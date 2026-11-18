@@ -372,10 +372,14 @@ def build(query: dict[str, Any], dialect: str | None = None) -> Any:
     return select
 
 
-def render(query_json: str, dialect: str | None) -> str:
-    """Render a `SqlQuery` (as JSON) for a dialect (`None` is sqlglot's default)."""
-    query = json.loads(query_json)
-    sql = str(_escaped_identifiers(build(query, dialect), dialect).sql(dialect=dialect))
+def _finish(sql: str, query: dict[str, Any]) -> str:
+    """
+    The generated SQL with the user's query in place of its placeholder. Under `params=`
+    the statement is %-formatted by the driver: a `%` the plugin wrote (a column's name)
+    is doubled, the user's query is left as they wrote it.
+    """
+    if query.get("escape_percent"):
+        sql = sql.replace("%", "%%")
     from_ = query["from"]
     if "Subquery" in from_:
         sub = from_["Subquery"]
@@ -383,6 +387,88 @@ def render(query_json: str, dialect: str | None) -> str:
         end = "\n" if "--" in sub or "#" in sub else ""
         sql = sql.replace(_SUBQUERY_PLACEHOLDER, f"({sub}{end})", 1)
     return sql
+
+
+def render(query_json: str, dialect: str | None) -> str:
+    """Render a `SqlQuery` (as JSON) for a dialect (`None` is sqlglot's default)."""
+    query = json.loads(query_json)
+    sql = str(_escaped_identifiers(build(query, dialect), dialect).sql(dialect=dialect))
+    return _finish(sql, query)
+
+
+_PREDICATE_PLACEHOLDER = f"__polars_predicate_{secrets.token_hex(8)}__"
+_FILTER_PLACEHOLDER = f"__polars_filter_{secrets.token_hex(8)}__"
+
+
+def _shared_filter(query: dict[str, Any], d: str | None) -> tuple[str, str]:
+    """
+    The `AND` conjuncts of a query's filter as SQL, as `WHERE` writes them: with
+    another conjunct beside them (each of `AND` / `OR` in parentheses), and alone (a
+    single conjunct isn't wrapped).
+    """
+    columns = set(query.get("qualified") or ())
+    plain, wrapped = [], []
+    for f in query["filter"]:
+        node = _qualified(_expr(f, d), columns, query["from"])
+        text = str(_escaped_identifiers(node, d).sql(dialect=d))
+        plain.append(text)
+        wrapped.append(f"({text})" if isinstance(node, exp.Connector) else text)
+    return " AND ".join(wrapped), " AND ".join(plain)
+
+
+def _with_partition(
+    query: dict[str, Any], predicate: Any, shared: tuple[str, str], d: str | None
+) -> str:
+    """
+    `query` with the partition's predicate ahead of its (already rendered) filter. The
+    filter (an `IN` list of thousands of values, say) is written once for all
+    partitions.
+    """
+    q = dict(query)
+    # the partition predicates written by the user (`partition_predicates`, the only raw
+    # ones) stay as written, also where `%` is doubled: they stand in as a placeholder
+    user_text = None
+    if isinstance(predicate, dict) and "Raw" in predicate:
+        user_text, predicate = predicate["Raw"], {"Raw": _PREDICATE_PLACEHOLDER}
+    filters = [] if predicate is None else [predicate]
+    if not query["filter"]:
+        q["filter"] = filters
+        sql = str(_escaped_identifiers(build(q, d), d).sql(dialect=d))
+        sql = _finish(sql, query)
+    else:
+        # the shared filter stands in as one raw condition, replaced after generation
+        q["filter"] = [*filters, {"Raw": _FILTER_PLACEHOLDER}]
+        sql = str(_escaped_identifiers(build(q, d), d).sql(dialect=d))
+        alone = not filters and len(query["filter"]) == 1
+        sql = sql.replace(f"({_FILTER_PLACEHOLDER})", shared[1 if alone else 0], 1)
+        sql = _finish(sql, query)
+    if user_text is not None:
+        sql = sql.replace(_PREDICATE_PLACEHOLDER, user_text, 1)
+    return sql
+
+
+def render_partitions(
+    query_json: str, count_json: str, predicates_json: str, dialect: str | None
+) -> list[tuple[str, str]]:
+    """
+    The SQL and the row-count SQL of each partition: the query (and count query), each
+    with the partition's predicate in front of its filter, which every partition shares.
+    """
+    query, count = json.loads(query_json), json.loads(count_json)
+    shared = _shared_filter(query, dialect)
+    if count["filter"] == query["filter"] and count.get("qualified") == query.get(
+        "qualified"
+    ):
+        shared_count = shared
+    else:
+        shared_count = _shared_filter(count, dialect)
+    return [
+        (
+            _with_partition(query, predicate, shared, dialect),
+            _with_partition(count, predicate, shared_count, dialect),
+        )
+        for predicate in json.loads(predicates_json)
+    ]
 
 
 _WRITES = (
@@ -768,13 +854,44 @@ _KNOWN_AGGREGATES = frozenset(
 )
 
 
+def _is_scalar_min_max(node: Any) -> bool:
+    """SQLite's `max(a, b)` / `min(a, b)` (sqlglot parses them as the aggregates)."""
+    return isinstance(node, (exp.Max, exp.Min)) and bool(node.args.get("expressions"))
+
+
+def _is_aggregate_query(select: Any) -> bool:
+    """
+    Whether a select without `GROUP BY` is an aggregate query (one group): an aggregate
+    in its own select list or `HAVING`, not in a window, a subquery or a scalar
+    function.
+    """
+    stack = [*select.expressions]
+    if (having := select.args.get("having")) is not None:
+        stack.append(having)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (exp.Window, exp.Subquery, exp.Select)) or (
+            _is_scalar_min_max(node)
+        ):
+            if _is_scalar_min_max(node):
+                stack.extend(node.iter_expressions())
+            continue
+        if isinstance(node, exp.AggFunc) or (
+            isinstance(node, exp.Anonymous) and node.name.lower() in _KNOWN_AGGREGATES
+        ):
+            return True
+        stack.extend(node.iter_expressions())
+    return False
+
+
 def _bare_column_in_group_by(select: Any) -> bool:
     """
-    Whether a `GROUP BY` query selects (or filters with `HAVING`) a column that is
-    neither grouped nor inside an aggregate: its value comes from any row of the group.
+    Whether a `GROUP BY` query (or an aggregate query without one) selects (or filters
+    with `HAVING`) a column that is neither grouped nor inside an aggregate: its value
+    comes from any row of the group.
     """
     group = select.args.get("group")
-    if group is None:
+    if group is None and not _is_aggregate_query(select):
         return False
     projections = select.expressions
     grouped: set[str] = set()
@@ -782,12 +899,12 @@ def _bare_column_in_group_by(select: Any) -> bool:
     # grouped by `GROUP BY a.id`
     grouped_names: set[str] = set()
     grouped_unqualified: set[str] = set()
-    if group.args.get("all"):
+    if group is not None and group.args.get("all"):
         return False
     by_alias = {
         p.alias.lower(): p.this for p in projections if isinstance(p, exp.Alias)
     }
-    for node in group.walk():
+    for node in group.walk() if group is not None else ():
         if isinstance(node, exp.Column) and not node.table:
             # `GROUP BY l` for `lower(g) AS l`: the expression it names
             if (named := by_alias.get(node.name.lower())) is not None:
@@ -852,14 +969,17 @@ def _bare_column_in_group_by(select: Any) -> bool:
                 for child in node.iter_expressions()
                 if child is not node.this
             )
-        if isinstance(
-            node,
-            (
-                exp.AggFunc,
-                # `count(*) FILTER (WHERE x > 0)`, `... WITHIN GROUP (ORDER BY x)`
-                exp.Filter,
-                exp.WithinGroup,
-            ),
+        if (
+            not _is_scalar_min_max(node)
+            and isinstance(
+                node,
+                (
+                    exp.AggFunc,
+                    # `count(*) FILTER (WHERE x > 0)`, `... WITHIN GROUP (ORDER BY x)`
+                    exp.Filter,
+                    exp.WithinGroup,
+                ),
+            )
         ) or (
             isinstance(node, exp.Anonymous) and node.name.lower() in _KNOWN_AGGREGATES
         ):
@@ -948,6 +1068,70 @@ def _top_level_order_by_without_limit(stmt: Any) -> bool:
         if not isinstance(stmt, (exp.Subquery, exp.Paren)):
             return False
         stmt = stmt.this
+
+
+def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
+    """
+    The query's top-level `ORDER BY` (without the keyword) on its output columns,
+    for a wrapper that repeats it outside; `None` if there is none, or a key is not an
+    output column (a selected column, its alias, an expression selected as it is, or its
+    position) of an unambiguous, star-free select list.
+    """
+    while not stmt.args.get("order"):
+        if not isinstance(stmt, (exp.Subquery, exp.Paren)):
+            return None
+        stmt = stmt.this
+    selects = stmt.selects
+    if not selects or any(isinstance(s, exp.Star) or s.is_star for s in selects):
+        return None
+    names = [s.alias_or_name for s in selects]
+    # (the servers that need this compare column names without regard to case)
+    lowered = [n.lower() for n in names]
+    if not all(names) or len(set(lowered)) != len(names):
+        return None
+    is_set_operation = isinstance(stmt, exp.SetOperation)
+    keys = []
+    for o in stmt.args["order"].expressions:
+        if not isinstance(o, exp.Ordered):
+            return None
+        key = o.this
+        while isinstance(key, exp.Paren):
+            key = key.this
+        name = None
+        if isinstance(key, exp.Literal) and not key.is_string:
+            try:
+                ordinal = int(key.name)
+            except ValueError:
+                return None
+            if 1 <= ordinal <= len(names):
+                name = names[ordinal - 1]
+        elif (
+            isinstance(key, exp.Column)
+            and not key.table
+            and key.name.lower() in lowered
+        ):
+            # an alias, or the selected column of that name
+            name = names[lowered.index(key.name.lower())]
+        if name is None and not is_set_operation:
+            for s, n in zip(selects, names, strict=True):
+                if key == (s.this if isinstance(s, exp.Alias) else s):
+                    name = n
+                    break
+        if name is None:
+            return None
+        ordered = o.copy()
+        # qualified by the wrapper's derived table (`_pl`, `relation_qualifier`): the
+        # inner column, not the select item that converts it (a decimal read as text
+        # would sort as text)
+        ordered.set(
+            "this",
+            exp.Column(
+                this=exp.to_identifier(name, quoted=True),
+                table=exp.to_identifier("_pl", quoted=True),
+            ),
+        )
+        keys.append(_escaped_identifiers(ordered, dialect).sql(dialect=dialect))
+    return ", ".join(keys)
 
 
 def _nested_queries(stmt: Any) -> bool:
@@ -1232,6 +1416,7 @@ def _no_facts() -> dict[str, Any]:
         "single_select": False,
         "has_cte": False,
         "top_level_order_by_without_limit": False,
+        "outer_order_by": None,
         "output_columns": None,
         "read_only": False,
         "repeatable": False,
@@ -1385,6 +1570,7 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
         stmt.args.get("with") is not None
     )
     facts["top_level_order_by_without_limit"] = _top_level_order_by_without_limit(stmt)
+    facts["outer_order_by"] = _outer_order_by(stmt, dialect)
     # what can't take another `LIMIT` after it
     facts["top_level_limit"] = any(
         stmt.args.get(k) for k in ("limit", "fetch", "offset", "locks")

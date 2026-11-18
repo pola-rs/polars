@@ -100,7 +100,7 @@ def dtype_from_database_typename(
                 value=modifier,
                 raise_unmatched=False,
             )
-        else:
+        elif value:
             # an element type in brackets keeps its own modifiers
             # (eg: ClickHouse 'Array(Decimal(10, 2))')
             if inner_value := dtype_from_database_typename(

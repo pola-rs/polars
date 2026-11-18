@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::database::dialect::DialectName;
-use crate::database::sql::{QueryFacts, SqlQuery, SqlRenderer};
+use crate::database::sql::{QueryFacts, SqlExpr, SqlQuery, SqlRenderer};
 
 pub struct SqlglotRenderer {
     module: Py<PyModule>,
@@ -56,6 +56,31 @@ impl SqlRenderer for SqlglotRenderer {
         .map_err(|e| polars_err!(ComputeError: "sqlglot could not render SQL for {dialect}: {e}"))
     }
 
+    fn render_partitions(
+        &self,
+        query: &SqlQuery,
+        count: &SqlQuery,
+        predicates: &[Option<SqlExpr>],
+        dialect: DialectName,
+    ) -> PolarsResult<Vec<(String, String)>> {
+        let encode = |v: &dyn Fn() -> serde_json::Result<String>| {
+            v().map_err(|e| polars_err!(ComputeError: "could not encode SQL query: {e}"))
+        };
+        let query = encode(&|| serde_json::to_string(query))?;
+        let count = encode(&|| serde_json::to_string(count))?;
+        let predicates = encode(&|| serde_json::to_string(predicates))?;
+        Python::attach(|py| {
+            self.module
+                .call_method1(
+                    py,
+                    "render_partitions",
+                    (query, count, predicates, dialect_name(dialect)),
+                )?
+                .extract::<Vec<(String, String)>>(py)
+        })
+        .map_err(|e| polars_err!(ComputeError: "sqlglot could not render SQL for {dialect}: {e}"))
+    }
+
     fn inspect_query(&self, sql: &str, dialect: DialectName) -> PolarsResult<QueryFacts> {
         self.facts("inspect_query", sql, dialect)
             .map_err(|e| polars_err!(ComputeError: "sqlglot could not inspect the query: {e}"))
@@ -90,6 +115,10 @@ impl SqlglotRenderer {
                 Some(v) if !v.is_none() => Some(v.extract()?),
                 _ => None,
             };
+            let outer_order_by: Option<String> = match d.get_item("outer_order_by")? {
+                Some(v) if !v.is_none() => Some(v.extract()?),
+                _ => None,
+            };
             let unknown_functions: Vec<String> = match d.get_item("unknown_functions")? {
                 Some(v) if !v.is_none() => v.extract()?,
                 _ => vec![],
@@ -107,6 +136,7 @@ impl SqlglotRenderer {
                 single_select: get("single_select")?,
                 has_cte: get("has_cte")?,
                 top_level_order_by_without_limit: get("top_level_order_by_without_limit")?,
+                outer_order_by: outer_order_by.map(Into::into),
                 output_columns: output_columns.map(|v| v.into_iter().map(Into::into).collect()),
                 read_only: get("read_only")?,
                 repeatable: get("repeatable")?,

@@ -480,7 +480,8 @@ pub fn drop_nans<'a>(
         let values = ac.flat_naive();
         let mut values = values.is_nan().unwrap();
         values.rechunk_mut();
-        values.downcast_as_array().values().clone()
+        // A null slot can hold a NaN value, so mask with the validity.
+        values.downcast_as_array().true_and_valid()
     } else {
         Bitmap::new_with_value(false, 1)
     };

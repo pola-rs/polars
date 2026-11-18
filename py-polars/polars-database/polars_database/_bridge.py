@@ -166,8 +166,11 @@ def _pool_checkout(
         # a psycopg_pool `getconn()`: its `close()` closes the connection but doesn't
         # give the slot back; `putconn` does (and replaces a closed connection)
         def invalidate() -> None:
-            # `close_returns=True` (psycopg_pool 3.2): `close()` gives it back itself
-            if getattr(pool, "_close_returns", False):
+            # `close_returns=True`: `close()` gives it back itself (public attribute
+            # since psycopg_pool 3.2.x/3.3; the private spelling is from older ones)
+            if getattr(pool, "close_returns", False) or getattr(
+                pool, "_close_returns", False
+            ):
                 conn.close()
                 return
             with contextlib.suppress(Exception):
@@ -1024,6 +1027,49 @@ def _uri_part_kwargs(parts: dict[str, Any], renames: dict[str, str]) -> dict[str
     return {renames.get(k, k): v for k, v in parts.items() if v is not None}
 
 
+# How long `_duckdb_connect` retries a file DuckDB still holds, and how often it asks
+# first (doubling up to the maximum). The race with a closing instance lasts
+# milliseconds; a file held for good (attached in another connection of this process)
+# fails after this.
+_DUCKDB_CONNECT_RETRY_SECONDS = 1.0
+_DUCKDB_CONNECT_RETRY_INTERVAL = 0.005
+_DUCKDB_CONNECT_RETRY_MAX_INTERVAL = 0.1
+
+
+def _duckdb_connect(mod: Any, path: str, kwargs: dict[str, Any]) -> Any:
+    """
+    `duckdb.connect(path)`, retried while the file is still held by a closing database.
+
+    DuckDB shares one database instance between the connections to a file in a process.
+    When the last connection of one closes, the instance is destroyed; a `connect` from
+    another thread at that moment finds no instance in its cache, but the file is still
+    attached by the dying one: `Unique file handle conflict: Cannot attach ... already
+    attached`. It lasts as long as the destruction does, so the connect is asked again,
+    with a bound: a conflict that persists is another connection's (it attached it).
+    """
+    start = time.monotonic()
+    interval = _DUCKDB_CONNECT_RETRY_INTERVAL
+    while True:
+        try:
+            return mod.connect(path, **kwargs)
+        except Exception as e:
+            if "Unique file handle conflict" not in str(e):
+                raise
+            waited = time.monotonic() - start
+            if waited >= _DUCKDB_CONNECT_RETRY_SECONDS:
+                msg = (
+                    f"{e} (it persisted for {waited:.1f} s: the file is attached by "
+                    "another connection in this process, which has to be closed first)"
+                )
+                try:
+                    err = type(e)(msg)
+                except Exception:
+                    raise e from None
+                raise err from e
+        time.sleep(interval)
+        interval = min(interval * 2, _DUCKDB_CONNECT_RETRY_MAX_INTERVAL)
+
+
 def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
     """A DB-API connection to a URI through a driver module."""
     mod = importlib.import_module(module)
@@ -1033,7 +1079,7 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
         return mod.connect(path, **{**kw, **options})
     if module == "duckdb":
         path, kw = _duckdb_connect_args(uri)
-        return mod.connect(path, **{**kw, **options})
+        return _duckdb_connect(mod, path, {**kw, **options})
     if module == "psycopg":
         # libpq reads (and checks) the query parameters itself
         return mod.connect(_libpq_uri(uri), **options)
@@ -1768,6 +1814,102 @@ def _mysql_unsigned(cursor: Any, description: Any, i: int) -> bool | None:
     return None
 
 
+_DUCKDB_SCALAR_DTYPES = {
+    "BOOLEAN": "Boolean",
+    "TINYINT": "Int8",
+    "SMALLINT": "Int16",
+    "INTEGER": "Int32",
+    "BIGINT": "Int64",
+    "HUGEINT": "Int128",
+    "UTINYINT": "UInt8",
+    "USMALLINT": "UInt16",
+    "UINTEGER": "UInt32",
+    "UBIGINT": "UInt64",
+    "FLOAT": "Float32",
+    "DOUBLE": "Float64",
+    "VARCHAR": "String",
+    "BLOB": "Binary",
+    "DATE": "Date",
+    "TIME": "Time",
+}
+
+
+def _split_top_level(text: str, sep: str = ",") -> list[str]:
+    """`text` split at `sep` outside parentheses, brackets and double quotes."""
+    parts: list[str] = []
+    depth = 0
+    quoted = False
+    start = 0
+    for i, ch in enumerate(text):
+        if ch == '"':
+            quoted = not quoted
+        elif quoted:
+            continue
+        elif ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        elif ch == sep and depth == 0:
+            parts.append(text[start:i])
+            start = i + 1
+    parts.append(text[start:])
+    return [p.strip() for p in parts]
+
+
+def _duckdb_type_dtype(type_name: str, *, nested_only: bool) -> Any:
+    """
+    The Polars dtype of a DuckDB type name, as `cursor.description` shows it.
+
+    `Null` for a type this doesn't read (a map, a union, a time zone...): the column is
+    then typed as before. With `nested_only`, a scalar type is `Null` too.
+    """
+    import polars as pl
+
+    name = type_name.strip()
+    try:
+        if name.endswith("]") and (i := name.rfind("[")) > 0:
+            element = _duckdb_type_dtype(name[:i], nested_only=False)
+            if element == pl.Null:
+                return pl.Null
+            size = name[i + 1 : -1].strip()
+            if not size:
+                return pl.List(element)
+            return pl.Array(element, int(size)) if size.isdigit() else pl.Null
+        if name.upper().startswith("STRUCT(") and name.endswith(")"):
+            fields: dict[str, Any] = {}
+            for field in _split_top_level(name[len("STRUCT(") : -1]):
+                if field.startswith('"'):
+                    end = 1
+                    while end < len(field):
+                        if field[end] == '"':
+                            if field[end + 1 : end + 2] != '"':
+                                break
+                            end += 1
+                        end += 1
+                    field_name = field[1:end].replace('""', '"')
+                    field_type = field[end + 1 :]
+                else:
+                    field_name, _, field_type = field.partition(" ")
+                dtype = _duckdb_type_dtype(field_type, nested_only=False)
+                if dtype == pl.Null:
+                    return pl.Null
+                fields[field_name] = dtype
+            return pl.Struct(fields) if fields else pl.Null
+        if nested_only:
+            return pl.Null
+        upper = name.upper()
+        if (scalar := _DUCKDB_SCALAR_DTYPES.get(upper)) is not None:
+            return getattr(pl, scalar)
+        if upper == "TIMESTAMP":
+            return pl.Datetime("us")
+        if m := re.fullmatch(r"DECIMAL\((\d+),\s*(\d+)\)", upper):
+            p, s = int(m.group(1)), int(m.group(2))
+            return pl.Decimal(p, s) if 0 < p <= 38 else pl.Null
+    except (ValueError, TypeError):
+        pass
+    return pl.Null
+
+
 def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any]:
     """Dtypes of a Postgres-, MySQL-family or Databricks result's columns.
 
@@ -1797,6 +1939,8 @@ def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any
         return pl.Null if name is None else named(name)
 
     def mysql(i: int, d: Any) -> Any:
+        if d[1] == 16 and _module_of(cursor) == "pymysql":
+            return pl.Binary  # BIT: pymysql reads it as bytes, as with rows
         name = _MYSQL_FIELD_DTYPES.get(d[1]) if type(d[1]) is int else None
         if isinstance(name, tuple):
             unsigned = _mysql_unsigned(cursor, description, i)
@@ -1819,6 +1963,9 @@ def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any
         return pl.Null if name is None else named(name)
 
     module = _module_of(cursor)
+    if module == "duckdb":
+        # (only nested types: a scalar column is typed from the catalog's type)
+        return [_duckdb_type_dtype(str(d[1]), nested_only=True) for d in description]
     if module == "databricks":
         return [databricks(d) for d in description]
     if module in ("psycopg", "psycopg2", "pg8000"):

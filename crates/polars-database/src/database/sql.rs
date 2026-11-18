@@ -102,6 +102,27 @@ impl SqlLiteral {
         f.is_finite().then_some(Self::Float(f))
     }
 
+    /// The bytes the literal takes in a statement, about (a string's quotes and escapes, a
+    /// temporal literal's cast).
+    pub fn estimated_bytes(&self) -> usize {
+        match self {
+            Self::Null => 4,
+            Self::Bool(_) => 5,
+            Self::Int(v) => {
+                v.unsigned_abs()
+                    .checked_ilog10()
+                    .map_or(1, |d| d as usize + 1)
+                    + 2
+            },
+            Self::Float(_) => 26,
+            Self::Decimal(t) => t.len() + 4,
+            Self::String(s) => s.len() + s.len() / 8 + 4,
+            Self::Date(t) => t.len() + 8,
+            Self::Timestamp { text, .. } => text.len() + 34,
+            Self::Time(t) => t.len() + 16,
+        }
+    }
+
     /// Strings and text-like literals, for collation checks.
     pub fn as_str(&self) -> Option<&str> {
         match self {
@@ -203,6 +224,45 @@ impl SqlExpr {
         Self::Binary(Box::new(l), op, Box::new(r))
     }
 
+    /// How deeply its operators nest.
+    pub fn depth(&self) -> usize {
+        match self {
+            Self::Column(_) | Self::Literal(_) | Self::Raw(_) | Self::Like { .. } => 1,
+            Self::Binary(l, _, r) | Self::IsNotDistinctFrom(l, r, _) => {
+                1 + l.depth().max(r.depth())
+            },
+            Self::Not(e) | Self::IsNull(e, _) | Self::InList(e, _, _) => 1 + e.depth(),
+            Self::Between(a, b, c) => 1 + a.depth().max(b.depth()).max(c.depth()),
+        }
+    }
+
+    /// The bytes it takes in a statement, about.
+    pub fn estimated_bytes(&self) -> usize {
+        match self {
+            Self::Column(c) => c.len() + 4,
+            Self::Literal(l) => l.estimated_bytes(),
+            Self::Raw(s) => s.len() + 2,
+            Self::Like { expr, pattern, .. } => {
+                expr.estimated_bytes() + pattern.len() + pattern.len() / 8 + 20
+            },
+            Self::Binary(l, _, r) | Self::IsNotDistinctFrom(l, r, _) => {
+                l.estimated_bytes() + r.estimated_bytes() + 12
+            },
+            Self::Not(e) | Self::IsNull(e, _) => e.estimated_bytes() + 12,
+            Self::InList(e, values, _) => {
+                e.estimated_bytes()
+                    + 12
+                    + values
+                        .iter()
+                        .map(|v| v.estimated_bytes() + 2)
+                        .sum::<usize>()
+            },
+            Self::Between(a, b, c) => {
+                a.estimated_bytes() + b.estimated_bytes() + c.estimated_bytes() + 14
+            },
+        }
+    }
+
     pub fn and_all(mut exprs: Vec<SqlExpr>) -> Option<Self> {
         let first = exprs.pop()?;
         Some(
@@ -261,6 +321,10 @@ pub struct SqlQuery {
     /// `"_pl"."c"`): a select item reads them through a conversion under the same name,
     /// which `ORDER BY` (and ClickHouse's `WHERE`) resolves a bare name to.
     pub qualified: Vec<PlSmallStr>,
+    /// The driver %-formats the statement (it binds `params=`): a `%` the renderer writes is
+    /// doubled. The user's query, which holds the placeholders, is left as written.
+    #[serde(default)]
+    pub escape_percent: bool,
 }
 
 impl SqlQuery {
@@ -272,6 +336,7 @@ impl SqlQuery {
             order_by: vec![],
             limit: None,
             qualified: vec![],
+            escape_percent: false,
         }
     }
 }
@@ -283,6 +348,9 @@ pub struct QueryFacts {
     pub single_select: bool,
     pub has_cte: bool,
     pub top_level_order_by_without_limit: bool,
+    /// The top-level `ORDER BY`'s keys written on the query's output columns, for a wrapper
+    /// that repeats the ordering outside; `None` if there is none or a key is no output column.
+    pub outer_order_by: Option<PlSmallStr>,
     /// `None` if it can't be known without the database (e.g. `SELECT *`).
     pub output_columns: Option<Vec<PlSmallStr>>,
     /// One query that only reads: no DML or DDL anywhere (CTEs included), no `SELECT INTO`.
@@ -324,6 +392,31 @@ pub trait SqlRenderer: Send + Sync {
     /// e.g. `"sqlglot 30.24.0"`; recorded in the plan and shown by explain().
     fn id(&self) -> PlSmallStr;
     fn render(&self, query: &SqlQuery, dialect: DialectName) -> PolarsResult<String>;
+    /// The SQL and the row-count SQL (`count`, over the same filter) of each partition: the
+    /// queries with the partition's predicate (none for a partition without one) in front of
+    /// their filter. A renderer may write the filter the partitions share once.
+    fn render_partitions(
+        &self,
+        query: &SqlQuery,
+        count: &SqlQuery,
+        predicates: &[Option<SqlExpr>],
+        dialect: DialectName,
+    ) -> PolarsResult<Vec<(String, String)>> {
+        predicates
+            .iter()
+            .map(|predicate| {
+                let with = |q: &SqlQuery| {
+                    let mut q = q.clone();
+                    q.filter.splice(0..0, predicate.clone());
+                    q
+                };
+                Ok((
+                    self.render(&with(query), dialect)?,
+                    self.render(&with(count), dialect)?,
+                ))
+            })
+            .collect()
+    }
     fn inspect_query(&self, sql: &str, dialect: DialectName) -> PolarsResult<QueryFacts>;
     /// The facts of a view's query, from its definition (its `CREATE VIEW` statement, or
     /// only its query): the output columns are the view's.

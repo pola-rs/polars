@@ -709,3 +709,16 @@ fn test_join_non_equi_range() {
         "expected = {expected:?}\nactual={actual:?}"
     );
 }
+
+#[test]
+fn typed_null_query_param() {
+    // a null value acts as NULL, also when it has a type
+    let mut ctx = create_ctx();
+    let params = QueryParams::Positional(vec![Scalar::null(DataType::Int64)]);
+    let df = ctx
+        .execute_with_params("SELECT COUNT($1) AS n FROM df", &params)
+        .unwrap()
+        .collect()
+        .unwrap();
+    assert_eq!(df.column("n").unwrap().i64().unwrap().get(0), Some(0));
+}

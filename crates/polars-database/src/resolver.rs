@@ -23,11 +23,11 @@ use crate::ffi::{
     borrow_handle, clone_handle, export_schema, ffi_call, ffi_call_infallible, into_handle,
     release_handle,
 };
-use crate::filter::{Class, Node, Translator};
+use crate::filter::{Class, Node, PushBudget, Translator};
 use crate::reader::ReaderBuilder;
 
-/// Prefix of serialized resolvers, so that a change of the format fails clearly.
-const SERDE_MAGIC: &[u8] = b"PLDBRS1";
+/// Kind prefix of serialized resolvers (see [`crate::serde_header`]).
+const SERDE_KIND: &str = "PLDBRS";
 
 pub struct Resolver {
     options: Arc<DatabaseScanOptions>,
@@ -79,7 +79,7 @@ impl Resolver {
     }
 
     fn serialize(&self) -> PolarsResult<Vec<u8>> {
-        let mut out = SERDE_MAGIC.to_vec();
+        let mut out = crate::serde_header(SERDE_KIND);
         out.extend(polars_utils::pl_serialize::serialize_to_bytes::<_, false>(
             &SerializedResolver {
                 options: self.options.clone(),
@@ -90,13 +90,7 @@ impl Resolver {
     }
 
     fn deserialize(bytes: &[u8]) -> PolarsResult<Self> {
-        let bytes = bytes.strip_prefix(SERDE_MAGIC).ok_or_else(|| {
-            polars_err!(
-                ComputeError:
-                "cannot deserialize a scan_database plan: it was made by an incompatible \
-                version of {}", crate::PACKAGE_NAME
-            )
-        })?;
+        let bytes = crate::strip_serde_header(bytes, SERDE_KIND)?;
         let s: SerializedResolver =
             polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(bytes)?;
         Ok(Self {
@@ -121,8 +115,10 @@ impl Resolver {
         let nodes: Vec<Node> = args.filters.iter().map(|doc| Node::parse(doc)).collect();
         if config.pushdown_disabled.is_none() {
             let translator = Translator { config: &config };
+            // what one statement holds of them (a filter beyond it is left to Polars)
+            let mut budget = PushBudget::new(config.dialect);
             for (i, node) in nodes.iter().enumerate() {
-                if let Some((expr, class)) = translator.translate(node) {
+                if let Some((expr, class)) = budget.admit(translator.translate(node)) {
                     let exact = class == Class::Exact;
                     if exact {
                         applied.push(i as u64);

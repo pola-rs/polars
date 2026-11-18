@@ -36,6 +36,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlsplit
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -2668,6 +2669,41 @@ def test_clickhouse_connectorx_reads_every_row_or_fails() -> None:
                     lf.collect()
                 # without the column, the rows read
                 assert lf.select("id").collect().height == 1001
+    finally:
+        _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_clickhouse
+def test_clickhouse_connectorx_array_of_decimals_fails_only_when_read() -> None:
+    # #442: ConnectorX fails on an array of decimals even for no rows, so the table
+    # couldn't be planned: any projection failed
+    pytest.importorskip("connectorx")
+    table = "rvb_ch_array_decimal"
+    _execute(
+        "clickhouse",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id Int32, ad Array(Decimal(38, 20)), "
+            "d Decimal(38, 20)) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} VALUES (1, [1.12345678901234567890], "
+            "1.12345678901234567890)",
+        ],
+    )
+    try:
+        lf = _scan("clickhouse", "connectorx", table)
+        assert lf.select("id", "d").collect().rows() == [
+            (1, Decimal("1.12345678901234567890"))
+        ]
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="column 'ad'"):
+            lf.collect()
+        # a query that selects it can't be planned
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="array of decimals"
+        ):
+            _scan("clickhouse", "connectorx", f"SELECT * FROM {table}").collect()
+        query = _scan("clickhouse", "connectorx", f"SELECT id, d FROM {table}")
+        assert query.collect().rows() == [(1, Decimal("1.12345678901234567890"))]
+        assert _scan("clickhouse", "adbc", table).collect().height == 1
     finally:
         _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
 
@@ -5452,3 +5488,274 @@ def test_postgres_name_columns_are_not_compared_as_text() -> None:
             assert lf.filter(n != long).collect().height == 1, (driver, source)
             assert lf.filter(n < long).collect().height == 1, (driver, source)
             assert lf.filter(n.is_in([long])).collect().height == 0, (driver, source)
+
+
+@needs_clickhouse
+@pytest.mark.parametrize("driver", ["adbc", "clickhouse_connect"])
+def test_clickhouse_datetime_arrays_are_read_in_seconds(driver: str) -> None:
+    # #429: ADBC read the elements' epoch seconds as milliseconds
+    table = f"r31_ch_dt_arr_{driver}"
+    _execute(
+        "clickhouse",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id Int32, a Array(DateTime('UTC')), "
+            "n Array(Nullable(DateTime('Asia/Tokyo')))) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} VALUES "
+            "(1, ['2024-01-01 00:00:00', '2024-06-01 12:30:00'], "
+            "[NULL, '2024-01-01 00:00:00']), (2, [], [])",
+        ],
+    )
+    for source in [table, f"SELECT * FROM {table}"]:
+        df = _scan("clickhouse", driver, source).collect().sort("id")
+        assert df["a"].to_list() == [
+            [
+                datetime(2024, 1, 1, tzinfo=UTC),
+                datetime(2024, 6, 1, 12, 30, tzinfo=UTC),
+            ],
+            [],
+        ]
+        n = df["n"][0].to_list()
+        assert n[0] is None
+        # (written in the column's zone)
+        assert n[1] == datetime(2024, 1, 1, tzinfo=ZoneInfo("Asia/Tokyo"))
+
+
+@needs_postgres
+@pytest.mark.parametrize("module", ["psycopg", "psycopg2"])
+def test_postgres_timestamptz_arrays_read_in_utc_on_a_live_session(
+    module: str,
+) -> None:
+    # #430: the array lacked the `AT TIME ZONE 'UTC'` of the scalar: in a session of
+    # Europe/Amsterdam, 1900 reads as the zone's local mean time (00:19:32)
+    _execute(
+        "postgres17",
+        [
+            "DROP TABLE IF EXISTS r31_tstz_arr",
+            "CREATE TABLE r31_tstz_arr (id int, t timestamptz, a timestamptz[])",
+            "INSERT INTO r31_tstz_arr VALUES "
+            "(1, '1900-01-01 00:00+00', "
+            "ARRAY['1900-01-01 00:00+00', '2024-06-01 12:00+00']::timestamptz[]), "
+            "(2, NULL, NULL), "
+            "(3, NULL, ARRAY[NULL, '1900-01-01 00:00+00']::timestamptz[])",
+        ],
+    )
+    conn = _live_postgres(module)
+    try:
+        conn.cursor().execute("SET TIME ZONE 'Europe/Amsterdam'")
+        conn.commit()
+        for source in ["r31_tstz_arr", "SELECT * FROM r31_tstz_arr"]:
+            df = pl.scan_database(source, conn).collect().sort("id")
+            assert df.schema["a"] == pl.List(pl.Datetime("us", "UTC"))
+            assert df["t"][0] == datetime(1900, 1, 1, tzinfo=UTC)
+            assert df["a"][0].to_list() == [
+                datetime(1900, 1, 1, tzinfo=UTC),
+                datetime(2024, 6, 1, 12, tzinfo=UTC),
+            ]
+            assert df["a"][1] is None
+            assert df["a"][2].to_list() == [None, datetime(1900, 1, 1, tzinfo=UTC)]
+    finally:
+        conn.close()
+
+
+@pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
+@pytest.mark.parametrize("pushdown", [True, False])
+def test_mariadb_ordered_query_with_a_date_keeps_its_order(pushdown: bool) -> None:
+    # #423: MariaDB drops the ORDER BY of a derived table: a query with a date column
+    # was wrapped for the zero-date conversion, and read in another order
+    table = f"r31_ord_{int(pushdown)}"  # (the parametrized runs may be parallel)
+    _execute(
+        "mariadb",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, d DATE)",
+            f"INSERT INTO {table} VALUES "
+            + ", ".join(f"({i}, '2024-01-0{i}')" for i in range(1, 6)),
+        ],
+    )
+    for driver in ["pymysql", "live"]:
+        lf = _scan(
+            "mariadb",
+            driver,
+            f"SELECT id, d FROM {table} ORDER BY id DESC",
+            pushdown=pushdown,
+        )
+        assert lf.collect()["id"].to_list() == [5, 4, 3, 2, 1], driver
+        assert lf.head(1).collect()["id"].to_list() == [5], driver
+        assert lf.collect()["d"][0] == date(2024, 1, 5)
+
+
+@pytest.mark.skipif(SERVERS["clickhouse"].uri is None, reason="no ClickHouse URI")
+@pytest.mark.parametrize("driver", ["clickhouse_connect", "connectorx"])
+def test_clickhouse_datetime64_nanoseconds_with_a_schema_override(driver: str) -> None:
+    # #435: the number the plugin's own conversion reads (nanoseconds since the epoch)
+    # is no guess: an override of the column's type to ns must not refuse it
+    _execute(
+        "clickhouse",
+        [
+            "DROP TABLE IF EXISTS r31_dt64",
+            "CREATE TABLE r31_dt64 (id Int32, ts DateTime64(9, 'UTC')) "
+            "ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO r31_dt64 VALUES (1, '2024-01-01 20:00:00.123456789')",
+        ],
+    )
+    out = _scan(
+        "clickhouse",
+        driver,
+        "r31_dt64",
+        schema_overrides={"ts": pl.Datetime("ns", "UTC")},
+    ).collect()
+    assert out["ts"].dtype == pl.Datetime("ns", "UTC")
+    assert out["ts"].dt.nanosecond().item() == 123456789
+
+
+@pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
+@pytest.mark.parametrize("driver", ["pymysql", "adbc"])
+def test_mariadb_ordered_query_sorts_by_the_derived_table_column(driver: str) -> None:
+    # #423: the outer ORDER BY names the derived table's column (`_pl`.`d`), not the
+    # select item that converts it (a decimal or SET read as text would sort as text);
+    # a query's own conversions are the zero-date one, whose order is the column's
+    table = f"r31_ordcol_{driver}"
+    _execute(
+        "mariadb",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, d DATE)",
+            f"INSERT INTO {table} VALUES (1, '2024-03-01'), (2, '2024-01-01'), "
+            "(3, '2024-02-01')",
+        ],
+    )
+    lf = _scan(
+        "mariadb", driver, f"SELECT id, d FROM {table} ORDER BY d", pushdown=False
+    )
+    assert "ORDER BY `_pl`.`d`" in lf.explain()
+    assert lf.collect()["id"].to_list() == [2, 3, 1]
+
+
+@pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
+def test_mariadb_ordered_query_with_a_timestamp_in_a_live_session() -> None:
+    # #423: the wrapper of a query's column conversions repeats the ORDER BY outside
+    # (MariaDB drops it inside a derived table); a key that isn't a selected column
+    # can't be both
+    _execute(
+        "mariadb",
+        [
+            "SET time_zone = '+00:00'",
+            "DROP TABLE IF EXISTS r31_ots",
+            "CREATE TABLE r31_ots (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
+            "INSERT INTO r31_ots VALUES "
+            + ", ".join(f"({i}, '2024-01-0{i} 20:00:00')" for i in range(1, 6)),
+        ],
+    )
+    conn = _mysql_connection("mariadb", "pymysql", "-08:00")
+    try:
+        out = pl.scan_database(
+            "SELECT id, ts FROM r31_ots ORDER BY id DESC", conn
+        ).collect()
+        assert out["id"].to_list() == [5, 4, 3, 2, 1]
+        lf = pl.scan_database("SELECT id, ts FROM r31_ots ORDER BY id DESC", conn)
+        assert "ORDER BY `_pl`.`id` DESC" in lf.explain()
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="ORDER BY"):
+            pl.scan_database("SELECT id, ts FROM r31_ots ORDER BY -id", conn).collect()
+    finally:
+        conn.close()
+
+
+def _mysql_connection(name: str, module: str, time_zone: str | None) -> Any:
+    uri = SERVERS[name].uri
+    assert uri is not None
+    if module == "pymysql":
+        conn = pytest.importorskip("pymysql").connect(**_parts(uri))
+    else:
+        conn = pytest.importorskip("mysql.connector").connect(**_parts(uri))
+    if time_zone is not None:
+        conn.cursor().execute(f"SET time_zone = '{time_zone}'")
+    return conn
+
+
+@pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
+@pytest.mark.parametrize("module", ["pymysql", "mysql.connector"])
+def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
+    module: str,
+) -> None:
+    # #440: a TIMESTAMP is read in the session's time zone: under `schema=` its type
+    # isn't known, so the instants would be shifted silently
+    _execute(
+        "mysql",
+        [
+            "SET time_zone = '+00:00'",
+            "DROP TABLE IF EXISTS r31_tz",
+            "CREATE TABLE r31_tz (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
+            "INSERT INTO r31_tz VALUES (1, '2024-01-01 20:00:00')",
+        ],
+    )
+    schema: dict[str, PolarsDataType] = {
+        "id": pl.Int64,
+        "ts": pl.Datetime("us", "UTC"),
+    }
+    expected = datetime(2024, 1, 1, 20, tzinfo=UTC)
+    conn = _mysql_connection("mysql", module, "-08:00")
+    try:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="time zone"):
+            pl.scan_database("r31_tz", conn, schema=schema).collect()
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="time zone"):
+            pl.scan_database(
+                "SELECT id, ts FROM r31_tz",
+                conn,
+                schema_overrides={"ts": pl.Datetime("us", "UTC")},
+            ).collect()
+        # a table's declared type is known: the instant is read right
+        out = pl.scan_database("r31_tz", conn).collect()
+        assert out["ts"].item() == expected
+    finally:
+        conn.close()
+    conn = _mysql_connection("mysql", module, "+00:00")
+    try:
+        out = pl.scan_database("r31_tz", conn, schema=schema).collect()
+        assert out["ts"].item() == expected
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("module", ["pymysql", "mysql.connector"])
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_params_with_percent_in_names(module: str, name: str) -> None:
+    # #425: a `%` in a column's name, written by the plugin into a statement the driver
+    # %-formats (`params=`), is doubled. Connector/Python replaces only `%s` and leaves
+    # `%%` as it is: a column named `x%s` can't be written there (pushdown is off)
+    if SERVERS[name].uri is None:
+        pytest.skip(f"no {name} URI")
+    connector = module == "mysql.connector"
+    table = f"r31_pct_{name}_{module.replace('.', '_')}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, `a%b` TEXT, `rate%` INT, "
+            + ("d DATE)" if connector else "`x%s` INT, d DATE)"),
+            f"INSERT INTO {table} (id, `a%b`, `rate%`, d) VALUES "
+            "(1, 'x', 5, '2024-01-01'), (2, 'y', 7, '2024-01-02')",
+        ],
+    )
+    conn = _mysql_connection(name, module, None)
+    escaped = "a%b" if connector else "a%%b"
+    rate = "rate%" if connector else "rate%%"
+    try:
+        for source in [
+            f"SELECT * FROM {table} WHERE id >= %s",
+            f"SELECT id, `{escaped}`, `{rate}`, d FROM {table} WHERE id >= %s",
+        ]:
+            kwargs_list: list[dict[str, Any]] = [
+                {},
+                {"pushdown": False},
+                {"partition_on": None},
+            ]
+            for kwargs in kwargs_list:
+                lf = pl.scan_database(source, conn, params=[2], **kwargs)
+                out = lf.filter(pl.col("id") >= 2).collect()
+                assert out["id"].to_list() == [2], (source, kwargs)
+                assert out["d"].to_list() == [date(2024, 1, 2)], (source, kwargs)
+                assert out["a%b"].to_list() == ["y"], (source, kwargs)
+                assert lf.select("id", "rate%").collect()["rate%"].to_list() == [7]
+    finally:
+        conn.close()

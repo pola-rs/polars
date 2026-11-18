@@ -1803,6 +1803,64 @@ def test_scan_duckdb_timestamptz_is_planned_in_utc(tmp_path: Path) -> None:
         assert lf.collect()["tz"].item() == datetime(2024, 1, 1, tzinfo=UTC)
 
 
+def test_scan_duckdb_nested_timestamptz_is_planned_in_utc(tmp_path: Path) -> None:
+    # #437: also in a struct field, a map value and a fixed-size array, whatever the
+    # session's time zone
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "t.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE t AS SELECT {'b': TIMESTAMPTZ '2024-01-01 00:00:00+00'} AS s, "
+            "MAP {'k': TIMESTAMPTZ '2024-01-01 00:00:00+00'} AS m, "
+            "[TIMESTAMPTZ '2024-01-01 00:00:00+00']::TIMESTAMPTZ[1] AS a"
+        )
+
+    def connect() -> Any:
+        return duckdb.connect(path, config={"TimeZone": "Asia/Tokyo"})
+
+    utc = datetime(2024, 1, 1, tzinfo=UTC)
+    for source in ["t", "SELECT * FROM t"]:
+        lf = pl.scan_database(source, connect)
+        schema = lf.collect_schema()
+        assert schema["s"] == pl.Struct({"b": pl.Datetime("us", "UTC")})
+        assert schema["m"] == pl.Map(pl.String, pl.Datetime("us", "UTC"))
+        assert schema["a"] == pl.Array(pl.Datetime("us", "UTC"), 1)
+        df = lf.collect()
+        assert df["s"].item() == {"b": utc}
+        assert df["a"].item().to_list() == [utc]
+
+
+@pytest.mark.parametrize("dtype", [pl.Datetime("us"), pl.Date, pl.Time])
+@pytest.mark.parametrize("how", ["schema", "overrides"])
+def test_scan_sqlite_epoch_seconds_are_not_cast_to_a_date(
+    tmp_path: Path, dtype: Any, how: str
+) -> None:
+    # #435: a number isn't read as raw ticks of a date or time (`1700000000` as
+    # `1970-01-01 00:28:20`, or as days past the calendar: `pl.Date` panicked)
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, ts TIMESTAMP)")
+        conn.execute("INSERT INTO t VALUES (1, 1700000000)")
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    kwargs: dict[str, Any] = (
+        {"schema": {"id": pl.Int64, "ts": dtype}}
+        if how == "schema"
+        else {"schema_overrides": {"ts": dtype}}
+    )
+    lf = pl.scan_database("SELECT id, ts FROM t", uri, **kwargs)
+    with pytest.raises(pl.exceptions.SchemaError, match="read the column as"):
+        lf.collect()
+    # read as the integer it is, and converted in Polars
+    df = pl.scan_database(
+        "SELECT id, ts FROM t", uri, schema_overrides={"ts": pl.Int64}
+    ).collect()
+    assert df["ts"].item() == 1700000000
+    assert df.select(pl.from_epoch("ts"))["ts"].item() == datetime(
+        2023, 11, 14, 22, 13, 20
+    )
+
+
 def test_scan_engine_with_a_shared_connection_pool() -> None:
     # a StaticPool's one connection is the user's: used as a live connection, so its
     # temporary tables are visible and it isn't discarded
@@ -4222,3 +4280,124 @@ def test_unsupported_adbc_cancel_returns_while_issuing() -> None:
     session.cancel()
     assert monotonic() - started < 1
     assert session._cancelled
+
+
+def test_duckdb_empty_query_keeps_nested_dtypes(tmp_path: Path) -> None:
+    # #438: an empty result planned STRUCT/LIST/ARRAY columns as String
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "t.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE t AS SELECT 1 AS id, {'a': 1, 'b': 'x', 'c d': [1.5]} AS st, "
+            "[1, 2] AS l, [[1], [2]] AS ll, [1, 2, 3] AS arr3, [{'k': 1}] AS ls"
+        )
+        conn.execute("ALTER TABLE t ALTER arr3 TYPE INTEGER[3]")
+    uri = f"duckdb:///{path}"
+    full = pl.scan_database("select * from t", uri).collect()
+    empty = pl.scan_database("select * from t where id < 0", uri).collect()
+    assert empty.height == 0
+    for name in ["st", "l", "ll", "arr3", "ls"]:
+        assert empty.schema[name] == full.schema[name], name
+    assert empty.schema["arr3"] == pl.Array(pl.Int32, 3)
+    lf = pl.scan_database("select * from t where id < 0", uri)
+    assert lf.collect_schema() == full.schema
+
+
+def test_duckdb_connect_retries_a_file_still_held_by_a_closing_database() -> None:
+    # #443: a connect racing the destruction of the file's last database instance
+    from polars_database import _bridge
+
+    class Module:
+        calls = 0
+
+        def __init__(self, failures: int, message: str) -> None:
+            self.failures = failures
+            self.message = message
+
+        def connect(self, path: str, **kw: Any) -> tuple[str, dict[str, Any]]:
+            Module.calls += 1
+            if Module.calls <= self.failures:
+                raise RuntimeError(self.message)
+            return path, kw
+
+    conflict = 'Unique file handle conflict: Cannot attach "f" - already attached'
+    assert _bridge._duckdb_connect(Module(3, conflict), "f.db", {"a": 1}) == (
+        "f.db",
+        {"a": 1},
+    )
+    assert Module.calls == 4
+
+    # another error is raised at once
+    Module.calls = 0
+    with pytest.raises(RuntimeError, match="different configuration"):
+        _bridge._duckdb_connect(Module(1, "different configuration"), "f.db", {})
+    assert Module.calls == 1
+
+    # a file that stays held is an error after the bound
+    Module.calls = 0
+    old = _bridge._DUCKDB_CONNECT_RETRY_SECONDS
+    _bridge._DUCKDB_CONNECT_RETRY_SECONDS = 0.05
+    try:
+        with pytest.raises(RuntimeError, match=r"conflict.*it persisted for"):
+            _bridge._duckdb_connect(Module(10**9, conflict), "f.db", {})
+    finally:
+        _bridge._DUCKDB_CONNECT_RETRY_SECONDS = old
+    assert Module.calls > 1
+
+    # by default it gives up within about a second (a persistent conflict, not the race)
+    Module.calls = 0
+    t = monotonic()
+    with pytest.raises(RuntimeError, match="persisted"):
+        _bridge._duckdb_connect(Module(10**9, conflict), "f.db", {})
+    assert monotonic() - t < 3
+
+
+def test_duckdb_concurrent_uri_scans_of_one_file(tmp_path: Path) -> None:
+    # #443: threads collecting scans of one file failed intermittently
+    duckdb = pytest.importorskip("duckdb")
+    from concurrent.futures import ThreadPoolExecutor
+
+    path = str(tmp_path / "t.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE t AS SELECT range AS id, range % 7 AS g FROM range(200)"
+        )
+
+    def collect(i: int) -> int:
+        lf = pl.scan_database("t", f"duckdb:///{path}")
+        return lf.filter(pl.col("g") == i % 7).collect().height
+
+    with ThreadPoolExecutor(8) as pool:
+        heights = list(pool.map(collect, range(64)))
+    assert heights == [len(range(i % 7, 200, 7)) for i in range(64)]
+
+
+def test_duckdb_type_names_as_dtypes() -> None:
+    from polars_database._bridge import _duckdb_type_dtype
+
+    def nested(name: str) -> Any:
+        return _duckdb_type_dtype(name, nested_only=True)
+
+    assert nested("INTEGER") == pl.Null  # a scalar column is typed elsewhere
+    assert nested("INTEGER[]") == pl.List(pl.Int32)
+    assert nested("DECIMAL(10,2)[][]") == pl.List(pl.List(pl.Decimal(10, 2)))
+    assert nested("VARCHAR[3]") == pl.Array(pl.String, 3)
+    assert nested('STRUCT(a INTEGER, "b, c" VARCHAR[], "q""x" STRUCT(z DOUBLE))') == (
+        pl.Struct(
+            {
+                "a": pl.Int32,
+                "b, c": pl.List(pl.String),
+                'q"x': pl.Struct({"z": pl.Float64}),
+            }
+        )
+    )
+    # not read: the column is typed as before
+    for unread in [
+        "MAP(VARCHAR, INTEGER)",
+        "UNION(a INTEGER, b VARCHAR)",
+        "TIMESTAMP WITH TIME ZONE[]",
+        "STRUCT(a UUID)",
+        "INTEGER[x]",
+        "STRUCT()",
+    ]:
+        assert nested(unread) == pl.Null, unread

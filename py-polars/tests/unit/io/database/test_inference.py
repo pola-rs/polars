@@ -94,6 +94,13 @@ def test_dtype_inference_from_string(
         "FooType",
         "Unknown",
         "MISSING",
+        # no element type, or no name at all (a Databricks `ARRAY` column, #436)
+        "",
+        "ARRAY",
+        "LIST",
+        "[]",
+        "ARRAY<>",
+        "MAP",
         "XML",  # note: we deliberately exclude "number" as it is ambiguous.
         "Number",  # (could refer to any size of int, float, or decimal dtype)
     ],

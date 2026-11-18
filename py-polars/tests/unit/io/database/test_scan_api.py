@@ -979,6 +979,27 @@ def test_databricks_empty_result_is_typed_from_the_description() -> None:
     assert _empty_frame(cursor, utc=True).schema == pl.Schema(expected)
 
 
+def test_empty_result_description_dtypes_of_duckdb_and_pymysql_bit() -> None:
+    # #438: DuckDB's nested types, and pymysql's BIT (bytes, as with rows)
+    from polars_database._bridge import _empty_frame
+
+    description = [
+        ("id", "INTEGER", None, None, None, None, None),
+        ("st", "STRUCT(a INTEGER, b VARCHAR[])", None, None, None, None, None),
+        ("l", "BIGINT[]", None, None, None, None, None),
+    ]
+    cursor = _fake("duckdb", "DuckDBPyConnection", description=description)
+    expected: dict[str, Any] = {
+        "id": pl.Null,  # (a scalar column is typed from the catalog)
+        "st": pl.Struct({"a": pl.Int32, "b": pl.List(pl.String)}),
+        "l": pl.List(pl.Int64),
+    }
+    assert _empty_frame(cursor, utc=True).schema == pl.Schema(expected)
+    bit = [("b", 16, None, None, None, None, True)]
+    cursor = _fake("pymysql.cursors", "Cursor", description=bit)
+    assert _empty_frame(cursor, utc=True).schema == pl.Schema({"b": pl.Binary})
+
+
 def test_databricks_empty_result_takes_the_drivers_arrow_schema() -> None:
     # #384, #422: an exhausted result still has the Arrow schema of its rows
     import pyarrow as pa
@@ -1134,6 +1155,16 @@ def test_psycopg_pool_connection_goes_back_with_putconn() -> None:
     invalidate2()
     assert conn2.closed
     assert pool2.returned == []
+
+    # #426: the public attribute (psycopg_pool 3.3) is the one that counts
+    pool3 = ConnectionPool()
+    pool3.close_returns = True  # type: ignore[attr-defined]
+    conn3 = Connection(pool3)
+    _, _, invalidate3 = _pool_checkout(conn3)
+    assert invalidate3 is not None
+    invalidate3()
+    assert conn3.closed
+    assert pool3.returned == []
 
     # another pool's (oracledb, mysql.connector) connection is left to `close()`
     other = Connection(_fake("oracledb.pool", "ConnectionPool"))

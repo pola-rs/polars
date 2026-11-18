@@ -260,6 +260,34 @@ fn mysql_query_probe(
     Ok(probe)
 }
 
+/// Whether a MySQL zone name (`@@session.time_zone`, or `@@system_time_zone` under `SYSTEM`)
+/// is UTC itself.
+///
+/// By name, never by the offset now: a zone with daylight saving time is at offset 0 for
+/// half a year (London in winter), and a TIMESTAMP stored in the other half would read
+/// shifted by an hour without an error. `@@system_time_zone` is the server's abbreviation
+/// (`GMT`, `BST`) or its OS's name, so a bare `GMT` is London's winter, no UTC; only the
+/// spellings of UTC itself are (Windows writes it out). A zone that is UTC under another
+/// name is refused, with the way out in the message.
+fn is_utc_zone(zone: &str) -> bool {
+    matches!(
+        zone.trim().to_ascii_uppercase().as_str(),
+        "UTC"
+            | "+00:00"
+            | "-00:00"
+            | "0:00"
+            | "Z"
+            | "ETC/UTC"
+            | "UCT"
+            | "ETC/UCT"
+            | "ZULU"
+            | "ETC/ZULU"
+            | "UNIVERSAL"
+            | "ETC/UNIVERSAL"
+            | "COORDINATED UNIVERSAL TIME"
+    )
+}
+
 /// Whether the MySQL-dialect server is a MariaDB.
 fn is_mariadb(session: &mut dyn DatabaseSession) -> bool {
     match session.catalog_query("SELECT VERSION()") {
@@ -331,6 +359,9 @@ pub fn resolve_scan(
         ..Default::default()
     };
     let mut query_facts: Option<QueryFacts> = None;
+    // The server drops the query's top-level `ORDER BY` inside a derived table (MariaDB, or
+    // a MySQL dialect server not known to keep it without I/O): a read must not wrap it.
+    let mut derived_order_dropped = false;
     if let DatabaseRelation::Query { sql } = &options.relation {
         let sql = sql.clone();
         let facts = sql_renderer().and_then(|r| r.inspect_query(&sql, dialect));
@@ -436,17 +467,23 @@ pub fn resolve_scan(
         {
             pushdown_disabled = Some(reason);
         }
-        if query.derived_order_by && pushdown_disabled.is_none() {
+        if query.derived_order_by {
             if dialect.keeps_derived_table_order().is_none() {
                 // Without I/O, the server may be a MariaDB (see below).
                 if user_schema.is_some() {
-                    pushdown_disabled = Some(MARIADB_ORDER_BY.into());
+                    derived_order_dropped = true;
+                    if pushdown_disabled.is_none() {
+                        pushdown_disabled = Some(MARIADB_ORDER_BY.into());
+                    }
                 }
             } else {
                 // Trino drops it (as its documentation says), and the others aren't
                 // known to keep it: the wrapped query would return its rows in another
                 // order (and `head` other rows).
-                pushdown_disabled = Some(derived_order_by_reason(dialect));
+                derived_order_dropped = true;
+                if pushdown_disabled.is_none() {
+                    pushdown_disabled = Some(derived_order_by_reason(dialect));
+                }
             }
         }
         if verbose()
@@ -503,11 +540,17 @@ pub fn resolve_scan(
         // MariaDB drops the `ORDER BY` of a derived table without `LIMIT`: the wrapped
         // query would return its rows in another order (and `head` other rows).
         // (Its schema is still found wrapped: the order doesn't matter there.)
-        if query.derived_order_by && pushdown_disabled.is_none() && is_mariadb(session.as_mut()) {
-            if verbose() {
-                eprintln!("[scan_database]: pushdown disabled: {MARIADB_ORDER_BY}");
+        if query.derived_order_by
+            && dialect.keeps_derived_table_order().is_none()
+            && is_mariadb(session.as_mut())
+        {
+            derived_order_dropped = true;
+            if pushdown_disabled.is_none() {
+                if verbose() {
+                    eprintln!("[scan_database]: pushdown disabled: {MARIADB_ORDER_BY}");
+                }
+                pushdown_disabled = Some(MARIADB_ORDER_BY.into());
             }
-            pushdown_disabled = Some(MARIADB_ORDER_BY.into());
         }
         if let DatabaseRelation::Query { sql } = &options.relation
             && dialect == DialectName::Mysql
@@ -942,6 +985,8 @@ pub fn resolve_scan(
         pushdown_disabled,
         volatile_source: volatility.volatile.is_some(),
         volatility_unchecked,
+        user_schema: user_typed,
+        derived_order_dropped,
         bounds_cache: Default::default(),
     })
 }
@@ -992,6 +1037,60 @@ pub fn check_unplanned_volatility(
         );
     }
     Ok(true)
+}
+
+/// The aware `Datetime` columns of a MySQL source read without a session setup (a live
+/// connection) whose database type isn't known (`schema=`, or `schema_overrides` on a query):
+/// a `TIMESTAMP` is read in the session's time zone, and a `DATETIME` as it is, and the SQL
+/// can't tell them apart. They are right only in a UTC session, which the first session
+/// checks here, so that the instants aren't shifted silently.
+pub fn check_mysql_session_zone(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+) -> PolarsResult<()> {
+    // (SingleStore has no session setup either way)
+    if !matches!(
+        config.dialect,
+        DialectName::Mysql | DialectName::Singlestore
+    ) || (config.dialect == DialectName::Mysql && config.session_setup_runs())
+    {
+        return Ok(());
+    }
+    let Some(column) = config.columns.iter().find(|c| {
+        matches!(c.dtype, DataType::Datetime(_, Some(_)))
+            && config.schema.contains(&c.name)
+            && c.db_type.as_deref().is_none_or(|t| t == MYSQL_DATE)
+    }) else {
+        return Ok(());
+    };
+    // best effort: another statement, or an unreadable answer, is no reason to fail the read
+    let Ok(df) = session.catalog_query("SELECT @@session.time_zone, @@system_time_zone") else {
+        return Ok(());
+    };
+    let text = |i: usize| {
+        df.columns()
+            .get(i)
+            .and_then(|c| c.get(0).ok())
+            .and_then(|v| v.get_str().map(|s| s.to_string()))
+    };
+    let (Some(session_zone), Some(system_zone)) = (text(0), text(1)) else {
+        return Ok(());
+    };
+    let zone = if session_zone.eq_ignore_ascii_case("SYSTEM") {
+        system_zone
+    } else {
+        session_zone
+    };
+    polars_ensure!(
+        is_utc_zone(&zone),
+        InvalidOperation:
+        "column '{}' is read as a Datetime in UTC, but this connection's time zone is '{zone}' \
+        and the column's database type isn't known: a TIMESTAMP is read in the session's time \
+        zone, so its instants would be shifted. Run SET time_zone = '+00:00' on the connection \
+        first, or read the column as a Datetime without a time zone",
+        column.name
+    );
+    Ok(())
 }
 
 /// [`source_volatility`] of a `schema=` source, whose planning didn't look it up, on
@@ -1115,6 +1214,14 @@ fn in_utc(dtype: &DataType) -> DataType {
     match dtype {
         DataType::Datetime(tu, Some(_)) => DataType::Datetime(*tu, Some(TimeZone::UTC)),
         DataType::List(inner) => DataType::List(Box::new(in_utc(inner))),
+        DataType::Array(inner, width) => DataType::Array(Box::new(in_utc(inner)), *width),
+        DataType::Map(key, value) => DataType::Map(Box::new(in_utc(key)), Box::new(in_utc(value))),
+        DataType::Struct(fields) => DataType::Struct(
+            fields
+                .iter()
+                .map(|f| Field::new(f.name().clone(), in_utc(f.dtype())))
+                .collect(),
+        ),
         dt => dt.clone(),
     }
 }
@@ -1431,6 +1538,23 @@ fn column_conversion(
         {
             return Some(format!("toUnixTimestamp64Nano({column})"));
         }
+        // ADBC reads the elements of an `Array(DateTime)` as the plain integers too (seconds
+        // read as milliseconds): as `DateTime64(0)`, like the scalar
+        if matches!(backend, BackendKind::Adbc { .. })
+            && t.starts_with("array(")
+            && let Some(sql) = clickhouse_array_datetime(db_type, column, 0)
+        {
+            return Some(sql);
+        }
+        // ConnectorX fails on an array of decimals, even of no rows (its Arrow schema says
+        // `Decimal128(38, 10)`, its arrays another scale): selected as text, so that the
+        // table's other columns read, and `check_connectorx_arrays` refuses this one
+        if matches!(backend, BackendKind::ConnectorX)
+            && t.starts_with("array(")
+            && t.contains("decimal")
+        {
+            return Some(dialect.cast_to_text(column));
+        }
         // in arrays (any deep), as their nanoseconds since the epoch
         if !matches!(backend, BackendKind::Adbc { .. }) && t.starts_with("array(") {
             return clickhouse_array_nanoseconds(db_type, column, 0);
@@ -1517,17 +1641,26 @@ fn column_conversion(
     // `Datetime(…, "UTC")` takes as UTC.
     if matches!(dialect, DialectName::Postgresql | DialectName::Redshift) {
         let t = db_type.trim().to_ascii_lowercase();
+        let array = t.ends_with("[]");
         let utc = !setup_runs
             && matches!(backend, BackendKind::Python { .. })
             && t.starts_with("timestamp")
-            && t.ends_with("with time zone");
-        let (value, value_type) = if utc {
-            (
+            && t.trim_end_matches("[]").ends_with("with time zone");
+        let (value, value_type) = match (utc, array) {
+            (true, false) => (
                 format!("({column} AT TIME ZONE 'UTC')"),
-                "timestamp without time zone",
-            )
-        } else {
-            (column.to_string(), db_type)
+                "timestamp without time zone".to_string(),
+            ),
+            // each element (in order; a NULL array stays NULL, which `ARRAY(…)` wouldn't)
+            (true, true) => (
+                format!(
+                    "CASE WHEN {column} IS NULL THEN NULL ELSE ARRAY(SELECT pl_x AT TIME ZONE \
+                    'UTC' FROM unnest({column}) WITH ORDINALITY AS pl_t(pl_x, pl_i) \
+                    ORDER BY pl_i) END"
+                ),
+                "timestamp without time zone[]".to_string(),
+            ),
+            (false, _) => (column.to_string(), db_type.to_string()),
         };
         let fail = |what: &str| {
             let msg = dialect.quote_str(&format!("column {column} holds {what}"));
@@ -1562,6 +1695,13 @@ fn column_conversion(
                 };
                 checks.push((infinite, fail("infinity, which Polars can't represent")));
             }
+        }
+        // (`unnest` flattens: the elements of the array of arrays would read as one list)
+        if utc && array {
+            checks.push((
+                format!("array_ndims({column}) > 1"),
+                fail("a multi-dimensional array; read it as text, or unnest it in a query"),
+            ));
         }
         if postgres && matches!(backend, BackendKind::Adbc { .. }) && db_type.trim().ends_with("[]")
         {
@@ -1635,6 +1775,21 @@ fn column_conversion(
         return Some(format!("IF({}, NULL, {value})", mysql_zero_date(column)));
     }
     None
+}
+
+/// A ClickHouse array (of arrays) of `DateTime` as `DateTime64(0)` elements; `None` for
+/// another type.
+fn clickhouse_array_datetime(db_type: &str, x: &str, depth: usize) -> Option<String> {
+    let t = super::schema::clickhouse_value_type(db_type);
+    if t.starts_with("array(") {
+        let written = super::schema::clickhouse_unwrapped(db_type);
+        let open = written.find('(')?;
+        let inner = written[open + 1..].strip_suffix(')')?;
+        let v = format!("pl_x{depth}");
+        let element = clickhouse_array_datetime(inner, &v, depth + 1)?;
+        return Some(format!("arrayMap({v} -> {element}, {x})"));
+    }
+    (t == "datetime" || t.starts_with("datetime(")).then(|| format!("toDateTime64({x}, 0)"))
 }
 
 /// A ClickHouse array (of arrays) of `DateTime64(7..9)` as the elements' nanoseconds since
@@ -2007,6 +2162,21 @@ pub(crate) fn compared_column_sql(config: &DatabaseScanConfig, column: &str) -> 
     )
 }
 
+/// Whether the driver %-formats the statements of this scan (`params=`): the SQL the plugin
+/// writes doubles its `%`.
+fn percent_formatted(config: &DatabaseScanConfig) -> bool {
+    crate::filter::percent_formatted(&config.options.connection, &config.backend.kind)
+}
+
+/// `sql`, written by the plugin, with its `%` doubled where the driver %-formats it.
+fn escape_percent(config: &DatabaseScanConfig, sql: String) -> String {
+    if percent_formatted(config) {
+        sql.replace('%', "%%")
+    } else {
+        sql
+    }
+}
+
 /// Select items as fixed SQL, for the discovery queries that don't go through the renderer.
 fn fixed_select_list(dialect: DialectName, items: &[SqlSelectItem]) -> String {
     items
@@ -2046,8 +2216,27 @@ fn discover_schema(
         if verbose() {
             eprintln!("[scan_database]: schema from: {sql}");
         }
-        let mut batches = session.execute(sql, Some(1))?;
-        match batches.next().transpose()? {
+        // ConnectorX builds no Arrow array of ClickHouse decimals (`Array(Decimal(..))`),
+        // and says so only with an Arrow error: for a query (a table's are read as text,
+        // see `column_conversion`) that selects one
+        let connectorx_array = |e: PolarsError| {
+            if matches!(backend, BackendKind::ConnectorX)
+                && dialect == DialectName::Clickhouse
+                && e.to_string()
+                    .contains("column types must match schema types")
+            {
+                polars_err!(
+                    InvalidOperation:
+                    "ConnectorX can't read an array of decimals from ClickHouse (a column of \
+                    this query's result): leave it out of the query, or pin another driver, \
+                    e.g. driver=\"adbc\" or \"clickhouse_connect\" ({e})"
+                )
+            } else {
+                e
+            }
+        };
+        let mut batches = session.execute(sql, Some(1)).map_err(connectorx_array)?;
+        match batches.next().transpose().map_err(connectorx_array)? {
             Some(first) => Ok(first),
             None => polars_bail!(
                 ComputeError: "database returned no result for the schema query: {sql}"
@@ -2141,6 +2330,8 @@ fn discover_schema(
         };
         let mut sample_query = SqlQuery::select(items, from_clause(options));
         sample_query.limit = Some(TYPE_SAMPLE_ROWS);
+        sample_query.escape_percent =
+            crate::filter::percent_formatted(&options.connection, backend);
         let sample_sql = renderer.render(&sample_query, dialect)?;
         if verbose() {
             eprintln!("[scan_database]: typing columns from a sample: {sample_sql}");
@@ -2321,38 +2512,41 @@ pub fn compile_scan(
         .iter()
         .map(|f| zero_dates_as_null(config, f.expr.clone()))
         .collect();
-    let mut compiled = Vec::with_capacity(partitions.len());
-    for part in &partitions {
-        let mut filter = Vec::with_capacity(pushdown.filters.len() + 1);
-        // A zero date goes to the partition of the NULLs, as which it is read.
-        filter.extend(
+    // The partitions differ in their predicate only: the shared filter (an `IN` list of
+    // thousands of values) is rendered once, not by each partition.
+    let escape_percent = percent_formatted(config);
+    let query = SqlQuery {
+        columns: select.clone(),
+        from: from.clone(),
+        filter: pushed.clone(),
+        order_by: order_by.clone(),
+        limit,
+        qualified: qualified.clone(),
+        escape_percent,
+    };
+    let count = SqlQuery {
+        columns: vec![SqlSelectItem::CountStar],
+        from: from.clone(),
+        filter: pushed.clone(),
+        order_by: vec![],
+        limit: None,
+        qualified: vec![],
+        escape_percent,
+    };
+    // A zero date goes to the partition of the NULLs, as which it is read.
+    let predicates: Vec<Option<SqlExpr>> = partitions
+        .iter()
+        .map(|part| {
             part.predicate
                 .clone()
-                .map(|p| zero_dates_as_null(config, p)),
-        );
-        filter.extend(pushed.iter().cloned());
-
-        let query = SqlQuery {
-            columns: select.clone(),
-            from: from.clone(),
-            filter: filter.clone(),
-            order_by: order_by.clone(),
-            limit,
-            qualified: qualified.clone(),
-        };
-        let count = SqlQuery {
-            columns: vec![SqlSelectItem::CountStar],
-            from: from.clone(),
-            filter,
-            order_by: vec![],
-            limit: None,
-            qualified: vec![],
-        };
-        compiled.push(CompiledPartition {
-            sql: renderer.render(&query, dialect)?,
-            count_sql: renderer.render(&count, dialect)?,
-        });
-    }
+                .map(|p| zero_dates_as_null(config, p))
+        })
+        .collect();
+    let compiled: Vec<CompiledPartition> = renderer
+        .render_partitions(&query, &count, &predicates, dialect)?
+        .into_iter()
+        .map(|(sql, count_sql)| CompiledPartition { sql, count_sql })
+        .collect();
 
     let exact_filters = pushdown.filters.iter().filter(|f| f.exact).count();
     let out = CompiledScan {
@@ -2419,6 +2613,37 @@ fn select_item(config: &DatabaseScanConfig, c: &PlSmallStr) -> SqlSelectItem {
         },
         None => SqlSelectItem::Column(c.clone()),
     }
+}
+
+/// The columns the plugin reads as epoch nanoseconds, a number, where the database type is
+/// a temporal one (ClickHouse `DateTime64(7..9)` through `toUnixTimestamp64Nano`, see
+/// `column_conversion`): the planned type, also an override of it, says the unit
+/// (`cast_to_user_schema`). Empty without `schema_overrides` (the only case that needs it).
+pub(crate) fn numeric_temporal_conversions(config: &DatabaseScanConfig) -> PlHashSet<PlSmallStr> {
+    let mut out = PlHashSet::new();
+    if config.options.schema_overrides.is_none()
+        || config.dialect != DialectName::Clickhouse
+        || matches!(config.backend.kind, BackendKind::Adbc { .. })
+    {
+        return out;
+    }
+    for c in config.columns.iter() {
+        let nanoseconds = c.db_type.as_deref().is_some_and(|t| {
+            matches!(
+                declared_dtype(config.dialect, t),
+                Some(DataType::Datetime(TimeUnit::Nanoseconds, _))
+            )
+        });
+        if nanoseconds
+            && matches!(
+                select_item(config, &c.name),
+                SqlSelectItem::Expr { sql, .. } if sql.starts_with("toUnixTimestamp64Nano(")
+            )
+        {
+            out.insert(c.name.clone());
+        }
+    }
+    out
 }
 
 /// The quoted relation a scan's columns can be qualified by.
@@ -2517,17 +2742,47 @@ fn compile_unwrapped(
                 let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
                 items.extend(utf8_checks(config, &names));
             }
-            let read = if items
+            let needs_wrapper = items
                 .iter()
-                .any(|i| matches!(i, SqlSelectItem::Expr { .. }))
-            {
+                .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
+            // A server that drops a derived table's ORDER BY would return the rows in another
+            // order: the wrapper repeats the query's ORDER BY outside, on its output columns
+            // (the conversions stay: a TIMESTAMP's instant, a FLOAT's digits). Where a key is
+            // no output column, the query can't be both converted and ordered.
+            let outer_order = if needs_wrapper && config.derived_order_dropped {
+                let facts = sql_renderer().and_then(|r| r.inspect_query(sql, dialect));
+                match facts {
+                    Ok(f) if wrap_blocker(&f, dialect).is_none() && f.outer_order_by.is_some() => {
+                        f.outer_order_by
+                    },
+                    _ => polars_bail!(
+                        InvalidOperation:
+                        "the query's ORDER BY can't be kept: columns of this scan need a \
+                        conversion in a wrapping query, whose server drops the ORDER BY of a \
+                        derived table, and a key of the ORDER BY is no column the query \
+                        selects (or the query can't be wrapped); pass order_by= to \
+                        scan_database instead of the query's ORDER BY, sort in Polars, or \
+                        CAST the columns in the query"
+                    ),
+                }
+            } else {
+                None
+            };
+            let read = if needs_wrapper {
                 // the alias the select items are qualified by (SQLite)
-                format!(
+                let mut read = format!(
                     "SELECT {} FROM ({}) {}",
-                    fixed_select_list(dialect, &items),
+                    escape_percent(config, fixed_select_list(dialect, &items)),
                     wrappable(sql),
                     relation_qualifier(config)
-                )
+                );
+                if let Some(order) = outer_order {
+                    read.push_str(&format!(
+                        " ORDER BY {}",
+                        escape_percent(config, order.to_string())
+                    ));
+                }
+                read
             } else {
                 sql.to_string()
             };
@@ -2549,7 +2804,7 @@ fn compile_unwrapped(
                 .iter()
                 .any(|i| matches!(i, SqlSelectItem::Expr { .. }))
             {
-                fixed_select_list(dialect, &items)
+                escape_percent(config, fixed_select_list(dialect, &items))
             } else {
                 "*".to_string()
             };
@@ -3177,6 +3432,7 @@ fn run_bounds(
         ],
         from.clone(),
     );
+    query.escape_percent = percent_formatted(config);
     query.filter = filters
         .iter()
         .filter(|f| f.exact)
@@ -3219,6 +3475,23 @@ fn run_bounds(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn utc_zone_is_decided_by_name() {
+        for z in [
+            "UTC",
+            "utc",
+            "+00:00",
+            "Etc/UTC",
+            "Coordinated Universal Time",
+        ] {
+            assert!(is_utc_zone(z), "{z}");
+        }
+        // London's winter (a DST zone), BST, and zones at offset 0 now
+        for z in ["GMT", "BST", "Europe/London", "WET", "+01:00", "SYSTEM", ""] {
+            assert!(!is_utc_zone(z), "{z}");
+        }
+    }
+
     use super::*;
     use crate::database::backend::BatchIter;
 

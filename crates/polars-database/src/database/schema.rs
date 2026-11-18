@@ -36,6 +36,17 @@ pub fn normalize_dtype(dtype: &DataType) -> DataType {
         },
         // `numeric(p, s)[]`: the element too
         DataType::List(inner) => DataType::List(Box::new(normalize_dtype(inner))),
+        DataType::Array(inner, width) => DataType::Array(Box::new(normalize_dtype(inner)), *width),
+        DataType::Map(key, value) => DataType::Map(
+            Box::new(normalize_dtype(key)),
+            Box::new(normalize_dtype(value)),
+        ),
+        DataType::Struct(fields) => DataType::Struct(
+            fields
+                .iter()
+                .map(|f| Field::new(f.name().clone(), normalize_dtype(f.dtype())))
+                .collect(),
+        ),
         dt => dt.clone(),
     }
 }
@@ -205,6 +216,24 @@ pub fn cast_to_schema(
     schema: &Schema,
     overrides: Option<&Schema>,
 ) -> PolarsResult<DataFrame> {
+    cast_to_user_schema(df, schema, overrides, false, &PlHashSet::new())
+}
+
+/// [`cast_to_schema`], where `user_schema` says the planned schema is the user's `schema=`.
+/// A column the user typed (`schema=`, or in `overrides`) isn't cast from a number to a
+/// temporal type: the number would be read as raw ticks of the unit (`1700000000` seconds as
+/// `1970-01-01 00:28:20` microseconds, or days out of the calendar's range), silently. The
+/// database's own conversions (a MySQL `TIME` as microseconds, ClickHouse arrays as
+/// nanoseconds) plan the type themselves. `own_numbers`: the columns the plugin's own
+/// conversion reads as numbers of a temporal database type (nanoseconds since the epoch), which
+/// an override may retype (`Datetime("ns", "UTC")`) without this refusal.
+pub fn cast_to_user_schema(
+    df: &DataFrame,
+    schema: &Schema,
+    overrides: Option<&Schema>,
+    user_schema: bool,
+    own_numbers: &PlHashSet<PlSmallStr>,
+) -> PolarsResult<DataFrame> {
     let height = df.height();
     let mut columns = Vec::with_capacity(schema.len());
     for (name, dtype) in schema.iter() {
@@ -242,6 +271,24 @@ pub fn cast_to_schema(
         } else if col.dtype() == &DataType::Null {
             Column::full_null(name.clone(), height, dtype)
         } else {
+            if (user_schema
+                || overrides.is_some_and(|o| {
+                    // the conversion's numbers are nanoseconds: any other unit is a guess
+                    o.contains(name)
+                        && !(own_numbers.contains(name)
+                            && matches!(dtype, DataType::Datetime(TimeUnit::Nanoseconds, _)))
+                }))
+                && numeric_to_temporal(col.dtype(), dtype)
+            {
+                polars_bail!(
+                    SchemaMismatch:
+                    "database column '{name}' is {} and {dtype} was requested: a number isn't \
+                    converted to a date or time as raw ticks (the unit and epoch of the number \
+                    aren't known); read the column as {} and convert it in Polars, for example \
+                    with `pl.from_epoch`",
+                    col.dtype(), col.dtype()
+                )
+            }
             let cast = col
                 .cast_with_options(dtype, CastOptions::Strict)
                 .map_err(|e| {
@@ -259,6 +306,16 @@ pub fn cast_to_schema(
         columns.push(col);
     }
     DataFrame::new(height, columns)
+}
+
+/// A cast of a number to a date or time (not a duration, which the database's `TIME`
+/// conversion plans from microseconds).
+fn numeric_to_temporal(from: &DataType, to: &DataType) -> bool {
+    (from.is_integer() || from.is_float() || from.is_decimal())
+        && matches!(
+            to,
+            DataType::Date | DataType::Datetime(_, _) | DataType::Time
+        )
 }
 
 fn has_extension(dtype: &DataType) -> bool {
@@ -629,7 +686,7 @@ pub fn clickhouse_value_type(db_type: &str) -> String {
 }
 
 /// A ClickHouse type without its wrappers, as written: time zone names are case-sensitive.
-fn clickhouse_unwrapped(db_type: &str) -> &str {
+pub(super) fn clickhouse_unwrapped(db_type: &str) -> &str {
     let mut t = db_type.trim();
     loop {
         let inner = ["nullable(", "lowcardinality("].iter().find_map(|p| {
@@ -738,6 +795,63 @@ fn declared_integer(dialect: DialectName, t: &str) -> Option<DataType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbers_are_not_cast_to_dates_of_user_columns() {
+        let ints = Column::new("x".into(), &[1_700_000_000i64]);
+        let df = DataFrame::new(1, vec![ints]).unwrap();
+        let none = PlHashSet::new();
+        for dtype in [
+            DataType::Date,
+            DataType::Time,
+            DataType::Datetime(TimeUnit::Microseconds, None),
+        ] {
+            let schema = Schema::from_iter([Field::new("x".into(), dtype.clone())]);
+            // `schema=`, and a column of `schema_overrides`
+            let e = cast_to_user_schema(&df, &schema, None, true, &none).unwrap_err();
+            assert!(e.to_string().contains("read the column as i64"), "{e}");
+            assert!(cast_to_user_schema(&df, &schema, Some(&schema), false, &none).is_err());
+            // the database's own conversion plans it
+            assert!(cast_to_user_schema(&df, &schema, None, false, &none).is_ok());
+            // an override of a column the plugin itself read as a number (ClickHouse
+            // `DateTime64(9)` as nanoseconds) is no raw-ticks guess
+            let converted = PlHashSet::from_iter([PlSmallStr::from("x")]);
+            assert!(cast_to_user_schema(&df, &schema, Some(&schema), false, &converted).is_err());
+            // `schema=` names no database type: nothing converted
+            assert!(cast_to_user_schema(&df, &schema, None, true, &none).is_err());
+        }
+        // (the conversion's numbers are nanoseconds: only that unit is no guess)
+        let ns = Schema::from_iter([Field::new(
+            "x".into(),
+            DataType::Datetime(TimeUnit::Nanoseconds, Some(TimeZone::UTC)),
+        )]);
+        let converted = PlHashSet::from_iter([PlSmallStr::from("x")]);
+        assert!(cast_to_user_schema(&df, &ns, Some(&ns), false, &converted).is_ok());
+        assert!(cast_to_user_schema(&df, &ns, Some(&ns), false, &none).is_err());
+        let dur = Schema::from_iter([Field::new(
+            "x".into(),
+            DataType::Duration(TimeUnit::Microseconds),
+        )]);
+        assert!(cast_to_user_schema(&df, &dur, Some(&dur), true, &none).is_ok());
+    }
+
+    #[test]
+    fn utc_spellings_normalise_inside_nested_types() {
+        let est = DataType::Datetime(
+            TimeUnit::Microseconds,
+            TimeZone::opt_try_new(Some("Etc/UTC")).unwrap(),
+        );
+        let utc = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
+        let nested = DataType::Struct(vec![Field::new("b".into(), est.clone())]);
+        assert_eq!(
+            normalize_dtype(&nested),
+            DataType::Struct(vec![Field::new("b".into(), utc.clone())])
+        );
+        assert_eq!(
+            normalize_dtype(&DataType::Array(Box::new(est), 2)),
+            DataType::Array(Box::new(utc), 2)
+        );
+    }
 
     #[test]
     fn inexact_numeric_casts_fail() {

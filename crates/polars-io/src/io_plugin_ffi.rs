@@ -75,5 +75,9 @@ pub fn import_struct_schema(schema: ArrowSchema, package: &str) -> PolarsResult<
             "{package} returned a non-struct schema: {:?}", field.dtype
         )
     };
+    // (`Field::from` unwraps a time zone it can't read: an error for a plugin's)
+    for f in fields.iter() {
+        DataType::check_arrow_time_zones(&f.dtype)?;
+    }
     Ok(fields.iter().map(Field::from).collect())
 }

@@ -134,8 +134,19 @@ impl Node {
     }
 
     /// Parses a document. Parts that don't parse become [`Node::Unknown`], which is never pushed.
+    ///
+    /// `serde_json` stops at 128 levels of nesting, which a left-deep chain of 63 `or`s (two
+    /// levels each) reaches. The limit is lifted, and replaced by [`MAX_DOC_DEPTH`], checked
+    /// before parsing: the parser, the tree's recursive drop and the translation each need
+    /// stack in proportion to the depth.
     pub fn parse(doc: &str) -> Self {
-        match serde_json::from_str::<Value>(doc) {
+        if !within_depth(doc, MAX_DOC_DEPTH) {
+            return Self::Unknown;
+        }
+        let mut de = serde_json::Deserializer::from_str(doc);
+        de.disable_recursion_limit();
+        let de = serde_stacker::Deserializer::new(&mut de);
+        match <Value as serde::Deserialize>::deserialize(de) {
             Ok(v) => Self::from_value(&v),
             Err(_) => Self::Unknown,
         }
@@ -206,6 +217,38 @@ impl Node {
             op => Self::Compare(arg()?, CmpOp::parse(op)?, arg()?),
         })
     }
+}
+
+/// The deepest nesting of a filter document that is parsed: an `or` chain of about 500 terms
+/// (an operator is two levels: its object and its `args`).
+const MAX_DOC_DEPTH: usize = 1024;
+
+/// Whether the JSON text nests at most `max` levels of objects and arrays.
+fn within_depth(doc: &str, max: usize) -> bool {
+    let (mut depth, mut in_string, mut escaped) = (0usize, false, false);
+    for b in doc.bytes() {
+        if in_string {
+            match b {
+                _ if escaped => escaped = false,
+                b'\\' => escaped = true,
+                b'"' => in_string = false,
+                _ => {},
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                depth += 1;
+                if depth > max {
+                    return false;
+                }
+            },
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            _ => {},
+        }
+    }
+    true
 }
 
 fn parse_time_unit(s: &str) -> Option<TimeUnit> {
@@ -322,13 +365,59 @@ pub(crate) fn sqlalchemy(kind: &BackendKind) -> bool {
 
 /// Whether an output column's name, written into the wrapper SQL, would be read as a
 /// placeholder by the driver that binds `params=` (`%` for `%s`-style drivers, `:name` for
-/// SQLAlchemy's `text()`).
+/// SQLAlchemy's `text()`). Where the plugin can write the name so that it isn't (see
+/// [`percent_formatted`], [`percent_matched`]), it isn't one.
 pub(crate) fn name_reads_as_placeholder(
     connection: &crate::database::connection::ConnectionSpec,
     kind: &BackendKind,
     name: &str,
 ) -> bool {
-    binds_params(connection) && (name.contains('%') || (sqlalchemy(kind) && name.contains(':')))
+    if !binds_params(connection) {
+        return false;
+    }
+    let percent = if percent_formatted(connection, kind) {
+        false
+    } else if percent_matched(connection, kind) {
+        // only `%s` and `%(name)s`; `%%` isn't read as an escape, so no `%s` can be written
+        name.contains("%s") || name.contains("%(")
+    } else {
+        name.contains('%')
+    };
+    percent || (sqlalchemy(kind) && name.contains(':'))
+}
+
+/// How a MySQL driver's Python module reads `%` in a statement run with `params=`.
+fn mysql_driver(kind: &BackendKind) -> Option<&'static str> {
+    match kind {
+        BackendKind::Python { module } => match module.as_str() {
+            "pymysql" | "MySQLdb" => Some("format"),
+            // Connector/Python (the module of its connections is `mysql`)
+            "mysql" | "mysql.connector" => Some("match"),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether the driver %-formats the statements it runs with `params=` (PyMySQL, mysqlclient:
+/// Python's `%` operator), so that a `%` the plugin writes into the SQL (a column's name) is
+/// doubled. Other drivers that format with `%` aren't covered: the name keeps pushdown off
+/// there ([`name_reads_as_placeholder`]).
+pub(crate) fn percent_formatted(
+    connection: &crate::database::connection::ConnectionSpec,
+    kind: &BackendKind,
+) -> bool {
+    binds_params(connection) && mysql_driver(kind) == Some("format")
+}
+
+/// Whether the driver replaces only the placeholders `%s` and `%(name)s` of the statement
+/// it runs with `params=` (MySQL Connector/Python: a regular expression), leaving every
+/// other `%`, `%%` too, as it is.
+fn percent_matched(
+    connection: &crate::database::connection::ConnectionSpec,
+    kind: &BackendKind,
+) -> bool {
+    binds_params(connection) && mysql_driver(kind) == Some("match")
 }
 
 /// See [`Translator::mysql_without_setup`]. SingleStore has no session setup at all: its
@@ -356,6 +445,43 @@ fn contains_in_list(e: &SqlExpr) -> bool {
         SqlExpr::Not(e) => contains_in_list(e),
         _ => false,
     }
+}
+
+/// The operands of a chain of `and` (or `or`) nodes, left to right.
+fn chain<'n>(node: &'n Node, or: bool, out: &mut Vec<&'n Node>) {
+    let mut stack = vec![node];
+    while let Some(n) = stack.pop() {
+        match n {
+            Node::And(l, r) if !or => stack.extend([&**r, &**l]),
+            Node::Or(l, r) if or => stack.extend([&**r, &**l]),
+            n => out.push(n),
+        }
+    }
+}
+
+/// Chains up to this long are written as the document has them, left-deep: `((a OR b) OR c)`.
+const MAX_LEFT_DEEP_CHAIN: usize = 32;
+
+fn left_deep(parts: Vec<SqlExpr>, op: SqlBinOp) -> SqlExpr {
+    let mut parts = parts.into_iter();
+    let first = parts.next().expect("a chain has a part");
+    parts.fold(first, |acc, e| SqlExpr::binary(acc, op, e))
+}
+
+/// The parts joined as a balanced tree (their order kept).
+fn balanced(mut parts: Vec<SqlExpr>, op: SqlBinOp) -> SqlExpr {
+    while parts.len() > 1 {
+        let mut next = Vec::with_capacity(parts.len().div_ceil(2));
+        let mut it = parts.into_iter();
+        while let Some(a) = it.next() {
+            next.push(match it.next() {
+                Some(b) => SqlExpr::binary(a, op, b),
+                None => a,
+            });
+        }
+        parts = next;
+    }
+    parts.pop().expect("a chain has a part")
 }
 
 /// How a translated expression relates to the Polars predicate `P`.
@@ -564,11 +690,25 @@ impl Translator<'_> {
         }
     }
 
+    /// Whether a boolean column holds integers (or other numbers): in MySQL and SQLite always,
+    /// elsewhere where its declared type is known and isn't a boolean.
+    fn booleans_are_integers(&self, name: &str) -> bool {
+        self.dialect().booleans_are_integers()
+            || self
+                .config
+                .column(name)
+                .and_then(|c| c.db_type.as_deref())
+                .is_some_and(|t| {
+                    !matches!(t.trim().to_ascii_lowercase().as_str(), "bool" | "boolean")
+                })
+    }
+
     /// `b` is `value`. MySQL and SQLite hold booleans as integers, any of which but 0 Polars
-    /// reads as true, while `TRUE` is 1.
+    /// reads as true, while `TRUE` is 1. So does a column of a known numeric type read as a
+    /// boolean (a DuckDB `BIGINT` or `DOUBLE`): `id = TRUE` would be `id = 1`.
     fn boolean_is(&self, name: &PlSmallStr, value: bool) -> SqlExpr {
         let col = SqlExpr::col(name.clone());
-        if self.dialect().booleans_are_integers() {
+        if self.booleans_are_integers(name) {
             let op = if value { SqlBinOp::NotEq } else { SqlBinOp::Eq };
             return SqlExpr::binary(col, op, SqlExpr::lit(SqlLiteral::Int(0)));
         }
@@ -593,8 +733,10 @@ impl Translator<'_> {
     /// conjunct it drops (a column it doesn't push, or an operand it can't translate).
     pub fn pushed_columns(&self, node: &Node, out: &mut Vec<PlSmallStr>) {
         match node {
-            Node::And(left, right) => {
-                for side in [left, right] {
+            Node::And(..) => {
+                let mut operands = vec![];
+                chain(node, false, &mut operands);
+                for side in operands {
                     if self.translate(side).is_some() {
                         self.pushed_columns(side, out);
                     }
@@ -612,18 +754,35 @@ impl Translator<'_> {
     /// A boolean expression as SQL, with its class. `None` when it can't be pushed.
     pub fn translate(&self, node: &Node) -> Option<(SqlExpr, Class)> {
         match node {
-            Node::And(left, right) => match (self.translate(left), self.translate(right)) {
-                (Some((l, lc)), Some((r, rc))) => {
-                    Some((SqlExpr::binary(l, SqlBinOp::And, r), lc.min(rc)))
-                },
-                // Dropping one side of an AND keeps every row the AND keeps.
-                (Some((e, _)), None) | (None, Some((e, _))) => Some((e, Class::Superset)),
-                (None, None) => None,
-            },
-            Node::Or(left, right) => {
-                let (l, lc) = self.translate(left)?;
-                let (r, rc) = self.translate(right)?;
-                Some((SqlExpr::binary(l, SqlBinOp::Or, r), lc.min(rc)))
+            Node::And(..) | Node::Or(..) => {
+                let or = matches!(node, Node::Or(..));
+                let mut operands = vec![];
+                chain(node, or, &mut operands);
+                let op = if or { SqlBinOp::Or } else { SqlBinOp::And };
+                // the database and the renderer recurse as deep as the tree: a long chain is
+                // joined balanced, as deep as the logarithm of its length
+                let join = if operands.len() > MAX_LEFT_DEEP_CHAIN {
+                    balanced
+                } else {
+                    left_deep
+                };
+                let mut class = Class::Exact;
+                let mut parts = Vec::with_capacity(operands.len());
+                for operand in operands {
+                    match self.translate(operand) {
+                        Some((e, c)) => {
+                            class = class.min(c);
+                            parts.push(e);
+                        },
+                        // Dropping one side of an AND keeps every row the AND keeps.
+                        None if !or => class = Class::Superset,
+                        None => return None,
+                    }
+                }
+                if parts.is_empty() {
+                    return None;
+                }
+                Some((join(parts, op), class))
             },
             Node::Compare(left, op, right) => self.comparison(left, *op, right),
             Node::Column(name) => {
@@ -758,6 +917,17 @@ impl Translator<'_> {
             },
             _ => return true,
         };
+        // A DATE written from a constant in the Julian-Gregorian gap (1582-10-05..14) reads back
+        // as 1582-10-15 but is compared as the day written: `d = DATE '1582-10-15'` drops it,
+        // and so do `>=` and `>` against the days up to it (a `<` or `<=` against a later day
+        // keeps it). Timestamps in the gap compare right (checked live), and so do dates
+        // from a later day on.
+        if self.dialect() == DialectName::Databricks
+            && matches!(av, AnyValue::Date(_))
+            && days <= DATABRICKS_GAP_END_DAYS
+        {
+            return false;
+        }
         (lo..=hi).contains(&days)
     }
 
@@ -777,10 +947,13 @@ impl Translator<'_> {
     fn is_in(&self, e: &Node, values: &Series, nulls_equal: bool) -> Option<(SqlExpr, Class)> {
         let (name, dtype) = self.column(e)?;
         // `IN (TRUE)` is `IN (1)` (see `boolean_is`)
-        if dtype == &DataType::Boolean && self.dialect().booleans_are_integers() {
+        if dtype == &DataType::Boolean && self.booleans_are_integers(name) {
             return None;
         }
 
+        if !literal_comparable(dtype, values.dtype()) {
+            return None;
+        }
         let mut has_null = false;
         let mut lits = Vec::with_capacity(values.len());
         for av in values.iter() {
@@ -809,11 +982,7 @@ impl Translator<'_> {
         let mut class = self.leaf_class(name, dtype, CmpOp::Eq)?;
 
         let col = || Box::new(self.compared(name));
-        // (a string's quotes and escapes, the separator; another literal's text)
-        let bytes: usize = lits
-            .iter()
-            .map(|l| l.as_str().map_or(32, |s| s.len() + s.len() / 8 + 4))
-            .sum();
+        let bytes: usize = lits.iter().map(|l| l.estimated_bytes() + 2).sum();
         let mut expr = if lits.len() <= self.dialect().max_in_list()
             && bytes <= self.dialect().max_in_list_bytes()
         {
@@ -910,10 +1079,23 @@ impl Translator<'_> {
         }
     }
 
+    /// Whether the column's declared type is a date, time or timestamp one.
+    fn temporal_db_type(&self, name: &str) -> bool {
+        self.config
+            .column(name)
+            .and_then(|c| c.db_type.as_deref())
+            .is_some_and(|t| {
+                let t = t.trim().to_ascii_lowercase();
+                t.starts_with("date") || t.starts_with("time")
+            })
+    }
+
     /// The class of `column <op> literal`, from the column's type and semantics.
     fn leaf_class(&self, name: &str, dtype: &DataType, op: CmpOp) -> Option<Class> {
         match dtype {
-            dt if dt.is_integer() => Some(Class::Exact),
+            // An integer read from a date or timestamp column (`schema=` with a type to go by)
+            // is its epoch count, which the database compares as a number (MySQL: 20231231).
+            dt if dt.is_integer() => (!self.temporal_db_type(name)).then_some(Class::Exact),
             DataType::Boolean => self.dialect().supports_boolean().then_some(Class::Exact),
             // SQL Server's legacy `datetime` holds 1/300 s ticks, which the microsecond
             // literal doesn't match exactly.
@@ -953,14 +1135,20 @@ impl Translator<'_> {
             },
             // An aware literal is a `TIMESTAMP_LTZ`, which Databricks converts a
             // `TIMESTAMP_NTZ` column's value to in the session's time zone, not UTC: a
-            // column read as aware (`databricks.sql` once did) mustn't be compared so.
+            // column read as aware (`databricks.sql` once did) mustn't be compared so. Only
+            // a column known to be an LTZ one is compared (the type lookup may have failed).
             DataType::Datetime(_, Some(_))
                 if self.dialect() == DialectName::Databricks
-                    && self
+                    && !self
                         .config
                         .column(name)
                         .and_then(|c| c.db_type.as_deref())
-                        .is_some_and(|t| t.trim().eq_ignore_ascii_case("timestamp_ntz")) =>
+                        .is_some_and(|t| {
+                            matches!(
+                                t.trim().to_ascii_lowercase().as_str(),
+                                "timestamp" | "timestamp_ltz"
+                            )
+                        }) =>
             {
                 None
             },
@@ -1075,7 +1263,7 @@ impl Translator<'_> {
             };
         }
 
-        if !self.literal_fits(name, av) {
+        if !literal_comparable(dtype, lit.dtype()) || !self.literal_fits(name, av) {
             return None;
         }
         let lit = SqlLiteral::from_any_value(av, dtype)?;
@@ -1094,7 +1282,7 @@ impl Translator<'_> {
         let class = self.leaf_class(name, dtype, op)?;
         let mut expr = match lit {
             // `b = TRUE` / `b <> FALSE`, as `boolean_is` writes them
-            SqlLiteral::Bool(v) if self.dialect().booleans_are_integers() => match bin_op {
+            SqlLiteral::Bool(v) if self.booleans_are_integers(name) => match bin_op {
                 SqlBinOp::Eq => self.boolean_is(name, v),
                 SqlBinOp::NotEq => self.boolean_is(name, !v),
                 // integers order otherwise than booleans
@@ -1142,6 +1330,68 @@ impl Translator<'_> {
             SqlExpr::binary(self.compared(a), bin_op, self.compared(b)),
             Class::Exact,
         ))
+    }
+}
+
+/// Whether a literal of dtype `lit` compared with a column of dtype `col` is what the database
+/// compares once the literal is written as the column's type. Polars either compares them
+/// as values of a type they share (integers, floats, decimals, which the literal's lossless
+/// cast to the column's type meets) or refuses (a string and an integer, a naive and an
+/// aware datetime, two time zones), and a refusal must not become a pushed filter that
+/// returns rows. An integer compared with a float is Polars' float comparison (the
+/// integer rounded), not the database's exact one.
+fn literal_comparable(col: &DataType, lit: &DataType) -> bool {
+    if col == lit {
+        return true;
+    }
+    match (col, lit) {
+        (c, l) if c.is_integer() && l.is_integer() => true,
+        (c, l) if c.is_float() && (l.is_integer() || l.is_float()) => true,
+        (DataType::Decimal(..), l) => l.is_integer() || matches!(l, DataType::Decimal(..)),
+        (DataType::Datetime(_, a), DataType::Datetime(_, b)) => a == b,
+        _ => false,
+    }
+}
+
+/// 1582-10-15, the first day of the Gregorian calendar, in days since the epoch.
+const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
+
+/// The deepest an expression may nest in a statement: the renderer recurses through it (in
+/// Python, whose stack is short), and so does the database.
+const MAX_EXPR_DEPTH: usize = 100;
+
+/// What one statement takes of the pushed filters: a count, a depth and a size the database
+/// accepts (see [`DialectName::max_conjuncts`], [`DialectName::max_statement_bytes`]). The
+/// resolver passes each translated filter, in order, through [`admit`](Self::admit); one that
+/// doesn't fit is not pushed (Polars applies it, as it does for any filter it can't translate),
+/// and later, smaller ones may still fit.
+pub struct PushBudget {
+    dialect: DialectName,
+    conjuncts: usize,
+    bytes: usize,
+}
+
+impl PushBudget {
+    pub fn new(dialect: DialectName) -> Self {
+        Self {
+            dialect,
+            conjuncts: 0,
+            bytes: 0,
+        }
+    }
+
+    pub fn admit(&mut self, pushed: Option<(SqlExpr, Class)>) -> Option<(SqlExpr, Class)> {
+        let (expr, _) = pushed.as_ref()?;
+        let bytes = expr.estimated_bytes();
+        if self.conjuncts >= self.dialect.max_conjuncts()
+            || self.bytes + bytes > self.dialect.max_statement_bytes()
+            || expr.depth() > MAX_EXPR_DEPTH
+        {
+            return None;
+        }
+        self.conjuncts += 1;
+        self.bytes += bytes;
+        pushed
     }
 }
 
@@ -1290,6 +1540,8 @@ mod tests {
             pushdown_disabled: None,
             volatile_source: false,
             volatility_unchecked: false,
+            user_schema: false,
+            derived_order_dropped: false,
             bounds_cache: Default::default(),
         }
     }
@@ -1307,8 +1559,14 @@ mod tests {
     }
 
     fn cmp(op: &str, col: &str, dtype: &str, value: &str) -> String {
+        // dates and booleans are JSON numbers and booleans, the rest strings
+        let value = if matches!(dtype, "date" | "bool") {
+            value.to_string()
+        } else {
+            format!("\"{value}\"")
+        };
         format!(
-            r#"{{"op": "{op}", "args": [{{"col": "{col}"}}, {{"lit": {{"dtype": "{dtype}", "value": "{value}"}}}}]}}"#
+            r#"{{"op": "{op}", "args": [{{"col": "{col}"}}, {{"lit": {{"dtype": "{dtype}", "value": {value}}}}}]}}"#
         )
     }
 
@@ -1377,6 +1635,21 @@ mod tests {
         ));
         assert!(!name_reads_as_placeholder(&with, &psycopg, "plain"));
         assert!(!name_reads_as_placeholder(&spec(), &psycopg, "rate%"));
+        // MySQL's drivers: the `%` is doubled where the plugin writes it (#425)
+        let pymysql = BackendKind::Python {
+            module: "pymysql".into(),
+        };
+        assert!(!name_reads_as_placeholder(&with, &pymysql, "rate%"));
+        assert!(percent_formatted(&with, &pymysql));
+        assert!(!percent_formatted(&spec(), &pymysql));
+        assert!(!percent_formatted(&with, &psycopg));
+        // Connector/Python replaces only `%s`: other names are written as they are
+        let connector = BackendKind::Python {
+            module: "mysql".into(),
+        };
+        assert!(!percent_formatted(&with, &connector));
+        assert!(!name_reads_as_placeholder(&with, &connector, "a%b"));
+        assert!(name_reads_as_placeholder(&with, &connector, "x%s"));
     }
 
     #[test]
@@ -1388,5 +1661,405 @@ mod tests {
             cmp("eq", "a", "i64", "1")
         );
         assert!(Node::parse(&and).has_unknown());
+    }
+
+    /// `(a == 0) | (b == 1) | …`, left-deep as Polars builds it.
+    fn or_chain(terms: usize) -> String {
+        let mut doc = cmp("eq", "a", "i64", "0");
+        for i in 1..terms {
+            doc = format!(
+                r#"{{"op": "or", "args": [{doc}, {}]}}"#,
+                cmp("eq", "b", "i64", &i.to_string())
+            );
+        }
+        doc
+    }
+
+    fn translate_doc(config: &DatabaseScanConfig, doc: &str) -> Option<(SqlExpr, Class)> {
+        Translator { config }.translate(&Node::parse(doc))
+    }
+
+    #[test]
+    fn deep_documents_are_parsed_and_pushed() {
+        // #431: `serde_json`'s 128-level limit made a left-deep OR of 63 terms `Unknown`
+        let c = config(
+            DialectName::Postgresql,
+            adbc("postgresql"),
+            &[("a", DataType::Int64, None), ("b", DataType::Int64, None)],
+        );
+        for terms in [62, 63, 200, 450] {
+            let node = Node::parse(&or_chain(terms));
+            assert!(!node.has_unknown(), "{terms} terms");
+            let (expr, class) = translate_doc(&c, &or_chain(terms)).expect("pushed");
+            assert_eq!(class, Class::Exact);
+            // a long chain is balanced: as deep as the logarithm of its length
+            assert!(expr.depth() <= terms.max(MAX_LEFT_DEEP_CHAIN) + 2);
+            if terms > MAX_LEFT_DEEP_CHAIN {
+                assert!(expr.depth() < 20, "{terms} terms: depth {}", expr.depth());
+            }
+        }
+        // past the document limit: not pushed, no stack overflow
+        assert!(matches!(Node::parse(&or_chain(600)), Node::Unknown));
+        // the same, on a thread with a small stack (translation, drop)
+        std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                let doc = or_chain(500);
+                assert!(translate_doc(&c, &doc).is_some());
+                // nested `not`s: depth in the tree itself
+                let mut not = cmp("eq", "a", "i64", "0");
+                for _ in 0..400 {
+                    not = format!(r#"{{"op": "not", "args": [{not}]}}"#);
+                }
+                let node = Node::parse(&not);
+                assert!(!node.has_unknown());
+                let _ = Translator { config: &c }.translate(&node);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn and_or_chains_keep_their_class() {
+        let c = config(
+            DialectName::Postgresql,
+            adbc("postgresql"),
+            &[("a", DataType::Int64, None), ("s", DataType::String, None)],
+        );
+        let and = |terms: Vec<String>| {
+            terms
+                .into_iter()
+                .reduce(|l, r| format!(r#"{{"op": "and", "args": [{l}, {r}]}}"#))
+                .unwrap()
+        };
+        let or = |terms: Vec<String>| {
+            terms
+                .into_iter()
+                .reduce(|l, r| format!(r#"{{"op": "or", "args": [{l}, {r}]}}"#))
+                .unwrap()
+        };
+        let exact = cmp("gt", "a", "i64", "1");
+        let unknown = r#"{"unknown": "f"}"#.to_string();
+        // a dropped part of an AND leaves a superset; of an OR, nothing is pushed
+        let doc = and(vec![exact.clone(), unknown.clone(), exact.clone()]);
+        assert_eq!(class_of(&c, &doc), Some(Class::Superset));
+        let doc = or(vec![exact.clone(), unknown.clone(), exact.clone()]);
+        assert_eq!(class_of(&c, &doc), None);
+        let doc = and(vec![unknown.clone(), unknown.clone()]);
+        assert_eq!(class_of(&c, &doc), None);
+        // long chains too
+        let many = vec![exact.clone(); 100];
+        assert_eq!(class_of(&c, &and(many.clone())), Some(Class::Exact));
+        assert_eq!(class_of(&c, &or(many.clone())), Some(Class::Exact));
+        let mut with_unknown = many;
+        with_unknown[50] = unknown;
+        assert_eq!(
+            class_of(&c, &and(with_unknown.clone())),
+            Some(Class::Superset)
+        );
+        assert_eq!(class_of(&c, &or(with_unknown)), None);
+        // a string equality is a superset (unknown collation): so is its chain
+        let s_eq = cmp("eq", "s", "str", "x");
+        assert_eq!(class_of(&c, &or(vec![exact, s_eq])), Some(Class::Superset));
+    }
+
+    #[test]
+    fn statement_budget() {
+        let eq = |v: usize| cmp("neq", "id", "i64", &v.to_string());
+        let cfg = |d, k: BackendKind| config(d, k, &[("id", DataType::Int64, None)]);
+        // #445: SQLite refuses an expression tree deeper than 1000
+        let sqlite = cfg(DialectName::Sqlite, adbc("sqlite"));
+        let t = Translator { config: &sqlite };
+        let mut budget = PushBudget::new(DialectName::Sqlite);
+        let pushed = (0..1200)
+            .filter(|i| budget.admit(t.translate(&Node::parse(&eq(*i)))).is_some())
+            .count();
+        assert_eq!(pushed, DialectName::Sqlite.max_conjuncts());
+        assert!(pushed < 1000);
+        let mut budget = PushBudget::new(DialectName::Postgresql);
+        let pg = cfg(DialectName::Postgresql, adbc("postgresql"));
+        let t = Translator { config: &pg };
+        let pushed = (0..4000)
+            .filter(|i| budget.admit(t.translate(&Node::parse(&eq(*i)))).is_some())
+            .count();
+        assert_eq!(pushed, DialectName::Postgresql.max_conjuncts());
+
+        // #434: lists under the per-list cap, ORed (ClickHouse `max_query_size`)
+        let ch = config(
+            DialectName::Clickhouse,
+            adbc("clickhouse"),
+            &[("s", DataType::String, None), ("id", DataType::Int64, None)],
+        );
+        let list = |k: usize| {
+            let values: Vec<String> = (0..1100)
+                .map(|i| format!("\"v{k}-{i}-{}\"", "x".repeat(40)))
+                .collect();
+            format!(
+                r#"{{"op": "is_in", "args": [{{"col": "s"}}], "nulls_equal": false,
+                "values": {{"dtype": "str", "values": [{}]}}}}"#,
+                values.join(",")
+            )
+        };
+        let one = list(0);
+        let t = Translator { config: &ch };
+        let (expr, _) = t.translate(&Node::parse(&one)).unwrap();
+        assert!(matches!(expr, SqlExpr::InList(..)));
+        assert!(expr.estimated_bytes() <= DialectName::Clickhouse.max_statement_bytes());
+        let or8 = (0..8)
+            .map(list)
+            .reduce(|l, r| format!(r#"{{"op": "or", "args": [{l}, {r}]}}"#))
+            .unwrap();
+        let pushed = t.translate(&Node::parse(&or8));
+        assert!(pushed.is_some());
+        let mut budget = PushBudget::new(DialectName::Clickhouse);
+        assert!(budget.admit(pushed).is_none());
+        // ... while the first under the budget go through, then no more
+        let mut budget = PushBudget::new(DialectName::Clickhouse);
+        let admitted = (0..8)
+            .filter(|k| budget.admit(t.translate(&Node::parse(&list(*k)))).is_some())
+            .count();
+        assert!((1..8).contains(&admitted), "{admitted}");
+
+        // MariaDB: a single literal over `max_allowed_packet`
+        let my = config(
+            DialectName::Mysql,
+            adbc("mysql"),
+            &[
+                ("s", DataType::String, None),
+                ("id", DataType::Int64, Some("bigint")),
+            ],
+        );
+        let big = cmp("eq", "s", "str", &"x".repeat(17 << 20));
+        let t = Translator { config: &my };
+        let pushed = t.translate(&Node::parse(&big));
+        let mut budget = PushBudget::new(DialectName::Mysql);
+        assert!(budget.admit(pushed).is_none());
+        // a filter that doesn't fit doesn't stop a small one after it
+        assert!(
+            budget
+                .admit(t.translate(&Node::parse(&cmp("lt", "id", "i64", "3"))))
+                .is_some()
+        );
+        // a single `IN` list never fills the statement (a longer one becomes a range)
+        for d in [
+            DialectName::Mysql,
+            DialectName::Sqlite,
+            DialectName::Clickhouse,
+        ] {
+            assert!(d.max_in_list_bytes() <= d.max_statement_bytes() / 2);
+        }
+    }
+
+    #[test]
+    fn literals_of_another_dtype_are_not_pushed() {
+        // #432: Polars raises (or compares otherwise); the scan mustn't return rows
+        let c = config(
+            DialectName::Postgresql,
+            adbc("postgresql"),
+            &[
+                ("id", DataType::Int64, None),
+                ("s", DataType::String, None),
+                ("f", DataType::Float64, None),
+                (
+                    "ntz",
+                    DataType::Datetime(TimeUnit::Microseconds, None),
+                    None,
+                ),
+                (
+                    "ltz",
+                    DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC)),
+                    None,
+                ),
+                ("d", DataType::Date, None),
+            ],
+        );
+        assert_eq!(class_of(&c, &cmp("eq", "id", "str", "1")), None);
+        assert_eq!(class_of(&c, &cmp("eq", "s", "i64", "1")), None);
+        assert_eq!(class_of(&c, &cmp("eq", "id", "f64", "1.0")), None);
+        assert_eq!(class_of(&c, &cmp("eq", "id", "bool", "true")), None);
+        assert_eq!(class_of(&c, &cmp("eq", "d", "datetime[us]", "0")), None);
+        // naive against aware, aware against naive or another zone
+        assert_eq!(
+            class_of(&c, &cmp("eq", "ntz", "datetime[us, UTC]", "0")),
+            None
+        );
+        assert_eq!(class_of(&c, &cmp("eq", "ltz", "datetime[us]", "0")), None);
+        assert_eq!(
+            class_of(&c, &cmp("eq", "ltz", "datetime[us, Europe/Berlin]", "0")),
+            None
+        );
+        // what Polars compares as values: other integer widths, an integer with a float
+        // column, another time unit
+        assert_eq!(
+            class_of(&c, &cmp("eq", "id", "i32", "1")),
+            Some(Class::Exact)
+        );
+        assert_eq!(
+            class_of(&c, &cmp("eq", "id", "u8", "1")),
+            Some(Class::Exact)
+        );
+        assert_eq!(
+            class_of(&c, &cmp("eq", "s", "str", "x")),
+            Some(Class::Superset)
+        );
+        assert_eq!(
+            class_of(&c, &cmp("eq", "ntz", "datetime[ms]", "1000")),
+            Some(Class::Exact)
+        );
+        assert_eq!(
+            class_of(&c, &cmp("eq", "ltz", "datetime[ns, UTC]", "1000000")),
+            Some(Class::Exact)
+        );
+        assert_eq!(
+            class_of(&c, &cmp("eq", "d", "date", "5")),
+            Some(Class::Exact)
+        );
+        // `is_in` and `is_between` the same
+        let is_in = |col: &str, dtype: &str, values: &str| {
+            format!(
+                r#"{{"op": "is_in", "args": [{{"col": "{col}"}}], "nulls_equal": false,
+                "values": {{"dtype": "{dtype}", "values": [{values}]}}}}"#
+            )
+        };
+        assert_eq!(class_of(&c, &is_in("id", "str", r#""1", "2""#)), None);
+        assert_eq!(
+            class_of(&c, &is_in("id", "i64", r#""1", "2""#)),
+            Some(Class::Exact)
+        );
+        assert_eq!(class_of(&c, &is_in("s", "i64", r#""1""#)), None);
+        let between = r#"{"op": "is_between", "closed": "both", "args": [{"col": "id"},
+            {"lit": {"dtype": "str", "value": "1"}}, {"lit": {"dtype": "str", "value": "2"}}]}"#;
+        assert_eq!(class_of(&c, between), None);
+    }
+
+    #[test]
+    fn databricks_aware_literals_need_a_known_ltz_column() {
+        // #428: a failed type lookup leaves `db_type` unknown
+        let utc = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
+        let c = |t| {
+            config(
+                DialectName::Databricks,
+                adbc("databricks"),
+                &[("ts", utc.clone(), t)],
+            )
+        };
+        let aware = cmp("eq", "ts", "datetime[us, UTC]", "1719835200000000");
+        assert_eq!(class_of(&c(Some("timestamp")), &aware), Some(Class::Exact));
+        assert_eq!(class_of(&c(Some("TIMESTAMP")), &aware), Some(Class::Exact));
+        assert_eq!(class_of(&c(Some("timestamp_ntz")), &aware), None);
+        assert_eq!(class_of(&c(None), &aware), None);
+        // other dialects don't need the type
+        let pg = config(
+            DialectName::Postgresql,
+            adbc("postgresql"),
+            &[("ts", utc.clone(), None)],
+        );
+        assert_eq!(class_of(&pg, &aware), Some(Class::Exact));
+    }
+
+    #[test]
+    fn databricks_dates_in_the_gregorian_gap() {
+        // #446: DATE '1582-10-15' drops a row stored in the 1582-10-05..14 gap
+        let c = |d| {
+            config(
+                d,
+                adbc("databricks"),
+                &[
+                    ("d", DataType::Date, Some("date")),
+                    (
+                        "ts",
+                        DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC)),
+                        Some("timestamp"),
+                    ),
+                ],
+            )
+        };
+        let db = c(DialectName::Databricks);
+        // 1582-10-15 is -141427 days; 1582-10-16 is -141426
+        for op in ["eq", "gt_eq", "lt", "gt"] {
+            assert_eq!(
+                class_of(&db, &cmp(op, "d", "date", "-141427")),
+                None,
+                "{op}"
+            );
+            assert_eq!(
+                class_of(&db, &cmp(op, "d", "date", "-141430")),
+                None,
+                "{op}"
+            );
+            assert_eq!(
+                class_of(&db, &cmp(op, "d", "date", "-141426")),
+                Some(Class::Exact)
+            );
+        }
+        // timestamps in the gap compare right (checked live)
+        let us = |days: i64| (days * 86_400_000_000).to_string();
+        let ts = |days: i64| cmp("eq", "ts", "datetime[us, UTC]", &us(days));
+        assert_eq!(class_of(&db, &ts(-141_427)), Some(Class::Exact));
+        assert_eq!(class_of(&db, &ts(-141_432)), Some(Class::Exact));
+        // another dialect is untouched
+        let pg = c(DialectName::Postgresql);
+        assert_eq!(
+            class_of(&pg, &cmp("eq", "d", "date", "-141427")),
+            Some(Class::Exact)
+        );
+    }
+
+    #[test]
+    fn booleans_over_numeric_columns() {
+        // #439: `id = TRUE` is `id = 1`, Polars reads every nonzero as true
+        let c = |t| {
+            config(
+                DialectName::Duckdb,
+                BackendKind::Python {
+                    module: "duckdb".into(),
+                },
+                &[("b", DataType::Boolean, t)],
+            )
+        };
+        let sql = |config: &DatabaseScanConfig, doc: &str| {
+            let (e, class) = translate_doc(config, doc).unwrap();
+            assert_eq!(class, Class::Exact);
+            format!("{e:?}")
+        };
+        let col = r#"{"col": "b"}"#;
+        let not = format!(r#"{{"op": "not", "args": [{col}]}}"#);
+        for numeric in ["BIGINT", "DOUBLE", "INTEGER"] {
+            let c = c(Some(numeric));
+            let s = sql(&c, col);
+            assert!(s.contains("NotEq") && s.contains("Int(0)"), "{s}");
+            let s = sql(&c, &not);
+            assert!(s.contains("Not(") && s.contains("NotEq"), "{s}");
+        }
+        for plain in [Some("BOOLEAN"), Some("bool"), None] {
+            let s = sql(&c(plain), col);
+            assert!(s.contains("Bool(true)"), "{s}");
+        }
+        let eq_true = cmp("eq", "b", "bool", "true");
+        let s = sql(&c(Some("BIGINT")), &eq_true);
+        assert!(s.contains("NotEq") && s.contains("Int(0)"), "{s}");
+    }
+
+    #[test]
+    fn integers_over_temporal_columns_are_not_compared() {
+        // #441: MySQL compares a DATE with a number as 20231231
+        let c = |dialect, t| config(dialect, adbc("mysql"), &[("d", DataType::Int32, t)]);
+        let gt = cmp("gt", "d", "i32", "19722");
+        for t in ["date", "datetime(6)", "timestamp", "time"] {
+            assert_eq!(
+                class_of(&c(DialectName::Postgresql, Some(t)), &gt),
+                None,
+                "{t}"
+            );
+        }
+        assert_eq!(
+            class_of(&c(DialectName::Postgresql, Some("int")), &gt),
+            Some(Class::Exact)
+        );
+        assert_eq!(
+            class_of(&c(DialectName::Postgresql, None), &gt),
+            Some(Class::Exact)
+        );
     }
 }

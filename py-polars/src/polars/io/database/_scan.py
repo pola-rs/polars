@@ -465,6 +465,15 @@ def scan_database(
         Push projections, filters and limits into the SQL. With `False`, the source
         runs as given, with a single query, and Polars does all further work.
 
+    Notes
+    -----
+    A `LazyFrame` snapshots what the scan found when it was planned: the table's
+    columns and types, the partitioning and, for a view or query, whether it is
+    volatile. Collecting the same `LazyFrame` again reuses that plan, also after the
+    database changed (a column dropped, added or retyped, a table replaced by a view
+    or another table): the second collect can then read the wrong columns or fail.
+    Call `scan_database` again after such a change.
+
     See Also
     --------
     read_database

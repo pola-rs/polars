@@ -219,6 +219,7 @@ impl FlushState {
         scope: &'s TaskScope<'s, 'env>,
         senders: Vec<PortSender>,
         key: &'env PlSmallStr,
+        projection: Option<&'env [PlSmallStr]>,
         sort_options: &SortMultipleOptions,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
@@ -246,7 +247,9 @@ impl FlushState {
                             wait_group.wait().await;
                         },
                         Step::Sort(bucket, seq, memory) => {
-                            let sorted = sort_bucket(bucket, memory.sort, key, &sort_options).await;
+                            let sorted =
+                                sort_bucket(bucket, memory.sort, key, projection, &sort_options)
+                                    .await;
                             self.finish_sort(seq, memory, sorted)?;
                         },
                         Step::Wait(notified) => notified.await,
@@ -275,6 +278,7 @@ async fn sort_bucket(
     bucket: PendingBucket,
     bytes: u64,
     key: &PlSmallStr,
+    projection: Option<&[PlSmallStr]>,
     sort_options: &SortMultipleOptions,
 ) -> PolarsResult<DataFrame> {
     let _reservation = memory_manager().reserve(bytes).await;
@@ -282,7 +286,7 @@ async fn sort_bucket(
     let df = accumulate_dataframes_vertical_unchecked(dfs);
     let (offset, len) = bucket.local;
     if bucket.needs_sort {
-        return sort_range(df, key, sort_options.clone(), bucket.local);
+        return sort_range(df, key, projection, sort_options.clone(), bucket.local);
     }
     // The bucket holds a single key value or only nulls, so it is sorted
     // already, but its frames don't carry the flag.
@@ -297,5 +301,8 @@ async fn sort_bucket(
         c.set_sorted_flag(sorted);
         c
     })?;
+    if let Some(columns) = projection {
+        df = df.select(columns)?;
+    }
     Ok(df)
 }

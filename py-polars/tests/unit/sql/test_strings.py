@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -87,6 +92,53 @@ def test_string_concat_errors(invalid_concat: str) -> None:
         match=r"CONCAT.*expects at least \d argument[s]? \(found \d\)",
     ):
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data").collect()
+
+
+def test_string_chr() -> None:
+    df = pl.DataFrame(
+        {
+            "n": [65, None, 233, 128512, 0, 0x10FFFF],
+            "small": pl.Series([97, None, 98, 99, 100, 101], dtype=pl.Int8),
+            "big": pl.Series([10, None, 66, 67, 68, 69], dtype=pl.UInt64),
+            "g": [1, 1, 2, 2, 3, 3],
+        }
+    )
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        "SELECT CHR(n) AS c, CHR(small) || CHR(big) AS d, CHR(65) AS a, CHR(NULL) AS z FROM df",
+        eager=True,
+    )
+    assert res.schema == {
+        "c": pl.String,
+        "d": pl.String,
+        "a": pl.String,
+        "z": pl.String,
+    }
+    assert res.rows() == [
+        ("A", "a\n", "A", None),
+        (None, None, "A", None),
+        ("é", "bB", "A", None),
+        ("😀", "cC", "A", None),
+        ("\x00", "dD", "A", None),
+        ("\U0010ffff", "eE", "A", None),
+    ]
+    res = ctx.execute(
+        "SELECT g, STRING_AGG(CHR(small), '' ORDER BY small) AS s FROM df GROUP BY g ORDER BY g",
+        eager=True,
+    )
+    assert res.rows() == [(1, "a"), (2, "bc"), (3, "de")]
+
+    # negative, above the last code point, and a UTF-16 surrogate
+    for n in (-1, 0x110000, 0xD800):
+        with pytest.raises(ComputeError, match=f"invalid Unicode code point: {n}"):
+            ctx.execute(f"SELECT CHR({n}) FROM df", eager=True)
+    with pytest.raises(ComputeError, match="invalid Unicode code point: -5"):
+        ctx.execute("SELECT CHR(small - 102) FROM df", eager=True)
+    for arg in ("65.5", "TRUE", "'65'"):
+        with pytest.raises(
+            InvalidOperationError, match="expected an integer code point"
+        ):
+            ctx.execute(f"SELECT CHR({arg}) FROM df", eager=True)
 
 
 def test_string_left_right_reverse() -> None:

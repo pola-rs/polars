@@ -9,6 +9,8 @@ String
      - Description
    * - :ref:`BIT_LENGTH <bit_length>`
      - Returns the length of the input string in bits.
+   * - :ref:`CHR <chr>`
+     - Returns the character of an integer Unicode code point.
    * - :ref:`CONCAT <concat>`
      - Returns all input expressions concatenated together as a string.
    * - :ref:`CONCAT_WS <concat_ws>`
@@ -76,6 +78,8 @@ String
      - Converts a string to a Datetime using a PostgreSQL template.
    * - :ref:`TRIM <trim>`
      - Strips characters from the left and/or right of a string.
+   * - :ref:`TRY_STRPTIME <try_strptime>`
+     - Like `STRPTIME`, but returns NULL for a string that does not match the format.
    * - :ref:`UPPER <upper>`
      - Returns an uppercased column.
 
@@ -104,6 +108,32 @@ Returns the length of the input string in bits.
     # │ ccc  ┆ 24     │
     # │ dddd ┆ 32     │
     # └──────┴────────┘
+
+.. _chr:
+
+CHR
+---
+Returns the character of an integer Unicode code point. Raises an error for a negative
+number, a number above 1114111 (``0x10FFFF``), or a UTF-16 surrogate (55296 to 57343).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"n": [65, 233, 8364]})
+    df.sql("""
+      SELECT n, CHR(n) AS c FROM self
+    """)
+    # shape: (3, 2)
+    # ┌──────┬─────┐
+    # │ n    ┆ c   │
+    # │ ---  ┆ --- │
+    # │ i64  ┆ str │
+    # ╞══════╪═════╡
+    # │ 65   ┆ A   │
+    # │ 233  ┆ é   │
+    # │ 8364 ┆ €   │
+    # └──────┴─────┘
 
 .. _concat:
 
@@ -1123,7 +1153,8 @@ TO_TIMESTAMP
 ------------
 Converts a string to a Datetime using a PostgreSQL template, such as 'YYYY-MM-DD HH24:MI:SS';
 the patterns are those of :ref:`TO_CHAR <to_char>`. A template that contains `%` is read as a
-strftime format, and without a template ISO-8601 format is assumed.
+strftime format, and without a template ISO-8601 format is assumed. A number is read as the
+seconds since the Unix epoch, giving a UTC Datetime.
 
 **Example:**
 
@@ -1140,6 +1171,30 @@ strftime format, and without a template ISO-8601 format is assumed.
     # │ 1978-07-05 10:30 AM ┆ 1978-07-05 10:30:00 │
     # │ 2020-04-10 10:05 PM ┆ 2020-04-10 22:05:00 │
     # └─────────────────────┴─────────────────────┘
+
+.. _try_strptime:
+
+TRY_STRPTIME
+------------
+Like :ref:`STRPTIME <strptime>`, but returns NULL for a string that does not match the format,
+instead of raising an error.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["2024-02-29", "2023-02-29", "not a date"]})
+    df.sql("SELECT s, TRY_STRPTIME(s, '%Y-%m-%d') AS dt FROM self")
+    # shape: (3, 2)
+    # ┌────────────┬─────────────────────┐
+    # │ s          ┆ dt                  │
+    # │ ---        ┆ ---                 │
+    # │ str        ┆ datetime[μs]        │
+    # ╞════════════╪═════════════════════╡
+    # │ 2024-02-29 ┆ 2024-02-29 00:00:00 │
+    # │ 2023-02-29 ┆ null                │
+    # │ not a date ┆ null                │
+    # └────────────┴─────────────────────┘
 
 .. _upper:
 

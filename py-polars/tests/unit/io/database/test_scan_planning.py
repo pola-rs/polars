@@ -9,14 +9,16 @@ covered here without servers. Regenerate the snapshot after a reviewed change wi
 
 from __future__ import annotations
 
+import functools
 import json
+import operator
 import os
 import re
 import sqlite3
 import subprocess
 import sys
 from contextlib import closing
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -166,6 +168,117 @@ def test_sql_snapshot_details() -> None:
     assert "filters 0/1" in plans["postgresql"]["arithmetic"]["pushed"]
     # an empty projection selects a constant
     assert "projection 2/11" in plans["postgresql"]["select"]["pushed"]
+
+
+def _scan(dialect: str, **kwargs: Any) -> pl.LazyFrame:
+    return pl.scan_database(
+        "s.t",
+        DIALECT_URIS[dialect],
+        schema=EDGE_SCHEMA,
+        driver="sqlalchemy",
+        partition_on=None,
+        **kwargs,
+    )
+
+
+@pytest.mark.parametrize("terms", [63, 200, 450])
+def test_deeply_nested_filters_are_pushed(terms: int) -> None:
+    """A document nested past serde_json's 128 levels was not pushed at all."""
+    # `a | b | c …` is a left-deep tree (`any_horizontal` of many is not sent as one)
+    pred = functools.reduce(operator.or_, [pl.col("i64") == i for i in range(terms)])
+    plan = _scan("postgresql").filter(pred).explain()
+    assert "filters 1/1 (1 exact)" in plan
+    sql = next(line for line in plan.splitlines() if "sql[0]:" in line)
+    assert f'"i64" = {terms - 1}' in sql
+    # `col + 1` many times is nested as deep, and no tier-1 expression
+    pred = functools.reduce(operator.add, [pl.col("i64")] * terms) > 0
+    assert "filters 0/1" in _scan("postgresql").filter(pred).explain()
+
+
+def test_filters_nested_past_the_document_limit_are_not_pushed() -> None:
+    pred = functools.reduce(operator.or_, [pl.col("i64") == i for i in range(900)])
+    assert "filters 0/1" in _scan("postgresql").filter(pred).explain()
+
+
+@pytest.mark.parametrize(("levels", "pushed"), [(45, True), (60, False)])
+def test_deeply_alternating_filters(levels: int, pushed: bool) -> None:
+    # nesting that no chain flattening shortens: the renderer's (Python's) recursion is
+    # as deep as the expression
+    pred = pl.col("i64") == 0
+    for i in range(levels):
+        pred = ((pred & (pl.col("i64") != i + 10)) | (pl.col("i64") == -i)).alias("p")
+    plan = _scan("postgresql").filter(pred).explain()
+    assert ("filters 1/1" in plan) == pushed, plan
+
+
+def test_filters_over_the_statement_budget_are_left_to_polars() -> None:
+    # SQLite refuses an expression tree deeper than 1000 (1,200 chained filters)
+    lf = _scan("sqlite")
+    for i in range(1200):
+        lf = lf.filter(pl.col("i64") != i)
+    plan = lf.explain()
+    assert re.search(r"filters 400/1200 \(400 exact\)", plan), plan
+    # ... where others take far more
+    lf = _scan("postgresql")
+    for i in range(1200):
+        lf = lf.filter(pl.col("i64") != i)
+    assert "filters 1000/1200 (1000 exact)" in lf.explain()
+    # a ClickHouse statement is held to its `max_query_size`: lists under the
+    # per-list cap ORed together are not
+    lists = [
+        pl.col("s").is_in([f"v{k}-{i}-" + "x" * 40 for i in range(1100)])
+        for k in range(8)
+    ]
+    assert "filters 1/1" in _scan("clickhouse").filter(lists[0]).explain()
+    plan = _scan("clickhouse").filter(pl.any_horizontal(lists)).explain()
+    assert "filters 0/1" in plan
+    # a single literal over MariaDB's `max_allowed_packet`
+    pred = (pl.col("s") == "x" * (17 << 20)) | (pl.col("i64") < 3)
+    assert "filters 0/1" in _scan("mysql").filter(pred).explain()
+
+
+@pytest.mark.parametrize("dialect", ["postgresql", "sqlite", "duckdb", "databricks"])
+def test_literals_of_another_dtype_are_not_pushed(dialect: str) -> None:
+    # Polars raises or compares otherwise: the scan must not turn it into rows
+    for pred in (
+        pl.col("i64") == pl.lit("1"),
+        pl.col("s") == pl.lit(1),
+        pl.col("ts") == pl.lit(datetime(2026, 1, 1, tzinfo=UTC)),
+        pl.col("d") == pl.lit(datetime(2026, 1, 1)),
+    ):
+        plan = _scan(dialect).filter(pred).explain()
+        assert "filters 0/1" in plan, (pred, plan)
+    # the same type, or integers of another width, are
+    assert "filters 1/1" in _scan(dialect).filter(pl.col("i64") == 1).explain()
+
+
+def test_databricks_aware_literals_need_a_known_ltz_column() -> None:
+    schema: dict[str, pl.DataType | type[pl.DataType]] = {
+        "ts": pl.Datetime("us", "UTC"),
+        "id": pl.Int64,
+    }
+    lf = pl.scan_database(
+        "s.t", DIALECT_URIS["databricks"], schema=schema, driver="sqlalchemy"
+    )
+    pred = pl.col("ts") == datetime(2026, 1, 1, tzinfo=UTC)
+    # under `schema=` the column's type is not known: not pushed
+    assert "filters 0/1" in lf.filter(pred).explain()
+    assert "filters 1/1" in lf.filter(pl.col("id") == 1).explain()
+
+
+def test_databricks_dates_in_the_gregorian_gap_are_not_pushed() -> None:
+    lf = pl.scan_database(
+        "s.t", DIALECT_URIS["databricks"], schema={"d": pl.Date}, driver="sqlalchemy"
+    )
+    for day in (date(1582, 10, 15), date(1582, 10, 10), date(1500, 1, 1)):
+        assert "filters 0/1" in lf.filter(pl.col("d") == day).explain()
+        assert "filters 0/1" in lf.filter(pl.col("d") >= day).explain()
+        assert "filters 0/1" in lf.filter(pl.col("d").is_in([day])).explain()
+    assert "filters 1/1" in lf.filter(pl.col("d") >= date(1582, 10, 16)).explain()
+    pg = pl.scan_database(
+        "s.t", DIALECT_URIS["postgresql"], schema={"d": pl.Date}, driver="sqlalchemy"
+    )
+    assert "filters 1/1" in pg.filter(pl.col("d") == date(1582, 10, 15)).explain()
 
 
 @pytest.mark.parametrize(
@@ -1056,6 +1169,17 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
             True,
         ),
         ("postgres", "SELECT g, h FROM t GROUP BY ROLLUP (g, h)", True),
+        # SQLite's scalar `max(a, b)` / `min(a, b)` aren't aggregates (#427)
+        ("sqlite", "SELECT g, max(a, b) AS m FROM t GROUP BY g", False),
+        ("sqlite", "SELECT g, min(a, b) AS m FROM t GROUP BY g", False),
+        ("sqlite", "SELECT g, max(g, 1) AS m FROM t GROUP BY g", True),
+        ("sqlite", "SELECT g, max(a) AS m FROM t GROUP BY g", True),
+        # an aggregate without `GROUP BY` beside a bare column (one group)
+        ("sqlite", "SELECT name, count(*) AS n FROM t", False),
+        ("mysql", "SELECT name, count(*) AS n FROM t", False),
+        ("sqlite", "SELECT count(*) AS n, max(x) FROM t", True),
+        ("sqlite", "SELECT name, sum(x) OVER () FROM t", True),
+        ("sqlite", "SELECT name, (SELECT max(z) FROM u) AS m FROM t", True),
         # well-formed queries stay repeatable
         ("sqlite", "SELECT lower(g) AS l, count(*) FROM t GROUP BY l", True),
         ("sqlite", "SELECT g, count(*) FILTER (WHERE x > 0) FROM t GROUP BY g", True),
@@ -1865,3 +1989,147 @@ def test_mysql_zero_date_filter_grows_linearly() -> None:
     assert step > 0
     assert sizes[16] - sizes[8] < 8 * step * 1.2
     assert sizes[16] < 20 * sizes[2]
+
+
+def _col(name: str) -> dict[str, Any]:
+    return {"Column": name}
+
+
+def _int(v: int) -> dict[str, Any]:
+    return {"Literal": {"Int": v}}
+
+
+@pytest.mark.parametrize(
+    "dialect", ["postgres", "mysql", "sqlite", "tsql", "oracle", "clickhouse", None]
+)
+@pytest.mark.parametrize("from_", [{"Table": ["t"]}, {"Subquery": "SELECT * FROM u"}])
+@pytest.mark.parametrize("n_filters", [0, 1, 2])
+@pytest.mark.parametrize("qualified", [[], ["a"]])
+def test_partitions_share_the_rendered_filter(
+    dialect: str | None, from_: Any, n_filters: int, qualified: list[str]
+) -> None:
+    # #444: the filter the partitions share is written once, and each partition's SQL is
+    # what rendering the whole filter per partition gives
+    import json
+
+    from polars_database import _sqlglot
+
+    shared = [
+        {"Binary": [_col("b"), "Or", {"Binary": [_col("c"), "Lt", _int(3)]}]},
+        {"InList": [_col("a"), [{"Int": i} for i in range(20)], False]},
+    ][:n_filters]
+    predicates = [
+        None,
+        {"Binary": [_col("id"), "Lt", _int(10)]},
+        {
+            "Binary": [
+                {"Binary": [_col("id"), "GtEq", _int(10)]},
+                "And",
+                {"Binary": [_col("id"), "Lt", _int(20)]},
+            ]
+        },
+        {"Binary": [_col("id"), "Or", _col("x")]},
+    ]
+    query: dict[str, Any] = {
+        "columns": [{"Column": "id"}, {"Expr": {"sql": "a + 1", "alias": "a"}}],
+        "from": from_,
+        "filter": shared,
+        "order_by": [],
+        "limit": None,
+        "qualified": qualified,
+    }
+    count: dict[str, Any] = {
+        "columns": ["CountStar"],
+        "from": from_,
+        "filter": shared,
+        "order_by": [],
+        "limit": None,
+        "qualified": [],
+    }
+    got = _sqlglot.render_partitions(
+        json.dumps(query), json.dumps(count), json.dumps(predicates), dialect
+    )
+    for predicate, (sql, count_sql) in zip(predicates, got, strict=True):
+        extra = [] if predicate is None else [predicate]
+        for q, text in ((query, sql), (count, count_sql)):
+            whole = {**q, "filter": [*extra, *q["filter"]]}
+            assert text == _sqlglot.render(json.dumps(whole), dialect)
+
+
+def test_partitioned_scan_plans_in_time_with_a_long_in_list(tmp_path: Path) -> None:
+    # #444: 5,000 values in 50 partitions took 1.7 s of rendering (28 s at 800)
+    from time import perf_counter
+
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, g INTEGER)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(i, i % 7) for i in range(200)]
+        )
+        conn.commit()
+    lf = pl.scan_database(
+        "t",
+        f"sqlite:///{path}",
+        schema={"id": pl.Int64, "g": pl.Int64},
+        partition_on="id",
+        partition_num=200,
+        partition_range=(0, 200),
+    ).filter(pl.col("g").is_in(list(range(5000))))
+    started = perf_counter()
+    plan = lf.explain()
+    assert perf_counter() - started < 3
+    assert "IN (" in plan
+    assert len(lf.collect()) == 200
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT id, d FROM t ORDER BY id DESC", "`_pl`.`id` DESC"),
+        (
+            "SELECT id AS k, d FROM t ORDER BY k, d DESC",
+            "`_pl`.`k`, `_pl`.`d` DESC",
+        ),
+        ("SELECT id, d FROM t ORDER BY 2, 1", "`_pl`.`d`, `_pl`.`id`"),
+        ("SELECT id + 1 AS n FROM t ORDER BY id + 1", "`_pl`.`n`"),
+        ("SELECT id, d FROM t ORDER BY id LIMIT 3", "`_pl`.`id`"),
+        ("SELECT Id, d FROM t ORDER BY ID", "`_pl`.`Id`"),
+        ("SELECT id, d FROM t ORDER BY `id`, (d)", "`_pl`.`id`, `_pl`.`d`"),
+        ("SELECT id, d FROM t ORDER BY id COLLATE utf8mb4_bin", None),
+        ("SELECT id, d FROM t", None),
+        ("SELECT id, d FROM t ORDER BY -id", None),
+        ("SELECT id FROM t ORDER BY d", None),
+        ("SELECT * FROM t ORDER BY id", None),
+    ],
+)
+def test_outer_order_by_of_a_query(query: str, expected: str | None) -> None:
+    # #423: a wrapper repeats the ORDER BY on the query's output columns
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(query, "mysql")["outer_order_by"] == expected
+
+
+def test_partition_predicates_keep_their_percent_signs() -> None:
+    # #425: only SQL the plugin writes has its `%` doubled for a driver that %-formats
+    import json
+
+    from polars_database._sqlglot import render_partitions
+
+    query = {
+        "columns": [{"Column": "a%b"}],
+        "from": {"Subquery": "SELECT 1 AS `a%b` WHERE 'x' LIKE 'x%'"},
+        "filter": [],
+        "order_by": [],
+        "limit": None,
+        "qualified": [],
+        "escape_percent": True,
+    }
+    [(sql, _)] = render_partitions(
+        json.dumps(query),
+        json.dumps(query),
+        json.dumps([{"Raw": "s LIKE 'a%'"}]),
+        "mysql",
+    )
+    assert "`a%%b`" in sql
+    assert "(s LIKE 'a%')" in sql
+    assert "x%'" in sql

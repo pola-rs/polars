@@ -2336,6 +2336,38 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.str_reverse())
 
+    def from_code_point(self) -> Expr:
+        """
+        Convert integer Unicode code points to strings of one character.
+
+        The input must be an integer column; the output is a string column.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Raises
+        ------
+        ComputeError
+            If a value is negative, above 1114111 (``0x10FFFF``), or a UTF-16
+            surrogate (55296 to 57343).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"code": [65, 233, 8364, None]})
+        >>> df.with_columns(pl.col("code").str.from_code_point().alias("char"))
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ code ┆ char │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 65   ┆ A    │
+        │ 233  ┆ é    │
+        │ 8364 ┆ €    │
+        │ null ┆ null │
+        └──────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.str_from_code_point())
+
     def slice(
         self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
     ) -> Expr:

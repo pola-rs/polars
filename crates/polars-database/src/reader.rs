@@ -26,16 +26,16 @@ use crate::database::backend::{
     open_backend, open_session_with_retries, retry_wait,
 };
 use crate::database::config::CompiledPartition;
-use crate::database::planner::check_unplanned_volatility;
-use crate::database::schema::cast_to_schema;
+use crate::database::planner::{check_mysql_session_zone, check_unplanned_volatility};
+use crate::database::schema::cast_to_user_schema;
 use crate::database::{DatabaseScanConfig, catalog};
 use crate::ffi::{
     arrow_fields, borrow_handle, clone_handle, export_schema, ffi_call, ffi_call_infallible,
     into_handle, release_handle,
 };
 
-/// Prefix of serialized builders, so that a change of the format fails clearly.
-const SERDE_MAGIC: &[u8] = b"PLDBRB1";
+/// Kind prefix of serialized builders (see [`crate::serde_header`]).
+const SERDE_KIND: &str = "PLDBRB";
 
 /// The scan executions whose state ([`Shared`]) is alive in this process: their sessions may
 /// still be read, stopped or closed.
@@ -121,7 +121,7 @@ impl ReaderBuilder {
     }
 
     fn serialize(&self) -> PolarsResult<Vec<u8>> {
-        let mut out = SERDE_MAGIC.to_vec();
+        let mut out = crate::serde_header(SERDE_KIND);
         out.extend(polars_utils::pl_serialize::serialize_to_bytes::<_, false>(
             &SerializedBuilder {
                 config: self.config.clone(),
@@ -132,13 +132,7 @@ impl ReaderBuilder {
     }
 
     fn deserialize(bytes: &[u8]) -> PolarsResult<Self> {
-        let bytes = bytes.strip_prefix(SERDE_MAGIC).ok_or_else(|| {
-            polars_err!(
-                ComputeError:
-                "cannot deserialize a scan_database plan: it was made by an incompatible \
-                version of {}", crate::PACKAGE_NAME
-            )
-        })?;
+        let bytes = crate::strip_serde_header(bytes, SERDE_KIND)?;
         let s: SerializedBuilder =
             polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(bytes)?;
         Ok(Self::new(s.config, s.schema))
@@ -217,11 +211,15 @@ pub struct Shared {
     /// The columns that [`decode_sqlite_reals`](crate::database::planner::decode_sqlite_reals)
     /// decodes.
     sqlite_text_columns: Vec<PlSmallStr>,
+    /// [`numeric_temporal_conversions`](crate::database::planner::numeric_temporal_conversions)
+    own_numbers: PlHashSet<PlSmallStr>,
     /// Instantiated once per execution: re-checks that the planned backend exists here.
     backend: OnceLock<Arc<dyn DatabaseBackend>>,
     /// The outcome of [`check_unplanned_volatility`], run on the first session opened:
     /// whether the source turned out volatile.
     volatility: OnceLock<Result<bool, String>>,
+    /// The outcome of [`check_mysql_session_zone`], run on the first session opened.
+    session_zone: OnceLock<Result<(), String>>,
     pool: Mutex<Pool>,
     pool_changed: std::sync::Condvar,
     /// Set when the scan is torn down: threads still waiting for a session give up instead
@@ -234,9 +232,11 @@ impl Shared {
         *LIVE_SCANS.lock().unwrap() += 1;
         Self {
             sqlite_text_columns: crate::database::planner::sqlite_text_columns(&config),
+            own_numbers: crate::database::planner::numeric_temporal_conversions(&config),
             config,
             backend: OnceLock::new(),
             volatility: OnceLock::new(),
+            session_zone: OnceLock::new(),
             pool: Mutex::new(Pool::default()),
             pool_changed: std::sync::Condvar::new(),
             aborted: AtomicBool::new(false),
@@ -257,6 +257,15 @@ impl Shared {
             })
         });
         if let Err(e) = checked {
+            polars_bail!(InvalidOperation: "{e}");
+        }
+        let zone = self.session_zone.get_or_init(|| {
+            check_mysql_session_zone(session.as_mut(), &self.config).map_err(|e| match e {
+                PolarsError::InvalidOperation(msg) => msg.to_string(),
+                e => e.to_string(),
+            })
+        });
+        if let Err(e) = zone {
             polars_bail!(InvalidOperation: "{e}");
         }
         Ok(session)
@@ -459,7 +468,13 @@ impl PartitionReader {
                 batch,
                 &self.shared.sqlite_text_columns,
             )?;
-            let batch = cast_to_schema(&batch, &config.schema.try_project(&names)?, overrides)?;
+            let batch = cast_to_user_schema(
+                &batch,
+                &config.schema.try_project(&names)?,
+                overrides,
+                config.user_schema,
+                &self.shared.own_numbers,
+            )?;
             match &mut out {
                 None => out = Some(batch),
                 Some(acc) => {
@@ -625,7 +640,13 @@ impl PartitionStream {
         let overrides = config.options.schema_overrides.as_deref();
         let df =
             crate::database::planner::decode_sqlite_reals(df, &self.shared.sqlite_text_columns)?;
-        cast_to_schema(&df, &self.projected, overrides)
+        cast_to_user_schema(
+            &df,
+            &self.projected,
+            overrides,
+            config.user_schema,
+            &self.shared.own_numbers,
+        )
     }
 
     /// The next non-empty batch, cast to the planned schema; `None` at the end.
@@ -640,7 +661,10 @@ impl PartitionStream {
             }
             // (decoded by `read_counted` already: decoding twice would unescape twice)
             let overrides = self.shared.config.options.schema_overrides.as_deref();
-            return cast_to_schema(&df, &self.projected, overrides).map(Some);
+            let user_schema = self.shared.config.user_schema;
+            let own_numbers = &self.shared.own_numbers;
+            return cast_to_user_schema(&df, &self.projected, overrides, user_schema, own_numbers)
+                .map(Some);
         }
         if self.complete {
             return Ok(None);

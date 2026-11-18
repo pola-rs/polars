@@ -409,11 +409,44 @@ impl DialectName {
     }
 
     /// Longest `IN (…)` list pushed as-is, in bytes of its literals: ClickHouse refuses a
-    /// statement over `max_query_size` (256 KiB by default).
+    /// statement over `max_query_size` (256 KiB by default). Half the statement budget at most,
+    /// so one list never fills the statement.
     pub fn max_in_list_bytes(self) -> usize {
         match self {
             Self::Clickhouse => 64 << 10,
-            _ => 16 << 20,
+            _ => self.max_statement_bytes() / 2,
+        }
+    }
+
+    /// The bytes of pushed filters one statement may hold (see `filter::PushBudget`), under
+    /// the shortest statement the database takes, with a margin for the rest of the
+    /// statement and the estimate: ClickHouse `max_query_size` is 256 KiB, MySQL's and
+    /// MariaDB's `max_allowed_packet` 16 MiB (MariaDB; 64 MiB in MySQL 8.4), SQLite's
+    /// `SQLITE_MAX_SQL_LENGTH` 1,000,000 bytes, Trino's `query.max-length` 1,000,000
+    /// characters, Snowflake's and BigQuery's statement text about 1 MB. Those unknown
+    /// (Generic, Flight SQL) take the short budget.
+    pub fn max_statement_bytes(self) -> usize {
+        match self {
+            Self::Clickhouse => 128 << 10,
+            Self::Sqlite
+            | Self::Trino
+            | Self::Snowflake
+            | Self::Bigquery
+            | Self::Generic
+            | Self::Flightsql => 512 << 10,
+            _ => 8 << 20,
+        }
+    }
+
+    /// How many filters (ANDed in one `WHERE`) a statement may hold. The database parses
+    /// `a AND b AND c …` as a chain as deep as it is long: SQLite refuses an expression tree
+    /// deeper than 1000 (`SQLITE_MAX_EXPR_DEPTH`) at 1,200 filters, where Postgres, MySQL,
+    /// MariaDB and DuckDB took 4,000.
+    pub fn max_conjuncts(self) -> usize {
+        match self {
+            Self::Sqlite => 400,
+            Self::Mssql | Self::Oracle | Self::Generic | Self::Flightsql => 256,
+            _ => 1000,
         }
     }
 

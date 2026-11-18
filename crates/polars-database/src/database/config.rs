@@ -100,6 +100,13 @@ pub struct DatabaseScanConfig {
     /// ([`check_unplanned_volatility`](super::planner::check_unplanned_volatility)).
     #[serde(default)]
     pub volatility_unchecked: bool,
+    /// The planned schema is the user's `schema=` (not discovered).
+    #[serde(default)]
+    pub user_schema: bool,
+    /// The query has a top-level `ORDER BY` that the server drops inside a derived table
+    /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
+    #[serde(default)]
+    pub derived_order_dropped: bool,
     /// Partition bounds already queried, by the bounds SQL: optimizing the plan again
     /// (another `collect`, `explain`) doesn't query them again. The outer partitions are
     /// open-ended, so stale bounds only skew partition sizes, never lose rows.
