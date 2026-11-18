@@ -27,8 +27,8 @@ on:
         type: string
       polars-iceberg-version:
         description: >
-          Version of polars-iceberg to install from PyPI. If omitted, build polars-iceberg from its
-          dev branch.
+          Version of polars-iceberg to install from PyPI. If omitted, build polars-iceberg from this
+          repository.
         type: string
       polars-database-version:
         description: >
@@ -87,10 +87,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
-
-      - name: Clone polars-iceberg
-        if: ${{ !inputs.polars-iceberg-version }}
-        uses: ./.github/actions/clone-polars-iceberg
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -160,7 +156,7 @@ jobs:
           if [[ -n "$POLARS_ICEBERG_VERSION" ]]; then
             uv pip install --no-deps "polars-iceberg==$POLARS_ICEBERG_VERSION"
           else
-            maturin develop --manifest-path ../crates/polars-iceberg/Cargo.toml
+            maturin develop --manifest-path polars-iceberg/Cargo.toml
           fi
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_iceberg'

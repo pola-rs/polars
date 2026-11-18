@@ -29,7 +29,7 @@ build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-polars-iceberg
-build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-iceberg)
+build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (py-polars/polars-iceberg)
 	@$(MAKE) -s -C ../crates $@ VENV=$(abspath $(VENV))
 
 .PHONY: build-polars-database
