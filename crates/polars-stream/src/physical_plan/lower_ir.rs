@@ -710,9 +710,6 @@ fn lower_ir_inner(
             slice,
             sort_options,
         } => {
-            /// For large `k`, a sort is faster without a top-k in front of it.
-            const MAX_SORT_TOP_K: usize = 1 << 15;
-
             let slice = slice.clone();
             let mut by_column = by_column.clone();
             let mut sort_options = sort_options.clone();
@@ -731,7 +728,8 @@ fn lower_ir_inner(
                 let l = l as usize;
                 limit = Some(limit.map_or(l, |limit| usize::min(limit, l)));
             };
-            let limit = limit.filter(|&l| l <= MAX_SORT_TOP_K);
+            // Such a top k keeps every row.
+            let limit = limit.filter(|&l| l < IdxSize::MAX as usize);
 
             let mut stream = phys_input;
 
