@@ -91,6 +91,26 @@ impl DataFrame {
             split.into_iter().map(split_fn).collect()
         }
     }
+
+    /// Convert the columns of this [DataFrame] to arrow arrays, one per column.
+    ///
+    /// Use [`DataFrame::try_iter_chunks`] for Map columns that may need several arrays.
+    pub fn rechunk_to_arrow(&self, compat_level: CompatLevel) -> Vec<ArrayRef> {
+        self.columns()
+            .iter()
+            .map(|c| c.clone().rechunk_to_arrow(compat_level))
+            .collect()
+    }
+
+    /// Convert the columns of this [DataFrame] to arrow arrays, one per column.
+    ///
+    /// Use [`DataFrame::try_iter_chunks`] for Map columns that may need several arrays.
+    pub fn rechunk_into_arrow(self, compat_level: CompatLevel) -> Vec<ArrayRef> {
+        self.into_columns()
+            .into_iter()
+            .map(|c| c.rechunk_to_arrow(compat_level))
+            .collect()
+    }
 }
 
 impl DataFrame {
