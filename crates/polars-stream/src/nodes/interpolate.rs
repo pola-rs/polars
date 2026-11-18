@@ -7,6 +7,7 @@ use polars_error::PolarsResult;
 use polars_ops::series::interpolate;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -153,7 +154,7 @@ impl ComputeNode for InterpolateNode {
                 };
 
                 // Everything until the last run of nulls is ready to be sent.
-                let ready_values = column.slice(0, last_non_null_idx + 1);
+                let ready_values = column.slice(Slice::head(last_non_null_idx + 1));
 
                 if distributor
                     .send((
@@ -216,8 +217,8 @@ impl ComputeNode for InterpolateNode {
                     // If there were pending nulls, we know that the previous morsel already
                     // emitted our first value. We are only using it to enable interpolation here.
                     // Slice it off and don't double emit it.
-                    if has_prepended {
-                        column = column.slice(1, usize::MAX);
+                    if has_prepended && let Some(prepended) = Slice::skip(1) {
+                        column = column.slice(prepended);
                     }
 
                     let mut morsel =

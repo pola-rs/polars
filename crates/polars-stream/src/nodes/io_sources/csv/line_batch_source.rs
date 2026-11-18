@@ -333,7 +333,8 @@ enum BatchAction {
 /// Applies the pre-slice to a sequence of newline-aligned batches and assigns row offsets and
 /// morsel sequence ids.
 struct BatchSlicer {
-    global_slice: Option<Range<usize>>,
+    /// `(offset, len)`, where a `None` len runs to the end.
+    global_slice: Option<(usize, Option<usize>)>,
     needs_full_row_count: bool,
     row_offset: usize,
     morsel_seq: MorselSeq,
@@ -344,7 +345,9 @@ impl BatchSlicer {
     fn new(pre_slice: Option<Slice>, needs_full_row_count: bool) -> Self {
         let global_slice = if let Some(pre_slice) = pre_slice {
             match pre_slice {
-                Slice::Positive { .. } => Some(Range::<usize>::from(pre_slice)),
+                Slice::Positive { .. } | Slice::PositiveUnbounded { .. } => {
+                    Some(pre_slice.to_unsigned_offset_len())
+                },
                 // IR lowering puts negative slice in separate node.
                 // TODO: Native line buffering for negative slice
                 Slice::Negative { .. } => unreachable!(),

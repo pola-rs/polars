@@ -9,6 +9,7 @@ use polars_error::{PolarsError, PolarsResult};
 use polars_plan::dsl::ColumnsUdf;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::slice_enum::Slice;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -113,9 +114,9 @@ impl RollingFixedWindowNode {
             .saturating_sub(behind)
             .min(buf_end.saturating_sub(self.window.length as u64))
             .max(self.buf_start);
-        self.buf = self
-            .buf
-            .slice((keep_start - self.buf_start) as i64, usize::MAX);
+        if let Some(dropped) = Slice::skip((keep_start - self.buf_start) as usize) {
+            self.buf = self.buf.slice(dropped);
+        }
         self.buf_start = keep_start;
 
         Some((batch, out_offset, num_ready as usize))
@@ -131,7 +132,7 @@ impl RollingFixedWindowNode {
         let mut columns = batch.into_columns();
         let out = func.call_udf(&mut columns)?;
         Ok(out
-            .slice(out_offset as i64, out_len)
+            .slice((out_offset, out_len))
             .with_name(output_name.clone())
             .into_frame())
     }

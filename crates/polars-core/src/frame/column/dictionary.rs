@@ -395,8 +395,8 @@ impl DictionaryColumn {
         }
     }
 
-    pub fn slice(&self, offset: i64, length: usize) -> Self {
-        self.with_order_kept(self.codes.slice(offset, length))
+    pub fn slice(&self, slice: impl Into<Slice>) -> Self {
+        self.with_order_kept(self.codes.slice(slice))
     }
 
     pub fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Self> {
@@ -806,7 +806,7 @@ mod test {
         let mut above_limit = a.clone();
         above_limit.set_sorted_flag(IsSorted::Ascending);
         above_limit.as_materialized_series();
-        let smaller_b = b.slice(0, 2);
+        let smaller_b = b.slice(Slice::head(2));
         assert!(!above_limit.try_append(&smaller_b));
         assert_eq!(above_limit.dict().id(), a.dict().id());
         assert_eq!(values(&above_limit), values(&a));
@@ -828,7 +828,7 @@ mod test {
     #[test]
     fn try_append_reuses_dictionary_above_extension_bound() {
         let mut a = dict_column(&["a", "b", "c"], &[Some(0), Some(1), Some(2)]);
-        let same_dict = a.slice(1, 1);
+        let same_dict = a.slice((1usize, 1));
         let overlapping = dict_column(&["c"], &[Some(0)]);
         let id = a.dict().id();
         assert!(a.try_append(&same_dict));
@@ -849,7 +849,7 @@ mod test {
         let mut a = dict_column(&["b", "a"], &[Some(1), Some(1), Some(0)]);
         assert_eq!(a.is_sorted_flag(), IsSorted::Not);
         a.set_sorted_flag(IsSorted::Ascending);
-        assert_eq!(a.slice(1, 2).is_sorted_flag(), IsSorted::Ascending);
+        assert_eq!(a.slice((1usize, 2)).is_sorted_flag(), IsSorted::Ascending);
         assert_eq!(a.rechunk().is_sorted_flag(), IsSorted::Ascending);
         assert_eq!(a.reverse().is_sorted_flag(), IsSorted::Descending);
         assert_eq!(

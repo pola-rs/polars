@@ -28,13 +28,15 @@ pub async fn resolve_to_positive_slice(
             row_deletions: Default::default(),
         }),
 
-        pre_slice @ Some(Slice::Positive { .. }) => Ok(ResolvedSliceInfo {
-            scan_source_idx: 0,
-            row_index: config.row_index.clone(),
-            pre_slice,
-            initialized_readers: None,
-            row_deletions: Default::default(),
-        }),
+        pre_slice @ Some(Slice::Positive { .. } | Slice::PositiveUnbounded { .. }) => {
+            Ok(ResolvedSliceInfo {
+                scan_source_idx: 0,
+                row_index: config.row_index.clone(),
+                pre_slice,
+                initialized_readers: None,
+                row_deletions: Default::default(),
+            })
+        },
 
         Some(_) => resolve_negative_slice(config, execution_state, io_metrics).await,
     }

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::ops::Range;
 
 use futures::future::join_all;
 use parking_lot::Mutex;
@@ -13,6 +14,7 @@ use polars_error::PolarsResult;
 use polars_ooc::{MostRecentSpillContext, SpillFrame, memory_manager};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 use tokio::sync::Notify;
 
 use super::{drop_parallel, sort_range};
@@ -37,9 +39,9 @@ pub fn sort_index_row_bytes(key_dtype: &DataType) -> u64 {
 /// A bucket of the partitioned input, in emission order.
 pub struct PendingBucket {
     pub frames: Vec<SpillFrame>,
-    /// The rows of this bucket to emit, as an offset into the concatenation
-    /// of `frames` (sorted when `needs_sort`) and a length.
-    pub local: (usize, usize),
+    /// The rows of this bucket to emit, as a range into the concatenation of
+    /// `frames` (sorted when `needs_sort`).
+    pub local: Range<usize>,
     pub needs_sort: bool,
 }
 
@@ -122,7 +124,7 @@ impl FlushState {
         let mut seq = 0;
         let mut unsorted = VecDeque::with_capacity(buckets.len());
         for bucket in buckets {
-            let num_morsels = bucket.local.1.div_ceil(morsel_size) as u64;
+            let num_morsels = bucket.local.len().div_ceil(morsel_size) as u64;
             let memory = bucket.memory(row_bytes, index_row_bytes);
             unsorted.push_back((bucket, seq, memory));
             seq += num_morsels;
@@ -160,7 +162,10 @@ impl FlushState {
             let (df, bytes) = entry.remove();
             inner.next_seq += 1;
             if df.height() > self.morsel_size {
-                let rest = df.slice(self.morsel_size as i64, usize::MAX);
+                let rest = match Slice::skip(self.morsel_size as usize) {
+                    Some(sent) => df.slice(sent),
+                    None => df.clone(),
+                };
                 inner.sorted.insert(seq + 1, (rest, bytes));
             } else {
                 inner.ahead_bytes -= bytes;
@@ -168,7 +173,7 @@ impl FlushState {
                     self.notify.notify_waiters();
                 }
             }
-            return Step::Emit(df.slice(0, self.morsel_size), seq);
+            return Step::Emit(df.slice(Slice::head(self.morsel_size)), seq);
         }
 
         if let Some((_, _, memory)) = inner.unsorted.front()
@@ -284,13 +289,12 @@ async fn sort_bucket(
     let _reservation = memory_manager().reserve(bytes).await;
     let dfs = join_all(bucket.frames.into_iter().map(SpillFrame::into_df)).await;
     let df = accumulate_dataframes_vertical_unchecked(dfs);
-    let (offset, len) = bucket.local;
     if bucket.needs_sort {
         return sort_range(df, key, projection, sort_options.clone(), bucket.local);
     }
     // The bucket holds a single key value or only nulls, so it is sorted
     // already, but its frames don't carry the flag.
-    let mut df = df.slice(offset as i64, len);
+    let mut df = df.slice(bucket.local);
     let sorted = if sort_options.descending[0] {
         IsSorted::Descending
     } else {

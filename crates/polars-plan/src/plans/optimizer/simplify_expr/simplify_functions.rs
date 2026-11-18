@@ -417,9 +417,10 @@ pub(super) fn optimize_functions(
             let offset_i64: i64 = offset.try_into().unwrap_or(i64::MAX);
             let offset_node =
                 expr_arena.add(AExpr::Literal(LiteralValue::Scalar(offset_i64.into())));
-            let length_node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(
-                (usize::MAX as u64).into(),
-            )));
+            let length_node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::UInt64,
+                AnyValue::Null,
+            ))));
             Some(AExpr::Slice {
                 input: input[0].node(),
                 offset: offset_node,

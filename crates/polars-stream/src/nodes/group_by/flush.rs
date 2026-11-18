@@ -232,7 +232,7 @@ impl Shared {
                     bytes,
                 } => {
                     // An empty result is sent as one empty morsel.
-                    let df = frame.slice(*offset as i64, morsel_size);
+                    let df = frame.slice((*offset, morsel_size));
                     *offset += df.height();
                     let done = (*offset >= frame.height()).then_some(*bytes);
                     let seq = MorselSeq::new(self.next_seq.fetch_add(1, Ordering::Relaxed));

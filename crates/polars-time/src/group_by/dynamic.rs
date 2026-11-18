@@ -374,7 +374,7 @@ impl Wrap<&DataFrame> {
                 rows.clone(),
             )?;
             let groups = GroupsType::new_slice(groups, true, true);
-            let dt = dt.slice(rows.start as i64, rows.len());
+            let dt = dt.slice(rows);
             Ok((dt, groups.into_sliceable()))
         }
     }

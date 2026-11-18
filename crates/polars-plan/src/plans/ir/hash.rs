@@ -66,13 +66,8 @@ impl IR {
                 validate_schema.hash(state);
                 is_pure.hash(state);
             },
-            IR::Slice {
-                offset,
-                len,
-                input: _,
-            } => {
-                len.hash(state);
-                offset.hash(state);
+            IR::Slice { slice, input: _ } => {
+                slice.hash(state);
             },
             IR::Filter {
                 input: _,

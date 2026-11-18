@@ -13,6 +13,8 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -637,3 +639,68 @@ def test_slice_expr_single_value_offset(expr: pl.Expr, expected: list[int]) -> N
         lf.select(expr).collect(),
         pl.DataFrame({"a": expected}, schema={"a": pl.Int64}),
     )
+
+
+def test_slice_offset_beyond_u32_after_sorted_group_by() -> None:
+    lf = (
+        pl.LazyFrame({"g": [1, 2, 3], "x": [1, 2, 3]})
+        .set_sorted("g")
+        .group_by("g", maintain_order=True)
+        .agg(pl.col("x").sum())
+    )
+    assert lf.slice(2**32 + 1, 10).collect().height == 0
+
+
+def test_slice_offset_beyond_u32_after_rolling() -> None:
+    lf = (
+        pl.LazyFrame({"t": [1, 2, 3], "x": [1, 2, 3]})
+        .set_sorted("t")
+        .rolling("t", period="2i")
+        .agg(pl.col("x").sum())
+    )
+    assert lf.slice(2**32 + 1, 10).collect().height == 0
+
+
+def test_slice_offset_beyond_u32_after_union() -> None:
+    lf = pl.concat([pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [3]})])
+    assert lf.slice(5_000_000_000, 10).collect().height == 0
+
+
+def test_slice_i64_min_offset_on_scan(tmp_path: Path) -> None:
+    path = tmp_path / "a.parquet"
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    df.write_parquet(path)
+    assert_frame_equal(
+        pl.scan_parquet(path).slice(-(2**63), 1).collect(), df.slice(-(2**63), 1)
+    )
+
+
+def test_expr_head_and_open_ended_slice_in_one_select() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
+    q = lf.select(pl.col("a").head(3).sum(), pl.col("b").slice(2).sum())
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [6], "b": [12]}))
+
+
+def test_tail_of_sequential_union() -> None:
+    lf = pl.concat(
+        [pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [3, 4]})], parallel=False
+    )
+    assert_frame_equal(lf.tail(1).collect(), pl.DataFrame({"a": [4]}))
+
+
+def test_expr_slice_negative_length_raises() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    with pytest.raises(ComputeError):
+        lf.select(pl.col("a").slice(1, -1)).collect()
+
+
+def test_expr_chained_slices_in_select() -> None:
+    lf = pl.LazyFrame({"a": range(10)})
+    q = lf.select(pl.col("a").slice(1, 5).slice(0, 5))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2, 3, 4, 5]}))
+
+
+def test_expr_chained_slices_offset_beyond_i64() -> None:
+    lf = pl.LazyFrame({"a": range(5)})
+    q = lf.select(pl.col("a").slice(2**63 - 1).slice(2**63 - 1))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": []}, schema={"a": pl.Int64}))

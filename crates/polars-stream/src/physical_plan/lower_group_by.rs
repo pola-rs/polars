@@ -20,8 +20,8 @@ use polars_plan::plans::{
 use polars_plan::prelude::*;
 use polars_plan::utils::rename_columns;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{IdxSize, format_pl_smallstr};
 use recursive::recursive;
 use slotmap::DenseSlotMap;
 
@@ -1431,8 +1431,8 @@ fn try_build_streaming_group_by_with_key_ranges(
         ctx,
     )?;
 
-    let out = if let Some((offset, len)) = options.slice {
-        build_slice_stream(post_select, offset, len, phys_sm)
+    let out = if let Some(slice) = options.slice {
+        build_slice_stream(post_select, slice, phys_sm)
     } else {
         post_select
     };
@@ -1548,13 +1548,13 @@ pub fn try_build_sorted_group_by(
                 aggs: aggs.to_vec(),
                 slice: options
                     .slice
-                    .filter(|(o, _)| *o >= 0)
-                    .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                    .filter(|slice| slice.is_positive())
+                    .map(|slice| (slice.positive_offset(), slice.len())),
             },
         )),
     );
-    if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-        input = build_slice_stream(input, *offset, *length, phys_sm);
+    if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
+        input = build_slice_stream(input, slice, phys_sm);
     }
 
     if projected {
@@ -1691,14 +1691,14 @@ pub fn build_group_by_stream_with_key_ranges(
                         placement: rolling_options.placement,
                         slice: options
                             .slice
-                            .filter(|(o, _)| *o >= 0)
-                            .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                            .filter(|slice| slice.is_positive())
+                            .map(|slice| (slice.positive_offset(), slice.len())),
                         aggs: aggs.to_vec(),
                     },
                 )),
             );
-            if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-                input = build_slice_stream(input, *offset, *length, phys_sm);
+            if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
+                input = build_slice_stream(input, slice, phys_sm);
             }
             return Ok(input);
         } else if let Some(dynamic_options) = options.as_ref().dynamic.as_ref()
@@ -1714,13 +1714,13 @@ pub fn build_group_by_stream_with_key_ranges(
                         aggs: aggs.to_vec(),
                         slice: options
                             .slice
-                            .filter(|(o, _)| *o >= 0)
-                            .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                            .filter(|slice| slice.is_positive())
+                            .map(|slice| (slice.positive_offset(), slice.len())),
                     },
                 )),
             );
-            if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-                input = build_slice_stream(input, *offset, *length, phys_sm);
+            if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
+                input = build_slice_stream(input, slice, phys_sm);
             }
             return Ok(input);
         }

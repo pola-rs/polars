@@ -164,7 +164,7 @@ async fn finish_initialize_multi_scan_pipeline(
             if verbose {
                 eprintln!("[MultiScanTaskInit]: early return (filter excludes all files)")
             }
-        } else if config.pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
+        } else if config.pre_slice.as_ref().is_some_and(|x| x.is_empty()) {
             if cfg!(debug_assertions) {
                 panic!("should quit earlier");
             }

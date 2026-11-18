@@ -10,7 +10,6 @@ use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileWriteFormat;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
-use polars_utils::slice_enum::Slice;
 use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -265,17 +264,20 @@ fn visualize_plan_rec(
             input,
             offset,
             length,
-        } => (
-            format!("slice\\noffset: {offset}, length: {length}"),
-            from_ref(input),
-        ),
+        } => {
+            let label = match length {
+                Some(length) => format!("slice\\noffset: {offset}, length: {length}"),
+                None => format!("slice\\noffset: {offset}"),
+            };
+            (label, from_ref(input))
+        },
         PhysNodeKind::Reverse { input } => ("reverse".to_owned(), from_ref(input)),
         PhysNodeKind::NegativeSlice {
             input,
-            offset,
+            offset_from_end,
             length,
         } => (
-            format!("slice\\noffset: {offset}, length: {length}"),
+            format!("slice\\noffset: -{offset_from_end}, length: {length}"),
             from_ref(input),
         ),
         PhysNodeKind::DynamicSlice {
@@ -472,7 +474,10 @@ fn visualize_plan_rec(
             let f = &mut s;
             write!(f, "key: {key}\\n").unwrap();
             if let Some((offset, length)) = slice {
-                write!(f, "slice: {offset}, {length}\\n").unwrap();
+                match length {
+                    Some(length) => write!(f, "slice: {offset}, {length}\\n").unwrap(),
+                    None => write!(f, "slice: {offset}\\n").unwrap(),
+                }
             }
             write!(
                 f,
@@ -681,18 +686,11 @@ fn visualize_plan_rec(
             }
 
             if let Some(pre_slice) = pre_slice {
-                write!(f, "\nslice: offset: ").unwrap();
-
-                match pre_slice {
-                    Slice::Positive { offset, len: _ } => write!(f, "{}", *offset),
-                    Slice::Negative {
-                        offset_from_end,
-                        len: _,
-                    } => write!(f, "-{}", *offset_from_end),
+                let (offset, len) = pre_slice.to_signed_offset_len();
+                write!(f, "\nslice: offset: {offset}").unwrap();
+                if let Some(len) = len {
+                    write!(f, ", len: {len}").unwrap();
                 }
-                .unwrap();
-
-                write!(f, ", len: {}", pre_slice.len()).unwrap()
             }
 
             if let Some(predicate) = predicate {
@@ -803,7 +801,10 @@ fn visualize_plan_rec(
                 write!(f, "start_range: {:?}\\n", placement.start_range).unwrap();
             }
             if let Some((offset, length)) = slice {
-                write!(f, "slice: {offset}, {length}\\n").unwrap();
+                match length {
+                    Some(length) => write!(f, "slice: {offset}, {length}\\n").unwrap(),
+                    None => write!(f, "slice: {offset}\\n").unwrap(),
+                }
             }
             write!(
                 f,
@@ -835,7 +836,10 @@ fn visualize_plan_rec(
                 write!(f, "owned_range: {:?}\\n", placement.owned_range).unwrap();
             }
             if let Some((offset, length)) = slice {
-                write!(f, "slice: {offset}, {length}\\n").unwrap();
+                match length {
+                    Some(length) => write!(f, "slice: {offset}, {length}\\n").unwrap(),
+                    None => write!(f, "slice: {offset}\\n").unwrap(),
+                }
             }
             write!(
                 f,

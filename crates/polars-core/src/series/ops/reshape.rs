@@ -302,7 +302,7 @@ impl Series {
 
                 let mut offset = 0u64;
                 for _ in 0..rows {
-                    let row = s_ref.slice(offset as i64, cols as usize);
+                    let row = s_ref.slice((offset as usize, cols as usize));
                     builder.append_series(&row).unwrap();
                     offset += cols;
                 }

@@ -297,7 +297,7 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
                 // formats (e.g. with and without an offset) are parsed one by one.
                 let mut out = Series::new_empty(PlSmallStr::EMPTY, dtype);
                 for i in 0..ca.len() {
-                    let value = parse(&ca.slice(i as i64, 1))
+                    let value = parse(&ca.slice((i, 1)))
                         .map(|v| v.into_series())
                         .unwrap_or_else(|_| Series::full_null(PlSmallStr::EMPTY, 1, dtype));
                     out.append(&value)?;

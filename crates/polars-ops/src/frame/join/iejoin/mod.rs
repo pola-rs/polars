@@ -13,13 +13,14 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
-use polars_core::utils::{_set_partition_size, slice_slice, split};
+use polars_core::utils::{_set_partition_size, split};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_defs::join::{IEJoinOptions, InequalityOperator};
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::itertools::Itertools;
+use polars_utils::slice_enum::Slice;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 use rayon::prelude::*;
 
@@ -27,7 +28,7 @@ use crate::frame::_finish_join;
 
 #[allow(clippy::too_many_arguments)]
 fn ie_join_impl_t<T: PolarsNumericType>(
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     l1_order: IdxCa,
     l2_order: &[IdxSize],
     op1: InequalityOperator,
@@ -110,7 +111,7 @@ fn ie_join_impl_t<T: PolarsNumericType>(
 }
 
 fn piecewise_merge_join_impl_t<T, P>(
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     left_order: Option<&[IdxSize]>,
     right_order: Option<&[IdxSize]>,
     left_ordered: Series,
@@ -236,7 +237,7 @@ fn emit_unmatched_right_via_flip(
     left: &DataFrame,
     right: &DataFrame,
     suffix: Option<PlSmallStr>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     compute_flipped_indices: impl FnOnce() -> PolarsResult<(IdxCa, IdxCa)>,
 ) -> PolarsResult<DataFrame> {
     let (matched_right, matched_left) = compute_flipped_indices()?;
@@ -261,7 +262,7 @@ fn take_unmatched_left(
     left_matched_idx: &IdxCa,
     right_matched_idx: &IdxCa,
     left_height: usize,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let (left_idx, right_idx) =
         append_unmatched_left(left_matched_idx, right_matched_idx, left_height);
@@ -269,10 +270,7 @@ fn take_unmatched_left(
 
     let (left_idx, right_idx) = match slice {
         None => (left_idx.as_slice(), right_idx.as_slice()),
-        Some((offset, len)) => (
-            slice_slice(&left_idx, offset, len),
-            slice_slice(&right_idx, offset, len),
-        ),
+        Some(slice) => (&left_idx[slice], &right_idx[slice]),
     };
 
     Ok(RAYON.join(
@@ -292,7 +290,7 @@ fn take_unmatched_both(
     right: &DataFrame,
     left_matched_idx: &IdxCa,
     right_matched_idx: &IdxCa,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let (left_height, right_height) = (left.height(), right.height());
     let n_matched_pairs = left_matched_idx.len();
@@ -335,10 +333,7 @@ fn take_unmatched_both(
 
     let (left_idx, right_idx) = match slice {
         None => (out_left.as_slice(), out_right.as_slice()),
-        Some((offset, len)) => (
-            slice_slice(&out_left, offset, len),
-            slice_slice(&out_right, offset, len),
-        ),
+        Some(slice) => (&out_left[slice], &out_right[slice]),
     };
 
     Ok(RAYON.join(
@@ -365,12 +360,12 @@ fn iejoin_par_indices(
     let sl = &selected_left[0];
     let l1_s_l = sl
         .arg_sort(l1_sort_options)
-        .slice(sl.null_count() as i64, sl.len() - sl.null_count());
+        .slice((sl.null_count(), sl.len() - sl.null_count()));
 
     let sr = &selected_right[0];
     let l1_s_r = sr
         .arg_sort(l1_sort_options)
-        .slice(sr.null_count() as i64, sr.len() - sr.null_count());
+        .slice((sr.null_count(), sr.len() - sr.null_count()));
 
     // Because we do a cartesian product, the number of partitions is squared.
     // We take the sqrt, but we don't expect every partition to produce results and work can be
@@ -484,7 +479,7 @@ pub(super) fn iejoin_par(
     selected_right: Vec<Series>,
     options: &IEJoinOptions,
     suffix: Option<PlSmallStr>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     emit_unmatched: EmitUnmatched,
 ) -> PolarsResult<DataFrame> {
     if emit_unmatched == EmitUnmatched::Right {
@@ -514,7 +509,7 @@ pub(super) fn iejoin(
     selected_right: Vec<Series>,
     options: &IEJoinOptions,
     suffix: Option<PlSmallStr>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     emit_unmatched: EmitUnmatched,
 ) -> PolarsResult<DataFrame> {
     if emit_unmatched == EmitUnmatched::Right {
@@ -553,13 +548,13 @@ fn finish_ie_join(
     mut right_idx: IdxCa,
     emit_unmatched: EmitUnmatched,
     suffix: Option<PlSmallStr>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> PolarsResult<DataFrame> {
     let (taken_left, taken_right) = match emit_unmatched {
         EmitUnmatched::None => {
-            if let Some((offset, len)) = slice {
-                left_idx = left_idx.slice(offset, len);
-                right_idx = right_idx.slice(offset, len);
+            if let Some(slice) = slice {
+                left_idx = left_idx.slice(slice);
+                right_idx = right_idx.slice(slice);
             }
             return unsafe { materialize_join(left, right, &left_idx, &right_idx, suffix) };
         },
@@ -576,7 +571,7 @@ fn compute_ie_join_indices(
     selected_left: Vec<Series>,
     selected_right: Vec<Series>,
     options: &IEJoinOptions,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> PolarsResult<(IdxCa, IdxCa)> {
     if options.operator2.is_some() {
         iejoin_tuples(selected_left, selected_right, options, slice)
@@ -611,7 +606,7 @@ fn iejoin_tuples(
     selected_left: Vec<Series>,
     selected_right: Vec<Series>,
     options: &IEJoinOptions,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> PolarsResult<(IdxCa, IdxCa)> {
     if selected_left.len() != 2 {
         return Err(
@@ -660,7 +655,7 @@ fn iejoin_tuples(
     // Get ordering of x, skipping any null entries as these cannot be matches
     let l1_order = x
         .arg_sort(l1_sort_options)
-        .slice(x.null_count() as i64, x.len() - x.null_count());
+        .slice((x.null_count(), x.len() - x.null_count()));
 
     let y_ordered_by_x = unsafe { y.take_unchecked(&l1_order) };
     let l2_sort_options = SortOptions::default()
@@ -669,10 +664,10 @@ fn iejoin_tuples(
         .with_order_descending(l2_descending);
     // Get the indexes into l1, ordered by y values.
     // l2_order is the same as "p" from Khayyat et al.
-    let l2_order = y_ordered_by_x.arg_sort(l2_sort_options).slice(
-        y_ordered_by_x.null_count() as i64,
+    let l2_order = y_ordered_by_x.arg_sort(l2_sort_options).slice((
+        y_ordered_by_x.null_count(),
         y_ordered_by_x.len() - y_ordered_by_x.null_count(),
-    );
+    ));
     let l2_order = l2_order.rechunk();
     let l2_order = l2_order.downcast_as_array().values().as_slice();
 
@@ -694,10 +689,7 @@ fn iejoin_tuples(
     let right_row_idx = IdxCa::from_vec("".into(), right_row_idx);
     let (left_row_idx, right_row_idx) = match slice {
         None => (left_row_idx, right_row_idx),
-        Some((offset, len)) => (
-            left_row_idx.slice(offset, len),
-            right_row_idx.slice(offset, len),
-        ),
+        Some(slice) => (left_row_idx.slice(slice), right_row_idx.slice(slice)),
     };
     Ok((left_row_idx, right_row_idx))
 }
@@ -707,7 +699,7 @@ fn piecewise_merge_join_tuples(
     selected_left: Vec<Series>,
     selected_right: Vec<Series>,
     options: &IEJoinOptions,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> PolarsResult<(IdxCa, IdxCa)> {
     if selected_left.len() != 1 {
         return Err(
@@ -756,10 +748,9 @@ fn piecewise_merge_join_tuples(
                 .with_order_descending(descending);
 
             // Get order and slice to ignore any null values, which cannot be match results
-            let mut order = series.arg_sort(sort_options).slice(
-                series.null_count() as i64,
-                series.len() - series.null_count(),
-            );
+            let mut order = series
+                .arg_sort(sort_options)
+                .slice((series.null_count(), series.len() - series.null_count()));
             order.rechunk_mut();
             let ordered = unsafe { series.take_unchecked(&order) };
             (ordered, Some(order))
@@ -828,17 +819,12 @@ fn piecewise_merge_join_tuples(
     let right_row_idx = IdxCa::from_vec("".into(), right_row_idx);
     let (left_row_idx, right_row_idx) = match slice {
         None => (left_row_idx, right_row_idx),
-        Some((offset, len)) => (
-            left_row_idx.slice(offset, len),
-            right_row_idx.slice(offset, len),
-        ),
+        Some(slice) => (left_row_idx.slice(slice), right_row_idx.slice(slice)),
     };
     Ok((left_row_idx, right_row_idx))
 }
 
-fn slice_end_index(slice: Option<(i64, usize)>) -> Option<i64> {
-    match slice {
-        Some((offset, len)) if offset >= 0 => Some(offset.saturating_add_unsigned(len as u64)),
-        _ => None,
-    }
+fn slice_end_index(slice: Option<Slice>) -> Option<i64> {
+    let end = slice?.end_position()?;
+    Some(i64::try_from(end).unwrap_or(i64::MAX))
 }

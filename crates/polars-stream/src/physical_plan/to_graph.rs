@@ -26,6 +26,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 use slotmap::{DenseSlotMap, SecondaryMap};
 
@@ -192,14 +193,14 @@ fn to_graph_rec<'a>(
 
         NegativeSlice {
             input,
-            offset,
+            offset_from_end,
             length,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.add_node_with_metrics(
                 |registry| {
                     nodes::negative_slice::NegativeSliceNode::new(
-                        *offset,
+                        Slice::tail(*offset_from_end).to_signed_offset_len().0,
                         *length,
                         registry.task_metrics(),
                     )

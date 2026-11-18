@@ -207,9 +207,13 @@ impl<'a> IRDotDisplay<'a> {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "{header}\n{exprs}"))?;
             },
-            Slice { input, offset, len } => {
+            Slice { input, slice } => {
                 recurse!(*input);
-                write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;
+                let (offset, len) = slice.to_signed_offset_len();
+                write_label(f, id, |f| match len {
+                    Some(len) => write!(f, "SLICE offset: {offset}; len: {len}"),
+                    None => write!(f, "SLICE offset: {offset}; len: ∞"),
+                })?;
             },
             Distinct { input, options, .. } => {
                 recurse!(*input);

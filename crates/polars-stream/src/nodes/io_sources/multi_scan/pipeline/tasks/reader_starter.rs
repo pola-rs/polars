@@ -94,14 +94,14 @@ impl ReaderStarter {
                 .pre_slice
                 .clone()
                 .map(|x| {
-                    PolarsResult::Ok(match x {
-                        Slice::Positive { .. } => {
-                            x.offsetted(current_row_position.unwrap().num_rows()?)
-                        },
-                        Slice::Negative { .. } => x,
+                    PolarsResult::Ok(if x.is_negative() {
+                        Some(x)
+                    } else {
+                        x.offsetted(current_row_position.unwrap().num_rows()?)
                     })
                 })
-                .transpose()?;
+                .transpose()?
+                .flatten();
 
             if current_row_position.is_some() && verbose {
                 eprintln!(
@@ -111,7 +111,7 @@ impl ReaderStarter {
                 )
             }
 
-            if pre_slice_this_file.as_ref().is_some_and(|x| x.len() == 0) {
+            if pre_slice_this_file.as_ref().is_some_and(|x| x.is_empty()) {
                 if verbose {
                     eprintln!("[ReaderStarter]: Stopping (pre_slice)")
                 }
@@ -147,38 +147,35 @@ impl ReaderStarter {
 
             // * This translates the `pre_slice` to physical offsets (i.e. apply before deleting rows).
             //   The slice remains the same if there are no row deletions.
-            let pre_slice_this_file: Option<PhysicalSlice> =
-                pre_slice_this_file.map(|pre_slice| match pre_slice {
-                    Slice::Positive { .. } => {
-                        PhysicalSlice::new(pre_slice, external_filter_mask.as_ref())
-                    },
-
+            let pre_slice_this_file: Option<PhysicalSlice> = pre_slice_this_file.map(|pre_slice| {
+                if pre_slice.is_positive() {
+                    PhysicalSlice::new(pre_slice, external_filter_mask.as_ref())
+                } else {
                     // This is hit here for NDJSON single file negative slice, we just passthrough
                     // in this case.
-                    Slice::Negative { .. } => {
-                        if external_filter_mask.is_some() {
-                            unimplemented!(
-                                "{pre_slice:?} {}",
-                                ExternalFilterMask::log_display(external_filter_mask.as_ref())
-                            )
-                        }
+                    if external_filter_mask.is_some() {
+                        unimplemented!(
+                            "{pre_slice:?} {}",
+                            ExternalFilterMask::log_display(external_filter_mask.as_ref())
+                        )
+                    }
 
-                        assert!(
-                            (extra_ops.row_index.is_none()
-                                || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
-                                && (external_filter_mask.is_none()
-                                    || reader_capabilities
-                                        .contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
-                        );
+                    assert!(
+                        (extra_ops.row_index.is_none()
+                            || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
+                            && (external_filter_mask.is_none()
+                                || reader_capabilities
+                                    .contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
+                    );
 
-                        PhysicalSlice {
-                            slice: pre_slice,
-                            // Note, this is not the correct starting position. The assertion above
-                            // should ensure this value is not used in post-apply.
-                            slice_start_position: RowCounter::default(),
-                        }
-                    },
-                });
+                    PhysicalSlice {
+                        slice: pre_slice,
+                        // Note, this is not the correct starting position. The assertion above
+                        // should ensure this value is not used in post-apply.
+                        slice_start_position: RowCounter::default(),
+                    }
+                }
+            });
 
             let row_index_this_file = {
                 let current_row_position = if let Some(current_row_position) = current_row_position
@@ -232,10 +229,8 @@ impl ReaderStarter {
                 } else if pre_slice_this_file.as_ref().is_some_and(|phys_slice| {
                     phys_slice
                         .slice
-                        .clone()
-                        .restrict_to_bounds(n_rows_in_file.num_physical_rows())
-                        .len()
-                        == 0
+                        .resolve(n_rows_in_file.num_physical_rows())
+                        .is_empty()
                 }) {
                     skip_read_reason = Some("0 rows after slice")
                 }
@@ -273,7 +268,7 @@ impl ReaderStarter {
                         panic!();
                     }
 
-                    let slice_end = pre_slice_this_file.as_ref().map(Slice::end_position);
+                    let slice_end = pre_slice_this_file.as_ref().and_then(Slice::end_position);
 
                     let get_row_count = async {
                         let num_physical_rows =

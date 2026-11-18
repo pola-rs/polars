@@ -316,12 +316,12 @@ pub(crate) fn node_stats_with_cache(
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(match slice {
                 None => inner,
-                Some((offset, len, _)) => inner.slice((*offset, *len)),
+                Some((slice, _)) => inner.slice(*slice),
             })
         },
-        IR::Slice { input, offset, len } => {
+        IR::Slice { input, slice } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            Some(inner.slice((*offset, *len as usize)))
+            Some(inner.slice(*slice))
         },
         IR::Union { inputs, options } => {
             let mut acc = NodeStats::of_rows(0.0);
@@ -719,7 +719,7 @@ fn one_row_per_group(
     keys: &[&PlSmallStr],
     sources: &[Option<&PlSmallStr>],
     ndv: Option<f64>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> NodeStats {
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
@@ -908,7 +908,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
 
 /// Rows left after applying `slice` to a relation of `rows` rows.
 fn sliced(rows: f64, slice: impl Into<Slice>) -> f64 {
-    let bounded = slice.into().restrict_to_bounds(rows as usize);
+    let bounded = slice.into().resolve(rows as usize);
     (bounded.len() as f64).max(MIN_CARDINALITY)
 }
 

@@ -669,3 +669,45 @@ def test_external_reader_hive_slice_ends_in_file_skipped_by_predicate(
         lf.head(8).filter(pl.col("p").is_in(["a", "c"])).collect(),
         pl.DataFrame({"x": range(5), "p": "a"}),
     )
+
+
+def test_external_reader_open_ended_pre_slice() -> None:
+    df = pl.DataFrame({"a": [0, 1, 2]})
+    pre_slices: list[tuple[int, int | None] | None] = []
+
+    class Reader(FileReader):
+        def n_rows_in_file(self, limit: int | None = None) -> int:
+            return df.height
+
+        def schema(self) -> SchemaDict:
+            return df.schema
+
+        def collect_batches(
+            self,
+            *,
+            columns: Sequence[str] = (),
+            row_index: tuple[str, int] | None = None,
+            pre_slice: tuple[int, int | None] | None = None,
+            filters: Sequence[FilterExpr] = (),
+            num_pipelines: int,
+        ) -> Iterator[pl.DataFrame]:
+            pre_slices.append(pre_slice)
+            if pre_slice is None:
+                yield df
+            else:
+                yield df.slice(*pre_slice)
+
+    class ReaderBuilder(FileReaderBuilder):
+        def reader_capabilities(self) -> ReaderCapabilities:
+            return ReaderCapabilities(pre_slice=True)
+
+        def build_file_reader(
+            self,
+            source: str | bytes,
+            multi_scan_context: dict[Any, Any],
+        ) -> FileReader:
+            return Reader()
+
+    q = pl.scan_external_reader(ReaderBuilder(), sources=["x"], schema=df.schema)
+    assert_frame_equal(q.slice(1).collect(), df.slice(1))
+    assert pre_slices == [(1, None)]

@@ -273,7 +273,7 @@ impl EvalExpr {
                 }
                 let flush_len = rel;
                 polars_ensure!(flush_len > 0, ComputeError: "list elements larger than IdxSize::MAX are not supported");
-                let batch = ca.slice(batch_row_start as i64, flush_len);
+                let batch = ca.slice((batch_row_start, flush_len));
                 let batch_columns = slice_columns(columns, batch_row_start, flush_len);
                 batch_results.push_back(self.evaluate_on_list_chunked(
                     &batch,
@@ -286,7 +286,7 @@ impl EvalExpr {
             }
             // Flush the final batch.
             let batch_len = ca.len() - batch_row_start;
-            let batch = ca.slice(batch_row_start as i64, batch_len);
+            let batch = ca.slice((batch_row_start, batch_len));
             let batch_columns = slice_columns(columns, batch_row_start, batch_len);
             batch_results.push_back(self.evaluate_on_list_chunked(
                 &batch,
@@ -492,7 +492,7 @@ impl EvalExpr {
 
             while batch_row_start < ca.len() {
                 let batch_len = (ca.len() - batch_row_start).min(rows_per_batch);
-                let batch = ca.slice(batch_row_start as i64, batch_len);
+                let batch = ca.slice((batch_row_start, batch_len));
                 let batch_columns = slice_columns(columns, batch_row_start, batch_len);
                 batch_results.push_back(self.evaluate_on_array_chunked(
                     &batch,
@@ -976,6 +976,6 @@ impl PhysicalExpr for EvalExpr {
 fn slice_columns(columns: &[Column], offset: usize, length: usize) -> Vec<Column> {
     columns
         .iter()
-        .map(|c| c.slice(offset as i64, length))
+        .map(|c| c.slice((offset, length)))
         .collect()
 }

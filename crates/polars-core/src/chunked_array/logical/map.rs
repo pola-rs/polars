@@ -1024,7 +1024,7 @@ mod test {
 
     #[test]
     fn sliced_map_windows_flat_access() {
-        let sliced = three_row_map().into_series().slice(1, 2);
+        let sliced = three_row_map().into_series().slice((1usize, 2));
         let sliced = sliced.map().unwrap();
 
         // Storage retains all entries; flat access respects the slice.
@@ -1055,7 +1055,7 @@ mod test {
         let dtype = map_dtype(DataType::String, DataType::Int64);
         assert!(MapChunked::try_from_storage(dtype.clone(), storage.clone()).is_err());
 
-        let map = MapChunked::try_from_storage(dtype, storage.slice(1, 2)).unwrap();
+        let map = MapChunked::try_from_storage(dtype, storage.slice((1usize, 2))).unwrap();
         assert_eq!(map.len(), 2);
         assert_no_live_null_entries_or_keys(&map);
         assert_eq!(
@@ -1066,7 +1066,7 @@ mod test {
 
     #[test]
     fn with_values_round_trip_on_a_sliced_map() {
-        let sliced = three_row_map().into_series().slice(1, 2);
+        let sliced = three_row_map().into_series().slice((1usize, 2));
         let sliced = sliced.map().unwrap();
         let values = sliced.values().cast(&DataType::Float64).unwrap();
         let out = sliced.with_values(&values).unwrap();
@@ -1080,7 +1080,7 @@ mod test {
         // Casting must use the same offset window.
         let expected = three_row_map()
             .into_series()
-            .slice(1, 2)
+            .slice((1usize, 2))
             .cast(&dtype)
             .unwrap();
         assert!(
@@ -1393,7 +1393,7 @@ mod test {
         let nulls = Series::full_null(PlSmallStr::from_static("m"), 3, &dtype);
         assert!(compact_null_map_rows(nulls.map().unwrap().storage().list().unwrap()).is_none());
 
-        let sliced = map.into_series().slice(1, 2);
+        let sliced = map.into_series().slice((1usize, 2));
         assert!(
             compact_null_map_rows(sliced.map().unwrap().storage().list().unwrap()).is_none(),
             "entries outside the offsets are not hidden by null rows"
@@ -1429,7 +1429,7 @@ mod test {
                 three_row_map().dtype().clone(),
                 three_row_map()
                     .into_series()
-                    .slice(0, 1)
+                    .slice(Slice::head(1))
                     .get(0)
                     .unwrap()
                     .into_static(),

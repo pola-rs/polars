@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::CustomIterTools;
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 use rayon::prelude::*;
 
 use super::*;
@@ -27,22 +27,25 @@ fn extract_offset(offset: &Column, expr: &Expr) -> PolarsResult<i64> {
     )
 }
 
-fn extract_length(length: &Column, expr: &Expr) -> PolarsResult<usize> {
+fn extract_length(length: &Column, expr: &Expr) -> PolarsResult<Option<usize>> {
     polars_ensure!(
         length.len() <= 1, expr = expr, ComputeError:
         "invalid argument to slice; expected a length literal, got series of length {}",
         length.len()
     );
     match length.get(0).unwrap() {
-        Null => Ok(usize::MAX),
-        v => v.extract().ok_or_else(
+        Null => Ok(None),
+        v => v.extract().map(Some).ok_or_else(
             || polars_err!(expr = expr, ComputeError: "unable to extract length from {:?}", length),
         ),
     }
 }
 
-fn extract_args(offset: &Column, length: &Column, expr: &Expr) -> PolarsResult<(i64, usize)> {
-    Ok((extract_offset(offset, expr)?, extract_length(length, expr)?))
+fn extract_args(offset: &Column, length: &Column, expr: &Expr) -> PolarsResult<Option<Slice>> {
+    Ok(Slice::new(
+        extract_offset(offset, expr)?,
+        extract_length(length, expr)?,
+    ))
 }
 
 fn check_argument(arg: &Column, groups: &GroupsType, name: &str, expr: &Expr) -> PolarsResult<()> {
@@ -62,21 +65,21 @@ fn check_argument(arg: &Column, groups: &GroupsType, name: &str, expr: &Expr) ->
     Ok(())
 }
 
-fn slice_groups_idx(offset: i64, length: usize, mut first: IdxSize, idx: &[IdxSize]) -> IdxItem {
-    let (offset, len) = slice_offsets(offset, length, idx.len());
+fn slice_groups_idx(slice: Option<Slice>, mut first: IdxSize, idx: &[IdxSize]) -> IdxItem {
+    let range = slice.map_or(0..idx.len(), |s| s.resolve(idx.len()));
 
     // If slice isn't out of bounds, we replace first.
     // If slice is oob, the `idx` vec will be empty and `first` will be ignored
-    if let Some(f) = idx.get(offset) {
+    if let Some(f) = idx.get(range.start) {
         first = *f;
     }
     // This is a clone of the vec, which is unfortunate. Maybe we have a `sliceable` unitvec one day.
-    (first, IdxVec::from_slice(&idx[offset..offset + len]))
+    (first, IdxVec::from_slice(&idx[range]))
 }
 
-fn slice_groups_slice(offset: i64, length: usize, first: IdxSize, len: IdxSize) -> [IdxSize; 2] {
-    let (offset, len) = slice_offsets(offset, length, len as usize);
-    [first + offset as IdxSize, len as IdxSize]
+fn slice_groups_slice(slice: Option<Slice>, first: IdxSize, len: IdxSize) -> [IdxSize; 2] {
+    let range = slice.map_or(0..len as usize, |s| s.resolve(len as usize));
+    [first + range.start as IdxSize, range.len() as IdxSize]
 }
 
 impl PhysicalExpr for SliceExpr {
@@ -94,9 +97,12 @@ impl PhysicalExpr for SliceExpr {
         let offset = &results[0];
         let length = &results[1];
         let series = &results[2];
-        let (offset, length) = extract_args(offset, length, &self.expr)?;
+        let slice = extract_args(offset, length, &self.expr)?;
 
-        Ok(series.slice(offset, length))
+        Ok(match slice {
+            Some(slice) => series.slice(slice),
+            None => series.clone(),
+        })
     }
 
     fn evaluate_on_groups_impl<'a>(
@@ -126,10 +132,13 @@ impl PhysicalExpr for SliceExpr {
         use AggState::*;
         let groups = match (&ac_offset.state, &ac_length.state) {
             (LiteralScalar(offset), LiteralScalar(length)) => {
-                let (offset, length) = extract_args(offset, length, &self.expr)?;
+                let slice = extract_args(offset, length, &self.expr)?;
 
                 if let LiteralScalar(s) = ac.agg_state() {
-                    let s1 = s.slice(offset, length);
+                    let s1 = match slice {
+                        Some(slice) => s.slice(slice),
+                        None => s.clone(),
+                    };
                     ac.with_literal(s1);
                     ac.aggregated();
                     return Ok(ac);
@@ -144,7 +153,7 @@ impl PhysicalExpr for SliceExpr {
                     GroupsType::Idx(groups) => {
                         let mut sliced: GroupsIdx = groups
                             .iter()
-                            .map(|(first, idx)| slice_groups_idx(offset, length, first, idx))
+                            .map(|(first, idx)| slice_groups_idx(slice, first, idx))
                             .collect();
                         sliced.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
                         GroupsType::Idx(sliced)
@@ -156,7 +165,7 @@ impl PhysicalExpr for SliceExpr {
                     } => {
                         let groups = groups
                             .iter()
-                            .map(|&[first, len]| slice_groups_slice(offset, length, first, len))
+                            .map(|&[first, len]| slice_groups_slice(slice, first, len))
                             .collect_trusted();
                         GroupsType::new_slice(groups, *overlapping, *monotonic)
                     },
@@ -183,7 +192,11 @@ impl PhysicalExpr for SliceExpr {
                             .iter()
                             .zip(length.into_no_null_iter())
                             .map(|((first, idx), length)| {
-                                slice_groups_idx(offset, length as usize, first, idx)
+                                slice_groups_idx(
+                                    Some(Slice::from((offset, length as usize))),
+                                    first,
+                                    idx,
+                                )
                             })
                             .collect();
                         sliced.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
@@ -198,7 +211,11 @@ impl PhysicalExpr for SliceExpr {
                             .iter()
                             .zip(length.into_no_null_iter())
                             .map(|(&[first, len], length)| {
-                                slice_groups_slice(offset, length as usize, first, len)
+                                slice_groups_slice(
+                                    Some(Slice::from((offset, length as usize))),
+                                    first,
+                                    len,
+                                )
                             })
                             .collect_trusted();
                         GroupsType::new_slice(groups, *overlapping, false)
@@ -226,7 +243,7 @@ impl PhysicalExpr for SliceExpr {
                             .iter()
                             .zip(offset.into_no_null_iter())
                             .map(|((first, idx), offset)| {
-                                slice_groups_idx(offset, length, first, idx)
+                                slice_groups_idx(Slice::new(offset, length), first, idx)
                             })
                             .collect();
                         sliced.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
@@ -241,7 +258,7 @@ impl PhysicalExpr for SliceExpr {
                             .iter()
                             .zip(offset.into_no_null_iter())
                             .map(|(&[first, len], offset)| {
-                                slice_groups_slice(offset, length, first, len)
+                                slice_groups_slice(Slice::new(offset, length), first, len)
                             })
                             .collect_trusted();
                         GroupsType::new_slice(groups, *overlapping, false)
@@ -275,7 +292,11 @@ impl PhysicalExpr for SliceExpr {
                             .zip(offset.into_no_null_iter())
                             .zip(length.into_no_null_iter())
                             .map(|(((first, idx), offset), length)| {
-                                slice_groups_idx(offset, length as usize, first, idx)
+                                slice_groups_idx(
+                                    Some(Slice::from((offset, length as usize))),
+                                    first,
+                                    idx,
+                                )
                             })
                             .collect();
                         sliced.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
@@ -291,7 +312,11 @@ impl PhysicalExpr for SliceExpr {
                             .zip(offset.into_no_null_iter())
                             .zip(length.into_no_null_iter())
                             .map(|((&[first, len], offset), length)| {
-                                slice_groups_slice(offset, length as usize, first, len)
+                                slice_groups_slice(
+                                    Some(Slice::from((offset, length as usize))),
+                                    first,
+                                    len,
+                                )
                             })
                             .collect_trusted();
                         GroupsType::new_slice(groups, *overlapping, false)

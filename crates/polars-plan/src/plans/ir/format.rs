@@ -250,8 +250,9 @@ impl<'a> IRDisplay<'a> {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 let name = if let Some(slice) = options.slice {
                     format!(
-                        "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                        options.maintain_order
+                        "SLICED UNION[maintain_order: {0}]: {1}",
+                        options.maintain_order,
+                        slice.fmt_tuple()
                     )
                 } else {
                     format!("UNION[maintain_order: {0}]", options.maintain_order)
@@ -960,12 +961,12 @@ pub fn write_ir_non_recursive(
 
             Ok(())
         },
-        IR::Slice {
-            input: _,
-            offset,
-            len,
-        } => {
-            write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", "")
+        IR::Slice { input: _, slice } => {
+            let (offset, len) = slice.to_signed_offset_len();
+            match len {
+                Some(len) => write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", ""),
+                None => write!(f, "{:indent$}SLICE[offset: {offset}, len: ∞]", ""),
+            }
         },
         IR::Filter {
             input: _,
@@ -1080,11 +1081,10 @@ pub fn write_ir_non_recursive(
                 f.write_char('[')?;
 
                 let mut comma = false;
-                if let Some((o, l, dyn_pred)) = slice {
+                if let Some((s, dyn_pred)) = slice {
+                    write!(f, "slice: {}", s.fmt_tuple())?;
                     if let Some(dyn_pred) = &dyn_pred {
-                        write!(f, "slice: ({o}, {l}, {dyn_pred:?})")?;
-                    } else {
-                        write!(f, "slice: ({o}, {l})")?;
+                        write!(f, ", {dyn_pred:?}")?;
                     }
                     comma = true;
                 }
@@ -1221,8 +1221,9 @@ pub fn write_ir_non_recursive(
         IR::Union { inputs: _, options } => {
             let name = if let Some(slice) = options.slice {
                 format!(
-                    "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                    options.maintain_order
+                    "SLICED UNION[maintain_order: {0}]: {1}",
+                    options.maintain_order,
+                    slice.fmt_tuple()
                 )
             } else {
                 format!("UNION[maintain_order: {0}]", options.maintain_order)

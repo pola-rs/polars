@@ -113,12 +113,12 @@ pub struct PyFileOptions {
 
 #[pymethods]
 impl PyFileOptions {
+    // TODO: @3.0: Expose a slice that runs to the end with a `None` length.
     #[getter]
     fn n_rows(&self) -> Option<(i64, IdxSize)> {
         self.inner
             .pre_slice
-            .clone()
-            .map(|slice| slice.to_signed_offset_len())
+            .map(|slice| slice.to_legacy_signed_offset_len())
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {
@@ -581,12 +581,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             }
             .into_py_any(py)
         },
-        IR::Slice { input, offset, len } => Slice {
-            input: input.0,
-            offset: *offset,
-            len: *len,
-        }
-        .into_py_any(py),
+        IR::Slice { input, slice } => {
+            // TODO: @3.0: Expose a slice that runs to the end with a `None` length.
+            let (offset, len) = slice.to_legacy_signed_offset_len();
+            Slice {
+                input: input.0,
+                offset,
+                len,
+            }
+            .into_py_any(py)
+        },
         IR::Filter { input, predicate } => Filter {
             input: input.0,
             predicate: predicate.into(),
@@ -701,9 +705,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: slice
-                .as_ref()
-                .map(|t| (t.0, t.1, t.2.as_ref().map(|p| p.id().as_u128()))),
+            slice: slice.as_ref().map(|(slice, dyn_pred)| {
+                let (offset, len) = slice.to_legacy_signed_offset_len();
+                (
+                    offset,
+                    len as usize,
+                    dyn_pred.as_ref().map(|p| p.id().as_u128()),
+                )
+            }),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {
@@ -834,7 +843,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             },
                         },
                         options.args.nulls_equal,
-                        options.args.slice,
+                        legacy_slice(options.args.slice),
                         options.args.suffix().as_str(),
                         options.args.coalesce.coalesce(how),
                         Into::<&str>::into(options.args.maintain_order),
@@ -885,7 +894,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     },
                 )?,
                 options.maintain_order,
-                options.slice,
+                legacy_slice(options.slice),
             )
                 .into_py_any(py)?,
         }
@@ -979,7 +988,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
             // Remaining options are implementation detail, not logical
-            slice: options.slice,
+            slice: legacy_slice(options.slice),
             rows: options.rows,
             maintain_order: options.maintain_order,
         }
@@ -1035,4 +1044,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         },
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
+}
+
+// TODO: @3.0: Expose a slice that runs to the end with a `None` length.
+pub(crate) fn legacy_slice(slice: Option<polars_utils::slice_enum::Slice>) -> Option<(i64, usize)> {
+    slice.map(|slice| {
+        let (offset, len) = slice.to_legacy_signed_offset_len();
+        (offset, len as usize)
+    })
 }

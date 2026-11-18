@@ -10,7 +10,7 @@ use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::broadcast::{BroadcastLength, broadcast_len};
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 pub use scalar::ScalarColumn;
 
 use self::compare_inner::TotalOrdInner;
@@ -672,22 +672,19 @@ impl Column {
     pub fn head(&self, length: Option<usize>) -> Column {
         let len = length.unwrap_or(HEAD_DEFAULT_LENGTH);
         let len = usize::min(len, self.len());
-        self.slice(0, len)
+        self.slice(Slice::head(len))
     }
     pub fn tail(&self, length: Option<usize>) -> Column {
         let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
         let len = usize::min(len, self.len());
-        debug_assert!(len <= i64::MAX as usize);
-        self.slice(-(len as i64), len)
+        self.slice(Slice::tail(len))
     }
-    pub fn slice(&self, offset: i64, length: usize) -> Column {
+    pub fn slice(&self, slice: impl Into<Slice>) -> Column {
+        let slice = slice.into();
         match self {
-            Column::Series(s) => s.slice(offset, length).into(),
-            Column::Scalar(s) => {
-                let (_, length) = slice_offsets(offset, length, s.len());
-                s.resize(length).into()
-            },
-            Column::Dictionary(s) => s.slice(offset, length).into(),
+            Column::Series(s) => s.slice(slice).into(),
+            Column::Scalar(s) => s.resize(slice.resolve(s.len()).len()).into(),
+            Column::Dictionary(s) => s.slice(slice).into(),
         }
     }
 
@@ -711,10 +708,10 @@ impl Column {
                 )
             },
             Column::Dictionary(_) => {
-                let (split, _) = slice_offsets(offset, self.len(), self.len());
+                let split = Slice::new(offset, None).map_or(0, |s| s.resolve(self.len()).start);
                 (
-                    self.slice(0, split),
-                    self.slice(split as i64, self.len() - split),
+                    self.slice(Slice::head(split)),
+                    self.slice((split, self.len() - split)),
                 )
             },
             Column::Series(_) => {
@@ -1271,7 +1268,7 @@ impl Column {
             // @NOTE: Since the column is sorted, arg_unique can also take a fast path and
             // just do a single traversal.
             let arg_unique = slf
-                .slice(start as i64, (end - start) as usize)
+                .slice((start as usize, (end - start) as usize))
                 .arg_unique()
                 .unwrap();
 

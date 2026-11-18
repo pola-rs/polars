@@ -11,7 +11,10 @@ pub fn split_slice_at_file(
     match SplitSlicePosition::split_slice_at_file(
         current_row_offset,
         n_rows_this_file,
-        global_slice_start..global_slice_end,
+        (
+            global_slice_start,
+            Some(global_slice_end.saturating_sub(global_slice_start)),
+        ),
     ) {
         SplitSlicePosition::Overlapping(offset, len) => (offset, len),
         SplitSlicePosition::Before | SplitSlicePosition::After => (0, 0),
@@ -29,7 +32,7 @@ impl SplitSlicePosition {
     pub fn split_slice_at_file(
         current_row_offset: usize,
         n_rows_this_file: usize,
-        global_slice: std::ops::Range<usize>,
+        global_slice: (usize, Option<usize>),
     ) -> Self {
         // e.g.
         // slice: (start: 1, end: 2)
@@ -40,14 +43,17 @@ impl SplitSlicePosition {
         // in this example we want to include only file 1.
 
         let next_row_offset = current_row_offset + n_rows_this_file;
+        let (global_slice_start, global_slice_len) = global_slice;
+        let global_slice_end = global_slice_len.map(|len| global_slice_start.saturating_add(len));
 
-        if next_row_offset <= global_slice.start {
+        if next_row_offset <= global_slice_start {
             Self::Before
-        } else if current_row_offset >= global_slice.end {
+        } else if global_slice_end.is_some_and(|end| current_row_offset >= end) {
             Self::After
         } else {
-            let n_rows_to_skip = global_slice.start.saturating_sub(current_row_offset);
-            let n_excess_rows = next_row_offset.saturating_sub(global_slice.end);
+            let n_rows_to_skip = global_slice_start.saturating_sub(current_row_offset);
+            let n_excess_rows =
+                global_slice_end.map_or(0, |end| next_row_offset.saturating_sub(end));
 
             Self::Overlapping(
                 n_rows_to_skip,

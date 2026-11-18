@@ -592,7 +592,7 @@ pub fn slice_broadcast_list(
         let opt_length = lengths.get(if lengths.len() == 1 { 0 } else { index });
         let offset = opt_offset?;
         let length = opt_length.map_or(usize::MAX, |l| l as usize);
-        Some(single_list.slice(offset, length))
+        Some(single_list.slice((offset, length)))
     });
 
     let mut out: ListChunked = iter.collect_trusted();
