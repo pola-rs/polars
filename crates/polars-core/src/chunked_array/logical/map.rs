@@ -70,6 +70,7 @@ impl MapChunked {
             InvalidOperation: "expected `{storage_dtype}` storage for `{dtype}`, got `{}`",
             storage.dtype()
         );
+        let dtype = map_dtype_of_storage(storage.dtype());
 
         let storage = canonicalize_map_storage(&storage)?.unwrap_or(storage);
         Ok(Self { dtype, storage })
@@ -397,6 +398,7 @@ impl MapChunked {
             ComputeError: "Map entry transform produced `{}` storage instead of `{storage_dtype}`",
             storage.dtype(),
         );
+        let dtype = map_dtype_of_storage(storage.dtype());
 
         if cast_key {
             // Decimal rescaling can merge distinct keys even when schemas match.
@@ -406,6 +408,16 @@ impl MapChunked {
             Ok(unsafe { Self::from_storage_unchecked(dtype, storage) }.into_series())
         }
     }
+}
+
+/// The Map dtype of a checked `storage_dtype`, keeping its own categorical mapping, which dtype equality ignores.
+fn map_dtype_of_storage(storage_dtype: &DataType) -> DataType {
+    let DataType::List(entries) = storage_dtype else {
+        unreachable!("map storage is a list")
+    };
+    entries
+        .map_from_positional_entries_dtype()
+        .expect("map storage dtype checked")
 }
 
 /// Require named entry fields outside Arrow and Parquet, whose specifications define
@@ -1020,6 +1032,47 @@ mod test {
         // Formatting resolves all reachable codes.
         let _ = format!("{}", map.keys());
         let _ = format!("{}", map.into_series());
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    #[test]
+    fn map_dtype_keeps_the_storage_categorical_mapping() {
+        use polars_dtype::categorical::{CategoricalMapping, CategoricalPhysical, Categories};
+        use polars_utils::aliases::PlSeedableRandomStateQuality;
+
+        let cats = Categories::random(PlSmallStr::EMPTY, CategoricalPhysical::U32);
+        let keys = str_keys(&[Some("a"), Some("b")])
+            .cast(&DataType::from_categories(cats.clone()))
+            .unwrap();
+        let values = i64_values(&[Some(1), Some(2)]);
+        let storage = storage(&pack_map_entries(&keys, &values), &[0, 2], None);
+
+        // Equal to the keys' dtype, since categorical equality ignores the mapping.
+        let other_mapping = Arc::new(CategoricalMapping::with_hasher(
+            cats.physical().max_categories(),
+            PlSeedableRandomStateQuality::default(),
+        ));
+        let other_key = DataType::Categorical(cats.clone(), other_mapping);
+        let assert_own_mapping = |map: &MapChunked| {
+            let DataType::Categorical(_, mapping) = map.key_dtype() else {
+                panic!("expected a categorical key, got {}", map.key_dtype())
+            };
+            assert!(Arc::ptr_eq(mapping, &cats.mapping()));
+        };
+
+        let map =
+            MapChunked::try_from_storage(map_dtype(other_key.clone(), DataType::Int64), storage)
+                .unwrap();
+        assert_own_mapping(&map);
+
+        // A value-only cast keeps the keys without re-validating them.
+        let cast = map
+            .cast_with_options(
+                &map_dtype(other_key, DataType::Int32),
+                CastOptions::NonStrict,
+            )
+            .unwrap();
+        assert_own_mapping(cast.map().unwrap());
     }
 
     #[test]
