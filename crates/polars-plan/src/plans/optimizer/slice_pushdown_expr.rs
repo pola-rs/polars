@@ -32,6 +32,7 @@ impl ExprSlice {
                     .map(Some),
             }
             && let Some(slice) = Slice::new(offset, len)
+            && slice.is_within_i64()
         {
             return Self::Extracted(slice);
         };

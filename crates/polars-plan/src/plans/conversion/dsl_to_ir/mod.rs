@@ -411,6 +411,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         },
         DslPlan::Slice { input, slice } => {
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(slice))?;
+            polars_ensure!(
+                slice.is_within_i64(),
+                OutOfBounds: "slice {slice:?} runs past row i64::MAX"
+            );
 
             if slice.is_empty() {
                 let input_schema = ctxt
@@ -484,6 +488,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             mut sort_options,
         } => {
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(select))?;
+            polars_ensure!(
+                slice.is_none_or(|slice| slice.is_within_i64()),
+                OutOfBounds: "slice {slice:?} runs past row i64::MAX"
+            );
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
             // note: if given an Expr::Columns, count the individual cols

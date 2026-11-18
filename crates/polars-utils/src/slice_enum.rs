@@ -132,6 +132,19 @@ impl Slice {
         }
     }
 
+    /// Return whether the signed offset and the end of the slice fit in an `i64`.
+    pub fn is_within_i64(&self) -> bool {
+        match *self {
+            Slice::Positive { .. } => self
+                .end_position()
+                .is_some_and(|end| i64::try_from(end).is_ok()),
+            Slice::PositiveUnbounded { offset } => i64::try_from(offset.get()).is_ok(),
+            Slice::Negative {
+                offset_from_end, ..
+            } => 0i64.checked_sub_unsigned(offset_from_end as u64).is_some(),
+        }
+    }
+
     /// Return the smallest `head` or `tail` that contains the slice, or `None` if the slice
     /// may need every row.
     pub fn bounding_limit(&self) -> Option<Slice> {
@@ -235,7 +248,7 @@ impl Slice {
     }
 
     /// Return the single slice that selects the same rows as applying `self` and then `next`,
-    /// or `None` if that cannot be known statically or if its offset does not fit in an `i64`.
+    /// or `None` if that cannot be known statically or if it does not fit in an `i64`.
     pub fn reslice(self, next: Slice) -> Option<Slice> {
         use Slice::*;
 
@@ -290,8 +303,7 @@ impl Slice {
         if combined.is_empty() {
             return Some(Self::EMPTY);
         }
-        (combined.is_negative() || i64::try_from(combined.positive_offset()).is_ok())
-            .then_some(combined)
+        combined.is_within_i64().then_some(combined)
     }
 
     /// Return the smallest slice that contains both `a` and `b` at any height, or `None` if
