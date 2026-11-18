@@ -5,6 +5,7 @@ import math
 from fractions import Fraction
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -286,11 +287,20 @@ def test_bin_intervals_uniform_float_extremes() -> None:
 
 @pytest.mark.parametrize(("lo", "n_bins"), [(7.391, 3), (6.2, 4)])
 @pytest.mark.parametrize("right_closed", [False, True])
+@pytest.mark.parametrize(
+    ("dtype", "np_dtype"),
+    [(pl.Float16, np.float16), (pl.Float32, np.float32), (pl.Float64, np.float64)],
+)
 def test_bin_intervals_uniform_float_span_of_one_ulp(
-    lo: float, n_bins: int, right_closed: bool
+    lo: float,
+    n_bins: int,
+    right_closed: bool,
+    dtype: pl.DataType,
+    np_dtype: type[np.floating[Any]],
 ) -> None:
-    hi = math.nextafter(lo, math.inf)
-    s = pl.Series("a", [lo, hi])
+    lo_np = np_dtype(lo)
+    lo, hi = float(lo_np), float(np.nextafter(lo_np, np_dtype(math.inf)))
+    s = pl.Series("a", [lo, hi], dtype=dtype)
 
     result = s.bin_intervals(
         n_bins, labels=False, include_intervals=True, right_closed=right_closed

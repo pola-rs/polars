@@ -440,27 +440,20 @@ pub fn bin_interval_breaks(
         let Some((min, max)) = f.f64()?.min_max() else {
             return Ok(None);
         };
-        let breaks: Vec<f64> = if min == max {
-            // Special case so that we match the integer path -- we would round otherwise
-            vec![min; n_breaks]
-        } else {
-            // The interpolation can round out of order when `max` is a few ulps above `min`.
-            // Keeping each break at or above the previous one, and within `[min, max)` when
-            // right-closed or `(min, max]` when left-closed, keeps the breaks sorted and `min`
-            // and `max` in the first and last bin.
-            let (mut lo, hi) = if right_closed {
-                (min, max.next_down())
-            } else {
-                (min.next_up(), max)
-            };
-            (1..=n_breaks)
-                .map(|i| {
-                    let t = i as f64 / n_bins as f64;
-                    lo = (min * (1.0 - t) + max * t).max(lo).min(hi);
-                    lo
-                })
-                .collect()
-        };
+        let lerp: Vec<f64> = (1..=n_breaks)
+            .map(|i| {
+                let t = i as f64 / n_bins as f64;
+                min * (1.0 - t) + max * t
+            })
+            .collect();
+        // Fix the breaks up after rounding them to the input dtype, which can undo a fixup in
+        // `f64`. `min` and `max` come from the column, so they and the fixed breaks round-trip.
+        let narrowed = Float64Chunked::from_vec(s.name().clone(), lerp)
+            .into_series()
+            .cast(dtype)?
+            .cast(&DataType::Float64)?;
+        let mut breaks: Vec<f64> = narrowed.f64()?.into_no_null_iter().collect();
+        fix_float_breaks(&mut breaks, min, max, right_closed);
         return Float64Chunked::from_vec(s.name().clone(), breaks)
             .into_series()
             .cast(dtype)
@@ -469,6 +462,32 @@ pub fn bin_interval_breaks(
 
     let phys = s.to_physical_repr();
     let phys: &Series = phys.as_ref();
+/// Makes `breaks` non-decreasing and within `[min, max)` when right-closed or `(min, max]` when
+/// left-closed, so that `min` and `max` land in the first and last bin.
+///
+/// A break that is out of order, out of range or NaN, as the interpolation produces over a span of
+/// a few ulps or of `[-inf, inf]`, repeats the break before it (from `min`) when right-closed, or
+/// the one after it (from `max`) when left-closed.
+fn fix_float_breaks(breaks: &mut [f64], min: f64, max: f64, right_closed: bool) {
+    if right_closed {
+        let mut prev = min;
+        for b in breaks.iter_mut() {
+            if *b >= prev && *b < max {
+                prev = *b;
+            }
+            *b = prev;
+        }
+    } else {
+        let mut next = max;
+        for b in breaks.iter_mut().rev() {
+            if *b <= next && *b > min {
+                next = *b;
+            }
+            *b = next;
+        }
+    }
+}
+
     let breaks = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
         type N = <$T as PolarsNumericType>::Native;
         let ca: &ChunkedArray<$T> = phys.as_ref().as_ref();
