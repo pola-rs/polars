@@ -153,9 +153,21 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         if df.height() == 0 {
             return Ok(Bitmap::new());
         }
-        let array = self
-            .skip_batch_predicate
-            .evaluate(df, &Default::default())?;
+        let array = match self.skip_batch_predicate.evaluate(df, &Default::default()) {
+            Ok(array) => array,
+            // Statistics are bounds rather than values of the batch (e.g. truncated strings),
+            // which the predicate may fail on. Only skip the batches it can be evaluated for.
+            Err(_) if df.height() > 1 => {
+                return (0..df.height())
+                    .map(|i| {
+                        Ok(self
+                            .evaluate_with_stat_df(&df.slice(i as i64, 1))?
+                            .get_bit(0))
+                    })
+                    .collect();
+            },
+            Err(_) => return Ok(Bitmap::new_zeroed(1)),
+        };
         let array = array.bool()?.rechunk();
         let array = array.downcast_as_array();
 
