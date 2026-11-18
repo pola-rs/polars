@@ -620,7 +620,12 @@ fn create_physical_expr_inner(
             // These make groups of their own, in which the columns are read from the rows of the
             // frame of the evaluation.
             let evaluation_has_subgroups = expr_arena.iter(evaluation).any(|(_, ae)| match ae {
-                AExpr::Over { .. } | AExpr::Eval { .. } => true,
+                AExpr::Over { .. } => true,
+                // A value per list is read from the rows if it is broadcast over the rows of a
+                // nested evaluation.
+                AExpr::Eval { expr, columns, .. } => {
+                    !columns.is_empty() && !is_scalar_ae(*expr, expr_arena)
+                },
                 #[cfg(feature = "dynamic_group_by")]
                 AExpr::Rolling { .. } => true,
                 #[cfg(feature = "dtype-struct")]

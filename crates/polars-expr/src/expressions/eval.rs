@@ -169,7 +169,8 @@ pub struct EvalExpr {
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
     evaluation_is_fallible: bool,
-    /// Whether the evaluation makes groups of its own, such as those of a window.
+    /// Whether the evaluation makes groups of its own, such as those of a window, or broadcasts
+    /// columns over the rows of a nested evaluation.
     evaluation_has_subgroups: bool,
     inputs_are_elementwise: bool,
 }
