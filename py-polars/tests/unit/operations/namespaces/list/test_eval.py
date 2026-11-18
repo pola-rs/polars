@@ -889,6 +889,30 @@ def test_list_eval_columns(engine: EngineType) -> None:
         "b": [[[11, 12]], [[]]],
     }
 
+    # A value per list read in a nested `eval` on the rows of each list.
+    lf = pl.LazyFrame({"n": [[[1], [2]]], "x": [10]})
+    out = lf.select(
+        pl.col("n").list.eval(
+            pl.element().reverse().list.eval(pl.element() + pl.col("x"))
+        )
+    ).collect(engine=engine)
+    assert out["n"].to_list() == [[[12], [11]]]
+
+    # Reductions on the value of an empty list or a null value.
+    lf = pl.LazyFrame({"l": [[], [1, 2]], "x": [10, 20], "b": [None, True]})
+    out = lf.select(
+        unique=pl.col("l").list.agg(pl.col("x").unique()),
+        drop_nulls=pl.col("l").list.agg(pl.col("x").drop_nulls()),
+        is_empty=pl.col("l").list.agg(pl.col("x").is_empty()),
+        all=pl.col("l").list.agg(pl.col("b").all()),
+    ).collect(engine=engine)
+    assert out.to_dict(as_series=False) == {
+        "unique": [[10], [20]],
+        "drop_nulls": [[10], [20]],
+        "is_empty": [False, False],
+        "all": [True, True],
+    }
+
     with pytest.raises(pl.exceptions.InvalidOperationError, match="index column"):
         lf.select(
             pl.col("l").list.eval(pl.element().sum().rolling(pl.col("x"), period="1i"))
@@ -985,3 +1009,9 @@ def test_list_eval_columns_group_by() -> None:
         "lit": [[[11, 12], [21, 22]], [[31, 32]]],
         "lit_first": [[11, 12], [31, 32]],
     }
+
+
+def test_list_agg_unique_of_first() -> None:
+    df = pl.DataFrame({"l": [[], [1, 2]]})
+    out = df.select(pl.col("l").list.agg(pl.element().first().unique()))
+    assert out["l"].to_list() == [[None], [1]]

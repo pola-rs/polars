@@ -365,6 +365,7 @@ impl EvalExpr {
 
         // Fast path. Groups are pointing to the same offsets in the data buffer.
         if flat_naive.len() == flattened_len
+            && ac.update_groups == UpdateGroups::No
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
             && !(is_agg && self.evaluation_is_scalar)
         {
@@ -795,67 +796,89 @@ impl PhysicalExpr for EvalExpr {
             return Ok(input);
         }
 
+        let is_per_group = |s: &AggState| {
+            matches!(
+                s,
+                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+            )
+        };
+        let is_flat = |ac: &AggregationContext| {
+            matches!(
+                ac.agg_state(),
+                AggState::NotAggregated(_) | AggState::LiteralScalar(_)
+            ) && matches!(ac.update_groups, UpdateGroups::No)
+        };
+        let per_group_values = |ac: &AggregationContext| {
+            let c = ac.flat_naive();
+            if c.len() == 1 {
+                c.new_from_index(0, groups.len())
+            } else {
+                c.into_owned()
+            }
+        };
+        let mut column_acs = self
+            .columns
+            .iter()
+            .map(|c| c.evaluate_on_groups(df, groups, state))
+            .collect::<PolarsResult<Vec<_>>>()?;
+
         // `values` are the rows the evaluation runs on, with a value per row in each of
         // `columns`. If `lists` is set, these are the rows of all groups in order, as in `lists`.
         let mut lists = None;
         let mut per_group = false;
         let (values, columns) = if self.columns.is_empty() {
             (input.flat_naive().into_owned(), Vec::new())
-        } else if let Some(columns) = self.columns_per_group(&input, df, groups, state)? {
+        } else if is_per_group(input.agg_state())
+            && column_acs.iter().all(|ac| is_per_group(ac.agg_state()))
+        {
             // A value per group, such as an `eval` on the columns of an enclosing `eval`.
             per_group = true;
-            let values = input.flat_naive().into_owned();
-            let values = if values.len() == 1 {
-                values.new_from_index(0, groups.len())
-            } else {
-                values
+            let columns = column_acs.iter().map(per_group_values).collect();
+            (per_group_values(&input), columns)
+        } else if self.inputs_are_elementwise && is_flat(&input) && column_acs.iter().all(is_flat) {
+            // A literal is the same for every row of `df`.
+            let flat = |ac: &AggregationContext| match ac.agg_state() {
+                AggState::LiteralScalar(c) => c.new_from_index(0, df.height()),
+                _ => ac.flat_naive().into_owned(),
             };
-            (values, columns)
+            let columns = column_acs.iter().map(flat).collect();
+            (flat(&input), columns)
         } else {
-            match input.agg_state() {
-                AggState::NotAggregated(_) | AggState::LiteralScalar(_)
-                    if self.inputs_are_elementwise
-                        && matches!(input.update_groups, UpdateGroups::No) =>
-                {
-                    let columns = self
-                        .columns
-                        .iter()
-                        .map(|c| c.evaluate(df, state))
-                        .collect::<PolarsResult<Vec<_>>>()?;
-                    // A literal is the same for every row of `df`.
-                    let values = match input.agg_state() {
-                        AggState::LiteralScalar(c) => c.new_from_index(0, df.height()),
-                        _ => input.flat_naive().into_owned(),
-                    };
-                    (values, columns)
-                },
-                AggState::AggregatedScalar(_) => return Err(unsupported()),
-                AggState::NotAggregated(_)
-                | AggState::AggregatedList(_)
-                | AggState::LiteralScalar(_) => {
-                    let input_lists = input
-                        .aggregated_as_list()
-                        .into_owned()
-                        .rechunk()
-                        .into_owned();
-                    let lengths = input_lists.offsets()?;
-                    let columns = self
-                        .columns
-                        .iter()
-                        .map(|c| {
-                            let mut ac = c.evaluate_on_groups(df, groups, state)?;
-                            let c_lists = ac.aggregated_as_list().rechunk().into_owned();
-                            if c_lists.offsets()?.lengths().ne(lengths.lengths()) {
-                                return Err(unsupported());
-                            }
-                            Ok(c_lists.get_inner().into_column())
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()?;
-                    let values = input_lists.get_inner().into_column();
-                    lists = Some(input_lists);
-                    (values, columns)
-                },
+            if let AggState::AggregatedScalar(_) = input.agg_state() {
+                return Err(unsupported());
             }
+            let input_lists = input
+                .aggregated_as_list()
+                .into_owned()
+                .rechunk()
+                .into_owned();
+            let offsets = input_lists.offsets()?;
+            let mut scalar_idxs = Vec::new();
+            let mut columns = Vec::with_capacity(column_acs.len());
+            for ac in &mut column_acs {
+                if is_per_group(ac.agg_state()) {
+                    scalar_idxs.push(columns.len());
+                    columns.push(per_group_values(ac));
+                } else {
+                    let c_lists = ac.aggregated_as_list().rechunk().into_owned();
+                    if c_lists.offsets()?.lengths().ne(offsets.lengths()) {
+                        return Err(unsupported());
+                    }
+                    columns.push(c_lists.get_inner().into_column());
+                }
+            }
+            // Repeat the value of each group for each of its rows.
+            if !scalar_idxs.is_empty() {
+                let scalars: Vec<_> = scalar_idxs.iter().map(|i| columns[*i].clone()).collect();
+                let height = (*offsets.last() - *offsets.first()) as usize;
+                let repeated = repeat_rows(&scalars, offsets.lengths(), height)?;
+                for (i, c) in scalar_idxs.iter().zip(repeated.into_columns()) {
+                    columns[*i] = c;
+                }
+            }
+            let values = input_lists.get_inner().into_column();
+            lists = Some(input_lists);
+            (values, columns)
         };
 
         let out = match self.variant {
@@ -902,41 +925,6 @@ impl PhysicalExpr for EvalExpr {
 
     fn is_scalar(&self) -> bool {
         self.is_scalar
-    }
-}
-
-impl EvalExpr {
-    /// The columns with a value per group, if `input` and all columns have a value per group.
-    fn columns_per_group(
-        &self,
-        input: &AggregationContext,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Option<Vec<Column>>> {
-        let is_per_group = |s: &AggState| {
-            matches!(
-                s,
-                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
-            )
-        };
-        if !is_per_group(input.agg_state()) {
-            return Ok(None);
-        }
-        let mut columns = Vec::with_capacity(self.columns.len());
-        for c in &self.columns {
-            let ac = c.evaluate_on_groups(df, groups, state)?;
-            if !is_per_group(ac.agg_state()) {
-                return Ok(None);
-            }
-            let column = ac.flat_naive().into_owned();
-            columns.push(if column.len() == 1 {
-                column.new_from_index(0, groups.len())
-            } else {
-                column
-            });
-        }
-        Ok(Some(columns))
     }
 }
 

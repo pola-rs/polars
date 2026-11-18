@@ -97,3 +97,11 @@ def test_cumulative_eval_columns(min_samples: int) -> None:
     )
     expected = [11, 23, 36] if min_samples == 0 else [None, 23, 36]
     assert out["v"].to_list() == expected
+
+
+def test_cumulative_eval_nested_eval_columns() -> None:
+    df = pl.DataFrame({"l": [[], [1, 2]], "x": [10, 20]})
+    out = df.select(
+        pl.col("l").cumulative_eval(pl.element().list.agg(pl.col("x")).sum())
+    )
+    assert out["l"].to_list() == [10, 40]

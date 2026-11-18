@@ -3818,3 +3818,16 @@ def test_group_by_literal_agg_empty_groups_categorical_30326() -> None:
     # The sorted flag sits on the physical, which `flags` does not show.
     assert v.n_unique() == 2
     assert v.unique().len() == 2
+
+
+def test_group_by_reduce_value_per_group() -> None:
+    df = pl.DataFrame({"g": [1, 2, 2], "b": [None, True, False]})
+    out = df.group_by("g", maintain_order=True).agg(
+        all=pl.col("b").first().all(),
+        is_empty=pl.col("b").first().is_empty(ignore_nulls=True),
+    )
+    assert out.to_dict(as_series=False) == {
+        "g": [1, 2],
+        "all": [True, True],
+        "is_empty": [True, False],
+    }
