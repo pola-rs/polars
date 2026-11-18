@@ -115,6 +115,8 @@ pub struct EvalColumns {
     /// The address of the groups of the evaluation, to tell them apart from groups made inside
     /// it, such as those of a window.
     pub groups: usize,
+    /// Whether the frame of the evaluation has the columns with a row per element.
+    pub has_rows: bool,
 }
 
 /// State/ cache that is maintained during the Execution of the physical plan.

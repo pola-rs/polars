@@ -62,6 +62,7 @@ fn eval_columns(
     columns: &[Column],
     validity: Option<&Bitmap>,
     groups: &GroupPositions,
+    has_rows: bool,
 ) -> PolarsResult<Option<EvalColumns>> {
     let Some(first) = columns.first() else {
         return Ok(None);
@@ -75,6 +76,7 @@ fn eval_columns(
     Ok(Some(EvalColumns {
         columns: DataFrame::new(height, columns)?,
         groups: groups as *const GroupPositions as usize,
+        has_rows,
     }))
 }
 
@@ -349,7 +351,7 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
-        state.eval_columns = Arc::new(eval_columns(columns, validity.as_ref(), &groups)?);
+        state.eval_columns = Arc::new(eval_columns(columns, validity.as_ref(), &groups, true)?);
         state.element = Arc::new(Some((flattened, validity.clone())));
 
         let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
@@ -555,7 +557,7 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
-        state.eval_columns = Arc::new(eval_columns(columns, validity.as_ref(), &groups)?);
+        state.eval_columns = Arc::new(eval_columns(columns, validity.as_ref(), &groups, true)?);
         state.element = Arc::new(Some((flattened, validity.clone())));
 
         let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
@@ -682,7 +684,7 @@ impl EvalExpr {
         let df = DataFrame::empty_with_height(input.len());
 
         let mut state = state.clone();
-        state.eval_columns = Arc::new(eval_columns(columns, deposit.as_ref(), &groups)?);
+        state.eval_columns = Arc::new(eval_columns(columns, deposit.as_ref(), &groups, false)?);
         state.element = Arc::new(Some((flattened, validity)));
 
         let agg = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
@@ -816,6 +818,11 @@ impl PhysicalExpr for EvalExpr {
                 c.into_owned()
             }
         };
+        let frame_has_rows = state
+            .eval_columns
+            .as_ref()
+            .as_ref()
+            .is_some_and(|c| c.has_rows);
         let mut column_acs = self
             .columns
             .iter()
@@ -835,13 +842,26 @@ impl PhysicalExpr for EvalExpr {
             per_group = true;
             let columns = column_acs.iter().map(per_group_values).collect();
             (per_group_values(&input), columns)
-        } else if self.inputs_are_elementwise && is_flat(&input) && column_acs.iter().all(is_flat) {
+        } else if self.inputs_are_elementwise
+            && is_flat(&input)
+            && column_acs
+                .iter()
+                .all(|ac| is_flat(ac) || (is_per_group(ac.agg_state()) && frame_has_rows))
+        {
             // A literal is the same for every row of `df`.
             let flat = |ac: &AggregationContext| match ac.agg_state() {
                 AggState::LiteralScalar(c) => c.new_from_index(0, df.height()),
                 _ => ac.flat_naive().into_owned(),
             };
-            let columns = column_acs.iter().map(flat).collect();
+            // A value per group of an enclosing `eval` is in its frame `df`.
+            let columns = column_acs
+                .iter()
+                .zip(&self.columns)
+                .map(|(ac, c)| match ac.agg_state() {
+                    AggState::AggregatedScalar(_) => c.evaluate(df, state),
+                    _ => Ok(flat(ac)),
+                })
+                .collect::<PolarsResult<_>>()?;
             (flat(&input), columns)
         } else {
             if let AggState::AggregatedScalar(_) = input.agg_state() {

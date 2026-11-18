@@ -3838,3 +3838,9 @@ def test_group_by_reduce_value_per_group() -> None:
     assert out["g"].to_list() == [False] * 4
     out = df.select(empty.over("g", mapping_strategy="explode"))
     assert out.to_series().to_list() == [False] * 3
+
+    value = pl.lit(None, dtype=pl.Boolean).all()
+    out = df.select(pl.col("g").cumulative_eval(value))
+    assert out["g"].to_list() == [True] * 4
+    out = df.select(value.over("g", mapping_strategy="explode"))
+    assert out.to_series().to_list() == [True] * 3

@@ -898,6 +898,18 @@ def test_list_eval_columns(engine: EngineType) -> None:
     ).collect(engine=engine)
     assert out["n"].to_list() == [[[12], [11]]]
 
+    # A value per list read in a nested `eval` inside a rolling window.
+    lf = pl.LazyFrame({"l": [[[1], [2], [3]], [[4]]], "x": [10, 20]})
+    out = lf.select(
+        pl.col("l").list.eval(
+            pl.element()
+            .list.agg(pl.col("x") + pl.element().first())
+            .sum()
+            .rolling(pl.element().list.first(), period="2i")
+        )
+    ).collect(engine=engine)
+    assert out["l"].to_list() == [[11, 23, 25], [24]]
+
     # Reductions on the value of an empty list or a null value.
     lf = pl.LazyFrame({"l": [[], [1, 2]], "x": [10, 20], "b": [None, True]})
     out = lf.select(

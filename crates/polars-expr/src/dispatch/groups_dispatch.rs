@@ -185,6 +185,21 @@ pub fn has_nulls<'a>(
     Ok(ac)
 }
 
+/// Maps the value of each group with `f`, if `ac` has a value per group.
+fn map_value_per_group(
+    ac: &mut AggregationContext,
+    groups: &GroupPositions,
+    f: impl FnOnce(&Column) -> PolarsResult<Column>,
+) -> PolarsResult<bool> {
+    let out = match &ac.state {
+        AggState::AggregatedScalar(s) => f(s)?,
+        AggState::LiteralScalar(s) => f(s)?.new_from_index(0, groups.len()),
+        _ => return Ok(false),
+    };
+    ac.state = AggState::AggregatedScalar(out);
+    Ok(true)
+}
+
 pub fn any<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -196,18 +211,15 @@ pub fn any<'a>(
 
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
 
-    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
-        if ignore_nulls {
-            *s = s
-                .equal_missing(&Column::new_scalar(PlSmallStr::EMPTY, true.into(), 1))
-                .unwrap()
-                .into_column();
+    let is_value_per_group = map_value_per_group(&mut ac, groups, |s| {
+        let out = if ignore_nulls {
+            s.equal_missing(&Column::new_scalar(PlSmallStr::EMPTY, true.into(), 1))
         } else {
-            *s = s
-                .equal(&Column::new_scalar(PlSmallStr::EMPTY, true.into(), 1))
-                .unwrap()
-                .into_column();
-        }
+            s.equal(&Column::new_scalar(PlSmallStr::EMPTY, true.into(), 1))
+        };
+        Ok(out?.into_column())
+    })?;
+    if is_value_per_group {
         return Ok(ac);
     }
 
@@ -231,18 +243,15 @@ pub fn all<'a>(
 
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
 
-    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
-        if ignore_nulls {
-            *s = s
-                .not_equal_missing(&Column::new_scalar(PlSmallStr::EMPTY, false.into(), 1))
-                .unwrap()
-                .into_column();
+    let is_value_per_group = map_value_per_group(&mut ac, groups, |s| {
+        let out = if ignore_nulls {
+            s.not_equal_missing(&Column::new_scalar(PlSmallStr::EMPTY, false.into(), 1))
         } else {
-            *s = s
-                .equal(&Column::new_scalar(PlSmallStr::EMPTY, true.into(), 1))
-                .unwrap()
-                .into_column();
-        }
+            s.equal(&Column::new_scalar(PlSmallStr::EMPTY, true.into(), 1))
+        };
+        Ok(out?.into_column())
+    })?;
+    if is_value_per_group {
         return Ok(ac);
     }
 
@@ -265,20 +274,16 @@ pub fn is_empty<'a>(
     assert_eq!(inputs.len(), 1);
 
     // TODO: dedicated impl.
-    let ac = inputs[0].evaluate_on_groups(df, groups, state)?;
-    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &ac.state {
-        let mut is_empty = if ignore_nulls {
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    let is_value_per_group = map_value_per_group(&mut ac, groups, |s| {
+        Ok(if ignore_nulls {
             s.is_null().into_column()
         } else {
             Column::new_scalar(s.name().clone(), false.into(), s.len())
-        };
-        if let AggState::LiteralScalar(_) = &ac.state {
-            is_empty = is_empty.new_from_index(0, groups.len());
-        }
-        return Ok(AggregationContext::from_agg_state(
-            AggState::AggregatedScalar(is_empty),
-            Cow::Borrowed(groups),
-        ));
+        })
+    })?;
+    if is_value_per_group {
+        return Ok(ac);
     }
     let counts = evaluate_count_on_ac(ac, !ignore_nulls)?;
     let is_empty = counts.equal(&Column::new_scalar(
