@@ -1035,3 +1035,14 @@ def test_list_agg_unique_of_first() -> None:
     df = pl.DataFrame({"l": [[], [1, 2]]})
     out = df.select(pl.col("l").list.agg(pl.element().first().unique()))
     assert out["l"].to_list() == [[None], [1]]
+
+
+def test_list_eval_after_with_columns_on_sliced_chunk_30881() -> None:
+    # The second chunk is a slice whose values extend past its last offset.
+    first = pl.DataFrame({"p": [["b"]]})
+    other = pl.DataFrame({"p": [["a", ""], ["c"]]}).head(1)
+    df = pl.concat([first, other], rechunk=False)
+    df = df.with_columns(x=pl.col("p").list.eval(pl.element() == "a"))
+
+    out = df.select(pl.col("p").list.eval(pl.element().filter(pl.element() != "")))
+    assert out["p"].to_list() == [["b"], ["a"]]
