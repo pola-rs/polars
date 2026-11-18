@@ -700,6 +700,23 @@ def test_expr_chained_slices_in_select() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2, 3, 4, 5]}))
 
 
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        ((pl.col("a").head(5) + 1).last(), [5]),
+        ((pl.col("a").head(5) + 1).tail(2), [4, 5]),
+        ((pl.col("a").head(5) + 1).slice(0), [1, 2, 3, 4, 5]),
+        ((pl.col("a").tail(5) + 1).slice(1, 2), [7, 8]),
+        ((pl.col("a").slice(1, 5) + 1).last(), [6]),
+    ],
+)
+def test_expr_slice_through_elementwise_onto_sliced_column(
+    expr: pl.Expr, expected: list[int]
+) -> None:
+    lf = pl.LazyFrame({"a": range(10)})
+    assert_frame_equal(lf.select(expr).collect(), pl.DataFrame({"a": expected}))
+
+
 def test_expr_chained_slices_offset_beyond_i64() -> None:
     lf = pl.LazyFrame({"a": range(5)})
     q = lf.select(pl.col("a").slice(2**63 - 1).slice(2**63 - 1))
