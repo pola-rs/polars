@@ -36,7 +36,12 @@ impl AExpr {
 
             Eval { variant, .. } => variant.is_elementwise(),
 
-            Element | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+            Element
+            | EvalColumn(_)
+            | BinaryExpr { .. }
+            | Column(_)
+            | Ternary { .. }
+            | Cast { .. } => true,
 
             #[cfg(feature = "dtype-struct")]
             StructEval { .. } | StructField(_) => true,
@@ -194,7 +199,7 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
 /// separate projection. `inputs_rev` must be `ae.inputs_rev()`.
 pub fn is_splittable(ae: &AExpr, inputs_rev: &[Node], expr_arena: &Arena<AExpr>) -> bool {
     match ae {
-        AExpr::Column(_) | AExpr::Element => return false,
+        AExpr::Column(_) | AExpr::Element | AExpr::EvalColumn(_) => return false,
         #[cfg(feature = "dtype-struct")]
         AExpr::StructEval { .. } => return false,
         _ => {},

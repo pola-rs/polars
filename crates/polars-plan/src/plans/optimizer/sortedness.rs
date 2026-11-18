@@ -692,7 +692,7 @@ pub fn aexpr_sortedness(
     keep_distinct: bool,
 ) -> Option<AExprSorted> {
     match aexpr {
-        AExpr::Element => None,
+        AExpr::Element | AExpr::EvalColumn(_) => None,
         AExpr::Explode { .. } => None,
         AExpr::Column(col) => {
             let fst = input_sorted?.first()?;

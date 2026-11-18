@@ -234,7 +234,7 @@ pub fn all<'a>(
     if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
         if ignore_nulls {
             *s = s
-                .equal_missing(&Column::new_scalar(PlSmallStr::EMPTY, true.into(), 1))
+                .not_equal_missing(&Column::new_scalar(PlSmallStr::EMPTY, false.into(), 1))
                 .unwrap()
                 .into_column();
         } else {
@@ -265,7 +265,15 @@ pub fn is_empty<'a>(
     assert_eq!(inputs.len(), 1);
 
     // TODO: dedicated impl.
-    let ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    if let AggState::AggregatedScalar(s) = &mut ac.state {
+        *s = if ignore_nulls {
+            s.is_null().into_column()
+        } else {
+            Column::new_scalar(s.name().clone(), false.into(), s.len())
+        };
+        return Ok(ac);
+    }
     let counts = evaluate_count_on_ac(ac, !ignore_nulls)?;
     let is_empty = counts.equal(&Column::new_scalar(
         PlSmallStr::EMPTY,

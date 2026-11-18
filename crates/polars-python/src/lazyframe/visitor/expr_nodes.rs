@@ -862,6 +862,7 @@ fn dyn_list_literal_into_py(py: Python<'_>, value: &DynListLiteralValue) -> PyRe
 pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
     match expr {
         AExpr::Element => Err(PyNotImplementedError::new_err("element")),
+        AExpr::EvalColumn(_) => Err(PyNotImplementedError::new_err("eval column")),
         AExpr::Explode { expr, options } => Explode {
             expr: expr.0,
             options: (options.empty_as_null, options.keep_nulls),
