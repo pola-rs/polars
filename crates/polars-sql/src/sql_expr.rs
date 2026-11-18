@@ -156,7 +156,7 @@ fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
     ))
 }
 
-fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
+pub(crate) fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
     let options = ParserOptions {
         trailing_commas: true,
         ..Default::default()

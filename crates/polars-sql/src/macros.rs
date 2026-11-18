@@ -17,13 +17,13 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::Keyword;
 use sqlparser::parser::{Parser, ParserError};
-use sqlparser::tokenizer::Token;
+use sqlparser::tokenizer::{Token, TokenWithSpan};
 
 use crate::context::{RelationName, match_qualifier, relation_name};
 use crate::dyn_visit;
 use crate::lambda::{lambda_arg, shift_lambda_elements};
 use crate::params::first_param;
-use crate::sql_expr::to_sql_interface_err;
+use crate::sql_expr::{parser_of, to_sql_interface_err};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::strip_nested;
 
@@ -153,8 +153,7 @@ impl Macros {
             expanding: vec![],
             expanded: false,
             size: ExpandedSize::default(),
-            lambda_depth: 0,
-            lambda_bodies: vec![],
+            lambdas: LambdaScopes::default(),
         };
         if let ControlFlow::Break(err) = dyn_visit::visit_mut(node, &mut expander) {
             return Err(err);
@@ -281,7 +280,7 @@ fn parse_create_macro(
         }
         parser.expect_keyword_is(Keyword::AS)?;
         let body = if parser.parse_keyword(Keyword::TABLE) {
-            MacroBody::Table(parser.parse_query()?)
+            MacroBody::Table(parse_table_body(parser)?)
         } else {
             MacroBody::Expr(Box::new(parser.parse_expr()?))
         };
@@ -303,6 +302,63 @@ fn parse_create_macro(
         table,
         overloads,
     })
+}
+
+/// The query of a TABLE definition, which ends before the `, (...) AS TABLE` of the next
+/// definition.
+fn parse_table_body(parser: &mut Parser) -> Result<Box<Query>, ParserError> {
+    // The parser is past `AS TABLE`, so the next token is at the current index + 1.
+    let tokens: Vec<&TokenWithSpan> = (parser.get_current_index() + 1..)
+        .map(|i| parser.token_at(i))
+        .take_while(|t| !matches!(t.token, Token::EOF | Token::SemiColon))
+        .filter(|t| !matches!(t.token, Token::Whitespace(_)))
+        .collect();
+    let len = next_definition(&tokens).unwrap_or(tokens.len());
+    let mut body_parser = parser_of(tokens[..len].iter().map(|&t| t.clone()).collect());
+    let query = body_parser.parse_query()?;
+    let rest = body_parser.peek_token();
+    if rest.token != Token::EOF {
+        return body_parser.expected("the end of the macro body", rest);
+    }
+    for _ in 0..len {
+        parser.next_token();
+    }
+    Ok(query)
+}
+
+/// The position of the comma that starts the next TABLE definition in `tokens`.
+fn next_definition(tokens: &[&TokenWithSpan]) -> Option<usize> {
+    let is_keyword = |i: usize, keywords: &[Keyword]| matches!(tokens.get(i).map(|t| &t.token), Some(Token::Word(w)) if keywords.contains(&w.keyword));
+    let mut depth = 0usize;
+    for (i, token) in tokens.iter().enumerate() {
+        match token.token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => depth = depth.saturating_sub(1),
+            Token::Comma if depth == 0 && tokens.get(i + 1)?.token == Token::LParen => {
+                // `, (params) AS TABLE` and a query; `(a) AS table` can also be a SELECT item.
+                let mut params_depth = 0usize;
+                let close = (i + 1..tokens.len()).find(|&j| {
+                    match tokens[j].token {
+                        Token::LParen => params_depth += 1,
+                        Token::RParen => params_depth -= 1,
+                        _ => {},
+                    }
+                    params_depth == 0
+                })?;
+                if is_keyword(close + 1, &[Keyword::AS])
+                    && is_keyword(close + 2, &[Keyword::TABLE])
+                    && (is_keyword(
+                        close + 3,
+                        &[Keyword::SELECT, Keyword::WITH, Keyword::VALUES],
+                    ) || tokens.get(close + 3).map(|t| &t.token) == Some(&Token::LParen))
+                {
+                    return Some(i);
+                }
+            },
+            _ => {},
+        }
+    }
+    None
 }
 
 fn parse_drop_macro(parser: &mut Parser, table: bool) -> Result<MacroStatement, ParserError> {
@@ -500,10 +556,44 @@ struct MacroExpander<'a> {
     expanding: Vec<(String, bool)>,
     expanded: bool,
     size: ExpandedSize,
-    /// The number of lambdas around the expression being visited.
-    lambda_depth: usize,
+    lambdas: LambdaScopes,
+}
+
+/// The lambdas around the visited expression.
+#[derive(Default)]
+struct LambdaScopes {
+    depth: usize,
     /// The bodies of the lambda arguments of the functions being visited.
-    lambda_bodies: Vec<*const SQLExpr>,
+    bodies: Vec<*const SQLExpr>,
+}
+
+impl LambdaScopes {
+    /// Called before the children of `expr` are visited.
+    fn enter(&mut self, expr: &SQLExpr) {
+        if self.bodies.contains(&(expr as *const SQLExpr)) {
+            self.depth += 1;
+        }
+        if let SQLExpr::Function(func) = expr {
+            self.bodies
+                .extend(lambda_args(func).map(|body| body as *const SQLExpr));
+        }
+    }
+
+    /// Called after the children of `expr` are visited. Returns whether `expr` is a lambda
+    /// body, which `leave_body` leaves once `expr` is visited.
+    fn leave_children(&mut self, expr: &SQLExpr) -> bool {
+        if let SQLExpr::Function(func) = expr {
+            let n_lambdas = lambda_args(func).count();
+            self.bodies.truncate(self.bodies.len() - n_lambdas);
+        }
+        self.bodies.contains(&(expr as *const SQLExpr))
+    }
+
+    fn leave_body(&mut self, is_body: bool) {
+        if is_body {
+            self.depth -= 1;
+        }
+    }
 }
 
 impl MacroExpander<'_> {
@@ -531,6 +621,8 @@ impl MacroExpander<'_> {
                 // An argument of the call is expanded where the call is.
                 dyn_visit::visit_mut(&mut arg.value, self)?;
             } else {
+                // The lambdas of a default count from the call.
+                shift_lambda_elements(&mut arg.value, 0, self.lambdas.depth);
                 self.expand_nested(&mut arg.value, name, table)?;
                 // As written in the definition, a default cannot read columns.
                 if expr_references_any_column(&arg.value) {
@@ -629,7 +721,7 @@ impl VisitorMut for MacroExpander<'_> {
         let mut subquery = query.clone();
         dyn_visit::visit_mut(
             &mut *subquery,
-            &mut ParamReplacer::new(self.macros, &name, &bound, &self.size),
+            &mut ParamReplacer::new(self.macros, &name, &bound, &self.size, self.lambdas.depth),
         )?;
         self.expand_nested(&mut subquery, &name, true)?;
         let alias = alias.unwrap_or_else(|| TableAlias {
@@ -654,27 +746,14 @@ impl VisitorMut for MacroExpander<'_> {
     }
 
     fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
-        if self.lambda_bodies.contains(&(expr as *const SQLExpr)) {
-            self.lambda_depth += 1;
-        }
-        if let SQLExpr::Function(func) = expr {
-            self.lambda_bodies
-                .extend(lambda_args(func).map(|body| body as *const SQLExpr));
-        }
+        self.lambdas.enter(expr);
         ControlFlow::Continue(())
     }
 
     fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
-        let ptr = expr as *const SQLExpr;
-        if let SQLExpr::Function(func) = expr {
-            let n_lambdas = lambda_args(func).count();
-            self.lambda_bodies
-                .truncate(self.lambda_bodies.len() - n_lambdas);
-        }
+        let is_body = self.lambdas.leave_children(expr);
         self.expand_call(expr)?;
-        if self.lambda_bodies.contains(&ptr) {
-            self.lambda_depth -= 1;
-        }
+        self.lambdas.leave_body(is_body);
         ControlFlow::Continue(())
     }
 }
@@ -698,8 +777,9 @@ impl MacroExpander<'_> {
         };
         self.size.add(body.as_ref())?;
         let mut body = body.as_ref().clone();
-        shift_lambda_elements(&mut body, self.lambda_depth);
-        let mut replacer = ParamReplacer::new(self.macros, &name, &bound, &self.size);
+        shift_lambda_elements(&mut body, 0, self.lambdas.depth);
+        let mut replacer =
+            ParamReplacer::new(self.macros, &name, &bound, &self.size, self.lambdas.depth);
         dyn_visit::visit_mut(&mut body, &mut replacer)?;
         self.expand_nested(&mut body, &name, false)?;
         // The value of a call is an expression, not a position or keyword in ORDER BY or
@@ -856,6 +936,10 @@ struct ParamReplacer<'a> {
     name: &'a str,
     params: &'a [(Ident, SQLExpr)],
     size: &'a ExpandedSize,
+    /// The number of lambdas around the call, which the elements of the values count.
+    call_depth: usize,
+    /// The lambdas of the body around the visited expression.
+    lambdas: LambdaScopes,
     /// The relations of each query and SELECT around the visited expression.
     relations: Vec<Relations>,
     /// The CTEs and derived tables of the visited queries.
@@ -868,12 +952,15 @@ impl<'a> ParamReplacer<'a> {
         name: &'a str,
         params: &'a [(Ident, SQLExpr)],
         size: &'a ExpandedSize,
+        call_depth: usize,
     ) -> Self {
         Self {
             macros,
             name,
             params,
             size,
+            call_depth,
+            lambdas: LambdaScopes::default(),
             relations: Vec::new(),
             scoped_queries: PlHashSet::default(),
         }
@@ -911,7 +998,10 @@ impl<'a> ParamReplacer<'a> {
             ));
         }
         self.size.add(value)?;
-        ControlFlow::Continue(Some(parenthesize(value.clone())))
+        let mut value = parenthesize(value.clone());
+        // The lambdas of the value are placed in the lambdas of the body around it.
+        shift_lambda_elements(&mut value, self.call_depth, self.lambdas.depth);
+        ControlFlow::Continue(Some(value))
     }
 }
 
@@ -995,18 +1085,41 @@ impl VisitorMut for ParamReplacer<'_> {
         {
             self.scoped_queries.insert(&**subquery as *const Query);
         }
-        // The conditions inside an aliased join still see the relations it hides.
+        // The conditions inside an aliased join see the relations that the alias hides, but
+        // not the alias or the other relations of the FROM.
         if let Some(names) = hidden_by_alias(factor) {
             self.relations.push(Relations {
                 names,
-                starts_scope: false,
+                starts_scope: true,
                 is_query: false,
             });
         }
         ControlFlow::Continue(())
     }
 
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        self.lambdas.enter(expr);
+        ControlFlow::Continue(())
+    }
+
     fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        let is_body = self.lambdas.leave_children(expr);
+        self.replace_param(expr)?;
+        self.lambdas.leave_body(is_body);
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
+        if hidden_by_alias(factor).is_some() {
+            self.relations.pop();
+        }
+        unparenthesize_table_args(factor, self.macros);
+        ControlFlow::Continue(())
+    }
+}
+
+impl ParamReplacer<'_> {
+    fn replace_param(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
         match expr {
             SQLExpr::Identifier(ident) => {
                 if let Some(value) = self.value(&ident.value)? {
@@ -1029,14 +1142,6 @@ impl VisitorMut for ParamReplacer<'_> {
             },
             _ => unparenthesize_operands(expr, self.macros),
         }
-        ControlFlow::Continue(())
-    }
-
-    fn post_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
-        if hidden_by_alias(factor).is_some() {
-            self.relations.pop();
-        }
-        unparenthesize_table_args(factor, self.macros);
         ControlFlow::Continue(())
     }
 }

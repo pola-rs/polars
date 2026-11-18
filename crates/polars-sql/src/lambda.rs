@@ -200,9 +200,9 @@ impl VisitorMut for LambdaResolver {
     }
 }
 
-/// Moves the lambda elements in `expr` `by` lambdas deeper, for `expr` placed in the bodies of
-/// `by` lambdas.
-pub(crate) fn shift_lambda_elements(expr: &mut SQLExpr, by: usize) {
+/// Moves the elements of the lambdas deeper than `above` in `expr` `by` lambdas deeper, for
+/// `expr` placed in the bodies of `by` more lambdas.
+pub(crate) fn shift_lambda_elements(expr: &mut SQLExpr, above: usize, by: usize) {
     if by == 0 {
         return;
     }
@@ -212,6 +212,7 @@ pub(crate) fn shift_lambda_elements(expr: &mut SQLExpr, by: usize) {
             ..
         }) = expr
             && let Some(depth) = element_depth(p)
+            && depth > above
         {
             *p = format!("{ELEMENT_MARKER}{}", depth + by);
         }

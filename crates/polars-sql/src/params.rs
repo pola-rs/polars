@@ -237,6 +237,11 @@ pub(crate) fn bind_params(
     Ok(Some(binder.bound))
 }
 
+/// An error if `params` has a value, for a statement that has no parameters.
+pub(crate) fn check_no_params(params: &QueryParams) -> PolarsResult<()> {
+    check_all_used(params, &[], &PlHashSet::new())
+}
+
 fn check_all_used(
     params: &QueryParams,
     used_numbers: &[bool],

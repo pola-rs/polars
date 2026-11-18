@@ -64,7 +64,7 @@ use crate::grouping_sets::{
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::layout_alter::{self, Layout, LayoutAlter, OtherStatement};
 use crate::macros::{MacroStatement, Macros, check_macro, is_callable_name};
-use crate::params::{QueryParams, bind_params};
+use crate::params::{QueryParams, bind_params, check_no_params};
 use crate::positional_join::{has_positional_join, is_positional_join};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
@@ -1417,7 +1417,9 @@ impl SQLContext {
         let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => return Err(self.alter_table_error(&alter.name)),
-            Err(OtherStatement::Macro(stmt)) => return self.execute_macro_statement(stmt),
+            Err(OtherStatement::Macro(stmt)) => {
+                return self.execute_macro_statement(stmt, params);
+            },
         };
         let bound = bind_params(&mut stmt, params)?;
         copy_table_as_query(&mut stmt)?;
@@ -3083,7 +3085,11 @@ impl SQLContext {
         })
     }
 
-    fn execute_macro_statement(&mut self, stmt: MacroStatement) -> PolarsResult<LazyFrame> {
+    fn execute_macro_statement(
+        &mut self,
+        stmt: MacroStatement,
+        params: &QueryParams,
+    ) -> PolarsResult<LazyFrame> {
         let response = match stmt {
             MacroStatement::Create {
                 or_replace,
@@ -3103,6 +3109,7 @@ impl SQLContext {
                     SQLInterface: "cannot create macro '{}': a function with that name exists", name.value
                 );
                 check_macro(&name, &overloads)?;
+                check_no_params(params)?;
                 self.macros.create(&name, table, or_replace, overloads)?;
                 format!("CREATE MACRO {}", name.value)
             },
@@ -3111,6 +3118,7 @@ impl SQLContext {
                 if_exists,
                 name,
             } => {
+                check_no_params(params)?;
                 self.macros.drop(&name, table, if_exists)?;
                 format!("DROP MACRO {}", name.value)
             },

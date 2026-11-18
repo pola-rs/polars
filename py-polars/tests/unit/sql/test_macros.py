@@ -598,6 +598,12 @@ def test_macro_rejects_query_params() -> None:
     ]:
         with pytest.raises(SQLInterfaceError, match="not supported in CREATE MACRO"):
             ctx.execute(sql, params=[5])
+    ctx.execute("CREATE MACRO f() AS 1")
+    with pytest.raises(SQLInterfaceError, match=r"\$unused is not used"):
+        ctx.execute("DROP MACRO f", params={"unused": 5})
+    with pytest.raises(SQLInterfaceError, match=r"\$1 is not used"):
+        ctx.execute("CREATE MACRO g() AS 1", params=[5])
+    assert ctx.execute("SELECT f() AS a", eager=True).rows() == [(1,)]
 
 
 def test_macro_lambda_inside_lambda() -> None:
@@ -609,6 +615,21 @@ def test_macro_lambda_inside_lambda() -> None:
     )
     assert res.to_dicts() == [{"r": [[2, 3], [4]]}]
 
+    # A lambda in an argument or default that lands in a lambda of the body.
+    ctx.execute("CREATE MACRO wrap(xs) AS list_transform([0], lambda z: xs)")
+    res = ctx.execute(
+        "SELECT wrap(list_transform([1, 2], lambda y: y + 1)) AS r", eager=True
+    )
+    assert res.to_dicts() == [{"r": [[2, 3]]}]
+    ctx.execute(
+        "CREATE MACRO wrap_default(xs := list_transform([1, 2], lambda y: y + 1)) "
+        "AS list_transform([0], lambda z: xs)"
+    )
+    res = ctx.execute(
+        "SELECT list_transform([5], lambda q: wrap_default()) AS r", eager=True
+    )
+    assert res.to_dicts() == [{"r": [[[2, 3]]]}]
+
 
 def test_macro_alias_of_parenthesized_join() -> None:
     ctx = pl.SQLContext()
@@ -618,3 +639,25 @@ def test_macro_alias_of_parenthesized_join() -> None:
     )
     res = ctx.execute("SELECT * FROM pick({'v': 99})", eager=True)
     assert res.to_dicts() == [{"v": 99}]
+
+    # The alias does not name a relation inside the join.
+    ctx.execute(
+        "CREATE MACRO pick_on(j) AS TABLE SELECT j.x "
+        "FROM ((VALUES (1), (2)) a(x) JOIN (VALUES (0)) b(y) ON a.x = j.v) j"
+    )
+    res = ctx.execute("SELECT * FROM pick_on({'v': 2})", eager=True)
+    assert res.rows() == [(2,)]
+
+
+def test_table_macro_overloads() -> None:
+    ctx = pl.SQLContext()
+    ctx.execute(
+        "CREATE MACRO t(v) AS TABLE SELECT v AS x, (v, w) AS TABLE SELECT v + w AS x"
+    )
+    assert ctx.execute("SELECT * FROM t(2)", eager=True).rows() == [(2,)]
+    assert ctx.execute("SELECT * FROM t(2, 3)", eager=True).rows() == [(5,)]
+    # Without a query after `AS TABLE`, it is an item of the SELECT.
+    ctx.execute(
+        "CREATE MACRO u(v) AS TABLE SELECT v AS x, (v) AS tbl FROM (VALUES (1))"
+    )
+    assert ctx.execute("SELECT * FROM u(4)", eager=True).rows() == [(4, 4)]
