@@ -548,10 +548,7 @@ impl VisitorMut for MacroExpander<'_> {
                 ));
             },
         };
-        let (overload, bound) = match bind_args(&name, &overloads, args) {
-            Ok(res) => res,
-            Err(err) => return ControlFlow::Break(err),
-        };
+        let (overload, bound) = flow(bind_args(&name, &overloads, args))?;
         let alias = alias.take();
         let bound = self.expand_args(bound, &name, true)?;
         let MacroBody::Table(query) = &overload.body else {
@@ -593,14 +590,8 @@ impl VisitorMut for MacroExpander<'_> {
             return ControlFlow::Continue(());
         };
         self.check_not_expanding(&name, false)?;
-        let args = match macro_call_args(&name, func) {
-            Ok(args) => args,
-            Err(err) => return ControlFlow::Break(err),
-        };
-        let (overload, bound) = match bind_args(&name, &overloads, args) {
-            Ok(res) => res,
-            Err(err) => return ControlFlow::Break(err),
-        };
+        let args = flow(macro_call_args(&name, func))?;
+        let (overload, bound) = flow(bind_args(&name, &overloads, args))?;
         let bound = self.expand_args(bound, &name, false)?;
         let MacroBody::Expr(body) = &overload.body else {
             unreachable!()
@@ -617,6 +608,14 @@ impl VisitorMut for MacroExpander<'_> {
         };
         self.expanded = true;
         ControlFlow::Continue(())
+    }
+}
+
+/// `res` as the result of a visit.
+fn flow<T>(res: PolarsResult<T>) -> ControlFlow<PolarsError, T> {
+    match res {
+        Ok(value) => ControlFlow::Continue(value),
+        Err(err) => ControlFlow::Break(err),
     }
 }
 
