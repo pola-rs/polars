@@ -4486,6 +4486,17 @@ def test_delete_catalog_table_float_condition(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+def test_delete_registered_table_shadowing_catalog_table(lake: CountingCatalog) -> None:
+    # a registered table of the name wins: DELETE changes it, not the catalog table
+    ctx = lake_ctx(lake)
+    ctx.register("lineitem", pl.LazyFrame({"k": [1, 2], "v": ["x", "y"]}))
+    ctx.execute("DELETE FROM lineitem WHERE k = 1")
+    assert ctx.execute("SELECT k FROM lineitem", eager=True)["k"].to_list() == [2]
+    res = ctx.execute("SELECT k FROM lake.tpch.lineitem ORDER BY k", eager=True)
+    assert res["k"].to_list() == [1, 2]
+
+
+@pytest.mark.write_disk
 def test_delete_catalog_table_resolution(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     # a registered table of the name comes first, as in a read

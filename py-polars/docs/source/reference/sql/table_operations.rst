@@ -378,6 +378,23 @@ DELETE
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 
+On a registered table, it returns the remaining rows, and later statements in the same
+context see the table without the deleted rows. Source files and the original frame are
+not changed.
+
+The table keeps the condition, not its result. Each read of the table runs the condition
+again on the table's source. A subquery of the condition keeps its tables as registered at
+the time of the ``DELETE``.
+
+- A condition that names a missing column fails at the ``DELETE`` and leaves the table
+  unchanged. Other errors in the condition, such as a string compared with an integer or a
+  cast of a string that is not a number, show when the table is read, on each read until
+  the table is registered again.
+- Collecting the result of a ``DELETE`` computes the remaining rows. Leave the result lazy
+  when only the change is needed.
+- Each ``DELETE`` adds its condition to the table. After many, register the collected rows
+  again: ``ctx.register("t", ctx.execute("SELECT * FROM t", eager=True))``.
+
 On a table of an attached catalog, it deletes the matching rows in one commit, as one
 snapshot. It returns the statement, not the remaining rows. Rows where the condition is NULL
 are kept.

@@ -3138,23 +3138,41 @@ impl SQLContext {
             polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
         };
         let (from, selection) = delete_parts(delete)?;
-        if let TableFactor::Table { name, .. } = &from.relation
-            && let Some((tbl, table)) = self.catalog_change_target(name)?
-        {
+        let TableFactor::Table { name, .. } = &from.relation else {
+            polars_bail!(SQLInterface: "DELETE requires a registered table")
+        };
+        if let Some((tbl, table)) = self.catalog_change_target(name)? {
             polars_bail!(
                 SQLInterface: "DELETE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 tbl, display_name(&table.full_name())
             );
         }
         let lf = self.delete_target(from)?;
-        match selection {
+        let tbl = object_name_to_string(name);
+        polars_ensure!(
+            key_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.is_some(),
+            SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl
+        );
+        let remaining = match selection {
             // no WHERE clause; equivalent to TRUNCATE (drop all rows)
-            None => Ok(lf.clear()),
+            None => lf.clear(),
             // apply constraint as inverted filter (drops rows matching the selection)
             Some(selection) => {
-                self.process_where(lf, Some(selection), FilterMode::RemoveTrue, None)
+                let remaining =
+                    self.process_where(lf, Some(selection), FilterMode::RemoveTrue, None)?;
+                // A missing column fails here, before the table changes (no data is read).
+                LazyFrame::from(remaining.logical_plan.clone()).collect_schema()?;
+                remaining
             },
-        }
+        };
+        // Later statements see the remaining rows, as after TRUNCATE. Locked only now:
+        // resolving the table and its WHERE read the table map.
+        let mut table_map = self.table_map.write().unwrap();
+        let Some(key) = key_ignoring_case(&table_map, &tbl)?.cloned() else {
+            polars_bail!(SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl)
+        };
+        table_map.insert(key, remaining.clone());
+        Ok(remaining)
     }
 
     fn delete_target(&mut self, from: &TableWithJoins) -> PolarsResult<LazyFrame> {
