@@ -169,6 +169,8 @@ pub struct EvalExpr {
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
     evaluation_is_fallible: bool,
+    /// Whether the evaluation makes groups of its own, such as those of a window.
+    evaluation_has_subgroups: bool,
     inputs_are_elementwise: bool,
 }
 
@@ -185,6 +187,7 @@ impl EvalExpr {
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
         evaluation_is_fallible: bool,
+        evaluation_has_subgroups: bool,
         inputs_are_elementwise: bool,
     ) -> Self {
         Self {
@@ -198,6 +201,7 @@ impl EvalExpr {
             evaluation_is_scalar,
             evaluation_is_elementwise,
             evaluation_is_fallible,
+            evaluation_has_subgroups,
             inputs_are_elementwise,
         }
     }
@@ -206,6 +210,12 @@ impl EvalExpr {
     /// instead gives a single value per list.
     fn use_elementwise_path(&self) -> bool {
         self.evaluation_is_elementwise && !(self.evaluation_is_scalar && !self.columns.is_empty())
+    }
+
+    /// Whether the evaluation reads the columns from the rows of its frame, rather than a value
+    /// per group from `ExecutionState::eval_columns`.
+    fn reads_frame_rows(&self) -> bool {
+        self.use_elementwise_path() || self.evaluation_has_subgroups
     }
 
     /// `columns` are those `evaluation` reads, a value per list.
@@ -301,7 +311,7 @@ impl EvalExpr {
             return Ok(out);
         }
 
-        let df = if columns.is_empty() {
+        let df = if columns.is_empty() || !self.reads_frame_rows() {
             DataFrame::empty_with_height(ca.len())
         } else {
             let offsets = ca.offsets()?;
@@ -351,7 +361,12 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
-        state.eval_columns = Arc::new(eval_columns(columns, validity.as_ref(), &groups, true)?);
+        state.eval_columns = Arc::new(eval_columns(
+            columns,
+            validity.as_ref(),
+            &groups,
+            self.reads_frame_rows(),
+        )?);
         state.element = Arc::new(Some((flattened, validity.clone())));
 
         let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
@@ -505,7 +520,7 @@ impl EvalExpr {
             return Ok(out);
         }
 
-        let df = if columns.is_empty() {
+        let df = if columns.is_empty() || !self.reads_frame_rows() {
             DataFrame::empty_with_height(ca.len())
         } else {
             repeat_rows(columns, std::iter::repeat_n(width, ca.len()), flattened_len)?
@@ -557,7 +572,12 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
-        state.eval_columns = Arc::new(eval_columns(columns, validity.as_ref(), &groups, true)?);
+        state.eval_columns = Arc::new(eval_columns(
+            columns,
+            validity.as_ref(),
+            &groups,
+            self.reads_frame_rows(),
+        )?);
         state.element = Arc::new(Some((flattened, validity.clone())));
 
         let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
@@ -931,7 +951,15 @@ impl PhysicalExpr for EvalExpr {
                 )?;
             },
             None => {
-                input.with_values_and_args(out, false, Some(&self.expr), true, self.is_scalar())?;
+                // The output of a literal depends on the rows if columns are read.
+                let preserve_literal = self.columns.is_empty();
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    self.is_scalar(),
+                )?;
             },
         }
 

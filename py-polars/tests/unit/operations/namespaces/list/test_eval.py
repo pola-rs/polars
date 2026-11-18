@@ -1011,6 +1011,14 @@ def test_list_eval_columns_group_by() -> None:
         "last": [[23], None],
     }
 
+    # A literal input reading columns has no value in an empty window.
+    lf = pl.LazyFrame({"i": [0], "x": [10]})
+    q = lf.rolling("i", period="1i", offset="0i").agg(
+        xs=pl.lit([1]).list.agg(pl.col("x"))
+    )
+    assert q.collect(engine="in-memory")["xs"].to_list() == [[]]
+    assert q.collect(engine="streaming")["xs"].to_list() == [[]]
+
     # A literal input is the same for every row of the group.
     out = df.group_by("g", maintain_order=True).agg(
         lit=pl.lit([1, 2]).list.eval(pl.element() + pl.col("x")),

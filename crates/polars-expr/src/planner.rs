@@ -617,6 +617,16 @@ fn create_physical_expr_inner(
             let evaluation_is_fallible = expr_arena
                 .iter(evaluation)
                 .any(|(_, ae)| ae.is_fallible_top_level(expr_arena));
+            // These make groups of their own, in which the columns are read from the rows of the
+            // frame of the evaluation.
+            let evaluation_has_subgroups = expr_arena.iter(evaluation).any(|(_, ae)| match ae {
+                AExpr::Over { .. } | AExpr::Eval { .. } => true,
+                #[cfg(feature = "dynamic_group_by")]
+                AExpr::Rolling { .. } => true,
+                #[cfg(feature = "dtype-struct")]
+                AExpr::StructEval { .. } => true,
+                _ => false,
+            });
 
             let output_field = expr_arena
                 .get(expression)
@@ -645,6 +655,7 @@ fn create_physical_expr_inner(
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
                 evaluation_is_fallible,
+                evaluation_has_subgroups,
                 inputs_are_elementwise,
             )))
         },
