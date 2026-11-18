@@ -312,7 +312,8 @@ pub fn aexpr_projection_height(
     Some(match aexpr {
         Column(_) => H::Column,
 
-        Element | EvalColumn(_) => H::Column,
+        Element => H::Column,
+        EvalColumn(_) => H::Scalar,
         #[cfg(feature = "dtype-struct")]
         StructField(_) => H::Unknown,
         Literal(lv) => {

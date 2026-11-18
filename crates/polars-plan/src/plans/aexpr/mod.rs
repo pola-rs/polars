@@ -178,7 +178,7 @@ pub enum AExpr {
     /// Equivalent of `pl.element()`.
     Element,
     /// A column of the frame read in the `evaluation` of an `Eval`: the output of the one of its
-    /// `columns` with this name, repeated for each element of the row.
+    /// `columns` with this name, a single value per evaluated list.
     EvalColumn(PlSmallStr),
     Explode {
         expr: Node,

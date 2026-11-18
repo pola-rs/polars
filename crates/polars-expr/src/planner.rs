@@ -316,11 +316,14 @@ fn create_physical_expr_inner(
                 output_field,
             )))
         },
-        // Read from the frame of the evaluation, see `EvalExpr`.
-        Column(column) | EvalColumn(column) => Ok(Arc::new(ColumnExpr::new(
+        Column(column) => Ok(Arc::new(ColumnExpr::new(
             column.clone(),
             node_to_expr(expression, expr_arena),
             schema.clone(),
+        ))),
+        EvalColumn(column) => Ok(Arc::new(EvalColumnExpr::new(
+            column.clone(),
+            node_to_expr(expression, expr_arena),
         ))),
         Element => {
             let output_field = expr_arena

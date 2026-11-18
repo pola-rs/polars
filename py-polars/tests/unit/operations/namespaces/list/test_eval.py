@@ -796,7 +796,7 @@ def test_list_eval_columns(engine: EngineType) -> None:
             "n": [1, 0, 1, 1],
         }
     )
-    # A column is the value of the row, repeated for each element.
+    # A column is the value of the row, as a literal would be.
     out = lf.select(
         add=pl.col("l").list.eval(pl.element() + pl.col("x")),
         filter=pl.col("l").list.eval(pl.element().filter(pl.element() > pl.col("n"))),
@@ -805,36 +805,40 @@ def test_list_eval_columns(engine: EngineType) -> None:
         when=pl.col("l").list.eval(
             pl.when(pl.element() > 1).then(pl.element() + pl.col("x")).otherwise(0)
         ),
-        agg=pl.col("l").list.agg(pl.element().sum() + pl.col("x").first()),
-        agg_col=pl.col("l").list.agg(pl.col("x").first()),
+        agg=pl.col("l").list.agg(pl.element().sum() + pl.col("x")),
+        agg_col=pl.col("l").list.agg(pl.col("x")),
+        head=pl.col("l").list.eval(pl.element().head(pl.col("n"))),
+        shift=pl.col("l").list.eval(pl.element().shift(pl.col("n"))),
         lit=pl.lit([1, 2]).list.eval(pl.element() * pl.col("x")),
     ).collect(engine=engine)
     expected = pl.DataFrame(
         {
             "add": [[11, 12], [23], [], None],
             "filter": [[2], [3], [], None],
-            "append": [[1, 2, 10, 10], [3, 20], [], None],
-            "sum": [[20], [20], [0], None],
+            "append": [[1, 2, 10], [3, 20], [30], None],
+            "sum": [[10], [20], [30], None],
             "when": [[0, 12], [23], [], None],
-            "agg": [13, 23, None, None],
-            "agg_col": [10, 20, None, None],
+            "agg": [13, 23, 30, None],
+            "agg_col": [10, 20, 30, None],
+            "head": [[1], [], [], None],
+            "shift": [[None, 1], [3], [], None],
             "lit": [[10, 20], [20, 40], [30, 60], [40, 80]],
         }
     )
     assert_frame_equal(out, expected)
 
-    out = (
-        lf.head(2)
-        .select(pl.col("l").list.eval(pl.element().head(pl.col("n").first())))
-        .collect(engine=engine)
-    )
-    assert out["l"].to_list() == [[1], []]
-
+    # A window inside the evaluation.
     lf = pl.LazyFrame({"l": [[1, 1, 2], [0]], "x": [10, 20]})
     out = lf.select(
-        over=pl.col("l").list.eval(pl.col("x").sum().over(pl.element())),
+        over=pl.col("l").list.eval(
+            (pl.element() * pl.col("x")).sum().over(pl.element())
+        ),
+        over_col=pl.col("l").list.eval(pl.col("x").over(pl.element())),
     ).collect(engine=engine)
-    assert out["over"].to_list() == [[20, 20, 10], [20]]
+    assert out.to_dict(as_series=False) == {
+        "over": [[20, 20, 20], [0]],
+        "over_col": [[10, 10, 10], [20]],
+    }
 
     # Null rows don't run fallible expressions on their columns.
     lf = pl.LazyFrame({"l": [[1, 2], [3, 4]], "x": ["10", "bad"]}).with_columns(

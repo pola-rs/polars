@@ -364,12 +364,12 @@ def test_arr_eval_columns(engine: EngineType) -> None:
     out = lf.select(
         add=pl.col("a").arr.eval(pl.element() + pl.col("x")),
         append=pl.col("a").arr.eval(pl.element().append(pl.col("x")), as_list=True),
-        agg=pl.col("a").arr.agg(pl.element().max() - pl.col("x").first()),
-        agg_col=pl.col("a").arr.agg(pl.col("x").first()),
+        agg=pl.col("a").arr.agg(pl.element().max() - pl.col("x")),
+        agg_col=pl.col("a").arr.agg(pl.col("x")),
     ).collect(engine=engine)
     assert out.to_dict(as_series=False) == {
         "add": [[11, 12], [23, 24], None],
-        "append": [[1, 2, 10, 10], [3, 4, 20, 20], None],
+        "append": [[1, 2, 10], [3, 4, 20], None],
         "agg": [-8, -16, None],
         "agg_col": [10, 20, None],
     }
@@ -388,10 +388,14 @@ def test_arr_eval_columns(engine: EngineType) -> None:
 
     out = (
         df.lazy()
-        .select(pl.col("a").arr.eval(pl.col("x").fill_null("bad").cast(pl.Int64)))
+        .select(
+            pl.col("a").arr.eval(
+                pl.element() + pl.col("x").fill_null("bad").cast(pl.Int64)
+            )
+        )
         .collect(engine=engine)
     )
-    assert out["a"].to_list() == [[10, 10], None]
+    assert out["a"].to_list() == [[11, 12], None]
 
     df = pl.DataFrame({"a": [["1"], None]}, schema={"a": pl.Array(pl.String, 1)})
     out = (

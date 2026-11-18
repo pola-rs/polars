@@ -13,14 +13,14 @@ use polars_core::prelude::{
     _set_check_length, BooleanChunked, ChunkCast, ChunkExplode, ChunkFilter, ChunkNestingUtils,
     Column, Field, GroupPositions, GroupsType, IdxCa, IntoColumn, ListBuilderTrait, ListChunked,
 };
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::Series;
 use polars_plan::dsl::{EvalVariant, Expr};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
-use crate::state::ExecutionState;
+use crate::state::{EvalColumns, ExecutionState};
 
 fn check_column_lengths(columns: &[Column], len: usize) -> PolarsResult<()> {
     if let Some(c) = columns.iter().find(|c| c.len() != len) {
@@ -54,6 +54,91 @@ fn repeat_rows(
         })
         .collect();
     DataFrame::new(height, columns)
+}
+
+/// The columns read in an evaluation with a row per group of `groups`, which skip the rows that
+/// are null in `validity`.
+fn eval_columns(
+    columns: &[Column],
+    validity: Option<&Bitmap>,
+    groups: &GroupPositions,
+) -> PolarsResult<Option<EvalColumns>> {
+    let Some(first) = columns.first() else {
+        return Ok(None);
+    };
+    let (height, columns) = match validity {
+        Some(validity) if validity.unset_bits() > 0 => {
+            (validity.set_bits(), filter_columns(columns, validity)?.1)
+        },
+        _ => (first.len(), columns.to_vec()),
+    };
+    Ok(Some(EvalColumns {
+        columns: DataFrame::new(height, columns)?,
+        groups: groups as *const GroupPositions as usize,
+    }))
+}
+
+/// A column read in the evaluation of an `eval`: a single value per evaluated list.
+pub struct EvalColumnExpr {
+    name: PlSmallStr,
+    expr: Expr,
+}
+
+impl EvalColumnExpr {
+    pub fn new(name: PlSmallStr, expr: Expr) -> Self {
+        Self { name, expr }
+    }
+}
+
+impl PhysicalExpr for EvalColumnExpr {
+    fn as_expression(&self) -> Option<&Expr> {
+        Some(&self.expr)
+    }
+
+    /// The value of the list of each element, from the frame of the elementwise evaluation.
+    fn evaluate_impl(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
+        df.column(&self.name).cloned().map_err(|_| {
+            polars_err!(
+                InvalidOperation: "column '{}' can not be read per element in this `eval`",
+                self.name
+            )
+        })
+    }
+
+    /// The value of each group: that of the list for the groups of the evaluation, and that of its
+    /// first element for other groups, such as those of a window.
+    fn evaluate_on_groups_impl<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        if let Some(eval_columns) = state.eval_columns.as_ref()
+            && eval_columns.groups == groups as *const GroupPositions as usize
+        {
+            let column = eval_columns.columns.column(&self.name)?.clone();
+            return Ok(AggregationContext::from_agg_state(
+                AggState::AggregatedScalar(column),
+                Cow::Borrowed(groups),
+            ));
+        }
+        // SAFETY: the groups are in bounds of the frame.
+        let column = unsafe { self.evaluate(df, state)?.agg_first(groups) };
+        Ok(AggregationContext::from_agg_state(
+            AggState::AggregatedScalar(column),
+            Cow::Borrowed(groups),
+        ))
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        input_schema
+            .get_field(&self.name)
+            .ok_or_else(|| polars_err!(ColumnNotFound: "{}", self.name))
+    }
+
+    fn is_scalar(&self) -> bool {
+        true
+    }
 }
 
 /// The rows of `columns` that are set in `validity`.
@@ -113,6 +198,12 @@ impl EvalExpr {
             evaluation_is_fallible,
             inputs_are_elementwise,
         }
+    }
+
+    /// Whether `evaluation` runs once on all elements. A scalar evaluation that reads columns
+    /// instead gives a single value per list.
+    fn use_elementwise_path(&self) -> bool {
+        self.evaluation_is_elementwise && !(self.evaluation_is_scalar && !self.columns.is_empty())
     }
 
     /// `columns` are those `evaluation` reads, a value per list.
@@ -217,7 +308,7 @@ impl EvalExpr {
         };
 
         // Fast path: fully elementwise expression.
-        if self.evaluation_is_elementwise {
+        if self.use_elementwise_path() {
             let mut state = state.clone();
             state.element = Arc::new(Some((flattened, validity.clone())));
             let mut column = self.evaluation.evaluate(&df, &state)?;
@@ -258,6 +349,7 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
+        state.eval_columns = Arc::new(eval_columns(columns, validity.as_ref(), &groups)?);
         state.element = Arc::new(Some((flattened, validity.clone())));
 
         let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
@@ -417,7 +509,7 @@ impl EvalExpr {
         };
 
         // Fast path: fully elementwise expression.
-        if self.evaluation_is_elementwise {
+        if self.use_elementwise_path() {
             assert!(!self.evaluation_is_scalar);
 
             let mut state = state.clone();
@@ -462,6 +554,7 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
+        state.eval_columns = Arc::new(eval_columns(columns, validity.as_ref(), &groups)?);
         state.element = Arc::new(Some((flattened, validity.clone())));
 
         let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
@@ -583,11 +676,12 @@ impl EvalExpr {
 
         let groups = groups.into_sliceable();
 
-        // The groups are windows of the rows, so the columns need no repeating.
+        // Each window reads the columns at its last row.
         check_column_lengths(columns, input.len())?;
-        let df = DataFrame::new(input.len(), columns.to_vec())?;
+        let df = DataFrame::empty_with_height(input.len());
 
         let mut state = state.clone();
+        state.eval_columns = Arc::new(eval_columns(columns, deposit.as_ref(), &groups)?);
         state.element = Arc::new(Some((flattened, validity)));
 
         let agg = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;

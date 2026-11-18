@@ -1431,8 +1431,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
-            A column of the frame is the value of the row being evaluated, repeated
-            for each element.
+            A column of the frame is the value of the row being evaluated, as a
+            literal would be.
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
@@ -1457,7 +1457,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         │ 3   ┆ 2   ┆ [2.0, 1.0] │
         └─────┴─────┴────────────┘
 
-        Read a column, which is the value of the row repeated for each element:
+        Read a column, which is the value of the row being evaluated:
 
         >>> df.with_columns(
         ...     diff=pl.concat_list("a", "b").list.eval(pl.element() - pl.col("a"))
@@ -1490,8 +1490,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
-            A column of the frame is the value of the row being evaluated, repeated
-            for each element.
+            A column of the frame is the value of the row being evaluated, as a
+            literal would be.
 
         Examples
         --------

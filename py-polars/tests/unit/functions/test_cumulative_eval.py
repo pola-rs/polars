@@ -92,7 +92,7 @@ def test_cumulative_eval_columns(min_samples: int) -> None:
     df = pl.DataFrame({"v": [1, 2, 3], "x": [10, 20, 30]})
     out = df.select(
         pl.col("v").cumulative_eval(
-            pl.element().sum() + pl.col("x").last(), min_samples=min_samples
+            pl.element().sum() + pl.col("x"), min_samples=min_samples
         )
     )
     expected = [11, 23, 36] if min_samples == 0 else [None, 23, 36]
