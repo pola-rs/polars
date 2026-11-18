@@ -115,8 +115,8 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     s.dtype().ensure_json_map_keys()?;
     let mut chunks = Vec::with_capacity(s.n_chunks());
     for i in 0..s.n_chunks() {
-        for arr in s.try_to_arrow_split(i, CompatLevel::newest())? {
-            chunks.push(polars_json::json::write::serialize_to_utf8(&*arr));
+        for arr in s.try_to_arrow_split(i, CompatLevel::newest()) {
+            chunks.push(polars_json::json::write::serialize_to_utf8(&*arr?));
         }
     }
 

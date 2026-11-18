@@ -71,12 +71,10 @@ pub(crate) fn series_to_stream<'py>(
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let field = series.field().to_arrow(CompatLevel::newest());
     let series = series.clone();
-    let iter = Box::new((0..series.n_chunks()).flat_map(move |i| {
-        match series.try_to_arrow_split(i, CompatLevel::newest()) {
-            Ok(arrays) => arrays.into_iter().map(Ok).collect(),
-            Err(err) => vec![Err(err)],
-        }
-    })) as _;
+    let iter = Box::new(
+        (0..series.n_chunks())
+            .flat_map(move |i| series.try_to_arrow_split(i, CompatLevel::newest())),
+    ) as _;
 
     let stream = ffi::export_iterator(iter, field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")

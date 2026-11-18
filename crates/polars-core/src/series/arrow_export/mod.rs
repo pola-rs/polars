@@ -16,9 +16,11 @@ mod split;
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use either::Either;
 use polars_compute::cast::cast_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
+use split::fits_arrow_map;
 pub(crate) use split::{arrow_export_row_ranges, contains_arrow_map};
 
 use crate::prelude::{
@@ -110,28 +112,27 @@ impl Series {
     }
 
     /// Export a chunk of this Series as one or more arrow arrays, split at rows so that each
-    /// arrow MAP array fits in `i32` offsets.
+    /// arrow MAP array fits in `i32` offsets; the pieces are converted as the iterator reaches them.
     pub fn try_to_arrow_split(
         &self,
         chunk_idx: usize,
         compat_level: CompatLevel,
-    ) -> PolarsResult<Vec<ArrayRef>> {
-        let chunk = self.chunks()[chunk_idx].as_ref();
+    ) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send + use<> {
         let arrow_dtype = self.dtype().to_arrow(compat_level);
-        let Some(ranges) = arrow_export_row_ranges(&[(chunk, &arrow_dtype, false)], chunk.len())
-        else {
-            return Ok(vec![self.try_to_arrow(chunk_idx, compat_level)?]);
+        let chunk = self.chunks()[chunk_idx].as_ref();
+        let ranges = contains_arrow_map(&arrow_dtype)
+            .then(|| arrow_export_row_ranges(&[(chunk, &arrow_dtype, false)], chunk.len()))
+            .flatten();
+        let Some(ranges) = ranges else {
+            return Either::Left(std::iter::once(self.try_to_arrow(chunk_idx, compat_level)));
         };
 
         let chunk = self.select_chunk(chunk_idx);
-        ranges
-            .into_iter()
-            .map(|r| {
-                chunk
-                    .slice(r.start as i64, r.len())
-                    .try_to_arrow(0, compat_level)
-            })
-            .collect()
+        Either::Right(ranges.into_iter().map(move |r| {
+            chunk
+                .slice(r.start as i64, r.len())
+                .try_to_arrow(0, compat_level)
+        }))
     }
 
     /// Export this Series to an arrow array. The dtype of the returned array will match the
@@ -256,9 +257,9 @@ impl ToArrowConverter {
             },
             (DataType::List(item_dtype), ArrowDataType::LargeList(arrow_item_field)) => {
                 let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
-                // Export only the child this list spans, so that a slice of a list of maps has
-                // only its own map entries.
-                let trimmed = contains_arrow_map(arrow_item_field.dtype())
+                // A split piece of a list of maps must export only the child it spans, as its
+                // whole child may overflow the `i32` offsets of an arrow MAP.
+                let trimmed = (!fits_arrow_map(arr.values().as_ref(), arrow_item_field.dtype()))
                     .then(|| trim_list_child(arr))
                     .flatten();
                 let arr = trimmed.as_ref().unwrap_or(arr);

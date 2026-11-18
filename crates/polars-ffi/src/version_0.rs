@@ -107,8 +107,8 @@ pub fn export_series(s: &Series) -> SeriesExport {
     // A chunk becomes several arrays where an arrow MAP would overflow its `i32` offsets. Only a
     // single row with more map entries than that panics, as this ABI has no way to return errors.
     let mut arrays = (0..s.chunks().len())
-        .flat_map(|i| s.try_to_arrow_split(i, CompatLevel::newest()).unwrap())
-        .map(|arr| Box::into_raw(Box::new(ffi::export_array_to_c(arr))))
+        .flat_map(|i| s.try_to_arrow_split(i, CompatLevel::newest()))
+        .map(|arr| Box::into_raw(Box::new(ffi::export_array_to_c(arr.unwrap()))))
         .collect::<Box<_>>();
 
     let len = arrays.len();
