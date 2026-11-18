@@ -962,11 +962,7 @@ pub fn write_ir_non_recursive(
             Ok(())
         },
         IR::Slice { input: _, slice } => {
-            let (offset, len) = slice.to_signed_offset_len();
-            match len {
-                Some(len) => write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", ""),
-                None => write!(f, "{:indent$}SLICE[offset: {offset}, len: ∞]", ""),
-            }
+            write!(f, "{:indent$}SLICE[{slice}]", "")
         },
         IR::Filter {
             input: _,
@@ -1009,7 +1005,7 @@ pub fn write_ir_non_recursive(
                 unified_scan_args.field_selection.as_deref(),
                 row_estimation,
                 &predicate,
-                unified_scan_args.pre_slice.clone(),
+                unified_scan_args.pre_slice,
                 unified_scan_args.row_index.as_ref(),
                 unified_scan_args.deletion_files.as_ref(),
             )

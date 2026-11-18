@@ -153,7 +153,7 @@ pub fn sublist_slice_var(
         } else {
             let slice = Slice::from((offsets[i * offset_stride], lengths[i * lengths_stride]));
             let range = slice.resolve(list_len);
-            fast_explode &= range.len() > 0;
+            fast_explode &= !range.is_empty();
             (list_start + range.start, range.len())
         };
 

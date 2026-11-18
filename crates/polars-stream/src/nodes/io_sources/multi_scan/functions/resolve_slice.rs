@@ -19,7 +19,7 @@ pub async fn resolve_to_positive_slice(
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<ResolvedSliceInfo> {
-    match config.pre_slice.clone() {
+    match config.pre_slice {
         None => Ok(ResolvedSliceInfo {
             scan_source_idx: 0,
             row_index: config.row_index.clone(),
@@ -53,7 +53,7 @@ async fn resolve_negative_slice(
     let pre_slice @ Slice::Negative {
         offset_from_end,
         len: slice_len,
-    } = config.pre_slice.clone().unwrap()
+    } = config.pre_slice.unwrap()
     else {
         unreachable!()
     };

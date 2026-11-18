@@ -399,14 +399,10 @@ impl<'a> TreeFmtNode<'a> {
                     ),
                     vec![self.lp_node(None, *input)],
                 ),
-                Slice { input, slice } => {
-                    let (offset, len) = slice.to_signed_offset_len();
-                    let label = match len {
-                        Some(len) => format!("SLICE[offset: {offset}, len: {len}]"),
-                        None => format!("SLICE[offset: {offset}, len: ∞]"),
-                    };
-                    ND(wh(h, &label), vec![self.lp_node(None, *input)])
-                },
+                Slice { input, slice } => ND(
+                    wh(h, &format!("SLICE[{slice}]")),
+                    vec![self.lp_node(None, *input)],
+                ),
                 MapFunction { input, function } => ND(
                     wh(h, &format!("{function}")),
                     vec![self.lp_node(None, *input)],

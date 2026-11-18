@@ -92,7 +92,6 @@ impl ReaderStarter {
 
             let pre_slice_this_file = extra_ops
                 .pre_slice
-                .clone()
                 .map(|x| {
                     PolarsResult::Ok(if x.is_negative() {
                         Some(x)
@@ -195,7 +194,7 @@ impl ReaderStarter {
                 row_index: row_index_this_file,
                 pre_slice: pre_slice_this_file
                     .as_ref()
-                    .map(|phys_slice: &PhysicalSlice| phys_slice.slice.clone()),
+                    .map(|phys_slice: &PhysicalSlice| phys_slice.slice),
                 // Other operations don't need updating per file
                 ..extra_ops.clone()
             };

@@ -253,7 +253,7 @@ async fn finish_initialize_multi_scan_pipeline(
             ResolvedSliceInfo {
                 scan_source_idx: 0,
                 row_index: config.row_index.clone(),
-                pre_slice: config.pre_slice.clone(),
+                pre_slice: config.pre_slice,
                 initialized_readers: None,
                 row_deletions: Default::default(),
             }

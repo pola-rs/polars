@@ -1168,7 +1168,7 @@ fn lower_ir_inner(
                         unified_scan_args.column_mapping.as_ref(),
                     );
 
-                    let pre_slice = unified_scan_args.pre_slice.clone();
+                    let pre_slice = unified_scan_args.pre_slice;
                     let disable_morsel_split = disable_morsel_split.unwrap_or(true);
 
                     // Set to None if empty for performance.

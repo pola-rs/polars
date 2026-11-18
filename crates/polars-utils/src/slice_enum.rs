@@ -397,11 +397,10 @@ impl Slice {
 impl std::fmt::Display for Slice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (offset, len) = self.to_signed_offset_len();
-        write!(f, "offset: {offset}")?;
-        if let Some(len) = len {
-            write!(f, ", len: {len}")?;
+        match len {
+            Some(len) => write!(f, "offset: {offset}, len: {len}"),
+            None => write!(f, "offset: {offset}, len: ∞"),
         }
-        Ok(())
     }
 }
 

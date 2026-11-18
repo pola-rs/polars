@@ -686,11 +686,7 @@ fn visualize_plan_rec(
             }
 
             if let Some(pre_slice) = pre_slice {
-                let (offset, len) = pre_slice.to_signed_offset_len();
-                write!(f, "\nslice: offset: {offset}").unwrap();
-                if let Some(len) = len {
-                    write!(f, ", len: {len}").unwrap();
-                }
+                write!(f, "\nslice: {pre_slice}").unwrap();
             }
 
             if let Some(predicate) = predicate {

@@ -416,8 +416,8 @@ struct SliceState(Option<Slice>);
 
 impl SliceState {
     /// `pre_slice` is positive.
-    fn new(pre_slice: Option<&Slice>) -> Self {
-        Self(pre_slice.copied())
+    fn new(pre_slice: Option<Slice>) -> Self {
+        Self(pre_slice)
     }
 
     fn done(&self) -> bool {
@@ -503,8 +503,8 @@ impl FileReader for FfiFileReader {
                 },
                 s => s,
             };
-            let slice_end = pre_slice.as_ref().and_then(|s| s.end_position());
-            let mut slice = SliceState::new(pre_slice.as_ref());
+            let slice_end = pre_slice.and_then(|s| s.end_position());
+            let mut slice = SliceState::new(pre_slice);
 
             let source_token = SourceToken::new();
 

@@ -209,11 +209,7 @@ impl<'a> IRDotDisplay<'a> {
             },
             Slice { input, slice } => {
                 recurse!(*input);
-                let (offset, len) = slice.to_signed_offset_len();
-                write_label(f, id, |f| match len {
-                    Some(len) => write!(f, "SLICE offset: {offset}; len: {len}"),
-                    None => write!(f, "SLICE offset: {offset}; len: ∞"),
-                })?;
+                write_label(f, id, |f| write!(f, "SLICE {slice}"))?;
             },
             Distinct { input, options, .. } => {
                 recurse!(*input);

@@ -217,9 +217,13 @@ impl DynamicGroupBy {
         };
 
         if windows.is_empty() {
-            if let Some(retired) = Slice::skip(num_retired as usize) {
-                self.buf_df = self.buf_df.slice(retired);
-                self.buf_index_column = self.buf_index_column.slice(retired);
+            if num_retired > 0 {
+                self.buf_df = self
+                    .buf_df
+                    .slice(num_retired as usize..self.buf_df.height());
+                self.buf_index_column = self
+                    .buf_index_column
+                    .slice(num_retired as usize..self.buf_index_column.len());
                 self.buf_df_offset += num_retired;
             }
 
@@ -255,10 +259,12 @@ impl DynamicGroupBy {
             (end - self.buf_df_offset) as usize,
         ));
 
-        if let Some(retired) = Slice::skip(num_retired as usize) {
-            self.buf_df = self.buf_df.slice(retired);
-            self.buf_index_column = self.buf_index_column.slice(retired);
-        }
+        self.buf_df = self
+            .buf_df
+            .slice(num_retired as usize..self.buf_df.height());
+        self.buf_index_column = self
+            .buf_index_column
+            .slice(num_retired as usize..self.buf_index_column.len());
         self.buf_df_offset += num_retired;
 
         if windows.is_empty() {

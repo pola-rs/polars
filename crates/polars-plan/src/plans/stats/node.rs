@@ -201,9 +201,9 @@ pub(crate) fn node_stats_with_cache(
             };
             // The slice is applied before the predicate, so it narrows first.
             let mut filtered = unfiltered;
-            if let Some(slice) = &unified_scan_args.pre_slice {
-                filtered = sliced(filtered, slice.clone());
-                max_rows = max_rows.map(|m| sliced(m, slice.clone()));
+            if let Some(slice) = unified_scan_args.pre_slice {
+                filtered = sliced(filtered, slice);
+                max_rows = max_rows.map(|m| sliced(m, slice));
             }
             let columns = scan_columns(ir);
             if let Some(p) = predicate {
@@ -500,8 +500,8 @@ impl NodeStats {
     }
 
     /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
-    fn slice(mut self, slice: impl Into<Slice> + Clone) -> Self {
-        self.max_rows = self.max_rows.map(|m| sliced(m, slice.clone()));
+    fn slice(mut self, slice: Slice) -> Self {
+        self.max_rows = self.max_rows.map(|m| sliced(m, slice));
         let filtered = sliced(self.filtered, slice);
         self.filter(filtered)
     }

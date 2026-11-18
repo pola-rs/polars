@@ -974,8 +974,5 @@ impl PhysicalExpr for EvalExpr {
 }
 
 fn slice_columns(columns: &[Column], offset: usize, length: usize) -> Vec<Column> {
-    columns
-        .iter()
-        .map(|c| c.slice((offset, length)))
-        .collect()
+    columns.iter().map(|c| c.slice((offset, length))).collect()
 }

@@ -148,7 +148,7 @@ impl RecordBatchDataFetcher {
                 num_rows_this_rb =
                     Some(record_batch_cum_len[record_batch_idx] - row_offset.unwrap());
 
-                if let Some(global_slice) = global_slice.clone() {
+                if let Some(global_slice) = global_slice {
                     match SplitSlicePosition::split_slice_at_file(
                         row_offset.unwrap() as usize,
                         num_rows_this_rb.unwrap() as usize,

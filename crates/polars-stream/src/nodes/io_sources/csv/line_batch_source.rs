@@ -371,12 +371,8 @@ impl BatchSlicer {
         let prev_row_offset = self.row_offset;
         self.row_offset += n_lines;
 
-        let slice = if let Some(global_slice) = &self.global_slice {
-            match SplitSlicePosition::split_slice_at_file(
-                prev_row_offset,
-                n_lines,
-                global_slice.clone(),
-            ) {
+        let slice = if let Some(global_slice) = self.global_slice {
+            match SplitSlicePosition::split_slice_at_file(prev_row_offset, n_lines, global_slice) {
                 SplitSlicePosition::Before => {
                     self.n_rows_skipped = self.n_rows_skipped.saturating_add(n_lines);
                     return BatchAction::Skip;

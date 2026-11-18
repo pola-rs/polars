@@ -40,7 +40,6 @@ use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 pub(super) use polars_core::series::IsSorted;
-#[allow(unused_imports)]
 use polars_defs::join::{
     JoinArgs, JoinCoalesce, JoinType, JoinTypeOptions, JoinValidation, MaintainOrderJoin,
 };

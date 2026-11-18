@@ -261,9 +261,8 @@ impl ApplyExtraOps {
         // Note, this counts physical rows
         let mut local_slice_offset: usize = 0;
 
-        if let Some(slice) = physical_pre_slice
-            .clone()
-            .and_then(|s| s.offsetted(current_row_position.num_physical_rows()))
+        if let Some(slice) =
+            physical_pre_slice.and_then(|s| s.offsetted(current_row_position.num_physical_rows()))
         {
             let slice = slice.restrict_to_bounds(df.height());
 

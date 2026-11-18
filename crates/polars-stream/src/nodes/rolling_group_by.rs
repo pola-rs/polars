@@ -152,14 +152,13 @@ impl RollingGroupBy {
 
         let start_row_offset = self.buf_df_offset;
 
-        let data = match Slice::skip(num_retired as usize) {
-            Some(retired) => {
-                self.buf_index_column = self.buf_index_column.slice(retired);
-                let new_buf_df = self.buf_df.slice(retired);
-                std::mem::replace(&mut self.buf_df, new_buf_df)
-            },
-            None => self.buf_df.clone(),
-        };
+        self.buf_index_column = self
+            .buf_index_column
+            .slice(num_retired as usize..self.buf_index_column.len());
+        let new_buf_df = self
+            .buf_df
+            .slice(num_retired as usize..self.buf_df.height());
+        let data = std::mem::replace(&mut self.buf_df, new_buf_df);
         self.buf_df_offset += num_retired;
 
         if windows.is_empty() {

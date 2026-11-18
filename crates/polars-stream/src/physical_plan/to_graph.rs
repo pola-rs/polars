@@ -1180,7 +1180,7 @@ fn to_graph_rec<'a>(
             let file_projection_builder = file_projection_builder.clone();
 
             let row_index = row_index.clone();
-            let pre_slice = pre_slice.clone();
+            let pre_slice = *pre_slice;
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
             let extra_columns_policy = *extra_columns_policy;

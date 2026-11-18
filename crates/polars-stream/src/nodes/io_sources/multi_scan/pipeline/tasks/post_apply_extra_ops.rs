@@ -90,7 +90,6 @@ impl PostApplyExtraOps {
 
                     // We hit this if a reader does not support PRE_SLICE.
                     if physical_pre_slice
-                        .clone()
                         .and_then(|x| x.offsetted(row_counter.num_physical_rows()))
                         .is_some_and(|x| x.is_empty())
                     {

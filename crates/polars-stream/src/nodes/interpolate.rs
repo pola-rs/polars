@@ -217,8 +217,8 @@ impl ComputeNode for InterpolateNode {
                     // If there were pending nulls, we know that the previous morsel already
                     // emitted our first value. We are only using it to enable interpolation here.
                     // Slice it off and don't double emit it.
-                    if has_prepended && let Some(prepended) = Slice::skip(1) {
-                        column = column.slice(prepended);
+                    if has_prepended {
+                        column = column.slice(1..column.len());
                     }
 
                     let mut morsel =

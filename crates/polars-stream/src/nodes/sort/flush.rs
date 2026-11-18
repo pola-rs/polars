@@ -162,10 +162,7 @@ impl FlushState {
             let (df, bytes) = entry.remove();
             inner.next_seq += 1;
             if df.height() > self.morsel_size {
-                let rest = match Slice::skip(self.morsel_size as usize) {
-                    Some(sent) => df.slice(sent),
-                    None => df.clone(),
-                };
+                let rest = df.slice(self.morsel_size..df.height());
                 inner.sorted.insert(seq + 1, (rest, bytes));
             } else {
                 inner.ahead_bytes -= bytes;
