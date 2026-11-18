@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_plan::constants::{get_literal_name, get_pl_element_name, get_pl_structfields_name};
+use polars_plan::constants::{get_literal_name, get_pl_structfields_name};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
