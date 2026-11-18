@@ -85,11 +85,9 @@ impl InitializedState {
     }
 }
 
-/// The row groups encoded from one morsel, more than one where its arrow MAP arrays would
-/// overflow their `i32` offsets.
-struct EncodedRowGroups {
-    /// The number of rows and the pages of each leaf column, per row group.
-    row_groups: Vec<(usize, Vec<Vec<CompressedPage>>)>,
+struct EncodedRowGroup {
+    num_rows: usize,
+    data: Vec<Vec<CompressedPage>>,
     morsel_permit: SinkMorselPermit,
 }
 
@@ -144,7 +142,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         };
 
         let (encoded_row_group_tx, encoded_row_group_rx) = tokio::sync::mpsc::channel::<
-            executor::AbortOnDropHandle<PolarsResult<EncodedRowGroups>>,
+            executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>,
         >(num_pipelines.get());
 
         let key_value_metadata = self.options.key_value_metadata.clone();
