@@ -675,7 +675,17 @@ impl SQLExprVisitor<'_> {
                     *v = cast_literal_series(&s, dtype)?.get(0)?.into_static();
                 }
             }
-            return series_from_literals(PlSmallStr::EMPTY, &array_elements);
+            let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
+            // A null keeps the type of its cast.
+            for (v, cast) in array_elements.iter().zip(&element_casts) {
+                if let (AnyValue::Null, Some(dtype)) = (v, cast) {
+                    let supertype = try_get_supertype(s.dtype(), dtype)?;
+                    if supertype != *s.dtype() {
+                        s = s.cast(&supertype)?;
+                    }
+                }
+            }
+            return Ok(s);
         }
         let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
         if let Some(dtype) = resolve_common_dtype(&cast_dtypes, Some("array literal "))? {

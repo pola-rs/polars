@@ -2,6 +2,7 @@
 //!
 //! A macro call is replaced by the macro body, with its parameters replaced by the arguments,
 //! before the statement is planned.
+use std::cell::Cell;
 use std::ops::ControlFlow;
 use std::sync::{Arc, RwLock};
 
@@ -18,7 +19,7 @@ use sqlparser::keywords::Keyword;
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::tokenizer::Token;
 
-use crate::context::relation_name;
+use crate::context::{RelationName, match_qualifier, relation_name};
 use crate::dyn_visit;
 use crate::sql_expr::to_sql_interface_err;
 use crate::sql_visitors::expr_references_any_column;
@@ -149,6 +150,7 @@ impl Macros {
             macros: self,
             expanding: vec![],
             expanded: false,
+            size: ExpandedSize::default(),
         };
         if let ControlFlow::Break(err) = dyn_visit::visit_mut(node, &mut expander) {
             return Err(err);
@@ -433,11 +435,43 @@ impl Visitor for FreeIdentifiers<'_> {
 /// The deepest nesting of macro calls in macro bodies.
 const MAX_MACRO_DEPTH: usize = 64;
 
+/// The most expressions that expanding the macros of a statement may copy.
+const MAX_EXPANDED_EXPRS: usize = 100_000;
+
+/// The number of expressions copied by an expansion.
+#[derive(Default)]
+struct ExpandedSize(Cell<usize>);
+
+impl ExpandedSize {
+    /// Counts the expressions of `node`, which is about to be copied.
+    fn add<T: Visit>(&self, node: &T) -> ControlFlow<PolarsError> {
+        struct Count(usize);
+        impl Visitor for Count {
+            type Break = ();
+            fn pre_visit_expr(&mut self, _expr: &SQLExpr) -> ControlFlow<()> {
+                self.0 += 1;
+                ControlFlow::Continue(())
+            }
+        }
+        let mut count = Count(0);
+        let _ = dyn_visit::visit(node, &mut count);
+        let size = self.0.get() + count.0;
+        if size > MAX_EXPANDED_EXPRS {
+            return ControlFlow::Break(polars_err!(
+                SQLInterface: "the query is too large after expanding its macros"
+            ));
+        }
+        self.0.set(size);
+        ControlFlow::Continue(())
+    }
+}
+
 struct MacroExpander<'a> {
     macros: &'a Macros,
     /// The macros whose bodies are being expanded, as (lowercase name, whether a table macro).
     expanding: Vec<(String, bool)>,
     expanded: bool,
+    size: ExpandedSize,
 }
 
 impl MacroExpander<'_> {
@@ -461,13 +495,18 @@ impl MacroExpander<'_> {
     ) -> ControlFlow<PolarsError, Vec<(Ident, SQLExpr)>> {
         let mut params = Vec::with_capacity(bound.len());
         for mut arg in bound {
-            self.expand_nested(&mut arg.value, name, table)?;
-            // As written in the definition, a default cannot read columns.
-            if arg.is_default && expr_references_any_column(&arg.value) {
-                return ControlFlow::Break(polars_err!(
-                    SQLInterface: "the default of parameter '{}' of macro '{}' cannot read columns",
-                    arg.name.value, name
-                ));
+            if !arg.is_default {
+                // An argument of the call is expanded where the call is.
+                dyn_visit::visit_mut(&mut arg.value, self)?;
+            } else {
+                self.expand_nested(&mut arg.value, name, table)?;
+                // As written in the definition, a default cannot read columns.
+                if expr_references_any_column(&arg.value) {
+                    return ControlFlow::Break(polars_err!(
+                        SQLInterface: "the default of parameter '{}' of macro '{}' cannot read columns",
+                        arg.name.value, name
+                    ));
+                }
             }
             params.push((arg.name, arg.value));
         }
@@ -554,10 +593,11 @@ impl VisitorMut for MacroExpander<'_> {
         let MacroBody::Table(query) = &overload.body else {
             unreachable!()
         };
+        self.size.add(&**query)?;
         let mut subquery = query.clone();
         dyn_visit::visit_mut(
             &mut *subquery,
-            &mut ParamReplacer::new(self.macros, &name, &bound),
+            &mut ParamReplacer::new(self.macros, &name, &bound, &self.size),
         )?;
         self.expand_nested(&mut subquery, &name, true)?;
         let alias = alias.unwrap_or_else(|| TableAlias {
@@ -596,8 +636,9 @@ impl VisitorMut for MacroExpander<'_> {
         let MacroBody::Expr(body) = &overload.body else {
             unreachable!()
         };
+        self.size.add(body.as_ref())?;
         let mut body = body.as_ref().clone();
-        let mut replacer = ParamReplacer::new(self.macros, &name, &bound);
+        let mut replacer = ParamReplacer::new(self.macros, &name, &bound, &self.size);
         dyn_visit::visit_mut(&mut body, &mut replacer)?;
         self.expand_nested(&mut body, &name, false)?;
         // The value of a call is an expression, not a position or keyword in ORDER BY or
@@ -733,7 +774,7 @@ struct BoundArg {
 
 /// The names of the relations of a query or SELECT, with each part of a qualified name.
 struct Relations {
-    names: Vec<String>,
+    names: Vec<RelationName>,
     /// A CTE or derived table, which does not see the relations of the query it is part of.
     starts_scope: bool,
     is_query: bool,
@@ -744,6 +785,7 @@ struct ParamReplacer<'a> {
     macros: &'a Macros,
     name: &'a str,
     params: &'a [(Ident, SQLExpr)],
+    size: &'a ExpandedSize,
     /// The relations of each query and SELECT around the visited expression.
     relations: Vec<Relations>,
     /// The CTEs and derived tables of the visited queries.
@@ -751,18 +793,24 @@ struct ParamReplacer<'a> {
 }
 
 impl<'a> ParamReplacer<'a> {
-    fn new(macros: &'a Macros, name: &'a str, params: &'a [(Ident, SQLExpr)]) -> Self {
+    fn new(
+        macros: &'a Macros,
+        name: &'a str,
+        params: &'a [(Ident, SQLExpr)],
+        size: &'a ExpandedSize,
+    ) -> Self {
         Self {
             macros,
             name,
             params,
+            size,
             relations: Vec::new(),
             scoped_queries: PlHashSet::default(),
         }
     }
 
-    /// Whether `name` names a relation that the visited expression sees.
-    fn names_relation(&self, name: &str) -> bool {
+    /// Whether a leading run of `idents` names a relation that the visited expression sees.
+    fn names_relation(&self, idents: &[Ident]) -> bool {
         let mut hidden = false;
         for relations in self.relations.iter().rev() {
             if hidden {
@@ -773,7 +821,7 @@ impl<'a> ParamReplacer<'a> {
                 }
                 continue;
             }
-            if relations.names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            if match_qualifier(idents, relations.names.iter()).is_some() {
                 return true;
             }
             hidden = relations.starts_scope;
@@ -792,6 +840,7 @@ impl<'a> ParamReplacer<'a> {
                 self.name, name
             ));
         }
+        self.size.add(value)?;
         ControlFlow::Continue(Some(parenthesize(value.clone())))
     }
 }
@@ -887,7 +936,7 @@ impl VisitorMut for ParamReplacer<'_> {
                 }
             },
             // A qualifier naming a relation of the body reads that relation.
-            SQLExpr::CompoundIdentifier(idents) if self.names_relation(&idents[0].value) => {},
+            SQLExpr::CompoundIdentifier(idents) if self.names_relation(idents) => {},
             SQLExpr::CompoundIdentifier(idents) => {
                 if let Some(value) = self.value(&idents[0].value)? {
                     // The fields of the value, also when it names a column like a table.
@@ -912,9 +961,9 @@ impl VisitorMut for ParamReplacer<'_> {
 }
 
 /// Adds the names of the relations that the ORDER BY of a query with this body can qualify
-/// columns with to `names`, with each part of a qualified name. Each SELECT of a set
+/// columns with to `names`. Each SELECT of a set
 /// operation has its own relations.
-fn relation_names(body: &SetExpr, names: &mut Vec<String>) {
+fn relation_names(body: &SetExpr, names: &mut Vec<RelationName>) {
     match body {
         SetExpr::Select(select) => {
             for table in &select.from {
@@ -926,13 +975,13 @@ fn relation_names(body: &SetExpr, names: &mut Vec<String>) {
     }
 }
 
-fn table_names(table: &TableWithJoins, names: &mut Vec<String>) {
+fn table_names(table: &TableWithJoins, names: &mut Vec<RelationName>) {
     for factor in std::iter::once(&table.relation).chain(table.joins.iter().map(|j| &j.relation)) {
         factor_names(factor, names);
     }
 }
 
-fn factor_names(factor: &TableFactor, names: &mut Vec<String>) {
+fn factor_names(factor: &TableFactor, names: &mut Vec<RelationName>) {
     match factor {
         TableFactor::NestedJoin {
             table_with_joins, ..
@@ -940,19 +989,17 @@ fn factor_names(factor: &TableFactor, names: &mut Vec<String>) {
         TableFactor::Pivot { table, .. } | TableFactor::Unpivot { table, .. } => {
             factor_names(table, names)
         },
-        TableFactor::Function { name, alias, .. } => match alias {
-            Some(alias) => names.push(alias.name.value.clone()),
-            None => names.extend(
-                name.0
-                    .iter()
-                    .filter_map(|p| Some(p.as_ident()?.value.clone())),
-            ),
-        },
+        TableFactor::Function { name, alias, .. } => names.push(RelationName::new(match alias {
+            Some(alias) => vec![alias.name.value.clone()],
+            None => name
+                .0
+                .iter()
+                .filter_map(|p| Some(p.as_ident()?.value.clone()))
+                .collect(),
+        })),
         _ => {},
     }
-    if let Some(name) = relation_name(factor) {
-        names.extend(name.parts().iter().cloned());
-    }
+    names.extend(relation_name(factor));
 }
 
 /// Drops the parentheses around function arguments. A substituted value keeps its

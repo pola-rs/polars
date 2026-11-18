@@ -8002,7 +8002,7 @@ pub(crate) struct RelationName {
 }
 
 impl RelationName {
-    fn new(parts: Vec<String>) -> Self {
+    pub(crate) fn new(parts: Vec<String>) -> Self {
         Self {
             parts,
             written: None,

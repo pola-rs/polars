@@ -552,3 +552,27 @@ def test_macro_positional_join() -> None:
         """)
         res = ctx.execute("SELECT * FROM zipped()", eager=True).rows()
         assert res == [(1, 10), (2, 20), (None, 30)]
+
+
+def test_macro_expansion_size() -> None:
+    ctx = pl.SQLContext()
+    ctx.execute("CREATE MACRO m0(x) AS x + x")
+    for k in range(1, 40):
+        ctx.execute(f"CREATE MACRO m{k}(x) AS m{k - 1}(x) + m{k - 1}(x)")
+    with pytest.raises(SQLInterfaceError, match="too large after expanding"):
+        ctx.execute("SELECT m39(1) AS a", eager=True)
+
+
+def test_macro_qualifier_of_relation() -> None:
+    # `ns.v` is the field of the argument: `ns` alone does not name `ns.items`.
+    ctx = pl.SQLContext({"ns.items": pl.DataFrame({"ns": [{"v": 7}]})})
+    ctx.execute("CREATE MACRO m(ns) AS TABLE SELECT ns.v FROM ns.items")
+    res = ctx.execute("SELECT * FROM m({'v': 99})", eager=True)
+    assert res.to_dicts() == [{"v": 99}]
+
+
+def test_macro_call_in_argument_of_same_macro() -> None:
+    ctx = pl.SQLContext()
+    ctx.execute("CREATE MACRO echo(v) AS TABLE SELECT v")
+    res = ctx.execute("SELECT * FROM echo((SELECT 1 FROM echo(2)))", eager=True)
+    assert res.rows() == [(1,)]

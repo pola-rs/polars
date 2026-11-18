@@ -145,6 +145,10 @@ def test_array_literal_cast_elements() -> None:
     assert res.rows() == [([1, 2, 3],)]
     res = pl.sql("SELECT [DATE '2020-01-01', '2020-01-02'] AS a").collect()
     assert res.rows() == [([date(2020, 1, 1), date(2020, 1, 2)],)]
+    # a null keeps the type of its cast
+    res = pl.sql("SELECT [CAST(NULL AS DOUBLE), 1] AS a").collect()
+    assert res.schema["a"] == pl.List(pl.Float64)
+    assert res.rows() == [([None, 1.0],)]
     # a sign of a value that is no number is not dropped
     df = pl.DataFrame({"flag": [False, True], "x": [-2, 2]})
     res = pl.sql("SELECT flag FROM df WHERE flag IN (NOT FALSE)").collect()
