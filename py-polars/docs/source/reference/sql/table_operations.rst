@@ -11,6 +11,8 @@ Table Operations
      - Change the columns, properties or partitioning of a table in an attached catalog.
    * - :ref:`CALL <call>`
      - Run a maintenance procedure on a table in an attached catalog.
+   * - :ref:`COPY <copy>`
+     - Write the result of a query, or a table, to a file.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -231,6 +233,33 @@ are 0. Iceberg v3 tables are not supported yet.
     -- rewritten, e.g. those written before the table's partitioning changed. Other specs'
     -- manifests stay as they are.
     CALL lake.system.rewrite_manifests('sales.orders', spec_id => 0)
+
+.. _copy:
+
+COPY
+----
+Write the result of a query, or a table, to a file. :meth:`SQLContext.execute` returns a
+``LazyFrame`` that writes the file once it is collected; collecting it gives an empty frame.
+
+The format is the one that ``FORMAT`` names, or else the one of the file extension: ``csv``;
+``parquet``; ``ipc``, ``arrow`` or ``feather``; ``ndjson`` or ``jsonl``. A CSV file takes the
+options ``HEADER`` (written unless set to ``false``), ``DELIMITER``, ``NULL`` and ``QUOTE``.
+The path can be a cloud URL, and a leading ``~`` is the home directory.
+
+The directory of the file must exist, and an existing file is replaced. If the query fails
+while it runs, a partial file can be left behind, also in the place of a file that existed.
+
+Only ``COPY ... TO '<file>'`` is supported. To load a file, read it in a query, as in
+``CREATE TABLE t AS SELECT * FROM 'data.csv'``. Writing files can be turned off with
+``SQLContext(allow_file_writes=False)``.
+
+**Example:**
+
+.. code-block:: sql
+
+    COPY (SELECT region, SUM(amount) AS total FROM sales GROUP BY region) TO 'totals.parquet'
+    COPY sales (region, amount) TO 'sales.csv'
+    COPY sales TO 'sales.txt' (FORMAT csv, DELIMITER '|', HEADER false)
 
 .. _create_schema:
 
