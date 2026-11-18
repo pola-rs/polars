@@ -1089,7 +1089,7 @@ impl DictionaryMerger {
     /// Registers the dictionary of `column` and gives where it starts in the merged dictionary,
     /// for [`DictionaryColumn::into_shifted_codes`]. `None` (and every later call too) if the
     /// column cannot be merged, or if the merged dictionary outgrows the rows seen so far by
-    /// more than [`MAX_MERGED_SLACK_ROWS`] (rows' worth), as every dictionary registered is held
+    /// more than `MAX_MERGED_SLACK_ROWS` (rows' worth), as every dictionary registered is held
     /// until the output is made, however few rows use it.
     pub fn register(&mut self, column: &DictionaryColumn) -> Option<u32> {
         if self.failed
