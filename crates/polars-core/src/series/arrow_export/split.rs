@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use polars_arrow::array::{Array, ArrayRef, FixedSizeListArray, ListArray, StructArray};
+use polars_arrow::bitmap::utils::SlicesIterator;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_error::{PolarsResult, polars_bail};
 
@@ -125,29 +126,11 @@ fn add_entry_counts(
             };
 
             // MAP export drops what null rows own (`normalize_map_entries`); LARGE_LIST keeps it.
-            let drops_nulls = map_node.is_some() && cfg!(feature = "dtype-map");
-            match arr
-                .validity()
-                .filter(|_| drops_nulls && arr.null_count() > 0)
-            {
-                None => add_rows(rows, node),
-                Some(validity) => {
-                    let mut run_start = None;
-                    for row in rows.clone() {
-                        match (validity.get_bit(row), run_start) {
-                            (true, None) => run_start = Some(row),
-                            (false, Some(start)) => {
-                                add_rows(start..row, node);
-                                run_start = None;
-                            },
-                            _ => {},
-                        }
-                    }
-                    if let Some(start) = run_start {
-                        add_rows(start..rows.end, node);
-                    }
-                    *node = child_node + count_arrow_maps(entries.dtype());
-                },
+            if map_node.is_some() {
+                for_each_exported_map_run(arr, rows, |run| add_rows(run, node));
+                *node = child_node + count_arrow_maps(entries.dtype());
+            } else {
+                add_rows(rows, node);
             }
         },
         ArrowDataType::FixedSizeList(item, width) => {
@@ -170,6 +153,25 @@ fn add_entry_counts(
         },
         ArrowDataType::Extension(ext) => add_entry_counts(array, rows, &ext.inner, hot, out, node),
         _ => {},
+    }
+}
+
+/// Call `f` with each run of `rows` of the MAP `arr` whose entries export keeps: every row but
+/// the null ones, whose entries `normalize_map_entries` drops.
+pub(super) fn for_each_exported_map_run(
+    arr: &ListArray<i64>,
+    rows: Range<usize>,
+    mut f: impl FnMut(Range<usize>),
+) {
+    let validity = arr
+        .validity()
+        .filter(|_| cfg!(feature = "dtype-map") && arr.null_count() > 0);
+    let Some(validity) = validity else {
+        return f(rows);
+    };
+    let validity = validity.clone().sliced(rows.start, rows.len());
+    for (start, len) in SlicesIterator::new(&validity) {
+        f(rows.start + start..rows.start + start + len);
     }
 }
 

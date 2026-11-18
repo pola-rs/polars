@@ -92,6 +92,25 @@ def test_categorical_frame_shares_one_dictionary_across_batches() -> None:
     assert df.n_chunks("all") == [2, 2]
 
 
+def test_map_dictionary_holds_only_the_exported_entries() -> None:
+    # Row 1 is null but owns the entry "b", which export drops.
+    arr = pa.MapArray.from_arrays(
+        pa.array([0, 1, 2, 3, 4], pa.int32()),
+        pa.array(["k"] * 4),
+        pa.array(["a", "b", "c", "d"]).dictionary_encode(),
+        mask=pa.array([False, True, False, False]),
+    )
+    m = pl.Series("m", arr).cast(pl.Map(pl.String, pl.Categorical))
+    # Both slices share all of `m`'s entries.
+    df = pl.concat([m.slice(0, 1).to_frame(), m.slice(1, 2).to_frame()], rechunk=False)
+    assert df.n_chunks() == 2
+
+    batches = pa.table(df).to_batches()
+
+    dicts = [batch["m"].items.dictionary.to_pylist() for batch in batches]
+    assert dicts == [["a", "c"], ["a", "c"]]
+
+
 def test_enum_batches_share_one_dictionary_buffer() -> None:
     dtype = pl.Enum(["x", "y", "z"])
     df = pl.concat([pl.DataFrame({"e": ["x", "y"]}, schema={"e": dtype})] * 2)

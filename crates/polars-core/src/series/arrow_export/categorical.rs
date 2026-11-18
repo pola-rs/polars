@@ -156,7 +156,7 @@ impl CategoricalToArrowConverter {
     /// Add the Categorical keys of `array`, a physical array of `dtype`, to the key remaps, so
     /// that exports with `persist_remap` share one dictionary.
     ///
-    /// Keys under null parents are added too, so the dictionary may hold a few unused values.
+    /// It adds what export converts: under a Map, only the entries of its valid rows.
     pub fn seed(&mut self, array: &dyn Array, dtype: &DataType) {
         use DataType::*;
 
@@ -191,7 +191,17 @@ impl CategoricalToArrowConverter {
                 }
             },
             #[cfg(feature = "dtype-map")]
-            Map(_, _) => self.seed(array, &dtype.map_storage_dtype().unwrap()),
+            Map(_, _) => {
+                // Only the entries export keeps, which may be far fewer than the child holds.
+                let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+                let entries_dtype = dtype.map_entries_dtype().unwrap();
+                let offsets = arr.offsets().as_slice();
+                super::split::for_each_exported_map_run(arr, 0..arr.len(), |rows| {
+                    let start = offsets[rows.start] as usize;
+                    let len = offsets[rows.end] as usize - start;
+                    self.seed(arr.values().sliced(start, len).as_ref(), &entries_dtype);
+                });
+            },
             #[cfg(feature = "dtype-extension")]
             Extension(_, inner) => self.seed(array, inner),
             _ => {},
@@ -251,14 +261,18 @@ impl CategoricalArrayToArrowConverter {
 
         let keys_arr: PrimitiveArray<T> = match self {
             Self::Categorical {
-                mapping, key_remap, ..
+                mapping,
+                key_remap,
+                values,
             } => {
                 assert_eq!(input_mapping_ptr, Arc::as_ptr(mapping));
 
                 let key_remap: &mut PlIndexSet<T> = key_remap.as_any_mut().downcast_mut().unwrap();
 
                 if !persist_remap {
-                    key_remap.clear()
+                    key_remap.clear();
+                    // A remap that restarts can reach the cached length with other keys.
+                    values.0 = None;
                 }
 
                 keys_arr

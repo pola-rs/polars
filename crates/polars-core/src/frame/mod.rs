@@ -2774,7 +2774,8 @@ pub struct RecordBatchIter {
     /// each such column has one dictionary, which consumers such as pyarrow's `group_by` and IPC
     /// file writer require.
     converters: Vec<Option<ToArrowConverter>>,
-    /// Whether `converters` hold every key, which is done before the first batch.
+    /// Whether `converters` hold every key. A single batch builds its dictionary as it converts,
+    /// so this is done only before the first of several batches.
     seeded: bool,
     split: Option<SplitChunk>,
     /// The first row of the next chunk, to slice columns without chunks of their own.
@@ -2788,8 +2789,10 @@ struct SplitChunk {
 }
 
 impl RecordBatchIter {
-    fn seed(&mut self) {
-        for (c, converter) in self.df.columns().iter().zip(&mut self.converters) {
+    /// Seed `converters` with every key of `df`, so that its batches share one dictionary per
+    /// column; only worth it when there will be more than one batch.
+    fn seed(df: &DataFrame, converters: &mut [Option<ToArrowConverter>]) {
+        for (c, converter) in df.columns().iter().zip(converters) {
             let Some(converter) = converter else {
                 continue;
             };
@@ -2810,7 +2813,6 @@ impl RecordBatchIter {
                 converter.seed(chunk.as_ref(), c.dtype());
             }
         }
-        self.seeded = true;
     }
 
     /// Export chunk `idx` of `df`, which holds `rows`, as one batch.
@@ -2873,11 +2875,12 @@ impl Iterator for RecordBatchIter {
     type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.seeded {
-            self.seed();
-        }
         // Taken out so that `export` can borrow `self.df` alongside them.
         let mut converters = std::mem::take(&mut self.converters);
+        if !self.seeded && self.cursor.n_chunks > 1 {
+            Self::seed(&self.df, &mut converters);
+            self.seeded = true;
+        }
         let out = self.next_batch(&mut converters);
         self.converters = converters;
         out
@@ -2915,6 +2918,10 @@ impl RecordBatchIter {
             {
                 Ok(None) => {},
                 Ok(Some(ranges)) => {
+                    if !self.seeded {
+                        Self::seed(&self.df, converters);
+                        self.seeded = true;
+                    }
                     self.split = Some(SplitChunk {
                         chunk: self.df.chunk_frame(idx, rows),
                         ranges: ranges.into_iter(),
