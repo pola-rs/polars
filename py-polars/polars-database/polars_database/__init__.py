@@ -9,6 +9,7 @@ loads it through the versioned FFI contracts it exports (`_polars_io_plugin_ids`
 import atexit
 
 from polars_database._lib import (
+    __build_commit__,
     __version__,
     _at_exit,
     _capsule,
@@ -26,6 +27,7 @@ from polars_database._lib import (
 atexit.register(_at_exit)
 
 __all__ = [
+    "__build_commit__",
     "__version__",
     "_capsule",
     "_polars_io_plugin_ids",
