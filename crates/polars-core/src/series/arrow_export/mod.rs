@@ -19,7 +19,9 @@ use std::sync::Arc;
 use polars_compute::cast::cast_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
-pub(crate) use split::{arrow_export_row_ranges, contains_arrow_map};
+pub(crate) use split::{
+    MAX_MAP_ENTRIES, arrow_export_row_ranges, contains_arrow_map, max_map_span,
+};
 
 use crate::prelude::{
     Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType, ListArray,

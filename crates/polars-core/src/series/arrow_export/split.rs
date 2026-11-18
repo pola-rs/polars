@@ -4,7 +4,7 @@ use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
 use polars_arrow::datatypes::ArrowDataType;
 
 /// The most entries an arrow MAP array can hold, as its offsets are `i32`.
-const MAX_MAP_ENTRIES: u64 = i32::MAX as u64;
+pub(crate) const MAX_MAP_ENTRIES: u64 = i32::MAX as u64;
 
 /// Whether exporting to `dtype` builds an arrow MAP, whose offsets are `i32`.
 pub(crate) fn contains_arrow_map(dtype: &ArrowDataType) -> bool {
@@ -24,7 +24,7 @@ pub(crate) fn contains_arrow_map(dtype: &ArrowDataType) -> bool {
 ///
 /// A span bounds what export keeps, which can be less: a MAP drops the entries of its null rows
 /// (`normalize_map_entries`).
-fn max_map_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowDataType) -> u64 {
+pub(crate) fn max_map_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowDataType) -> u64 {
     match dtype {
         ArrowDataType::Map(entries, _) | ArrowDataType::LargeList(entries) => {
             let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
@@ -227,5 +227,46 @@ mod tests {
         assert_eq!(ranges, Some(vec![0..2047, 2047..4094, 4094..4096]));
         let sc = df.columns()[1].as_scalar_column().unwrap();
         assert!(sc.lazy_as_materialized_series().is_none());
+    }
+
+    #[test]
+    fn split_for_arrow_export_cuts_at_chunks_without_copying() {
+        let row = 1i64 << 29;
+        let chunks: Vec<_> = (0..3).map(|_| map_chunk(&[row, row], None)).collect();
+        let s = map_series(chunks.clone());
+        let df = DataFrame::new_infer_height(vec![s.into_column()]).unwrap();
+        let arrow_dtype = map_dtype().to_arrow(CompatLevel::newest());
+
+        let pieces = df.split_for_arrow_export([&arrow_dtype]);
+
+        // Each chunk fits on its own, so the pieces are the chunks themselves.
+        let heights: Vec<_> = pieces.iter().map(|p| p.height()).collect();
+        assert_eq!(heights, [2, 2, 2]);
+        for (piece, chunk) in pieces.iter().zip(&chunks) {
+            let piece_chunks = piece.columns()[0].as_materialized_series().chunks();
+            assert_eq!(piece_chunks.len(), 1);
+            let arr: &ListArray<i64> = piece_chunks[0].as_any().downcast_ref().unwrap();
+            let chunk: &ListArray<i64> = chunk.as_any().downcast_ref().unwrap();
+            assert!(*arr.offsets().last() - *arr.offsets().first() <= i32::MAX as i64);
+            assert_eq!(
+                arr.offsets().as_slice().as_ptr(),
+                chunk.offsets().as_slice().as_ptr()
+            );
+        }
+    }
+
+    #[test]
+    fn split_for_arrow_export_bounds_a_scalar_map_by_the_height() {
+        // One row of 2^20 entries fits; 4096 of them do not.
+        let scalar = scalar_map_column((0..1 << 20).collect(), 4096);
+        let df = DataFrame::new_infer_height(vec![scalar]).unwrap();
+        let arrow_dtype = df.columns()[0].dtype().to_arrow(CompatLevel::newest());
+
+        let pieces = df.split_for_arrow_export([&arrow_dtype]);
+
+        let heights: Vec<_> = pieces.iter().map(|p| p.height()).collect();
+        assert_eq!(heights, [2047, 2047, 2]);
+        let empty = DataFrame::new_infer_height(vec![scalar_map_column(vec![1], 0)]).unwrap();
+        assert_eq!(empty.split_for_arrow_export([&arrow_dtype]).len(), 1);
     }
 }

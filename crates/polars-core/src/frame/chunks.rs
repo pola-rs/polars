@@ -5,7 +5,9 @@ use rayon::prelude::*;
 
 use crate::prelude::*;
 use crate::runtime::RAYON;
-use crate::series::arrow_export::{arrow_export_row_ranges, contains_arrow_map};
+use crate::series::arrow_export::{
+    MAX_MAP_ENTRIES, arrow_export_row_ranges, contains_arrow_map, max_map_span,
+};
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 
 impl From<RecordBatch> for DataFrame {
@@ -164,6 +166,105 @@ impl DataFrame {
         }
         columns.extend(owned.iter().map(|(arr, dtype)| (&**arr, *dtype, false)));
         arrow_export_row_ranges(&columns, rows.len())
+    }
+
+    /// Slices of this frame that each export to `arrow_dtypes` without overflowing the `i32`
+    /// offsets of an arrow MAP; just the frame unless one would.
+    ///
+    /// The columns may be chunked differently, and nothing is rechunked: a frame that may
+    /// overflow is first cut at the chunk boundaries of its MAP columns, which can give more
+    /// slices than needed.
+    pub fn split_for_arrow_export<'a>(
+        self,
+        arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
+    ) -> Vec<DataFrame> {
+        let dtypes: Vec<_> = arrow_dtypes.into_iter().collect();
+        let height = self.height();
+        // Before any row is read, as an empty Scalar column has none.
+        if height == 0 || !dtypes.iter().any(|d| contains_arrow_map(d)) {
+            return vec![self];
+        }
+        let scalar_rows = self.arrow_export_scalar_rows(&dtypes);
+        let map_columns: Vec<_> = self
+            .columns()
+            .iter()
+            .zip(&dtypes)
+            .zip(&scalar_rows)
+            .filter(|((_, dtype), _)| contains_arrow_map(dtype))
+            .map(|((c, dtype), row)| (c, *dtype, row))
+            .collect();
+
+        // The spans of all chunks added up bound every MAP of the frame.
+        let fits = map_columns.iter().all(|(c, dtype, row)| {
+            let span = match (c.as_scalar_column(), row) {
+                (Some(_), Some(row)) => {
+                    max_map_span(row.as_ref(), 0..1, dtype).saturating_mul(height as u64)
+                },
+                (Some(_), None) => 0,
+                (None, _) => c
+                    .as_materialized_series()
+                    .chunks()
+                    .iter()
+                    .map(|arr| max_map_span(arr.as_ref(), 0..arr.len(), dtype))
+                    .fold(0u64, u64::saturating_add),
+            };
+            span <= MAX_MAP_ENTRIES
+        });
+        if fits {
+            return vec![self];
+        }
+
+        // Within a candidate, each chunked MAP column is a slice of one of its chunks.
+        let mut cuts = vec![0, height];
+        for (c, _, _) in &map_columns {
+            if c.as_scalar_column().is_none() {
+                let lengths = c.as_materialized_series().chunk_lengths();
+                cuts.extend(lengths.scan(0, |end, len| {
+                    *end += len;
+                    Some(*end)
+                }));
+            }
+        }
+        cuts.sort_unstable();
+        cuts.dedup();
+
+        let mut cursors = vec![(0, 0); map_columns.len()];
+        let mut ranges = Vec::new();
+        for candidate in cuts.windows(2).map(|w| w[0]..w[1]) {
+            let arrays: Vec<(ArrayRef, &ArrowDataType, bool)> = map_columns
+                .iter()
+                .zip(&mut cursors)
+                .filter_map(|((c, dtype, row), (idx, start))| {
+                    if c.as_scalar_column().is_some() {
+                        return row.as_ref().map(|row| (row.clone(), *dtype, true));
+                    }
+                    let chunks = c.as_materialized_series().chunks();
+                    while *start + chunks[*idx].len() <= candidate.start {
+                        *start += chunks[*idx].len();
+                        *idx += 1;
+                    }
+                    let arr = chunks[*idx].sliced(candidate.start - *start, candidate.len());
+                    Some((arr, *dtype, false))
+                })
+                .collect();
+            let columns: Vec<_> = arrays
+                .iter()
+                .map(|(arr, dtype, repeated)| (arr.as_ref(), *dtype, *repeated))
+                .collect();
+            match arrow_export_row_ranges(&columns, candidate.len()) {
+                None => ranges.push(candidate),
+                Some(pieces) => ranges.extend(
+                    pieces
+                        .into_iter()
+                        .map(|r| candidate.start + r.start..candidate.start + r.end),
+                ),
+            }
+        }
+
+        ranges
+            .into_iter()
+            .map(|r| self.slice(r.start as i64, r.len()))
+            .collect()
     }
 }
 
