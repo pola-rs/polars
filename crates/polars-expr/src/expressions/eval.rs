@@ -798,8 +798,19 @@ impl PhysicalExpr for EvalExpr {
         // `values` are the rows the evaluation runs on, with a value per row in each of
         // `columns`. If `lists` is set, these are the rows of all groups in order, as in `lists`.
         let mut lists = None;
+        let mut per_group = false;
         let (values, columns) = if self.columns.is_empty() {
             (input.flat_naive().into_owned(), Vec::new())
+        } else if let Some(columns) = self.columns_per_group(&input, df, groups, state)? {
+            // A value per group, such as an `eval` on the columns of an enclosing `eval`.
+            per_group = true;
+            let values = input.flat_naive().into_owned();
+            let values = if values.len() == 1 {
+                values.new_from_index(0, groups.len())
+            } else {
+                values
+            };
+            (values, columns)
         } else {
             match input.agg_state() {
                 AggState::NotAggregated(_) | AggState::LiteralScalar(_)
@@ -863,6 +874,9 @@ impl PhysicalExpr for EvalExpr {
             EvalVariant::Cumulative { .. } => unreachable!(),
         };
         match lists {
+            _ if per_group => {
+                input.with_values_and_args(out, true, Some(&self.expr), false, true)?;
+            },
             Some(lists) => {
                 let out = lists.with_inner_values(out.as_materialized_series());
                 input.with_values_and_args(
@@ -888,6 +902,41 @@ impl PhysicalExpr for EvalExpr {
 
     fn is_scalar(&self) -> bool {
         self.is_scalar
+    }
+}
+
+impl EvalExpr {
+    /// The columns with a value per group, if `input` and all columns have a value per group.
+    fn columns_per_group(
+        &self,
+        input: &AggregationContext,
+        df: &DataFrame,
+        groups: &GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<Option<Vec<Column>>> {
+        let is_per_group = |s: &AggState| {
+            matches!(
+                s,
+                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+            )
+        };
+        if !is_per_group(input.agg_state()) {
+            return Ok(None);
+        }
+        let mut columns = Vec::with_capacity(self.columns.len());
+        for c in &self.columns {
+            let ac = c.evaluate_on_groups(df, groups, state)?;
+            if !is_per_group(ac.agg_state()) {
+                return Ok(None);
+            }
+            let column = ac.flat_naive().into_owned();
+            columns.push(if column.len() == 1 {
+                column.new_from_index(0, groups.len())
+            } else {
+                column
+            });
+        }
+        Ok(Some(columns))
     }
 }
 

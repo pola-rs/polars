@@ -867,9 +867,32 @@ def test_list_eval_columns(engine: EngineType) -> None:
     # Nested, where the column is the value of the outer row.
     lf = pl.LazyFrame({"n": [[[1, 2], [3]], [[4]]], "x": [10, 100]})
     out = lf.select(
-        pl.col("n").list.eval(pl.element().list.eval(pl.element() + pl.col("x")))
+        a=pl.col("n").list.eval(pl.element().list.eval(pl.element() + pl.col("x"))),
+        b=pl.col("n").list.eval(
+            pl.element().list.agg(pl.element().sum() * pl.col("x"))
+        ),
     ).collect(engine=engine)
-    assert out["n"].to_list() == [[[11, 12], [13]], [[104]]]
+    assert out.to_dict(as_series=False) == {
+        "a": [[[11, 12], [13]], [[104]]],
+        "b": [[30, 30], [400]],
+    }
+
+    # A nested `eval` on a value per list is a value per list.
+    lf = pl.LazyFrame({"l": [[1, 2], []], "x": [10, 20]})
+    q = lf.select(
+        a=pl.col("l").list.agg(pl.lit([0]).list.agg(pl.col("x"))),
+        b=pl.col("l").list.eval(pl.col("l").list.eval(pl.element() + pl.col("x"))),
+    )
+    assert q.collect_schema() == {"a": pl.Int64, "b": pl.List(pl.List(pl.Int64))}
+    assert q.collect(engine=engine).to_dict(as_series=False) == {
+        "a": [10, 20],
+        "b": [[[11, 12]], [[]]],
+    }
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="index column"):
+        lf.select(
+            pl.col("l").list.eval(pl.element().sum().rolling(pl.col("x"), period="1i"))
+        ).collect(engine=engine)
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

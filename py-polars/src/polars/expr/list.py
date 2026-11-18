@@ -1431,8 +1431,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
-            A column of the frame is the value of the row being evaluated, as a
-            literal would be.
+            A column of the frame is the value of the row being evaluated: a
+            single value per list.
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
@@ -1490,8 +1490,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
-            A column of the frame is the value of the row being evaluated, as a
-            literal would be.
+            A column of the frame is the value of the row being evaluated: a
+            single value per list.
 
         Examples
         --------

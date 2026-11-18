@@ -1228,8 +1228,8 @@ class ExprArrayNameSpace:
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
-            A column of the frame is the value of the row being evaluated, as a
-            literal would be.
+            A column of the frame is the value of the row being evaluated: a
+            single value per list.
         as_list
             Collect the resulting data as a list. This allows for expressions which
             output a variable amount of data.
@@ -1266,8 +1266,8 @@ class ExprArrayNameSpace:
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
-            A column of the frame is the value of the row being evaluated, as a
-            literal would be.
+            A column of the frame is the value of the row being evaluated: a
+            single value per list.
 
         Examples
         --------
