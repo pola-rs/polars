@@ -83,7 +83,7 @@ def test_external_reader() -> None:
             *,
             columns: Sequence[str] = (),
             row_index: tuple[str, int] | None = None,
-            pre_slice: tuple[int, int] | None = None,
+            pre_slice: tuple[int, int | None] | None = None,
             filters: Sequence[FilterExpr] = (),
             num_pipelines: int,
         ) -> Iterator[pl.DataFrame]:
@@ -119,7 +119,7 @@ def test_external_reader() -> None:
             *,
             columns: Sequence[str],
             row_index: tuple[str, int] | None,
-            pre_slice: tuple[int, int] | None,
+            pre_slice: tuple[int, int | None] | None,
             filters: Sequence[FilterExpr],
         ) -> Iterator[pl.DataFrame]:
             return (slf.df.slice(x, 1) for x in range(slf.df.height))
@@ -152,7 +152,7 @@ def test_external_reader() -> None:
             *,
             columns: Sequence[str],
             row_index: tuple[str, int] | None,
-            pre_slice: tuple[int, int] | None,
+            pre_slice: tuple[int, int | None] | None,
             filters: Sequence[FilterExpr],
         ) -> Iterator[pl.DataFrame]:
             return (slf.df.slice(x, 1) for x in range(slf.df.height))
@@ -189,7 +189,7 @@ def test_external_reader() -> None:
             *,
             columns: Sequence[str],
             row_index: tuple[str, int] | None,
-            pre_slice: tuple[int, int] | None,
+            pre_slice: tuple[int, int | None] | None,
             filters: Sequence[FilterExpr],
         ) -> Iterator[pl.DataFrame]:
             return (slf.df.slice(x, 1) for x in range(slf.df.height))
@@ -235,7 +235,7 @@ def test_external_reader() -> None:
             *,
             columns: Sequence[str],
             row_index: tuple[str, int] | None,
-            pre_slice: tuple[int, int] | None,
+            pre_slice: tuple[int, int | None] | None,
             filters: Sequence[FilterExpr],
         ) -> Iterator[pl.DataFrame]:
             return (slf.df.slice(x, 1) for x in range(slf.df.height))
@@ -282,7 +282,7 @@ def test_external_reader() -> None:
             *,
             columns: Sequence[str],
             row_index: tuple[str, int] | None,
-            pre_slice: tuple[int, int] | None,
+            pre_slice: tuple[int, int | None] | None,
             filters: Sequence[FilterExpr],
         ) -> Iterator[pl.DataFrame]:
             for i, df in enumerate(slf.df.slice(x, 1) for x in range(slf.df.height)):
@@ -327,7 +327,7 @@ def test_external_reader() -> None:
             *,
             columns: Sequence[str],
             row_index: tuple[str, int] | None,
-            pre_slice: tuple[int, int] | None,
+            pre_slice: tuple[int, int | None] | None,
             filters: Sequence[FilterExpr],
         ) -> Iterator[pl.DataFrame]:
             for i, df in enumerate(slf.df.slice(x, 1) for x in range(slf.df.height)):
@@ -378,7 +378,7 @@ def test_external_reader() -> None:
             *,
             columns: Sequence[str],
             row_index: tuple[str, int] | None,
-            pre_slice: tuple[int, int] | None,
+            pre_slice: tuple[int, int | None] | None,
             filters: Sequence[FilterExpr],
         ) -> Iterator[pl.DataFrame]:
             df = slf.df
@@ -447,7 +447,7 @@ def test_external_reader_expand_paths(tmp_path: Path) -> None:
             *,
             columns: Sequence[str] = (),
             row_index: tuple[str, int] | None = None,
-            pre_slice: tuple[int, int] | None = None,
+            pre_slice: tuple[int, int | None] | None = None,
             filters: Sequence[FilterExpr] = (),
             num_pipelines: int,
         ) -> Iterator[pl.DataFrame]:
@@ -513,7 +513,7 @@ def test_external_reader_with_resolver_use_case() -> None:
             *,
             columns: Sequence[str] = (),
             row_index: tuple[str, int] | None = None,
-            pre_slice: tuple[int, int] | None = None,
+            pre_slice: tuple[int, int | None] | None = None,
             filters: Sequence[FilterExpr] = (),
             num_pipelines: int,
         ) -> Iterator[pl.DataFrame]:
@@ -637,7 +637,7 @@ def test_external_reader_hive_slice_ends_in_file_skipped_by_predicate(
             *,
             columns: Sequence[str] = (),
             row_index: tuple[str, int] | None = None,
-            pre_slice: tuple[int, int] | None = None,
+            pre_slice: tuple[int, int | None] | None = None,
             filters: Sequence[FilterExpr] = (),
             num_pipelines: int,
         ) -> Iterator[pl.DataFrame]:
