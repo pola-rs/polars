@@ -1539,20 +1539,15 @@ pub fn try_build_sorted_group_by(
         };
         gb_output_schema.insert(field.name, dtype);
     }
-    input = PhysStream::first(
-        phys_sm.insert(PhysNode::new(
-            Arc::new(gb_output_schema.clone()),
-            PhysNodeKind::SortedGroupBy {
-                input,
-                key: input_column.clone(),
-                aggs: aggs.to_vec(),
-                slice: options
-                    .slice
-                    .filter(|slice| slice.is_positive())
-                    .map(|slice| (slice.positive_offset(), slice.len())),
-            },
-        )),
-    );
+    input = PhysStream::first(phys_sm.insert(PhysNode::new(
+        Arc::new(gb_output_schema.clone()),
+        PhysNodeKind::SortedGroupBy {
+            input,
+            key: input_column.clone(),
+            aggs: aggs.to_vec(),
+            slice: options.slice.filter(|slice| slice.is_positive()),
+        },
+    )));
     if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
         input = build_slice_stream(input, slice, phys_sm);
     }
@@ -1679,24 +1674,19 @@ pub fn build_group_by_stream_with_key_ranges(
             && keys.is_empty()
             && apply.is_none()
         {
-            let mut input = PhysStream::first(
-                phys_sm.insert(PhysNode::new(
-                    output_schema.clone(),
-                    PhysNodeKind::RollingGroupBy {
-                        input,
-                        index_column: rolling_options.index_column.clone(),
-                        period: rolling_options.period,
-                        offset: rolling_options.offset,
-                        closed: rolling_options.closed_window,
-                        placement: rolling_options.placement,
-                        slice: options
-                            .slice
-                            .filter(|slice| slice.is_positive())
-                            .map(|slice| (slice.positive_offset(), slice.len())),
-                        aggs: aggs.to_vec(),
-                    },
-                )),
-            );
+            let mut input = PhysStream::first(phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::RollingGroupBy {
+                    input,
+                    index_column: rolling_options.index_column.clone(),
+                    period: rolling_options.period,
+                    offset: rolling_options.offset,
+                    closed: rolling_options.closed_window,
+                    placement: rolling_options.placement,
+                    slice: options.slice.filter(|slice| slice.is_positive()),
+                    aggs: aggs.to_vec(),
+                },
+            )));
             if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
                 input = build_slice_stream(input, slice, phys_sm);
             }
@@ -1705,20 +1695,15 @@ pub fn build_group_by_stream_with_key_ranges(
             && keys.is_empty()
             && apply.is_none()
         {
-            let mut input = PhysStream::first(
-                phys_sm.insert(PhysNode::new(
-                    output_schema.clone(),
-                    PhysNodeKind::DynamicGroupBy {
-                        input,
-                        options: dynamic_options.clone(),
-                        aggs: aggs.to_vec(),
-                        slice: options
-                            .slice
-                            .filter(|slice| slice.is_positive())
-                            .map(|slice| (slice.positive_offset(), slice.len())),
-                    },
-                )),
-            );
+            let mut input = PhysStream::first(phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::DynamicGroupBy {
+                    input,
+                    options: dynamic_options.clone(),
+                    aggs: aggs.to_vec(),
+                    slice: options.slice.filter(|slice| slice.is_positive()),
+                },
+            )));
             if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
                 input = build_slice_stream(input, slice, phys_sm);
             }

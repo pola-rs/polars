@@ -84,11 +84,7 @@ impl ComputeNode for DynamicSliceNode {
                             state.task_metrics.clone(),
                         ));
                     },
-                    slice => {
-                        let (offset, length) =
-                            slice.map_or((0, None), |s| (s.positive_offset(), s.len()));
-                        *self = Self::Streaming(StreamingSliceNode::new(offset, length))
-                    },
+                    slice => *self = Self::Streaming(StreamingSliceNode::new(slice)),
                 }
             }
         }

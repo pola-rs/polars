@@ -49,8 +49,7 @@ impl Executor for UnionExec {
 
                 // TODO!: don't read the file yet if it is before the slice!
                 let height = df.height();
-                let next_slice = slice.offsetted(height);
-                let range = slice.resolve(height);
+                let (range, next_slice) = slice.split_front(height);
                 let is_exhausted = next_slice.is_some_and(|s| s.is_empty());
                 let is_last = idx + 1 == n_inputs || is_exhausted;
 

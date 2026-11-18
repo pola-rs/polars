@@ -179,6 +179,15 @@ impl Slice {
         }
     }
 
+    /// Return the rows the slice selects from the next `n_rows` rows, and the slice to apply to
+    /// the rows after them, `None` if that would select every row.
+    ///
+    /// # Panics
+    /// Panics if `self` is [`Slice::Negative`].
+    pub fn split_front(self, n_rows: usize) -> (Range<usize>, Option<Self>) {
+        (self.resolve(n_rows), self.offsetted(n_rows))
+    }
+
     /// Return which rows the slice selects from `n_rows` rows.
     #[inline]
     pub fn resolve(self, n_rows: usize) -> Range<usize> {

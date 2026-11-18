@@ -105,7 +105,8 @@ impl RecordBatchDataFetcher {
 
         let inflight_budget = byte_source.window_inflight_budget();
         let window_growth = WindowGrowth::for_source(&byte_source, inflight_budget.as_deref());
-        let global_slice = pre_slice.map(|s| s.to_unsigned_offset_len());
+        let global_slice = pre_slice;
+        assert!(global_slice.is_none_or(|s| s.is_positive()));
 
         polars_ensure!(
             global_slice.is_none() || record_batch_cum_len.is_some(),

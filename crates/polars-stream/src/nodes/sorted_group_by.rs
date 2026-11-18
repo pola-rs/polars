@@ -31,17 +31,18 @@ pub struct SortedGroupBy {
     key: PlSmallStr,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
 
-    /// `(offset, len)` of the groups not yet sent, where a `None` len runs to the end.
-    slice: Option<(usize, Option<usize>)>,
+    /// The slice of the groups not yet sent, `None` if it selects every group.
+    slice: Option<Slice>,
     seq_offset: Arc<RelaxedCell<u64>>,
 }
 impl SortedGroupBy {
     pub fn new(
         key: PlSmallStr,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
-        slice: Option<(usize, Option<usize>)>,
+        slice: Option<Slice>,
         input_schema: Arc<Schema>,
     ) -> Self {
+        assert!(slice.is_none_or(|s| s.is_positive()));
         let buf_df = DataFrame::empty_with_arc_schema(input_schema.clone());
         Self {
             buf_df,
@@ -59,14 +60,12 @@ impl SortedGroupBy {
         state: &ExecutionState,
         idxs: &mut Vec<IdxSize>,
         df: DataFrame,
-        windows_slice: Option<(usize, Option<usize>)>,
+        windows_slice: Option<Slice>,
     ) -> PolarsResult<DataFrame> {
         let column = df.column(key).unwrap();
         rle_lengths(column, idxs).unwrap();
 
-        let windows_range = windows_slice
-            .and_then(|(offset, len)| Slice::new_positive(offset, len))
-            .map_or(0..idxs.len(), |s| s.resolve(idxs.len()));
+        let windows_range = windows_slice.map_or(0..idxs.len(), |s| s.resolve(idxs.len()));
         let windows_offset = windows_range.start;
         let windows_length = windows_range.len();
 
@@ -124,7 +123,7 @@ impl ComputeNode for SortedGroupBy {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if self.slice.is_some_and(|(_, l)| l == Some(0)) {
+        if self.slice.is_some_and(|s| s.is_empty()) {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
@@ -159,7 +158,7 @@ impl ComputeNode for SortedGroupBy {
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
             assert!(self.buf_df.height() > 0);
-            assert!(self.slice.is_none_or(|(_, l)| l != Some(0)));
+            assert!(self.slice.is_none_or(|s| !s.is_empty()));
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let df = Self::evaluate_one(
@@ -228,7 +227,7 @@ impl ComputeNode for SortedGroupBy {
         // This finds boundaries to distribute to worker threads over.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await
-                && self.slice.is_none_or(|(_, l)| l != Some(0))
+                && self.slice.is_none_or(|s| !s.is_empty())
             {
                 let (sf, seq, source_token, wait_token) = morsel.into_inner();
                 let df = sf.into_df().await;
@@ -267,21 +266,17 @@ impl ComputeNode for SortedGroupBy {
 
                 let windows_slice = self.slice;
 
-                if let Some((offset, len)) = windows_slice {
+                if let Some(slice) = windows_slice {
                     let buf_key_column = buf_key_column.head(Some(num_flushable as usize));
 
                     // Since `buf_key_column` is flagged as sorted, this is simply a linear scan.
                     let num_uniq_values = buf_key_column.n_unique()?;
 
-                    let num_sent = Slice::new_positive(offset, len)
-                        .map_or(num_uniq_values, |s| s.resolve(num_uniq_values).len());
-                    self.slice = Some((
-                        offset.saturating_sub(num_uniq_values),
-                        len.map(|len| len - num_sent),
-                    ));
+                    let range;
+                    (range, self.slice) = slice.split_front(num_uniq_values);
 
                     // Fast path: Slice allows skipping the entire morsel.
-                    if offset >= num_uniq_values {
+                    if range.is_empty() {
                         continue;
                     }
                 }

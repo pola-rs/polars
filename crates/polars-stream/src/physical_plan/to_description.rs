@@ -120,15 +120,10 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
-        PhysNodeKind::StreamingSlice {
-            input,
-            offset,
-            length,
-            ..
-        } => (
+        PhysNodeKind::StreamingSlice { input, slice } => (
             PhysicalPropsDescription::Slice {
-                offset: *offset,
-                length: *length,
+                offset: slice.positive_offset(),
+                length: slice.len(),
             },
             vec![input.node],
         ),
@@ -335,7 +330,7 @@ pub fn phys_props(
             PhysicalPropsDescription::SortedGroupBy {
                 key: key.to_string(),
                 aggs: fmt_exprs(aggs, expr_arena),
-                slice: slice.map(|(offset, len)| (offset as u64, len)),
+                slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
             },
             vec![input.node],
         ),
@@ -868,7 +863,7 @@ pub fn phys_props(
                     include_boundaries: *include_boundaries,
                     closed_window: fmt_from_static_str(closed_window),
                     aggs: fmt_exprs(aggs, expr_arena),
-                    slice: slice.map(|(offset, len)| (offset as u64, len)),
+                    slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
                 },
                 vec![input.node],
             )
@@ -889,7 +884,7 @@ pub fn phys_props(
                 period: period.to_string(),
                 offset: offset.to_string(),
                 closed_window: fmt_from_static_str(closed),
-                slice: slice.map(|(offset, len)| (offset as u64, len)),
+                slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
                 aggs: fmt_exprs(aggs, expr_arena),
             },
             vec![input.node],

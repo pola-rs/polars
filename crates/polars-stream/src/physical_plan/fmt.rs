@@ -10,6 +10,7 @@ use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileWriteFormat;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
+use polars_utils::slice_enum::Slice;
 use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -260,26 +261,21 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
-        PhysNodeKind::StreamingSlice {
-            input,
-            offset,
-            length,
-        } => {
-            let label = match length {
-                Some(length) => format!("slice\\noffset: {offset}, length: {length}"),
-                None => format!("slice\\noffset: {offset}"),
-            };
-            (label, from_ref(input))
+        PhysNodeKind::StreamingSlice { input, slice } => {
+            (format!("slice\\n{slice}"), from_ref(input))
         },
         PhysNodeKind::Reverse { input } => ("reverse".to_owned(), from_ref(input)),
         PhysNodeKind::NegativeSlice {
             input,
             offset_from_end,
             length,
-        } => (
-            format!("slice\\noffset: -{offset_from_end}, length: {length}"),
-            from_ref(input),
-        ),
+        } => {
+            let slice = Slice::Negative {
+                offset_from_end: *offset_from_end,
+                len: *length,
+            };
+            (format!("slice\\n{slice}"), from_ref(input))
+        },
         PhysNodeKind::DynamicSlice {
             input,
             offset,
@@ -473,11 +469,8 @@ fn visualize_plan_rec(
             s.push_str("sorted-group-by\\n");
             let f = &mut s;
             write!(f, "key: {key}\\n").unwrap();
-            if let Some((offset, length)) = slice {
-                match length {
-                    Some(length) => write!(f, "slice: {offset}, {length}\\n").unwrap(),
-                    None => write!(f, "slice: {offset}\\n").unwrap(),
-                }
+            if let Some(slice) = slice {
+                write!(f, "slice: {slice}\\n").unwrap();
             }
             write!(
                 f,
@@ -796,11 +789,8 @@ fn visualize_plan_rec(
                 write!(f, "origin: {}\\n", placement.origin).unwrap();
                 write!(f, "start_range: {:?}\\n", placement.start_range).unwrap();
             }
-            if let Some((offset, length)) = slice {
-                match length {
-                    Some(length) => write!(f, "slice: {offset}, {length}\\n").unwrap(),
-                    None => write!(f, "slice: {offset}\\n").unwrap(),
-                }
+            if let Some(slice) = slice {
+                write!(f, "slice: {slice}\\n").unwrap();
             }
             write!(
                 f,
@@ -831,11 +821,8 @@ fn visualize_plan_rec(
             if let Some(placement) = placement {
                 write!(f, "owned_range: {:?}\\n", placement.owned_range).unwrap();
             }
-            if let Some((offset, length)) = slice {
-                match length {
-                    Some(length) => write!(f, "slice: {offset}, {length}\\n").unwrap(),
-                    None => write!(f, "slice: {offset}\\n").unwrap(),
-                }
+            if let Some(slice) = slice {
+                write!(f, "slice: {slice}\\n").unwrap();
             }
             write!(
                 f,

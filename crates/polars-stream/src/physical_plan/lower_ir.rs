@@ -77,11 +77,7 @@ pub fn build_slice_stream(
             length: slice.len().unwrap(),
         }
     } else {
-        PhysNodeKind::StreamingSlice {
-            input,
-            offset: slice.positive_offset(),
-            length: slice.len(),
-        }
+        PhysNodeKind::StreamingSlice { input, slice }
     };
     PhysStream::first(phys_sm.insert(PhysNode::new(input.output_schema(phys_sm).clone(), kind)))
 }

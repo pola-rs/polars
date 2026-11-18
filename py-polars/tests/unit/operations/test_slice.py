@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -13,6 +13,7 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from tests.conftest import PlMonkeyPatch
@@ -641,6 +642,17 @@ def test_slice_expr_single_value_offset(expr: pl.Expr, expected: list[int]) -> N
     )
 
 
+def test_slice_expr_dynamic_offset_selects_every_row(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+    df = pl.DataFrame({"a": range(100), "o": [0] * 100})
+    assert_frame_equal(
+        df.lazy().select(pl.col("a").slice(pl.col("o").first())).collect(),
+        df.select("a"),
+    )
+
+
 def test_slice_offset_beyond_u32_after_sorted_group_by() -> None:
     lf = (
         pl.LazyFrame({"g": [1, 2, 3], "x": [1, 2, 3]})
@@ -659,6 +671,35 @@ def test_slice_offset_beyond_u32_after_rolling() -> None:
         .agg(pl.col("x").sum())
     )
     assert lf.slice(2**32 + 1, 10).collect().height == 0
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [(0, 1), (20, 30), (99, 5), (20, None), (95, None), (-3, None), (500, None)],
+)
+@pytest.mark.parametrize(
+    "group_by",
+    [
+        lambda f: f.group_by("g", maintain_order=True).agg(pl.col("x").sum()),
+        lambda f: f.rolling("t", period="3i").agg(pl.col("x").sum()),
+        lambda f: f.group_by_dynamic("t", every="2i").agg(pl.col("x").sum()),
+    ],
+)
+def test_group_by_slice_across_morsels(
+    offset: int,
+    length: int | None,
+    group_by: Callable[[Any], Any],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+    df = pl.DataFrame(
+        {"t": range(300), "g": [i // 3 for i in range(300)], "x": range(300)}
+    )
+    lf = df.lazy().set_sorted("t").set_sorted("g")
+    assert_frame_equal(
+        group_by(lf).slice(offset, length).collect(),
+        group_by(df).slice(offset, length),
+    )
 
 
 def test_slice_offset_beyond_u32_after_union() -> None:

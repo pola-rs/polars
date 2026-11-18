@@ -39,8 +39,8 @@ pub struct RollingGroupBy {
 
     seq: MorselSeq,
 
-    /// `(offset, len)` of the windows not yet sent, where a `None` len runs to the end.
-    slice: Option<(usize, Option<usize>)>,
+    /// The slice of the windows not yet sent, `None` if it selects every window.
+    slice: Option<Slice>,
 
     index_column: PlSmallStr,
     space: IndexSpace,
@@ -59,9 +59,10 @@ impl RollingGroupBy {
         offset: Duration,
         closed: ClosedWindow,
         placement: Option<RollingWindowPlacement>,
-        slice: Option<(usize, Option<usize>)>,
+        slice: Option<Slice>,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
     ) -> PolarsResult<Self> {
+        assert!(slice.is_none_or(|s| s.is_positive()));
         polars_ensure!(
             !period.is_zero() && !period.negative(),
             ComputeError: "rolling window period should be strictly positive",
@@ -177,16 +178,10 @@ impl RollingGroupBy {
                 }
             }
         }
-        let range = self
+        let range;
+        (range, self.slice) = self
             .slice
-            .and_then(|(offset, len)| Slice::new_positive(offset, len))
-            .map_or(0..windows.len(), |s| s.resolve(windows.len()));
-        self.slice = self.slice.map(|(offset, len)| {
-            (
-                offset.saturating_sub(windows.len()),
-                len.map(|len| len - range.len()),
-            )
-        });
+            .map_or((0..windows.len(), None), |s| s.split_front(windows.len()));
         let key = key.slice(range.clone());
 
         let offset = windows[0][0];
@@ -228,7 +223,7 @@ impl ComputeNode for RollingGroupBy {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if self.slice.is_some_and(|(_, len)| len == Some(0)) || self.is_past_range() {
+        if self.slice.is_some_and(|s| s.is_empty()) || self.is_past_range() {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
@@ -264,7 +259,7 @@ impl ComputeNode for RollingGroupBy {
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
             assert!(self.buf_df.height() > 0);
-            assert!(!self.slice.is_some_and(|(_, len)| len == Some(0)));
+            assert!(self.slice.is_none_or(|s| !s.is_empty()));
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 if let Some((windows, df, key)) = self.next_windows(true)? {
@@ -339,7 +334,7 @@ impl ComputeNode for RollingGroupBy {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let mut prev_max = None;
             while let Ok(morsel) = recv.recv().await
-                && !self.slice.is_some_and(|(_, len)| len == Some(0))
+                && self.slice.is_none_or(|s| !s.is_empty())
                 && !self.is_past_range()
             {
                 let (sf, seq, source_token, wait_token) = morsel.into_inner();

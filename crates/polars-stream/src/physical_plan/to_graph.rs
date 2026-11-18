@@ -171,14 +171,10 @@ fn to_graph_rec<'a>(
             return Ok(node);
         },
 
-        StreamingSlice {
-            input,
-            offset,
-            length,
-        } => {
+        StreamingSlice { input, slice } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
-                nodes::streaming_slice::StreamingSliceNode::new(*offset, *length),
+                nodes::streaming_slice::StreamingSliceNode::new(Some(*slice)),
                 [(input_key, input.port)],
             )
         },

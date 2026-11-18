@@ -415,8 +415,8 @@ impl FfiFileReader {
 struct SliceState(Option<Slice>);
 
 impl SliceState {
-    /// `pre_slice` is positive.
     fn new(pre_slice: Option<Slice>) -> Self {
+        assert!(pre_slice.is_none_or(|s| s.is_positive()));
         Self(pre_slice)
     }
 
@@ -427,8 +427,8 @@ impl SliceState {
     /// Moves past `h` more rows: the offset and length of the part of them in the slice.
     fn advance(&mut self, h: u64) -> (u64, u64) {
         let h = usize::try_from(h).unwrap_or(usize::MAX);
-        let range = self.0.map_or(0..h, |s| s.resolve(h));
-        self.0 = self.0.and_then(|s| s.offsetted(h));
+        let range;
+        (range, self.0) = self.0.map_or((0..h, None), |s| s.split_front(h));
         (range.start as u64, range.len() as u64)
     }
 

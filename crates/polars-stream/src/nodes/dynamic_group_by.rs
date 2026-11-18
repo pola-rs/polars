@@ -38,8 +38,8 @@ pub struct DynamicGroupBy {
 
     seq: MorselSeq,
 
-    /// `(offset, len)` of the windows not yet sent, where a `None` len runs to the end.
-    slice: Option<(usize, Option<usize>)>,
+    /// The slice of the windows not yet sent, `None` if it selects every window.
+    slice: Option<Slice>,
 
     group_by: Option<PlSmallStr>,
     index_column: PlSmallStr,
@@ -56,8 +56,9 @@ impl DynamicGroupBy {
         schema: Arc<Schema>,
         options: DynamicGroupOptionsIR,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
-        slice: Option<(usize, Option<usize>)>,
+        slice: Option<Slice>,
     ) -> PolarsResult<Self> {
+        assert!(slice.is_none_or(|s| s.is_positive()));
         let DynamicGroupOptionsIR {
             index_column,
             every,
@@ -236,16 +237,10 @@ impl DynamicGroupBy {
         let offset = windows[0][0];
         let end = windows.iter().map(|[s, len]| s + len).max().unwrap();
 
-        let range = self
+        let range;
+        (range, self.slice) = self
             .slice
-            .and_then(|(offset, len)| Slice::new_positive(offset, len))
-            .map_or(0..windows.len(), |s| s.resolve(windows.len()));
-        self.slice = self.slice.map(|(offset, len)| {
-            (
-                offset.saturating_sub(windows.len()),
-                len.map(|len| len - range.len()),
-            )
-        });
+            .map_or((0..windows.len(), None), |s| s.split_front(windows.len()));
         windows.truncate(range.end);
         windows.drain(..range.start);
         for bound in [&mut lower_bound, &mut upper_bound] {
@@ -288,7 +283,7 @@ impl ComputeNode for DynamicGroupBy {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if self.slice.is_some_and(|(_, len)| len == Some(0)) || self.windower.is_done() {
+        if self.slice.is_some_and(|s| s.is_empty()) || self.windower.is_done() {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
@@ -324,7 +319,7 @@ impl ComputeNode for DynamicGroupBy {
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
             assert!(self.buf_df.height() > 0);
-            assert!(!self.slice.is_some_and(|(_, len)| len == Some(0)));
+            assert!(self.slice.is_none_or(|s| !s.is_empty()));
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 if let Some((windows, lower_bound, upper_bound, df)) = self.next_windows(true)? {
@@ -421,7 +416,7 @@ impl ComputeNode for DynamicGroupBy {
         // This finds boundaries to distribute to worker threads over.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await
-                && !self.slice.is_some_and(|(_, len)| len == Some(0))
+                && self.slice.is_none_or(|s| !s.is_empty())
                 && !self.windower.is_done()
             {
                 let (sf, seq, source_token, wait_token) = morsel.into_inner();

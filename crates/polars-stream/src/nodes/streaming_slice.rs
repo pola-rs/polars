@@ -5,19 +5,18 @@ use super::compute_node_prelude::*;
 /// A node that passes through the rows of a positive slice.
 /// Since the offset is non-negative this can be done in a streaming manner.
 pub struct StreamingSliceNode {
-    /// Relative to the rows not yet received.
-    offset: usize,
-    /// `None` runs to the end.
-    length: Option<usize>,
+    /// The slice of the rows not yet received, `None` if it selects every row.
+    slice: Option<Slice>,
 }
 
 impl StreamingSliceNode {
-    pub fn new(offset: usize, length: Option<usize>) -> Self {
-        Self { offset, length }
+    pub fn new(slice: Option<Slice>) -> Self {
+        assert!(slice.is_none_or(|s| s.is_positive()));
+        Self { slice }
     }
 
     fn is_exhausted(&self) -> bool {
-        self.length == Some(0)
+        self.slice.is_some_and(|s| s.is_empty())
     }
 }
 
@@ -57,10 +56,10 @@ impl ComputeNode for StreamingSliceNode {
                 let morsel = morsel
                     .map(|df| {
                         let height = df.height();
-                        let range = Slice::new_positive(self.offset, self.length)
-                            .map_or(0..height, |s| s.resolve(height));
-                        self.offset = self.offset.saturating_sub(height);
-                        self.length = self.length.map(|len| len - range.len());
+                        let range;
+                        (range, self.slice) = self
+                            .slice
+                            .map_or((0..height, None), |s| s.split_front(height));
 
                         if range.len() != height {
                             df.slice(range)
