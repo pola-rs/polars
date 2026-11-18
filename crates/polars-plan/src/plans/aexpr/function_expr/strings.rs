@@ -54,6 +54,7 @@ pub enum IRStringFunction {
     LenBytes,
     LenChars,
     Lowercase,
+    FromCodePoint,
     #[cfg(feature = "extract_jsonpath")]
     JsonDecode(DataType),
     #[cfg(feature = "extract_jsonpath")]
@@ -171,6 +172,7 @@ impl IRStringFunction {
             JsonPathMatch => mapper.with_dtype(DataType::String),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
+            FromCodePoint => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "string_normalize")]
@@ -271,7 +273,7 @@ impl IRStringFunction {
             S::JsonDecode { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "extract_jsonpath")]
             S::JsonPathMatch => FunctionOptions::elementwise(),
-            S::LenBytes | S::LenChars => FunctionOptions::elementwise()
+            S::LenBytes | S::LenChars | S::FromCodePoint => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
             #[cfg(feature = "regex")]
             S::Replace { .. } => {
@@ -357,6 +359,7 @@ impl Display for IRStringFunction {
             LenBytes => "len_bytes",
             Lowercase => "to_lowercase",
             LenChars => "len_chars",
+            FromCodePoint => "from_code_point",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
             #[cfg(feature = "string_pad")]

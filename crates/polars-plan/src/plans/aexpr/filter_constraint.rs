@@ -109,7 +109,7 @@ fn is_modeled_dtype(dtype: &DataType) -> bool {
 // decimal of another scale is rescaled when that loses no digits.
 fn column_value(value: &Scalar, dtype: &DataType) -> Option<Scalar> {
     if value.dtype() == dtype {
-        return (!value.is_null()).then(|| value.clone());
+        return (!value.is_null()).then(|| canonical_float(value));
     }
     #[cfg(feature = "dtype-decimal")]
     if let (AnyValue::Decimal(v, _, old_scale), DataType::Decimal(precision, scale)) =
@@ -126,6 +126,25 @@ fn column_value(value: &Scalar, dtype: &DataType) -> Option<Scalar> {
         });
     }
     None
+}
+
+// A float as the value it compares equal to in every set and order of the model:
+// `-0.0 == 0.0` and NaN equals NaN when filtering, but `Scalar`'s hash and order tell
+// their bit patterns apart (so `is_in([-0.0]) AND is_in([0.0])` looked impossible).
+fn canonical_float(value: &Scalar) -> Scalar {
+    use polars_core::prelude::AnyValue as AV;
+    use polars_utils::float16::pf16;
+
+    let canonical = match value.value() {
+        AV::Float64(v) if v.is_nan() => AV::Float64(f64::NAN),
+        AV::Float64(v) if *v == 0.0 => AV::Float64(0.0),
+        AV::Float32(v) if v.is_nan() => AV::Float32(f32::NAN),
+        AV::Float32(v) if *v == 0.0 => AV::Float32(0.0),
+        AV::Float16(v) if v.is_nan() => AV::Float16(pf16::NAN),
+        AV::Float16(v) if f32::from(*v) == 0.0 => AV::Float16(pf16::from(0.0f32)),
+        _ => return value.clone(),
+    };
+    Scalar::new(value.dtype().clone(), canonical)
 }
 
 // Whether `a == b` on two columns of these dtypes compares their values exactly,

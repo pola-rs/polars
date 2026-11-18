@@ -839,6 +839,42 @@ impl SlicePushDown {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
             },
+            // A positive slice of a row index over a resolver: the resolver reads only the
+            // slice, numbered from where the slice starts (else the in-memory engine reads the
+            // whole source).
+            (
+                MapFunction {
+                    input,
+                    function:
+                        FunctionIR::RowIndex {
+                            name,
+                            offset,
+                            schema,
+                        },
+                },
+                Some(state),
+            ) if state.offset >= 0
+                && matches!(
+                    lp_arena.get(input),
+                    Resolver { resolved_ir: None, filters, .. } if filters.is_empty()
+                ) =>
+            {
+                let shifted = idxsize_try_from(state.offset)
+                    .ok()
+                    .and_then(|o| offset.unwrap_or(0).checked_add(o));
+                let lp = MapFunction {
+                    input,
+                    function: FunctionIR::RowIndex {
+                        name,
+                        offset: shifted.or(offset),
+                        schema,
+                    },
+                };
+                match shifted {
+                    Some(_) => self.pushdown_and_continue(lp, Some(state), lp_arena, expr_arena),
+                    None => self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena),
+                }
+            },
             (MapFunction { input, function }, _) if function.allow_predicate_pd() => {
                 let lp = MapFunction { input, function };
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)

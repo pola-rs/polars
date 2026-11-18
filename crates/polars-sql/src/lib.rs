@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 mod catalog;
 mod context;
+mod copy;
 mod datetime_template;
 mod dyn_visit;
 pub mod function_registry;
@@ -16,6 +17,7 @@ pub mod keywords;
 mod lateral;
 mod layout_alter;
 mod literal_folding;
+mod params;
 mod pivot;
 mod positional_join;
 mod resolver;
@@ -38,10 +40,11 @@ mod types;
 mod window_frames;
 
 pub use catalog::{
-    CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogSortField,
+    CallArg, CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogSortField,
     CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};
+pub use params::QueryParams;
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;
 pub use time_travel::VersionSpec;

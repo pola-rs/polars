@@ -12,7 +12,9 @@
 //! * A plugin exposes each contract as a PyCapsule whose name is the plugin ID and whose pointer
 //!   is the contract's `Plugin` struct. The Python module of the plugin lists its IDs in
 //!   `_polars_io_plugin_ids: tuple[str, ...]` and returns the capsule for an ID from
-//!   `_capsule(id: str)`. This handshake never changes.
+//!   `_capsule(id: str)`. The struct must stay valid while its capsule lives (a static, or
+//!   owned by the capsule); a host that keeps using the pointer keeps the capsule alive (Polars
+//!   holds it for the rest of the process). This handshake never changes.
 //! * Polars uses the newest ID that both sides support, dispatches by exact capsule name, and
 //!   refuses unknown IDs. Polars drops an ID by removing it from its supported list (calls then
 //!   fail with a compatibility error), a plugin by no longer exporting it.
@@ -20,13 +22,24 @@
 //! * An ID is dropped on one side only after the other side has released its successor, so that
 //!   a compatible pair of released versions always exists.
 //!
+//! Generic contracts, usable by any plugin: [`file_reader_v1`] (feature `file_reader`) and
+//! [`lazyframe_resolver_v1`] (feature `lazyframe_resolver`, which includes `file_reader`). Hosts
+//! that call them from anywhere in a query find the plugins through [`registry`], by ID string.
+//! They are not [`PluginId`] variants: released plugins match on `PluginId` exhaustively, and
+//! Cargo feature unification would add the variants to their builds.
+//!
 //! Each plugin type's contract is behind a Cargo feature of the same name (e.g. `iceberg`).
 //! Features only control what is compiled; they never change an ID or a layout.
 #![allow(clippy::missing_safety_doc)]
 
 pub mod common;
+#[cfg(feature = "file_reader")]
+pub mod file_reader_v1;
 #[cfg(feature = "iceberg")]
 pub mod iceberg_v1;
+#[cfg(feature = "lazyframe_resolver")]
+pub mod lazyframe_resolver_v1;
+pub mod registry;
 
 use std::ffi::CStr;
 

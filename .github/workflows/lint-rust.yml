@@ -11,6 +11,7 @@ on:
       - py-polars/src/**
       - py-polars/Cargo.toml
       - py-polars/polars-iceberg/**
+      - py-polars/polars-database/**
       - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -27,6 +28,7 @@ on:
       - py-polars/src/**
       - py-polars/Cargo.toml
       - py-polars/polars-iceberg/**
+      - py-polars/polars-database/**
       - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml

@@ -156,7 +156,10 @@ pub(super) fn call_dsl_resolvers(
         ir_arena,
     ) {
         ControlFlow::Continue(()) => {},
-        ControlFlow::Break(err) => return Err(err),
+        ControlFlow::Break(err) => {
+            drain_resolve_tasks(&mut resolve_tasks);
+            return Err(err);
+        },
     }
 
     let verbose = verbose();
@@ -171,7 +174,7 @@ pub(super) fn call_dsl_resolvers(
             eprintln!("call_dsl_resolvers: n_resolvers: {n}")
         }
 
-        ASYNC.block_in_place_on(async {
+        let out = ASYNC.block_in_place_on(async {
             let mut optimize_scratch = ScratchVec::default();
 
             while let Some((node, args, resolved)) = resolve_tasks.next().await {
@@ -360,8 +363,21 @@ pub(super) fn call_dsl_resolvers(
             }
 
             PolarsResult::Ok(())
-        })?;
+        });
+        if out.is_err() {
+            drain_resolve_tasks(&mut resolve_tasks);
+        }
+        out?;
     }
 
     Ok(())
+}
+
+/// Waits for the resolvers still running when another one failed. A resolver may call a plugin
+/// on a blocking thread, which can't be aborted: it must not keep running after the query has
+/// returned its error.
+fn drain_resolve_tasks<T>(resolve_tasks: &mut FuturesUnordered<Pin<Box<dyn Future<Output = T>>>>) {
+    if !resolve_tasks.is_empty() {
+        ASYNC.block_in_place_on(async { while resolve_tasks.next().await.is_some() {} });
+    }
 }

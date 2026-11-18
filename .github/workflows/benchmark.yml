@@ -5,6 +5,7 @@ on:
     paths:
       - crates/**
       - py-polars/polars-iceberg/**
+      - py-polars/polars-database/**
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
@@ -15,6 +16,7 @@ on:
     paths:
       - crates/**
       - py-polars/polars-iceberg/**
+      - py-polars/polars-database/**
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
@@ -141,6 +143,14 @@ jobs:
           maturin develop --uv --manifest-path polars-iceberg/Cargo.toml
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_iceberg'
+
+      - name: Install polars_database plugin
+        working-directory: py-polars
+        run: |
+          # The venv is created by uv and has no pip.
+          maturin develop --uv --manifest-path polars-database/Cargo.toml
+          # The plugin tests skip when the module is missing; fail here instead.
+          python -c 'import polars_database'
 
       - name: Run non-benchmark tests
         working-directory: py-polars

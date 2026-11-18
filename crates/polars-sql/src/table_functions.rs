@@ -104,13 +104,109 @@ impl FromStr for PolarsTableFunctions {
     }
 }
 
+/// A file format that SQL reads and writes by name: a file extension, or `FORMAT` in `COPY`.
+pub(crate) enum FileFormat {
+    #[cfg(feature = "csv")]
+    Csv,
+    #[cfg(feature = "parquet")]
+    Parquet,
+    #[cfg(feature = "ipc")]
+    Ipc,
+    #[cfg(feature = "json")]
+    Ndjson,
+}
+
+impl FileFormat {
+    /// The names of the formats, as extensions.
+    pub(crate) const NAMES: &[&str] = &[
+        #[cfg(feature = "csv")]
+        "csv",
+        #[cfg(feature = "parquet")]
+        "parquet",
+        #[cfg(feature = "ipc")]
+        "ipc",
+        #[cfg(feature = "ipc")]
+        "arrow",
+        #[cfg(feature = "ipc")]
+        "feather",
+        #[cfg(feature = "json")]
+        "ndjson",
+        #[cfg(feature = "json")]
+        "jsonl",
+    ];
+
+    /// The format that `name` gives, in any case.
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            #[cfg(feature = "csv")]
+            "csv" => Some(FileFormat::Csv),
+            #[cfg(feature = "parquet")]
+            "parquet" => Some(FileFormat::Parquet),
+            #[cfg(feature = "ipc")]
+            "ipc" | "arrow" | "feather" => Some(FileFormat::Ipc),
+            // Not `json`: `read_json` reads newline-delimited JSON only.
+            #[cfg(feature = "json")]
+            "ndjson" | "jsonl" => Some(FileFormat::Ndjson),
+            _ => None,
+        }
+    }
+
+    /// The format of `path`, by its extension as written.
+    pub(crate) fn of_path(path: &str) -> Option<Self> {
+        let file_name = path.rsplit('/').next()?;
+        let (_, extension) = file_name.rsplit_once('.')?;
+        Self::from_name(extension)
+    }
+}
+
 impl PolarsTableFunctions {
+    /// The function that reads `path`, by its extension as written.
+    #[allow(unreachable_code)]
+    fn for_path(path: &str) -> Option<Self> {
+        Some(match FileFormat::of_path(path)? {
+            #[cfg(feature = "csv")]
+            FileFormat::Csv => PolarsTableFunctions::ReadCsv,
+            #[cfg(feature = "parquet")]
+            FileFormat::Parquet => PolarsTableFunctions::ReadParquet,
+            #[cfg(feature = "ipc")]
+            FileFormat::Ipc => PolarsTableFunctions::ReadIpc,
+            #[cfg(feature = "json")]
+            FileFormat::Ndjson => PolarsTableFunctions::ReadNdjson,
+        })
+    }
+
+    /// Whether `path` has the extension of a file format.
+    pub(crate) fn reads_path(path: &str) -> bool {
+        Self::for_path(path).is_some()
+    }
+
+    /// The file at `path`, read with defaults. `None` when its extension names no reader.
+    pub(crate) fn read_path(
+        path: &str,
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<Option<(String, LazyFrame)>> {
+        let Some(read_fn) = Self::for_path(path) else {
+            return Ok(None);
+        };
+        let path = SQLValue::SingleQuotedString(path.to_string()).with_empty_span();
+        let arg = SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(SQLExpr::Value(path)));
+        read_fn.execute(&[arg], ctx).map(Some)
+    }
+
     #[allow(unreachable_code)]
     pub(crate) fn execute(
         &self,
         args: &[SQLFunctionArg],
         ctx: &mut SQLContext,
     ) -> PolarsResult<(String, LazyFrame)> {
+        let reads_file = !matches!(
+            self,
+            PolarsTableFunctions::GenerateSeries | PolarsTableFunctions::Range
+        );
+        polars_ensure!(
+            !reads_file || ctx.allow_file_reads,
+            SQLInterface: "reading files is disabled in this SQLContext"
+        );
         let (name, lf): (String, LazyFrame) = match self {
             #[cfg(feature = "csv")]
             PolarsTableFunctions::ReadCsv => self.read_csv(args)?,
@@ -492,8 +588,7 @@ impl PolarsTableFunctions {
 
 /// The path with a leading `~` replaced by the home directory. The Python API does this before
 /// a path reaches Rust; a path in SQL text does not pass through there.
-#[allow(dead_code)]
-fn expand_home_dir(path: PlRefPath) -> PolarsResult<PlRefPath> {
+pub(crate) fn expand_home_dir(path: PlRefPath) -> PolarsResult<PlRefPath> {
     match polars_io::resolve_homedir(path.as_str()) {
         std::borrow::Cow::Owned(expanded) => PlRefPath::try_from_path(&expanded),
         std::borrow::Cow::Borrowed(_) => Ok(path),

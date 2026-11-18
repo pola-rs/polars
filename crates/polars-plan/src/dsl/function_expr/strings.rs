@@ -137,6 +137,8 @@ pub enum StringFunction {
     },
     #[cfg(feature = "regex")]
     EscapeRegex,
+    /// The character of each integer Unicode code point.
+    FromCodePoint,
 }
 
 impl Display for StringFunction {
@@ -169,6 +171,7 @@ impl Display for StringFunction {
             LenBytes => "len_bytes",
             Lowercase => "to_lowercase",
             LenChars => "len_chars",
+            FromCodePoint => "from_code_point",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
             #[cfg(feature = "string_pad")]

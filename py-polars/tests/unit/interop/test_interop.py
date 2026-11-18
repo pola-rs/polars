@@ -1017,6 +1017,28 @@ def test_from_arrow_invalid_time_zone() -> None:
         pl.from_arrow(arr)
 
 
+@pytest.mark.parametrize("time_zone", ["+05:30", "GMT+8", "Z", "not-a-zone"])
+@pytest.mark.parametrize("n_rows", [0, 1])
+def test_from_arrow_unreadable_time_zone_is_an_error_not_a_panic(
+    time_zone: str, n_rows: int
+) -> None:
+    # an empty batch took a path that unwrapped the time zone (a panic)
+    values = [datetime(2021, 1, 1)] * n_rows
+    ts = pa.array(values, type=pa.timestamp("us", tz=time_zone))
+    nested = pa.array([values] * n_rows, type=pa.list_(ts.type))
+    for table in [
+        pa.table({"ts": ts}),
+        pa.table({"x": nested}),
+        pa.table(
+            {"s": pa.array([{"t": v} for v in values], pa.struct([("t", ts.type)]))}
+        ),
+    ]:
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.from_arrow(table)
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.DataFrame(table)
+
+
 @pytest.mark.parametrize(
     ("fixed_offset", "etc_tz"),
     [

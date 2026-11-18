@@ -3214,6 +3214,7 @@ pub(crate) fn build_sort_stream_with_ctx(
         by_column: vec![key],
         slice,
         sort_options,
+        projection: None,
     };
     let mut stream = PhysStream::first(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)));
 

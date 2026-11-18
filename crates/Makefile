@@ -113,6 +113,11 @@ build-polars-iceberg:  ## Compile and install the `polars_iceberg` I/O plugin (p
 	@unset CONDA_PREFIX \
 	&& $(VENV_BIN)/maturin develop -m ../py-polars/polars-iceberg/Cargo.toml $(ARGS) --uv
 
+.PHONY: build-polars-database
+build-polars-database:  ## Compile and install the `polars_database` I/O plugin (py-polars/polars-database) into the venv
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m ../py-polars/polars-database/Cargo.toml $(ARGS) --uv
+
 .PHONY: doctest
 doctest:  ## Check that documentation builds
 	cargo doc --no-deps --all-features -p polars-utils

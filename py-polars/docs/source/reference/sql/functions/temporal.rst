@@ -14,12 +14,16 @@ Temporal
      - Returns the local time at the start of the statement.
    * - :ref:`CURRENT_TIMESTAMP <current_timestamp>`
      - Returns the local date and time at the start of the statement.
+   * - :ref:`DATE_DIFF <date_diff>`
+     - Counts the boundaries of a part, such as 'day' or 'month', crossed from a start to an end value.
    * - :ref:`DATE_PART <date_part>`
      - Extracts a part of a date (or datetime) such as 'year', 'month', etc.
    * - :ref:`DATE_TRUNC <date_trunc>`
      - Truncates a date (or datetime) to the given part, such as 'hour' or 'month'.
    * - :ref:`EXTRACT <extract>`
      - Offers the same functionality as `DATE_PART` with slightly different syntax.
+   * - :ref:`MAKE_DATE <make_date>`
+     - Builds a date from integer year, month and day parts.
    * - :ref:`STRFTIME <strftime>`
      - Formats a temporal value (Datetime, Date, or Time) as a string.
    * - :ref:`TO_CHAR <to_char>`
@@ -74,6 +78,47 @@ microsecond precision and no time zone. `LOCALTIMESTAMP` and `NOW()` are aliases
 .. code-block:: python
 
     df.sql("SELECT CURRENT_TIMESTAMP AS ts, NOW() AS ts_now FROM self")
+
+.. _date_diff:
+
+DATE_DIFF
+---------
+Counts the boundaries of a part crossed from a start to an end value, as an Int64 that is
+negative if the end is before the start. From 2024-01-31 to 2024-02-01 is 1 month, while from
+2024-01-01 to 2024-01-31 is 0 months. `DATEDIFF` is an alias.
+
+Supported parts are 'year', 'quarter', 'month', 'week' (starts on Monday), 'day', 'hour',
+'minute', 'second', 'millisecond', 'microsecond' and 'nanosecond' (plural forms are also
+accepted). The values can be dates, timestamps or times; times only support parts shorter
+than a day. A string literal is read as a value of the type of the other argument.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {
+            "start_date": [date(2024, 1, 31), date(2024, 12, 31)],
+            "end_ts": [datetime(2024, 2, 1, 10, 30), datetime(2025, 1, 1)],
+        }
+    )
+    df.sql("""
+      SELECT
+        DATE_DIFF('day', start_date, end_ts) AS days,
+        DATE_DIFF('month', start_date, end_ts) AS months,
+        DATE_DIFF('year', start_date, end_ts) AS years,
+        DATE_DIFF('hour', start_date, end_ts) AS hours
+      FROM self
+    """)
+    # shape: (2, 4)
+    # ┌──────┬────────┬───────┬───────┐
+    # │ days ┆ months ┆ years ┆ hours │
+    # │ ---  ┆ ---    ┆ ---   ┆ ---   │
+    # │ i64  ┆ i64    ┆ i64   ┆ i64   │
+    # ╞══════╪════════╪═══════╪═══════╡
+    # │ 1    ┆ 1      ┆ 0     ┆ 34    │
+    # │ 1    ┆ 1      ┆ 1     ┆ 24    │
+    # └──────┴────────┴───────┴───────┘
 
 .. _date_part:
 
@@ -326,6 +371,31 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     # │ 2026-08-22 ┆ 202    ┆ 2026 ┆ 3       │
     # │ 2077-02-10 ┆ 207    ┆ 2077 ┆ 1       │
     # └────────────┴────────┴──────┴─────────┘
+
+.. _make_date:
+
+MAKE_DATE
+---------
+Builds a date from year, month and day parts, like :func:`polars.date`. Raises an error if the
+parts do not form a valid date. Years before 1 are counted as in ISO 8601: year 0 is 1 BC.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"y": [2024, 2025], "m": [2, 12], "d": [29, 31]})
+    df.sql("""
+      SELECT y, m, d, MAKE_DATE(y, m, d) AS dt FROM self
+    """)
+    # shape: (2, 4)
+    # ┌──────┬─────┬─────┬────────────┐
+    # │ y    ┆ m   ┆ d   ┆ dt         │
+    # │ ---  ┆ --- ┆ --- ┆ ---        │
+    # │ i64  ┆ i64 ┆ i64 ┆ date       │
+    # ╞══════╪═════╪═════╪════════════╡
+    # │ 2024 ┆ 2   ┆ 29  ┆ 2024-02-29 │
+    # │ 2025 ┆ 12  ┆ 31  ┆ 2025-12-31 │
+    # └──────┴─────┴─────┴────────────┘
 
 .. _strftime:
 

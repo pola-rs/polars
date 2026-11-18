@@ -220,12 +220,13 @@ impl GroupingSets {
         contains_grouping_placeholder(expr, self.placeholders())
     }
 
-    /// The computed keys, each with the name of the column that holds its grouped values.
+    /// The computed and renamed keys, each with the name of the column that holds its grouped
+    /// values.
     pub(crate) fn stored_keys(&self, key_schema: &Schema) -> Vec<(Expr, PlSmallStr)> {
         self.stripped_keys
             .iter()
             .zip(key_schema.iter_names())
-            .filter(|(key, _)| !matches!(key, Expr::Column(_)))
+            .filter(|(key, name)| !matches!(key, Expr::Column(column) if column == *name))
             .map(|(key, name)| (key.clone(), name.clone()))
             .collect()
     }

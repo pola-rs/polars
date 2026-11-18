@@ -9,6 +9,10 @@ Table Operations
      - Description
    * - :ref:`ALTER TABLE <alter_table>`
      - Change the columns, properties or partitioning of a table in an attached catalog.
+   * - :ref:`CALL <call>`
+     - Run a maintenance procedure on a table in an attached catalog.
+   * - :ref:`COPY <copy>`
+     - Write the result of a query, or a table, to a file.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -18,7 +22,7 @@ Table Operations
    * - :ref:`DELETE FROM <delete_from_table>`
      - Remove specific rows of data from a table using an (optional) constraint.
    * - :ref:`DESCRIBE <describe>`
-     - Returns the column names and types of a table or view.
+     - Returns the column names and types of a table, view, file or query.
    * - :ref:`DROP SCHEMA <drop_schema>`
      - Drop an empty namespace of an attached catalog.
    * - :ref:`DROP TABLES <drop_tables>`
@@ -33,6 +37,8 @@ Table Operations
      - Update, delete and insert rows of a table in an attached catalog from a source.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables and views registered in the given context.
+   * - :ref:`INFORMATION_SCHEMA.COLUMNS <information_schema_columns>`
+     - A table with a row per column of each table and view registered in the given context.
    * - :ref:`GENERATE_SERIES <generate_series_table_func>`
      - Create a table with one column of values from start to stop, stop included.
    * - :ref:`RANGE <range_table_func>`
@@ -100,6 +106,160 @@ Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY
     ALTER TABLE lake.sales.orders RESET PARTITIONED BY
     ALTER TABLE lake.sales.orders SET SORTED BY (customer_id, ordered_at DESC NULLS LAST)
     ALTER TABLE lake.sales.orders RESET SORTED BY
+
+.. _call:
+
+CALL
+----
+Run a maintenance procedure on a table of a catalog attached with
+:meth:`SQLContext.register_catalog`. A ``CALL`` returns a result row.
+
+.. code-block:: sql
+
+    CALL [<catalog>.]system.<procedure>(<arguments>)
+
+* Without ``<catalog>``, the default catalog is used.
+* Arguments are given in order, or by name as ``name => value``.
+* Argument values are literals: strings, integers, booleans, ``NULL``, ``map('k', 'v')``
+  or ``array('a', 'b')``.
+* The ``table`` argument is a string with the table's name in that catalog: ``'ns.t'``, or
+  ``'t'`` in the catalog's default namespace. It may start with the catalog's name.
+
+**rewrite_data_files**
+
+Compacts the data files of a table in one commit, as a ``replace`` snapshot. Small files
+are combined, and large ones split, into files of about the target size. Sizes are
+estimated from the files read: files that another writer compressed differently can take
+a second ``CALL`` to reach the target size. The rows stay the
+same: rows that delete files removed are not written again. The new files are written
+under the table's current partition spec and sorted by its sort order. Delete files stay.
+Files are selected as Iceberg's ``binpack`` strategy does: per partition, a group of files is
+rewritten when it has enough small or large files, or files with many deleted rows.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Argument
+     - Description
+   * - ``table``
+     - The table. Required.
+   * - ``strategy``
+     - ``'binpack'``. Default: ``'binpack'``. ``'sort'`` is not supported yet.
+   * - ``sort_order``
+     - Not supported yet.
+   * - ``options``
+     - A ``map('key', 'value', ...)`` of these options:
+
+       * ``rewrite-all``: ``'true'`` rewrites every selected file. Default: ``'false'``.
+       * ``target-file-size-bytes``: the size of the new files. Default: the table's
+         ``write.target-file-size-bytes``, else 512 MB.
+       * ``min-file-size-bytes``, ``max-file-size-bytes``: files outside this range are
+         rewritten. Default: 75% and 180% of the target size.
+       * ``min-input-files``: the number of such files in a group that is enough for a
+         rewrite. Default: 5.
+       * ``max-file-group-size-bytes``, ``max-file-group-input-files``: the largest group
+         rewritten together. Default: 100 GB, no limit.
+       * ``delete-file-threshold``: files with at least this many delete files are
+         rewritten. Default: no limit.
+       * ``delete-ratio-threshold``: files with at least this share of deleted rows are
+         rewritten. Default: 0.3.
+   * - ``where``
+     - A condition as a string. Only the files that may hold a matching row are
+       considered, and they are rewritten whole. ``where`` is a reserved word: give it in
+       position, or as ``"where" => '...'``.
+
+It returns ``rewritten_data_files_count``, ``added_data_files_count``,
+``rewritten_bytes_count``, ``failed_data_files_count`` and ``removed_delete_files_count``.
+The last two are always 0. If no group needs a rewrite, nothing is committed and the counts
+are 0. Concurrent appends do not conflict with a compaction. A concurrent change to a
+rewritten file, such as a delete, makes it fail. Iceberg v3 tables, tables with equality
+delete files, and position delete files that are not of one data file are not supported
+yet.
+
+**Example:**
+
+.. code-block:: sql
+
+    -- Compact every data file of table `orders` in namespace `sales` of catalog `lake`,
+    -- partition by partition, into files of about 128 MB.
+    CALL lake.system.rewrite_data_files(
+        table => 'sales.orders',
+        options => map('rewrite-all', 'true', 'target-file-size-bytes', '134217728')
+    )
+
+    -- Only the files that may hold rows of 2024, by position: the strategy, no sort
+    -- order, no options, then the condition.
+    CALL lake.system.rewrite_data_files(
+        'sales.orders', 'binpack', NULL, NULL, 'ordered_at >= ''2024-01-01'''
+    )
+
+**rewrite_manifests**
+
+Rewrites the data manifests of a table in one commit, as a ``replace`` snapshot. The rows
+and data files stay the same. The new manifests are sorted by partition and about
+``commit.manifest.target-size-bytes`` in size (default 8 MB), so queries skip more of them.
+Delete manifests are not changed.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Argument
+     - Description
+   * - ``table``
+     - The table. Required.
+   * - ``use_caching``
+     - Accepted. Has no effect.
+   * - ``spec_id``
+     - The partition spec whose manifests are rewritten. Default: the current spec.
+   * - ``sort_by``
+     - Not supported yet.
+
+It returns ``rewritten_manifests_count`` and ``added_manifests_count``. If there is nothing
+to rewrite (no data manifests, or one small enough), nothing is committed and both counts
+are 0. Iceberg v3 tables are not supported yet.
+
+**Example:**
+
+.. code-block:: sql
+
+    -- Table `orders` in namespace `sales` of catalog `lake`: rewrite the data manifests of
+    -- its current partition spec into fewer manifests, sorted by partition. Rows and data
+    -- files stay the same.
+    CALL lake.system.rewrite_manifests(table => 'sales.orders')
+
+    -- The same table, given by position. Only the manifests of partition spec 0 are
+    -- rewritten, e.g. those written before the table's partitioning changed. Other specs'
+    -- manifests stay as they are.
+    CALL lake.system.rewrite_manifests('sales.orders', spec_id => 0)
+
+.. _copy:
+
+COPY
+----
+Write the result of a query, or a table, to a file. :meth:`SQLContext.execute` returns a
+``LazyFrame`` that writes the file once it is collected; collecting it gives an empty frame.
+
+The format is the one that ``FORMAT`` names, or else the one of the file extension: ``csv``;
+``parquet``; ``ipc``, ``arrow`` or ``feather``; ``ndjson`` or ``jsonl``. A CSV file takes the
+options ``HEADER`` (written unless set to ``false``), ``DELIMITER``, ``NULL`` and ``QUOTE``.
+The path can be a cloud URL, and a leading ``~`` is the home directory.
+
+The directory of the file must exist, and an existing file is replaced. If the query fails
+while it runs, a partial file can be left behind, also in the place of a file that existed.
+
+Only ``COPY ... TO '<file>'`` is supported. To load a file, read it in a query, as in
+``CREATE TABLE t AS SELECT * FROM 'data.csv'``. Writing files can be turned off with
+``SQLContext(allow_file_writes=False)``.
+
+**Example:**
+
+.. code-block:: sql
+
+    COPY (SELECT region, SUM(amount) AS total FROM sales GROUP BY region) TO 'totals.parquet'
+    COPY sales (region, amount) TO 'sales.csv'
+    COPY sales TO 'sales.txt' (FORMAT csv, DELIMITER '|', HEADER false)
 
 .. _create_schema:
 
@@ -218,6 +378,23 @@ DELETE
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 
+On a registered table, it returns the remaining rows, and later statements in the same
+context see the table without the deleted rows. Source files and the original frame are
+not changed.
+
+The table keeps the condition, not its result. Each read of the table runs the condition
+again on the table's source. A subquery of the condition keeps its tables as registered at
+the time of the ``DELETE``.
+
+- A condition that names a missing column fails at the ``DELETE`` and leaves the table
+  unchanged. Other errors in the condition, such as a string compared with an integer or a
+  cast of a string that is not a number, show when the table is read, on each read until
+  the table is registered again.
+- Collecting the result of a ``DELETE`` computes the remaining rows. Leave the result lazy
+  when only the change is needed.
+- Each ``DELETE`` adds its condition to the table. After many, register the collected rows
+  again: ``ctx.register("t", ctx.execute("SELECT * FROM t", eager=True))``.
+
 On a table of an attached catalog, it deletes the matching rows in one commit, as one
 snapshot. It returns the statement, not the remaining rows. Rows where the condition is NULL
 are kept.
@@ -256,14 +433,23 @@ If another writer commits first:
 
 DESCRIBE
 --------
-Returns the column names and Polars data types of a table or view, as the columns
-``column_name`` and ``column_type``. ``DESC`` is the same.
+Returns the column names and data types of a table, a view, a file or the result of a query,
+as the columns ``column_name`` and ``column_type``. ``DESC`` is the same. A query is not run.
+A file is given by its path in single quotes, as in :ref:`FROM <from>`; only what its columns
+are known from is read, such as the metadata of a Parquet file or the first rows of a CSV file.
+
+A type is given by the SQL name that :ref:`CAST <cast>` reads back as that type, with a nested
+type in full, such as ``STRUCT<lat DOUBLE PRECISION, lon DOUBLE PRECISION>``. A type that has
+no SQL name, such as a fixed-size array, is given by its Polars name in lower case, also inside
+a nested type; such a name cannot be used in ``CAST``.
 
 **Example:**
 
 .. code-block:: sql
 
     DESCRIBE some_table
+    DESCRIBE 'data/events.parquet'
+    DESCRIBE SELECT a, b * 2 AS c FROM some_table
 
 .. _drop_schema:
 
@@ -421,6 +607,23 @@ Returns a list of all tables and views registered in the given context.
 .. code-block:: sql
 
     SHOW TABLES
+
+.. _information_schema_columns:
+
+INFORMATION_SCHEMA.COLUMNS
+--------------------------
+A table with a row per column of each table and view registered in the given context, in the
+order of their names. Its columns are ``table_name``, ``column_name``, ``ordinal_position``
+(starting at 1), ``data_type`` (the Polars data type, as in :ref:`DESCRIBE <describe>`) and
+``is_nullable`` (always ``'YES'``). Read in a view, it does not list the views that read it.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_name = 'some_table'
 
 .. _generate_series_table_func:
 
