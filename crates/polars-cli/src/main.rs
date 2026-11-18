@@ -38,6 +38,7 @@ fn run_command() -> ExitCode {
         Err(error) => return report(error),
     };
     let format = args.format();
+    let read_only = args.read_only();
     // Checked before the script is read, which can wait for standard input.
     if format.is_one_file() && io::stdout().is_terminal() {
         return report(usage_error(
@@ -59,7 +60,8 @@ fn run_command() -> ExitCode {
     let interrupted = handle_interrupts();
     // Not locked: Polars and the panic hook write to these streams from other threads.
     let stdout = BufWriter::new(io::stdout());
-    let code = run(&script, &mut Printer::new(stdout, io::stderr(), format));
+    let mut printer = Printer::new(stdout, io::stderr(), format);
+    let code = run(&script, read_only, &mut printer);
     // An interrupt that arrived while the last result was printed stopped nothing.
     if code == exit_code::OK && interrupted.load(Ordering::SeqCst) {
         ExitCode::from(exit_code::INTERRUPTED)

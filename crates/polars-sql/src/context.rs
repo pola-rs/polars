@@ -48,6 +48,7 @@ use crate::catalog::{
     hint_unsupported_part, name_parts, name_position, rewrite_catalog_names, set_partitioning,
     set_sort_order, table_name_parts,
 };
+use crate::copy::{self, CopyToStdout};
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::functions::{PolarsSQLFunctions, is_random};
@@ -84,7 +85,7 @@ use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::{PolarsTableFunctions, expand_home_dir};
 use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::{map_sql_dtype_to_polars, sql_type_name};
-use crate::{col, copy, unique_column_name};
+use crate::{col, unique_column_name};
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -1427,12 +1428,23 @@ impl SQLContext {
             )));
         }
 
+        self.plan_statement(stmt, bound, Self::execute_statement)
+    }
+
+    /// The plan that `plan` makes of `stmt`, with the values `bound` of its parameters,
+    /// resolved against the context now.
+    fn plan_statement(
+        &mut self,
+        mut stmt: Statement,
+        bound: Option<PlHashMap<PlSmallStr, Scalar>>,
+        plan: impl FnOnce(&mut Self, &Statement) -> PolarsResult<LazyFrame>,
+    ) -> PolarsResult<LazyFrame> {
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
         desugar_quantified_subqueries(&mut stmt);
         self.catalog_spellings = catalog_spellings;
         self.params = Arc::new(bound.unwrap_or_default());
         self.start_statement();
-        let res = self.execute_statement(&stmt).inspect_err(|_| {
+        let res = plan(self, &stmt).inspect_err(|_| {
             self.clear_statement_state();
         })?;
 
@@ -1444,6 +1456,45 @@ impl SQLContext {
 
         self.clear_statement_state();
         Ok(res)
+    }
+
+    /// The `COPY ... TO STDOUT` statement of `query`, if it is one, for the caller to write to
+    /// its output: [`SQLContext::execute`] rejects it. It is not a file that SQL writes, so
+    /// [`SQLContext::with_file_writes`] does not limit it.
+    pub fn copy_to_stdout(&mut self, query: &str) -> PolarsResult<Option<CopyToStdout>> {
+        let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
+            return Ok(None);
+        };
+        if !matches!(
+            stmt,
+            Statement::Copy {
+                to: true,
+                target: CopyTarget::Stdout,
+                ..
+            }
+        ) {
+            return Ok(None);
+        }
+        let bound = bind_params(&mut stmt, &QueryParams::default())?;
+        copy_table_as_query(&mut stmt)?;
+        let Statement::Copy {
+            options,
+            legacy_options,
+            ..
+        } = &stmt
+        else {
+            unreachable!()
+        };
+        let format = copy::write_format(None, options, legacy_options)?;
+        // the query is planned as that of `COPY ... TO '<file>'` is
+        let rows = self.plan_statement(stmt, bound, |context, stmt| match stmt {
+            Statement::Copy {
+                source: CopySource::Query(query),
+                ..
+            } => context.execute_query(query),
+            _ => unreachable!(),
+        })?;
+        Ok(Some(CopyToStdout { rows, format }))
     }
 
     /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
@@ -2846,14 +2897,10 @@ impl SQLContext {
             polars_bail!(SQLInterface: "COPY of a table is not supported in this statement");
         };
         polars_ensure!(
-            legacy_options.is_empty(),
-            SQLInterface: "COPY takes its options in parentheses, as in (FORMAT csv, HEADER false)"
-        );
-        polars_ensure!(
             self.allow_file_writes,
             SQLInterface: "writing files is disabled in this SQLContext"
         );
-        let format = copy::write_format(path, options)?;
+        let format = copy::write_format(Some(path), options, legacy_options)?;
         let target = SinkTarget::Path(expand_home_dir(PlRefPath::new(path))?);
         self.execute_query(query)?.sink(
             SinkDestination::File { target },

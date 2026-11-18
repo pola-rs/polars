@@ -9,12 +9,15 @@
 use std::any::Any;
 use std::io::Write;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
 
 use polars::error::abort::{QueryAborted, catch_polars_abort};
+use polars::prelude::sink::{SinkedPathsCallback, SinkedPathsCallbackArgs};
 use polars::prelude::{
-    DataFrame, Engine, LazyFrame, PlanCallback, PolarsError, PolarsResult, SinkDestination,
-    UnifiedSinkArgs,
+    DataFrame, DslPlan, Engine, IntoLazy, LazyFrame, PlanCallback, PolarsError, PolarsResult,
+    SinkDestination, SinkType, SpecialEq, UnifiedSinkArgs, df,
 };
 use polars::sql::SQLContext;
 
@@ -42,12 +45,14 @@ pub mod exit_code {
 
 /// Runs the statements of `script` in order, in one session, and reports the outcome to
 /// `printer`. Stops at the first statement that fails. Returns the exit code.
-pub fn run<O, E>(script: &Script, printer: &mut Printer<O, E>) -> u8
+///
+/// With `read_only`, a statement that writes a file fails.
+pub fn run<O, E>(script: &Script, read_only: bool, printer: &mut Printer<O, E>) -> u8
 where
     O: Write + Send + 'static,
     E: Write,
 {
-    let mut context = SQLContext::new();
+    let mut context = SQLContext::new().with_file_writes(!read_only);
     let code = run_statements(script, printer, |sql| context.execute(sql));
     drop(context);
     // Spill files are deleted in the background; wait for that before the process can exit.
@@ -159,11 +164,25 @@ where
 /// Runs `plan` on the streaming engine. A format that the engine has a sink for goes from the
 /// engine straight to the output. Any other result is handed to `printer` batch by batch, in
 /// order, so that the whole result is never held here.
-fn stream<O, E>(plan: LazyFrame, printer: &mut Printer<O, E>) -> Result<(), Stop>
+fn stream<O, E>(mut plan: LazyFrame, printer: &mut Printer<O, E>) -> Result<(), Stop>
 where
     O: Write + Send + 'static,
     E: Write,
 {
+    // `COPY` plans the sink that writes its file, so its plan runs as it is. The statement
+    // then answers with the number of rows it wrote.
+    if let DslPlan::Sink {
+        payload: SinkType::File(file),
+        ..
+    } = &mut plan.logical_plan
+    {
+        let rows = Arc::new(AtomicU64::new(0));
+        file.unified_sink_args.sinked_paths_callback = Some(count_rows(Arc::clone(&rows)));
+        plan.collect_with_engine(Engine::Streaming)?;
+        let response = format!("COPY {}", rows.load(Ordering::Relaxed));
+        return stream(df!("Response" => [response])?.lazy(), printer);
+    }
+
     if let Some((target, format)) = printer.engine_sink() {
         let sink_args = UnifiedSinkArgs {
             maintain_order: true,
@@ -231,6 +250,18 @@ where
     })
 }
 
+/// What a file sink calls once it has written its files: stores their number of rows in `rows`.
+fn count_rows(rows: Arc<AtomicU64>) -> SinkedPathsCallback {
+    let count = move |args: SinkedPathsCallbackArgs| {
+        let written = args.path_info_list.iter().map(|file| file.num_rows).sum();
+        rows.store(written, Ordering::Relaxed);
+        Ok(())
+    };
+    // Not `PlanCallback::new`: in a build with Python, that takes arguments that convert to
+    // Python objects only.
+    SinkedPathsCallback::Callback(PlanCallback::Rust(SpecialEq::new(Arc::new(count) as _)))
+}
+
 /// Errors name the plan nodes they passed through. The outermost one is the batch sink that
 /// `stream` adds, which is not part of the statement.
 fn without_sink_context(error: PolarsError) -> PolarsError {
@@ -293,7 +324,7 @@ mod tests {
 
     fn run_formatted(sql: &str, format: Format) -> (u8, String, String) {
         let script = Script::new(sql.to_string());
-        captured(format, |printer| run(&script, printer))
+        captured(format, |printer| run(&script, false, printer))
     }
 
     /// Runs `sql` with `result` in place of the SQL engine.
