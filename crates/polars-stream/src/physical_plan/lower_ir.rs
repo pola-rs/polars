@@ -186,6 +186,9 @@ pub(crate) fn add_row_idx_sort_key(
     stream
 }
 
+/// Above this `k` a sort is faster without a top-k in front of it.
+const MAX_SORT_TOP_K: usize = 1 << 15;
+
 /// Keeps the first `k` rows in sort order, in no particular order.
 pub(crate) fn build_top_k_stream(
     input: PhysStream,
@@ -728,6 +731,7 @@ fn lower_ir_inner(
                 let l = l as usize;
                 limit = Some(limit.map_or(l, |limit| usize::min(limit, l)));
             };
+            let limit = limit.filter(|&l| l <= MAX_SORT_TOP_K);
 
             let mut stream = phys_input;
 

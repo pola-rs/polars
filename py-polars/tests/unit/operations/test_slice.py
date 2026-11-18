@@ -721,3 +721,10 @@ def test_expr_chained_slices_offset_beyond_i64() -> None:
     lf = pl.LazyFrame({"a": range(5)})
     q = lf.select(pl.col("a").slice(2**63 - 1).slice(2**63 - 1))
     assert_frame_equal(q.collect(), pl.DataFrame({"a": []}, schema={"a": pl.Int64}))
+
+
+def test_sort_head_u64_max() -> None:
+    lf = pl.LazyFrame({"a": [3, 1, 2]})
+    assert_frame_equal(
+        lf.sort("a").head(2**64 - 1).collect(), pl.DataFrame({"a": [1, 2, 3]})
+    )
