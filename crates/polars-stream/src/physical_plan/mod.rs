@@ -339,7 +339,7 @@ pub enum PhysNodeKind {
         input: PhysStream,
         key: PlSmallStr,
         aggs: Vec<ExprIR>,
-        /// `(offset, len)`.
+        /// `(offset, len)`, where a `None` len runs to the end.
         slice: Option<(usize, Option<usize>)>,
     },
 
@@ -485,7 +485,7 @@ pub enum PhysNodeKind {
         input: PhysStream,
         options: DynamicGroupOptionsIR,
         aggs: Vec<ExprIR>,
-        /// `(offset, len)`.
+        /// `(offset, len)`, where a `None` len runs to the end.
         slice: Option<(usize, Option<usize>)>,
     },
 
@@ -497,7 +497,7 @@ pub enum PhysNodeKind {
         offset: Duration,
         closed: ClosedWindow,
         placement: Option<RollingWindowPlacement>,
-        /// `(offset, len)`.
+        /// `(offset, len)`, where a `None` len runs to the end.
         slice: Option<(usize, Option<usize>)>,
         aggs: Vec<ExprIR>,
     },

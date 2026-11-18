@@ -2004,7 +2004,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let df: DataFrame = df!("Fruit" => ["Apple", "Grape", "Grape", "Fig", "Fig"],
     ///                         "Color" => ["Green", "Red", "White", "White", "Red"])?;
-    /// let sl: DataFrame = df.slice(2, 3);
+    /// let sl: DataFrame = df.slice((2i64, 3));
     ///
     /// assert_eq!(sl.shape(), (3, 2));
     /// println!("{}", sl);

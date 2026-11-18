@@ -38,7 +38,7 @@ pub struct DynamicGroupBy {
 
     seq: MorselSeq,
 
-    /// `(offset, len)` of the windows not yet sent.
+    /// `(offset, len)` of the windows not yet sent, where a `None` len runs to the end.
     slice: Option<(usize, Option<usize>)>,
 
     group_by: Option<PlSmallStr>,

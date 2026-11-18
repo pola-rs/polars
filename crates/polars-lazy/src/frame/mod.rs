@@ -1733,8 +1733,8 @@ impl LazyFrame {
     /// Slice the DataFrame.
     ///
     /// The slice is given as a [`Slice`] or as an `(offset, len)` tuple. A negative `offset`
-    /// counts from the end of the DataFrame: `lf.slice((-5, 3))` gets three rows, starting at
-    /// the row fifth from the end. A `len` of `None` runs to the end: `lf.slice((5, None))`.
+    /// counts from the end of the DataFrame: `lf.slice((-5i64, 3))` gets three rows, starting at
+    /// the row fifth from the end. [`Slice::skip`] gives a slice that runs to the end.
     ///
     /// If the slice extends beyond the end of the DataFrame, only the rows up to the end are
     /// returned.

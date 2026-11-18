@@ -6,8 +6,7 @@ use crate::pl_str::PlSmallStr;
 
 /// A selection of rows, resolved against the height of its input once that is known.
 ///
-/// A selection of every row is not a slice, so it is unrepresentable. This should be indicated
-/// by `Option<Slice>::None` that role.
+/// A slice from 0 that runs to the end has no variant; `Option<Slice>::None` stands for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]

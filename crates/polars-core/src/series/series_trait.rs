@@ -256,10 +256,7 @@ pub trait SeriesTrait:
         self.slice(Slice::head(num_elements))
     }
 
-    /// Get a zero copy view of the data.
-    ///
-    /// When offset is negative the offset is counted from the
-    /// end of the array
+    /// Get a zero copy view of the elements `slice` selects.
     fn slice(&self, _slice: Slice) -> Series;
 
     /// Get a zero copy view of the data.
