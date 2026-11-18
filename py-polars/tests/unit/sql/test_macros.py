@@ -739,3 +739,24 @@ def test_table_macro_join_scopes() -> None:
         "CROSS JOIN (VALUES (0)) p(v)"
     )
     assert ctx.execute("SELECT * FROM m2({'v': 2})", eager=True).rows() == [(2,)]
+    # The dropped side of a semi join is not seen by later joins or derived tables.
+    semi = (
+        "FROM (VALUES (1, {'v': 7})) a(k, p) SEMI JOIN (VALUES (1)) p(v) ON a.k = p.v"
+    )
+    ctx.execute(
+        f"CREATE MACRO m3(p) AS TABLE SELECT b.x {semi} "
+        "JOIN (VALUES (7), (99)) b(x) ON b.x = p.v"
+    )
+    assert ctx.execute("SELECT * FROM m3({'v': 99})", eager=True).rows() == [(99,)]
+    ctx.execute(
+        f"CREATE MACRO m4(p) AS TABLE SELECT d.x {semi} CROSS JOIN (SELECT p.v AS x) d"
+    )
+    assert ctx.execute("SELECT * FROM m4({'v': 99})", eager=True).rows() == [(99,)]
+    # A join condition in a LATERAL subquery sees the relations before it.
+    ctx.execute(
+        "CREATE MACRO m5(p) AS TABLE SELECT d.x FROM (VALUES (1), (2)) p(v), "
+        "LATERAL (SELECT b.x FROM (VALUES (0)) a(k) "
+        "JOIN (VALUES (1), (2)) b(x) ON b.x = p.v) d"
+    )
+    res = ctx.execute("SELECT * FROM m5({'v': 99}) ORDER BY x", eager=True)
+    assert res.rows() == [(1,), (2,)]

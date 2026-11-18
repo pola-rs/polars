@@ -8237,7 +8237,7 @@ pub(crate) fn declared_relations(
 }
 
 /// Whether a join returns the columns of its left and of its right input.
-fn join_keeps_inputs(op: &JoinOperator) -> (bool, bool) {
+pub(crate) fn join_keeps_inputs(op: &JoinOperator) -> (bool, bool) {
     match op {
         JoinOperator::Semi(_)
         | JoinOperator::LeftSemi(_)

@@ -19,7 +19,9 @@ use sqlparser::keywords::Keyword;
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::tokenizer::{Token, TokenWithSpan};
 
-use crate::context::{RelationName, kept_factors, match_qualifier, relation_name};
+use crate::context::{
+    RelationName, join_keeps_inputs, kept_factors, match_qualifier, relation_name,
+};
 use crate::dyn_visit;
 use crate::lambda::{lambda_arg, shift_lambda_elements};
 use crate::params::first_param;
@@ -1018,8 +1020,12 @@ impl<'a> ParamReplacer<'a> {
         for relations in self.relations.iter().rev() {
             if hidden {
                 // The relations of an enclosing query can still be correlated, unless the
-                // query is itself a CTE or derived table.
+                // query is itself a CTE or derived table. A derived table still sees the
+                // relations before it.
                 if relations.is_query {
+                    if match_qualifier(idents, relations.preceding.iter()).is_some() {
+                        return true;
+                    }
                     hidden = relations.starts_scope;
                 }
                 continue;
@@ -1188,12 +1194,24 @@ impl ParamReplacer<'_> {
     /// the relations before each derived table, which it reads as if LATERAL.
     /// Records the relations each join condition sees.
     fn add_relations(&mut self, table: &TableWithJoins, names: &mut Vec<RelationName>) {
+        let start = names.len();
         let mut joined = Vec::new();
         self.add_factor(&table.relation, names, &mut joined);
         for join in &table.joins {
+            let (left_names, left_joined) = (names.len(), joined.len());
             self.add_factor(&join.relation, names, &mut joined);
             for condition in join_conditions(&join.join_operator) {
                 self.join_conditions.insert(condition, joined.clone());
+            }
+            // After a semi or anti join, the relations of its dropped input are gone.
+            let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);
+            if !keep_right {
+                names.truncate(left_names);
+                joined.truncate(left_joined);
+            }
+            if !keep_left {
+                names.drain(start..left_names);
+                joined.drain(..left_joined);
             }
         }
     }
