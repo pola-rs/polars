@@ -674,6 +674,16 @@ def test_table_macro_overload_boundaries() -> None:
         "SELECT * FROM (VALUES (1)) a(a), (VALUES (2)) AS table(b)"
     )
     assert ctx.execute("SELECT * FROM g()", eager=True).rows() == [(1, 2)]
+    # The longest query that parses is the body.
+    ctx.execute("CREATE MACRO one() AS TABLE SELECT 1 AS x, (a) AS table FROM t")
+    assert ctx.execute("SELECT * FROM one()", eager=True).rows() == [(1, 7)]
+    ctx.execute(
+        "CREATE MACRO three(a) AS TABLE SELECT a, "
+        "(a, b) AS TABLE SELECT a + b, () AS TABLE SELECT 7"
+    )
+    assert ctx.execute("SELECT * FROM three(1)", eager=True).rows() == [(1,)]
+    assert ctx.execute("SELECT * FROM three(1, 2)", eager=True).rows() == [(3,)]
+    assert ctx.execute("SELECT * FROM three()", eager=True).rows() == [(7,)]
     ctx.execute("CREATE MACRO h() AS TABLE SELECT /*+ some_hint */ 1 AS one")
     with pytest.raises(SQLInterfaceError, match="optimizer hints are not supported"):
         ctx.execute("SELECT * FROM h()", eager=True)
@@ -686,7 +696,7 @@ def test_table_macro_implicit_lateral() -> None:
         "CREATE MACRO m(p) AS TABLE "
         "SELECT d.x FROM (VALUES (1), (2)) p(v), (SELECT p.v AS x) d"
     )
-    assert ctx.execute("SELECT * FROM m({'v': 99})", eager=True).rows() == [
+    assert ctx.execute("SELECT * FROM m({'v': 99}) ORDER BY x", eager=True).rows() == [
         (1,),
         (2,),
     ]
@@ -698,3 +708,17 @@ def test_table_macro_implicit_lateral() -> None:
         (99,),
         (99,),
     ]
+    ctx.execute(
+        "CREATE MACRO m3(p) AS TABLE "
+        "SELECT d.x FROM LATERAL (SELECT p.v AS x) d, (VALUES (1), (2)) p(v)"
+    )
+    assert ctx.execute("SELECT * FROM m3({'v': 99})", eager=True).rows() == [
+        (99,),
+        (99,),
+    ]
+    ctx.execute(
+        "CREATE MACRO m4(p) AS TABLE SELECT j.x "
+        "FROM ((VALUES (1), (2)) p(v) CROSS JOIN (SELECT p.v AS x) d) j"
+    )
+    res = ctx.execute("SELECT * FROM m4({'v': 99}) ORDER BY x", eager=True)
+    assert res.rows() == [(1,), (2,)]

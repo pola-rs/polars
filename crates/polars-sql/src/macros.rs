@@ -331,36 +331,61 @@ fn parse_table_body(parser: &mut Parser) -> Result<Box<Query>, ParserError> {
 }
 
 /// The query at the start of `tokens` and its number of tokens. It ends at a comma that
-/// starts another TABLE definition.
+/// starts another TABLE definition. The longest query that parses is taken, so a definition
+/// that is also a valid continuation of the query must be put in parentheses.
 fn split_table_body(tokens: &[TokenWithSpan]) -> Result<(Box<Query>, usize), ParserError> {
+    let words: Vec<usize> = (0..tokens.len())
+        .filter(|&i| !matches!(tokens[i].token, Token::Whitespace(_)))
+        .collect();
+    let mut boundaries = vec![];
     let mut depth = 0usize;
-    for (i, token) in tokens.iter().enumerate() {
-        match token.token {
+    for (k, &i) in words.iter().enumerate() {
+        match tokens[i].token {
             Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
             Token::RParen | Token::RBracket | Token::RBrace => depth = depth.saturating_sub(1),
-            Token::Comma if depth == 0 && starts_table_definition(&tokens[i + 1..]) => {
-                if let Ok(query) = parse_whole_query(&tokens[..i]) {
-                    return Ok((query, i));
-                }
+            Token::Comma if depth == 0 && starts_table_definition(tokens, &words[k + 1..]) => {
+                boundaries.push(i)
             },
             _ => {},
         }
     }
-    Ok((parse_whole_query(tokens)?, tokens.len()))
+    let whole = parse_whole_query(tokens);
+    if whole.is_err() {
+        for &i in boundaries.iter().rev() {
+            if let Ok(query) = parse_whole_query(&tokens[..i]) {
+                return Ok((query, i));
+            }
+        }
+    }
+    Ok((whole?, tokens.len()))
 }
 
-/// Whether `tokens` start with `(params) AS TABLE` and a query.
-fn starts_table_definition(tokens: &[TokenWithSpan]) -> bool {
-    let first = tokens
-        .iter()
-        .find(|t| !matches!(t.token, Token::Whitespace(_)));
-    if first.is_none_or(|t| t.token != Token::LParen) {
+/// Whether the tokens at `words` start with `(params) AS TABLE`.
+fn starts_table_definition(tokens: &[TokenWithSpan], words: &[usize]) -> bool {
+    let token = |k: usize| words.get(k).map(|&i| &tokens[i].token);
+    let is_keyword =
+        |k: usize, keyword| matches!(token(k), Some(Token::Word(w)) if w.keyword == keyword);
+    if token(0) != Some(&Token::LParen) {
         return false;
     }
-    let mut parser = parser_of(tokens.to_vec());
+    let mut depth = 0usize;
+    let Some(close) = (0..words.len()).find(|&k| {
+        match token(k) {
+            Some(Token::LParen) => depth += 1,
+            Some(Token::RParen) => depth -= 1,
+            _ => {},
+        }
+        depth == 0
+    }) else {
+        return false;
+    };
+    if !is_keyword(close + 1, Keyword::AS) || !is_keyword(close + 2, Keyword::TABLE) {
+        return false;
+    }
+    let mut parser = parser_of(tokens[words[0]..=words[close + 2]].to_vec());
     parse_macro_params(&mut parser).is_ok()
         && parser.parse_keywords(&[Keyword::AS, Keyword::TABLE])
-        && parser.parse_query().is_ok()
+        && parser.peek_token().token == Token::EOF
 }
 
 fn parse_whole_query(tokens: &[TokenWithSpan]) -> Result<Box<Query>, ParserError> {
@@ -1054,21 +1079,7 @@ impl VisitorMut for ParamReplacer<'_> {
         }
         let mut names = Vec::new();
         for table in &select.from {
-            let factors =
-                std::iter::once(&table.relation).chain(table.joins.iter().map(|j| &j.relation));
-            for factor in factors {
-                if let TableFactor::Derived {
-                    lateral: false,
-                    subquery,
-                    ..
-                } = factor
-                    && !names.is_empty()
-                {
-                    self.scoped_queries
-                        .insert(&**subquery as *const Query, names.clone());
-                }
-                factor_names(factor, &mut names);
-            }
+            self.add_relations(table, &mut names);
         }
         self.relations.push(Relations {
             names,
@@ -1110,12 +1121,7 @@ impl VisitorMut for ParamReplacer<'_> {
     }
 
     fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
-        if let TableFactor::Derived {
-            lateral: false,
-            subquery,
-            ..
-        } = factor
-        {
+        if let TableFactor::Derived { subquery, .. } = factor {
             self.scoped_queries
                 .entry(&**subquery as *const Query)
                 .or_default();
@@ -1155,6 +1161,32 @@ impl VisitorMut for ParamReplacer<'_> {
 }
 
 impl ParamReplacer<'_> {
+    /// Adds the names of the relations of `table` to `names`, the relations before it. Records
+    /// the relations before each derived table, which it reads as if LATERAL.
+    fn add_relations(&mut self, table: &TableWithJoins, names: &mut Vec<RelationName>) {
+        self.add_factor(&table.relation, names);
+        for join in &table.joins {
+            self.add_factor(&join.relation, names);
+        }
+    }
+
+    fn add_factor(&mut self, factor: &TableFactor, names: &mut Vec<RelationName>) {
+        match factor {
+            TableFactor::Derived { subquery, .. } => {
+                self.scoped_queries
+                    .insert(&**subquery as *const Query, names.clone());
+            },
+            TableFactor::NestedJoin {
+                table_with_joins, ..
+            } => self.add_relations(table_with_joins, &mut names.clone()),
+            TableFactor::Pivot { table, .. } | TableFactor::Unpivot { table, .. } => {
+                self.add_factor(table, &mut names.clone())
+            },
+            _ => {},
+        }
+        factor_names(factor, names);
+    }
+
     fn replace_param(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
         match expr {
             SQLExpr::Identifier(ident) => {
