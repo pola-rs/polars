@@ -41,4 +41,6 @@ workspace = true
 
 [features]
 default = ["fast_alloc"]
+# Test helpers for crates that spill; enable only from dev-dependencies.
+test-support = []
 fast_alloc = ["dep:mimalloc", "dep:tikv-jemallocator", "dep:tikv-jemalloc-sys"]

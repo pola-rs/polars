@@ -6,6 +6,7 @@ mod spill_context;
 mod spill_file;
 mod spill_frame;
 mod spill_token;
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod test_support;
 
