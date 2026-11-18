@@ -2200,6 +2200,12 @@ impl DataFrame {
                 .collect(),
         );
         let has_arrow_map = schema.iter_values().any(|f| contains_arrow_map(f.dtype()));
+        let scalar_rows = if has_arrow_map {
+            let dtypes: Vec<_> = schema.iter_values().map(|f| f.dtype()).collect();
+            self.arrow_export_scalar_rows(&dtypes)
+        } else {
+            Vec::new()
+        };
 
         RecordBatchIterWrap::Batches(RecordBatchIter {
             df: self.clone(),
@@ -2208,6 +2214,7 @@ impl DataFrame {
             compat_level,
             parallel,
             has_arrow_map,
+            scalar_rows,
             split: None,
             offset: 0,
         })
@@ -2760,6 +2767,8 @@ pub struct RecordBatchIter {
     parallel: bool,
     /// Whether some column exports to an arrow MAP, so a chunk may need several batches.
     has_arrow_map: bool,
+    /// See [`DataFrame::arrow_export_scalar_rows`]; empty without an arrow MAP.
+    scalar_rows: Vec<Option<ArrayRef>>,
     split: Option<SplitChunk>,
     /// The first row of the next chunk, to slice columns without chunks of their own.
     offset: usize,
@@ -2768,10 +2777,48 @@ pub struct RecordBatchIter {
 /// A chunk exported as one batch per row range.
 struct SplitChunk {
     chunk: DataFrame,
+    /// The columns without an arrow MAP, converted once for the whole chunk so that their pieces
+    /// share one dictionary; `None` for the columns converted per piece.
+    converted: Vec<Option<ArrayRef>>,
     ranges: std::vec::IntoIter<std::ops::Range<usize>>,
 }
 
+/// Export `rows` of `c`, which its chunk `idx` holds if it has chunks of its own.
+fn column_to_arrow(
+    c: &Column,
+    idx: usize,
+    rows: std::ops::Range<usize>,
+    compat_level: CompatLevel,
+) -> PolarsResult<ArrayRef> {
+    match c.as_series() {
+        Some(s) => s.try_to_arrow(idx, compat_level),
+        // A dictionary column's codes need not have the chunks of the other columns.
+        None => {
+            let mut s = c
+                .slice(rows.start as i64, rows.len())
+                .take_materialized_series();
+            if s.n_chunks() > 1 {
+                s = s.rechunk();
+            }
+            s.try_to_arrow(0, compat_level)
+        },
+    }
+}
+
 impl RecordBatchIter {
+    /// `f` of each column index below `width`, in parallel if this export is.
+    fn map_columns<T: Send>(
+        &self,
+        width: usize,
+        f: impl Fn(usize) -> PolarsResult<T> + Send + Sync,
+    ) -> PolarsResult<Vec<T>> {
+        if self.parallel {
+            RAYON.install(|| (0..width).into_par_iter().map(f).collect())
+        } else {
+            (0..width).map(f).collect()
+        }
+    }
+
     /// Export chunk `idx` of `df`, which holds `rows`, as one batch.
     fn export(
         &self,
@@ -2780,31 +2827,55 @@ impl RecordBatchIter {
         rows: std::ops::Range<usize>,
     ) -> PolarsResult<RecordBatch> {
         let length = rows.len();
-        // A dictionary column's codes need not have the chunks of the other columns.
-        let to_arrow = |c: &Column| match c.as_series() {
-            Some(s) => s.try_to_arrow(idx, self.compat_level),
+        let arrays = self.map_columns(df.width(), |i| {
+            column_to_arrow(&df.columns()[i], idx, rows.clone(), self.compat_level)
+        })?;
+        Ok(RecordBatch::new(length, self.schema.clone(), arrays))
+    }
+
+    /// Export `range` of a split chunk as one batch.
+    fn export_piece(
+        &self,
+        split: &SplitChunk,
+        range: std::ops::Range<usize>,
+    ) -> PolarsResult<RecordBatch> {
+        let length = range.len();
+        let arrays = self.map_columns(split.chunk.width(), |i| match &split.converted[i] {
+            Some(arr) => Ok(arr.sliced(range.start, length)),
             None => {
-                let mut s = c
-                    .slice(rows.start as i64, length)
-                    .take_materialized_series();
-                if s.n_chunks() > 1 {
-                    s = s.rechunk();
-                }
-                s.try_to_arrow(0, self.compat_level)
+                let c = split.chunk.columns()[i].slice(range.start as i64, length);
+                column_to_arrow(&c, 0, 0..length, self.compat_level)
             },
-        };
+        })?;
+        Ok(RecordBatch::new(length, self.schema.clone(), arrays))
+    }
 
-        let batch_cols = if self.parallel {
-            let iter = df.columns().par_iter().map(to_arrow);
-            RAYON.install(|| iter.collect::<PolarsResult<Vec<ArrayRef>>>())?
-        } else {
-            df.columns()
-                .iter()
-                .map(to_arrow)
-                .collect::<PolarsResult<_>>()?
+    /// Cut chunk `idx`, which holds `rows`, into pieces if its arrow MAPs need it.
+    fn plan_split(
+        &self,
+        idx: usize,
+        rows: std::ops::Range<usize>,
+    ) -> PolarsResult<Option<SplitChunk>> {
+        let dtypes: Vec<&ArrowDataType> = self.schema.iter_values().map(|f| f.dtype()).collect();
+        let Some(ranges) =
+            self.df
+                .arrow_export_ranges(&dtypes, &self.scalar_rows, idx, rows.clone())
+        else {
+            return Ok(None);
         };
-
-        Ok(RecordBatch::new(length, self.schema.clone(), batch_cols))
+        let chunk = self.df.chunk_frame(idx, rows);
+        let length = chunk.height();
+        let converted = self.map_columns(chunk.width(), |i| {
+            if contains_arrow_map(dtypes[i]) {
+                return Ok(None);
+            }
+            column_to_arrow(&chunk.columns()[i], 0, 0..length, self.compat_level).map(Some)
+        })?;
+        Ok(Some(SplitChunk {
+            chunk,
+            converted,
+            ranges: ranges.into_iter(),
+        }))
     }
 }
 
@@ -2813,28 +2884,23 @@ impl Iterator for RecordBatchIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(split) = &mut self.split {
-            if let Some(range) = split.ranges.next() {
-                let piece = split.chunk.slice(range.start as i64, range.len());
-                return Some(self.export(&piece, 0, 0..range.len()));
+            match split.ranges.next() {
+                Some(range) => {
+                    let split = self.split.as_ref().unwrap();
+                    return Some(self.export_piece(split, range));
+                },
+                None => self.split = None,
             }
-            self.split = None;
         }
 
         let (idx, length) = self.cursor.next(&self.df)?;
         let rows = self.offset..self.offset + length;
         self.offset += length;
         if self.has_arrow_map {
-            let arrow_dtypes = self.schema.iter_values().map(|f| f.dtype());
-            match self
-                .df
-                .arrow_export_ranges(arrow_dtypes, Some((idx, rows.clone())))
-            {
+            match self.plan_split(idx, rows.clone()) {
                 Ok(None) => {},
-                Ok(Some(ranges)) => {
-                    self.split = Some(SplitChunk {
-                        chunk: self.df.chunk_frame(idx, rows),
-                        ranges: ranges.into_iter(),
-                    });
+                Ok(split) => {
+                    self.split = split;
                     return self.next();
                 },
                 Err(err) => return Some(Err(err)),

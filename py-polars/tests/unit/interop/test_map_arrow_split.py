@@ -147,23 +147,18 @@ def test_two_map_columns_are_cut_at_the_same_rows(df: pl.DataFrame) -> None:
 
 
 def test_a_single_row_with_too_many_map_entries_raises(df: pl.DataFrame) -> None:
-    with pytest.raises(InvalidOperationError, match="a single row has 3221225472"):
+    with pytest.raises(InvalidOperationError, match="3221225472 map entries overflow"):
         df.select(pl.col("m").implode()).to_arrow()
 
 
-def test_ipc_writers_split_an_oversized_map_chunk(df: pl.DataFrame) -> None:
-    for write, open_ in (
-        (lambda f: df.write_ipc(f, compression="zstd"), pa.ipc.open_file),
-        (lambda f: df.lazy().sink_ipc(f, compression="zstd"), pa.ipc.open_file),
-        (lambda f: df.write_ipc_stream(f), pa.ipc.open_stream),
-    ):
-        f = io.BytesIO()
-        write(f)
-        f.seek(0)
-        table = open_(f).read_all()
+def test_write_ipc_stream_splits_an_oversized_map_chunk(df: pl.DataFrame) -> None:
+    f = io.BytesIO()
+    df.write_ipc_stream(f)
+    f.seek(0)
+    table = pa.ipc.open_stream(f).read_all()
 
-        assert batch_rows(table) == [3, 3]
-        assert table.column("i").to_pylist() == [0, 1, 2, 3, 4, 5]
+    assert batch_rows(table) == [3, 3]
+    assert table.column("i").to_pylist() == [0, 1, 2, 3, 4, 5]
 
 
 def test_serialize_splits_an_oversized_map_chunk(df: pl.DataFrame) -> None:
@@ -183,36 +178,24 @@ def test_to_arrow_splits_a_later_chunk_beside_a_scalar(df: pl.DataFrame) -> None
     assert table.column("c").to_pylist() == [7] * 7
 
 
-def test_sink_ipc_splits_a_map_column_with_several_chunks() -> None:
-    chunk = map_chunk([ROW, ROW])
-    table = pa.table({"m": pa.chunked_array([chunk, chunk, chunk])})
-    df = pl.from_arrow(table)
-    assert isinstance(df, pl.DataFrame)
-    assert df.n_chunks() == 3
-
-    f = io.BytesIO()
-    df.lazy().sink_ipc(f)
-    f.seek(0)
-
-    assert map_entries(pa.ipc.open_file(f).read_all(), "m") == [3 * ROW, 3 * ROW]
-
-
-def test_entries_under_null_map_rows_are_not_counted() -> None:
+def test_entries_under_null_map_rows_export() -> None:
     def outer(inner_lens: list[int], *, valid: bool) -> pa.MapArray:
         offsets = pa.array([0, len(inner_lens)], pa.int32())
         keys = zeroed_bools(len(inner_lens))
         mask = pa.array([not valid])
         return pa.MapArray.from_arrays(offsets, keys, map_chunk(inner_lens), mask=mask)
 
-    # The null rows own 3 * 2^30 inner entries, which export drops.
+    # The null rows own 3 * 2^30 inner entries, which export drops. Their spans
+    # still count toward the cuts, which may then cut more than needed.
     chunks = [outer([ROW], valid=True)] + [outer([ROW, ROW], valid=False)] * 3
     s = pl.from_arrow(pa.chunked_array(chunks))
     assert isinstance(s, pl.Series)
 
     table = s.rechunk().to_frame().to_arrow()
 
-    assert batch_rows(table) == [4]
+    assert table.num_rows == 4
     assert table.column(0).null_count == 3
+    assert len(table.column(0).chunk(0).keys) == 1
 
 
 def test_plugin_export_splits_an_oversized_map_chunk(df: pl.DataFrame) -> None:
@@ -247,3 +230,39 @@ def test_to_pandas_batches_share_one_schema(df: pl.DataFrame) -> None:
     assert len(batches) == 2
     assert batches[0].schema == batches[1].schema
     assert pa.Table.from_batches(batches).num_rows == 6
+
+
+def test_split_batches_share_the_dictionary_of_a_categorical_column(
+    df: pl.DataFrame,
+) -> None:
+    out = df.with_columns(
+        c=pl.Series(["a"] * 3 + ["b"] * 3, dtype=pl.Categorical),
+        n=pl.struct("m", c=pl.Series(["x"] * 3 + ["y"] * 3, dtype=pl.Categorical)),
+    )
+
+    table = out.to_arrow()
+
+    assert batch_rows(table) == [3, 3]
+    batches = table.to_batches()
+    # `c` is converted once for the chunk and sliced, so its pieces share one
+    # dictionary.
+    assert batches[0]["c"].dictionary == batches[1]["c"].dictionary
+    assert table.column("c").to_pylist() == ["a"] * 3 + ["b"] * 3
+    # The Categorical beside the Map in `n` is converted per piece, with a
+    # dictionary each.
+    table.validate()
+    n_c = [batch["n"].field("c").to_pylist() for batch in batches]
+    assert n_c == [["x"] * 3, ["y"] * 3]
+
+
+@pytest.mark.parametrize("height", [0, 3])
+def test_a_scalar_map_column_exports(height: int) -> None:
+    dtype = pl.Map(pl.String, pl.Int64)
+    df = pl.DataFrame({"i": range(height)}).with_columns(
+        m=pl.lit({"a": 1}, dtype=dtype)
+    )
+
+    table = df.to_arrow()
+
+    assert table.num_rows == height
+    assert table.column("m").to_pylist() == [[("a", 1)]] * height

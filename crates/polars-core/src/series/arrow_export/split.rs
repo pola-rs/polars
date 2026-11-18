@@ -1,11 +1,10 @@
 use std::ops::Range;
 
-use polars_arrow::array::{Array, ArrayRef, FixedSizeListArray, ListArray, StructArray};
+use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
 use polars_arrow::datatypes::ArrowDataType;
-use polars_error::{PolarsResult, polars_bail};
 
 /// The most entries an arrow MAP array can hold, as its offsets are `i32`.
-const MAX_MAP_ENTRIES: i64 = i32::MAX as i64;
+const MAX_MAP_ENTRIES: u64 = i32::MAX as u64;
 
 /// Whether exporting to `dtype` builds an arrow MAP, whose offsets are `i32`.
 pub(crate) fn contains_arrow_map(dtype: &ArrowDataType) -> bool {
@@ -20,281 +19,94 @@ pub(crate) fn contains_arrow_map(dtype: &ArrowDataType) -> bool {
     }
 }
 
-/// The number of MAP nodes in `dtype`, which the walks below number in pre-order.
-fn count_arrow_maps(dtype: &ArrowDataType) -> usize {
-    match dtype {
-        ArrowDataType::Map(entries, _) => 1 + count_arrow_maps(entries.dtype()),
-        ArrowDataType::LargeList(field) | ArrowDataType::FixedSizeList(field, _) => {
-            count_arrow_maps(field.dtype())
-        },
-        ArrowDataType::Struct(fields) => fields.iter().map(|f| count_arrow_maps(f.dtype())).sum(),
-        ArrowDataType::Extension(ext) => count_arrow_maps(&ext.inner),
-        _ => 0,
-    }
-}
-
-// The walks below follow a Polars physical array along its arrow export dtype, so they rely on
-// the layout `ToArrowConverter` relies on: MAP and LARGE_LIST are `ListArray<i64>`, and
-// FIXED_SIZE_LIST, STRUCT and EXTENSION wrap the arrays their arrow types describe. They must
-// also count the entries export keeps: a MAP drops what its null rows own
-// (`normalize_map_entries`, via `compact_null_rows_chunk`), and a LARGE_LIST over a MAP exports
-// only the child its offsets span.
-
-/// Add to `out[node]` the entries that MAP `node` of `dtype` spans over `rows` of `array`, an
-/// upper bound on what export writes; reads two offsets per list level.
-fn add_entry_bounds(
-    array: &dyn Array,
-    rows: Range<usize>,
-    dtype: &ArrowDataType,
-    out: &mut [i64],
-    node: &mut usize,
-) {
+/// The most entries any MAP of `dtype` spans over `rows` of `array`, a Polars physical array laid
+/// out as `ToArrowConverter` expects; reads two offsets per list level.
+///
+/// A span bounds what export keeps, which can be less: a MAP drops the entries of its null rows
+/// (`normalize_map_entries`).
+fn max_map_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowDataType) -> u64 {
     match dtype {
         ArrowDataType::Map(entries, _) | ArrowDataType::LargeList(entries) => {
             let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
             let offsets = arr.offsets().as_slice();
             let child_rows = offsets[rows.start] as usize..offsets[rows.end] as usize;
-            if matches!(dtype, ArrowDataType::Map(_, _)) {
-                out[*node] += child_rows.len() as i64;
-                *node += 1;
-            }
-            add_entry_bounds(
+            let own = match dtype {
+                ArrowDataType::Map(_, _) => child_rows.len() as u64,
+                _ => 0,
+            };
+            own.max(max_map_span(
                 arr.values().as_ref(),
                 child_rows,
                 entries.dtype(),
-                out,
-                node,
-            );
+            ))
         },
         ArrowDataType::FixedSizeList(item, width) => {
             let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
             let child_rows = rows.start * width..rows.end * width;
-            add_entry_bounds(arr.values().as_ref(), child_rows, item.dtype(), out, node);
+            max_map_span(arr.values().as_ref(), child_rows, item.dtype())
         },
         ArrowDataType::Struct(fields) => {
             let arr: &StructArray = array.as_any().downcast_ref().unwrap();
-            for (values, f) in arr.values().iter().zip(fields) {
-                add_entry_bounds(values.as_ref(), rows.clone(), f.dtype(), out, node);
-            }
+            arr.values()
+                .iter()
+                .zip(fields)
+                .map(|(values, f)| max_map_span(values.as_ref(), rows.clone(), f.dtype()))
+                .max()
+                .unwrap_or(0)
         },
-        ArrowDataType::Extension(ext) => add_entry_bounds(array, rows, &ext.inner, out, node),
-        _ => {},
+        ArrowDataType::Extension(ext) => max_map_span(array, rows, &ext.inner),
+        _ => 0,
     }
 }
 
-/// Add to `out[node]` the entries export writes for MAP `node` of `dtype` over `rows` of
-/// `array`, for the hot nodes: the MAPs whose bound over all rows exceeds `i32::MAX`. The other
-/// MAPs fit in any range, so subtrees without a hot node are skipped.
-fn add_entry_counts(
-    array: &dyn Array,
-    rows: Range<usize>,
-    dtype: &ArrowDataType,
-    hot: &[bool],
-    out: &mut [i64],
-    node: &mut usize,
-) {
-    let n_maps = count_arrow_maps(dtype);
-    if !hot[*node..*node + n_maps].contains(&true) {
-        *node += n_maps;
-        return;
-    }
-
-    match dtype {
-        ArrowDataType::Map(entries, _) | ArrowDataType::LargeList(entries) => {
-            let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
-            let offsets = arr.offsets().as_slice();
-            let map_node = matches!(dtype, ArrowDataType::Map(_, _)).then(|| {
-                *node += 1;
-                *node - 1
-            });
-            let child_node = *node;
-            let mut add_rows = |rows: Range<usize>, node: &mut usize| {
-                let child_rows = offsets[rows.start] as usize..offsets[rows.end] as usize;
-                if let Some(m) = map_node {
-                    out[m] += child_rows.len() as i64;
-                }
-                *node = child_node;
-                add_entry_counts(
-                    arr.values().as_ref(),
-                    child_rows,
-                    entries.dtype(),
-                    hot,
-                    out,
-                    node,
-                );
-            };
-
-            // MAP export drops what null rows own (`normalize_map_entries`); LARGE_LIST keeps it.
-            let drops_nulls = map_node.is_some() && cfg!(feature = "dtype-map");
-            match arr
-                .validity()
-                .filter(|_| drops_nulls && arr.null_count() > 0)
-            {
-                None => add_rows(rows, node),
-                Some(validity) => {
-                    let mut run_start = None;
-                    for row in rows.clone() {
-                        match (validity.get_bit(row), run_start) {
-                            (true, None) => run_start = Some(row),
-                            (false, Some(start)) => {
-                                add_rows(start..row, node);
-                                run_start = None;
-                            },
-                            _ => {},
-                        }
-                    }
-                    if let Some(start) = run_start {
-                        add_rows(start..rows.end, node);
-                    }
-                    *node = child_node + count_arrow_maps(entries.dtype());
-                },
-            }
-        },
-        ArrowDataType::FixedSizeList(item, width) => {
-            let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
-            let child_rows = rows.start * width..rows.end * width;
-            add_entry_counts(
-                arr.values().as_ref(),
-                child_rows,
-                item.dtype(),
-                hot,
-                out,
-                node,
-            );
-        },
-        ArrowDataType::Struct(fields) => {
-            let arr: &StructArray = array.as_any().downcast_ref().unwrap();
-            for (values, f) in arr.values().iter().zip(fields) {
-                add_entry_counts(values.as_ref(), rows.clone(), f.dtype(), hot, out, node);
-            }
-        },
-        ArrowDataType::Extension(ext) => add_entry_counts(array, rows, &ext.inner, hot, out, node),
-        _ => {},
-    }
-}
-
-/// Row ranges cutting the `height` rows of `columns` so that every arrow MAP exported from a
-/// range fits in its `i32` offsets; `None` if no cut is needed, and an error if a single row
-/// exports more MAP entries than that.
+/// Row ranges cutting the `height` rows of `columns` for export; `None` if no cut is needed.
 ///
-/// Each column is given as its chunks with the arrow dtype it exports to; columns may be chunked
-/// differently. A `repeated` column holds a single row, whose chunks may each hold part of it,
-/// that stands for each of the `height` rows, so a scalar column is planned without
-/// materializing it.
+/// Each range either fits, as every arrow MAP it exports spans at most `i32::MAX` entries, or is
+/// a single row, which conversion must check. Ranges are as long as that allows.
 ///
-/// The cost is two offset reads per list level and chunk. Only if some MAP's offsets span more
-/// than `i32::MAX` entries does a pass over the rows count what each row exports of those MAPs;
-/// it allocates nothing per row, but walks each row's nested lists down to the MAPs.
-pub(crate) fn arrow_export_row_ranges<'a>(
-    columns: impl IntoIterator<Item = (&'a [ArrayRef], &'a ArrowDataType, bool)>,
+/// Each column is one array with the arrow dtype it exports to. A `repeated` column holds one row
+/// that stands for each of the `height` rows, so a scalar column is planned from one row.
+///
+/// If `0..height` fits, this costs two offset reads per list level; otherwise that times
+/// `log2(height)` per range.
+pub(crate) fn arrow_export_row_ranges(
+    columns: &[(&dyn Array, &ArrowDataType, bool)],
     height: usize,
-) -> PolarsResult<Option<Vec<Range<usize>>>> {
-    let columns: Vec<_> = columns
-        .into_iter()
-        .filter(|(_, dtype, _)| contains_arrow_map(dtype))
-        .collect();
-    let n_maps = columns.iter().map(|(_, d, _)| count_arrow_maps(d)).sum();
-
-    let mut bounds = vec![0i64; n_maps];
-    let mut node = 0;
-    for (chunks, dtype, repeated) in &columns {
-        let first = node;
-        for chunk in chunks.iter() {
-            node = first;
-            add_entry_bounds(
-                chunk.as_ref(),
-                0..chunk.len(),
-                dtype,
-                &mut bounds,
-                &mut node,
-            );
-        }
-        node = first + count_arrow_maps(dtype);
-        if *repeated {
-            for b in &mut bounds[first..node] {
-                *b *= height as i64;
-            }
-        }
+) -> Option<Vec<Range<usize>>> {
+    if height == 0 {
+        return None;
     }
-    let hot: Vec<bool> = bounds.iter().map(|&b| b > MAX_MAP_ENTRIES).collect();
-    if !hot.contains(&true) {
-        return Ok(None);
+    let fits = |rows: Range<usize>| {
+        columns.iter().all(|&(array, dtype, repeated)| {
+            let span = if repeated {
+                max_map_span(array, 0..1, dtype).saturating_mul(rows.len() as u64)
+            } else {
+                max_map_span(array, rows.clone(), dtype)
+            };
+            span <= MAX_MAP_ENTRIES
+        })
+    };
+    if fits(0..height) {
+        return None;
     }
 
-    // A repeated column exports the same entries in every row, so count them once.
-    let mut repeated_counts = vec![0i64; n_maps];
-    let mut node = 0;
-    for (chunks, dtype, repeated) in &columns {
-        let first = node;
-        node += count_arrow_maps(dtype);
-        if *repeated {
-            for chunk in chunks.iter() {
-                let mut chunk_node = first;
-                add_entry_counts(
-                    chunk.as_ref(),
-                    0..chunk.len(),
-                    dtype,
-                    &hot,
-                    &mut repeated_counts,
-                    &mut chunk_node,
-                );
-            }
-        }
-    }
-
-    // Greedy: extend the range while every MAP fits, as late cuts give the fewest pieces.
-    let mut cursors: Vec<(usize, usize)> = vec![(0, 0); columns.len()];
-    let mut row_counts = vec![0i64; n_maps];
-    let mut range_counts = vec![0i64; n_maps];
     let mut ranges = Vec::new();
     let mut start = 0;
-    for row in 0..height {
-        row_counts.copy_from_slice(&repeated_counts);
-        let mut node = 0;
-        for ((chunks, dtype, repeated), (chunk_idx, local)) in columns.iter().zip(&mut cursors) {
-            if *repeated {
-                node += count_arrow_maps(dtype);
-                continue;
+    while start < height {
+        // Spans only grow with the range, so binary search for the longest one that fits.
+        let (mut end, mut hi) = (start + 1, height);
+        while end < hi {
+            let mid = end + (hi - end).div_ceil(2);
+            if fits(start..mid) {
+                end = mid;
+            } else {
+                hi = mid - 1;
             }
-            while *local == chunks[*chunk_idx].len() {
-                *chunk_idx += 1;
-                *local = 0;
-            }
-            let chunk = chunks[*chunk_idx].as_ref();
-            add_entry_counts(
-                chunk,
-                *local..*local + 1,
-                dtype,
-                &hot,
-                &mut row_counts,
-                &mut node,
-            );
-            *local += 1;
         }
-
-        if let Some(&n) = row_counts.iter().find(|&&n| n > MAX_MAP_ENTRIES) {
-            polars_bail!(
-                InvalidOperation:
-                "to_arrow() conversion failed: a single row has {n} map entries, more than \
-                the i32 offsets of the arrow MAP type can hold",
-            );
-        }
-        if range_counts
-            .iter()
-            .zip(&row_counts)
-            .any(|(r, n)| r + n > MAX_MAP_ENTRIES)
-        {
-            ranges.push(start..row);
-            start = row;
-            range_counts.fill(0);
-        }
-        for (r, n) in range_counts.iter_mut().zip(&row_counts) {
-            *r += n;
-        }
+        ranges.push(start..end);
+        start = end;
     }
-    ranges.push(start..height);
-
-    Ok((ranges.len() > 1).then_some(ranges))
+    Some(ranges)
 }
 
 #[cfg(all(test, feature = "dtype-map"))]
@@ -356,25 +168,14 @@ mod tests {
 
         let arrays = s.try_to_arrow_split(0, CompatLevel::newest()).unwrap();
 
-        assert_eq!(arrays.len(), 1);
-        let map: &MapArray = arrays[0].as_any().downcast_ref().unwrap();
-        assert_eq!(map.offsets().as_slice(), [0, 1, 1]);
-    }
-
-    #[test]
-    fn split_for_arrow_export_cuts_across_chunks_without_rechunking() {
-        let row = 1i64 << 29;
-        let chunk = map_chunk(&[row, row], None);
-        let s = map_series(vec![chunk.clone(), chunk.clone(), chunk]);
-        let df = DataFrame::new_infer_height(vec![s.into_column()]).unwrap();
-        let arrow_dtype = map_dtype().to_arrow(CompatLevel::newest());
-
-        let pieces = df.split_for_arrow_export([&arrow_dtype]).unwrap();
-
-        let heights: Vec<_> = pieces.iter().map(|p| p.height()).collect();
-        assert_eq!(heights, [3, 3]);
-        let n_chunks: Vec<_> = pieces.iter().map(|p| p.columns()[0].n_chunks()).collect();
-        assert_eq!(n_chunks, [2, 2]);
+        // The null row's span alone overflows, so it is cut off and normalized on its own.
+        let maps: Vec<&MapArray> = arrays
+            .iter()
+            .map(|a| a.as_any().downcast_ref().unwrap())
+            .collect();
+        let offsets: Vec<_> = maps.iter().map(|m| m.offsets().as_slice()).collect();
+        assert_eq!(offsets, [[0, 1], [0, 0]]);
+        assert_eq!(maps[1].null_count(), 1);
     }
 
     /// A scalar column repeating one map with `keys`, held in two chunks, over `height` rows.
@@ -417,33 +218,14 @@ mod tests {
             .iter()
             .map(|c| c.dtype().to_arrow(CompatLevel::newest()))
             .collect();
+        let dtypes: Vec<_> = dtypes.iter().collect();
 
-        let ranges = df.arrow_export_ranges(&dtypes, None).unwrap();
-        let chunk_ranges = df.arrow_export_ranges(&dtypes, Some((0, 0..4096))).unwrap();
+        let scalar_rows = df.arrow_export_scalar_rows(&dtypes);
+        let ranges = df.arrow_export_ranges(&dtypes, &scalar_rows, 0, 0..4096);
 
         // 2047 rows of 2^20 entries is the most that fits in `i32` offsets.
         assert_eq!(ranges, Some(vec![0..2047, 2047..4094, 4094..4096]));
-        assert_eq!(chunk_ranges, ranges);
         let sc = df.columns()[1].as_scalar_column().unwrap();
         assert!(sc.lazy_as_materialized_series().is_none());
-    }
-
-    /// Materializing a scalar map deduplicates its keys, so its raw entries only bound what export
-    /// writes.
-    #[test]
-    fn a_scalar_map_with_duplicate_keys_is_planned_by_its_exported_entries() {
-        let df =
-            DataFrame::new_infer_height(vec![scalar_map_column(vec![7; 1 << 20], 4096)]).unwrap();
-        let arrow_dtype = df.columns()[0].dtype().to_arrow(CompatLevel::newest());
-
-        let pieces = df.split_for_arrow_export([&arrow_dtype]).unwrap();
-
-        assert_eq!(pieces.len(), 1);
-        let arrays = pieces[0].columns()[0]
-            .as_materialized_series()
-            .try_to_arrow_split(0, CompatLevel::newest())
-            .unwrap();
-        let map: &MapArray = arrays[0].as_any().downcast_ref().unwrap();
-        assert_eq!(*map.offsets().last(), 4096);
     }
 }

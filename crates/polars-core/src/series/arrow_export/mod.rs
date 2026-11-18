@@ -46,7 +46,7 @@ macro_rules! primitive_to_boxed_with_logical {
 }
 
 /// Drop the entries no live row owns and rebase the offsets onto the rest; `None` if the
-/// chunk already spans exactly its child. The splitter in `split.rs` must drop the same entries.
+/// chunk already spans exactly its child.
 fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
     #[cfg(feature = "dtype-map")]
     if let Some(compacted) = crate::chunked_array::logical::compact_null_rows_chunk(arr) {
@@ -116,9 +116,9 @@ impl Series {
         chunk_idx: usize,
         compat_level: CompatLevel,
     ) -> PolarsResult<Vec<ArrayRef>> {
-        let chunk = std::slice::from_ref(&self.chunks()[chunk_idx]);
+        let chunk = self.chunks()[chunk_idx].as_ref();
         let arrow_dtype = self.dtype().to_arrow(compat_level);
-        let Some(ranges) = arrow_export_row_ranges([(chunk, &arrow_dtype, false)], chunk[0].len())?
+        let Some(ranges) = arrow_export_row_ranges(&[(chunk, &arrow_dtype, false)], chunk.len())
         else {
             return Ok(vec![self.try_to_arrow(chunk_idx, compat_level)?]);
         };
@@ -526,6 +526,17 @@ impl ToArrowConverter {
         let normalized = normalize_map_entries(arr);
         let arr = normalized.as_ref().unwrap_or(arr);
 
+        // Arrow's MAP offsets are `i32`, a Polars list's are `i64`. Checked before the entries
+        // are converted, which is the expensive part.
+        let offsets = OffsetsBuffer::<i32>::try_from(arr.offsets()).map_err(|_| {
+            polars_err!(
+                InvalidOperation:
+                "to_arrow() conversion failed: {} map entries overflow the i32 offsets \
+                of the arrow MAP type",
+                arr.offsets().last(),
+            )
+        })?;
+
         let mut arrow_dtype = to_owned_dtype(arrow_field);
 
         let ArrowDataType::Map(arrow_entries_field, _keys_sorted) = &mut arrow_dtype else {
@@ -542,16 +553,6 @@ impl ToArrowConverter {
             entries_dtype,
             Cow::Borrowed(arrow_entries_field.as_ref()),
         )?;
-
-        // Arrow's MAP offsets are `i32`, a Polars list's are `i64`.
-        let offsets = OffsetsBuffer::<i32>::try_from(arr.offsets()).map_err(|_| {
-            polars_err!(
-                InvalidOperation:
-                "to_arrow() conversion failed: {} map entries overflow the i32 offsets \
-                of the arrow MAP type",
-                arr.offsets().last(),
-            )
-        })?;
 
         Ok(Box::new(MapArray::try_new(
             arrow_dtype,

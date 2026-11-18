@@ -1,10 +1,8 @@
-use std::borrow::Cow;
 use std::ops::Range;
 
 use polars_arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
-use crate::frame::column::ScalarColumn;
 use crate::prelude::*;
 use crate::runtime::RAYON;
 use crate::series::arrow_export::{arrow_export_row_ranges, contains_arrow_map};
@@ -114,106 +112,59 @@ impl DataFrame {
 }
 
 impl DataFrame {
-    /// Row ranges cutting this frame, or its chunk `chunk_idx` holding `rows` if given, so that
-    /// each exports to `arrow_dtypes` without overflowing the `i32` offsets of an arrow MAP;
-    /// `None` if no cut is needed.
-    pub(crate) fn arrow_export_ranges<'a>(
+    /// The one row of each Scalar column that exports to `arrow_dtypes` with an arrow MAP, for
+    /// [`DataFrame::arrow_export_ranges`] to plan from; `None` for every other column.
+    pub(crate) fn arrow_export_scalar_rows(
         &self,
-        arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
-        chunk: Option<(usize, Range<usize>)>,
-    ) -> PolarsResult<Option<Vec<Range<usize>>>> {
-        let rows = chunk
-            .as_ref()
-            .map_or(0..self.height(), |(_, rows)| rows.clone());
-        let columns: Vec<_> = self
-            .columns()
+        arrow_dtypes: &[&ArrowDataType],
+    ) -> Vec<Option<ArrayRef>> {
+        self.columns()
             .iter()
             .zip(arrow_dtypes)
-            .filter(|(_, dtype)| contains_arrow_map(dtype))
-            .collect();
+            .map(|(c, dtype)| {
+                let sc = c.as_scalar_column().filter(|_| contains_arrow_map(dtype))?;
+                let row = sc.as_single_value_series();
+                let row = if row.n_chunks() > 1 {
+                    row.rechunk()
+                } else {
+                    row
+                };
+                row.chunks().first().filter(|row| row.len() == 1).cloned()
+            })
+            .collect()
+    }
 
-        // Scalar Maps are first counted from their raw entries, an upper bound on what export
-        // writes, as materializing them deduplicates keys. Only if planning on that bound cuts or
-        // fails are they deduplicated, once, to count exactly.
-        let plan = |canonical: bool| {
-            let mut has_raw = false;
-            let chunks: Vec<Cow<'_, [ArrayRef]>> = columns
-                .iter()
-                .map(|(c, _)| match (c, &chunk) {
-                    (Column::Series(s), None) => Cow::Borrowed(s.chunks().as_slice()),
-                    (Column::Series(s), Some((idx, _))) => {
-                        Cow::Borrowed(std::slice::from_ref(&s.chunks()[*idx]))
-                    },
-                    (Column::Scalar(sc), _) => {
-                        let raw = (!canonical).then(|| raw_map_row_chunks(sc)).flatten();
-                        has_raw |= raw.is_some();
-                        Cow::Owned(raw.unwrap_or_else(|| sc.as_single_value_series().into_chunks()))
-                    },
-                    (_, _) => Cow::Owned(
-                        c.slice(rows.start as i64, rows.len())
-                            .take_materialized_series()
-                            .into_chunks(),
-                    ),
-                })
-                .collect();
-            let ranges = arrow_export_row_ranges(
-                chunks.iter().zip(&columns).map(|(chunks, (c, dtype))| {
-                    (chunks.as_ref(), *dtype, c.as_scalar_column().is_some())
-                }),
-                rows.len(),
-            );
-            (ranges, has_raw)
-        };
-
-        let (ranges, has_raw) = plan(false);
-        if !has_raw || matches!(ranges, Ok(None)) {
-            return ranges;
+    /// Row ranges cutting chunk `chunk_idx` of this aligned frame, which holds `rows`, so that
+    /// each exports to `arrow_dtypes` without overflowing the `i32` offsets of an arrow MAP; see
+    /// [`arrow_export_row_ranges`]. `None` if no cut is needed.
+    pub(crate) fn arrow_export_ranges(
+        &self,
+        arrow_dtypes: &[&ArrowDataType],
+        scalar_rows: &[Option<ArrayRef>],
+        chunk_idx: usize,
+        rows: Range<usize>,
+    ) -> Option<Vec<Range<usize>>> {
+        let mut owned = Vec::new();
+        let mut columns = Vec::new();
+        for ((c, dtype), scalar_row) in self.columns().iter().zip(arrow_dtypes).zip(scalar_rows) {
+            if !contains_arrow_map(dtype) {
+                continue;
+            }
+            match (c, scalar_row) {
+                (Column::Series(s), _) => columns.push((&*s.chunks()[chunk_idx], *dtype, false)),
+                // An empty Scalar column has no row, and the chunk then holds none either.
+                (Column::Scalar(_), Some(row)) => columns.push((&**row, *dtype, true)),
+                (Column::Scalar(_), None) => {},
+                (Column::Dictionary(_), _) => {
+                    let s = c.slice(rows.start as i64, rows.len());
+                    let s = s.take_materialized_series().rechunk();
+                    owned.push((s.chunks()[0].clone(), *dtype));
+                },
+            }
         }
-        plan(true).0
+        columns.extend(owned.iter().map(|(arr, dtype)| (&**arr, *dtype, false)));
+        arrow_export_row_ranges(&columns, rows.len())
     }
-
-    /// Slices of this frame that each export to `arrow_dtypes` without overflowing the `i32`
-    /// offsets of an arrow MAP; just the frame unless one would.
-    ///
-    /// The columns may be chunked differently, and nothing is rechunked.
-    pub fn split_for_arrow_export<'a>(
-        self,
-        arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
-    ) -> PolarsResult<Vec<DataFrame>> {
-        let Some(ranges) = self.arrow_export_ranges(arrow_dtypes, None)? else {
-            return Ok(vec![self]);
-        };
-
-        Ok(ranges
-            .into_iter()
-            .map(|r| self.slice(r.start as i64, r.len()))
-            .collect())
-    }
-}
-
-/// The single row of a scalar Map as chunks of its raw entries, which together make up that row;
-/// `None` for any other scalar.
-fn raw_map_row_chunks(sc: &ScalarColumn) -> Option<Vec<ArrayRef>> {
-    #[cfg(feature = "dtype-map")]
-    if let AnyValue::Map(entries) = sc.scalar().value() {
-        return Some(
-            entries
-                .chunks()
-                .iter()
-                .map(|chunk| {
-                    let offsets = vec![0, chunk.len() as i64];
-                    let dtype = ListArray::<i64>::default_datatype(chunk.dtype().clone());
-                    // SAFETY: the offsets span the whole chunk.
-                    let offsets =
-                        unsafe { polars_arrow::offset::Offsets::new_unchecked(offsets) }.into();
-                    ListArray::<i64>::new(dtype, offsets, chunk.clone(), None).boxed()
-                })
-                .collect(),
-        );
-    }
-    #[cfg(not(feature = "dtype-map"))]
-    let _ = sc;
-    None
 }
 
 /// Split DataFrame into chunks in preparation for writing. The chunks have a
