@@ -28,11 +28,14 @@ pub(crate) fn fits_arrow_map(array: &dyn Array, dtype: &ArrowDataType) -> bool {
 /// out as `ToArrowConverter` expects; reads two offsets per list level.
 ///
 /// A span bounds what export keeps, which can be less: a MAP drops the entries of its null rows
-/// (`normalize_map_entries`).
+/// (`normalize_map_entries`). An array that `dtype` doesn't describe spans nothing, which leaves
+/// the mismatch for conversion to report.
 pub(crate) fn max_map_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowDataType) -> u64 {
     match dtype {
         ArrowDataType::Map(entries, _) | ArrowDataType::LargeList(entries) => {
-            let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+            let Some(arr) = array.as_any().downcast_ref::<ListArray<i64>>() else {
+                return 0;
+            };
             let offsets = arr.offsets().as_slice();
             let child_rows = offsets[rows.start] as usize..offsets[rows.end] as usize;
             let own = match dtype {
@@ -46,12 +49,16 @@ pub(crate) fn max_map_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowD
             ))
         },
         ArrowDataType::FixedSizeList(item, width) => {
-            let arr: &FixedSizeListArray = array.as_any().downcast_ref().unwrap();
+            let Some(arr) = array.as_any().downcast_ref::<FixedSizeListArray>() else {
+                return 0;
+            };
             let child_rows = rows.start * width..rows.end * width;
             max_map_span(arr.values().as_ref(), child_rows, item.dtype())
         },
         ArrowDataType::Struct(fields) => {
-            let arr: &StructArray = array.as_any().downcast_ref().unwrap();
+            let Some(arr) = array.as_any().downcast_ref::<StructArray>() else {
+                return 0;
+            };
             arr.values()
                 .iter()
                 .zip(fields)
@@ -116,6 +123,8 @@ pub(crate) fn arrow_export_row_ranges(
 
 #[cfg(all(test, feature = "dtype-map"))]
 mod tests {
+    use std::borrow::Cow;
+
     use polars_arrow::array::{BooleanArray, Int32Array, MapArray, NullArray};
     use polars_arrow::bitmap::Bitmap;
     use polars_arrow::offset::Offsets;
@@ -223,6 +232,39 @@ mod tests {
         assert!(batches[0].is_ok());
         let err = batches[1].as_ref().unwrap_err();
         assert!(matches!(err, PolarsError::InvalidOperation(_)), "{err}");
+    }
+
+    #[test]
+    fn a_one_row_chunk_with_too_many_map_entries_errors() {
+        let m = map_series(vec![
+            map_chunk(&[1], None),
+            map_chunk(&[u32::MAX as i64], None),
+        ]);
+        let df = DataFrame::new_infer_height(vec![m.into_column()]).unwrap();
+
+        let batches: Vec<_> = df.try_iter_chunks(CompatLevel::newest(), false).collect();
+
+        assert_eq!(batches.len(), 2);
+        assert!(batches[0].is_ok());
+        let err = batches[1].as_ref().unwrap_err();
+        assert!(matches!(err, PolarsError::InvalidOperation(_)), "{err}");
+    }
+
+    #[test]
+    fn a_target_dtype_that_does_not_match_the_array_errors() {
+        let s = Series::new("l".into(), [Series::new("".into(), [1i64])]);
+        let int = ArrowField::new("item".into(), ArrowDataType::Int64, true);
+        let list = ArrowField::new("item".into(), ArrowDataType::LargeList(Box::new(int)), true);
+        let map = ArrowField::new(
+            "item".into(),
+            map_dtype().to_arrow(CompatLevel::newest()),
+            true,
+        );
+
+        for item in [list, map] {
+            let field = ArrowField::new("l".into(), ArrowDataType::LargeList(Box::new(item)), true);
+            assert!(s.to_arrow_with_field(0, Cow::Owned(field), true).is_err());
+        }
     }
 
     /// A scalar column repeating one map with `keys`, held in two chunks, over `height` rows.

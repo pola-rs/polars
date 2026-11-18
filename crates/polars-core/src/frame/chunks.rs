@@ -67,7 +67,8 @@ impl DataFrame {
             .columns()
             .iter()
             .map(|col| match col {
-                Column::Series(s) => Column::from(s.select_chunk(chunk_idx)),
+                // `Column::from` would turn a one-row chunk into a Scalar, which reads the row.
+                Column::Series(s) => Column::Series(s.select_chunk(chunk_idx).into()),
                 // These have no chunks of their own to follow.
                 Column::Scalar(_) | Column::Dictionary(_) => {
                     col.slice(rows.start as i64, rows.len())
