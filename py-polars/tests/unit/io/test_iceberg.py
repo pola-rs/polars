@@ -1217,7 +1217,11 @@ def test_sink_iceberg_overwrite_filter_required_column_added(tmp_path: Path) -> 
 
 
 @pytest.mark.write_disk
-def test_sink_iceberg_overwrite_filter_double_partition(tmp_path: Path) -> None:
+def test_sink_iceberg_overwrite_filter_double_partition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
     tbl, _ = new_iceberg_table(
         tmp_path,
         schema=IcebergSchema(
@@ -1227,12 +1231,91 @@ def test_sink_iceberg_overwrite_filter_double_partition(tmp_path: Path) -> None:
     )
     pl.LazyFrame({"x": [0.1, 0.2], "k": [1, 2]}).sink_iceberg(tbl, mode="append")
 
+    if maintenance._pyiceberg_rounds_doubles():
+        with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+            pl.LazyFrame(schema={"x": pl.Float64, "k": pl.Int64}).sink_iceberg(
+                tbl, mode="overwrite", overwrite_filter="x = 0.1"
+            )
+        # exact decoder allows the write
+        monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
+
     pl.LazyFrame(schema={"x": pl.Float64, "k": pl.Int64}).sink_iceberg(
         tbl, mode="overwrite", overwrite_filter="x = 0.1"
     )
 
-    # PyIceberg reads double partition values as float32: no pruning by them
     assert _scan_sorted(tbl)["k"].to_list() == [2]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_double_partitions_30832(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pyarrow as pa
+
+    import polars.io.iceberg._maintenance as maintenance
+
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    schema = IcebergSchema(
+        NestedField(1, "x", DoubleType()), NestedField(2, "k", LongType())
+    )
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x"))
+    path_d = tmp_path / "double"
+    path_d.mkdir()
+    tbl, _ = new_iceberg_table(path_d, schema=schema, partition_spec=spec)
+    tbl.append(
+        pa.Table.from_pydict({"x": [0.1, 0.2], "k": [1, 2]}).cast(
+            schema_to_pyarrow(schema)
+        )
+    )
+
+    # Filtered overwrite on DOUBLE partition table is refused
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        pl.LazyFrame(schema={"x": pl.Float64, "k": pl.Int64}).sink_iceberg(
+            tbl, mode="overwrite", overwrite_filter="x = 0.1"
+        )
+
+    # Dynamic partition overwrite on existing DOUBLE partition is refused
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        pl.LazyFrame(
+            {"x": [0.1], "k": [10]}, schema={"x": pl.Float64, "k": pl.Int64}
+        ).sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
+
+    # Filtered overwrite matching 0 rows succeeds
+    pl.LazyFrame(schema={"x": pl.Float64, "k": pl.Int64}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="x = 99.0"
+    )
+
+    # Unfiltered full-table overwrite drops all manifests without rewriting; succeeds
+    pl.LazyFrame(
+        {"x": [0.3], "k": [3]}, schema={"x": pl.Float64, "k": pl.Int64}
+    ).sink_iceberg(tbl, mode="overwrite")
+    assert _scan_sorted(tbl)["k"].to_list() == [3]
+
+    # When decoder is exact, filtered and dynamic overwrites succeed
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
+    pl.LazyFrame(
+        {"x": [0.3], "k": [30]}, schema={"x": pl.Float64, "k": pl.Int64}
+    ).sink_iceberg(tbl, mode="overwrite", overwrite_filter="x = 0.3")
+    assert _scan_sorted(tbl)["k"].to_list() == [30]
+
+    # FLOAT columns are unaffected
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    schema_f = IcebergSchema(
+        NestedField(1, "x", FloatType()), NestedField(2, "k", LongType())
+    )
+    spec_f = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x"))
+    path_f = tmp_path / "float"
+    path_f.mkdir()
+    tbl_f, _ = new_iceberg_table(path_f, schema=schema_f, partition_spec=spec_f)
+    tbl_f.append(
+        pa.Table.from_pydict({"x": [0.1, 0.2], "k": [1, 2]}).cast(
+            schema_to_pyarrow(schema_f)
+        )
+    )
+    pl.LazyFrame(schema={"x": pl.Float32, "k": pl.Int64}).sink_iceberg(
+        tbl_f, mode="overwrite", overwrite_filter="x = 0.1"
+    )
+    assert _scan_sorted(tbl_f)["k"].to_list() == [2]
 
 
 @pytest.mark.write_disk

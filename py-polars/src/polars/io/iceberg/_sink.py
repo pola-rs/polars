@@ -1994,6 +1994,18 @@ class IcebergSinkState:
                 table, tasks, predicate, self.iceberg_storage_properties
             )
             removed += [t.file for t in whole + partial]
+            if (
+                self.dynamic_partition_overwrite or self.overwrite_filter is not None
+            ) and removed:
+                from polars.io.iceberg._maintenance import _rounded_doubles_error
+
+                if rounded := _rounded_doubles_error(
+                    table.metadata,
+                    ".".join(table.name()),
+                    "overwrite",
+                    {f.spec_id for f in removed},
+                ):
+                    raise NotImplementedError(rounded)
             if partial:
                 rewritten, rewritten_sort_order_id = self._write_survivors(
                     table, partial, predicate

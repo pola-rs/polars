@@ -406,6 +406,8 @@ def delete_iceberg(
             f"rows of Iceberg table '{name}' may have been deleted (commit state "
             "unknown)"
         ),
+        operation="delete_iceberg",
+        name=name,
     )
 
 

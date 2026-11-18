@@ -254,3 +254,117 @@ def test_delete_iceberg_whole_partition(tmp_path: Path) -> None:
     # Metadata-only: no data file is rewritten.
     assert snapshot.summary.operation.value == "delete"
     assert_frame_equal(read(table), DATA.remove(pl.col("b")))
+
+
+@pytest.mark.write_disk
+def test_delete_iceberg_double_partitions_30832(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pyarrow as pa
+
+    import polars.io.iceberg._maintenance as maintenance
+
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    schema = IcebergSchema(
+        NestedField(1, "x", DoubleType()), NestedField(2, "k", LongType())
+    )
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x"))
+    path_d = tmp_path / "double"
+    path_d.mkdir()
+    table, _ = new_iceberg_table(path_d, schema=schema, partition_spec=spec)
+    # Write both partitions in one commit so they share a manifest
+    table.append(
+        pa.Table.from_pydict({"x": [0.1, 2.0], "k": [1, 2]}).cast(
+            schema_to_pyarrow(schema)
+        )
+    )
+
+    # Deleting k == 2 rewrites the manifest keeping x == 0.1
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        pl.delete_iceberg(table, pl.col("k") == 2)
+
+    table.refresh()
+    # Data and partition metadata remain uncorrupted
+    assert_frame_equal(
+        pl.scan_iceberg(table).sort("k").collect(),
+        pl.DataFrame(
+            {"x": [0.1, 2.0], "k": [1, 2]}, schema={"x": pl.Float64, "k": pl.Int64}
+        ),
+    )
+
+    # Deleting no rows touches nothing and succeeds
+    pl.delete_iceberg(table, pl.col("k") == 99)
+
+    # Exact decoder works properly without error
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
+    pl.delete_iceberg(table, pl.col("k") == 2)
+    table.refresh()
+    assert_frame_equal(
+        pl.scan_iceberg(table).collect(),
+        pl.DataFrame({"x": [0.1], "k": [1]}, schema={"x": pl.Float64, "k": pl.Int64}),
+    )
+
+    # FLOAT columns are unaffected
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    schema_f = IcebergSchema(
+        NestedField(1, "x", FloatType()), NestedField(2, "k", LongType())
+    )
+    spec_f = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x"))
+    path_f = tmp_path / "float"
+    path_f.mkdir()
+    table_f, _ = new_iceberg_table(path_f, schema=schema_f, partition_spec=spec_f)
+    table_f.append(
+        pa.Table.from_pydict({"x": [0.1, 2.0], "k": [1, 2]}).cast(
+            schema_to_pyarrow(schema_f)
+        )
+    )
+    pl.delete_iceberg(table_f, pl.col("k") == 2)
+    table_f.refresh()
+    assert_frame_equal(
+        pl.scan_iceberg(table_f).collect(),
+        pl.DataFrame({"x": [0.1], "k": [1]}, schema={"x": pl.Float32, "k": pl.Int64}),
+    )
+
+
+@pytest.mark.write_disk
+def test_delete_iceberg_multiple_partition_specs_30832(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pyarrow as pa
+
+    import polars.io.iceberg._maintenance as maintenance
+
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    schema = IcebergSchema(
+        NestedField(1, "x", DoubleType()),
+        NestedField(2, "y", LongType()),
+        NestedField(3, "k", LongType()),
+    )
+    spec = PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x"))
+    table, _ = new_iceberg_table(tmp_path, schema=schema, partition_spec=spec)
+    table.append(
+        pa.Table.from_pydict({"x": [0.1, 0.2], "y": [1, 2], "k": [1, 2]}).cast(
+            schema_to_pyarrow(schema)
+        )
+    )
+
+    # Evolve to Spec 1: partition by y only (no DOUBLE partition)
+    with table.update_spec() as update:
+        update.remove_field("x")
+        update.add_identity("y")
+
+    table.append(
+        pa.Table.from_pydict({"x": [0.3, 0.4], "y": [3, 4], "k": [3, 4]}).cast(
+            schema_to_pyarrow(schema)
+        )
+    )
+
+    # Deleting rows matching only files in Spec 1 succeeds
+    # (no DOUBLE partition in Spec 1).
+    pl.delete_iceberg(table, pl.col("k") == 4)
+    table.refresh()
+    assert sorted(pl.scan_iceberg(table).collect()["k"].to_list()) == [1, 2, 3]
+
+    # Deleting rows matching files in Spec 0 is refused
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        pl.delete_iceberg(table, pl.col("k") == 2)

@@ -4566,6 +4566,40 @@ def test_delete_catalog_table_rewrite(
 
 
 @pytest.mark.write_disk
+def test_delete_catalog_table_double_partitions_30832(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    ctx = lake_ctx(lake)
+    for name, dtype in (("d", "DOUBLE"), ("f", "REAL")):
+        ctx.execute(f"CREATE TABLE {name} (x {dtype}, k INT) PARTITION BY (x)")
+        ctx.execute(f"INSERT INTO {name} VALUES (0.1, 1), (0.2, 2)")
+
+    # Deleting a row from a table partitioned by DOUBLE is refused when decoder rounds
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        ctx.execute("DELETE FROM d WHERE k = 1")
+
+    # Deleting 0 rows succeeds
+    ctx.execute("DELETE FROM d WHERE k = 99")
+
+    # TRUNCATE TABLE is unaffected
+    ctx.execute("TRUNCATE TABLE d")
+    assert table_rows(lake, "tpch", "d") == []
+
+    # FLOAT columns are unaffected
+    ctx.execute("DELETE FROM f WHERE k = 1")
+    assert table_rows(lake, "tpch", "f") == [(0.2, 2)]
+
+    # Exact decoder allows DELETE
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
+    ctx.execute("INSERT INTO d VALUES (0.1, 1), (0.2, 2)")
+    ctx.execute("DELETE FROM d WHERE k = 1")
+    assert table_rows(lake, "tpch", "d") == [(0.2, 2)]
+
+
+@pytest.mark.write_disk
 def test_delete_catalog_table_cleans_metadata_check(
     lake: CountingCatalog, tmp_path: Path
 ) -> None:
@@ -4794,6 +4828,35 @@ def test_update_catalog_table_partitioned(lake: CountingCatalog) -> None:
     assert table_rows(lake, "tpch", "p") == [(1, "y"), (2, "x"), (3, "y")]
     rows = table.scan(row_filter="part = 'y'").to_arrow().to_pylist()
     assert sorted(r["k"] for r in rows) == [1, 3]
+
+
+@pytest.mark.write_disk
+def test_update_catalog_table_double_partitions_30832(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    ctx = lake_ctx(lake)
+    for name, dtype in (("d", "DOUBLE"), ("f", "REAL")):
+        ctx.execute(f"CREATE TABLE {name} (x {dtype}, k INT) PARTITION BY (x)")
+        ctx.execute(f"INSERT INTO {name} VALUES (0.1, 1), (0.2, 2)")
+
+    # Updating rows in a table partitioned by DOUBLE is refused when decoder rounds
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        ctx.execute("UPDATE d SET k = 10 WHERE k = 1")
+
+    # Updating 0 rows succeeds
+    ctx.execute("UPDATE d SET k = 10 WHERE k = 99")
+
+    # FLOAT columns are unaffected
+    ctx.execute("UPDATE f SET k = 10 WHERE k = 1")
+    assert table_rows(lake, "tpch", "f") == [(0.1, 10), (0.2, 2)]
+
+    # Exact decoder allows UPDATE
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
+    ctx.execute("UPDATE d SET k = 10 WHERE k = 1")
+    assert table_rows(lake, "tpch", "d") == [(0.1, 10), (0.2, 2)]
 
 
 @pytest.mark.write_disk
@@ -6105,6 +6168,41 @@ def test_merge_catalog_table_partitioned(lake: CountingCatalog) -> None:
     assert table_rows(lake, "tpch", "p") == [(1, "y"), (2, "x"), (3, "y"), (4, "z")]
     rows = lake.load_table(("tpch", "p")).scan(row_filter="part = 'y'").to_arrow()
     assert sorted(rows["k"].to_pylist()) == [1, 3]
+
+
+@pytest.mark.write_disk
+def test_merge_catalog_table_double_partitions_30832(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import polars.io.iceberg._maintenance as maintenance
+
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE d (x DOUBLE, k INT) PARTITION BY (x)")
+    ctx.execute("INSERT INTO d VALUES (0.1, 1), (0.2, 2)")
+
+    # MERGE matching existing file (WHEN MATCHED THEN UPDATE) rewrites manifest
+    # and is refused
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        ctx.execute(
+            "MERGE INTO d USING (VALUES (0.1, 10)) AS s(x, k) ON d.k = 1 "
+            "WHEN MATCHED THEN UPDATE SET k = s.k"
+        )
+
+    # MERGE that only inserts new rows is a pure append and succeeds
+    ctx.execute(
+        "MERGE INTO d USING (VALUES (0.3, 3)) AS s(x, k) ON d.k = s.k "
+        "WHEN NOT MATCHED THEN INSERT VALUES (s.x, s.k)"
+    )
+    assert (0.3, 3) in table_rows(lake, "tpch", "d")
+
+    # Exact decoder allows MERGE with WHEN MATCHED
+    monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
+    ctx.execute(
+        "MERGE INTO d USING (VALUES (0.1, 10)) AS s(x, k) ON d.k = 1 "
+        "WHEN MATCHED THEN UPDATE SET k = s.k"
+    )
+    assert (0.1, 10) in table_rows(lake, "tpch", "d")
 
 
 @pytest.mark.write_disk

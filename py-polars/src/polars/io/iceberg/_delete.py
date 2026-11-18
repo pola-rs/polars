@@ -26,6 +26,8 @@ def _delete_whole_files(
     *,
     refused: str,
     unknown: str,
+    operation: str = "delete_iceberg",
+    name: str | None = None,
 ) -> bool:
     """
     Delete the rows of `table` matching `delete_filter` by dropping data files.
@@ -84,7 +86,32 @@ def _delete_whole_files(
                     # computing that wrote manifests the commit will not use
                     delete._clean_all_uncommitted()
                     return False
-                delete.commit()
+                parent = table.current_snapshot()
+                old_paths = (
+                    {m.manifest_path for m in parent.manifests(table.io)}
+                    if parent is not None
+                    else set()
+                )
+                existing_manifests, _, _ = delete._compute_deletes
+                rewritten_specs = {
+                    m.partition_spec_id
+                    for m in existing_manifests
+                    if m.manifest_path not in old_paths
+                }
+                rounded_err: str | None = None
+                if rewritten_specs and operation != "TRUNCATE":
+                    from polars.io.iceberg._maintenance import _rounded_doubles_error
+
+                    if rounded := _rounded_doubles_error(
+                        table.metadata,
+                        ".".join(table.name()) if name is None else name,
+                        operation,
+                        rewritten_specs,
+                    ):
+                        delete._clean_all_uncommitted()
+                        rounded_err = rounded
+                if rounded_err is None:
+                    delete.commit()
         except (_AlreadyCommitted, CommitStateUnknownException, ValidationException):
             raise
         except Exception as error:
@@ -102,6 +129,8 @@ def _delete_whole_files(
     except Exception as error:
         error.add_note(refused)
         raise
+    if rounded_err is not None:
+        raise NotImplementedError(rounded_err)
     _copy_table_state(wrapped, table)
     return True
 
@@ -114,6 +143,8 @@ def _delete_rows(
     *,
     refused: str,
     unknown: str,
+    operation: str = "delete_iceberg",
+    name: str | None = None,
 ) -> None:
     """
     Delete the rows of `table` matching `delete_filter` (`predicate`) in one commit.
@@ -129,7 +160,14 @@ def _delete_rows(
     from polars.io.iceberg._sink import _ReplaceFiles
     from polars.io.iceberg.functions import _scan_iceberg_files
 
-    if _delete_whole_files(table, delete_filter, refused=refused, unknown=unknown):
+    if _delete_whole_files(
+        table,
+        delete_filter,
+        refused=refused,
+        unknown=unknown,
+        operation=operation,
+        name=name,
+    ):
         return
 
     partial: list[FileScanTask] = []
@@ -150,6 +188,16 @@ def _delete_rows(
         raise
     if not removed:
         return
+    if operation != "TRUNCATE":
+        from polars.io.iceberg._maintenance import _rounded_doubles_error
+
+        if rounded := _rounded_doubles_error(
+            table.metadata,
+            ".".join(table.name()) if name is None else name,
+            operation,
+            {f.spec_id for f in removed},
+        ):
+            raise NotImplementedError(rounded)
     replace = _ReplaceFiles(
         data_files=removed,
         conflict_filter=delete_filter,

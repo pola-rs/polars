@@ -1321,6 +1321,8 @@ def _truncate_catalog_table(
         storage_options,
         refused=f"table '{name}' could not be truncated: {where}",
         unknown=f"table '{name}' may have been truncated (commit state unknown): {where}",
+        operation="TRUNCATE",
+        name=_display_name(identifier),
     )
     return response
 
@@ -1585,6 +1587,8 @@ def _delete_catalog_table(
             storage_options,
             refused=refused,
             unknown=unknown,
+            operation="DELETE",
+            name=table_name,
         )
     return response
 
@@ -1662,6 +1666,15 @@ def _update_catalog_table(
     replaced = [t for t, n in zip(tasks, counts, strict=True) if n.item() > 0]
     if not replaced:
         return response
+    from polars.io.iceberg._maintenance import _rounded_doubles_error
+
+    if rounded := _rounded_doubles_error(
+        table.metadata,
+        table_name,
+        "UPDATE",
+        {t.file.spec_id for t in replaced},
+    ):
+        raise NotImplementedError(rounded)
     # pass 2: every row of those files, the matching ones updated
     rows = updated_rows(_scan_iceberg_files(table, replaced, storage_options))
     replace = _ReplaceFiles(
@@ -1786,8 +1799,23 @@ def _merge_catalog_table(
         replaced = [t for t in tasks if t.file.file_path in affected]
         if not replaced and inserted_df.is_empty():
             return response
+    except Exception as error:
+        error.add_note(refused)
+        raise
 
-        # execution B: rewrite the files, with the same source
+    if replaced:
+        from polars.io.iceberg._maintenance import _rounded_doubles_error
+
+        if rounded := _rounded_doubles_error(
+            table.metadata,
+            table_name,
+            "MERGE",
+            {t.file.spec_id for t in replaced},
+        ):
+            raise NotImplementedError(rounded)
+
+    # execution B: rewrite the files, with the same source
+    try:
         rows = [inserted_df.lazy()]
         if replaced:
             rows.insert(
