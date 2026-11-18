@@ -144,25 +144,19 @@ impl DataFrame {
         chunk_idx: usize,
         rows: Range<usize>,
     ) -> Option<Vec<Range<usize>>> {
-        let mut owned = Vec::new();
         let mut columns = Vec::new();
         for ((c, dtype), scalar_row) in self.columns().iter().zip(arrow_dtypes).zip(scalar_rows) {
             if !contains_arrow_map(dtype) {
                 continue;
             }
-            match (c, scalar_row) {
-                (Column::Series(s), _) => columns.push((&*s.chunks()[chunk_idx], *dtype, false)),
-                // An empty Scalar column has no row, and the chunk then holds none either.
-                (Column::Scalar(_), Some(row)) => columns.push((&**row, *dtype, true)),
-                (Column::Scalar(_), None) => {},
-                (Column::Dictionary(_), _) => {
-                    let s = c.slice(rows.start as i64, rows.len());
-                    let s = s.take_materialized_series().rechunk();
-                    owned.push((s.chunks()[0].clone(), *dtype));
-                },
+            match (c.as_series(), scalar_row) {
+                (Some(s), _) => columns.push((&*s.chunks()[chunk_idx], *dtype, false)),
+                (None, Some(row)) => columns.push((&**row, *dtype, true)),
+                // An empty Scalar column has no row, and the chunk then holds none either. A
+                // Dictionary column is a String, never a MAP.
+                (None, None) => {},
             }
         }
-        columns.extend(owned.iter().map(|(arr, dtype)| (&**arr, *dtype, false)));
         arrow_export_row_ranges(&columns, rows.len())
     }
 }
