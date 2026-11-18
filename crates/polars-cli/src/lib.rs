@@ -267,6 +267,9 @@ fn count_rows(rows: Arc<AtomicU64>) -> SinkedPathsCallback {
 fn without_sink_context(error: PolarsError) -> PolarsError {
     match error {
         PolarsError::Context { error, msg } if &*msg == "'sink'" => *error,
+        PolarsError::Attached { error, attachment } => {
+            without_sink_context(*error).with_attachment(*attachment)
+        },
         error => error,
     }
 }

@@ -73,7 +73,9 @@ fn class_of(error: &PolarsError) -> &'static str {
         SQLSyntax(_) => "SQLSyntaxError",
         StringCacheMismatch(_) => "StringCacheMismatchError",
         StructFieldNotFound(_) => "StructFieldNotFoundError",
-        Context { error, .. } | ExprContext { error, .. } => class_of(error),
+        Context { error, .. } | ExprContext { error, .. } | Attached { error, .. } => {
+            class_of(error)
+        },
         // `ComputeError`, and the variants that exist only with other feature sets.
         _ => "ComputeError",
     }

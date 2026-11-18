@@ -11,7 +11,7 @@ use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::dynamic_boundary_dtype;
-use polars_error::feature_gated;
+use polars_error::{ErrorAttachment, feature_gated};
 use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -94,20 +94,23 @@ pub fn to_alp(
             let Some(ir_until_then) = lp_arena.last_node() else {
                 return Err(err);
             };
-            let node_name = if let PolarsError::Context { msg, .. } = &err {
-                msg
+            // Skip the plans of nested conversions.
+            let mut outer = &err;
+            while let PolarsError::Attached { error, .. } = outer {
+                outer = error;
+            }
+            let node = if let PolarsError::Context { msg, .. } = outer {
+                msg.to_string()
             } else {
-                "THIS_NODE"
+                "THIS_NODE".to_string()
             };
             let plan = IRPlan::new(
                 ir_until_then,
                 std::mem::take(lp_arena),
                 std::mem::take(expr_arena),
             );
-            let location = format!("{}", plan.display());
-            Err(err.wrap_msg(|msg| {
-                format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
-            }))
+            let plan = format!("{}", plan.display());
+            Err(err.with_attachment(ErrorAttachment::ResolvedPlan { node, plan }))
         },
     }
 }
