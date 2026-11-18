@@ -42,32 +42,17 @@ impl Scalar {
         )
     }
 
-    /// One `Map` row from its flat key and value fields, deduplicating keys.
-    ///
-    /// Duplicate keys keep their first position and last value. Errors on null keys or an
-    /// invalid Map dtype.
+    /// One `Map` row from its `Struct {key, value}` entries; duplicate keys keep their first position and last value.
     #[cfg(feature = "dtype-map")]
-    pub fn new_map(keys: &Series, values: &Series) -> PolarsResult<Self> {
-        use crate::chunked_array::logical::{MapChunked, pack_map_entries};
+    pub(crate) fn map_from_entries(entries: Series) -> PolarsResult<Self> {
+        use crate::chunked_array::logical::MapChunked;
         use crate::series::IntoSeries;
 
-        let dtype = DataType::Map(
-            Box::new(keys.dtype().clone()),
-            Box::new(values.dtype().clone()),
-        );
-        let storage = pack_map_entries(keys, values).implode()?.into_series();
+        let dtype = entries.dtype().map_from_named_entries_dtype()?;
+        let storage = entries.implode()?.into_series();
         let map = MapChunked::try_from_storage(dtype.clone(), storage)?;
         let value = map.get_any_value(0)?.into_static();
         Ok(Scalar::new(dtype, value))
-    }
-
-    /// For callers that already hold one row's entries, such as deserialization.
-    ///
-    /// Keys are not deduplicated: Polars' own serialized data is trusted like an Arrow import.
-    #[cfg(feature = "dtype-map")]
-    pub(crate) fn map_from_entries(entries: Series) -> Self {
-        let value = AnyValue::Map(entries);
-        Scalar::new(value.dtype(), value)
     }
 
     #[cfg(feature = "dtype-array")]

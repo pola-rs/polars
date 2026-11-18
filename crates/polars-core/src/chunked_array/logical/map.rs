@@ -82,14 +82,17 @@ impl MapChunked {
         dtype: &DataType,
         entries: &Series,
     ) -> Option<Self> {
-        dtype.ensure_valid_map_dtype().ok()?;
-        if dtype.map_entries_dtype().as_ref() != Some(entries.dtype()) {
+        // `Categorical`/`Enum` equality ignores the mapping, so `dtype` may not describe the
+        // entries; the storage carries the dtype derived from the entries instead.
+        let own_dtype = entries.dtype().map_from_positional_entries_dtype()?;
+        if own_dtype.map_entries_dtype().as_ref() != Some(entries.dtype()) || &own_dtype != dtype {
             return None;
         }
         let storage = entries.implode().ok()?.with_name(name);
         ensure_live_entries_non_null(&storage).ok()?;
-        // SAFETY: valid dtype, matching entries dtype, no null entries or keys in the only row.
-        Some(unsafe { Self::from_storage_unchecked(dtype.clone(), storage.into_series()) })
+        // SAFETY: `own_dtype` is a valid Map dtype built from the entries' own fields, and the
+        // only row has no null entries or keys.
+        Some(unsafe { Self::from_storage_unchecked(own_dtype, storage.into_series()) })
     }
 
     pub fn name(&self) -> &PlSmallStr {
@@ -1516,18 +1519,51 @@ mod test {
         }
     }
 
+    #[cfg(feature = "serde")]
     #[test]
-    fn scalar_new_map_deduplicates_keys() {
+    fn scalar_map_deserialization_deduplicates_keys() {
         let keys = str_keys(&[Some("a"), Some("b"), Some("a")]);
         let values = i64_values(&[Some(1), Some(2), Some(3)]);
-        let s = Scalar::new_map(&keys, &values)
-            .unwrap()
-            .into_series(PlSmallStr::from_static("m"));
+        let scalar = Scalar::new(
+            map_dtype(DataType::String, DataType::Int64),
+            AnyValue::Map(pack_map_entries(&keys, &values)),
+        );
+        let json = serde_json::to_string(&scalar).unwrap();
+        let scalar: Scalar = serde_json::from_str(&json).unwrap();
+        let s = scalar.into_series(PlSmallStr::from_static("m"));
         let map = s.map().unwrap();
         assert_eq!(
             str_values(&map.keys()),
             [Some("a".into()), Some("b".into())]
         );
         assert_eq!(map.values().i64().unwrap().to_vec(), [Some(3), Some(2)]);
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    #[test]
+    fn scalar_map_series_keeps_the_entries_categorical_mapping() {
+        use polars_dtype::categorical::{CategoricalMapping, Categories};
+        use polars_utils::aliases::PlSeedableRandomStateQuality;
+
+        let cats = Categories::random(PlSmallStr::EMPTY, CategoricalPhysical::U32);
+        let keys = str_keys(&[Some("a")])
+            .cast(&DataType::from_categories(cats.clone()))
+            .unwrap();
+        let entries = pack_map_entries(&keys, &i64_values(&[Some(1)]));
+        // Equal to the entries' key dtype, since equality ignores the mapping.
+        let other_mapping = Arc::new(CategoricalMapping::with_hasher(
+            cats.physical().max_categories(),
+            PlSeedableRandomStateQuality::default(),
+        ));
+        let dtype = map_dtype(
+            DataType::Categorical(cats.clone(), other_mapping),
+            DataType::Int64,
+        );
+        let s =
+            Scalar::new(dtype, AnyValue::Map(entries)).into_series(PlSmallStr::from_static("m"));
+        let DataType::Categorical(_, mapping) = s.map().unwrap().key_dtype() else {
+            panic!("expected a Categorical key")
+        };
+        assert!(Arc::ptr_eq(mapping, &cats.mapping()));
     }
 }

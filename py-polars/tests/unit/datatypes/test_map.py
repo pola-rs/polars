@@ -665,6 +665,20 @@ def test_map_scalar_materialization_keeps_entries() -> None:
     assert out["m"].cast(ENTRIES).to_list() == expected
 
 
+def test_map_python_dict_keys_colliding_after_cast_are_deduplicated() -> None:
+    d = {1: 10, "1": 20, "b": 2}
+    for s in (
+        pl.DataFrame([{"m": d}], schema={"m": MAP}, strict=False)["m"],
+        pl.Series("m", [d], dtype=MAP, strict=False),
+    ):
+        assert s.to_arrow().to_pylist() == [[("1", 20), ("b", 2)]]
+        assert s.map.get("1").to_list() == [20]
+
+        out = pl.DataFrame({"x": [1, 2]}).with_columns(m=pl.lit(s).first())
+        assert out["m"].to_arrow().to_pylist() == [[("1", 20), ("b", 2)]] * 2
+        assert out["m"].map.get("1").to_list() == [20, 20]
+
+
 def _ipc_buffer(s: pl.Series) -> IO[bytes]:
     buf = io.BytesIO()
     s.to_frame().write_ipc(buf)
