@@ -647,7 +647,8 @@ impl MacroExpander<'_> {
         ControlFlow::Continue(())
     }
 
-    /// Expand the macro calls in the arguments of a call of macro `name`.
+    /// Expand the macro calls in the defaults of a call of macro `name`. The other arguments
+    /// were expanded where the call is.
     fn expand_args(
         &mut self,
         bound: Vec<BoundArg>,
@@ -656,10 +657,7 @@ impl MacroExpander<'_> {
     ) -> ControlFlow<PolarsError, Vec<(Ident, SQLExpr)>> {
         let mut params = Vec::with_capacity(bound.len());
         for mut arg in bound {
-            if !arg.is_default {
-                // An argument of the call is expanded where the call is.
-                dyn_visit::visit_mut(&mut arg.value, self)?;
-            } else {
+            if arg.is_default {
                 // The lambdas of a default count from the call.
                 shift_lambda_elements(&mut arg.value, 0, self.lambdas.depth);
                 self.expand_nested(&mut arg.value, name, table)?;
@@ -698,7 +696,28 @@ impl MacroExpander<'_> {
 impl VisitorMut for MacroExpander<'_> {
     type Break = PolarsError;
 
-    fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
+    fn post_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
+        self.expand_table_call(factor)?;
+        unparenthesize_table_args(factor, self.macros);
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        self.lambdas.enter(expr);
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        let is_body = self.lambdas.leave_children(expr);
+        self.expand_call(expr)?;
+        self.lambdas.leave_body(is_body);
+        ControlFlow::Continue(())
+    }
+}
+
+impl MacroExpander<'_> {
+    /// Replaces `factor` by the body of the table macro it calls, if it calls one.
+    fn expand_table_call(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
         let (macro_name, lateral) = match &*factor {
             TableFactor::Table {
                 name,
@@ -779,25 +798,6 @@ impl VisitorMut for MacroExpander<'_> {
         ControlFlow::Continue(())
     }
 
-    fn post_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
-        unparenthesize_table_args(factor, self.macros);
-        ControlFlow::Continue(())
-    }
-
-    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
-        self.lambdas.enter(expr);
-        ControlFlow::Continue(())
-    }
-
-    fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
-        let is_body = self.lambdas.leave_children(expr);
-        self.expand_call(expr)?;
-        self.lambdas.leave_body(is_body);
-        ControlFlow::Continue(())
-    }
-}
-
-impl MacroExpander<'_> {
     /// Replaces `expr` by the body of the macro it calls, if it calls one.
     fn expand_call(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
         unparenthesize_operands(expr, self.macros);
@@ -986,7 +986,7 @@ struct ParamReplacer<'a> {
     /// The CTEs and derived tables of the visited queries, with the relations before each
     /// derived table in its FROM.
     scoped_queries: PlHashMap<*const Query, Vec<RelationName>>,
-    /// The join conditions and table function arguments of the visited SELECTs, with the
+    /// The join conditions and table function arguments of the visited SELECT statements, with the
     /// relations each sees.
     narrowed_exprs: PlHashMap<*const SQLExpr, Vec<RelationName>>,
     /// The narrowed expressions being visited.

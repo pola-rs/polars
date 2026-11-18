@@ -581,12 +581,11 @@ def test_macro_call_in_argument_of_same_macro() -> None:
 def test_macro_expansion_size_of_table_macros() -> None:
     ctx = pl.SQLContext()
     ctx.execute("CREATE MACRO t0() AS TABLE SELECT 1 AS x")
-    for k in range(1, 40):
-        ctx.execute(
-            f"CREATE MACRO t{k}() AS TABLE SELECT * FROM t{k - 1}() a, t{k - 1}() b"
-        )
+    for k in range(1, 10):
+        tables = ", ".join(f"t{k - 1}() a{i}" for i in range(8))
+        ctx.execute(f"CREATE MACRO t{k}() AS TABLE SELECT * FROM {tables}")
     with pytest.raises(SQLInterfaceError, match="too large after expanding"):
-        ctx.execute("SELECT * FROM t39()", eager=True)
+        ctx.execute("SELECT * FROM t9()", eager=True)
 
 
 def test_macro_rejects_query_params() -> None:
