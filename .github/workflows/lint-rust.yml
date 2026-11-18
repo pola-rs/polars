@@ -10,8 +10,8 @@ on:
       - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
-      - py-polars/polars-iceberg/**
       - py-polars/polars-database/**
+      - py-polars/polars-iceberg/**
       - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -27,8 +27,8 @@ on:
       - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
-      - py-polars/polars-iceberg/**
       - py-polars/polars-database/**
+      - py-polars/polars-iceberg/**
       - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml

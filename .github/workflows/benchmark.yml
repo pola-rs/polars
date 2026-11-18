@@ -4,8 +4,8 @@ on:
   pull_request:
     paths:
       - crates/**
-      - py-polars/polars-iceberg/**
       - py-polars/polars-database/**
+      - py-polars/polars-iceberg/**
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
@@ -15,8 +15,8 @@ on:
       - "1.x"
     paths:
       - crates/**
-      - py-polars/polars-iceberg/**
       - py-polars/polars-database/**
+      - py-polars/polars-iceberg/**
       - Cargo.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
