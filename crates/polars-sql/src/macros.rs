@@ -10,9 +10,9 @@ use polars_core::prelude::{PolarsError, PolarsResult, polars_bail, polars_ensure
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
     AccessExpr, CastKind, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
-    FunctionArgumentList, FunctionArguments, Ident, JoinOperator, ObjectName, OrderByExpr, Query,
-    Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins,
-    Value as SQLValue, Visit, VisitMut, Visitor, VisitorMut,
+    FunctionArgumentList, FunctionArguments, Ident, ObjectName, OrderByExpr, Query, Select,
+    SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
+    Visit, VisitMut, Visitor, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::Keyword;
@@ -986,10 +986,11 @@ struct ParamReplacer<'a> {
     /// The CTEs and derived tables of the visited queries, with the relations before each
     /// derived table in its FROM.
     scoped_queries: PlHashMap<*const Query, Vec<RelationName>>,
-    /// The join conditions of the visited SELECTs, with the relations each sees.
-    join_conditions: PlHashMap<*const SQLExpr, Vec<RelationName>>,
-    /// The join conditions being visited.
-    open_conditions: Vec<*const SQLExpr>,
+    /// The join conditions and table function arguments of the visited SELECTs, with the
+    /// relations each sees.
+    narrowed_exprs: PlHashMap<*const SQLExpr, Vec<RelationName>>,
+    /// The narrowed expressions being visited.
+    open_narrowed: Vec<*const SQLExpr>,
 }
 
 impl<'a> ParamReplacer<'a> {
@@ -1009,8 +1010,8 @@ impl<'a> ParamReplacer<'a> {
             lambdas: LambdaScopes::default(),
             relations: Vec::new(),
             scoped_queries: PlHashMap::default(),
-            join_conditions: PlHashMap::default(),
-            open_conditions: vec![],
+            narrowed_exprs: PlHashMap::default(),
+            open_narrowed: vec![],
         }
     }
 
@@ -1155,15 +1156,16 @@ impl VisitorMut for ParamReplacer<'_> {
 
     fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
         self.lambdas.enter(expr);
-        // A join condition sees the relations of its join, not those joined after it.
-        if let Some(names) = self.join_conditions.remove(&(expr as *const SQLExpr)) {
+        // A join condition sees the relations of its join, not those joined after it. The
+        // arguments of a table function see the relations before it.
+        if let Some(names) = self.narrowed_exprs.remove(&(expr as *const SQLExpr)) {
             self.relations.push(Relations {
                 names,
                 starts_scope: true,
                 preceding: vec![],
                 is_query: false,
             });
-            self.open_conditions.push(expr as *const SQLExpr);
+            self.open_narrowed.push(expr as *const SQLExpr);
         }
         ControlFlow::Continue(())
     }
@@ -1173,8 +1175,8 @@ impl VisitorMut for ParamReplacer<'_> {
         let is_body = self.lambdas.leave_children(expr);
         self.replace_param(expr)?;
         self.lambdas.leave_body(is_body);
-        if self.open_conditions.last() == Some(&ptr) {
-            self.open_conditions.pop();
+        if self.open_narrowed.last() == Some(&ptr) {
+            self.open_narrowed.pop();
             self.relations.pop();
         }
         ControlFlow::Continue(())
@@ -1200,8 +1202,8 @@ impl ParamReplacer<'_> {
         for join in &table.joins {
             let (left_names, left_joined) = (names.len(), joined.len());
             self.add_factor(&join.relation, names, &mut joined);
-            for condition in join_conditions(&join.join_operator) {
-                self.join_conditions.insert(condition, joined.clone());
+            for condition in root_exprs(&join.join_operator) {
+                self.narrowed_exprs.insert(condition, joined.clone());
             }
             // After a semi or anti join, the relations of its dropped input are gone.
             let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);
@@ -1234,6 +1236,14 @@ impl ParamReplacer<'_> {
             } => self.add_relations(table_with_joins, &mut names.clone()),
             TableFactor::Pivot { table, .. } | TableFactor::Unpivot { table, .. } => {
                 self.add_factor(table, &mut names.clone(), &mut vec![])
+            },
+            TableFactor::Table { args: Some(_), .. }
+            | TableFactor::Function { .. }
+            | TableFactor::TableFunction { .. }
+            | TableFactor::UNNEST { .. } => {
+                for arg in root_exprs(factor) {
+                    self.narrowed_exprs.insert(arg, names.clone());
+                }
             },
             _ => {},
         }
@@ -1312,8 +1322,8 @@ fn table_names(table: &TableWithJoins, names: &mut Vec<RelationName>) {
     }
 }
 
-/// The expressions of the condition of a join.
-fn join_conditions(op: &JoinOperator) -> Vec<*const SQLExpr> {
+/// The outermost expressions of `node`.
+fn root_exprs<T: Visit>(node: &T) -> Vec<*const SQLExpr> {
     struct Roots {
         depth: usize,
         roots: Vec<*const SQLExpr>,
@@ -1338,7 +1348,7 @@ fn join_conditions(op: &JoinOperator) -> Vec<*const SQLExpr> {
         depth: 0,
         roots: vec![],
     };
-    let _ = dyn_visit::visit(op, &mut roots);
+    let _ = dyn_visit::visit(node, &mut roots);
     roots.roots
 }
 

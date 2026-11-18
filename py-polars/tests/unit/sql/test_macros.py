@@ -760,3 +760,7 @@ def test_table_macro_join_scopes() -> None:
     )
     res = ctx.execute("SELECT * FROM m5({'v': 99}) ORDER BY x", eager=True)
     assert res.rows() == [(1,), (2,)]
+    # The alias of a table function does not name a relation in its arguments.
+    ctx.execute("CREATE MACRO seq(p) AS TABLE SELECT * FROM range(p.n) AS p(x)")
+    res = ctx.execute("SELECT * FROM seq({'n': 3}) ORDER BY x", eager=True)
+    assert res.rows() == [(0,), (1,), (2,)]
