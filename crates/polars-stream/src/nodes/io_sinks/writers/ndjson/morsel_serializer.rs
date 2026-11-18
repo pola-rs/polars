@@ -91,13 +91,19 @@ impl MorselSerializer {
         serialized_data.clear();
         serialized_data.reserve_exact(*allocation_size);
 
-        let arrow_dtypes: Vec<_> = df
-            .columns()
-            .iter()
-            .map(|c| c.dtype().to_arrow(CompatLevel::newest()))
-            .collect();
-        // Planned before rechunking, so that an oversized Map is never copied into one chunk.
-        for mut df in df.split_for_arrow_export(&arrow_dtypes) {
+        // Only a Polars Map exports to an arrow MAP here.
+        let pieces = if df.columns().iter().any(|c| c.dtype().contains_map()) {
+            let arrow_dtypes: Vec<_> = df
+                .columns()
+                .iter()
+                .map(|c| c.dtype().to_arrow(CompatLevel::newest()))
+                .collect();
+            // Planned before rechunking, so that an oversized Map is never copied into one chunk.
+            df.split_for_arrow_export(&arrow_dtypes)
+        } else {
+            vec![df]
+        };
+        for mut df in pieces {
             rechunk_par(unsafe { df.columns_mut_retain_schema() }, task_metrics).await;
             let height = df.height();
 
@@ -105,9 +111,9 @@ impl MorselSerializer {
             let mut fields = Vec::with_capacity(df.width());
             for c in df.into_columns() {
                 let name = c.name().clone();
-                let arr = c
-                    .take_materialized_series()
-                    .try_to_arrow(0, CompatLevel::newest())?;
+                let s = c.take_materialized_series();
+                debug_assert_eq!(s.n_chunks(), 1);
+                let arr = s.try_to_arrow(0, CompatLevel::newest())?;
                 fields.push(ArrowField::new(name, arr.dtype().clone(), true));
                 arrays.push(arr);
             }

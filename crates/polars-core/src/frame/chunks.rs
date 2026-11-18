@@ -168,8 +168,8 @@ impl DataFrame {
         arrow_export_row_ranges(&columns, rows.len())
     }
 
-    /// Slices of this frame that each export to `arrow_dtypes` without overflowing the `i32`
-    /// offsets of an arrow MAP; just the frame unless one would.
+    /// Slices of this frame that each export to `arrow_dtypes`, one per column, without
+    /// overflowing the `i32` offsets of an arrow MAP; just the frame unless one would.
     ///
     /// The columns may be chunked differently, and nothing is rechunked: a frame that may
     /// overflow is first cut at the chunk boundaries of its MAP columns, which can give more
@@ -179,6 +179,7 @@ impl DataFrame {
         arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
     ) -> Vec<DataFrame> {
         let dtypes: Vec<_> = arrow_dtypes.into_iter().collect();
+        assert_eq!(dtypes.len(), self.width(), "one arrow dtype per column");
         let height = self.height();
         // Before any row is read, as an empty Scalar column has none.
         if height == 0 || !dtypes.iter().any(|d| contains_arrow_map(d)) {
@@ -263,7 +264,23 @@ impl DataFrame {
 
         ranges
             .into_iter()
-            .map(|r| self.slice(r.start as i64, r.len()))
+            .map(|r| {
+                let columns = self
+                    .columns()
+                    .iter()
+                    .map(|c| match c {
+                        // `Column::slice` makes a one-row Series a Scalar by reading its row,
+                        // which can panic where the export of that row would return an error.
+                        Column::Series(s) => {
+                            Column::Series(s.slice(r.start as i64, r.len()).into())
+                        },
+                        _ => c.slice(r.start as i64, r.len()),
+                    })
+                    .collect();
+                // SAFETY: every column is sliced to the `r.len()` rows of `r`, and keeps its
+                // name and dtype.
+                unsafe { DataFrame::new_unchecked(r.len(), columns).with_schema_from(&self) }
+            })
             .collect()
     }
 }
