@@ -8250,7 +8250,7 @@ fn join_keeps_inputs(op: &JoinOperator) -> (bool, bool) {
 
 /// The table factors of `tbl` whose columns it returns, as a semi or anti join drops one
 /// of its inputs.
-fn kept_factors(tbl: &TableWithJoins) -> Vec<&TableFactor> {
+pub(crate) fn kept_factors(tbl: &TableWithJoins) -> Vec<&TableFactor> {
     let mut factors = vec![&tbl.relation];
     for join in &tbl.joins {
         let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);

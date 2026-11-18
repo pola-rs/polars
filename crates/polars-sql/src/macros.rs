@@ -10,16 +10,16 @@ use polars_core::prelude::{PolarsError, PolarsResult, polars_bail, polars_ensure
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
     AccessExpr, CastKind, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
-    FunctionArgumentList, FunctionArguments, Ident, ObjectName, OrderByExpr, Query, Select,
-    SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
-    Visit, VisitMut, Visitor, VisitorMut,
+    FunctionArgumentList, FunctionArguments, Ident, JoinOperator, ObjectName, OrderByExpr, Query,
+    Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins,
+    Value as SQLValue, Visit, VisitMut, Visitor, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::Keyword;
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::tokenizer::{Token, TokenWithSpan};
 
-use crate::context::{RelationName, match_qualifier, relation_name};
+use crate::context::{RelationName, kept_factors, match_qualifier, relation_name};
 use crate::dyn_visit;
 use crate::lambda::{lambda_arg, shift_lambda_elements};
 use crate::params::first_param;
@@ -984,6 +984,10 @@ struct ParamReplacer<'a> {
     /// The CTEs and derived tables of the visited queries, with the relations before each
     /// derived table in its FROM.
     scoped_queries: PlHashMap<*const Query, Vec<RelationName>>,
+    /// The join conditions of the visited SELECTs, with the relations each sees.
+    join_conditions: PlHashMap<*const SQLExpr, Vec<RelationName>>,
+    /// The join conditions being visited.
+    open_conditions: Vec<*const SQLExpr>,
 }
 
 impl<'a> ParamReplacer<'a> {
@@ -1003,6 +1007,8 @@ impl<'a> ParamReplacer<'a> {
             lambdas: LambdaScopes::default(),
             relations: Vec::new(),
             scoped_queries: PlHashMap::default(),
+            join_conditions: PlHashMap::default(),
+            open_conditions: vec![],
         }
     }
 
@@ -1077,9 +1083,11 @@ impl VisitorMut for ParamReplacer<'_> {
                 };
             }
         }
+        let mut preceding = Vec::new();
         let mut names = Vec::new();
         for table in &select.from {
-            self.add_relations(table, &mut names);
+            self.add_relations(table, &mut preceding);
+            table_names(table, &mut names);
         }
         self.relations.push(Relations {
             names,
@@ -1141,13 +1149,28 @@ impl VisitorMut for ParamReplacer<'_> {
 
     fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
         self.lambdas.enter(expr);
+        // A join condition sees the relations of its join, not those joined after it.
+        if let Some(names) = self.join_conditions.remove(&(expr as *const SQLExpr)) {
+            self.relations.push(Relations {
+                names,
+                starts_scope: true,
+                preceding: vec![],
+                is_query: false,
+            });
+            self.open_conditions.push(expr as *const SQLExpr);
+        }
         ControlFlow::Continue(())
     }
 
     fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        let ptr = expr as *const SQLExpr;
         let is_body = self.lambdas.leave_children(expr);
         self.replace_param(expr)?;
         self.lambdas.leave_body(is_body);
+        if self.open_conditions.last() == Some(&ptr) {
+            self.open_conditions.pop();
+            self.relations.pop();
+        }
         ControlFlow::Continue(())
     }
 
@@ -1163,14 +1186,26 @@ impl VisitorMut for ParamReplacer<'_> {
 impl ParamReplacer<'_> {
     /// Adds the names of the relations of `table` to `names`, the relations before it. Records
     /// the relations before each derived table, which it reads as if LATERAL.
+    /// Records the relations each join condition sees.
     fn add_relations(&mut self, table: &TableWithJoins, names: &mut Vec<RelationName>) {
-        self.add_factor(&table.relation, names);
+        let mut joined = Vec::new();
+        self.add_factor(&table.relation, names, &mut joined);
         for join in &table.joins {
-            self.add_factor(&join.relation, names);
+            self.add_factor(&join.relation, names, &mut joined);
+            for condition in join_conditions(&join.join_operator) {
+                self.join_conditions.insert(condition, joined.clone());
+            }
         }
     }
 
-    fn add_factor(&mut self, factor: &TableFactor, names: &mut Vec<RelationName>) {
+    /// As `add_relations`, for `factor`, which also adds its names to `joined`.
+    fn add_factor(
+        &mut self,
+        factor: &TableFactor,
+        names: &mut Vec<RelationName>,
+        joined: &mut Vec<RelationName>,
+    ) {
+        factor_names(factor, joined);
         match factor {
             TableFactor::Derived { subquery, .. } => {
                 self.scoped_queries
@@ -1180,7 +1215,7 @@ impl ParamReplacer<'_> {
                 table_with_joins, ..
             } => self.add_relations(table_with_joins, &mut names.clone()),
             TableFactor::Pivot { table, .. } | TableFactor::Unpivot { table, .. } => {
-                self.add_factor(table, &mut names.clone())
+                self.add_factor(table, &mut names.clone(), &mut vec![])
             },
             _ => {},
         }
@@ -1252,10 +1287,41 @@ fn relation_names(body: &SetExpr, names: &mut Vec<RelationName>) {
     }
 }
 
+/// Adds the names of the relations whose columns `table` returns to `names`.
 fn table_names(table: &TableWithJoins, names: &mut Vec<RelationName>) {
-    for factor in std::iter::once(&table.relation).chain(table.joins.iter().map(|j| &j.relation)) {
+    for factor in kept_factors(table) {
         factor_names(factor, names);
     }
+}
+
+/// The expressions of the condition of a join.
+fn join_conditions(op: &JoinOperator) -> Vec<*const SQLExpr> {
+    struct Roots {
+        depth: usize,
+        roots: Vec<*const SQLExpr>,
+    }
+    impl Visitor for Roots {
+        type Break = ();
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if self.depth == 0 {
+                self.roots.push(expr);
+            }
+            self.depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_expr(&mut self, _expr: &SQLExpr) -> ControlFlow<()> {
+            self.depth -= 1;
+            ControlFlow::Continue(())
+        }
+    }
+    let mut roots = Roots {
+        depth: 0,
+        roots: vec![],
+    };
+    let _ = dyn_visit::visit(op, &mut roots);
+    roots.roots
 }
 
 fn factor_names(factor: &TableFactor, names: &mut Vec<RelationName>) {

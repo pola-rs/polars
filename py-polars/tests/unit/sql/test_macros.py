@@ -722,3 +722,20 @@ def test_table_macro_implicit_lateral() -> None:
     )
     res = ctx.execute("SELECT * FROM m4({'v': 99}) ORDER BY x", eager=True)
     assert res.rows() == [(1,), (2,)]
+
+
+def test_table_macro_join_scopes() -> None:
+    ctx = pl.SQLContext()
+    # A semi join drops its right side, so `p` reads the argument after the join.
+    ctx.execute(
+        "CREATE MACRO m(p) AS TABLE SELECT p.v "
+        "FROM (VALUES (1, {'v': 7})) a(k, p) SEMI JOIN (VALUES (1)) p(v) ON a.k = p.v"
+    )
+    assert ctx.execute("SELECT * FROM m({'v': 99})", eager=True).rows() == [(99,)]
+    # A relation joined later is not seen by an earlier join condition.
+    ctx.execute(
+        "CREATE MACRO m2(p) AS TABLE SELECT a.x "
+        "FROM (VALUES (1), (2)) a(x) JOIN (VALUES (0)) b(y) ON a.x = p.v "
+        "CROSS JOIN (VALUES (0)) p(v)"
+    )
+    assert ctx.execute("SELECT * FROM m2({'v': 2})", eager=True).rows() == [(2,)]
