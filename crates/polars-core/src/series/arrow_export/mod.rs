@@ -259,9 +259,11 @@ impl ToArrowConverter {
                 let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
                 // A split piece of a list of maps must export only the child it spans, as its
                 // whole child may overflow the `i32` offsets of an arrow MAP.
-                let trimmed = (!fits_arrow_map(arr.values().as_ref(), arrow_item_field.dtype()))
-                    .then(|| trim_list_child(arr))
-                    .flatten();
+                let item_dtype_arrow = arrow_item_field.dtype();
+                let trimmed = (contains_arrow_map(item_dtype_arrow)
+                    && !fits_arrow_map(arr.values().as_ref(), item_dtype_arrow))
+                .then(|| trim_list_child(arr))
+                .flatten();
                 let arr = trimmed.as_ref().unwrap_or(arr);
 
                 let mut arrow_dtype = to_owned_dtype(arrow_field);
