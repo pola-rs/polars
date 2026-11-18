@@ -235,6 +235,48 @@ fn read_only_refuses_to_write_a_file() {
 }
 
 #[test]
+fn copy_to_stdout_writes_rows_in_its_own_format() {
+    let rows = by_category("read_csv('../../examples/datasets/foods1.csv')");
+
+    // Only the rows, whatever `--format` is. No file is written, so `--read-only` allows it.
+    assert_eq!(
+        run(&[
+            "--read-only",
+            "-c",
+            &format!("COPY ({rows}) TO STDOUT (FORMAT csv)")
+        ]),
+        (0, BY_CATEGORY.to_string(), String::new())
+    );
+
+    // A table of the session, with the options of the format, between other results.
+    let script = format!(
+        "CREATE TABLE foods AS {rows}; \
+         COPY foods (calories, category) TO STDOUT (FORMAT csv, HEADER false, DELIMITER '|'); \
+         SELECT COUNT(*) AS n FROM foods"
+    );
+    let expected = "\
+Response
+CREATE TABLE foods
+410|fruit
+540|meat
+1250|seafood
+192|vegetables
+n
+4
+";
+    assert_eq!(
+        run(&["--format", "csv", "-c", &script]),
+        (0, expected.to_string(), String::new())
+    );
+
+    // A binary format is one file, which does not share the output with another result.
+    let script = "COPY (SELECT 1 AS a) TO STDOUT (FORMAT parquet); SELECT 2 AS b";
+    let (code, out, err) = run(&["-c", script]);
+    assert_eq!((code, out.as_str()), (1, ""));
+    assert!(err.contains("takes a script of one statement"), "{err}");
+}
+
+#[test]
 fn a_script_is_read_from_standard_input() {
     let script = "SELECT 1 AS a;\nSELECT 'x;y' AS b;\n";
     assert_eq!(

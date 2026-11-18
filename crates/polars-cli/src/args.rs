@@ -11,6 +11,9 @@ share one session. The run stops at the first statement that fails.
 
 Without -c or -f, the script is read from standard input.
 
+COPY ... TO STDOUT (FORMAT <name>) writes its rows to standard output in the
+format it names, not in that of --format.
+
 Exit codes:
   0    every statement succeeded
   1    a statement failed
@@ -42,7 +45,7 @@ pub struct Args {
     #[arg(long, value_enum, value_name = "FMT", default_value_t)]
     format: Format,
 
-    /// Refuse statements that write files, such as COPY ... TO
+    /// Refuse statements that write files, such as COPY to a file
     #[arg(long, env = "POLARS_READ_ONLY", value_parser = FalseyValueParser::new())]
     read_only: bool,
 }

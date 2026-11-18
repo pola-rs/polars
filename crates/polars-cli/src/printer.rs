@@ -7,6 +7,7 @@ use polars::io::utils::file::{Writable, WritableTrait};
 use polars::prelude::{
     CompatLevel, CsvWriterOptions, DataFrame, DataType, FileWriteFormat, NDJsonWriterOptions,
     ParquetWriteOptions, PolarsResult, SchemaExt, SchemaRef, SinkTarget, SpecialEq, polars_bail,
+    polars_ensure,
 };
 use polars_arrow::io::ipc::write::{StreamWriter as ArrowStream, WriteOptions};
 
@@ -83,8 +84,10 @@ pub struct Printer<O: Write, E> {
     err: E,
     format: Format,
     result: Option<ResultWriter<O>>,
-    /// Whether errors name their statement: only when the script has several.
-    number_statements: bool,
+    /// Whether the script has several statements. Errors then name their statement.
+    several_statements: bool,
+    /// Whether the output is a terminal.
+    on_terminal: bool,
     /// Whether the table format prints the result of the current statement in full.
     in_full: bool,
 }
@@ -107,9 +110,16 @@ impl<O: Write, E: Write> Printer<O, E> {
             err,
             format,
             result: None,
-            number_statements: false,
+            several_statements: false,
+            on_terminal: false,
             in_full: false,
         }
+    }
+
+    /// Tells whether the output is a terminal, which does not take a binary format.
+    pub fn on_terminal(mut self, on_terminal: bool) -> Self {
+        self.on_terminal = on_terminal;
+        self
     }
 
     /// Whether the reader of the output has gone away, as when it is piped into `head`.
@@ -130,14 +140,43 @@ impl<O: Write, E: Write> Printer<O, E> {
             Format::Parquet => FileWriteFormat::Parquet(Arc::new(ParquetWriteOptions::default())),
             Format::Table | Format::ArrowStream => return None,
         };
+        Some((self.sink_target(), format))
+    }
+
+    /// For `COPY ... TO STDOUT`: the output as the target of a sink that writes `format`, the
+    /// format of the statement. A binary format is one file, which a terminal cannot show and
+    /// which cannot share the output with another result.
+    pub(crate) fn copy_target(&self, format: &FileWriteFormat) -> PolarsResult<SinkTarget>
+    where
+        O: Send + 'static,
+    {
+        if !matches!(format, FileWriteFormat::Csv(_) | FileWriteFormat::NDJson(_)) {
+            let name = format.extension();
+            polars_ensure!(
+                !self.on_terminal,
+                InvalidOperation:
+                "COPY TO STDOUT format '{name}' is binary; send the output to a file or a pipe"
+            );
+            polars_ensure!(
+                !self.several_statements,
+                InvalidOperation:
+                "COPY TO STDOUT format '{name}' writes one file, so it takes a script of one statement"
+            );
+        }
+        Ok(self.sink_target())
+    }
+
+    fn sink_target(&self) -> SinkTarget
+    where
+        O: Send + 'static,
+    {
         let writer = Writable::Dyn(Box::new(self.out.clone()));
-        let target = SinkTarget::Dyn(SpecialEq::new(Arc::new(Mutex::new(Some(writer)))));
-        Some((target, format))
+        SinkTarget::Dyn(SpecialEq::new(Arc::new(Mutex::new(Some(writer)))))
     }
 
     pub fn event(&mut self, event: Event) -> PolarsResult<()> {
         match event {
-            Event::Start { statements } => self.number_statements = statements > 1,
+            Event::Start { statements } => self.several_statements = statements > 1,
             Event::Statement { describes } => self.in_full = describes,
             Event::Schema(schema) => self.result = Some(self.start_result(&schema)?),
             Event::Rows(mut rows) => {
@@ -173,7 +212,7 @@ impl<O: Write, E: Write> Printer<O, E> {
                 // What was written of the results comes before the error. The output may be
                 // what failed, so the error is reported whether or not this works.
                 let _ = self.out.flush();
-                if self.number_statements {
+                if self.several_statements {
                     write!(self.err, "statement {}: ", error.statement)?;
                 }
                 writeln!(self.err, "{}: {}", error.class, error.message)?;
