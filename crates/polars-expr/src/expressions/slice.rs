@@ -193,7 +193,7 @@ impl PhysicalExpr for SliceExpr {
                             .zip(length.into_no_null_iter())
                             .map(|((first, idx), length)| {
                                 slice_groups_idx(
-                                    Some(Slice::from((offset, length as usize))),
+                                    Slice::new(offset, Some(length as usize)),
                                     first,
                                     idx,
                                 )
@@ -212,7 +212,7 @@ impl PhysicalExpr for SliceExpr {
                             .zip(length.into_no_null_iter())
                             .map(|(&[first, len], length)| {
                                 slice_groups_slice(
-                                    Some(Slice::from((offset, length as usize))),
+                                    Slice::new(offset, Some(length as usize)),
                                     first,
                                     len,
                                 )
@@ -293,7 +293,7 @@ impl PhysicalExpr for SliceExpr {
                             .zip(length.into_no_null_iter())
                             .map(|(((first, idx), offset), length)| {
                                 slice_groups_idx(
-                                    Some(Slice::from((offset, length as usize))),
+                                    Slice::new(offset, Some(length as usize)),
                                     first,
                                     idx,
                                 )
@@ -313,7 +313,7 @@ impl PhysicalExpr for SliceExpr {
                             .zip(length.into_no_null_iter())
                             .map(|((&[first, len], offset), length)| {
                                 slice_groups_slice(
-                                    Some(Slice::from((offset, length as usize))),
+                                    Slice::new(offset, Some(length as usize)),
                                     first,
                                     len,
                                 )

@@ -18,7 +18,7 @@ pub(crate) fn split_at(
 ) -> (Vec<ArrayRef>, Vec<ArrayRef>) {
     let mut new_chunks_left = Vec::with_capacity(1);
     let mut new_chunks_right = Vec::with_capacity(1);
-    let raw_offset = Slice::new(offset, None).map_or(0, |s| s.resolve(own_length).start);
+    let raw_offset = Slice::resolve_offset(offset, own_length);
 
     let mut remaining_offset = raw_offset;
     let mut iter = chunks.iter().filter(|c| !c.is_empty());
@@ -290,10 +290,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     where
         Self: Sized,
     {
-        match length {
-            Some(len) => self.slice(Slice::head(std::cmp::min(len, self.len()))),
-            None => self.slice(Slice::head(std::cmp::min(10, self.len()))),
-        }
+        self.slice(Slice::head(length.unwrap_or(10)))
     }
 
     /// Get the tail of the [`ChunkedArray`]
@@ -302,11 +299,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     where
         Self: Sized,
     {
-        let len = match length {
-            Some(len) => std::cmp::min(len, self.len()),
-            None => std::cmp::min(10, self.len()),
-        };
-        self.slice(Slice::tail(len))
+        self.slice(Slice::tail(length.unwrap_or(10)))
     }
 
     /// Remove empty chunks.

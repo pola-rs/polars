@@ -2046,7 +2046,7 @@ impl DataFrame {
     pub fn split_at(&self, offset: i64) -> (Self, Self) {
         let (a, b) = self.columns().iter().map(|s| s.split_at(offset)).unzip();
 
-        let idx = Slice::new(offset, None).map_or(0, |s| s.resolve(self.height()).start);
+        let idx = Slice::resolve_offset(offset, self.height());
 
         let a = unsafe { DataFrame::new_unchecked(idx, a).with_schema_from(self) };
         let b = unsafe { DataFrame::new_unchecked(self.height() - idx, b).with_schema_from(self) };

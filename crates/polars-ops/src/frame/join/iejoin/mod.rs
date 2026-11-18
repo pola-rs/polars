@@ -44,7 +44,7 @@ fn ie_join_impl_t<T: PolarsNumericType>(
     let mut left_row_idx: Vec<IdxSize> = vec![];
     let mut right_row_idx: Vec<IdxSize> = vec![];
 
-    let slice_end = slice_end_index(slice);
+    let slice_end = slice.and_then(|s| s.end_position());
     let mut match_count = 0;
 
     let ca: &ChunkedArray<T> = x.as_ref().as_ref();
@@ -122,7 +122,7 @@ where
     T: PolarsNumericType,
     P: FnMut(&T::Native, &T::Native) -> bool,
 {
-    let slice_end = slice_end_index(slice);
+    let slice_end = slice.and_then(|s| s.end_position());
 
     let mut left_row_idx: Vec<IdxSize> = vec![];
     let mut right_row_idx: Vec<IdxSize> = vec![];
@@ -152,7 +152,7 @@ where
                 };
                 let right_end_idx = match slice_end {
                     None => right_ca.len(),
-                    Some(end) => min(right_ca.len(), (end as usize) - match_count + right_idx),
+                    Some(end) => min(right_ca.len(), end - match_count + right_idx),
                 };
                 for included_right_row_idx in right_idx..right_end_idx {
                     let right_row = match right_order {
@@ -173,7 +173,7 @@ where
             // so there can be no more matches for LHS rows
             break;
         }
-        if slice_end.is_some_and(|end| match_count >= end as usize) {
+        if slice_end.is_some_and(|end| match_count >= end) {
             break;
         }
         left_idx += 1;
@@ -822,9 +822,4 @@ fn piecewise_merge_join_tuples(
         Some(slice) => (left_row_idx.slice(slice), right_row_idx.slice(slice)),
     };
     Ok((left_row_idx, right_row_idx))
-}
-
-fn slice_end_index(slice: Option<Slice>) -> Option<i64> {
-    let end = slice?.end_position()?;
-    Some(i64::try_from(end).unwrap_or(i64::MAX))
 }

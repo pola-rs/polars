@@ -670,14 +670,10 @@ impl Column {
     }
 
     pub fn head(&self, length: Option<usize>) -> Column {
-        let len = length.unwrap_or(HEAD_DEFAULT_LENGTH);
-        let len = usize::min(len, self.len());
-        self.slice(Slice::head(len))
+        self.slice(Slice::head(length.unwrap_or(HEAD_DEFAULT_LENGTH)))
     }
     pub fn tail(&self, length: Option<usize>) -> Column {
-        let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
-        let len = usize::min(len, self.len());
-        self.slice(Slice::tail(len))
+        self.slice(Slice::tail(length.unwrap_or(TAIL_DEFAULT_LENGTH)))
     }
     pub fn slice(&self, slice: impl Into<Slice>) -> Column {
         let slice = slice.into();
@@ -708,7 +704,7 @@ impl Column {
                 )
             },
             Column::Dictionary(_) => {
-                let split = Slice::new(offset, None).map_or(0, |s| s.resolve(self.len()).start);
+                let split = Slice::resolve_offset(offset, self.len());
                 (
                     self.slice(Slice::head(split)),
                     self.slice((split, self.len() - split)),

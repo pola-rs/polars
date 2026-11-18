@@ -591,8 +591,10 @@ pub fn slice_broadcast_list(
         let opt_offset = offsets.get(if offsets.len() == 1 { 0 } else { index });
         let opt_length = lengths.get(if lengths.len() == 1 { 0 } else { index });
         let offset = opt_offset?;
-        let length = opt_length.map_or(usize::MAX, |l| l as usize);
-        Some(single_list.slice((offset, length)))
+        Some(match Slice::new(offset, opt_length.map(|l| l as usize)) {
+            Some(slice) => single_list.slice(slice),
+            None => single_list.clone(),
+        })
     });
 
     let mut out: ListChunked = iter.collect_trusted();

@@ -44,6 +44,13 @@ impl Slice {
         .map(Self::canonical)
     }
 
+    /// Return the position `offset` refers to in `n_rows` rows, counting from the end if `offset`
+    /// is negative, clamped to `0..=n_rows`.
+    #[inline]
+    pub fn resolve_offset(offset: i64, n_rows: usize) -> usize {
+        Slice::new(offset, None).map_or(0, |s| s.resolve(n_rows).start)
+    }
+
     /// Create the slice of `len` rows from `offset`. Run to the end if `len` is `None`. Return
     /// `None` if that selects every row.
     #[inline]

@@ -1059,14 +1059,12 @@ impl Series {
     }
     /// Get the head of the Series.
     pub fn head(&self, length: Option<usize>) -> Series {
-        let len = length.unwrap_or(HEAD_DEFAULT_LENGTH);
-        self.slice(Slice::head(std::cmp::min(len, self.len())))
+        self.slice(Slice::head(length.unwrap_or(HEAD_DEFAULT_LENGTH)))
     }
 
     /// Get the tail of the Series.
     pub fn tail(&self, length: Option<usize>) -> Series {
-        let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
-        self.slice(Slice::tail(std::cmp::min(len, self.len())))
+        self.slice(Slice::tail(length.unwrap_or(TAIL_DEFAULT_LENGTH)))
     }
 
     /// Get a zero copy view of the elements `slice` selects.
