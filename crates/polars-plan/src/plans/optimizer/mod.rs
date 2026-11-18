@@ -338,7 +338,7 @@ pub fn optimize(
     if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins {
         join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
         if opt_flags.streaming() {
-            join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena);
+            join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena, false);
         }
     }
 
@@ -431,7 +431,31 @@ pub fn optimize(
         hooks.apply_scan_predicate_to_scan_ir,
     )?;
 
+    let has_dsl_resolvers = match &get_or_init_members!().seen_dsl_resolvers {
+        Some(resolvers) => !resolvers.is_empty(),
+        // None records that equivalent resolver nodes were seen.
+        None => true,
+    };
+
     call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
+
+    // Resolver scans are available only now. Attach filters solely to joins
+    // containing them; existing runtime filters and cache boundaries are retained.
+    if opt_flags.contains(OptFlags::ROW_ESTIMATE)
+        && opt_flags.streaming()
+        && get_or_init_members!().has_joins
+        && has_dsl_resolvers
+    {
+        join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena, true);
+    }
+
+    // Nested field selections were opaque to the first projection pass. Resolved
+    // resolver nodes are transparent to the existing pass, including its cache
+    // coordination and schema refresh. Run after late runtime filters so their
+    // residual predicates retain every required column.
+    if has_dsl_resolvers && opt_flags.projection_pushdown() {
+        projection_pushdown(root, ir_arena, expr_arena, has_recursive, !opt_flags.gpu());
+    }
 
     // Needs the final plan, with the predicates that are set while the query runs.
     if has_recursive {

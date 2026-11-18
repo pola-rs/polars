@@ -343,6 +343,12 @@ impl ColumnSelectorBuilder {
             };
         }
 
+        if self.cast_columns_policy.delta_type_widening
+            && polars_plan::dsl::delta_cast_is_lossless(incoming_dtype, target_dtype)
+        {
+            return attach_cast(CastOptions::Strict);
+        }
+
         // Decimal precision widening with equal scale (allowed Iceberg type promotion).
         #[cfg(feature = "dtype-decimal")]
         if let (

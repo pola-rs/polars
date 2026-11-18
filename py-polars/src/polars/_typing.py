@@ -250,6 +250,10 @@ DefaultFieldValues: TypeAlias = tuple[
 DeletionFiles: TypeAlias = (
     tuple[Literal["iceberg"], tuple[dict[int, list[str]], dict[int, str]]]
     | tuple[Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame"]]
+    | tuple[
+        Literal["delta-deletion-vector-native"],
+        dict[int, tuple[str | bytes, int, int, int]],
+    ]
 )
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"

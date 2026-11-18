@@ -327,14 +327,28 @@ jobs:
         id: version
         uses: ./.github/actions/polars-iceberg-version
 
-  # Full Python test suite, with the polars-iceberg plugin installed from PyPI at the version
+  polars-delta-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Get polars-delta version
+        id: version
+        uses: ./.github/actions/polars-delta-version
+
+  # Full Python test suite, with both I/O plugins installed from PyPI at the versions
   # required in pyproject.toml.
   test-python:
-    needs: [polars-iceberg-version]
+    needs: [polars-iceberg-version, polars-delta-version]
     uses: ./.github/workflows/test-python.yml
     with:
       sha: ${{ inputs.sha }}
       polars-iceberg-version: ${{ needs.polars-iceberg-version.outputs.version }}
+      polars-delta-version: ${{ needs.polars-delta-version.outputs.version }}
 
   publish-to-pypi:
     needs: [base-package, create-sdist, build-wheels, test-python]

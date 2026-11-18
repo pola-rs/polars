@@ -191,7 +191,30 @@ impl PyFileOptions {
                     .into_any()
                     .unbind()
             },
-            Some(DeletionFilesList::Delta(provider)) => {
+            Some(DeletionFilesList::Delta(vectors)) => {
+                use polars_plan::dsl::deletion::DeltaDeletionVectorLocation;
+                let out = PyDict::new(py);
+                for (key, vector) in vectors.iter() {
+                    let (location, offset): (Py<PyAny>, u64) = match &vector.location {
+                        DeltaDeletionVectorLocation::Inline(bytes) => {
+                            (pyo3::types::PyBytes::new(py, bytes).into_any().unbind(), 0)
+                        },
+                        DeltaDeletionVectorLocation::File { path, offset } => (
+                            path.as_str().into_pyobject(py)?.into_any().unbind(),
+                            *offset,
+                        ),
+                    };
+                    out.set_item(
+                        key,
+                        (location, offset, vector.size_in_bytes, vector.cardinality),
+                    )?;
+                }
+                ("delta-deletion-vector-native", out)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
+            Some(DeletionFilesList::DeltaPythonCallback(provider)) => {
                 ("delta-deletion-vector", provider.callback().0.clone_ref(py))
                     .into_pyobject(py)?
                     .into_any()
@@ -208,6 +231,17 @@ impl PyFileOptions {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
+            Some(ColumnMapping::Delta { schema, by_name }) => (
+                if *by_name {
+                    "delta-name-mapping"
+                } else {
+                    "delta-id-mapping"
+                },
+                iceberg_schema_to_pyobject(py, schema)?,
+            )
+                .into_pyobject(py)?
+                .into_any()
+                .unbind(),
             Some(ColumnMapping::Iceberg { schema, .. }) => (
                 "iceberg-column-mapping",
                 iceberg_schema_to_pyobject(py, schema)?,
@@ -314,6 +348,7 @@ fn iceberg_column_to_pyobject(py: Python<'_>, column: &IcebergColumn) -> PyResul
         physical_id,
         type_,
         mapped_names: _,
+        is_delta_variant: _,
     } = column;
 
     let type_ = match type_ {

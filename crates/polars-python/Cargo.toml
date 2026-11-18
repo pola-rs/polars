@@ -214,6 +214,7 @@ cloud = [
   "dep:object_store",
   "dep:polars-io-ext-ffi",
   "polars-io-ext-ffi/iceberg",
+  "polars-io-ext-ffi/delta",
   "dep:tokio",
 ]
 peaks = ["polars/peaks"]

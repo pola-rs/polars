@@ -25,6 +25,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 pub mod common;
+#[cfg(feature = "delta")]
+pub mod delta_v2;
 #[cfg(feature = "iceberg")]
 pub mod iceberg_v1;
 
@@ -33,7 +35,8 @@ use std::ffi::CStr;
 /// Prefix of all plugin IDs (capsule names).
 pub const ID_PREFIX: &str = "polars.io_plugin.";
 
-/// All plugin IDs defined by this crate, for exhaustive matching.
+/// Iceberg plugin IDs, for exhaustive matching by Iceberg adapters.
+/// Delta dispatches its independently versioned contract by its exact capsule name.
 ///
 /// Only the ID strings ([`PluginId::name`]) cross the FFI boundary; the enum and its
 /// discriminants are not part of any contract and may be reordered freely. Adding a variant
@@ -45,7 +48,7 @@ pub enum PluginId {
 }
 
 impl PluginId {
-    /// Every ID, oldest first within each plugin type.
+    /// Every Iceberg ID, oldest first.
     pub const ALL: &[Self] = &[
         #[cfg(feature = "iceberg")]
         Self::IcebergV1,

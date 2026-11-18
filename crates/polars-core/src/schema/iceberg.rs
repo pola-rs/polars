@@ -66,6 +66,9 @@ pub struct IcebergColumn {
     /// Names of the field in data files without field IDs, from the table's name mapping
     /// (`schema.name-mapping.default`).
     pub mapped_names: Vec<PlSmallStr>,
+    /// Planner-owned marker for Delta Variant physical storage.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub is_delta_variant: bool,
 }
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
@@ -255,6 +258,10 @@ fn arrow_field_to_iceberg_column_rec(
         physical_id,
         type_,
         mapped_names: vec![],
+        is_delta_variant: field.metadata.as_ref().is_some_and(|md| {
+            md.get("polars.delta.variant")
+                .is_some_and(|v| v.as_str() == "true")
+        }),
     };
 
     Ok(out)
@@ -288,6 +295,27 @@ impl IcebergSchema {
         }
     }
 
+    /// Delta id mode never resolves names; absent IDs denote missing table fields.
+    pub fn from_arrow_schema_with_strict_ids(
+        schema: &ArrowSchema,
+        table: &IcebergSchema,
+    ) -> PolarsResult<Self> {
+        let fields = normalize_delta_variants(schema.iter_values(), table, false)?;
+        let fields = with_placeholder_ids_of_level(&fields);
+        Self::try_from_arrow_fields_iter(fields.iter())
+    }
+
+    /// Delta name mode ignores all physical file IDs.
+    pub fn from_arrow_schema_with_physical_names(
+        schema: &ArrowSchema,
+        table: &IcebergSchema,
+    ) -> PolarsResult<Self> {
+        let fields = normalize_delta_variants(schema.iter_values(), table, true)?;
+        let fields: Vec<_> = fields.iter().map(without_field_ids).collect();
+        let fields = with_mapped_ids_of_level(&fields, table);
+        Self::try_from_arrow_fields_iter(fields.iter())
+    }
+
     /// The schema of a data file, as [`Self::from_arrow_schema`]. A file written without field
     /// IDs (e.g. imported with `add_files`) is read with the table's name mapping, which
     /// `table` (the projected table columns) carries if `table_has_name_mapping`: its fields
@@ -313,6 +341,136 @@ impl IcebergSchema {
 
         let fields = with_mapped_ids_of_level(schema.iter_values(), table);
         Self::try_from_arrow_fields_iter(fields.iter())
+    }
+}
+
+/// Normalize Variant storage only after matching the enclosing field's Delta mapping.
+fn normalize_delta_variants<'a>(
+    fields: impl IntoIterator<Item = &'a ArrowField>,
+    table: &IcebergSchema,
+    by_name: bool,
+) -> PolarsResult<Vec<ArrowField>> {
+    fields
+        .into_iter()
+        .map(|field| {
+            let column = if by_name {
+                table
+                    .values()
+                    .find(|c| c.mapped_names.iter().any(|n| n == &field.name))
+            } else {
+                field
+                    .metadata
+                    .as_ref()
+                    .and_then(|md| md.get(PARQUET_FIELD_ID_KEY))
+                    .and_then(|id| id.parse::<u32>().ok())
+                    .and_then(|id| table.get(&id))
+            };
+            column.map_or_else(
+                || Ok(field.clone()),
+                |c| normalize_delta_variant(field, c, by_name),
+            )
+        })
+        .collect()
+}
+
+fn normalize_delta_variant(
+    field: &ArrowField,
+    column: &IcebergColumn,
+    by_name: bool,
+) -> PolarsResult<ArrowField> {
+    use ArrowDataType as ADT;
+    use IcebergColumnType as ICT;
+    let dtype = if column.is_delta_variant {
+        let (ADT::Struct(fields), ICT::Struct(children)) = (&field.dtype, &column.type_) else {
+            polars_bail!(SchemaMismatch: "Delta Variant must contain binary value and metadata fields")
+        };
+        if fields.len() != 2
+            || ["value", "metadata"].iter().any(|name| {
+                fields
+                    .iter()
+                    .filter(|f| {
+                        f.name.as_str() == *name
+                            && matches!(f.dtype, ADT::Binary | ADT::LargeBinary | ADT::BinaryView)
+                    })
+                    .count()
+                    != 1
+            })
+        {
+            polars_bail!(SchemaMismatch: "Delta Variant must contain exactly one binary value and one binary metadata field")
+        }
+        ADT::Struct(
+            fields
+                .iter()
+                .map(|f| {
+                    let child = children.values().find(|c| c.name == f.name).unwrap();
+                    with_field_id(f.clone(), child.physical_id)
+                })
+                .collect(),
+        )
+    } else {
+        match (&field.dtype, &column.type_) {
+            (ADT::Struct(fields), ICT::Struct(children)) => {
+                ADT::Struct(normalize_delta_variants(fields, children, by_name)?)
+            },
+            (ADT::List(inner), ICT::List(c)) => {
+                ADT::List(Box::new(normalize_delta_variant(inner, c, by_name)?))
+            },
+            (ADT::LargeList(inner), ICT::List(c)) => {
+                ADT::LargeList(Box::new(normalize_delta_variant(inner, c, by_name)?))
+            },
+            (ADT::FixedSizeList(inner, width), ICT::FixedSizeList(c, _)) => ADT::FixedSizeList(
+                Box::new(normalize_delta_variant(inner, c, by_name)?),
+                *width,
+            ),
+            (ADT::Map(entries, sorted), ICT::Map(key, value)) => {
+                if let ADT::Struct(kv) = &entries.dtype
+                    && kv.len() == 2
+                {
+                    ADT::Map(
+                        Box::new(ArrowField {
+                            dtype: ADT::Struct(vec![
+                                normalize_delta_variant(&kv[0], key, by_name)?,
+                                normalize_delta_variant(&kv[1], value, by_name)?,
+                            ]),
+                            ..(**entries).clone()
+                        }),
+                        *sorted,
+                    )
+                } else {
+                    field.dtype.clone()
+                }
+            },
+            _ => field.dtype.clone(),
+        }
+    };
+    Ok(ArrowField {
+        dtype,
+        ..field.clone()
+    })
+}
+
+/// Remove file IDs recursively before applying Delta physical-name mapping.
+fn without_field_ids(field: &ArrowField) -> ArrowField {
+    use ArrowDataType as ADT;
+    let dtype = match &field.dtype {
+        ADT::Struct(fields) => ADT::Struct(fields.iter().map(without_field_ids).collect()),
+        ADT::List(inner) => ADT::List(Box::new(without_field_ids(inner))),
+        ADT::LargeList(inner) => ADT::LargeList(Box::new(without_field_ids(inner))),
+        ADT::FixedSizeList(inner, width) => {
+            ADT::FixedSizeList(Box::new(without_field_ids(inner)), *width)
+        },
+        ADT::Map(entries, sorted) => ADT::Map(Box::new(without_field_ids(entries)), *sorted),
+        dtype => dtype.clone(),
+    };
+    let metadata = field.metadata.as_deref().map(|metadata| {
+        let mut metadata = metadata.clone();
+        metadata.remove(PARQUET_FIELD_ID_KEY);
+        Arc::new(metadata)
+    });
+    ArrowField {
+        dtype,
+        metadata,
+        ..field.clone()
     }
 }
 
@@ -417,6 +575,15 @@ fn with_mapped_ids(field: &ArrowField, column: &IcebergColumn) -> ArrowField {
     use IcebergColumnType as ICT;
 
     let dtype = match (&field.dtype, &column.type_) {
+        (ADT::Struct(fields), ICT::Struct(children)) if column.is_delta_variant => ADT::Struct(
+            fields
+                .iter()
+                .map(|field| {
+                    let child = children.values().find(|c| c.name == field.name).unwrap();
+                    with_field_id(field.clone(), child.physical_id)
+                })
+                .collect(),
+        ),
         (ADT::Struct(fields), ICT::Struct(children)) => {
             ADT::Struct(with_mapped_ids_of_level(fields, children))
         },

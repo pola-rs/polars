@@ -3,6 +3,8 @@ pub mod cloud_options;
 #[cfg(all(feature = "parquet", feature = "json"))]
 pub mod delta_stats;
 #[cfg(all(feature = "cloud", feature = "parquet"))]
+pub mod delta_plugin;
+#[cfg(all(feature = "cloud", feature = "parquet"))]
 pub mod iceberg_plugin;
 #[cfg(feature = "parquet")]
 pub mod parquet_encryption;

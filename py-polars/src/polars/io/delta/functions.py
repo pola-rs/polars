@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import importlib
-import importlib.util
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.expired import RemovedParameter, removed_parameters
-from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
-from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._scan_resolver import DeltaScanResolver
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -57,7 +54,7 @@ def read_delta(
     columns
         Columns to select. Accepts a list of column names.
     storage_options
-        Extra options for the storage backends supported by `deltalake`.
+        Storage options for native Polars reads or the `deltalake` fallback.
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
@@ -198,7 +195,7 @@ def scan_delta(
         Note: If `version` is not provided, the latest version of delta lake
         table is read.
     storage_options
-        Extra options for the storage backends supported by `deltalake`.
+        Storage options for native Polars reads or the `deltalake` fallback.
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here
@@ -223,6 +220,18 @@ def scan_delta(
     Returns
     -------
     LazyFrame
+
+    Notes
+    -----
+    When a compatible `polars_delta` plugin is installed, Polars uses native Delta
+    planning. Set `POLARS_DELTA_PLANNER=plugin` to require it, or
+    `POLARS_DELTA_PLANNER=deltalake` to select the compatibility planner. Automatic
+    selection can fall back for unsupported features; invalid metadata and IO
+    failures are reported. `use_pyarrow=True` and writes continue to use deltalake.
+
+    URI scans keep the snapshot selected during resolution. A supplied `DeltaTable`
+    without an explicit version follows updates to that object's loaded version.
+    If its schema changes, construct a new scan. An explicit version remains fixed.
 
     Examples
     --------
@@ -296,18 +305,23 @@ def scan_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
     """
-    from polars._plr import PyLazyFrame
     from polars.io.cloud.credential_provider._builder import (
         _init_credential_provider_builder,
     )
 
     table: DeltaTable | None = None
 
-    if importlib.util.find_spec("deltalake") is not None:
+    from pathlib import Path
+
+    # Path scans must work without importing (or installing) deltalake.
+    if not isinstance(source, (str, Path)):
         from deltalake import DeltaTable
 
         if isinstance(source, DeltaTable):
             table = source
+        else:
+            msg = "source must be a path or DeltaTable"
+            raise TypeError(msg)
 
     if table is None:
         credential_provider_builder = _init_credential_provider_builder(
@@ -329,7 +343,7 @@ def scan_delta(
             **(storage_options or {}),
         }
 
-    dataset = DeltaDataset(
+    dataset = DeltaScanResolver(
         table_=NoPickleOption(table),
         table_uri_=str(source) if table is None else None,
         version=version,
@@ -340,4 +354,4 @@ def scan_delta(
         pyarrow_options=pyarrow_options,
     )
 
-    return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))
+    return dataset.lazy()

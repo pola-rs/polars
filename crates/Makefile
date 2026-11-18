@@ -108,6 +108,11 @@ bench-save:  ## Run benchmark and save
 bench-cmp:  ## Run benchmark and compare
 	cargo bench --features=random --bench $(BENCH) -- --load-baseline $(FEAT) --baseline $(BASE)
 
+.PHONY: build-polars-delta
+build-polars-delta:  ## Compile and install the `polars_delta` I/O plugin (py-polars/polars-delta) into the venv
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m ../py-polars/polars-delta/Cargo.toml $(ARGS) --uv
+
 .PHONY: build-polars-iceberg
 build-polars-iceberg:  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-iceberg) into the venv
 	@if [ ! -f polars-iceberg/Cargo.toml ]; then \

@@ -15,6 +15,7 @@ default = []
 # Contract `polars.io_plugin.iceberg.v1` (`iceberg_v1`). Features only control what is compiled;
 # they never change a plugin ID or layout.
 iceberg = []
+delta = []
 
 [dependencies]
 async-ffi = { workspace = true }

@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, Weak};
 
 #[cfg(feature = "python")]
 use polars_arrow::array::ListArray;
@@ -12,13 +12,17 @@ use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlInde
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::series::Series;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
+use polars_error::{PolarsResult, feature_gated, polars_bail, polars_ensure, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
-use polars_plan::dsl::deletion::DeletionFilesList;
 #[cfg(feature = "python")]
 use polars_plan::dsl::deletion::DeltaDeletionVectorProvider;
+use polars_plan::dsl::deletion::{
+    DELTA_DV_MAX_SERIALIZED_BYTES, DeletionFilesList, DeltaDeletionVector,
+    DeltaDeletionVectorDecoder, DeltaDeletionVectorLocation, delta_deletion_vector_decoder,
+    require_delta_deletion_vector_decoder,
+};
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource, ScanSources};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::format_pl_smallstr;
@@ -49,6 +53,13 @@ pub enum DeletionFilesProvider {
                 PlHashMap<PlRefPath, Arc<tokio::sync::OnceCell<PuffinDeletionVectors>>>,
             >,
         >,
+    },
+    DeltaNative {
+        vectors: Arc<PlIndexMap<usize, DeltaDeletionVector>>,
+        cache: Arc<parking_lot::Mutex<NativeDeletionVectorCache>>,
+        files: Arc<DeletionVectorFiles>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+        io_metrics: Option<Arc<IOMetrics>>,
     },
     #[cfg(feature = "python")]
     DeltaDeletionVector {
@@ -118,8 +129,15 @@ impl DeletionFilesProvider {
                     deletion_load_tasks: Default::default(),
                 })
             }),
+            Some(DeletionFilesList::Delta(vectors)) => Ok(Self::DeltaNative {
+                files: Arc::new(DeletionVectorFiles::new(&vectors)),
+                vectors,
+                cache: Default::default(),
+                task_metrics: execution_state.task_metrics.clone(),
+                io_metrics,
+            }),
             #[cfg(feature = "python")]
-            Some(DeletionFilesList::Delta(provider)) => {
+            Some(DeletionFilesList::DeltaPythonCallback(provider)) => {
                 let ScanSources::Paths(selected_paths) = selected_sources else {
                     polars_bail!(ComputeError: "delta deletion vectors require path-based scan sources");
                 };
@@ -405,6 +423,81 @@ impl DeletionFilesProvider {
                     },
                 ));
 
+                Some(RowDeletionsInit::Initializing(handle))
+            },
+
+            Self::DeltaNative {
+                vectors,
+                cache,
+                files,
+                task_metrics,
+                io_metrics,
+            } => {
+                let files = files.clone();
+                let vector = vectors.get(&scan_source_idx)?.clone();
+                let cell = native_cache_cell(cache, &vector);
+                let io_metrics = io_metrics.clone();
+                if verbose {
+                    match &vector.location {
+                        DeltaDeletionVectorLocation::Inline(_) => eprintln!(
+                            "[DeletionFilesProvider[Delta]]: scan_source_idx: {scan_source_idx}, inline"
+                        ),
+                        DeltaDeletionVectorLocation::File { path, offset } => eprintln!(
+                            "[DeletionFilesProvider[Delta]]: scan_source_idx: {scan_source_idx}, path: {path}, offset: {offset}"
+                        ),
+                    }
+                }
+                let handle = AbortOnDropHandle::new(executor::spawn(
+                    TaskPriority::Low,
+                    task_metrics.as_deref(),
+                    async move {
+                        cell.get_or_try_init(|| async move {
+                            let decoder = match delta_deletion_vector_decoder() {
+                                Some(d) => d,
+                                // Loading takes the Python GIL: not on an executor thread.
+                                None => polars_core::runtime::ASYNC
+                                    .spawn_blocking(require_delta_deletion_vector_decoder)
+                                    .await
+                                    .unwrap()?,
+                            };
+                            let max_rows = deletion_vector_max_rows();
+                            let bitmap = match vector.location {
+                                DeltaDeletionVectorLocation::Inline(bytes) => decoder
+                                    .decode_inline(
+                                        &bytes,
+                                        vector.size_in_bytes,
+                                        vector.cardinality,
+                                        max_rows,
+                                    )?,
+                                DeltaDeletionVectorLocation::File { path, offset } => {
+                                    let bytes = files
+                                        .read_frame(
+                                            decoder.clone(),
+                                            path,
+                                            offset,
+                                            vector.size_in_bytes,
+                                            cloud_options.as_deref(),
+                                            io_metrics,
+                                        )
+                                        .await?;
+                                    decoder.decode_frame(
+                                        &bytes,
+                                        offset,
+                                        vector.size_in_bytes,
+                                        vector.cardinality,
+                                        max_rows,
+                                    )?
+                                },
+                            };
+                            bitmap.unset_bits();
+                            Ok(ExternalFilterMask::DeltaDeletionVector {
+                                mask: BooleanChunked::from_bitmap(PlSmallStr::EMPTY, bitmap),
+                            })
+                        })
+                        .await
+                        .cloned()
+                    },
+                ));
                 Some(RowDeletionsInit::Initializing(handle))
             },
 
@@ -836,6 +929,222 @@ fn load_iceberg_puffin_deletes(puffin_bytes: Buffer<u8>) -> PolarsResult<PuffinD
     }
 }
 
+// Keep corrupt or highly sparse vectors from driving an unbounded dense allocation.
+// This is a PER-MASK execution resource limit, also on bigidx builds, not an
+// aggregate budget: the bounded active-reader window can hold several such masks. The decoder accepts
+// a row bound so a future reader can instead pass the data file's validated row count.
+fn deletion_vector_max_rows() -> usize {
+    ((DELTA_DV_MAX_SERIALIZED_BYTES as u128 * 8)
+        .min(u128::from(polars_core::prelude::IdxSize::MAX))) as usize
+}
+
+/// Vectors of a file are read together as one `[0, end)` request when that is at most this large.
+const MAX_SHARED_PREFIX_BYTES: u64 = 1 << 20;
+/// Prefixes held by a scan, over all files. Past it, files read their vectors one by one.
+const SHARED_PREFIX_BUDGET_BYTES: u64 = 64 << 20;
+
+struct DeletionVectorFileState {
+    /// The format version byte of this file was validated.
+    version_ok: tokio::sync::OnceCell<()>,
+    /// `[0, span_end)` of the file, shared by its vectors, kept for the scan. `None`: not
+    /// shared (over the budget, or the read failed), and each vector reads its own frame.
+    prefix: tokio::sync::OnceCell<Option<Buffer<u8>>>,
+    /// The file length, once a shared prefix read came back short (`u64::MAX`: unknown).
+    known_len: std::sync::atomic::AtomicU64,
+}
+
+impl Default for DeletionVectorFileState {
+    fn default() -> Self {
+        Self {
+            version_ok: Default::default(),
+            prefix: Default::default(),
+            known_len: u64::MAX.into(),
+        }
+    }
+}
+
+/// Bytes taken from the shared-prefix budget, returned on drop (e.g. when the reading task is
+/// cancelled) unless [`commit`](Self::commit)ted.
+struct PrefixReservation<'a> {
+    files: &'a DeletionVectorFiles,
+    n: u64,
+    committed: bool,
+}
+
+impl PrefixReservation<'_> {
+    fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for PrefixReservation<'_> {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.files
+                .prefix_budget
+                .fetch_add(self.n, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+/// Per-scan state of the files that hold deletion vectors.
+pub struct DeletionVectorFiles {
+    /// Largest end offset of the vectors of each file.
+    span_end: PlHashMap<PlRefPath, u64>,
+    files: parking_lot::Mutex<PlHashMap<PlRefPath, Arc<DeletionVectorFileState>>>,
+    /// Bytes of shared prefixes that may still be read.
+    prefix_budget: std::sync::atomic::AtomicU64,
+}
+
+impl DeletionVectorFiles {
+    fn new(vectors: &PlIndexMap<usize, DeltaDeletionVector>) -> Self {
+        let mut span_end: PlHashMap<PlRefPath, u64> = PlHashMap::new();
+        for v in vectors.values() {
+            if let DeltaDeletionVectorLocation::File { path, offset } = &v.location {
+                let end = offset.saturating_add(u64::from(v.size_in_bytes) + 8);
+                let e = span_end.entry(path.clone()).or_default();
+                *e = (*e).max(end);
+            }
+        }
+        Self {
+            span_end,
+            files: Default::default(),
+            prefix_budget: SHARED_PREFIX_BUDGET_BYTES.into(),
+        }
+    }
+
+    fn try_reserve(&self, n: u64) -> Option<PrefixReservation<'_>> {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.prefix_budget
+            .try_update(Relaxed, Relaxed, |b| b.checked_sub(n))
+            .ok()
+            .map(|_| PrefixReservation {
+                files: self,
+                n,
+                committed: false,
+            })
+    }
+
+    /// Read the frame of one vector: `size + 8` bytes at `offset`, after validating the file's
+    /// version byte. A range past the end of the file is a short-read `ComputeError` whenever
+    /// the file length is known from a short body (never an object-store range error then).
+    async fn read_frame(
+        self: &Arc<Self>,
+        decoder: Arc<dyn DeltaDeletionVectorDecoder>,
+        path: PlRefPath,
+        offset: u64,
+        size: u32,
+        cloud_options: Option<&CloudOptions>,
+        io_metrics: Option<Arc<IOMetrics>>,
+    ) -> PolarsResult<Buffer<u8>> {
+        polars_ensure!(
+            size as usize <= DELTA_DV_MAX_SERIALIZED_BYTES,
+            ComputeError: "deletion vector exceeds 512 MiB serialized size resource limit"
+        );
+        let range = usize::try_from(offset)
+            .ok()
+            .and_then(|start| Some(start..start.checked_add(size as usize)?.checked_add(8)?))
+            .ok_or_else(
+                || polars_err!(ComputeError: "deletion vector frame outside file bounds"),
+            )?;
+        let state = self.files.lock().entry(path.clone()).or_default().clone();
+        let span_end = self.span_end.get(&path).copied().unwrap_or(0);
+        let this = self.clone();
+        let cloud_options = cloud_options.cloned();
+        let source_path = path.clone();
+        let handle = polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle(
+            polars_core::runtime::ASYNC.spawn(async move {
+                let source = DynByteSourceBuilder::ObjectStore(FetchConfig::streaming())
+                    .try_build_from_path(source_path.clone(), cloud_options.as_ref(), io_metrics)
+                    .await?;
+                // A range past the end of the file is an error, whatever the store does with it
+                // (a short body or a failure).
+                let get = |r: std::ops::Range<usize>| {
+                    let source = &source;
+                    let source_path = &source_path;
+                    let state = &state;
+                    async move {
+                        let b = source.get_range(r.clone()).await?;
+                        if b.len() != r.len() {
+                            if r.start == 0 {
+                                state
+                                    .known_len
+                                    .store(b.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                            }
+                            return Err(short_read_err(source_path, b.len(), r.len()));
+                        }
+                        PolarsResult::Ok(b)
+                    }
+                };
+                if (range.end as u64) <= span_end && span_end <= MAX_SHARED_PREFIX_BYTES {
+                    // The vectors of a file are small and adjacent: one request serves all of
+                    // them, and holds the version byte. If it cannot be had (the budget is spent,
+                    // or some other vector of the file reaches past its end), only the vectors
+                    // that are themselves bad may fail, so this one reads its own frame.
+                    let prefix = state
+                        .prefix
+                        .get_or_init(|| async {
+                            let reservation = this.try_reserve(span_end)?;
+                            let prefix = get(0..span_end as usize).await.ok();
+                            if prefix.is_some() {
+                                reservation.commit();
+                            }
+                            prefix
+                        })
+                        .await;
+                    if let Some(prefix) = prefix {
+                        decoder.check_file_version(&prefix[..1])?;
+                        return Ok(prefix.clone().sliced(range));
+                    }
+                }
+                // The prefix read showed the file is too short for this vector: report that, not
+                // whatever the store does with a range past the end.
+                let known_len = state.known_len.load(std::sync::atomic::Ordering::Relaxed);
+                if known_len != u64::MAX && (range.end as u64) > known_len {
+                    return Err(short_read_err(
+                        &source_path,
+                        known_len.saturating_sub(range.start as u64) as usize,
+                        range.len(),
+                    ));
+                }
+                // The version byte is validated once per file, before any frame is requested.
+                state
+                    .version_ok
+                    .get_or_try_init(|| async { decoder.check_file_version(&get(0..1).await?) })
+                    .await?;
+                get(range).await
+            }),
+        );
+        handle.await.unwrap()
+    }
+}
+
+fn short_read_err(path: &PlRefPath, got: usize, want: usize) -> polars_error::PolarsError {
+    polars_err!(
+        ComputeError:
+        "deletion vector file {path} is shorter than the vector: read {got} of {want} bytes"
+    )
+}
+
+type NativeDeletionVectorCache =
+    PlHashMap<DeltaDeletionVector, Weak<tokio::sync::OnceCell<ExternalFilterMask>>>;
+
+fn native_cache_cell(
+    cache: &parking_lot::Mutex<NativeDeletionVectorCache>,
+    vector: &DeltaDeletionVector,
+) -> Arc<tokio::sync::OnceCell<ExternalFilterMask>> {
+    let mut cache = cache.lock();
+    let entry = cache.entry(vector.clone()).or_default();
+    match entry.upgrade() {
+        Some(cell) => cell,
+        None => {
+            let cell = Arc::new(tokio::sync::OnceCell::new());
+            *entry = Arc::downgrade(&cell);
+            cell
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use polars_utils::slice_enum::Slice;
@@ -863,6 +1172,26 @@ mod tests {
         };
 
         (mask.into_iter().collect(), slice)
+    }
+
+    #[test]
+    fn native_cache_shares_only_live_loads() {
+        use super::*;
+        let vector = DeltaDeletionVector {
+            location: DeltaDeletionVectorLocation::Inline(Buffer::default()),
+            size_in_bytes: 0,
+            cardinality: 0,
+        };
+        let cache = parking_lot::Mutex::new(NativeDeletionVectorCache::default());
+        let a = native_cache_cell(&cache, &vector);
+        let b = native_cache_cell(&cache, &vector);
+        assert!(Arc::ptr_eq(&a, &b));
+        let weak = Arc::downgrade(&a);
+        drop(a);
+        drop(b);
+        assert!(weak.upgrade().is_none());
+        let c = native_cache_cell(&cache, &vector);
+        assert!(!Weak::ptr_eq(&weak, &Arc::downgrade(&c)));
     }
 
     #[test]

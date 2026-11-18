@@ -95,6 +95,22 @@ jobs:
           -p polars-time
           -p polars-utils
 
+      - name: Compile polars-delta codec tests
+        run: cargo test -p polars-delta --no-default-features --no-run
+
+      - name: Run polars-delta codec tests
+        if: github.event_name == 'pull_request'
+        run: cargo test -p polars-delta --no-default-features
+
+      # Keep the extension-module feature out of Rust test executables; the Python
+      # workflow builds and loads that feature against the host's plugin contract.
+      - name: Compile polars-delta planner tests
+        run: cargo test -p polars-delta --features planner --no-run
+
+      - name: Run polars-delta planner tests
+        if: github.event_name == 'pull_request'
+        run: cargo test -p polars-delta --features planner
+
   integration-test:
     runs-on: ${{ matrix.os }}
     strategy:
