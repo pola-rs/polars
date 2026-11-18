@@ -2667,9 +2667,13 @@ class _ConnectorXSession:
                     sql, connection_uri=self.uri, protocol=self.protocol
                 )
         except RuntimeError as e:
-            # ConnectorX can't type an empty SQLite result (or a leading NULL); sqlite3
-            # reads the same file
-            if self.dialect != "sqlite" or "Cannot infer type" not in str(e):
+            # ConnectorX can't type an empty SQLite result (or a leading NULL), and
+            # types a column by its declared type: a number in a `TIMESTAMP` column
+            # is "Invalid column type Integer". sqlite3 reads the same file, by the
+            # values' own types
+            if self.dialect != "sqlite" or not any(
+                m in str(e) for m in ("Cannot infer type", "Invalid column type")
+            ):
                 raise
             # `sqlite://<path>` (see `_connectorx_uri`) as SQLAlchemy's form
             sqlite_uri = "sqlite:///" + self.uri.removeprefix("sqlite://")

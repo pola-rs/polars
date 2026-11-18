@@ -17,6 +17,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import threading
 from contextlib import closing
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
@@ -181,23 +182,54 @@ def _scan(dialect: str, **kwargs: Any) -> pl.LazyFrame:
     )
 
 
+def _explain(lf: pl.LazyFrame) -> str:
+    """
+    Explain a plan on a thread with a big stack.
+
+    Polars computes the schema of a deep expression once per node, each time down its
+    whole depth; on the default 8 MB stack a debug build maps and unmaps a stack
+    segment on each descent past ~250 levels: `a | b | …` of 700 terms takes 7 s that
+    way, 0.4 s on a big stack (plain Polars, unrelated to the scan).
+    """
+    out: list[str] = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            out.append(lf.explain())
+        except BaseException as e:
+            errors.append(e)
+
+    old = threading.stack_size(512 << 20)
+    try:
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join()
+    finally:
+        threading.stack_size(old)
+    if errors:
+        raise errors[0]
+    return out[0]
+
+
 @pytest.mark.parametrize("terms", [63, 200, 450])
 def test_deeply_nested_filters_are_pushed(terms: int) -> None:
     """A document nested past serde_json's 128 levels was not pushed at all."""
     # `a | b | c …` is a left-deep tree (`any_horizontal` of many is not sent as one)
     pred = functools.reduce(operator.or_, [pl.col("i64") == i for i in range(terms)])
-    plan = _scan("postgresql").filter(pred).explain()
+    plan = _explain(_scan("postgresql").filter(pred))
     assert "filters 1/1 (1 exact)" in plan
     sql = next(line for line in plan.splitlines() if "sql[0]:" in line)
     assert f'"i64" = {terms - 1}' in sql
     # `col + 1` many times is nested as deep, and no tier-1 expression
     pred = functools.reduce(operator.add, [pl.col("i64")] * terms) > 0
-    assert "filters 0/1" in _scan("postgresql").filter(pred).explain()
+    assert "filters 0/1" in _explain(_scan("postgresql").filter(pred))
 
 
 def test_filters_nested_past_the_document_limit_are_not_pushed() -> None:
-    pred = functools.reduce(operator.or_, [pl.col("i64") == i for i in range(900)])
-    assert "filters 0/1" in _scan("postgresql").filter(pred).explain()
+    # two document levels per `|`: past the limit of 1,024 levels from 513 terms
+    pred = functools.reduce(operator.or_, [pl.col("i64") == i for i in range(600)])
+    assert "filters 0/1" in _explain(_scan("postgresql").filter(pred))
 
 
 @pytest.mark.parametrize(("levels", "pushed"), [(45, True), (60, False)])
