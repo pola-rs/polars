@@ -315,6 +315,24 @@ def test_bin_intervals_uniform_float_span_of_one_ulp(
 
 
 @pytest.mark.parametrize(
+    ("values", "right_closed"),
+    [([0.0, 1.0, math.inf], True), ([-math.inf, -1.0, 0.0], False)],
+)
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+def test_bin_intervals_uniform_float_infinite_endpoint(
+    values: list[float], right_closed: bool, dtype: pl.DataType
+) -> None:
+    s = pl.Series("a", values, dtype=dtype)
+
+    result = s.bin_intervals(2, labels=False, right_closed=right_closed)
+
+    # The breakpoint interpolates to the infinite endpoint, and moves to the nearest finite
+    # value rather than taking a finite row into the infinite one's bin.
+    expected = [0, 0, 1] if right_closed else [0, 1, 1]
+    assert result.to_list() == expected
+
+
+@pytest.mark.parametrize(
     ("dtype", "values"),
     [
         (pl.Int8, [-128, 0, 127]),

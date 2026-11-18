@@ -472,26 +472,42 @@ fn uniform_threshold_offsets(
 /// Makes `breaks` non-decreasing and within `[min, max)` when right-closed or `(min, max]` when
 /// left-closed, so that `min` and `max` land in the first and last bin.
 ///
-/// A break that is out of order, out of range or NaN, as the interpolation produces over a span of
-/// a few ulps or of `[-inf, inf]`, repeats the break before it (from `min`) when right-closed, or
-/// the one after it (from `max`) when left-closed.
-fn fix_float_breaks(breaks: &mut [f64], min: f64, max: f64, right_closed: bool) {
-    if right_closed {
-        let mut prev = min;
-        for b in breaks.iter_mut() {
-            if *b >= prev && *b < max {
-                prev = *b;
-            }
-            *b = prev;
-        }
+/// The bounds are the neighbors of `max` and `min` in the float dtype `dtype`, so a break that
+/// rounds onto an endpoint moves as little as possible. A NaN break, which the interpolation over
+/// `[-inf, inf]` produces, repeats the break before it.
+fn fix_float_breaks(breaks: &mut [f64], min: f64, max: f64, dtype: &DataType, right_closed: bool) {
+    let (mut lo, hi) = if right_closed {
+        (min, float_step(max, dtype, false))
     } else {
-        let mut next = max;
-        for b in breaks.iter_mut().rev() {
-            if *b <= next && *b > min {
-                next = *b;
+        (float_step(min, dtype, true), max)
+    };
+    for b in breaks.iter_mut() {
+        *b = b.max(lo).min(hi);
+        lo = *b;
+    }
+}
+
+/// The neighbor of `x` toward `+inf` if `up`, else toward `-inf`, among the values of the float
+/// dtype `dtype`, which holds `x`.
+fn float_step(x: f64, dtype: &DataType, up: bool) -> f64 {
+    match dtype {
+        DataType::Float32 => {
+            let x = x as f32;
+            (if up { x.next_up() } else { x.next_down() }) as f64
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            use polars_utils::float16::pf16;
+            let x = pf16::from(x);
+            f64::from(if up { x.next_up() } else { x.next_down() })
+        },
+        _ => {
+            if up {
+                x.next_up()
+            } else {
+                x.next_down()
             }
-            *b = next;
-        }
+        },
     }
 }
 
@@ -513,6 +529,12 @@ pub fn bin_interval_breaks(
         let Some((min, max)) = f.f64()?.min_max() else {
             return Ok(None);
         };
+        if min == max {
+            // The bounds of `fix_float_breaks` cross without a span. This matches the integer path.
+            return Ok(Some(
+                Series::new(s.name().clone(), vec![min; n_breaks]).cast(dtype)?,
+            ));
+        }
         let lerp: Vec<f64> = (1..=n_breaks)
             .map(|i| {
                 let t = i as f64 / n_bins as f64;
@@ -526,7 +548,7 @@ pub fn bin_interval_breaks(
             .cast(dtype)?
             .cast(&DataType::Float64)?;
         let mut breaks: Vec<f64> = narrowed.f64()?.into_no_null_iter().collect();
-        fix_float_breaks(&mut breaks, min, max, right_closed);
+        fix_float_breaks(&mut breaks, min, max, dtype, right_closed);
         return Float64Chunked::from_vec(s.name().clone(), breaks)
             .into_series()
             .cast(dtype)
