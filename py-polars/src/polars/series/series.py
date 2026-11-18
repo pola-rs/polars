@@ -8,6 +8,7 @@ from collections.abc import Iterable, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
+from fractions import Fraction
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -739,6 +740,12 @@ class Series(metaclass=_Meta):
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
 
+        elif (
+            isinstance(other, (PyDecimal, Fraction))
+            or (_check_for_numpy(other) and isinstance(other, np.floating))
+        ) and self.dtype.is_integer():
+            other = Series([other])
+
         elif isinstance(other, float) and self.dtype.is_integer():
             # require upcast when comparing int series to float value
             self = self.cast(Float64)
@@ -1062,8 +1069,13 @@ class Series(metaclass=_Meta):
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
-        elif isinstance(other, str) or (
-            isinstance(other, (float, date, datetime)) and not self.dtype.is_float()
+        elif (
+            isinstance(other, str)
+            or (
+                isinstance(other, (float, date, datetime)) and not self.dtype.is_float()
+            )
+            or isinstance(other, (PyDecimal, Fraction))
+            or (_check_for_numpy(other) and isinstance(other, np.floating))
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
