@@ -874,7 +874,8 @@ def format(f_string: str, *args: IntoExpr) -> Expr:
         code, floats are written as when cast to a string. Decimals follow the
         rules for floats, but are rounded exactly (half to even) for `f`, `F`
         and `%`, and converted to floats for the other format codes. Other
-        data types are cast to a string first.
+        data types, and any value with format code `s`, are cast to a string
+        first.
     args
         Expression(s) that fill the placeholders
 

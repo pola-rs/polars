@@ -100,9 +100,11 @@ impl FormatSpec {
 
     pub fn kind(&self, dtype: &DataType) -> PolarsResult<FormatKind> {
         let ty = self.ty.map(char::from);
+        // Unlike in Python, `s` writes any value as its string.
         let kind = match dtype {
+            _ if ty == Some('s') => FormatKind::Str,
             dt if dt.is_integer() => FormatKind::Int,
-            DataType::Boolean if ty.is_some_and(|t| t != 's') => FormatKind::Int,
+            DataType::Boolean if ty.is_some() => FormatKind::Int,
             dt if dt.is_float() || dt.is_decimal() => FormatKind::Float,
             _ => FormatKind::Str,
         };

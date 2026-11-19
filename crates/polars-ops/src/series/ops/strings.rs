@@ -53,6 +53,13 @@ pub fn str_format(
     // A row with a null is null, so its other values are not converted: a conversion can fail,
     // as for a binary value that is not UTF-8.
     let null_count = validity.as_ref().map_or(0, |v| v.unset_bits());
+    if null_count == output_length {
+        return Ok(Column::full_null(
+            output_name,
+            output_length,
+            &DataType::String,
+        ));
+    }
     let mask = (null_count > 0)
         .then(|| BooleanChunked::from_bitmap(PlSmallStr::EMPTY, validity.clone().unwrap()));
     for (i, c) in cs.iter_mut().enumerate() {

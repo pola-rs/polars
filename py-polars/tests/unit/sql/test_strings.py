@@ -227,9 +227,13 @@ def test_string_printf_non_finite_and_null_rows() -> None:
     # `%s` converts the value of a null row only after the row is known to be null
     df = pl.DataFrame({"s": ["x", None], "b": [b"a", b"\xff"]})
     res = df.sql(
-        "SELECT PRINTF('%s%4s', s, b) AS a, FORMAT('{}{:>4}', s, b) AS b FROM self"
+        """
+        SELECT PRINTF('%s%4s', s, b) AS a, FORMAT('{}{:>4}', s, b) AS b,
+          PRINTF('%s%.2s', s, b) AS c
+        FROM self
+        """
     )
-    assert res.rows() == [("x   a", "x   a"), (None, None)]
+    assert res.rows() == [("x   a", "x   a", "xa"), (None, None, None)]
 
     res = pl.sql(
         "SELECT PRINTF('%s|%5s|%-6s|%s', {'a': 1}, 42, 2.5, CAST(1.50 AS DECIMAL(4, 2)))",

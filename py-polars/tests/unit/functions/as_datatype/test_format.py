@@ -184,7 +184,7 @@ def test_format_spec_engines() -> None:
     [
         (".2d", pl.Int64, "a precision is not allowed"),
         ("d", pl.Float64, "format code 'd' is not supported for f64"),
-        ("s", pl.Int32, "format code 's' is not supported for i32"),
+        ("+s", pl.Int32, "a sign is not allowed in a format specifier for i32"),
         ("+", pl.String, "a sign is not allowed"),
         ("=5", pl.Date, "'=' alignment is not allowed"),
         (",x", pl.Int64, "',' is not allowed with format code 'x'"),
@@ -260,3 +260,13 @@ def test_format_spec_null_rows(engine: EngineType) -> None:
     lf = pl.LazyFrame({"s": ["x", None], "b": [b"a", b"\xff"]})
     res = lf.select(pl.format("{}{:>4}", "s", "b"))
     assert res.collect(engine=engine).to_series().to_list() == ["x   a", None]
+
+    # every row is null, so the scalar is not formatted
+    lf = pl.LazyFrame({"a": [1, None], "b": [None, 2]})
+    res = lf.select(pl.format("{}{}{:c}", "a", "b", pl.lit(-1)))
+    assert res.collect(engine=engine).to_series().to_list() == [None, None]
+
+
+def test_format_spec_s_any_dtype() -> None:
+    res = pl.select(pl.format("{:>5s}|{:.2s}|{:s}", pl.lit(42), pl.lit(3.14159), True))
+    assert res.item() == "   42|3.|true"
