@@ -1596,9 +1596,15 @@ fn lower_ir_inner(
                 trans_left_on.drain(left_on.len()..);
                 trans_right_on.drain(right_on.len()..);
 
+                let mut key_is_row_encoded = false;
                 if use_streaming_merge_join || use_streaming_asof_join {
-                    let (tmp_left_key_col, tmp_right_key_col);
-                    (trans_input_left, trans_left_on, tmp_left_key_col) = append_sorted_key_column(
+                    let (tmp_left_key_col, tmp_right_key_col, right_is_row_encoded);
+                    (
+                        trans_input_left,
+                        trans_left_on,
+                        tmp_left_key_col,
+                        key_is_row_encoded,
+                    ) = append_sorted_key_column(
                         trans_input_left,
                         trans_left_on,
                         left_on_sorted.as_ref(),
@@ -1608,27 +1614,34 @@ fn lower_ir_inner(
                         expr_cache,
                         ctx,
                     )?;
-                    (trans_input_right, trans_right_on, tmp_right_key_col) =
-                        append_sorted_key_column(
-                            trans_input_right,
-                            trans_right_on,
-                            right_on_sorted.as_ref(),
-                            !args.nulls_equal,
-                            expr_arena,
-                            phys_sm,
-                            expr_cache,
-                            ctx,
-                        )?;
+                    (
+                        trans_input_right,
+                        trans_right_on,
+                        tmp_right_key_col,
+                        right_is_row_encoded,
+                    ) = append_sorted_key_column(
+                        trans_input_right,
+                        trans_right_on,
+                        right_on_sorted.as_ref(),
+                        !args.nulls_equal,
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                    debug_assert_eq!(key_is_row_encoded, right_is_row_encoded);
                     tmp_left_col_names.push(tmp_left_key_col);
                     tmp_right_col_names.push(tmp_right_key_col);
                 }
 
                 let node = match () {
                     _ if use_streaming_merge_join => {
-                        let keys_are_row_encoded = left_on_names.len() > 1;
-                        if keys_are_row_encoded {
+                        // A row-encoded key sorts ascending.
+                        if key_is_row_encoded {
                             key_descending = Some(false);
                         }
+                        // Only a multi-column key is read past its validity.
+                        let is_multi_column_key = left_on_names.len() > 1;
                         phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::MergeJoin {
@@ -1638,7 +1651,7 @@ fn lower_ir_inner(
                                 right_on: right_on_names,
                                 tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
                                 tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
-                                keys_row_encoded: keys_are_row_encoded,
+                                keys_row_encoded: is_multi_column_key,
                                 descending: key_descending.unwrap(),
                                 nulls_last: key_nulls_last.unwrap(),
                                 args: args.clone(),
@@ -2200,6 +2213,8 @@ fn is_scalar_window(exprs: &[ExprIR], has_order_by: bool, expr_arena: &Arena<AEx
 ///
 /// If keys_sorted is None, the sortedness of the key will be decided by the
 /// default sortedness behavior of RowEncodingVariant::Ordered.
+///
+/// Also returns whether the key column is a row encoding.
 #[allow(clippy::too_many_arguments)]
 fn append_sorted_key_column(
     phys_input: PhysStream,
@@ -2210,7 +2225,7 @@ fn append_sorted_key_column(
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
-) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
+) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>, bool)> {
     let input_schema = phys_input.output_schema(phys_sm);
     let use_row_encoding =
         key_exprs.len() > 1 || key_exprs[0].dtype(input_schema, expr_arena)?.is_nested();
@@ -2249,7 +2264,7 @@ fn append_sorted_key_column(
     } else {
         (phys_input, None)
     };
-    Ok((phys_output, key_exprs, key_col_name))
+    Ok((phys_output, key_exprs, key_col_name, use_row_encoding))
 }
 
 /// Lowers the IR tree rooted at `ir_node` to the in-memory engine.
