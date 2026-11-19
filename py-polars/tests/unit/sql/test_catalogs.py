@@ -4569,9 +4569,10 @@ def test_delete_catalog_table_double_partitions_30832(
 
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
     ctx = lake_ctx(lake)
-    for name, dtype in (("d", "DOUBLE"), ("f", "REAL")):
-        ctx.execute(f"CREATE TABLE {name} (x {dtype}, k INT) PARTITION BY (x)")
-        ctx.execute(f"INSERT INTO {name} VALUES (0.1, 1), (0.2, 2)")
+    ctx.execute("CREATE TABLE d (x DOUBLE, k INT) PARTITION BY (x)")
+    ctx.execute("INSERT INTO d VALUES (0.1, 1), (0.2, 2)")
+    ctx.execute("CREATE TABLE f (x REAL, k INT) PARTITION BY (x)")
+    ctx.execute("INSERT INTO f VALUES (0.5, 1), (2.0, 2)")
 
     # Deleting a row from a table partitioned by DOUBLE is refused when decoder rounds
     with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
@@ -4586,7 +4587,7 @@ def test_delete_catalog_table_double_partitions_30832(
 
     # FLOAT columns are unaffected
     ctx.execute("DELETE FROM f WHERE k = 1")
-    assert table_rows(lake, "tpch", "f") == [(0.2, 2)]
+    assert table_rows(lake, "tpch", "f") == [(2.0, 2)]
 
     # Exact decoder allows DELETE
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
@@ -4886,9 +4887,10 @@ def test_update_catalog_table_double_partitions_30832(
 
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
     ctx = lake_ctx(lake)
-    for name, dtype in (("d", "DOUBLE"), ("f", "REAL")):
-        ctx.execute(f"CREATE TABLE {name} (x {dtype}, k INT) PARTITION BY (x)")
-        ctx.execute(f"INSERT INTO {name} VALUES (0.1, 1), (0.2, 2)")
+    ctx.execute("CREATE TABLE d (x DOUBLE, k INT) PARTITION BY (x)")
+    ctx.execute("INSERT INTO d VALUES (0.1, 1), (0.2, 2)")
+    ctx.execute("CREATE TABLE f (x REAL, k INT) PARTITION BY (x)")
+    ctx.execute("INSERT INTO f VALUES (0.5, 1), (2.0, 2)")
 
     # Updating rows in a table partitioned by DOUBLE is refused when decoder rounds
     with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
@@ -4899,7 +4901,7 @@ def test_update_catalog_table_double_partitions_30832(
 
     # FLOAT columns are unaffected
     ctx.execute("UPDATE f SET k = 10 WHERE k = 1")
-    assert table_rows(lake, "tpch", "f") == [(0.1, 10), (0.2, 2)]
+    assert table_rows(lake, "tpch", "f") == [(0.5, 10), (2.0, 2)]
 
     # Exact decoder allows UPDATE
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
@@ -5269,7 +5271,9 @@ def test_update_catalog_table_pattern_column_names(lake: CountingCatalog) -> Non
 
 
 @pytest.mark.write_disk
-def test_update_catalog_table_partition_pruning(lake: CountingCatalog) -> None:
+def test_update_catalog_table_partition_pruning(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import pyarrow as pa
     from pyiceberg.partitioning import PartitionField, PartitionSpec
     from pyiceberg.schema import Schema
@@ -5291,7 +5295,14 @@ def test_update_catalog_table_partition_pruning(lake: CountingCatalog) -> None:
             )
         )
     ctx = lake_ctx(lake)
-    # PyIceberg reads a DOUBLE partition value as float32: no file may be pruned on it
+    # PyIceberg reads a DOUBLE partition value as float32: refused when decoder rounds
+    import polars.io.iceberg._maintenance as maintenance
+
+    if maintenance._pyiceberg_rounds_doubles():
+        with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+            ctx.execute("UPDATE dbl SET k = 10 WHERE x = 0.1")
+        monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
+
     ctx.execute("UPDATE dbl SET k = 10 WHERE x = 0.1")
     assert table_rows(lake, "tpch", "dbl")[-1] == (10, 0.1, 0)
     # a NULL partition value under OR fails PyIceberg's planning: plan without it
@@ -6226,9 +6237,10 @@ def test_merge_catalog_table_double_partitions_30832(
 
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
     ctx = lake_ctx(lake)
-    for name, dtype in (("d", "DOUBLE"), ("f", "REAL")):
-        ctx.execute(f"CREATE TABLE {name} (x {dtype}, k INT) PARTITION BY (x)")
-        ctx.execute(f"INSERT INTO {name} VALUES (0.1, 1), (0.2, 2)")
+    ctx.execute("CREATE TABLE d (x DOUBLE, k INT) PARTITION BY (x)")
+    ctx.execute("INSERT INTO d VALUES (0.1, 1), (0.2, 2)")
+    ctx.execute("CREATE TABLE f (x REAL, k INT) PARTITION BY (x)")
+    ctx.execute("INSERT INTO f VALUES (0.5, 1), (2.0, 2)")
 
     # MERGE matching existing file (WHEN MATCHED THEN UPDATE) rewrites manifest
     # and is refused
@@ -6247,10 +6259,10 @@ def test_merge_catalog_table_double_partitions_30832(
 
     # FLOAT columns are unaffected
     ctx.execute(
-        "MERGE INTO f USING (VALUES (0.1, 1)) AS s(x, k) ON f.k = s.k "
+        "MERGE INTO f USING (VALUES (0.5, 1)) AS s(x, k) ON f.k = s.k "
         "WHEN MATCHED THEN UPDATE SET k = 10"
     )
-    assert (0.1, 10) in table_rows(lake, "tpch", "f")
+    assert (0.5, 10) in table_rows(lake, "tpch", "f")
 
     # Exact decoder allows MERGE with WHEN MATCHED
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
