@@ -240,6 +240,8 @@ def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -
     )
     if layout == "idx":
         df = df.sample(fraction=1.0, shuffle=True, seed=0)
+    elif layout == "slice":
+        df = df.with_columns(pl.col("g").set_sorted())
     elif layout == "sorted_slice":
         df = df.with_columns(pl.col("g", "v").set_sorted())
 
