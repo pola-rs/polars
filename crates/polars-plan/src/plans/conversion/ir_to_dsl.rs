@@ -511,7 +511,15 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use IRStringFunction as IB;
             use StringFunction as B;
             F::StringExpr(match f {
-                IB::Format { format, insertions } => B::Format { format, insertions },
+                IB::Format {
+                    format,
+                    insertions,
+                    specs,
+                } => B::Format {
+                    format,
+                    insertions,
+                    specs,
+                },
                 #[cfg(feature = "concat_str")]
                 IB::ConcatHorizontal {
                     delimiter,
@@ -543,7 +551,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::LenBytes => B::LenBytes,
                 IB::LenChars => B::LenChars,
                 IB::FromCodePoint => B::FromCodePoint,
-                IB::FormatValue(spec) => B::FormatValue(spec),
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),

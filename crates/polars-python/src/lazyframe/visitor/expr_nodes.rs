@@ -189,7 +189,7 @@ pub enum PyStringFunction {
     ExtractMany,
     FindMany,
     FromCodePoint,
-    FormatValue,
+    FormatWithSpecs,
 }
 
 #[pymethods]
@@ -1250,10 +1250,25 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     (py_function,).into_py_any(py)
                 },
                 IRFunctionExpr::StringExpr(strfun) => match strfun {
-                    IRStringFunction::Format { format, insertions } => (
+                    IRStringFunction::Format {
+                        format,
+                        insertions,
+                        specs,
+                    } if specs.is_empty() => (
                         PyStringFunction::Format,
                         format.as_str(),
                         insertions.to_vec(),
+                    )
+                        .into_py_any(py),
+                    IRStringFunction::Format {
+                        format,
+                        insertions,
+                        specs,
+                    } => (
+                        PyStringFunction::FormatWithSpecs,
+                        format.as_str(),
+                        insertions.to_vec(),
+                        specs.iter().map(|s| s.as_deref()).collect::<Vec<_>>(),
                     )
                         .into_py_any(py),
                     IRStringFunction::ConcatHorizontal {
@@ -1304,9 +1319,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRStringFunction::LenChars => (PyStringFunction::LenChars,).into_py_any(py),
                     IRStringFunction::FromCodePoint => {
                         (PyStringFunction::FromCodePoint,).into_py_any(py)
-                    },
-                    IRStringFunction::FormatValue(spec) => {
-                        (PyStringFunction::FormatValue, spec.as_str()).into_py_any(py)
                     },
                     IRStringFunction::Lowercase => (PyStringFunction::Lowercase,).into_py_any(py),
                     #[cfg(feature = "extract_jsonpath")]

@@ -224,12 +224,30 @@ def test_string_printf_non_finite_and_null_rows() -> None:
     )
     assert res.rows() == [("xA", "xA"), (None, None)]
 
+    # `%s` converts the value of a null row only after the row is known to be null
+    df = pl.DataFrame({"s": ["x", None], "b": [b"a", b"\xff"]})
+    res = df.sql(
+        "SELECT PRINTF('%s%4s', s, b) AS a, FORMAT('{}{:>4}', s, b) AS b FROM self"
+    )
+    assert res.rows() == [("x   a", "x   a"), (None, None)]
+
+    res = pl.sql(
+        "SELECT PRINTF('%s|%5s|%-6s|%s', {'a': 1}, 42, 2.5, CAST(1.50 AS DECIMAL(4, 2)))",
+        eager=True,
+    )
+    assert res.item() == "{1}|   42|2.5   |1.50"
+
 
 @pytest.mark.parametrize(
     ("query", "error", "match"),
     [
         ("SELECT PRINTF(s, i) FROM df", SQLSyntaxError, "must be a string literal"),
         ("SELECT PRINTF('%#o', i) FROM df", SQLSyntaxError, "does not support '%#o'"),
+        (
+            "SELECT PRINTF('%.2x', i) FROM df",
+            InvalidOperationError,
+            "a precision is not allowed",
+        ),
         (
             "SELECT PRINTF('%s', [1, 2]) FROM df",
             InvalidOperationError,

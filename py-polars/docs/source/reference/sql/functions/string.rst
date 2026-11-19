@@ -562,8 +562,9 @@ Fills the ``%`` conversions of a format string with the other arguments, as in C
 Supports the flags ``-``, ``+``, space, ``#``, ``0`` and ``,`` (thousands separator), the
 width, the precision, argument numbers (``%2$s``) and the conversions ``d``, ``i``, ``u``,
 ``f``, ``F``, ``e``, ``E``, ``g``, ``G``, ``x``, ``X``, ``o``, ``c`` and ``s``; ``%%`` writes
-a ``%``. ``%s`` converts any value that can be cast to a string; lists and structs are not
-supported. A precision is not supported with ``d``, ``i`` and ``u``, nor is ``#`` with ``o``.
+a ``%``. ``%s`` converts any value that can be cast to a string, which excludes lists and
+arrays. A precision is not supported with ``d``, ``i``, ``u``, ``o``, ``x``, ``X`` and ``c``, nor
+is ``#`` with ``o``.
 Negative numbers keep their sign with ``u``, ``x``, ``X`` and ``o``, ``%#x`` writes ``0x0`` for
 zero, and ``%c`` writes the character of a Unicode code point. The result is null if any
 argument is null.

@@ -3,18 +3,27 @@ use std::borrow::Cow;
 use polars_arrow::array::builder::StaticArrayBuilder;
 use polars_arrow::array::{Array, Utf8ViewArrayBuilder};
 use polars_arrow::datatypes::ArrowDataType;
-use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
+use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
+
+use super::format_value;
 
 #[inline(always)]
 fn opt_str_to_string(s: Option<&str>) -> &str {
     s.unwrap_or("null")
 }
 
-pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> PolarsResult<Column> {
+/// Fills the `insertions` of `format` with the values of `cs`, each formatted with its Python
+/// format specification in `specs`, if any.
+pub fn str_format(
+    cs: &mut [Column],
+    format: &str,
+    insertions: &[usize],
+    specs: &[Option<PlSmallStr>],
+) -> PolarsResult<Column> {
     assert_eq!(cs.len(), insertions.len());
     assert!(!cs.is_empty()); // Checked at IR construction
 
@@ -39,8 +48,25 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
                 Some(v) => *v = polars_arrow::bitmap::and(v, &c_validity),
             }
         }
+    }
 
-        *c = c.cast(&DataType::String)?;
+    // A row with a null is null, so its other values are not converted: a conversion can fail,
+    // as for a binary value that is not UTF-8.
+    let null_count = validity.as_ref().map_or(0, |v| v.unset_bits());
+    let mask = (null_count > 0)
+        .then(|| BooleanChunked::from_bitmap(PlSmallStr::EMPTY, validity.clone().unwrap()));
+    for (i, c) in cs.iter_mut().enumerate() {
+        if let Some(mask) = &mask
+            && c.len() != 1
+            && c.null_count() < null_count
+        {
+            let nulls = Column::full_null(c.name().clone(), c.len(), c.dtype());
+            *c = c.zip_with(mask, &nulls)?;
+        }
+        *c = match specs.get(i).and_then(Option::as_ref) {
+            Some(spec) => format_value(c, spec)?,
+            None => c.cast(&DataType::String)?,
+        };
         num_scalar_inputs += usize::from(c.len() == 1);
     }
 

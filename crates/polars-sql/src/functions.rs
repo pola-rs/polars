@@ -4533,7 +4533,10 @@ fn printf_to_format(
                 spec.push('.');
                 spec.push_str(precision);
             }
-            spec.push(ty);
+            // Without a precision, `s` writes any value as in a cast to a string.
+            if ty != 's' || precision.is_some() {
+                spec.push(ty);
+            }
             spec
         };
         let spec = build_spec(zero);
@@ -4558,7 +4561,7 @@ fn printf_to_format(
             polars_bail!(SQLSyntax: "PRINTF format '{printf}' needs more arguments (found {})", args.len());
         };
         used[index] = true;
-        if ty == 's' {
+        if ty == 's' && precision.is_some() {
             format.push_str(&format!("{{{}:{spec}}}", inputs.len()));
             inputs.push(arg.clone().cast(DataType::String));
         } else if zero && matches!(ty, 'e' | 'E' | 'f' | 'F' | 'g' | 'G') {

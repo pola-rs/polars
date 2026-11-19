@@ -16,6 +16,7 @@ pub enum IRStringFunction {
     Format {
         format: PlSmallStr,
         insertions: Arc<[usize]>,
+        specs: Arc<[Option<PlSmallStr>]>,
     },
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {
@@ -145,14 +146,20 @@ pub enum IRStringFunction {
     },
     #[cfg(feature = "regex")]
     EscapeRegex,
-    FormatValue(PlSmallStr),
 }
 
 impl IRStringFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRStringFunction::*;
         match self {
-            Format { .. } => mapper.with_dtype(DataType::String),
+            Format { specs, .. } => {
+                for (field, spec) in mapper.args().iter().zip(specs.iter()) {
+                    if let Some(spec) = spec {
+                        polars_defs::format_spec::FormatSpec::parse(spec)?.check(field.dtype())?;
+                    }
+                }
+                mapper.with_dtype(DataType::String)
+            },
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } | ConcatHorizontal { .. } => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
@@ -174,10 +181,6 @@ impl IRStringFunction {
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
             FromCodePoint => mapper.with_dtype(DataType::String),
-            FormatValue(spec) => mapper.try_map_dtype(|dtype| {
-                polars_defs::format_spec::FormatSpec::parse(spec)?.check(dtype)?;
-                Ok(DataType::String)
-            }),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "string_normalize")]
@@ -278,10 +281,8 @@ impl IRStringFunction {
             S::JsonDecode { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "extract_jsonpath")]
             S::JsonPathMatch => FunctionOptions::elementwise(),
-            S::LenBytes | S::LenChars | S::FromCodePoint | S::FormatValue(_) => {
-                FunctionOptions::elementwise()
-                    .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT)
-            },
+            S::LenBytes | S::LenChars | S::FromCodePoint => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
             #[cfg(feature = "regex")]
             S::Replace { .. } => {
                 FunctionOptions::elementwise().with_supertyping(Default::default())
@@ -367,7 +368,6 @@ impl Display for IRStringFunction {
             Lowercase => "to_lowercase",
             LenChars => "len_chars",
             FromCodePoint => "from_code_point",
-            FormatValue(_) => "format_value",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
             #[cfg(feature = "string_pad")]

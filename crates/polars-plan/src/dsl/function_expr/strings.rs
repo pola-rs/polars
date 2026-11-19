@@ -10,6 +10,9 @@ pub enum StringFunction {
     Format {
         format: PlSmallStr,
         insertions: Arc<[usize]>,
+        /// The Python format specification of each input, or empty if no input has one.
+        #[cfg_attr(feature = "serde", serde(default))]
+        specs: Arc<[Option<PlSmallStr>]>,
     },
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {
@@ -139,8 +142,6 @@ pub enum StringFunction {
     EscapeRegex,
     /// The character of each integer Unicode code point.
     FromCodePoint,
-    /// Each value formatted with a Python format specification.
-    FormatValue(PlSmallStr),
 }
 
 impl Display for StringFunction {
@@ -174,7 +175,6 @@ impl Display for StringFunction {
             Lowercase => "to_lowercase",
             LenChars => "len_chars",
             FromCodePoint => "from_code_point",
-            FormatValue(_) => "format_value",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
             #[cfg(feature = "string_pad")]

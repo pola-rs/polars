@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_format() -> None:
@@ -235,3 +239,24 @@ def test_format_spec_invalid_code_point() -> None:
     df = pl.DataFrame({"s": ["x", None], "code": [65, -1]})
     res = df.select(pl.format("{}{:c}", "s", "code")).to_series()
     assert res.to_list() == ["xA", None]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_format_spec_null_rows(engine: EngineType) -> None:
+    # each output of a multi-column input has the nulls of its own row
+    lf = pl.LazyFrame({"a": [65, None], "b": [None, 66]})
+    res = lf.select(pl.format("{:c}{}", pl.col("a", "b"), pl.lit("!")))
+    assert res.collect(engine=engine).to_dict(as_series=False) == {
+        "a": ["A!", None],
+        "b": [None, "B!"],
+    }
+
+    # the nulls are those of the evaluated input
+    lf = pl.LazyFrame({"a": [None] * 50 + [65] * 50})
+    res = lf.select(pl.format("{:c}{}", pl.col("a").shuffle(), pl.lit("!")))
+    assert res.collect(engine=engine).null_count().item() == 50
+
+    # a binary value of a null row is not converted
+    lf = pl.LazyFrame({"s": ["x", None], "b": [b"a", b"\xff"]})
+    res = lf.select(pl.format("{}{:>4}", "s", "b"))
+    assert res.collect(engine=engine).to_series().to_list() == ["x   a", None]

@@ -29,6 +29,7 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
     let bytes = format.as_bytes();
     let mut s = Vec::with_capacity(format.len());
     let mut insertions = Vec::with_capacity(input.len());
+    let mut specs = Vec::with_capacity(input.len());
     let mut i = 0;
     while i < format.len() {
         match bytes[i] {
@@ -77,14 +78,11 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
                     polars_ensure!(valid_col_name, InvalidOperation: "unacceptable column name '{col_name_str}' in format string, must be ASCII identifier\n{format}");
                     Expr::Column(PlSmallStr::from_str(col_name_str))
                 };
-                let spec = if spec.is_empty() {
-                    None
-                } else {
-                    let code_point =
-                        polars_defs::format_spec::FormatSpec::parse(spec)?.ty == Some(b'c');
-                    Some((spec, code_point))
-                };
-                input.push((expr, spec));
+                if !spec.is_empty() {
+                    polars_defs::format_spec::FormatSpec::parse(spec)?;
+                }
+                input.push(expr);
+                specs.push((!spec.is_empty()).then(|| PlSmallStr::from_str(spec)));
                 insertions.push(s.len());
                 i += close_offset + 1;
             },
@@ -106,37 +104,16 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
         ShapeMismatch: "number of automatic placeholders should equal the number of arguments"
     );
 
-    // A row with a null is null, so its other values are not formatted: `c` fails on values
-    // that are not code points.
-    let mask = (input.len() > 1 && input.iter().any(|(_, spec)| spec.is_some_and(|(_, c)| c)))
-        .then(|| {
-            all_horizontal(
-                input
-                    .iter()
-                    .map(|(e, _)| e.clone().is_not_null())
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .transpose()?;
-    let input = input
-        .into_iter()
-        .map(|(expr, spec)| match spec {
-            None => expr,
-            Some((spec, code_point)) => {
-                let expr = match &mask {
-                    Some(mask) if code_point => when(mask.clone()).then(expr).otherwise(lit(NULL)),
-                    _ => expr,
-                };
-                expr.map_unary(StringFunction::FormatValue(spec.into()))
-            },
-        })
-        .collect();
+    if specs.iter().all(Option::is_none) {
+        specs.clear();
+    }
 
     Ok(Expr::Function {
         input,
         function: StringFunction::Format {
             format: PlSmallStr::from(std::str::from_utf8(&s).unwrap()),
             insertions: insertions.into(),
+            specs: specs.into(),
         }
         .into(),
     })
