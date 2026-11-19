@@ -9,7 +9,14 @@ use sqlparser::keywords::Keyword;
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::tokenizer::Token;
 
+use crate::macros::{MacroStatement, parse_macro_statement};
 use crate::sql_expr::{sql_parser, to_sql_interface_err};
+
+/// A statement that sqlparser does not parse.
+pub(crate) enum OtherStatement {
+    Alter(LayoutAlter),
+    Macro(MacroStatement),
+}
 
 /// A parsed `ALTER TABLE [IF EXISTS] <name> SET | RESET PARTITIONED BY ...` or
 /// `ALTER TABLE [IF EXISTS] <name> SET | RESET SORTED BY ...`.
@@ -27,25 +34,37 @@ pub(crate) enum Layout {
     SortOrder(Vec<OrderByExpr>),
 }
 
-/// The statements of `query`, or its layout change.
+/// The statements of `query`, or the statement that sqlparser does not parse.
 pub(crate) fn parse_statements_or_alter(
     query: &str,
-) -> PolarsResult<Result<Vec<Statement>, LayoutAlter>> {
+) -> PolarsResult<Result<Vec<Statement>, OtherStatement>> {
     let (mut parser, taken) = sql_parser(query)?;
     if let Some(alter) = parse_layout_alter(&mut parser)? {
         // a time travel clause has no table to read here
         taken.refuse()?;
-        return Ok(Err(alter));
+        return Ok(Err(OtherStatement::Alter(alter)));
+    }
+    match parse_macro_statement(&mut parser) {
+        Ok(None) => {},
+        parsed => {
+            let parse = |parser: &mut Parser<'static>| {
+                Ok(parse_macro_statement(parser)?.into_iter().collect())
+            };
+            let parsed = parsed.map(|stmt| stmt.into_iter().collect());
+            let stmt = taken.attach_to(query, parsed, parse)?.pop();
+            let stmt = stmt.ok_or_else(|| polars_err!(SQLInterface: "invalid macro statement"))?;
+            return Ok(Err(OtherStatement::Macro(stmt)));
+        },
     }
     Ok(Ok(taken.attach(query, parser.parse_statements())?))
 }
 
-/// The single statement of `query`, or its layout change.
+/// The single statement of `query`, or the statement that sqlparser does not parse.
 pub(crate) fn parse_single_statement_or_alter(
     query: &str,
-) -> PolarsResult<Result<Statement, LayoutAlter>> {
+) -> PolarsResult<Result<Statement, OtherStatement>> {
     Ok(match parse_statements_or_alter(query)? {
-        Err(alter) => Err(alter),
+        Err(other) => Err(other),
         Ok(statements) => {
             let [stmt]: [Statement; 1] = statements.try_into().map_err(|_| {
                 polars_err!(SQLInterface: "one (and only one) statement can be parsed at a time")

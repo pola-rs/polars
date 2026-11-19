@@ -1003,7 +1003,8 @@ fn first_row_order(y: &Query, select: &Select, exprs: &[OrderByExpr]) -> Option<
     // function would see the rows of the other keys.
     let unsupported = |e: &SQLExpr| match strip_nested(e) {
         SQLExpr::Identifier(ident) => alias.is_some_and(|a| a.value == ident.value),
-        SQLExpr::Value(_) => true,
+        // A number in parentheses is no position.
+        SQLExpr::Value(_) => !matches!(e, SQLExpr::Nested(_)),
         e => expr_has_window_functions(e),
     };
     if exprs

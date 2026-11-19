@@ -13,6 +13,8 @@ Table Operations
      - Run a maintenance procedure on a table in an attached catalog.
    * - :ref:`COPY <copy>`
      - Write the result of a query, or a table, to a file.
+   * - :ref:`CREATE MACRO <create_macro>`
+     - Create a named expression or query with parameters.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -23,6 +25,8 @@ Table Operations
      - Remove specific rows of data from a table using an (optional) constraint.
    * - :ref:`DESCRIBE <describe>`
      - Returns the column names and types of a table, view, file or query.
+   * - :ref:`DROP MACRO <drop_macro>`
+     - Deletes the specified macro.
    * - :ref:`DROP SCHEMA <drop_schema>`
      - Drop an empty namespace of an attached catalog.
    * - :ref:`DROP TABLES <drop_tables>`
@@ -261,6 +265,34 @@ Only ``COPY ... TO '<file>'`` is supported. To load a file, read it in a query, 
     COPY sales (region, amount) TO 'sales.csv'
     COPY sales TO 'sales.txt' (FORMAT csv, DELIMITER '|', HEADER false)
 
+.. _create_macro:
+
+CREATE MACRO
+------------
+Create a macro: a named expression with parameters (a scalar macro), or a named query with
+parameters (a table macro, with ``AS TABLE``). A call is replaced by the body of the macro,
+with the parameters replaced by the arguments. ``CREATE FUNCTION`` is the same statement.
+
+- A parameter can have a default (``b := 5``); a call can give arguments by name (``b := 1``).
+- A macro can have several definitions, for different numbers of arguments.
+- A scalar macro is called like a function; a table macro is called in ``FROM``.
+- Outside subqueries, the body of a scalar macro can only use its parameters.
+- An argument that reads columns cannot be used in a subquery of the macro body.
+- ``OR REPLACE`` replaces an existing macro. ``TEMP``/``TEMPORARY`` is accepted; every
+  macro lives in its context. A view uses the macros as they are when it is read.
+
+**Example:**
+
+.. code-block:: sql
+
+    CREATE MACRO add_tax(amount, rate := 0.21) AS amount * (1 + rate)
+    CREATE MACRO clamp(a) AS greatest(a, 0),
+        (a, hi) AS least(greatest(a, 0), hi)
+    CREATE MACRO orders_since(d) AS TABLE SELECT * FROM orders WHERE order_date >= d
+
+    SELECT add_tax(amount), add_tax(amount, rate := 0.09) FROM orders
+    SELECT * FROM orders_since('2024-01-01')
+
 .. _create_schema:
 
 CREATE SCHEMA
@@ -450,6 +482,21 @@ a nested type; such a name cannot be used in ``CAST``.
     DESCRIBE some_table
     DESCRIBE 'data/events.parquet'
     DESCRIBE SELECT a, b * 2 AS c FROM some_table
+
+.. _drop_macro:
+
+DROP MACRO
+----------
+Deletes the specified scalar macro, or table macro with ``DROP MACRO TABLE``. ``DROP FUNCTION``
+deletes a scalar macro. Dropping a macro that does not exist raises an error unless the
+optional ``IF EXISTS`` clause is given.
+
+**Example:**
+
+.. code-block:: sql
+
+    DROP MACRO add_tax
+    DROP MACRO TABLE IF EXISTS orders_since
 
 .. _drop_schema:
 

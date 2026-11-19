@@ -16,6 +16,7 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
+use crate::subquery::strip_nested;
 use crate::types::map_sql_dtype_to_polars;
 
 /// The options of one table function call, validated against the options it accepts.
@@ -373,7 +374,7 @@ pub(crate) enum StringValues {
 }
 
 fn literal(expr: &SQLExpr) -> Option<&SQLValue> {
-    match expr {
+    match strip_nested(expr) {
         SQLExpr::Value(SQLValueWithSpan { value, .. }) => Some(value),
         _ => None,
     }
@@ -388,7 +389,7 @@ fn string_literal(expr: &SQLExpr) -> Option<String> {
 
 #[cfg(feature = "csv")]
 fn array_elements(expr: &SQLExpr) -> Option<&[SQLExpr]> {
-    match expr {
+    match strip_nested(expr) {
         SQLExpr::Array(SQLArray { elem, .. }) => Some(elem),
         _ => None,
     }
