@@ -1,3 +1,4 @@
+use polars::error::ErrorAttachment;
 use polars::prelude::PolarsError;
 
 /// A position in the SQL text, both counted from 1.
@@ -21,9 +22,14 @@ pub struct ErrorRecord {
 
 impl ErrorRecord {
     pub fn from_polars(error: &PolarsError, statement: usize) -> Self {
+        // Relative to the statement, not the script.
+        let message = error
+            .clone()
+            .retain_attachments(|a| !matches!(a, ErrorAttachment::SqlLocation(_)))
+            .to_string();
         Self {
             class: class_of(error),
-            message: error.to_string(),
+            message,
             hint: None,
             location: None,
             statement,

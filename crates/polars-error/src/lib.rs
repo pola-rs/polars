@@ -10,7 +10,9 @@ use std::ops::Deref;
 use std::sync::{Arc, LazyLock};
 use std::{env, io};
 pub mod abort;
+mod sql_location;
 
+pub use sql_location::*;
 pub use warning::*;
 
 #[cfg(feature = "python")]
@@ -123,7 +125,11 @@ pub enum PolarsError {
 #[non_exhaustive]
 pub enum ErrorAttachment {
     /// The plan as far as it was resolved when the error happened.
-    ResolvedPlan { node: String, plan: String },
+    ResolvedPlan {
+        node: String,
+        plan: String,
+    },
+    SqlLocation(SqlLocation),
 }
 
 impl ErrorAttachment {
@@ -134,6 +140,7 @@ impl ErrorAttachment {
                 "\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node} <---\n{plan}"
             )
             .unwrap(),
+            ErrorAttachment::SqlLocation(location) => location.write_after_message(out),
         }
     }
 }
@@ -302,8 +309,13 @@ impl PolarsError {
 
         error.wrap_msg(|msg| {
             let mut out = msg.to_string();
-            // Innermost first.
-            for attachment in attachments.iter().rev() {
+            // The innermost SQL location first, then the other attachments, innermost first.
+            let is_location = |a: &ErrorAttachment| matches!(a, ErrorAttachment::SqlLocation(_));
+            let innermost_first = attachments.iter().rev().map(|a| a.as_ref());
+            if let Some(location) = innermost_first.clone().find(|a| is_location(a)) {
+                location.write_after_message(&mut out);
+            }
+            for attachment in innermost_first.filter(|a| !is_location(a)) {
                 attachment.write_after_message(&mut out);
             }
             if !context_exprs.is_empty() {
@@ -443,6 +455,17 @@ impl PolarsError {
             error: Box::new(self),
             attachment: Box::new(attachment),
         }
+    }
+
+    /// The innermost SQL location.
+    pub fn sql_location(&self) -> Option<&SqlLocation> {
+        self.attachments()
+            .into_iter()
+            .rev()
+            .find_map(|attachment| match attachment {
+                ErrorAttachment::SqlLocation(location) => Some(location),
+                _ => None,
+            })
     }
 
     /// The attachments, outermost first.

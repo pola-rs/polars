@@ -4,14 +4,16 @@
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
+use polars_error::SqlLocationKind;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     Array, DictionaryField, Expr as SQLExpr, GroupByExpr, Ident, OrderByKind, Query, Select,
     Statement, UnaryOperator, Value as SQLValue, ValueWithSpan, Visit, Visitor,
 };
-use sqlparser::tokenizer::Location;
+use sqlparser::tokenizer::{Location, Span};
 
 use crate::dyn_visit;
+use crate::location::locate;
 
 /// The values of the parameters of a query.
 #[derive(Clone, Debug)]
@@ -70,6 +72,18 @@ pub(crate) fn first_param(node: &(impl Visit + ?Sized)) -> Option<String> {
         ControlFlow::Break(p) => Some(p),
         ControlFlow::Continue(()) => None,
     }
+}
+
+/// `literal` with the position of the placeholder it replaces.
+fn at_placeholder(mut literal: SQLExpr, span: Span) -> SQLExpr {
+    let value = match &mut literal {
+        SQLExpr::UnaryOp { expr, .. } => expr.as_mut(),
+        literal => literal,
+    };
+    if let SQLExpr::Value(value) = value {
+        value.span = span;
+    }
+    literal
 }
 
 /// The SQL literal of `value`, if it has one: as the parser reads it, so a negative number
@@ -292,9 +306,11 @@ impl<'a> Binder<'a> {
         let Some(param) = param_ref(p) else {
             return Ok(());
         };
-        let (name, value) = self.resolve(p, param, span.start)?;
+        let (name, value) = self
+            .resolve(p, param, span.start)
+            .map_err(|e| locate(e, SqlLocationKind::Exact, *span))?;
         *expr = match sql_literal(value.value()) {
-            Some(literal) => literal,
+            Some(literal) => at_placeholder(literal, *span),
             None => {
                 let placeholder = SQLValue::Placeholder(name.to_string()).with_span(*span);
                 self.bound.insert(name, value.clone());
