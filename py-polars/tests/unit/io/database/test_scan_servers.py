@@ -694,12 +694,14 @@ def _edge_types(name: str) -> pl.DataFrame:
 # filter with the same filter applied by Polars to the whole table.
 
 
-def _execute(name: str, statements: list[str]) -> None:
+def _execute(name: str, statements: list[str], *, root: bool = False) -> None:
+    # (`root`: MySQL's `polars` can't create functions (binlog))
     server = SERVERS[name]
     if server.uri is None:
         pytest.skip(f"no {name} URI")
     assert server.factory is not None
-    conn = server.factory(server.uri)()
+    uri = server.uri.replace("polars:polars_Test1", "root:polars_Test1")
+    conn = server.factory(uri if root else server.uri)()
     try:
         cur = conn.cursor()
         for sql in statements:
@@ -6626,21 +6628,7 @@ def _partitions(name: str, source: str, key: str = "id") -> list[int]:
 
 
 def _execute_as_root(name: str, statements: list[str]) -> None:
-    """MySQL's `polars` can't create functions (binlog): the root user does."""
-    server = SERVERS[name]
-    if server.uri is None:
-        pytest.skip(f"no {name} URI")
-    assert server.factory is not None
-    conn = server.factory(
-        server.uri.replace("polars:polars_Test1", "root:polars_Test1")
-    )()
-    try:
-        cur = conn.cursor()
-        for sql in statements:
-            cur.execute(sql)
-        conn.commit()
-    finally:
-        conn.close()
+    _execute(name, statements, root=True)
 
 
 def test_postgres_allowlist_kinds_of_relation() -> None:
