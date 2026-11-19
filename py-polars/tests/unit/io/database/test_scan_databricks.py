@@ -1020,15 +1020,14 @@ def test_collated_grouping_is_not_partitioned_or_filtered() -> None:
     ]
     with _scratch(setup) as schema:
         grouped = "SELECT id % 32 AS g, ascii(s) AS k FROM {t} GROUP BY id % 32, s"
-        for table in ("vol_collated",):
-            sql = grouped.format(t=f"{schema}.{table}")
-            _refused(_scan(sql, partition_on="k", partition_num=4))
-            _refused(_scan(sql, partition_predicates=["k = 65", "k = 97"]))
-            lf = _scan(sql, partition_on=None)
-            # the database's own representative is read once; a filter on it stays in
-            # Polars, so it can't change which spelling is returned
-            assert _filters(lf.filter(pl.col("k") == 97))[0] == 0
-            assert lf.collect().height > 0
+        sql = grouped.format(t=f"{schema}.vol_collated")
+        _refused(_scan(sql, partition_on="k", partition_num=4))
+        _refused(_scan(sql, partition_predicates=["k = 65", "k = 97"]))
+        lf = _scan(sql, partition_on=None)
+        # the database's own representative is read once; a filter on it stays in
+        # Polars, so it can't change which spelling is returned
+        assert _filters(lf.filter(pl.col("k") == 97))[0] == 0
+        assert lf.collect().height > 0
         # a collation in the query's own text
         inline = (
             "SELECT ascii(s) AS k FROM (SELECT CAST(x AS STRING COLLATE UTF8_LCASE) "

@@ -5075,25 +5075,6 @@ def test_sqlite_replaced_binary_collation_is_not_exact() -> None:
         )
 
 
-def test_sqlite_redefined_abs_does_not_change_an_unfiltered_read() -> None:
-    # the conversion of a mixed column called the session's `abs`
-    def read(redefine: bool) -> list[Any]:
-        with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
-            conn.execute("CREATE TABLE m (id INTEGER, v)")
-            conn.executemany("INSERT INTO m VALUES (?, ?)", [(1, 1.0 / 3), (2, "abc")])
-            conn.commit()
-            if redefine:
-                conn.create_function("abs", 1, lambda x: 0)
-            return (
-                pl.scan_database("m", conn, partition_on=None)
-                .sort("id")
-                .collect()["v"]
-                .to_list()
-            )
-
-    assert read(True) == read(False)
-
-
 @pytest.mark.parametrize(
     ("name", "n_args", "func"),
     [

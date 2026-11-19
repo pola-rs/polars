@@ -6857,34 +6857,51 @@ def _ids_table(name: str, table: str, extra: str = "") -> None:
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_user_function_named_like_another_dialects_builtin(name: str) -> None:
-    # `initcap` is sqlglot's, not MySQL's: a user's function of the name runs there, and
-    # was proven because the allowlist applied to every dialect
+    # `initcap`, `date_trunc` and `strpos` are sqlglot's, not MySQL's built-ins: a
+    # stored function of the name runs there, and was proven because the allowlist
+    # applied to every dialect. The built-ins TRUNCATE and CHAR are no user's.
+    fns = ["initcap", "date_trunc", "strpos"]
     _ids_table(name, "review_vf_ids")
     _execute_as_root(
         name,
-        [
-            "DROP FUNCTION IF EXISTS polars.initcap",
-            "CREATE FUNCTION polars.initcap(x INT) RETURNS INT NOT DETERMINISTIC NO SQL "
-            "RETURN FLOOR(RAND() * 1000)",
+        [f"DROP FUNCTION IF EXISTS polars.{fn}" for fn in fns]
+        + [
+            f"CREATE FUNCTION polars.{fn}(x INT) RETURNS INT NOT DETERMINISTIC NO SQL "
+            "RETURN FLOOR(RAND() * 1000)"
+            for fn in fns
         ],
     )
     try:
-        _refused(
-            name,
-            "SELECT id, initcap(id) AS k FROM review_vf_ids",
-            via="query",
-            why="initcap",
-        )
+        for fn in fns:
+            _refused(
+                name,
+                f"SELECT id, {fn}(id) AS k FROM review_vf_ids",
+                via="query",
+                why=fn,
+            )
         assert _partitions(name, "review_vf_ids") == list(range(300))
+        assert _partitions(
+            name,
+            "SELECT id, TRUNCATE(id / 3, 0) AS k, CHAR(65) AS c FROM review_vf_ids",
+        ) == list(range(300))
     finally:
-        _execute_as_root(name, ["DROP FUNCTION IF EXISTS polars.initcap"])
+        _execute_as_root(name, [f"DROP FUNCTION IF EXISTS polars.{fn}" for fn in fns])
 
 
 def test_clickhouse_user_functions_named_like_another_dialects_builtin() -> None:
-    # none of these names is a ClickHouse built-in
+    # none of these names is a ClickHouse built-in (`bool_and` is sqlglot's), where
+    # `levenshteinDistance` and `editDistance` are (sqlglot calls both LEVENSHTEIN)
     name = "clickhouse"
     _ids_table(name, "review_vf_ids")
-    names = ["total", "cot", "quote", "unicode", "levenshtein", "split_part"]
+    names = [
+        "total",
+        "cot",
+        "quote",
+        "unicode",
+        "levenshtein",
+        "split_part",
+        "bool_and",
+    ]
     drops = [f"DROP FUNCTION IF EXISTS {n}" for n in names]
     _execute(name, drops)
     _execute(name, [f"CREATE FUNCTION {n} AS (x) -> rand() % 1000" for n in names])
@@ -6896,63 +6913,14 @@ def test_clickhouse_user_functions_named_like_another_dialects_builtin() -> None
                 via="query",
                 why=n,
             )
-    finally:
-        _execute(name, drops)
-    assert _partitions(name, "review_vf_ids") == list(range(300))
-
-
-@pytest.mark.parametrize("name", ["mysql", "mariadb"])
-def test_mysql_user_function_of_a_name_sqlglot_knows_elsewhere(name: str) -> None:
-    # `date_trunc` and `strpos` are sqlglot's, no MySQL built-ins (the old exclusion
-    # list named some of them only): a stored function of the name runs there. The
-    # built-ins TRUNCATE and CHAR are no user's.
-    _ids_table(name, "review_vf2_ids")
-    _execute_as_root(
-        name,
-        [
-            "DROP FUNCTION IF EXISTS polars.date_trunc",
-            "DROP FUNCTION IF EXISTS polars.strpos",
-            "CREATE FUNCTION polars.date_trunc(x INT) RETURNS INT NOT DETERMINISTIC "
-            "NO SQL RETURN FLOOR(RAND() * 1000)",
-            "CREATE FUNCTION polars.strpos(x INT) RETURNS INT NOT DETERMINISTIC "
-            "NO SQL RETURN FLOOR(RAND() * 1000)",
-        ],
-    )
-    try:
-        for fn in ["date_trunc", "strpos"]:
-            _refused(name, f"SELECT id, {fn}(id) AS k FROM review_vf2_ids", why=fn)
-        assert _partitions(
-            name,
-            "SELECT id, TRUNCATE(id / 3, 0) AS k, CHAR(65) AS c FROM review_vf2_ids",
-        ) == list(range(300))
-    finally:
-        _execute_as_root(
-            name,
-            [
-                "DROP FUNCTION IF EXISTS polars.date_trunc",
-                "DROP FUNCTION IF EXISTS polars.strpos",
-            ],
-        )
-
-
-def test_clickhouse_user_function_of_a_name_sqlglot_knows_elsewhere() -> None:
-    # `bool_and` is no ClickHouse built-in; `levenshteinDistance` and `editDistance` are
-    # (sqlglot calls both LEVENSHTEIN)
-    name = "clickhouse"
-    _ids_table(name, "review_vf2_ids")
-    _execute(name, ["DROP FUNCTION IF EXISTS bool_and"])
-    _execute(name, ["CREATE FUNCTION bool_and AS (x) -> rand() % 1000"])
-    try:
-        _refused(
-            name, "SELECT id, bool_and(id) AS k FROM review_vf2_ids", why="bool_and"
-        )
         assert _partitions(
             name,
             "SELECT id, levenshteinDistance('a', 'b') AS a, "
-            "editDistance('a', 'b') AS b FROM review_vf2_ids",
+            "editDistance('a', 'b') AS b FROM review_vf_ids",
         ) == list(range(300))
     finally:
-        _execute(name, ["DROP FUNCTION IF EXISTS bool_and"])
+        _execute(name, drops)
+    assert _partitions(name, "review_vf_ids") == list(range(300))
 
 
 @pytest.mark.parametrize("name", ["postgres17", "mysql", "mariadb", "clickhouse"])

@@ -1048,14 +1048,19 @@ impl CatalogQueries {
                 // DuckDB resolves names case-insensitively, where `duckdb_name_rank` says.
                 let rank = duckdb_name_rank(parts, &[], search);
                 let n = s(name);
+                let (tbl, view, db, sc, name_lc) = (
+                    duckdb_ascii_lower("table_name"),
+                    duckdb_ascii_lower("view_name"),
+                    duckdb_ascii_lower("database_name"),
+                    duckdb_ascii_lower("schema_name"),
+                    duckdb_ascii_lower(&n),
+                );
                 let duck_filter = format!(
-                    "system.main.translate(table_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = system.main.translate({n}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') \
-                    AND [system.main.translate(database_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), system.main.translate(schema_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')] = (\
-                    SELECT [system.main.translate(database_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), system.main.translate(schema_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')] FROM (\
+                    "{tbl} = {name_lc} AND [{db}, {sc}] = (SELECT [{db}, {sc}] FROM (\
                     SELECT database_name, schema_name, {rank} AS r FROM duckdb_tables() \
-                    WHERE system.main.translate(table_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = system.main.translate({n}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') \
+                    WHERE {tbl} = {name_lc} \
                     UNION ALL SELECT database_name, schema_name, {rank} FROM duckdb_views() \
-                    WHERE NOT internal AND system.main.translate(view_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = system.main.translate({n}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')) \
+                    WHERE NOT internal AND {view} = {name_lc}) \
                     WHERE r IS NOT NULL ORDER BY r LIMIT 1)"
                 );
                 Self {
@@ -1098,6 +1103,13 @@ impl CatalogQueries {
     }
 }
 
+/// `expr` with ASCII letters lower-cased, as DuckDB folds identifiers (not `lower()`).
+fn duckdb_ascii_lower(expr: &str) -> String {
+    format!(
+        "system.main.translate({expr}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')"
+    )
+}
+
 /// The places (lower-cased database and schema, as SQL) where DuckDB looks for the
 /// relation `parts` (`[database.][schema.]name`), in order: an unqualified name in the
 /// current database and schema (see [`duckdb_name_rank`] for the rest of its search);
@@ -1106,17 +1118,12 @@ impl CatalogQueries {
 /// database and schema of the view naming it, where its own names resolve instead of the
 /// current ones.
 fn duckdb_places(parts: &[PlSmallStr], context: &[PlSmallStr]) -> Vec<(String, String)> {
-    let s = |v: &str| {
-        format!(
-            "system.main.translate({}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')",
-            DialectName::Duckdb.quote_str(v)
-        )
-    };
+    let s = |v: &str| duckdb_ascii_lower(&DialectName::Duckdb.quote_str(v));
     let (current_db, current_schema) = match context {
         [db, sc] => (s(db), s(sc)),
         _ => (
-            "system.main.translate(system.main.current_database(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(),
-            "system.main.translate(system.main.current_schema(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(),
+            duckdb_ascii_lower("system.main.current_database()"),
+            duckdb_ascii_lower("system.main.current_schema()"),
         ),
     };
     match parts {
@@ -1157,12 +1164,7 @@ fn duckdb_name_rank(
 /// user's macro can replace (a list comprehension is one) runs in it. If the read fails,
 /// the current schema and `main` after `temp`.
 fn duckdb_search_places(session: &mut dyn DatabaseSession) -> Vec<(String, String)> {
-    let s = |v: &str| {
-        format!(
-            "system.main.translate({}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')",
-            DialectName::Duckdb.quote_str(v)
-        )
-    };
+    let s = |v: &str| duckdb_ascii_lower(&DialectName::Duckdb.quote_str(v));
     let read = session.catalog_query(
         "SELECT system.main.current_setting('search_path'), system.main.current_database(), \
         system.main.current_schema()",
@@ -1180,8 +1182,8 @@ fn duckdb_search_places(session: &mut dyn DatabaseSession) -> Vec<(String, Strin
     let (db, schema) = match (state.1, state.2) {
         (Some(db), Some(schema)) => (s(&db), s(&schema)),
         _ => (
-            "system.main.translate(system.main.current_database(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(),
-            "system.main.translate(system.main.current_schema(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(),
+            duckdb_ascii_lower("system.main.current_database()"),
+            duckdb_ascii_lower("system.main.current_schema()"),
         ),
     };
     for entry in state
@@ -1274,7 +1276,11 @@ fn duckdb_rank(places: &[(String, String)]) -> String {
         .iter()
         .enumerate()
         .map(|(i, (db, sc))| {
-            format!("WHEN system.main.translate(database_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = {db} AND system.main.translate(schema_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = {sc} THEN {i}")
+            let (d, s) = (
+                duckdb_ascii_lower("database_name"),
+                duckdb_ascii_lower("schema_name"),
+            );
+            format!("WHEN {d} = {db} AND {s} = {sc} THEN {i}")
         })
         .collect::<Vec<_>>()
         .join(" ");
@@ -1316,18 +1322,10 @@ pub enum ViewLookup {
 }
 
 /// What kind of relation `parts` (`[catalog.][schema.]name`, unquoted, as the database folds them)
-/// is, and the definition of a view, whose query the database runs again each time it is read. Only
-/// relations of a known kind are [`ViewLookup::Table`] (Postgres: ordinary and partitioned tables
-/// whose partitions and children are all ordinary, without row-level security; MySQL and MariaDB:
-/// base tables on InnoDB, MyISAM, Aria or MEMORY; ClickHouse: MergeTree-family, Memory and Log
-/// tables, not in `system`; Oracle: tables (not external) and materialized views, a synonym only
-/// when it resolves to one; DuckDB: tables of a DuckDB database, not an attached Postgres or
-/// SQLite; SQLite: tables that aren't virtual; Databricks: managed and external tables; SQL Server:
-/// user tables); everything else, unknown names included, is [`ViewLookup::Failed`]. A view is
-/// [`ViewLookup::View`]; its query is run again each time the view is read:
-/// SQLite and MySQL merge it into the reading query, calling its functions again for a
-/// filter. `context`: the qualifier of the view whose query names it, where an unqualified
-/// name is looked up first (SQLite, DuckDB).
+/// is, and the definition of a view, whose query the database runs again each time it is read.
+/// Only relations of a dialect's known stored kinds are [`ViewLookup::Table`]; everything else,
+/// unknown names included, is [`ViewLookup::Failed`]. `context`: the qualifier of the view whose
+/// query names it, where an unqualified name is looked up first (SQLite, DuckDB).
 pub fn view_definition(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
@@ -1431,15 +1429,17 @@ pub fn view_definition(
             format!(
                 "SELECT is_view, sql, database_name, schema_name FROM (\
                 SELECT {rank} AS r, 0 AS o, true AS is_view, sql, database_name, schema_name \
-                FROM duckdb_views() WHERE NOT internal AND system.main.translate(view_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = system.main.translate({n}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') \
+                FROM duckdb_views() WHERE NOT internal AND {view_lc} = {n_lc} \
                 UNION ALL SELECT {rank}, 1, false, NULL, database_name, schema_name \
-                FROM duckdb_tables() WHERE system.main.translate(table_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = system.main.translate({n}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') \
+                FROM duckdb_tables() WHERE {table_lc} = {n_lc} \
                 AND database_name IN (SELECT database_name FROM duckdb_databases() \
                 WHERE type = 'duckdb')) \
                 WHERE r IS NOT NULL \
                 QUALIFY row_number() OVER (ORDER BY r, o) = 1 \
                 AND count(*) OVER (PARTITION BY r, o) = 1",
-                n = s(name)
+                view_lc = duckdb_ascii_lower("view_name"),
+                table_lc = duckdb_ascii_lower("table_name"),
+                n_lc = duckdb_ascii_lower(&s(name)),
             )
         },
         // Plain MergeTree (also Replicated and Shared), Memory and Log tables repeat their rows.
@@ -2370,21 +2370,14 @@ pub struct FunctionLookup {
 }
 
 /// Whether a user's function (or, on Postgres, operator or cast) may run where the query calls the
-/// built-ins `names` (lower-cased, the parser's knowledge of the query: they are allowlisted, a
-/// user's function standing in their place is not): `None` where the dialect has no lookup, or it
-/// failed. Postgres: a function of one of the `names`; an operator one of whose operand types is
-/// the type of a column of one of the `relations` (the source's tables and views, each as name
-/// parts: a view's body reads others) or a type the SQL names (`cast_types`), or any if
-/// `all_operators` (the SQL doesn't parse: its tables are unknown), however the SQL spells its use
-/// (`LIKE`, `BETWEEN`, `GROUP BY` and `ORDER BY` run operators too); a cast from such a type, to a
-/// type the SQL names, or an implicit one to such a type; each outside `pg_catalog` and
-/// `information_schema` and that no extension owns (domains and arrays count as their base and
-/// element types). MySQL: a stored function of a name (or a loadable one, where the server lists
-/// them); ClickHouse: a user-defined function (`origin != 'System'`); Databricks: a routine of a
-/// name in a schema of the SQL path (`databricks_path`), or a temporary function of the session.
-/// Oracle: a user's function or a synonym of the name. SQLite: the connection's functions of the
-/// name that aren't deterministic, or that replace a built-in. DuckDB: a user's macro or function
-/// of the name.
+/// built-ins `names` (lower-cased: allowlisted, a user's function standing in their place is not):
+/// `None` where the dialect has no lookup, or it failed. Postgres: a function of one of the
+/// `names`; an operator one of whose operand types is that of a column of the `relations` (each as
+/// name parts: a view's body reads others) or a type the SQL names (`cast_types`), or any if
+/// `all_operators` (the SQL doesn't parse); a cast from or to such a type; each outside
+/// `pg_catalog` and `information_schema` and no extension's (domains and arrays count as their
+/// base and element types). Other dialects: a user's stored, loadable or temporary function of a
+/// name; SQLite: one that isn't deterministic or replaces a built-in.
 pub fn user_functions(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
@@ -2959,42 +2952,28 @@ mod tests {
 
     #[test]
     fn duckdb_places_follow_its_name_resolution() {
+        let lc = duckdb_ascii_lower;
         let places = |parts: &[&str], context: &[&str]| {
             let parts = parts.iter().map(|p| (*p).into()).collect::<Vec<_>>();
             let context = context.iter().map(|p| (*p).into()).collect::<Vec<_>>();
             duckdb_places(&parts, &context)
         };
         let current = (
-            "system.main.translate(system.main.current_database(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(),
-            "system.main.translate(system.main.current_schema(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(),
+            lc("system.main.current_database()"),
+            lc("system.main.current_schema()"),
         );
         let main = "'main'".to_string();
         assert_eq!(places(&["t"], &[]), std::slice::from_ref(&current));
         // `a.t`: the schema `a`, else the (attached) database `a`
         assert_eq!(
             places(&["a", "t"], &[]),
-            [
-                (current.0.clone(), "system.main.translate('a', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string()),
-                ("system.main.translate('a', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(), main.clone())
-            ]
+            [(current.0.clone(), lc("'a'")), (lc("'a'"), main.clone())]
         );
-        assert_eq!(
-            places(&["d", "s", "t"], &[]),
-            [(
-                "system.main.translate('d', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(),
-                "system.main.translate('s', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string()
-            )]
-        );
+        assert_eq!(places(&["d", "s", "t"], &[]), [(lc("'d'"), lc("'s'"))]);
         // a view's own names, where it is, then `main`
         assert_eq!(
             places(&["t"], &["d", "s"]),
-            [
-                (
-                    "system.main.translate('d', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(),
-                    "system.main.translate('s', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string()
-                ),
-                ("system.main.translate('d', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')".to_string(), main.clone())
-            ]
+            [(lc("'d'"), lc("'s'")), (lc("'d'"), main.clone())]
         );
         // an unqualified name: `temp` first, then the whole search path
         let search = vec![
@@ -3007,7 +2986,7 @@ mod tests {
         assert!(!rank.contains("'s1'"), "{rank}");
         let rank = duckdb_rank(&places(&["a", "t"], &[]));
         assert!(
-            rank.starts_with("CASE WHEN system.main.translate(database_name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = "),
+            rank.starts_with(&format!("CASE WHEN {} = ", lc("database_name"))),
             "{rank}"
         );
         assert!(rank.ends_with("THEN 1 END"), "{rank}");

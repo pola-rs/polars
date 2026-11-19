@@ -181,42 +181,6 @@ def _factory_singleton_engine(factory: Any) -> Any:
     return engine_of(factory)
 
 
-def _no_reset(*_args: Any, **_kwargs: Any) -> None:
-    return None
-
-
-def _release_without_reset(fairy: Any) -> None:
-    """
-    Check a pool checkout in without the pool's reset on return.
-
-    `transaction_reset` only spares the default rollback: a `reset_on_return="commit"`
-    pool would commit, and `reset` listeners would run, on a connection whose
-    transaction is the user's.
-    """
-    if fairy._counter > 1:
-        # a pool that hands the thread's checkout out again (SingletonThreadPool): this
-        # only gives back our share of the user's own checkout, which stays theirs
-        fairy._close_special(transaction_reset=True)
-        return
-    try:
-        fairy._reset = _no_reset
-    except AttributeError:
-        pool = fairy._pool
-        if pool._reset_on_return.name == "reset_commit" or pool.dispatch.reset:
-            msg = (
-                "scan_database can't share the pooled connection of this engine "
-                "without its pool's reset on return (`pool_reset_on_return` other "
-                "than 'rollback', or a `reset` event listener), which would end the "
-                "user's transaction: pass `engine.raw_connection().driver_connection`"
-            )
-            raise TypeError(msg) from None
-    try:
-        fairy._close_special(transaction_reset=True)
-    finally:
-        # (never left on a fairy that is checked out again)
-        fairy.__dict__.pop("_reset", None)
-
-
 def _shared_dbapi_connection(engine: Any) -> Any:
     """
     The DB-API connection that an Engine's shared-connection pool hands out.
@@ -226,6 +190,9 @@ def _shared_dbapi_connection(engine: Any) -> Any:
     once, here, without that reset, and the scan uses the DB-API connection directly.
     """
     from sqlalchemy.pool.base import _ConnectionFairy
+
+    _plugin()
+    from polars_database._bridge import _release_without_reset
 
     pool = engine.pool
     if any(c.__name__ == "AssertionPool" for c in type(pool).__mro__) and getattr(
