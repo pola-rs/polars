@@ -107,6 +107,9 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
+    /// Columns the planner found unreadable right, with why: raised when one is read.
+    #[serde(default)]
+    pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,
     /// Partition bounds already queried, by the bounds SQL: optimizing the plan again
     /// (another `collect`, `explain`) doesn't query them again. The outer partitions are
     /// open-ended, so stale bounds only skew partition sizes, never lose rows.

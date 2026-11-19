@@ -26,8 +26,12 @@ use crate::database::backend::{
     open_backend, open_session_with_retries, retry_wait,
 };
 use crate::database::config::CompiledPartition;
-use crate::database::planner::{check_mysql_session_zone, check_unplanned_volatility};
-use crate::database::schema::cast_to_user_schema;
+use crate::database::dialect::DialectName;
+use crate::database::planner::{
+    check_mysql_session_zone, check_time_with_zone, check_unplanned_volatility,
+    time_text_risk_columns,
+};
+use crate::database::schema::cast_columns;
 use crate::database::{DatabaseScanConfig, catalog};
 use crate::ffi::{
     arrow_fields, borrow_handle, clone_handle, export_schema, ffi_call, ffi_call_infallible,
@@ -211,8 +215,16 @@ pub struct Shared {
     /// The columns that [`decode_sqlite_reals`](crate::database::planner::decode_sqlite_reals)
     /// decodes.
     sqlite_text_columns: Vec<PlSmallStr>,
+    /// [`mysql_timestamp_text_columns`](crate::database::planner::mysql_timestamp_text_columns)
+    mysql_timestamp_text: Vec<PlSmallStr>,
+    /// [`time_text_risk_columns`]
+    time_text_risk: PlHashMap<PlSmallStr, String>,
+    /// The SQLite Binary columns whose batches are checked for blobs only.
+    sqlite_blob_columns: Vec<(PlSmallStr, bool)>,
     /// [`numeric_temporal_conversions`](crate::database::planner::numeric_temporal_conversions)
     own_numbers: PlHashSet<PlSmallStr>,
+    /// [`converted_columns`](crate::database::planner::converted_columns)
+    converted: PlHashSet<PlSmallStr>,
     /// Instantiated once per execution: re-checks that the planned backend exists here.
     backend: OnceLock<Arc<dyn DatabaseBackend>>,
     /// The outcome of [`check_unplanned_volatility`], run on the first session opened:
@@ -232,7 +244,11 @@ impl Shared {
         *LIVE_SCANS.lock().unwrap() += 1;
         Self {
             sqlite_text_columns: crate::database::planner::sqlite_text_columns(&config),
+            sqlite_blob_columns: crate::database::planner::sqlite_blob_columns(&config),
+            mysql_timestamp_text: crate::database::planner::mysql_timestamp_text_columns(&config),
+            time_text_risk: time_text_risk_columns(&config),
             own_numbers: crate::database::planner::numeric_temporal_conversions(&config),
+            converted: crate::database::planner::converted_columns(&config),
             config,
             backend: OnceLock::new(),
             volatility: OnceLock::new(),
@@ -363,6 +379,23 @@ impl Drop for Scan {
     }
 }
 
+/// How much of a non-repeatable source's rows a count keeps for the read (#9); a bigger
+/// result is counted and dropped.
+const COUNT_BUFFER_BYTES: usize = 256 << 20;
+
+/// [`COUNT_BUFFER_BYTES`], or `POLARS_DATABASE_COUNT_BUFFER_BYTES` (a test hook).
+fn count_buffer_bytes() -> PolarsResult<usize> {
+    match std::env::var("POLARS_DATABASE_COUNT_BUFFER_BYTES") {
+        Ok(v) => v.trim().parse().map_err(|_| {
+            polars_err!(
+                ComputeError:
+                "POLARS_DATABASE_COUNT_BUFFER_BYTES must be a number of bytes, got '{v}'"
+            )
+        }),
+        Err(_) => Ok(COUNT_BUFFER_BYTES),
+    }
+}
+
 /// The reader of one partition.
 pub struct PartitionReader {
     shared: Arc<Shared>,
@@ -374,6 +407,9 @@ pub struct PartitionReader {
     /// The rows of a source that isn't repeatable, read to count them: the read returns
     /// these rows, the ones the count (and the slices planned from it) saw.
     counted_rows: Mutex<Option<DataFrame>>,
+    /// The count of a source that isn't repeatable passed `COUNT_BUFFER_BYTES`: its rows
+    /// weren't kept, so the read runs the query again and must find as many rows (#9).
+    count_unbuffered: Mutex<bool>,
     /// The running statement's cancel handle; replaced when a retry reconnects.
     cancel: Arc<Mutex<Option<CancelHandle>>>,
     cancelled: Arc<AtomicBool>,
@@ -414,14 +450,34 @@ impl PartitionReader {
             }
             *cancel = session.cancel_handle();
         }
-        let r = if repeatable {
+        let config = &self.shared.config;
+        let r = if repeatable
+            && config.dialect == DialectName::Sqlite
+            && !config.options.connection.opened_by_plugin()
+        {
+            // The user's connection may have redefined `count` (`create_aggregate`), and a
+            // wrong count slices the wrong rows without failing: count the rows themselves.
+            let sql = format!(
+                "SELECT 1 FROM ({}) pl_count",
+                crate::database::planner::wrappable(&self.partition.sql)
+            );
+            session
+                .execute(&sql, config.options.fetch.batch_size)
+                .and_then(|batches| {
+                    let mut n = 0u64;
+                    for batch in batches {
+                        n += batch?.height() as u64;
+                    }
+                    Ok(n)
+                })
+        } else if repeatable {
             session
                 .query(&self.partition.count_sql)
                 .and_then(|df| catalog::scalar_u64(&df))
         } else {
-            self.read_counted(&mut session).map(|df| {
-                let n = df.height() as u64;
-                *self.counted_rows.lock().unwrap() = Some(df);
+            self.read_counted(&mut session).map(|(n, df)| {
+                *self.count_unbuffered.lock().unwrap() = df.is_none();
+                *self.counted_rows.lock().unwrap() = df;
                 n
             })
         };
@@ -440,7 +496,13 @@ impl PartitionReader {
         } else {
             drop(session);
         }
-        let n = r.map_err(|e| out_of_range_date_hint(e).context(self.context().into()))?;
+        let n = r.map_err(|e| {
+            crate::database::planner::explain_sqlite_error(
+                &self.shared.config,
+                out_of_range_date_hint(e),
+            )
+            .context(self.context().into())
+        })?;
         // A cancel that came as the statement started may have found nothing to stop.
         if cancelled {
             polars_bail!(ComputeError: "the database read was cancelled");
@@ -452,29 +514,58 @@ impl PartitionReader {
     /// The partition's rows, each batch cast to the planned schema as the read casts
     /// it: drivers type each batch on its own (a decimal's scale, a time zone), and
     /// batches of other dtypes can't be stacked.
-    fn read_counted(&self, session: &mut Session) -> PolarsResult<DataFrame> {
+    ///
+    /// Returns the number of rows, and the rows unless they passed `COUNT_BUFFER_BYTES`: a
+    /// result that big is counted and dropped (the read runs the query again, and checks
+    /// that it finds as many rows), so a `tail(n)` can't hold the whole result (#9).
+    fn read_counted(&self, session: &mut Session) -> PolarsResult<(u64, Option<DataFrame>)> {
         let config = &self.shared.config;
         let overrides = config.options.schema_overrides.as_deref();
         let mut out: Option<DataFrame> = None;
-        for batch in session.execute(&self.partition.sql, config.options.fetch.batch_size)? {
+        let (mut rows, mut kept_bytes, mut dropped) = (0u64, 0usize, false);
+        let buffer_bytes = count_buffer_bytes()?;
+        let batches = session.execute(&self.partition.sql, config.options.fetch.batch_size)?;
+        let mut checked = false;
+        for batch in batches {
             let batch = batch?;
+            // (a Python statement runs at the first batch: its description is known now)
+            if !std::mem::replace(&mut checked, true) {
+                check_time_with_zone(&**session, config)?;
+            }
             let names = batch
                 .get_column_names()
                 .into_iter()
                 .filter(|n| config.schema.contains(n))
                 .cloned()
                 .collect::<Vec<_>>();
+            crate::database::planner::check_sqlite_blobs(&batch, &self.shared.sqlite_blob_columns)?;
             let batch = crate::database::planner::decode_sqlite_reals(
                 batch,
                 &self.shared.sqlite_text_columns,
             )?;
-            let batch = cast_to_user_schema(
+            let batch = crate::database::planner::as_utc_instants(
+                batch,
+                &self.shared.mysql_timestamp_text,
+            )?;
+            let batch = cast_columns(
                 &batch,
                 &config.schema.try_project(&names)?,
                 overrides,
                 config.user_schema,
                 &self.shared.own_numbers,
+                &self.shared.converted,
+                &self.shared.time_text_risk,
             )?;
+            rows += batch.height() as u64;
+            if dropped {
+                continue;
+            }
+            kept_bytes += batch.estimated_size(false);
+            if kept_bytes > buffer_bytes {
+                dropped = true;
+                out = None;
+                continue;
+            }
             match &mut out {
                 None => out = Some(batch),
                 Some(acc) => {
@@ -482,9 +573,13 @@ impl PartitionReader {
                 },
             }
         }
-        out.ok_or_else(|| {
+        if dropped {
+            return Ok((rows, None));
+        }
+        let df = out.ok_or_else(|| {
             polars_err!(ComputeError: "database query returned no result: {}", self.partition.sql)
-        })
+        })?;
+        Ok((rows, Some(df)))
     }
 
     fn cancel(&self) {
@@ -530,6 +625,7 @@ impl PartitionReader {
                 || self.shared.found_volatile(),
             expected_rows: *self.n_rows.lock().unwrap(),
             counted_rows: self.counted_rows.lock().unwrap().take(),
+            must_match_count: *self.count_unbuffered.lock().unwrap(),
             context: self.context(),
             projected,
             dtype: field.dtype().clone(),
@@ -541,6 +637,7 @@ impl PartitionReader {
             pending: VecDeque::new(),
             attempt: 0,
             sent: false,
+            zone_checked: false,
             rows_read: 0,
             done: false,
             complete: false,
@@ -560,6 +657,8 @@ struct PartitionStream {
     expected_rows: Option<u64>,
     /// The rows read by the count of a source that isn't repeatable, returned as they are.
     counted_rows: Option<DataFrame>,
+    /// The rows of a count weren't kept: this read must find as many (see `count_unbuffered`).
+    must_match_count: bool,
     context: String,
     projected: Schema,
     dtype: ArrowDataType,
@@ -572,6 +671,8 @@ struct PartitionStream {
     pending: VecDeque<Box<dyn Array>>,
     attempt: usize,
     sent: bool,
+    /// [`check_time_with_zone`] ran on this statement.
+    zone_checked: bool,
     rows_read: u64,
     done: bool,
     /// The statement ran to its end.
@@ -638,14 +739,18 @@ impl PartitionStream {
     fn cast(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let config = &self.shared.config;
         let overrides = config.options.schema_overrides.as_deref();
+        crate::database::planner::check_sqlite_blobs(&df, &self.shared.sqlite_blob_columns)?;
         let df =
             crate::database::planner::decode_sqlite_reals(df, &self.shared.sqlite_text_columns)?;
-        cast_to_user_schema(
+        let df = crate::database::planner::as_utc_instants(df, &self.shared.mysql_timestamp_text)?;
+        cast_columns(
             &df,
             &self.projected,
             overrides,
             config.user_schema,
             &self.shared.own_numbers,
+            &self.shared.converted,
+            &self.shared.time_text_risk,
         )
     }
 
@@ -663,8 +768,19 @@ impl PartitionStream {
             let overrides = self.shared.config.options.schema_overrides.as_deref();
             let user_schema = self.shared.config.user_schema;
             let own_numbers = &self.shared.own_numbers;
-            return cast_to_user_schema(&df, &self.projected, overrides, user_schema, own_numbers)
-                .map(Some);
+            let converted = &self.shared.converted;
+            let df =
+                crate::database::planner::as_utc_instants(df, &self.shared.mysql_timestamp_text)?;
+            return cast_columns(
+                &df,
+                &self.projected,
+                overrides,
+                user_schema,
+                own_numbers,
+                converted,
+                &self.shared.time_text_risk,
+            )
+            .map(Some);
         }
         if self.complete {
             return Ok(None);
@@ -699,6 +815,12 @@ impl PartitionStream {
             if batch.height() == 0 {
                 continue;
             }
+            // (a Python statement runs at the first batch: its description is known now)
+            if !std::mem::replace(&mut self.zone_checked, true)
+                && let Some(session) = &self.session
+            {
+                check_time_with_zone(&**session, &self.shared.config)?;
+            }
             return self.cast(batch).map(Some);
         }
     }
@@ -712,10 +834,24 @@ impl PartitionStream {
             let Some(mut df) = self.next_batch()? else {
                 // The count and the rows come from separate statements. Slices were planned
                 // from the count: if the rows changed in between, they took the wrong rows.
-                if !self.limited
+                if (!self.limited || self.must_match_count)
                     && let Some(n) = self.expected_rows
                     && self.rows_read != n
                 {
+                    if self.must_match_count {
+                        // only a source that isn't repeatable is counted and dropped
+                        polars_bail!(
+                            ComputeError:
+                            "the source isn't repeatable (it returns other rows each time) \
+                            and its result is larger than the count buffer ({} bytes), so the \
+                            rows it returned when counted were dropped, and running it again for the \
+                            read found {} rows where the count found {n}. Make the source \
+                            repeatable: a LIMIT / OFFSET needs an ORDER BY on a unique key, and a \
+                            TABLESAMPLE or a volatile function (random(), now()) has to go. Or \
+                            raise POLARS_DATABASE_COUNT_BUFFER_BYTES",
+                            count_buffer_bytes().unwrap_or(COUNT_BUFFER_BYTES), self.rows_read
+                        );
+                    }
                     polars_bail!(
                         ComputeError:
                         "the partition returned {} rows, but COUNT(*) found {n}: the table \
@@ -780,7 +916,11 @@ impl Iterator for PartitionStream {
             },
             Err(e) => {
                 self.done = true;
-                let e = out_of_range_date_hint(e).context(self.context.clone().into());
+                let e = crate::database::planner::explain_sqlite_error(
+                    &self.shared.config,
+                    out_of_range_date_hint(e),
+                )
+                .context(self.context.clone().into());
                 *self.error.lock().unwrap() = Some(e.clone());
                 Some(Err(e))
             },
@@ -952,6 +1092,7 @@ unsafe extern "C" fn reader_new(h: ScanHandle, source: FfiStr<'_>) -> FfiResult<
             partition: Arc::new(partition),
             n_rows: Mutex::new(None),
             counted_rows: Mutex::new(None),
+            count_unbuffered: Mutex::new(false),
             cancel,
             cancelled: Arc::new(AtomicBool::new(false)),
             error: Arc::new(Mutex::new(None)),

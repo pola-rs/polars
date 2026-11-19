@@ -181,6 +181,147 @@ def _pool_checkout(
     return conn, None, None
 
 
+# SQLAlchemy pools that hand out one DB-API connection (per thread) to every checkout.
+SHARED_CONNECTION_POOLS = ("StaticPool", "SingletonThreadPool", "AssertionPool")
+
+
+def _no_reset(*_args: Any, **_kwargs: Any) -> None:
+    return None
+
+
+def _release_without_reset(fairy: Any) -> None:
+    """
+    Check a pool checkout in without the pool's reset on return.
+
+    `transaction_reset` only spares the default rollback: a `reset_on_return="commit"`
+    pool would commit, and `reset` listeners would run, on a connection whose
+    transaction is the user's.
+    """
+    if fairy._counter > 1:
+        # a pool that hands the thread's checkout out again (SingletonThreadPool): this
+        # only gives back our share of the user's own checkout, which stays theirs
+        fairy._close_special(transaction_reset=True)
+        return
+    try:
+        fairy._reset = _no_reset
+    except AttributeError:
+        pool = fairy._pool
+        if pool._reset_on_return.name == "reset_commit" or pool.dispatch.reset:
+            msg = (
+                "scan_database can't share the pooled connection of this engine "
+                "without its pool's reset on return (`pool_reset_on_return` other "
+                "than 'rollback', or a `reset` event listener), which would end the "
+                "user's transaction: pass `engine.raw_connection().driver_connection`"
+            )
+            raise TypeError(msg) from None
+    try:
+        fairy._close_special(transaction_reset=True)
+    finally:
+        # (never left on a fairy that is checked out again)
+        fairy.__dict__.pop("_reset", None)
+
+
+def _is_orm_session(obj: Any) -> bool:
+    return any(
+        c.__name__ == "Session" and c.__module__.startswith("sqlalchemy.orm")
+        for c in type(obj).__mro__
+    )
+
+
+def _has_pool(obj: Any, name: str) -> bool:
+    pool = getattr(obj, "pool", None)
+    return pool is not None and any(c.__name__ == name for c in type(pool).__mro__)
+
+
+def _singleton_pool_error() -> TypeError:
+    return TypeError(
+        "a connection function over a SingletonThreadPool can't be scanned: the pool "
+        "opens a connection for each thread that asks, and closes other threads' "
+        "(the caller's too) beyond its `pool_size`, while the scan connects from its "
+        "own threads. Pass the Engine itself (read through its one connection), or "
+        "use another pool"
+    )
+
+
+def shared_pool_connection(obj: Any) -> Any:
+    """
+    The DB-API connection of a checkout (`engine.raw_connection()`, `engine.connect()`,
+    an ORM Session of the engine) from a pool that shares one connection, released
+    without the pool's reset on return (which would end the transaction of whoever else
+    uses the connection); None for any other object. The connection is then read as a
+    live one. Raises for a SingletonThreadPool (see `_singleton_pool_error`).
+    """
+    fairy = obj
+    if _module_of(obj) == "sqlalchemy" and type(obj).__name__ == "Connection":
+        fairy = getattr(obj, "connection", None)
+    elif _is_orm_session(obj):
+        # a Session checks its connection out on first use, and gives it back on
+        # `rollback()`/`close()`: read the Engine's one connection instead
+        engine = None
+        with contextlib.suppress(Exception):
+            engine = obj.get_bind()
+        pool = getattr(engine, "pool", None)
+        if not any(c.__name__ in SHARED_CONNECTION_POOLS for c in type(pool).__mro__):
+            return None
+        if _has_pool(engine, "SingletonThreadPool"):
+            raise _singleton_pool_error()
+        return _engine_shared_connection(engine)
+    if type(fairy).__name__ != "_ConnectionFairy":
+        return None
+    pool = getattr(fairy, "_pool", None)
+    if not any(c.__name__ in SHARED_CONNECTION_POOLS for c in type(pool).__mro__):
+        return None
+    release = getattr(fairy, "_close_special", None)
+    if not callable(release) or (driver := fairy.driver_connection) is None:
+        return None
+    if any(c.__name__ == "SingletonThreadPool" for c in type(pool).__mro__):
+        _release_without_reset(fairy)
+        raise _singleton_pool_error()
+    _release_without_reset(fairy)
+    return driver
+
+
+def _engine_shared_connection(engine: Any) -> Any:
+    """The one DB-API connection of an Engine whose pool shares it, left as it is."""
+    pool = engine.pool
+    if any(c.__name__ == "AssertionPool" for c in type(pool).__mro__) and getattr(
+        pool, "_checked_out", False
+    ):
+        # checked out by a user's `engine.connect()` (a second checkout raises)
+        record = getattr(pool, "_conn", None)
+        if (driver := getattr(record, "driver_connection", None)) is not None:
+            return driver
+    fairy = engine.raw_connection()
+    driver = fairy.driver_connection
+    _release_without_reset(fairy)
+    return driver
+
+
+def _duckdb_engine_connection(obj: Any, session: dict[str, Any]) -> Any:
+    """
+    The DuckDB connection under a SQLAlchemy `Connection` of duckdb_engine, or None.
+
+    duckdb_engine's cursors run on the one DuckDB connection, where a statement
+    replaces a result the user has not read to the end: read as the DuckDB connection
+    it is, the scan leaves that result alone (as for a DuckDB connection passed
+    directly). Not with the user's own parameters or execute options, which are
+    SQLAlchemy's.
+    """
+    if (
+        _module_of(obj) != "sqlalchemy"
+        or type(obj).__name__ != "Connection"
+        or session.get("params") is not None
+        or session.get("execute_options")
+    ):
+        return None
+    with contextlib.suppress(Exception):
+        wrapper = obj.connection.driver_connection
+        raw = getattr(wrapper, "_ConnectionWrapper__c", None)
+        if _module_of(raw) == "duckdb":
+            return raw
+    return None
+
+
 # ADBC's vendor names, as dialect names
 _ADBC_VENDORS = {
     "postgresql": "postgresql",
@@ -198,6 +339,8 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
     """`(dialect, module)` of a connection factory or live connection object."""
     if kind == "factory":
         conn = obj()
+        if (shared := shared_pool_connection(conn)) is not None:
+            return _connection_info(shared)
         driver, give_back, _ = _pool_checkout(conn)
         try:
             return _connection_info(driver)
@@ -1094,7 +1237,13 @@ def _duckdb_shared_cursor(
     if path in ("", ":memory:") or path.startswith(":memory:"):
         conn = _duckdb_connect(mod, path, kwargs)
         return conn, conn.close
-    key = (path, repr(sorted(kwargs.items(), key=lambda kv: kv[0])))
+    # (a relative file is the working directory's, which may change between scans)
+    # (resolved through symlinks, and opened as resolved: DuckDB's own instance cache
+    # joins `link/../x.db` with `x.db`, where the file system doesn't)
+    where = path
+    if ":" not in path:
+        where = path = os.path.realpath(path)
+    key = (where, repr(sorted(kwargs.items(), key=lambda kv: kv[0])))
     with _DUCKDB_ROOTS_LOCK:
         entry = _DUCKDB_ROOTS.get(key)
         if entry is None:
@@ -1292,6 +1441,70 @@ def _psycopg2_bytes(target: Any) -> None:
     )
 
 
+_SCAN_OPTION = "polars_database_scan"
+
+
+@functools.cache
+def _sqlalchemy_psycopg2_guard() -> None:
+    """
+    Makes the statements of a scan behind SQLAlchemy read bytea and infinity as a scan
+    of psycopg2 does (`_psycopg2_bytes`, `_psycopg2_no_infinity`), on the driver's
+    cursor that SQLAlchemy opens: a listener on every Engine, which acts on the statements run
+    with the scan's execution option only.
+    """
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, "before_cursor_execute")
+    def _on_cursor(
+        conn: Any,
+        cursor: Any,
+        statement: Any,
+        parameters: Any,
+        context: Any,
+        executemany: Any,
+    ) -> None:
+        if (
+            context is not None
+            and context.execution_options.get(_SCAN_OPTION)
+            and type(cursor).__module__.split(".", 1)[0] == "psycopg2"
+        ):
+            _psycopg2_bytes(cursor)
+            _psycopg2_no_infinity(cursor)
+
+
+def _psycopg2_no_infinity(cursor: Any) -> None:
+    """
+    Makes the cursor fail on a date or timestamp of `infinity` / `-infinity`, which
+    psycopg2 reads as `date.max` / `date.min` (and Polars can't represent), whether or not
+    the column's type was looked up: `date`, `timestamp`, `timestamptz` and their
+    arrays.
+    """
+    ext = importlib.import_module("psycopg2.extensions")
+
+    def guard(base: Any, name: str, oid: int, array_oid: int) -> None:
+        def cast(value: Any, cur: Any) -> Any:
+            if value is not None and value.strip().lower().endswith("infinity"):
+                msg = (
+                    f"the database holds '{value}' in a {name} column, which Polars can't "
+                    "represent (the driver would read it as the largest or smallest "
+                    "date): filter it out or cast it in a query"
+                )
+                raise ValueError(msg)
+            return None if value is None else base(value, cur)
+
+        scalar = ext.new_type((oid,), f"POLARS_{name.upper()}", cast)
+        ext.register_type(scalar, cursor)
+        ext.register_type(
+            ext.new_array_type((array_oid,), f"POLARS_{name.upper()}_ARRAY", scalar),
+            cursor,
+        )
+
+    guard(ext.DATE, "date", 1082, 1182)
+    guard(ext.PYDATETIME, "timestamp", 1114, 1115)
+    guard(ext.PYDATETIMETZ, "timestamptz", 1184, 1185)
+
+
 def _object_columns_as_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
     """
     Batches without `Object` columns: a row driver's `uuid.UUID`, `ipaddress` or other
@@ -1329,6 +1542,42 @@ def _object_columns_as_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
                     name, [None if v is None else str(v) for v in values], pl.String
                 )
             )
+        yield df
+
+
+def _valid_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
+    """
+    Batches whose text is valid UTF-8, also nested in lists and structs.
+
+    The Databricks connector hands the bytes of a `STRING` over as they are (a value
+    made of `unhex('FF')` is one), and Polars' String assumes UTF-8: an invalid byte
+    would reach the caller as a String that breaks its contract (memory unsafety in
+    string operations).
+    """
+    import polars as pl
+    from polars.exceptions import ComputeError
+
+    def has_text(dtype: Any) -> bool:
+        if dtype == pl.String:
+            return True
+        if isinstance(dtype, (pl.List, pl.Array)):
+            return has_text(dtype.inner)
+        if isinstance(dtype, pl.Struct):
+            return any(has_text(f.dtype) for f in dtype.fields)
+        return False
+
+    for df in frames:
+        names = [c for c, dt in df.schema.items() if has_text(dt)]
+        if names:
+            try:
+                df.select(names).to_arrow().validate(full=True)
+            except Exception as e:
+                msg = (
+                    "the database returned text that isn't valid UTF-8 (a STRING made "
+                    "of other bytes); read the column as BINARY with "
+                    f"CAST(<column> AS BINARY) and decode it in Polars ({e})"
+                )
+                raise ComputeError(msg) from e
         yield df
 
 
@@ -1446,12 +1695,44 @@ def _transaction_idle(conn: Any) -> bool | None:
             if (callable(autocommit) and autocommit()) or (
                 callable(options) and options().get("isolation_level") == "AUTOCOMMIT"
             ):
+                # no transaction of SQLAlchemy's, but the user's own `BEGIN` may be
+                # open on the driver's connection: that one says
+                fairy = getattr(conn, "connection", None)
+                driver = getattr(fairy, "driver_connection", None)
+                if driver is not None and driver is not conn:
+                    status = _transaction_idle(driver)
+                    if status is not None:
+                        return status
                 return True
             return not in_transaction()
         if isinstance(in_transaction, bool) and module in ("sqlite3", "mysql"):
             # sqlite3, and mysql.connector (the status of its last result)
             return not in_transaction
     return None
+
+
+def _refuse_pending_results(conn: Any) -> None:
+    """
+    Refuse a scan on a connection with an unread unbuffered result.
+
+    A statement of the scan on such a connection drops the unread rows (PyMySQL, with a
+    warning). (The pending result sets of a multi-statement query aren't told from the
+    trailing OK packet of a `CALL` without reading it, so they stay a limit.)
+    """
+    if _module_of(conn) == "sqlalchemy":
+        # a SQLAlchemy Connection: the driver's is what holds the result
+        with contextlib.suppress(Exception):
+            conn = conn.connection.driver_connection
+    if _module_of(conn) != "pymysql":
+        return
+    result = getattr(conn, "_result", None)
+    if result is not None and getattr(result, "unbuffered_active", False):
+        msg = (
+            "the connection has an unbuffered result that has not been read to the "
+            "end, and a scan would discard its rows: read it first (`fetchall()`), "
+            "or pass a connection of its own"
+        )
+        raise RuntimeError(msg)
 
 
 def _cancel_target(conn: Any) -> Any:
@@ -1480,13 +1761,15 @@ def _duckdb_needs_connection(conn: Any) -> bool:
         "AND function_type IN ('macro', 'table_macro'))"
     )
     try:
-        # whole: DuckDB 2 refuses other work on a connection with a result left unread
-        rows = conn.execute(sql).fetchall()
+        # A relation, not `execute`: `conn.execute` replaces a result of the user's left
+        # unread (DuckDB 1 and 2, silently), a relation's query leaves it (DuckDB 1) or
+        # is refused (DuckDB 2, `ResourceInUseException`)
+        rows = conn.sql(sql).fetchall()
         if rows and rows[0][0]:
             return True
         # outside a transaction each statement is one of its own
-        first = conn.execute("SELECT txid_current()").fetchall()
-        second = conn.execute("SELECT txid_current()").fetchall()
+        first = conn.sql("SELECT txid_current()").fetchall()
+        second = conn.sql("SELECT txid_current()").fetchall()
     except Exception:
         return False
     return bool(first == second)
@@ -1519,28 +1802,31 @@ def _duckdb_copy_session(conn: Any, cursor: Any) -> bool:
     settings = "SELECT name, value FROM system.main.duckdb_settings()"
     variables = "SELECT name, value::VARCHAR, type FROM system.main.duckdb_variables()"
     try:
-        wanted = dict(conn.execute(settings).fetchall())
+        wanted = dict(conn.sql(settings).fetchall())
         current = dict(cursor.execute(settings).fetchall())
         for name, value in wanted.items():
             # (`schema` can't be set: `search_path` has it; the profiling and log files
             # are the user's, and none of it changes rows)
             if name not in skipped and value != current.get(name):
                 cursor.execute(f"SET {ident(name)} = {quote(value)}")
-        for name, value, type_ in conn.execute(variables).fetchall():
+        for name, value, type_ in conn.sql(variables).fetchall():
             # DuckDB 2's catalog wraps typed NULLs in a VARIANT: its value is not
             # SQL NULL and casts to the text 'NULL', also a valid non-null VARCHAR.
             # getvariable requires a constant name, so inspect each variable itself.
-            is_null = conn.execute(
+            is_null = conn.sql(
                 f"SELECT system.main.getvariable({quote(name)}) IS NULL"
-            ).fetchone()[0]
+            ).fetchall()[0][0]
             if type_.strip('"').upper() == "NULL":
                 # an untyped NULL has no valid cast target
                 cursor.execute(f"SET VARIABLE {ident(name)} = NULL")
             else:
                 literal = "NULL" if is_null else quote(value)
                 cursor.execute(f"SET VARIABLE {ident(name)} = {literal}::{type_}")
-    except Exception:
-        return False
+    except Exception as e:
+        # DuckDB 2 refuses a relation's query while the user's result is unfinished
+        # (even a `fetchone()` of a count): nothing of the session can be read, and the
+        # cursor, which leaves that result alone, runs with the defaults
+        return type(e).__name__ == "ResourceInUseException"
     return True
 
 
@@ -1552,8 +1838,11 @@ def _postgres_family(conn: Any) -> bool:
     if module in ("psycopg", "psycopg2", "pg8000"):
         return True
     if module == "sqlalchemy":
-        dialect = getattr(getattr(conn, "dialect", None), "name", "")
-        return dialect in ("postgresql", "redshift")
+        dialect = getattr(conn, "dialect", None)
+        # (also the forks: TimescaleDB, CockroachDB, ... subclass PGDialect)
+        return getattr(dialect, "name", "") in ("postgresql", "redshift") or any(
+            c.__name__ == "PGDialect" for c in type(dialect).__mro__
+        )
     return False
 
 
@@ -1857,6 +2146,127 @@ def _databricks_arrow_frame(cursor: Any, frame: DataFrame) -> DataFrame:
         if isinstance(typed, pl.DataFrame) and typed.columns == frame.columns:
             return typed.clear()
     return frame
+
+
+def _mysql_session_zone(conn: Any) -> str | None:
+    """
+    The time zone a live MySQL-family connection reads a `TIMESTAMP` in, as a name
+    Polars takes (an IANA name or a fixed offset, `UTC` for UTC's spellings); `None`
+    where it isn't known exactly (the server's own zone `SYSTEM` that isn't UTC, an
+    abbreviation such as `CEST` or `EST`, which don't tell the zone's rules), or the
+    lookup fails.
+    """
+    try:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT @@session.time_zone, @@system_time_zone")
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+        session, system = (str(v).strip() for v in row)
+    except Exception:
+        return None
+    utc_names = {
+        "UTC", "+00:00", "-00:00", "0:00", "Z", "ETC/UTC", "UCT", "ETC/UCT", "ZULU",
+        "ETC/ZULU", "UNIVERSAL", "ETC/UNIVERSAL", "COORDINATED UNIVERSAL TIME",
+    }  # fmt: skip
+    zone = system if session.upper() == "SYSTEM" else session
+    if zone.upper() in utc_names:
+        return "UTC"
+    if session.upper() == "SYSTEM":
+        return None  # the OS's zone, by an abbreviation
+    if re.fullmatch(r"[+-]\d\d:\d\d", zone):
+        return zone
+    try:
+        import zoneinfo
+
+        zoneinfo.ZoneInfo(zone)
+    except Exception:
+        return None
+    # (a bare abbreviation that is also a fixed zone, `EST`, may be a daylight zone's)
+    return zone if "/" in zone else None
+
+
+def _description(result: Any) -> Any:
+    """A result's DB-API description (a SQLAlchemy result: its cursor's)."""
+    description = getattr(result, "description", None)
+    if description is None:
+        description = getattr(getattr(result, "cursor", None), "description", None)
+    return description
+
+
+def _time_with_zone_columns(result: Any) -> list[str]:
+    """
+    The names of a result's `TIMETZ` columns where the description tells (DuckDB's type
+    name, Postgres drivers' OID 1266): the drivers return such a value as the local time
+    of day, its offset dropped.
+    """
+    module = _module_of(
+        result if hasattr(result, "description") else getattr(result, "cursor", result)
+    )
+    with contextlib.suppress(Exception):
+        return [
+            d[0]
+            for d in _description(result)
+            if (module == "duckdb" and str(d[1]).upper() == "TIME WITH TIME ZONE")
+            or (
+                module in ("psycopg", "psycopg2", "pg8000")
+                and type(d[1]) is int
+                and d[1] == 1266
+            )
+        ]
+    return []
+
+
+def _mysql_timestamp_columns(result: Any) -> list[str]:
+    """The names of a MySQL-family result's `TIMESTAMP` columns (field type 7)."""
+    description = _description(result)
+    with contextlib.suppress(Exception):
+        return [d[0] for d in description if type(d[1]) is int and d[1] == 7]
+    return []
+
+
+def _mysql_timestamps_to_utc(
+    frames: Iterator[DataFrame], columns: list[str], zone: str
+) -> Iterator[DataFrame]:
+    """
+    Each batch's `TIMESTAMP` columns (the session's wall-clock time, naive) as the
+    instants they are, in UTC. A wall-clock time the zone has twice (the hour its
+    clocks go back) can't tell which instant it is: an error, never a guess.
+    """
+    import datetime as dt
+
+    import polars as pl
+
+    offset = None
+    if zone == "UTC":
+        offset = dt.timedelta(0)
+    elif re.fullmatch(r"[+-]\d\d:\d\d", zone):
+        hours, minutes = int(zone[1:3]), int(zone[4:6])
+        offset = dt.timedelta(hours=hours, minutes=minutes) * (
+            -1 if zone[0] == "-" else 1
+        )
+
+    def instant(c: str) -> Any:
+        naive = pl.col(c).cast(pl.Datetime("us"))
+        if offset is not None:
+            return (naive - offset).dt.replace_time_zone("UTC")
+        return naive.dt.replace_time_zone(
+            zone, ambiguous="raise", non_existent="raise"
+        ).dt.convert_time_zone("UTC")
+
+    for df in frames:
+        present = [c for c in columns if c in df.columns]
+        try:
+            yield df.with_columns(instant(c) for c in present)
+        except pl.exceptions.PolarsError as e:
+            msg = (
+                f"the TIMESTAMP column(s) {present} are read in this connection's time "
+                f"zone ({zone}), and a value in it can't be made an instant (a "
+                f"wall-clock time the zone has twice?): {e}. Run SET time_zone = "
+                "'+00:00' on the connection first"
+            )
+            raise RuntimeError(msg) from e
 
 
 def _mysql_unsigned(cursor: Any, description: Any, i: int) -> bool | None:
@@ -2169,6 +2579,15 @@ class _Session:
                 for m in ("cancel", "interrupt")
             )
         )
+        # a live MySQL driver's session reads a TIMESTAMP in its own time zone, which
+        # `execute` converts to UTC (a SQLAlchemy Connection is its driver's connection)
+        # the last statement's result columns that are a `TIMETZ` (offset dropped)
+        self.timetz_columns: list[str] = []
+        self.mysql_converts = not owned and _module_of(_cancel_target(conn)) in (
+            "pymysql",
+            "MySQLdb",
+            "mysql",
+        )
         # SQLAlchemy's `text()` reads `:name` and `\:` inside the string literals
         # written into the SQL; without parameters, the SQL goes to the driver as is
         self._raw_sqlalchemy = (
@@ -2194,6 +2613,7 @@ class _Session:
             not bind and _module_of(self.conn) == "sqlalchemy"
         )
         state = self._state
+        self.timetz_columns = []
         entered = False
         cursor = None
         cx_cursor: Any = None
@@ -2207,6 +2627,8 @@ class _Session:
             with state.lock:
                 state.active += 1
                 entered = True
+                if not self.owned:
+                    _refuse_pending_results(self.conn)
                 # A live connection outside a transaction is left without one. Polars
                 # may release a read after `collect()` returned (an early stop), while
                 # the user runs statements on the connection again: a ROLLBACK then
@@ -2223,6 +2645,14 @@ class _Session:
                     savepoint = name
                 cursor = self._server_cursor(batch_size)
                 cx = ConnectionExecutor(cursor if cursor is not None else self.conn)
+                # before the statement: a connection reads one result at a time
+                mysql_live = self.mysql_converts
+                live_zone = (
+                    _mysql_session_zone(_cancel_target(self.conn))
+                    if mysql_live
+                    else None
+                )
+                timestamps: list[str] = []
                 # A DuckDB cursor is a connection of its own: it sees neither the
                 # user's connection's temporary tables, views and macros nor its
                 # uncommitted writes (a factory's connection has the same). Where it
@@ -2246,6 +2676,9 @@ class _Session:
                         cx.cursor.close()
                     cx.cursor = self.conn
                     cx.can_close_cursor = False
+                    # `execute` would replace a result of the user's left unread
+                    # (DuckDB 1): a relation leaves it, and DuckDB 2 refuses
+                    cx._duckdb_has_lazy_relations = lambda: True  # type: ignore[method-assign]
                 cx_cursor = cx.cursor if cx.cursor is not cursor else None
                 options = dict(self.execute_options)
                 if not bind:
@@ -2277,6 +2710,18 @@ class _Session:
                 if params is not None:
                     # each driver names the parameters argument of `execute()` itself
                     options[_params_keyword(cx)] = params
+                if (
+                    _module_of(self.conn) == "sqlalchemy"
+                    and not oracle_arrow
+                    and cx.driver_name == "sqlalchemy"
+                    and cx._is_alchemy_object(cx.cursor)
+                ):
+                    # (psycopg2's cursor behind SQLAlchemy, see the guard)
+                    _sqlalchemy_psycopg2_guard()
+                    options["execution_options"] = {
+                        **(options.get("execution_options") or {}),
+                        _SCAN_OPTION: True,
+                    }
                 runner = (
                     cx.cursor
                     if cx.driver_name == "duckdb" and cx.cursor is not self.conn
@@ -2324,9 +2769,28 @@ class _Session:
                         )
                     )
                 )
+                # A live MySQL session reads a TIMESTAMP in its own time zone, as naive
+                # wall-clock time: the instants (UTC), as the table source reads them
+                self.timetz_columns = _time_with_zone_columns(cx.result)
+                timestamps = _mysql_timestamp_columns(cx.result) if mysql_live else []
+                if timestamps:
+                    if live_zone is None:
+                        msg = (
+                            f"the TIMESTAMP column(s) {timestamps} are read in this "
+                            "connection's time zone, which can't be told exactly (the "
+                            "server's own zone, or an abbreviation): run SET time_zone "
+                            "= '+00:00' on the connection first, or give an IANA name "
+                            "or an offset"
+                        )
+                        raise RuntimeError(msg)
+                    frames = _mysql_timestamps_to_utc(frames, timestamps, live_zone)
+                if _module_of(cx.result) == "databricks":
+                    frames = _valid_text(frames)
                 # some drivers yield no batch for an empty result, and close the
                 # cursor when done: take the column names first
-                empty_frame = _empty_frame(cx.result, utc=self.owned)
+                empty_frame = _empty_frame(
+                    cx.result, utc=self.owned or bool(timestamps)
+                )
                 if on_connection:
                     frames = iter(list(frames))
                 if idle and _transaction_idle(self.conn) is False:
@@ -2452,13 +2916,27 @@ class _Session:
                 # MySQL can't keep two results open on one connection: another scan's
                 # statement would end this one's result early, silently with PyMySQL
                 return _buffered_cursor(self.conn, module)
+            if module == "psycopg2":
+                # a client-side cursor of the scan's own: its readings of bytea and
+                # infinity are the cursor's, and the user's statements keep theirs
+                cursor = self.conn.cursor()
+                _psycopg2_bytes(cursor)
+                _psycopg2_no_infinity(cursor)
+                return cursor
             return None
         if module in ("psycopg", "psycopg2"):
-            cursor = self.conn.cursor(name=f"polars_scan_{next(_CURSOR_IDS)}")
+            name = f"polars_scan_{next(_CURSOR_IDS)}"
+            if getattr(self.conn, "autocommit", False) is True:
+                # a named cursor needs a transaction, and there is none in autocommit:
+                # one that outlives each statement
+                cursor = self.conn.cursor(name=name, withhold=True)
+            else:
+                cursor = self.conn.cursor(name=name)
             cursor.itersize = batch_size
             if module == "psycopg2":
                 # also for a connection the plugin didn't open (factory, live)
                 _psycopg2_bytes(cursor)
+                _psycopg2_no_infinity(cursor)
             return cursor
         if module == "pymysql":
             import pymysql.cursors  # type: ignore[import-untyped]
@@ -2467,8 +2945,13 @@ class _Session:
         if module == "sqlalchemy" and callable(
             opts := getattr(self.conn, "execution_options", None)
         ):
-            # the dialect's own streaming cursor (named, SSCursor, ...)
-            opts(stream_results=True, max_row_buffer=batch_size)
+            # the dialect's own streaming cursor (named, SSCursor, ...), but not in
+            # AUTOCOMMIT: a Postgres named cursor needs a transaction there is none of
+            autocommit = getattr(self.conn, "_is_autocommit_isolation", None)
+            if not (
+                callable(autocommit) and autocommit() and _postgres_family(self.conn)
+            ):
+                opts(stream_results=True, max_row_buffer=batch_size)
         return None
 
     def execute_update(self, sql: str) -> None:
@@ -3002,6 +3485,9 @@ def adbc_connect(
     return _AdbcSession(driver, entrypoint, options, execute_options)
 
 
+_ASSERTION_POOL_LOCK = threading.Lock()
+
+
 def connect(
     kind: str,
     target_kind: str,
@@ -3025,9 +3511,29 @@ def connect(
     session = {"execute_options": execute_opts, "params": params}
 
     if target_kind == "live":
+        if (raw := _duckdb_engine_connection(target, session)) is not None:
+            target = raw
         return _Session(target, owned=False, **session)
     if target_kind == "factory":
-        conn, close, invalidate = _pool_checkout(target())
+        try:
+            checkout = target()
+        except AssertionError:
+            # an AssertionPool refuses a second checkout while another is out: ours
+            # are given back at once (below), and wait for each other
+            with _ASSERTION_POOL_LOCK:
+                for attempt in range(100):
+                    try:
+                        checkout = target()
+                        break
+                    except AssertionError:
+                        if attempt == 99:
+                            raise
+                        time.sleep(0.002)
+        if (shared := shared_pool_connection(checkout)) is not None:
+            # one connection that the user's own statements use too (an open
+            # transaction): a live connection, never rolled back or closed
+            return _Session(shared, owned=False, **session)
+        conn, close, invalidate = _pool_checkout(checkout)
         return _Session(
             conn,
             owned=True,

@@ -234,6 +234,29 @@ pub fn cast_to_user_schema(
     user_schema: bool,
     own_numbers: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
+    cast_columns(
+        df,
+        schema,
+        overrides,
+        user_schema,
+        own_numbers,
+        &PlHashSet::new(),
+        &PlHashMap::new(),
+    )
+}
+
+/// [`cast_to_user_schema`], where `plugin_converted` are the columns the plugin reads through a
+/// conversion of its own (a number as text, a decimal as text): their dtype is not the
+/// database's, so a text read for a number is no change of the column's kind.
+pub fn cast_columns(
+    df: &DataFrame,
+    schema: &Schema,
+    overrides: Option<&Schema>,
+    user_schema: bool,
+    own_numbers: &PlHashSet<PlSmallStr>,
+    plugin_converted: &PlHashSet<PlSmallStr>,
+    time_text_risk: &PlHashMap<PlSmallStr, String>,
+) -> PolarsResult<DataFrame> {
     let height = df.height();
     let mut columns = Vec::with_capacity(schema.len());
     for (name, dtype) in schema.iter() {
@@ -271,15 +294,13 @@ pub fn cast_to_user_schema(
         } else if col.dtype() == &DataType::Null {
             Column::full_null(name.clone(), height, dtype)
         } else {
-            if (user_schema
-                || overrides.is_some_and(|o| {
-                    // the conversion's numbers are nanoseconds: any other unit is a guess
-                    o.contains(name)
-                        && !(own_numbers.contains(name)
-                            && matches!(dtype, DataType::Datetime(TimeUnit::Nanoseconds, _)))
-                }))
-                && numeric_to_temporal(col.dtype(), dtype)
-            {
+            let user_typed = user_schema || overrides.is_some_and(|o| o.contains(name));
+            let own_ns = own_numbers.contains(name)
+                && matches!(dtype, DataType::Datetime(TimeUnit::Nanoseconds, _));
+            // (a column of NULLs only has no values to misread: a driver types it as it likes)
+            let has_values = col.null_count() < col.len();
+            // the conversion's numbers are nanoseconds: any other unit is a guess
+            if has_values && user_typed && !own_ns && numeric_to_temporal(col.dtype(), dtype) {
                 polars_bail!(
                     SchemaMismatch:
                     "database column '{name}' is {} and {dtype} was requested: a number isn't \
@@ -287,6 +308,36 @@ pub fn cast_to_user_schema(
                     aren't known); read the column as {} and convert it in Polars, for example \
                     with `pl.from_epoch`",
                     col.dtype(), col.dtype()
+                )
+            }
+            // A column the database retyped since planning (an `INT` that is now a `DATE`)
+            // would be read as another kind of value: day numbers, raw ticks, midnight.
+            // A time of day for a column declared as text (`schema=`, where nothing looked
+            // the type up) on a driver that can't tell a `TIMETZ` (the planner lists such
+            // columns): it comes back as the local time of day, without the offset the
+            // text would have had.
+            if has_values
+                && matches!((col.dtype(), dtype), (DataType::Time, DataType::String))
+                && let Some(cast) = time_text_risk.get(name)
+            {
+                polars_bail!(
+                    SchemaMismatch:
+                    "database column '{name}' is read as a time of day but String was \
+                    declared: this driver can't tell a time with a time zone (`TIMETZ`), \
+                    which it returns without its offset, and the text would lose it. Read \
+                    the column as text in a query ({cast}), or with a Python driver"
+                )
+            }
+            if has_values
+                && !user_typed
+                && (kind_changed(col.dtype(), dtype)
+                    || value_kind_changed(col.dtype(), dtype, plugin_converted.contains(name)))
+            {
+                polars_bail!(
+                    SchemaMismatch:
+                    "database column '{name}' is {} but {dtype} was planned: the column's type \
+                    changed since the scan was planned; plan the scan again",
+                    col.dtype()
                 )
             }
             let cast = col
@@ -308,14 +359,93 @@ pub fn cast_to_user_schema(
     DataFrame::new(height, columns)
 }
 
-/// A cast of a number to a date or time (not a duration, which the database's `TIME`
-/// conversion plans from microseconds).
+/// A cast of a number to a date, time or duration, also inside lists, arrays and structs
+/// (fields matched by name, as the cast does). A duration of a database's `TIME` is planned
+/// from microseconds by [`duration_to_time`], before this.
 fn numeric_to_temporal(from: &DataType, to: &DataType) -> bool {
-    (from.is_integer() || from.is_float() || from.is_decimal())
-        && matches!(
-            to,
-            DataType::Date | DataType::Datetime(_, _) | DataType::Time
-        )
+    match (from, to) {
+        (DataType::List(a) | DataType::Array(a, _), DataType::List(b) | DataType::Array(b, _)) => {
+            numeric_to_temporal(a, b)
+        },
+        (DataType::Struct(a), DataType::Struct(b)) => b.iter().any(|fb| {
+            a.iter()
+                .find(|fa| fa.name() == fb.name())
+                .is_some_and(|fa| numeric_to_temporal(fa.dtype(), fb.dtype()))
+        }),
+        _ => {
+            (from.is_integer() || from.is_float() || from.is_decimal())
+                && matches!(
+                    to,
+                    DataType::Date
+                        | DataType::Datetime(_, _)
+                        | DataType::Time
+                        | DataType::Duration(_)
+                )
+        },
+    }
+}
+
+/// A change of kind between the column read and the one planned: a date or time read where
+/// a number was planned, or a date and a datetime (the cast reads day numbers, raw ticks or
+/// midnight). Nested in lists and structs too.
+fn kind_changed(from: &DataType, to: &DataType) -> bool {
+    match (from, to) {
+        (DataType::List(a) | DataType::Array(a, _), DataType::List(b) | DataType::Array(b, _)) => {
+            kind_changed(a, b)
+        },
+        (DataType::Struct(a), DataType::Struct(b)) => b.iter().any(|fb| {
+            a.iter()
+                .find(|fa| fa.name() == fb.name())
+                .is_some_and(|fa| kind_changed(fa.dtype(), fb.dtype()))
+        }),
+        _ => {
+            let number = |d: &DataType| d.is_integer() || d.is_float() || d.is_decimal();
+            let temporal = |d: &DataType| {
+                matches!(
+                    d,
+                    DataType::Date
+                        | DataType::Datetime(_, _)
+                        | DataType::Time
+                        | DataType::Duration(_)
+                )
+            };
+            // (a number planned as a date or time is a database's own conversion)
+            (temporal(from) && number(to))
+                || matches!(
+                    (from, to),
+                    (DataType::Date, DataType::Datetime(_, _))
+                        | (DataType::Datetime(_, _), DataType::Date)
+                )
+        },
+    }
+}
+
+/// A column read as another kind of value than planned, unless the plugin reads it through a
+/// conversion of its own (`converted`: it may make text of a number, or a naive UTC time of
+/// an instant): text where an integer or float was planned (`'42'` is no 42),
+/// a boolean where a number was (read as 1), and a naive timestamp where one with a time
+/// zone was (its wall clock would be read as UTC). Nested in lists and structs too.
+fn value_kind_changed(from: &DataType, to: &DataType, converted: bool) -> bool {
+    match (from, to) {
+        (DataType::List(a) | DataType::Array(a, _), DataType::List(b) | DataType::Array(b, _)) => {
+            value_kind_changed(a, b, converted)
+        },
+        (DataType::Struct(a), DataType::Struct(b)) => b.iter().any(|fb| {
+            a.iter()
+                .find(|fa| fa.name() == fb.name())
+                .is_some_and(|fa| value_kind_changed(fa.dtype(), fb.dtype(), converted))
+        }),
+        _ => {
+            let plain_number = |d: &DataType| d.is_integer() || d.is_float();
+            !converted
+                && ((matches!(from, DataType::String) && plain_number(to))
+                    || (matches!(from, DataType::Boolean) && (plain_number(to) || to.is_decimal()))
+                    || matches!(
+                        (from, to),
+                        (DataType::Datetime(_, None), DataType::Datetime(_, Some(_)))
+                    ))
+        },
+    }
 }
 
 fn has_extension(dtype: &DataType) -> bool {
@@ -415,6 +545,18 @@ fn check_numeric_exact(src: &Column, cast: &Column) -> PolarsResult<()> {
 fn check_exact_at(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResult<()> {
     let path = |suffix: &str| -> PlSmallStr { format!("{}{suffix}", src.name()).into() };
     match (src.dtype(), cast.dtype()) {
+        (DataType::Map(_, _), DataType::Map(_, _)) => {
+            // a map is a list of `key` / `value` structs: its values are checked as such
+            let storage = |c: &Column| -> PolarsResult<Column> {
+                Ok(c.as_materialized_series()
+                    .map()?
+                    .storage()
+                    .clone()
+                    .with_name(c.name().clone())
+                    .into_column())
+            };
+            return check_exact_at(&storage(src)?, &storage(cast)?, root);
+        },
         (DataType::List(_) | DataType::Array(_, _), DataType::List(_) | DataType::Array(_, _)) => {
             // The values of the rows that have a list (exploded: a null row holds none in a
             // list, a width's worth in an array, and a slice keeps the values outside it).
@@ -456,16 +598,17 @@ fn check_exact_at(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResul
     }
     check_decimal_exact(src, cast, root)?;
     let (from, to) = (src.dtype(), cast.dtype());
-    if from.is_float() && to == &DataType::Float32 {
+    if from.is_float() && matches!(to, DataType::Float32 | DataType::Float16) {
         // the nearest `Float32` is the reading, but not an overflow to infinity
         let finite = src.as_materialized_series().is_finite()?;
         let overflow = cast.as_materialized_series().is_infinite()? & finite;
         if let Some(i) = overflow.iter().position(|v| v == Some(true)) {
             polars_bail!(
                 SchemaMismatch:
-                "database column '{}' has the value {}, which is out of the range of Float32; \
+                "database column '{}' has the value {}, which is out of the range of {}; \
                 read the column as pl.Float64",
-                src.name(), src.get(i)?
+                src.name(), src.get(i)?,
+                if to == &DataType::Float16 { "Float16" } else { "Float32" }
             )
         }
         return Ok(());
@@ -832,7 +975,54 @@ mod tests {
             "x".into(),
             DataType::Duration(TimeUnit::Microseconds),
         )]);
-        assert!(cast_to_user_schema(&df, &dur, Some(&dur), true, &none).is_ok());
+        // a duration is no more a number of ticks than a date is, and nesting doesn't hide it
+        assert!(cast_to_user_schema(&df, &dur, Some(&dur), true, &none).is_err());
+        let nested = |inner: DataType| {
+            Schema::from_iter([Field::new("x".into(), DataType::List(Box::new(inner)))])
+        };
+        let list = DataFrame::new(
+            1,
+            vec![
+                Column::new("x".into(), &[1_700_000_000i64])
+                    .as_materialized_series()
+                    .implode()
+                    .unwrap()
+                    .into_column(),
+            ],
+        )
+        .unwrap();
+        for inner in [
+            DataType::Date,
+            DataType::Datetime(TimeUnit::Microseconds, None),
+        ] {
+            let schema = nested(inner);
+            assert!(cast_to_user_schema(&list, &schema, None, true, &none).is_err());
+            assert!(cast_to_user_schema(&list, &schema, Some(&schema), false, &none).is_err());
+        }
+    }
+
+    #[test]
+    fn a_column_retyped_since_planning_is_not_reread_as_another_kind() {
+        let none = PlHashSet::new();
+        let day = Column::new("x".into(), &[1i32])
+            .cast(&DataType::Date)
+            .unwrap();
+        let date = DataFrame::new(1, vec![day]).unwrap();
+        // a date where an integer was planned: day numbers
+        let ints = Schema::from_iter([Field::new("x".into(), DataType::Int32)]);
+        let e = cast_to_user_schema(&date, &ints, None, false, &none).unwrap_err();
+        assert!(
+            e.to_string().contains("changed since the scan was planned"),
+            "{e}"
+        );
+        // a date where a datetime was planned: midnight
+        let dt = Schema::from_iter([Field::new(
+            "x".into(),
+            DataType::Datetime(TimeUnit::Microseconds, None),
+        )]);
+        assert!(cast_to_user_schema(&date, &dt, None, false, &none).is_err());
+        // what the user typed is cast as asked
+        assert!(cast_to_user_schema(&date, &dt, Some(&dt), false, &none).is_ok());
     }
 
     #[test]
@@ -901,6 +1091,12 @@ mod tests {
         )
         .unwrap_err();
         assert!(e.to_string().contains("Float32"), "{e}");
+        let e = cast(
+            list_of(Series::new("".into(), &[1e5])),
+            DataType::List(Box::new(DataType::Float16)),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("Float16"), "{e}");
         let ints = Series::new("".into(), &[(1i64 << 53) + 1]);
         assert!(cast(list_of(ints), DataType::List(Box::new(DataType::Float64))).is_err());
         let ok = Series::new("".into(), &[1.0, 2.0]);

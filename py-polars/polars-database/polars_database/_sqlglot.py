@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import secrets
 from typing import Any
 
 from polars._dependencies import import_optional
+from polars_database._builtin_functions import BUILTIN_FUNCTIONS, SYNTAX_WORDS
 
 # The lowest version the tests pass with (also in pyproject.toml): before 28.6, Oracle's
 # SYSTIMESTAMP isn't parsed as a volatile function, so a query on it was read as
@@ -494,213 +496,538 @@ def _is_read_only(stmt: Any) -> bool:
     return not any(s.args.get("into") for s in stmt.find_all(exp.Select))
 
 
-# Functions that return other values each time they run (or each time a query runs), by
-# lower-cased name; sqlglot parses most of them as `Anonymous`. `random()` / `rand()` /
-# `DBMS_RANDOM.VALUE` and the `uuid()` family parse as typed nodes (`_VOLATILE_NODES`).
-_VOLATILE_FUNCTIONS = frozenset(
+# ALLOWLIST OF REPEATABLE CONSTRUCTS
+#
+# Design (decided 2026-11-19, after 41 review rounds kept finding new volatile
+# constructs by listing what is volatile): a query is repeatable only on positive proof
+# that running it again returns the same rows. Every function, operator, cast, column
+# and
+# table in it must be in the lists below (all small and conservative, per dialect where
+# they differ); anything else -- a function sqlglot doesn't know, a user's function
+# whatever its IMMUTABLE / DETERMINISTIC label, a clock, a session variable, a table
+# function, a typed node nobody listed -- is *not* repeatable. A refused case costs a
+# clear error (explicit `partition_on`) or one query (`partition_on="auto"`); a case
+# wrongly proven returns wrong rows, so a name is added only when it is known to be
+# deterministic. What the SQL can't show (a view's body, a table's kind, a generated
+# column, a user's overload of a built-in) is proven on the Rust side from the catalog
+# (`catalog.rs`, `planner.rs::source_volatility`) by the same rule.
+
+# sqlglot's typed functions, by class name, whose value depends on their arguments only.
+# (Not: clocks, random and uuid functions, `ANY_VALUE` / `FIRST` / `LAST` / `ARG_MIN`
+# and
+# kin, `ARRAY_AGG` / `GROUP_CONCAT` / `LIST` (order-dependent), `MODE`, approximate
+# aggregates, `ROW_NUMBER` / `LAG` / `FIRST_VALUE` ... (order of ties), session and
+# environment functions, JSON and array functions.)
+_PROVEN_FUNCTIONS = frozenset(
     {
-        # Postgres (and DuckDB)
-        "random",
-        "random_normal",
-        "setseed",
-        "gen_random_uuid",
-        "gen_random_bytes",
-        "uuid_generate_v1",
-        "uuid_generate_v1mc",
-        "uuid_generate_v4",
-        "uuidv4",
-        "uuidv7",
-        "nextval",
-        # the session's (STABLE, but each partition reads on a session of its own)
-        "pg_backend_pid",
-        "inet_client_port",
-        "inet_client_addr",
-        "txid_current",
-        "pg_current_xact_id",
-        # the time of the call, statement or transaction: partitions, and a count and
-        # its read, run in transactions of their own (typed nodes: `_VOLATILE_NODES`)
-        "clock_timestamp",
-        "statement_timestamp",
-        "transaction_timestamp",
-        "timeofday",
-        "now",
-        "current_timestamp",
-        "get_current_timestamp",
-        "today",
-        # SQLite
-        "randomblob",
-        # SQL Server
-        "newid",
-        "newsequentialid",
-        "crypt_gen_random",
-        # Oracle (`DBMS_RANDOM.*` and `seq.NEXTVAL` are checked apart)
-        "sys_guid",
-        # MySQL / MariaDB
-        "rand",
-        "uuid",
-        "uuid_short",
-        "uuid_v4",
-        "uuid_v7",
-        "random_bytes",
-        # the session's: each partition reads on a session of its own
-        "connection_id",
-        "last_insert_id",
-        "sysdate",
-        "curdate",
-        "curtime",
-        "unix_timestamp",
-        "utc_timestamp",
-        "localtimestamp",
-        # SQL Server
-        "getdate",
-        "getutcdate",
-        "sysdatetime",
-        "sysutcdatetime",
-        "sysdatetimeoffset",
-        # ClickHouse (and its `rand*` family, see `_is_volatile`)
-        "generateuuidv4",
-        "generateuuidv7",
-        "generateulid",
-        "generateserialid",
-        "generatesnowflakeid",
-        "fuzzbits",
-        "now64",
-        "yesterday",
-        "nowinblock",
-        "nowinblock64",
-        "uptime",
-        "queryid",
-        "currentqueryid",
-        "initialqueryid",
-        "initialquerystarttime",
-        "transactionid",
-        "generaterandomstructure",
-        "filesystemavailable",
-        "filesystemfree",
-        "filesystemcapacity",
-        # Snowflake
-        "uuid_string",
-        "seq1",
-        "seq2",
-        "seq4",
-        "seq8",
-        "randstr",
-        # Databricks (typed nodes in `_VOLATILE_NODES`; `ai_*` by prefix)
-        "uniform",
-        "normal",
-        "shuffle",
-        # ClickHouse: random orders and samples, a random table, the session's id
-        "arrayshuffle",
-        "arraypartialshuffle",
-        "arrayrandomsample",
-        "generaterandom",
-        "connectionid",
-        # Postgres: the snapshot of the transaction (each partition has its own)
-        "txid_current_snapshot",
-        "pg_current_snapshot",
-        # Oracle: the session's context and user environment
-        "sys_context",
-        "userenv",
+        # aggregates that don't depend on the order of rows
+        "Count",
+        "CountIf",
+        "Sum",
+        "Avg",
+        "Min",
+        "Max",
+        "Stddev",
+        "StddevPop",
+        "StddevSamp",
+        "Variance",
+        "VariancePop",
+        "LogicalAnd",
+        "LogicalOr",
+        "BitwiseAndAgg",
+        "BitwiseOrAgg",
+        "BitwiseXorAgg",
+        "Corr",
+        "CovarPop",
+        "CovarSamp",
+        "Median",
+        "PercentileCont",
+        "PercentileDisc",
+        "Kurtosis",
+        "Skewness",
+        "Grouping",
+        # windows that treat ties alike
+        "Rank",
+        "DenseRank",
+        "PercentRank",
+        "CumeDist",
+        # conditions and conversions
+        "And",
+        "Or",
+        "Xor",
+        "Case",
+        "If",
+        "Coalesce",
+        "Nullif",
+        "Nvl2",
+        "Greatest",
+        "Least",
+        "Cast",
+        "TryCast",
+        "Exists",
+        "Decode",
+        "DecodeCase",
+        "Array",
+        # math
+        "Abs",
+        "Acos",
+        "Asin",
+        "Atan",
+        "Atan2",
+        "Cbrt",
+        "Ceil",
+        "Cos",
+        "Cot",
+        "Degrees",
+        "Exp",
+        "Floor",
+        "Ln",
+        "Log",
+        "Pi",
+        "Pow",
+        "Radians",
+        "Round",
+        "Sign",
+        "Sin",
+        "Sqrt",
+        "Tan",
+        "Trunc",
+        "Factorial",
+        # strings
+        "Concat",
+        "ConcatWs",
+        "Contains",
+        "EndsWith",
+        "StartsWith",
+        "Initcap",
+        "Left",
+        "Right",
+        "Length",
+        "Lower",
+        "Upper",
+        "Pad",
+        "Repeat",
+        "Replace",
+        "Reverse",
+        "Space",
+        "SplitPart",
+        "StrPosition",
+        "Substring",
+        "SubstringIndex",
+        "Translate",
+        "Trim",
+        "Overlay",
+        "Ascii",
+        "Chr",
+        "Unicode",
+        "Hex",
+        "Unhex",
+        "MD5",
+        "SHA",
+        "SHA2",
+        "Levenshtein",
+        "Soundex",
+        "ByteLength",
+        "BitLength",
+        "RegexpLike",
+        "RegexpILike",
+        "RegexpReplace",
+        "RegexpExtract",
+        "RegexpSubstr",
+        "RegexpCount",
+        "RegexpInstr",
+        "ToChar",
+        "ToNumber",
+        "ToDouble",
+        "ToBoolean",
+        "NumberToStr",
+        # dates and times of their arguments (a text 'now' is
+        # `_is_current_time_literal`;
+        # SQLite's without a time value, `_sqlite_time_unproven`)
+        "Extract",
+        "Year",
+        "Month",
+        "Day",
+        "Hour",
+        "Minute",
+        "Second",
+        "Quarter",
+        "Week",
+        "WeekOfYear",
+        "DayOfWeek",
+        "DayOfMonth",
+        "DayOfYear",
+        "DateAdd",
+        "DateSub",
+        "DateDiff",
+        "DateTrunc",
+        "DatetimeTrunc",
+        "TimestampTrunc",
+        "DateFromParts",
+        "TimeFromParts",
+        "TimestampFromParts",
+        "LastDay",
+        "AddMonths",
+        "MonthsBetween",
+        "TsOrDsAdd",
+        "TsOrDsDiff",
+        "TsOrDsToDate",
+        "TsOrDsToTimestamp",
+        "TsOrDsToDatetime",
+        "TsOrDsToTime",
+        "StrToDate",
+        "StrToTime",
+        "TimeToStr",
+        "UnixToTime",
+        "UnixToStr",
+        "TimeStrToTime",
+        "TimeStrToDate",
+        "Date",
+        "Datetime",
+        "Time",
+        "Timestamp",
     }
 )
-# Tables whose rows are the server's state at the time of the read (Postgres)
-_VOLATILE_TABLES = frozenset({"pg_stat_activity", "pg_locks"})
-_VOLATILE_NODES = tuple(
-    node
-    for node in (
-        getattr(exp, name, None)
-        for name in (
-            "Rand",
-            "Randn",
-            # Databricks: `uniform`, `randstr`, `shuffle`, `normal`, `ai_classify` ...
-            "Uniform",
-            "Randstr",
-            "Shuffle",
-            "Normal",
-            "Zipf",
-            "AIAgg",
-            "AIClassify",
-            "AIEmbed",
-            "AIForecast",
-            "AIGenerate",
-            "AISimilarity",
-            "AISummarizeAgg",
-            "GenerateEmbedding",
-            "GenerateBool",
-            "GenerateDouble",
-            "GenerateInt",
-            "GenerateText",
-            "Uuid",
-            "Seq1",
-            "Seq2",
-            "Seq4",
-            "Seq8",
-            # `now()`, `CURRENT_TIMESTAMP`, `SYSDATE`, `GETDATE()`, ...
-            "CurrentDate",
-            "CurrentDatetime",
-            "CurrentTime",
-            "CurrentTimestamp",
-            "CurrentTimestampLTZ",
-            "Localtime",
-            "Localtimestamp",
-            "Systimestamp",
-            "UtcDate",
-            "UtcTime",
-            "UtcTimestamp",
-        )
-    )
-    if node is not None
+
+# Functions sqlglot doesn't know (parsed as `Anonymous`) that are built in and
+# deterministic, lower-cased, in the dialects below (a user's function of the name is
+# looked up in the catalog: `_OVERRIDABLE_DIALECTS`).
+_PROVEN_ANONYMOUS = frozenset(
+    {
+        "ifnull",
+        "nvl",
+        "iif",
+        "typeof",
+        "hex",
+        "quote",
+        "printf",
+        "instr",
+        "unicode",
+        "octet_length",
+        "char_length",
+        "character_length",
+        "btrim",
+        "date_part",
+        "every",
+        "total",
+    }
+)
+# ... and in one dialect
+_PROVEN_ANONYMOUS_BY_DIALECT = {
+    "clickhouse": frozenset(
+        {
+            "tostring",
+            "toint8",
+            "toint16",
+            "toint32",
+            "toint64",
+            "touint8",
+            "touint16",
+            "touint32",
+            "touint64",
+            "tofloat32",
+            "tofloat64",
+            "todate",
+            "todatetime",
+            "todate32",
+            "empty",
+            "notempty",
+            "intdiv",
+            "modulo",
+            "lowerutf8",
+            "upperutf8",
+            "lengthutf8",
+            "multiif",
+        }
+    ),
+}
+
+# Spark table functions that return the same rows on every call (their arguments are
+# checked as any); a user's table function, `read_kafka` or `IDENTIFIER('v')` is not
+# proven
+_SPARK_DIALECTS = frozenset({"databricks", "spark", "hive"})
+_SPARK_TABLE_FUNCTIONS = frozenset(
+    {
+        "range",
+        "explode",
+        "explode_outer",
+        "inline",
+        "inline_outer",
+        "posexplode",
+        "posexplode_outer",
+        "stack",
+        "json_tuple",
+    }
+)
+
+# Everything else the tree may hold: syntax that holds no function or table of its own.
+_PROVEN_STRUCTURE = frozenset(
+    {
+        "Select",
+        "Subquery",
+        "Paren",
+        "Tuple",
+        "Where",
+        "Prewhere",
+        "From",
+        "Join",
+        "Having",
+        "Group",
+        "Cube",
+        "Rollup",
+        "GroupingSets",
+        "Order",
+        "Ordered",
+        "Alias",
+        "TableAlias",
+        "Column",
+        "Identifier",
+        "Literal",
+        "Null",
+        "Boolean",
+        "Star",
+        "DataType",
+        "DataTypeParam",
+        "In",
+        "Between",
+        "Is",
+        "Not",
+        "Neg",
+        "EQ",
+        "NEQ",
+        "LT",
+        "LTE",
+        "GT",
+        "GTE",
+        "NullSafeEQ",
+        "NullSafeNEQ",
+        "Add",
+        "Sub",
+        "Mul",
+        "Div",
+        "IntDiv",
+        "Mod",
+        "DPipe",
+        "Like",
+        "ILike",
+        "Escape",
+        "BitwiseAnd",
+        "BitwiseOr",
+        "BitwiseXor",
+        "BitwiseNot",
+        "BitwiseLeftShift",
+        "BitwiseRightShift",
+        "Union",
+        "Intersect",
+        "Except",
+        "With",
+        "CTE",
+        "Distinct",
+        "Window",
+        "WindowSpec",
+        "Filter",
+        "WithinGroup",
+        "Interval",
+        "Var",
+        "Values",
+        "Any",
+        "All",
+        "Placeholder",
+        "Table",
+        "Dot",
+        "Bracket",
+        "Limit",
+        "Offset",
+        "Fetch",
+        "TableSample",
+        "Lateral",
+        "Final",
+    }
+)
+
+# Keywords a parser reads as a column (it knows none of them as a function) that name
+# the
+# time or the session, as an unqualified column: also a real column of the name is
+# refused
+_NILADIC_COLUMNS = frozenset(
+    {
+        "sysdate",
+        "systimestamp",
+        "current_date",
+        "current_time",
+        "current_timestamp",
+        "localtime",
+        "localtimestamp",
+        "utc_date",
+        "utc_time",
+        "utc_timestamp",
+        "sessiontimezone",
+        "dbtimezone",
+        "current_user",
+        "session_user",
+        "user",
+        "uid",
+        "current_catalog",
+        "current_schema",
+        "current_role",
+        "current_path",
+        "rownum",
+        "now",
+        "today",
+    }
 )
 
 
-def _is_volatile(node: Any, dialect: str | None, relations: set[str]) -> bool:
-    if isinstance(node, _VOLATILE_NODES):
+def _sqlite_time_unproven(node: Any) -> bool:
+    """
+    SQLite's date and time functions read their first argument as a time value: without
+    one, or with a modifier alone (`datetime('subsec')`), or `'now'`, they return the
+    current time. Proven only where it is not a text, or a text that starts with a
+    digit.
+    """
+    first = next(iter(node.iter_expressions()), None)
+    if first is None:
         return True
-    if (
-        dialect == "sqlite"
-        and _function_name(node) in _SQLITE_TIME_FUNCTIONS
-        and not any(True for _ in node.iter_expressions())
-    ):
-        # `datetime()`, `unixepoch()`: without a time value, the current time
-        return True
-    if isinstance(node, exp.PropertyEQ) and isinstance(node.this, exp.Parameter):
-        # MySQL's `@v := expr`: the assignment runs in the order the rows are read
-        return True
-    if (
-        isinstance(node, exp.Parameter)
-        and isinstance(node.this, exp.Parameter)
-        and dialect == "tsql"
-    ):
-        # `@@SPID`, `@@ROWCOUNT`, ...: the session's
-        return True
+    if isinstance(first, exp.Literal) and first.is_string:
+        return not first.name[:1].isdigit()
+    return False
+
+
+# ClickHouse functions of the rows read before (their number, or values, or the size of
+# the block): a filter the database runs before them, also on another column, changes
+# them. About filter pushdown, not repeatability (those aren't proven anyway).
+_ROWS_READ_FUNCTIONS = frozenset(
+    {
+        "rownumberinallblocks",
+        "rownumberinblock",
+        "blocknumber",
+        "runningdifference",
+        "runningdifferencestartingwithfirstvalue",
+        "runningaccumulate",
+        "neighbor",
+        "blocksize",
+        "blockserializedsize",
+    }
+)
+
+
+def _describe(node: Any, dialect: str | None) -> str:
+    """What an unproven node is, for the error that names it: its name, or its SQL."""
+    if isinstance(node, exp.Func):
+        name = _function_name(node)
+        return f"{name}()" if name else "a function"
     if isinstance(node, exp.Table):
-        return str(node.name).lower() in _VOLATILE_TABLES
+        return str(node.sql(dialect=dialect))[:40]
+    try:
+        return str(node.sql(dialect=dialect))[:40]
+    except sqlglot.errors.SqlglotError:
+        return type(node).__name__
+
+
+def _unproven(node: Any, dialect: str | None, relations: set[str]) -> bool:
+    """Whether `node` is something the allowlist doesn't prove to repeat."""
+    kind = type(node).__name__
+    if (
+        dialect in _SPARK_DIALECTS
+        and isinstance(node.parent, exp.Table)
+        and node.parent.this is node
+        and isinstance(node, exp.Func)
+    ):
+        return _function_name(node) not in _SPARK_TABLE_FUNCTIONS
+    if (
+        isinstance(node, exp.Dot)
+        and isinstance(node.expression, exp.Func)
+        and dialect in _USER_ROUTINE_DIALECTS
+    ):
+        # `schema.f(x)`: a user's routine by a path the catalog lookup of names doesn't
+        # follow
+        return True
     if isinstance(node, exp.Anonymous):
         name = node.name.lower()
         if name == "unix_timestamp":
             # of its argument, if it has one
             return not node.expressions
+        if name in _SQLITE_TIME_FUNCTIONS and dialect == "sqlite":
+            return _sqlite_time_unproven(node)
+        return not (
+            name in _PROVEN_ANONYMOUS
+            or name in _PROVEN_ANONYMOUS_BY_DIALECT.get(dialect or "", ())
+        )
+    if isinstance(node, exp.Func):
+        if kind not in _PROVEN_FUNCTIONS:
+            return True
+        if isinstance(node, exp.Array) and any(
+            isinstance(e, exp.Query) for e in node.expressions
+        ):
+            # `ARRAY(SELECT ...)`: the order of the subquery's rows is none; only a
+            # constructor of proven elements is
+            return True
+        if dialect in _TEXT_TIME_DIALECTS and _time_cast_operand(node) is not None:
+            return _unproven_temporal_cast(node, dialect)
+        if dialect == "sqlite" and _function_name(node) in _TIME_FUNCTIONS:
+            return _sqlite_time_unproven(node)
+        return False
+    if isinstance(node, exp.DataType):
+        # a user's type (Postgres): its casts and comparisons are the user's
+        return node.this == exp.DataType.Type.USERDEFINED
+    if isinstance(node, exp.Column):
+        if node.is_star:
+            return False
+        name = node.name.lower()
+        if node.table:
+            # `seq.NEXTVAL`, `DBMS_RANDOM.VALUE`, a struct's field: a qualifier that is
+            # no
+            # table, subquery or CTE of the query isn't proven to be a column
+            if node.table.lower() not in relations:
+                return True
+        elif name in _NILADIC_COLUMNS:
+            return True
+        # ClickHouse's virtual columns (`_part`, `_partition_id`, ...)
+        return dialect == "clickhouse" and name.startswith("_")
+    if isinstance(node, exp.Table):
+        # a name (a view or table the catalog proves: `catalog.view_definition`), not a
+        # function, time travel, a partition clause or a sample
+        is_name = isinstance(node.this, exp.Identifier) or (
+            dialect in _SPARK_DIALECTS
+            and isinstance(node.this, exp.Func)
+            and _function_name(node.this) in _SPARK_TABLE_FUNCTIONS
+        )
+        return not is_name or any(
+            node.args.get(k)
+            for k in (
+                "version",
+                "system_time",
+                "when",
+                "changes",
+                "sample",
+                "rows_from",
+            )
+        )
+    if isinstance(node, exp.Values) and dialect == "clickhouse":
+        # `values('id UInt32, k UInt32 ALIAS modulo(rand(), 4)', ...)`: the structure
+        # string is read as one literal, though its `ALIAS` / `DEFAULT` expressions run
+        # on
+        # each read (#492)
+        # (the first row, whose first element is the structure, each in a tuple)
+        structure: Any = node
+        for _ in range(3):
+            exprs = structure.expressions if structure is not None else None
+            structure = exprs[0] if exprs else None
         return (
-            name in _VOLATILE_FUNCTIONS
-            or name.startswith("ai_")
-            or (dialect == "clickhouse" and name.startswith("rand"))
+            isinstance(structure, exp.Literal)
+            and structure.is_string
+            and re.search(
+                r"\b(alias|default|materialized|ephemeral)\b", structure.name, re.I
+            )
+            is not None
         )
     if isinstance(node, exp.Literal) and node.is_string:
         return _is_current_time_literal(node)
-    if isinstance(node, exp.Dot):
-        # Oracle `DBMS_RANDOM.RANDOM()`, `DBMS_CRYPTO.RANDOMBYTES(…)`
-        return node.this.name.lower() in ("dbms_random", "dbms_crypto")
-    if isinstance(node, exp.Column) and node.table:
-        # `seq.NEXTVAL` (Oracle, Snowflake), `DBMS_RANDOM.VALUE` without parentheses; a
-        # qualifier that names a table or alias of the query is a column `nextval`
-        qualifier = node.table.lower()
-        if qualifier in relations:
-            return False
-        return node.name.lower() == "nextval" or qualifier in (
-            "dbms_random",
-            "dbms_crypto",
-        )
-    return False
+    if isinstance(node, exp.Parameter):
+        # `@v`, `@@v`: the session's (each partition reads on a session of its own); a
+        # numbered `$1` is a bound parameter
+        return not isinstance(node.this, exp.Literal)
+    return kind not in _PROVEN_STRUCTURE
 
 
 # Text that names a time relative to now: Postgres' special date / time inputs, SQLite's
@@ -731,9 +1058,11 @@ def _function_name(node: Any) -> str:
     return ""
 
 
-# Where `'now'` is only text: concatenated, a `LIKE` pattern, an output column of its
-# own
-_TEXT_CONTEXTS = (exp.DPipe, exp.Concat, exp.ConcatWs, exp.Like, exp.ILike, exp.Alias)
+# Where a relative-time text is only text: concatenated, a `LIKE` pattern. (Not an
+# output
+# column of its own: `SELECT 'now' AS t` may be cast later, `(SELECT
+# 'now')::timestamptz`.)
+_TEXT_CONTEXTS = (exp.DPipe, exp.Concat, exp.ConcatWs, exp.Like, exp.ILike)
 # String functions, by sqlglot's name or the function's own
 _TEXT_FUNCTIONS = frozenset(
     {
@@ -769,6 +1098,137 @@ _TEXT_FUNCTIONS = frozenset(
 )
 
 
+# A text a database may read as a time relative to now: a word of `_RELATIVE_WORDS` with
+# nothing else but time-like tokens around it, in any order (`'today'`, `'yesterday
+# 13:00'`,
+# `'today EST'`, `'EST today'`, `'13:00 yesterday'`, `'today Europe/Paris'`,
+# `'today allballs'`); not `'Now Corp'`. Mirrored by `planner.rs`'s
+# `relative_time_text`.
+_RELATIVE_WORDS = frozenset({"now", "today", "tomorrow", "yesterday"})
+# Words of a time of day or a zone (Postgres' zone abbreviations and its zone names that
+# are one word); a zone with a `/` is a path (`Europe/Paris`), `PST8PDT` or `UTC+5` a
+# POSIX zone
+_TIME_WORDS = frozenset(
+    [
+        "am",
+        "pm",
+        "at",
+        "allballs",
+        "z",
+        "zulu",
+        "ut",
+        "utc",
+        "uct",
+        "gmt",
+        "est",
+        "edt",
+        "cst",
+        "cdt",
+        "mst",
+        "mdt",
+        "pst",
+        "pdt",
+        "akst",
+        "akdt",
+        "hst",
+        "ast",
+        "adt",
+        "nst",
+        "ndt",
+        "bst",
+        "cet",
+        "cest",
+        "eet",
+        "eest",
+        "wet",
+        "west",
+        "msk",
+        "ist",
+        "jst",
+        "kst",
+        "hkt",
+        "pkt",
+        "wib",
+        "wit",
+        "wita",
+        "aest",
+        "aedt",
+        "acst",
+        "acdt",
+        "awst",
+        "nzst",
+        "nzdt",
+        "sast",
+        "cat",
+        "eat",
+        "wat",
+        "sst",
+        "chst",
+        "universal",
+        "japan",
+        "singapore",
+        "hongkong",
+        "israel",
+        "cuba",
+        "egypt",
+        "eire",
+        "iceland",
+        "iran",
+        "jamaica",
+        "libya",
+        "navajo",
+        "poland",
+        "portugal",
+        "turkey",
+        "gb",
+        "nz",
+        "prc",
+        "roc",
+        "rok",
+    ]
+)
+_TIME_TOKEN = re.compile(
+    r"^(?:[\d:./+\-]+(?:[ap]\.?m\.?)?|[a-z]+[+-]?\d[\d:]*[a-z]*\d*|[a-z_]+(?:/[a-z_+\-\d]+)+)$"
+)
+_RELATIVE_WORD = re.compile(
+    r"\b(now|today|tomorrow|yesterday|allballs)\b", re.IGNORECASE
+)
+
+
+def _relative_time_text(text: str) -> bool:
+    """Whether the dialect may read `text` as a time relative to the statement."""
+    seen = False
+    for token in re.split(r"[\s,]+", text.strip().lower()):
+        if not token:
+            continue
+        if token in _RELATIVE_WORDS:
+            seen = True
+            continue
+        # `now+1`: a word with an offset
+        word = re.match(r"[a-z]+", token)
+        if (
+            word is not None
+            and word.group() in _RELATIVE_WORDS
+            and re.fullmatch(r"[\d:./+\-]+", token[word.end() :])
+        ):
+            seen = True
+        elif token not in _TIME_WORDS and _TIME_TOKEN.match(token) is None:
+            return False
+    return seen
+
+
+def _absolute_time_text(text: str) -> bool:
+    """A text that is an absolute date or time: it starts with a digit, names no
+    `now`.
+    """
+    stripped = text.strip()
+    return (
+        stripped[:1].isdigit()
+        and _RELATIVE_WORD.search(stripped) is None
+        and not _relative_time_text(stripped)
+    )
+
+
 def _is_current_time_literal(node: Any) -> bool:
     """
     A text literal that the database may read as the current time: `'now'::timestamp`,
@@ -776,56 +1236,162 @@ def _is_current_time_literal(node: Any) -> bool:
     reads `ts - 'now'`, `created < 'now'` and `greatest(ts, 'now')` as times). Only
     where it is clearly text (`s || 'now'`, a cast to text) is it not one.
     """
-    if node.name.strip().lower() not in _CURRENT_TIME_TEXT:
+    if not _relative_time_text(node.name):
         return False
     parent = node.parent
     if isinstance(parent, (exp.Cast, exp.TryCast)):
         return bool(parent.to.is_type(*exp.DataType.TEMPORAL_TYPES))
-    return not isinstance(parent, (*_TEXT_CONTEXTS, exp.Select)) and (
+    return not isinstance(parent, _TEXT_CONTEXTS) and (
         _function_name(parent) not in _TEXT_FUNCTIONS
     )
 
 
-# Aggregates that return any one of their values; ClickHouse's numbering of the rows
-# (and blocks) in the order they happen to be read
-_ARBITRARY_FUNCTIONS = frozenset(
+# Dialects whose text-to-time casts read `'now'` (Postgres' special inputs, Spark's: not
+# DuckDB's, whose casts read none, 0.10 to 2.0), and those of them whose catalog says
+# which columns hold text (Spark reads `'now'` in a cast of a literal only, so a column
+# is proven)
+_TEXT_TIME_DIALECTS = frozenset({"postgres", "redshift", "databricks", "spark"})
+_TEXT_COLUMN_DIALECTS = frozenset({"postgres", "redshift"})
+# Dialects where a user may define a function of any name that is no built-in's
+_USER_ROUTINE_DIALECTS = frozenset({"mysql", "mariadb", "clickhouse", "databricks"})
+# Typed functions whose value is a date, a time or a number, never text
+_NON_TEXT_FUNCTIONS = frozenset(
     {
-        "any",
-        "anylast",
-        "any_value",
-        "arbitrary",
-        "first",
-        "last",
-        # the value of any row among those that tie
-        "arg_min",
-        "arg_max",
-        "argmin",
-        "argmax",
-        "min_by",
-        "max_by",
-        "rownumberinallblocks",
-        "rownumberinblock",
-        "blocknumber",
+        "Extract",
+        "Year",
+        "Month",
+        "Day",
+        "Hour",
+        "Minute",
+        "Second",
+        "Quarter",
+        "Week",
+        "WeekOfYear",
+        "DayOfWeek",
+        "DayOfMonth",
+        "DayOfYear",
+        "DateAdd",
+        "DateSub",
+        "DateTrunc",
+        "DatetimeTrunc",
+        "TimestampTrunc",
+        "DateFromParts",
+        "TimeFromParts",
+        "TimestampFromParts",
+        "LastDay",
+        "AddMonths",
+        "TsOrDsAdd",
+        "TsOrDsToDate",
+        "TsOrDsToTimestamp",
+        "TsOrDsToDatetime",
+        "TsOrDsToTime",
+        "StrToDate",
+        "StrToTime",
+        "UnixToTime",
+        "TimeStrToTime",
+        "TimeStrToDate",
+        "Date",
+        "Datetime",
+        "Time",
+        "Timestamp",
+        "Abs",
+        "Ceil",
+        "Floor",
+        "Round",
+        "Length",
+        "DateDiff",
+        "TsOrDsDiff",
     }
 )
 
 
-# ClickHouse functions of the rows read before (their number, or values): a filter the
-# database runs before them, also on another column, changes their values
-_ROWS_READ_FUNCTIONS = frozenset(
-    {
-        "rownumberinallblocks",
-        "rownumberinblock",
-        "blocknumber",
-        "runningdifference",
-        "runningdifferencestartingwithfirstvalue",
-        "runningaccumulate",
-        "neighbor",
-        # the size of the block read
-        "blocksize",
-        "blockserializedsize",
-    }
+def _unwrapped(node: Any) -> Any:
+    while isinstance(node, exp.Paren):
+        node = node.this
+    return node
+
+
+def _may_be_text(node: Any) -> bool:
+    """
+    Whether `node` (an operand of a cast to a time) may be a text: a literal that isn't
+    an absolute date or time, a concatenation, a function of text, a cast to text, a
+    subquery or a CASE. A column is told by the catalog (`temporal_cast_columns`).
+    """
+    node = _unwrapped(node)
+    if isinstance(node, exp.Literal):
+        return node.is_string and not _absolute_time_text(node.name)
+    if isinstance(node, (exp.Null, exp.Interval, exp.Column, exp.Placeholder)):
+        # (a bound parameter's text is judged by its value, `params_time_relative`)
+        return False
+    if isinstance(node, exp.Parameter):
+        return not isinstance(node.this, exp.Literal)
+    if isinstance(node, (exp.Cast, exp.TryCast)):
+        return not node.to.is_type(
+            *exp.DataType.TEMPORAL_TYPES, *exp.DataType.NUMERIC_TYPES
+        )
+    if isinstance(node, (exp.Add, exp.Sub, exp.Mul, exp.Div, exp.Neg)):
+        return any(_may_be_text(e) for e in node.iter_expressions())
+    if isinstance(node, exp.Func) and not isinstance(node, exp.Anonymous):
+        return type(node).__name__ not in _NON_TEXT_FUNCTIONS
+    return True
+
+
+# Functions that read their one text argument as a date or time as a cast does
+# (Postgres' `date(s)`, `time(s)`, `timestamp(s)`)
+_TIME_CONSTRUCTORS = (
+    exp.Date,
+    exp.Datetime,
+    exp.Time,
+    exp.Timestamp,
+    exp.TsOrDsToDate,
+    exp.TsOrDsToDatetime,
+    exp.TsOrDsToTime,
+    exp.TsOrDsToTimestamp,
+    exp.TimeStrToDate,
+    exp.TimeStrToTime,
 )
+
+
+def _time_cast_operand(node: Any) -> Any:
+    """The operand of a cast to a date or time, or of a function that casts to one."""
+    if isinstance(node, (exp.Cast, exp.TryCast)):
+        return node.this if node.to.is_type(*exp.DataType.TEMPORAL_TYPES) else None
+    if isinstance(node, _TIME_CONSTRUCTORS):
+        return node.this
+    return None
+
+
+def _unproven_temporal_cast(node: Any, dialect: str | None) -> bool:
+    """
+    A cast to a date or time that may read a relative time (`'now'`) from its operand:
+    proven only for an operand that isn't text. A column is looked up (Postgres), unless
+    the query has relations of its own (a CTE, a derived table, `VALUES`) whose columns
+    may be that text; where the catalog can't say, it is refused.
+    """
+    operand = _unwrapped(_time_cast_operand(node))
+    if isinstance(operand, exp.Column):
+        if dialect not in _TEXT_COLUMN_DIALECTS:
+            # (a column's text, a CTE's or a VALUES' too, isn't read: Databricks)
+            return False
+        root = node.root()
+        return root.find(exp.CTE, exp.Values, exp.Subquery, exp.Lateral) is not None
+    return _may_be_text(operand)
+
+
+def _temporal_cast_columns(stmt: Any, dialect: str | None) -> list[str]:
+    """Lower-cased names of the columns cast to a date or time (the catalog says
+    text).
+    """
+    if dialect not in _TEXT_COLUMN_DIALECTS:
+        return []
+    names: set[str] = set()
+    for cast in stmt.find_all(exp.Cast, exp.TryCast, *_TIME_CONSTRUCTORS):
+        operand = _time_cast_operand(cast)
+        if operand is not None:
+            operand = _unwrapped(operand)
+            if isinstance(operand, exp.Column):
+                names.add(operand.name.lower())
+    return sorted(names)
 
 
 # Window functions whose value depends on the order of rows that tie (`row_number() OVER
@@ -884,6 +1450,21 @@ def _is_aggregate_query(select: Any) -> bool:
     return False
 
 
+def _qualified_key(column: Any) -> str:
+    """
+    A qualified column as `catalog.schema.table.name`, each part folded to lower case
+    unless quoted (`s1.t.id` is not `s2.t.id`, nor `"T".id` `"t".id`).
+    """
+    parts = []
+    for key in ("catalog", "db", "table", "this"):
+        part = column.args.get(key)
+        if part is not None:
+            parts.append(
+                part.name if getattr(part, "quoted", False) else part.name.lower()
+            )
+    return ".".join(parts)
+
+
 def _bare_column_in_group_by(select: Any) -> bool:
     """
     Whether a `GROUP BY` query (or an aggregate query without one) selects (or filters
@@ -913,7 +1494,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
                     # `GROUP BY k` for `g AS k` (or `t.g AS k`) groups `g`
                     grouped_names.add(named.name.lower())
                     if named.table:
-                        grouped.add(f"{named.table}.{named.name}".lower())
+                        grouped.add(_qualified_key(named))
                     else:
                         grouped_unqualified.add(named.name.lower())
         if isinstance(node, exp.Literal) and node.is_int:
@@ -925,7 +1506,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
         if isinstance(node, exp.Column):
             grouped_names.add(node.name.lower())
             if node.table:
-                grouped.add(f"{node.table}.{node.name}".lower())
+                grouped.add(_qualified_key(node))
             else:
                 grouped_unqualified.add(node.name.lower())
         elif isinstance(node, exp.Var) and node.name.upper() == "ALL":
@@ -937,10 +1518,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
     def column_is_bare(node: Any, is_having: bool) -> bool:
         name = node.name.lower()
         if node.table:
-            is_grouped = (
-                f"{node.table}.{node.name}".lower() in grouped
-                or name in grouped_unqualified
-            )
+            is_grouped = _qualified_key(node) in grouped or name in grouped_unqualified
         else:
             is_grouped = name in grouped_names
         return not is_grouped and not (is_having and name in aliases)
@@ -1005,18 +1583,11 @@ def _picks_arbitrary_rows(stmt: Any, dialect: str | None) -> bool:
     """
     Whether the query may give other rows, or number them otherwise, each time it runs:
     a window function that tells tied rows apart (or has a `ROWS` / `GROUPS` frame),
-    `DISTINCT ON`, an aggregate that picks any value, a bare column next to a `GROUP BY`
-    (SQLite, and MySQL without `ONLY_FULL_GROUP_BY`, take it from any row of the group),
-    Oracle's `ROWNUM`, or Postgres' one-argument `age(x)` (relative to today).
+    `DISTINCT ON`, a bare column next to a `GROUP BY` (SQLite, and MySQL without
+    `ONLY_FULL_GROUP_BY`, take it from any row of the group), or Oracle's `ROWNUM`.
+    Aggregates that pick any value or depend on the order of rows aren't in the
+    allowlist (`_PROVEN_FUNCTIONS`).
     """
-    if stmt.find(exp.AnyValue, exp.First, exp.Last) is not None:
-        return True
-    # `first_value(x)` / `last_value(x)` outside a window (Databricks) aggregate any row
-    if any(
-        f.find_ancestor(exp.Window) is None
-        for f in stmt.find_all(exp.FirstValue, exp.LastValue)
-    ):
-        return True
     if dialect in _BARE_GROUP_BY_DIALECTS and any(
         _bare_column_in_group_by(select) for select in stmt.find_all(exp.Select)
     ):
@@ -1042,15 +1613,59 @@ def _picks_arbitrary_rows(stmt: Any, dialect: str | None) -> bool:
         c.name.lower() == "rownum" and not c.table for c in stmt.find_all(exp.Column)
     ):
         return True
-    if any(d.args.get("on") is not None for d in stmt.find_all(exp.Distinct)):
+    return any(d.args.get("on") is not None for d in stmt.find_all(exp.Distinct))
+
+
+def _collapses_rows(stmt: Any) -> bool:
+    """
+    Whether the query merges rows that compare equal into one (`GROUP BY`, `SELECT
+    DISTINCT`, `UNION`, `INTERSECT`, `EXCEPT`, `DISTINCT` in an aggregate other than
+    `COUNT`): under a collation that equates different texts, the database returns
+    any one of them (#488).
+    """
+    if stmt.find(exp.Group) is not None:
         return True
-    for node in stmt.find_all(exp.Func):
-        name = _function_name(node)
-        # each partition reads other blocks, and other rows before each
-        if name in _ARBITRARY_FUNCTIONS or name in _ROWS_READ_FUNCTIONS:
+    for d in stmt.find_all(exp.Distinct):
+        if not isinstance(d.parent, exp.Count):
             return True
-        if name == "age" and len(node.expressions) == 1:
-            return True
+    return any(
+        not isinstance(op, exp.Union) or op.args.get("distinct", True)
+        for op in stmt.find_all(exp.SetOperation)
+    )
+
+
+def _binary_collation(name: str, dialect: str | None) -> bool:
+    """
+    Whether collation `name` (lower-cased) equates only identical texts, where the
+    dialect pads nothing: MySQL's `utf8mb4_bin` pads (`'a'` is `'a '`),
+    `utf8mb4_0900_bin`
+    and MariaDB's `utf8mb4_nopad_bin` don't; SQL Server pads in every collation;
+    a user's Postgres collation may be nondeterministic whatever its name (the catalog
+    says: a `COLLATE` of it is refused here).
+    """
+    if dialect in ("postgres", "redshift"):
+        return name in ("c", "posix", "ucs_basic")
+    if dialect in ("mysql", "mariadb"):
+        return name == "binary" or name.endswith(("_0900_bin", "_nopad_bin"))
+    if dialect == "tsql":
+        return False
+    return name in ("utf8_binary", "binary", "c", "posix", "") or name.endswith(
+        ("_bin", "_bin2")
+    )
+
+
+def _uses_collation(tokens: list[Any], dialect: str | None = None) -> bool:
+    """
+    Whether the query names a collation other than a binary one (`COLLATE x`,
+    `collate(s, 'x')`). A column's own collation is the catalog's to say.
+    """
+    for i, t in enumerate(tokens):
+        if t.text.lower() != "collate":
+            continue
+        nxt = tokens[i + 1].text.lower().strip("'\"`") if i + 1 < len(tokens) else ""
+        if _binary_collation(nxt, dialect) and nxt:
+            continue
+        return True
     return False
 
 
@@ -1070,20 +1685,41 @@ def _top_level_order_by_without_limit(stmt: Any) -> bool:
         stmt = stmt.this
 
 
-def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
+def _outer_order_by(
+    stmt: Any,
+    dialect: str | None,
+    star_columns: list[str] | None = None,
+    star_ordinals: bool = True,
+) -> str | None:
     """
     The query's top-level `ORDER BY` (without the keyword) on its output columns,
     for a wrapper that repeats it outside; `None` if there is none, or a key is not an
     output column (a selected column, its alias, an expression selected as it is, or its
-    position) of an unambiguous, star-free select list.
+    position) of an unambiguous select list. A select list of a lone `*` (or `t.*`) is
+    the planned columns `star_columns`, where given; any other star is not expanded. A
+    position in it needs `star_ordinals`: the columns are the database's own, in its
+    order
+    (not a user's `schema=`).
     """
     while not stmt.args.get("order"):
         if not isinstance(stmt, (exp.Subquery, exp.Paren)):
             return None
         stmt = stmt.this
     selects = stmt.selects
-    if not selects or any(isinstance(s, exp.Star) or s.is_star for s in selects):
+    if not selects:
         return None
+    expanded = False
+    if any(isinstance(s, exp.Star) or s.is_star for s in selects):
+        if (
+            star_columns is None
+            or len(selects) != 1
+            or isinstance(stmt, exp.SetOperation)
+        ):
+            return None
+        selects = [exp.column(c, quoted=True) for c in star_columns]
+        expanded = True
+        if not selects:
+            return None
     names = [s.alias_or_name for s in selects]
     # (the servers that need this compare column names without regard to case)
     lowered = [n.lower() for n in names]
@@ -1103,11 +1739,12 @@ def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
                 ordinal = int(key.name)
             except ValueError:
                 return None
-            if 1 <= ordinal <= len(names):
+            if (star_ordinals or not expanded) and 1 <= ordinal <= len(names):
                 name = names[ordinal - 1]
         elif (
             isinstance(key, exp.Column)
-            and not key.table
+            # (`t.id` of `SELECT * FROM t`: the one table's column)
+            and (not key.table or (expanded and not stmt.args.get("joins")))
             and key.name.lower() in lowered
         ):
             # an alias, or the selected column of that name
@@ -1209,32 +1846,13 @@ def _cte_in_scope(table: Any, dialect: str | None) -> bool:
     return False
 
 
-# A Spark table function (`range(1, 10)`) is a built-in, not a view
-_NO_TABLE_VIEWS = frozenset({"databricks", "spark", "hive"})
-
-
-# The Spark table functions that return the same rows on every call
-_SPARK_TABLE_BUILTINS = frozenset(
-    {
-        "range",
-        "explode",
-        "explode_outer",
-        "inline",
-        "inline_outer",
-        "posexplode",
-        "posexplode_outer",
-        "stack",
-        "json_tuple",
-    }
-)
-
-
-def _tables(stmt: Any, dialect: str | None) -> list[list[str]]:
+def _tables(stmt: Any, dialect: str | None) -> tuple[list[list[str]], list[list[str]]]:
     """
-    The tables (or views) a query reads, as `[catalog.][schema.]name` parts, unquoted
+    The tables (or views) a query reads, as `[catalog.][schema.]name` parts, and those
+    of
+    them read only with `FINAL` (ClickHouse), unquoted
     names folded as the dialect folds them (`Orders` is `orders` on Postgres, `ORDERS`
-    on Oracle): not its CTEs. A table function may be a view too (ClickHouse's
-    parameterized `v(p = 1)`), except in Spark SQL (`_NO_TABLE_VIEWS`).
+    on Oracle): not its CTEs. A table function is none (it isn't proven, `_unproven`).
     """
     from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 
@@ -1248,11 +1866,10 @@ def _tables(stmt: Any, dialect: str | None) -> list[list[str]]:
     else:
         stmt = normalize_identifiers(stmt.copy(), dialect=dialect)
     tables: list[list[str]] = []
+    plain: list[list[str]] = []
     for t in stmt.find_all(exp.Table):
         if isinstance(t.this, exp.Identifier):
             name = t.name
-        elif isinstance(t.this, exp.Anonymous) and dialect not in _NO_TABLE_VIEWS:
-            name = str(t.this.name)
         else:
             continue
         if not name or _cte_in_scope(t, dialect):
@@ -1260,40 +1877,26 @@ def _tables(stmt: Any, dialect: str | None) -> list[list[str]]:
         parts = [p for p in (t.catalog, t.db, name) if p]
         if parts not in tables:
             tables.append(parts)
-    return tables
-
-
-# Where the catalog tells a user's table function (a DuckDB table macro running
-# `random()`, a volatile Postgres set-returning function) from the stable built-ins
-_TABLE_FUNCTION_CATALOGS = frozenset({"duckdb", "postgres", "clickhouse"})
-
-
-def _unknown_functions(stmt: Any, dialect: str | None) -> list[str]:
-    """
-    Lower-cased names of the functions sqlglot doesn't know; table functions only where
-    the catalog tells user ones from built-ins (`_TABLE_FUNCTION_CATALOGS`).
-    """
-    tables = dialect in _TABLE_FUNCTION_CATALOGS
-    spark = dialect in _NO_TABLE_VIEWS
-    return sorted(
-        {
-            str(n.name).lower()
-            for n in stmt.find_all(exp.Anonymous)
-            if n.name
-            and (
-                tables
-                or not isinstance(n.parent, exp.Table)
-                # Spark: a table function that isn't a stable built-in may be a user's
-                # (a SQL UDTF over `rand()`, `read_kafka`, `IDENTIFIER('v')`: any view)
-                or (spark and str(n.name).lower() not in _SPARK_TABLE_BUILTINS)
-            )
-        }
-    )
+        if not isinstance(t.parent, exp.Final):
+            plain.append(parts)
+    return tables, [t for t in tables if t not in plain]
 
 
 # Where the user can replace a built-in function (SQLite's `create_function`, a DuckDB
-# macro or Python function), so that the name sqlglot knows runs something else
-_OVERRIDABLE_DIALECTS = frozenset({"sqlite", "duckdb"})
+# macro or Python function, a Postgres or Oracle function in a schema the name is looked
+# up in before the built-ins), so that the name sqlglot knows runs something else
+_OVERRIDABLE_DIALECTS = frozenset(
+    {
+        "sqlite",
+        "duckdb",
+        "postgres",
+        "oracle",
+        "mysql",
+        "mariadb",
+        "clickhouse",
+        "databricks",
+    }
+)
 
 
 # The functions that run for an operator the user can replace, by the operator's token
@@ -1378,6 +1981,86 @@ def _known_functions(
     return sorted(names)
 
 
+def _non_builtin_calls(stmt: Any, tokens: list[Any], dialect: str | None) -> list[str]:
+    """
+    Lower-cased names the SQL calls (as written: sqlglot reads `nvl(x)` as `COALESCE`,
+    `strpos` as its own `STR_POSITION`) that are no built-in function of the dialect
+    (`BUILTIN_FUNCTIONS`), where a user may create one of any name (MySQL, MariaDB,
+    ClickHouse, Databricks): a stored, loadable, SQL or temporary function, which the
+    catalog may not show. Not a type's name after `AS` or `::` (`AS DECIMAL(10, 2)`) or
+    an
+    alias's column list (`AS t (a, b)`, `WITH c (a, b)`).
+    """
+    builtins = BUILTIN_FUNCTIONS.get(dialect or "")
+    if builtins is None:
+        return []
+    aliases = {a.name.lower() for a in stmt.find_all(exp.TableAlias)}
+    kind = sqlglot.TokenType
+    calls: set[str] = set()
+    i, n = 0, len(tokens)
+    while i < n:
+        t = tokens[i]
+        if t.text.lower() == "as" or t.token_type == kind.DCOLON:
+            # a type or an alias: its name and its parenthesised arguments are no call
+            j = i + 1
+            if j < n and tokens[j].text.isidentifier():
+                j += 1
+                if j < n and tokens[j].token_type == kind.L_PAREN:
+                    depth = 0
+                    while j < n:
+                        if tokens[j].token_type == kind.L_PAREN:
+                            depth += 1
+                        elif tokens[j].token_type == kind.R_PAREN:
+                            depth -= 1
+                            if depth == 0:
+                                j += 1
+                                break
+                        j += 1
+                i = j
+                continue
+        nxt = tokens[i + 1] if i + 1 < n else None
+        word = t.text.lower()
+        if (
+            nxt is not None
+            and nxt.token_type == kind.L_PAREN
+            and t.text.isidentifier()
+            and "STRING" not in t.token_type.name
+            and word not in SYNTAX_WORDS
+            and word not in aliases
+            and word not in builtins
+        ):
+            calls.add(word)
+        i += 1
+    return sorted(calls)
+
+
+def _cast_type_names(stmt: Any, dialect: str | None) -> list[str]:
+    """Lower-cased type names the query writes (a user's cast is found by them)."""
+    names: set[str] = set()
+    for dt in stmt.find_all(exp.DataType):
+        with contextlib.suppress(sqlglot.errors.SqlglotError):
+            names.add(dt.sql(dialect=dialect).split("(")[0].strip().lower())
+    return sorted(n for n in names if n)
+
+
+def _referenced_columns(stmt: Any, dialect: str | None = None) -> list[str] | None:
+    """
+    Lower-cased names the query writes, `None` where a `*` projects every column (or,
+    on Postgres, a table's name stands for its whole row: `SELECT DISTINCT t FROM t`).
+    """
+    for select in stmt.find_all(exp.Select):
+        if any(e.is_star for e in select.expressions):
+            return None
+    if dialect in ("postgres", "redshift"):
+        relations = _relations(stmt)
+        if any(
+            not c.table and c.name.lower() in relations
+            for c in stmt.find_all(exp.Column)
+        ):
+            return None
+    return sorted({i.name.lower() for i in stmt.find_all(exp.Identifier)})
+
+
 def _volatile_columns(stmt: Any, calls: list[Any]) -> list[str] | None:
     """
     The output columns whose values come from volatile functions, `None` if that can't
@@ -1426,9 +2109,16 @@ def _no_facts() -> dict[str, Any]:
         "side_effects_outside_rows": False,
         "volatile_columns": [],
         "all_columns_volatile": False,
-        "unknown_functions": [],
         "known_functions": [],
+        "unproven": [],
         "tables": [],
+        "collapses_rows": False,
+        "collated": False,
+        "cast_types": [],
+        "any_operator": False,
+        "referenced_columns": None,
+        "final_tables": [],
+        "temporal_cast_columns": [],
         "body": None,
     }
 
@@ -1527,7 +2217,29 @@ def _unparsed_facts(
     except sqlglot.errors.SqlglotError:
         return facts
     facts["known_functions"] = _known_functions(None, tokens, dialect)
+    # (its tables are unknown: a user's operator, which sqlglot doesn't parse either,
+    # may be on any type)
+    facts["any_operator"] = dialect in ("postgres", "redshift")
     return facts
+
+
+def outer_order_by(
+    sql: str,
+    dialect: str | None,
+    columns: list[str],
+    star_ordinals: bool = True,
+) -> str | None:
+    """
+    The query's `ORDER BY` on its output columns (see `_outer_order_by`), where a
+    `SELECT *` has the planned `columns`; `None` if it can't be kept that way.
+    """
+    try:
+        statements, _ = _parse_query(_without_lambda_parentheses(sql, dialect), dialect)
+    except sqlglot.errors.SqlglotError:
+        return None
+    if len(statements) != 1 or not isinstance(statements[0], exp.Query):
+        return None
+    return _outer_order_by(statements[0], dialect, columns, star_ordinals)
 
 
 def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
@@ -1577,57 +2289,76 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     )
     facts["nested_queries"] = _nested_queries(stmt)
     relations = _relations(stmt)
-    volatile_calls = [
-        node
-        for node in stmt.find_all(
-            exp.Func,
-            exp.Dot,
-            exp.Column,
-            exp.Literal,
-            exp.PropertyEQ,
-            exp.Parameter,
-            exp.Table,
-        )
-        if _is_volatile(node, dialect, relations)
-    ]
-    volatile = bool(volatile_calls)
-    # a function sqlglot doesn't know may be the user's own: SQLite's `create_function`
-    # makes non-deterministic ones by default (Postgres doesn't push a filter through a
-    # volatile one)
-    unknown = list(stmt.find_all(exp.Anonymous)) if dialect == "sqlite" else []
-    columns = _volatile_columns(stmt, volatile_calls + unknown)
+    # what the allowlist doesn't prove (`_unproven`): any function, operator, column or
+    # table of the query
+    unproven = [node for node in stmt.walk() if _unproven(node, dialect, relations)]
+    # ... and the names written that are no built-in's: judged as written, the nodes
+    # they
+    # parse to flagged (a name no node is found for may be any column's)
+    written = _non_builtin_calls(stmt, tokens, dialect)
+    flagged: list[Any] = []
+    matched: set[str] = set()
+    if written:
+        for f in stmt.find_all(exp.Func):
+            names = (
+                {_function_name(f)}
+                if isinstance(f, exp.Anonymous)
+                else {n.lower() for n in f.sql_names()}
+            )
+            if names & set(written):
+                matched |= names & set(written)
+                flagged.append(f)
+        unproven.extend(f for f in flagged if not any(f is u for u in unproven))
+    columns = _volatile_columns(stmt, unproven)
+    if set(written) - matched:
+        columns = None
     if columns is None or any(
         _function_name(f) in _ROWS_READ_FUNCTIONS for f in stmt.find_all(exp.Func)
     ):
         facts["all_columns_volatile"] = True
     else:
         facts["volatile_columns"] = columns
-    # The database says whether these are volatile (`catalog::volatile_functions`): a
-    # user's function may be (`random()` inside), and each partition would run it again.
-    facts["unknown_functions"] = _unknown_functions(stmt, dialect)
     facts["known_functions"] = _known_functions(stmt, tokens, dialect)
+    facts["collapses_rows"] = _collapses_rows(stmt)
+    facts["collated"] = _uses_collation(tokens, dialect)
+    facts["unproven"] = sorted(
+        {_describe(n, dialect) for n in unproven if not any(n is f for f in flagged)}
+        | {f"{n}()" for n in written}
+    )[:5]
     # A view among them may call a volatile function (`catalog::view_definition`).
-    facts["tables"] = _tables(stmt, dialect)
+    facts["tables"], facts["final_tables"] = _tables(stmt, dialect)
+    facts["referenced_columns"] = _referenced_columns(stmt, dialect)
+    facts["temporal_cast_columns"] = _temporal_cast_columns(stmt, dialect)
+    if dialect in ("postgres", "redshift"):
+        facts["cast_types"] = _cast_type_names(stmt, dialect)
     # anywhere in the query: a nested LIMIT without a unique ORDER BY picks rows too
     facts["repeatable"] = (
         stmt.find(exp.Limit, exp.Fetch, exp.Offset, exp.TableSample) is None
-        and not volatile
+        and not unproven
+        and not written
         and not _picks_arbitrary_rows(stmt, dialect)
     )
-    # Running it may change something: a volatile function (`nextval`), or one sqlglot
-    # doesn't know, which may be the user's own (a stored function that writes).
-    facts["side_effects"] = volatile or stmt.find(exp.Anonymous) is not None
+    # Running it may change something: a function sqlglot doesn't know (`nextval`, or a
+    # user's, which may write), a sequence's pseudo-column, a variable assignment.
+    facts["side_effects"] = bool(written) or any(
+        not isinstance(n, exp.Func) or isinstance(n, exp.Anonymous) for n in unproven
+    )
     # Where MariaDB evaluates such a function under a `LIMIT 0`: a set operation's
     # branches, a query without FROM, and conditions (`WHERE f() = 1` is constant)
     calls = [
         node
-        for node in stmt.find_all(exp.Func, exp.Dot, exp.Column, exp.Literal)
-        if isinstance(node, exp.Anonymous) or _is_volatile(node, dialect, relations)
+        for node in unproven
+        if not isinstance(node, exp.Func)
+        or isinstance(node, exp.Anonymous)
+        or any(node is f for f in flagged)
     ]
-    facts["side_effects_outside_rows"] = bool(calls) and (
+    facts["side_effects_outside_rows"] = (
+        bool(calls) or bool(set(written) - matched)
+    ) and (
         isinstance(stmt, exp.SetOperation)
         or stmt.args.get("from_", stmt.args.get("from")) is None
         or any(c.find_ancestor(exp.Where, exp.Having, exp.Join) for c in calls)
+        or bool(set(written) - matched)
     )
     selects = stmt.selects
     if selects and not any(isinstance(s, exp.Star) or s.is_star for s in selects):

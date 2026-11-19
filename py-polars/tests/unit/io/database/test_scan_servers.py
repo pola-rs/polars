@@ -28,6 +28,7 @@ import contextlib
 import functools
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import time
@@ -1197,11 +1198,21 @@ def test_ordered_read_with_more_partitions_than_sessions(
     import sys
 
     assert POSTGRES is not None
+    # a real table: a query over generate_series() isn't proven repeatable, so it can't
+    # be partitioned
+    table = f"rvc_pg_ordered_{driver}"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} AS SELECT i AS id, md5(i::text) AS s "
+            "FROM generate_series(1, 1000000) AS i",
+        ],
+    )
     out = tmp_path / "out.parquet"
     code = (
         "import polars as pl\n"
-        f"lf = pl.scan_database('SELECT i AS id, md5(i::text) AS s "
-        f"FROM generate_series(1, 1000000) AS i', {POSTGRES!r}, driver={driver!r}, "
+        f"lf = pl.scan_database({table!r}, {POSTGRES!r}, driver={driver!r}, "
         "partition_on='id', partition_num=16, max_connections=4, batch_size=10000)\n"
         f"for _ in range({3 if FULL else 1}):\n"
         f"    lf.sink_parquet({str(out)!r})\n"
@@ -1210,6 +1221,8 @@ def test_ordered_read_with_more_partitions_than_sessions(
         subprocess.run([sys.executable, "-c", code], check=True, timeout=120)
     except subprocess.TimeoutExpired:
         pytest.fail("the ordered partitioned read hung")
+    finally:
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
     assert pl.scan_parquet(out).select(pl.len()).collect().item() == 1_000_000
 
 
@@ -1949,6 +1962,129 @@ def test_mysql_user_statements_during_an_unbuffered_live_scan(driver: str) -> No
         user_statement()
     finally:
         conn.close()
+
+
+@pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
+@pytest.mark.parametrize("how", ["pymysql", "sqlalchemy"])
+def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> None:
+    # PyMySQL drops unread rows of an unbuffered cursor (with a warning) when another
+    # statement runs: also through a SQLAlchemy Connection. (The later results of a
+    # multi-statement query are dropped silently, and not detected.)
+    pymysql = pytest.importorskip("pymysql")
+    uri = SERVERS["mysql"].uri
+    assert uri is not None
+    engine = None
+    if how == "pymysql":
+        conn = pymysql.connect(**_parts(uri))
+        cur = conn.cursor(pymysql.cursors.SSCursor)
+        cur.execute("SELECT id FROM edge")
+        cur.fetchone()
+        source: Any = conn
+    else:
+        sqlalchemy = pytest.importorskip("sqlalchemy")
+        engine = sqlalchemy.create_engine(_sqlalchemy_url(uri, "pymysql"))
+        conn = engine.connect()
+        result = conn.execution_options(stream_results=True).exec_driver_sql(
+            "SELECT id FROM edge"
+        )
+        result.fetchmany(1)
+        source = conn
+    try:
+        with pytest.raises(Exception, match="not been read to the end"):
+            pl.scan_database("edge", source).collect()
+        # the user's result is intact; read to the end, the scan works again
+        if how == "pymysql":
+            assert len(cur.fetchall()) > 0
+            cur.close()
+        else:
+            assert len(result.fetchall()) > 0
+        assert pl.scan_database("edge", source).collect().height > 0
+    finally:
+        conn.close()
+        if engine is not None:
+            engine.dispose()
+
+
+@pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
+@pytest.mark.parametrize("how", ["execute", "callproc"])
+def test_pymysql_scan_after_a_stored_procedure_call(how: str) -> None:
+    # the trailing OK packet of a CALL is not a pending result
+    pymysql = pytest.importorskip("pymysql")
+    uri = SERVERS["mysql"].uri
+    assert uri is not None
+    conn = pymysql.connect(**_parts(uri), autocommit=True)
+    try:
+        cur = conn.cursor()
+        cur.execute("DROP PROCEDURE IF EXISTS polars_scan_call_p")
+        cur.execute("CREATE PROCEDURE polars_scan_call_p() BEGIN SELECT 1 AS a; END")
+        if how == "execute":
+            cur.execute("CALL polars_scan_call_p()")
+        else:
+            cur.callproc("polars_scan_call_p")
+        assert cur.fetchall() == ((1,),)
+        assert pl.scan_database("SELECT 7 AS x", conn).collect().item() == 7
+        cur.execute("DROP PROCEDURE polars_scan_call_p")
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("server", ["mysql", "mariadb"])
+def test_autocommit_engine_still_streams_outside_postgres(server: str) -> None:
+    # only a Postgres named cursor needs a transaction: other dialects stream in
+    # AUTOCOMMIT too (the whole result in memory otherwise)
+    uri = SERVERS[server].uri
+    if uri is None:
+        pytest.skip(f"no {server} URI")
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("pymysql")
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(uri, "pymysql"), isolation_level="AUTOCOMMIT"
+    )
+    seen: list[str] = []
+
+    @sqlalchemy.event.listens_for(engine, "before_cursor_execute")
+    def hook(conn: Any, cursor: Any, stmt: str, *args: Any) -> None:
+        if "polars_stream_probe" in stmt:
+            seen.append(type(cursor).__name__)
+
+    try:
+        pl.scan_database("SELECT 1 AS polars_stream_probe", engine).collect()
+    finally:
+        engine.dispose()
+    assert seen
+    assert all("SS" in name or "Unbuffered" in name for name in seen), seen
+
+
+@needs_postgres
+@pytest.mark.parametrize("module", ["psycopg", "psycopg2"])
+def test_postgres_autocommit_connections_are_read(module: str) -> None:
+    # a named cursor needs a transaction: an autocommit connection (a factory's, an
+    # Engine's with isolation_level="AUTOCOMMIT") is read with one that outlives the
+    # statement
+    import importlib
+
+    driver = importlib.import_module(module)
+    assert POSTGRES is not None
+    q = "SELECT g AS id FROM generate_series(1, 5000) g"
+
+    def connect() -> Any:
+        conn = driver.connect(POSTGRES)
+        conn.autocommit = True
+        return conn
+
+    assert pl.scan_database(q, connect, batch_size=1000).collect().height == 5000
+    # (a table: a query over a table function (`generate_series`) is not proven to
+    # repeat, so it is not partitioned)
+    lf = pl.scan_database("orders", connect, partition_on="id", partition_num=3)
+    whole = pl.scan_database("orders", connect, partition_on=None)
+    assert lf.select("id").collect().height == whole.select("id").collect().height > 0
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    url = POSTGRES.replace("postgresql://", f"postgresql+{module}://", 1)
+    engine = sqlalchemy.create_engine(url, isolation_level="AUTOCOMMIT")
+    try:
+        assert pl.scan_database(q, engine, batch_size=1000).collect().height == 5000
+    finally:
+        engine.dispose()
 
 
 @needs_postgres
@@ -2859,12 +2995,69 @@ def test_mysql_live_connection_in_another_time_zone(module: str) -> None:
         assert lf.collect_schema()["ts"] == pl.Datetime("us", "UTC")
         assert lf.collect().sort("id")["ts"].to_list() == [instant, None]
         assert lf.filter(pl.col("ts") == instant).collect()["id"].to_list() == [1]
-        # a query's column type is unknown: read as the session shows it, not as UTC
+        # (#76) a query's TIMESTAMP is the same instants, as the table reads them
         query = pl.scan_database(f"SELECT id, ts FROM {table}", conn)
-        assert query.collect_schema()["ts"] == pl.Datetime("us")
+        assert query.collect_schema()["ts"] == pl.Datetime("us", "UTC")
+        assert query.collect().sort("id")["ts"].to_list() == [instant, None]
     finally:
         conn.close()
         _execute("mysql", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_postgres
+@pytest.mark.parametrize(
+    "driver", ["psycopg", "psycopg2", "pg8000", "adbc", "connectorx"]
+)
+def test_postgres_time_declared_as_text_under_schema(driver: str) -> None:
+    # `schema=` has no type to look up: a plain `time` declared String reads its text; a
+    # `timetz` never loses its offset (a Python driver's description tells it; an Arrow
+    # driver can't, and refuses a String that is a time of day, naming Postgres' cast)
+    table = f"r44_pg_timetz_{driver}"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, t time, tz timetz)",
+            f"INSERT INTO {table} VALUES (1, '10:00:00', '10:00:00+02'), (2, NULL, NULL)",
+        ],
+    )
+    python = driver in ("psycopg", "psycopg2", "pg8000")
+    try:
+        schema: dict[str, PolarsDataType] = {"id": pl.Int32, "t": pl.String}
+        lf = _scan("postgres17", driver, table, schema=schema, partition_on=None)
+        if python:
+            assert lf.collect().sort("id")["t"].to_list() == ["10:00:00", None]
+            for dtype in [pl.String, pl.Time]:
+                lf = _scan(
+                    "postgres17",
+                    driver,
+                    table,
+                    schema={"id": pl.Int32, "tz": dtype},
+                    partition_on=None,
+                )
+                with pytest.raises(
+                    pl.exceptions.InvalidOperationError, match=r"TIMETZ.*CAST.*AS TEXT"
+                ):
+                    lf.collect()
+            # the advice works
+            out = _scan(
+                "postgres17",
+                driver,
+                f"SELECT id, CAST(tz AS TEXT) AS tz FROM {table}",
+                schema={"id": pl.Int32, "tz": pl.String},
+                partition_on=None,
+            ).collect()
+            assert out.sort("id")["tz"].to_list() == ["10:00:00+02", None]
+        else:
+            with pytest.raises(
+                pl.exceptions.SchemaError, match=r"TIMETZ.*CAST.*AS TEXT"
+            ):
+                lf.collect()
+        # (the table's own types read the same: the timetz as text, with its offset)
+        out = _scan("postgres17", driver, table, partition_on=None).collect()
+        assert out.sort("id")["tz"].to_list() == ["10:00:00+02", None]
+    finally:
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
 
 
 @needs_postgres
@@ -3443,6 +3636,78 @@ def test_postgres_infinity_is_an_error(driver: str) -> None:
 
 
 @needs_postgres
+@pytest.mark.parametrize("how", ["live", "engine", "sa_connection", "sa_uri"])
+def test_postgres_infinity_is_an_error_on_psycopg2_connections_of_the_user(
+    how: str,
+) -> None:
+    # #99: psycopg2 read `-infinity` as 0001-01-01 and `infinity` as 9999-12-31 on a
+    # connection the plugin didn't open too (also behind SQLAlchemy)
+    psycopg2 = pytest.importorskip("psycopg2")
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    assert POSTGRES is not None
+    table = f"r42_pg_inf_{how}"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, d date, ts timestamp, tz timestamptz, "
+            "da date[])",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01', '2024-01-01', "
+            "'2024-01-01 00:00:00+00', '{2024-01-01}'), (2, '-infinity', NULL, NULL, NULL), "
+            "(3, NULL, 'infinity', NULL, NULL), (4, NULL, NULL, '-infinity', NULL), "
+            "(5, NULL, NULL, NULL, '{2024-01-01,infinity}')",
+        ],
+    )
+    url = _sqlalchemy_url(POSTGRES, "psycopg2")
+    engine = None
+    conn: Any = None
+    if how == "live":
+        conn = source = psycopg2.connect(POSTGRES)
+    elif how == "engine":
+        source = engine = sqlalchemy.create_engine(url)
+    elif how == "sa_connection":
+        engine = sqlalchemy.create_engine(url)
+        conn = source = engine.connect()
+    else:
+        source = url
+    try:
+        # (`schema=`: nothing looks the columns' types up, as a typed read would)
+        types = {
+            "d": pl.Date,
+            "ts": pl.Datetime("us"),
+            "tz": pl.Datetime("us", "UTC"),
+            "da": pl.List(pl.Date),
+        }
+        for column, dtype in types.items():
+            for query in [table, f"SELECT id, {column} FROM {table}"]:
+                for schema in [None, {"id": pl.Int32, column: dtype}]:
+                    lf = pl.scan_database(
+                        query, source, partition_on=None, schema=schema
+                    )
+                    if schema is None or query != table:
+                        lf = lf.select("id", column)
+                    with pytest.raises(pl.exceptions.PolarsError, match="infinity"):
+                        lf.collect()
+        # the user's own statements keep the driver's reading of them
+        if how == "live":
+            cur = conn.cursor()
+            cur.execute(f"SELECT d FROM {table} WHERE id = 2")
+            assert cur.fetchone()[0].year == 1
+            conn.rollback()
+        # rows without one are read
+        lf = pl.scan_database(
+            f"SELECT * FROM {table} WHERE id = 1", source, partition_on=None
+        )
+        assert lf.collect()["d"].to_list() == [date(2024, 1, 1)]
+    finally:
+        if conn is not None:
+            conn.close()
+        if engine is not None:
+            engine.dispose()
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_postgres
 def test_postgres_multidimensional_array_is_an_error_on_adbc() -> None:
     # ADBC flattened {{1,2},{3,4}} to [1, 2, 3, 4]
     table = "rvc_pg_ndims"
@@ -3761,18 +4026,17 @@ def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
     # an Engine's connections had no cancel: head() waited for the slowest partition
     sa = pytest.importorskip("sqlalchemy")
     pytest.importorskip("psycopg")
+    # A plain table: a slow function in a view or key isn't proven repeatable, so it
+    # couldn't be partitioned. The last partition is slow because it holds most rows.
     _execute(
         "postgres17",
         [
-            "DROP VIEW IF EXISTS rvc_pg_slow_v",
             "DROP TABLE IF EXISTS rvc_pg_slow",
-            "CREATE OR REPLACE FUNCTION rvc_pg_slow_fn(i int) RETURNS int LANGUAGE plpgsql "
-            "IMMUTABLE AS $$ BEGIN IF i > 300 THEN PERFORM pg_sleep(0.05); END IF; "
-            "RETURN i; END $$",
-            "CREATE TABLE rvc_pg_slow (id int PRIMARY KEY)",
-            "INSERT INTO rvc_pg_slow SELECT generate_series(1, 400)",
-            "CREATE VIEW rvc_pg_slow_v AS SELECT id, rvc_pg_slow_fn(id) AS v "
-            "FROM rvc_pg_slow",
+            "CREATE UNLOGGED TABLE rvc_pg_slow (id int, k int, s text)",
+            "INSERT INTO rvc_pg_slow SELECT g, 1, md5(g::text) "
+            "FROM generate_series(1, 300) g",
+            "INSERT INTO rvc_pg_slow SELECT 301 + g % 100, 1, md5(g::text) "
+            "FROM generate_series(1, 12000000) g",
         ],
     )
     assert POSTGRES is not None
@@ -3781,15 +4045,16 @@ def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
     )
     try:
         lf = pl.scan_database(
-            "rvc_pg_slow_v",
+            "rvc_pg_slow",
             engine,
             partition_on="id",
             partition_range=(1, 400),
             partition_num=4,
         )
         start = time.perf_counter()
-        assert lf.filter(pl.col("id") <= 100).head(1).collect().height == 1
-        # the last partition alone takes 5 s
+        # k matches in every partition: none is pruned, the first answers at once
+        assert lf.filter(pl.col("k") == 1).head(1).collect().height == 1
+        # the last partition alone takes several seconds
         assert time.perf_counter() - start < 3
         # The cancelled partitions gave their connections back after `collect()`
         # returned, from threads of their own: an Engine disposed then let them go
@@ -3797,14 +4062,7 @@ def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
         assert engine.pool.checkedout() == 0
     finally:
         engine.dispose()
-        _execute(
-            "postgres17",
-            [
-                "DROP VIEW IF EXISTS rvc_pg_slow_v",
-                "DROP TABLE IF EXISTS rvc_pg_slow",
-                "DROP FUNCTION IF EXISTS rvc_pg_slow_fn(int)",
-            ],
-        )
+        _execute("postgres17", ["DROP TABLE IF EXISTS rvc_pg_slow"])
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -5083,6 +5341,9 @@ def test_partition_over_a_volatile_user_function(name: str) -> None:
         )
         with pytest.raises(pl.exceptions.InvalidOperationError, match="review_myrand"):
             lf.collect()
+        # a user's function is refused whatever its IMMUTABLE / DETERMINISTIC label,
+        # which
+        # the database doesn't check (#509); a plain column key still partitions
         lf = _scan(
             name,
             driver,
@@ -5090,7 +5351,16 @@ def test_partition_over_a_volatile_user_function(name: str) -> None:
             partition_on="d",
             partition_num=4,
         )
-        assert sorted(lf.collect()["d"].to_list()) == [2 * i for i in range(300)]
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
+        lf = _scan(
+            name,
+            driver,
+            "review_volatile_fn_ids",
+            partition_on="id",
+            partition_num=4,
+        )
+        assert sorted(lf.collect()["id"].to_list()) == list(range(300))
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -5230,6 +5500,47 @@ def test_mysql_zero_dates_in_queries_and_under_schema(name: str) -> None:
             name, driver, table, schema=schema, partition_on="d", partition_num=3
         )
         assert lf.collect()["id"].sort().to_list() == [1, 2, 3, 4], driver
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.String, pl.Date])
+def test_mysql_zero_dates_are_never_silently_dropped_by_a_null_test(
+    name: str, dtype: pl.DataType
+) -> None:
+    # #460: under `schema=` of a dtype other than a date, `IS NULL` was pushed as stored
+    # and returned only the NULL row, the zero date (which the read refuses) left out
+    # silently
+    table = f"r460_zero_{name}_{str(dtype).lower()}"
+    _execute(
+        name,
+        [
+            "SET SESSION sql_mode = ''",
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, dd date NULL)",
+            f"INSERT INTO {table} VALUES (1, '0000-00-00'), (2, NULL), (3, '2020-01-02')",
+        ],
+    )
+    try:
+        lf = _scan(
+            name,
+            "adbc",
+            table,
+            schema={"id": pl.Int32, "dd": dtype},
+        )
+        for predicate, expected in [
+            (pl.col("dd").is_null(), [1, 2]),
+            (pl.col("dd").is_not_null(), [3]),
+        ]:
+            if dtype == pl.Date:
+                # the zero date reads as NULL
+                got = lf.filter(predicate).collect()["id"].sort().to_list()
+                assert got == expected
+            else:
+                # the read refuses a zero date: it is not left out silently
+                with pytest.raises(pl.exceptions.ComputeError, match="zero"):
+                    lf.filter(predicate).collect()
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
 
 
 @pytest.mark.parametrize(
@@ -5633,6 +5944,104 @@ def test_mariadb_ordered_query_sorts_by_the_derived_table_column(driver: str) ->
 
 
 @pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
+def test_mariadb_star_order_by_position_under_a_reordered_schema() -> None:
+    # `ORDER BY 1` of a `SELECT *` is the database's first column, not the first of the
+    # user's `schema=`: it sorted by the date, silently
+    _execute(
+        "mariadb",
+        [
+            "DROP TABLE IF EXISTS r42_star",
+            "CREATE TABLE r42_star (id INT PRIMARY KEY, d DATE)",
+            "INSERT INTO r42_star VALUES (1, '2024-01-03'), (2, '2024-01-02'), "
+            "(3, '2024-01-01')",
+        ],
+    )
+    schema = {"d": pl.Date, "id": pl.Int32}
+    for driver in ["pymysql", "live"]:
+        lf = _scan(
+            "mariadb",
+            driver,
+            "SELECT * FROM r42_star ORDER BY 1 DESC",
+            schema=schema,
+            partition_on=None,
+        )
+        with pytest.raises(pl.exceptions.PolarsError, match="can't be kept"):
+            lf.collect()
+        lf = _scan(
+            "mariadb",
+            driver,
+            "SELECT * FROM r42_star ORDER BY id DESC",
+            schema=schema,
+            partition_on=None,
+        )
+        assert lf.collect()["id"].to_list() == [3, 2, 1], driver
+        # the database's own columns: the position is theirs
+        lf = _scan(
+            "mariadb",
+            driver,
+            "SELECT * FROM r42_star ORDER BY 1 DESC",
+            partition_on=None,
+        )
+        assert lf.collect()["id"].to_list() == [3, 2, 1], driver
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_timestamp_read_as_text_is_the_same_on_every_live_path(name: str) -> None:
+    # a TIMESTAMP typed String read `...+00:00` through a query or `schema=` and no
+    # offset through a table (the bridge converted its instants to UTC, the SQL did)
+    pymysql = pytest.importorskip("pymysql")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    u = urlsplit(server.uri)
+    table = f"r42_ts_text_{name}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01 22:00:00'), (2, NULL)",
+        ],
+    )
+    conn = pymysql.connect(
+        host=u.hostname,
+        port=u.port,
+        user=u.username,
+        password=u.password,
+        database=u.path.lstrip("/"),
+        autocommit=True,
+    )
+    try:
+        # (a session zone that isn't UTC: the instant is 17:00 there)
+        conn.cursor().execute("SET time_zone = '+05:00'")
+        texts = set()
+        for source in [table, f"SELECT id, ts FROM {table}"]:
+            for kwargs in [
+                {"schema_overrides": {"ts": pl.String}},
+                {"schema": {"id": pl.Int32, "ts": pl.String}},
+            ]:
+                out = pl.scan_database(
+                    source, conn, partition_on=None, **kwargs
+                ).collect()
+                texts.add(tuple(out.sort("id")["ts"].to_list()))
+        assert texts == {("2024-01-01 22:00:00.000000+00:00", None)}
+        # (through a URI the digits are the driver's, the instant the same)
+        for source in [table, f"SELECT id, ts FROM {table}"]:
+            out = pl.scan_database(
+                source,
+                server.uri,
+                partition_on=None,
+                schema_overrides={"ts": pl.String},
+            ).collect()
+            ts = out.sort("id")["ts"].to_list()
+            assert ts[0].startswith("2024-01-01 22:00:00")
+            assert ts[0].endswith("+00:00")
+    finally:
+        conn.close()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
 def test_mariadb_ordered_query_with_a_timestamp_in_a_live_session() -> None:
     # #423: the wrapper of a query's column conversions repeats the ORDER BY outside
     # (MariaDB drops it inside a derived table); a key that isn't a selected column
@@ -5679,14 +6088,17 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
     module: str,
 ) -> None:
     # #440: a TIMESTAMP is read in the session's time zone: under `schema=` its type
-    # isn't known, so the instants would be shifted silently
+    # isn't known, so the instants were shifted silently. (#76) The result's field type
+    # tells a TIMESTAMP, and the session's zone is read: the instants are right
+    # (a table of its own: the parametrizations run side by side)
+    table = f"r31_tz_{module.replace('.', '_')}"
     _execute(
         "mysql",
         [
             "SET time_zone = '+00:00'",
-            "DROP TABLE IF EXISTS r31_tz",
-            "CREATE TABLE r31_tz (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
-            "INSERT INTO r31_tz VALUES (1, '2024-01-01 20:00:00')",
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01 20:00:00')",
         ],
     )
     schema: dict[str, PolarsDataType] = {
@@ -5696,25 +6108,85 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
     expected = datetime(2024, 1, 1, 20, tzinfo=UTC)
     conn = _mysql_connection("mysql", module, "-08:00")
     try:
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="time zone"):
-            pl.scan_database("r31_tz", conn, schema=schema).collect()
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="time zone"):
-            pl.scan_database(
-                "SELECT id, ts FROM r31_tz",
-                conn,
-                schema_overrides={"ts": pl.Datetime("us", "UTC")},
-            ).collect()
+        out = pl.scan_database(table, conn, schema=schema).collect()
+        assert out["ts"].item() == expected
+        out = pl.scan_database(
+            f"SELECT id, ts FROM {table}",
+            conn,
+            schema_overrides={"ts": pl.Datetime("us", "UTC")},
+        ).collect()
+        assert out["ts"].item() == expected
         # a table's declared type is known: the instant is read right
-        out = pl.scan_database("r31_tz", conn).collect()
+        out = pl.scan_database(table, conn).collect()
         assert out["ts"].item() == expected
     finally:
         conn.close()
     conn = _mysql_connection("mysql", module, "+00:00")
     try:
-        out = pl.scan_database("r31_tz", conn, schema=schema).collect()
+        out = pl.scan_database(table, conn, schema=schema).collect()
         assert out["ts"].item() == expected
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_sqlalchemy_connection_in_another_time_zone(name: str) -> None:
+    # a live SQLAlchemy `Connection` over a MySQL driver reads a TIMESTAMP in its
+    # session's zone as every other live MySQL connection: the instants, in UTC, as the
+    # table source reads them, for text and for an unknown type; a DATETIME stays naive
+    sa = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("pymysql")
+    uri = SERVERS[name].uri
+    if uri is None:
+        pytest.skip(f"no {name} URI")
+    table = f"r44_sa_tz_{name}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL, "
+            "dt DATETIME NULL)",
+            "SET time_zone = '+00:00'",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01 22:00:00', "
+            "'2024-01-01 22:00:00')",
+        ],
+    )
+    engine = sa.create_engine(_sqlalchemy_url(uri, "pymysql"))
+    instant = datetime(2024, 1, 1, 22, tzinfo=UTC)
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("SET time_zone = '+05:00'")
+            for source in [table, f"SELECT id, ts, dt FROM {table}"]:
+                lf = pl.scan_database(source, conn, partition_on=None)
+                assert lf.collect_schema()["ts"] == pl.Datetime("us", "UTC")
+                out = lf.collect()
+                assert out["ts"].to_list() == [instant]
+                assert out["dt"].to_list() == [datetime(2024, 1, 1, 22)]
+                texts = set()
+                for kwargs in [
+                    {"schema_overrides": {"ts": pl.String}},
+                    {"schema": {"id": pl.Int32, "ts": pl.String}},
+                ]:
+                    out = pl.scan_database(
+                        source, conn, partition_on=None, **kwargs
+                    ).collect()
+                    texts.add(out["ts"].item())
+                assert texts == {"2024-01-01 22:00:00.000000+00:00"}, source
+                out = pl.scan_database(
+                    source,
+                    conn,
+                    partition_on=None,
+                    schema={
+                        "id": pl.Int32,
+                        "ts": pl.Datetime("us", "UTC"),
+                        "dt": pl.Datetime("us"),
+                    },
+                ).collect()
+                assert out["ts"].to_list() == [instant]
+                assert out["dt"].to_list() == [datetime(2024, 1, 1, 22)]
+    finally:
+        engine.dispose()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
 
 
 @pytest.mark.parametrize("module", ["pymysql", "mysql.connector"])
@@ -5759,3 +6231,1159 @@ def test_mysql_params_with_percent_in_names(module: str, name: str) -> None:
                 assert lf.select("id", "rate%").collect()["rate%"].to_list() == [7]
     finally:
         conn.close()
+
+
+@needs_postgres
+def test_postgres_user_collations_named_like_builtin_ones() -> None:
+    # #497, #498: a collation is known by its identity, not its name: a user's ICU `"C"`
+    # (or `"default"`, `"POSIX"`, `ucs_basic`) is not the byte-wise built-in one
+    _execute(
+        "postgres17",
+        [
+            "DROP SCHEMA IF EXISTS r_coll_det CASCADE",
+            "DROP SCHEMA IF EXISTS r_coll_nd CASCADE",
+            "CREATE SCHEMA r_coll_det",
+            "CREATE SCHEMA r_coll_nd",
+            "CREATE COLLATION r_coll_det.\"C\" (provider = icu, locale = 'en-US')",
+            'CREATE TABLE r_coll_det.keys (id int, s text COLLATE r_coll_det."C")',
+            "INSERT INTO r_coll_det.keys VALUES (1, 'Z'), (2, 'a'), (3, 'z'), (4, 'A')",
+        ]
+        + [
+            f'CREATE COLLATION r_coll_nd."{name}" (provider = icu, '
+            "locale = 'und-u-ks-level2', deterministic = false)"
+            for name in ["C", "default", "POSIX", "ucs_basic"]
+        ]
+        + [
+            f'CREATE TABLE r_coll_nd.keys_{i} (id int, s text COLLATE r_coll_nd."{name}")'
+            for i, name in enumerate(["C", "default", "POSIX", "ucs_basic"])
+        ]
+        + [
+            f"INSERT INTO r_coll_nd.keys_{i} VALUES (1, 'Z'), (2, 'a'), (3, 'z'), (4, 'A')"
+            for i in range(4)
+        ],
+    )
+    try:
+        # the table path: ordering over a user collation named `C`
+        lf = _scan("postgres17", "psycopg", "r_coll_det.keys")
+        check_filter_ids(
+            lf,
+            [
+                pl.col("s") < "a",
+                pl.col("s") > "a",
+                pl.col("s") >= "Z",
+                pl.col("s") == "a",
+            ],
+        )
+        # the query path: the printed collation name is the user's, visible first on the
+        # search path
+        for i in range(4):
+            lf = _scan(
+                "postgres17",
+                "psycopg",
+                f"SELECT id, s FROM keys_{i}",
+                connect_options={"options": "-c search_path=r_coll_nd,pg_catalog"},
+            )
+            check_filter_ids(lf, [pl.col("s") == "a", pl.col("s") != "a"])
+    finally:
+        _execute(
+            "postgres17",
+            [
+                "DROP SCHEMA IF EXISTS r_coll_det CASCADE",
+                "DROP SCHEMA IF EXISTS r_coll_nd CASCADE",
+            ],
+        )
+
+
+@pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
+@ORACLE_GROUP
+def test_oracle_literals_in_the_1582_calendar_gap() -> None:
+    # #512: Oracle reads a literal in 1582-10-05..14 back as 1582-10-15, which the
+    # stored values and Polars' comparison don't: it is not pushed
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE r512_gap'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            'CREATE TABLE r512_gap ("id" NUMBER(9), d DATE, t TIMESTAMP(6))',
+            "INSERT INTO r512_gap VALUES (1, DATE '1582-10-04', TIMESTAMP '1582-10-04 00:00:00')",
+            "INSERT INTO r512_gap VALUES (2, DATE '1582-10-15', TIMESTAMP '1582-10-15 00:00:00')",
+            "INSERT INTO r512_gap VALUES (3, DATE '1582-10-16', TIMESTAMP '1582-10-16 00:00:00')",
+        ],
+    )
+    try:
+        lf = _scan("oracle", "oracledb", "R512_GAP")
+        literals = [
+            datetime(1582, 10, 10),
+            datetime(1582, 10, 5),
+            datetime(1582, 10, 14),
+        ]
+        predicates = []
+        for col in ("D", "T"):
+            for lit in literals:
+                c = pl.col(col)
+                predicates += [
+                    c == lit,
+                    c != lit,
+                    c < lit,
+                    c <= lit,
+                    c > lit,
+                    c >= lit,
+                    c.is_in([lit]),
+                ]
+        check_filter_ids(lf, predicates)
+    finally:
+        _execute("oracle", ["DROP TABLE r512_gap"])
+
+
+# Silent value and type conversions.
+
+
+@pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
+@pytest.mark.parametrize("driver", ["pymysql", "connectorx", "live"])
+def test_mariadb_query_with_order_by_reads_the_dtypes_of_one_without(
+    driver: str,
+) -> None:
+    # (#455) the result types of a query with a top-level ORDER BY weren't looked up: a
+    # FLOAT holding 16777216 read as 6-digit text (16777200.0), a YEAR as String
+    if driver == "connectorx":
+        pytest.importorskip("connectorx")
+    table = f"t455_order_{driver}"
+    _execute(
+        "mariadb",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, f FLOAT, y YEAR)",
+            f"INSERT INTO {table} VALUES (1, 16777216, 2024), (2, 1.5, 1999)",
+        ],
+    )
+    try:
+        plain = _scan("mariadb", driver, f"SELECT id, f, y FROM {table}").collect()
+        ordered = _scan(
+            "mariadb", driver, f"SELECT id, f, y FROM {table} ORDER BY id"
+        ).collect()
+        assert plain.schema == ordered.schema
+        assert ordered["f"].to_list() == [16777216.0, 1.5]
+        assert ordered["y"].to_list() == plain["y"].to_list()
+    finally:
+        _execute("mariadb", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+@pytest.mark.parametrize("driver", ["pymysql", "live"])
+def test_mysql_select_star_order_by_is_kept_with_converted_columns(
+    name: str, driver: str
+) -> None:
+    # (#457) `SELECT * … ORDER BY id DESC` of a table with a FLOAT / DATE / DATETIME /
+    # TIMESTAMP column raised "the query's ORDER BY can't be kept" on MariaDB: the
+    # star is the planned columns
+    if SERVERS[name].uri is None:
+        pytest.skip(f"no {name} URI")
+    table = f"t457_star_{name}_{driver}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, f FLOAT, d DATE, "
+            "dt DATETIME, ts TIMESTAMP NULL)",
+            f"INSERT INTO {table} VALUES "
+            "(1, 16777216, '2024-01-01', '2024-01-01 01:02:03', '2024-01-01 01:02:03'), "
+            "(3, 1.5, '2024-01-03', '2024-01-03 01:02:03', '2024-01-03 01:02:03'), "
+            "(2, NULL, NULL, NULL, NULL)",
+        ],
+    )
+    try:
+        for query in [
+            f"SELECT * FROM {table} ORDER BY id DESC",
+            f"SELECT * FROM {table} ORDER BY {table}.id DESC",
+            f"SELECT * FROM {table} AS t ORDER BY 1 DESC",
+        ]:
+            lf = _scan(name, driver, query, partition_on=None)
+            out = lf.collect()
+            assert out["id"].to_list() == [3, 2, 1], query
+            assert out["f"].to_list() == [1.5, None, 16777216.0], query
+            assert out["d"].to_list() == [date(2024, 1, 3), None, date(2024, 1, 1)]
+            assert lf.head(2).collect()["id"].to_list() == [3, 2], query
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_live_query_timestamps_are_instants_in_a_non_utc_session(
+    name: str,
+) -> None:
+    # (#76) a query's TIMESTAMP on a live connection read as naive wall-clock time of
+    # the session's zone, where the table reads UTC instants: dt.date() put a row on
+    # another day. The zone is read from the session; where it can't be told apart, or a
+    # wall-clock time is ambiguous, the read fails
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    assert server.factory is not None
+    table = f"t76_live_{name}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL, "
+            "dt DATETIME)",
+            "SET time_zone = '+00:00'",
+            f"INSERT INTO {table} VALUES "
+            "(1, '2024-01-01 22:00:00', '2024-01-01 22:00:00'), "
+            "(2, NULL, NULL), "
+            "(3, '2024-11-03 09:30:00', '2024-11-03 09:30:00'), "
+            "(4, '2024-07-01 12:00:00', '2024-07-01 12:00:00')",
+        ],
+    )
+    conn = server.factory(server.uri)()
+    try:
+
+        def run(statement: str) -> None:
+            cur = conn.cursor()
+            cur.execute(statement)
+            cur.close()
+
+        run("SET time_zone = '+00:00'")
+        utc = (
+            pl.scan_database(f"SELECT * FROM {table}", conn, partition_on=None)
+            .collect()
+            .sort("id")
+        )
+        assert utc.schema["ts"] == pl.Datetime("us", "UTC")
+        for zone in ["-08:00", "+05:30", "SYSTEM"]:
+            run(f"SET time_zone = '{zone}'")
+            for source in [f"SELECT * FROM {table}", table]:
+                lf = pl.scan_database(source, conn, partition_on=None)
+                got = lf.collect().sort("id")
+                assert_frame_equal(got, utc)
+                assert got["ts"].dt.date().to_list()[0] == date(2024, 1, 1)
+        # the zone is read for each query
+        run("SET time_zone = '-08:00'")
+        for source in [f"SELECT id, ts FROM {table} WHERE id = 1", table]:
+            out = pl.scan_database(source, conn, partition_on=None).collect()
+            assert out["ts"].dt.convert_time_zone("UTC")[0] == datetime(
+                2024, 1, 1, 22, tzinfo=UTC
+            )
+        # a zone with daylight saving time: exact outside the repeated hour
+        try:
+            run("SET time_zone = 'America/Los_Angeles'")
+        except Exception:
+            pytest.skip("no time zone tables on this server")
+        out = pl.scan_database(
+            f"SELECT id, ts FROM {table} WHERE id IN (1, 4)", conn, partition_on=None
+        ).collect()
+        assert out.sort("id")["ts"].to_list() == [
+            datetime(2024, 1, 1, 22, tzinfo=UTC),
+            datetime(2024, 7, 1, 12, tzinfo=UTC),
+        ]
+        # 2024-11-03 09:30 UTC is 01:30 PST, a wall-clock time that happened twice
+        with pytest.raises(pl.exceptions.PolarsError):
+            pl.scan_database(
+                f"SELECT id, ts FROM {table} WHERE id = 3", conn, partition_on=None
+            ).collect()
+        # an abbreviation names no zone's rules
+        run("SET time_zone = 'SYSTEM'")
+    finally:
+        conn.close()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_clickhouse
+def test_clickhouse_datetime64_arrays_retyped_to_a_coarser_unit_are_not_misread() -> (
+    None
+):
+    # (#456) the nanosecond ticks of an Array(DateTime64(9)) read as microseconds
+    # (year 55972) under a List(Datetime("us")) override, a "ms" one panicked: each
+    # is an error or the right instant
+    pytest.importorskip("clickhouse_connect")
+    table = "t456_ch_ticks"
+    _execute(
+        "clickhouse",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id Int32, a Array(DateTime64(9, 'UTC'))) "
+            "ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} VALUES (1, ['2024-01-02 03:04:05.123456789'])",
+        ],
+    )
+    try:
+        for unit in ["us", "ms"]:
+            for source in [table, f"SELECT * FROM {table}"]:
+                lf = _scan(
+                    "clickhouse",
+                    "clickhouse_connect",
+                    source,
+                    schema_overrides={"a": pl.List(pl.Datetime(unit, "UTC"))},  # type: ignore[arg-type]
+                )
+                try:
+                    df = lf.collect()
+                except pl.exceptions.PolarsError:
+                    continue
+                [value] = df["a"][0].to_list()
+                assert value.replace(microsecond=0) == datetime(
+                    2024, 1, 2, 3, 4, 5, tzinfo=UTC
+                ), (unit, source)
+    finally:
+        _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_postgres
+def test_postgres_psycopg2_infinity_is_an_error_without_a_type_lookup() -> None:
+    # (#99) under `schema=` no type lookup ran, and psycopg2 read ±infinity as
+    # date.max / date.min
+    table = "t99_pg_inf"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, d date, tz timestamptz[])",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01', '{{2024-01-01 00:00+00}}'), "
+            "(2, '-infinity', NULL), (3, NULL, '{infinity}')",
+        ],
+    )
+    schema = {
+        "id": pl.Int32,
+        "d": pl.Date,
+        "tz": pl.List(pl.Datetime("us", "UTC")),
+    }
+    try:
+        for column in ["d", "tz"]:
+            lf = _scan("postgres17", "psycopg2", table, schema=schema)
+            with pytest.raises(pl.exceptions.PolarsError, match="infinity"):
+                lf.select(column).collect()
+        ok = _scan("postgres17", "psycopg2", table, schema=schema).select("id")
+        assert ok.collect()["id"].sort().to_list() == [1, 2, 3]
+    finally:
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_view_column_list_permuting_the_querys_aliases(name: str) -> None:
+    # #309: under `schema=` a view's columns were matched to its query's by name, but
+    # MySQL's definition leaves out the view's column list: `a` here is `rand()`
+    _execute(
+        name,
+        [
+            "DROP VIEW IF EXISTS review_volatile_perm",
+            "DROP TABLE IF EXISTS review_volatile_perm_ids",
+            "CREATE TABLE review_volatile_perm_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_volatile_perm_ids VALUES "
+            + ", ".join(f"({i})" for i in range(300)),
+            "CREATE VIEW review_volatile_perm (a, b) AS "
+            "SELECT rand() AS b, id AS a FROM review_volatile_perm_ids",
+        ],
+    )
+    # the view's column `a` is `rand()`; the schema may list the columns in either order
+    for schema in (
+        {"a": pl.Float64, "b": pl.Int64},
+        {"b": pl.Int64, "a": pl.Float64},
+    ):
+        for driver in _runnable_drivers(name):
+            lf = _scan(name, driver, "review_volatile_perm", schema=schema)
+            # `a` is never filtered by the database (it would call rand() again)
+            pred = pl.col("a") > 0.5
+            assert "filters 0/1" in lf.filter(pred).explain(), (driver, schema)
+            df = lf.filter(pred).collect()
+            assert (df["a"] > 0.5).all(), (driver, schema)
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="partitioned"
+            ):
+                _scan(
+                    name,
+                    driver,
+                    "review_volatile_perm",
+                    schema=schema,
+                    partition_on="b",
+                    partition_num=4,
+                ).collect()
+
+
+def _refused(
+    name: str,
+    source: str,
+    key: str = "id",
+    driver: str | None = None,
+    *,
+    via: str | None = None,
+    why: str | None = None,
+) -> None:
+    """
+    The explicit `partition_on` is refused.
+
+    `via`: which check fired, `"query"` (the
+    SQL's own allowlist, `this query can't be partitioned`) or `"source"` (the catalog:
+    a view, a table's kind, a user's function, a collation); `why`: a regex the message
+    names the unproven item by.
+    """
+    lf = _scan(
+        name, driver or _default_driver(name), source, partition_on=key, partition_num=4
+    )
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="can't be partitioned"
+    ) as e:
+        lf.collect()
+    message = str(e.value)
+    if via is not None:
+        assert f"this {via} can't be partitioned" in message, message
+    if why is not None:
+        assert re.search(why, message, re.IGNORECASE), message
+
+
+def _partitions(name: str, source: str, key: str = "id") -> list[int]:
+    lf = _scan(name, _default_driver(name), source, partition_on=key, partition_num=4)
+    return sorted(lf.collect()["id"].to_list())
+
+
+def _execute_as_root(name: str, statements: list[str]) -> None:
+    """MySQL's `polars` can't create functions (binlog): the root user does."""
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    assert server.factory is not None
+    conn = server.factory(
+        server.uri.replace("polars:polars_Test1", "root:polars_Test1")
+    )()
+    try:
+        cur = conn.cursor()
+        for sql in statements:
+            cur.execute(sql)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_postgres_allowlist_kinds_of_relation() -> None:
+    # #463, #506, #507: only ordinary tables (whose children are ordinary), and views
+    # proven the same way, partition; server views, user operators and casts do not
+    name = "postgres17"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_al_parent CASCADE",
+            "DROP TABLE IF EXISTS review_al_ids CASCADE",
+            "CREATE TABLE review_al_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_al_ids SELECT g FROM generate_series(0, 299) g",
+            "CREATE TABLE review_al_parent (id int, p int) PARTITION BY RANGE (id)",
+            "CREATE TABLE review_al_p1 PARTITION OF review_al_parent FOR VALUES "
+            "FROM (0) TO (150)",
+            "CREATE TABLE review_al_p2 PARTITION OF review_al_parent FOR VALUES "
+            "FROM (150) TO (300)",
+            "INSERT INTO review_al_parent SELECT g, 0 FROM generate_series(0, 299) g",
+            "CREATE OR REPLACE VIEW review_al_v AS SELECT id FROM review_al_ids",
+        ],
+    )
+    for source in ["review_al_ids", "review_al_parent", "review_al_v"]:
+        lf = _scan(
+            name, _default_driver(name), source, partition_on="id", partition_num=4
+        )
+        assert sorted(lf.collect()["id"].to_list()) == list(range(300)), source
+    # server-state views: their definitions call functions that aren't proven (#463)
+    for source in [
+        "SELECT datid FROM pg_stat_database",
+        "SELECT pid AS id FROM pg_stat_activity",
+    ]:
+        _refused(name, source, "pid" if "activity" in source else "datid")
+    # a user's operator over a volatile function (#507), on a domain over `int`: it
+    # counts for the sources with a column of that type only (round 2, finding 3); one
+    # on `int` would count for every int column of the tests running at the same time
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_al_dt",
+            "DROP OPERATOR IF EXISTS ===(review_al_dom, review_al_dom)",
+            "DROP FUNCTION IF EXISTS review_al_noisy(review_al_dom, review_al_dom)",
+            "DROP DOMAIN IF EXISTS review_al_dom",
+            "CREATE DOMAIN review_al_dom AS int",
+            "CREATE TABLE review_al_dt (id review_al_dom PRIMARY KEY)",
+            "INSERT INTO review_al_dt SELECT g FROM generate_series(0, 299) g",
+            "CREATE OR REPLACE FUNCTION review_al_noisy(a review_al_dom, "
+            "b review_al_dom) RETURNS bool "
+            "LANGUAGE sql VOLATILE AS 'SELECT random() < 0.5'",
+            "CREATE OPERATOR === (LEFTARG = review_al_dom, RIGHTARG = review_al_dom, "
+            "FUNCTION = review_al_noisy)",
+        ],
+    )
+    try:
+        # (#506, #507) the error names the operator
+        _refused(
+            name,
+            "SELECT id FROM review_al_dt WHERE id === id",
+            via="source",
+            why=r"operator .*===",
+        )
+        # a source with no column of the operator's type is fine
+        assert _partitions(name, "review_al_ids") == list(range(300))
+        assert _partitions(name, "SELECT id FROM review_al_ids WHERE id = id") == list(
+            range(300)
+        )
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_al_dt",
+                "DROP OPERATOR IF EXISTS ===(review_al_dom, review_al_dom)",
+                "DROP FUNCTION IF EXISTS review_al_noisy(review_al_dom, review_al_dom)",
+                "DROP DOMAIN IF EXISTS review_al_dom",
+            ],
+        )
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_allowlist_kinds_of_relation(name: str) -> None:
+    # #448, #499: information_schema's system views, session variables, and a VIRTUAL
+    # column that calls rand() are not proven
+    statements = [
+        "DROP TABLE IF EXISTS review_al_ids",
+        "CREATE TABLE review_al_ids (id int PRIMARY KEY)",
+        "INSERT INTO review_al_ids SELECT seq FROM (SELECT @r := @r + 1 AS seq FROM "
+        "information_schema.columns a, (SELECT @r := -1) v LIMIT 300) t",
+    ]
+    _execute(name, statements)
+    _refused(name, "SELECT id FROM review_al_ids WHERE id > @@pseudo_thread_id - 1")
+    _refused(name, "SELECT ID AS id FROM information_schema.processlist", "id")
+    if name == "mariadb":
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_al_gen",
+                "CREATE TABLE review_al_gen (id int PRIMARY KEY, "
+                "k int AS (floor(rand() * 1000)) VIRTUAL)",
+                "INSERT INTO review_al_gen (id) SELECT id FROM review_al_ids",
+                "DROP TABLE IF EXISTS review_al_okgen",
+                "CREATE TABLE review_al_okgen (id int PRIMARY KEY, "
+                "k int AS (id % 7) VIRTUAL)",
+                "INSERT INTO review_al_okgen (id) SELECT id FROM review_al_ids",
+            ],
+        )
+        _refused(name, "review_al_gen", "k")
+        _refused(name, "SELECT id, k FROM review_al_gen", "k")
+        for key in ["id", "k"]:
+            lf = _scan(
+                name,
+                _default_driver(name),
+                "review_al_okgen",
+                partition_on=key,
+                partition_num=4,
+            )
+            assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+    lf = _scan(
+        name,
+        _default_driver(name),
+        "review_al_ids",
+        partition_on="id",
+        partition_num=4,
+    )
+    assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+
+
+def test_clickhouse_allowlist_kinds_of_relation() -> None:
+    # #273, #500, #501: an ALIAS column, a Merge table over a volatile view, table
+    # functions and virtual columns are not proven; MergeTree tables are
+    name = "clickhouse"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_al_alias",
+            "DROP TABLE IF EXISTS review_al_merge",
+            "DROP VIEW IF EXISTS review_al_v",
+            "DROP TABLE IF EXISTS review_al_ids",
+            "CREATE TABLE review_al_ids (id UInt32) ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO review_al_ids SELECT number FROM numbers(300)",
+            "CREATE TABLE review_al_alias (id UInt32, k UInt32 ALIAS rand() % 1000) "
+            "ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO review_al_alias (id) SELECT number FROM numbers(300)",
+            "CREATE VIEW review_al_v AS SELECT id FROM review_al_ids "
+            "WHERE rand() % 2 = 0",
+            "CREATE TABLE review_al_merge (id UInt32) ENGINE = Merge(currentDatabase(), "
+            "'^review_al_v$')",
+        ],
+    )
+    _refused(name, "SELECT id, k FROM review_al_alias", "k")
+    _refused(name, "review_al_alias", "id")
+    _refused(name, "review_al_merge", "id")
+    _refused(name, "SELECT id FROM merge(currentDatabase(), '^review_al_ids$')")
+    _refused(name, "SELECT id, _part FROM review_al_ids", "id")
+    lf = _scan(
+        name, _default_driver(name), "review_al_ids", partition_on="id", partition_num=4
+    )
+    assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+
+
+def test_oracle_allowlist_synonym_chain() -> None:
+    # #508: a synonym of a synonym of a volatile view is followed (or not proven)
+    name = "oracle"
+    statements, _ = VOLATILE_VIEWS[name]
+    _execute(
+        name,
+        [
+            *statements,
+            'CREATE OR REPLACE SYNONYM "review_volatile_s2" FOR "review_volatile_s"',
+            'CREATE OR REPLACE SYNONYM "review_volatile_s3" FOR "review_volatile_s2"',
+        ],
+    )
+    for source in ['"review_volatile_s2"', 'SELECT * FROM "review_volatile_s3"']:
+        _refused(name, source)
+    lf = _scan(
+        name,
+        _default_driver(name),
+        "review_volatile_ids",
+        partition_on="id",
+        partition_num=4,
+    )
+    assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+
+
+def _ids_table(name: str, table: str, extra: str = "") -> None:
+    """`table (id)` of 300 rows, on the server's own syntax."""
+    if name.startswith("postgres"):
+        statements = [
+            f"DROP TABLE IF EXISTS {table} CASCADE",
+            f"CREATE TABLE {table} (id int PRIMARY KEY{extra})",
+            f"INSERT INTO {table} (id) SELECT g FROM generate_series(0, 299) g",
+        ]
+    elif name == "clickhouse":
+        statements = [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id UInt32{extra}) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} (id) SELECT number FROM numbers(300)",
+        ]
+    else:
+        statements = [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY{extra})",
+            f"INSERT INTO {table} (id) SELECT seq FROM (SELECT @r := @r + 1 AS seq FROM "
+            "information_schema.columns a, (SELECT @r := -1) v LIMIT 300) t",
+        ]
+    _execute(name, statements)
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_user_function_named_like_another_dialects_builtin(name: str) -> None:
+    # review finding 1: `initcap` is sqlglot's, not MySQL's: a user's function of the
+    # name runs there, and was proven because the allowlist applied to every dialect
+    _ids_table(name, "review_vf_ids")
+    _execute_as_root(
+        name,
+        [
+            "DROP FUNCTION IF EXISTS polars.initcap",
+            "CREATE FUNCTION polars.initcap(x INT) RETURNS INT NOT DETERMINISTIC NO SQL "
+            "RETURN FLOOR(RAND() * 1000)",
+        ],
+    )
+    try:
+        _refused(
+            name,
+            "SELECT id, initcap(id) AS k FROM review_vf_ids",
+            via="query",
+            why="initcap",
+        )
+        assert _partitions(name, "review_vf_ids") == list(range(300))
+    finally:
+        _execute_as_root(name, ["DROP FUNCTION IF EXISTS polars.initcap"])
+
+
+def test_clickhouse_user_functions_named_like_another_dialects_builtin() -> None:
+    # review finding 1 (ClickHouse): none of these names is a ClickHouse built-in
+    name = "clickhouse"
+    _ids_table(name, "review_vf_ids")
+    names = ["total", "cot", "quote", "unicode", "levenshtein", "split_part"]
+    drops = [f"DROP FUNCTION IF EXISTS {n}" for n in names]
+    _execute(name, drops)
+    _execute(name, [f"CREATE FUNCTION {n} AS (x) -> rand() % 1000" for n in names])
+    try:
+        for n in names:
+            _refused(
+                name,
+                f"SELECT id, {n}(id) AS k FROM review_vf_ids",
+                via="query",
+                why=n,
+            )
+    finally:
+        _execute(name, drops)
+    assert _partitions(name, "review_vf_ids") == list(range(300))
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_user_function_of_a_name_sqlglot_knows_elsewhere(name: str) -> None:
+    # review round 2, finding 5: `date_trunc` and `strpos` are sqlglot's, no MySQL
+    # built-ins (the old exclusion list named some of them only): a stored function of
+    # the name runs there. The built-ins TRUNCATE and CHAR are no user's.
+    _ids_table(name, "review_vf2_ids")
+    _execute_as_root(
+        name,
+        [
+            "DROP FUNCTION IF EXISTS polars.date_trunc",
+            "DROP FUNCTION IF EXISTS polars.strpos",
+            "CREATE FUNCTION polars.date_trunc(x INT) RETURNS INT NOT DETERMINISTIC "
+            "NO SQL RETURN FLOOR(RAND() * 1000)",
+            "CREATE FUNCTION polars.strpos(x INT) RETURNS INT NOT DETERMINISTIC "
+            "NO SQL RETURN FLOOR(RAND() * 1000)",
+        ],
+    )
+    try:
+        for fn in ["date_trunc", "strpos"]:
+            _refused(name, f"SELECT id, {fn}(id) AS k FROM review_vf2_ids", why=fn)
+        assert _partitions(
+            name,
+            "SELECT id, TRUNCATE(id / 3, 0) AS k, CHAR(65) AS c FROM review_vf2_ids",
+        ) == list(range(300))
+    finally:
+        _execute_as_root(
+            name,
+            [
+                "DROP FUNCTION IF EXISTS polars.date_trunc",
+                "DROP FUNCTION IF EXISTS polars.strpos",
+            ],
+        )
+
+
+def test_clickhouse_user_function_of_a_name_sqlglot_knows_elsewhere() -> None:
+    # review round 2, finding 5: `bool_and` is no ClickHouse built-in;
+    # `levenshteinDistance`
+    # and `editDistance` are (sqlglot calls both LEVENSHTEIN)
+    name = "clickhouse"
+    _ids_table(name, "review_vf2_ids")
+    _execute(name, ["DROP FUNCTION IF EXISTS bool_and"])
+    _execute(name, ["CREATE FUNCTION bool_and AS (x) -> rand() % 1000"])
+    try:
+        _refused(
+            name, "SELECT id, bool_and(id) AS k FROM review_vf2_ids", why="bool_and"
+        )
+        assert _partitions(
+            name,
+            "SELECT id, levenshteinDistance('a', 'b') AS a, "
+            "editDistance('a', 'b') AS b FROM review_vf2_ids",
+        ) == list(range(300))
+    finally:
+        _execute(name, ["DROP FUNCTION IF EXISTS bool_and"])
+
+
+@pytest.mark.parametrize("name", ["postgres17", "mysql", "mariadb", "clickhouse"])
+def test_casts_of_time_columns_to_dates_still_partition(name: str) -> None:
+    # review round 2, findings 1 and 9: a cast (or `date(col)`) of a column that holds
+    # no text is proven; a plain table, a view and a GROUP BY over an int key too
+    column = {"clickhouse": "DateTime", "postgres17": "timestamp"}.get(name, "DATETIME")
+    _ids_table(name, "review_cast_ids", extra=f", ts {column}")
+    expected = list(range(300))
+    for source in [
+        "review_cast_ids",
+        "SELECT id, CAST(ts AS DATE) AS d FROM review_cast_ids",
+        "SELECT id, CAST(ts AS DATE) AS d FROM review_cast_ids GROUP BY id, ts",
+        "SELECT id, COUNT(*) AS n FROM review_cast_ids GROUP BY id",
+    ]:
+        assert _partitions(name, source) == expected, source
+    if name == "postgres17":
+        assert (
+            _partitions(name, "SELECT id, date(ts) AS d FROM review_cast_ids")
+            == expected
+        )
+
+
+def _nopad_bin(name: str) -> str:
+    """The binary collation of the server that doesn't pad `'a'` to `'a '`."""
+    return "utf8mb4_nopad_bin" if name == "mariadb" else "utf8mb4_0900_bin"
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_collapsing_over_a_case_insensitive_column(name: str) -> None:
+    # review finding 2 (#488 beyond Databricks): `GROUP BY s` over `utf8mb4_*_ci`
+    # returns any one spelling of 'a' / 'A', so partitions disagree; binary ones don't
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_ci",
+            "CREATE TABLE review_ci (id INT PRIMARY KEY, s VARCHAR(5) "
+            "CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci, "
+            f"b VARCHAR(5) CHARACTER SET utf8mb4 COLLATE {_nopad_bin(name)}, "
+            "p VARCHAR(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin)",
+            "INSERT INTO review_ci VALUES (1, 'a', 'a', 'a'), (2, 'A', 'A', 'a '), "
+            "(3, 'b', 'b', 'b')",
+        ],
+    )
+    for source in [
+        "SELECT s, COUNT(*) AS id FROM review_ci GROUP BY s",
+        "SELECT DISTINCT s, id FROM review_ci",
+        "SELECT s, id FROM review_ci UNION SELECT s, id FROM review_ci",
+    ]:
+        _refused(name, source, via="source", why="collation|column 's'")
+    # a PAD SPACE binary collation (`utf8mb4_bin`) equates `'a'` and `'a '` too, as a
+    # COLLATE clause does
+    for source in [
+        "SELECT p, COUNT(*) AS id FROM review_ci GROUP BY p",
+        "SELECT DISTINCT p, id FROM review_ci",
+    ]:
+        _refused(name, source, via="source", why="collation|column 'p'")
+    # a NO PAD binary collation, a column the query doesn't name, and no collapsing:
+    # proven
+    for source in [
+        "SELECT b, COUNT(*) AS id FROM review_ci GROUP BY b",
+        "SELECT id % 2 AS g, COUNT(*) AS id FROM review_ci GROUP BY g",
+        "SELECT s, id FROM review_ci",
+    ]:
+        lf = _scan(
+            name,
+            _default_driver(name),
+            source,
+            partition_on="id",
+            partition_num=2,
+        )
+        lf.collect()
+
+
+def test_postgres_collapsing_over_a_nondeterministic_collation() -> None:
+    name = "postgres17"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_ci",
+            "DROP COLLATION IF EXISTS review_ci_coll",
+            "CREATE COLLATION review_ci_coll (provider = icu, locale = "
+            "'und-u-ks-level2', deterministic = false)",
+            "CREATE TABLE review_ci (id int PRIMARY KEY, "
+            'n text COLLATE "review_ci_coll", d text)',
+            "INSERT INTO review_ci VALUES (1, 'a', 'a'), (2, 'A', 'A'), (3, 'b', 'b')",
+        ],
+    )
+    try:
+        for source in [
+            "SELECT n, COUNT(*) AS id FROM review_ci GROUP BY n",
+            "SELECT DISTINCT n, id FROM review_ci",
+        ]:
+            _refused(name, source, via="source", why="collation|column 'n'")
+        # a table's name is its whole row, collated column included
+        _refused(
+            name,
+            "SELECT DISTINCT r FROM review_ci r",
+            via="source",
+            why="collation|column 'n'",
+        )
+        lf = _scan(
+            name,
+            _default_driver(name),
+            "SELECT d, COUNT(*) AS id FROM review_ci GROUP BY d",
+            partition_on="id",
+            partition_num=2,
+        )
+        lf.collect()
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_ci",
+                "DROP COLLATION IF EXISTS review_ci_coll",
+            ],
+        )
+
+
+def test_postgres_relative_time_text_through_casts() -> None:
+    # review finding 3: 'now' reaches a cast to a time by routes that aren't a literal
+    name = "postgres17"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_rt",
+            "CREATE TABLE review_rt (id int PRIMARY KEY, ts timestamptz, txt text)",
+            "INSERT INTO review_rt SELECT g, now(), 'now' FROM generate_series(0, 299) g",
+        ],
+    )
+    try:
+        for cond in [
+            "ts < (SELECT 'now')::timestamptz",
+            "ts < 'now'::text::timestamptz",
+            "ts < ('n' || 'ow')::timestamptz",
+            "ts < lower('NOW')::timestamptz",
+            "ts < 'yesterday 13:00'::timestamptz",
+            "ts < 'today allballs'::timestamptz",
+            "ts < (SELECT x FROM (VALUES ('now')) v(x))::timestamptz",
+        ]:
+            _refused(name, f"SELECT id FROM review_rt WHERE {cond}", via="query")
+        _refused(
+            name,
+            "WITH c AS (SELECT lower('NOW') AS x) SELECT id FROM review_rt, c "
+            "WHERE ts < c.x::timestamptz",
+            via="query",
+        )
+        # stored text, cast later (also by a typed constructor: `date(txt)` is
+        # `exp.Date`)
+        _refused(
+            name,
+            "SELECT id FROM review_rt WHERE txt::timestamptz > ts",
+            via="source",
+            why="text column 'txt'",
+        )
+        for cond in ["date(txt) > ts::date", "txt::date > ts::date"]:
+            _refused(
+                name,
+                f"SELECT id FROM review_rt WHERE {cond}",
+                via="source",
+                why="text column 'txt'",
+            )
+        # relative text that doesn't start with the word
+        for text in ["today EST", "EST today", "13:00 yesterday", "04:05 tomorrow"]:
+            _refused(
+                name,
+                f"SELECT id FROM review_rt WHERE ts < '{text}'::timestamptz",
+                via="query",
+            )
+        # absolute text, and a cast of a time column, are proven
+        for cond in [
+            "ts < '2999-01-01 00:00:00'::timestamptz",
+            "ts::date < date '2999-01-01'",
+            "ts::date <= ts",
+        ]:
+            assert _partitions(name, f"SELECT id FROM review_rt WHERE {cond}") == list(
+                range(300)
+            ), cond
+    finally:
+        _execute(name, ["DROP TABLE IF EXISTS review_rt"])
+
+
+def test_clickhouse_merge_on_read_engines_need_final() -> None:
+    # review finding 5: Replacing/Collapsing/... MergeTree show other rows before and
+    # after a background merge; a TTL drops rows in the background
+    name = "clickhouse"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_rep",
+            "DROP TABLE IF EXISTS review_exp",
+            "DROP TABLE IF EXISTS review_plain",
+            "CREATE TABLE review_rep (id UInt32, v UInt32) "
+            "ENGINE = ReplacingMergeTree ORDER BY id",
+            "INSERT INTO review_rep SELECT number, 1 FROM numbers(300)",
+            "INSERT INTO review_rep SELECT number, 2 FROM numbers(300)",
+            "CREATE TABLE review_exp (id UInt32, d DateTime) ENGINE = MergeTree "
+            "ORDER BY id TTL d + INTERVAL 100 YEAR",
+            "INSERT INTO review_exp SELECT number, now() FROM numbers(300)",
+            "CREATE TABLE review_plain (id UInt32) ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO review_plain SELECT number FROM numbers(300)",
+            "DROP TABLE IF EXISTS review_expcol",
+            "DROP TABLE IF EXISTS review_expcolumn",
+            # a column named `ttl` is no TTL; a column's TTL expires its values
+            "CREATE TABLE review_expcol (id UInt32, ttl UInt32) ENGINE = MergeTree "
+            "ORDER BY id",
+            "INSERT INTO review_expcol SELECT number, 1 FROM numbers(300)",
+            "CREATE TABLE review_expcolumn (id UInt32, d DateTime, "
+            "v UInt32 TTL d + INTERVAL 100 YEAR) ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO review_expcolumn SELECT number, now(), 1 FROM numbers(300)",
+        ],
+    )
+    try:
+        # review round 2, finding 10: said so, not "foreign or external table"
+        _refused(name, "review_exp", via="source", why=r"\bTTL\b")
+        _refused(name, "review_expcolumn", via="source", why=r"\bTTL\b")
+        assert _partitions(name, "review_expcol") == list(range(300))
+        _refused(name, "review_rep", via="source", why="merge")
+        _refused(name, "SELECT id FROM review_rep", via="source", why="FINAL|merge")
+        assert _partitions(name, "review_plain") == list(range(300))
+        # with FINAL the visible rows don't depend on merges, also after one
+        source = "SELECT id, v FROM review_rep FINAL"
+        before = _partitions(name, source)
+        _execute(name, ["OPTIMIZE TABLE review_rep FINAL"])
+        assert _partitions(name, source) == before == list(range(300))
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_rep",
+                "DROP TABLE IF EXISTS review_exp",
+                "DROP TABLE IF EXISTS review_plain",
+                "DROP TABLE IF EXISTS review_expcol",
+                "DROP TABLE IF EXISTS review_expcolumn",
+            ],
+        )
+
+
+def test_postgres_user_operators_and_casts_only_count_where_used() -> None:
+    # review finding 6: a user's operator or cast elsewhere in the database doesn't make
+    # every source unproven; one the SQL uses does, named in the error
+    name = "postgres17"
+    _ids_table(name, "review_uo_ids")
+    _execute(
+        name,
+        [
+            "DROP TYPE IF EXISTS review_uo_t CASCADE",
+            "CREATE TYPE review_uo_t AS (a int)",
+            "CREATE OR REPLACE FUNCTION review_uo_f(review_uo_t) RETURNS int "
+            "LANGUAGE sql VOLATILE AS 'SELECT (random() * 10)::int'",
+            "CREATE CAST (review_uo_t AS int) WITH FUNCTION review_uo_f(review_uo_t)",
+        ],
+    )
+    try:
+        assert _partitions(name, "review_uo_ids") == list(range(300))
+        assert _partitions(name, "SELECT id + 1 AS id FROM review_uo_ids") == list(
+            range(1, 301)
+        )
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_uo_c",
+                "CREATE TABLE review_uo_c (id int PRIMARY KEY, v review_uo_t)",
+                "INSERT INTO review_uo_c SELECT g, ROW(g)::review_uo_t "
+                "FROM generate_series(0, 299) g",
+            ],
+        )
+        _refused(
+            name,
+            "SELECT id FROM review_uo_c WHERE v::int > -1",
+            via="source",
+            why="cast .*review_uo_t",
+        )
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_uo_c",
+                "DROP TYPE IF EXISTS review_uo_t CASCADE",
+            ],
+        )
+
+
+@pytest.mark.parametrize("name", ["postgres17", "postgres14"])
+def test_postgres_user_operators_count_by_the_types_they_take(name: str) -> None:
+    # review round 2, finding 3: LIKE, BETWEEN, IN, CASE, GROUP BY, ORDER BY ... run
+    # operators the SQL doesn't spell, `x=-1` merges two; a user's operator counts when
+    # one of its operand types is a type of a column the source reads (or one the SQL
+    # names). The operator is on a domain over `text`, not on `int` or `text` (which
+    # would
+    # make every source of the tests running at the same time unproven).
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_op_dom_t CASCADE",
+            "DROP TABLE IF EXISTS review_op_ids CASCADE",
+            "DROP VIEW IF EXISTS review_op_v",
+            "DROP OPERATOR IF EXISTS public.~~ (review_op_dom, review_op_dom)",
+            "DROP FUNCTION IF EXISTS review_op_f(review_op_dom, review_op_dom)",
+            "DROP DOMAIN IF EXISTS review_op_dom",
+            "CREATE DOMAIN review_op_dom AS text",
+            "CREATE TABLE review_op_dom_t (id int PRIMARY KEY, s review_op_dom)",
+            "INSERT INTO review_op_dom_t SELECT g, g::text FROM generate_series(0, 299) g",
+            "CREATE TABLE review_op_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_op_ids SELECT g FROM generate_series(0, 299) g",
+            "CREATE VIEW review_op_v AS SELECT id, s FROM review_op_dom_t",
+            "CREATE FUNCTION review_op_f(review_op_dom, review_op_dom) RETURNS boolean "
+            "LANGUAGE sql VOLATILE AS 'SELECT random() < 0.5'",
+            "CREATE OPERATOR public.~~ (LEFTARG = review_op_dom, "
+            "RIGHTARG = review_op_dom, FUNCTION = review_op_f)",
+        ],
+    )
+    try:
+        # `s LIKE '1%'` runs `public.~~(review_op_dom, review_op_dom)`: a volatile
+        # user's operator
+        _refused(
+            name,
+            "SELECT id FROM review_op_dom_t WHERE s LIKE '1%'",
+            via="source",
+            why=r"operator .*~~",
+        )
+        # (any source over a column of the type: the operator may run for any syntax)
+        _refused(name, "review_op_dom_t", via="source", why=r"operator .*~~")
+        _refused(name, "review_op_v", via="source", why=r"operator .*~~")
+        _refused(
+            name,
+            "SELECT id FROM review_op_dom_t WHERE id BETWEEN 0 AND 400",
+            via="source",
+            why=r"operator .*~~",
+        )
+        # a type the SQL names is a user's: the query itself isn't proven
+        _refused(
+            name,
+            "SELECT id FROM review_op_ids WHERE id::text::review_op_dom IN ('1', '2')",
+        )
+        # no column of the source, and no type the SQL names, is the domain
+        assert _partitions(name, "review_op_ids") == list(range(300))
+        assert _partitions(
+            name, "SELECT id FROM review_op_ids WHERE id > 5 GROUP BY id"
+        ) == list(range(6, 300))
+    finally:
+        _execute(
+            name,
+            [
+                "DROP VIEW IF EXISTS review_op_v",
+                "DROP OPERATOR IF EXISTS public.~~ (review_op_dom, review_op_dom)",
+                "DROP FUNCTION IF EXISTS review_op_f(review_op_dom, review_op_dom)",
+                "DROP TABLE IF EXISTS review_op_dom_t CASCADE",
+                "DROP TABLE IF EXISTS review_op_ids CASCADE",
+                "DROP DOMAIN IF EXISTS review_op_dom",
+            ],
+        )
+
+
+def test_postgres_citext_domains_and_arrays_collapse_case_insensitively() -> None:
+    # review round 2, finding 13: `citext` through a domain or an array
+    name = "postgres17"
+    try:
+        _execute(name, ["CREATE EXTENSION IF NOT EXISTS citext"])
+    except Exception:
+        pytest.skip("no citext extension")
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_cd",
+            "DROP DOMAIN IF EXISTS review_cd_dom",
+            "CREATE DOMAIN review_cd_dom AS citext",
+            "CREATE TABLE review_cd (id int PRIMARY KEY, d review_cd_dom, a citext[], "
+            "t text)",
+            "INSERT INTO review_cd VALUES (1, 'a', '{a}', 'a'), (2, 'A', '{A}', 'A')",
+        ],
+    )
+    try:
+        for source in [
+            "SELECT d, COUNT(*) AS id FROM review_cd GROUP BY d",
+            "SELECT a, COUNT(*) AS id FROM review_cd GROUP BY a",
+        ]:
+            _refused(name, source, via="source", why="citext|collation")
+        assert _partitions(name, "SELECT t, COUNT(*) AS id FROM review_cd GROUP BY t")
+    finally:
+        _execute(
+            name,
+            ["DROP TABLE IF EXISTS review_cd", "DROP DOMAIN IF EXISTS review_cd_dom"],
+        )
+
+
+def test_sqlite_virtual_table_detection_is_by_create_statement(tmp_path: Any) -> None:
+    # review finding 7: a column `is_virtual` or a name `virtual_machines` is no
+    # virtual table; a VIRTUAL generated column is evaluated on each read
+    import sqlite3
+
+    path = tmp_path / "v.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE virtual_machines (id INTEGER PRIMARY KEY, is_virtual INT);
+        CREATE TABLE gen_ok (id INTEGER PRIMARY KEY, k INT AS (id % 7) VIRTUAL);
+        CREATE TABLE gen_stored (id INTEGER PRIMARY KEY, k INT AS (id % 5) STORED);
+        CREATE VIRTUAL TABLE fts USING fts5(body);
+        """
+    )
+    for t in ["virtual_machines", "gen_ok", "gen_stored"]:
+        conn.executemany(f"INSERT INTO {t} (id) VALUES (?)", [(i,) for i in range(300)])
+    conn.commit()
+    conn.close()
+    for table in ["virtual_machines", "gen_ok", "gen_stored"]:
+        lf = pl.scan_database(
+            table, f"sqlite:///{path}", partition_on="id", partition_num=4
+        )
+        assert sorted(lf.collect()["id"].to_list()) == list(range(300)), table
+    for table, why in [("fts", "ordinary")]:
+        lf = pl.scan_database(
+            table, f"sqlite:///{path}", partition_on="rowid", partition_num=4
+        )
+        with pytest.raises(pl.exceptions.InvalidOperationError, match=why):
+            lf.collect()
+
+
+@pytest.mark.parametrize("name", ["postgres17", "duckdb"])
+def test_array_of_a_subquery_isnt_proven(name: str) -> None:
+    # review finding 8
+    if name == "duckdb":
+        pytest.skip("covered by the unit test")
+    _ids_table(name, "review_arr_ids")
+    _refused(
+        name,
+        "SELECT id, ARRAY(SELECT id FROM review_arr_ids) AS a FROM review_arr_ids",
+        via="query",
+    )
+    assert _partitions(
+        name, "SELECT id, ARRAY[id, 1] AS a FROM review_arr_ids"
+    ) == list(range(300))

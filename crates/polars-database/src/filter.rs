@@ -753,6 +753,21 @@ impl Translator<'_> {
 
     /// A boolean expression as SQL, with its class. `None` when it can't be pushed.
     pub fn translate(&self, node: &Node) -> Option<(SqlExpr, Class)> {
+        let (expr, class) = self.translate_node(node)?;
+        // A test for NULL on a MySQL column of unknown type is widened to keep zero dates
+        // (`zero_dates_as_null`): a superset (#460).
+        if class == Class::Exact
+            && self.config.columns.iter().any(|c| {
+                crate::database::planner::zero_date_candidate(self.config, c)
+                    && crate::database::planner::tests_null(&expr, &c.name)
+            })
+        {
+            return Some((expr, Class::Superset));
+        }
+        Some((expr, class))
+    }
+
+    fn translate_node(&self, node: &Node) -> Option<(SqlExpr, Class)> {
         match node {
             Node::And(..) | Node::Or(..) => {
                 let or = matches!(node, Node::Or(..));
@@ -874,7 +889,8 @@ impl Translator<'_> {
                 self.dialect().quote_ident(name)
             ))
         } else {
-            SqlExpr::col(name.clone())
+            // (a DuckDB TIMETZ read as text: `LIKE` on the column itself is a binder error)
+            self.compared(name)
         };
         let pattern = format!("{prefix}{}{suffix}", self.escape_like(pat));
         let class = if strings.equality_exact && !self.dialect().like_case_insensitive() {
@@ -925,6 +941,14 @@ impl Translator<'_> {
         if self.dialect() == DialectName::Databricks
             && matches!(av, AnyValue::Date(_))
             && days <= DATABRICKS_GAP_END_DAYS
+        {
+            return false;
+        }
+        // Oracle normalises a DATE or TIMESTAMP literal in the gap (1582-10-05..14) to
+        // 1582-10-15, so the comparison runs against a day Polars never wrote (#512): every
+        // operator then admits or drops the 1582-10-15 row. Stored values read back right.
+        if self.dialect() == DialectName::Oracle
+            && (ORACLE_GAP_START_DAYS..DATABRICKS_GAP_END_DAYS).contains(&days)
         {
             return false;
         }
@@ -1354,7 +1378,9 @@ fn literal_comparable(col: &DataType, lit: &DataType) -> bool {
 }
 
 /// 1582-10-15, the first day of the Gregorian calendar, in days since the epoch.
-const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
+pub(crate) const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
+/// 1582-10-05, the first day of the Julian-Gregorian gap; the gap ends before `DATABRICKS_GAP_END_DAYS`.
+const ORACLE_GAP_START_DAYS: i64 = -141_437;
 
 /// The deepest an expression may nest in a statement: the renderer recurses through it (in
 /// Python, whose stack is short), and so does the database.
@@ -1542,6 +1568,7 @@ mod tests {
             volatility_unchecked: false,
             user_schema: false,
             derived_order_dropped: false,
+            refused_columns: vec![],
             bounds_cache: Default::default(),
         }
     }
@@ -2004,6 +2031,27 @@ mod tests {
             class_of(&pg, &cmp("eq", "d", "date", "-141427")),
             Some(Class::Exact)
         );
+    }
+
+    #[test]
+    fn oracle_dates_in_the_gregorian_gap() {
+        // #512: Oracle normalises a DATE/TIMESTAMP literal in 1582-10-05..14 to 1582-10-15
+        let cfg = config(
+            DialectName::Oracle,
+            adbc("oracle"),
+            &[("d", DataType::Date, Some("DATE"))],
+        );
+        let t = Translator { config: &cfg };
+        let us =
+            |days: i64| AnyValue::Datetime(days * 86_400_000_000, TimeUnit::Microseconds, None);
+        for days in [-141_437, -141_433, -141_428] {
+            assert!(!t.temporal_in_range(&AnyValue::Date(days as i32)), "{days}");
+            assert!(!t.temporal_in_range(&us(days)), "{days}");
+        }
+        for days in [-141_438, -141_427, -141_426, 0] {
+            assert!(t.temporal_in_range(&AnyValue::Date(days as i32)), "{days}");
+            assert!(t.temporal_in_range(&us(days)), "{days}");
+        }
     }
 
     #[test]

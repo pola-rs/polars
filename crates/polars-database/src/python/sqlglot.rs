@@ -86,6 +86,27 @@ impl SqlRenderer for SqlglotRenderer {
             .map_err(|e| polars_err!(ComputeError: "sqlglot could not inspect the query: {e}"))
     }
 
+    fn outer_order_by(
+        &self,
+        sql: &str,
+        dialect: DialectName,
+        columns: &[PlSmallStr],
+        star_ordinals: bool,
+    ) -> PolarsResult<Option<PlSmallStr>> {
+        let columns: Vec<&str> = columns.iter().map(|c| c.as_str()).collect();
+        Python::attach(|py| {
+            self.module
+                .call_method1(
+                    py,
+                    "outer_order_by",
+                    (sql, dialect_name(dialect), columns, star_ordinals),
+                )?
+                .extract::<Option<String>>(py)
+        })
+        .map(|o| o.map(Into::into))
+        .map_err(|e| polars_err!(ComputeError: "sqlglot could not read the query's ORDER BY: {e}"))
+    }
+
     fn inspect_view(&self, sql: &str, dialect: DialectName) -> PolarsResult<QueryFacts> {
         self.facts("inspect_view", sql, dialect)
             .map_err(|e| polars_err!(ComputeError: "sqlglot could not inspect the view: {e}"))
@@ -119,11 +140,11 @@ impl SqlglotRenderer {
                 Some(v) if !v.is_none() => Some(v.extract()?),
                 _ => None,
             };
-            let unknown_functions: Vec<String> = match d.get_item("unknown_functions")? {
+            let known_functions: Vec<String> = match d.get_item("known_functions")? {
                 Some(v) if !v.is_none() => v.extract()?,
                 _ => vec![],
             };
-            let known_functions: Vec<String> = match d.get_item("known_functions")? {
+            let unproven: Vec<String> = match d.get_item("unproven")? {
                 Some(v) if !v.is_none() => v.extract()?,
                 _ => vec![],
             };
@@ -131,7 +152,33 @@ impl SqlglotRenderer {
                 Some(v) if !v.is_none() => v.extract()?,
                 _ => vec![],
             };
+            let strings = |k: &str| -> PyResult<Vec<PlSmallStr>> {
+                Ok(match d.get_item(k)? {
+                    Some(v) if !v.is_none() => v
+                        .extract::<Vec<String>>()?
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                    _ => vec![],
+                })
+            };
+            let referenced_columns = match d.get_item("referenced_columns")? {
+                Some(v) if !v.is_none() => Some(strings("referenced_columns")?),
+                _ => None,
+            };
+            let final_tables: Vec<Vec<String>> = match d.get_item("final_tables")? {
+                Some(v) if !v.is_none() => v.extract()?,
+                _ => vec![],
+            };
             PyResult::Ok(QueryFacts {
+                cast_types: strings("cast_types")?,
+                any_operator: get("any_operator")?,
+                temporal_cast_columns: strings("temporal_cast_columns")?,
+                referenced_columns,
+                final_tables: final_tables
+                    .into_iter()
+                    .map(|t| t.into_iter().map(Into::into).collect())
+                    .collect(),
                 parses: get("parses")?,
                 single_select: get("single_select")?,
                 has_cte: get("has_cte")?,
@@ -146,8 +193,10 @@ impl SqlglotRenderer {
                 side_effects_outside_rows: get("side_effects_outside_rows")?,
                 volatile_columns: volatile_columns.into_iter().map(Into::into).collect(),
                 all_columns_volatile: get("all_columns_volatile")?,
-                unknown_functions: unknown_functions.into_iter().map(Into::into).collect(),
+                unproven: unproven.into_iter().map(Into::into).collect(),
                 known_functions: known_functions.into_iter().map(Into::into).collect(),
+                collapses_rows: get("collapses_rows")?,
+                collated: get("collated")?,
                 tables: tables
                     .into_iter()
                     .map(|t| t.into_iter().map(Into::into).collect())

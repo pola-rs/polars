@@ -12,6 +12,7 @@ string literals.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 from datetime import UTC, date, datetime, time
@@ -26,7 +27,7 @@ from polars.testing import assert_frame_equal
 from tests.unit.io.database._databricks import CHAR_VALUES, ENV, ensure_seeded
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
 pytest.importorskip("polars_database")
 pytest.importorskip("sqlglot")
@@ -295,6 +296,33 @@ def test_temporary_views_are_not_inspectable_and_shadow_tables() -> None:
     assert _scan("orders").collect_schema().names()[:2] == ["id", "customer"]
 
 
+def test_view_with_schema_evolution_has_the_current_collation() -> None:
+    # #514: the stored schema of a `WITH SCHEMA EVOLUTION` view is stale until something
+    # reads it; the server compares by the base column's current collation
+    from tests.unit.io.database._databricks import connect, execute
+
+    assert URI is not None
+    ensure_seeded(URI)
+    conn = connect(URI)
+    try:
+        for stmt in [
+            "DROP VIEW IF EXISTS r514_v",
+            "DROP TABLE IF EXISTS r514_t",
+            "CREATE TABLE r514_t (id INT, s STRING)",
+            "INSERT INTO r514_t VALUES (1,'abc'),(2,'ABC'),(3,'Abc'),(4,'abd'),(5,NULL)",
+            "CREATE VIEW r514_v WITH SCHEMA EVOLUTION AS SELECT * FROM r514_t",
+            "ALTER TABLE r514_t ALTER COLUMN s TYPE STRING COLLATE UTF8_LCASE",
+        ]:
+            execute(conn, stmt)
+        # the first scan, before anything reads the view
+        lf = pl.scan_database("r514_v", conn)
+        assert _ids(lf.filter(pl.col("s") == "abc").collect()) == [1]
+    finally:
+        for stmt in ["DROP VIEW IF EXISTS r514_v", "DROP TABLE IF EXISTS r514_t"]:
+            execute(conn, stmt)
+        conn.close()
+
+
 # --- strings -------------------------------------------------------------------------
 
 
@@ -491,6 +519,22 @@ def test_wide_decimals_are_exact(how: str) -> None:
     assert lf.filter(pl.col("x") > Decimal(WIDE)).collect().height == 0
 
 
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql", "factory"])
+def test_invalid_utf8_text_is_an_error_not_a_string(how: str) -> None:
+    """A STRING of other bytes would be a String that fails Arrow validation."""
+    sql = "SELECT CAST(unhex('FF') AS STRING) AS s"
+    with pytest.raises(Exception, match=r"(?i)utf-?8"):
+        out = _scan(sql, how).collect()
+        out.to_arrow().validate(full=True)
+        raise AssertionError(f"read {out!r}")  # pragma: no cover
+    # a BINARY of the same byte, and valid text, read
+    ok = _scan(
+        "SELECT unhex('FF') AS b, CAST(unhex('EFBFBD') AS STRING) AS s", how
+    ).collect()
+    assert ok["b"].to_list() == [b"\xff"]
+    assert ok["s"].to_list() == ["\ufffd"]
+
+
 def test_decimal_predicates_on_a_table() -> None:
     lf = _scan("edge_types")
     reference = _scan("edge_types", pushdown=False).collect()
@@ -620,3 +664,394 @@ def test_the_token_is_not_in_the_plan() -> None:
     token = re.search(r"token:([^@]+)@", URI)
     assert token is not None
     assert token[1] not in _scan("edge").explain()
+
+
+# --- a SQLAlchemy Engine ------------------------------------------------------------
+
+
+def _engine(zone: str | None = None) -> Any:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("databricks.sqlalchemy")
+    from tests.unit.io.database._databricks import parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    p = parts(URI)
+    connect_args: dict[str, Any] = {}
+    if zone is not None:
+        connect_args["session_configuration"] = {"timezone": zone}
+    return sqlalchemy.create_engine(
+        f"databricks://token:{p['token']}@{p['host']}?http_path={p['http_path']}"
+        f"&catalog={p['catalog']}&schema={p['schema']}",
+        connect_args=connect_args,
+    )
+
+
+_NESTED = """
+SELECT 1 AS id,
+  array(CAST(9007199254740993 AS BIGINT), NULL) AS ab,
+  array(CAST('12345678901234567890.123456789' AS DECIMAL(38,9))) AS adec,
+  array(TIMESTAMP '2024-07-01 12:00:00+00:00') AS ats,
+  map('k', CAST(9007199254740993 AS BIGINT)) AS mb,
+  named_struct('a', CAST(9007199254740993 AS BIGINT),
+               'b', TIMESTAMP '2024-07-01 12:00:00+00:00') AS st
+"""
+
+
+@pytest.mark.parametrize("zone", [None, "America/Los_Angeles"])
+def test_engine_reads_nested_values_and_timestamps_like_the_connector(
+    zone: str | None,
+) -> None:
+    # (#462, #472) the Engine's rows typed a NULL-holding array of bigints Float64
+    # (9007199254740993 read as ...992.0), failed on other nested types, and read a
+    # TIMESTAMP as naive UTC wall-clock time whatever the session's zone
+    kwargs = {"session_configuration": {"timezone": zone}} if zone else {}
+    factory = _connection(**kwargs)
+    engine = _engine(zone)
+    try:
+        for source in [_NESTED, "SELECT id, ntz, ltz FROM edge_zones"]:
+            reference = pl.scan_database(source, factory, partition_on=None).collect()
+            got = pl.scan_database(source, engine, partition_on=None).collect()
+            assert got.schema == reference.schema, source
+            assert_frame_equal(got, reference)
+        nested = pl.scan_database(_NESTED, engine, partition_on=None).collect()
+        assert nested["ab"].to_list() == [[9007199254740993, None]]
+        assert nested["st"][0]["a"] == 9007199254740993
+        zoned = pl.scan_database(
+            "SELECT id, ltz FROM edge_zones", engine, partition_on=None
+        ).collect()
+        if zone is not None:
+            assert zoned.schema["ltz"] == pl.Datetime("us", zone)
+    finally:
+        engine.dispose()
+
+
+def test_sqlalchemy_connection_reads_on_its_own_session() -> None:
+    # the Engine's pooled connection was dropped when the cursor was made (and went back
+    # into the pool while in use), and a Connection read on another pooled connection:
+    # its temporary view wasn't there
+    engine = _engine()
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                "CREATE OR REPLACE TEMPORARY VIEW r42_tmp AS SELECT 7 AS x"
+            )
+            lf = pl.scan_database("SELECT x FROM r42_tmp", conn, partition_on=None)
+            assert lf.collect()["x"].to_list() == [7]
+            # the Connection is still the user's, and open
+            assert conn.exec_driver_sql("SELECT x FROM r42_tmp").fetchall() == [(7,)]
+        pl.scan_database("SELECT 1 AS x", engine, partition_on=None).collect()
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+def test_engine_read_database_early_stop_gives_back_the_pooled_connection() -> None:
+    # a batch iterator dropped after one batch, or failing part-way, left the pooled
+    # connection checked out for good (a cycle through the driver's connection)
+    engine = _engine()
+    try:
+        for _ in range(2):
+            it = pl.read_database(
+                "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
+            )
+            next(iter(it))
+            del it
+            assert engine.pool.checkedout() == 0
+        it = pl.read_database(
+            "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
+        )
+        gen = iter(it)
+        next(gen)
+        with pytest.raises(RuntimeError, match="boom"):
+            gen.throw(RuntimeError("boom"))
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+def test_temporary_functions_of_the_session_are_found() -> None:
+    # review round 2, finding 4: a temporary function (`system.session`) of a name
+    # sqlglot knows (`to_double`, `datetime`: no Databricks built-ins) runs rand() each
+    # time; `SHOW USER FUNCTIONS` lists it, and the SQL path's schemas don't
+    from tests.unit.io.database._databricks import connect, execute
+
+    assert URI is not None
+    ensure_seeded(URI)
+    conn = connect(URI)
+    try:
+        execute(
+            conn,
+            "CREATE OR REPLACE TEMPORARY FUNCTION to_double(x DOUBLE) RETURNS DOUBLE "
+            "RETURN x + rand()",
+        )
+        lf = pl.scan_database(
+            "SELECT id, to_double(id) AS t FROM range(1, 201) AS t(id)",
+            conn,
+            partition_on="id",
+            partition_num=4,
+        )
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match=r"this query can't be partitioned.*to_double",
+        ):
+            lf.collect()
+        # a query that calls no such function partitions
+        lf = pl.scan_database(
+            "SELECT id, upper('a') AS u FROM range(1, 201) AS t(id)",
+            conn,
+            partition_on="id",
+            partition_num=4,
+        )
+        assert sorted(lf.collect()["id"].to_list()) == list(range(1, 201))
+    finally:
+        execute(conn, "DROP TEMPORARY FUNCTION IF EXISTS to_double")
+        conn.close()
+
+
+def test_casts_of_columns_to_dates_are_proven() -> None:
+    # review round 2, finding 9: Databricks reads `'now'` in a cast of a literal only; a
+    # column, a CTE's or a VALUES' text fails (CAST_INVALID_INPUT)
+    sql = "SELECT id, CAST(d AS DATE) AS k FROM {src}"
+    src = (
+        "(SELECT id, TIMESTAMP '2024-01-01 10:00:00' AS d FROM range(1, 201) AS t(id))"
+    )
+    lf = _scan(sql.format(src=src), partition_on="id", partition_num=4)
+    assert sorted(lf.collect()["id"].to_list()) == list(range(1, 201))
+    lf = _scan(
+        "SELECT id, CAST('now' AS DATE) AS k FROM range(1, 201) AS t(id)",
+        partition_on="id",
+        partition_num=4,
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+        lf.collect()
+
+
+@contextlib.contextmanager
+def _scratch(setup: list[str], *, path: str | None = None) -> Iterator[str]:
+    """
+    Run `setup` statements in the test schema and yield the qualified schema.
+
+    The objects are dropped by name afterwards (`DROP ... IF EXISTS` of each `CREATE`).
+    """
+    from tests.unit.io.database._databricks import connect, execute, parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    p = parts(URI)
+    schema = f"`{p['catalog']}`.`{p['schema']}`"
+    conn = connect(URI)
+    drops: list[str] = []
+    try:
+        if path is not None:
+            execute(conn, f"SET PATH = {path.format(schema=schema)}")
+        for sql in setup:
+            sql = sql.format(schema=schema)
+            m = re.match(
+                r"CREATE (?:OR REPLACE )?(TABLE|VIEW|FUNCTION) ([^\s(]+)", sql, re.I
+            )
+            assert m is not None, sql
+            execute(conn, sql)
+            drops.append(f"DROP {m[1]} IF EXISTS {m[2]}")
+        if path is not None:
+            execute(conn, "SET PATH = DEFAULT_PATH")
+        yield schema
+    finally:
+        if path is not None:
+            execute(conn, "SET PATH = DEFAULT_PATH")
+        for sql in reversed(drops):
+            execute(conn, sql)
+        conn.close()
+
+
+def _refused(lf: pl.LazyFrame, match: str = "partitioned") -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        lf.collect()
+
+
+def test_date_ranges_at_or_before_the_gregorian_cutover_are_refused() -> None:
+    # #461: Databricks reads a date of 1582-10-05..14 back as 1582-10-15 but compares it
+    # as written, so a cut at or before 1582-10-15 loses rows
+    setup = [
+        "CREATE OR REPLACE TABLE {schema}.vol_dates AS SELECT * FROM VALUES "
+        "(1, DATE'1500-01-01'), (2, DATE'1582-10-04'), (3, DATE'1582-10-10'), "
+        "(4, DATE'1582-10-15'), (5, DATE'1700-06-01'), (6, DATE'2024-01-01') "
+        "AS t(id, d)"
+    ]
+    with _scratch(setup) as schema:
+        name = f"{schema}.vol_dates"
+        for kwargs in (
+            {"partition_range": (date(1500, 1, 1), date(1700, 1, 1))},
+            {"partition_range": (date(1582, 10, 15), date(1700, 1, 1))},
+            {},  # MIN/MAX: the table's own first date is 1500
+        ):
+            lf = _scan(name, partition_on="d", partition_num=3, **kwargs)
+            _refused(lf, "1582-10-15")
+        # without an explicit key, one query reads every row
+        auto = _scan(name, partition_on="auto", partition_num=3)
+        assert _ids(auto.collect()) == [1, 2, 3, 4, 5, 6]
+        # a range above the gap partitions, and reads every row once
+        lf = _scan(
+            name,
+            partition_on="d",
+            partition_num=3,
+            partition_range=(date(1600, 1, 1), date(2000, 1, 1)),
+        )
+        assert "partitions: 3" in lf.explain()
+        assert _ids(lf.collect()) == [1, 2, 3, 4, 5, 6]
+
+
+def test_a_view_with_columns_named_like_the_describe_headings() -> None:
+    # #502: columns named `# Detailed Table Information` and `Type` must not be read as
+    # the view's details, which would make the view an ordinary table
+    setup = [
+        "CREATE OR REPLACE VIEW {schema}.vol_headings AS SELECT id, "
+        "'x' AS `Type`, rand() AS `# Detailed Table Information` "
+        "FROM range(1, 201) AS t(id)"
+    ]
+    with _scratch(setup) as schema:
+        name = f"{schema}.vol_headings"
+        for source in (name, f"SELECT * FROM {name}"):
+            _refused(_scan(source, partition_on="id", partition_num=4))
+        assert _scan(name, partition_on=None).collect().height == 200
+
+
+def test_function_path_of_a_view_and_of_the_session() -> None:
+    # #513: `SET PATH = <schema>, system.builtin` puts a user's `abs()` ahead of the
+    # built-in one, for a view created then and for a query of that session
+    from tests.unit.io.database._databricks import connect, execute
+
+    udf = (
+        "CREATE OR REPLACE FUNCTION {schema}.abs(x BIGINT) RETURNS DOUBLE "
+        "NOT DETERMINISTIC RETURN rand()"
+    )
+    view = (
+        "CREATE OR REPLACE VIEW {schema}.vol_path_view AS "
+        "SELECT id, abs(id) AS a FROM range(1, 201) AS t(id)"
+    )
+    plain = (
+        "CREATE OR REPLACE VIEW {schema}.vol_plain_view AS "
+        "SELECT id, sign(id) AS a FROM range(1, 201) AS t(id)"
+    )
+    with _scratch([udf]) as schema, _scratch([view], path="{schema}, system.builtin"):
+        assert URI is not None
+        # the view's own path is read from its description
+        conn = connect(URI)
+        try:
+            rows = execute(conn, f"DESCRIBE TABLE EXTENDED {schema}.vol_path_view")
+        finally:
+            conn.close()
+        paths = [r[1] for r in rows if r[0] == "SQL Path"]
+        assert paths
+        assert not paths[0].lower().startswith("system.builtin"), paths
+        name = f"{schema}.vol_path_view"
+        for source in (name, f"SELECT * FROM {name}"):
+            _refused(_scan(source, partition_on="id", partition_num=4))
+
+        # a query of a session whose path puts the schema first
+        def factory() -> Any:
+            conn = connect(URI)
+            execute(conn, f"SET PATH = {schema}, system.builtin")
+            return conn
+
+        sql = "SELECT id, abs(id) AS a FROM range(1, 201) AS t(id)"
+        lf = pl.scan_database(sql, factory, partition_on="id", partition_num=4)
+        _refused(lf)
+        # (a user's `abs` in a schema of the path counts wherever the path puts it: the
+        # catalog lists routines by name, not by what resolves first)
+        _refused(_scan(sql, partition_on="id", partition_num=4))
+        # another built-in, and a view created under the default path, partition
+        lf = _scan(
+            "SELECT id, sign(id) AS a FROM range(1, 201) AS t(id)",
+            partition_on="id",
+            partition_num=4,
+        )
+        assert "partitions: 4" in lf.explain()
+        with _scratch([plain]):
+            lf = _scan(f"{schema}.vol_plain_view", partition_on="id", partition_num=4)
+            assert "partitions: 4" in lf.explain()
+            assert lf.collect().height == 200
+
+
+def test_bound_time_text_makes_the_query_volatile() -> None:
+    # #493: `CAST(:text AS TIMESTAMP)` of 'now' is the statement's clock
+    sql = "SELECT id, CAST(:text AS TIMESTAMP) AS ts FROM range(8) AS t(id)"
+    for kwargs in (
+        {"partition_on": "id", "partition_num": 4},
+        {"partition_predicates": ["id < 4", "id >= 4"]},
+    ):
+        lf = _scan(sql, "databricks.sql", params={"text": "now"}, **kwargs)
+        _refused(lf)
+    # a fixed time, and one scan of 'now', are fine
+    fixed = _scan(
+        sql,
+        "databricks.sql",
+        params={"text": "2024-01-01"},
+        partition_on="id",
+        partition_num=4,
+    )
+    assert fixed.collect()["ts"].n_unique() == 1
+    one = _scan(sql, "databricks.sql", params={"text": "now"}, partition_on=None)
+    assert one.collect()["ts"].n_unique() == 1
+
+
+def test_bare_current_time_makes_the_query_volatile() -> None:
+    # #490: the statement's time, which each partition would read at another moment
+    for expr in ("CURRENT_TIME", "CURRENT_TIME()", "CURRENT_TIMESTAMP", "CURRENT_DATE"):
+        sql = f"SELECT id, {expr} AS stamp FROM range(8) AS t(id)"
+        for kwargs in (
+            {"partition_on": "id", "partition_num": 4},
+            {"partition_predicates": ["id < 4", "id >= 4"]},
+        ):
+            _refused(_scan(sql, **kwargs), "partitioned")
+
+
+def test_collated_grouping_is_not_partitioned_or_filtered() -> None:
+    # #488: a GROUP BY over a column that compares 'A' and 'a' equal returns one of
+    # them, and a later statement may return the other
+    setup = [
+        "CREATE OR REPLACE TABLE {schema}.vol_collated AS SELECT id, "
+        "CAST(IF(id % 7 < 3, 'A', 'a') AS STRING COLLATE UTF8_LCASE) AS s "
+        "FROM range(0, 4000) AS t(id)",
+        "CREATE OR REPLACE TABLE {schema}.vol_binary AS SELECT id, "
+        "IF(id % 7 < 3, 'A', 'a') AS s FROM range(0, 4000) AS t(id)",
+    ]
+    with _scratch(setup) as schema:
+        grouped = "SELECT id % 32 AS g, ascii(s) AS k FROM {t} GROUP BY id % 32, s"
+        for table in ("vol_collated",):
+            sql = grouped.format(t=f"{schema}.{table}")
+            _refused(_scan(sql, partition_on="k", partition_num=4))
+            _refused(_scan(sql, partition_predicates=["k = 65", "k = 97"]))
+            lf = _scan(sql, partition_on=None)
+            # the database's own representative is read once; a filter on it stays in
+            # Polars, so it can't change which spelling is returned
+            assert _filters(lf.filter(pl.col("k") == 97))[0] == 0
+            assert lf.collect().height > 0
+        # a collation in the query's own text
+        inline = (
+            "SELECT ascii(s) AS k FROM (SELECT CAST(x AS STRING COLLATE UTF8_LCASE) "
+            "AS s FROM VALUES ('A'), ('a') AS t(x) GROUP BY ALL)"
+        )
+        _refused(_scan(inline, partition_on="k", partition_num=2))
+        # binary strings group exactly: nothing changes
+        sql = grouped.format(t=f"{schema}.vol_binary")
+        lf = _scan(sql, partition_on="k", partition_num=2)
+        assert "partitions: 2" in lf.explain()
+        assert lf.collect().height == _scan(sql, partition_on=None).collect().height
+
+
+def test_user_function_named_like_another_dialects_builtin() -> None:
+    # review finding 1: `total` is SQLite's, not Databricks': a user's function of the
+    # name in the schema of the path runs, whatever sqlglot calls it
+    udf = (
+        "CREATE OR REPLACE FUNCTION {schema}.total(x BIGINT) RETURNS DOUBLE "
+        "NOT DETERMINISTIC RETURN rand()"
+    )
+    sql = "SELECT id, total(id) AS t FROM range(1, 201) AS t(id)"
+    with _scratch([udf]):
+        lf = _scan(sql, partition_on="id", partition_num=4)
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match=r"this query can't be partitioned.*total",
+        ):
+            lf.collect()

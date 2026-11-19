@@ -231,16 +231,38 @@ pub struct ObjectInfo {
 }
 
 /// Determines the dialect of a connection.
-#[cfg_attr(not(feature = "python"), allow(unused_variables))]
 pub fn detect_dialect(
     spec: &ConnectionSpec,
     user: Option<DialectName>,
     object: Option<&ObjectInfo>,
 ) -> PolarsResult<DialectName> {
-    if let Some(d) = user {
-        return Ok(d);
-    }
-    Ok(match &spec.target {
+    let inferred = infer_dialect(spec, object);
+    let Some(user) = user else {
+        return Ok(inferred);
+    };
+    // A `dialect=` names what the connection can't say, or refines it (a MySQL driver
+    // on SingleStore, a Postgres driver on Redshift); one that contradicts the connection
+    // would write another database's SQL (other string escapes) and pick its driver (#452).
+    let refines = matches!(
+        (inferred, user),
+        (DialectName::Mysql, DialectName::Singlestore)
+            | (DialectName::Postgresql, DialectName::Redshift)
+    );
+    // Flight SQL is a transport: the database behind it (Dremio, DuckDB, Trino, ...) is
+    // whatever `dialect=` says, so it never contradicts, as Generic doesn't.
+    let open = |d: DialectName| matches!(d, DialectName::Generic | DialectName::Flightsql);
+    polars_ensure!(
+        user == inferred || refines || open(user) || open(inferred),
+        InvalidOperation:
+        "dialect='{user}' contradicts the connection, which is a '{inferred}' one; drop \
+        `dialect=` or fix the connection"
+    );
+    Ok(user)
+}
+
+#[cfg_attr(not(feature = "python"), allow(unused_variables))]
+fn infer_dialect(spec: &ConnectionSpec, object: Option<&ObjectInfo>) -> DialectName {
+    match &spec.target {
         ConnectionTarget::Uri(_) => {
             let scheme = spec.scheme().unwrap_or_default();
             if scheme == "profile" {
@@ -257,7 +279,7 @@ pub fn detect_dialect(
         ConnectionTarget::Factory(_) | ConnectionTarget::Live(_) => {
             object.map_or(DialectName::Generic, |o| o.dialect)
         },
-    })
+    }
 }
 
 /// Which backends can serve this connection form at all.
@@ -414,6 +436,14 @@ pub fn resolve_backend(
         });
     }
 
+    // Flight SQL is a transport: `dialect=` names the database behind it (for the SQL written),
+    // while the drivers are the Flight SQL ones, whatever it says (#452).
+    let dialect = if infer_dialect(spec, object) == DialectName::Flightsql {
+        DialectName::Flightsql
+    } else {
+        dialect
+    };
+
     // An explicit pin is final: unavailable is an error, never a silent fallback.
     let pin = driver_pin
         .map(|p| (PlSmallStr::from(p), false))
@@ -510,5 +540,25 @@ mod tests {
             parse_driver_pin("/abs/x.so", pg).unwrap(),
             BackendKind::Adbc { .. }
         ));
+    }
+
+    #[test]
+    fn a_dialect_must_not_contradict_the_connection() {
+        // #452
+        let uri = |u: &str| ConnectionSpec::new(ConnectionTarget::Uri(u.into()));
+        let pg = uri("postgresql://h/db");
+        let d = |s: &ConnectionSpec, u| detect_dialect(s, u, None);
+        assert_eq!(d(&pg, None).unwrap(), DialectName::Postgresql);
+        assert!(d(&pg, Some(DialectName::Snowflake)).is_err());
+        assert!(d(&uri("sqlite:///x.db"), Some(DialectName::Snowflake)).is_err());
+        // the same, a refinement, or a connection that says nothing
+        assert!(d(&pg, Some(DialectName::Postgresql)).is_ok());
+        assert!(d(&pg, Some(DialectName::Redshift)).is_ok());
+        assert!(d(&uri("mysql://h/db"), Some(DialectName::Singlestore)).is_ok());
+        assert!(d(&pg, Some(DialectName::Generic)).is_ok());
+        assert_eq!(
+            d(&uri("foo://h/db"), Some(DialectName::Snowflake)).unwrap(),
+            DialectName::Snowflake
+        );
     }
 }
