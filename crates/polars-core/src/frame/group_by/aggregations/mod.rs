@@ -36,7 +36,7 @@ use crate::chunked_array::from_iterator_par::{
 };
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
-use crate::chunked_array::ops::aggregate::{quantile_of_nonnull, sorted_quantile};
+use crate::chunked_array::ops::aggregate::{quantile_of_nonnull, quantile_with, sorted_quantile};
 use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
@@ -315,6 +315,20 @@ unsafe fn quantile_of_rows<N: NumericNative>(
     quantile_of_nonnull(vals, quantile, method)
 }
 
+/// The `quantile` of `n` values, where `value_at(rank)` reads the value at an ascending rank.
+fn quantile_of_ranked<N: ToPrimitive + Copy + Default>(
+    n: usize,
+    quantile: f64,
+    method: QuantileMethod,
+    value_at: impl Fn(usize) -> N,
+) -> Option<f64> {
+    quantile_with(n, quantile, method, |ranks, out| {
+        for (o, &r) in out.iter_mut().zip(ranks) {
+            *o = value_at(r);
+        }
+    })
+}
+
 /// The quantile to take of each group.
 #[derive(Clone, Copy, Debug)]
 pub enum GroupQuantile<'a> {
@@ -366,9 +380,7 @@ where
             overlapping,
             monotonic,
         } => {
-            if let Some(quantile) = scalar
-                && _use_rolling_kernels(groups, *overlapping, *monotonic, ca.chunks())
-            {
+            if _use_rolling_kernels(groups, *overlapping, *monotonic, ca.chunks()) {
                 // this cast is a no-op for floats
                 let s = ca
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
@@ -376,31 +388,45 @@ where
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
-                let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _, _>(
-                        values,
-                        offset_iter,
-                        Some(RollingFnParams::Quantile(RollingQuantileParams {
-                            prob: quantile,
-                            method,
-                        })),
-                    ),
+                // The windows only rank the values, so their own probability is unused.
+                let params = Some(RollingFnParams::Quantile(RollingQuantileParams {
+                    prob: 0.5,
+                    method,
+                }));
+                let windows = groups.iter().enumerate();
+                let out: ChunkedArray<K> = match arr.validity() {
+                    None => {
+                        let mut window = QuantileWindow::new(values, 0, 0, params, None);
+                        windows
+                            .map(|(g, [first, len])| {
+                                // SAFETY: the groups are in bounds.
+                                unsafe { window.update(*first as usize, (first + len) as usize) };
+                                let quantile = quantile_of_group(g)?;
+                                quantile_of_ranked(window.n_values(), quantile, method, |r| {
+                                    window.value_at_rank(r)
+                                })
+                                .map(to_out)
+                            })
+                            .collect()
+                    },
                     Some(validity) => {
-                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _, _>(
-                            values,
-                            validity,
-                            offset_iter,
-                            Some(RollingFnParams::Quantile(RollingQuantileParams {
-                                prob: quantile,
-                                method,
-                            })),
-                        )
+                        let mut window = rolling::nulls::QuantileWindow::new(
+                            values, validity, 0, 0, params, None,
+                        );
+                        windows
+                            .map(|(g, [first, len])| {
+                                // SAFETY: the groups are in bounds.
+                                unsafe { window.update(*first as usize, (first + len) as usize) };
+                                let quantile = quantile_of_group(g)?;
+                                quantile_of_ranked(window.n_values(), quantile, method, |r| {
+                                    window.value_at_rank(r)
+                                })
+                                .map(to_out)
+                            })
+                            .collect()
                     },
                 };
-                // The rolling kernels works on the dtype, this is not yet the
-                // float output type we need.
-                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
+                out.into_series()
             } else if let sorted @ (IsSorted::Ascending | IsSorted::Descending) =
                 ca.is_sorted_flag()
             {

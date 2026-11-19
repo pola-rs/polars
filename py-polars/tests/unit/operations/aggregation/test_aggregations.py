@@ -255,12 +255,55 @@ def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -
     assert out["v"].to_list() == [expected[g] for g in out["g"]]
 
 
-def test_quantile_varying_per_rolling_window_20951() -> None:
-    df = pl.DataFrame(
-        {"t": [1, 2, 3, 4], "v": [4.0, 1.0, 3.0, 2.0], "q": [0.0, 1.0, 0.0, 1.0]}
-    )
-    out = df.rolling("t", period="2i").agg(pl.col("v").quantile(pl.col("q").last()))
-    assert out["v"].to_list() == [4.0, 4.0, 1.0, 3.0]
+def _assert_rolling_quantile_matches_series(
+    v: pl.Series, q: list[float | None], period: int, method: QuantileMethod
+) -> None:
+    df = pl.DataFrame({"t": range(len(v)), "v": v, "q": q})
+    windows = [v[max(0, i - period + 1) : i + 1] for i in range(len(v))]
+
+    def oracle(w: pl.Series, p: float | None) -> float | None:
+        if p is None or not 0.0 <= p <= 1.0:
+            return None
+        return w.quantile(p, method)
+
+    rolling = df.rolling("t", period=f"{period}i")
+    per_window = rolling.agg(pl.col("v").quantile(pl.col("q").last(), method))
+    assert per_window["v"].to_list() == [
+        oracle(w, p) for w, p in zip(windows, q, strict=True)
+    ]
+    literal = rolling.agg(pl.col("v").quantile(0.3, method))
+    assert literal["v"].to_list() == [oracle(w, 0.3) for w in windows]
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_quantile_varying_per_rolling_window_20951(
+    method: QuantileMethod, with_nulls: bool
+) -> None:
+    rng = np.random.default_rng(0)
+    n = 60
+    v = pl.Series("v", rng.integers(0, 10, n), dtype=pl.Float64)
+    if with_nulls:
+        v = v.scatter(rng.choice(n, n // 3, replace=False), None)
+    q: list[float | None] = list(rng.random(n))
+    q[5], q[17], q[40] = None, 1.5, -0.5
+    _assert_rolling_quantile_matches_series(v, q, 5, method)
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "method"),
+    [
+        ([1e308, 1e308, 1e308], pl.Float64, "midpoint"),
+        ([-3e38, 3e38, -3e38], pl.Float32, "linear"),
+    ],
+)
+def test_quantile_rolling_interpolation_does_not_overflow(
+    values: list[float], dtype: PolarsDataType, method: QuantileMethod
+) -> None:
+    v = pl.Series("v", values, dtype=dtype)
+    _assert_rolling_quantile_matches_series(v, [0.0, 0.5, 0.0], 2, method)
 
 
 @pytest.mark.parametrize(
