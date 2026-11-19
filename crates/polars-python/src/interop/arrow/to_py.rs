@@ -87,8 +87,7 @@ pub(crate) fn dataframe_to_stream<'py>(
     let schema = df.schema().to_arrow(CompatLevel::newest());
     let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
     let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
-    let iter = batches_to_struct_arrays(df.try_iter_chunks(CompatLevel::newest(), false), dtype);
-    let stream = ffi::export_iterator(Box::new(iter), field);
+    let stream = ffi::export_iterator(frame_to_struct_arrays(df, dtype), field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
 }
 
@@ -115,14 +114,22 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
     PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }
 
-/// Each record batch as an arrow struct array of `dtype`, the way a C stream carries a table.
-pub(crate) fn batches_to_struct_arrays(
-    batches: impl Iterator<Item = PolarsResult<RecordBatch>> + Send + 'static,
+/// The record batches of `df` as arrow struct arrays of `dtype`, the way a C stream carries a table.
+pub(crate) fn frame_to_struct_arrays(
+    df: &DataFrame,
     dtype: ArrowDataType,
-) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send + 'static {
-    batches.map(move |batch| {
+) -> Box<dyn Iterator<Item = PolarsResult<ArrayRef>> + Send> {
+    // `try_iter_chunks` cuts a frame without columns into batches of the ideal morsel size.
+    if df.width() == 0 {
+        let height = df.height();
+        let array = (height > 0).then(|| Ok(StructArray::new(dtype, height, vec![], None).boxed()));
+        return Box::new(array.into_iter());
+    }
+
+    let batches = df.try_iter_chunks(CompatLevel::newest(), false);
+    Box::new(batches.map(move |batch| {
         let batch = batch?;
         let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);
         Ok(array.boxed())
-    })
+    }))
 }

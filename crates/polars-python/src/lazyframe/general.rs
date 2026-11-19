@@ -32,7 +32,7 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
-use crate::interop::arrow::to_py::batches_to_struct_arrays;
+use crate::interop::arrow::to_py::frame_to_struct_arrays;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
@@ -1799,11 +1799,7 @@ impl Iterator for ArrowStreamIterator {
                 Err(err) => return Some(Err(err)),
                 Ok(mut df) => {
                     df.rechunk_mut();
-                    let batches = df.try_iter_chunks(CompatLevel::newest(), false);
-                    self.arrays = Some(Box::new(batches_to_struct_arrays(
-                        batches,
-                        self.dtype.clone(),
-                    )));
+                    self.arrays = Some(frame_to_struct_arrays(&df, self.dtype.clone()));
                 },
             }
         }
