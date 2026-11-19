@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::ops::DerefMut;
+use std::panic::AssertUnwindSafe;
 
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
@@ -127,25 +128,61 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
 }
 
 struct PrivateData {
-    iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>>>,
+    iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send>,
     field: Field,
     error: Option<CString>,
+    /// Whether a callback panicked, which ends the stream as `iter` is left in an unknown state.
+    panicked: bool,
+}
+
+/// The status of a failed callback, as no status of the interface itself is ever this.
+const CALLBACK_ERROR: i32 = 2001;
+
+fn error_cstring(message: &str) -> CString {
+    CString::new(message.replace('\0', "\\0")).unwrap()
+}
+
+/// Run the body of a stream callback, storing a panic as the stream's error, as unwinding out of
+/// an `extern "C"` function aborts the process.
+unsafe fn catch_callback(
+    iter: *mut ArrowArrayStream,
+    body: impl FnOnce(&mut PrivateData) -> i32,
+) -> i32 {
+    if iter.is_null() {
+        return CALLBACK_ERROR;
+    }
+    let private = (*iter).private_data as *mut PrivateData;
+    if (*private).panicked {
+        return CALLBACK_ERROR;
+    }
+    match std::panic::catch_unwind(AssertUnwindSafe(|| body(&mut *private))) {
+        Ok(status) => status,
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("unknown panic");
+            (*private).error = Some(error_cstring(&format!(
+                "panic in an Arrow C stream callback: {message}"
+            )));
+            (*private).panicked = true;
+            CALLBACK_ERROR
+        },
+    }
 }
 
 unsafe extern "C" fn get_next(iter: *mut ArrowArrayStream, array: *mut ArrowArray) -> i32 {
-    if iter.is_null() {
-        return 2001;
-    }
-    let private = &mut *((*iter).private_data as *mut PrivateData);
-
-    match private.iter.next() {
+    catch_callback(iter, |private| match private.iter.next() {
         Some(Ok(item)) => {
             // check that the array has the same dtype as field
             let item_dt = item.dtype();
             let expected_dt = private.field.dtype();
             if item_dt != expected_dt {
-                private.error = Some(CString::new(format!("The iterator produced an item of data type {item_dt:?} but the producer expects data type {expected_dt:?}").as_bytes().to_vec()).unwrap());
-                return 2001; // custom application specific error (since this is never a result of this interface)
+                private.error = Some(error_cstring(&format!(
+                    "The iterator produced an item of data type {item_dt:?} but the producer expects data type {expected_dt:?}"
+                )));
+                return CALLBACK_ERROR;
             }
 
             std::ptr::write(array, export_array_to_c(item));
@@ -154,11 +191,8 @@ unsafe extern "C" fn get_next(iter: *mut ArrowArrayStream, array: *mut ArrowArra
             0
         },
         Some(Err(err)) => {
-            // A NUL would end the C string: without it, `CString::new` can't fail (and a panic
-            // here can't unwind out of this `extern "C"` function).
-            let message = err.to_string().replace('\0', "\\0");
-            private.error = Some(CString::new(message).unwrap());
-            2001 // custom application specific error (since this is never a result of this interface)
+            private.error = Some(error_cstring(&err.to_string()));
+            CALLBACK_ERROR
         },
         None => {
             let a = ArrowArray::empty();
@@ -166,17 +200,14 @@ unsafe extern "C" fn get_next(iter: *mut ArrowArrayStream, array: *mut ArrowArra
             private.error = None;
             0
         },
-    }
+    })
 }
 
 unsafe extern "C" fn get_schema(iter: *mut ArrowArrayStream, schema: *mut ArrowSchema) -> i32 {
-    if iter.is_null() {
-        return 2001;
-    }
-    let private = &mut *((*iter).private_data as *mut PrivateData);
-
-    std::ptr::write(schema, export_field_to_c(&private.field));
-    0
+    catch_callback(iter, |private| {
+        std::ptr::write(schema, export_field_to_c(&private.field));
+        0
+    })
 }
 
 unsafe extern "C" fn get_last_error(iter: *mut ArrowArrayStream) -> *const ::std::os::raw::c_char {
@@ -202,14 +233,17 @@ unsafe extern "C" fn release(iter: *mut ArrowArrayStream) {
 }
 
 /// Exports an iterator to the [C stream interface](https://arrow.apache.org/docs/format/CStreamInterface.html)
+///
+/// The iterator must be `Send`, as the consumer may read the stream from any thread.
 pub fn export_iterator(
-    iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>>>,
+    iter: Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send>,
     field: Field,
 ) -> ArrowArrayStream {
     let private_data = Box::new(PrivateData {
         iter,
         field,
         error: None,
+        panicked: false,
     });
 
     ArrowArrayStream {
