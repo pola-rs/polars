@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use polars_arrow::array::builder::StaticArrayBuilder;
 use polars_arrow::array::{Array, Utf8ViewArrayBuilder};
 use polars_arrow::datatypes::ArrowDataType;
-use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, StringChunked};
+use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::broadcast::broadcast_len;
@@ -59,16 +59,12 @@ pub fn str_format(
             &DataType::String,
         ));
     }
-    // `mask` keeps the values under the nulls, which a cast still reads.
-    let mask = (null_count > 0)
-        .then(|| BooleanChunked::from_bitmap(PlSmallStr::EMPTY, validity.clone().unwrap()));
     for (i, c) in cs.iter_mut().enumerate() {
-        if let Some(mask) = &mask
+        if let Some(validity) = &validity
             && c.len() != 1
             && c.null_count() < null_count
         {
-            let nulls = Column::full_null(c.name().clone(), c.len(), c.dtype());
-            *c = c.zip_with(mask, &nulls)?;
+            *c = c.mask(validity);
         }
         *c = match specs.get(i).and_then(Option::as_ref) {
             Some(spec) => format_value(c, spec)?,
