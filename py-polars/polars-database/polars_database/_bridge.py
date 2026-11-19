@@ -1695,8 +1695,8 @@ def _transaction_idle(conn: Any) -> bool | None:
             if (callable(autocommit) and autocommit()) or (
                 callable(options) and options().get("isolation_level") == "AUTOCOMMIT"
             ):
-                # no transaction of SQLAlchemy's, but the user's own `BEGIN` may be
-                # open on the driver's connection: that one says
+                # no transaction of SQLAlchemy's, but the user's own `BEGIN` may be open
+                # on the driver's connection: that one says
                 fairy = getattr(conn, "connection", None)
                 driver = getattr(fairy, "driver_connection", None)
                 if driver is not None and driver is not conn:
@@ -2676,8 +2676,8 @@ class _Session:
                         cx.cursor.close()
                     cx.cursor = self.conn
                     cx.can_close_cursor = False
-                    # `execute` would replace a result of the user's left unread
-                    # (DuckDB 1): a relation leaves it, and DuckDB 2 refuses
+                    # `execute` would replace a result of the user's left unread (DuckDB
+                    # 1): a relation leaves it, and DuckDB 2 refuses
                     cx._duckdb_has_lazy_relations = lambda: True  # type: ignore[method-assign]
                 cx_cursor = cx.cursor if cx.cursor is not cursor else None
                 options = dict(self.execute_options)
@@ -3518,8 +3518,8 @@ def connect(
         try:
             checkout = target()
         except AssertionError:
-            # an AssertionPool refuses a second checkout while another is out: ours
-            # are given back at once (below), and wait for each other
+            # an AssertionPool refuses a second checkout while another is out: ours are
+            # given back at once (below), and wait for each other
             with _ASSERTION_POOL_LOCK:
                 for attempt in range(100):
                     try:

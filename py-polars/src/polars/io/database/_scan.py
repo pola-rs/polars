@@ -93,8 +93,8 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
     ):
         if (engine := _factory_singleton_engine(connection)) is not None:
             # a SingletonThreadPool opens a connection for each thread that asks and
-            # closes others' beyond its `pool_size`: read through the calling
-            # thread's one connection, as for the Engine itself
+            # closes others' beyond its `pool_size`: read through the calling thread's
+            # one connection, as for the Engine itself
             return "live", _shared_dbapi_connection(engine)
         return "factory", connection
     if hasattr(connection, "cursor") or hasattr(connection, "execute"):

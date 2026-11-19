@@ -329,8 +329,8 @@ pub fn table_info(
     let mut evolving_types_failed = false;
     // A lookup may fail on its own (a missing view, permissions): the others still run.
     let mut failed: Vec<&'static str> = vec![];
-    // `DESCRIBE TABLE EXTENDED` was refused and the plain `DESCRIBE TABLE` answered: it has
-    // no `View Schema Mode` row, so a view of schema evolution can't be told from a table.
+    // `DESCRIBE TABLE EXTENDED` was refused and the plain `DESCRIBE TABLE` answered: it has no
+    // `View Schema Mode` row, so a view of schema evolution can't be told from a table.
     let fell_back = std::cell::Cell::new(false);
     let mut run = |what: &'static str, sql: &str| -> Option<DataFrame> {
         match session.catalog_query(sql) {
@@ -397,10 +397,10 @@ pub fn table_info(
             }
         }
         if dialect == DialectName::Databricks {
-            // a view created WITH SCHEMA [TYPE] EVOLUTION stores a schema that goes stale
-            // when its base column changes (a collation, say) until something reads it, while
-            // the server compares by the current one: take the types from `DESCRIBE QUERY`.
-            // (Without the row, the mode is unknown: the types are read from the query too.)
+            // a view created WITH SCHEMA [TYPE] EVOLUTION stores a schema that goes stale when its
+            // base column changes (a collation, say) until something reads it, while the server
+            // compares by the current one: take the types from `DESCRIBE QUERY`. (Without the row,
+            // the mode is unknown: the types are read from the query too.)
             let evolving = fell_back.get()
                 || (0..df.height()).any(|row| {
                     cell_str(&df, 0, row).is_some_and(|k| k.trim() == "View Schema Mode")
@@ -686,10 +686,10 @@ pub fn query_info(
             // (byte order is code point order only in UTF-8, see the table's lookup)
             let sql = pg_select(
                 &|c| {
-                    // Identity, not the printed name: a user's collation named `"C"` first
-                    // on the search_path prints as the built-in one. `to_regcollation`
-                    // resolves the printed name as the server did; only a deterministic
-                    // `pg_catalog` collation is reported (anything else is empty: unknown).
+                    // Identity, not the printed name: a user's collation named `"C"` first on the
+                    // search_path prints as the built-in one. `to_regcollation` resolves the
+                    // printed name as the server did; only a deterministic `pg_catalog` collation
+                    // is reported (anything else is empty: unknown).
                     format!(
                         "CASE WHEN current_setting('server_encoding') = 'UTF8' THEN \
                         COALESCE((SELECT co.collname::text FROM pg_collation co \
@@ -818,9 +818,9 @@ impl CatalogQueries {
                     // A non-deterministic (e.g. case-insensitive ICU) collation has no name
                     // we can classify: it is reported as empty, which reads as `UNKNOWN`.
                     // A byte-wise collation orders by code point only in UTF-8: in another
-                    // server encoding it reads as the (deterministic) default. Only a
-                    // `pg_catalog` collation is known by its name: a user's `"C"` in
-                    // another schema may be an ICU one, so it reads as `user.C`.
+                    // server encoding it reads as the (deterministic) default. Only a `pg_catalog`
+                    // collation is known by its name: a user's `"C"` in another schema may be an
+                    // ICU one, so it reads as `user.C`.
                     collations: Some(if dialect == DialectName::Postgresql {
                         format!(
                             "SELECT a.attname, CASE WHEN NOT co.collisdeterministic THEN '' \
@@ -1007,10 +1007,10 @@ impl CatalogQueries {
                     )),
                     // `BINARY` compares the bytes of the database's encoding: code point
                     // order only in UTF-8, so a UTF-16 database reads as collated.
-                    // A connection the plugin didn't open (a live object, a factory's) may
-                    // have replaced `BINARY` or any collation (`create_collation`), in a way
-                    // no probe can rule out (a natural or shortlex order passes a byte-order
-                    // one): its collations are unknown.
+                    // A connection the plugin didn't open (a live object, a factory's) may have
+                    // replaced `BINARY` or any collation (`create_collation`), in a way no probe
+                    // can rule out (a natural or shortlex order passes a byte-order one): its
+                    // collations are unknown.
                     declared_sql: Some(format!(
                         "SELECT sql || CASE WHEN {} <> 'UTF-8' THEN ' COLLATE' ELSE '' END \
                         FROM ({master}) WHERE type = 'table' AND name = {}",
@@ -1287,11 +1287,10 @@ fn duckdb_rank(places: &[(String, String)]) -> String {
 /// What the catalog says a relation is, for [`view_definition`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ViewLookup {
-    /// An ordinary table or a materialized view, whose rows are stored: positively found, of
-    /// a kind each dialect's allowlist names (see [`view_definition`]). `generated`: the
-    /// `(column, SQL expression)` of its columns computed each time it is read (DuckDB's
-    /// virtual, MySQL's and MariaDB's `VIRTUAL`, ClickHouse's `ALIAS`), which must pass the
-    /// same checks as a query.
+    /// An ordinary table or a materialized view, whose rows are stored: positively found, of a kind
+    /// each dialect's allowlist names (see [`view_definition`]). `generated`: the `(column, SQL
+    /// expression)` of its columns computed each time it is read (DuckDB's virtual, MySQL's and
+    /// MariaDB's `VIRTUAL`, ClickHouse's `ALIAS`), which must pass the same checks as a query.
     Table { generated: Vec<(String, String)> },
     /// A view: its query, or its whole `CREATE VIEW` statement (empty where the catalog
     /// hides it: MySQL without `SHOW VIEW`), and where it was found: the qualifier its
@@ -1301,32 +1300,30 @@ pub enum ViewLookup {
         sql: String,
         qualifier: Vec<PlSmallStr>,
     },
-    /// A table whose visible rows change at background merges (ClickHouse's Replacing,
-    /// Collapsing, Summing, Aggregating and Graphite MergeTree): proven only where the
-    /// query reads it with `FINAL`. `generated` as for `Table`.
+    /// A table whose visible rows change at background merges (ClickHouse's Replacing, Collapsing,
+    /// Summing, Aggregating and Graphite MergeTree): proven only where the query reads it with
+    /// `FINAL`. `generated` as for `Table`.
     MergeOnRead { generated: Vec<(String, String)> },
-    /// A ClickHouse table with a `TTL` (of the table or a column): rows or values expire in
-    /// the background, whatever `FINAL` says.
+    /// A ClickHouse table with a `TTL` (of the table or a column): rows or values expire in the
+    /// background, whatever `FINAL` says.
     Ttl,
     /// The dialect has no lookup: not proven.
     Unknown,
-    /// Not proven to be a table or a view whose query can be read: the lookup failed, the
-    /// name isn't found or is ambiguous, or it is another kind of relation (a foreign,
-    /// external or federated table, a table function, a system view, an unresolved
-    /// synonym).
+    /// Not proven to be a table or a view whose query can be read: the lookup failed, the name
+    /// isn't found or is ambiguous, or it is another kind of relation (a foreign, external or
+    /// federated table, a table function, a system view, an unresolved synonym).
     Failed,
 }
 
-/// What kind of relation `parts` (`[catalog.][schema.]name`, unquoted, as the database folds
-/// them) is, and the definition of a view, whose query the database runs again each time it
-/// is read. Only relations of a known kind are [`ViewLookup::Table`] (Postgres: ordinary
-/// and partitioned tables whose partitions and children are all ordinary, without
-/// row-level security; MySQL and MariaDB: base tables on InnoDB, MyISAM, Aria or MEMORY;
-/// ClickHouse: MergeTree-family, Memory and Log tables, not in `system`; Oracle: tables
-/// (not external) and materialized views, a synonym only when it resolves to one;
-/// DuckDB: tables of a DuckDB database, not an attached Postgres or SQLite; SQLite: tables
-/// that aren't virtual; Databricks: managed and external tables; SQL Server: user tables);
-/// everything else, unknown names included, is [`ViewLookup::Failed`]. A view is
+/// What kind of relation `parts` (`[catalog.][schema.]name`, unquoted, as the database folds them)
+/// is, and the definition of a view, whose query the database runs again each time it is read. Only
+/// relations of a known kind are [`ViewLookup::Table`] (Postgres: ordinary and partitioned tables
+/// whose partitions and children are all ordinary, without row-level security; MySQL and MariaDB:
+/// base tables on InnoDB, MyISAM, Aria or MEMORY; ClickHouse: MergeTree-family, Memory and Log
+/// tables, not in `system`; Oracle: tables (not external) and materialized views, a synonym only
+/// when it resolves to one; DuckDB: tables of a DuckDB database, not an attached Postgres or
+/// SQLite; SQLite: tables that aren't virtual; Databricks: managed and external tables; SQL Server:
+/// user tables); everything else, unknown names included, is [`ViewLookup::Failed`]. A view is
 /// [`ViewLookup::View`]; its query is run again each time the view is read:
 /// SQLite and MySQL merge it into the reading query, calling its functions again for a
 /// filter. `context`: the qualifier of the view whose query names it, where an unqualified
@@ -1427,8 +1424,8 @@ pub fn view_definition(
         ),
         // The first place the name resolves in (`duckdb_name_rank`): a temporary view hides
         // a table of its name. Names compare by `lower()`, which folds more than DuckDB's
-        // identifiers do (`Vé` and `vÉ` are two views): two relations of the same rank are
-        // none found.
+        // identifiers do (`Vé` and `vÉ` are two views): two relations of the same rank are none
+        // found.
         DialectName::Duckdb => {
             let rank = duckdb_name_rank(parts, context, &search);
             format!(
@@ -1445,11 +1442,11 @@ pub fn view_definition(
                 n = s(name)
             )
         },
-        // Plain MergeTree (also Replicated and Shared), Memory and Log tables repeat their
-        // rows. The MergeTree variants that fold rows at background merges (Replacing,
-        // Collapsing, Summing, Aggregating, Graphite) show other rows before and after one,
-        // unless read with `FINAL`: `MergeOnRead`. A TTL drops rows or values in the
-        // background (`clickhouse_has_ttl`, on the table's text). (No `?` or `$` in the
+        // Plain MergeTree (also Replicated and Shared), Memory and Log tables repeat their rows.
+        // The MergeTree variants that fold rows at background merges (Replacing, Collapsing,
+        // Summing, Aggregating, Graphite) show other rows before and after one, unless read with
+        // `FINAL`: `MergeOnRead`. A TTL drops rows or values in the background
+        // (`clickhouse_has_ttl`, on the table's text). (No `?` or `$` in the
         // SQL: ConnectorX binds them.)
         DialectName::Clickhouse => format!(
             "SELECT engine = 'View', as_select, \
@@ -1560,8 +1557,8 @@ pub fn view_definition(
             None => ViewLookup::Failed,
         };
     }
-    // (SQL Server's and ClickHouse's extra columns, a synonym's base, the object id and the
-    // merge flag, are no qualifier)
+    // (SQL Server's and ClickHouse's extra columns, a synonym's base, the object id and the merge
+    // flag, are no qualifier)
     let qualifier_end = if matches!(dialect, DialectName::Mssql | DialectName::Clickhouse) {
         2
     } else {
@@ -1576,9 +1573,9 @@ pub fn view_definition(
     }
 }
 
-/// Whether a ClickHouse `CREATE TABLE` text has a `TTL` clause (of the table, or of a column):
-/// the word `TTL` outside quotes, strings and comments, that doesn't start a column definition
-/// (a column named `ttl` follows `(` or `,`; a clause follows a type or an expression).
+/// Whether a ClickHouse `CREATE TABLE` text has a `TTL` clause (of the table, or of a column): the
+/// word `TTL` outside quotes, strings and comments, that doesn't start a column definition (a
+/// column named `ttl` follows `(` or `,`; a clause follows a type or an expression).
 fn clickhouse_has_ttl(sql: &str) -> bool {
     let chars: Vec<char> = sql.chars().collect();
     let (mut i, mut prev) = (0, ' ');
@@ -1620,9 +1617,9 @@ fn clickhouse_has_ttl(sql: &str) -> bool {
     false
 }
 
-/// The columns of a table the database computes each time it is read, as
-/// `(column, SQL expression)`; `None` if the lookup fails. `row`: the table's row of
-/// [`view_definition`] (DuckDB's names its database and schema).
+/// The columns of a table the database computes each time it is read, as `(column, SQL
+/// expression)`; `None` if the lookup fails. `row`: the table's row of [`view_definition`]
+/// (DuckDB's names its database and schema).
 fn generated_columns(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
@@ -1654,8 +1651,8 @@ fn generated_columns(
             schema.map_or_else(|| "currentDatabase()".to_string(), s),
             s(name)
         ),
-        // computed columns that aren't persisted are evaluated on each read; persisted ones
-        // are stored (and must be deterministic)
+        // computed columns that aren't persisted are evaluated on each read; persisted ones are
+        // stored (and must be deterministic)
         DialectName::Mssql => format!(
             "SELECT c.name, c.definition FROM sys.computed_columns c WHERE c.object_id = {} \
             AND c.is_persisted = 0",
@@ -1678,10 +1675,10 @@ fn generated_columns(
         .collect()
 }
 
-/// SQLite's VIRTUAL generated columns (`pragma_table_xinfo` hidden = 2), computed on each
-/// read, with their expressions taken from the table's `CREATE` text (`row`: `(is_view,
-/// sql, schema)`); STORED ones (hidden = 3) are written once. An expression that can't be
-/// matched to its column is empty, which the inspection doesn't prove.
+/// SQLite's VIRTUAL generated columns (`pragma_table_xinfo` hidden = 2), computed on each read,
+/// with their expressions taken from the table's `CREATE` text (`row`: `(is_view, sql, schema)`);
+/// STORED ones (hidden = 3) are written once. An expression that can't be matched to its column is
+/// empty, which the inspection doesn't prove.
 fn sqlite_generated_columns(
     session: &mut dyn DatabaseSession,
     parts: &[PlSmallStr],
@@ -1717,8 +1714,8 @@ fn sqlite_generated_columns(
     Some(out)
 }
 
-/// The parenthesised expressions after `AS` (`x INT AS (a + b)`, `GENERATED ALWAYS AS (..)`)
-/// in a `CREATE TABLE` text, outside quotes, in order.
+/// The parenthesised expressions after `AS` (`x INT AS (a + b)`, `GENERATED ALWAYS AS (..)`) in a
+/// `CREATE TABLE` text, outside quotes, in order.
 fn sqlite_generated_expressions(sql: &str) -> Vec<String> {
     let chars: Vec<char> = sql.chars().collect();
     let (mut out, mut i) = (vec![], 0);
@@ -1773,12 +1770,12 @@ fn sqlite_generated_expressions(sql: &str) -> Vec<String> {
     out
 }
 
-/// The Oracle lookup of [`view_definition`]: the name is resolved as Oracle does (the
-/// current schema, or the owner of the view whose text names it, then `PUBLIC`'s
-/// synonyms), through synonyms (at most [`ORACLE_SYNONYM_HOPS`], none over a database
-/// link) to a table, a materialized view or a view. A table that is external or has
-/// virtual columns whose expressions can't be read isn't proven. `TEXT_VC` holds the first
-/// 4000 characters of a view's text, the `LONG` `TEXT` all of them.
+/// The Oracle lookup of [`view_definition`]: the name is resolved as Oracle does (the current
+/// schema, or the owner of the view whose text names it, then `PUBLIC`'s synonyms), through
+/// synonyms (at most [`ORACLE_SYNONYM_HOPS`], none over a database link) to a table, a materialized
+/// view or a view. A table that is external or has virtual columns whose expressions can't be read
+/// isn't proven. `TEXT_VC` holds the first 4000 characters of a view's text, the `LONG` `TEXT` all
+/// of them.
 const ORACLE_SYNONYM_HOPS: usize = 8;
 
 fn oracle_lookup(
@@ -1911,8 +1908,8 @@ fn oracle_lookup(
     ViewLookup::Failed
 }
 
-/// The quoted name of a relation as `DESCRIBE TABLE EXTENDED` resolves it: a name inside a
-/// view is as of the catalog and namespace the view was created in (`context`).
+/// The quoted name of a relation as `DESCRIBE TABLE EXTENDED` resolves it: a name inside a view is
+/// as of the catalog and namespace the view was created in (`context`).
 fn databricks_full_name(parts: &[PlSmallStr], context: &[PlSmallStr]) -> String {
     let mut full: Vec<&str> = vec![];
     match (parts.len(), context) {
@@ -1927,11 +1924,10 @@ fn databricks_full_name(parts: &[PlSmallStr], context: &[PlSmallStr]) -> String 
         .join(".")
 }
 
-/// The Databricks (and Spark) lookup of [`view_definition`]: `DESCRIBE TABLE EXTENDED`
-/// resolves the name as the query does (temporary views, the session's catalog and schema, the
-/// Hive metastore), and lists the type, the text and the catalog and namespace of a view. A
-/// name inside a view's text is resolved in the catalog and namespace the view was created
-/// in (`context`).
+/// The Databricks (and Spark) lookup of [`view_definition`]: `DESCRIBE TABLE EXTENDED` resolves the
+/// name as the query does (temporary views, the session's catalog and schema, the Hive metastore),
+/// and lists the type, the text and the catalog and namespace of a view. A name inside a view's
+/// text is resolved in the catalog and namespace the view was created in (`context`).
 fn databricks_view(
     session: &mut dyn DatabaseSession,
     parts: &[PlSmallStr],
@@ -1986,17 +1982,17 @@ fn databricks_view(
     };
     let kind = kind.trim().to_ascii_uppercase();
     if kind != "VIEW" {
-        // managed and external tables only: a materialized view, a metric view, a
-        // streaming or a foreign table is read through what it runs
+        // managed and external tables only: a materialized view, a metric view, a streaming or a
+        // foreign table is read through what it runs
         return if matches!(kind.as_str(), "MANAGED" | "EXTERNAL") {
             ViewLookup::Table { generated: vec![] }
         } else {
             ViewLookup::Failed
         };
     }
-    // The view's names were resolved along its SQL path: a function of a user's schema
-    // may stand ahead of the built-ins (`SET PATH = my.schema, system.builtin`). Proven
-    // only where the built-ins come first, as by default.
+    // The view's names were resolved along its SQL path: a function of a user's schema may stand
+    // ahead of the built-ins (`SET PATH = my.schema, system.builtin`). Proven only where the
+    // built-ins come first, as by default.
     if sql_path
         .as_deref()
         .is_some_and(|p| !databricks_builtins_first(p))
@@ -2022,16 +2018,15 @@ fn databricks_view(
     ViewLookup::View { sql, qualifier }
 }
 
-/// The columns of a table whose collation may equate different texts, lower-cased, or `*`
-/// for all of them where the table's own text says so; `None` where the lookup fails or the
-/// dialect has none (a `GROUP BY` or `DISTINCT` over them returns any one of the
-/// spellings that compare equal, and each partition may return another). Binary collations
-/// only: MySQL and MariaDB `_bin` ones that are `NO PAD` (the others compare `'a'` and
-/// `'a '` equal) and `binary`; Postgres deterministic ones (not `citext`, nor a domain
-/// or array of it); SQL Server none (every collation pads: any string column counts);
-/// Oracle `BINARY` (and `USING_NLS_COMP` where the session's `NLS_COMP` is binary);
-/// Databricks `UTF8_BINARY`; ClickHouse groups bytes; SQLite and DuckDB: a table or setting
-/// that names a collation.
+/// The columns of a table whose collation may equate different texts, lower-cased, or `*` for all
+/// of them where the table's own text says so; `None` where the lookup fails or the dialect has
+/// none (a `GROUP BY` or `DISTINCT` over them returns any one of the spellings that compare equal,
+/// and each partition may return another). Binary collations only: MySQL and MariaDB `_bin` ones
+/// that are `NO PAD` (the others compare `'a'` and `'a '` equal) and `binary`; Postgres
+/// deterministic ones (not `citext`, nor a domain or array of it); SQL Server none (every collation
+/// pads: any string column counts); Oracle `BINARY` (and `USING_NLS_COMP` where the session's
+/// `NLS_COMP` is binary); Databricks `UTF8_BINARY`; ClickHouse groups bytes; SQLite and DuckDB: a
+/// table or setting that names a collation.
 pub fn nonbinary_collated_columns(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
@@ -2074,9 +2069,9 @@ pub fn nonbinary_collated_columns(
             }
             return Some(out);
         },
-        // (`utf8mb4_bin` pads: `'a'` and `'a '` are one group; `utf8mb4_0900_bin` is `NO PAD`,
-        // as MySQL's `COLLATIONS` says; MariaDB's has no such column, and names its
-        // `NO PAD` collations `_nopad_`: the fallback)
+        // (`utf8mb4_bin` pads: `'a'` and `'a '` are one group; `utf8mb4_0900_bin` is `NO PAD`, as
+        // MySQL's `COLLATIONS` says; MariaDB's has no such column, and names its `NO PAD`
+        // collations `_nopad_`: the fallback)
         DialectName::Mysql | DialectName::Singlestore => {
             let schema_sql = schema
                 .or(context.last().map(|c| c.as_str()))
@@ -2139,8 +2134,8 @@ pub fn nonbinary_collated_columns(
                 s(name)
             )
         },
-        // every database the connection has (`temp`, `main`, attached ones), or the schema
-        // the name is qualified by
+        // every database the connection has (`temp`, `main`, attached ones), or the schema the name
+        // is qualified by
         DialectName::Sqlite => {
             let schemas: Vec<String> = match schema {
                 Some(sc) => vec![sc.to_string()],
@@ -2182,8 +2177,8 @@ pub fn nonbinary_collated_columns(
                 },
             );
         },
-        // (tables and views, of every database of the connection, by name and schema; a
-        // view's own columns hold no collation: the tables its query reads are looked up too)
+        // (tables and views, of every database of the connection, by name and schema; a view's own
+        // columns hold no collation: the tables its query reads are looked up too)
         DialectName::Duckdb => {
             // (`context`: the database and schema of the view that names it)
             let db = if parts.len() >= 3 {
@@ -2241,8 +2236,8 @@ pub fn nonbinary_collated_columns(
 }
 
 /// The `(column, collation)` rows of [`nonbinary_collated_columns`]: the columns that have a
-/// collation; `None` where there are no rows (the name wasn't resolved the way the lookup
-/// does: a synonym).
+/// collation; `None` where there are no rows (the name wasn't resolved the way the lookup does: a
+/// synonym).
 fn finish_collated(df: DataFrame) -> Option<Vec<String>> {
     if df.height() == 0 {
         return None;
@@ -2256,8 +2251,8 @@ fn finish_collated(df: DataFrame) -> Option<Vec<String>> {
     )
 }
 
-/// The lower-cased names of the text columns of a Postgres table or view (a cast of one to a
-/// date or time may read `'now'`); `None` where the lookup fails or isn't Postgres'.
+/// The lower-cased names of the text columns of a Postgres table or view (a cast of one to a date
+/// or time may read `'now'`); `None` where the lookup fails or isn't Postgres'.
 pub fn text_columns(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
@@ -2288,10 +2283,10 @@ pub fn text_columns(
     )
 }
 
-/// Whether a Databricks SQL path (`system.builtin, system.ai, main.default`; a session's
-/// begins `system.session, system.builtin, ...`) names the built-in functions first. A
-/// temporary function (`system.session`) can't take the name of a built-in: Databricks
-/// refuses to create one (`ROUTINE_ALREADY_EXISTS`), so it may come before them.
+/// Whether a Databricks SQL path (`system.builtin, system.ai, main.default`; a session's begins
+/// `system.session, system.builtin, ...`) names the built-in functions first. A temporary function
+/// (`system.session`) can't take the name of a built-in: Databricks refuses to create one
+/// (`ROUTINE_ALREADY_EXISTS`), so it may come before them.
 pub fn databricks_builtins_first(path: &str) -> bool {
     path.trim()
         .trim_start_matches('[')
@@ -2302,9 +2297,8 @@ pub fn databricks_builtins_first(path: &str) -> bool {
         .is_some_and(|p| p == "system.builtin")
 }
 
-/// The Databricks session's SQL path (`SELECT current_path()`), `None` where it can't be
-/// read. Read once per planning, for [`databricks_builtins_first`] and the lookup of
-/// [`user_functions`].
+/// The Databricks session's SQL path (`SELECT current_path()`), `None` where it can't be read. Read
+/// once per planning, for [`databricks_builtins_first`] and the lookup of [`user_functions`].
 pub fn databricks_path(session: &mut dyn DatabaseSession) -> Option<String> {
     match session.catalog_query("SELECT current_path()") {
         Ok(df) => cell_str(&df, 0, 0),
@@ -2358,41 +2352,39 @@ fn mssql_name_parts(name: &str) -> usize {
     parts
 }
 
-/// What the catalog says of the user's functions that stand where a built-in is
-/// called ([`user_functions`]).
+/// What the catalog says of the user's functions that stand where a built-in is called
+/// ([`user_functions`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FunctionLookup {
-    /// A user's function (a DuckDB macro aside, see `bodies`) of the name of one of them
-    /// exists: whatever its `IMMUTABLE` / `DETERMINISTIC` label, which the database doesn't
-    /// check, the query is not proven to repeat. SQLite's flag is the exception: a
-    /// function registered without `deterministic=True` counts, one with it doesn't.
+    /// A user's function (a DuckDB macro aside, see `bodies`) of the name of one of them exists:
+    /// whatever its `IMMUTABLE` / `DETERMINISTIC` label, which the database doesn't check, the
+    /// query is not proven to repeat. SQLite's flag is the exception: a function registered without
+    /// `deterministic=True` counts, one with it doesn't.
     pub found: bool,
-    /// The SQL expressions of those defined in SQL (DuckDB macros), which the catalog
-    /// doesn't classify: they count if their bodies do.
+    /// The SQL expressions of those defined in SQL (DuckDB macros), which the catalog doesn't
+    /// classify: they count if their bodies do.
     pub bodies: Vec<String>,
-    /// What was found, by name (`function public.f(integer)`, `operator ===`, `cast a to b`),
-    /// where the lookup says: for the error.
+    /// What was found, by name (`function public.f(integer)`, `operator ===`, `cast a to b`), where
+    /// the lookup says: for the error.
     pub objects: Vec<String>,
 }
 
-/// Whether a user's function (or, on Postgres, operator or cast) may run where the query
-/// calls the built-ins `names` (lower-cased, the parser's knowledge of the query: they are
-/// allowlisted, a user's function standing in their place is not): `None` where the dialect
-/// has no lookup, or it failed. Postgres: a function of one of the `names`; an operator one
-/// of whose operand types is the type of a column of one of the `relations` (the source's
-/// tables and views, each as name parts: a view's body reads others) or a type the SQL
-/// names (`cast_types`), or any if `all_operators` (the SQL doesn't parse: its tables
-/// are unknown), however the SQL spells its use (`LIKE`, `BETWEEN`, `GROUP BY`
-/// and `ORDER BY` run operators too); a cast from such a type, to a type the SQL names, or
-/// an implicit one to such a type; each outside `pg_catalog` and `information_schema`
-/// and that no extension owns (domains and arrays count as their base and element types).
-/// MySQL: a stored function of a name (or a loadable one, where the server lists
-/// them); ClickHouse: a user-defined
-/// function (`origin != 'System'`); Databricks: a routine of a name in a schema of the SQL
-/// path (`databricks_path`), or a temporary function of the session. Oracle: a user's
-/// function or a synonym of the
-/// name. SQLite: the connection's functions of the name that aren't deterministic, or that
-/// replace a built-in. DuckDB: a user's macro or function of the name.
+/// Whether a user's function (or, on Postgres, operator or cast) may run where the query calls the
+/// built-ins `names` (lower-cased, the parser's knowledge of the query: they are allowlisted, a
+/// user's function standing in their place is not): `None` where the dialect has no lookup, or it
+/// failed. Postgres: a function of one of the `names`; an operator one of whose operand types is
+/// the type of a column of one of the `relations` (the source's tables and views, each as name
+/// parts: a view's body reads others) or a type the SQL names (`cast_types`), or any if
+/// `all_operators` (the SQL doesn't parse: its tables are unknown), however the SQL spells its use
+/// (`LIKE`, `BETWEEN`, `GROUP BY` and `ORDER BY` run operators too); a cast from such a type, to a
+/// type the SQL names, or an implicit one to such a type; each outside `pg_catalog` and
+/// `information_schema` and that no extension owns (domains and arrays count as their base and
+/// element types). MySQL: a stored function of a name (or a loadable one, where the server lists
+/// them); ClickHouse: a user-defined function (`origin != 'System'`); Databricks: a routine of a
+/// name in a schema of the SQL path (`databricks_path`), or a temporary function of the session.
+/// Oracle: a user's function or a synonym of the name. SQLite: the connection's functions of the
+/// name that aren't deterministic, or that replace a built-in. DuckDB: a user's macro or function
+/// of the name.
 pub fn user_functions(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
@@ -2426,9 +2418,9 @@ pub fn user_functions(
     // `(found count[, body])` rows
     let sql = match dialect {
         DialectName::Postgresql | DialectName::Redshift => {
-            // the types of the source's columns, and those the SQL names (a type name
-            // to_regtype can read: no brackets, quotes or the like), with the base of a
-            // domain and the element of an array
+            // the types of the source's columns, and those the SQL names (a type name to_regtype
+            // can read: no brackets, quotes or the like), with the base of a domain and the element
+            // of an array
             let regclasses = relations
                 .iter()
                 .map(|r| {
@@ -2509,13 +2501,13 @@ pub fn user_functions(
             "SELECT 1, CAST(NULL AS Nullable(String)), name FROM system.functions \
             WHERE origin != 'System' AND lower(name) IN ({list})"
         ),
-        // the schemas of the session's SQL path, ahead of which the built-ins stand only
-        // by default (`databricks_builtins_first`)
+        // the schemas of the session's SQL path, ahead of which the built-ins stand only by default
+        // (`databricks_builtins_first`)
         DialectName::Databricks => {
             let path = databricks_path?;
             let mut out = FunctionLookup::default();
-            // temporary functions (`system.session`) of the session, which `SHOW USER
-            // FUNCTIONS` lists by their bare names beside the persistent ones (`c.s.f`)
+            // temporary functions (`system.session`) of the session, which `SHOW USER FUNCTIONS`
+            // lists by their bare names beside the persistent ones (`c.s.f`)
             let df = match session.catalog_query("SHOW USER FUNCTIONS") {
                 Ok(df) => df,
                 Err(e) => {
@@ -2565,8 +2557,7 @@ pub fn user_functions(
             WHERE name COLLATE NOCASE IN ({list}) AND (flags & 2048) = 0 \
             AND (builtin = 0 OR name COLLATE NOCASE NOT IN ({list})))"
         ),
-        // macros have no stability: their bodies say; a user's Python function is not
-        // proven
+        // macros have no stability: their bodies say; a user's Python function is not proven
         DialectName::Duckdb => format!(
             "SELECT false, macro_definition FROM duckdb_functions() \
             WHERE function_name COLLATE NOCASE IN ({list}) AND function_type IN ('macro', 'table_macro') \
@@ -2597,10 +2588,10 @@ pub fn user_functions(
     let mut out = FunctionLookup::default();
     fold_function_rows(&mut out, &df);
     if matches!(dialect, DialectName::Mysql | DialectName::Singlestore) {
-        // loadable functions (`CREATE FUNCTION ... SONAME`), which `ROUTINES` doesn't list:
-        // MySQL's `performance_schema` table, or MariaDB's `mysql.func`. Where neither is
-        // readable by the user they go unchecked (a limit: the names the query writes that
-        // are no built-in's are refused all the same, `_sqlglot._non_builtin_calls`).
+        // loadable functions (`CREATE FUNCTION ... SONAME`), which `ROUTINES` doesn't list: MySQL's
+        // `performance_schema` table, or MariaDB's `mysql.func`. Where neither is readable by the
+        // user they go unchecked (a limit: the names the query writes that are no built-in's are
+        // refused all the same, `_sqlglot._non_builtin_calls`).
         for table in ["performance_schema.user_defined_functions", "mysql.func"] {
             match session.catalog_query(&format!(
                 "SELECT 1, NULL, name FROM {table} WHERE LOWER(name) IN ({list})"
@@ -3491,8 +3482,8 @@ mod tests {
         let info = table_info(&mut s, d, &["t".into()], true);
         assert_eq!(info.types.len(), 1);
         assert!(!info.incomplete);
-        // no `View Schema Mode` row to tell a view of schema evolution: the types are
-        // read from the query too, and char padding is unknown
+        // no `View Schema Mode` row to tell a view of schema evolution: the types are read from the
+        // query too, and char padding is unknown
         assert_eq!(
             s.0,
             [
@@ -3592,8 +3583,8 @@ mod tests {
         );
         assert_eq!(rec.0[0], "SHOW USER FUNCTIONS");
         assert!(rec.0[1].contains("`test`.information_schema.routines"));
-        // Postgres: operators and casts by the types of the relations' columns and the
-        // types the SQL names (a source with no relation and no name asks nothing)
+        // Postgres: operators and casts by the types of the relations' columns and the types the
+        // SQL names (a source with no relation and no name asks nothing)
         let mut rec = SqlLog(vec![]);
         user_functions(
             &mut rec,

@@ -152,16 +152,15 @@ pub trait DatabaseSession: Send {
         None
     }
 
-    /// Whether the session converts a live MySQL connection's `TIMESTAMP` columns from its
-    /// time zone to UTC instants as they are read (the bridge does, by the result's field
-    /// types).
+    /// Whether the session converts a live MySQL connection's `TIMESTAMP` columns from its time
+    /// zone to UTC instants as they are read (the bridge does, by the result's field types).
     fn converts_mysql_timestamps(&self) -> bool {
         false
     }
 
     /// The columns of the last statement's result that are a time of day with a time zone
-    /// (`TIMETZ`), where the driver's result description tells: its value is read as the
-    /// local time of day, the offset dropped.
+    /// (`TIMETZ`), where the driver's result description tells: its value is read as the local time
+    /// of day, the offset dropped.
     fn time_with_zone_columns(&self) -> Vec<String> {
         vec![]
     }

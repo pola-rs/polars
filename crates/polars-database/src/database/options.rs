@@ -253,8 +253,8 @@ impl DatabaseScanOptions {
 
 use std::hash::BuildHasher;
 
-/// Hashes the whole dtype, parameters included (`DataType`'s own `Hash` covers only the variant,
-/// so two decimal scales, time zones, units or Enum categories would collide).
+/// Hashes the whole dtype, parameters included (`DataType`'s own `Hash` covers only the variant, so
+/// two decimal scales, time zones, units or Enum categories would collide).
 pub fn hash_dtype<H: Hasher>(dtype: &DataType, h: &mut H) {
     std::mem::discriminant(dtype).hash(h);
     match dtype {

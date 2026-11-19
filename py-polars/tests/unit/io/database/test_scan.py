@@ -1491,9 +1491,9 @@ def test_scan_duckdb_volatile_views(tmp_path: Path) -> None:
 def test_scan_duckdb_collapsing_over_views_and_same_named_tables(
     tmp_path: Path,
 ) -> None:
-    # the collation lookup read `duckdb_tables()` only (no
-    # views: every GROUP BY over a view was refused) and matched by name across schemas
-    # and databases, taking the first row
+    # the collation lookup read `duckdb_tables()` only (no views: every GROUP BY over a
+    # view was refused) and matched by name across schemas and databases, taking the
+    # first row
     duckdb = pytest.importorskip("duckdb")
     conn = duckdb.connect()
     conn.execute("CREATE TABLE t AS SELECT range AS id, 'a' AS s FROM range(300)")
@@ -1574,8 +1574,8 @@ def test_scan_sqlite_collation_of_a_table_in_an_attached_database(
 
 
 def test_scan_duckdb_generated_columns_and_ambiguous_names(tmp_path: Path) -> None:
-    # a relation counts only on proof; a virtual column that calls random()
-    # makes the table not repeatable; names `lower()` folds together are not told apart
+    # a relation counts only on proof; a virtual column that calls random() makes the
+    # table not repeatable; names `lower()` folds together are not told apart
     duckdb = pytest.importorskip("duckdb")
     path = str(tmp_path / "t.duckdb")
     with duckdb.connect(path) as conn:
@@ -4865,8 +4865,8 @@ class _OpaqueFactory:
 
 
 def test_scan_function_over_a_singleton_thread_pool(tmp_path: Path) -> None:
-    # the pool closes other threads' connections beyond `pool_size` (a crash with
-    # the scan's concurrent connects, or the user's own connection closed)
+    # the pool closes other threads' connections beyond `pool_size` (a crash with the
+    # scan's concurrent connects, or the user's own connection closed)
     import functools
 
     sqlalchemy = pytest.importorskip("sqlalchemy")
@@ -4974,8 +4974,8 @@ def test_postgres_family_includes_dialect_forks() -> None:
 def test_scan_assertion_pool_function_with_concurrent_connects(
     tmp_path: Path,
 ) -> None:
-    # a second checkout of an AssertionPool raises: the scan's connects, each
-    # returned at once, take turns
+    # a second checkout of an AssertionPool raises: the scan's connects, each returned
+    # at once, take turns
     sqlalchemy = pytest.importorskip("sqlalchemy")
     with closing(sqlite3.connect(tmp_path / "shared.db")) as conn:
         conn.execute("CREATE TABLE t (v INTEGER)")
@@ -5008,8 +5008,8 @@ def test_scan_assertion_pool_function_with_concurrent_connects(
 
 
 def test_scan_duckdb_shared_cursor_key_resolves_symlinks(tmp_path: Path) -> None:
-    # `..` after a symlink is not the textual parent: abspath would key the two files
-    # as one
+    # `..` after a symlink is not the textual parent: abspath would key the two files as
+    # one
     duckdb = pytest.importorskip("duckdb")
     from polars_database import _bridge
 
@@ -5037,8 +5037,8 @@ def test_scan_duckdb_shared_cursor_key_resolves_symlinks(tmp_path: Path) -> None
 
 
 def test_sqlite_generated_column_compares_by_its_declared_affinity() -> None:
-    # `pragma_table_info` omits generated columns: a NUMERIC one had no affinity
-    # and an exact string equality compared SQLite's rounded text of the REAL
+    # `pragma_table_info` omits generated columns: a NUMERIC one had no affinity and an
+    # exact string equality compared SQLite's rounded text of the REAL
     with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
         try:
             conn.execute(
@@ -5183,8 +5183,8 @@ def test_sqlite_replaced_binary_collation_that_passes_a_byte_order_probe(
 
 
 def test_sqlite_pushed_conversions_call_no_function() -> None:
-    # the SQL the plugin writes for a mixed column uses no function that a
-    # connection can redefine
+    # the SQL the plugin writes for a mixed column uses no function that a connection
+    # can redefine
     with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
         conn.execute("CREATE TABLE m (id INTEGER, v, w)")
         conn.execute("INSERT INTO m VALUES (1, 0.5, 1)")
@@ -5211,8 +5211,7 @@ def test_a_flight_sql_transport_takes_any_dialect() -> None:
 def test_a_flight_sql_transport_without_a_driver_pin_keeps_flight_sql_drivers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `dialect=` on `grpc://` is the SQL's dialect only; the driver was
-    # picked from it
+    # `dialect=` on `grpc://` is the SQL's dialect only; the driver was picked from it
     # (DuckDB's ADBC driver created a file named like the address)
     monkeypatch.chdir(tmp_path)
     for dialect in ["duckdb", "postgresql", "mysql", "sqlite"]:
@@ -5502,9 +5501,9 @@ def test_scan_duckdb_column_retyped_after_planning_is_an_error(
 def test_scan_sqlite_live_blobs_next_to_numbers_say_so(
     tmp_path: Path, table: str, batch_size: int | None
 ) -> None:
-    # whichever batch the blob and the number meet in (the driver's own
-    # frame of one fails before the batch is checked), the error is the blob one; and no
-    # SQL function of the user's connection is called to type a table's column
+    # whichever batch the blob and the number meet in (the driver's own frame of one
+    # fails before the batch is checked), the error is the blob one; and no SQL function
+    # of the user's connection is called to type a table's column
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
         conn.execute("CREATE TABLE blob_first (id INTEGER PRIMARY KEY, x)")
@@ -5586,8 +5585,8 @@ def test_scan_sqlite_live_blob_mixed_with_other_values_is_not_lost(
 def test_scan_sqlite_blob_column_with_other_values_is_an_error(
     tmp_path: Path, driver: str
 ) -> None:
-    # a BLOB column next to numbers or text read the numbers as NULL, as 6-digit
-    # `%e` text, or failed with a type error; a blob-only column reads as it is
+    # a BLOB column next to numbers or text read the numbers as NULL, as 6-digit `%e`
+    # text, or failed with a type error; a blob-only column reads as it is
     _importorskip_sqlite_driver(driver)
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
@@ -5618,9 +5617,8 @@ def test_scan_sqlite_blob_column_with_other_values_is_an_error(
 def test_scan_sqlite_blob_guard_survives_redefined_functions(
     tmp_path: Path, how: str
 ) -> None:
-    # the guard is no SQL function a live connection or a factory's
-    # connection may have replaced (`abs`, `typeof`): the batches are checked as they
-    # come
+    # the guard is no SQL function a live connection or a factory's connection may have
+    # replaced (`abs`, `typeof`): the batches are checked as they come
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
         conn.execute("CREATE TABLE t (id INTEGER, b BLOB)")
@@ -5667,8 +5665,8 @@ def test_scan_sqlite_blob_guard_survives_redefined_functions(
 def test_scan_sqlite_union_of_scans_differing_in_dtype_parameters(
     tmp_path: Path,
 ) -> None:
-    # common subplan elimination merged scans that differ only in the decimal
-    # scale (also the time zone, Enum categories, duration unit) of their dtypes
+    # common subplan elimination merged scans that differ only in the decimal scale
+    # (also the time zone, Enum categories, duration unit) of their dtypes
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
         conn.execute("CREATE TABLE t (id INTEGER, x TEXT)")

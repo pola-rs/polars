@@ -246,8 +246,8 @@ pub fn cast_to_user_schema(
 }
 
 /// [`cast_to_user_schema`], where `plugin_converted` are the columns the plugin reads through a
-/// conversion of its own (a number as text, a decimal as text): their dtype is not the
-/// database's, so a text read for a number is no change of the column's kind.
+/// conversion of its own (a number as text, a decimal as text): their dtype is not the database's,
+/// so a text read for a number is no change of the column's kind.
 pub fn cast_columns(
     df: &DataFrame,
     schema: &Schema,
@@ -310,12 +310,11 @@ pub fn cast_columns(
                     col.dtype(), col.dtype()
                 )
             }
-            // A column the database retyped since planning (an `INT` that is now a `DATE`)
-            // would be read as another kind of value: day numbers, raw ticks, midnight.
-            // A time of day for a column declared as text (`schema=`, where nothing looked
-            // the type up) on a driver that can't tell a `TIMETZ` (the planner lists such
-            // columns): it comes back as the local time of day, without the offset the
-            // text would have had.
+            // A column the database retyped since planning (an `INT` that is now a `DATE`) would be
+            // read as another kind of value: day numbers, raw ticks, midnight. A time of day for a
+            // column declared as text (`schema=`, where nothing looked the type up) on a driver
+            // that can't tell a `TIMETZ` (the planner lists such columns): it comes back as the
+            // local time of day, without the offset the text would have had.
             if has_values
                 && matches!((col.dtype(), dtype), (DataType::Time, DataType::String))
                 && let Some(cast) = time_text_risk.get(name)
@@ -359,9 +358,9 @@ pub fn cast_columns(
     DataFrame::new(height, columns)
 }
 
-/// A cast of a number to a date, time or duration, also inside lists, arrays and structs
-/// (fields matched by name, as the cast does). A duration of a database's `TIME` is planned
-/// from microseconds by [`duration_to_time`], before this.
+/// A cast of a number to a date, time or duration, also inside lists, arrays and structs (fields
+/// matched by name, as the cast does). A duration of a database's `TIME` is planned from
+/// microseconds by [`duration_to_time`], before this.
 fn numeric_to_temporal(from: &DataType, to: &DataType) -> bool {
     match (from, to) {
         (DataType::List(a) | DataType::Array(a, _), DataType::List(b) | DataType::Array(b, _)) => {
@@ -385,9 +384,9 @@ fn numeric_to_temporal(from: &DataType, to: &DataType) -> bool {
     }
 }
 
-/// A change of kind between the column read and the one planned: a date or time read where
-/// a number was planned, or a date and a datetime (the cast reads day numbers, raw ticks or
-/// midnight). Nested in lists and structs too.
+/// A change of kind between the column read and the one planned: a date or time read where a number
+/// was planned, or a date and a datetime (the cast reads day numbers, raw ticks or midnight).
+/// Nested in lists and structs too.
 fn kind_changed(from: &DataType, to: &DataType) -> bool {
     match (from, to) {
         (DataType::List(a) | DataType::Array(a, _), DataType::List(b) | DataType::Array(b, _)) => {
@@ -421,10 +420,10 @@ fn kind_changed(from: &DataType, to: &DataType) -> bool {
 }
 
 /// A column read as another kind of value than planned, unless the plugin reads it through a
-/// conversion of its own (`converted`: it may make text of a number, or a naive UTC time of
-/// an instant): text where an integer or float was planned (`'42'` is no 42),
-/// a boolean where a number was (read as 1), and a naive timestamp where one with a time
-/// zone was (its wall clock would be read as UTC). Nested in lists and structs too.
+/// conversion of its own (`converted`: it may make text of a number, or a naive UTC time of an
+/// instant): text where an integer or float was planned (`'42'` is no 42), a boolean where a number
+/// was (read as 1), and a naive timestamp where one with a time zone was (its wall clock would be
+/// read as UTC). Nested in lists and structs too.
 fn value_kind_changed(from: &DataType, to: &DataType, converted: bool) -> bool {
     match (from, to) {
         (DataType::List(a) | DataType::Array(a, _), DataType::List(b) | DataType::Array(b, _)) => {

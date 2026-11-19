@@ -140,9 +140,9 @@ impl ConnectionSpec {
         })
     }
 
-    /// Whether the plugin opens the connection itself (a URI or an ODBC string), as against
-    /// one the user made (a live object, a factory's), which may have redefined SQL
-    /// functions and collations.
+    /// Whether the plugin opens the connection itself (a URI or an ODBC string), as against one the
+    /// user made (a live object, a factory's), which may have redefined SQL functions and
+    /// collations.
     pub fn opened_by_plugin(&self) -> bool {
         matches!(
             self.target,

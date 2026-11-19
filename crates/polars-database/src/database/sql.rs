@@ -355,10 +355,10 @@ pub struct QueryFacts {
     pub output_columns: Option<Vec<PlSmallStr>>,
     /// One query that only reads: no DML or DDL anywhere (CTEs included), no `SELECT INTO`.
     pub read_only: bool,
-    /// Proven to return the same rows each time it runs on the same data: no `LIMIT` /
-    /// `OFFSET` / `FETCH` / `TOP` (which pick rows), no `TABLESAMPLE`, and every function,
-    /// operator, column and table of it in the allowlist of `_sqlglot.py` (anything else,
-    /// a user's function and a clock among it, is not repeatable).
+    /// Proven to return the same rows each time it runs on the same data: no `LIMIT` / `OFFSET` /
+    /// `FETCH` / `TOP` (which pick rows), no `TABLESAMPLE`, and every function, operator, column
+    /// and table of it in the allowlist of `_sqlglot.py` (anything else, a user's function and a
+    /// clock among it, is not repeatable).
     pub repeatable: bool,
     /// A `LIMIT` / `OFFSET` / `FETCH` (or a lock clause) ends the query: it can't take
     /// another `LIMIT`.
@@ -379,8 +379,8 @@ pub struct QueryFacts {
     pub all_columns_volatile: bool,
     /// Lower-cased names of the functions it knows, on a database where a user's function
     /// may replace one (SQLite, DuckDB, Postgres, Oracle): the database says whether one did
-    /// ([`user_functions`](super::catalog::user_functions)). A function the parser doesn't
-    /// know is not proven repeatable (`repeatable` is false): the allowlist in `_sqlglot.py`.
+    /// ([`user_functions`](super::catalog::user_functions)). A function the parser doesn't know is
+    /// not proven repeatable (`repeatable` is false): the allowlist in `_sqlglot.py`.
     pub known_functions: Vec<PlSmallStr>,
     /// It merges rows that compare equal (`GROUP BY`, `DISTINCT`, a set operation): under a
     /// collation that equates different texts the database returns any one of them.
@@ -389,11 +389,11 @@ pub struct QueryFacts {
     pub collated: bool,
     /// Postgres: the type names it writes, which a user's cast to or from them runs for.
     pub cast_types: Vec<PlSmallStr>,
-    /// Postgres: the SQL doesn't parse (a user's operator of a name sqlglot doesn't know is
-    /// one such), so its tables and types are unknown: any user's operator may run.
+    /// Postgres: the SQL doesn't parse (a user's operator of a name sqlglot doesn't know is one
+    /// such), so its tables and types are unknown: any user's operator may run.
     pub any_operator: bool,
-    /// The names it writes (columns, aliases, tables), lower-cased; `None` where a `*`
-    /// projects every column.
+    /// The names it writes (columns, aliases, tables), lower-cased; `None` where a `*` projects
+    /// every column.
     pub referenced_columns: Option<Vec<PlSmallStr>>,
     /// The tables of `tables` it reads only with `FINAL` (ClickHouse).
     pub final_tables: Vec<Vec<PlSmallStr>>,
@@ -440,8 +440,8 @@ pub trait SqlRenderer: Send + Sync {
     fn inspect_query(&self, sql: &str, dialect: DialectName) -> PolarsResult<QueryFacts>;
     /// The query's top-level `ORDER BY` on its output columns, for a wrapper that repeats it
     /// outside, where a `SELECT *` is the planned `columns`. `None` where it can't be kept.
-    /// `star_ordinals`: whether `columns` are the database's own, in its order (an ordinal
-    /// of a `SELECT *` is resolved only then).
+    /// `star_ordinals`: whether `columns` are the database's own, in its order (an ordinal of a
+    /// `SELECT *` is resolved only then).
     fn outer_order_by(
         &self,
         sql: &str,

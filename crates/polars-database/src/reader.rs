@@ -379,8 +379,8 @@ impl Drop for Scan {
     }
 }
 
-/// How much of a non-repeatable source's rows a count keeps for the read (#9); a bigger
-/// result is counted and dropped.
+/// How much of a non-repeatable source's rows a count keeps for the read (#9); a bigger result is
+/// counted and dropped.
 const COUNT_BUFFER_BYTES: usize = 256 << 20;
 
 /// [`COUNT_BUFFER_BYTES`], or `POLARS_DATABASE_COUNT_BUFFER_BYTES` (a test hook).
@@ -407,8 +407,8 @@ pub struct PartitionReader {
     /// The rows of a source that isn't repeatable, read to count them: the read returns
     /// these rows, the ones the count (and the slices planned from it) saw.
     counted_rows: Mutex<Option<DataFrame>>,
-    /// The count of a source that isn't repeatable passed `COUNT_BUFFER_BYTES`: its rows
-    /// weren't kept, so the read runs the query again and must find as many rows (#9).
+    /// The count of a source that isn't repeatable passed `COUNT_BUFFER_BYTES`: its rows weren't
+    /// kept, so the read runs the query again and must find as many rows (#9).
     count_unbuffered: Mutex<bool>,
     /// The running statement's cancel handle; replaced when a retry reconnects.
     cancel: Arc<Mutex<Option<CancelHandle>>>,
@@ -455,8 +455,8 @@ impl PartitionReader {
             && config.dialect == DialectName::Sqlite
             && !config.options.connection.opened_by_plugin()
         {
-            // The user's connection may have redefined `count` (`create_aggregate`), and a
-            // wrong count slices the wrong rows without failing: count the rows themselves.
+            // The user's connection may have redefined `count` (`create_aggregate`), and a wrong
+            // count slices the wrong rows without failing: count the rows themselves.
             let sql = format!(
                 "SELECT 1 FROM ({}) pl_count",
                 crate::database::planner::wrappable(&self.partition.sql)
@@ -515,9 +515,9 @@ impl PartitionReader {
     /// it: drivers type each batch on its own (a decimal's scale, a time zone), and
     /// batches of other dtypes can't be stacked.
     ///
-    /// Returns the number of rows, and the rows unless they passed `COUNT_BUFFER_BYTES`: a
-    /// result that big is counted and dropped (the read runs the query again, and checks
-    /// that it finds as many rows), so a `tail(n)` can't hold the whole result (#9).
+    /// Returns the number of rows, and the rows unless they passed `COUNT_BUFFER_BYTES`: a result
+    /// that big is counted and dropped (the read runs the query again, and checks that it finds as
+    /// many rows), so a `tail(n)` can't hold the whole result (#9).
     fn read_counted(&self, session: &mut Session) -> PolarsResult<(u64, Option<DataFrame>)> {
         let config = &self.shared.config;
         let overrides = config.options.schema_overrides.as_deref();

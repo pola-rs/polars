@@ -240,16 +240,16 @@ pub fn detect_dialect(
     let Some(user) = user else {
         return Ok(inferred);
     };
-    // A `dialect=` names what the connection can't say, or refines it (a MySQL driver
-    // on SingleStore, a Postgres driver on Redshift); one that contradicts the connection
-    // would write another database's SQL (other string escapes) and pick its driver.
+    // A `dialect=` names what the connection can't say, or refines it (a MySQL driver on
+    // SingleStore, a Postgres driver on Redshift); one that contradicts the connection would write
+    // another database's SQL (other string escapes) and pick its driver.
     let refines = matches!(
         (inferred, user),
         (DialectName::Mysql, DialectName::Singlestore)
             | (DialectName::Postgresql, DialectName::Redshift)
     );
-    // Flight SQL is a transport: the database behind it (Dremio, DuckDB, Trino, ...) is
-    // whatever `dialect=` says, so it never contradicts, as Generic doesn't.
+    // Flight SQL is a transport: the database behind it (Dremio, DuckDB, Trino, ...) is whatever
+    // `dialect=` says, so it never contradicts, as Generic doesn't.
     let open = |d: DialectName| matches!(d, DialectName::Generic | DialectName::Flightsql);
     polars_ensure!(
         user == inferred || refines || open(user) || open(inferred),

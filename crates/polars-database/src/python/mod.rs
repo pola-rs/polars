@@ -127,8 +127,8 @@ fn range_of(obj: &Bound<'_, PyAny>) -> PyResult<(Scalar, Scalar)> {
 }
 
 /// The key text of a plain value: its `repr` (whole), plus, for a `datetime` or `time`, the UTC
-/// offset the `tzinfo` gives: a custom `tzinfo`'s `repr` may not show it (R9-3). Containers
-/// are walked, so a value nested in one is keyed too.
+/// offset the `tzinfo` gives: a custom `tzinfo`'s `repr` may not show it (R9-3). Containers are
+/// walked, so a value nested in one is keyed too.
 fn key_of(v: &Bound<'_, PyAny>, out: &mut String) -> PyResult<()> {
     use std::fmt::Write;
     if v.is_exact_instance_of::<PyList>() || v.is_exact_instance_of::<PyTuple>() {

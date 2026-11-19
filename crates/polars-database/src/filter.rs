@@ -944,9 +944,9 @@ impl Translator<'_> {
         {
             return false;
         }
-        // Oracle normalises a DATE or TIMESTAMP literal in the gap (1582-10-05..14) to
-        // 1582-10-15, so the comparison runs against a day Polars never wrote: every
-        // operator then admits or drops the 1582-10-15 row. Stored values read back right.
+        // Oracle normalises a DATE or TIMESTAMP literal in the gap (1582-10-05..14) to 1582-10-15,
+        // so the comparison runs against a day Polars never wrote: every operator then admits or
+        // drops the 1582-10-15 row. Stored values read back right.
         if self.dialect() == DialectName::Oracle
             && (ORACLE_GAP_START_DAYS..DATABRICKS_GAP_END_DAYS).contains(&days)
         {

@@ -501,21 +501,19 @@ def _is_read_only(stmt: Any) -> bool:
 # Design (decided 2026-11-19, after 41 review rounds kept finding new volatile
 # constructs by listing what is volatile): a query is repeatable only on positive proof
 # that running it again returns the same rows. Every function, operator, cast, column
-# and
-# table in it must be in the lists below (all small and conservative, per dialect where
-# they differ); anything else -- a function sqlglot doesn't know, a user's function
-# whatever its IMMUTABLE / DETERMINISTIC label, a clock, a session variable, a table
-# function, a typed node nobody listed -- is *not* repeatable. A refused case costs a
-# clear error (explicit `partition_on`) or one query (`partition_on="auto"`); a case
-# wrongly proven returns wrong rows, so a name is added only when it is known to be
+# and table in it must be in the lists below (all small and conservative, per dialect
+# where they differ); anything else -- a function sqlglot doesn't know, a user's
+# function whatever its IMMUTABLE / DETERMINISTIC label, a clock, a session variable, a
+# table function, a typed node nobody listed -- is *not* repeatable. A refused case
+# costs a clear error (explicit `partition_on`) or one query (`partition_on="auto"`); a
+# case wrongly proven returns wrong rows, so a name is added only when it is known to be
 # deterministic. What the SQL can't show (a view's body, a table's kind, a generated
 # column, a user's overload of a built-in) is proven on the Rust side from the catalog
 # (`catalog.rs`, `planner.rs::source_volatility`) by the same rule.
 
 # sqlglot's typed functions, by class name, whose value depends on their arguments only.
 # (Not: clocks, random and uuid functions, `ANY_VALUE` / `FIRST` / `LAST` / `ARG_MIN`
-# and
-# kin, `ARRAY_AGG` / `GROUP_CONCAT` / `LIST` (order-dependent), `MODE`, approximate
+# and kin, `ARRAY_AGG` / `GROUP_CONCAT` / `LIST` (order-dependent), `MODE`, approximate
 # aggregates, `ROW_NUMBER` / `LAG` / `FIRST_VALUE` ... (order of ties), session and
 # environment functions, JSON and array functions.)
 _PROVEN_FUNCTIONS = frozenset(
@@ -642,8 +640,8 @@ _PROVEN_FUNCTIONS = frozenset(
         "ToBoolean",
         "NumberToStr",
         # dates and times of their arguments (a text 'now' is
-        # `_is_current_time_literal`;
-        # SQLite's without a time value, `_sqlite_time_unproven`)
+        # `_is_current_time_literal`; SQLite's without a time value,
+        # `_sqlite_time_unproven`)
         "Extract",
         "Year",
         "Month",
@@ -846,8 +844,7 @@ _PROVEN_STRUCTURE = frozenset(
 )
 
 # Keywords a parser reads as a column (it knows none of them as a function) that name
-# the
-# time or the session, as an unqualified column: also a real column of the name is
+# the time or the session, as an unqualified column: also a real column of the name is
 # refused
 _NILADIC_COLUMNS = frozenset(
     {
@@ -976,8 +973,7 @@ def _unproven(node: Any, dialect: str | None, relations: set[str]) -> bool:
         name = node.name.lower()
         if node.table:
             # `seq.NEXTVAL`, `DBMS_RANDOM.VALUE`, a struct's field: a qualifier that is
-            # no
-            # table, subquery or CTE of the query isn't proven to be a column
+            # no table, subquery or CTE of the query isn't proven to be a column
             if node.table.lower() not in relations:
                 return True
         elif name in _NILADIC_COLUMNS:
@@ -1006,9 +1002,8 @@ def _unproven(node: Any, dialect: str | None, relations: set[str]) -> bool:
     if isinstance(node, exp.Values) and dialect == "clickhouse":
         # `values('id UInt32, k UInt32 ALIAS modulo(rand(), 4)', ...)`: the structure
         # string is read as one literal, though its `ALIAS` / `DEFAULT` expressions run
-        # on
-        # each read
-        # (the first row, whose first element is the structure, each in a tuple)
+        # on each read (the first row, whose first element is the structure, each in a
+        # tuple)
         structure: Any = node
         for _ in range(3):
             exprs = structure.expressions if structure is not None else None
@@ -1059,8 +1054,7 @@ def _function_name(node: Any) -> str:
 
 
 # Where a relative-time text is only text: concatenated, a `LIKE` pattern. (Not an
-# output
-# column of its own: `SELECT 'now' AS t` may be cast later, `(SELECT
+# output column of its own: `SELECT 'now' AS t` may be cast later, `(SELECT
 # 'now')::timestamptz`.)
 _TEXT_CONTEXTS = (exp.DPipe, exp.Concat, exp.ConcatWs, exp.Like, exp.ILike)
 # String functions, by sqlglot's name or the function's own
@@ -1100,8 +1094,7 @@ _TEXT_FUNCTIONS = frozenset(
 
 # A text a database may read as a time relative to now: a word of `_RELATIVE_WORDS` with
 # nothing else but time-like tokens around it, in any order (`'today'`, `'yesterday
-# 13:00'`,
-# `'today EST'`, `'EST today'`, `'13:00 yesterday'`, `'today Europe/Paris'`,
+# 13:00'`, `'today EST'`, `'EST today'`, `'13:00 yesterday'`, `'today Europe/Paris'`,
 # `'today allballs'`); not `'Now Corp'`. Mirrored by `planner.rs`'s
 # `relative_time_text`.
 _RELATIVE_WORDS = frozenset({"now", "today", "tomorrow", "yesterday"})
@@ -2293,8 +2286,7 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     # table of the query
     unproven = [node for node in stmt.walk() if _unproven(node, dialect, relations)]
     # ... and the names written that are no built-in's: judged as written, the nodes
-    # they
-    # parse to flagged (a name no node is found for may be any column's)
+    # they parse to flagged (a name no node is found for may be any column's)
     written = _non_builtin_calls(stmt, tokens, dialect)
     flagged: list[Any] = []
     matched: set[str] = set()

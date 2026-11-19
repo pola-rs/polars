@@ -1427,9 +1427,8 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("clickhouse", "SELECT toString(a), a % 3 FROM t", True),
         ("clickhouse", "SELECT * FROM remote('h', db, t)", False),
         ("clickhouse", "SELECT * FROM v(p = 1)", False),
-        # a table function's schema string holds an expression (`ALIAS`,
-        # `DEFAULT`)
-        # the parser reads as one literal
+        # a table function's schema string holds an expression (`ALIAS`, `DEFAULT`) the
+        # parser reads as one literal
         (
             "clickhouse",
             "SELECT id, k FROM values('id UInt32, k UInt32 ALIAS modulo(rand(), 4)', "
@@ -2326,8 +2325,8 @@ def test_star_order_by_ordinal_needs_the_databases_column_order() -> None:
 
 
 def test_star_order_by_ordinal_is_not_resolved_under_a_user_schema() -> None:
-    # `schema=` lists the user's columns, in the user's order: `ORDER BY 1` of a
-    # `SELECT *` is the database's first column, which isn't known (no I/O)
+    # `schema=` lists the user's columns, in the user's order: `ORDER BY 1` of a `SELECT
+    # *` is the database's first column, which isn't known (no I/O)
     lf = pl.scan_database(
         "SELECT * FROM t ORDER BY 1 DESC",
         DIALECT_URIS["mysql"],
@@ -2375,8 +2374,8 @@ def test_partition_predicates_keep_their_percent_signs() -> None:
 @pytest.mark.parametrize(
     ("dialect", "query", "repeatable"),
     [
-        # an array constructor of proven elements, not a subquery's rows
-        # (a text 'now' in an output column may be cast later)
+        # an array constructor of proven elements, not a subquery's rows (a text 'now'
+        # in an output column may be cast later)
         ("postgres", "SELECT 'now' AS label FROM t", False),
         ("postgres", "SELECT ARRAY[id, 1] FROM t", True),
         ("postgres", "SELECT ARRAY(SELECT id FROM u) FROM t", False),
@@ -2546,8 +2545,7 @@ def test_relative_time_in_any_position(
     ("dialect", "name", "args"),
     [
         # names sqlglot knows that the dialect has no function of: a user's, or a
-        # loadable
-        # one the catalog may not list (MySQL), as written
+        # loadable one the catalog may not list (MySQL), as written
         ("mysql", "date_trunc", "'day', x"),
         ("mysql", "timestamp_trunc", "x, 'day'"),
         ("mysql", "regexp_extract", "x, 'a'"),
