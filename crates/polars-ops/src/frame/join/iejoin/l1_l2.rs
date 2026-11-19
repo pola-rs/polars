@@ -116,7 +116,7 @@ pub(super) trait L1Array {
         op1: InequalityOperator,
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64;
+    ) -> usize;
 
     unsafe fn process_lhs_entry(
         &self,
@@ -125,7 +125,7 @@ pub(super) trait L1Array {
         op1: InequalityOperator,
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64;
+    ) -> usize;
 
     unsafe fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray);
 }
@@ -168,7 +168,7 @@ fn find_matches_in_l1<T>(
     op1: InequalityOperator,
     left_row_ids: &mut Vec<IdxSize>,
     right_row_ids: &mut Vec<IdxSize>,
-) -> i64
+) -> usize
 where
     T: NumericNative,
     T: TotalOrd,
@@ -205,7 +205,7 @@ where
         op1: InequalityOperator,
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64 {
+    ) -> usize {
         let row_index = self.get_unchecked(l1_index).row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
@@ -231,7 +231,7 @@ where
         op1: InequalityOperator,
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64 {
+    ) -> usize {
         let row_index = self.get_unchecked(l1_index).row_index;
         let from_lhs = row_index > 0;
         if from_lhs {

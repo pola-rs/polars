@@ -103,7 +103,7 @@ impl AExpr {
 
                 Ok(field)
             },
-            Column(name) => ctx
+            Column(name) | EvalColumn(name) => ctx
                 .schema
                 .get_field(name)
                 .ok_or_else(|| ctx.schema.column_not_found_err(name)),
@@ -319,12 +319,12 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant,
+                columns,
             } => {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
 
                 let element_dtype = variant.element_dtype(field.dtype())?;
-                let mut evaluation_schema = ctx.schema.clone();
-                evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
+                let evaluation_schema = eval_schema(columns, element_dtype, ctx.schema, ctx.arena)?;
                 let mut output_field = ctx
                     .arena
                     .get(*evaluation)
@@ -494,12 +494,28 @@ impl AExpr {
                 None if input.is_empty() => format_pl_smallstr!("{}", &function),
                 None => input[0].output_name().clone(),
             },
-            Column(name) => name.clone(),
+            Column(name) | EvalColumn(name) => name.clone(),
             #[cfg(feature = "dtype-struct")]
             StructField(name) => name.clone(),
             Literal(lv) => lv.output_column_name().clone(),
         }
     }
+}
+
+/// The schema that the `evaluation` of an `Eval` is resolved against: `schema` with the outputs
+/// of its `columns` and the element.
+pub fn eval_schema(
+    columns: &[ExprIR],
+    element_dtype: &DataType,
+    schema: &Schema,
+    arena: &Arena<AExpr>,
+) -> PolarsResult<Schema> {
+    let mut out = schema.clone();
+    for field in func_args_to_fields(columns, &ToFieldContext::new(arena, schema))? {
+        out.with_column(field.name, field.dtype);
+    }
+    out.insert(get_pl_element_name(), element_dtype.clone());
+    Ok(out)
 }
 
 fn func_args_to_fields(input: &[ExprIR], ctx: &ToFieldContext) -> PolarsResult<Vec<Field>> {

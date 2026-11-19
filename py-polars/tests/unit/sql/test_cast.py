@@ -322,34 +322,49 @@ def test_try_cast_string_to_temporal_partial() -> None:
         df.sql("SELECT CAST(s AS date) AS x FROM self")
 
 
-@pytest.mark.may_fail_cloud  # reason: eager construct to_struct
-@pytest.mark.xfail  # this is a construct we cannot deal with anymore
 def test_cast_json() -> None:
-    df = pl.DataFrame({"txt": ['{"a":[1,2,3],"b":["x","y","z"],"c":5.0}']})
-
+    df = pl.DataFrame(
+        {
+            "txt": ['{"a":[1,2,3],"c":5.0}', None],
+            "s": [{"k": 1, "v": "a"}, {"k": 2, "v": None}],
+        }
+    )
     with pl.SQLContext(df=df, eager=True) as ctx:
         for json_cast in ("txt::json", "CAST(txt AS JSON)"):
-            res = ctx.execute(f"SELECT {json_cast} AS j FROM df")
-
-            assert res.schema == {
-                "j": pl.Struct(
-                    {
-                        "a": pl.List(pl.Int64),
-                        "b": pl.List(pl.String),
-                        "c": pl.Float64,
-                    },
-                )
-            }
-            assert_frame_equal(
-                res.unnest("j"),
-                pl.DataFrame(
-                    {
-                        "a": [[1, 2, 3]],
-                        "b": [["x", "y", "z"]],
-                        "c": [5.0],
-                    }
-                ),
+            res = ctx.execute(
+                f"SELECT {json_cast} AS j, {json_cast} ->> 'c' AS c FROM df"
             )
+            assert res.rows() == [('{"a":[1,2,3],"c":5.0}', "5.0"), (None, None)]
+
+        res = ctx.execute("SELECT s::json AS j, s::json ->> 'v' AS v FROM df")
+        assert res.rows() == [('{"k":1,"v":"a"}', "a"), ('{"k":2,"v":null}', None)]
+
+        res = ctx.execute(
+            """SELECT '{"k": {"z": 2}}'::JSON -> 'k' ->> 'z' AS z, 1::JSON AS i"""
+        )
+        assert res.rows() == [("2", "1")]
+
+    res = pl.sql(
+        """
+        SELECT COUNT(s), COUNT(s::JSON), COUNT(*) FILTER (WHERE s::JSON IS NULL)
+        FROM (VALUES ({'a': 1}), (NULL)) t(s)
+        """,
+        eager=True,
+    )
+    assert res.rows() == [(1, 1, 1)]
+    with pytest.raises(SQLInterfaceError, match=r"cannot cast .* to JSON"):
+        pl.sql("SELECT {'b': X'01'}::JSON", eager=True)
+    with pytest.raises(SQLInterfaceError, match="only CAST of text to JSON"):
+        pl.sql("SELECT TRY_CAST('{}' AS JSON)", eager=True)
+
+    res = pl.DataFrame({"x": [1.5, float("inf"), float("-inf")]}).sql(
+        "SELECT x::JSON AS j, TRY_CAST(x AS JSON) AS t FROM self"
+    )
+    assert res.rows() == [
+        ("1.5", "1.5"),
+        ("Infinity", "Infinity"),
+        ("-Infinity", "-Infinity"),
+    ]
 
 
 @pytest.mark.parametrize(

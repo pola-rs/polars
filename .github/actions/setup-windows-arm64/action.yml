@@ -15,7 +15,7 @@ runs:
       run: |
         Write-Output "> Update Expand-Archive (Microsoft.PowerShell.Archive)"
         Install-PackageProvider -Name NuGet -Force
-        Install-Module -Name Microsoft.PowerShell.Archive -Force
+        Install-Module -Name Microsoft.PowerShell.Archive -RequiredVersion 1.2.6 -Force
 
         Write-Output "> Setup bash.exe (git-for-windows/PortableGit)"
         Invoke-WebRequest "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-arm64.7z.exe" -OutFile /git.7z.exe

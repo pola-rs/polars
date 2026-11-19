@@ -558,15 +558,16 @@ def test_multiscan_slice_middle(
 
 
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
-@given(offset=st.integers(-100, 100), length=st.integers(0, 101))
+@given(offset=st.integers(-100, 100), length=st.none() | st.integers(0, 101))
 def test_multiscan_slice_parametric(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     offset: int,
-    length: int,
+    length: int | None,
 ) -> None:
+    ref_df = pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame()
     ref = io.BytesIO()
-    write(pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame(), ref)
+    write(ref_df, ref)
     ref.seek(0)
 
     fs = [io.BytesIO() for _ in range(13)]
@@ -575,7 +576,7 @@ def test_multiscan_slice_parametric(
         f.seek(0)
 
     assert_frame_equal(
-        scan(ref).slice(offset, length).collect(),
+        ref_df.slice(offset, length),
         scan(fs).slice(offset, length).collect(engine="streaming"),
     )
 

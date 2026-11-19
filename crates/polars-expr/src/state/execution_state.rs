@@ -109,6 +109,16 @@ struct CachedValue {
     df: DataFrame,
 }
 
+/// The columns read in an `eval`, with a row per group of its evaluation.
+pub struct EvalColumns {
+    pub columns: DataFrame,
+    /// The address of the groups of the evaluation, to tell them apart from groups made inside
+    /// it, such as those of a window.
+    pub groups: usize,
+    /// Whether the frame of the evaluation has the columns with a row per element.
+    pub has_rows: bool,
+}
+
 /// State/ cache that is maintained during the Execution of the physical plan.
 #[derive(Clone)]
 pub struct ExecutionState {
@@ -125,6 +135,7 @@ pub struct ExecutionState {
     #[cfg(feature = "dtype-struct")]
     pub with_fields_ac: Option<Arc<AggregationContext<'static>>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
+    pub eval_columns: Arc<Option<EvalColumns>>,
     stop: Arc<RelaxedCell<bool>>,
 }
 
@@ -145,6 +156,7 @@ impl ExecutionState {
             #[cfg(feature = "dtype-struct")]
             with_fields_ac: Default::default(),
             element: Default::default(),
+            eval_columns: Default::default(),
             stop: Arc::new(RelaxedCell::from(false)),
         }
     }
@@ -171,6 +183,7 @@ impl ExecutionState {
             flags: self.flags.clone(),
             // Retain input values for `pl.element` in Eval context
             element: self.element.clone(),
+            eval_columns: self.eval_columns.clone(),
             #[cfg(feature = "dtype-struct")]
             with_fields: self.with_fields.clone(),
             #[cfg(feature = "dtype-struct")]

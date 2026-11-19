@@ -340,13 +340,6 @@ def test_invalid_dtype() -> None:
         pl.Series([None], dtype=tzinfo)  # type: ignore[arg-type]
 
 
-def test_arr_eval_named_cols() -> None:
-    df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
-
-    with pytest.raises(ComputeError):
-        df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
-
-
 def test_alias_in_join_keys() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
     with pytest.raises(
@@ -879,3 +872,18 @@ def test_planning_error_names_expression(
     msg = str(exc.value)
     assert f"This error occurred in the following expression:\n\t{inner}\n" in msg
     assert f"while evaluating this larger expression:\n\t{outer}\n" in msg
+
+
+def test_planning_error_shows_the_plan_until_the_failure() -> None:
+    lf = pl.LazyFrame({"a": [1, 2]}).select(pl.col("nope"))
+    with pytest.raises(ColumnNotFoundError) as exc:
+        lf.collect()
+    msg = str(exc.value)
+    assert msg.startswith('unable to find column "nope"; valid columns: ["a"]\n\n')
+
+    plan = msg.index("Resolved plan until failure:\n\n\t---> FAILED HERE RESOLVING ")
+    expr = msg.index(
+        'This error occurred in the following expression:\n\tcol("nope")\n'
+    )
+    stack = msg.index("This error occurred with the following context stack:\n")
+    assert plan < expr < stack

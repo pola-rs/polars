@@ -204,6 +204,26 @@ where
     }
 }
 
+/// An opaque payload owned by a named plugin package, serialized as raw bytes.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PackageBytes {
+    pub package: crate::pl_str::PlSmallStr,
+    #[serde(with = "serde_bytes_vec")]
+    pub bytes: Vec<u8>,
+}
+
+mod serde_bytes_vec {
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(v: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_bytes(v)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        super::deserialize_map_bytes(d, |b| b.into_owned())
+    }
+}
+
 thread_local! {
     pub static USE_CLOUDPICKLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
     Generic,
@@ -27,7 +28,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PySQLContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Mapping, Sequence
+    from collections.abc import Callable, Collection, Sequence
     from types import TracebackType
     from typing import Any, Final, Literal, Self, TypeAlias
 
@@ -99,6 +100,30 @@ def _get_frame_locals(
     return _get_stack_locals(of_type=of_type, n_objects=n_objects, named=named)  # type: ignore[arg-type]
 
 
+def _query_params(
+    params: Sequence[Any] | Mapping[str, Any] | None,
+) -> list[Any] | dict[str, Any] | None:
+    """The values of the query parameters, as the engine takes them."""
+    if params is None:
+        return None
+    from polars.expr import Expr
+
+    values: list[Any] | dict[str, Any]
+    if isinstance(params, Mapping):
+        values = dict(params)
+        items = list(values.values())
+    elif isinstance(params, (str, bytes)):
+        msg = f"`params` must be a sequence or a mapping, got {qualified_type_name(params)!r}"
+        raise TypeError(msg)
+    else:
+        values = items = list(params)
+    for value in items:
+        if isinstance(value, (Expr, Series, DataFrame, LazyFrame)):
+            msg = f"query parameter values must be scalars, got {qualified_type_name(value)!r}"
+            raise TypeError(msg)
+    return values
+
+
 class SQLContext(Generic[FrameType]):
     """
     Run SQL queries against DataFrame, LazyFrame, and Series data.
@@ -139,6 +164,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = ...,
         eager: Literal[False] = False,
         allow_file_reads: bool = ...,
+        allow_file_writes: bool = ...,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
@@ -150,6 +176,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = ...,
         eager: Literal[True],
         allow_file_reads: bool = ...,
+        allow_file_writes: bool = ...,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
@@ -161,6 +188,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = ...,
         eager: bool,
         allow_file_reads: bool = ...,
+        allow_file_writes: bool = ...,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
@@ -179,6 +207,7 @@ class SQLContext(Generic[FrameType]):
         register_globals: bool | int = False,
         eager: bool = False,
         allow_file_reads: bool = True,
+        allow_file_writes: bool = True,
         **named_frames: CompatibleFrameType | None,
     ) -> None:
         """
@@ -201,9 +230,14 @@ class SQLContext(Generic[FrameType]):
             impacts whether :meth:`execute` returns an eager or lazy result frame).
         allow_file_reads
             Whether SQL may read files and URLs, through table functions such as
-            `read_parquet` or a quoted path in `FROM`. Set to False to run untrusted
-            SQL; it can then only read the registered frames and catalogs.
-            Statements on a registered catalog are not limited: with a writable
+            `read_parquet` or a quoted path in `FROM`. With False, SQL can only read
+            the registered frames and catalogs.
+        allow_file_writes
+            Whether SQL may write files and URLs, through `COPY ... TO`. With False,
+            `COPY` is an error.
+
+            Set both to False to run untrusted SQL. This is not a full sandbox:
+            statements on a registered catalog are not limited, so with a writable
             catalog, SQL can still create tables and choose where they are stored.
         **named_frames
             Named eager/lazy frames, provided as kwargs.
@@ -228,7 +262,7 @@ class SQLContext(Generic[FrameType]):
         issue_unstable_warning(
             "`SQLContext` is considered **unstable**, although it is close to being considered stable."
         )
-        self._ctxt = PySQLContext.new(allow_file_reads)
+        self._ctxt = PySQLContext.new(allow_file_reads, allow_file_writes)
         self._eager_execution = eager
         self._catalogs = {}
 
@@ -247,20 +281,40 @@ class SQLContext(Generic[FrameType]):
     @overload
     @classmethod
     def execute_global(
-        cls, query: str, *, eager: Literal[False] = False
+        cls,
+        query: str,
+        *,
+        eager: Literal[False] = False,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame: ...
 
     @overload
     @classmethod
-    def execute_global(cls, query: str, *, eager: Literal[True]) -> DataFrame: ...
+    def execute_global(
+        cls,
+        query: str,
+        *,
+        eager: Literal[True],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
+    ) -> DataFrame: ...
 
     @overload
     @classmethod
-    def execute_global(cls, query: str, *, eager: bool) -> DataFrame | LazyFrame: ...
+    def execute_global(
+        cls,
+        query: str,
+        *,
+        eager: bool,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
+    ) -> DataFrame | LazyFrame: ...
 
     @classmethod
     def execute_global(
-        cls, query: str, *, eager: bool = False
+        cls,
+        query: str,
+        *,
+        eager: bool = False,
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
     ) -> DataFrame | LazyFrame:
         """
         Immediately execute a SQL query, automatically registering frame globals.
@@ -282,6 +336,8 @@ class SQLContext(Generic[FrameType]):
         eager
             If True, returns execution results as `DataFrame` instead of `LazyFrame`.
             (Note that the query itself is always executed in lazy-mode).
+        params
+            The values of the query parameters; see :meth:`execute`.
 
         Examples
         --------
@@ -317,7 +373,7 @@ class SQLContext(Generic[FrameType]):
         # get compatible objects from the globals, constraining by possible names
         named_frames = _get_frame_locals(all_compatible=True, named=table_names)
         with cls(frames=named_frames, register_globals=False) as ctx:
-            return ctx.execute(query=query, eager=eager)
+            return ctx.execute(query=query, eager=eager, params=params)
 
     def __enter__(self) -> SQLContext[FrameType]:
         """Track tables and catalogs on scope entry; supports nested scopes."""
@@ -366,41 +422,73 @@ class SQLContext(Generic[FrameType]):
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, *, eager: None = ...
+        self: SQLContext[DataFrame],
+        query: str,
+        *,
+        eager: None = ...,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> DataFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, *, eager: Literal[False]
+        self: SQLContext[DataFrame],
+        query: str,
+        *,
+        eager: Literal[False],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[DataFrame], query: str, *, eager: Literal[True]
+        self: SQLContext[DataFrame],
+        query: str,
+        *,
+        eager: Literal[True],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> DataFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, *, eager: None = ...
+        self: SQLContext[LazyFrame],
+        query: str,
+        *,
+        eager: None = ...,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, *, eager: Literal[False]
+        self: SQLContext[LazyFrame],
+        query: str,
+        *,
+        eager: Literal[False],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame: ...
 
     @overload
     def execute(
-        self: SQLContext[LazyFrame], query: str, *, eager: Literal[True]
+        self: SQLContext[LazyFrame],
+        query: str,
+        *,
+        eager: Literal[True],
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> DataFrame: ...
 
     @overload
     def execute(
-        self, query: str, *, eager: bool | None = ...
+        self,
+        query: str,
+        *,
+        eager: bool | None = ...,
+        params: Sequence[Any] | Mapping[str, Any] | None = ...,
     ) -> LazyFrame | DataFrame: ...
 
     def execute(
-        self, query: str, *, eager: bool | None = None
+        self,
+        query: str,
+        *,
+        eager: bool | None = None,
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
     ) -> LazyFrame | DataFrame:
         """
         Parse the given SQL query and execute it against the registered frame data.
@@ -415,6 +503,12 @@ class SQLContext(Generic[FrameType]):
             If unset, the value of the init-time "eager" parameter will be used.
             Note that the query itself is always executed in lazy-mode; this
             parameter only impacts the type of the returned frame.
+        params
+            The values of the query parameters. A sequence gives the values of the
+            positional parameters `?` (in order) or `$1`, `$2`, ...; a mapping gives
+            the values of the named parameters `$name` or `:name`. A parameter acts as
+            a literal of its value, so it can never inject SQL. Every parameter needs a
+            value, and every value must be used.
 
         Examples
         --------
@@ -480,19 +574,47 @@ class SQLContext(Generic[FrameType]):
         │ 1990   ┆ 232338648   ┆ 3       │
         │ 1970   ┆ 134821952   ┆ 1       │
         └────────┴─────────────┴─────────┘
+
+        Execute a query with parameters:
+
+        >>> ctx.execute(
+        ...     '''
+        ...     SELECT title FROM films
+        ...     WHERE release_year > $year AND imdb_score >= $score
+        ...     ''',
+        ...     params={"year": 1990, "score": 9.0},
+        ...     eager=True,
+        ... )
+        shape: (2, 1)
+        ┌──────────────────────────┐
+        │ title                    │
+        │ ---                      │
+        │ str                      │
+        ╞══════════════════════════╡
+        │ The Dark Knight          │
+        │ The Shawshank Redemption │
+        └──────────────────────────┘
         """
+        values = _query_params(params)
         if self._catalogs:
-            res = wrap_ldf(self._execute_with_catalogs(query))
+            res = wrap_ldf(self._execute_with_catalogs(query, values))
         else:
-            res = wrap_ldf(self._ctxt.execute(query))
+            res = wrap_ldf(self._ctxt.execute(query, values))
         return res.collect() if eager or self._eager_execution else res
 
-    def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
+    def _execute_with_catalogs(
+        self, query: str, params: list[Any] | dict[str, Any] | None = None
+    ) -> PyLazyFrame:
         """Execute `query` with its catalog tables scanned."""
         if (stmt := self._ctxt.catalog_statement(query)) is not None:
+            if params is not None:
+                msg = "query parameters are not supported in a statement that changes a catalog table"
+                raise SQLInterfaceError(msg)
             return self._execute_catalog_statement(stmt, query)._ldf
 
-        return self._ctxt.execute_with_catalog_tables(query, self._catalog_scans(query))
+        return self._ctxt.execute_with_catalog_tables(
+            query, self._catalog_scans(query), params
+        )
 
     def _catalog_scans(
         self, query: str, target: tuple[list[str], pyiceberg.table.Table] | None = None
@@ -578,6 +700,15 @@ class SQLContext(Generic[FrameType]):
         _check_not_metadata_table(stmt)
         config, instance, storage_options = self._catalogs[stmt["catalog"]]
         catalog = instance if instance is not None else catalog_from(config)
+        if stmt["kind"] == "call":
+            return _call_catalog_procedure(
+                catalog,
+                stmt,
+                lambda condition, scan: wrap_expr(
+                    self._ctxt.catalog_call_predicate(condition, scan._ldf)
+                ),
+                storage_options,
+            ).lazy()
         if stmt["kind"] == "drop_table":
             response = _drop_catalog_table(catalog, stmt)
         elif stmt["kind"] == "create_table":
@@ -1192,6 +1323,137 @@ def _truncate_catalog_table(
         unknown=f"table '{name}' may have been truncated (commit state unknown): {where}",
     )
     return response
+
+
+def _call_catalog_procedure(
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    predicate_of: Callable[[str, LazyFrame], Expr],
+    storage_options: StorageOptionsDict | None,
+) -> DataFrame:
+    """Run the maintenance procedure of a `CALL`, returning its result row."""
+    if stmt["procedure"] == "rewrite_manifests":
+        return _call_rewrite_manifests(catalog, stmt)
+    if stmt["procedure"] == "rewrite_data_files":
+        return _call_rewrite_data_files(catalog, stmt, predicate_of, storage_options)
+    msg = f"unsupported procedure {stmt['procedure']!r}"
+    raise NotImplementedError(msg)
+
+
+def _load_procedure_table(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> pyiceberg.table.Table:
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    missing = (
+        f"table '{stmt['name']}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be maintained"
+    )
+    return _load_catalog_table(catalog, identifier, missing)
+
+
+def _call_rewrite_manifests(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> DataFrame:
+    from polars.datatypes import Int32
+    from polars.io.iceberg._maintenance import rewrite_manifests
+
+    args = stmt["args"]
+    # checked before loading the table
+    if "sort_by" in args:
+        msg = "CALL rewrite_manifests: `sort_by` is not supported yet"
+        raise NotImplementedError(msg)
+    for arg, kind in (("spec_id", int), ("use_caching", bool)):
+        value = args.get(arg)
+        if value is not None and (
+            not isinstance(value, kind) or (kind is int and isinstance(value, bool))
+        ):
+            msg = f"CALL rewrite_manifests: `{arg}` must be {kind.__name__}, found {value!r}"
+            raise SQLInterfaceError(msg)
+    table = _load_procedure_table(catalog, stmt)
+    # `use_caching` tunes Spark's planning: no effect here
+    rewritten, added = rewrite_manifests(table, spec_id=args.get("spec_id"))
+    return DataFrame(
+        {"rewritten_manifests_count": [rewritten], "added_manifests_count": [added]},
+        schema={"rewritten_manifests_count": Int32, "added_manifests_count": Int32},
+    )
+
+
+def _call_rewrite_data_files(
+    catalog: pyiceberg.catalog.Catalog,
+    stmt: dict[str, Any],
+    predicate_of: Callable[[str, LazyFrame], Expr],
+    storage_options: StorageOptionsDict | None,
+) -> DataFrame:
+    from polars.datatypes import Int32, Int64
+    from polars.io.iceberg._maintenance import rewrite_data_files
+    from polars.io.iceberg._utils import (
+        UnconvertiblePredicateError,
+        predicate_to_pyiceberg_delete_filter,
+    )
+    from polars.io.iceberg.functions import scan_iceberg
+
+    args = stmt["args"]
+    # checked before loading the table
+    strategy = args.get("strategy", "binpack")
+    if not isinstance(strategy, str) or strategy.lower() not in ("binpack", "sort"):
+        msg = (
+            "CALL rewrite_data_files: `strategy` must be 'binpack' or 'sort', "
+            f"found {strategy!r}"
+        )
+        raise SQLInterfaceError(msg)
+    if strategy.lower() == "sort" or "sort_order" in args:
+        msg = "CALL rewrite_data_files: only `strategy => 'binpack'` is supported yet"
+        raise NotImplementedError(msg)
+    options = args.get("options", {})
+    if not isinstance(options, dict):
+        msg = (
+            "CALL rewrite_data_files: `options` must be map('key', 'value', ...), "
+            f"found {options!r}"
+        )
+        raise SQLInterfaceError(msg)
+    where = args.get("where")
+    if where is not None and not isinstance(where, str):
+        msg = f"CALL rewrite_data_files: `where` must be a string, found {where!r}"
+        raise SQLInterfaceError(msg)
+    table = _load_procedure_table(catalog, stmt)
+    row_filter = None
+    if where is not None:
+        # files that may hold a matching row are rewritten whole
+        predicate = predicate_of(
+            where, scan_iceberg(table, storage_options=storage_options)
+        )
+        try:
+            row_filter = predicate_to_pyiceberg_delete_filter(predicate, table)
+        except UnconvertiblePredicateError as error:
+            full_name = _display_name([stmt["catalog"], *stmt["identifier"]])
+            reason = error.reason or error.likely or "unsupported expression"
+            raise _condition_error(
+                full_name,
+                where,
+                reason,
+                statement="CALL rewrite_data_files",
+                hint=False,
+            ) from error
+    rewritten, added, size = rewrite_data_files(
+        table, options=options, row_filter=row_filter, storage_options=storage_options
+    )
+    # Iceberg's columns; partial progress and removing delete files are not supported
+    return DataFrame(
+        {
+            "rewritten_data_files_count": [rewritten],
+            "added_data_files_count": [added],
+            "rewritten_bytes_count": [size],
+            "failed_data_files_count": [0],
+            "removed_delete_files_count": [0],
+        },
+        schema={
+            "rewritten_data_files_count": Int32,
+            "added_data_files_count": Int32,
+            "rewritten_bytes_count": Int64,
+            "failed_data_files_count": Int32,
+            "removed_delete_files_count": Int32,
+        },
+    )
 
 
 def _load_catalog_table(

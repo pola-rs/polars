@@ -281,8 +281,8 @@ impl SeriesTrait for NullChunked {
         AnyValue::Null
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
-        let (chunks, len) = chunkops::slice(&self.chunks, offset, length, self.len());
+    fn slice(&self, slice: Slice) -> Series {
+        let (chunks, len) = chunkops::slice(&self.chunks, slice, self.len());
         NullChunked {
             name: self.name.clone(),
             length: len,

@@ -98,9 +98,7 @@ impl ComputeNode for SpillFrameSourceNode {
                     return None;
                 }
                 Some(match slf.morsels.get(i) {
-                    Some(&(g, f, offset, len)) => {
-                        slf.groups[g][f].get().await.slice(offset as i64, len)
-                    },
+                    Some(&(g, f, offset, len)) => slf.groups[g][f].get().await.slice((offset, len)),
                     None => DataFrame::empty_with_schema(&slf.schema),
                 })
             },

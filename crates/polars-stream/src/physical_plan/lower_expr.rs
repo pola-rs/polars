@@ -27,6 +27,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
+use polars_utils::slice_enum::Slice;
 use slotmap::DenseSlotMap;
 
 use super::fmt::fmt_exprs;
@@ -113,7 +114,7 @@ pub fn is_input_independent_rec(
 
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
-        AExpr::Element => unreachable!(),
+        AExpr::Element | AExpr::EvalColumn(_) => unreachable!(),
         AExpr::StructField(_) => false,
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
@@ -195,7 +196,13 @@ pub fn is_input_independent_rec(
             expr,
             evaluation: _,
             variant: _,
-        } => is_input_independent_rec(*expr, arena, cache),
+            columns,
+        } => {
+            is_input_independent_rec(*expr, arena, cache)
+                && columns
+                    .iter()
+                    .all(|c| is_input_independent_rec(c.node(), arena, cache))
+        },
         AExpr::StructEval {
             expr,
             evaluation,
@@ -594,7 +601,7 @@ fn lower_exprs_with_ctx(
 
         match ctx.expr_arena.get(expr).clone() {
             // Handled separately in `Eval` expressions.
-            AExpr::Element => unreachable!(),
+            AExpr::Element | AExpr::EvalColumn(_) => unreachable!(),
             // Mapped to `Column` in `StructEval`.
             AExpr::StructField(_) => unreachable!(),
 
@@ -1682,16 +1689,24 @@ fn lower_exprs_with_ctx(
                 expr: inner,
                 evaluation,
                 variant,
+                mut columns,
             } => match variant {
                 EvalVariant::List
                 | EvalVariant::ListAgg
                 | EvalVariant::Array { as_list: _ }
                 | EvalVariant::ArrayAgg => {
-                    let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                    let inputs: Vec<Node> = std::iter::once(inner)
+                        .chain(columns.iter().map(|c| c.node()))
+                        .collect();
+                    let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inputs, ctx)?;
+                    for (c, node) in columns.iter_mut().zip(&trans_exprs[1..]) {
+                        c.set_node(*node);
+                    }
                     let eval_expr = AExpr::Eval {
-                        expr: trans_expr[0],
+                        expr: trans_exprs[0],
                         evaluation,
                         variant,
+                        columns,
                     };
                     input_streams.insert(trans_input);
                     transformed_exprs.push(ctx.expr_arena.add(eval_expr));
@@ -3126,14 +3141,14 @@ fn build_length_preserving_select_stream_with_ctx(
 pub(crate) fn build_sort_stream_with_ctx(
     input: PhysStream,
     by_column: Vec<ExprIR>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     mut sort_options: SortMultipleOptions,
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
     // Any order is sorted by no keys, so the input order is kept.
     if by_column.is_empty() {
         return Ok(match slice {
-            Some((offset, len)) => build_slice_stream(input, offset, len, ctx.phys_sm),
+            Some(slice) => build_slice_stream(input, slice, ctx.phys_sm),
             None => input,
         });
     }
@@ -3273,7 +3288,7 @@ fn build_limited_sort_stream_with_ctx(
 pub fn build_sort_stream(
     input: PhysStream,
     by_column: Vec<ExprIR>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     sort_options: SortMultipleOptions,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,

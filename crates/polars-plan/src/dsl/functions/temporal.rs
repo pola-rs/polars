@@ -1,5 +1,6 @@
 use chrono::{Datelike, Timelike};
 use polars_arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
+use polars_defs::time::date_diff::DateDiffUnit;
 use polars_utils::array;
 
 use super::*;
@@ -182,6 +183,15 @@ impl DatetimeArgs {
             )))
             .alias(PlSmallStr::from_static("datetime")),
         )
+    }
+}
+
+/// Count the `unit` boundaries crossed from `start` to `end`, which is negative if `end` is
+/// before `start`.
+pub fn date_diff(start: Expr, end: Expr, unit: DateDiffUnit) -> Expr {
+    Expr::Function {
+        input: vec![start, end],
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateDiff(unit)),
     }
 }
 

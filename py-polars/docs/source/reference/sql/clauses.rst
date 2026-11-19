@@ -233,8 +233,8 @@ format: ``.csv``, ``.parquet``, ``.ipc`` / ``.arrow`` / ``.feather``, or ``.ndjs
 The file is read with the defaults of the ``read_csv``, ``read_parquet``, ``read_ipc`` or
 ``read_ndjson`` table function; call that function to pass options, or to read a path that
 does not end in such an extension. A table of the same name comes first, and any other name
-in quotes is looked up as a table. To run untrusted SQL, turn off reading files and URLs with
-``SQLContext(allow_file_reads=False)``.
+in quotes is looked up as a table. To run untrusted SQL, turn off reading and writing files
+and URLs with ``SQLContext(allow_file_reads=False, allow_file_writes=False)``.
 
 .. code-block:: sql
 
