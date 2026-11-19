@@ -206,7 +206,7 @@ impl utils::Decoded for (FSBVec, BitmapBuilder) {
     }
 
     fn remaining_capacity(&self) -> usize {
-        (self.0.capacity() - self.0.len()).min(self.1.capacity() - self.1.len())
+        (self.0.capacity() - self.0.len()).min(self.1.remaining_capacity())
     }
 }
 

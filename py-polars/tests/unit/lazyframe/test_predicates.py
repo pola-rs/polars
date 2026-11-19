@@ -774,7 +774,7 @@ def test_predicate_pushdown_struct_unnest_19632() -> None:
     plan = q.explain()
 
     assert "FILTER" in plan
-    assert plan.index("FILTER") < plan.index("UNNEST")
+    assert plan.index("UNNEST") < plan.index("FILTER")
 
     assert_frame_equal(
         q.collect(),
@@ -788,7 +788,7 @@ def test_predicate_pushdown_struct_unnest_19632() -> None:
     plan = q.explain()
 
     assert "FILTER" in plan
-    assert plan.index("FILTER") < plan.index("UNNEST")
+    assert plan.index("UNNEST") < plan.index("FILTER")
 
     assert_frame_equal(
         q.collect(),
@@ -801,7 +801,7 @@ def test_predicate_pushdown_struct_unnest_19632() -> None:
     q = lf.filter(pl.col("a") == 1)
     plan = q.explain()
 
-    assert plan.index("FILTER") < plan.index("UNNEST")
+    assert plan.index("UNNEST") < plan.index("FILTER") < plan.index("SELECT")
 
     assert_frame_equal(
         q.collect(),

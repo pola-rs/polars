@@ -9,7 +9,7 @@ use polars_utils::pl_str::PlSmallStr;
 /// Which parts of one column's value are needed.
 ///
 /// Built by projection pushdown, which reads struct fields by name; non-struct values are always
-/// `All`. See `agent-docs/nested-projection-pushdown/01-field-pruning.md`.
+/// `All`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]

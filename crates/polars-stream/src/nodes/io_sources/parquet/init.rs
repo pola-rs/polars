@@ -8,14 +8,19 @@ use polars_async::executor;
 use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
-use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
+use polars_io::predicates::{
+    AndIoExpr, ColumnPredicateExpr, PathExtractIoExpr, PhysicalIoExpr, SpecializedColumnPredicate,
+};
 use polars_io::prelude::ParallelStrategy;
 use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher, row_groups_to_read};
-use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
+use super::row_group_decode::{
+    DynamicConjunct, PredicateColumn, PredicateLeaf, RowGroupDecoder, Source, struct_only,
+};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -472,92 +477,232 @@ impl ParquetReadImpl {
             filters_rows && matches!(self.options.parallel, ParallelStrategy::Prefiltered);
         use_prefiltered |= filters_rows && matches!(self.options.parallel, ParallelStrategy::Auto);
 
-        let predicate_field_indices: Arc<[usize]> =
-            if use_prefiltered && let Some(predicate) = predicate.as_ref() {
-                projected_arrow_fields
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, projected_field)| {
-                        predicate
-                            .live_columns
-                            .contains(projected_field.output_name())
-                            .then_some(i)
-                    })
-                    .collect()
-            } else {
-                Default::default()
-            };
-
-        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered {
-            filtered_range(
-                predicate_field_indices.as_ref(),
-                projected_arrow_fields.len(),
-            )
-            .collect()
-        } else {
-            Default::default()
-        };
-
-        // The predicate columns, each with its decode filter when the decoder may evaluate
-        // the predicate on the values as it decodes them.
         let staged = predicate.as_ref().and_then(|p| p.staged.as_ref());
-        let predicate_columns: Arc<[PredicateColumn]> = match staged {
-            Some(staged) if use_prefiltered => staged
-                .column_predicates
-                .iter()
-                .map(|(name, p)| {
-                    let dynamic = p
+        let mut rest_predicate = match staged {
+            Some(staged) if use_prefiltered => staged.rest.clone(),
+            _ => predicate.as_ref().map(|p| p.predicate.clone()),
+        };
+        let mut root_predicate_counts =
+            polars_utils::aliases::PlHashMap::<PlSmallStr, (usize, bool)>::default();
+        if let Some(staged) = staged {
+            for path in staged.column_predicates.keys() {
+                let (paths, whole) = root_predicate_counts.entry(path.root.clone()).or_default();
+                if path.path.is_empty() {
+                    *whole = true;
+                } else {
+                    *paths += 1;
+                }
+            }
+        }
+        let auto_leaf_eligible = projected_arrow_fields
+            .iter()
+            .map(|projection| {
+                if !use_prefiltered || staged.is_none() || self.metadata.row_groups.is_empty() {
+                    return false;
+                }
+                let dtype = &projection.decode_field(0).dtype;
+                let (paths, whole) = root_predicate_counts
+                    .get(projection.output_name())
+                    .copied()
+                    .unwrap_or_default();
+                let leaves = polars_parquet::read::n_columns(dtype);
+                // Benchmarks favor one root decode for narrow/repeated roots.
+                // Conservatively avoid duplicate work when a whole-root conjunct
+                // or many predicate paths already require most of that decode.
+                // Explicit prefiltered scans can force scalar leaf passes.
+                struct_only(dtype) && leaves >= 8 && !whole && paths * 2 < leaves
+            })
+            .collect::<Vec<_>>();
+        let mut predicate_leaves = Vec::new();
+        let mut predicate_columns = Vec::new();
+        if let Some(staged) = staged.filter(|_| use_prefiltered) {
+            for (path, p) in staged.column_predicates.iter() {
+                let field_idx = projected_arrow_fields
+                    .iter()
+                    .position(|f| f.output_name() == &path.root);
+                let source = if path.path.is_empty() {
+                    match field_idx {
+                        Some(i) => Source::Field(i),
+                        None => {
+                            assert_eq!(Some(&path.root), row_index.as_ref().map(|ri| &ri.name));
+                            Source::RowIndex
+                        },
+                    }
+                } else {
+                    let leaf = field_idx.and_then(|i| {
+                        let ArrowFieldProjection::Plain(field, _) = &projected_arrow_fields[i]
+                        else {
+                            return None;
+                        };
+                        if !matches!(self.options.parallel, ParallelStrategy::Prefiltered)
+                            && !auto_leaf_eligible[i]
+                        {
+                            return None;
+                        }
+                        let mut field = field;
+                        for name in &path.path {
+                            let ArrowDataType::Struct(children) = &field.dtype else {
+                                return None;
+                            };
+                            field = children.iter().find(|f| f.name == *name)?;
+                        }
+                        if field.dtype.is_nested() {
+                            return None;
+                        }
+                        // Physical offsets come from file metadata, never the pruned
+                        // field (whose validity-only siblings vary by row group).
+                        let rg = self.metadata.row_groups.first()?;
+                        let column_idx = rg.parquet_columns().iter().position(|c| {
+                            let d = c.descriptor();
+                            d.descriptor.max_rep_level == 0
+                                && d.path_in_schema.first() == Some(&path.root)
+                                && d.path_in_schema[1..] == *path.path
+                        })?;
+                        let mut field = field.clone();
+                        field.name = path.root.clone();
+                        field.is_nullable = rg.parquet_columns()[column_idx]
+                            .descriptor()
+                            .descriptor
+                            .max_def_level
+                            > 0;
+                        Some(PredicateLeaf {
+                            column_idx,
+                            arrow_field: field,
+                            path: path.clone(),
+                        })
+                    });
+                    let Some(leaf) = leaf else {
+                        let wrap = |child: Arc<dyn PhysicalIoExpr>| -> Arc<dyn PhysicalIoExpr> {
+                            Arc::new(PathExtractIoExpr {
+                                path: path.clone(),
+                                child,
+                            })
+                        };
+                        if let Some(field_idx) = field_idx {
+                            predicate_columns.push(PredicateColumn {
+                                source: Source::Field(field_idx),
+                                predicate: p.predicate.clone().map(wrap),
+                                decode_filter: None,
+                                constant: None,
+                                dynamic: p
+                                    .dynamic
+                                    .iter()
+                                    .map(|d| {
+                                        DynamicConjunct::new(
+                                            wrap(d.predicate.clone()),
+                                            d.source.clone(),
+                                        )
+                                    })
+                                    .collect(),
+                            });
+                        } else {
+                            let wrapped = wrap(p.conjoined());
+                            rest_predicate = Some(match rest_predicate {
+                                None => wrapped,
+                                Some(rest) => Arc::new(AndIoExpr(rest, wrapped)),
+                            });
+                        }
+                        continue;
+                    };
+                    let idx = predicate_leaves.len();
+                    predicate_leaves.push(leaf);
+                    Source::Leaf(idx)
+                };
+                let arrow_field = match source {
+                    Source::Field(i) => Some(projected_arrow_fields[i].arrow_field()),
+                    Source::Leaf(i) => Some(&predicate_leaves[i].arrow_field),
+                    Source::RowIndex => None,
+                };
+                let may_decode_filter = match source {
+                    Source::Field(i) => filter_while_decoding(&projected_arrow_fields[i]),
+                    Source::Leaf(i) => filter_while_decoding(&ArrowFieldProjection::Plain(
+                        predicate_leaves[i].arrow_field.clone(),
+                        None,
+                    )),
+                    Source::RowIndex => false,
+                };
+                let constant = p.specialized.as_ref().and_then(|s| match s {
+                    SpecializedColumnPredicate::Equal(sc) if !sc.is_null() => Some(sc.clone()),
+                    _ => None,
+                });
+                let decode_filter =
+                    p.predicate
+                        .as_ref()
+                        .filter(|_| may_decode_filter)
+                        .map(|predicate| {
+                            let field = arrow_field.unwrap();
+                            PredicateFilter {
+                                predicate: Arc::new(ColumnPredicateExpr::new(
+                                    path.root.clone(),
+                                    DataType::from_arrow_field(field),
+                                    field.dtype.clone(),
+                                    predicate.clone(),
+                                    p.specialized.clone(),
+                                )),
+                                include_values: constant.is_none(),
+                            }
+                        });
+                if self.verbose && matches!(source, Source::Leaf(_)) {
+                    let name = std::iter::once(path.root.as_str())
+                        .chain(path.path.iter().map(|s| s.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(".");
+                    eprintln!(
+                        "[ParquetFileReader]: Predicate leaf {name}: decode_filter={}, specialized={:?}",
+                        decode_filter.is_some(),
+                        p.specialized
+                    );
+                }
+                predicate_columns.push(PredicateColumn {
+                    source,
+                    predicate: p.predicate.clone(),
+                    decode_filter,
+                    constant,
+                    dynamic: p
                         .dynamic
                         .iter()
                         .map(|d| DynamicConjunct::new(d.predicate.clone(), d.source.clone()))
-                        .collect();
-                    let Some(field_idx) = projected_arrow_fields
-                        .iter()
-                        .position(|f| f.output_name() == name)
-                    else {
-                        assert_eq!(Some(name), row_index.as_ref().map(|ri| &ri.name));
-                        return PredicateColumn {
-                            source: Source::RowIndex,
-                            predicate: p.predicate.clone(),
-                            decode_filter: None,
-                            constant: None,
-                            dynamic,
-                        };
-                    };
-                    let projection = &projected_arrow_fields[field_idx];
-                    let arrow_field = projection.arrow_field();
-                    let constant = p.specialized.as_ref().and_then(|s| match s {
-                        SpecializedColumnPredicate::Equal(sc) if !sc.is_null() => Some(sc.clone()),
-                        _ => None,
+                        .collect(),
+                });
+            }
+        }
+        // Different paths that fall back to the same root must share one decode,
+        // including any original whole-root predicate. Keep dynamic conjuncts
+        // separate so activation, measurement and bypass remain effective.
+        let mut coalesced = polars_utils::aliases::PlIndexMap::<Source, PredicateColumn>::default();
+        for column in predicate_columns {
+            if let Some(existing) = coalesced.get_mut(&column.source) {
+                if let Some(predicate) = column.predicate {
+                    existing.predicate = Some(match existing.predicate.take() {
+                        None => predicate,
+                        Some(left) => Arc::new(AndIoExpr(left, predicate)),
                     });
-                    let decode_filter = p
-                        .predicate
-                        .as_ref()
-                        .filter(|_| filter_while_decoding(projection))
-                        .map(|predicate| PredicateFilter {
-                            predicate: Arc::new(ColumnPredicateExpr::new(
-                                name.clone(),
-                                DataType::from_arrow_field(arrow_field),
-                                arrow_field.dtype.clone(),
-                                predicate.clone(),
-                                p.specialized.clone(),
-                            )),
-                            include_values: constant.is_none(),
-                        });
-                    PredicateColumn {
-                        source: Source::Field(field_idx),
-                        predicate: p.predicate.clone(),
-                        decode_filter,
-                        constant,
-                        dynamic,
-                    }
-                })
-                .collect(),
-            _ => Default::default(),
+                }
+                existing.dynamic.extend(column.dynamic);
+                existing.decode_filter = None;
+                existing.constant = None;
+            } else {
+                coalesced.insert(column.source, column);
+            }
+        }
+        let predicate_columns: Arc<[PredicateColumn]> = coalesced.into_values().collect();
+        let predicate_leaves: Arc<[PredicateLeaf]> = predicate_leaves.into();
+        let predicate_field_indices: Arc<[usize]> = if use_prefiltered {
+            projected_arrow_fields.iter().enumerate().filter_map(|(i, f)| {
+                let needed = predicate_columns.iter().any(|p| p.source == Source::Field(i))
+                    // Native rest expressions can refer to any live root. Retaining
+                    // them all is conservative and keeps all multi-root conjuncts total.
+                    || (staged.is_none_or(|s| s.rest.is_some())
+                        && predicate.as_ref().is_some_and(|p| p.live_columns.contains(f.output_name())));
+                needed.then_some(i)
+            }).collect()
+        } else {
+            Default::default()
         };
-        let rest_predicate = match staged {
-            Some(staged) if use_prefiltered => staged.rest.clone(),
-            _ => predicate.as_ref().map(|p| p.predicate.clone()),
+        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered {
+            filtered_range(&predicate_field_indices, projected_arrow_fields.len()).collect()
+        } else {
+            Default::default()
         };
         let rest_field_indices: Arc<[usize]> = predicate_field_indices
             .iter()
@@ -585,7 +730,7 @@ impl ParquetReadImpl {
         if use_prefiltered && self.verbose {
             eprintln!(
                 "[ParquetFileReader]: Pre-filtered decode enabled ({} live [{} column predicates, {} rest], {} non-live)",
-                predicate_field_indices.len(),
+                predicate_field_indices.len() + predicate_leaves.len(),
                 predicate_columns.len(),
                 rest_field_indices.len(),
                 non_predicate_field_indices.len()
@@ -601,6 +746,7 @@ impl ParquetReadImpl {
             use_prefiltered,
             predicate_field_indices,
             predicate_columns,
+            predicate_leaves,
             rest_predicate,
             rest_field_indices,
             passes: Mutex::new(Arc::new(passes)),

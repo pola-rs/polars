@@ -43,8 +43,8 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
 
 impl<'a, D: Decoder> State<'a, D> {
     pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> ParquetResult<Self> {
-        let is_optional =
-            page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
+        // A required leaf can still be null because an ancestor struct is null.
+        let is_optional = page.descriptor.max_def_level > 0;
 
         let mut page_validity = None;
 
@@ -112,11 +112,13 @@ pub fn not_implemented(page: &DataPage) -> ParquetError {
     ))
 }
 
-pub(crate) type PageValidity<'a> = HybridRleDecoder<'a>;
+pub(crate) type PageValidity<'a> = (HybridRleDecoder<'a>, u32);
 pub(crate) fn page_validity_decoder(page: &DataPage) -> ParquetResult<PageValidity<'_>> {
     let validity = split_buffer(page)?.def;
-    let decoder = hybrid_rle::HybridRleDecoder::new(validity, 1, page.num_values());
-    Ok(decoder)
+    let max_def = page.descriptor.max_def_level as u32;
+    let bits = crate::parquet::read::levels::get_bit_width(page.descriptor.max_def_level);
+    let decoder = hybrid_rle::HybridRleDecoder::new(validity, bits, page.num_values());
+    Ok((decoder, max_def))
 }
 
 pub(crate) fn unspecialized_decode<T: Default>(
@@ -639,13 +641,11 @@ impl<D: Decoder> PageDecoder<D> {
                 && page.page().header().is_dictionary_encoded()
                 && (!pred_tracks_nulls
                     || page.page().null_count() == Some(0)
-                    || page.page().descriptor.primitive_type.field_info.repetition
-                        != Repetition::Optional);
+                    || page.page().descriptor.max_def_level == 0);
 
             // If we are looking for nulls, but this page does not contain any nulls.
             can_skip_page |= pred_is_eq_null
-                && (page.page().descriptor.primitive_type.field_info.repetition
-                    == Repetition::Required
+                && (page.page().descriptor.max_def_level == 0
                     || page.page().null_count() == Some(0));
 
             if can_skip_page {
@@ -985,9 +985,48 @@ pub(crate) fn decode_hybrid_rle_into_bitmap(
 }
 
 pub(crate) fn decode_page_validity(
-    mut page_validity: HybridRleDecoder<'_>,
+    (mut page_validity, max_def): PageValidity<'_>,
     limit: Option<usize>,
 ) -> ParquetResult<Option<Bitmap>> {
+    if max_def > 1 {
+        page_validity.limit_to(limit.unwrap_or(page_validity.len()));
+        let num_values = page_validity.len();
+        let mut leading_valid = 0;
+        let mut bitmap: Option<BitmapBuilder> = None;
+        while let Some(chunk) = page_validity.next_chunk()? {
+            match chunk {
+                HybridRleChunk::Rle(level, size) => {
+                    if level == max_def && bitmap.is_none() {
+                        leading_valid += size;
+                    } else {
+                        let bm = bitmap.get_or_insert_with(|| {
+                            let mut bm = BitmapBuilder::with_capacity(num_values);
+                            bm.extend_constant(leading_valid, true);
+                            bm
+                        });
+                        bm.extend_constant(size, level == max_def);
+                    }
+                },
+                HybridRleChunk::Bitpacked(mut decoder) => {
+                    while let Some((levels, len)) = decoder.chunked().next_inexact() {
+                        for &level in &levels[..len] {
+                            if level == max_def && bitmap.is_none() {
+                                leading_valid += 1;
+                            } else {
+                                let bm = bitmap.get_or_insert_with(|| {
+                                    let mut bm = BitmapBuilder::with_capacity(num_values);
+                                    bm.extend_constant(leading_valid, true);
+                                    bm
+                                });
+                                bm.push(level == max_def);
+                            }
+                        }
+                    }
+                },
+            }
+        }
+        return Ok(bitmap.map(BitmapBuilder::freeze));
+    }
     assert!(page_validity.num_bits() <= 1);
 
     let mut num_ones = 0;
@@ -1024,4 +1063,32 @@ pub(crate) fn decode_page_validity(
 
     decode_hybrid_rle_into_bitmap(page_validity, None, &mut bm)?;
     Ok(Some(bm.freeze()))
+}
+
+#[cfg(test)]
+mod leaf_validity_tests {
+    use super::*;
+
+    #[test]
+    fn definition_levels_are_valid_only_at_maximum() {
+        for max_def in [1, 2, 3, 7, 16, 63] {
+            let bits = crate::parquet::read::levels::get_bit_width(max_def);
+            let mut levels = vec![max_def as u32; 63];
+            levels.extend((0..257).map(|i| i % (max_def as u32 + 1)));
+            levels.extend(std::iter::repeat_n(0, 65));
+            let mut bytes = vec![];
+            hybrid_rle::encode::<u32, _, _>(&mut bytes, levels.iter().copied(), bits).unwrap();
+            for limit in [None, Some(0), Some(37), Some(211)] {
+                let decoder = HybridRleDecoder::new(&bytes, bits, levels.len());
+                let actual = decode_page_validity((decoder, max_def as u32), limit).unwrap();
+                let len = limit.unwrap_or(levels.len());
+                let expected = levels[..len]
+                    .iter()
+                    .map(|&v| v == max_def as u32)
+                    .collect::<Vec<_>>();
+                let actual = actual.map_or_else(|| vec![true; len], |bm| bm.iter().collect());
+                assert_eq!(actual, expected, "max_def={max_def}, limit={limit:?}");
+            }
+        }
+    }
 }

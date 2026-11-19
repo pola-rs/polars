@@ -119,7 +119,7 @@ impl<T: NativeType> utils::Decoded for (Vec<T>, BitmapBuilder) {
     }
 
     fn remaining_capacity(&self) -> usize {
-        (self.0.capacity() - self.0.len()).min(self.1.capacity() - self.1.len())
+        (self.0.capacity() - self.0.len()).min(self.1.remaining_capacity())
     }
 }
 
@@ -268,5 +268,28 @@ where
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
         Ok(PrimitiveArray::try_new(dtype, values.into(), validity).unwrap())
+    }
+}
+
+#[cfg(test)]
+mod remaining_capacity_tests {
+    use polars_arrow::bitmap::BitmapBuilder;
+
+    use crate::arrow::read::deserialize::utils::Decoded;
+
+    #[test]
+    fn remaining_capacity_after_small_null_extension() {
+        // A validity builder without storage still holds up to 63 bits in its word buffer, so
+        // its length can exceed its capacity; this used to underflow `capacity - len`.
+        let mut state = (Vec::<i64>::new(), BitmapBuilder::new());
+        for n in [0, 1, 10, 52, 1, 64, 3] {
+            state.extend_nulls(n);
+            let _ = state.remaining_capacity();
+        }
+        let mut state = (Vec::<i64>::with_capacity(8), BitmapBuilder::with_capacity(0));
+        state.extend_nulls(7);
+        assert!(state.remaining_capacity() <= 1);
+        state.extend_nulls(1);
+        assert_eq!(state.len(), 8);
     }
 }

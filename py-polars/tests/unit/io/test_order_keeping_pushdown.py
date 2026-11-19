@@ -264,3 +264,52 @@ def test_expression_that_raises_is_evaluated(
     q = pl.scan_parquet(path).with_columns(k=expr).filter(pl.col("k").is_null())
     with pytest.raises(pl.exceptions.PolarsError):
         q.collect()
+
+
+OVERFLOWING = [
+    (pl.Int64, 2**63 - 1, pl.col("x") + 86_400),
+    (pl.Int64, -(2**63), pl.col("x") - 86_400),
+    (pl.Int64, -(2**63), 5 - pl.col("x")),
+    (pl.Int64, -(2**63), -pl.col("x")),
+    (pl.Int64, 2**62, pl.col("x") * 4),
+    (pl.Int64, -(2**63), pl.col("x") * -3),
+    (pl.Int64, -(2**63), pl.col("x") // -1),
+    (pl.Int32, 2**31 - 1, (pl.col("x") + 1).cast(pl.Int64) - 7),
+    (pl.UInt8, 0, pl.col("x") - 1),
+    (pl.Datetime("us"), 2**63 - 1, pl.col("x") + timedelta(days=1)),
+]
+
+
+@pytest.mark.parametrize(("dtype", "extreme", "expr"), OVERFLOWING)
+def test_overflow_in_row_group_keeps_its_other_rows(
+    dtype: pl.DataType, extreme: int, expr: pl.Expr, tmp_path: Path
+) -> None:
+    # https://github.com/pola-rs/polars/issues/30655: one value of a row group
+    # overflowing the expression made its statistics skip the row group, with the
+    # other rows that match.
+    values = [1, 50, 100, extreme, 2, 3, 4, 5]
+    df = pl.DataFrame({"x": pl.Series(values).cast(dtype)})
+    path = tmp_path / "data.parquet"
+    df.write_parquet(path, row_group_size=4)
+    scan = pl.scan_parquet(path)
+
+    k = df.select(expr).to_series()
+    physical = k.to_physical()
+    for v in physical.unique():
+        t = pl.lit(v, dtype=physical.dtype)
+        if k.dtype != physical.dtype:
+            t = t.cast(k.dtype)
+        for predicate in [expr < t, expr <= t, expr > t, expr >= t, expr == t]:
+            q = scan.filter(predicate)
+            expected = df.filter(predicate)
+            assert_frame_equal(
+                q.collect(engine="in-memory"), expected, check_row_order=False
+            )
+            assert_frame_equal(
+                q.collect(engine="streaming"), expected, check_row_order=False
+            )
+
+    for descending in [False, True]:
+        q = scan.with_columns(k=expr).sort("k", descending=descending).head(3)
+        expected = df.with_columns(k=expr).sort("k", descending=descending).head(3)
+        assert_frame_equal(q.collect(engine="streaming"), expected)
