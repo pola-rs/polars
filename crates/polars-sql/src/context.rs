@@ -82,7 +82,7 @@ use crate::subquery::{
     LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
     is_correlated_subquery, quantified_as_exists, row_indexed_once,
 };
-use crate::subquery_pull_up::NESTED_PREFIX;
+use crate::subquery_pull_up::{NESTED_PREFIX, select_values};
 use crate::table_functions::{PolarsTableFunctions, expand_home_dir};
 use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::{map_sql_dtype_to_polars, sql_type_name};
@@ -2696,33 +2696,83 @@ impl SQLContext {
         &mut self,
         values: impl Iterator<Item = &'a Vec<SQLExpr>>,
     ) -> PolarsResult<LazyFrame> {
-        let frame_rows: Vec<Vec<AnyValue>> = values.map(|row| {
-            row.iter().map(|expr| {
-                let expr = parse_sql_expr(expr, self, None)?;
-                match expr {
-                    Expr::Literal(value) => {
-                        value.to_any_value()
-                            .ok_or_else(|| polars_err!(SQLInterface: "invalid literal value: {:?}", value))
-                            .map(|av| av.into_static())
-                    },
-                    _ => polars_bail!(SQLInterface: "VALUES clause expects literals; found {}", expr),
-                }
-            }).collect()
-        }).collect::<PolarsResult<_>>()?;
-
-        // Each column takes the supertype of all its rows, not the first row's type.
-        let width = frame_rows.first().map_or(0, Vec::len);
+        let rows: Vec<&Vec<SQLExpr>> = values.collect();
+        let width = rows.first().map_or(0, |row| row.len());
         polars_ensure!(
-            frame_rows.iter().all(|row| row.len() == width),
+            rows.iter().all(|row| row.len() == width),
             SQLSyntax: "VALUES rows must all have the same number of values"
         );
-        let columns = (0..width)
+        let mut cells = rows
+            .iter()
+            .map(|row| row.iter().map(|expr| self.literal_value(expr)).collect())
+            .collect::<PolarsResult<Vec<Vec<_>>>>()?;
+
+        // A column of literals takes the supertype of its rows, not the first row's type.
+        let literal_columns = (0..width)
             .map(|i| {
-                let values: Vec<AnyValue> = frame_rows.iter().map(|row| row[i].clone()).collect();
-                series_from_literals(format_pl_smallstr!("column_{i}"), &values).map(Column::from)
+                let values: Option<Vec<AnyValue>> =
+                    cells.iter_mut().map(|row| row[i].take()).collect();
+                values
+                    .map(|values| series_from_literals(format_pl_smallstr!("column_{i}"), &values))
+                    .transpose()
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(DataFrame::new_infer_height(columns)?.lazy())
+        if literal_columns.iter().all(Option::is_some) {
+            let columns = literal_columns
+                .into_iter()
+                .flatten()
+                .map(Column::from)
+                .collect();
+            return Ok(DataFrame::new_infer_height(columns)?.lazy());
+        }
+
+        // The other columns: each row is a SELECT without FROM, and the rows are combined
+        // like UNION ALL. Their names are reserved, so that a cell cannot read another cell of
+        // its row by its alias.
+        let expression_columns: Vec<usize> = (0..width)
+            .filter(|&i| literal_columns[i].is_none())
+            .collect();
+        let name = |i: usize| format!("__POLARS_VALUES_{i}");
+        let frames = rows
+            .iter()
+            .map(|row| {
+                let query = select_values(
+                    expression_columns
+                        .iter()
+                        .map(|&i| (row[i].clone(), name(i))),
+                )?;
+                self.execute_isolated(|ctx| ctx.execute_query(&query))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let opts = UnionArgs {
+            parallel: true,
+            to_supertypes: true,
+            maintain_order: true,
+            ..Default::default()
+        };
+        let exprs: Vec<Expr> = literal_columns
+            .into_iter()
+            .enumerate()
+            .map(|(i, column)| match column {
+                Some(series) => lit(series),
+                None => col(name(i)).alias(format_pl_smallstr!("column_{i}")),
+            })
+            .collect();
+        Ok(concat(frames, opts)?.select(exprs))
+    }
+
+    /// The value of a literal VALUES cell; `None` for an expression.
+    fn literal_value(&mut self, expr: &SQLExpr) -> PolarsResult<Option<AnyValue<'static>>> {
+        if expr_contains_subquery(expr) {
+            return Ok(None);
+        }
+        let Expr::Literal(value) = parse_sql_expr(expr, self, None)? else {
+            return Ok(None);
+        };
+        let value = value
+            .to_any_value()
+            .ok_or_else(|| polars_err!(SQLInterface: "invalid literal value: {:?}", value))?;
+        Ok(Some(value.into_static()))
     }
 
     // EXPLAIN SELECT * FROM DF
