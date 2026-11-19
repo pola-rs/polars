@@ -130,6 +130,7 @@ pub enum ErrorAttachment {
         plan: String,
     },
     SqlLocation(SqlLocation),
+    Hint(Cow<'static, str>),
 }
 
 impl ErrorAttachment {
@@ -141,7 +142,30 @@ impl ErrorAttachment {
             )
             .unwrap(),
             ErrorAttachment::SqlLocation(location) => location.write_after_message(out),
+            ErrorAttachment::Hint(hint) => write!(out, "\n\nHint: {hint}").unwrap(),
         }
+    }
+}
+
+/// Writes `attachments` (innermost first): the innermost SQL location, the hints, the rest.
+fn write_attachments<'a>(
+    out: &mut String,
+    attachments: impl Iterator<Item = &'a ErrorAttachment> + Clone,
+) {
+    let is_location = |a: &ErrorAttachment| matches!(a, ErrorAttachment::SqlLocation(_));
+    let is_hint = |a: &ErrorAttachment| matches!(a, ErrorAttachment::Hint(_));
+    if let Some(location) = attachments.clone().find(|a| is_location(a)) {
+        location.write_after_message(out);
+    }
+    let mut hints = Vec::new();
+    for hint in attachments.clone().filter(|a| is_hint(a)) {
+        if !hints.contains(&hint) {
+            hint.write_after_message(out);
+            hints.push(hint);
+        }
+    }
+    for attachment in attachments.filter(|a| !is_location(a) && !is_hint(a)) {
+        attachment.write_after_message(out);
     }
 }
 
@@ -309,15 +333,7 @@ impl PolarsError {
 
         error.wrap_msg(|msg| {
             let mut out = msg.to_string();
-            // The innermost SQL location first, then the other attachments, innermost first.
-            let is_location = |a: &ErrorAttachment| matches!(a, ErrorAttachment::SqlLocation(_));
-            let innermost_first = attachments.iter().rev().map(|a| a.as_ref());
-            if let Some(location) = innermost_first.clone().find(|a| is_location(a)) {
-                location.write_after_message(&mut out);
-            }
-            for attachment in innermost_first.filter(|a| !is_location(a)) {
-                attachment.write_after_message(&mut out);
-            }
+            write_attachments(&mut out, attachments.iter().rev().map(|a| a.as_ref()));
             if !context_exprs.is_empty() {
                 let first = context_exprs.first().unwrap();
                 let last = context_exprs.last().unwrap();
@@ -457,6 +473,23 @@ impl PolarsError {
         }
     }
 
+    pub fn with_hint(self, hint: impl Into<Cow<'static, str>>) -> Self {
+        self.with_attachment(ErrorAttachment::Hint(hint.into()))
+    }
+
+    /// The hints, innermost first, without duplicates.
+    pub fn hints(&self) -> Vec<&str> {
+        let mut hints = Vec::new();
+        for attachment in self.attachments().into_iter().rev() {
+            if let ErrorAttachment::Hint(hint) = attachment
+                && !hints.contains(&hint.as_ref())
+            {
+                hints.push(hint.as_ref());
+            }
+        }
+        hints
+    }
+
     /// The innermost SQL location.
     pub fn sql_location(&self) -> Option<&SqlLocation> {
         self.attachments()
@@ -514,17 +547,15 @@ impl PolarsError {
 
     /// Writes the attachments into the innermost message.
     pub fn inline_attachments(self) -> Self {
-        use PolarsError::*;
-        match self {
-            Attached { error, attachment } => error.inline_attachments().wrap_msg(|msg| {
-                let mut out = msg.to_string();
-                attachment.write_after_message(&mut out);
-                out
-            }),
-            Context { error, msg } => error.inline_attachments().context(msg),
-            ExprContext { error, expr } => error.inline_attachments().with_expr_context(expr),
-            error => error,
+        let attachments: Vec<ErrorAttachment> = self.attachments().into_iter().cloned().collect();
+        if attachments.is_empty() {
+            return self;
         }
+        self.retain_attachments(|_| false).wrap_msg(|msg| {
+            let mut out = msg.to_string();
+            write_attachments(&mut out, attachments.iter().rev());
+            out
+        })
     }
 }
 
@@ -574,11 +605,6 @@ macro_rules! polars_err {
     ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
-        )
-    };
-    ($variant:ident: $fmt:literal $(, $arg:expr)*, hint = $hint:literal) => {
-        $crate::__private::must_use(
-            $crate::PolarsError::$variant(format!(concat_str!($fmt, "\n\nHint: ", $hint), $($arg),*).into())
         )
     };
     ($variant:ident: $err:expr $(,)?) => {
@@ -845,7 +871,25 @@ pub mod __private {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ErrString, PolarsError};
+    use crate::{ErrString, ErrorAttachment, PolarsError, SqlLocation};
+
+    #[test]
+    fn test_attachments_are_written_location_then_hints_then_plan() {
+        let error = polars_err!(SQLInterface: "bad")
+            .with_attachment(ErrorAttachment::SqlLocation(SqlLocation::statement(
+                "SELECT 1",
+            )))
+            .with_attachment(ErrorAttachment::ResolvedPlan {
+                node: "'select'".to_string(),
+                plan: "DF []".to_string(),
+            })
+            .with_hint("try this")
+            .with_hint("try this");
+        let expected = "bad\n\nIn the SQL statement: SELECT 1\n\nHint: try this\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING 'select' <---\nDF []";
+        assert_eq!(error.hints(), vec!["try this"]);
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(error.inline_attachments().to_string(), expected);
+    }
 
     #[test]
     fn test_polars_error_roundtrips_through_std_io_error() {
