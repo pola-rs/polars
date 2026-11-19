@@ -10,6 +10,7 @@ use polars_io::external_reader::ExternalReaderBuilder;
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
+use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::dsl_resolver::DslResolver;
@@ -410,11 +411,10 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn slice(self, offset: i64, len: IdxSize) -> Self {
+    pub fn slice(self, slice: Slice) -> Self {
         DslPlan::Slice {
             input: Arc::new(self.0),
-            offset,
-            len,
+            slice,
         }
         .into()
     }

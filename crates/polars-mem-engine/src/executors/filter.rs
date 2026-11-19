@@ -142,10 +142,7 @@ fn filter_par(df: &DataFrame, mask: &BooleanChunked) -> PolarsResult<DataFrame> 
     let dfs = RAYON.install(|| {
         _split_offsets(df.height(), n_chunks)
             .into_par_iter()
-            .map(|(offset, len)| {
-                let offset = offset as i64;
-                df.slice(offset, len).filter(&mask.slice(offset, len))
-            })
+            .map(|(offset, len)| df.slice((offset, len)).filter(&mask.slice((offset, len))))
             .collect::<PolarsResult<Vec<_>>>()
     })?;
     Ok(accumulate_dataframes_vertical_unchecked(dfs))

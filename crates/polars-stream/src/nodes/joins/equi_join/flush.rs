@@ -436,7 +436,7 @@ impl Shared {
                     if let Some(df) = frame
                         && *offset < df.height()
                     {
-                        let df = df.slice(*offset as i64, morsel_size);
+                        let df = df.slice((*offset, morsel_size));
                         *offset += df.height();
                         output = Some(with_nulls_for_other_side(df, *is_left, params));
                     } else if let Some((_, next)) = stored.pop_frame() {

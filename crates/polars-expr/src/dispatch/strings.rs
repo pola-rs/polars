@@ -21,8 +21,17 @@ use super::*;
 pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRStringFunction::*;
     match func {
-        Format { format, insertions } => {
-            map_as_slice!(strings::format, format.as_str(), insertions.as_ref())
+        Format {
+            format,
+            insertions,
+            specs,
+        } => {
+            map_as_slice!(
+                strings::format,
+                format.as_str(),
+                insertions.as_ref(),
+                specs.as_ref()
+            )
         },
         #[cfg(feature = "regex")]
         Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
@@ -778,8 +787,13 @@ fn replace_all(
     }
 }
 
-pub(super) fn format(s: &mut [Column], format: &str, insertions: &[usize]) -> PolarsResult<Column> {
-    polars_ops::series::str_format(s, format, insertions)
+pub(super) fn format(
+    s: &mut [Column],
+    format: &str,
+    insertions: &[usize],
+    specs: &[Option<PlSmallStr>],
+) -> PolarsResult<Column> {
+    polars_ops::series::str_format(s, format, insertions, specs)
 }
 
 #[cfg(feature = "regex")]

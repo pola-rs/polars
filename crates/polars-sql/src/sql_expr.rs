@@ -45,16 +45,20 @@ use crate::context::join_idents;
 use crate::dyn_visit::visit_expressions;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
+use crate::lambda::{
+    check_lambda_body_expr, element_depth, lambda_element, resolve_lambda_params,
+    rewrite_lambda_tokens,
+};
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
 use crate::positional_join::{attach_positional_aliases, extract_positional_joins};
 use crate::sql_visitors::expr_references_any_column;
-use crate::subquery::is_correlated_subquery;
+use crate::subquery::{is_correlated_subquery, strip_nested};
 use crate::time_travel::{TableVersions, extract_table_versions};
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
-    strip_utc_offset,
+    sql_type_name, strip_utc_offset,
 };
 use crate::{SQLContext, col, struct_field, unique_column_name};
 
@@ -69,7 +73,11 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
 /// The time travel clauses taken out of a query before it is parsed, which sqlparser does not
 /// parse.
 #[must_use]
-pub(crate) struct TakenClauses(TableVersions);
+pub(crate) struct TakenClauses {
+    versions: TableVersions,
+    /// Whether the query has lambdas (see [`rewrite_lambda_tokens`]).
+    pub(crate) has_lambdas: bool,
+}
 
 impl TakenClauses {
     /// The statements `parsed` from `sql`, with the taken clauses attached. A `POSITIONAL JOIN`
@@ -81,30 +89,45 @@ impl TakenClauses {
         sql: &str,
         parsed: Result<Vec<Statement>, ParserError>,
     ) -> PolarsResult<Vec<Statement>> {
-        let (mut stmts, versions) = match parsed {
-            Ok(mut stmts) => {
-                attach_positional_aliases(&mut stmts)?;
-                (stmts, self.0)
+        self.attach_to(sql, parsed.map_err(to_sql_interface_err), |parser| {
+            parser.parse_statements().map_err(to_sql_interface_err)
+        })
+    }
+
+    /// As `attach`, for the nodes that `parse` parses.
+    pub(crate) fn attach_to<T: sqlparser::ast::VisitMut>(
+        self,
+        sql: &str,
+        parsed: PolarsResult<Vec<T>>,
+        parse: impl FnOnce(&mut Parser<'static>) -> PolarsResult<Vec<T>>,
+    ) -> PolarsResult<Vec<T>> {
+        let has_lambdas = self.has_lambdas;
+        let (mut nodes, versions) = match parsed {
+            Ok(mut nodes) => {
+                attach_positional_aliases(&mut nodes)?;
+                (nodes, self.versions)
             },
             Err(err) => {
-                let (mut tokens, versions) = tokenize(sql)?;
+                let (mut tokens, taken) = tokenize(sql)?;
+                let versions = taken.versions;
                 let positional_joins = extract_positional_joins(&mut tokens);
                 if positional_joins.is_empty() {
-                    return Err(to_sql_interface_err(err));
+                    return Err(err);
                 }
-                let mut stmts = parser_of(tokens)
-                    .parse_statements()
-                    .map_err(|_| to_sql_interface_err(err))?;
-                positional_joins.attach(&mut stmts)?;
-                (stmts, versions)
+                let mut nodes = parse(&mut parser_of(tokens)).map_err(|_| err)?;
+                positional_joins.attach(&mut nodes)?;
+                (nodes, versions)
             },
         };
-        versions.attach(&mut stmts)?;
-        Ok(stmts)
+        versions.attach(&mut nodes)?;
+        if has_lambdas {
+            resolve_lambda_params(&mut nodes);
+        }
+        Ok(nodes)
     }
 
     pub(crate) fn refuse(self) -> PolarsResult<()> {
-        self.0.refuse()
+        self.versions.refuse()
     }
 }
 
@@ -112,21 +135,28 @@ impl TakenClauses {
 /// relation or a column. Time travel clauses (see [`TableVersions`]) are taken out first: the
 /// caller attaches them to its statements or refuses them.
 pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TakenClauses)> {
-    let (tokens, versions) = tokenize(sql)?;
-    Ok((parser_of(tokens), TakenClauses(versions)))
+    let (tokens, taken) = tokenize(sql)?;
+    Ok((parser_of(tokens), taken))
 }
 
-fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TableVersions)> {
+fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
     let mut tokens = Tokenizer::new(&GenericDialect, sql)
         .with_unescape(ParserOptions::default().unescape)
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
-    demote_top_keyword(&mut tokens);
+    normalize_tokens(&mut tokens);
+    let has_lambdas = rewrite_lambda_tokens(&mut tokens);
     let versions = extract_table_versions(&mut tokens)?;
-    Ok((tokens, versions))
+    Ok((
+        tokens,
+        TakenClauses {
+            versions,
+            has_lambdas,
+        },
+    ))
 }
 
-fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
+pub(crate) fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
     let options = ParserOptions {
         trailing_commas: true,
         ..Default::default()
@@ -136,12 +166,18 @@ fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
         .with_tokens_with_locations(tokens)
 }
 
-fn demote_top_keyword(tokens: &mut [TokenWithSpan]) {
+/// Reads an escape string (`E'..'`) as a plain string, as the tokenizer resolved its escapes,
+/// and `TOP` as a keyword only where it starts `SELECT TOP n`.
+fn normalize_tokens(tokens: &mut [TokenWithSpan]) {
     let is_keyword = |token: &Token, keywords: &[Keyword]| matches!(token, Token::Word(word) if keywords.contains(&word.keyword));
     let mut previous: Option<usize> = None;
     for i in 0..tokens.len() {
-        if matches!(tokens[i].token, Token::Whitespace(_)) {
-            continue;
+        match &mut tokens[i].token {
+            Token::Whitespace(_) => continue,
+            Token::EscapedStringLiteral(s) => {
+                tokens[i].token = Token::SingleQuotedString(std::mem::take(s));
+            },
+            _ => {},
         }
         if is_keyword(&tokens[i].token, &[Keyword::TOP]) {
             let next = tokens[i + 1..]
@@ -271,7 +307,7 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
                 // formats (e.g. with and without an offset) are parsed one by one.
                 let mut out = Series::new_empty(PlSmallStr::EMPTY, dtype);
                 for i in 0..ca.len() {
-                    let value = parse(&ca.slice(i as i64, 1))
+                    let value = parse(&ca.slice((i, 1)))
                         .map(|v| v.into_series())
                         .unwrap_or_else(|_| Series::full_null(PlSmallStr::EMPTY, 1, dtype));
                     out.append(&value)?;
@@ -467,18 +503,52 @@ fn offset_by(base: Expr, offset: String) -> PolarsResult<Expr> {
     }
 }
 
-/// Extract the literal value; returns `(sql_value, optional_op)`.
+/// Extract the literal value; returns `(sql_value, optional_op)`. Nested signs combine into
+/// one.
 fn extract_literal_with_op<'a>(
     expr: &'a SQLExpr,
     outer_op: Option<&'a SQLUnaryOperator>,
 ) -> Option<(&'a SQLValue, Option<&'a SQLUnaryOperator>)> {
-    match expr {
-        SQLExpr::Value(ValueWithSpan { value: v, .. }) => Some((v, outer_op)),
-        SQLExpr::UnaryOp { op, expr } if outer_op.is_none() => match expr.as_ref() {
-            SQLExpr::Value(ValueWithSpan { value: v, .. }) => Some((v, Some(op))),
-            _ => None,
-        },
-        _ => None,
+    let mut expr = strip_nested(expr);
+    let mut op = outer_op;
+    loop {
+        match expr {
+            SQLExpr::Value(ValueWithSpan { value: v, .. }) => return Some((v, op)),
+            SQLExpr::UnaryOp {
+                op: inner_op,
+                expr: inner,
+            } => {
+                op = match (op, inner_op) {
+                    (None, _) => Some(inner_op),
+                    (
+                        Some(SQLUnaryOperator::Minus | SQLUnaryOperator::Plus),
+                        SQLUnaryOperator::Plus,
+                    ) => op,
+                    (Some(SQLUnaryOperator::Plus), SQLUnaryOperator::Minus) => Some(inner_op),
+                    (Some(SQLUnaryOperator::Minus), SQLUnaryOperator::Minus) => None,
+                    _ => return None,
+                };
+                expr = strip_nested(inner);
+            },
+            _ => return None,
+        }
+    }
+}
+
+/// The operand of the signs (and parentheses) around `expr`, and whether they negate it.
+fn signed_operand(mut expr: &SQLExpr) -> (bool, &SQLExpr) {
+    let mut negate = false;
+    loop {
+        match strip_nested(expr) {
+            SQLExpr::UnaryOp {
+                op: op @ (SQLUnaryOperator::Minus | SQLUnaryOperator::Plus),
+                expr: inner,
+            } => {
+                negate ^= *op == SQLUnaryOperator::Minus;
+                expr = inner;
+            },
+            operand => return (negate, operand),
+        }
     }
 }
 
@@ -500,23 +570,43 @@ fn resolve_common_dtype(dtypes: &[DataType], desc: Option<&str>) -> PolarsResult
 impl SQLExprVisitor<'_> {
     fn array_expr_to_series(&mut self, elements: &[SQLExpr]) -> PolarsResult<Series> {
         let mut array_elements = Vec::with_capacity(elements.len());
-        let mut cast_dtypes = Vec::new();
+        let mut element_casts = Vec::with_capacity(elements.len());
         for e in elements {
-            let val = match e {
+            let mut cast = None;
+            let val = match strip_nested(e) {
                 SQLExpr::Value(ValueWithSpan { value: v, .. }) => self.visit_any_value(v, None),
                 SQLExpr::UnaryOp { op, expr } => match extract_literal_with_op(expr, Some(op)) {
                     Some((v, op)) => self.visit_any_value(v, op),
-                    None => match expr.as_ref() {
-                        SQLExpr::Cast {
-                            data_type, expr: inner, format: None, ..
-                        } => {
-                            cast_dtypes.push(map_sql_dtype_to_polars(data_type)?);
-                            match extract_literal_with_op(inner, Some(op)) {
-                                Some((v, op)) => self.visit_any_value(v, op),
-                                None => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
-                            }
+                    None => match signed_operand(e) {
+                        (
+                            negate,
+                            SQLExpr::Cast {
+                                data_type,
+                                expr: inner,
+                                format: None,
+                                ..
+                            },
+                        ) => match extract_literal_with_op(inner, None) {
+                            // The sign applies to the cast value.
+                            Some((v, inner_op)) => {
+                                let dtype = map_sql_dtype_to_polars(data_type)?;
+                                let v = self.visit_any_value(v, inner_op)?.into_static();
+                                let s = series_from_literals(PlSmallStr::EMPTY, &[v])?;
+                                ensure_nested_cast_source("CAST", &dtype, s.dtype())?;
+                                let mut s = cast_literal_series(&s, &dtype)?;
+                                if negate {
+                                    s = polars_ops::series::negate(&s)?;
+                                }
+                                cast = Some(dtype);
+                                Ok(s.get(0)?.into_static())
+                            },
+                            _ => Err(
+                                polars_err!(SQLInterface: "array element {:?} is not supported", e),
+                            ),
                         },
-                        _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
+                        _ => {
+                            Err(polars_err!(SQLInterface: "array element {:?} is not supported", e))
+                        },
                     },
                 },
                 SQLExpr::Array(values) => {
@@ -525,27 +615,77 @@ impl SQLExprVisitor<'_> {
                 },
                 SQLExpr::TypedString(TypedString {
                     data_type,
-                    value: ValueWithSpan {
-                        value: SQLValue::SingleQuotedString(v), ..
-                    },
+                    value:
+                        ValueWithSpan {
+                            value: SQLValue::SingleQuotedString(v),
+                            ..
+                        },
                     ..
                 }) => {
-                    cast_dtypes.push(self.resolve_typed_literal_dtype(data_type, v)?);
+                    cast = Some(self.resolve_typed_literal_dtype(data_type, v)?);
                     Ok(AnyValue::StringOwned(v.as_str().into()))
                 },
                 SQLExpr::Cast {
-                    data_type, expr, format: None, ..
+                    data_type,
+                    expr,
+                    format: None,
+                    ..
                 } => {
-                    cast_dtypes.push(map_sql_dtype_to_polars(data_type)?);
+                    cast = Some(map_sql_dtype_to_polars(data_type)?);
                     match extract_literal_with_op(expr, None) {
                         Some((v, op)) => self.visit_any_value(v, op),
-                        None => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
+                        None => {
+                            Err(polars_err!(SQLInterface: "array element {:?} is not supported", e))
+                        },
                     }
                 },
                 _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
             }?
             .into_static();
             array_elements.push(val);
+            element_casts.push(cast);
+        }
+        let cast_dtypes: Vec<DataType> = element_casts.iter().flatten().cloned().collect();
+        // Casting the whole list keeps each value only when the values share one type, and
+        // the values without a cast are strings (or nulls) that take the type of the others.
+        let mut value_dtypes = array_elements
+            .iter()
+            .filter(|v| !v.is_null())
+            .map(|v| v.dtype());
+        let one_value_dtype = value_dtypes
+            .next()
+            .is_none_or(|first| value_dtypes.all(|dtype| dtype == first));
+        let casts_own_value = !cast_dtypes.is_empty()
+            && (!one_value_dtype
+                || array_elements.iter().zip(&element_casts).any(|(v, cast)| {
+                    cast.is_none() && !matches!(v, AnyValue::Null | AnyValue::StringOwned(_))
+                }));
+        if casts_own_value {
+            // Strings without a cast still take the type of the casts.
+            let strings_dtype =
+                resolve_common_dtype(&cast_dtypes, Some("array literal ")).unwrap_or(None);
+            for (v, cast) in array_elements.iter_mut().zip(&element_casts) {
+                let cast = match v {
+                    AnyValue::StringOwned(_) if cast.is_none() => &strings_dtype,
+                    _ => cast,
+                };
+                if let Some(dtype) = cast {
+                    let s = series_from_literals(PlSmallStr::EMPTY, std::slice::from_ref(v))?;
+                    ensure_nested_cast_source("CAST", dtype, s.dtype())?;
+                    *v = cast_literal_series(&s, dtype)?.get(0)?.into_static();
+                }
+            }
+            let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
+            // A null keeps the type of its cast.
+            for (v, cast) in array_elements.iter().zip(&element_casts) {
+                if let (AnyValue::Null, Some(dtype)) = (v, cast) {
+                    let supertype = try_get_supertype(s.dtype(), dtype)?;
+                    if supertype != *s.dtype() {
+                        s = s.cast(&supertype)?;
+                    }
+                }
+            }
+            return Ok(s);
         }
         let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
         if let Some(dtype) = resolve_common_dtype(&cast_dtypes, Some("array literal "))? {
@@ -557,6 +697,9 @@ impl SQLExprVisitor<'_> {
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        if self.ctx.lambda_depth > 0 {
+            check_lambda_body_expr(expr)?;
+        }
         match expr {
             SQLExpr::AllOp {
                 left,
@@ -589,16 +732,51 @@ impl SQLExprVisitor<'_> {
             } => self.visit_at_time_zone(timestamp, time_zone),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundFieldAccess { root, access_chain } => {
+                // struct fields of an expression (eg: "(expr).a.b")
+                let fields: Option<Vec<&Ident>> = access_chain
+                    .iter()
+                    .map(|access| match access {
+                        AccessExpr::Dot(SQLExpr::Identifier(ident)) => Some(ident),
+                        _ => None,
+                    })
+                    .collect();
+                if let Some(fields) = fields {
+                    let root = self.visit_expr(root)?;
+                    return Ok(fields
+                        .into_iter()
+                        .fold(root, |expr, field| struct_field(expr, field.value.as_str())));
+                }
                 // simple subscript access (eg: "array_col[1]")
                 if access_chain.len() == 1 {
                     match &access_chain[0] {
                         AccessExpr::Subscript(subscript) => {
                             return self.visit_subscript(root, subscript);
                         },
-                        AccessExpr::Dot(_) => {
-                            polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: {:?}", access_chain[0])
-                        },
+                        AccessExpr::Dot(_) => {},
                     }
+                }
+                if let SQLExpr::Value(ValueWithSpan {
+                    value: SQLValue::Placeholder(p),
+                    ..
+                }) = root.as_ref()
+                    && element_depth(p).is_some()
+                {
+                    let mut expr = self.visit_expr(root)?;
+                    for access in access_chain {
+                        match access {
+                            AccessExpr::Dot(SQLExpr::Identifier(field)) => {
+                                expr = struct_field(expr, field.value.as_str());
+                            },
+                            AccessExpr::Subscript(subscript) => {
+                                expr = self.visit_subscript_of(expr, subscript)?;
+                            },
+                            _ => polars_bail!(SQLSyntax: "unsupported field access: {}", access),
+                        }
+                    }
+                    return Ok(expr);
+                }
+                if let [AccessExpr::Dot(_)] = access_chain.as_slice() {
+                    polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: {:?}", access_chain[0])
                 }
                 // chained dot/bracket notation (eg: "struct_col.field[2].foo[0].bar")
                 polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
@@ -1045,6 +1223,10 @@ impl SQLExprVisitor<'_> {
 
     fn visit_subscript(&mut self, expr: &SQLExpr, subscript: &Subscript) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
+        self.visit_subscript_of(expr, subscript)
+    }
+
+    fn visit_subscript_of(&mut self, expr: Expr, subscript: &Subscript) -> PolarsResult<Expr> {
         Ok(match subscript {
             Subscript::Index { index } => {
                 // a map is looked up by key, not by position
@@ -1492,6 +1674,25 @@ impl SQLExprVisitor<'_> {
     ///
     /// e.g. +column or -column
     fn visit_unary_op(&mut self, op: &SQLUnaryOperator, expr: &SQLExpr) -> PolarsResult<Expr> {
+        let mut operand = expr;
+        while let SQLExpr::Nested(e)
+        | SQLExpr::UnaryOp {
+            op: SQLUnaryOperator::Plus,
+            expr: e,
+        } = operand
+        {
+            operand = e;
+        }
+        if let (
+            SQLUnaryOperator::Minus,
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::Placeholder(p),
+                ..
+            }),
+        ) = (op, operand)
+        {
+            return Ok(param_lit(negate_param(self.ctx.param(p)?.value(), p)?));
+        }
         let expr = self.visit_expr(expr)?;
         Ok(match (op, expr.clone()) {
             // simplify the parse tree by special-casing common unary +/- ops
@@ -1540,6 +1741,10 @@ impl SQLExprVisitor<'_> {
     ///
     /// See [SQLFunctionVisitor] for more details
     fn visit_function(&mut self, function: &SQLFunction) -> PolarsResult<Expr> {
+        polars_ensure!(
+            self.ctx.lambda_depth == 0 || function.over.is_none(),
+            SQLInterface: "window functions are not supported in a lambda"
+        );
         let window = match &function.over {
             Some(window) => Some(self.ctx.resolve_window(window)?),
             None => None,
@@ -1559,6 +1764,11 @@ impl SQLExprVisitor<'_> {
         self.ctx.group_scope.in_window = in_window;
         let expr = expr?;
 
+        polars_ensure!(
+            self.ctx.lambda_depth == 0
+                || !PolarsSQLFunctions::is_aggregate_call(function, self.ctx, &expr)?,
+            SQLInterface: "aggregate functions are not supported in a lambda"
+        );
         if !is_window
             && (in_window || self.ctx.group_scope.mark_aggregates)
             && PolarsSQLFunctions::is_aggregate_call(function, self.ctx, &expr)?
@@ -1998,10 +2208,48 @@ impl SQLExprVisitor<'_> {
         }
         let expr = self.visit_expr(expr)?;
 
+        // A JSON value is its text, which the JSON operators read.
         #[cfg(feature = "json")]
         if dtype == &SQLDataType::JSON {
-            // @BROKEN: we cannot handle this.
-            return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
+            let typed = self.ctx.with_typed_subqueries(&expr)?;
+            let dtype = self.expr_dtype(&typed);
+            if matches!(dtype, None | Some(DataType::String)) {
+                // TRY_CAST would need to check that the text is JSON.
+                polars_ensure!(
+                    matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon),
+                    SQLInterface: "only CAST of text to JSON is supported"
+                );
+            }
+            return Ok(match dtype {
+                None | Some(DataType::String) => expr.cast(DataType::String),
+                Some(dtype) if dtype.is_float() => {
+                    let text = expr.cast(DataType::String);
+                    when(text.clone().eq(lit("inf")))
+                        .then(lit("Infinity"))
+                        .when(text.clone().eq(lit("-inf")))
+                        .then(lit("-Infinity"))
+                        .otherwise(text)
+                },
+                Some(dtype @ DataType::Struct(_)) => {
+                    polars_ensure!(
+                        !dtype.contains_dtype_recursive(&DataType::Binary)
+                            && !dtype.contains_dtype_recursive(&DataType::BinaryOffset)
+                            && !dtype.contains_objects(),
+                        SQLInterface: "cannot cast {} to JSON", sql_type_name(&dtype)
+                    );
+                    when(expr.clone().is_not_null())
+                        .then(expr.struct_().json_encode())
+                        .otherwise(lit(NULL))
+                },
+                Some(dtype)
+                    if dtype.is_null() || dtype.is_bool() || dtype.is_primitive_numeric() =>
+                {
+                    expr.cast(DataType::String)
+                },
+                Some(dtype) => polars_bail!(
+                    SQLInterface: "cannot cast {} to JSON", sql_type_name(&dtype)
+                ),
+            });
         }
         self.cast_to(expr, map_sql_dtype_to_polars(dtype)?, cast_kind)
     }
@@ -2090,6 +2338,10 @@ impl SQLExprVisitor<'_> {
                 bitstring_to_bytes_literal(b)?
             },
             SQLValue::SingleQuotedString(s) => lit(s.clone()),
+            SQLValue::Placeholder(p) if let Some(depth) = element_depth(p) => {
+                lambda_element(depth, self.ctx.lambda_depth)?
+            },
+            SQLValue::Placeholder(p) => param_lit(self.ctx.param(p)?.value().clone().into_static()),
             other => {
                 polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
             },
@@ -2102,6 +2354,14 @@ impl SQLExprVisitor<'_> {
         value: &SQLValue,
         op: Option<&SQLUnaryOperator>,
     ) -> PolarsResult<AnyValue<'_>> {
+        polars_ensure!(
+            op.is_none()
+                || matches!(
+                    value,
+                    SQLValue::Number(..) | SQLValue::Null | SQLValue::Placeholder(_)
+                ),
+            SQLInterface: "unary op {:?} not supported for SQL value {:?}", op.unwrap(), value
+        );
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
             SQLValue::DollarQuotedString(s) => AnyValue::StringOwned(s.clone().value.into()),
@@ -2141,6 +2401,19 @@ impl SQLExprVisitor<'_> {
                 }
             },
             SQLValue::SingleQuotedString(s) => AnyValue::StringOwned(s.as_str().into()),
+            SQLValue::Placeholder(p) if element_depth(p).is_some() => {
+                polars_bail!(SQLInterface: "a lambda parameter is not supported in a literal")
+            },
+            SQLValue::Placeholder(p) => {
+                let value = self.ctx.param(p)?;
+                match op {
+                    None | Some(SQLUnaryOperator::Plus) => value.value().clone().into_static(),
+                    Some(SQLUnaryOperator::Minus) => negate_param(value.value(), p)?,
+                    Some(op) => polars_bail!(
+                        SQLInterface: "unary op {:?} not supported for query parameter {}", op, p
+                    ),
+                }
+            },
             other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
         })
     }
@@ -2485,15 +2758,19 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 
     // `sql_expr` should only translate expressions, not statements or clauses
     let (mut ast, taken) = sql_parser(s)?;
+    let has_lambdas = taken.has_lambdas;
     taken.refuse()?;
     if let Token::Word(word) = &ast.peek_token().token {
         if keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&word.keyword) {
             polars_bail!(SQLInterface: "expected an expression (found '{}' clause)", word.value)
         }
     }
-    let expr = ast
+    let mut expr = ast
         .parse_select_item()
         .map_err(|_| polars_err!(SQLInterface: "unable to parse '{}' as Expr", s))?;
+    if has_lambdas {
+        resolve_lambda_params(&mut expr);
+    }
 
     // ensure all input was consumed; remaining tokens indicate invalid trailing SQL
     match &ast.peek_token().token {
@@ -2617,6 +2894,13 @@ pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsRes
                 active_schema: None,
             };
             visitor.array_expr_to_series(arr.elem.as_slice())
+        },
+        SQLExpr::Value(ValueWithSpan {
+            value: SQLValue::Placeholder(p),
+            ..
+        }) => match ctx.param(p)?.value() {
+            AnyValue::List(s) => Ok(s.clone()),
+            _ => polars_bail!(SQLSyntax: "Expected array expression, found query parameter {}", p),
         },
         _ => polars_bail!(SQLSyntax: "Expected array expression, found {:?}", expr),
     }
@@ -2934,6 +3218,38 @@ pub(crate) fn is_decimal_literal_valued(expr: &Expr) -> bool {
                 && (is_decimal_literal_valued(truthy) || is_decimal_literal_valued(falsy))
         },
         e => decimal_literal(e).is_some(),
+    }
+}
+
+/// `-value` for the query parameter `p`. An integer that doesn't fit its type widens to Int128.
+fn negate_param(value: &AnyValue, p: &str) -> PolarsResult<AnyValue<'static>> {
+    let dtype = value.dtype();
+    let negated = match value {
+        AnyValue::Float32(v) => Some(AnyValue::Float32(-v)),
+        AnyValue::Float64(v) => Some(AnyValue::Float64(-v)),
+        AnyValue::Decimal(v, precision, scale) => Some(AnyValue::Decimal(-v, *precision, *scale)),
+        AnyValue::Duration(v, unit) => v.checked_neg().map(|v| AnyValue::Duration(v, *unit)),
+        _ if dtype.is_integer() => value
+            .extract::<i128>()
+            .and_then(i128::checked_neg)
+            .map(|v| {
+                let v = AnyValue::Int128(v);
+                v.strict_cast(&dtype).map_or(v, |v| v.into_static())
+            }),
+        _ => polars_bail!(
+            SQLInterface: "cannot negate query parameter {} of type {}", p, dtype
+        ),
+    };
+    negated.ok_or_else(|| polars_err!(ComputeError: "negating query parameter {} overflows", p))
+}
+
+/// The literal of the query parameter value `value`. An Int64 or Float64 value acts as a
+/// numeric literal.
+fn param_lit(value: AnyValue<'static>) -> Expr {
+    match value {
+        AnyValue::Int64(v) => lit(v),
+        AnyValue::Float64(v) => lit(v),
+        v => Scalar::new(v.dtype(), v).lit(),
     }
 }
 

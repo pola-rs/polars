@@ -522,6 +522,11 @@ def test_try_strptime() -> None:
     ):
         ctx.execute("SELECT TRY_STRPTIME(s) FROM df", eager=True)
 
+    # an invalid format raises, also for TRY_STRPTIME
+    for func in ["STRPTIME(s, '%Q')", "TRY_STRPTIME(s, '%Y-%')", "DATE(s, '%Q')"]:
+        with pytest.raises(SQLInterfaceError, match="invalid date/time format"):
+            ctx.execute(f"SELECT {func} FROM df", eager=True)
+
 
 def test_temporal_strings_to_datetime() -> None:
     df = pl.DataFrame(
@@ -1026,6 +1031,83 @@ def test_date_trunc_errors() -> None:
         pl.sql_expr("DATE_TRUNC('day', dtm)")
     with pytest.raises(SQLInterfaceError, match="DATE_TRUNC cannot determine the type"):
         df.sql("SELECT DATE_TRUNC('hour', (SELECT DATE '2024-05-17')) FROM self")
+
+
+def test_date_diff() -> None:
+    df = pl.DataFrame(
+        {
+            "d": [date(2024, 1, 31), date(2024, 12, 31), None],
+            "ts": [
+                datetime(2024, 2, 1, 10, 30),
+                datetime(2025, 1, 1),
+                datetime(2024, 1, 1),
+            ],
+            "t": [time(10), time(12, 30), None],
+        }
+    )
+    out = df.sql(
+        """
+        SELECT
+          DATE_DIFF('month', d, ts) AS months,
+          DATEDIFF('Days', d, ts) AS days,
+          date_diff('hrs', d, ts) AS hours,
+          DATE_DIFF('year', d, ts) AS years,
+          DATE_DIFF('week', d, ts) AS weeks,
+          DATE_DIFF('minute', TIME '09:15:00', t) AS minutes,
+          DATE_DIFF('day', d, '2025-03-01') AS days_to,
+          DATE_DIFF('hour', '2024-01-01 00:00:00', ts) AS hours_from,
+          DATE_DIFF('minute', '09:15:00', t) AS minutes_from,
+          DATE_DIFF(NULL, d, ts) AS null_part
+        FROM self
+        """
+    )
+    assert out.schema == dict.fromkeys(out.columns, pl.Int64)
+    assert out.rows() == [
+        (1, 1, 34, 0, 0, 45, 395, 754, 45, None),
+        (1, 1, 24, 1, 0, 195, 60, 8784, 195, None),
+        (None, None, None, None, None, None, None, 0, None, None),
+    ]
+
+    # a string literal takes the type of a scalar subquery
+    assert (
+        pl.sql(
+            "SELECT DATE_DIFF('day', (SELECT DATE '2024-01-01'), '2024-01-02') AS n",
+            eager=True,
+        ).item()
+        == 1
+    )
+
+    # weeks start on Monday
+    assert (
+        pl.sql(
+            "SELECT DATE_DIFF('week', DATE '2024-01-07', DATE '2024-01-08') AS w",
+            eager=True,
+        ).item()
+        == 1
+    )
+
+    lf = pl.LazyFrame({"g": [1, 1, 2], "d": [date(2024, 1, 1), date(2024, 3, 5), None]})
+    out = lf.sql(
+        """
+        SELECT g, MAX(DATE_DIFF('day', DATE '2024-01-01', d)) AS n
+        FROM self GROUP BY g ORDER BY g
+        """
+    ).collect()
+    assert out.rows() == [(1, 64), (2, None)]
+
+
+def test_date_diff_errors() -> None:
+    df = pl.DataFrame({"d": [date(2024, 1, 1)], "t": [time(1)], "part": ["day"]})
+    with pytest.raises(SQLSyntaxError, match="DATE_DIFF does not support 'decade'"):
+        df.sql("SELECT DATE_DIFF('decade', d, d) FROM self")
+    with pytest.raises(SQLSyntaxError, match="invalid 'part' for DATE_DIFF"):
+        df.sql("SELECT DATE_DIFF(part, d, d) FROM self")
+    with pytest.raises(SQLInterfaceError, match="no function matches"):
+        df.sql("SELECT DATEDIFF(d, d) FROM self")
+    with pytest.raises(InvalidOperationError, match="not supported for Time"):
+        df.sql("SELECT DATE_DIFF('day', t, t) FROM self")
+    with pytest.raises(InvalidOperationError, match="got str"):
+        df.sql("SELECT DATE_DIFF('day', '2024-01-01', '2024-02-01') FROM self")
 
 
 def test_date_part_functions() -> None:

@@ -199,8 +199,8 @@ pub enum PhysNodeKind {
 
     StreamingSlice {
         input: PhysStream,
-        offset: usize,
-        length: usize,
+        /// Positive slice.
+        slice: Slice,
     },
 
     Reverse {
@@ -209,7 +209,7 @@ pub enum PhysNodeKind {
 
     NegativeSlice {
         input: PhysStream,
-        offset: i64,
+        offset_from_end: usize,
         length: usize,
     },
 
@@ -339,13 +339,14 @@ pub enum PhysNodeKind {
         input: PhysStream,
         key: PlSmallStr,
         aggs: Vec<ExprIR>,
-        slice: Option<(IdxSize, IdxSize)>,
+        /// Positive slice.
+        slice: Option<Slice>,
     },
 
     Sort {
         input: PhysStream,
         by_column: Vec<ExprIR>,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         sort_options: SortMultipleOptions,
         /// (projected columns, num_input_columns).
         projection: Option<(Vec<PlSmallStr>, usize)>,
@@ -484,7 +485,8 @@ pub enum PhysNodeKind {
         input: PhysStream,
         options: DynamicGroupOptionsIR,
         aggs: Vec<ExprIR>,
-        slice: Option<(IdxSize, IdxSize)>,
+        /// Positive slice.
+        slice: Option<Slice>,
     },
 
     #[cfg(feature = "dynamic_group_by")]
@@ -495,7 +497,8 @@ pub enum PhysNodeKind {
         offset: Duration,
         closed: ClosedWindow,
         placement: Option<RollingWindowPlacement>,
-        slice: Option<(IdxSize, IdxSize)>,
+        /// Positive slice.
+        slice: Option<Slice>,
         aggs: Vec<ExprIR>,
     },
 

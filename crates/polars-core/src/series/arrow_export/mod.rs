@@ -130,11 +130,11 @@ impl Series {
         };
 
         let chunk = self.select_chunk(chunk_idx);
-        Either::Right(ranges.into_iter().map(move |r| {
-            chunk
-                .slice(r.start as i64, r.len())
-                .try_to_arrow(0, compat_level)
-        }))
+        Either::Right(
+            ranges
+                .into_iter()
+                .map(move |r| chunk.slice(r).try_to_arrow(0, compat_level)),
+        )
     }
 
     /// Export this Series to an arrow array. The dtype of the returned array will match the

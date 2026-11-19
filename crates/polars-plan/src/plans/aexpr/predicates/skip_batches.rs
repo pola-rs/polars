@@ -393,7 +393,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         }
 
         match arena.get(e) {
-            AExpr::Element => None,
+            AExpr::Element | AExpr::EvalColumn(_) => None,
             AExpr::Explode { .. } => None,
             AExpr::Column(_) => None,
             #[cfg(feature = "dtype-struct")]

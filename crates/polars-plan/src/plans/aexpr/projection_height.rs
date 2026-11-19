@@ -313,6 +313,7 @@ pub fn aexpr_projection_height(
         Column(_) => H::Column,
 
         Element => H::Column,
+        EvalColumn(_) => H::Scalar,
         #[cfg(feature = "dtype-struct")]
         StructField(_) => H::Unknown,
         Literal(lv) => {
@@ -323,7 +324,7 @@ pub fn aexpr_projection_height(
             }
         },
 
-        Eval { .. } => input_heights?[0],
+        Eval { .. } => H::zipped_projection_height(input_heights?.iter().copied()),
         #[cfg(feature = "dtype-struct")]
         StructEval { .. } => input_heights?[0],
 

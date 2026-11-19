@@ -699,6 +699,10 @@ pub(crate) fn py_object_to_any_value(
                     // will convert via Series -> mmap_numpy_array
                     return Ok(get_list as InitFn);
                 }
+                static BOOL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+                if ob.is_instance(BOOL_TYPE.import(py, "numpy", "bool_")?)? {
+                    return Ok(get_bool as InitFn);
+                }
                 static DATETIME64_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
                 if ob.is_instance(DATETIME64_TYPE.import(py, "numpy", "datetime64")?)? {
                     return Ok(get_numpy_datetime as InitFn);

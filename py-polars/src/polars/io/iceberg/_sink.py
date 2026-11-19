@@ -116,6 +116,10 @@ class _HandBack:
     files: list[_IcebergSinkedFile] | None = None
     sort_order_id: int | None = None
 
+    def __init__(self, max_rows_per_file: int | None = None) -> None:
+        # files sized by rows instead of estimated bytes (compaction)
+        self.max_rows_per_file = max_rows_per_file
+
     def __getstate__(self) -> tuple[()]:
         msg = "a sink that hands back its files cannot be serialized"
         raise TypeError(msg)
@@ -1672,6 +1676,11 @@ class IcebergSinkState:
             self.sort_order_id = sort_order.order_id
 
         approximate_bytes_per_file = 2 * 1024 * 1024 * 1024
+        max_rows_per_file = (
+            self.replace_files.max_rows_per_file
+            if isinstance(self.replace_files, _HandBack)
+            else None
+        )
 
         if v := property_as_int(
             properties=table_metadata.properties,
@@ -1682,7 +1691,22 @@ class IcebergSinkState:
                 estimated_compression_ratio * v, (1 << 64) - 1
             )
 
-        return lf.sink_parquet(
+        from polars.io.iceberg._credentials import renewing_credential_provider
+        from polars.io.iceberg._plugin import _data_location
+
+        storage_options, credential_provider = renewing_credential_provider(
+            table,
+            self._get_converted_storage_options(),
+            self.iceberg_storage_properties,
+            _data_location(table),
+            # Only the name was kept: renewals resolve it too.
+            catalog_name=(
+                self.catalog_name if self.py_catalog_class_module is None else None
+            ),
+        )
+
+        # The provider is taken as `scan_parquet` does, untyped.
+        return lf.sink_parquet(  # type: ignore[call-overload]
             pl.PartitionBy(
                 _normalize_windows_iceberg_file_uri(
                     self.sink_base_path(object_storage_enabled=object_storage_enabled)
@@ -1692,14 +1716,18 @@ class IcebergSinkState:
                 ),
                 key=partition_key_exprs,
                 include_key=False if partition_key_exprs is not None else None,
-                approximate_bytes_per_file=approximate_bytes_per_file,
+                max_rows_per_file=max_rows_per_file,
+                approximate_bytes_per_file=(
+                    approximate_bytes_per_file if max_rows_per_file is None else None
+                ),
             ),
             arrow_schema=arrow_schema,
             compression=self.compression,
             compression_level=self.compression_level,
             row_group_size=self.row_group_size,
             maintain_order=True if sort_order.fields else self.maintain_order,
-            storage_options=self._get_converted_storage_options(),
+            storage_options=storage_options,
+            credential_provider=credential_provider,
             lazy=True,
         )._ldf
 
@@ -1720,7 +1748,12 @@ class IcebergSinkState:
         if verbose:
             eprint(f"IcebergSinkState[commit]: mode: '{self.mode}'")
 
+        from polars.io.iceberg._credentials import refresh_file_io
+
         table = self.table()
+        # The manifests are written with the table's FileIO, whose vended credentials
+        # may have expired while the data was written.
+        refresh_file_io(table)
 
         self._commit(table, sinked_files, verbose=verbose)
 
@@ -2164,11 +2197,15 @@ class IcebergSinkState:
         location, own = self.written_files_dir()
         if not own:
             return location
+        from polars.io.iceberg._credentials import refresh_file_io
+
         table = self.table()
         try:
             current = table.catalog.load_table(table.name())
             if _landed(current, table, self.sink_uuid_str):
                 return location
+            # The files are deleted with the FileIO, as for the commit.
+            refresh_file_io(table, current)
         except NoSuchTableError:
             pass
         except Exception:
@@ -2195,22 +2232,14 @@ class IcebergSinkState:
         return load_file_io({**table.io.properties, **user}, location=table.location())
 
     def sink_base_path(self, *, object_storage_enabled: bool) -> str:
-        from pyiceberg.table import TableProperties
+        from polars.io.iceberg._plugin import _data_location
 
-        table = self.table()
-        table_metadata = table.metadata
-        table_properties = table_metadata.properties
-
-        sink_base_path = (
-            path.rstrip("/")
-            if (path := table_properties.get(TableProperties.WRITE_DATA_PATH))
-            else f"{table_metadata.location.rstrip('/')}/data"
-        )
+        sink_base_path = _data_location(self.table())
 
         if object_storage_enabled:
-            return f"{sink_base_path}/"
+            return sink_base_path
 
-        return f"{sink_base_path}/{self.sink_uuid_str}/"
+        return f"{sink_base_path}{self.sink_uuid_str}/"
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -70,9 +70,7 @@ impl DataFrame {
                 // `Column::from` would turn a one-row chunk into a Scalar, which reads the row.
                 Column::Series(s) => Column::Series(s.select_chunk(chunk_idx).into()),
                 // These have no chunks of their own to follow.
-                Column::Scalar(_) | Column::Dictionary(_) => {
-                    col.slice(rows.start as i64, rows.len())
-                },
+                Column::Scalar(_) | Column::Dictionary(_) => col.slice(rows.clone()),
             })
             .collect();
 
@@ -83,7 +81,7 @@ impl DataFrame {
     pub fn split_chunks_by_n(self, n: usize, parallel: bool) -> Vec<DataFrame> {
         let split = _split_offsets(self.height(), n);
 
-        let split_fn = |(offset, len)| self.slice(offset as i64, len);
+        let split_fn = |(offset, len)| self.slice((offset, len));
 
         if parallel {
             // Parallel so that null_counts run in parallel
@@ -266,10 +264,8 @@ impl DataFrame {
                     .map(|c| match c {
                         // `Column::slice` makes a one-row Series a Scalar by reading its row,
                         // which can panic where the export of that row would return an error.
-                        Column::Series(s) => {
-                            Column::Series(s.slice(r.start as i64, r.len()).into())
-                        },
-                        _ => c.slice(r.start as i64, r.len()),
+                        Column::Series(s) => Column::Series(s.slice(r.clone()).into()),
+                        _ => c.slice(r.clone()),
                     })
                     .collect();
                 // SAFETY: every column is sliced to the `r.len()` rows of `r`, and keeps its

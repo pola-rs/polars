@@ -120,7 +120,7 @@ fn source(df: &DataFrame) -> LazyFrame {
     }
     let chunks: Vec<LazyFrame> = (0..df.height())
         .step_by(5)
-        .map(|o| df.slice(o as i64, 5).lazy())
+        .map(|o| df.slice((o, 5)).lazy())
         .collect();
     let args = UnionArgs {
         rechunk: false,
@@ -177,10 +177,7 @@ fn partitions(
             origin,
             start_range: IndexRange::new(first, end),
         };
-        out.push((
-            df.slice(read_start as i64, read_end - read_start),
-            placement,
-        ));
+        out.push((df.slice((read_start, read_end - read_start)), placement));
     }
     out
 }
@@ -398,7 +395,7 @@ fn windows_outside_the_range_are_not_evaluated() {
         let placed =
             collect_placed(query(input, "t", &options, &aggs), Some(*placement), engine).unwrap();
         assert!(
-            placed.equals_missing(&expected.slice(3, 2)),
+            placed.equals_missing(&expected.slice((3usize, 2))),
             "{engine:?}\n{placed}"
         );
         assert!(collect_placed(query(input, "t", &options, &aggs), None, engine).is_err());
@@ -413,9 +410,9 @@ fn check_slice(
     for engine in ENGINES {
         let full = collect(query(), engine).unwrap();
         assert!(full.height() > 4);
-        let sliced = collect(query().slice(1, 3), engine).unwrap();
+        let sliced = collect(query().slice((1usize, 3)), engine).unwrap();
         assert!(
-            sliced.equals_missing(&full.slice(1, 3)),
+            sliced.equals_missing(&full.slice((1usize, 3))),
             "{engine:?}\n{sliced}\n{full}"
         );
     }
@@ -519,10 +516,7 @@ fn rolling_partitions(
         let placement = RollingWindowPlacement {
             owned_range: IndexRange::new(first, end),
         };
-        out.push((
-            df.slice(read_start as i64, read_end - read_start),
-            placement,
-        ));
+        out.push((df.slice((read_start, read_end - read_start)), placement));
     }
     out
 }

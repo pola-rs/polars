@@ -873,7 +873,7 @@ mod tests {
         let random_state = PlRandomState::default();
         // In two parts, so the second part finds the escaped keys of the first.
         let mid = df.height() / 2;
-        for part in [df.slice(0, mid), df.slice(mid as i64, df.height() - mid)] {
+        for part in [df.slice(Slice::head(mid)), df.slice(mid..df.height())] {
             let keys = encoder
                 .try_hash_keys(&part, random_state.clone(), true)
                 .unwrap();
@@ -954,8 +954,8 @@ mod tests {
     #[test]
     fn escaped_keys_match_in_join() {
         let df = keys_df();
-        let build = df.slice(0, 7);
-        let probe = df.slice(3, 9);
+        let build = df.slice(Slice::head(7));
+        let probe = df.slice(3..12);
         let schema = df.schema().clone();
         let narrow = join_matches(&narrow_encoder(schema.clone(), false), &build, &probe);
         let full = join_matches(&KeyEncoder::new(schema, false, &[]), &build, &probe);

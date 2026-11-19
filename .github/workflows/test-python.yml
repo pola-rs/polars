@@ -18,7 +18,8 @@ on:
       - docs/source/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
-  # Called by the release workflow, which tests against the released polars-iceberg from PyPI.
+  # Called by the release workflow, which tests against the released polars-iceberg and
+  # polars-database from PyPI.
   workflow_call:
     inputs:
       sha:
@@ -26,8 +27,13 @@ on:
         type: string
       polars-iceberg-version:
         description: >
-          Version of polars-iceberg to install from PyPI. If omitted, build polars-iceberg from its
-          dev branch.
+          Version of polars-iceberg to install from PyPI. If omitted, build polars-iceberg from this
+          repository.
+        type: string
+      polars-database-version:
+        description: >
+          Version of polars-database to install from PyPI. If omitted, build polars-database from
+          this checkout.
         type: string
 
 concurrency:
@@ -81,10 +87,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
-
-      - name: Clone polars-iceberg
-        if: ${{ !inputs.polars-iceberg-version }}
-        uses: ./.github/actions/clone-polars-iceberg
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -154,10 +156,25 @@ jobs:
           if [[ -n "$POLARS_ICEBERG_VERSION" ]]; then
             uv pip install --no-deps "polars-iceberg==$POLARS_ICEBERG_VERSION"
           else
-            maturin develop --manifest-path ../crates/polars-iceberg/Cargo.toml
+            maturin develop --manifest-path polars-iceberg/Cargo.toml
           fi
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_iceberg'
+
+      # The plugin is an abi3 extension module, which free-threaded builds cannot load.
+      - name: Install polars_database plugin
+        if: matrix.python-version != '3.14t'
+        env:
+          POLARS_DATABASE_VERSION: ${{ inputs.polars-database-version }}
+        run: |
+          if [[ -n "$POLARS_DATABASE_VERSION" ]]; then
+            # `--no-deps` skips its `sqlglot` dependency, which requirements-dev.txt installs.
+            uv pip install --no-deps "polars-database==$POLARS_DATABASE_VERSION"
+          else
+            maturin develop --manifest-path polars-database/Cargo.toml
+          fi
+          # The plugin tests skip when the module is missing; fail here instead.
+          python -c 'import polars_database'
 
       - name: Run doctests
         if: github.event_name != 'push' && matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest' && !matrix.variant
