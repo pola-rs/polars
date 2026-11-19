@@ -584,33 +584,7 @@ mod tests {
     use std::task::{Context, Waker};
 
     use super::*;
-
-    const OVER_BUDGET_VARS: [(&str, &str); 1] = [("POLARS_OOC_MEMORY_BUDGET_MB", "1")];
-    const OVER_BUDGET_USAGE: i64 = 16 << 20;
-
-    /// Puts the memory manager over budget until dropped.
-    struct OverBudget;
-
-    impl OverBudget {
-        fn new() -> Self {
-            for (var, val) in OVER_BUDGET_VARS {
-                unsafe { std::env::set_var(var, val) };
-                config().reload_env_var(var);
-            }
-            crate::global_alloc::add_test_usage(OVER_BUDGET_USAGE);
-            OverBudget
-        }
-    }
-
-    impl Drop for OverBudget {
-        fn drop(&mut self) {
-            crate::global_alloc::add_test_usage(-OVER_BUDGET_USAGE);
-            for (var, _) in OVER_BUDGET_VARS {
-                unsafe { std::env::remove_var(var) };
-                config().reload_env_var(var);
-            }
-        }
-    }
+    use crate::test_support::OverBudget;
 
     #[test]
     fn spill_waits_while_over_budget() {

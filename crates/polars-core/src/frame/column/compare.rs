@@ -9,7 +9,6 @@ use super::{
     BooleanChunked, ChunkCompareEq, ChunkCompareIneq, ChunkExpandAtIndex, Column, DictionaryColumn,
     IntoSeries, Series,
 };
-use crate::prelude::{ChunkFullNull, StringChunked};
 
 /// `op` evaluated on each used value of `column` and spread to its rows.
 fn dictionary_mask(
@@ -22,7 +21,7 @@ fn dictionary_mask(
             Err(err) => {
                 // A value no row uses may fail where the used ones don't; that falls back to the
                 // used ones. An error without any values (e.g. of the dtypes) is returned at once.
-                let empty = StringChunked::full_null(column.name().clone(), 0).into_series();
+                let empty = Series::full_null(column.name().clone(), 0, column.dtype());
                 if op(&empty).is_err() {
                     return Err(err);
                 }
@@ -39,10 +38,9 @@ fn dictionary_lookup_mask(
     op: impl Fn(&Series) -> PolarsResult<BooleanChunked>,
 ) -> PolarsResult<BooleanChunked> {
     let n = column.dict().len();
-    let mut values =
-        StringChunked::with_chunk(column.name().clone(), column.dict().values().clone());
-    values.append(&StringChunked::full_null(PlSmallStr::EMPTY, 1))?;
-    let table = op(&values.into_series())?;
+    let mut values = column.dict().values_series(column.name().clone());
+    values.append(&Series::full_null(PlSmallStr::EMPTY, 1, column.dtype()))?;
+    let table = op(&values)?;
     let table = table.rechunk();
     polars_ensure!(
         table.len() == n + 1,

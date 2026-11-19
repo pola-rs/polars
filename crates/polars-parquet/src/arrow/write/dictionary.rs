@@ -530,6 +530,52 @@ pub fn array_to_pages<K: DictionaryKey>(
                     | ArrowDataType::Time64(_)
                     | ArrowDataType::Timestamp(_, _)
                     | ArrowDataType::Duration(_) => dyn_prim!(i64, i64, values, options, type_),
+                    // A Decimal is stored by its precision, as the plain column is.
+                    ArrowDataType::Decimal(precision, _) => {
+                        let array = values
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<i128>>()
+                            .unwrap();
+                        if *precision <= 9 {
+                            let narrow = PrimitiveArray::<i32>::new(
+                                ArrowDataType::Int32,
+                                array.values().iter().map(|x| *x as i32).collect(),
+                                array.validity().cloned(),
+                            );
+                            dyn_prim!(i32, i32, &narrow, options, type_)
+                        } else if *precision <= 18 {
+                            let narrow = PrimitiveArray::<i64>::new(
+                                ArrowDataType::Int64,
+                                array.values().iter().map(|x| *x as i64).collect(),
+                                array.validity().cloned(),
+                            );
+                            dyn_prim!(i64, i64, &narrow, options, type_)
+                        } else {
+                            let size = super::decimal_length_from_precision(*precision);
+                            let mut buffer = Vec::with_capacity(size * array.len());
+                            for x in array.values().iter() {
+                                buffer.extend_from_slice(&x.to_be_bytes()[16 - size..]);
+                            }
+                            let stats = if options.has_statistics() {
+                                Some(
+                                    super::fixed_size_binary::build_statistics_big_endian(
+                                        array,
+                                        type_.clone(),
+                                        size,
+                                        &options.statistics,
+                                    )
+                                    .serialize(),
+                                )
+                            } else {
+                                None
+                            };
+                            (
+                                DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
+                                stats,
+                                None,
+                            )
+                        }
+                    },
                     ArrowDataType::UInt8 => dyn_prim!(u8, i32, values, options, type_),
                     ArrowDataType::UInt16 => dyn_prim!(u16, i32, values, options, type_),
                     ArrowDataType::UInt32 => dyn_prim!(u32, i32, values, options, type_),

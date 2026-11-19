@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 
-use polars_arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray};
+use polars_arrow::array::{
+    BinaryViewArray, DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray,
+};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
@@ -65,6 +67,8 @@ impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
 /// given row group all the values are in the dictionary page and all data pages are dictionary
 /// encoded. This makes the job of decoding them extremely simple and fast.
 pub struct CategoricalDecoder<T> {
+    /// Whether the values are String (valid UTF-8) rather than Binary.
+    is_string: bool,
     dict_size: usize,
     decoder: BinViewDecoder,
     plain_page_dict: MutableBinaryViewArray<[u8]>,
@@ -81,14 +85,41 @@ pub struct CategoricalDecoder<T> {
 
 impl<T> CategoricalDecoder<T> {
     pub fn new() -> Self {
+        Self::new_with(true)
+    }
+
+    /// A decoder of Binary values, which are not validated as UTF-8.
+    pub fn new_binary() -> Self {
+        Self::new_with(false)
+    }
+
+    fn new_with(is_string: bool) -> Self {
         Self {
+            is_string,
             dict_size: usize::MAX,
-            decoder: BinViewDecoder::new_string(),
+            decoder: BinViewDecoder::new(is_string),
             plain_page_dict: MutableBinaryViewArray::new(),
             plain_page_dict_lookup: PlHashMap::new(),
             plain_page_dict_mask: MutableBitmap::new(),
             dict: None,
             key_type: PhantomData,
+        }
+    }
+
+    /// Evaluates `predicate` on `values`, as the String or Binary values they are.
+    ///
+    /// # Safety
+    /// If this decodes Strings, `values` must be valid UTF-8.
+    unsafe fn evaluate(
+        &self,
+        predicate: &PredicateFilter,
+        values: &BinaryViewArray,
+    ) -> PolarsResult<Bitmap> {
+        if self.is_string {
+            let values = unsafe { values.to_utf8view_unchecked() };
+            predicate.predicate.try_evaluate(&values)
+        } else {
+            predicate.predicate.try_evaluate(values)
         }
     }
 }
@@ -114,8 +145,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         predicate: &PredicateFilter,
     ) -> PolarsResult<Bitmap> {
         // SAFETY: The dictionary was checked to be UTF-8 when it was deserialized.
-        let dict = unsafe { dict.to_utf8view_unchecked() };
-        predicate.predicate.try_evaluate(&dict)
+        unsafe { self.evaluate(predicate, dict) }
     }
 
     fn evaluate_predicate(
@@ -176,8 +206,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
                 new_values.push_value(value);
             }
             // SAFETY: Plain page values are treated as UTF-8 when the array is finalized.
-            let new_values = unsafe { new_values.freeze().to_utf8view_unchecked() };
-            match predicate.predicate.try_evaluate(&new_values) {
+            match unsafe { self.evaluate(predicate, &new_values.freeze()) } {
                 Ok(mask) => self.plain_page_dict_mask.extend_from_bitmap(&mask),
                 Err(_) => evaluate_rows = true,
             }
@@ -199,10 +228,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
                 }
             }
             // SAFETY: The values are treated as UTF-8 when the array is finalized.
-            let values = unsafe { values.freeze().to_utf8view_unchecked() };
-            let mask = predicate
-                .predicate
-                .try_evaluate(&values)
+            let mask = unsafe { self.evaluate(predicate, &values.freeze()) }
                 .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
             Some(mask)
         } else {
@@ -306,8 +332,12 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
 
         let view_dict = view_dict.freeze();
 
-        // SAFETY: This was checked during construction of the dictionary
-        let dict = unsafe { view_dict.to_utf8view_unchecked() }.boxed();
+        let dict = if self.is_string {
+            // SAFETY: This was checked during construction of the dictionary
+            unsafe { view_dict.to_utf8view_unchecked() }.boxed()
+        } else {
+            view_dict.boxed()
+        };
 
         // SAFETY: This was checked during decoding
         Ok(unsafe { DictionaryArray::try_new_unchecked(dtype, keys, dict) }.unwrap())
@@ -413,25 +443,35 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
     }
 }
 
-/// Decodes a flat String column chunk into codes into its dictionary page.
+/// Decodes a flat String or Binary column chunk into codes into its dictionary page.
 ///
 /// Every data page must be dictionary-encoded (see `PageReader::dictionary_only_len`). The
 /// dictionary values in the output share the dictionary page's buffers.
-pub fn decode_dictionary_codes(
+pub fn decode_byte_dictionary_codes(
     field_name: &str,
     pages: crate::parquet::read::BasicDecompressor,
     filter: Option<super::Filter>,
+    is_string: bool,
 ) -> ParquetResult<(Vec<DictionaryArray<u32>>, Bitmap)> {
+    let values_dtype = if is_string {
+        ArrowDataType::Utf8View
+    } else {
+        ArrowDataType::BinaryView
+    };
     let dtype = ArrowDataType::Dictionary(
         polars_arrow::datatypes::IntegerType::UInt32,
-        Box::new(ArrowDataType::Utf8View),
+        Box::new(values_dtype),
         false,
     );
     let (_, arrays, pred_true_mask) = utils::PageDecoder::new(
         field_name,
         pages,
         dtype,
-        CategoricalDecoder::<u32>::new(),
+        if is_string {
+            CategoricalDecoder::<u32>::new()
+        } else {
+            CategoricalDecoder::<u32>::new_binary()
+        },
         None,
     )?
     .collect(filter)?;

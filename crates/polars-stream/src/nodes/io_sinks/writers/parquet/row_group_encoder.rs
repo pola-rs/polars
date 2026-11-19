@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::array::{Array, DictionaryArray, PrimitiveArray};
-use polars_arrow::datatypes::{ArrowSchemaRef, Field as ArrowField, IntegerType};
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchemaRef, Field as ArrowField, IntegerType};
 use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
@@ -15,7 +15,8 @@ use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
     CompressedPage, Compressor, Encoding, SchemaDescriptor, WriteOptions, array_to_columns,
 };
-use polars_utils::UnitVec;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
+use polars_utils::{IdxSize, UnitVec};
 
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::writers::parquet::EncodedRowGroup;
@@ -98,8 +99,8 @@ fn dictionary_sample_has_unique_mapping(d: &DictionaryColumn) -> bool {
         return false;
     }
 
-    let values = d.dict().values();
-    let mut first_of: PlHashMap<&str, u32> = PlHashMap::with_capacity(codes.len());
+    let values = d.dict().bytes().expect("a String or Binary dictionary");
+    let mut first_of: PlHashMap<&[u8], u32> = PlHashMap::with_capacity(codes.len());
     for code in codes {
         // SAFETY: valid codes are in bounds for the dictionary.
         let value = unsafe { values.value_unchecked(code as usize) };
@@ -132,13 +133,108 @@ fn preflight_rejects(d: &DictionaryColumn) -> bool {
     d.len() >= MIN_CARDINALITY_PREFLIGHT_ROWS
         && d.dict().len() > max_dictionary_values
         && d.len() - d.null_count() > max_dictionary_values
-        && rejects_dictionary(d, max_dictionary_values)
+        && if d.dict().bytes().is_some() {
+            rejects_dictionary(d, max_dictionary_values)
+        } else {
+            // Values that are not bytes are not sampled for equal values under different codes:
+            // nearly distinct codes reject. A column of repeated values under distinct codes is
+            // then written by the ordinary writer, which also finds its dictionary.
+            estimate_dictionary_code_cardinality(d) > max_dictionary_values
+        }
+}
+
+/// Whether a column of this dtype whose dictionary does not hold bytes is written as a dictionary
+/// of its own values: the types whose parquet dictionary page `array_to_pages` writes, and that
+/// the dictionary-encoding writer would otherwise write as a flat column.
+fn is_writable_non_byte_dictionary_dtype(dtype: &ArrowDataType) -> bool {
+    use ArrowDataType::*;
+    matches!(
+        dtype,
+        Int8 | Int16
+            | Int32
+            | Int64
+            | UInt8
+            | UInt16
+            | UInt32
+            | UInt64
+            | Date32
+            | Time32(_)
+            | Time64(_)
+            | Timestamp(..)
+            | Duration(_)
+            | Float32
+            | Float64
+            | Decimal(..)
+            | LargeBinary
+    )
+}
+
+/// The first position of each distinct value of `values`, and the index among those of each
+/// value's. Values are equal if their bits are: `-0.0` differs from `0.0`, and NaNs with
+/// different payloads differ, so that floats round-trip exactly. `None` for types it does not
+/// handle.
+fn first_occurrences(values: &dyn Array) -> Option<(Vec<IdxSize>, Vec<u32>)> {
+    use polars_arrow::datatypes::PhysicalType;
+    use polars_arrow::types::{NativeType, PrimitiveType as PT};
+
+    fn by_key<K: std::hash::Hash + Eq>(keys: impl Iterator<Item = K>) -> (Vec<IdxSize>, Vec<u32>) {
+        // `values` holds the used dictionary values only, most of them distinct.
+        let mut first_of: PlHashMap<K, u32> = PlHashMap::with_capacity(keys.size_hint().0);
+        let mut unique = Vec::new();
+        let remap = keys
+            .enumerate()
+            .map(|(i, k)| {
+                *first_of.entry(k).or_insert_with(|| {
+                    unique.push(i as IdxSize);
+                    unique.len() as u32 - 1
+                })
+            })
+            .collect();
+        (unique, remap)
+    }
+    fn bits<T: NativeType>(v: &T) -> u128 {
+        let mut key = [0u8; 16];
+        let bytes = v.to_le_bytes();
+        let bytes = bytes.as_ref();
+        key[..bytes.len()].copy_from_slice(bytes);
+        u128::from_le_bytes(key)
+    }
+    macro_rules! primitive {
+        ($t:ty) => {{
+            let a = values.as_any().downcast_ref::<PrimitiveArray<$t>>()?;
+            by_key(a.values().iter().map(bits))
+        }};
+    }
+
+    Some(match values.dtype().to_physical_type() {
+        PhysicalType::Primitive(pt) => match pt {
+            PT::Int8 => primitive!(i8),
+            PT::Int16 => primitive!(i16),
+            PT::Int32 => primitive!(i32),
+            PT::Int64 => primitive!(i64),
+            PT::Int128 => primitive!(i128),
+            PT::UInt8 => primitive!(u8),
+            PT::UInt16 => primitive!(u16),
+            PT::UInt32 => primitive!(u32),
+            PT::UInt64 => primitive!(u64),
+            PT::Float32 => primitive!(f32),
+            PT::Float64 => primitive!(f64),
+            _ => return None,
+        },
+        PhysicalType::LargeBinary => {
+            let a = values
+                .as_any()
+                .downcast_ref::<polars_arrow::array::BinaryArray<i64>>()?;
+            by_key(a.values_iter())
+        },
+        _ => return None,
+    })
 }
 
 /// A dictionary-coded column as an arrow dictionary array, so that the writer writes its
 /// dictionary as is rather than building one by hashing the values. Only the dictionary values
-/// that rows use are kept. `None` if the column is not dictionary-coded or not written as a flat,
-/// dictionary-encoded string column.
+/// that rows use are kept. `None` if the column is not dictionary-coded, or it is not written as a
+/// flat, dictionary-encoded column of a type that is written from its dictionary.
 fn dictionary_array(
     c: &Column,
     field: &ArrowField,
@@ -147,12 +243,26 @@ fn dictionary_array(
     use polars_core::prelude::*;
 
     let d = c.as_dictionary_column()?;
-    // The values are written from views whatever the field's string type (by default
-    // `LargeUtf8`); the file's schema still comes from the field.
-    if !matches!(
-        field.dtype,
-        ArrowDataType::Utf8View | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8
-    ) || encodings != [Encoding::RleDictionary]
+    let is_bytes = d.dict().bytes().is_some();
+    if encodings != [Encoding::RleDictionary] {
+        return None;
+    }
+    if is_bytes {
+        // The values are written from views whatever the field's string type (by default
+        // `LargeUtf8`, `LargeBinary` for binary); the file's schema still comes from the field.
+        if !matches!(
+            field.dtype,
+            ArrowDataType::Utf8View
+                | ArrowDataType::LargeUtf8
+                | ArrowDataType::Utf8
+                | ArrowDataType::BinaryView
+                | ArrowDataType::LargeBinary
+                | ArrowDataType::Binary
+        ) {
+            return None;
+        }
+    } else if !is_writable_non_byte_dictionary_dtype(&field.dtype)
+        || d.dtype().to_arrow(CompatLevel::newest()) != field.dtype
     {
         return None;
     }
@@ -172,20 +282,32 @@ fn dictionary_array(
 
     // A dictionary may hold a value more than once (e.g. merged from two row groups' ones);
     // write each used value once.
-    let dict_values = d.dict().values();
-    let mut first_of: PlHashMap<&str, u32> = PlHashMap::with_capacity(used.len());
-    let mut unique: Vec<IdxSize> = Vec::with_capacity(used.len());
-    let remap: Vec<u32> = used
-        .iter()
-        .map(|c| {
-            // SAFETY: the used codes are in bounds for the dictionary.
-            let v = unsafe { dict_values.value_unchecked(*c as usize) };
-            *first_of.entry(v).or_insert_with(|| {
-                unique.push(*c);
-                unique.len() as u32 - 1
+    let values_series = d.dict().values_series(PlSmallStr::EMPTY);
+    let (unique, remap): (Vec<IdxSize>, Vec<u32>) = if let Some(dict_values) = d.dict().bytes() {
+        let mut first_of: PlHashMap<&[u8], u32> = PlHashMap::with_capacity(used.len());
+        let mut unique: Vec<IdxSize> = Vec::with_capacity(used.len());
+        let remap: Vec<u32> = used
+            .iter()
+            .map(|c| {
+                // SAFETY: the used codes are in bounds for the dictionary.
+                let v = unsafe { dict_values.value_unchecked(*c as usize) };
+                *first_of.entry(v).or_insert_with(|| {
+                    unique.push(*c);
+                    unique.len() as u32 - 1
+                })
             })
-        })
-        .collect();
+            .collect();
+        (unique, remap)
+    } else {
+        // SAFETY: the used codes are in bounds for the dictionary.
+        let used_values = unsafe {
+            values_series.take_unchecked(&IdxCa::from_vec(PlSmallStr::EMPTY, used.clone()))
+        };
+        let used_values = used_values.rechunk().to_arrow(0, CompatLevel::newest());
+        let (unique_positions, remap) = first_occurrences(used_values.as_ref())?;
+        let unique = unique_positions.iter().map(|p| used[*p as usize]).collect();
+        (unique, remap)
+    };
     // Mostly distinct values are written PLAIN, as `encode_as_dictionary_optional` decides for an
     // uncoded column.
     if d.len() > 128 && (unique.len() as f64) / (d.len() as f64) > 0.75 {
@@ -198,21 +320,17 @@ fn dictionary_array(
         }
     }
 
-    let values = StringChunked::with_chunk(PlSmallStr::EMPTY, dict_values.clone());
     // SAFETY: the used codes are in bounds for the dictionary.
-    let values = unsafe { values.take_unchecked(&IdxCa::from_vec(PlSmallStr::EMPTY, unique)) };
-    let values = values.rechunk().downcast_as_array().clone();
+    let values =
+        unsafe { values_series.take_unchecked(&IdxCa::from_vec(PlSmallStr::EMPTY, unique)) };
+    let values = values.rechunk().to_arrow(0, CompatLevel::newest());
     let validity = d.codes().rechunk_validity();
     let keys = PrimitiveArray::new(ArrowDataType::UInt32, keys.into(), validity);
-    let dtype = ArrowDataType::Dictionary(
-        IntegerType::UInt32,
-        Box::new(ArrowDataType::Utf8View),
-        false,
-    );
+    let dtype =
+        ArrowDataType::Dictionary(IntegerType::UInt32, Box::new(values.dtype().clone()), false);
     // SAFETY: every key indexes the used values (null keys are 0, and there is a value if any
     // key is valid).
-    let array =
-        unsafe { DictionaryArray::<u32>::try_new_unchecked(dtype, keys, values.boxed()) }.unwrap();
+    let array = unsafe { DictionaryArray::<u32>::try_new_unchecked(dtype, keys, values) }.unwrap();
     Some(array.boxed())
 }
 
@@ -356,6 +474,147 @@ mod tests {
             &ArrowField::new("s".into(), ArrowDataType::LargeUtf8, true),
             &[Encoding::RleDictionary],
         )
+    }
+
+    fn flat_i64(array: &DictionaryArray<u32>) -> Vec<Option<i64>> {
+        let values = array
+            .values()
+            .as_any()
+            .downcast_ref::<PrimitiveArray<i64>>()
+            .unwrap();
+        array
+            .keys()
+            .iter()
+            .map(|k| k.map(|k| values.value(*k as usize)))
+            .collect()
+    }
+
+    fn int_dictionary(values: &[i64], rows: usize) -> Column {
+        let values = Series::new("v".into(), values);
+        let n = values.len() as u32;
+        let codes = UInt32Chunked::from_iter_options(
+            PlSmallStr::EMPTY,
+            (0..rows as u32).map(|i| (i % 7 != 0).then_some(i % n)),
+        );
+        Column::Dictionary(
+            DictionaryColumn::try_new(
+                "i".into(),
+                SharedDictionary::try_new(values).unwrap(),
+                codes,
+            )
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn dictionary_sink_writes_non_byte_dictionary_when_the_field_matches() {
+        let column = int_dictionary(&[10, 20, 30], 1_000);
+        let field = |dtype| ArrowField::new("i".into(), dtype, true);
+        // A field of another type, or encodings that are not dictionary ones, give the plain
+        // column.
+        assert!(
+            dictionary_array(
+                &column,
+                &field(ArrowDataType::LargeUtf8),
+                &[Encoding::RleDictionary]
+            )
+            .is_none()
+        );
+        assert!(
+            dictionary_array(&column, &field(ArrowDataType::Int64), &[Encoding::Plain]).is_none()
+        );
+        let array = dictionary_array(
+            &column,
+            &field(ArrowDataType::Int64),
+            &[Encoding::RleDictionary],
+        )
+        .unwrap();
+        let array = array
+            .as_any()
+            .downcast_ref::<DictionaryArray<u32>>()
+            .unwrap();
+        assert_eq!(array.len(), 1_000);
+        assert_eq!(array.null_count(), 143);
+        assert_eq!(array.values().len(), 3);
+        // The rows are the column's.
+        let want = column.as_materialized_series().i64().unwrap().to_vec();
+        assert_eq!(flat_i64(array), want);
+    }
+
+    #[test]
+    fn dictionary_sink_writes_each_non_byte_value_once() {
+        // Equal values under different codes, floats compared by their bits.
+        let column = int_dictionary(&[10, 20, 10, 20, 10, 30], 1_000);
+        let array = dictionary_array(
+            &column,
+            &ArrowField::new("i".into(), ArrowDataType::Int64, true),
+            &[Encoding::RleDictionary],
+        )
+        .unwrap();
+        let array = array
+            .as_any()
+            .downcast_ref::<DictionaryArray<u32>>()
+            .unwrap();
+        assert_eq!(array.values().len(), 3);
+        let want = column.as_materialized_series().i64().unwrap().to_vec();
+        assert_eq!(flat_i64(array), want);
+
+        let floats = Series::new("v".into(), [0.0f64, -0.0, f64::NAN, 1.5, 0.0]);
+        let codes =
+            UInt32Chunked::from_iter_options(PlSmallStr::EMPTY, (0..1_000u32).map(|i| Some(i % 5)));
+        let column = Column::Dictionary(
+            DictionaryColumn::try_new(
+                "f".into(),
+                SharedDictionary::try_new(floats).unwrap(),
+                codes,
+            )
+            .unwrap(),
+        );
+        let array = dictionary_array(
+            &column,
+            &ArrowField::new("f".into(), ArrowDataType::Float64, true),
+            &[Encoding::RleDictionary],
+        )
+        .unwrap();
+        let array = array
+            .as_any()
+            .downcast_ref::<DictionaryArray<u32>>()
+            .unwrap();
+        // 0.0 once, -0.0, NaN and 1.5.
+        assert_eq!(array.values().len(), 4);
+    }
+
+    #[test]
+    fn dictionary_sink_writes_binary_values_as_binary_dictionary() {
+        let values: Vec<Vec<u8>> = (0..100u8).map(|i| vec![0xff, i]).collect();
+        let values = polars_arrow::array::BinaryViewArray::from_slice_values(&values);
+        let codes = UInt32Chunked::from_iter_options(
+            PlSmallStr::EMPTY,
+            (0..1_000).map(|i| (i % 7 != 0).then_some(i % 3)),
+        );
+        let column =
+            DictionaryColumn::try_new("b".into(), SharedDictionary::new_binary(values), codes)
+                .unwrap();
+        let array = dictionary_array(
+            &Column::Dictionary(column),
+            &ArrowField::new("b".into(), ArrowDataType::LargeBinary, true),
+            &[Encoding::RleDictionary],
+        )
+        .unwrap();
+        assert_eq!(
+            array.dtype(),
+            &ArrowDataType::Dictionary(
+                IntegerType::UInt32,
+                Box::new(ArrowDataType::BinaryView),
+                false
+            )
+        );
+        let array = array
+            .as_any()
+            .downcast_ref::<DictionaryArray<u32>>()
+            .unwrap();
+        assert_eq!(array.values().len(), 3);
+        assert_eq!(array.len(), 1_000);
     }
 
     #[test]

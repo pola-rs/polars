@@ -6,6 +6,9 @@ mod spill_context;
 mod spill_file;
 mod spill_frame;
 mod spill_token;
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;
 
 pub use global_alloc::{Allocator, estimate_memory_usage};
 pub use memory_grant::MemoryGrant;
@@ -39,11 +42,5 @@ pub trait Spillable: Send + Sync + 'static {
 
 static BYTES_SPILLED_TO_DISK: RelaxedCell<u64> = RelaxedCell::new_u64(0);
 
-// Tests that change global spill or allocator state run one at a time.
 #[cfg(test)]
-fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
+use test_support::test_lock;

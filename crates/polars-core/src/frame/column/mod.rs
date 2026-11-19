@@ -1,6 +1,9 @@
 use std::borrow::Cow;
 
-pub use dictionary::{DictionaryColumn, SharedDictionary, dictionary_codes_enabled};
+pub use dictionary::{
+    DictionaryColumn, DictionaryMerger, SharedDictionary, concat_columns, dictionary_codes_enabled,
+    try_concat_columns,
+};
 use num_traits::{Num, NumCast};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::trusted_len::TrustMyLength;
@@ -41,7 +44,7 @@ mod series;
 /// Currently, there are three ways to represent a [`Column`].
 /// 1. A [`Series`] of values
 /// 2. A [`ScalarColumn`] that repeats a single [`Scalar`]
-/// 3. A [`DictionaryColumn`] of String codes into a shared dictionary
+/// 3. A [`DictionaryColumn`] of codes into a shared dictionary of values of any dtype
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -247,7 +250,7 @@ impl Column {
                 None => Cow::Owned(Field::new(s.name().clone(), s.dtype().clone())),
                 Some(s) => s.field(),
             },
-            Column::Dictionary(s) => Cow::Owned(Field::new(s.name().clone(), DataType::String)),
+            Column::Dictionary(s) => Cow::Owned(Field::new(s.name().clone(), s.dtype().clone())),
         }
     }
 
@@ -518,7 +521,7 @@ impl Column {
     // # Casting
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         match self {
-            Column::Dictionary(_) if dtype == &DataType::String => Ok(self.clone()),
+            Column::Dictionary(d) if dtype == d.dtype() => Ok(self.clone()),
             // Casts each used dictionary value once, e.g. into a Categorical.
             Column::Dictionary(d) => d.apply_elementwise(|s| s.cast_with_options(dtype, options)),
             Column::Series(s) => s.cast_with_options(dtype, options).map(Column::from),
@@ -527,7 +530,7 @@ impl Column {
     }
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self {
-            Column::Dictionary(_) if dtype == &DataType::String => Ok(self.clone()),
+            Column::Dictionary(d) if dtype == d.dtype() => Ok(self.clone()),
             // Casts each used dictionary value once, e.g. into a Categorical.
             Column::Dictionary(d) => d.apply_elementwise(|s| s.strict_cast(dtype)),
             Column::Series(s) => s.strict_cast(dtype).map(Column::from),
@@ -536,7 +539,7 @@ impl Column {
     }
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Column> {
         match self {
-            Column::Dictionary(_) if dtype == &DataType::String => Ok(self.clone()),
+            Column::Dictionary(d) if dtype == d.dtype() => Ok(self.clone()),
             // Casts each used dictionary value once, e.g. into a Categorical.
             Column::Dictionary(d) => d.apply_elementwise(|s| s.cast(dtype)),
             Column::Series(s) => s.cast(dtype).map(Column::from),
@@ -548,7 +551,7 @@ impl Column {
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Column> {
         match self {
-            Column::Dictionary(_) if dtype == &DataType::String => Ok(self.clone()),
+            Column::Dictionary(d) if dtype == d.dtype() => Ok(self.clone()),
             // Casts each used dictionary value once, e.g. into a Categorical.
             Column::Dictionary(d) => d.apply_elementwise(|s| unsafe { s.cast_unchecked(dtype) }),
             Column::Series(s) => unsafe { s.cast_unchecked(dtype) }.map(Column::from),
@@ -1720,9 +1723,8 @@ impl Column {
             Column::Series(s) => unsafe { s.get_unchecked(index) },
             Column::Scalar(s) => s.scalar().as_any_value(),
             Column::Dictionary(s) => match unsafe { s.codes().get_unchecked(index) } {
-                Some(code) => {
-                    AnyValue::String(unsafe { s.dict().values().value_unchecked(code as usize) })
-                },
+                // SAFETY: valid codes are in bounds (invariant).
+                Some(code) => unsafe { s.dict().get_unchecked(code) },
                 None => AnyValue::Null,
             },
         }
@@ -2013,6 +2015,22 @@ impl Column {
 
                 Ok(ScalarColumn::from_single_value_series(op(&lhs, &rhs)?, length).into_column())
             },
+            // Applies `op` once per value of a dictionary column and a single value. Only when the
+            // result has the dictionary column's length.
+            (Column::Dictionary(lhs), rhs)
+                if rhs.len() == 1
+                    || (rhs.len() == lhs.len() && rhs.as_scalar_column().is_some()) =>
+            {
+                let rhs = rhs.as_materialized_series_maintain_scalar();
+                lhs.apply_elementwise(|values| op(values, &rhs))
+            },
+            (lhs, Column::Dictionary(rhs))
+                if lhs.len() == 1
+                    || (lhs.len() == rhs.len() && lhs.as_scalar_column().is_some()) =>
+            {
+                let lhs = lhs.as_materialized_series_maintain_scalar();
+                rhs.apply_elementwise(|values| op(&lhs, values))
+            },
             (lhs, Column::Scalar(rhs)) => {
                 op(lhs.as_materialized_series(), &rhs.as_single_value_series()).map(Column::from)
             },
@@ -2058,6 +2076,12 @@ impl Column {
                     ScalarColumn::from_single_value_series(f(&lhs, &rhs)?, self.len())
                         .into_column(),
                 )
+            },
+            (Column::Dictionary(lhs), Column::Scalar(rhs)) => {
+                lhs.apply_elementwise(|values| f_rb(values, rhs.scalar()))
+            },
+            (Column::Scalar(lhs), Column::Dictionary(rhs)) => {
+                rhs.apply_elementwise(|values| f_lb(lhs.scalar(), values))
             },
             (lhs, Column::Scalar(rhs)) => {
                 f_rb(lhs.as_materialized_series(), rhs.scalar()).map(Column::from)

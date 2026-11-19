@@ -388,7 +388,7 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.add_node_with_metrics(
                 |registry| {
-                    nodes::in_memory_sink::InMemorySinkNode::new(
+                    nodes::in_memory_sink::InMemorySinkNode::merging_dictionaries(
                         input_schema,
                         registry.task_metrics(),
                     )

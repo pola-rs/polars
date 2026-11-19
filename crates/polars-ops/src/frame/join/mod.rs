@@ -739,3 +739,52 @@ pub fn private_left_join_multiple_keys(
         nulls_equal,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use polars_core::frame::column::{DictionaryColumn, SharedDictionary};
+
+    use super::*;
+
+    fn int_dict(n: usize) -> Column {
+        let dict = SharedDictionary::try_new(Series::new("v".into(), [7i64, 8, 9])).unwrap();
+        let codes = UInt32Chunked::from_iter_options(
+            PlSmallStr::EMPTY,
+            (0..n).map(|i| (i % 5 != 4).then_some((i % 3) as u32)),
+        );
+        DictionaryColumn::try_new("k".into(), dict, codes)
+            .unwrap()
+            .into()
+    }
+
+    /// A join on a dictionary column of values that aren't String or Binary gives the result the
+    /// flat column does, from one materialization of the column.
+    #[test]
+    fn join_on_a_non_byte_dictionary_column() {
+        let n = 30;
+        let coded = int_dict(n);
+        let flat = coded.as_materialized_series().clone().into_column();
+        let payload = Column::new("p".into(), (0..n as i64).collect::<Vec<_>>());
+        let left = DataFrame::new(n, vec![coded.clone(), payload.clone()]).unwrap();
+        let left_flat = DataFrame::new(n, vec![flat, payload]).unwrap();
+        let right = df![
+            "k" => [7i64, 9, 9, 11],
+            "r" => ["a", "b", "c", "d"]
+        ]
+        .unwrap();
+
+        for how in [JoinType::Inner, JoinType::Left] {
+            let args = JoinArgs::new(how).with_maintain_order(MaintainOrderJoin::Left);
+            let got = left.join(&right, ["k"], ["k"], args.clone(), None).unwrap();
+            let want = left_flat.join(&right, ["k"], ["k"], args, None).unwrap();
+            assert!(got.equals_missing(&want));
+        }
+        assert!(
+            coded
+                .as_dictionary_column()
+                .unwrap()
+                .lazy_as_materialized_series()
+                .is_some()
+        );
+    }
+}
