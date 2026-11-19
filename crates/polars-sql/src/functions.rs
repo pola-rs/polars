@@ -2641,12 +2641,10 @@ impl SQLFunctionVisitor<'_> {
                 return self
                     .apply_window_spec(lit(LiteralValue::untyped_null()).cast(DataType::Int64));
             },
-            Expr::Literal(p) if p.extract_str().is_some() => {
-                let p = p.extract_str().unwrap();
-                date_diff_unit(&p.to_ascii_lowercase()).ok_or_else(
-                    || polars_err!(SQLSyntax: "DATE_DIFF does not support '{}' part", p),
-                )?
-            },
+            Expr::Literal(ref p) if let Some(p) = p.extract_str() => date_diff_unit(
+                &p.to_ascii_lowercase(),
+            )
+            .ok_or_else(|| polars_err!(SQLSyntax: "DATE_DIFF does not support '{}' part", p))?,
             part => polars_bail!(SQLSyntax: "invalid 'part' for DATE_DIFF ({})", part),
         };
         let start = self.parse_sql_arg(start)?;
@@ -2753,17 +2751,12 @@ impl SQLFunctionVisitor<'_> {
             args.len() == 2,
             SQLSyntax: "{} expects 2 arguments (found {})", name, args.len()
         );
-        self.try_visit_binary(|e, fmt: String| {
-            check_strptime_format(&fmt)?;
-            Ok(e.str().strptime(
+        self.visit_binary(|e, opts: StrptimeOptions| {
+            e.str().strptime(
                 DataType::Datetime(TimeUnit::Microseconds, None),
-                StrptimeOptions {
-                    format: Some(fmt.into()),
-                    strict,
-                    ..Default::default()
-                },
+                StrptimeOptions { strict, ..opts },
                 lit("latest"),
-            ))
+            )
         })
     }
 
@@ -3781,8 +3774,7 @@ impl SQLFunctionVisitor<'_> {
             SQLInterface: "the lambda of {name} takes one parameter (found {n_params})"
         );
         let mut list = self.parse_sql_arg(list)?;
-        let typed = self.ctx.with_typed_subqueries(&list)?;
-        let element_dtype = match self.ctx.expr_dtype(&typed, self.active_schema) {
+        let element_dtype = match self.arg_dtype(&list)? {
             Some(DataType::Array(inner, _)) => {
                 list = list.arr().to_list();
                 Some(*inner)

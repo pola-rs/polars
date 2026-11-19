@@ -69,6 +69,16 @@ impl TimeUnit {
         }
     }
 
+    /// The number of nanoseconds in one tick of this unit.
+    #[inline(always)]
+    pub const fn nanoseconds(self) -> i64 {
+        match self {
+            TimeUnit::Nanoseconds => 1,
+            TimeUnit::Microseconds => 1_000,
+            TimeUnit::Milliseconds => 1_000_000,
+        }
+    }
+
     /// `ns` nanoseconds expressed in this unit, truncated towards zero.
     #[inline(always)]
     pub const fn from_nsecs(self, ns: i64) -> i64 {
