@@ -10,6 +10,7 @@ use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
+use polars_core::frame::group_by::aggregations::GroupQuantile;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
@@ -710,7 +711,7 @@ pub fn quantile<'a>(
     let mut agg = unsafe {
         ac.flat_naive()
             .into_owned()
-            .agg_quantile(ac.groups(), quantile, method)
+            .agg_quantile(ac.groups(), GroupQuantile::Scalar(quantile), method)
     };
     agg.rename(keep_name);
     Ok(AggregationContext::from_agg_state(

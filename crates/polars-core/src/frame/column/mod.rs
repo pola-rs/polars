@@ -924,7 +924,7 @@ impl Column {
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Self {
         // @scalar-opt
