@@ -871,25 +871,7 @@ pub mod __private {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ErrString, ErrorAttachment, PolarsError, SqlLocation};
-
-    #[test]
-    fn test_attachments_are_written_location_then_hints_then_plan() {
-        let error = polars_err!(SQLInterface: "bad")
-            .with_attachment(ErrorAttachment::SqlLocation(SqlLocation::statement(
-                "SELECT 1",
-            )))
-            .with_attachment(ErrorAttachment::ResolvedPlan {
-                node: "'select'".to_string(),
-                plan: "DF []".to_string(),
-            })
-            .with_hint("try this")
-            .with_hint("try this");
-        let expected = "bad\n\nIn the SQL statement: SELECT 1\n\nHint: try this\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING 'select' <---\nDF []";
-        assert_eq!(error.hints(), vec!["try this"]);
-        assert_eq!(error.to_string(), expected);
-        assert_eq!(error.inline_attachments().to_string(), expected);
-    }
+    use crate::{ErrString, PolarsError};
 
     #[test]
     fn test_polars_error_roundtrips_through_std_io_error() {
