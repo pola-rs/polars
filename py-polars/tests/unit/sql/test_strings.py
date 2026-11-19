@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -205,10 +206,35 @@ def test_string_printf() -> None:
     ]
 
 
+def test_string_printf_non_finite_and_null_rows() -> None:
+    df = pl.DataFrame({"x": [math.inf, -math.inf, math.nan, 1.5, None]})
+    res = df.sql("SELECT PRINTF('%08f|%+08.1f|%08e|%08F', x, x, x, x) AS a FROM self")
+    # as in C, the `0` flag pads infinity and NaN with spaces
+    assert res.to_series().to_list() == [
+        "     inf|    +inf|     inf|     INF",
+        "    -inf|    -inf|    -inf|    -INF",
+        "     nan|    +nan|     nan|     NAN",
+        "1.500000|+00001.5|1.500000e+00|1.500000",
+        None,
+    ]
+
+    df = pl.DataFrame({"s": ["x", None], "code": [65, -1]})
+    res = df.sql(
+        "SELECT PRINTF('%s%c', s, code) AS a, FORMAT('{}{:c}', s, code) AS b FROM self"
+    )
+    assert res.rows() == [("xA", "xA"), (None, None)]
+
+
 @pytest.mark.parametrize(
     ("query", "error", "match"),
     [
         ("SELECT PRINTF(s, i) FROM df", SQLSyntaxError, "must be a string literal"),
+        ("SELECT PRINTF('%#o', i) FROM df", SQLSyntaxError, "does not support '%#o'"),
+        (
+            "SELECT PRINTF('%s', [1, 2]) FROM df",
+            InvalidOperationError,
+            "cannot cast List type",
+        ),
         ("SELECT PRINTF() FROM df", SQLSyntaxError, "at least 1 argument"),
         ("SELECT PRINTF('%d %d', i) FROM df", SQLSyntaxError, "needs more arguments"),
         ("SELECT PRINTF('%y', i) FROM df", SQLSyntaxError, "does not support '%y'"),

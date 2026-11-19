@@ -231,3 +231,7 @@ def test_format_spec_invalid_code_point() -> None:
     with pytest.raises(ComputeError, match="invalid Unicode code point: -1"):
         pl.select(pl.format("{:c}", pl.Series([65, -1])))
     assert pl.select(pl.format("{:c}{:c}", pl.lit(72), pl.lit(105))).item() == "Hi"
+    # a row with a null is null, so its invalid code point is not formatted
+    df = pl.DataFrame({"s": ["x", None], "code": [65, -1]})
+    res = df.select(pl.format("{}{:c}", "s", "code")).to_series()
+    assert res.to_list() == ["xA", None]

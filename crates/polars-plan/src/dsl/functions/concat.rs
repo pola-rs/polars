@@ -77,12 +77,14 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
                     polars_ensure!(valid_col_name, InvalidOperation: "unacceptable column name '{col_name_str}' in format string, must be ASCII identifier\n{format}");
                     Expr::Column(PlSmallStr::from_str(col_name_str))
                 };
-                if spec.is_empty() {
-                    input.push(expr);
+                let spec = if spec.is_empty() {
+                    None
                 } else {
-                    polars_defs::format_spec::FormatSpec::parse(spec)?;
-                    input.push(expr.map_unary(StringFunction::FormatValue(spec.into())));
-                }
+                    let code_point =
+                        polars_defs::format_spec::FormatSpec::parse(spec)?.ty == Some(b'c');
+                    Some((spec, code_point))
+                };
+                input.push((expr, spec));
                 insertions.push(s.len());
                 i += close_offset + 1;
             },
@@ -103,6 +105,32 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
         index_used || positional_input.is_empty(),
         ShapeMismatch: "number of automatic placeholders should equal the number of arguments"
     );
+
+    // A row with a null is null, so its other values are not formatted: `c` fails on values
+    // that are not code points.
+    let mask = (input.len() > 1 && input.iter().any(|(_, spec)| spec.is_some_and(|(_, c)| c)))
+        .then(|| {
+            all_horizontal(
+                input
+                    .iter()
+                    .map(|(e, _)| e.clone().is_not_null())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .transpose()?;
+    let input = input
+        .into_iter()
+        .map(|(expr, spec)| match spec {
+            None => expr,
+            Some((spec, code_point)) => {
+                let expr = match &mask {
+                    Some(mask) if code_point => when(mask.clone()).then(expr).otherwise(lit(NULL)),
+                    _ => expr,
+                };
+                expr.map_unary(StringFunction::FormatValue(spec.into()))
+            },
+        })
+        .collect();
 
     Ok(Expr::Function {
         input,

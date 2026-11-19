@@ -4499,39 +4499,44 @@ fn printf_to_format(
             _ => polars_bail!(SQLSyntax: "PRINTF does not support '{spec_str}'"),
         };
 
-        let mut spec = String::new();
-        if left {
-            spec.push('<');
-        } else if ty == 's' {
-            spec.push('>');
-        }
         // As in C, characters and strings ignore the numeric flags, and unsigned conversions
         // ignore the sign flags.
-        if !matches!(ty, 'c' | 's') {
-            let unsigned = matches!(conversion, Some(b'u' | b'o' | b'x' | b'X'));
-            if plus && !unsigned {
-                spec.push('+');
-            } else if space && !unsigned {
-                spec.push(' ');
+        let numeric = !matches!(ty, 'c' | 's');
+        let zero = zero && !left && numeric;
+        let build_spec = |zero: bool| {
+            let mut spec = String::new();
+            if left {
+                spec.push('<');
+            } else if ty == 's' {
+                spec.push('>');
             }
-            if alternate {
-                spec.push('#');
+            if numeric {
+                let unsigned = matches!(conversion, Some(b'u' | b'o' | b'x' | b'X'));
+                if plus && !unsigned {
+                    spec.push('+');
+                } else if space && !unsigned {
+                    spec.push(' ');
+                }
+                if alternate {
+                    spec.push('#');
+                }
+                if zero {
+                    spec.push('0');
+                }
             }
-            if zero && !left {
-                spec.push('0');
+            spec.push_str(width.unwrap_or(""));
+            if comma && numeric {
+                spec.push(',');
             }
-        }
-        spec.push_str(width.unwrap_or(""));
-        if comma && !matches!(ty, 'c' | 's') {
-            spec.push(',');
-        }
-        // `%f` always has 6 decimals, also for decimals.
-        let precision = precision.or((ty == 'f' || ty == 'F').then_some("6"));
-        if let Some(precision) = precision {
-            spec.push('.');
-            spec.push_str(precision);
-        }
-        spec.push(ty);
+            // `%f` always has 6 decimals, also for decimals.
+            if let Some(precision) = precision.or((ty == 'f' || ty == 'F').then_some("6")) {
+                spec.push('.');
+                spec.push_str(precision);
+            }
+            spec.push(ty);
+            spec
+        };
+        let spec = build_spec(zero);
 
         let index = match position {
             Some(position) => {
@@ -4553,13 +4558,24 @@ fn printf_to_format(
             polars_bail!(SQLSyntax: "PRINTF format '{printf}' needs more arguments (found {})", args.len());
         };
         used[index] = true;
-        let arg = if ty == 's' {
-            arg.clone().cast(DataType::String)
+        if ty == 's' {
+            format.push_str(&format!("{{{}:{spec}}}", inputs.len()));
+            inputs.push(arg.clone().cast(DataType::String));
+        } else if zero && matches!(ty, 'e' | 'E' | 'f' | 'F' | 'g' | 'G') {
+            // C pads infinity and NaN with spaces, also with the `0` flag.
+            let finite = arg.clone().cast(DataType::Float64).is_finite();
+            let padded =
+                |spec: &str| format_str(&format!("{{:{spec}}}"), std::slice::from_ref(arg));
+            format.push_str(&format!("{{{}}}", inputs.len()));
+            inputs.push(
+                when(finite)
+                    .then(padded(&spec)?)
+                    .otherwise(padded(&build_spec(false))?),
+            );
         } else {
-            arg.clone()
-        };
-        format.push_str(&format!("{{{}:{spec}}}", inputs.len()));
-        inputs.push(arg);
+            format.push_str(&format!("{{{}:{spec}}}", inputs.len()));
+            inputs.push(arg.clone());
+        }
     }
     format.push_str(&printf[literal_start..]);
     Ok((format, inputs))
