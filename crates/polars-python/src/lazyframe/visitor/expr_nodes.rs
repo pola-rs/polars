@@ -28,6 +28,7 @@ use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyInt, PyList, PyTuple};
 
+use super::nodes::legacy_slice;
 use crate::Wrap;
 use crate::lazyframe::visit::PyExprIR;
 use crate::series::PySeries;
@@ -777,7 +778,7 @@ impl PyGroupbyOptions {
 impl PyGroupbyOptions {
     #[getter]
     fn slice(&self) -> Option<(i64, usize)> {
-        self.inner.slice
+        legacy_slice(self.inner.slice)
     }
 
     #[getter]

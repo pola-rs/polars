@@ -440,10 +440,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
             return run_conversion(lp, ctxt, "filter");
         },
-        DslPlan::Slice { input, offset, len } => {
+        DslPlan::Slice { input, slice } => {
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(slice))?;
+            polars_ensure!(
+                slice.is_within_i64(),
+                OutOfBounds: "slice {slice:?} runs past row i64::MAX"
+            );
 
-            if len == 0 {
+            if slice.is_empty() {
                 let input_schema = ctxt
                     .lp_arena
                     .get(input)
@@ -457,7 +461,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     output_schema: None,
                 }
             } else {
-                IR::Slice { input, offset, len }
+                IR::Slice { input, slice }
             }
         },
         DslPlan::DataFrameScan { df, schema } => IR::DataFrameScan {
@@ -515,6 +519,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             mut sort_options,
         } => {
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(select))?;
+            polars_ensure!(
+                slice.is_none_or(|slice| slice.is_within_i64()),
+                OutOfBounds: "slice {slice:?} runs past row i64::MAX"
+            );
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
             // note: if given an Expr::Columns, count the individual cols
@@ -604,7 +612,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let lp = IR::Sort {
                 input,
                 by_column,
-                slice: slice.map(|t| (t.0, t.1, None)),
+                slice: slice.map(|slice| (slice, None)),
                 sort_options,
             };
 

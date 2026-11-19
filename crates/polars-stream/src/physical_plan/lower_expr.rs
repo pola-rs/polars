@@ -27,6 +27,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
+use polars_utils::slice_enum::Slice;
 use slotmap::DenseSlotMap;
 
 use super::fmt::fmt_exprs;
@@ -3140,14 +3141,14 @@ fn build_length_preserving_select_stream_with_ctx(
 pub(crate) fn build_sort_stream_with_ctx(
     input: PhysStream,
     by_column: Vec<ExprIR>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     mut sort_options: SortMultipleOptions,
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
     // Any order is sorted by no keys, so the input order is kept.
     if by_column.is_empty() {
         return Ok(match slice {
-            Some((offset, len)) => build_slice_stream(input, offset, len, ctx.phys_sm),
+            Some(slice) => build_slice_stream(input, slice, ctx.phys_sm),
             None => input,
         });
     }
@@ -3287,7 +3288,7 @@ fn build_limited_sort_stream_with_ctx(
 pub fn build_sort_stream(
     input: PhysStream,
     by_column: Vec<ExprIR>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     sort_options: SortMultipleOptions,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,

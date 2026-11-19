@@ -10,15 +10,14 @@ use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
 use polars_core::runtime::ASYNC;
 use polars_error::{polars_bail, polars_ensure};
-use polars_utils::IdxSize;
 use polars_utils::aliases::PlIndexSet;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
-use polars_utils::index::idxsize_try_from;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_thread_pool::PyThreadPool;
 use polars_utils::scratch_vec::ScratchVec;
+use polars_utils::slice_enum::Slice;
 
 use crate::dsl::dsl_resolver::{DslResolverTrait as _, ResolveDslArgs, ResolvedDsl};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
@@ -279,15 +278,15 @@ pub(super) fn call_dsl_resolvers(
                 // carries a slice, which means we can always apply the slice here.
                 debug_assert!(slice.is_none() || filters.is_empty());
 
-                if let Some((mut offset, len)) = slice {
-                    if slice_offset_applied {
-                        offset = 0
-                    }
+                let slice = match slice {
+                    Some(slice) if slice_offset_applied => slice.len().map(Slice::head),
+                    slice => slice,
+                };
 
+                if let Some(slice) = slice {
                     ir_node = ir_arena.add(IR::Slice {
                         input: ir_node,
-                        offset,
-                        len: idxsize_try_from(len).unwrap_or(IdxSize::MAX),
+                        slice,
                     });
                 }
 

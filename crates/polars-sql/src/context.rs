@@ -7778,11 +7778,18 @@ impl SQLContext {
             _ => None,
         };
         let offset_literal = offset.map(|e| number(e).and_then(|n| n.parse::<i64>().ok()));
-        let limit_literal = limit.map(|e| number(e).and_then(|n| n.parse::<IdxSize>().ok()));
+        let limit_literal = limit.map(|e| {
+            number(e)
+                .and_then(|n| n.parse::<i64>().ok())
+                .and_then(|n| usize::try_from(n).ok())
+        });
         match (offset_literal, limit_literal) {
-            (Some(Some(offset)), Some(Some(limit))) => Ok(lf.slice(offset, limit)),
-            (Some(Some(offset)), None) => Ok(lf.slice(offset, IdxSize::MAX)),
-            (None, Some(Some(limit))) => Ok(lf.limit(limit)),
+            (Some(Some(offset)), Some(Some(limit))) => Ok(lf.slice((offset, limit))),
+            (Some(Some(offset)), None) => Ok(match Slice::new(offset, None) {
+                Some(slice) => lf.slice(slice),
+                None => lf,
+            }),
+            (None, Some(Some(limit))) => Ok(lf.slice(Slice::head(limit))),
             (None, None) => Ok(lf),
             _ => self.slice_by_exprs(lf, offset, limit),
         }

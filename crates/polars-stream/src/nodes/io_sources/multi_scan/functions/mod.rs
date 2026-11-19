@@ -44,11 +44,10 @@ pub fn calc_n_readers_pre_init(
         return v;
     }
 
-    let max_files_with_slice = match pre_slice {
-        // Calculate the max number of files assuming 1 row per file.
-        Some(v @ Slice::Positive { .. }) => v.end_position().max(1),
-        Some(Slice::Negative { .. }) | None => usize::MAX,
-    };
+    // Calculate the max number of files assuming 1 row per file.
+    let max_files_with_slice = pre_slice
+        .and_then(|v| v.end_position())
+        .map_or(usize::MAX, |end| end.max(1));
 
     // Set this generously high, there are users who scan 10,000's of small files from the cloud.
     preferred_remote_pre_init

@@ -1516,9 +1516,13 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (offset, len=None))]
-    fn slice(&self, offset: i64, len: Option<IdxSize>) -> Self {
+    fn slice(&self, offset: i64, len: Option<usize>) -> Self {
         let ldf = self.ldf.read().clone();
-        ldf.slice(offset, len.unwrap_or(IdxSize::MAX)).into()
+        match Slice::new(offset, len) {
+            Some(slice) => ldf.slice(slice),
+            None => ldf,
+        }
+        .into()
     }
 
     fn tail(&self, n: IdxSize) -> Self {

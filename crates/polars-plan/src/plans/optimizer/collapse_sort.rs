@@ -151,11 +151,10 @@ fn try_prune_sort_with_sortedness(
     }
 
     // We can safely prune this sort node
-    if let Some((offset, len, _dyn_pred)) = slice {
+    if let Some((slice, _dyn_pred)) = slice {
         Some(IR::Slice {
             input: *input,
-            offset: *offset,
-            len: *len as IdxSize,
+            slice: *slice,
         })
     } else {
         Some(lp_arena.get(*input).clone())

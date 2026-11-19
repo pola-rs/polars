@@ -7,6 +7,7 @@ use polars_error::PolarsResult;
 use polars_utils::aliases::PlIndexSet;
 use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 
 use crate::dsl::{DslPlan, Expr};
 use crate::plans::{AExpr, ExprIR};
@@ -173,7 +174,7 @@ impl DslResolverTrait for DslResolver {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ResolveDslArgs {
     pub projection: Option<Buffer<PlSmallStr>>,
-    pub slice: Option<(i64, u64)>,
+    pub slice: Option<Slice>,
     pub filters: Buffer<Expr>,
     pub filter_columns: Buffer<PlSmallStr>,
     pub filter_drop_columns_idx: Option<usize>,

@@ -25,6 +25,7 @@ pub use polars_plan::prelude::{PlanCallback, UnionArgs};
 #[cfg(feature = "dynamic_group_by")]
 pub use polars_time::PolarsTemporalGroupby;
 pub(crate) use polars_utils::arena::{Arena, Node};
+pub use polars_utils::slice_enum::Slice;
 
 pub use crate::dsl::*;
 pub use crate::frame::*;
