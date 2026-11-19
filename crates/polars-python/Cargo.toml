@@ -153,6 +153,7 @@ parquet = [
   "polars/parquet",
   "polars-parquet",
   "polars-mem-engine/parquet",
+  "polars-io/parquet_kms",
   "dep:parquet-key-management",
 ]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]

@@ -28,8 +28,8 @@ use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
-    OrderByExpr, OrderBySort, Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound,
-    WindowFrameUnits, WindowSpec,
+    ObjectName, OrderByExpr, OrderBySort, Value as SQLValue, ValueWithSpan, WindowFrame,
+    WindowFrameBound, WindowFrameUnits, WindowSpec,
 };
 use sqlparser::tokenizer::Span;
 
@@ -1102,6 +1102,21 @@ pub(crate) enum PolarsSQLFunctions {
     // User-defined
     // ----
     Udf(String),
+}
+
+/// Whether `name` is a SQL function or a registered user-defined function.
+pub(crate) fn is_builtin_function(name: &Ident, ctx: &SQLContext) -> bool {
+    let function = SQLFunction {
+        name: ObjectName::from(vec![name.clone()]),
+        uses_odbc_syntax: false,
+        parameters: FunctionArguments::None,
+        args: FunctionArguments::None,
+        filter: None,
+        null_treatment: None,
+        over: None,
+        within_group: vec![],
+    };
+    PolarsSQLFunctions::try_from_sql(&function, ctx).is_ok()
 }
 
 impl PolarsSQLFunctions {
@@ -2681,8 +2696,9 @@ impl SQLFunctionVisitor<'_> {
             args.len() == 2,
             SQLSyntax: "{} expects 2 arguments (found {})", name, args.len()
         );
-        self.visit_binary(|e, fmt: String| {
-            e.str().strptime(
+        self.try_visit_binary(|e, fmt: String| {
+            check_strptime_format(&fmt)?;
+            Ok(e.str().strptime(
                 DataType::Datetime(TimeUnit::Microseconds, None),
                 StrptimeOptions {
                     format: Some(fmt.into()),
@@ -2690,7 +2706,7 @@ impl SQLFunctionVisitor<'_> {
                     ..Default::default()
                 },
                 lit("latest"),
-            )
+            ))
         })
     }
 
@@ -4290,6 +4306,15 @@ impl FromSQLExpr for String {
     }
 }
 
+/// An error for a format that has an unknown or incomplete `%` specifier.
+fn check_strptime_format(format: &str) -> PolarsResult<()> {
+    polars_ensure!(
+        chrono::format::StrftimeItems::new(format).parse().is_ok(),
+        SQLInterface: "invalid date/time format '{}'", format
+    );
+    Ok(())
+}
+
 impl FromSQLExpr for StrptimeOptions {
     fn from_sql_expr(expr: &SQLExpr, _: &mut SQLContext) -> PolarsResult<Self>
     where
@@ -4297,10 +4322,13 @@ impl FromSQLExpr for StrptimeOptions {
     {
         match expr {
             SQLExpr::Value(ValueWithSpan { value: v, .. }) => match v {
-                SQLValue::SingleQuotedString(s) => Ok(StrptimeOptions {
-                    format: Some(PlSmallStr::from_str(s)),
-                    ..StrptimeOptions::default()
-                }),
+                SQLValue::SingleQuotedString(s) => {
+                    check_strptime_format(s)?;
+                    Ok(StrptimeOptions {
+                        format: Some(PlSmallStr::from_str(s)),
+                        ..StrptimeOptions::default()
+                    })
+                },
                 _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", v),
             },
             _ => polars_bail!(SQLInterface: "cannot parse literal {:?}", expr),

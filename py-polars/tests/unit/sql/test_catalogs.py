@@ -492,10 +492,6 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             r"`bucket\(s\.a, 4\)` takes the number first, as in `bucket\(4, s\.a\)`",
         ),
         (
-            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY ((s).a)",
-            r"unsupported partition field `\(s\)\.a`",
-        ),
-        (
             "CREATE TABLE t (d DATE) PARTITION BY (date(d))",
             r"unsupported partition field `date\(d\)`",
         ),
@@ -4760,6 +4756,58 @@ def test_update_catalog_table(
     ctx = update_ctx(lake)
     assert ctx.execute(statement, eager=True).item() == "UPDATE lake.tpch.t"
     assert table_rows(lake, "tpch", "t") == rows
+
+
+@pytest.mark.write_disk
+def test_catalog_dml_macros(lake: CountingCatalog) -> None:
+    ctx = update_ctx(lake)
+    ctx.execute("CREATE MACRO inc(x) AS x + 1")
+    ctx.execute("UPDATE t SET n = inc(n) WHERE k = inc(0)")
+    ctx.execute("DELETE FROM t WHERE k = inc(3)")
+    assert table_rows(lake, "tpch", "t") == [(1, "a", 11), *T_ROWS[1:3]]
+    # the expanded query is written as SQL for the catalog
+    ctx.execute("CREATE MACRO fld(a) AS a.v")
+    ctx.execute(
+        "CREATE TABLE copied AS SELECT fld(p) AS v FROM (SELECT {'v': 7} AS p, 99 AS v) p"
+    )
+    assert table_rows(lake, "tpch", "copied") == [(7,)]
+    ctx.execute('CREATE MACRO "my rows"(a) AS TABLE SELECT a AS x')
+    ctx.execute('CREATE TABLE quoted AS SELECT * FROM "my rows"(7)')
+    assert table_rows(lake, "tpch", "quoted") == [(7,)]
+    # time travel in a macro body
+    version = lake.load_table(("tpch", "t")).metadata.current_snapshot_id
+    ctx.execute(
+        f"CREATE MACRO old_t() AS TABLE SELECT k FROM t VERSION AS OF {version}"
+    )
+    ctx.execute("DELETE FROM t WHERE k = 1")
+    assert ctx.execute("SELECT * FROM old_t() ORDER BY k", eager=True).rows() == [
+        (1,),
+        (2,),
+        (3,),
+    ]
+    # options, defaults and layouts
+    ctx.execute("CREATE MACRO owner_name() AS 'analytics'")
+    ctx.execute("CREATE MACRO missing() AS NULL")
+    ctx.execute("CREATE MACRO bucket_count() AS 4")
+    ctx.execute("CREATE MACRO key_value(x) AS x")
+    ctx.execute(
+        "CREATE TABLE opts (x INT DEFAULT missing()) WITH ('owner' = owner_name())"
+    )
+    ctx.execute("ALTER TABLE opts ADD COLUMN y INT DEFAULT missing()")
+    ctx.execute("ALTER TABLE opts SET PARTITIONED BY (bucket(bucket_count(), x))")
+    ctx.execute("ALTER TABLE opts SET SORTED BY (key_value(y))")
+    ctx.execute("CREATE TABLE nested (s STRUCT<key INT>)")
+    ctx.execute("CREATE MACRO key_of(s) AS s.key")
+    ctx.execute("ALTER TABLE nested SET PARTITIONED BY (bucket(4, key_of(s)))")
+    assert partition_fields(lake, "tpch", "nested") == [
+        ("s.key_bucket_4", "bucket[4]", "s.key")
+    ]
+    table = lake.load_table(("tpch", "opts"))
+    assert table.properties["owner"] == "analytics"
+    assert partition_fields(lake, "tpch", "opts") == [("x_bucket_4", "bucket[4]", "x")]
+    assert [
+        table.schema().find_column_name(f.source_id) for f in table.sort_order().fields
+    ] == ["y"]
 
 
 @pytest.mark.write_disk

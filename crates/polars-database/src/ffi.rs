@@ -47,6 +47,7 @@ fn flatten_error(e: &PolarsError) -> (FfiErrorKind, String) {
             let (kind, inner) = flatten_error(error);
             (kind, format!("{inner}: {msg}"))
         },
+        E::Attached { .. } => flatten_error(&e.clone().inline_attachments()),
         E::ColumnNotFound(m) => (FfiErrorKind::COLUMN_NOT_FOUND, m.to_string()),
         E::ComputeError(m) => (FfiErrorKind::COMPUTE, m.to_string()),
         E::InvalidOperation(m) => (FfiErrorKind::INVALID_OPERATION, m.to_string()),

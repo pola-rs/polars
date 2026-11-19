@@ -3443,6 +3443,7 @@ dependencies = [
  "num-traits",
  "object_store",
  "parking_lot",
+ "parquet-key-management",
  "percent-encoding",
  "polars-arrow",
  "polars-buffer",
