@@ -38,7 +38,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 }
                 return f.write_char(')');
             },
-            AExpr::Column(name) => return write!(f, "col({name})"),
+            AExpr::Column(name) | AExpr::EvalColumn(name) => return write!(f, "col({name})"),
             #[cfg(feature = "dtype-struct")]
             AExpr::StructField(name) => return write!(f, "field({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),

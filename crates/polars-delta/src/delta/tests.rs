@@ -7,7 +7,7 @@ use polars_arrow::ffi;
 use polars_io_ext_ffi::common::{
     FfiBuf, FfiError, FfiErrorKind, FfiFuture, FfiOption, FfiResult, FfiStr, FfiVec, FutureExt,
 };
-use polars_io_ext_ffi::delta_v2::{self, ObjectMeta, OutputHeader, Request, StorageHandle};
+use polars_io_ext_ffi::delta_v1::{self, ObjectMeta, OutputHeader, Request, StorageHandle};
 use serde_json::{Value, json};
 #[derive(Default)]
 struct Store(
@@ -29,8 +29,8 @@ impl Store {
             ),
         );
     }
-    fn host(&self) -> delta_v2::Host {
-        delta_v2::Host {
+    fn host(&self) -> delta_v1::Host {
+        delta_v1::Host {
             ctx: self as *const Self as *const c_void,
             get_storage,
             storage_get: get,

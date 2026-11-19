@@ -11,7 +11,7 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::HiveOptions;
 use polars_io::cloud::CloudOptions;
 use polars_io_ext_ffi::common::{ArrowArrayStream, ArrowSchema};
-use polars_io_ext_ffi::delta_v2::{Output, OutputHeader};
+use polars_io_ext_ffi::delta_v1::{Output, OutputHeader};
 use polars_plan::dsl::deletion::{
     DeletionFilesList, DeltaDeletionVector, DeltaDeletionVectorLocation,
 };

@@ -480,28 +480,15 @@ def test_delta_plugin_missing_package(
             assert_frame_equal(pl.scan_delta(path).collect(), pl.DataFrame({"a": [1]}))
 
 
-def test_delta_plugin_incompatible_contract(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import polars_delta
-
-    path = _table(tmp_path / "t", [_field("a", "long")], [pl.DataFrame({"a": [1]})])
-    monkeypatch.setattr(
-        polars_delta, "_polars_io_plugin_ids", ["polars.io_plugin.delta.v999"]
-    )
-    with pytest.raises(pl.exceptions.ComputeError, match="no compatible Delta"):
-        pl.scan_delta(path).collect()
-
-
 @pytest.mark.parametrize("required", [False, True])
-def test_delta_plugin_v1_only_package(
+def test_delta_plugin_unsupported_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, required: bool
 ) -> None:
     import sys
     import types
 
     old = types.ModuleType("polars_delta")
-    old._polars_io_plugin_ids = ["polars.io_plugin.delta.v1"]  # type: ignore[attr-defined]
+    old._polars_io_plugin_ids = ["polars.io_plugin.delta.v999"]  # type: ignore[attr-defined]
     old._capsule = lambda _id: None  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "polars_delta", old)
     path = _table(tmp_path / "t", [_field("a", "long")], [pl.DataFrame({"a": [1]})])

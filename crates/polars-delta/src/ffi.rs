@@ -1,6 +1,6 @@
-//! `delta.v2` deletion-vector decoders over the C ABI, served from [`crate::codec`].
+//! `delta.v1` deletion-vector decoders over the C ABI, served from [`crate::codec`].
 use polars_io_ext_ffi::common::{FfiBuf, FfiError, FfiErrorKind, FfiResult, FfiSlice};
-use polars_io_ext_ffi::delta_v2::KeepMask;
+use polars_io_ext_ffi::delta_v1::KeepMask;
 
 use crate::codec::{self, DecodeError};
 

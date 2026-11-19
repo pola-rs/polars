@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 mod catalog;
 mod context;
+mod copy;
 mod datetime_template;
 mod dyn_visit;
 pub mod function_registry;
@@ -13,6 +14,7 @@ mod join_keys;
 #[cfg(feature = "json")]
 mod json_text;
 pub mod keywords;
+mod lambda;
 mod lateral;
 mod layout_alter;
 mod literal_folding;
@@ -43,6 +45,7 @@ pub use catalog::{
     CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};
+pub use copy::CopyToStdout;
 pub use params::QueryParams;
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;

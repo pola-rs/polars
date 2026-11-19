@@ -92,6 +92,8 @@ jobs:
   create-sdist:
     needs: [version]
     runs-on: ubuntu-latest
+    env:
+      POLARS_DELTA_BUILD_COMMIT: ${{ needs.version.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -125,6 +127,8 @@ jobs:
   build-wheels:
     needs: [version]
     runs-on: ${{ matrix.os }}
+    env:
+      POLARS_DELTA_BUILD_COMMIT: ${{ needs.version.outputs.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -176,6 +180,8 @@ jobs:
         with:
           command: build
           target: ${{ matrix.target }}
+          # Forward the build commit into the manylinux/musllinux container.
+          docker-options: -e POLARS_DELTA_BUILD_COMMIT
           args: >
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path ${{ env.MANIFEST_PATH }}
@@ -188,7 +194,13 @@ jobs:
         if: endsWith(matrix.target, '-musl') == false
         run: |
           pip install --force-reinstall --verbose dist/*.whl
-          python -c 'import polars_delta'
+          # The Python release compares this commit with its own sources.
+          # `tr`: Python on Windows ends the line with CRLF.
+          COMMIT=$(python -c 'import polars_delta; print(polars_delta.__build_commit__)' | tr -d '\r')
+          if [[ "$COMMIT" != "$POLARS_DELTA_BUILD_COMMIT" ]]; then
+            echo "::error::__build_commit__ is '$COMMIT', expected $POLARS_DELTA_BUILD_COMMIT"
+            exit 1
+          fi
 
       - name: Upload wheel
         uses: actions/upload-artifact@v7

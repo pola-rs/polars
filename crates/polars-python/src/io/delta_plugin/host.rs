@@ -1,4 +1,4 @@
-//! Host functions of `delta.v2`: storage over `PolarsObjectStore`, executed on the Polars IO
+//! Host functions of `delta.v1`: storage over `PolarsObjectStore`, executed on the Polars IO
 //! runtime.
 use std::ffi::c_void;
 use std::future::Future;
@@ -15,7 +15,7 @@ use polars_io::cloud::{
 use polars_io_ext_ffi::common::{
     FfiBuf, FfiError, FfiErrorKind, FfiFuture, FfiOption, FfiResult, FfiStr, FfiVec, FutureExt,
 };
-use polars_io_ext_ffi::delta_v2::{Host, ObjectMeta, StorageHandle};
+use polars_io_ext_ffi::delta_v1::{Host, ObjectMeta, StorageHandle};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 

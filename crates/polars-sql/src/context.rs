@@ -19,17 +19,19 @@ use polars_plan::prelude::*;
 use polars_plan::utils::expr_to_leaf_column_names_iter;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
     AlterColumnOperation, AlterTable, AlterTableOperation, Assignment, AssignmentTarget,
-    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
-    CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch,
-    FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr,
-    HiveDistributionStyle, HiveFormat, Ident, IdentWithAlias, Insert, Join, JoinConstraint,
-    JoinOperator, LimitClause, Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr,
-    MergeInsertKind, MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr,
-    ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause, Query,
-    RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
+    BinaryOperator as SQLBinaryOperator, CopySource, CopyTarget, CreateTable, CreateTableLikeKind,
+    CreateTableOptions, CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem,
+    Expr as SQLExpr, Fetch, FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArguments,
+    GroupByExpr, HiveDistributionStyle, HiveFormat, Ident, IdentWithAlias, Insert, Join,
+    JoinConstraint, JoinOperator, LimitClause, Merge, MergeAction, MergeClause, MergeClauseKind,
+    MergeInsertExpr, MergeInsertKind, MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition,
+    NamedWindowExpr, ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause,
+    Query, RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
     TableAlias, TableAliasColumnDef, TableFactor, TableObject, TableWithJoins, Truncate,
     TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue,
@@ -46,6 +48,7 @@ use crate::catalog::{
     hint_unsupported_part, name_parts, name_position, rewrite_catalog_names, set_partitioning,
     set_sort_order, table_name_parts,
 };
+use crate::copy::{self, CopyToStdout};
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::functions::{PolarsSQLFunctions, is_random};
@@ -79,7 +82,7 @@ use crate::subquery::{
     is_correlated_subquery, quantified_as_exists, row_indexed_once,
 };
 use crate::subquery_pull_up::NESTED_PREFIX;
-use crate::table_functions::PolarsTableFunctions;
+use crate::table_functions::{PolarsTableFunctions, expand_home_dir};
 use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::{map_sql_dtype_to_polars, sql_type_name};
 use crate::{col, unique_column_name};
@@ -332,6 +335,8 @@ pub struct SQLContext {
     custom_function_registry: bool,
     /// Whether SQL may read files and URLs, through table functions or quoted paths.
     pub(crate) allow_file_reads: bool,
+    /// Whether SQL may write files and URLs, through `COPY`.
+    allow_file_writes: bool,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
@@ -379,6 +384,8 @@ pub struct SQLContext {
     /// The values of the current statement's parameters that have no SQL literal form, by
     /// placeholder (see `bind_params`).
     params: Arc<PlHashMap<PlSmallStr, Scalar>>,
+    /// The number of lambdas around the expression being parsed.
+    pub(crate) lambda_depth: usize,
 }
 
 /// The query of a view and the names it gives the query's columns.
@@ -433,6 +440,7 @@ impl Default for SQLContext {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
             custom_function_registry: false,
             allow_file_reads: true,
+            allow_file_writes: true,
             table_map: Default::default(),
             views: Default::default(),
             view_frames: Default::default(),
@@ -459,6 +467,7 @@ impl Default for SQLContext {
             nesting: 0,
             select_aliases: Default::default(),
             params: Default::default(),
+            lambda_depth: 0,
         }
     }
 }
@@ -552,6 +561,7 @@ impl SQLContext {
         let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
             return Ok(Vec::new());
         };
+        copy_table_as_query(&mut stmt)?;
         let mut reads = Vec::new();
         for (_, key) in self.rewrite_catalog_names(&mut stmt)?.0 {
             let (full_name, version) = split_version(&key);
@@ -1401,6 +1411,7 @@ impl SQLContext {
             Err(alter) => return Err(self.alter_table_error(&alter.name)),
         };
         let bound = bind_params(&mut stmt, params)?;
+        copy_table_as_query(&mut stmt)?;
 
         // The deferred plan holds the query text, which has the placeholders.
         if bound.is_none() && self.can_defer(&stmt) {
@@ -1417,12 +1428,23 @@ impl SQLContext {
             )));
         }
 
+        self.plan_statement(stmt, bound, Self::execute_statement)
+    }
+
+    /// The plan that `plan` makes of `stmt`, with the values `bound` of its parameters,
+    /// resolved against the context now.
+    fn plan_statement(
+        &mut self,
+        mut stmt: Statement,
+        bound: Option<PlHashMap<PlSmallStr, Scalar>>,
+        plan: impl FnOnce(&mut Self, &Statement) -> PolarsResult<LazyFrame>,
+    ) -> PolarsResult<LazyFrame> {
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
         desugar_quantified_subqueries(&mut stmt);
         self.catalog_spellings = catalog_spellings;
         self.params = Arc::new(bound.unwrap_or_default());
         self.start_statement();
-        let res = self.execute_statement(&stmt).inspect_err(|_| {
+        let res = plan(self, &stmt).inspect_err(|_| {
             self.clear_statement_state();
         })?;
 
@@ -1434,6 +1456,45 @@ impl SQLContext {
 
         self.clear_statement_state();
         Ok(res)
+    }
+
+    /// The `COPY ... TO STDOUT` statement of `query`, if it is one, for the caller to write to
+    /// its output: [`SQLContext::execute`] rejects it. It is not a file that SQL writes, so
+    /// [`SQLContext::with_file_writes`] does not limit it.
+    pub fn copy_to_stdout(&mut self, query: &str) -> PolarsResult<Option<CopyToStdout>> {
+        let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
+            return Ok(None);
+        };
+        if !matches!(
+            stmt,
+            Statement::Copy {
+                to: true,
+                target: CopyTarget::Stdout,
+                ..
+            }
+        ) {
+            return Ok(None);
+        }
+        let bound = bind_params(&mut stmt, &QueryParams::default())?;
+        copy_table_as_query(&mut stmt)?;
+        let Statement::Copy {
+            options,
+            legacy_options,
+            ..
+        } = &stmt
+        else {
+            unreachable!()
+        };
+        let format = copy::write_format(None, options, legacy_options)?;
+        // the query is planned as that of `COPY ... TO '<file>'` is
+        let rows = self.plan_statement(stmt, bound, |context, stmt| match stmt {
+            Statement::Copy {
+                source: CopySource::Query(query),
+                ..
+            } => context.execute_query(query),
+            _ => unreachable!(),
+        })?;
+        Ok(Some(CopyToStdout { rows, format }))
     }
 
     /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
@@ -1594,9 +1655,17 @@ impl SQLContext {
 
     /// Set whether SQL may read files and URLs, through table functions such as `read_parquet`
     /// or a quoted path in `FROM`. Registered tables and catalogs stay readable, and statements
-    /// on catalogs are not limited.
+    /// on catalogs are not limited. Writing files is set apart, by
+    /// [`SQLContext::with_file_writes`].
     pub fn with_file_reads(mut self, allow: bool) -> Self {
         self.allow_file_reads = allow;
+        self
+    }
+
+    /// Set whether SQL may write files and URLs, through `COPY ... TO`. Statements on catalogs
+    /// are not limited.
+    pub fn with_file_writes(mut self, allow: bool) -> Self {
+        self.allow_file_writes = allow;
         self
     }
 
@@ -1689,6 +1758,7 @@ impl SQLContext {
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
             Statement::Update(update) => self.execute_update(update)?,
             Statement::Merge(merge) => self.execute_merge(merge)?,
+            stmt @ Statement::Copy { .. } => self.execute_copy(stmt)?,
             _ => polars_bail!(
                 SQLInterface: "statement type is not supported:\n{:?}", ast,
             ),
@@ -2796,6 +2866,49 @@ impl SQLContext {
         response(&key)
     }
 
+    /// `COPY (<query>) TO '<file>'`: the plan that writes the file once it is collected.
+    fn execute_copy(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        let Statement::Copy {
+            source,
+            to,
+            target,
+            options,
+            legacy_options,
+            ..
+        } = stmt
+        else {
+            unreachable!()
+        };
+        let path = match target {
+            CopyTarget::Program { .. } => {
+                polars_bail!(SQLInterface: "COPY with PROGRAM is not supported")
+            },
+            _ if !*to => polars_bail!(
+                SQLInterface:
+                "COPY FROM is not supported; use CREATE TABLE <name> AS SELECT * FROM '<file>' or INSERT INTO <name> SELECT * FROM '<file>'"
+            ),
+            CopyTarget::File { filename } => filename,
+            _ => polars_bail!(
+                SQLInterface: "COPY TO STDOUT is not supported; use COPY ... TO '<file>'"
+            ),
+        };
+        // `COPY <table> TO` is a query by now, see `copy_table_as_query`
+        let CopySource::Query(query) = source else {
+            polars_bail!(SQLInterface: "COPY of a table is not supported in this statement");
+        };
+        polars_ensure!(
+            self.allow_file_writes,
+            SQLInterface: "writing files is disabled in this SQLContext"
+        );
+        let format = copy::write_format(Some(path), options, legacy_options)?;
+        let target = SinkTarget::Path(expand_home_dir(PlRefPath::new(path))?);
+        self.execute_query(query)?.sink(
+            SinkDestination::File { target },
+            format,
+            UnifiedSinkArgs::default(),
+        )
+    }
+
     // DESCRIBE <table>, DESCRIBE '<path>'
     fn execute_describe(&mut self, name: &ObjectName) -> PolarsResult<LazyFrame> {
         let (_, lf) = match self.read_quoted_path(name)? {
@@ -3076,23 +3189,41 @@ impl SQLContext {
             polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
         };
         let (from, selection) = delete_parts(delete)?;
-        if let TableFactor::Table { name, .. } = &from.relation
-            && let Some((tbl, table)) = self.catalog_change_target(name)?
-        {
+        let TableFactor::Table { name, .. } = &from.relation else {
+            polars_bail!(SQLInterface: "DELETE requires a registered table")
+        };
+        if let Some((tbl, table)) = self.catalog_change_target(name)? {
             polars_bail!(
                 SQLInterface: "DELETE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 tbl, display_name(&table.full_name())
             );
         }
         let lf = self.delete_target(from)?;
-        match selection {
+        let tbl = object_name_to_string(name);
+        polars_ensure!(
+            key_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.is_some(),
+            SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl
+        );
+        let remaining = match selection {
             // no WHERE clause; equivalent to TRUNCATE (drop all rows)
-            None => Ok(lf.clear()),
+            None => lf.clear(),
             // apply constraint as inverted filter (drops rows matching the selection)
             Some(selection) => {
-                self.process_where(lf, Some(selection), FilterMode::RemoveTrue, None)
+                let remaining =
+                    self.process_where(lf, Some(selection), FilterMode::RemoveTrue, None)?;
+                // A missing column fails here, before the table changes (no data is read).
+                LazyFrame::from(remaining.logical_plan.clone()).collect_schema()?;
+                remaining
             },
-        }
+        };
+        // Later statements see the remaining rows, as after TRUNCATE. Locked only now:
+        // resolving the table and its WHERE read the table map.
+        let mut table_map = self.table_map.write().unwrap();
+        let Some(key) = key_ignoring_case(&table_map, &tbl)?.cloned() else {
+            polars_bail!(SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl)
+        };
+        table_map.insert(key, remaining.clone());
+        Ok(remaining)
     }
 
     fn delete_target(&mut self, from: &TableWithJoins) -> PolarsResult<LazyFrame> {
@@ -9030,6 +9161,14 @@ fn statement_table_identifiers(
         include_schema,
         ..Default::default()
     };
+    // the visitor does not come by the table of `COPY <table>`
+    if let Statement::Copy {
+        source: CopySource::Table { table_name, .. },
+        ..
+    } = stmt
+    {
+        let _ = collector.pre_visit_relation(table_name);
+    }
     let _ = dyn_visit::visit(stmt, &mut collector);
     if unique {
         collector
@@ -10190,6 +10329,34 @@ fn ensure_no_version(target: &TableFactor, statement: &str) -> PolarsResult<()> 
     Ok(())
 }
 
+/// `COPY <table> [(<columns>)] TO` as `COPY (SELECT <columns> FROM <table>) TO`, so that the
+/// table is read as in any query.
+fn copy_table_as_query(stmt: &mut Statement) -> PolarsResult<()> {
+    if let Statement::Copy { source, to, .. } = stmt
+        && let CopySource::Table {
+            table_name,
+            columns,
+        } = source
+        && *to
+    {
+        let columns = match columns.is_empty() {
+            true => "*".to_string(),
+            // in double quotes, so that each name is read as a column
+            false => columns
+                .iter()
+                .map(|c| Ident::with_quote('"', c.value.as_str()).to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+        };
+        let select = format!("SELECT {columns} FROM {table_name}");
+        let Statement::Query(query) = parse_single_statement(&select)? else {
+            unreachable!()
+        };
+        *source = CopySource::Query(query);
+    }
+    Ok(())
+}
+
 fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
     let ast = parse_sql(query)?;
     polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
@@ -10248,7 +10415,14 @@ impl ExprSqlProjectionHeightBehavior {
         let mut has_column = false;
         let mut has_independent = false;
 
-        for e in expr.into_iter() {
+        // The evaluation of a `list.eval` runs on the elements of each list.
+        let mut stack = UnitVec::new();
+        stack.push(expr);
+        while let Some(e) = stack.pop() {
+            match e {
+                Expr::Eval { expr, .. } => stack.push(expr.as_ref()),
+                e => e.nodes(&mut stack),
+            }
             use Expr::*;
             has_column |= matches!(e, Column(_) | Selector(_));
             has_independent |= match e {

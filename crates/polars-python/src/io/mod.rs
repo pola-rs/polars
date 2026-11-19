@@ -6,6 +6,8 @@ pub mod delta_stats;
 pub mod delta_plugin;
 #[cfg(all(feature = "cloud", feature = "parquet"))]
 pub mod iceberg_plugin;
+#[cfg(feature = "io_plugin_ffi")]
+pub mod io_plugin;
 #[cfg(feature = "parquet")]
 pub mod parquet_encryption;
 #[cfg(feature = "parquet")]

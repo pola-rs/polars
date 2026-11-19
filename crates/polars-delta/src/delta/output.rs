@@ -3,7 +3,7 @@ use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType as D, Field};
 use polars_arrow::ffi;
 use polars_io_ext_ffi::common::{ArrowArrayStream, ArrowSchema};
-use polars_io_ext_ffi::delta_v2::{Output, OutputHeader, Request};
+use polars_io_ext_ffi::delta_v1::{Output, OutputHeader, Request};
 use serde_json::Value;
 
 use super::actions::{string, u64_value};

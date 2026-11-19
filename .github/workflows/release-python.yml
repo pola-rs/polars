@@ -12,6 +12,16 @@ on:
         description: Dry run
         type: boolean
         default: false
+      # For polars-database changes since its tested release that don't affect the plugin's
+      # behaviour (docs, comments): warn instead of failing.
+      allow-unreleased-database-changes:
+        description: Allow unreleased polars-database changes
+        type: boolean
+        default: false
+      allow-unreleased-delta-changes:
+        description: Allow unreleased polars-delta changes
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -314,41 +324,111 @@ jobs:
           name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
           path: dist/*.whl
 
-  polars-iceberg-version:
+  plugin-versions:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      iceberg: ${{ steps.iceberg.outputs.version }}
+      database: ${{ steps.database.outputs.version }}
+      delta: ${{ steps.delta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
       - name: Get polars-iceberg version
-        id: version
-        uses: ./.github/actions/polars-iceberg-version
-
-  polars-delta-version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
+        id: iceberg
+        uses: ./.github/actions/optional-dependency-version
         with:
-          ref: ${{ inputs.sha }}
+          package: polars-iceberg
+          extra: iceberg
+
+      - name: Get polars-database version
+        id: database
+        uses: ./.github/actions/optional-dependency-version
+        with:
+          package: polars-database
+          extra: database
 
       - name: Get polars-delta version
-        id: version
-        uses: ./.github/actions/polars-delta-version
+        id: delta
+        uses: ./.github/actions/optional-dependency-version
+        with:
+          package: polars-delta
+          extra: deltalake
 
-  # Full Python test suite, with both I/O plugins installed from PyPI at the versions
-  # required in pyproject.toml.
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # The tests below run against the released plugins. Compare their wheel build commits with
+      # this checkout so a plugin change (or its test) cannot be tested against old code.
+      # Not compared: the statically linked shared crates (polars-core, polars-arrow,
+      # polars-utils, polars-config, polars-error, the rest of polars-io-ext-ffi), Cargo.lock and
+      # the workspace's Cargo.toml, which would differ at nearly every release.
+      - name: Check for unreleased plugin changes
+        env:
+          DATABASE_VERSION: ${{ steps.database.outputs.version }}
+          DELTA_VERSION: ${{ steps.delta.outputs.version }}
+          ALLOW_DATABASE: ${{ inputs.allow-unreleased-database-changes }}
+          ALLOW_DELTA: ${{ inputs.allow-unreleased-delta-changes }}
+        run: |
+          # Arguments: package, extra, version, allow flag, FFI file; the allow input is named
+          # after the plugin (`allow-unreleased-<name>-changes`), the extra may differ from it.
+          check_plugin() {
+            local package=$1 extra=$2 version=$3 allow=$4 ffi_file=$5
+            local module="${package//-/_}" name="${package#polars-}"
+            local base tag msg
+            local paths=("crates/$package" "py-polars/$package" "crates/polars-io-ext-ffi/src/$ffi_file")
+
+            # A wheel only: a source build would embed nothing, or not the original build commit.
+            pip install --only-binary :all: --no-deps "$package==$version"
+            base=$(python -I -c 'import importlib, sys; print(getattr(importlib.import_module(sys.argv[1]), "__build_commit__", ""))' "$module")
+            if [[ -n "$base" ]]; then
+              if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::$package $version has an invalid __build_commit__"
+                exit 1
+              fi
+              echo "$package $version was built from $base (its __build_commit__)"
+            else
+              tag="$package-$version"
+              if ! git fetch --no-tags --depth=1 origin "refs/tags/$tag:refs/tags/$tag"; then
+                echo "::error::$package $version has no build commit and there is no tag $tag to compare with"
+                exit 1
+              fi
+              base=$(git rev-parse "$tag^{commit}")
+              echo "$package $version has no build commit; using the commit of tag $tag: $base"
+            fi
+
+            git fetch --no-tags --depth=1 origin "$base"
+            if git diff --quiet "$base" HEAD -- "${paths[@]}"; then
+              echo "$package sources are unchanged since $version"
+              return
+            fi
+
+            git diff --stat "$base" HEAD -- "${paths[@]}"
+            msg="Unreleased $package changes since $version (Polars checkout $base): release $package and raise the lower bound of the '$extra' extra, or rerun with allow-unreleased-$name-changes"
+            if [[ "$allow" == "true" ]]; then
+              echo "::warning::$msg"
+            else
+              echo "::error::$msg"
+              exit 1
+            fi
+          }
+
+          check_plugin polars-database database "$DATABASE_VERSION" "$ALLOW_DATABASE" lazyframe_resolver_v1.rs
+          check_plugin polars-delta deltalake "$DELTA_VERSION" "$ALLOW_DELTA" delta_v1.rs
+
+  # Full Python test suite, with the polars-iceberg, polars-database and polars-delta plugins installed from PyPI
+  # at the versions required in pyproject.toml.
   test-python:
-    needs: [polars-iceberg-version, polars-delta-version]
+    needs: [plugin-versions]
     uses: ./.github/workflows/test-python.yml
     with:
       sha: ${{ inputs.sha }}
-      polars-iceberg-version: ${{ needs.polars-iceberg-version.outputs.version }}
-      polars-delta-version: ${{ needs.polars-delta-version.outputs.version }}
+      polars-iceberg-version: ${{ needs.plugin-versions.outputs.iceberg }}
+      polars-database-version: ${{ needs.plugin-versions.outputs.database }}
+      polars-delta-version: ${{ needs.plugin-versions.outputs.delta }}
 
   publish-to-pypi:
     needs: [base-package, create-sdist, build-wheels, test-python]

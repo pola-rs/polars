@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib.metadata
 import os
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from polars._utils.logging import eprint, verbose
 from polars._utils.wrap import wrap_ldf
@@ -213,6 +214,7 @@ def plugin_scan(
 
 
 _AZURE_SCHEMES = ("abfs", "abfss", "adl", "az", "azure", "wasb", "wasbs")
+_ADLS_SAS_TOKEN = "adls.sas-token"
 
 # FileIO properties that PyIceberg honours and that have no object store equivalent,
 # by URL scheme.
@@ -370,6 +372,7 @@ def _catalog_storage_options(
             },
             **properties,
         }
+    properties = _account_sas_properties(properties, location)
 
     storage_options = {
         (key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP[k]): (
@@ -386,6 +389,38 @@ def _catalog_storage_options(
         if scheme in schemes and _property_is_true(properties, anonymous_key):
             storage_options[skip_signature_key] = "true"
     return storage_options
+
+
+def _account_sas_properties(
+    properties: Mapping[str, Any], location: str
+) -> Mapping[str, Any]:
+    """
+    `properties` with the SAS token vended for `location`'s storage account.
+
+    That is `adls.sas-token.<account host>`, given with its expiry under
+    `adls.sas-token`. It replaces a token set there: PyIceberg sets one, of any
+    account and without its expiry.
+    """
+    if _url_scheme(location) not in _AZURE_SCHEMES:
+        return properties
+    account = _azure_account(properties, location)
+    for k, v in properties.items():
+        host = k.removeprefix(f"{_ADLS_SAS_TOKEN}.")
+        if host == k or v in ("", None) or host.split(".")[0].lower() != account:
+            continue
+        out = {**properties, _ADLS_SAS_TOKEN: v}
+        if expiry := properties.get(f"{_ADLS_SAS_TOKEN}-expires-at-ms.{host}"):
+            out[f"{_ADLS_SAS_TOKEN}-expires-at-ms"] = expiry
+        return out
+    return properties
+
+
+def _azure_account(properties: Mapping[str, Any], location: str) -> str | None:
+    """Storage account of an Azure `location`; None if it cannot be told."""
+    # The URL's account is the one accessed. `az://container/...` has none.
+    host = urlparse(location).hostname or ""
+    name = host.split(".")[0] if "." in host else properties.get("adls.account-name")
+    return str(name).lower() if name else None
 
 
 def _data_location(table: pyiceberg.table.Table) -> str:

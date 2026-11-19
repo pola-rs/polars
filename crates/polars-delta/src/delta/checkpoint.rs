@@ -6,7 +6,7 @@ use polars_arrow::array::*;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::datatypes::{ArrowDataType, Field, TimeUnit};
 use polars_buffer::Buffer;
-use polars_io_ext_ffi::delta_v2::Request;
+use polars_io_ext_ffi::delta_v1::Request;
 use polars_parquet::arrow::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use polars_parquet::arrow::read::{BasicDecompressor, PageReader, column_iter_to_arrays};
 use polars_utils::aliases::PlHashSet;

@@ -9,7 +9,7 @@ use polars_arrow::bitmap::Bitmap;
 use polars_buffer::SharedStorage;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 use polars_io_ext_ffi::common::{FfiError, FfiErrorKind, FfiSlice};
-use polars_io_ext_ffi::delta_v2;
+use polars_io_ext_ffi::delta_v1;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyCapsuleMethods};
 
@@ -21,13 +21,13 @@ use crate::utils::EnterPolarsExt;
 
 /// Delta plugin IDs this Polars can call, oldest first. Removing an ID drops support for
 /// plugins that only provide it.
-pub const SUPPORTED_IDS: &[&CStr] = &[delta_v2::ID];
+pub const SUPPORTED_IDS: &[&CStr] = &[delta_v1::ID];
 
 /// Python distribution name of the plugin, for error messages.
 const PLUGIN_NAME: &str = "polars_delta";
 
 enum Dispatch {
-    V2(&'static delta_v2::Plugin),
+    V2(&'static delta_v1::Plugin),
 }
 
 fn dispatch(capsule: &Bound<'_, PyCapsule>) -> PolarsResult<Dispatch> {
@@ -38,14 +38,14 @@ fn dispatch(capsule: &Bound<'_, PyCapsule>) -> PolarsResult<Dispatch> {
         .map(|n| unsafe { n.as_cstr() }.to_owned());
 
     match name.as_deref() {
-        Some(id) if id == delta_v2::ID => {
+        Some(id) if id == delta_v1::ID => {
             let ptr = capsule
                 .pointer_checked(Some(id))
                 .map_err(|e| polars_err!(ComputeError: "invalid {PLUGIN_NAME} capsule: {e}"))?;
-            // SAFETY: A capsule with this name points to a static `delta_v2::Plugin`, and plugin
+            // SAFETY: A capsule with this name points to a static `delta_v1::Plugin`, and plugin
             // extension modules are never unloaded.
             Ok(Dispatch::V2(unsafe {
-                &*(ptr.as_ptr() as *const delta_v2::Plugin)
+                &*(ptr.as_ptr() as *const delta_v1::Plugin)
             }))
         },
         _ => polars_bail!(
@@ -59,9 +59,9 @@ fn dispatch(capsule: &Bound<'_, PyCapsule>) -> PolarsResult<Dispatch> {
 
 /// Serves deletion-vector decoding from the plugin's vtable; registered with the host's scan
 /// engine, which does all I/O itself.
-struct PluginDecoder(&'static delta_v2::Plugin);
+struct PluginDecoder(&'static delta_v1::Plugin);
 
-fn keep_mask_to_bitmap(mask: delta_v2::KeepMask) -> PolarsResult<Bitmap> {
+fn keep_mask_to_bitmap(mask: delta_v1::KeepMask) -> PolarsResult<Bitmap> {
     let len = usize::try_from(mask.len)
         .ok()
         .filter(|len| len.div_ceil(8) <= mask.bytes.len())
@@ -122,7 +122,7 @@ impl DeltaDeletionVectorDecoder for PluginDecoder {
     }
 }
 
-fn register_decoder(plugin: &'static delta_v2::Plugin) {
+fn register_decoder(plugin: &'static delta_v1::Plugin) {
     set_delta_deletion_vector_decoder(Arc::new(PluginDecoder(plugin)));
 }
 
@@ -187,7 +187,7 @@ pub fn _delta_plugin_scan(
     register_decoder(plugin);
     let cloud_options = storage_options
         .extract_opt_cloud_options(CloudScheme::from_path(&table_uri), credential_provider)?;
-    let request = delta_v2::Request {
+    let request = delta_v1::Request {
         table_uri,
         version,
         timestamp_ms,

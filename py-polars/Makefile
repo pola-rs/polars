@@ -33,7 +33,11 @@ build-polars-delta: .venv  ## Compile and install the `polars_delta` I/O plugin 
 	@$(MAKE) -s -C ../crates $@ VENV=$(abspath $(VENV))
 
 .PHONY: build-polars-iceberg
-build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-iceberg)
+build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (py-polars/polars-iceberg)
+	@$(MAKE) -s -C ../crates $@ VENV=$(abspath $(VENV))
+
+.PHONY: build-polars-database
+build-polars-database: .venv  ## Compile and install the `polars_database` I/O plugin (py-polars/polars-database)
 	@$(MAKE) -s -C ../crates $@ VENV=$(abspath $(VENV))
 
 .PHONY: build-debug
@@ -85,15 +89,15 @@ clippy:  ## Run clippy
 pre-commit: fmt lint clippy  ## Run all code formatting, lint, and clippy quality checks
 
 .PHONY: test
-test: .venv build build-polars-iceberg build-polars-delta  ## Run fast unittests
+test: .venv build build-polars-iceberg build-polars-database build-polars-delta  ## Run fast unittests
 	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
 
 .PHONY: test-in-memory
-test-in-memory: .venv build build-polars-iceberg build-polars-delta  ## Run fast unittests with the in-memory engine
+test-in-memory: .venv build build-polars-iceberg build-polars-database build-polars-delta  ## Run fast unittests with the in-memory engine
 	POLARS_TIMEOUT_MS=60000 POLARS_ENGINE_AFFINITY=in-memory $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
 
 .PHONY: test-all
-test-all: .venv build build-polars-iceberg build-polars-delta  ## Run all tests
+test-all: .venv build build-polars-iceberg build-polars-database build-polars-delta  ## Run all tests
 	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
@@ -112,7 +116,7 @@ docs-clean: .venv  ## Build Python docs (full rebuild)
 	@$(MAKE) docs
 
 .PHONY: coverage
-coverage: .venv build build-polars-iceberg build-polars-delta  ## Run tests and report coverage
+coverage: .venv build build-polars-iceberg build-polars-database build-polars-delta  ## Run tests and report coverage
 	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest --cov -n auto -m "not release and not benchmark"
 
 .PHONY: clean

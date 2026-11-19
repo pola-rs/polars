@@ -34,6 +34,7 @@ pub fn calc_n_readers_pre_init(
     num_sources: usize,
     pre_slice: Option<&Slice>,
     preferred_remote_pre_init: Option<usize>,
+    reader_max_concurrent: Option<usize>,
 ) -> usize {
     if let Ok(v) = std::env::var("POLARS_NUM_READERS_PRE_INIT").map(|x| {
         x.parse::<NonZeroUsize>()
@@ -55,18 +56,28 @@ pub fn calc_n_readers_pre_init(
         .min(max_files_with_slice)
         .min(num_sources)
         .clamp(1, 128)
+        .min(reader_max_concurrent.map_or(usize::MAX, |cap| cap.max(1)))
 }
 
-pub fn calc_max_concurrent_scans(num_pipelines: usize, num_sources: usize) -> usize {
-    if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
+/// `reader_max_concurrent` is the reader's own hard cap: `POLARS_MAX_CONCURRENT_SCANS` may lower
+/// it, not raise it. More readers than e.g. a database scan's sessions can deadlock an ordered
+/// read: a later reader holds the last session while its output waits behind the first.
+pub fn calc_max_concurrent_scans(
+    num_pipelines: usize,
+    num_sources: usize,
+    reader_max_concurrent: Option<usize>,
+) -> usize {
+    let n = if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
         x.parse::<NonZeroUsize>()
             .unwrap_or_else(|_| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}"))
             .get()
     }) {
-        return v;
-    }
+        v
+    } else {
+        num_pipelines.min(num_sources).clamp(1, 128)
+    };
 
-    num_pipelines.min(num_sources).clamp(1, 128)
+    n.min(reader_max_concurrent.map_or(usize::MAX, |cap| cap.max(1)))
 }
 
 pub async fn is_compressed_source(

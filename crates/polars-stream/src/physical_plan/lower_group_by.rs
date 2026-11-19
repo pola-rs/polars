@@ -344,7 +344,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
     match expr_arena.get(expr) {
         // Should be handled separately in `Eval`.
-        AExpr::Element => unreachable!(),
+        AExpr::Element | AExpr::EvalColumn(_) => unreachable!(),
 
         AExpr::StructField(_) => {
             // Reflecting StructEval expr state is not yet supported.
@@ -399,10 +399,13 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(AExpr::BinaryExpr { left, op, right }))
         },
 
+        // The columns that the evaluation reads are not aggregated.
+        AExpr::Eval { columns, .. } if !columns.is_empty() => None,
         AExpr::Eval {
             expr,
             evaluation,
             variant,
+            columns: _,
         } => {
             let (expr, evaluation, variant) = (*expr, *evaluation, *variant);
             let expr = lower_rec!(expr)?;
@@ -410,6 +413,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 expr,
                 evaluation,
                 variant,
+                columns: Vec::new(),
             }))
         },
 

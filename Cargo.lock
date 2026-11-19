@@ -3245,6 +3245,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-database"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "chrono",
+ "percent-encoding",
+ "polars-arrow",
+ "polars-config",
+ "polars-core",
+ "polars-error",
+ "polars-io-ext-ffi",
+ "polars-utils",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+ "strum",
+ "strum_macros",
+]
+
+[[package]]
+name = "polars-database-python"
+version = "0.1.0"
+dependencies = [
+ "polars-database",
+ "pyo3",
+]
+
+[[package]]
 name = "polars-defs"
 version = "0.55.1"
 dependencies = [
@@ -3262,7 +3291,7 @@ dependencies = [
 
 [[package]]
 name = "polars-delta"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "crc32fast",
@@ -3283,7 +3312,7 @@ dependencies = [
 
 [[package]]
 name = "polars-delta-python"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "polars-delta",
  "pyo3",
@@ -3391,6 +3420,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-iceberg"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "flate2",
+ "futures",
+ "hex",
+ "polars-arrow",
+ "polars-error",
+ "polars-io-ext-ffi",
+ "polars-utils",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "snap",
+ "tokio",
+ "zstd",
+]
+
+[[package]]
+name = "polars-iceberg-python"
+version = "0.1.0"
+dependencies = [
+ "polars-iceberg",
+ "pyo3",
+]
+
+[[package]]
 name = "polars-io"
 version = "0.55.1"
 dependencies = [
@@ -3415,6 +3472,7 @@ dependencies = [
  "num-traits",
  "object_store",
  "parking_lot",
+ "parquet-key-management",
  "percent-encoding",
  "polars-arrow",
  "polars-buffer",
@@ -3422,6 +3480,7 @@ dependencies = [
  "polars-config",
  "polars-core",
  "polars-error",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-parquet",
  "polars-schema",
@@ -3680,6 +3739,7 @@ dependencies = [
  "polars-error",
  "polars-ffi",
  "polars-io",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-parquet",
  "polars-row",
@@ -3871,6 +3931,7 @@ dependencies = [
  "polars-error",
  "polars-expr",
  "polars-io",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-mem-engine",
  "polars-observer",

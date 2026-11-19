@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use futures::{StreamExt, TryStreamExt};
-use polars_io_ext_ffi::delta_v2::Request;
+use polars_io_ext_ffi::delta_v1::Request;
 use polars_utils::aliases::PlHashSet;
 use serde_json::Value;
 

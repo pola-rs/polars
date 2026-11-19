@@ -2,7 +2,7 @@
 name = "polars-delta-python"
 # Released independently of Polars: the version of the PyPI package `polars-delta`, equal to the
 # `version` of `crates/polars-delta` (the module's `__version__`).
-version = "0.2.0"
+version = "0.1.0"
 edition = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }

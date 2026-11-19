@@ -76,6 +76,8 @@ pub fn to_alp(
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         verbose: verbose(),
         seen_caches: Default::default(),
+        #[cfg(feature = "parquet")]
+        encryption_sharing: Default::default(),
         recursions: Vec::new(),
     };
 
@@ -124,6 +126,8 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
 async fn fetch_metadata(
     lp: &DslPlan,
     cache_file_info: SourcesToFileInfo,
+    #[cfg(feature = "parquet")]
+    encryption_sharing: &mut polars_io::parquet::encryption::EncryptionSharing,
     verbose: bool,
 ) -> PolarsResult<()> {
     use futures::stream::StreamExt;
@@ -132,25 +136,34 @@ async fn fetch_metadata(
         (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
     ));
 
-    let mut futures = lp
-        .into_iter()
-        .filter_map(|dsl| match dsl {
+    // A resolver's schema may call a plugin on a blocking thread, which can't be aborted: it is
+    // waited for when anything fails, so that it doesn't keep running after the query returned.
+    let mut futures = FuturesUnordered::<Pin<Box<dyn Future<Output = PolarsResult<()>>>>>::new();
+    let mut resolver_futures =
+        FuturesUnordered::<Pin<Box<dyn Future<Output = PolarsResult<()>>>>>::new();
+
+    for dsl in lp.into_iter() {
+        match dsl {
             DslPlan::Scan {
                 sources,
                 unified_scan_args,
                 scan_type,
                 cached_ir,
-            } => Some(Box::pin(scans::dsl_to_ir(
+            } => futures.push(Box::pin(scans::dsl_to_ir(
                 sources.clone(),
                 unified_scan_args.clone(),
+                // Share decryption before reading footers, so that the KMS caches are
+                // shared.
+                #[cfg(feature = "parquet")]
+                share_scan_decryption(scan_type, encryption_sharing),
+                #[cfg(not(feature = "parquet"))]
                 scan_type.clone(),
                 cached_ir.clone(),
                 cache_file_info.clone(),
                 #[cfg(feature = "python")]
                 Arc::clone(&py_scan_resolve_threadpool),
                 verbose,
-            ))
-                as Pin<Box<dyn Future<Output = PolarsResult<()>>>>),
+            ))),
             DslPlan::Resolver {
                 resolver,
                 resolver_schema,
@@ -160,7 +173,7 @@ async fn fetch_metadata(
                 let resolver_schema = Arc::clone(resolver_schema);
 
                 if resolver_schema.lock().unwrap().is_none() {
-                    Some(
+                    resolver_futures.push(
                         match resolver.schema(
                             #[cfg(feature = "python")]
                             Arc::clone(&*py_scan_resolve_threadpool),
@@ -173,18 +186,44 @@ async fn fetch_metadata(
                             Err(e) => Box::pin(std::future::ready(Err(e))),
                         },
                     )
-                } else {
-                    None
                 }
             },
-            _ => None,
-        })
-        .collect::<FuturesUnordered<_>>();
+            _ => {},
+        }
+    }
 
+    let out = futures::future::try_join(run_all(&mut futures), run_all(&mut resolver_futures))
+        .await
+        .map(|_| ());
+    if out.is_err() {
+        drop(futures);
+        while resolver_futures.next().await.is_some() {}
+    }
+    out
+}
+
+/// Runs the futures until the first error.
+async fn run_all(
+    futures: &mut FuturesUnordered<Pin<Box<dyn Future<Output = PolarsResult<()>>>>>,
+) -> PolarsResult<()> {
+    use futures::stream::StreamExt;
     while let Some(result) = futures.next().await {
         result?
     }
-    Ok::<(), PolarsError>(())
+    Ok(())
+}
+
+/// Clones the scan type, using the shared decryption configuration with the same ID.
+#[cfg(feature = "parquet")]
+fn share_scan_decryption(
+    scan_type: &FileScanDsl,
+    encryption_sharing: &mut polars_io::parquet::encryption::EncryptionSharing,
+) -> Box<FileScanDsl> {
+    let mut scan_type = Box::new(scan_type.clone());
+    if let FileScanDsl::Parquet { options } = scan_type.as_mut() {
+        crate::plans::encryption_sharing::share_decryption(options, encryption_sharing);
+    }
+    scan_type
 }
 
 /// converts LogicalPlan to IR
@@ -198,7 +237,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     {
         let verbose = ctxt.verbose;
         let cache_file_info = ctxt.cache_file_info.clone();
-        let fut = fetch_metadata(&lp, cache_file_info, verbose);
+        let fut = fetch_metadata(
+            &lp,
+            cache_file_info,
+            #[cfg(feature = "parquet")]
+            &mut ctxt.encryption_sharing,
+            verbose,
+        );
         ASYNC.block_in_place_on(fut)?;
     }
 
@@ -1453,6 +1498,26 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let input = to_alp_impl(owned(input), &mut ctxt).context(failed_here!(sink))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
+
+            #[cfg(feature = "parquet")]
+            let payload = {
+                let mut payload = payload;
+                match &mut payload {
+                    SinkType::File(options) => crate::plans::encryption_sharing::share_encryption(
+                        &mut options.file_format,
+                        &mut ctxt.encryption_sharing,
+                    ),
+                    SinkType::Partitioned(options) => {
+                        crate::plans::encryption_sharing::share_encryption(
+                            &mut options.file_format,
+                            &mut ctxt.encryption_sharing,
+                        )
+                    },
+                    _ => {},
+                }
+                payload
+            };
+
             let payload = match payload {
                 SinkType::Iceberg(_) | SinkType::Delta(_) => unreachable!(),
                 SinkType::Memory => SinkTypeIR::Memory,

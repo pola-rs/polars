@@ -152,7 +152,7 @@ pub const DELTA_DV_MAX_SERIALIZED_BYTES: usize = 512 * 1024 * 1024;
 /// Decodes the Delta deletion-vector format into keep masks.
 ///
 /// Polars does not implement the format itself: the `polars-delta` plugin provides this over the
-/// `polars.io_plugin.delta.v2` contract, and the Python layer registers it with
+/// `polars.io_plugin.delta.v1` contract, and the Python layer registers it with
 /// [`set_delta_deletion_vector_decoder`]. The host does all I/O; only decoding crosses the plugin
 /// boundary. Masks are Arrow keep masks (set bit = keep); rows after the last deleted row are
 /// kept and not part of the mask.

@@ -1,6 +1,5 @@
-//! Unreleased contract `polars.io_plugin.delta.v2`: native Delta snapshot planning and
-//! deletion-vector decoding. (v1 lacked the decoders: a plugin built for it is read as
-//! incompatible, never past the end of its `Plugin` static.)
+//! Unreleased contract `polars.io_plugin.delta.v1`: native Delta snapshot planning and
+//! deletion-vector decoding.
 //! Output schema is a logical Arrow struct with original Delta field metadata and mapped PARQUET:field_id.
 //! Files contain path:utf8view,size:u64,record_count:nullable u64,partition_values:typed struct,
 //! optional stats:struct{<logical_col>_nc/min/max}, and nullable deletion_vector:struct{
@@ -15,7 +14,7 @@ use crate::common::{
     FfiVec,
 };
 
-pub const ID: &CStr = c"polars.io_plugin.delta.v2";
+pub const ID: &CStr = c"polars.io_plugin.delta.v1";
 
 /// Object listing entry. URLs are absolute; missing modification times cannot support legacy timestamp travel.
 #[repr(C)]

@@ -2,6 +2,7 @@
 from typing import Any
 
 __version__: str
+__build_commit__: str
 _polars_io_plugin_ids: tuple[str, ...]
 
 def _capsule(id: str) -> Any: ...

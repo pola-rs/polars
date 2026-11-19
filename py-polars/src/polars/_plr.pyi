@@ -940,6 +940,8 @@ class PyLazyFrame:
         scan_options: ScanOptions,
     ) -> PyLazyFrame: ...
     @staticmethod
+    def _from_io_plugin_resolver(package: str, capsule: Any) -> PyLazyFrame: ...
+    @staticmethod
     def scan_from_python_function_arrow_schema(
         schema: Any,
         scan_fn: Any,
@@ -2775,7 +2777,7 @@ class PyCatalogRead:
 
 class PySQLContext:
     @staticmethod
-    def new(allow_file_reads: bool) -> PySQLContext: ...
+    def new(allow_file_reads: bool, allow_file_writes: bool) -> PySQLContext: ...
     def execute(
         self, query: str, params: pylist[Any] | dict[str, Any] | None = None
     ) -> PyLazyFrame: ...

@@ -108,11 +108,11 @@ def test_independent_plugin_capsule_ids(
 ) -> None:
     delta = pytest.importorskip("polars_delta")
     iceberg = pytest.importorskip("polars_iceberg")
-    assert tuple(delta._polars_io_plugin_ids) == ("polars.io_plugin.delta.v2",)
+    assert tuple(delta._polars_io_plugin_ids) == ("polars.io_plugin.delta.v1",)
     assert tuple(iceberg._polars_io_plugin_ids) == ("polars.io_plugin.iceberg.v1",)
     for plugin, wrong_id in [
         (delta, "polars.io_plugin.iceberg.v1"),
-        (iceberg, "polars.io_plugin.delta.v2"),
+        (iceberg, "polars.io_plugin.delta.v1"),
     ]:
         with pytest.raises(ValueError):
             plugin._capsule(wrong_id)

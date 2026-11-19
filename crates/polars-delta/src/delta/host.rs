@@ -1,15 +1,15 @@
-//! Safe wrappers around the host functions of `delta.v2`.
+//! Safe wrappers around the host functions of `delta.v1`.
 use std::sync::Arc;
 
 use polars_io_ext_ffi::common::{FfiBuf, FfiError, FfiErrorKind, FfiStr};
-use polars_io_ext_ffi::delta_v2::{self, StorageHandle};
+use polars_io_ext_ffi::delta_v1::{self, StorageHandle};
 
 pub type PluginResult<T> = Result<T, FfiError>;
 
 /// Access to the host for the duration of one `plan` call.
 #[derive(Clone, Copy)]
 pub struct Host {
-    vtable: &'static delta_v2::Host,
+    vtable: &'static delta_v1::Host,
     verbose: bool,
 }
 
@@ -17,7 +17,7 @@ impl Host {
     /// # Safety
     /// `vtable` must be the pointer passed to the current `plan` call, and the returned `Host`
     /// (and every [`Storage`] obtained from it) must not be used after that call returns.
-    pub unsafe fn from_raw(vtable: *const delta_v2::Host, verbose: bool) -> PluginResult<Self> {
+    pub unsafe fn from_raw(vtable: *const delta_v1::Host, verbose: bool) -> PluginResult<Self> {
         if vtable.is_null() {
             return Err(FfiError::new(
                 FfiErrorKind::INVALID_ARGUMENT,

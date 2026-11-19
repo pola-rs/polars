@@ -11,6 +11,8 @@ Table Operations
      - Change the columns, properties or partitioning of a table in an attached catalog.
    * - :ref:`CALL <call>`
      - Run a maintenance procedure on a table in an attached catalog.
+   * - :ref:`COPY <copy>`
+     - Write the result of a query, or a table, to a file.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -232,6 +234,33 @@ are 0. Iceberg v3 tables are not supported yet.
     -- manifests stay as they are.
     CALL lake.system.rewrite_manifests('sales.orders', spec_id => 0)
 
+.. _copy:
+
+COPY
+----
+Write the result of a query, or a table, to a file. :meth:`SQLContext.execute` returns a
+``LazyFrame`` that writes the file once it is collected; collecting it gives an empty frame.
+
+The format is the one that ``FORMAT`` names, or else the one of the file extension: ``csv``;
+``parquet``; ``ipc``, ``arrow`` or ``feather``; ``ndjson`` or ``jsonl``. A CSV file takes the
+options ``HEADER`` (written unless set to ``false``), ``DELIMITER``, ``NULL`` and ``QUOTE``.
+The path can be a cloud URL, and a leading ``~`` is the home directory.
+
+The directory of the file must exist, and an existing file is replaced. If the query fails
+while it runs, a partial file can be left behind, also in the place of a file that existed.
+
+Only ``COPY ... TO '<file>'`` is supported. To load a file, read it in a query, as in
+``CREATE TABLE t AS SELECT * FROM 'data.csv'``. Writing files can be turned off with
+``SQLContext(allow_file_writes=False)``.
+
+**Example:**
+
+.. code-block:: sql
+
+    COPY (SELECT region, SUM(amount) AS total FROM sales GROUP BY region) TO 'totals.parquet'
+    COPY sales (region, amount) TO 'sales.csv'
+    COPY sales TO 'sales.txt' (FORMAT csv, DELIMITER '|', HEADER false)
+
 .. _create_schema:
 
 CREATE SCHEMA
@@ -348,6 +377,23 @@ DELETE
 ------
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
+
+On a registered table, it returns the remaining rows, and later statements in the same
+context see the table without the deleted rows. Source files and the original frame are
+not changed.
+
+The table keeps the condition, not its result. Each read of the table runs the condition
+again on the table's source. A subquery of the condition keeps its tables as registered at
+the time of the ``DELETE``.
+
+- A condition that names a missing column fails at the ``DELETE`` and leaves the table
+  unchanged. Other errors in the condition, such as a string compared with an integer or a
+  cast of a string that is not a number, show when the table is read, on each read until
+  the table is registered again.
+- Collecting the result of a ``DELETE`` computes the remaining rows. Leave the result lazy
+  when only the change is needed.
+- Each ``DELETE`` adds its condition to the table. After many, register the collected rows
+  again: ``ctx.register("t", ctx.execute("SELECT * FROM t", eager=True))``.
 
 On a table of an attached catalog, it deletes the matching rows in one commit, as one
 snapshot. It returns the statement, not the remaining rows. Rows where the condition is NULL

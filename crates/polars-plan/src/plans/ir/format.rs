@@ -148,7 +148,9 @@ fn write_scan(
 
         for (k, v) in props {
             writeln!(f)?;
-            write!(EscapeLabel(f), "{:indent$}{k}: {v}", "")?;
+            // One line per property. This is text, not a graph label: quotes stay as they are.
+            let v = v.replace('\n', "\\n");
+            write!(f, "{:indent$}{k}: {v}", "")?;
         }
     }
 
@@ -528,7 +530,7 @@ impl Display for ExprIRDisplay<'_> {
                 }
                 f.write_char(')')
             },
-            Column(name) => write!(f, "col(\"{name}\")"),
+            Column(name) | EvalColumn(name) => write!(f, "col(\"{name}\")"),
             #[cfg(feature = "dtype-struct")]
             StructField(name) => write!(f, "field(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
@@ -757,6 +759,7 @@ impl Display for ExprIRDisplay<'_> {
                 expr,
                 evaluation,
                 variant,
+                columns: _,
             } => {
                 let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let evaluation = self.with_root(evaluation);
