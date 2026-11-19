@@ -1274,16 +1274,37 @@ def test_sink_iceberg_overwrite_double_partitions_30832(
             tbl, mode="overwrite", overwrite_filter="x = 0.1"
         )
 
-    # Dynamic partition overwrite on existing DOUBLE partition is refused
-    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
-        pl.LazyFrame(
-            {"x": [0.1], "k": [10]}, schema={"x": pl.Float64, "k": pl.Int64}
-        ).sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
-
     # Filtered overwrite matching 0 rows succeeds
     pl.LazyFrame(schema={"x": pl.Float64, "k": pl.Int64}).sink_iceberg(
         tbl, mode="overwrite", overwrite_filter="x = 99.0"
     )
+
+    # Dynamic partition overwrite on a table that evolved from a DOUBLE partition spec
+    # is refused when it replaces files from the DOUBLE partition spec
+    path_dyn = tmp_path / "dynamic"
+    path_dyn.mkdir()
+    tbl_dyn, _ = new_iceberg_table(path_dyn, schema=schema, partition_spec=spec)
+    tbl_dyn.append(
+        pa.Table.from_pydict({"x": [0.1], "k": [1]}).cast(schema_to_pyarrow(schema))
+    )
+    with tbl_dyn.update_spec() as update:
+        update.remove_field("x")
+        update.add_identity("k")
+    tbl_dyn.append(
+        pa.Table.from_pydict({"x": [0.2], "k": [2]}).cast(schema_to_pyarrow(schema))
+    )
+
+    with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
+        pl.LazyFrame(
+            {"x": [0.9], "k": [1]}, schema={"x": pl.Float64, "k": pl.Int64}
+        ).sink_iceberg(tbl_dyn, mode="overwrite", partition_overwrite="dynamic")
+
+    # Dynamic partition overwrite replacing only Spec 1 files (no DOUBLE
+    # partition) succeeds
+    pl.LazyFrame(
+        {"x": [0.9], "k": [2]}, schema={"x": pl.Float64, "k": pl.Int64}
+    ).sink_iceberg(tbl_dyn, mode="overwrite", partition_overwrite="dynamic")
+    assert _scan_sorted(tbl_dyn)["k"].to_list() == [1, 2]
 
     # Unfiltered full-table overwrite drops all manifests without rewriting; succeeds
     pl.LazyFrame(
@@ -1297,6 +1318,11 @@ def test_sink_iceberg_overwrite_double_partitions_30832(
         {"x": [0.3], "k": [30]}, schema={"x": pl.Float64, "k": pl.Int64}
     ).sink_iceberg(tbl, mode="overwrite", overwrite_filter="x = 0.3")
     assert _scan_sorted(tbl)["k"].to_list() == [30]
+
+    pl.LazyFrame(
+        {"x": [0.8], "k": [1]}, schema={"x": pl.Float64, "k": pl.Int64}
+    ).sink_iceberg(tbl_dyn, mode="overwrite", partition_overwrite="dynamic")
+    assert _scan_sorted(tbl_dyn)["k"].to_list() == [1, 2]
 
     # FLOAT columns are unaffected
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)

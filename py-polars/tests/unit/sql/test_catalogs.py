@@ -6226,15 +6226,16 @@ def test_merge_catalog_table_double_partitions_30832(
 
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: True)
     ctx = lake_ctx(lake)
-    ctx.execute("CREATE TABLE d (x DOUBLE, k INT) PARTITION BY (x)")
-    ctx.execute("INSERT INTO d VALUES (0.1, 1), (0.2, 2)")
+    for name, dtype in (("d", "DOUBLE"), ("f", "REAL")):
+        ctx.execute(f"CREATE TABLE {name} (x {dtype}, k INT) PARTITION BY (x)")
+        ctx.execute(f"INSERT INTO {name} VALUES (0.1, 1), (0.2, 2)")
 
     # MERGE matching existing file (WHEN MATCHED THEN UPDATE) rewrites manifest
     # and is refused
     with pytest.raises(NotImplementedError, match="DOUBLE partition values"):
         ctx.execute(
-            "MERGE INTO d USING (VALUES (0.1, 10)) AS s(x, k) ON d.k = 1 "
-            "WHEN MATCHED THEN UPDATE SET k = s.k"
+            "MERGE INTO d USING (VALUES (0.1, 1)) AS s(x, k) ON d.k = s.k "
+            "WHEN MATCHED THEN UPDATE SET k = 10"
         )
 
     # MERGE that only inserts new rows is a pure append and succeeds
@@ -6244,11 +6245,18 @@ def test_merge_catalog_table_double_partitions_30832(
     )
     assert (0.3, 3) in table_rows(lake, "tpch", "d")
 
+    # FLOAT columns are unaffected
+    ctx.execute(
+        "MERGE INTO f USING (VALUES (0.1, 1)) AS s(x, k) ON f.k = s.k "
+        "WHEN MATCHED THEN UPDATE SET k = 10"
+    )
+    assert (0.1, 10) in table_rows(lake, "tpch", "f")
+
     # Exact decoder allows MERGE with WHEN MATCHED
     monkeypatch.setattr(maintenance, "_pyiceberg_rounds_doubles", lambda: False)
     ctx.execute(
-        "MERGE INTO d USING (VALUES (0.1, 10)) AS s(x, k) ON d.k = 1 "
-        "WHEN MATCHED THEN UPDATE SET k = s.k"
+        "MERGE INTO d USING (VALUES (0.1, 1)) AS s(x, k) ON d.k = s.k "
+        "WHEN MATCHED THEN UPDATE SET k = 10"
     )
     assert (0.1, 10) in table_rows(lake, "tpch", "d")
 
