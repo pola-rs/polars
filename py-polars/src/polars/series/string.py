@@ -1967,7 +1967,7 @@ class StringNameSpace(_NamespaceSuggestMixin):
         """
 
     def contains_any(
-        self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
+        self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to find matches.
@@ -2011,8 +2011,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
 
     def replace_many(
         self,
-        patterns: Series | list[str] | Mapping[str, str],
-        replace_with: Series | list[str] | str | NoDefault = NO_DEFAULT,
+        patterns: IntoExpr | Mapping[str, str],
+        replace_with: IntoExpr | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
         leftmost: bool = False,

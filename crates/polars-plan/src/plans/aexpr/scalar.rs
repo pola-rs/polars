@@ -15,6 +15,21 @@ pub fn is_scalar_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     }
 }
 
+/// Raises unless the argument `arg` of `function` at `node` is a scalar.
+pub fn ensure_scalar_ae(
+    node: Node,
+    arena: &Arena<AExpr>,
+    arg: &str,
+    function: impl std::fmt::Display,
+) -> PolarsResult<()> {
+    polars_ensure!(
+        is_scalar_ae(node, arena),
+        ShapeMismatch: "'{arg}' must be a scalar value in `{function}`; use a literal or an \
+        aggregation such as `.item()`, `.first()` or, for a list, `.implode()`"
+    );
+    Ok(())
+}
+
 /// A literal with exactly one value, including a single row `Series`.
 pub fn is_single_literal_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     matches!(arena.get(node), AExpr::Literal(lv) if lv.is_single_value())

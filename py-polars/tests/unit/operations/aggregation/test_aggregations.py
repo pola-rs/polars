@@ -12,7 +12,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
@@ -557,21 +557,20 @@ def test_approx_quantile_null_quantile() -> None:
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
 def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(pl.col("a").approx_quantile(pl.col("q")))
 
 
 @pytest.mark.parametrize(
     ("quantile", "expected"),
     [
-        (pl.lit(pl.Series([0.5])), 3.0),
-        (pl.lit(pl.Series([[0.1, 0.9]])), [1.0, 5.0]),
+        (pl.Series([0.5]).item(), 3.0),
+        ([0.1, 0.9], [1.0, 5.0]),
     ],
 )
-def test_approx_quantile_series_literal_quantile(
-    quantile: pl.Expr, expected: float | list[float]
+def test_approx_quantile_python_quantile(
+    quantile: float | list[float], expected: float | list[float]
 ) -> None:
-    # A one-row Series literal is broadcast like a scalar.
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0]})
     out = df.select(pl.col("a").approx_quantile(quantile))
     assert out.to_series().to_list() == [expected]
@@ -586,13 +585,13 @@ def test_quantile_null_quantile() -> None:
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
 def test_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(pl.col("a").quantile(pl.col("q")))
 
 
 def test_quantile_empty_quantile_group_by() -> None:
     df = pl.DataFrame(schema={"g": pl.Int64, "a": pl.Float64, "q": pl.Float64})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
 
 
@@ -826,10 +825,7 @@ def test_quantile_varying_quantiles_unsupported(
 ) -> None:
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "q": [0.1, 0.5, 0.9]})
 
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=r"does not support varying (approximate )?quantiles",
-    ):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(fn(pl.col("a"), pl.col("q")))
 
 

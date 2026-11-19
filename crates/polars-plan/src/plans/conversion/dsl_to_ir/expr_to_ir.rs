@@ -211,6 +211,10 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
         } => {
             let (expr, output_name) = recurse!(expr)?;
             let (idx, _) = to_aexpr_mat_lit!(idx)?;
+            // `get` is classified as scalar, so its index has to be one.
+            if *returns_scalar {
+                ensure_scalar_ae(idx, ctx.arena, "index", "get")?;
+            }
             (
                 AExpr::Gather {
                     expr,
@@ -488,6 +492,8 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
             let (input, output_name) = recurse!(input)?;
             let (offset, _) = to_aexpr_mat_lit!(offset)?;
             let (length, _) = to_aexpr_mat_lit!(length)?;
+            ensure_scalar_ae(offset, ctx.arena, "offset", "slice")?;
+            ensure_scalar_ae(length, ctx.arena, "length", "slice")?;
             (
                 AExpr::Slice {
                     input,

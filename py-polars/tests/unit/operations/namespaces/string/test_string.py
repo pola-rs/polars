@@ -1228,16 +1228,16 @@ def test_contains_expr() -> None:
         (["me"], False, True),
         (["Me"], False, False),
         (["Me"], True, True),
-        (pl.Series([["me", "they"]]), False, True),
-        (pl.Series([["Me", "they"]]), False, False),
-        (pl.Series([["Me", "they"]]), True, True),
+        (pl.lit(pl.Series(["me", "they"])).implode(), False, True),
+        (pl.lit(pl.Series(["Me", "they"])).implode(), False, False),
+        (pl.lit(pl.Series(["Me", "they"])).implode(), True, True),
         (["me", "they"], False, True),
         (["Me", "they"], False, False),
         (["Me", "they"], True, True),
     ],
 )
 def test_contains_any(
-    pattern: pl.Series | list[str],
+    pattern: pl.Expr | list[str],
     case_insensitive: bool,
     expected: bool,
 ) -> None:
@@ -1272,7 +1272,7 @@ def test_contains_any_flat_dtype_invalid() -> None:
     df = pl.DataFrame({"text": ["Tell me what you want"]})
     msg = "`str.contains_any` with a flat string datatype is invalid. Use `implode` to wrap the string value into a list."
     with pytest.raises(InvalidOperationError, match=re.escape(msg)):
-        df.select(pl.col("text").str.contains_any(pl.Series(["me", "they"])))
+        df.select(pl.col("text").str.contains_any(pl.lit("me")))
 
 
 def test_replace() -> None:
@@ -1524,14 +1524,14 @@ def test_replace_expressions() -> None:
         (["Me", "you"], ["it"], True, False, "Tell it what it want"),
         (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
         (
-            pl.Series([["me", "YOU"]]),
+            pl.lit(pl.Series(["me", "YOU"])).implode(),
             ["you", "me"],
             False,
             False,
             "Tell you what you want",
         ),
         (
-            pl.Series([["me", "YOU"]]),
+            pl.lit(pl.Series(["me", "YOU"])).implode(),
             ["you", "me"],
             True,
             False,
@@ -1554,7 +1554,7 @@ def test_replace_expressions() -> None:
     ],
 )
 def test_replace_many(
-    pattern: pl.Series | list[str],
+    pattern: pl.Expr | list[str],
     replacement: pl.Series | list[str] | str,
     case_insensitive: bool,
     leftmost: bool,
@@ -1589,18 +1589,10 @@ def test_replace_many_flat_dtype_invalid() -> None:
     df = pl.DataFrame({"text": ["Tell me what you want"]})
     msg = "`str.replace_many` with a flat str datatype as pattern is invalid. Use `implode` to wrap the string value into a list."
     with pytest.raises(InvalidOperationError, match=re.escape(msg)):
-        df.select(
-            pl.col("text").str.replace_many(
-                pl.Series(["me", "they"]), pl.Series([["it"]])
-            )
-        )
+        df.select(pl.col("text").str.replace_many(pl.lit("me"), ["it"]))
     msg = "`str.replace_many` with a flat str datatype as replacement is invalid. Use `implode` to wrap the string value into a list."
     with pytest.raises(InvalidOperationError, match=re.escape(msg)):
-        df.select(
-            pl.col("text").str.replace_many(
-                pl.Series([["me", "they"]]), pl.Series(["it"])
-            )
-        )
+        df.select(pl.col("text").str.replace_many(["me", "they"], pl.lit("it")))
 
 
 def test_replace_many_groupby() -> None:
@@ -1611,7 +1603,7 @@ def test_replace_many_groupby() -> None:
         }
     )
     out = df.group_by("g").agg(
-        pl.col.x.str.replace_many(pl.col.x.head(2).implode(), pl.Series([[""]]))
+        pl.col.x.str.replace_many(pl.col.x.head(2).implode(), [""])
     )
     expected = pl.DataFrame(
         {
@@ -2672,9 +2664,9 @@ def test_contains_any_replace_many_imploded_patterns() -> None:
 @pytest.mark.parametrize("height", [1, 3])
 def test_contains_any_replace_many_patterns_per_row_raises(height: int) -> None:
     df = pl.DataFrame({"s": ["ab"] * height, "p": [["a"]] * height})
-    with pytest.raises(InvalidOperationError, match="per row"):
+    with pytest.raises(ShapeError, match="'patterns' must be a scalar value"):
         df.lazy().select(pl.col("s").str.contains_any(pl.col("p"))).collect()
-    with pytest.raises(InvalidOperationError, match="per row"):
+    with pytest.raises(ShapeError, match="'patterns' must be a scalar value"):
         df.lazy().select(pl.col("s").str.replace_many(pl.col("p"), ["b"])).collect()
 
 
