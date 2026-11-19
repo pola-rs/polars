@@ -1555,7 +1555,7 @@ def test_replace_expressions() -> None:
 )
 def test_replace_many(
     pattern: pl.Expr | list[str],
-    replacement: pl.Series | list[str] | str,
+    replacement: list[str],
     case_insensitive: bool,
     leftmost: bool,
     expected: str,

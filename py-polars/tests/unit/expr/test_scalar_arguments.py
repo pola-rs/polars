@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import io
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ShapeError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 # A single row, so that every non-scalar argument has the length of a scalar at runtime.
-FRAME = pl.LazyFrame(
+FRAME = pl.DataFrame(
     {
         "a": [3.0],
         "v": [3],
@@ -29,7 +30,6 @@ FRAME = pl.LazyFrame(
         "vl": [[3]],
     }
 )
-SCHEMA = FRAME.collect_schema()
 # The flat column whose implode gives the value of a list column.
 FLAT = {"ps": "p", "rs": "r", "vl": "v"}
 
@@ -91,7 +91,7 @@ ARGUMENTS: list[tuple[str, str, Callable[[Any], pl.Expr], bool]] = [
 
 
 def _series(column: str) -> pl.Series:
-    return FRAME.select(column).collect().to_series()
+    return FRAME[column]
 
 
 def _scalar_forms(column: str, python_value: bool) -> dict[str, Any]:
@@ -129,7 +129,7 @@ NON_SCALAR_CASES = [
 
 @pytest.mark.parametrize(("build", "argument"), SCALAR_CASES)
 def test_scalar_argument(build: Callable[[Any], pl.Expr], argument: Any) -> None:
-    FRAME.select(build(argument)).collect()
+    FRAME.lazy().select(build(argument)).collect()
 
 
 @pytest.mark.parametrize(("build", "argument"), NON_SCALAR_CASES)
@@ -137,7 +137,15 @@ def test_non_scalar_argument_raises_at_planning(
     build: Callable[[Any], pl.Expr], argument: pl.Expr
 ) -> None:
     with pytest.raises(ShapeError, match="must be a scalar value"):
-        FRAME.select(build(argument)).collect_schema()
+        FRAME.lazy().select(build(argument)).collect_schema()
+
+
+def test_missing_scalar_argument_raises() -> None:
+    # The Python API always passes `k`, so build the expression from its JSON form.
+    json = '{"Function":{"input":[{"Column":"a"}],"function":{"TopK":{"descending":false}}}}'
+    expr = pl.Expr.deserialize(io.StringIO(json), format="json")
+    with pytest.raises(InvalidOperationError, match="missing argument 'k' in `top_k`"):
+        FRAME.lazy().select(expr).collect_schema()
 
 
 def test_get_index_must_be_scalar() -> None:

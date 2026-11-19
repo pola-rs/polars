@@ -922,8 +922,16 @@ pub(super) fn convert_functions(
                 (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
-            ensure_scalar_ae(e[1].node(), ctx.arena, "quantile", "approx_quantile")?;
-            let quantile = match ctx.arena.get(e[1].node()) {
+            let quantile_input = e.get(1).ok_or_else(
+                || polars_err!(InvalidOperation: "missing argument 'quantile' in `approx_quantile`"),
+            )?;
+            ensure_scalar_ae(
+                quantile_input.node(),
+                ctx.arena,
+                "quantile",
+                "approx_quantile",
+            )?;
+            let quantile = match ctx.arena.get(quantile_input.node()) {
                 AExpr::Literal(
                     lv @ (LiteralValue::Scalar(_)
                     | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
@@ -959,7 +967,10 @@ pub(super) fn convert_functions(
                 ctx.arena,
             );
             let estimate = AExprBuilder::function(
-                vec![sketch.expr_ir_retain_name(ctx.arena), e[1].clone()],
+                vec![
+                    sketch.expr_ir_retain_name(ctx.arena),
+                    quantile_input.clone(),
+                ],
                 I::ApproxQuantileEstimate { values_dtype },
                 ctx.arena,
             );
@@ -1397,7 +1408,10 @@ pub(super) fn convert_functions(
     };
 
     for &(idx, arg) in ir_function.scalar_inputs() {
-        ensure_scalar_ae(e[idx].node(), ctx.arena, arg, &ir_function)?;
+        let input = e.get(idx).ok_or_else(
+            || polars_err!(InvalidOperation: "missing argument '{arg}' in `{ir_function}`"),
+        )?;
+        ensure_scalar_ae(input.node(), ctx.arena, arg, &ir_function)?;
     }
 
     let mut options = ir_function.function_options();

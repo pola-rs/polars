@@ -1967,7 +1967,7 @@ class StringNameSpace(_NamespaceSuggestMixin):
         """
 
     def contains_any(
-        self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
+        self, patterns: list[str] | Expr, *, ascii_case_insensitive: bool = False
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to find matches.
@@ -1977,7 +1977,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         patterns
-            String patterns to search.
+            String patterns to search: one list for the whole Series, as a Python
+            list or an expression that returns a single list.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
@@ -2011,8 +2012,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
 
     def replace_many(
         self,
-        patterns: IntoExpr | Mapping[str, str],
-        replace_with: IntoExpr | NoDefault = NO_DEFAULT,
+        patterns: list[str] | Expr | Mapping[str, str],
+        replace_with: list[str] | Expr | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
         leftmost: bool = False,
@@ -2023,13 +2024,14 @@ class StringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         patterns
-            String patterns to search and replace.
+            String patterns to search and replace: one list for the whole Series, as a
+            Python list or an expression that returns a single list.
             Also accepts a mapping of patterns to their replacement as syntactic sugar
-            for `replace_many(pl.Series(mapping.keys()), pl.Series(mapping.values()))`.
+            for `replace_many(list(mapping.keys()), list(mapping.values()))`.
         replace_with
-            Strings to replace where a pattern was a match.
-            Length must match the length of `patterns` or have length 1. This can be
-            broadcasted, so it supports many:one and many:many.
+            Strings to replace where a pattern was a match: one list, like
+            `patterns`. Its length must match the length of `patterns` or be 1. This
+            can be broadcasted, so it supports many:one and many:many.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
