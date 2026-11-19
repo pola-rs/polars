@@ -755,7 +755,7 @@ impl Translator<'_> {
     pub fn translate(&self, node: &Node) -> Option<(SqlExpr, Class)> {
         let (expr, class) = self.translate_node(node)?;
         // A test for NULL on a MySQL column of unknown type is widened to keep zero dates
-        // (`zero_dates_as_null`): a superset (#460).
+        // (`zero_dates_as_null`): a superset.
         if class == Class::Exact
             && self.config.columns.iter().any(|c| {
                 crate::database::planner::zero_date_candidate(self.config, c)
@@ -945,7 +945,7 @@ impl Translator<'_> {
             return false;
         }
         // Oracle normalises a DATE or TIMESTAMP literal in the gap (1582-10-05..14) to
-        // 1582-10-15, so the comparison runs against a day Polars never wrote (#512): every
+        // 1582-10-15, so the comparison runs against a day Polars never wrote: every
         // operator then admits or drops the 1582-10-15 row. Stored values read back right.
         if self.dialect() == DialectName::Oracle
             && (ORACLE_GAP_START_DAYS..DATABRICKS_GAP_END_DAYS).contains(&days)
@@ -2035,7 +2035,7 @@ mod tests {
 
     #[test]
     fn oracle_dates_in_the_gregorian_gap() {
-        // #512: Oracle normalises a DATE/TIMESTAMP literal in 1582-10-05..14 to 1582-10-15
+        // Oracle normalises a DATE/TIMESTAMP literal in 1582-10-05..14 to 1582-10-15
         let cfg = config(
             DialectName::Oracle,
             adbc("oracle"),

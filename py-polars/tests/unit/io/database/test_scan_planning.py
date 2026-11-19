@@ -326,7 +326,7 @@ def test_databricks_dates_in_the_gregorian_gap_are_not_pushed() -> None:
         ("SELECT a FROM t EXCEPT SELECT a FROM u", True, False),
         ("SELECT a COLLATE UTF8_LCASE FROM t", False, True),
         ("SELECT a COLLATE UTF8_BINARY FROM t", False, False),
-        # #488: the collated key of a group, in a subquery
+        # the collated key of a group, in a subquery
         (
             "SELECT ascii(s) AS k FROM (SELECT x COLLATE UTF8_LCASE AS s "
             "FROM VALUES ('A'), ('a') AS t(x) GROUP BY ALL)",
@@ -1274,7 +1274,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
             "SELECT id, count(*) FROM a JOIN b ON a.k = b.k GROUP BY a.id",
             True,
         ),
-        # the schema counts: `s2.t.id` isn't grouped by `GROUP BY s1.t.id` (#378)
+        # the schema counts: `s2.t.id` isn't grouped by `GROUP BY s1.t.id`
         (
             "sqlite",
             "SELECT s1.t.id, s2.t.id AS b FROM s1.t JOIN s2.t ON true GROUP BY s1.t.id",
@@ -1400,7 +1400,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("oracle", "SELECT USERENV('SID') AS s FROM dual", False),
         ("tsql", "SELECT id, @@SPID AS s FROM t", False),
         ("tsql", "SELECT id FROM t WHERE id > @min", False),
-        # the allowlist (#506-#513 class): anything not proven is not repeatable
+        # the allowlist: anything not proven is not repeatable
         (
             "postgres",
             "SELECT upper(a), a + 1, CAST(b AS int) FROM t WHERE c IN (1, 2)",
@@ -1427,7 +1427,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("clickhouse", "SELECT toString(a), a % 3 FROM t", True),
         ("clickhouse", "SELECT * FROM remote('h', db, t)", False),
         ("clickhouse", "SELECT * FROM v(p = 1)", False),
-        # #492: a table function's schema string holds an expression (`ALIAS`,
+        # a table function's schema string holds an expression (`ALIAS`,
         # `DEFAULT`)
         # the parser reads as one literal
         (
@@ -2305,7 +2305,7 @@ def test_outer_order_by_of_a_query(query: str, expected: str | None) -> None:
     ],
 )
 def test_outer_order_by_of_a_star_query(query: str, expected: str | None) -> None:
-    # #457: a `SELECT *` has the planned columns
+    # a `SELECT *` has the planned columns
     from polars_database._sqlglot import outer_order_by
 
     assert outer_order_by(query, "mysql", ["id", "d"]) == expected
@@ -2375,13 +2375,13 @@ def test_partition_predicates_keep_their_percent_signs() -> None:
 @pytest.mark.parametrize(
     ("dialect", "query", "repeatable"),
     [
-        # finding 8: an array constructor of proven elements, not a subquery's rows
+        # an array constructor of proven elements, not a subquery's rows
         # (a text 'now' in an output column may be cast later)
         ("postgres", "SELECT 'now' AS label FROM t", False),
         ("postgres", "SELECT ARRAY[id, 1] FROM t", True),
         ("postgres", "SELECT ARRAY(SELECT id FROM u) FROM t", False),
         ("duckdb", "SELECT [id, 1] FROM t", True),
-        # finding 3: relative text through a cast, by any route
+        # relative text through a cast, by any route
         ("postgres", "SELECT id FROM t WHERE ts < (SELECT 'now')::timestamptz", False),
         ("postgres", "SELECT id FROM t WHERE ts < 'now'::text::timestamptz", False),
         ("postgres", "SELECT id FROM t WHERE ts < ('n' || 'ow')::timestamptz", False),
@@ -2416,7 +2416,7 @@ def test_partition_predicates_keep_their_percent_signs() -> None:
             "SELECT id FROM t WHERE ts < CAST(lower('NOW') AS TIMESTAMP)",
             False,
         ),
-        # finding 1: names that aren't built-in functions of the dialect
+        # names that aren't built-in functions of the dialect
         ("mysql", "SELECT initcap(x) FROM t", False),
         ("mysql", "SELECT upper(x) FROM t", True),
         ("clickhouse", "SELECT total(x) FROM t", False),

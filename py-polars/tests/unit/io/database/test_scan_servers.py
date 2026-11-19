@@ -2995,7 +2995,7 @@ def test_mysql_live_connection_in_another_time_zone(module: str) -> None:
         assert lf.collect_schema()["ts"] == pl.Datetime("us", "UTC")
         assert lf.collect().sort("id")["ts"].to_list() == [instant, None]
         assert lf.filter(pl.col("ts") == instant).collect()["id"].to_list() == [1]
-        # (#76) a query's TIMESTAMP is the same instants, as the table reads them
+        # a query's TIMESTAMP is the same instants, as the table reads them
         query = pl.scan_database(f"SELECT id, ts FROM {table}", conn)
         assert query.collect_schema()["ts"] == pl.Datetime("us", "UTC")
         assert query.collect().sort("id")["ts"].to_list() == [instant, None]
@@ -3640,7 +3640,7 @@ def test_postgres_infinity_is_an_error(driver: str) -> None:
 def test_postgres_infinity_is_an_error_on_psycopg2_connections_of_the_user(
     how: str,
 ) -> None:
-    # #99: psycopg2 read `-infinity` as 0001-01-01 and `infinity` as 9999-12-31 on a
+    # psycopg2 read `-infinity` as 0001-01-01 and `infinity` as 9999-12-31 on a
     # connection the plugin didn't open too (also behind SQLAlchemy)
     psycopg2 = pytest.importorskip("psycopg2")
     sqlalchemy = pytest.importorskip("sqlalchemy")
@@ -5343,7 +5343,7 @@ def test_partition_over_a_volatile_user_function(name: str) -> None:
             lf.collect()
         # a user's function is refused whatever its IMMUTABLE / DETERMINISTIC label,
         # which
-        # the database doesn't check (#509); a plain column key still partitions
+        # the database doesn't check; a plain column key still partitions
         lf = _scan(
             name,
             driver,
@@ -5507,7 +5507,7 @@ def test_mysql_zero_dates_in_queries_and_under_schema(name: str) -> None:
 def test_mysql_zero_dates_are_never_silently_dropped_by_a_null_test(
     name: str, dtype: pl.DataType
 ) -> None:
-    # #460: under `schema=` of a dtype other than a date, `IS NULL` was pushed as stored
+    # under `schema=` of a dtype other than a date, `IS NULL` was pushed as stored
     # and returned only the NULL row, the zero date (which the read refuses) left out
     # silently
     table = f"r460_zero_{name}_{str(dtype).lower()}"
@@ -6088,7 +6088,7 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
     module: str,
 ) -> None:
     # #440: a TIMESTAMP is read in the session's time zone: under `schema=` its type
-    # isn't known, so the instants were shifted silently. (#76) The result's field type
+    # isn't known, so the instants were shifted silently. The result's field type
     # tells a TIMESTAMP, and the session's zone is read: the instants are right
     # (a table of its own: the parametrizations run side by side)
     table = f"r31_tz_{module.replace('.', '_')}"
@@ -6235,7 +6235,7 @@ def test_mysql_params_with_percent_in_names(module: str, name: str) -> None:
 
 @needs_postgres
 def test_postgres_user_collations_named_like_builtin_ones() -> None:
-    # #497, #498: a collation is known by its identity, not its name: a user's ICU `"C"`
+    # a collation is known by its identity, not its name: a user's ICU `"C"`
     # (or `"default"`, `"POSIX"`, `ucs_basic`) is not the byte-wise built-in one
     _execute(
         "postgres17",
@@ -6297,7 +6297,7 @@ def test_postgres_user_collations_named_like_builtin_ones() -> None:
 @pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
 @ORACLE_GROUP
 def test_oracle_literals_in_the_1582_calendar_gap() -> None:
-    # #512: Oracle reads a literal in 1582-10-05..14 back as 1582-10-15, which the
+    # Oracle reads a literal in 1582-10-05..14 back as 1582-10-15, which the
     # stored values and Polars' comparison don't: it is not pushed
     _execute(
         "oracle",
@@ -6343,7 +6343,7 @@ def test_oracle_literals_in_the_1582_calendar_gap() -> None:
 def test_mariadb_query_with_order_by_reads_the_dtypes_of_one_without(
     driver: str,
 ) -> None:
-    # (#455) the result types of a query with a top-level ORDER BY weren't looked up: a
+    # the result types of a query with a top-level ORDER BY weren't looked up: a
     # FLOAT holding 16777216 read as 6-digit text (16777200.0), a YEAR as String
     if driver == "connectorx":
         pytest.importorskip("connectorx")
@@ -6373,7 +6373,7 @@ def test_mariadb_query_with_order_by_reads_the_dtypes_of_one_without(
 def test_mysql_select_star_order_by_is_kept_with_converted_columns(
     name: str, driver: str
 ) -> None:
-    # (#457) `SELECT * … ORDER BY id DESC` of a table with a FLOAT / DATE / DATETIME /
+    # `SELECT * … ORDER BY id DESC` of a table with a FLOAT / DATE / DATETIME /
     # TIMESTAMP column raised "the query's ORDER BY can't be kept" on MariaDB: the
     # star is the planned columns
     if SERVERS[name].uri is None:
@@ -6411,7 +6411,7 @@ def test_mysql_select_star_order_by_is_kept_with_converted_columns(
 def test_mysql_live_query_timestamps_are_instants_in_a_non_utc_session(
     name: str,
 ) -> None:
-    # (#76) a query's TIMESTAMP on a live connection read as naive wall-clock time of
+    # a query's TIMESTAMP on a live connection read as naive wall-clock time of
     # the session's zone, where the table reads UTC instants: dt.date() put a row on
     # another day. The zone is read from the session; where it can't be told apart, or a
     # wall-clock time is ambiguous, the read fails
@@ -6491,7 +6491,7 @@ def test_mysql_live_query_timestamps_are_instants_in_a_non_utc_session(
 def test_clickhouse_datetime64_arrays_retyped_to_a_coarser_unit_are_not_misread() -> (
     None
 ):
-    # (#456) the nanosecond ticks of an Array(DateTime64(9)) read as microseconds
+    # the nanosecond ticks of an Array(DateTime64(9)) read as microseconds
     # (year 55972) under a List(Datetime("us")) override, a "ms" one panicked: each
     # is an error or the right instant
     pytest.importorskip("clickhouse_connect")
@@ -6528,7 +6528,7 @@ def test_clickhouse_datetime64_arrays_retyped_to_a_coarser_unit_are_not_misread(
 
 @needs_postgres
 def test_postgres_psycopg2_infinity_is_an_error_without_a_type_lookup() -> None:
-    # (#99) under `schema=` no type lookup ran, and psycopg2 read ±infinity as
+    # under `schema=` no type lookup ran, and psycopg2 read ±infinity as
     # date.max / date.min
     table = "t99_pg_inf"
     _execute(
@@ -6558,7 +6558,7 @@ def test_postgres_psycopg2_infinity_is_an_error_without_a_type_lookup() -> None:
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_view_column_list_permuting_the_querys_aliases(name: str) -> None:
-    # #309: under `schema=` a view's columns were matched to its query's by name, but
+    # under `schema=` a view's columns were matched to its query's by name, but
     # MySQL's definition leaves out the view's column list: `a` here is `rand()`
     _execute(
         name,
@@ -6652,7 +6652,7 @@ def _execute_as_root(name: str, statements: list[str]) -> None:
 
 
 def test_postgres_allowlist_kinds_of_relation() -> None:
-    # #463, #506, #507: only ordinary tables (whose children are ordinary), and views
+    # only ordinary tables (whose children are ordinary), and views
     # proven the same way, partition; server views, user operators and casts do not
     name = "postgres17"
     _execute(
@@ -6676,14 +6676,14 @@ def test_postgres_allowlist_kinds_of_relation() -> None:
             name, _default_driver(name), source, partition_on="id", partition_num=4
         )
         assert sorted(lf.collect()["id"].to_list()) == list(range(300)), source
-    # server-state views: their definitions call functions that aren't proven (#463)
+    # server-state views: their definitions call functions that aren't proven
     for source in [
         "SELECT datid FROM pg_stat_database",
         "SELECT pid AS id FROM pg_stat_activity",
     ]:
         _refused(name, source, "pid" if "activity" in source else "datid")
-    # a user's operator over a volatile function (#507), on a domain over `int`: it
-    # counts for the sources with a column of that type only (round 2, finding 3); one
+    # a user's operator over a volatile function, on a domain over `int`: it
+    # counts for the sources with a column of that type only; one
     # on `int` would count for every int column of the tests running at the same time
     _execute(
         name,
@@ -6703,7 +6703,7 @@ def test_postgres_allowlist_kinds_of_relation() -> None:
         ],
     )
     try:
-        # (#506, #507) the error names the operator
+        # the error names the operator
         _refused(
             name,
             "SELECT id FROM review_al_dt WHERE id === id",
@@ -6729,7 +6729,7 @@ def test_postgres_allowlist_kinds_of_relation() -> None:
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_allowlist_kinds_of_relation(name: str) -> None:
-    # #448, #499: information_schema's system views, session variables, and a VIRTUAL
+    # information_schema's system views, session variables, and a VIRTUAL
     # column that calls rand() are not proven
     statements = [
         "DROP TABLE IF EXISTS review_al_ids",
@@ -6776,7 +6776,7 @@ def test_mysql_allowlist_kinds_of_relation(name: str) -> None:
 
 
 def test_clickhouse_allowlist_kinds_of_relation() -> None:
-    # #273, #500, #501: an ALIAS column, a Merge table over a volatile view, table
+    # an ALIAS column, a Merge table over a volatile view, table
     # functions and virtual columns are not proven; MergeTree tables are
     name = "clickhouse"
     _execute(
@@ -6809,7 +6809,7 @@ def test_clickhouse_allowlist_kinds_of_relation() -> None:
 
 
 def test_oracle_allowlist_synonym_chain() -> None:
-    # #508: a synonym of a synonym of a volatile view is followed (or not proven)
+    # a synonym of a synonym of a volatile view is followed (or not proven)
     name = "oracle"
     statements, _ = VOLATILE_VIEWS[name]
     _execute(
@@ -6858,7 +6858,7 @@ def _ids_table(name: str, table: str, extra: str = "") -> None:
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_user_function_named_like_another_dialects_builtin(name: str) -> None:
-    # review finding 1: `initcap` is sqlglot's, not MySQL's: a user's function of the
+    # `initcap` is sqlglot's, not MySQL's: a user's function of the
     # name runs there, and was proven because the allowlist applied to every dialect
     _ids_table(name, "review_vf_ids")
     _execute_as_root(
@@ -6882,7 +6882,7 @@ def test_mysql_user_function_named_like_another_dialects_builtin(name: str) -> N
 
 
 def test_clickhouse_user_functions_named_like_another_dialects_builtin() -> None:
-    # review finding 1 (ClickHouse): none of these names is a ClickHouse built-in
+    # none of these names is a ClickHouse built-in
     name = "clickhouse"
     _ids_table(name, "review_vf_ids")
     names = ["total", "cot", "quote", "unicode", "levenshtein", "split_part"]
@@ -6904,7 +6904,7 @@ def test_clickhouse_user_functions_named_like_another_dialects_builtin() -> None
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_user_function_of_a_name_sqlglot_knows_elsewhere(name: str) -> None:
-    # review round 2, finding 5: `date_trunc` and `strpos` are sqlglot's, no MySQL
+    # `date_trunc` and `strpos` are sqlglot's, no MySQL
     # built-ins (the old exclusion list named some of them only): a stored function of
     # the name runs there. The built-ins TRUNCATE and CHAR are no user's.
     _ids_table(name, "review_vf2_ids")
@@ -6937,7 +6937,7 @@ def test_mysql_user_function_of_a_name_sqlglot_knows_elsewhere(name: str) -> Non
 
 
 def test_clickhouse_user_function_of_a_name_sqlglot_knows_elsewhere() -> None:
-    # review round 2, finding 5: `bool_and` is no ClickHouse built-in;
+    # `bool_and` is no ClickHouse built-in;
     # `levenshteinDistance`
     # and `editDistance` are (sqlglot calls both LEVENSHTEIN)
     name = "clickhouse"
@@ -6959,7 +6959,7 @@ def test_clickhouse_user_function_of_a_name_sqlglot_knows_elsewhere() -> None:
 
 @pytest.mark.parametrize("name", ["postgres17", "mysql", "mariadb", "clickhouse"])
 def test_casts_of_time_columns_to_dates_still_partition(name: str) -> None:
-    # review round 2, findings 1 and 9: a cast (or `date(col)`) of a column that holds
+    # a cast (or `date(col)`) of a column that holds
     # no text is proven; a plain table, a view and a GROUP BY over an int key too
     column = {"clickhouse": "DateTime", "postgres17": "timestamp"}.get(name, "DATETIME")
     _ids_table(name, "review_cast_ids", extra=f", ts {column}")
@@ -6985,7 +6985,7 @@ def _nopad_bin(name: str) -> str:
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_collapsing_over_a_case_insensitive_column(name: str) -> None:
-    # review finding 2 (#488 beyond Databricks): `GROUP BY s` over `utf8mb4_*_ci`
+    # `GROUP BY s` over `utf8mb4_*_ci`
     # returns any one spelling of 'a' / 'A', so partitions disagree; binary ones don't
     _execute(
         name,
@@ -7075,7 +7075,7 @@ def test_postgres_collapsing_over_a_nondeterministic_collation() -> None:
 
 
 def test_postgres_relative_time_text_through_casts() -> None:
-    # review finding 3: 'now' reaches a cast to a time by routes that aren't a literal
+    # 'now' reaches a cast to a time by routes that aren't a literal
     name = "postgres17"
     _execute(
         name,
@@ -7138,7 +7138,7 @@ def test_postgres_relative_time_text_through_casts() -> None:
 
 
 def test_clickhouse_merge_on_read_engines_need_final() -> None:
-    # review finding 5: Replacing/Collapsing/... MergeTree show other rows before and
+    # Replacing/Collapsing/... MergeTree show other rows before and
     # after a background merge; a TTL drops rows in the background
     name = "clickhouse"
     _execute(
@@ -7168,7 +7168,7 @@ def test_clickhouse_merge_on_read_engines_need_final() -> None:
         ],
     )
     try:
-        # review round 2, finding 10: said so, not "foreign or external table"
+        # said so, not "foreign or external table"
         _refused(name, "review_exp", via="source", why=r"\bTTL\b")
         _refused(name, "review_expcolumn", via="source", why=r"\bTTL\b")
         assert _partitions(name, "review_expcol") == list(range(300))
@@ -7194,7 +7194,7 @@ def test_clickhouse_merge_on_read_engines_need_final() -> None:
 
 
 def test_postgres_user_operators_and_casts_only_count_where_used() -> None:
-    # review finding 6: a user's operator or cast elsewhere in the database doesn't make
+    # a user's operator or cast elsewhere in the database doesn't make
     # every source unproven; one the SQL uses does, named in the error
     name = "postgres17"
     _ids_table(name, "review_uo_ids")
@@ -7240,7 +7240,7 @@ def test_postgres_user_operators_and_casts_only_count_where_used() -> None:
 
 @pytest.mark.parametrize("name", ["postgres17", "postgres14"])
 def test_postgres_user_operators_count_by_the_types_they_take(name: str) -> None:
-    # review round 2, finding 3: LIKE, BETWEEN, IN, CASE, GROUP BY, ORDER BY ... run
+    # LIKE, BETWEEN, IN, CASE, GROUP BY, ORDER BY ... run
     # operators the SQL doesn't spell, `x=-1` merges two; a user's operator counts when
     # one of its operand types is a type of a column the source reads (or one the SQL
     # names). The operator is on a domain over `text`, not on `int` or `text` (which
@@ -7310,7 +7310,7 @@ def test_postgres_user_operators_count_by_the_types_they_take(name: str) -> None
 
 
 def test_postgres_citext_domains_and_arrays_collapse_case_insensitively() -> None:
-    # review round 2, finding 13: `citext` through a domain or an array
+    # `citext` through a domain or an array
     name = "postgres17"
     try:
         _execute(name, ["CREATE EXTENSION IF NOT EXISTS citext"])
@@ -7342,7 +7342,7 @@ def test_postgres_citext_domains_and_arrays_collapse_case_insensitively() -> Non
 
 
 def test_sqlite_virtual_table_detection_is_by_create_statement(tmp_path: Any) -> None:
-    # review finding 7: a column `is_virtual` or a name `virtual_machines` is no
+    # a column `is_virtual` or a name `virtual_machines` is no
     # virtual table; a VIRTUAL generated column is evaluated on each read
     import sqlite3
 
@@ -7375,7 +7375,6 @@ def test_sqlite_virtual_table_detection_is_by_create_statement(tmp_path: Any) ->
 
 @pytest.mark.parametrize("name", ["postgres17", "duckdb"])
 def test_array_of_a_subquery_isnt_proven(name: str) -> None:
-    # review finding 8
     if name == "duckdb":
         pytest.skip("covered by the unit test")
     _ids_table(name, "review_arr_ids")

@@ -1491,7 +1491,7 @@ def test_scan_duckdb_volatile_views(tmp_path: Path) -> None:
 def test_scan_duckdb_collapsing_over_views_and_same_named_tables(
     tmp_path: Path,
 ) -> None:
-    # review round 2, finding 7: the collation lookup read `duckdb_tables()` only (no
+    # the collation lookup read `duckdb_tables()` only (no
     # views: every GROUP BY over a view was refused) and matched by name across schemas
     # and databases, taking the first row
     duckdb = pytest.importorskip("duckdb")
@@ -1530,7 +1530,7 @@ def test_scan_duckdb_collapsing_over_views_and_same_named_tables(
 def test_scan_sqlite_collation_of_a_table_in_an_attached_database(
     tmp_path: Path,
 ) -> None:
-    # review round 2, finding 13: the collation lookup read `temp` and `main` only
+    # the collation lookup read `temp` and `main` only
     with closing(sqlite3.connect(tmp_path / "o.db")) as other:
         other.execute("CREATE TABLE ci (id INTEGER, s TEXT COLLATE NOCASE)")
         other.execute("CREATE TABLE pl (id INTEGER, s TEXT)")
@@ -1574,7 +1574,7 @@ def test_scan_sqlite_collation_of_a_table_in_an_attached_database(
 
 
 def test_scan_duckdb_generated_columns_and_ambiguous_names(tmp_path: Path) -> None:
-    # #483, #491: a relation counts only on proof; a virtual column that calls random()
+    # a relation counts only on proof; a virtual column that calls random()
     # makes the table not repeatable; names `lower()` folds together are not told apart
     duckdb = pytest.importorskip("duckdb")
     path = str(tmp_path / "t.duckdb")
@@ -1862,7 +1862,7 @@ def test_scan_duckdb_values_arrow_cant_carry(tmp_path: Path, driver: str) -> Non
 
 
 def test_scan_duckdb_timetz_keeps_its_offset() -> None:
-    # (#281, #247) TIMETZ '10:00+02' read as 10:00, the offset dropped: it is text now
+    # TIMETZ '10:00+02' read as 10:00, the offset dropped: it is text now
     duckdb = pytest.importorskip("duckdb")
     conn = duckdb.connect()
     conn.execute("CREATE TABLE t (id INTEGER, t TIMETZ)")
@@ -1886,27 +1886,27 @@ def test_scan_duckdb_lossy_values_are_errors() -> None:
     def scan(sql: str, **kwargs: Any) -> pl.LazyFrame:
         return pl.scan_database(sql, conn, partition_on=None, pushdown=False, **kwargs)
 
-    # (#485) a Map's values are checked as a List's are
+    # a Map's values are checked as a List's are
     with pytest.raises(pl.exceptions.SchemaError, match="would round"):
         scan(
             "SELECT map(['a'], [1.5]) AS x",
             schema={"x": pl.Map(pl.String, pl.Int64)},
         ).collect()
-    # (#486) a finite DOUBLE isn't an infinite Float16
+    # a finite DOUBLE isn't an infinite Float16
     with pytest.raises(pl.exceptions.SchemaError, match="Float16"):
         scan("SELECT 1e5::DOUBLE AS x", schema={"x": pl.Float16}).collect()
-    # (#495) TIME_NS 24:00:00 isn't NULL
+    # TIME_NS 24:00:00 isn't NULL
     with pytest.raises(pl.exceptions.ComputeError, match="can't represent"):
         scan("SELECT TIME_NS '24:00:00' AS t").collect()
-    # (#484) an enum label with a bracket doesn't hide the neighbouring field
+    # an enum label with a bracket doesn't hide the neighbouring field
     with pytest.raises(pl.exceptions.ComputeError, match="can't represent"):
         scan(
             "SELECT struct_pack(e := '('::ENUM('('), t := TIME '24:00:00') AS s"
         ).collect()
-    # (#504) a VARIANT is not a struct of its raw bytes
+    # a VARIANT is not a struct of its raw bytes
     with pytest.raises(pl.exceptions.ComputeError, match="VARIANT"):
         scan("SELECT 1::VARIANT AS v").collect()
-    # (#464, #465) numbers in nested columns, or as a duration, aren't raw ticks
+    # numbers in nested columns, or as a duration, aren't raw ticks
     for dtype in [
         pl.List(pl.Datetime("us")),
         pl.List(pl.Date),
@@ -2326,7 +2326,7 @@ def test_scan_now_dependent_query_isnt_partitioned(shop_uri: str) -> None:
 def test_scan_params_naming_a_time_make_the_query_volatile(
     shop_uri: str, text: str
 ) -> None:
-    # #493: a bound `'now'` cast to a timestamp is the statement's clock, which the SQL
+    # a bound `'now'` cast to a timestamp is the statement's clock, which the SQL
     # doesn't show: each partition would bind another
     for kwargs in (
         {"partition_on": "id", "partition_num": 4},
@@ -2358,7 +2358,7 @@ def test_scan_params_naming_a_time_make_the_query_volatile(
         partition_num=4,
     )
     assert "partitions: 4" in fixed.explain()
-    # review finding 9: a text that merely contains the word is no time
+    # a text that merely contains the word is no time
     for harmless in ["Now Corp", "today's special", "Tomorrowland"]:
         corp = pl.scan_database(
             "SELECT id, ? AS t FROM orders",
@@ -5037,7 +5037,7 @@ def test_scan_duckdb_shared_cursor_key_resolves_symlinks(tmp_path: Path) -> None
 
 
 def test_sqlite_generated_column_compares_by_its_declared_affinity() -> None:
-    # #480: `pragma_table_info` omits generated columns: a NUMERIC one had no affinity
+    # `pragma_table_info` omits generated columns: a NUMERIC one had no affinity
     # and an exact string equality compared SQLite's rounded text of the REAL
     with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
         try:
@@ -5061,7 +5061,7 @@ def test_sqlite_generated_column_compares_by_its_declared_affinity() -> None:
 
 
 def test_sqlite_replaced_binary_collation_is_not_exact() -> None:
-    # #481: a connection's own BINARY collation changes what `=` matches
+    # a connection's own BINARY collation changes what `=` matches
     with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
         conn.create_collation(
             "BINARY", lambda a, b: (a.lower() > b.lower()) - (a.lower() < b.lower())
@@ -5076,7 +5076,7 @@ def test_sqlite_replaced_binary_collation_is_not_exact() -> None:
 
 
 def test_sqlite_redefined_abs_does_not_change_an_unfiltered_read() -> None:
-    # #482: the conversion of a mixed column called the session's `abs`
+    # the conversion of a mixed column called the session's `abs`
     def read(redefine: bool) -> list[Any]:
         with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
             conn.execute("CREATE TABLE m (id INTEGER, v)")
@@ -5108,7 +5108,7 @@ def test_sqlite_redefined_abs_does_not_change_an_unfiltered_read() -> None:
 def test_sqlite_redefined_functions_do_not_change_a_read(
     name: str, n_args: int, func: Any
 ) -> None:
-    # #482: the conversions of mixed columns called the session's `char`, `typeof`, ...
+    # the conversions of mixed columns called the session's `char`, `typeof`, ...
     def read(redefine: bool) -> list[Any]:
         with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
             conn.execute("CREATE TABLE m (id INTEGER, v, w, z)")
@@ -5144,7 +5144,7 @@ def test_sqlite_redefined_functions_do_not_change_a_read(
 def test_sqlite_replaced_binary_collation_that_passes_a_byte_order_probe(
     order: str,
 ) -> None:
-    # #481: a replaced BINARY that is byte order on a few strings still orders others
+    # a replaced BINARY that is byte order on a few strings still orders others
     # differently; only a connection the plugin opened has the real BINARY
     import re
 
@@ -5183,7 +5183,7 @@ def test_sqlite_replaced_binary_collation_that_passes_a_byte_order_probe(
 
 
 def test_sqlite_pushed_conversions_call_no_function() -> None:
-    # #482, #481: the SQL the plugin writes for a mixed column uses no function that a
+    # the SQL the plugin writes for a mixed column uses no function that a
     # connection can redefine
     with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
         conn.execute("CREATE TABLE m (id INTEGER, v, w)")
@@ -5199,7 +5199,7 @@ def test_sqlite_pushed_conversions_call_no_function() -> None:
 
 
 def test_a_flight_sql_transport_takes_any_dialect() -> None:
-    # #452: `grpc://` is a transport, not a database: `dialect=` names the database
+    # `grpc://` is a transport, not a database: `dialect=` names the database
     for kwargs in [{"dialect": "duckdb"}, {"dialect": "trino"}]:
         with pytest.raises(pl.exceptions.PolarsError) as e:
             pl.scan_database(
@@ -5211,7 +5211,7 @@ def test_a_flight_sql_transport_takes_any_dialect() -> None:
 def test_a_flight_sql_transport_without_a_driver_pin_keeps_flight_sql_drivers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # #452: `dialect=` on `grpc://` is the SQL's dialect only; the driver was
+    # `dialect=` on `grpc://` is the SQL's dialect only; the driver was
     # picked from it
     # (DuckDB's ADBC driver created a file named like the address)
     monkeypatch.chdir(tmp_path)
@@ -5327,7 +5327,7 @@ def test_a_non_repeatable_source_over_the_count_buffer_says_so(
 
 
 def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:
-    # #487: DuckDB folds ASCII case only: `"Ä"` and `"ä"` are different tables
+    # DuckDB folds ASCII case only: `"Ä"` and `"ä"` are different tables
     duckdb = pytest.importorskip("duckdb")
     with duckdb.connect(":memory:") as conn:
         conn.execute('CREATE TABLE "Ä" (id INTEGER, s VARCHAR)')
@@ -5340,7 +5340,7 @@ def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:
 
 
 def test_a_dialect_that_contradicts_the_connection_is_refused(tmp_path: Path) -> None:
-    # #452: `dialect="snowflake"` on SQLite wrote Snowflake's string escapes
+    # `dialect="snowflake"` on SQLite wrote Snowflake's string escapes
     db = tmp_path / "t.db"
     with closing(sqlite3.connect(db)) as conn, conn:
         conn.execute("CREATE TABLE t (id INTEGER, s TEXT)")
@@ -5371,7 +5371,7 @@ def test_scan_duckdb_variant_is_refused_only_when_read() -> None:
 
 
 def test_scan_duckdb_nested_timetz_is_an_error() -> None:
-    # (#281) a TIMETZ in a list or struct read as a Time without its offset
+    # a TIMETZ in a list or struct read as a Time without its offset
     duckdb = pytest.importorskip("duckdb")
     conn = duckdb.connect()
     conn.execute(
@@ -5502,7 +5502,7 @@ def test_scan_duckdb_column_retyped_after_planning_is_an_error(
 def test_scan_sqlite_live_blobs_next_to_numbers_say_so(
     tmp_path: Path, table: str, batch_size: int | None
 ) -> None:
-    # (#242, #482) whichever batch the blob and the number meet in (the driver's own
+    # whichever batch the blob and the number meet in (the driver's own
     # frame of one fails before the batch is checked), the error is the blob one; and no
     # SQL function of the user's connection is called to type a table's column
     path = tmp_path / "t.db"
@@ -5586,7 +5586,7 @@ def test_scan_sqlite_live_blob_mixed_with_other_values_is_not_lost(
 def test_scan_sqlite_blob_column_with_other_values_is_an_error(
     tmp_path: Path, driver: str
 ) -> None:
-    # (#242) a BLOB column next to numbers or text read the numbers as NULL, as 6-digit
+    # a BLOB column next to numbers or text read the numbers as NULL, as 6-digit
     # `%e` text, or failed with a type error; a blob-only column reads as it is
     _importorskip_sqlite_driver(driver)
     path = tmp_path / "t.db"
@@ -5618,7 +5618,7 @@ def test_scan_sqlite_blob_column_with_other_values_is_an_error(
 def test_scan_sqlite_blob_guard_survives_redefined_functions(
     tmp_path: Path, how: str
 ) -> None:
-    # (#242, #482) the guard is no SQL function a live connection or a factory's
+    # the guard is no SQL function a live connection or a factory's
     # connection may have replaced (`abs`, `typeof`): the batches are checked as they
     # come
     path = tmp_path / "t.db"
@@ -5667,7 +5667,7 @@ def test_scan_sqlite_blob_guard_survives_redefined_functions(
 def test_scan_sqlite_union_of_scans_differing_in_dtype_parameters(
     tmp_path: Path,
 ) -> None:
-    # (#496) common subplan elimination merged scans that differ only in the decimal
+    # common subplan elimination merged scans that differ only in the decimal
     # scale (also the time zone, Enum categories, duration unit) of their dtypes
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:

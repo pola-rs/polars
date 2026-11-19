@@ -1541,7 +1541,7 @@ const SQLITE_REAL_MARK: char = '\u{1}';
 /// SQL for a SQLite value's storage class, text and marker. On a connection the user made
 /// (a live object, a factory's: `portable`) it calls no function: that connection may have
 /// redefined `typeof`, `char`, `substr`, `abs` (`create_function`) or `BINARY`
-/// (`create_collation`) (#482). Operators and `CAST` can't be, and comparing values of
+/// (`create_collation`). Operators and `CAST` can't be, and comparing values of
 /// different classes (`+x` has no affinity) or blobs uses neither. Where the plugin opens
 /// the connection, the functions are the builtin ones, and cheaper: a volatile expression
 /// (`random()`) is evaluated once by `typeof`, where the portable form evaluates it for each
@@ -1624,7 +1624,7 @@ impl SqliteOps {
 /// which [`decode_sqlite_reals`] writes as Polars writes a Float64. SQLite's own text of a
 /// real (`printf`, `CAST`) depends on its build, some of which round wrongly (to another
 /// real); scaling by powers of two is exact on any. (-0.0 reads as 0.0: SQLite doesn't
-/// tell them apart.) No `abs()`: a live connection may have redefined it (#482).
+/// tell them apart.) No `abs()`: a live connection may have redefined it.
 fn sqlite_real_exact(ops: SqliteOps, column: &str) -> String {
     format!(
         "CASE WHEN {column} = 9e999 THEN {m} || 'inf' \
@@ -2382,7 +2382,7 @@ fn mysql_zero_date(column: &str) -> String {
 /// `IS NULL`), keeping index ranges on `c` usable. The rewrite is per leaf, so the filter
 /// grows linearly (wrapping the whole filter once per column doubled it each time).
 ///
-/// `widen`: a test for NULL on a column of unknown type also keeps its zero dates (#460),
+/// `widen`: a test for NULL on a column of unknown type also keeps its zero dates,
 /// which makes the filter a superset: for a user's filter only, not a partition's predicate
 /// (the partitions must not overlap).
 fn zero_dates_as_null(config: &DatabaseScanConfig, filter: SqlExpr, widen: bool) -> SqlExpr {
@@ -2403,7 +2403,7 @@ fn zero_dates_as_null(config: &DatabaseScanConfig, filter: SqlExpr, widen: bool)
                     // zero dates, which the read refuses. A test for NULL must not hide
                     // such a row (a zero date is not NULL): the filter keeps it too (and is
                     // a superset, see `Translator::translate`), and the read fails on it as
-                    // it does without a filter (#460).
+                    // it does without a filter.
                     if widen && zero_date_candidate(config, c) && tests_null(&leaf, &c.name) {
                         let q = config.dialect.quote_ident(&c.name);
                         leaf = SqlExpr::binary(
@@ -3622,11 +3622,11 @@ fn source_volatility(
     // Databricks: the session's SQL path, read once (for the built-ins' place in it and for
     // where a user's function is looked up)
     let mut dbx_path: Option<Option<String>> = None;
-    // #488: where rows are merged (`GROUP BY`, `DISTINCT`) and a collation equates
+    // where rows are merged (`GROUP BY`, `DISTINCT`) and a collation equates
     // different texts, the database returns any one of them
     let mut collapses = facts.is_some_and(|f| f.collapses_rows);
     let mut collated = facts.is_some_and(|f| f.collated);
-    // #513: the functions of a query resolve along the session's SQL path, where a user's
+    // the functions of a query resolve along the session's SQL path, where a user's
     // function may stand ahead of the built-ins (a view's own path is read with its text)
     if dialect == DialectName::Databricks
         && matches!(relation, DatabaseRelation::Query { .. })
@@ -3808,7 +3808,7 @@ fn source_volatility(
                     }
                 },
                 // (not MySQL's: its definition leaves out a column list that may permute the
-                // query's own aliases, #309)
+                // query's own aliases)
                 Some(outputs)
                     if own_columns
                         && !view.all_columns_volatile
@@ -3964,7 +3964,7 @@ fn source_volatility(
             break;
         }
     }
-    // #488: a `GROUP BY`, `DISTINCT` or set operation over a text whose collation equates
+    // a `GROUP BY`, `DISTINCT` or set operation over a text whose collation equates
     // different spellings returns any one of them: proven only where the columns it names
     // have a binary (or deterministic) collation, which the catalog says
     if collapses && out.volatile.is_none() {
@@ -4206,7 +4206,7 @@ fn relative_time_text(text: &str) -> bool {
 
 /// Whether a query's bound parameters hold a text naming a time relative to the statement
 /// (the databases read it, cast to a timestamp or a date, as the current time, whose value
-/// the SQL doesn't show, #493). Judged on the quoted strings of the parameters' `repr`.
+/// the SQL doesn't show). Judged on the quoted strings of the parameters' `repr`.
 fn params_time_relative(connection: &ConnectionSpec) -> bool {
     let Some(key) = connection.query_params_key.as_ref() else {
         return false;
@@ -4432,7 +4432,7 @@ fn resolve_partitions(
         },
     };
 
-    // #461: Databricks reads a date in the Julian-Gregorian gap (1582-10-05..14) back as
+    // Databricks reads a date in the Julian-Gregorian gap (1582-10-05..14) back as
     // 1582-10-15 but compares it as written, so a cut at or before that day loses rows:
     // no ranges there (the one query reads them all).
     if config.dialect == DialectName::Databricks
@@ -4727,7 +4727,6 @@ mod tests {
     #[test]
     fn sqlite_conversions_on_a_users_connection_call_no_function() {
         // a live connection or a factory's may redefine any SQL function and collation
-        // (#482, #481)
         for t in [
             SQLITE_TEXT,
             SQLITE_REAL,

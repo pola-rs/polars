@@ -297,7 +297,7 @@ def test_temporary_views_are_not_inspectable_and_shadow_tables() -> None:
 
 
 def test_view_with_schema_evolution_has_the_current_collation() -> None:
-    # #514: the stored schema of a `WITH SCHEMA EVOLUTION` view is stale until something
+    # the stored schema of a `WITH SCHEMA EVOLUTION` view is stale until something
     # reads it; the server compares by the base column's current collation
     from tests.unit.io.database._databricks import connect, execute
 
@@ -704,7 +704,7 @@ SELECT 1 AS id,
 def test_engine_reads_nested_values_and_timestamps_like_the_connector(
     zone: str | None,
 ) -> None:
-    # (#462, #472) the Engine's rows typed a NULL-holding array of bigints Float64
+    # the Engine's rows typed a NULL-holding array of bigints Float64
     # (9007199254740993 read as ...992.0), failed on other nested types, and read a
     # TIMESTAMP as naive UTC wall-clock time whatever the session's zone
     kwargs = {"session_configuration": {"timezone": zone}} if zone else {}
@@ -773,7 +773,7 @@ def test_engine_read_database_early_stop_gives_back_the_pooled_connection() -> N
 
 
 def test_temporary_functions_of_the_session_are_found() -> None:
-    # review round 2, finding 4: a temporary function (`system.session`) of a name
+    # a temporary function (`system.session`) of a name
     # sqlglot knows (`to_double`, `datetime`: no Databricks built-ins) runs rand() each
     # time; `SHOW USER FUNCTIONS` lists it, and the SQL path's schemas don't
     from tests.unit.io.database._databricks import connect, execute
@@ -812,7 +812,7 @@ def test_temporary_functions_of_the_session_are_found() -> None:
 
 
 def test_casts_of_columns_to_dates_are_proven() -> None:
-    # review round 2, finding 9: Databricks reads `'now'` in a cast of a literal only; a
+    # Databricks reads `'now'` in a cast of a literal only; a
     # column, a CTE's or a VALUES' text fails (CAST_INVALID_INPUT)
     sql = "SELECT id, CAST(d AS DATE) AS k FROM {src}"
     src = (
@@ -872,7 +872,7 @@ def _refused(lf: pl.LazyFrame, match: str = "partitioned") -> None:
 
 
 def test_date_ranges_at_or_before_the_gregorian_cutover_are_refused() -> None:
-    # #461: Databricks reads a date of 1582-10-05..14 back as 1582-10-15 but compares it
+    # Databricks reads a date of 1582-10-05..14 back as 1582-10-15 but compares it
     # as written, so a cut at or before 1582-10-15 loses rows
     setup = [
         "CREATE OR REPLACE TABLE {schema}.vol_dates AS SELECT * FROM VALUES "
@@ -904,7 +904,7 @@ def test_date_ranges_at_or_before_the_gregorian_cutover_are_refused() -> None:
 
 
 def test_a_view_with_columns_named_like_the_describe_headings() -> None:
-    # #502: columns named `# Detailed Table Information` and `Type` must not be read as
+    # columns named `# Detailed Table Information` and `Type` must not be read as
     # the view's details, which would make the view an ordinary table
     setup = [
         "CREATE OR REPLACE VIEW {schema}.vol_headings AS SELECT id, "
@@ -919,7 +919,7 @@ def test_a_view_with_columns_named_like_the_describe_headings() -> None:
 
 
 def test_function_path_of_a_view_and_of_the_session() -> None:
-    # #513: `SET PATH = <schema>, system.builtin` puts a user's `abs()` ahead of the
+    # `SET PATH = <schema>, system.builtin` puts a user's `abs()` ahead of the
     # built-in one, for a view created then and for a query of that session
     from tests.unit.io.database._databricks import connect, execute
 
@@ -976,7 +976,7 @@ def test_function_path_of_a_view_and_of_the_session() -> None:
 
 
 def test_bound_time_text_makes_the_query_volatile() -> None:
-    # #493: `CAST(:text AS TIMESTAMP)` of 'now' is the statement's clock
+    # `CAST(:text AS TIMESTAMP)` of 'now' is the statement's clock
     sql = "SELECT id, CAST(:text AS TIMESTAMP) AS ts FROM range(8) AS t(id)"
     for kwargs in (
         {"partition_on": "id", "partition_num": 4},
@@ -998,7 +998,7 @@ def test_bound_time_text_makes_the_query_volatile() -> None:
 
 
 def test_bare_current_time_makes_the_query_volatile() -> None:
-    # #490: the statement's time, which each partition would read at another moment
+    # the statement's time, which each partition would read at another moment
     for expr in ("CURRENT_TIME", "CURRENT_TIME()", "CURRENT_TIMESTAMP", "CURRENT_DATE"):
         sql = f"SELECT id, {expr} AS stamp FROM range(8) AS t(id)"
         for kwargs in (
@@ -1009,7 +1009,7 @@ def test_bare_current_time_makes_the_query_volatile() -> None:
 
 
 def test_collated_grouping_is_not_partitioned_or_filtered() -> None:
-    # #488: a GROUP BY over a column that compares 'A' and 'a' equal returns one of
+    # a GROUP BY over a column that compares 'A' and 'a' equal returns one of
     # them, and a later statement may return the other
     setup = [
         "CREATE OR REPLACE TABLE {schema}.vol_collated AS SELECT id, "
@@ -1043,7 +1043,7 @@ def test_collated_grouping_is_not_partitioned_or_filtered() -> None:
 
 
 def test_user_function_named_like_another_dialects_builtin() -> None:
-    # review finding 1: `total` is SQLite's, not Databricks': a user's function of the
+    # `total` is SQLite's, not Databricks': a user's function of the
     # name in the schema of the path runs, whatever sqlglot calls it
     udf = (
         "CREATE OR REPLACE FUNCTION {schema}.total(x BIGINT) RETURNS DOUBLE "

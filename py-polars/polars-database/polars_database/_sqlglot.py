@@ -1007,7 +1007,7 @@ def _unproven(node: Any, dialect: str | None, relations: set[str]) -> bool:
         # `values('id UInt32, k UInt32 ALIAS modulo(rand(), 4)', ...)`: the structure
         # string is read as one literal, though its `ALIAS` / `DEFAULT` expressions run
         # on
-        # each read (#492)
+        # each read
         # (the first row, whose first element is the structure, each in a tuple)
         structure: Any = node
         for _ in range(3):
@@ -1621,7 +1621,7 @@ def _collapses_rows(stmt: Any) -> bool:
     Whether the query merges rows that compare equal into one (`GROUP BY`, `SELECT
     DISTINCT`, `UNION`, `INTERSECT`, `EXCEPT`, `DISTINCT` in an aggregate other than
     `COUNT`): under a collation that equates different texts, the database returns
-    any one of them (#488).
+    any one of them.
     """
     if stmt.find(exp.Group) is not None:
         return True

@@ -325,7 +325,7 @@ pub fn table_info(
         return info;
     };
 
-    // The fresh types of a Databricks view with schema evolution couldn't be read (#514).
+    // The fresh types of a Databricks view with schema evolution couldn't be read.
     let mut evolving_types_failed = false;
     // A lookup may fail on its own (a missing view, permissions): the others still run.
     let mut failed: Vec<&'static str> = vec![];
@@ -397,7 +397,7 @@ pub fn table_info(
             }
         }
         if dialect == DialectName::Databricks {
-            // #514: a view created WITH SCHEMA [TYPE] EVOLUTION stores a schema that goes stale
+            // a view created WITH SCHEMA [TYPE] EVOLUTION stores a schema that goes stale
             // when its base column changes (a collation, say) until something reads it, while
             // the server compares by the current one: take the types from `DESCRIBE QUERY`.
             // (Without the row, the mode is unknown: the types are read from the query too.)
@@ -427,7 +427,7 @@ pub fn table_info(
                     Some(t) => info.types = t,
                     None => evolving_types_failed = true,
                 }
-                // `DESCRIBE QUERY` shows a `char(n)` column as `string` (#400)
+                // `DESCRIBE QUERY` shows a `char(n)` column as `string`
                 info.padding_unknown = true;
             }
             databricks_collations(&mut info);
@@ -687,7 +687,7 @@ pub fn query_info(
             let sql = pg_select(
                 &|c| {
                     // Identity, not the printed name: a user's collation named `"C"` first
-                    // on the search_path prints as the built-in one (#498). `to_regcollation`
+                    // on the search_path prints as the built-in one. `to_regcollation`
                     // resolves the printed name as the server did; only a deterministic
                     // `pg_catalog` collation is reported (anything else is empty: unknown).
                     format!(
@@ -819,7 +819,7 @@ impl CatalogQueries {
                     // we can classify: it is reported as empty, which reads as `UNKNOWN`.
                     // A byte-wise collation orders by code point only in UTF-8: in another
                     // server encoding it reads as the (deterministic) default. Only a
-                    // `pg_catalog` collation is known by its name (#497): a user's `"C"` in
+                    // `pg_catalog` collation is known by its name: a user's `"C"` in
                     // another schema may be an ICU one, so it reads as `user.C`.
                     collations: Some(if dialect == DialectName::Postgresql {
                         format!(
@@ -1010,7 +1010,7 @@ impl CatalogQueries {
                     // A connection the plugin didn't open (a live object, a factory's) may
                     // have replaced `BINARY` or any collation (`create_collation`), in a way
                     // no probe can rule out (a natural or shortlex order passes a byte-order
-                    // one, #481): its collations are unknown.
+                    // one): its collations are unknown.
                     declared_sql: Some(format!(
                         "SELECT sql || CASE WHEN {} <> 'UTF-8' THEN ' COLLATE' ELSE '' END \
                         FROM ({master}) WHERE type = 'table' AND name = {}",
@@ -2024,7 +2024,7 @@ fn databricks_view(
 
 /// The columns of a table whose collation may equate different texts, lower-cased, or `*`
 /// for all of them where the table's own text says so; `None` where the lookup fails or the
-/// dialect has none (#488: a `GROUP BY` or `DISTINCT` over them returns any one of the
+/// dialect has none (a `GROUP BY` or `DISTINCT` over them returns any one of the
 /// spellings that compare equal, and each partition may return another). Binary collations
 /// only: MySQL and MariaDB `_bin` ones that are `NO PAD` (the others compare `'a'` and
 /// `'a '` equal) and `binary`; Postgres deterministic ones (not `citext`, nor a domain
@@ -2303,7 +2303,7 @@ pub fn databricks_builtins_first(path: &str) -> bool {
 }
 
 /// The Databricks session's SQL path (`SELECT current_path()`), `None` where it can't be
-/// read (#513). Read once per planning, for [`databricks_builtins_first`] and the lookup of
+/// read. Read once per planning, for [`databricks_builtins_first`] and the lookup of
 /// [`user_functions`].
 pub fn databricks_path(session: &mut dyn DatabaseSession) -> Option<String> {
     match session.catalog_query("SELECT current_path()") {
@@ -3196,7 +3196,7 @@ mod tests {
 
     #[test]
     fn databricks_evolving_view_takes_types_from_describe_query() {
-        // #514: the stored schema of a WITH SCHEMA EVOLUTION view may be stale
+        // the stored schema of a WITH SCHEMA EVOLUTION view may be stale
         let stale = [
             ("id", "int"),
             ("s", "string"),
@@ -3395,7 +3395,7 @@ mod tests {
 
     #[test]
     fn databricks_sql_paths() {
-        // #513: a user's schema ahead of the built-ins may shadow one of their functions
+        // a user's schema ahead of the built-ins may shadow one of their functions
         for ok in [
             "system.builtin, system.ai, test.polars_scan_database",
             "system.session,system.builtin,system.ai,test.polars_scan_database",
@@ -3491,7 +3491,7 @@ mod tests {
         let info = table_info(&mut s, d, &["t".into()], true);
         assert_eq!(info.types.len(), 1);
         assert!(!info.incomplete);
-        // no `View Schema Mode` row to tell a view of schema evolution (#514): the types are
+        // no `View Schema Mode` row to tell a view of schema evolution: the types are
         // read from the query too, and char padding is unknown
         assert_eq!(
             s.0,

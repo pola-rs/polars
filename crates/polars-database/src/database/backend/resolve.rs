@@ -242,7 +242,7 @@ pub fn detect_dialect(
     };
     // A `dialect=` names what the connection can't say, or refines it (a MySQL driver
     // on SingleStore, a Postgres driver on Redshift); one that contradicts the connection
-    // would write another database's SQL (other string escapes) and pick its driver (#452).
+    // would write another database's SQL (other string escapes) and pick its driver.
     let refines = matches!(
         (inferred, user),
         (DialectName::Mysql, DialectName::Singlestore)
@@ -437,7 +437,7 @@ pub fn resolve_backend(
     }
 
     // Flight SQL is a transport: `dialect=` names the database behind it (for the SQL written),
-    // while the drivers are the Flight SQL ones, whatever it says (#452).
+    // while the drivers are the Flight SQL ones, whatever it says.
     let dialect = if infer_dialect(spec, object) == DialectName::Flightsql {
         DialectName::Flightsql
     } else {
@@ -544,7 +544,6 @@ mod tests {
 
     #[test]
     fn a_dialect_must_not_contradict_the_connection() {
-        // #452
         let uri = |u: &str| ConnectionSpec::new(ConnectionTarget::Uri(u.into()));
         let pg = uri("postgresql://h/db");
         let d = |s: &ConnectionSpec, u| detect_dialect(s, u, None);
