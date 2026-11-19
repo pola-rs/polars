@@ -683,35 +683,45 @@ pub fn quantile<'a>(
     // Don't change names by aggregations as is done in polars-core.
     let keep_name = ac.get_values().name().clone();
 
-    let quantile_column = inputs[1].evaluate(df, state)?;
-    polars_ensure!(
-        !quantile_column.is_empty(),
-        ComputeError:
-            "the 'quantile' expression input should produce a single quantile, got an empty input"
-    );
-    polars_ensure!(
-        quantile_column.len() == 1,
-        ComputeError:
-            "polars only supports computing a single quantile in a groupby aggregation context"
-    );
+    let ac_quantile = inputs[1].evaluate_on_groups(df, groups, state)?;
+    let (quantile_column, per_group) = if let Some(s) = ac_quantile.uniform_single_value() {
+        (s.clone().into_column(), false)
+    } else {
+        match ac_quantile.state {
+            AggState::LiteralScalar(c) => (c, false),
+            AggState::AggregatedScalar(c) => (c, true),
+            AggState::AggregatedList(_) | AggState::NotAggregated(_) => polars_bail!(
+                ComputeError:
+                    "the 'quantile' expression input should produce a single quantile per group; \
+                    use `.item()` to take the single value of each group"
+            ),
+        }
+    };
     polars_ensure!(
         quantile_column.dtype().is_numeric(),
         SchemaMismatch:
             "expected expression of dtype 'numeric' for quantile, got '{}'",
         quantile_column.dtype()
     );
-    let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
 
-    if let AggState::LiteralScalar(c) = &mut ac.state {
-        *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
-        return Ok(ac);
-    }
+    let per_group_quantiles;
+    let quantile = if per_group {
+        per_group_quantiles = quantile_column.cast(&DataType::Float64)?;
+        GroupQuantile::PerGroup(per_group_quantiles.f64()?)
+    } else {
+        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
+        if let AggState::LiteralScalar(c) = &mut ac.state {
+            *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
+            return Ok(ac);
+        }
+        GroupQuantile::Scalar(quantile)
+    };
 
     // SAFETY: groups are in bounds.
     let mut agg = unsafe {
         ac.flat_naive()
             .into_owned()
-            .agg_quantile(ac.groups(), GroupQuantile::Scalar(quantile), method)
+            .agg_quantile(ac.groups(), quantile, method)
     };
     agg.rename(keep_name);
     Ok(AggregationContext::from_agg_state(

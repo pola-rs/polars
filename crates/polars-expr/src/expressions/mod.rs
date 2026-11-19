@@ -982,7 +982,7 @@ pub trait PhysicalExpr: Send + Sync {
 
 impl AggregationContext<'_> {
     /// The value of a list that holds the same single value for every group.
-    fn uniform_single_value(&self) -> Option<&Series> {
+    pub(crate) fn uniform_single_value(&self) -> Option<&Series> {
         let AggState::AggregatedList(c) = &self.state else {
             return None;
         };

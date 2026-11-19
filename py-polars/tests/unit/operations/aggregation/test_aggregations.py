@@ -226,6 +226,62 @@ def test_multi_quantile_group_by_unsupported_26956() -> None:
         df.group_by("g").agg(pl.col("v").quantile([0.25, 0.75]))
 
 
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("layout", ["idx", "slice", "sorted_slice"])
+def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 0, 0, 1, 1, 1, 1, 2, 2, 3],
+            "v": [None, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "q": [0.1, 0.1, 0.1, 0.8, 0.8, 0.8, 0.8, 0.5, 0.5, None],
+        }
+    )
+    if layout == "idx":
+        df = df.sample(fraction=1.0, shuffle=True, seed=0)
+    elif layout == "sorted_slice":
+        df = df.with_columns(pl.col("g", "v").set_sorted())
+
+    expected = {
+        g: None if part["q"][0] is None else part["v"].quantile(part["q"][0], method)
+        for (g,), part in df.group_by("g")
+    }
+    quantile = pl.col("v").quantile(pl.col("q").first(), method)
+
+    out = df.lazy().group_by("g").agg(quantile).collect()
+    assert dict(out.iter_rows()) == expected
+    out = df.lazy().select("g", quantile.over("g")).collect()
+    assert out["v"].to_list() == [expected[g] for g in out["g"]]
+
+
+def test_quantile_varying_per_rolling_window_20951() -> None:
+    df = pl.DataFrame(
+        {"t": [1, 2, 3, 4], "v": [4.0, 1.0, 3.0, 2.0], "q": [0.0, 1.0, 0.0, 1.0]}
+    )
+    out = df.rolling("t", period="2i").agg(pl.col("v").quantile(pl.col("q").last()))
+    assert out["v"].to_list() == [4.0, 4.0, 1.0, 3.0]
+
+
+@pytest.mark.parametrize(
+    "quantile_arg",
+    [pl.col("q"), pl.col("q").head(1), pl.lit(pl.Series([0.5, 0.5]))],
+    ids=["column", "head", "series_literal"],
+)
+def test_quantile_non_scalar_in_group_by_raises(quantile_arg: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3], "q": [0.5, 0.5, 0.5]})
+    with pytest.raises(ComputeError, match=r"single quantile per group.*\.item\(\)"):
+        df.group_by("g").agg(pl.col("v").quantile(quantile_arg))
+
+
+def test_quantile_series_literal_in_group_by() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3]})
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("v").quantile(pl.lit(pl.Series([0.5])))
+    )
+    assert out["v"].to_list() == [2.0, 3.0]
+
+
 def test_quantile_date() -> None:
     s = pl.Series(
         "a", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 4)]
@@ -591,7 +647,7 @@ def test_quantile_empty_quantile(dtype: PolarsDataType) -> None:
 
 def test_quantile_empty_quantile_group_by() -> None:
     df = pl.DataFrame(schema={"g": pl.Int64, "a": pl.Float64, "q": pl.Float64})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ComputeError, match="single quantile per group"):
         df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
 
 
