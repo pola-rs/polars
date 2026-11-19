@@ -6827,11 +6827,9 @@ def test_mysql_user_function_named_like_another_dialects_builtin(name: str) -> N
     )
     try:
         for fn in fns:
+            via = "query" if fn == "initcap" else None
             _refused(
-                name,
-                f"SELECT id, {fn}(id) AS k FROM review_vf_ids",
-                via="query",
-                why=fn,
+                name, f"SELECT id, {fn}(id) AS k FROM review_vf_ids", via=via, why=fn
             )
         assert _partitions(name, "review_vf_ids") == list(range(300))
         assert _partitions(
@@ -6867,6 +6865,8 @@ def test_clickhouse_user_functions_named_like_another_dialects_builtin() -> None
                 via="query",
                 why=n,
             )
+        # (a user's `levenshtein` would stand for them both)
+        _execute(name, ["DROP FUNCTION IF EXISTS levenshtein"])
         assert _partitions(
             name,
             "SELECT id, levenshteinDistance('a', 'b') AS a, "
