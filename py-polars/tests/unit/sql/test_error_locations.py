@@ -52,3 +52,15 @@ def test_error_location_on_a_long_line() -> None:
     assert line.endswith("...")
     assert len(line) <= len("LINE 1: ") + 106
     assert line[caret.index("^") :].startswith("LEN(s)")
+
+
+def test_error_hint() -> None:
+    with pytest.raises(SQLInterfaceError) as exc:
+        pl.sql("SELECT LEN('x')", eager=True)
+    message = str(exc.value)
+    # The location, then the hint, then the plan.
+    location = message.index("\n\nSQL at line 1, column 8:")
+    hint = message.index("\n\nHint: use LENGTH instead")
+    plan = message.find("Resolved plan")
+    assert location < hint
+    assert plan == -1 or hint < plan

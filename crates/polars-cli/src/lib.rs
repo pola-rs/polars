@@ -46,13 +46,16 @@ pub mod exit_code {
 /// Runs the statements of `script` in order, in one session, and reports the outcome to
 /// `printer`. Stops at the first statement that fails. Returns the exit code.
 ///
-/// With `read_only`, a statement that writes a file fails.
-pub fn run<O, E>(script: &Script, read_only: bool, printer: &mut Printer<O, E>) -> u8
+/// With `read_only`, what turned it on, a statement that writes a file fails.
+pub fn run<O, E>(script: &Script, read_only: Option<&str>, printer: &mut Printer<O, E>) -> u8
 where
     O: Write + Send + 'static,
     E: Write,
 {
-    let mut context = SQLContext::new().with_file_writes(!read_only);
+    let mut context = SQLContext::new().with_file_writes(read_only.is_none());
+    if let Some(origin) = read_only {
+        context = context.with_file_writes_disabled_by(origin);
+    }
     let code = run_statements(script, printer, |sql| {
         // `execute` rejects `COPY ... TO STDOUT`: where its rows go is up to the caller.
         Ok(match context.copy_to_stdout(sql)? {
@@ -153,7 +156,7 @@ where
             // A reader that closed the output, as `head` does, is not worth a message.
             Ok(Err(Stop::Error(_))) if printer.output_is_closed() => return exit_code::FAILURE,
             Ok(Err(Stop::Error(error))) => (
-                Event::Error(ErrorRecord::from_polars(&error, number)),
+                Event::Error(ErrorRecord::from_polars(&error, number, &statement, script)),
                 exit_code::FAILURE,
             ),
             Ok(Err(Stop::Aborted(QueryAborted::KeyboardInterrupt))) => {
@@ -361,7 +364,7 @@ mod tests {
 
     fn run_formatted(sql: &str, format: Format) -> (u8, String, String) {
         let script = Script::new(sql.to_string());
-        captured(format, |printer| run(&script, false, printer))
+        captured(format, |printer| run(&script, None, printer))
     }
 
     /// Runs `sql` with `result` in place of the SQL engine.
@@ -452,7 +455,7 @@ mod tests {
         let script = Script::new("COPY (SELECT 1 AS a) TO STDOUT (FORMAT parquet)".to_string());
         let (out, mut err) = (Output::default(), Vec::new());
         let mut printer = Printer::new(out.clone(), &mut err, Format::Table).on_terminal(true);
-        assert_eq!(run(&script, false, &mut printer), exit_code::FAILURE);
+        assert_eq!(run(&script, None, &mut printer), exit_code::FAILURE);
         assert_eq!(out.text(), "");
         assert!(String::from_utf8(err).unwrap().contains("is binary"));
     }
@@ -551,8 +554,10 @@ mod tests {
         let error = ErrorRecord {
             class: "ComputeError",
             message: "failed halfway".to_string(),
-            hint: None,
             location: None,
+            expression: None,
+            hints: Vec::new(),
+            details: String::new(),
             statement: 1,
         };
         printer.event(Event::Error(error)).unwrap();

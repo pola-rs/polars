@@ -342,6 +342,7 @@ pub struct SQLContext {
     pub(crate) allow_file_reads: bool,
     /// Whether SQL may write files and URLs, through `COPY`.
     allow_file_writes: bool,
+    file_writes_disabled_by: Option<String>,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
@@ -450,6 +451,7 @@ impl Default for SQLContext {
             custom_function_registry: false,
             allow_file_reads: true,
             allow_file_writes: true,
+            file_writes_disabled_by: None,
             table_map: Default::default(),
             views: Default::default(),
             macros: Default::default(),
@@ -1721,6 +1723,12 @@ impl SQLContext {
     /// are not limited.
     pub fn with_file_writes(mut self, allow: bool) -> Self {
         self.allow_file_writes = allow;
+        self
+    }
+
+    /// Name what turned file writes off, in the error of a statement that writes a file.
+    pub fn with_file_writes_disabled_by(mut self, origin: impl Into<String>) -> Self {
+        self.file_writes_disabled_by = Some(origin.into());
         self
     }
 
@@ -3017,10 +3025,14 @@ impl SQLContext {
         let CopySource::Query(query) = source else {
             polars_bail!(SQLInterface: "COPY of a table is not supported in this statement");
         };
-        polars_ensure!(
-            self.allow_file_writes,
-            SQLInterface: "writing files is disabled in this SQLContext"
-        );
+        if !self.allow_file_writes {
+            match &self.file_writes_disabled_by {
+                Some(origin) => {
+                    polars_bail!(SQLInterface: "writing files is disabled by {}", origin)
+                },
+                None => polars_bail!(SQLInterface: "writing files is disabled in this SQLContext"),
+            }
+        }
         let format = copy::write_format(Some(path), options, legacy_options)?;
         let target = SinkTarget::Path(expand_home_dir(PlRefPath::new(path))?);
         self.execute_query(query)?.sink(

@@ -3158,6 +3158,7 @@ dependencies = [
  "polars-ooc",
  "signal-hook",
  "sqlparser",
+ "unicode-width",
 ]
 
 [[package]]
