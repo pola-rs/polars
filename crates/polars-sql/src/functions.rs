@@ -16,7 +16,7 @@ use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
     DatetimeArgs, by_name, coalesce, concat_str, date_diff, datetime, datetime_ranges, element,
-    int_range, int_ranges, len, lit, max_horizontal, min_horizontal, when,
+    format_str, int_range, int_ranges, len, lit, max_horizontal, min_horizontal, when,
 };
 use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
@@ -475,6 +475,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT col2 from df WHERE ENDS_WITH(col1, 'a');
     /// ```
     EndsWith,
+    /// SQL 'format' function.
+    /// Fills the `{}` placeholders of a format string, which can hold a Python format
+    /// specification such as `{:.2f}`.
+    /// ```sql
+    /// SELECT FORMAT('{} costs {:.2f}', col1, col2) FROM df;
+    /// ```
+    Format,
     /// SQL 'initcap' function.
     /// Returns the value with the first letter capitalized.
     /// ```sql
@@ -525,6 +532,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT OCTET_LENGTH(col1) FROM df;
     /// ```
     OctetLength,
+    /// SQL 'printf' function.
+    /// Fills the `%` conversions of a format string, as in C's printf.
+    /// ```sql
+    /// SELECT PRINTF('%s costs %.2f', col1, col2) FROM df;
+    /// ```
+    Printf,
     /// SQL 'regexp_extract' function.
     /// Returns the given capture group of the first match of `pattern` (optional: `group`,
     /// 0 for the whole match), or an empty string if there is no match.
@@ -1202,6 +1215,7 @@ impl PolarsSQLFunctions {
             "first",
             "first_value",
             "floor",
+            "format",
             "generate_series",
             "greatest",
             "hour",
@@ -1248,6 +1262,7 @@ impl PolarsSQLFunctions {
             "pi",
             "pow",
             "power",
+            "printf",
             "quantile_cont",
             "quantile_disc",
             "quarter",
@@ -1410,6 +1425,7 @@ impl PolarsSQLFunctions {
             "concat" => Self::Concat,
             "concat_ws" => Self::ConcatWS,
             "ends_with" => Self::EndsWith,
+            "format" => Self::Format,
             #[cfg(feature = "nightly")]
             "initcap" => Self::InitCap,
             "left" => Self::Left,
@@ -1419,6 +1435,7 @@ impl PolarsSQLFunctions {
             "ltrim" => Self::LeftTrim,
             "normalize" => Self::Normalize,
             "octet_length" => Self::OctetLength,
+            "printf" => Self::Printf,
             "regexp_extract" => Self::RegexpExtract,
             "regexp_like" => Self::RegexpLike,
             "regexp_matches" => Self::RegexpMatches,
@@ -1873,6 +1890,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
+            Format => self.visit_format(false),
             #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
@@ -1976,6 +1994,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             OctetLength => self.visit_unary(|e| e.str().len_bytes().cast(DataType::Int64)),
+            Printf => self.visit_format(true),
             StrPos => self.visit_binary(sql_position),
             RegexpLike => {
                 let args = extract_args(function)?;
@@ -2647,6 +2666,44 @@ impl SQLFunctionVisitor<'_> {
             _ => (start, end),
         };
         self.apply_window_spec(date_diff(start, end, unit))
+    }
+
+    /// FORMAT with `{}` placeholders, or PRINTF with `%` conversions.
+    fn visit_format(&mut self, printf: bool) -> PolarsResult<Expr> {
+        let name = if printf { "PRINTF" } else { "FORMAT" };
+        let mut args = self.parse_variadic_args()?;
+        polars_ensure!(!args.is_empty(), SQLSyntax: "{name} expects at least 1 argument (found 0)");
+        let mut used = vec![false; args.len()];
+        let (mut format, mut inputs) = match args.remove(0) {
+            Expr::Literal(lv) if lv.is_null() => (
+                "{0}".to_string(),
+                vec![lit(LiteralValue::untyped_null()).cast(DataType::String)],
+            ),
+            Expr::Literal(lv) if lv.extract_str().is_some() => {
+                let format = lv.extract_str().unwrap();
+                if printf {
+                    printf_to_format(format, &args, &mut used)?
+                } else {
+                    sql_format_to_format(format, &args, &mut used)?
+                }
+            },
+            format => {
+                polars_bail!(SQLSyntax: "{name} format must be a string literal (found {format})")
+            },
+        };
+        // Unused arguments are written as empty strings, so that a null still gives a null and
+        // aggregates are kept.
+        for (arg, used) in args.into_iter().zip(used) {
+            if !used {
+                format.push_str(&format!("{{{}}}", inputs.len()));
+                inputs.push(
+                    when(arg.is_not_null())
+                        .then(lit(""))
+                        .otherwise(lit(LiteralValue::untyped_null())),
+                );
+            }
+        }
+        self.apply_window_spec(format_str(&format, &inputs)?)
     }
 
     fn visit_date_trunc(&mut self) -> PolarsResult<Expr> {
@@ -4347,6 +4404,230 @@ impl FromSQLExpr for Expr {
     fn from_sql_arg(expr: &SQLExpr, visitor: &mut SQLFunctionVisitor<'_>) -> PolarsResult<Self> {
         visitor.parse_sql_arg(expr)
     }
+}
+
+/// Translates a printf format string into a [`format_str`] format string and its arguments.
+fn printf_to_format(
+    printf: &str,
+    args: &[Expr],
+    used: &mut [bool],
+) -> PolarsResult<(String, Vec<Expr>)> {
+    let bytes = printf.as_bytes();
+    let mut format = String::with_capacity(printf.len());
+    let mut inputs = vec![];
+    let mut next_arg = 0;
+    let mut numbered = None;
+    let mut literal_start = 0;
+    let mut i = 0;
+    let digits = |i: &mut usize| {
+        let start = *i;
+        while bytes.get(*i).is_some_and(u8::is_ascii_digit) {
+            *i += 1;
+        }
+        (start < *i).then(|| &printf[start..*i])
+    };
+    while i < bytes.len() {
+        let (escaped, n_bytes) = match bytes[i] {
+            b'{' => ("{{", 1),
+            b'}' => ("}}", 1),
+            b'%' if bytes.get(i + 1) == Some(&b'%') => ("%", 2),
+            b'%' => ("", 1),
+            _ => {
+                i += 1;
+                continue;
+            },
+        };
+        format.push_str(&printf[literal_start..i]);
+        format.push_str(escaped);
+        let start = i;
+        i += n_bytes;
+        literal_start = i;
+        if !escaped.is_empty() {
+            continue;
+        }
+
+        // An argument number, as in `%2$s`.
+        let mut position = None;
+        let mut j = i;
+        if let Some(n) = digits(&mut j)
+            && bytes.get(j) == Some(&b'$')
+        {
+            position = Some(n.parse::<usize>().ok().filter(|n| *n > 0));
+            i = j + 1;
+        }
+        let (mut left, mut zero, mut plus, mut space, mut alternate, mut comma) =
+            (false, false, false, false, false, false);
+        while let Some(flag) = bytes.get(i) {
+            match flag {
+                b'-' => left = true,
+                b'0' => zero = true,
+                b'+' => plus = true,
+                b' ' => space = true,
+                b'#' => alternate = true,
+                b',' => comma = true,
+                _ => break,
+            }
+            i += 1;
+        }
+        let width = digits(&mut i);
+        let precision = if bytes.get(i) == Some(&b'.') {
+            i += 1;
+            Some(digits(&mut i).unwrap_or("0"))
+        } else {
+            None
+        };
+        // Length modifiers such as `ld` don't change the output.
+        while matches!(
+            bytes.get(i),
+            Some(b'h' | b'l' | b'L' | b'q' | b'j' | b'z' | b't')
+        ) {
+            i += 1;
+        }
+        let conversion = bytes.get(i).copied();
+        i += 1;
+        literal_start = i;
+        let spec_end = (i..printf.len())
+            .find(|end| printf.is_char_boundary(*end))
+            .unwrap_or(printf.len());
+        let spec_str = &printf[start..spec_end];
+        let ty = match conversion {
+            Some(b'd' | b'i' | b'u') if precision.is_none() => 'd',
+            Some(b'o') if !alternate => 'o',
+            Some(t @ (b'c' | b'e' | b'E' | b'f' | b'F' | b'g' | b'G' | b's' | b'x' | b'X')) => {
+                char::from(t)
+            },
+            _ => polars_bail!(SQLSyntax: "PRINTF does not support '{spec_str}'"),
+        };
+
+        // As in C, characters and strings ignore the numeric flags, and unsigned conversions
+        // ignore the sign flags.
+        let numeric = !matches!(ty, 'c' | 's');
+        let zero = zero && !left && numeric;
+        let build_spec = |zero: bool| {
+            let mut spec = String::new();
+            if left {
+                spec.push('<');
+            } else if ty == 's' {
+                spec.push('>');
+            }
+            if numeric {
+                let unsigned = matches!(conversion, Some(b'u' | b'o' | b'x' | b'X'));
+                if plus && !unsigned {
+                    spec.push('+');
+                } else if space && !unsigned {
+                    spec.push(' ');
+                }
+                if alternate {
+                    spec.push('#');
+                }
+                if zero {
+                    spec.push('0');
+                }
+            }
+            spec.push_str(width.unwrap_or(""));
+            if comma && numeric {
+                spec.push(',');
+            }
+            // `%f` always has 6 decimals, also for decimals.
+            if let Some(precision) = precision.or((ty == 'f' || ty == 'F').then_some("6")) {
+                spec.push('.');
+                spec.push_str(precision);
+            }
+            spec.push(ty);
+            spec
+        };
+        let spec = build_spec(zero);
+
+        let index = match position {
+            Some(position) => {
+                polars_ensure!(numbered != Some(false), SQLSyntax: "PRINTF cannot mix numbered and unnumbered arguments");
+                numbered = Some(true);
+                let Some(position) = position else {
+                    polars_bail!(SQLSyntax: "PRINTF does not support '{spec_str}'");
+                };
+                position - 1
+            },
+            None => {
+                polars_ensure!(numbered != Some(true), SQLSyntax: "PRINTF cannot mix numbered and unnumbered arguments");
+                numbered = Some(false);
+                next_arg += 1;
+                next_arg - 1
+            },
+        };
+        let Some(arg) = args.get(index) else {
+            polars_bail!(SQLSyntax: "PRINTF format '{printf}' needs more arguments (found {})", args.len());
+        };
+        used[index] = true;
+        if zero && matches!(ty, 'e' | 'E' | 'f' | 'F' | 'g' | 'G') {
+            // C pads infinity and NaN with spaces, also with the `0` flag.
+            let finite = arg.clone().cast(DataType::Float64).is_finite();
+            let padded =
+                |spec: &str| format_str(&format!("{{:{spec}}}"), std::slice::from_ref(arg));
+            format.push_str(&format!("{{{}}}", inputs.len()));
+            inputs.push(
+                when(finite)
+                    .then(padded(&spec)?)
+                    .otherwise(padded(&build_spec(false))?),
+            );
+        } else {
+            format.push_str(&format!("{{{}:{spec}}}", inputs.len()));
+            inputs.push(arg.clone());
+        }
+    }
+    format.push_str(&printf[literal_start..]);
+    Ok((format, inputs))
+}
+
+/// Translates a FORMAT format string, with `{}` and `{0}` placeholders, into a [`format_str`]
+/// format string and its arguments.
+fn sql_format_to_format(
+    sql_format: &str,
+    args: &[Expr],
+    used: &mut [bool],
+) -> PolarsResult<(String, Vec<Expr>)> {
+    let mut format = String::with_capacity(sql_format.len());
+    let mut inputs = vec![];
+    let mut next_arg = 0;
+    let mut numbered = None;
+    let mut rest = sql_format;
+    while let Some(i) = rest.find(['{', '}']) {
+        format.push_str(&rest[..i]);
+        let (brace, after) = (rest.as_bytes()[i], &rest[i + 1..]);
+        if after.as_bytes().first() == Some(&brace) {
+            format.push_str(if brace == b'{' { "{{" } else { "}}" });
+            rest = &after[1..];
+            continue;
+        }
+        let close = after.find('}').filter(|_| brace == b'{').ok_or_else(
+            || polars_err!(SQLSyntax: "unmatched brace in FORMAT format '{sql_format}'"),
+        )?;
+        let (arg, spec) = after[..close]
+            .split_once(':')
+            .unwrap_or((&after[..close], ""));
+        let index = if arg.is_empty() {
+            polars_ensure!(numbered != Some(true), SQLSyntax: "FORMAT cannot mix numbered and unnumbered placeholders");
+            numbered = Some(false);
+            next_arg += 1;
+            next_arg - 1
+        } else {
+            polars_ensure!(numbered != Some(false), SQLSyntax: "FORMAT cannot mix numbered and unnumbered placeholders");
+            numbered = Some(true);
+            let valid =
+                arg.bytes().all(|b| b.is_ascii_digit()) && (arg == "0" || !arg.starts_with('0'));
+            arg.parse::<usize>().ok().filter(|_| valid).ok_or_else(
+                || polars_err!(SQLSyntax: "FORMAT does not support the placeholder '{{{arg}}}'"),
+            )?
+        };
+        let Some(arg) = args.get(index) else {
+            polars_bail!(SQLSyntax: "FORMAT format '{sql_format}' needs more arguments (found {})", args.len());
+        };
+        used[index] = true;
+        format.push_str(&format!("{{{}:{spec}}}", inputs.len()));
+        inputs.push(arg.clone());
+        rest = &after[close + 1..];
+    }
+    format.push_str(rest);
+    Ok((format, inputs))
 }
 
 fn date_diff_unit(part: &str) -> Option<DateDiffUnit> {

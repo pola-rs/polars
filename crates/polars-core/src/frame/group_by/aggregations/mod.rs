@@ -190,7 +190,7 @@ pub fn _slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize
 where
     T: PolarsDataType,
 {
-    ca.slice(first as i64, len as usize)
+    ca.slice((first as usize, len as usize))
 }
 
 /// Helper that combines the groups into a parallel iterator over `(first, all): (u32, &Vec<u32>)`.

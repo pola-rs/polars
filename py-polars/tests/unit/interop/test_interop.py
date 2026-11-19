@@ -27,6 +27,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1903,3 +1905,21 @@ def test_export_arrow_to_c_logical_dtype(s: pl.Series) -> None:
     arr = pa.Array._import_from_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
     arr.validate(full=True)
     assert arr.equals(s.to_arrow(compat_level=CompatLevel.newest()))
+
+
+@pytest.mark.parametrize(
+    "export",
+    [
+        lambda df: pa.table(df),
+        lambda df: pa.RecordBatchReader.from_stream(df.lazy().collect_batches()),
+    ],
+    ids=["DataFrame", "LazyFrame.collect_batches"],
+)
+def test_arrow_c_stream_raises_on_a_nul_in_a_column_name(
+    export: Callable[[pl.DataFrame], Any],
+) -> None:
+    # Exporting the name panics in the stream's `get_schema` callback.
+    df = pl.DataFrame({"a\0b": [1]})
+
+    with pytest.raises(OSError, match="panic in an Arrow C stream callback"):
+        export(df)

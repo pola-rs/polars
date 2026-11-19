@@ -410,35 +410,31 @@ impl FfiFileReader {
     }
 }
 
-/// Positive-slice state over the stream of rows of one source.
-struct SliceState(Slice);
+/// Positive-slice state over the stream of rows of one source: the slice of the rows not yet
+/// read, `None` if every remaining row is selected.
+struct SliceState(Option<Slice>);
 
 impl SliceState {
-    /// `pre_slice` is positive.
-    fn new(pre_slice: Option<&Slice>) -> Self {
-        Self(pre_slice.cloned().unwrap_or(Slice::Positive {
-            offset: 0,
-            len: usize::MAX,
-        }))
+    fn new(pre_slice: Option<Slice>) -> Self {
+        assert!(pre_slice.is_none_or(|s| s.is_positive()));
+        Self(pre_slice)
     }
 
     fn done(&self) -> bool {
-        self.0.len() == 0
+        self.0.is_some_and(|s| s.is_empty())
     }
 
     /// Moves past `h` more rows: the offset and length of the part of them in the slice.
     fn advance(&mut self, h: u64) -> (u64, u64) {
         let h = usize::try_from(h).unwrap_or(usize::MAX);
-        let Slice::Positive { offset, len } = self.0.clone().restrict_to_bounds(h) else {
-            unreachable!()
-        };
-        self.0 = self.0.clone().offsetted(h);
-        (offset as u64, len as u64)
+        let range;
+        (range, self.0) = self.0.map_or((0..h, None), |s| s.split_front(h));
+        (range.start as u64, range.len() as u64)
     }
 
     fn apply(&mut self, df: DataFrame) -> DataFrame {
         let (offset, len) = self.advance(df.height() as u64);
-        df.slice(offset as i64, len as usize)
+        df.slice((offset as usize, len as usize))
     }
 }
 
@@ -507,8 +503,8 @@ impl FileReader for FfiFileReader {
                 },
                 s => s,
             };
-            let slice_end = pre_slice.as_ref().map(|s| s.end_position());
-            let mut slice = SliceState::new(pre_slice.as_ref());
+            let slice_end = pre_slice.and_then(|s| s.end_position());
+            let mut slice = SliceState::new(pre_slice);
 
             let source_token = SourceToken::new();
 
@@ -565,7 +561,7 @@ impl FileReader for FfiFileReader {
                 let df = slice.apply(df);
                 let mut offset = 0;
                 while offset < df.height() {
-                    let chunk = df.slice(offset as i64, morsel_size);
+                    let chunk = df.slice((offset, morsel_size));
                     offset += chunk.height();
                     let morsel =
                         Morsel::new_unregistered(chunk, MorselSeq::new(seq), source_token.clone());

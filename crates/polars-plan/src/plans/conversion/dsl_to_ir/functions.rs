@@ -246,7 +246,11 @@ pub(super) fn convert_functions(
             use IRStringFunction as IS;
             use StringFunction as S;
             I::StringExpr(match string_function {
-                S::Format { format, insertions } => {
+                S::Format {
+                    format,
+                    insertions,
+                    specs,
+                } => {
                     if input_is_empty {
                         polars_ensure!(
                             insertions.is_empty(),
@@ -260,7 +264,11 @@ pub(super) fn convert_functions(
 
                         return Ok((out, get_literal_name()));
                     } else {
-                        IS::Format { format, insertions }
+                        IS::Format {
+                            format,
+                            insertions,
+                            specs,
+                        }
                     }
                 },
                 #[cfg(feature = "concat_str")]

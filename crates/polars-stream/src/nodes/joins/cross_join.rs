@@ -8,6 +8,7 @@ use polars_defs::join::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
 use polars_error::polars_warn;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::compute_node_prelude::*;
@@ -218,7 +219,7 @@ impl ComputeNode for CrossJoinNode {
                                             let height = (build_df.height() - build_offset)
                                                 .min(ideal_morsel_size);
                                             let build_join_df =
-                                                build_df.slice(build_offset as i64, height);
+                                                build_df.slice((build_offset, height));
                                             let probe_join_df =
                                                 probe_df.new_from_index(probe_offset, height);
                                             let combined = combine(build_join_df, probe_join_df);
@@ -246,8 +247,8 @@ impl ComputeNode for CrossJoinNode {
                                             cached_build_df_repeated =
                                                 build_repeater.freeze_reset();
                                         }
-                                        let build_join_df =
-                                            cached_build_df_repeated.slice(0, build_height);
+                                        let build_join_df = cached_build_df_repeated
+                                            .slice(Slice::head(build_height));
 
                                         probe_repeater.subslice_extend_each_repeated(
                                             &probe_df,

@@ -64,30 +64,22 @@ use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 /// Creates a new PhysStream which outputs a slice of the input stream.
 pub fn build_slice_stream(
     input: PhysStream,
-    offset: i64,
-    length: usize,
+    slice: Slice,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
-    if offset >= 0 {
-        let offset = offset as usize;
-        PhysStream::first(phys_sm.insert(PhysNode::new(
-            input.output_schema(phys_sm).clone(),
-            PhysNodeKind::StreamingSlice {
-                input,
-                offset,
-                length,
-            },
-        )))
+    let kind = if let Slice::Negative {
+        offset_from_end, ..
+    } = slice
+    {
+        PhysNodeKind::NegativeSlice {
+            input,
+            offset_from_end,
+            length: slice.len().unwrap(),
+        }
     } else {
-        PhysStream::first(phys_sm.insert(PhysNode::new(
-            input.output_schema(phys_sm).clone(),
-            PhysNodeKind::NegativeSlice {
-                input,
-                offset,
-                length,
-            },
-        )))
-    }
+        PhysNodeKind::StreamingSlice { input, slice }
+    };
+    PhysStream::first(phys_sm.insert(PhysNode::new(input.output_schema(phys_sm).clone(), kind)))
 }
 
 /// Creates a new PhysStream which filters the input stream.
@@ -402,11 +394,10 @@ fn lower_ir_inner(
             return build_hstack_stream(phys_input, &exprs, expr_arena, phys_sm, expr_cache, ctx);
         },
 
-        IR::Slice { input, offset, len } => {
-            let offset = *offset;
-            let len = *len as usize;
+        IR::Slice { input, slice } => {
+            let slice = *slice;
             let phys_input = lower_ir!(*input)?;
-            return Ok(build_slice_stream(phys_input, offset, len, phys_sm));
+            return Ok(build_slice_stream(phys_input, slice, phys_sm));
         },
 
         IR::Filter { input, predicate } => {
@@ -721,32 +712,24 @@ fn lower_ir_inner(
             let phys_input = lower_ir!(*input)?;
 
             // See if we can insert a top k.
-            let mut limit = u64::MAX;
-            let mut is_from_end = false;
-            match slice {
-                Some((offset, len, _)) if offset >= 0 => {
-                    limit = (offset as u64).saturating_add(len as u64);
-                },
+            let (mut limit, is_from_end) = match slice.as_ref().map(|(slice, _)| *slice) {
+                Some(slice) if slice.is_positive() => (slice.end_position(), false),
                 // The limit applies before the slice, so it does not commute with keeping the tail.
-                Some((offset, _, _)) if sort_options.limit.is_none() => {
-                    limit = offset.unsigned_abs();
-                    is_from_end = true;
-                },
-                _ => {},
-            }
-            #[allow(clippy::unnecessary_cast)]
-            if let Some(l) = sort_options.limit {
-                limit = limit.min(l as u64);
+                Some(Slice::Negative {
+                    offset_from_end, ..
+                }) if sort_options.limit.is_none() => (Some(offset_from_end), true),
+                _ => (None, false),
             };
-            // Such a top k keeps every row, e.g. for open-ended slices.
-            #[allow(clippy::unnecessary_cast)]
-            if limit >= IdxSize::MAX as u64 {
-                limit = u64::MAX;
-            }
+            if let Some(l) = sort_options.limit {
+                let l = l as usize;
+                limit = Some(limit.map_or(l, |limit| usize::min(limit, l)));
+            };
+            // Such a top k keeps every row.
+            let limit = limit.filter(|&l| l < IdxSize::MAX as usize);
 
             let mut stream = phys_input;
 
-            if sort_options.maintain_order && limit < u64::MAX {
+            if sort_options.maintain_order && limit.is_some() {
                 stream = add_row_idx_sort_key(
                     stream,
                     &mut by_column,
@@ -781,7 +764,7 @@ fn lower_ir_inner(
                 by_column.clone()
             };
 
-            if limit < u64::MAX {
+            if let Some(limit) = limit {
                 let mut top_k_options = sort_options.clone();
                 if is_from_end {
                     top_k_options = top_k_options.with_order_reversed();
@@ -791,8 +774,8 @@ fn lower_ir_inner(
                     stream,
                     trans_by_column.clone(),
                     &top_k_options,
-                    limit,
-                    slice.as_ref().and_then(|t| t.2.clone()),
+                    limit as u64,
+                    slice.as_ref().and_then(|t| t.1.clone()),
                     expr_arena,
                     phys_sm,
                 );
@@ -801,7 +784,7 @@ fn lower_ir_inner(
             stream = build_sort_stream(
                 stream,
                 trans_by_column,
-                slice.as_ref().map(|t| (t.0, t.1)),
+                slice.as_ref().map(|t| t.0),
                 sort_options,
                 expr_arena,
                 phys_sm,
@@ -833,8 +816,8 @@ fn lower_ir_inner(
             let node = phys_sm.insert(PhysNode::new(output_schema, kind));
             let mut stream = PhysStream::first(node);
 
-            if let Some((offset, length)) = options.slice {
-                stream = build_slice_stream(stream, offset, length, phys_sm);
+            if let Some(slice) = options.slice {
+                stream = build_slice_stream(stream, slice, phys_sm);
             }
 
             return Ok(stream);
@@ -887,7 +870,7 @@ fn lower_ir_inner(
                 || unified_scan_args
                     .pre_slice
                     .as_ref()
-                    .is_some_and(|slice| slice.len() == 0)
+                    .is_some_and(|slice| slice.is_empty())
             {
                 if config::verbose() {
                     eprintln!("lower_ir: scan IR lowered as empty InMemorySource")
@@ -1179,7 +1162,7 @@ fn lower_ir_inner(
                         unified_scan_args.column_mapping.as_ref(),
                     );
 
-                    let pre_slice = unified_scan_args.pre_slice.clone();
+                    let pre_slice = unified_scan_args.pre_slice;
                     let disable_morsel_split = disable_morsel_split.unwrap_or(true);
 
                     // Set to None if empty for performance.
@@ -1255,11 +1238,8 @@ fn lower_ir_inner(
                     // the slice by adjusting the offset. This can remove a serial synchronization step in multiscan
                     // and allow the reader to still skip rows.
                     if let Some(row_index) = row_index_post.as_mut() {
-                        let positive_offset = match &pre_slice_to_multiscan {
-                            Some(Slice::Positive { offset, .. }) => *offset,
-                            Some(Slice::Negative { .. }) => unreachable!(),
-                            None => 0,
-                        };
+                        let positive_offset =
+                            pre_slice_to_multiscan.map_or(0, |s| s.positive_offset());
                         row_index.offset = row_index.offset.saturating_add(
                             IdxSize::try_from(positive_offset).unwrap_or(IdxSize::MAX),
                         );
@@ -1782,8 +1762,8 @@ fn lower_ir_inner(
                         ctx,
                     )?;
                 }
-                if let Some((offset, len)) = args.slice {
-                    stream = build_slice_stream(stream, offset, len, phys_sm);
+                if let Some(slice) = args.slice {
+                    stream = build_slice_stream(stream, slice, phys_sm);
                 }
                 return Ok(stream);
             } else {
@@ -1825,9 +1805,9 @@ fn lower_ir_inner(
                 // With zero width every row is identical to every other row, so
                 // at most a single row remains. This matches the zero-width case
                 // of `DataFrame::unique_impl`.
-                let mut stream = build_slice_stream(phys_input, 0, 1, phys_sm);
-                if let Some((offset, length)) = options.slice {
-                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                let mut stream = build_slice_stream(phys_input, Slice::head(1), phys_sm);
+                if let Some(slice) = options.slice {
+                    stream = build_slice_stream(stream, slice, phys_sm);
                 }
                 return Ok(stream);
             }
@@ -1874,8 +1854,8 @@ fn lower_ir_inner(
                 ));
 
                 let mut stream = PhysStream::first(sorted_uniq_node);
-                if let Some((offset, length)) = options.slice {
-                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                if let Some(slice) = options.slice {
+                    stream = build_slice_stream(stream, slice, phys_sm);
                 }
                 return Ok(stream);
             }
@@ -1912,8 +1892,8 @@ fn lower_ir_inner(
                     expr_cache,
                     ctx,
                 )?;
-                if let Some((offset, length)) = options.slice {
-                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                if let Some(slice) = options.slice {
+                    stream = build_slice_stream(stream, slice, phys_sm);
                 }
                 return Ok(stream);
             }
@@ -2037,8 +2017,8 @@ fn lower_ir_inner(
 
             // We didn't pass the slice earlier to build_group_by_stream because
             // we might have the intermediate keep = "none" filter.
-            if let Some((offset, length)) = options.slice {
-                stream = build_slice_stream(stream, offset, length, phys_sm);
+            if let Some(slice) = options.slice {
+                stream = build_slice_stream(stream, slice, phys_sm);
             }
 
             return Ok(stream);

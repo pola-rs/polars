@@ -849,7 +849,7 @@ fn bin_at_positions(
             maintain_order: true,
             ..Default::default()
         })
-        .slice(0, non_null_len);
+        .slice(Slice::head(non_null_len));
 
     // `finish_bins` reads `Some` as "emit the struct", so each arm keeps the boundaries
     // only when they are actually reported -- the value-based path needs them to bin at

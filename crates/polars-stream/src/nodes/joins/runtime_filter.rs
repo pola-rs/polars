@@ -1002,7 +1002,7 @@ mod tests {
         probe
             .append(&Series::new("k".into(), values(400..800)))
             .unwrap();
-        let probe = probe.slice(3, 790);
+        let probe = probe.slice(3..793);
         assert_eq!(probe.chunks().len(), 2);
         let expected: Vec<bool> = probe
             .i64()

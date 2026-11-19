@@ -28,6 +28,7 @@ use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyInt, PyList, PyTuple};
 
+use super::nodes::legacy_slice;
 use crate::Wrap;
 use crate::lazyframe::visit::PyExprIR;
 use crate::series::PySeries;
@@ -189,6 +190,7 @@ pub enum PyStringFunction {
     ExtractMany,
     FindMany,
     FromCodePoint,
+    FormatWithSpecs,
 }
 
 #[pymethods]
@@ -777,7 +779,7 @@ impl PyGroupbyOptions {
 impl PyGroupbyOptions {
     #[getter]
     fn slice(&self) -> Option<(i64, usize)> {
-        self.inner.slice
+        legacy_slice(self.inner.slice)
     }
 
     #[getter]
@@ -1249,10 +1251,25 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     (py_function,).into_py_any(py)
                 },
                 IRFunctionExpr::StringExpr(strfun) => match strfun {
-                    IRStringFunction::Format { format, insertions } => (
+                    IRStringFunction::Format {
+                        format,
+                        insertions,
+                        specs,
+                    } if specs.is_empty() => (
                         PyStringFunction::Format,
                         format.as_str(),
                         insertions.to_vec(),
+                    )
+                        .into_py_any(py),
+                    IRStringFunction::Format {
+                        format,
+                        insertions,
+                        specs,
+                    } => (
+                        PyStringFunction::FormatWithSpecs,
+                        format.as_str(),
+                        insertions.to_vec(),
+                        specs.iter().map(|s| s.as_deref()).collect::<Vec<_>>(),
                     )
                         .into_py_any(py),
                     IRStringFunction::ConcatHorizontal {

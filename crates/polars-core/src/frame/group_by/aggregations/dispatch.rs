@@ -354,7 +354,7 @@ impl Series {
                     .map_with(CloneWrapper(state), |state, &[start, len]| {
                         let len_us = len as usize;
                         if len_us > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
-                            col.slice(start as i64, len_us).n_unique().unwrap() as IdxSize
+                            col.slice((start as usize, len_us)).n_unique().unwrap() as IdxSize
                         } else {
                             state.0.n_unique_slice(values, start, len)
                         }

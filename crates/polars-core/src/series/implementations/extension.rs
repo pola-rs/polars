@@ -139,10 +139,10 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.0.storage_mut().chunks_mut()
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
+    fn slice(&self, slice: Slice) -> Series {
         self.0
             .storage()
-            .slice(offset, length)
+            .slice(slice)
             .into_extension(self.0.extension_type().clone())
     }
 

@@ -1190,7 +1190,7 @@ fn set_numeric<T: PolarsNumericType>(
             GroupsType::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
                 let offset = *offset;
                 let offset_len = *offset_len;
-                let ca = ca.slice(offset as i64, offset_len);
+                let ca = ca.slice((offset, offset_len));
                 let groups = &groups.all()[offset..offset + offset_len];
                 let values_ptr = sync_ptr_values.get();
                 let validity_ptr = sync_ptr_validity.get();
@@ -1218,7 +1218,7 @@ fn set_numeric<T: PolarsNumericType>(
                 offsets.par_iter().for_each(|(offset, offset_len)| {
                     let offset = *offset;
                     let offset_len = *offset_len;
-                    let ca = ca.slice(offset as i64, offset_len);
+                    let ca = ca.slice((offset, offset_len));
                     let groups = &groups[offset..offset + offset_len];
                     let values_ptr = sync_ptr_values.get();
                     let validity_ptr = sync_ptr_validity.get();

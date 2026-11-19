@@ -10,6 +10,9 @@ pub enum StringFunction {
     Format {
         format: PlSmallStr,
         insertions: Arc<[usize]>,
+        /// The Python format specification of each input, or empty if no input has one.
+        #[cfg_attr(feature = "serde", serde(default))]
+        specs: Arc<[Option<PlSmallStr>]>,
     },
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {

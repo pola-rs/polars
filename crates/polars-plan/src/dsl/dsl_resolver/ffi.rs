@@ -104,17 +104,15 @@ impl FfiDslResolver {
             filter_drop_columns_idx,
         } = args;
 
-        #[allow(clippy::unnecessary_cast)] // `IdxSize` is `u32` without bigidx
-        let idx_max = polars_utils::IdxSize::MAX as u64;
         let request = Resolve {
             projection: projection.map(|p| p.iter().map(|c| c.to_string()).collect()),
             // The resolver is only handed a limit (= offset + len), never the offset; the slice
             // is applied on top of the resolved scan.
-            // An open-ended slice (`len` of `IdxSize::MAX` or more) sends no limit, and neither
-            // does one that a database's `LIMIT` (a signed 64-bit integer) can't hold.
+            // An open-ended or negative slice sends no limit, and neither does one that a
+            // database's `LIMIT` (a signed 64-bit integer) can't hold.
             limit: slice
-                .filter(|(offset, len)| *offset >= 0 && *len < idx_max)
-                .and_then(|(offset, len)| (offset as u64).checked_add(len))
+                .and_then(|slice| slice.end_position())
+                .map(|limit| limit as u64)
                 .filter(|limit| *limit <= i64::MAX as u64),
             filters: filters_eir
                 .iter()
