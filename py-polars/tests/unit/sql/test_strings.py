@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -140,6 +141,221 @@ def test_string_chr() -> None:
             InvalidOperationError, match="expected an integer code point"
         ):
             ctx.execute(f"SELECT CHR({arg}) FROM df", eager=True)
+
+
+def test_string_printf() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["a", "bcd", None],
+            "i": [42, -7, 1234567],
+            "f": [3.14159, -0.5, 2.5],
+        }
+    )
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        """
+        SELECT
+          PRINTF('%s|%5s|%-5s|%.2s', s, s, s, s) AS s,
+          PRINTF('%d|%5i|%-5d|%05d|%+ld|%,d|%+x|% #X|%+o', i, i, i, i, i, i, i, i, i) AS i,
+          PRINTF('%.2f|%8.3f|%e|%.3g|%%', f, f, f, f) AS f,
+          PRINTF('%2$d-%1$s', s, i) AS numbered,
+          PRINTF('%s/%s', f, i > 0) AS cast,
+          PRINTF('{%c%c}', 72, 105) AS chars,
+          PRINTF('plain') AS plain,
+          PRINTF('%f|%e|%.1f', 0.5, 0.5, 2.25) AS decimals,
+          PRINTF(NULL, i) AS null_format
+        FROM df
+        """,
+        eager=True,
+    )
+    assert res.schema == dict.fromkeys(res.columns, pl.String)
+    assert res.rows() == [
+        (
+            "a|    a|a    |a",
+            "42|   42|42   |00042|+42|42|2a|0X2A|52",
+            "3.14|   3.142|3.141590e+00|3.14|%",
+            "42-a",
+            "3.14159/true",
+            "{Hi}",
+            "plain",
+            "0.500000|5.000000e-01|2.2",
+            None,
+        ),
+        (
+            "bcd|  bcd|bcd  |bc",
+            "-7|   -7|-7   |-0007|-7|-7|-7|-0X7|-7",
+            "-0.50|  -0.500|-5.000000e-01|-0.5|%",
+            "-7-bcd",
+            "-0.5/false",
+            "{Hi}",
+            "plain",
+            "0.500000|5.000000e-01|2.2",
+            None,
+        ),
+        (
+            None,
+            "1234567|1234567|1234567|1234567|+1234567|1,234,567|12d687|0X12D687|4553207",
+            "2.50|   2.500|2.500000e+00|2.5|%",
+            None,
+            "2.5/true",
+            "{Hi}",
+            "plain",
+            "0.500000|5.000000e-01|2.2",
+            None,
+        ),
+    ]
+
+
+def test_string_printf_non_finite_and_null_rows() -> None:
+    df = pl.DataFrame({"x": [math.inf, -math.inf, math.nan, 1.5, None]})
+    res = df.sql("SELECT PRINTF('%08f|%+08.1f|%08e|%08F', x, x, x, x) AS a FROM self")
+    # as in C, the `0` flag pads infinity and NaN with spaces
+    assert res.to_series().to_list() == [
+        "     inf|    +inf|     inf|     INF",
+        "    -inf|    -inf|    -inf|    -INF",
+        "     nan|    +nan|     nan|     NAN",
+        "1.500000|+00001.5|1.500000e+00|1.500000",
+        None,
+    ]
+
+    df = pl.DataFrame({"s": ["x", None], "code": [65, -1]})
+    res = df.sql(
+        "SELECT PRINTF('%s%c', s, code) AS a, FORMAT('{}{:c}', s, code) AS b FROM self"
+    )
+    assert res.rows() == [("xA", "xA"), (None, None)]
+
+    # `%s` converts the value of a null row only after the row is known to be null
+    df = pl.DataFrame({"s": ["x", None], "b": [b"a", b"\xff"]})
+    res = df.sql(
+        """
+        SELECT PRINTF('%s%4s', s, b) AS a, FORMAT('{}{:>4}', s, b) AS b,
+          PRINTF('%s%.2s', s, b) AS c
+        FROM self
+        """
+    )
+    assert res.rows() == [("x   a", "x   a", "xa"), (None, None, None)]
+
+    res = pl.sql(
+        "SELECT PRINTF('%s|%5s|%-6s|%s', {'a': 1}, 42, 2.5, CAST(1.50 AS DECIMAL(4, 2)))",
+        eager=True,
+    )
+    assert res.item() == "{1}|   42|2.5   |1.50"
+
+
+@pytest.mark.parametrize(
+    ("query", "error", "match"),
+    [
+        ("SELECT PRINTF(s, i) FROM df", SQLSyntaxError, "must be a string literal"),
+        ("SELECT PRINTF('%#o', i) FROM df", SQLSyntaxError, "does not support '%#o'"),
+        (
+            "SELECT PRINTF('%.2x', i) FROM df",
+            InvalidOperationError,
+            "a precision is not allowed",
+        ),
+        (
+            "SELECT PRINTF('%s', [1, 2]) FROM df",
+            InvalidOperationError,
+            "cannot cast List type",
+        ),
+        ("SELECT PRINTF() FROM df", SQLSyntaxError, "at least 1 argument"),
+        ("SELECT PRINTF('%d %d', i) FROM df", SQLSyntaxError, "needs more arguments"),
+        ("SELECT PRINTF('%y', i) FROM df", SQLSyntaxError, "does not support '%y'"),
+        (
+            "SELECT PRINTF('%.2d', i) FROM df",
+            SQLSyntaxError,
+            r"does not support '%\.2d'",
+        ),
+        ("SELECT PRINTF('%*d', i) FROM df", SQLSyntaxError, r"does not support '%\*'"),
+        ("SELECT PRINTF('%', i) FROM df", SQLSyntaxError, "does not support '%'"),
+        ("SELECT PRINTF('%1$d %d', i) FROM df", SQLSyntaxError, "cannot mix"),
+        (
+            "SELECT PRINTF('%0$d', i) FROM df",
+            SQLSyntaxError,
+            r"does not support '%0\$d'",
+        ),
+        (
+            "SELECT PRINTF('%d', f) FROM df",
+            InvalidOperationError,
+            "'d' is not supported for f64",
+        ),
+        (
+            "SELECT PRINTF('%f', s) FROM df",
+            InvalidOperationError,
+            "'f' is not supported for str",
+        ),
+    ],
+)
+def test_string_printf_errors(query: str, error: type[Exception], match: str) -> None:
+    df = pl.DataFrame({"s": ["a"], "i": [1], "f": [1.5]})
+    with pytest.raises(error, match=match):
+        pl.SQLContext(df=df).execute(query, eager=True)
+
+
+def test_string_format() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["a", "bcd", None],
+            "i": [42, -7, 1234567],
+            "f": [3.14159, -0.5, 2.5],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          FORMAT('{} has {:.1f} ({:>5})', s, f, i) AS a,
+          FORMAT('{1:,}-{0}', s, i) AS b,
+          FORMAT('{{}} {:+.2e}', f) AS c,
+          FORMAT('{:.1%}|{:%}', f, 0.25) AS d
+        FROM self
+        """
+    )
+    assert res.rows() == [
+        ("a has 3.1 (   42)", "42-a", "{} +3.14e+00", "314.2%|25%"),
+        ("bcd has -0.5 (   -7)", "-7-bcd", "{} -5.00e-01", "-50.0%|25%"),
+        (None, None, "{} +2.50e+00", "250.0%|25%"),
+    ]
+    with pytest.raises(InvalidOperationError, match="'d' is not supported for f64"):
+        df.sql("SELECT FORMAT('{:d}', f) FROM self")
+    with pytest.raises(
+        SQLSyntaxError, match=r"does not support the placeholder '\{s\}'"
+    ):
+        df.sql("SELECT FORMAT('{s}') FROM self")
+    with pytest.raises(SQLSyntaxError, match="cannot mix numbered and unnumbered"):
+        df.sql("SELECT FORMAT('{} {0}', s) FROM self")
+    for placeholder in ("{+0}", "{00}", "{-1}"):
+        with pytest.raises(SQLSyntaxError, match="does not support the placeholder"):
+            df.sql(f"SELECT FORMAT('{placeholder}', s) FROM self")
+    with pytest.raises(SQLSyntaxError, match="unmatched brace"):
+        df.sql("SELECT FORMAT('{} }', s) FROM self")
+
+
+def test_string_format_unused_args() -> None:
+    df = pl.DataFrame({"x": [1, 2], "s": ["a", None], "l": [[1], None]})
+    res = df.sql(
+        """
+        SELECT
+          FORMAT('{0}{0}', x, s) AS a,
+          PRINTF('%d', x, 'unused') AS b,
+          FORMAT(NULL, x) AS c,
+          PRINTF('ok', l, x'ff') AS d
+        FROM self
+        """
+    )
+    assert res.rows() == [("11", "1", None, "ok"), (None, "2", None, None)]
+
+    # Unused and null-format arguments still aggregate.
+    for query in (
+        "SELECT PRINTF('total', SUM(x)) AS r FROM self",
+        "SELECT PRINTF(NULL, SUM(x)) AS r FROM self",
+        "SELECT FORMAT('n={}', COUNT(*)) AS r FROM self WHERE x > 5",
+    ):
+        assert df.sql(query).height == 1
+    assert (
+        df.sql("SELECT FORMAT('n={}', COUNT(*)) AS r FROM self WHERE x > 5").item()
+        == "n=0"
+    )
+    with pytest.raises(SQLSyntaxError, match="must be a string literal"):
+        df.sql("SELECT FORMAT(s) FROM self")
 
 
 def test_string_left_right_reverse() -> None:
