@@ -308,11 +308,47 @@ def test_quantile_rolling_interpolation_does_not_overflow(
 
 @pytest.mark.parametrize(
     "quantile_arg",
-    [pl.col("q"), pl.col("q").head(1), pl.lit(pl.Series([0.5, 0.5]))],
-    ids=["column", "head", "series_literal"],
+    [pl.col("q"), pl.col("q").head(1)],
+    ids=["column", "head"],
 )
 def test_quantile_non_scalar_in_group_by_raises(quantile_arg: pl.Expr) -> None:
     df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3], "q": [0.5, 0.5, 0.5]})
+    with pytest.raises(ComputeError, match=r"single quantile per group.*\.item\(\)"):
+        df.group_by("g").agg(pl.col("v").quantile(quantile_arg))
+
+
+def test_quantile_series_literal_of_two_values_in_group_by_raises() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3]})
+    with pytest.raises(ComputeError, match="single quantile"):
+        df.group_by("g").agg(pl.col("v").quantile(pl.lit(pl.Series([0.5, 0.5]))))
+
+
+def test_quantile_literal_values_per_group_quantile() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, None, None, 1.5]})
+    lf = df.lazy().group_by("g", maintain_order=True)
+    out = lf.agg(pl.lit(3).quantile(pl.col("q").first()))
+    assert out.collect_schema()["literal"] == pl.Float64
+    assert out.collect()["literal"].to_list() == [3.0, None, None]
+    with pytest.raises(InvalidOperationError, match="not supported for dtype `bool`"):
+        lf.agg(pl.lit(True).quantile(pl.col("q").first())).collect()
+
+
+def test_quantile_series_literal_in_group_by_empty_frame() -> None:
+    df = pl.DataFrame(schema={"g": pl.Int64, "v": pl.Float64})
+    q = pl.lit(pl.Series([0.5]))
+    out = df.lazy().group_by("g").agg(pl.col("v").quantile(q)).collect()
+    assert out.schema == {"g": pl.Int64, "v": pl.Float64}
+    assert out.is_empty()
+
+
+@pytest.mark.parametrize("n_groups", [1, 2])
+@pytest.mark.parametrize(
+    "quantile_arg", [pl.col("q").mode(), pl.col("q").head(1)], ids=["mode", "head"]
+)
+def test_quantile_non_scalar_raises_for_any_group_count(
+    n_groups: int, quantile_arg: pl.Expr
+) -> None:
+    df = pl.DataFrame({"g": [0, 0, n_groups - 1], "v": [1, 2, 3], "q": [0.5] * 3})
     with pytest.raises(ComputeError, match=r"single quantile per group.*\.item\(\)"):
         df.group_by("g").agg(pl.col("v").quantile(quantile_arg))
 

@@ -683,11 +683,21 @@ pub fn quantile<'a>(
     // Don't change names by aggregations as is done in polars-core.
     let keep_name = ac.get_values().name().clone();
 
-    let ac_quantile = inputs[1].evaluate_on_groups(df, groups, state)?;
-    let (quantile_column, per_group) = if let Some(s) = ac_quantile.uniform_single_value() {
-        (s.clone().into_column(), false)
+    let (quantile_column, per_group) = if inputs[1].is_literal() {
+        let c = inputs[1].evaluate(df, state)?;
+        polars_ensure!(
+            !c.is_empty(),
+            ComputeError:
+                "the 'quantile' expression input should produce a single quantile, got an empty input"
+        );
+        polars_ensure!(
+            c.len() == 1,
+            ComputeError:
+                "polars only supports computing a single quantile in a groupby aggregation context"
+        );
+        (c, false)
     } else {
-        match ac_quantile.state {
+        match inputs[1].evaluate_on_groups(df, groups, state)?.state {
             AggState::LiteralScalar(c) => (c, false),
             AggState::AggregatedScalar(c) => (c, true),
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => polars_bail!(
@@ -707,7 +717,23 @@ pub fn quantile<'a>(
     let per_group_quantiles;
     let quantile = if per_group {
         per_group_quantiles = quantile_column.cast(&DataType::Float64)?;
-        GroupQuantile::PerGroup(per_group_quantiles.f64()?)
+        let quantiles = per_group_quantiles.f64()?;
+        if let AggState::LiteralScalar(c) = &ac.state {
+            // The quantile of a single value is that value, for any valid quantile.
+            let value = c.quantile_reduce(0.5, method)?;
+            let dtype = value.dtype().clone();
+            let valid: BooleanChunked = quantiles
+                .iter()
+                .map(|q| q.is_some_and(|q| (0.0..=1.0).contains(&q)))
+                .collect();
+            let out = Column::new_scalar(keep_name.clone(), value, groups.len())
+                .zip_with(&valid, &Column::full_null(keep_name, groups.len(), &dtype))?;
+            return Ok(AggregationContext::from_agg_state(
+                AggState::AggregatedScalar(out),
+                Cow::Borrowed(groups),
+            ));
+        }
+        GroupQuantile::PerGroup(quantiles)
     } else {
         let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
         if let AggState::LiteralScalar(c) = &mut ac.state {
