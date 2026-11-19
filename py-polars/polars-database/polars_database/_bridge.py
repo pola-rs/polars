@@ -1449,8 +1449,8 @@ def _sqlalchemy_psycopg2_guard() -> None:
     """
     Makes the statements of a scan behind SQLAlchemy read bytea and infinity as a scan
     of psycopg2 does (`_psycopg2_bytes`, `_psycopg2_no_infinity`), on the driver's
-    cursor that SQLAlchemy opens: a listener on every Engine, which acts on the statements run
-    with the scan's execution option only.
+    cursor that SQLAlchemy opens: a listener on every Engine, which acts on the
+    statements run with the scan's execution option only.
     """
     from sqlalchemy import event
     from sqlalchemy.engine import Engine
@@ -1476,8 +1476,8 @@ def _sqlalchemy_psycopg2_guard() -> None:
 def _psycopg2_no_infinity(cursor: Any) -> None:
     """
     Makes the cursor fail on a date or timestamp of `infinity` / `-infinity`, which
-    psycopg2 reads as `date.max` / `date.min` (and Polars can't represent), whether or not
-    the column's type was looked up: `date`, `timestamp`, `timestamptz` and their
+    psycopg2 reads as `date.max` / `date.min` (and Polars can't represent), whether or
+    not the column's type was looked up: `date`, `timestamp`, `timestamptz` and their
     arrays.
     """
     ext = importlib.import_module("psycopg2.extensions")

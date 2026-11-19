@@ -523,10 +523,12 @@ def test_wide_decimals_are_exact(how: str) -> None:
 def test_invalid_utf8_text_is_an_error_not_a_string(how: str) -> None:
     """A STRING of other bytes would be a String that fails Arrow validation."""
     sql = "SELECT CAST(unhex('FF') AS STRING) AS s"
+
+    def read_and_validate() -> None:
+        _scan(sql, how).collect().to_arrow().validate(full=True)
+
     with pytest.raises(Exception, match=r"(?i)utf-?8"):
-        out = _scan(sql, how).collect()
-        out.to_arrow().validate(full=True)
-        raise AssertionError(f"read {out!r}")  # pragma: no cover
+        read_and_validate()
     # a BINARY of the same byte, and valid text, read
     ok = _scan(
         "SELECT unhex('FF') AS b, CAST(unhex('EFBFBD') AS STRING) AS s", how
