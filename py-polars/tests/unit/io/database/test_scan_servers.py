@@ -5294,14 +5294,7 @@ def test_volatile_views(name: str) -> None:
             df = lf.filter(pl.col("b") > threshold).collect()
             assert (df["b"] > threshold).all(), driver
     # a table and a view without volatile functions still partition
-    lf = _scan(
-        name,
-        _default_driver(name),
-        "review_volatile_ids",
-        partition_on="id",
-        partition_num=4,
-    )
-    assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+    assert _partitions(name, "review_volatile_ids") == list(range(300))
 
 
 @pytest.mark.parametrize("name", ["postgres17", "mariadb"])
@@ -6671,10 +6664,7 @@ def test_postgres_allowlist_kinds_of_relation() -> None:
         ],
     )
     for source in ["review_al_ids", "review_al_parent", "review_al_v"]:
-        lf = _scan(
-            name, _default_driver(name), source, partition_on="id", partition_num=4
-        )
-        assert sorted(lf.collect()["id"].to_list()) == list(range(300)), source
+        assert _partitions(name, source) == list(range(300))
     # server-state views: their definitions call functions that aren't proven
     for source in [
         "SELECT datid FROM pg_stat_database",
@@ -6756,22 +6746,8 @@ def test_mysql_allowlist_kinds_of_relation(name: str) -> None:
         _refused(name, "review_al_gen", "k")
         _refused(name, "SELECT id, k FROM review_al_gen", "k")
         for key in ["id", "k"]:
-            lf = _scan(
-                name,
-                _default_driver(name),
-                "review_al_okgen",
-                partition_on=key,
-                partition_num=4,
-            )
-            assert sorted(lf.collect()["id"].to_list()) == list(range(300))
-    lf = _scan(
-        name,
-        _default_driver(name),
-        "review_al_ids",
-        partition_on="id",
-        partition_num=4,
-    )
-    assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+            assert _partitions(name, "review_al_okgen", key) == list(range(300))
+    assert _partitions(name, "review_al_ids") == list(range(300))
 
 
 def test_clickhouse_allowlist_kinds_of_relation() -> None:
@@ -6801,10 +6777,7 @@ def test_clickhouse_allowlist_kinds_of_relation() -> None:
     _refused(name, "review_al_merge", "id")
     _refused(name, "SELECT id FROM merge(currentDatabase(), '^review_al_ids$')")
     _refused(name, "SELECT id, _part FROM review_al_ids", "id")
-    lf = _scan(
-        name, _default_driver(name), "review_al_ids", partition_on="id", partition_num=4
-    )
-    assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+    assert _partitions(name, "review_al_ids") == list(range(300))
 
 
 def test_oracle_allowlist_synonym_chain() -> None:
@@ -6821,14 +6794,7 @@ def test_oracle_allowlist_synonym_chain() -> None:
     )
     for source in ['"review_volatile_s2"', 'SELECT * FROM "review_volatile_s3"']:
         _refused(name, source)
-    lf = _scan(
-        name,
-        _default_driver(name),
-        "review_volatile_ids",
-        partition_on="id",
-        partition_num=4,
-    )
-    assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+    assert _partitions(name, "review_volatile_ids") == list(range(300))
 
 
 def _ids_table(name: str, table: str, extra: str = "") -> None:
