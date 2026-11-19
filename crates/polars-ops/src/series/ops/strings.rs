@@ -9,7 +9,7 @@ use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::format_value;
+use super::format_spec::format_value;
 
 #[inline(always)]
 fn opt_str_to_string(s: Option<&str>) -> &str {
@@ -50,8 +50,7 @@ pub fn str_format(
         }
     }
 
-    // A row with a null is null, so its other values are not converted: a conversion can fail,
-    // as for a binary value that is not UTF-8.
+    // Values in rows with a null are not converted, as the conversion can fail.
     let null_count = validity.as_ref().map_or(0, |v| v.unset_bits());
     if null_count == output_length {
         return Ok(Column::full_null(
@@ -60,6 +59,7 @@ pub fn str_format(
             &DataType::String,
         ));
     }
+    // `mask` keeps the values under the nulls, which a cast still reads.
     let mask = (null_count > 0)
         .then(|| BooleanChunked::from_bitmap(PlSmallStr::EMPTY, validity.clone().unwrap()));
     for (i, c) in cs.iter_mut().enumerate() {

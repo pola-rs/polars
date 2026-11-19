@@ -108,25 +108,35 @@ fn write_int(
 ) -> PolarsResult<()> {
     num.clear();
     let prefix = |p| if spec.alternate { p } else { "" };
+    // Formatting a `u64` is faster than a `u128`.
+    macro_rules! write_magnitude {
+        ($fmt:literal) => {
+            match u64::try_from(magnitude) {
+                Ok(m) => write!(num, $fmt, m),
+                Err(_) => write!(num, $fmt, magnitude),
+            }
+            .unwrap()
+        };
+    }
     let (prefix, group) = match spec.ty {
         None | Some(b'd') => {
-            write!(num, "{magnitude}").unwrap();
+            write_magnitude!("{}");
             ("", 3)
         },
         Some(b'b') => {
-            write!(num, "{magnitude:b}").unwrap();
+            write_magnitude!("{:b}");
             (prefix("0b"), 4)
         },
         Some(b'o') => {
-            write!(num, "{magnitude:o}").unwrap();
+            write_magnitude!("{:o}");
             (prefix("0o"), 4)
         },
         Some(b'x') => {
-            write!(num, "{magnitude:x}").unwrap();
+            write_magnitude!("{:x}");
             (prefix("0x"), 4)
         },
         Some(b'X') => {
-            write!(num, "{magnitude:X}").unwrap();
+            write_magnitude!("{:X}");
             (prefix("0X"), 4)
         },
         Some(b'c') => {
@@ -201,23 +211,27 @@ fn write_decimal(
     let precision = spec.precision.unwrap_or(scale.max(0) as usize);
     let magnitude = mantissa.unsigned_abs();
     let shift = scale - precision as i64;
-    if shift > 0 {
+    let (value, n_trailing_zeros) = if shift > 0 {
         let divisor = 10u128.pow(shift as u32);
         let (q, r) = (magnitude / divisor, magnitude % divisor);
         let half = divisor / 2;
-        let q = q + u128::from(r > half || (r == half && q % 2 == 1));
-        write!(num, "{q}").unwrap();
+        (q + u128::from(r > half || (r == half && q % 2 == 1)), 0)
+    } else if magnitude != 0 {
+        (magnitude, shift.unsigned_abs() as usize)
     } else {
-        write!(num, "{magnitude}").unwrap();
-        if magnitude != 0 {
-            num.extend(std::iter::repeat_n('0', shift.unsigned_abs() as usize));
-        }
-    }
+        (0, 0)
+    };
     if precision > 0 {
-        if num.len() <= precision {
-            let n_zeros = precision + 1 - num.len();
-            num.insert_str(0, &"0".repeat(n_zeros));
-        }
+        // At least one digit before the decimal point.
+        let n_digits = value.checked_ilog10().map_or(1, |d| d as usize + 1) + n_trailing_zeros;
+        num.extend(std::iter::repeat_n(
+            '0',
+            (precision + 1).saturating_sub(n_digits),
+        ));
+    }
+    write!(num, "{value}").unwrap();
+    num.extend(std::iter::repeat_n('0', n_trailing_zeros));
+    if precision > 0 {
         num.insert(num.len() - precision, '.');
     } else if spec.alternate {
         num.push('.');
@@ -304,7 +318,7 @@ fn write_general(num: &mut String, v: f64, precision: usize, alternate: bool, do
 }
 
 /// Formats each value with a Python format specification, such as `>10` or `,.2f`.
-pub fn format_value(c: &Column, spec: &str) -> PolarsResult<Column> {
+pub(crate) fn format_value(c: &Column, spec: &str) -> PolarsResult<Column> {
     let spec = &FormatSpec::parse(spec)?;
     let dtype = c.dtype();
     if dtype.is_null() {
@@ -354,6 +368,10 @@ pub fn format_value(c: &Column, spec: &str) -> PolarsResult<Column> {
         // a string.
         FormatKind::Float if spec.ty.is_none() && spec.precision.is_none() => {
             let c = c.cast(&DataType::String)?;
+            if spec.width == 0 && spec.sign.is_none() && spec.grouping.is_none() && !spec.alternate
+            {
+                return Ok(c);
+            }
             c.str()?.apply_into_string_amortized(|v, buf| {
                 let (negative, v) = v.strip_prefix('-').map_or((false, v), |v| (true, v));
                 let (digits, rest) = split_digits(v);

@@ -46,10 +46,7 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
                 };
 
                 let placeholder = std::str::from_utf8(&bytes[i + 1..i + close_offset]).unwrap();
-                let (col_name_str, spec) = match placeholder.split_once(':') {
-                    Some((name, spec)) => (name, spec),
-                    None => (placeholder, ""),
-                };
+                let (col_name_str, spec) = placeholder.split_once(':').unwrap_or((placeholder, ""));
                 let col_name = col_name_str.as_bytes();
                 let expr = if col_name.is_empty() {
                     polars_ensure!(!index_used, InvalidOperation: "cannot switch from manual specification to automatic field numbering");
@@ -82,7 +79,7 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
                     polars_defs::format_spec::FormatSpec::parse(spec)?;
                 }
                 input.push(expr);
-                specs.push((!spec.is_empty()).then(|| PlSmallStr::from_str(spec)));
+                specs.push((!spec.is_empty()).then(|| spec.into()));
                 insertions.push(s.len());
                 i += close_offset + 1;
             },
