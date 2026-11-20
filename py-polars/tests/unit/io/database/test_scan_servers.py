@@ -7087,13 +7087,16 @@ def _ids_table(name: str, table: str, extra: str = "") -> None:
 @pytest.mark.parametrize("name", ["postgres17", "mysql", "mssql"])
 @pytest.mark.parametrize("consistency", ["none", "snapshot"])
 def test_negative_slices_under_a_concurrent_writer(name: str, consistency: str) -> None:
-    # #363: a tail is planned from COUNT(*) and read by a second statement, and the host
-    # stopped pulling at the end of the slice, so rows a writer inserted in between (here
-    # before every row: negative ids) shifted the slice, unchecked. It either takes the
-    # right rows or fails saying that the table changed.
+    # #363: a tail is planned from COUNT(*) and read by a second statement, and the
+    # host stopped pulling at the end of the slice, so rows a writer inserted in between
+    # (here before every row: negative ids) shifted the slice, unchecked. It either
+    # takes the right rows or fails saying that the table changed.
     import threading
 
-    _ids_table(name, "review_tail_ids")
+    # (a table of its own: the cells run in parallel)
+    table = f"review_tail_{consistency}"
+
+    _ids_table(name, table)
     stop = threading.Event()
     inserted = 0
 
@@ -7103,13 +7106,13 @@ def test_negative_slices_under_a_concurrent_writer(name: str, consistency: str) 
         try:
             cur = conn.cursor()
             while not stop.is_set():
-                cur.execute(f"INSERT INTO review_tail_ids (id) VALUES ({-inserted - 1})")
+                cur.execute(f"INSERT INTO {table} (id) VALUES ({-inserted - 1})")
                 conn.commit()
                 inserted += 1
         finally:
             conn.close()
 
-    cases = [
+    cases: list[tuple[Callable[[pl.LazyFrame], pl.LazyFrame], list[int]]] = [
         (lambda lf: lf.tail(5), list(range(295, 300))),
         (lambda lf: lf.slice(-10, 5), list(range(290, 295))),
     ]
@@ -7123,7 +7126,7 @@ def test_negative_slices_under_a_concurrent_writer(name: str, consistency: str) 
                 lf = _scan(
                     name,
                     _default_driver(name),
-                    "review_tail_ids",
+                    table,
                     order_by="id",
                     partition_on=None,
                     consistency=consistency,
@@ -7131,7 +7134,8 @@ def test_negative_slices_under_a_concurrent_writer(name: str, consistency: str) 
                 try:
                     got = query(lf).collect()["id"].to_list()
                 except pl.exceptions.ComputeError as e:
-                    assert "changed" in str(e), e
+                    if "changed" not in str(e):
+                        raise
                     changed += 1
                     continue
                 runs += 1
@@ -7139,7 +7143,7 @@ def test_negative_slices_under_a_concurrent_writer(name: str, consistency: str) 
     finally:
         stop.set()
         thread.join()
-        _execute(name, ["DROP TABLE IF EXISTS review_tail_ids"])
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
     assert inserted > 0
     assert runs + changed > 0
 
