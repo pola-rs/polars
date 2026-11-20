@@ -49,7 +49,11 @@ fn max_map_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowDataType) ->
             ))
         },
         ArrowDataType::FixedSizeList(item, width) => {
-            let Some(arr) = array.as_any().downcast_ref::<FixedSizeListArray>() else {
+            let Some(arr) = array
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .filter(|arr| arr.size() == *width)
+            else {
                 return 0;
             };
             let child_rows = rows.start * width..rows.end * width;
@@ -125,7 +129,7 @@ pub(crate) fn arrow_export_row_ranges(
 mod tests {
     use std::borrow::Cow;
 
-    use polars_arrow::array::{BooleanArray, Int32Array, MapArray, NullArray};
+    use polars_arrow::array::{BooleanArray, FixedSizeListArray, Int32Array, MapArray, NullArray};
     use polars_arrow::bitmap::Bitmap;
     use polars_arrow::offset::Offsets;
 
@@ -265,6 +269,44 @@ mod tests {
             let field = ArrowField::new("l".into(), ArrowDataType::LargeList(Box::new(item)), true);
             assert!(s.to_arrow_with_field(0, Cow::Owned(field), true).is_err());
         }
+    }
+
+    #[test]
+    fn a_target_width_that_does_not_match_the_array_errors() {
+        let map = map_chunk(&[1], None);
+        let array_dtype = DataType::Array(Box::new(map_dtype()), 1);
+        let fsl = FixedSizeListArray::new(
+            array_dtype.to_physical().to_arrow(CompatLevel::newest()),
+            1,
+            map,
+            None,
+        );
+        let list = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(fsl.dtype().clone()),
+            Offsets::try_from_lengths([1].into_iter()).unwrap().into(),
+            fsl.boxed(),
+            None,
+        );
+        let s = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                "l".into(),
+                vec![list.boxed()],
+                &DataType::List(Box::new(array_dtype)),
+            )
+        };
+        let map = ArrowField::new(
+            "item".into(),
+            map_dtype().to_arrow(CompatLevel::newest()),
+            true,
+        );
+        let item = ArrowField::new(
+            "item".into(),
+            ArrowDataType::FixedSizeList(Box::new(map), 2),
+            true,
+        );
+        let field = ArrowField::new("l".into(), ArrowDataType::LargeList(Box::new(item)), true);
+
+        assert!(s.to_arrow_with_field(0, Cow::Owned(field), true).is_err());
     }
 
     /// A scalar column repeating one map with `keys`, held in two chunks, over `height` rows.
