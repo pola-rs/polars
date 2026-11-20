@@ -189,6 +189,7 @@ where
                 );
 
                 by.for_each(|opt_by| match opt_by {
+                    Some("") => builder.append_values_iter(split_chars(s)),
                     Some(by) => builder.append_values_iter(op(s, by)),
                     _ => builder.append_null(),
                 });
