@@ -1466,6 +1466,136 @@ pub fn view_definition(
     }
 }
 
+/// The name of `parts` if the session resolves it to a temporary table (Postgres, MySQL, MariaDB:
+/// a temporary table hides a permanent one of its name for the session that made it).
+pub fn temporary_relation(
+    session: &mut dyn DatabaseSession,
+    dialect: DialectName,
+    parts: &[PlSmallStr],
+) -> Option<String> {
+    let qualified = parts
+        .iter()
+        .map(|p| dialect.quote_ident(p))
+        .collect::<Vec<_>>()
+        .join(".");
+    let temporary = match dialect {
+        DialectName::Postgresql => {
+            let df = session
+                .catalog_query(&format!(
+                    // the relation or any table inheriting from it (a temporary child is read
+                    // through its parent, by the session that made it only)
+                    "WITH RECURSIVE d(oid) AS (SELECT to_regclass({})::oid UNION ALL \
+                    SELECT i.inhrelid FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
+                    SELECT COALESCE(bool_or(c.relpersistence = 't'), false) FROM d \
+                    JOIN pg_class c ON c.oid = d.oid",
+                    dialect.quote_str(&qualified)
+                ))
+                .ok()?;
+            matches!(cell(&df, 0, 0), Some(AnyValue::Boolean(true)))
+        },
+        // (`SHOW CREATE TABLE` of a temporary table starts with `CREATE TEMPORARY TABLE`; an error:
+        // no such table, or a view)
+        DialectName::Mysql | DialectName::Singlestore => {
+            let df = session
+                .catalog_query(&format!("SHOW CREATE TABLE {qualified}"))
+                .ok()?;
+            cell_str(&df, 1, 0).is_some_and(|t| {
+                t.trim_start()
+                    .to_ascii_uppercase()
+                    .starts_with("CREATE TEMPORARY")
+            })
+        },
+        _ => false,
+    };
+    temporary.then(|| {
+        parts
+            .iter()
+            .map(|p| p.as_str())
+            .collect::<Vec<_>>()
+            .join(".")
+    })
+}
+
+/// Whether `dialect` has a [`resolution_fingerprint`]: the dialects where a session's own state
+/// (Postgres' `search_path` and temporary tables, MySQL's default database and temporary tables)
+/// changes which relation a name resolves to.
+pub fn has_resolution_fingerprint(dialect: DialectName) -> bool {
+    matches!(
+        dialect,
+        DialectName::Postgresql | DialectName::Mysql | DialectName::Singlestore
+    )
+}
+
+/// How each of `names` resolves on this session, as text that is equal for two sessions that
+/// resolve a name to the same relation, or to a temporary table of their own: for Postgres the
+/// relation the name resolves to as `perm:schema.name:relkind` or `temp:relkind`, and
+/// `+temp-children:N` when the session has `N` temporary tables of its own inheriting from it
+/// (permanent children are global DDL, not session state: a partition added later must not
+/// change the fingerprint); for MySQL / MariaDB / SingleStore the database
+/// and `temp` or `perm`. Session-specific ids (a temporary table's `pg_temp_N` schema, OIDs) are
+/// left out (and the temporary tables of other sessions, which `pg_class` lists too). One catalog statement on Postgres; MySQL has none that lists temporary tables, so
+/// one per name. `None`: the dialect has none, or the lookup failed.
+pub fn resolution_fingerprint(
+    session: &mut dyn DatabaseSession,
+    dialect: DialectName,
+    names: &[Vec<PlSmallStr>],
+) -> Option<Vec<String>> {
+    if names.is_empty() {
+        return None;
+    }
+    let qualified = |parts: &[PlSmallStr]| {
+        parts
+            .iter()
+            .map(|p| dialect.quote_ident(p))
+            .collect::<Vec<_>>()
+            .join(".")
+    };
+    match dialect {
+        DialectName::Postgresql => {
+            let cols = names
+                .iter()
+                .map(|parts| {
+                    // the root relation the name resolves to (the session-dependent part), and
+                    // how many temporary children of its own this session has under it
+                    // (permanent children are DDL, the same for every session)
+                    format!(
+                        "(WITH RECURSIVE d(oid, depth) AS (SELECT to_regclass({})::oid, 0 UNION ALL \
+                        SELECT i.inhrelid, d.depth + 1 FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
+                        SELECT COALESCE((SELECT CASE WHEN c.relpersistence = 't' THEN 'temp:' || \
+                        c.relkind::text ELSE 'perm:' || n.nspname || '.' || c.relname || ':' || \
+                        c.relkind::text END FROM d JOIN pg_class c ON c.oid = d.oid \
+                        JOIN pg_namespace n ON n.oid = c.relnamespace WHERE d.depth = 0 \
+                        AND (c.relpersistence <> 't' OR c.relnamespace = pg_my_temp_schema())), \
+                        'none') || COALESCE((SELECT '+temp-children:' || count(*) FROM d \
+                        JOIN pg_class c ON c.oid = d.oid WHERE d.depth > 0 \
+                        AND c.relpersistence = 't' AND c.relnamespace = pg_my_temp_schema() \
+                        HAVING count(*) > 0), ''))::text",
+                        dialect.quote_str(&qualified(parts))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let df = session.catalog_query(&format!("SELECT {cols}")).ok()?;
+            (0..names.len()).map(|i| cell_str(&df, i, 0)).collect()
+        },
+        DialectName::Mysql | DialectName::Singlestore => {
+            let df = session.catalog_query("SELECT DATABASE()").ok()?;
+            let default_db = cell_str(&df, 0, 0).unwrap_or_default();
+            let mut out = Vec::with_capacity(names.len());
+            for parts in names {
+                let db = match parts.as_slice() {
+                    [db, _] => db.to_string(),
+                    _ => default_db.clone(),
+                };
+                let temporary = temporary_relation(session, dialect, parts).is_some();
+                out.push(format!("{}:{db}", if temporary { "temp" } else { "perm" }));
+            }
+            Some(out)
+        },
+        _ => None,
+    }
+}
+
 /// The Databricks (and Spark) lookup of [`view_definition`]: `DESCRIBE TABLE EXTENDED`
 /// resolves the name as the query does (temporary views, the session's catalog and schema, the
 /// Hive metastore), and lists the type, the text and the catalog and namespace of a view. A
