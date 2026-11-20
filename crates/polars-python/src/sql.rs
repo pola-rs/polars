@@ -1,8 +1,8 @@
 use parking_lot::RwLock;
 use polars::prelude::{PlHashMap, PlSmallStr, Scalar};
 use polars::sql::{
-    CallArg, CatalogAlter, CatalogStatement, QueryParams, SQLContext, VersionSpec,
-    extract_table_identifiers,
+    CallArg, CatalogAlter, CatalogRefKind, CatalogRefMode, CatalogStatement, QueryParams,
+    SQLContext, VersionSpec, extract_table_identifiers,
 };
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -401,6 +401,42 @@ impl PySQLContext {
                             .collect();
                         op.set_item("fields", fields)?;
                     },
+                    CatalogAlter::SetRef {
+                        kind,
+                        name,
+                        mode,
+                        snapshot_id,
+                        max_ref_age_ms,
+                        min_snapshots_to_keep,
+                        max_snapshot_age_ms,
+                    } => {
+                        op.set_item("op", "set_ref")?;
+                        op.set_item("ref_kind", ref_kind_name(kind))?;
+                        op.set_item("ref", name)?;
+                        op.set_item(
+                            "mode",
+                            match mode {
+                                CatalogRefMode::Create => "create",
+                                CatalogRefMode::CreateIfNotExists => "create_if_not_exists",
+                                CatalogRefMode::Replace => "replace",
+                                CatalogRefMode::CreateOrReplace => "create_or_replace",
+                            },
+                        )?;
+                        op.set_item("snapshot_id", snapshot_id)?;
+                        op.set_item("max_ref_age_ms", max_ref_age_ms)?;
+                        op.set_item("min_snapshots_to_keep", min_snapshots_to_keep)?;
+                        op.set_item("max_snapshot_age_ms", max_snapshot_age_ms)?;
+                    },
+                    CatalogAlter::DropRef {
+                        kind,
+                        name,
+                        if_exists,
+                    } => {
+                        op.set_item("op", "drop_ref")?;
+                        op.set_item("ref_kind", ref_kind_name(kind))?;
+                        op.set_item("ref", name)?;
+                        op.set_item("if_exists", if_exists)?;
+                    },
                 }
                 dict.set_item("operation", op)?;
             },
@@ -580,5 +616,12 @@ impl PySQLContext {
         extract_table_identifiers(query, include_schema, unique)
             .map_err(PyPolarsErr::from)
             .map_err(Into::into)
+    }
+}
+
+fn ref_kind_name(kind: CatalogRefKind) -> &'static str {
+    match kind {
+        CatalogRefKind::Tag => "tag",
+        CatalogRefKind::Branch => "branch",
     }
 }
