@@ -974,6 +974,48 @@ def test_string_substr_unsigned_start() -> None:
         df.sql("SELECT SUBSTRING(s FROM n) FROM self")
 
 
+def test_string_substr_null_length() -> None:
+    df = pl.DataFrame({"s": ["hello", "abc"], "n": [None, 2]})
+    res = df.sql(
+        """
+        SELECT
+          LEFT(s, n) AS a,
+          LEFT(s, -n) AS b,
+          SUBSTR(s, 2, n) AS c,
+          SUBSTRING(s FROM 2 FOR n) AS d,
+          SUBSTR(s, 2, CAST(NULL AS INT)) AS e
+        FROM self
+        """
+    )
+    assert res.rows() == [
+        (None, None, None, None, None),
+        ("ab", "a", "bc", "bc", None),
+    ]
+
+    df = pl.DataFrame({"s": ["abc"], "n": [None]})
+    res = df.sql(
+        """
+        SELECT
+          LEFT(s, n) AS a,
+          SUBSTR(s, 2, n) AS b,
+          SUBSTRING(s FROM 2 FOR n) AS c,
+          SUBSTR(s, 2, (SELECT NULL)) AS d
+        FROM self
+        """
+    )
+    assert res.rows() == [(None, None, None, None)]
+    res = df.sql("SELECT s, ARRAY_AGG(LEFT(s, n)) AS a FROM self GROUP BY s")
+    assert res.rows() == [("abc", [None])]
+    res = df.select(pl.sql_expr("SUBSTR(s, 1, n)").over("s"))
+    assert res.rows() == [(None,)]
+
+    df = pl.DataFrame({"s": ["cat"], "n": pl.Series([2**63], dtype=pl.UInt64)})
+    res = df.sql(
+        "SELECT SUBSTR(s, 1, n) AS a, SUBSTRING(s FROM 2 FOR n) AS b FROM self"
+    )
+    assert res.rows() == [("cat", "at")]
+
+
 def test_string_lpad_rpad() -> None:
     df = pl.DataFrame({"txt": ["hello", "hi", "a", None, "longstring"]})
 
