@@ -355,12 +355,17 @@ pub struct QueryFacts {
     pub output_columns: Option<Vec<PlSmallStr>>,
     /// One query that only reads: no DML or DDL anywhere (CTEs included), no `SELECT INTO`.
     pub read_only: bool,
-    /// Returns the same rows each time it runs on the same data: no `LIMIT` / `OFFSET` /
-    /// `FETCH` / `TOP` (which pick rows), no `TABLESAMPLE`, no random functions.
+    /// Proven to return the same rows each time it runs on the same data: no `LIMIT` / `OFFSET` /
+    /// `FETCH` / `TOP` (which pick rows), no `TABLESAMPLE`, and every function, operator, column
+    /// and table of it in the allowlist of `_sqlglot.py` (anything else, a user's function and a
+    /// clock among it, is not repeatable).
     pub repeatable: bool,
     /// A `LIMIT` / `OFFSET` / `FETCH` (or a lock clause) ends the query: it can't take
     /// another `LIMIT`.
     pub top_level_limit: bool,
+    /// A `WITH TIES` (`FETCH FIRST n ROWS WITH TIES`, `TOP n WITH TIES`) is in the query: a
+    /// `LIMIT` around it may be applied inside it by the server.
+    pub with_ties: bool,
     /// A CTE, a query inside the query (not just parenthesised or in a `UNION`), or a
     /// parenthesised one with a `LIMIT` of its own.
     pub nested_queries: bool,
@@ -375,12 +380,36 @@ pub struct QueryFacts {
     /// A volatile function's values may reach any output column (through a subquery, a
     /// CTE or `*`).
     pub all_columns_volatile: bool,
-    /// Lower-cased names of the functions the parser doesn't know: the database says
-    /// whether they are volatile ([`volatile_functions`](super::catalog::volatile_functions)).
-    pub unknown_functions: Vec<PlSmallStr>,
     /// Lower-cased names of the functions it knows, on a database where a user's function
-    /// may replace one (SQLite, DuckDB): the database says whether one did.
+    /// may replace one (SQLite, DuckDB, Postgres, Oracle): the database says whether one did
+    /// ([`user_functions`](super::catalog::user_functions)). A function the parser doesn't know is
+    /// not proven repeatable (`repeatable` is false): the allowlist in `_sqlglot.py`.
     pub known_functions: Vec<PlSmallStr>,
+    /// It merges rows that compare equal (`GROUP BY`, `DISTINCT`, a set operation): under a
+    /// collation that equates different texts the database returns any one of them.
+    pub collapses_rows: bool,
+    /// It names a collation other than the binary one (`COLLATE UTF8_LCASE`).
+    pub collated: bool,
+    /// Postgres: the type names it writes, which a user's cast to or from them runs for.
+    pub cast_types: Vec<PlSmallStr>,
+    /// A join pairs rows by their place (`PASTE`, `POSITIONAL`): a filter pushed into the
+    /// database changes which rows pair.
+    pub positional_join: bool,
+    /// ClickHouse: a `SETTINGS` clause with a setting that may change the rows (an
+    /// `*_overflow_mode`, a `max_rows_to_*` limit): a filter pushed in changes the result.
+    pub unsafe_settings: bool,
+    /// Postgres: the SQL doesn't parse (a user's operator of a name sqlglot doesn't know is one
+    /// such), so its tables and types are unknown: any user's operator may run.
+    pub any_operator: bool,
+    /// The names it writes (columns, aliases, tables), lower-cased; `None` where a `*` projects
+    /// every column.
+    pub referenced_columns: Option<Vec<PlSmallStr>>,
+    /// The tables of `tables` it reads only with `FINAL` (ClickHouse).
+    pub final_tables: Vec<Vec<PlSmallStr>>,
+    /// Postgres: columns it casts to a date or time: text of them may name `now`.
+    pub temporal_cast_columns: Vec<PlSmallStr>,
+    /// What in it the allowlist doesn't prove (at most five: names or SQL), for the error.
+    pub unproven: Vec<PlSmallStr>,
     /// The tables (or views) it reads, `[catalog.][schema.]name` as written; not its CTEs.
     pub tables: Vec<Vec<PlSmallStr>>,
     /// The query without the semicolons and comments after its last token, if it parses.

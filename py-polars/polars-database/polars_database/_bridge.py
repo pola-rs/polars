@@ -382,6 +382,12 @@ def _connection_info(obj: Any) -> tuple[str, str]:
         with contextlib.suppress(Exception):
             vendor = str(obj.adbc_get_info().get("vendor_name", "")).lower()
             return _ADBC_VENDORS.get(vendor, ""), module
+    if module == "pyodbc":
+        # an ODBC driver of any DBMS: `SQL_DBMS_NAME` (17) says which. Only SQL Server's
+        # is checked; the others stay generic.
+        with contextlib.suppress(Exception):
+            if str(obj.getinfo(17)).lower() == "microsoft sql server":
+                return "mssql", module
     if module == "sqlalchemy":
         _require_sqlalchemy()
         engine = getattr(obj, "engine", None) or getattr(obj, "bind", None)
@@ -2138,6 +2144,23 @@ _DATABRICKS_TYPE_DTYPES = {
 }
 
 
+# Trino type names (`cursor.description`'s type codes) whose dtype is fixed. Left out
+# (typed from values): types with a zone or a variable precision, nested types,
+# `json`, `uuid`, intervals.
+_TRINO_TYPE_DTYPES = {
+    "boolean": "Boolean",
+    "tinyint": "Int8",
+    "smallint": "Int16",
+    "integer": "Int32",
+    "bigint": "Int64",
+    "real": "Float32",
+    "double": "Float64",
+    "varbinary": "Binary",
+    "date": "Date",
+    "json": "String",
+}
+
+
 def _databricks_arrow_frame(cursor: Any, frame: DataFrame) -> DataFrame:
     """
     The empty frame of a `databricks.sql` result, typed by the driver's Arrow schema.
@@ -2438,7 +2461,30 @@ def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any
         name = _DATABRICKS_TYPE_DTYPES.get(type_name)
         return pl.Null if name is None else named(name)
 
+    def trino(d: Any) -> Any:
+        # `d[1]` is Trino's type name: `bigint`, `decimal(10,2)`, `varchar(5)`
+        type_name = str(d[1]).lower().strip()
+        if (m := re.fullmatch(r"decimal\((\d+),\s*(\d+)\)", type_name)) is not None:
+            p, s = int(m[1]), int(m[2])
+            return pl.Decimal(p, s) if 0 < p <= 38 and 0 <= s <= p else pl.Null
+        # (a precision above 6 is read as text, and an instant in UTC: the planner's
+        # conversions, `Dialect.text_conversion`, `column_conversion`)
+        if (
+            m := re.fullmatch(r"timestamp\((\d+)\)( with time zone)?", type_name)
+        ) is not None:
+            if int(m[1]) > 6:
+                return pl.String
+            return pl.Datetime("us", "UTC") if m[2] else pl.Datetime("us")
+        if (m := re.fullmatch(r"time\((\d+)\)", type_name)) is not None:
+            return pl.Time if int(m[1]) <= 6 else pl.String
+        if re.fullmatch(r"(varchar|char)(\(\d+\))?", type_name):
+            return pl.String
+        name = _TRINO_TYPE_DTYPES.get(type_name)
+        return pl.Null if name is None else getattr(pl, name)
+
     module = _module_of(cursor)
+    if module == "trino":
+        return [trino(d) for d in description]
     if module == "duckdb":
         # (only nested types: a scalar column is typed from the catalog's type)
         return [_duckdb_type_dtype(str(d[1]), nested_only=True) for d in description]
@@ -2800,7 +2846,29 @@ class _Session:
                 empty_frame = _empty_frame(
                     cx.result, utc=self.owned or bool(timestamps)
                 )
+                # A column of NULLs only (a Trino batch) has no dtype from its
+                # values: the description's
+                import polars as pl
+
+                null_typed = (
+                    {
+                        name: dtype
+                        for name, dtype in empty_frame.schema.items()
+                        if dtype != pl.Null
+                    }
+                    if _module_of(cx.result) == "trino"
+                    else {}
+                )
                 if on_connection:
+                    frames = iter(list(frames))
+                if (
+                    not self.owned
+                    and _module_of(_cancel_target(self.conn)) == "pymssql"
+                ):
+                    # pymssql has no MARS: a connection runs one statement at a time,
+                    # and another scan's statement while this result is unread would
+                    # discard it (no rows, the other's rows, or a shape error). Read
+                    # whole here, under the lock.
                     frames = iter(list(frames))
                 if idle and _transaction_idle(self.conn) is False:
                     frames = iter(list(frames))
@@ -2831,6 +2899,14 @@ class _Session:
                 if df is None:
                     break
                 empty = False
+                if null_typed:
+                    df = df.with_columns(
+                        [
+                            pl.col(c).cast(dtype)
+                            for c, dtype in null_typed.items()
+                            if c in df.columns and df.schema[c] == pl.Null
+                        ]
+                    )
                 yield df
             if empty:
                 yield empty_frame
