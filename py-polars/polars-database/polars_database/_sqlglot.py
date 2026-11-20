@@ -2189,17 +2189,21 @@ def _cast_type_names(stmt: Any, dialect: str | None) -> list[str]:
     for dt in stmt.find_all(exp.DataType):
         with contextlib.suppress(sqlglot.errors.SqlglotError):
             names.add(dt.sql(dialect=dialect).split("(")[0].strip().lower())
-    # the types of its literals, for the operators a user defined on them (`0.5 * 2` runs a
-    # user's `*`(numeric, int4)), which no column or cast of the query names
-    for lit in stmt.find_all(exp.Literal):
-        if lit.is_string:
-            names.update(("text", "unknown"))
-        elif lit.name.isdigit():
-            names.update(("int4", "int8"))
-        else:
-            names.add("numeric")
-    if stmt.find(exp.Boolean) is not None:
-        names.add("bool")
+    if dialect in ("postgres", "redshift"):
+        # the types of its literals (marked `~`: they stand for operands, not for the
+        # target of a cast), for the operators a user defined on them (`0.5 * 2` runs a
+        # user's `*`(numeric, int4)), which no column or cast of the query names
+        literal: set[str] = set()
+        for lit in stmt.find_all(exp.Literal):
+            if lit.is_string:
+                literal.update(("text", "unknown"))
+            elif lit.name.isdigit():
+                literal.update(("int4", "int8"))
+            else:
+                literal.add("numeric")
+        if stmt.find(exp.Boolean) is not None:
+            literal.add("bool")
+        names.update(f"~{n}" for n in literal)
     return sorted(n for n in names if n)
 
 
@@ -2474,7 +2478,9 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     # adds in another order): as an output column it isn't a partition key (the column is
     # listed as volatile), anywhere else (a `HAVING`, a subquery, a join condition) it
     # decides which rows there are.
-    projections = {id(p) for p in stmt.selects} if isinstance(stmt, exp.Select) else set()
+    projections = (
+        {id(p) for p in stmt.selects} if isinstance(stmt, exp.Select) else set()
+    )
     inexact: list[Any] = []
     for node in stmt.find_all(exp.Func):
         if not _inexact_aggregate(node):

@@ -1819,12 +1819,18 @@ pub fn temporary_relation(
         },
         _ => false,
     };
-    temporary.then(|| parts.iter().map(|p| p.as_str()).collect::<Vec<_>>().join("."))
+    temporary.then(|| {
+        parts
+            .iter()
+            .map(|p| p.as_str())
+            .collect::<Vec<_>>()
+            .join(".")
+    })
 }
 
 /// Whether what an Oracle object shows depends on the session or the user: a global temporary
 /// table (each session has its own rows), an enabled Data Redaction policy, or an enabled VPD policy (`DBMS_RLS`, whose predicate
-/// may differ on each read, as `DBMS_RANDOM` does). A failed lookup counts as bound.
+/// may differ on each read, as `DBMS_RANDOM` does). A failed lookup of the first two counts as bound; the redaction view may be hidden from the user (no policy is seen then).
 fn oracle_session_bound(
     run: &mut impl FnMut(&str) -> Option<DataFrame>,
     owner: &str,
@@ -1845,13 +1851,15 @@ fn oracle_session_bound(
     }
     // Data Redaction (`DBMS_REDACT`): the query returns redacted values, which a filter pushed
     // into the database doesn't see (it compares the stored ones)
+    // (`REDACTION_POLICIES` is readable by DBAs, and by a user it is granted to: for any
+    // other it doesn't exist, no policy can be seen, and the lookup of every table would fail)
     let Some(df) = run(&format!(
         "SELECT COUNT(*) FROM redaction_policies WHERE object_owner = {} AND object_name = {} \
         AND enable = 'YES'",
         s(owner),
         s(name)
     )) else {
-        return true;
+        return false;
     };
     cell_u64(&df, 0, 0) != Some(0)
 }
@@ -2541,6 +2549,13 @@ pub fn user_functions(
                 })
                 .map(|t| format!("to_regtype({})", dialect.quote_str(t)))
                 .collect();
+            // the types of the SQL's literals (marked `~`): operands, not cast targets
+            let literal: Vec<String> = cast_types
+                .iter()
+                .filter_map(|t| t.strip_prefix('~'))
+                .filter(|t| t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+                .map(|t| format!("to_regtype({})", dialect.quote_str(t)))
+                .collect();
             let columns = if regclasses.is_empty() {
                 "SELECT NULL::oid WHERE false".to_string()
             } else {
@@ -2549,6 +2564,15 @@ pub fn user_functions(
                     AND a.attnum > 0 AND NOT a.attisdropped",
                     regclasses.join(", ")
                 )
+            };
+            let literal_types = if literal.is_empty() {
+                "SELECT NULL::oid WHERE false".to_string()
+            } else {
+                literal
+                    .iter()
+                    .map(|n| format!("SELECT {n}::oid"))
+                    .collect::<Vec<_>>()
+                    .join(" UNION ")
             };
             let named_types = if named.is_empty() {
                 "SELECT NULL::oid WHERE false".to_string()
@@ -2561,7 +2585,9 @@ pub fn user_functions(
             };
             format!(
                 "WITH RECURSIVE cols(o) AS ({columns}), named(o) AS ({named_types}), \
+                lit(o) AS ({literal_types}), \
                 ty(o) AS (SELECT o FROM cols UNION SELECT o FROM named UNION \
+                SELECT o FROM lit UNION \
                 SELECT v.x FROM ty r JOIN pg_type p ON p.oid = r.o CROSS JOIN LATERAL \
                 (VALUES (p.typbasetype), (p.typelem)) v(x) WHERE v.x <> 0), \
                 nm(o) AS (SELECT o FROM named UNION SELECT v.x FROM nm r JOIN pg_type p \
@@ -3522,8 +3548,11 @@ mod tests {
         let counter = runs.clone();
         let session = Box::new(Recorder {
             log: vec![],
-            answer: move |_: &str| {
-                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            answer: move |sql: &str| {
+                // (the `EXPLAIN` of the secure-view check is another statement)
+                if sql.starts_with("DESCRIBE") {
+                    counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }
                 describe(&[
                     ("id", "bigint"),
                     ("", ""),

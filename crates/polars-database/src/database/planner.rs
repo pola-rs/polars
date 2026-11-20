@@ -480,18 +480,10 @@ pub fn resolve_scan(
             pushdown_disabled = Some(reason);
         }
         if facts.as_ref().is_ok_and(|f| f.positional_join) && pushdown_disabled.is_none() {
-            pushdown_disabled = Some(
-                "a positional join (PASTE, POSITIONAL) pairs rows by their place, which a \
-                pushed filter changes"
-                    .into(),
-            );
+            pushdown_disabled = Some(POSITIONAL_REASON.into());
         }
         if facts.as_ref().is_ok_and(|f| f.unsafe_settings) && pushdown_disabled.is_none() {
-            pushdown_disabled = Some(
-                "a SETTINGS clause (an overflow mode, a row limit) may cut or change the rows, \
-                which a pushed filter changes"
-                    .into(),
-            );
+            pushdown_disabled = Some(SETTINGS_REASON.into());
         }
         if query.derived_order_by {
             if dialect.keeps_derived_table_order().is_none() {
@@ -651,11 +643,7 @@ pub fn resolve_scan(
             true,
         );
         if volatility.positional && pushdown_disabled.is_none() {
-            pushdown_disabled = Some(
-                "a view it reads pairs rows by their place (PASTE, POSITIONAL), which a pushed \
-                filter changes"
-                    .into(),
-            );
+            pushdown_disabled = Some(POSITIONAL_VIEW_REASON.into());
         }
         // a view's columns hold what its query gives, whatever `pragma_table_info` says
         // (the first branch's type, of a `UNION`)
@@ -1343,12 +1331,12 @@ pub fn check_temporary_relations(
     }
     let relations: Vec<Vec<PlSmallStr>> = match &config.options.relation {
         DatabaseRelation::Table { parts, .. } => vec![parts.to_vec()],
-        DatabaseRelation::Query { sql } => match sql_renderer()
-            .and_then(|r| r.inspect_query(sql, config.dialect))
-        {
-            Ok(f) => f.tables,
-            // can't tell which tables it reads
-            Err(_) => vec![],
+        DatabaseRelation::Query { sql } => {
+            match sql_renderer().and_then(|r| r.inspect_query(sql, config.dialect)) {
+                Ok(f) => f.tables,
+                // can't tell which tables it reads
+                Err(_) => vec![],
+            }
         },
     };
     for parts in relations {
@@ -1511,6 +1499,15 @@ fn in_utc(dtype: &DataType) -> DataType {
     }
 }
 
+/// Pushdown is off (a filter changes the rows), but the query is still wrapped for its
+/// conversions, as with `pushdown=False`.
+const POSITIONAL_REASON: &str = "a positional join (PASTE, POSITIONAL) pairs rows by their place, \
+    which a pushed filter changes";
+const POSITIONAL_VIEW_REASON: &str = "a view it reads pairs rows by their place (PASTE, \
+    POSITIONAL), which a pushed filter changes";
+const SETTINGS_REASON: &str = "a SETTINGS clause (an overflow mode, a row limit) may cut or \
+    change the rows, which a pushed filter changes";
+
 /// Whether the source is read with conversions in its select list: a table, or a query that
 /// is wrapped for them (with pushdown, or without it where it can be: see
 /// `compile_unwrapped`).
@@ -1522,9 +1519,14 @@ fn read_wrapped(
 ) -> bool {
     // only a derived `ORDER BY` (repeated outside the wrapper, `compile_unwrapped`) keeps the
     // pushdown off
-    let only_derived_order = pushdown_disabled
-        .as_deref()
-        .is_some_and(|r| r == MARIADB_ORDER_BY || r == derived_order_by_reason(dialect).as_str());
+    // (and a filter that changes the rows it pairs or keeps, as `pushdown=False` does)
+    let only_derived_order = pushdown_disabled.as_deref().is_some_and(|r| {
+        r == MARIADB_ORDER_BY
+            || r == derived_order_by_reason(dialect).as_str()
+            || r == POSITIONAL_REASON
+            || r == SETTINGS_REASON
+            || r == POSITIONAL_VIEW_REASON
+    });
     match options.relation {
         DatabaseRelation::Table { .. } => true,
         DatabaseRelation::Query { .. } => {

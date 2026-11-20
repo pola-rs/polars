@@ -87,9 +87,9 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
             # A pooled connection carries the state of its session (temporary tables,
             # `search_path`, session variables, a listener's settings): partitions read
             # through several would each see their own. One connection is checked out
-            # now, taken out of the pool, and the scan plans and reads every partition on
+            # now, held, and the scan plans and reads every partition on
             # it, one after another.
-            return "live", _pinned_dbapi_connection(connection)
+            return "pinned", _pinned_checkout(connection)
 
     if (engine := _session_shared_engine(connection)) is not None:
         # an ORM Session over such an Engine: the one connection is the user's too, and
@@ -207,18 +207,39 @@ def _in_caller_context(factory: Callable[[], Any]) -> Callable[[], Any]:
     return in_context
 
 
-def _pinned_dbapi_connection(engine: Any) -> Any:
+def _pinned_checkout(engine: Any) -> Any:
     """
-    One DB-API connection of an Engine's pool, taken out of it for the scan.
+    One checkout of an Engine's pool, held for the scan.
 
     The checkout (and its listeners) runs here, in the caller's thread and context. The
-    connection is detached: it belongs to the scan, which closes it when it is dropped,
-    and the pool opens another when it is asked again.
+    scan plans and reads every partition on its one DB-API connection, one after another,
+    and gives the checkout back (with the pool's own reset) when it is dropped.
     """
+    import weakref
+
+    from sqlalchemy import event
+
     fairy = engine.raw_connection()
-    dbapi_connection = fairy.driver_connection
-    fairy.detach()
-    return dbapi_connection
+    pinned = getattr(engine, "_polars_pinned_checkouts", None)
+    if pinned is None:
+        pinned = weakref.WeakSet()
+
+        def invalidate_with_the_engine(*_: Any) -> None:
+            # disposing of the engine ends the scans' connections: a checkout given back
+            # to the disposed pool afterwards would be left open there
+            for checkout in list(pinned):
+                with contextlib.suppress(Exception):
+                    checkout.invalidate()
+            pinned.clear()
+
+        try:
+            engine._polars_pinned_checkouts = pinned
+            event.listen(engine, "engine_disposed", invalidate_with_the_engine)
+        except Exception:  # pragma: no cover
+            pass
+    with contextlib.suppress(TypeError):
+        pinned.add(fairy)
+    return fairy
 
 
 def _shared_dbapi_connection(engine: Any) -> Any:
@@ -508,11 +529,14 @@ def scan_database(
           listeners. A pooled connection carries the state of its session
           (temporary tables, `search_path`, session variables), so the scan checks
           out ONE connection when `scan_database` is called (in the caller's thread
-          and context), takes it out of the pool (the pool opens another when it is
-          asked), and plans and reads every partition on it, one after another: it
-          is used as a live connection (see below), and a read through an Engine is
-          not parallel. For parallel reads pass a URI or a connection factory. An
-          Engine without pooling (`NullPool`) is read as a factory. An Engine with a `StaticPool`, `SingletonThreadPool` or
+          and context), and plans and reads every partition on it, one after another:
+          it is used as a live connection (see below), and a read through an Engine
+          is not parallel. The connection stays checked out of the pool for as long
+          as the LazyFrame (or one made from it) lives, and goes back to the pool,
+          with its reset, when that is dropped: a pool of one connection is blocked
+          meanwhile. For parallel reads pass a URI or a connection factory. An
+          Engine without pooling (`NullPool`) is read as a factory. An Engine with a
+          `StaticPool`, `SingletonThreadPool` or
           `AssertionPool` shares one DB-API connection: it is used as a live
           connection (see below), so the scan sees uncommitted changes made on it
           (so does an ORM `Session` of it). A function over a `SingletonThreadPool`
@@ -763,6 +787,10 @@ def scan_database(
 
     engine = connection
     connection_kind, connection = _connection_kind(connection)
+    # a pinned checkout is read as a live connection, and given back with the scan
+    plugin_kind = connection_kind
+    if connection_kind == "pinned":
+        connection_kind = "live"
     if (
         connection_kind == "factory"
         and connection is not engine
@@ -798,7 +826,9 @@ def scan_database(
             )
             raise ValueError(msg)
     if connection_kind == "live":
-        _check_live_sqlite3(connection)
+        _check_live_sqlite3(
+            connection.driver_connection if plugin_kind == "pinned" else connection
+        )
 
     from polars import DataFrame, Series
 
@@ -806,7 +836,7 @@ def scan_database(
         source=source,
         source_type=source_type,
         connection=connection,
-        connection_kind=connection_kind,
+        connection_kind=plugin_kind,
         dialect=dialect,
         driver=driver,
         connect_options=_string_options(connect_options),

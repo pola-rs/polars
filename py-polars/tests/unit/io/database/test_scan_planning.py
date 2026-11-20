@@ -2611,7 +2611,11 @@ def test_inspect_query_facts_do_not_cross_concurrent_calls(monkeypatch: Any) -> 
         ("clickhouse", "SELECT l.id, r.v FROM l PASTE JOIN r", False),
         ("clickhouse", "SELECT l.id, r.v FROM l ANY LEFT JOIN r ON l.k = r.k", False),
         ("clickhouse", "SELECT l.id, r.v FROM l LEFT SEMI JOIN r USING k", False),
-        ("clickhouse", "SELECT l.id, r.v FROM l ASOF JOIN r ON l.k = r.k AND l.t >= r.t", False),
+        (
+            "clickhouse",
+            "SELECT l.id, r.v FROM l ASOF JOIN r ON l.k = r.k AND l.t >= r.t",
+            False,
+        ),
         ("clickhouse", "SELECT l.id, r.v FROM l ALL INNER JOIN r ON l.k = r.k", True),
         ("duckdb", "SELECT a.id, b.v FROM a LEFT JOIN b ON a.k = b.k", True),
         # a float aggregate anywhere but an output column decides which rows there are (#546)
@@ -2638,7 +2642,9 @@ def test_a_float_aggregate_output_column_is_volatile_not_the_whole_query(
     # rows of the query don't change
     from polars_database._sqlglot import inspect_query
 
-    facts = inspect_query("SELECT g, sum(x) AS k, count(*) AS n FROM t GROUP BY g", dialect)
+    facts = inspect_query(
+        "SELECT g, sum(x) AS k, count(*) AS n FROM t GROUP BY g", dialect
+    )
     assert facts["repeatable"] is True
     assert facts["volatile_columns"] == ["k"]
     assert not facts["all_columns_volatile"]
@@ -2659,9 +2665,12 @@ def test_positional_joins_are_a_fact_for_pushdown() -> None:
         ("duckdb", "SELECT a.id, b.v FROM a POSITIONAL JOIN b"),
     ]:
         assert inspect_query(query, dialect)["positional_join"] is True, dialect
-    assert inspect_query("SELECT a.id FROM a JOIN b ON a.k = b.k", "duckdb")[
-        "positional_join"
-    ] is False
+    assert (
+        inspect_query("SELECT a.id FROM a JOIN b ON a.k = b.k", "duckdb")[
+            "positional_join"
+        ]
+        is False
+    )
 
 
 def test_postgres_attribute_notation_and_oracle_bare_names_are_looked_up() -> None:
@@ -2680,5 +2689,6 @@ def test_postgres_literal_types_are_looked_up_for_user_operators() -> None:
     from polars_database._sqlglot import inspect_query
 
     facts = inspect_query("SELECT id, 0.5 * 2 AS kk, 'a' AS s FROM t", "postgres")
-    assert {"numeric", "int4", "text"} <= set(facts["cast_types"])
+    assert {"~numeric", "~int4", "~text"} <= set(facts["cast_types"])
+    assert inspect_query("SELECT 1", "mysql")["cast_types"] == []
     assert inspect_query("SELECT id FROM t", "postgres")["cast_types"] == []

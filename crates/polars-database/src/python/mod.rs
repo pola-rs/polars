@@ -272,7 +272,16 @@ fn scan_resolver<'py>(
         "uri" => ConnectionTarget::Uri(connection.extract::<String>(py)?.into()),
         "odbc" => ConnectionTarget::Odbc(connection.extract::<String>(py)?.into()),
         "factory" => ConnectionTarget::Factory(Arc::new(PythonObject(connection))),
-        "live" => ConnectionTarget::Live(Arc::new(LiveConnection(PythonObject(connection)))),
+        "live" => ConnectionTarget::Live(Arc::new(LiveConnection(PythonObject(connection), None))),
+        // a checkout of an Engine's pool, held for this scan: its DB-API connection is
+        // read live, and the checkout is given back with the scan
+        "pinned" => {
+            let dbapi = connection.bind(py).getattr("driver_connection")?.unbind();
+            ConnectionTarget::Live(Arc::new(LiveConnection(
+                PythonObject(dbapi),
+                Some(PythonObject(connection)),
+            )))
+        },
         k => return Err(value_err(format!("invalid connection kind: {k}"))),
     };
     let connection = ConnectionSpec {
