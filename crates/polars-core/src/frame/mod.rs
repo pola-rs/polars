@@ -365,10 +365,7 @@ impl DataFrame {
             return true;
         }
 
-        let mut chunk_lengths = self
-            .columns()
-            .iter()
-            .filter_map(column_chunk_lengths);
+        let mut chunk_lengths = self.columns().iter().filter_map(column_chunk_lengths);
         match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {

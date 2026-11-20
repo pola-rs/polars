@@ -646,3 +646,25 @@ def test_dictionary_codes_partitioned_sink_across_row_groups(
             part = part.with_columns(p=pl.lit(key, dtype=df.schema["p"]))
         parts.append(part.select(df.columns))
     assert_frame_equal(pl.concat(parts).sort("v"), df.sort("v"))
+
+
+def test_dictionary_codes_file_size_partitioned_sink_across_row_groups(
+    tmp_path: Path,
+) -> None:
+    # No keys: dictionary columns reach the partition buffer as they are, and each row group
+    # brings a dictionary with other values (appended after the buffer's first one).
+    n = 12_000
+    idx = pl.int_range(n, eager=True)
+    s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(
+        ((idx.hash(1) % 3_000).cast(pl.Int64) + idx // 3_000 * 1_000) % 3_000
+    )
+    df = pl.DataFrame({"k": s, "v": idx})
+    path = _write(df, tmp_path / "f.parquet", row_group_size=3_000)
+    out_dir = tmp_path / "out"
+    pl.scan_parquet(path).sink_parquet(
+        pl.PartitionBy(out_dir, max_rows_per_file=5_000), mkdir=True
+    )
+    files = sorted(out_dir.glob("**/*.parquet"))
+    assert len(files) == 3
+    out = pl.concat([pl.read_parquet(f) for f in files])
+    assert_frame_equal(out, df)

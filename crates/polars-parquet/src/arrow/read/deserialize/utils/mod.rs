@@ -316,6 +316,13 @@ pub(super) trait Decoder: Sized {
 
     const CHUNKED: bool = false;
 
+    /// Whether a predicate read, which needs a new target whenever a page keeps more rows than
+    /// the current one has room for, sizes it for all rows left in the column chunk rather than
+    /// for that page's kept rows. Only for decoders whose `finalize` copies little per chunk
+    /// but whose targets are small (codes): otherwise a selective predicate would reserve
+    /// the whole column chunk for a few rows.
+    const PREDICATE_TARGET_FOR_REMAINING: bool = false;
+
     /// Evaluates the predicate on each dictionary value. An error means the rows have to be
     /// evaluated instead.
     fn evaluate_dict_predicate(
@@ -725,13 +732,14 @@ impl<D: Decoder> PageDecoder<D> {
                     if p.include_values && num_filtered_values > target.remaining_capacity() {
                         let previous_target = std::mem::replace(
                             &mut target,
-                            self.decoder.with_capacity(if D::CHUNKED {
-                                usize::max(num_filtered_values, MINIMUM_CHUNK_SIZE)
-                            } else {
-                                // One target for the rest of the column chunk rather than a
-                                // chunk per page, as `collect_flat` does.
-                                usize::max(num_filtered_values, num_values_remaining)
-                            }),
+                            self.decoder
+                                .with_capacity(if D::PREDICATE_TARGET_FOR_REMAINING {
+                                    // One target for the rest of the column chunk rather than a
+                                    // chunk per page.
+                                    usize::max(num_filtered_values, num_values_remaining)
+                                } else {
+                                    usize::max(num_filtered_values, MINIMUM_CHUNK_SIZE)
+                                }),
                         );
                         if previous_target.len() > 0 {
                             let chunk = self.decoder.finalize(

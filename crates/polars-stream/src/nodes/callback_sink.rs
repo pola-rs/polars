@@ -2,8 +2,9 @@ use std::num::NonZeroUsize;
 
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
+use polars_core::prelude::{DataType, PlSmallStr};
 use polars_core::runtime::ASYNC;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::prelude::PlanCallback;
 
 use crate::execute::StreamingExecutionState;
@@ -18,6 +19,8 @@ pub struct CallbackSinkNode {
     buffer: DataFrame,
     chunk_size: Option<NonZeroUsize>,
     is_done: bool,
+    /// The names and dtypes of the first morsel, which every later one must match.
+    schema: Option<Vec<(PlSmallStr, DataType)>>,
 }
 
 impl CallbackSinkNode {
@@ -33,6 +36,7 @@ impl CallbackSinkNode {
             buffer: DataFrame::empty(),
             chunk_size,
             is_done: false,
+            schema: None,
         }
     }
 }
@@ -99,6 +103,26 @@ impl ComputeNode for CallbackSinkNode {
                 let (sf, _, _, consume_token) = m.into_inner();
 
                 let df = sf.into_df().await;
+
+                // Morsels are not always appended to the buffer, which would check this.
+                match &self.schema {
+                    None => {
+                        self.schema = Some(
+                            df.columns()
+                                .iter()
+                                .map(|c| (c.name().clone(), c.dtype().clone()))
+                                .collect(),
+                        )
+                    },
+                    Some(schema) => polars_ensure!(
+                        schema.len() == df.width()
+                            && schema
+                                .iter()
+                                .zip(df.columns())
+                                .all(|((n, d), c)| n == c.name() && d == c.dtype()),
+                        SchemaMismatch: "schema of a morsel differs from that of the first"
+                    ),
+                }
 
                 // Without a chunk size every morsel is passed on as it is: buffering it would
                 // only append it to an empty frame.

@@ -165,11 +165,9 @@ impl BinviewKeyIdxTable {
             static CACHES: RefCell<PlHashMap<u64, DictCodeCache>> = RefCell::new(PlHashMap::new());
         }
         /// Past this many tables, or entries in all, a thread's caches are dropped. This bounds the
-        /// memory they keep once the tables are gone (they outlive the query): 1 MiB a thread.
-        /// A table can be dropped on another thread than the one holding its cache, so the cache
-        /// can't be dropped with the table; the cap is lowered instead.
+        /// memory they keep once the tables are gone (they outlive the query).
         const MAX_CACHED_TABLES: usize = 64;
-        const MAX_CACHED_ENTRIES: usize = 1 << 18;
+        const MAX_CACHED_ENTRIES: usize = 1 << 20;
         CACHES.with_borrow_mut(|caches| {
             let own = caches.get(&self.uid).map(DictCodeCache::capacity);
             let others =

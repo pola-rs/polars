@@ -157,7 +157,13 @@ fn columns_of_unequal_length_are_rejected() {
         Column::new("b".into(), [1i64]),
     ];
     let layout = KeyRowLayout::new(columns.iter().map(|c| c.dtype())).unwrap();
-    KeyRowKeys::from_columns(&columns, Arc::new(layout), &PlRandomState::default(), true, false);
+    KeyRowKeys::from_columns(
+        &columns,
+        Arc::new(layout),
+        &PlRandomState::default(),
+        true,
+        false,
+    );
 }
 
 #[test]

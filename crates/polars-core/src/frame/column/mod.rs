@@ -522,7 +522,10 @@ impl Column {
         let out = d.apply_elementwise(|s| s.cast_with_options(dtype, CastOptions::NonStrict));
         match out {
             Ok(out) if out.null_count() == d.null_count() => Ok(out),
-            _ => self.as_materialized_series().strict_cast(dtype).map(Column::from),
+            _ => self
+                .as_materialized_series()
+                .strict_cast(dtype)
+                .map(Column::from),
         }
     }
 

@@ -146,21 +146,6 @@ impl KeyedPartitioner {
                 .map(|x| PreComputedKeys::RowEncoded(x.downcast_as_array().clone()));
         }
 
-        // Dictionary columns are materialized here, on the parallel partitioning tasks: gathering
-        // keeps a morsel's whole dictionary in every partition's slice, and the distributor,
-        // which appends the slices serially, would then pay for it per slice.
-        let df = if df
-            .columns()
-            .iter()
-            .any(|c| matches!(c, Column::Dictionary(_)))
-        {
-            let mut df = df;
-            df.materialize_dictionary_columns();
-            df
-        } else {
-            df
-        };
-
         let gather_source_df: Cow<DataFrame> =
             if let Some(projection) = self.exclude_keys_projection.as_ref() {
                 let columns = df.columns();
@@ -177,6 +162,21 @@ impl KeyedPartitioner {
             } else {
                 Cow::Borrowed(&df)
             };
+
+        // Dictionary columns that are written are materialized here, on the parallel partitioning
+        // tasks: gathering keeps a morsel's whole dictionary in every partition's slice, and the
+        // distributor, which appends the slices serially, would then pay for it per slice.
+        let gather_source_df: Cow<DataFrame> = if gather_source_df
+            .columns()
+            .iter()
+            .any(|c| matches!(c, Column::Dictionary(_)))
+        {
+            let mut owned = gather_source_df.into_owned();
+            owned.materialize_dictionary_columns();
+            Cow::Owned(owned)
+        } else {
+            gather_source_df
+        };
 
         let partitions_vec: Vec<Partition> = groups
             .iter()

@@ -822,7 +822,7 @@ mod test {
 
     #[test]
     fn try_append_to_empty_adopts_the_other_dictionary() {
-        let mut a = dict_column(&["old-1", "old-2"], &[Some(0)]).clear();
+        let mut a = dict_column(&["old-1", "old-2"], &[Some(0)]).slice((0usize, 0usize));
         let b = dict_column(&["x", "y", "z"], &[Some(2), None, Some(0)]);
         assert!(a.is_empty());
         assert!(a.try_append(&b));
@@ -983,7 +983,14 @@ mod test {
             .to_string();
         assert!(err.contains("90 out of 100"), "{err}");
         let ok = Column::from(dict_column(&["2", "1"], &codes));
-        assert_eq!(ok.strict_cast(&DataType::Int64).unwrap().i64().unwrap().get(95), Some(1));
+        assert_eq!(
+            ok.strict_cast(&DataType::Int64)
+                .unwrap()
+                .i64()
+                .unwrap()
+                .get(95),
+            Some(1)
+        );
     }
 
     #[test]
