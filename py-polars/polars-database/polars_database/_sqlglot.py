@@ -2454,9 +2454,10 @@ def _hides_statement(
     Whether an alias may be another statement's start (SQL Server only).
 
     An unquoted alias, bare or after `AS`, that is a reserved keyword (`c EXEC(…)`,
-    `c COMMIT`), or a bare table alias with a column list (`c EXEC([…])` is `c` with the
-    alias `EXEC` and the columns `[…]`). Fail closed: such a query isn't read only,
-    whatever the AST says.
+    `c COMMIT`), or a bare alias with a column list after a table name (`c EXEC([…])` is
+    `c` with the alias `EXEC` and the columns `[…]`; SQL Server has no such table alias,
+    where a derived table, `VALUES` or `APPLY` has `v(id, s)`). Fail closed: such a
+    query isn't read only, whatever the AST says.
     """
     if dialect != "tsql":
         return False
@@ -2486,6 +2487,9 @@ def _hides_statement(
                 isinstance(alias, exp.Identifier)
                 and isinstance(node, exp.TableAlias)
                 and node.args.get("columns")
+                # (a derived table, `VALUES` or `APPLY` takes a bare alias and columns)
+                and isinstance(node.parent, exp.Table)
+                and isinstance(node.parent.this, exp.Identifier)
                 and bare(alias)
             ):
                 return True
