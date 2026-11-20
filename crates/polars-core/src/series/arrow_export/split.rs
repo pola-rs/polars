@@ -106,7 +106,9 @@ pub(crate) fn arrow_export_cut(rows: Range<usize>, fits: impl Fn(Range<usize>) -
 mod tests {
     use std::borrow::Cow;
 
-    use polars_arrow::array::{BooleanArray, FixedSizeListArray, Int32Array, MapArray, NullArray};
+    #[cfg(feature = "dtype-array")]
+    use polars_arrow::array::FixedSizeListArray;
+    use polars_arrow::array::{BooleanArray, Int32Array, MapArray, NullArray};
     use polars_arrow::bitmap::Bitmap;
     use polars_arrow::offset::Offsets;
 
@@ -249,6 +251,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "dtype-array")]
     #[test]
     fn a_target_width_that_does_not_match_the_array_errors() {
         let map = map_chunk(&[1], None);
