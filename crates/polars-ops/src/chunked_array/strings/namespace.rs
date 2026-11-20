@@ -291,7 +291,7 @@ where
             let all_failures = ca.filter(&failure_mask)?;
             // `.unique()` does not necessarily preserve the original order.
             let unique_failures_args = all_failures.arg_unique()?;
-            all_failures.take(&unique_failures_args.slice(0, 10))?
+            all_failures.take(&unique_failures_args.slice(Slice::head(10)))?
         };
         let some_error_msg = match base.len() {
             1 => {

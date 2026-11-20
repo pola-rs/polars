@@ -69,6 +69,16 @@ def scan_iceberg(
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+        Storage credentials vended by the table's catalog are used by default, and
+        renewed from the catalog before they expire, so the catalog's own
+        authentication must outlive the scan (e.g. PyIceberg's ``auth.type`` rather
+        than a static ``token``). Credentials given here replace them.
+
+        Not renewed: credentials vended without an expiry, and those of files on
+        another cloud than the table's. The PyIceberg reader uses one set of
+        credentials per table, also if the catalog vends separate ones for its
+        metadata and data files.
     catalog
         PyIceberg catalog to load the table from if the provided `target`
         was a table name.
@@ -179,10 +189,10 @@ def scan_iceberg(
     Supported options for GCS are available `here
     <https://py.iceberg.apache.org/configuration/#google-cloud-storage>`__.
 
-    >>> table_path = "s3://bucket/path/to/iceberg-table/metadata.json"
+    >>> table_path = "gs://bucket/path/to/iceberg-table/metadata.json"
     >>> storage_options = {
     ...     "gcs.project-id": "my-gcp-project",
-    ...     "gcs.oauth.token": "ya29.dr.AfM...",
+    ...     "gcs.oauth2.token": "ya29.dr.AfM...",
     ... }
     >>> pl.scan_iceberg(
     ...     table_path, storage_options=storage_options
@@ -328,9 +338,15 @@ def _scan_iceberg_files(
 def delete_iceberg(
     target: str | pyiceberg.table.Table,
     predicate: Expr,
+    *,
+    storage_options: StorageOptionsDict | None = None,
 ) -> None:
     """
     Delete the rows matching a predicate from an Iceberg table.
+
+    Data files whose rows all match are dropped. The other rows of data files that
+    match only partly are written to new files, which replace them in the same
+    snapshot (copy-on-write). Rows removed by earlier delete files stay deleted.
 
     .. warning::
         This functionality is currently considered **unstable**. It may be
@@ -343,13 +359,24 @@ def delete_iceberg(
     predicate
         Boolean expression selecting the rows to delete. Rows for which it
         evaluates to null are kept, as with :meth:`DataFrame.remove`.
+    storage_options
+        Extra options for the storage backends supported by `pyiceberg`, used to
+        read and write rewritten data files, as with :func:`scan_iceberg`.
+
+    Notes
+    -----
+    Not supported yet: Iceberg v3 tables, and rewriting a data file whose delete
+    files cannot be applied, such as equality deletes or position deletes that
+    cover several data files.
 
     Examples
     --------
     >>> pl.delete_iceberg(table, pl.col("id").is_in([1, 2, 3]))  # doctest: +SKIP
     """
     from pyiceberg.catalog import load_catalog
+    from pyiceberg.expressions import AlwaysFalse
 
+    from polars.io.iceberg._delete import _delete_rows
     from polars.io.iceberg._utils import predicate_to_pyiceberg_delete_filter
 
     issue_unstable_warning("`delete_iceberg` is considered unstable.")
@@ -359,7 +386,27 @@ def delete_iceberg(
     else:
         table = target
 
-    table.delete(predicate_to_pyiceberg_delete_filter(predicate, table))
+    name = ".".join(table.name())
+    if table.format_version > 2:
+        msg = (
+            f"delete from an Iceberg v{table.format_version} table is not supported "
+            f"yet: table '{name}'"
+        )
+        raise NotImplementedError(msg)
+    delete_filter = predicate_to_pyiceberg_delete_filter(predicate, table)
+    if delete_filter == AlwaysFalse():
+        return
+    _delete_rows(
+        table,
+        delete_filter,
+        predicate,
+        storage_options,
+        refused=f"no rows of Iceberg table '{name}' were deleted",
+        unknown=(
+            f"rows of Iceberg table '{name}' may have been deleted (commit state "
+            "unknown)"
+        ),
+    )
 
 
 def _catalog_table_wrap(

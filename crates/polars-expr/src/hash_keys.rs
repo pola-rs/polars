@@ -186,14 +186,23 @@ impl KeyEncoder {
     /// The keys of each group of `grouper`, which holds keys of this encoder, in group
     /// order.
     pub fn get_keys_in_group_order(&self, grouper: &dyn Grouper) -> DataFrame {
+        self.keys_in_group_order(|schema| grouper.get_keys_in_group_order(schema))
+    }
+
+    /// As `get_keys_in_group_order`, but `grouper` may hold no groups afterwards.
+    pub fn take_keys_in_group_order(&self, grouper: &mut dyn Grouper) -> DataFrame {
+        self.keys_in_group_order(|schema| grouper.take_keys_in_group_order(schema))
+    }
+
+    fn keys_in_group_order(&self, grouper_keys: impl FnOnce(&Schema) -> DataFrame) -> DataFrame {
         match &self.kind {
             KeyKind::Packed(packed) => {
                 let word_schema =
                     Schema::from_iter([(PlSmallStr::EMPTY, packed.layout().word_dtype())]);
-                let words = grouper.get_keys_in_group_order(&word_schema);
+                let words = grouper_keys(&word_schema);
                 packed.decode_words(&self.schema, words[0].as_materialized_series())
             },
-            _ => grouper.get_keys_in_group_order(&self.schema),
+            _ => grouper_keys(&self.schema),
         }
     }
 

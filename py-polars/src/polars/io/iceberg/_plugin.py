@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib.metadata
 import os
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from polars._utils.logging import eprint, verbose
 from polars._utils.wrap import wrap_ldf
@@ -129,8 +130,10 @@ def plugin_scan(
     use_metadata_statistics: bool,
     fast_deletion_count: bool,
     user_storage_options: StorageOptionsDict | None,
+    catalog_name: str | None = None,
 ) -> LazyFrame:
     """Plan the scan of `tbl` with the plugin; returns the native parquet scan."""
+    from polars.io.iceberg._credentials import renewing_credential_provider
     from polars.io.iceberg._utils import name_mapping_by_field_id
 
     plr = _plr()
@@ -152,9 +155,17 @@ def plugin_scan(
     storage_options = _storage_options(
         tbl.io.properties, metadata_location, user_storage_options
     )
-
+    # Renewed for the table's location, which its metadata and data files are under,
+    # rather than for one metadata file.
+    storage_options, renewing_provider = renewing_credential_provider(
+        tbl,
+        storage_options,
+        user_storage_options,
+        _table_location(tbl),
+        catalog_name=catalog_name,
+    )
     credential_provider = _init_credential_provider_builder(
-        "auto", metadata_location, storage_options, "scan_iceberg"
+        renewing_provider, metadata_location, storage_options, "scan_iceberg"
     )
 
     # Immutable metadata files are cached across scans with the same storage
@@ -203,6 +214,7 @@ def plugin_scan(
 
 
 _AZURE_SCHEMES = ("abfs", "abfss", "adl", "az", "azure", "wasb", "wasbs")
+_ADLS_SAS_TOKEN = "adls.sas-token"
 
 # FileIO properties that PyIceberg honours and that have no object store equivalent,
 # by URL scheme.
@@ -307,8 +319,7 @@ def _native_storage_options(
     (a file to read) if that is on another backend. With FileIO properties that
     have no object store equivalent, the user's storage options alone.
     """
-    # Where the table writes its data files: stable across scans, unlike a file.
-    location = table.properties.get("write.data.path") or table.location()
+    location = _data_location(table)
     # Files on another backend (e.g. added from elsewhere) take its properties.
     if source is not None and _backend(source) != _backend(location):
         location = source
@@ -361,6 +372,7 @@ def _catalog_storage_options(
             },
             **properties,
         }
+    properties = _account_sas_properties(properties, location)
 
     storage_options = {
         (key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP[k]): (
@@ -377,6 +389,49 @@ def _catalog_storage_options(
         if scheme in schemes and _property_is_true(properties, anonymous_key):
             storage_options[skip_signature_key] = "true"
     return storage_options
+
+
+def _account_sas_properties(
+    properties: Mapping[str, Any], location: str
+) -> Mapping[str, Any]:
+    """
+    `properties` with the SAS token vended for `location`'s storage account.
+
+    That is `adls.sas-token.<account host>`, given with its expiry under
+    `adls.sas-token`. It replaces a token set there: PyIceberg sets one, of any
+    account and without its expiry.
+    """
+    if _url_scheme(location) not in _AZURE_SCHEMES:
+        return properties
+    account = _azure_account(properties, location)
+    for k, v in properties.items():
+        host = k.removeprefix(f"{_ADLS_SAS_TOKEN}.")
+        if host == k or v in ("", None) or host.split(".")[0].lower() != account:
+            continue
+        out = {**properties, _ADLS_SAS_TOKEN: v}
+        if expiry := properties.get(f"{_ADLS_SAS_TOKEN}-expires-at-ms.{host}"):
+            out[f"{_ADLS_SAS_TOKEN}-expires-at-ms"] = expiry
+        return out
+    return properties
+
+
+def _azure_account(properties: Mapping[str, Any], location: str) -> str | None:
+    """Storage account of an Azure `location`; None if it cannot be told."""
+    # The URL's account is the one accessed. `az://container/...` has none.
+    host = urlparse(location).hostname or ""
+    name = host.split(".")[0] if "." in host else properties.get("adls.account-name")
+    return str(name).lower() if name else None
+
+
+def _data_location(table: pyiceberg.table.Table) -> str:
+    """Where the table writes its data files: stable across scans, unlike a file."""
+    path = table.properties.get("write.data.path") or f"{_table_location(table)}data"
+    # Catalogs match credentials by prefix, which usually ends with a slash.
+    return f"{path.rstrip('/')}/"
+
+
+def _table_location(table: pyiceberg.table.Table) -> str:
+    return f"{table.location().rstrip('/')}/"
 
 
 def _url_scheme(location: str) -> str:

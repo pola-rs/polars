@@ -9,6 +9,8 @@ use crate::error::{ErrorRecord, Location};
 /// A statement of a script, without its `;`.
 pub(crate) struct Statement<'a> {
     pub sql: &'a str,
+    /// Where it starts in the script, in bytes.
+    pub offset: usize,
     /// Whether the result describes a table, a query or a plan, as that of `DESCRIBE` and
     /// `EXPLAIN` does. Such a result is read as a whole.
     pub describes: bool,
@@ -37,7 +39,7 @@ impl Script {
                     line: error.location.line as usize,
                     column: error.location.column as usize,
                 };
-                (format!("sql parser error: {error}"), location)
+                (format!("sql parser error: {}", error.message), location)
             });
 
         // A statement is the text between two separators.
@@ -95,8 +97,24 @@ impl Script {
     pub(crate) fn statements(&self) -> impl Iterator<Item = Statement<'_>> {
         self.statements.iter().map(|(range, describes)| Statement {
             sql: &self.text[range.clone()],
+            offset: range.start,
             describes: *describes,
         })
+    }
+
+    /// Line `number` of the script, counted from 1.
+    pub(crate) fn line(&self, number: usize) -> Option<&str> {
+        self.text.lines().nth(number.checked_sub(1)?)
+    }
+
+    /// The line and column of the byte `offset` of the script.
+    pub(crate) fn location_of(&self, offset: usize) -> Location {
+        let before = &self.text[..offset];
+        let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+        Location {
+            line: before.matches('\n').count() + 1,
+            column: before[line_start..].chars().count() + 1,
+        }
     }
 
     /// The number of statements, counting the one that cannot be split.
@@ -107,13 +125,12 @@ impl Script {
     /// The error of the statement that cannot be split. It follows all other statements.
     pub(crate) fn split_error(&self) -> Option<ErrorRecord> {
         let (message, location) = self.error.as_ref()?;
-        Some(ErrorRecord {
-            class: "SQLInterfaceError",
-            message: message.clone(),
-            hint: None,
-            location: Some(*location),
-            statement: self.len(),
-        })
+        Some(ErrorRecord::split(
+            message.clone(),
+            *location,
+            self.len(),
+            self,
+        ))
     }
 }
 
@@ -320,7 +337,9 @@ mod tests {
         let error = script.split_error().unwrap();
         assert_eq!(error.class, "SQLInterfaceError");
         assert_eq!(error.statement, 2);
-        assert_eq!(error.location, Some(Location { line: 2, column: 8 }));
+        let location = error.location.unwrap();
+        assert_eq!(location.start, Location { line: 2, column: 8 });
+        assert_eq!(location.line, "SELECT 'abc");
         assert!(
             error
                 .message

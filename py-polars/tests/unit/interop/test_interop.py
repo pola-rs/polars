@@ -27,6 +27,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1017,6 +1019,28 @@ def test_from_arrow_invalid_time_zone() -> None:
         pl.from_arrow(arr)
 
 
+@pytest.mark.parametrize("time_zone", ["+05:30", "GMT+8", "Z", "not-a-zone"])
+@pytest.mark.parametrize("n_rows", [0, 1])
+def test_from_arrow_unreadable_time_zone_is_an_error_not_a_panic(
+    time_zone: str, n_rows: int
+) -> None:
+    # an empty batch took a path that unwrapped the time zone (a panic)
+    values = [datetime(2021, 1, 1)] * n_rows
+    ts = pa.array(values, type=pa.timestamp("us", tz=time_zone))
+    nested = pa.array([values] * n_rows, type=pa.list_(ts.type))
+    for table in [
+        pa.table({"ts": ts}),
+        pa.table({"x": nested}),
+        pa.table(
+            {"s": pa.array([{"t": v} for v in values], pa.struct([("t", ts.type)]))}
+        ),
+    ]:
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.from_arrow(table)
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.DataFrame(table)
+
+
 @pytest.mark.parametrize(
     ("fixed_offset", "etc_tz"),
     [
@@ -1881,3 +1905,21 @@ def test_export_arrow_to_c_logical_dtype(s: pl.Series) -> None:
     arr = pa.Array._import_from_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
     arr.validate(full=True)
     assert arr.equals(s.to_arrow(compat_level=CompatLevel.newest()))
+
+
+@pytest.mark.parametrize(
+    "export",
+    [
+        lambda df: pa.table(df),
+        lambda df: pa.RecordBatchReader.from_stream(df.lazy().collect_batches()),
+    ],
+    ids=["DataFrame", "LazyFrame.collect_batches"],
+)
+def test_arrow_c_stream_raises_on_a_nul_in_a_column_name(
+    export: Callable[[pl.DataFrame], Any],
+) -> None:
+    # Exporting the name panics in the stream's `get_schema` callback.
+    df = pl.DataFrame({"a\0b": [1]})
+
+    with pytest.raises(OSError, match="panic in an Arrow C stream callback"):
+        export(df)
