@@ -1996,6 +1996,13 @@ fn column_conversion(
             _ => {},
         }
     }
+    // `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, which every driver cuts to
+    // microseconds: a value with digits below the microsecond fails the read (rounding it
+    // would be silent), naming the column
+    let guarded = (dialect == DialectName::Mssql)
+        .then(|| mssql_sub_microsecond_guard(db_type, column))
+        .flatten();
+    let column = guarded.as_deref().unwrap_or(column);
     // ConnectorX shifts a `datetimeoffset` of another offset than UTC twice (`01:30 +05:30`
     // reads as 14:30 UTC, not 20:00): at offset 0 its read is right.
     if dialect == DialectName::Mssql
@@ -2007,12 +2014,17 @@ fn column_conversion(
     {
         return Some(format!("SWITCHOFFSET({column}, '+00:00')"));
     }
+    if guarded.is_some() {
+        return Some(column.to_string());
+    }
     // Read as text and parse the exact value; the planned dtype stays the declared decimal.
-    // ConnectorX reads decimals with at most 10 decimal places, dropping digits; an
+    // ConnectorX reads decimals with at most 10 decimal places, dropping digits (and panics on
+    // SQL Server decimals of more than 28 digits); an
     // unconstrained `numeric` / `NUMBER` reaches some drivers as a float (oracledb), and
     // its values may have more digits than the planned scale (an error then, not rounding).
     if let Some(DataType::Decimal(p, scale)) = declared_dtype(dialect, db_type)
-        && ((matches!(backend, BackendKind::ConnectorX) && scale > 10)
+        && ((matches!(backend, BackendKind::ConnectorX)
+            && (scale > 10 || (dialect == DialectName::Mssql && p > 28)))
             || DataType::Decimal(p, scale) == super::schema::UNCONSTRAINED_DECIMAL)
     {
         if dialect == DialectName::Oracle {
@@ -2256,6 +2268,34 @@ fn clickhouse_array_nanoseconds(db_type: &str, x: &str, depth: usize) -> Option<
     declared_dtype(DialectName::Clickhouse, db_type)
         .is_some_and(|d| matches!(d, DataType::Datetime(TimeUnit::Nanoseconds, _)))
         .then(|| format!("toUnixTimestamp64Nano({x})"))
+}
+
+/// SQL Server `datetime2(7)`, `time(7)` or `datetimeoffset(7)` (scale 7: a bare `datetime2`
+/// has it) as itself, failing where the value has digits below the microsecond, which
+/// the drivers cut (the conversion error names the column).
+fn mssql_sub_microsecond_guard(db_type: &str, column: &str) -> Option<String> {
+    let t = db_type.trim().to_ascii_lowercase();
+    let (base, args) = t.split_once('(').unwrap_or((&t, ""));
+    if !matches!(base.trim(), "datetime2" | "time" | "datetimeoffset") {
+        return None;
+    }
+    if args
+        .trim_end_matches(')')
+        .trim()
+        .parse::<u32>()
+        .is_ok_and(|scale| scale <= 6)
+    {
+        return None;
+    }
+    let msg = format!(
+        "column {} has digits below the microsecond, which Polars drivers cut: read it as text \
+        (CONVERT(varchar(40), c, 121)) or as datetime2(6) in a query",
+        column.replace('\'', "")
+    );
+    Some(format!(
+        "CASE WHEN CAST(CASE WHEN DATEPART(nanosecond, {column}) % 1000 <> 0 THEN '{msg}' \
+        ELSE '0' END AS int) = 0 THEN {column} END"
+    ))
 }
 
 /// An Oracle `NUMBER` as text, whatever the session's NLS settings (a live connection's

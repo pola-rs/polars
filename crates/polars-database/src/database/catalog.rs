@@ -46,7 +46,7 @@ pub struct CatalogInfo {
     /// (Databricks: `DESCRIBE QUERY` reports `char(5)` as `string`, while Spark pads the
     /// literal compared with the column): string semantics are unknown.
     pub padding_unknown: bool,
-    /// Columns the login reads masked (SQL Server dynamic data masking, without `UNMASK`): the
+    /// Columns the login reads masked (SQL Server dynamic data masking, no `UNMASK` on them): the
     /// database compares their real values and returns masked ones, so no filter on them is
     /// pushed, and none is a key.
     pub masked: PlHashSet<PlSmallStr>,
@@ -831,8 +831,10 @@ fn mssql_query_masked_columns(
 ) {
     let verbose = polars_core::config::verbose();
     let Ok(any) = session.query(
-        "SELECT CASE WHEN COALESCE(HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'UNMASK'), 0) = 0 \
-        AND EXISTS (SELECT 1 FROM sys.masked_columns WHERE is_masked = 1) THEN 1 ELSE 0 END AS m",
+        "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.masked_columns mc WHERE mc.is_masked = 1 \
+        AND COALESCE(HAS_PERMS_BY_NAME(QUOTENAME(OBJECT_SCHEMA_NAME(mc.object_id)) + '.' + \
+        QUOTENAME(OBJECT_NAME(mc.object_id)), 'OBJECT', 'UNMASK', mc.name, 'COLUMN'), 0) = 0) \
+        THEN 1 ELSE 0 END AS m",
     ) else {
         info.incomplete = true;
         return;
@@ -844,7 +846,9 @@ fn mssql_query_masked_columns(
         "SELECT d.name, CASE WHEN d.source_database IS NOT NULL \
         AND d.source_database <> DB_NAME() OR EXISTS (SELECT 1 FROM sys.masked_columns mc \
         WHERE mc.is_masked = 1 AND mc.name = d.source_column AND mc.object_id = \
-        OBJECT_ID(QUOTENAME(d.source_schema) + '.' + QUOTENAME(d.source_table))) \
+        OBJECT_ID(QUOTENAME(d.source_schema) + '.' + QUOTENAME(d.source_table)) \
+        AND COALESCE(HAS_PERMS_BY_NAME(QUOTENAME(d.source_schema) + '.' + \
+        QUOTENAME(d.source_table), 'OBJECT', 'UNMASK', mc.name, 'COLUMN'), 0) = 0) \
         THEN 1 ELSE 0 END AS is_masked \
         FROM sys.dm_exec_describe_first_result_set(N{}, NULL, 1) d WHERE d.is_hidden = 0",
         DialectName::Mssql.quote_str(&format!("SELECT * FROM {from}"))
@@ -868,12 +872,14 @@ fn mssql_query_masked_columns(
     }
 }
 
-/// SQL Server: the columns of a table that the login reads masked. Only database-wide
-/// `UNMASK` is looked at: a column-level grant also reads as masked (no filter is pushed).
+/// SQL Server: the columns of a table that the login reads masked: the permission is looked
+/// at per column, as `UNMASK` can be granted or denied at the database, schema, table and
+/// column (a database-wide grant with a column `DENY` still reads that column masked).
 fn mssql_masked_columns_sql(qualified: &str) -> String {
     format!(
         "SELECT c.name FROM sys.masked_columns c WHERE c.object_id = {} AND c.is_masked = 1 \
-        AND COALESCE(HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'UNMASK'), 0) = 0",
+        AND COALESCE(HAS_PERMS_BY_NAME(QUOTENAME(OBJECT_SCHEMA_NAME(c.object_id)) + '.' + \
+        QUOTENAME(OBJECT_NAME(c.object_id)), 'OBJECT', 'UNMASK', c.name, 'COLUMN'), 0) = 0",
         mssql_object_id(qualified)
     )
 }
