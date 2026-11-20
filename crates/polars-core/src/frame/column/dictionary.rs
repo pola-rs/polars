@@ -749,6 +749,7 @@ mod test {
     use super::*;
     use crate::chunked_array::cast::CastOptions;
     use crate::chunked_array::flags::StatisticsFlags;
+    use crate::frame::ChunkCursor;
 
     fn dict_column(dict: &[&str], codes: &[Option<u32>]) -> DictionaryColumn {
         let values = Utf8ViewArray::from_slice_values(dict);
@@ -1079,6 +1080,26 @@ mod test {
         assert!(parts.iter().all(|p| p.height() == 1000));
         let parts = crate::utils::split_and_flatten(&df, 2);
         assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn chunk_cursor_of_an_unaligned_frame_follows_the_series_chunks() {
+        let values = Utf8ViewArray::from_slice_values(["x", "y"]);
+        let mut codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, vec![0; 1000]);
+        codes
+            .append(&UInt32Chunked::from_vec(PlSmallStr::EMPTY, vec![1; 1000]))
+            .unwrap();
+        let d =
+            DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
+        let ints = Column::new("i".into(), (0..2000i64).collect::<Vec<_>>());
+        let df = DataFrame::new_infer_height(vec![Column::from(d), ints]).unwrap();
+        // Unaligned, as callers of `iter_chunks` that rechunk lazily may hold it: the cursor must
+        // follow the series column (as the batches select its chunks by index).
+        assert_eq!(df.first_col_n_chunks(), 1);
+        assert_eq!(df.first_col_chunk_lengths().collect::<Vec<_>>(), [2000]);
+        let mut cursor = ChunkCursor::new(&df);
+        assert_eq!(cursor.next(), Some((0, 2000)));
+        assert_eq!(cursor.next(), None);
     }
 
     #[test]

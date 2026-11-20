@@ -98,6 +98,17 @@ fn column_chunk_lengths(c: &Column) -> Option<Box<dyn Iterator<Item = usize> + '
 }
 
 impl DataFrame {
+    /// The chunk lengths the frame is laid out along: those of the first series column, as the
+    /// chunks of series columns are selected by index; only without one, those of the first
+    /// dictionary column's codes (which are sliced by offset).
+    fn chunk_lengths_of_leading_column(&self) -> Option<Box<dyn Iterator<Item = usize> + '_>> {
+        self.columns()
+            .iter()
+            .find(|c| matches!(c, Column::Series(_)))
+            .and_then(column_chunk_lengths)
+            .or_else(|| self.columns().iter().find_map(column_chunk_lengths))
+    }
+
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns().iter().map(Column::as_materialized_series)
     }
@@ -479,7 +490,7 @@ impl DataFrame {
 
     /// The number of chunks for the first column.
     pub fn first_col_n_chunks(&self) -> usize {
-        match self.columns().iter().find_map(column_chunk_lengths) {
+        match self.chunk_lengths_of_leading_column() {
             None if self.width() == 0 => 0,
             None => 1,
             Some(cl) => cl.size_hint().0,
@@ -488,7 +499,7 @@ impl DataFrame {
 
     /// The chunk lengths of the first column that has chunks, see [`Self::first_col_n_chunks`].
     pub(crate) fn first_col_chunk_lengths(&self) -> impl Iterator<Item = usize> + '_ {
-        match self.columns().iter().find_map(column_chunk_lengths) {
+        match self.chunk_lengths_of_leading_column() {
             None => Either::Right((self.width() > 0).then_some(self.height()).into_iter()),
             Some(cl) => Either::Left(cl),
         }
@@ -2749,7 +2760,8 @@ impl Iterator for RecordBatchIter<'_> {
         let offset = self.offset;
         self.offset += length;
 
-        // A dictionary column's codes need not have the chunks of the other columns.
+        // Dictionary columns are sliced by offset: their codes need not have the chunks of the
+        // series columns, which are selected by index.
         let to_arrow = |c: &Column| match c.as_series() {
             Some(s) => s.to_arrow(idx, self.compat_level),
             None => c
