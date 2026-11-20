@@ -501,7 +501,10 @@ def scan_database(
           read through an Engine is not parallel. The scan sets the session up as
           for a URI (read-only, UTC) and restores that before it gives the
           connection back to the pool, at the end of the collect: nothing is held
-          between collects. A transaction a checkout listener left open is
+          between collects. Each Engine scan in a query (a `concat` or self-join of
+          scans) holds one pooled connection until the query ends, so the pool
+          (`pool_size` + `max_overflow`) must allow as many as the query has scans
+          of it. A transaction a checkout listener left open is
           committed by that setup. For parallel reads pass a URI or a connection
           factory. An Engine without pooling (`NullPool`) is read as a factory. An
           Engine with a
