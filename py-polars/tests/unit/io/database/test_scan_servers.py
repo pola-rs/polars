@@ -7699,10 +7699,10 @@ def test_mssql_adbc_naive_datetimes_stay_naive() -> None:
 
 @needs_mssql
 def test_mssql_legacy_and_offset_datetimes() -> None:
-    # `datetime` (3.33 ms), `smalldatetime` (minutes), `datetimeoffset(7)` (any offset),
-    # `datetime2(7)` and `time(7)` (a value with digits below the microsecond fails the
-    # read: another test): read alike by every driver, and a filter on them keeps every
-    # row Polars keeps, whatever the database rounds
+    # `datetime` (3.33 ms), `smalldatetime` (minutes), `datetimeoffset(7)` (100 ns, any
+    # offset), `datetime2(7)` and `time(7)` (100 ns): read alike by every driver (the 7
+    # digit types exactly, as nanoseconds), and a filter on them keeps every row Polars
+    # keeps, whatever the database rounds
     table = "review_legacy_dt"
     _execute(
         "mssql",
@@ -7712,13 +7712,13 @@ def test_mssql_legacy_and_offset_datetimes() -> None:
             "dto datetimeoffset(7), d2 datetime2(7), tm time(7))",
             f"INSERT INTO {table} VALUES "
             "(1, '2020-01-02 03:04:05.003', '2020-01-02 03:04:00', "
-            "'2020-01-02 03:04:05.123456 +05:30', '2020-01-02 03:04:05.123456', "
-            "'03:04:05.123456'), "
+            "'2020-01-02 03:04:05.1234567 +05:30', '2020-01-02 03:04:05.1234567', "
+            "'03:04:05.1234567'), "
             "(2, '1753-01-01 00:00:00', '1900-01-01 00:00:00', "
-            "'0001-01-01 00:00:00 +00:00', '0001-01-01 00:00:00', '00:00:00'), "
+            "'1677-09-22 00:00:00 +00:00', '1677-09-22 00:00:00', '00:00:00'), "
             "(3, '9999-12-31 23:59:59.997', '2079-06-06 23:59:00', "
-            "'9999-12-31 23:59:59.999999 +00:00', '9999-12-31 23:59:59.999999', "
-            "'23:59:59.999999'), "
+            "'2262-04-11 23:47:16.8547758 +00:00', '2262-04-11 23:47:16.8547758', "
+            "'23:59:59.9999999'), "
             "(4, '2020-06-01 12:00:00', '2020-06-01 12:00:00', "
             "'2020-06-01 12:00:00 -08:00', '2020-06-01 12:00:00', '12:00:00'), "
             "(5, NULL, NULL, NULL, NULL, NULL)",
@@ -7729,6 +7729,9 @@ def test_mssql_legacy_and_offset_datetimes() -> None:
     df = next(iter(frames.values())).sort("id")
     assert df["dt"][0] == datetime(2020, 1, 2, 3, 4, 5, 3000)
     assert df["dto"][0] == datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC)
+    assert df["d2"].dtype == pl.Datetime("ns")
+    assert df["d2"].dt.nanosecond()[0] == 123456700
+    assert df["tm"].dtype == pl.Time
     assert df["dto"][3] == datetime(2020, 6, 1, 20, 0, tzinfo=UTC)
     predicates = [
         pl.col("dt") == datetime(2020, 1, 2, 3, 4, 5, 3000),
@@ -7745,7 +7748,7 @@ def test_mssql_legacy_and_offset_datetimes() -> None:
         pl.col("dto") < datetime(2020, 6, 1, 20, 0, 0, 1, tzinfo=UTC),
         pl.col("d2") == datetime(2020, 1, 2, 3, 4, 5, 123456),
         pl.col("d2") != datetime(2020, 1, 2, 3, 4, 5, 123456),
-        pl.col("d2") >= datetime(9999, 12, 31, 23, 59, 59, 999999),
+        pl.col("d2") >= datetime(2262, 4, 11, 23, 47, 16, 854775),
         pl.col("tm") == dtime(3, 4, 5, 123456),
         pl.col("tm") != dtime(3, 4, 5, 123456),
         pl.col("tm") >= dtime(23, 59, 59, 999999),
@@ -8472,24 +8475,39 @@ def test_mssql_synonym_of_a_legacy_datetime_is_looked_up_through() -> None:
 
 
 @needs_mssql
-def test_mssql_sub_microsecond_columns_fail_the_read_and_are_not_compared() -> None:
-    # `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, the drivers read
-    # microseconds: a pushed comparison would drop or add the rows the fraction decides,
-    # and a value with digits below the microsecond fails the read (cutting it is silent)
+def test_mssql_seven_digit_times_are_read_exactly_as_nanoseconds() -> None:
+    # `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, which drivers cut to
+    # microseconds: they are read as text, planned as nanoseconds, and not compared in the
+    # database (a pushed microsecond literal would drop or add the rows the fraction decides)
     table = "review_subus"
     _execute(
         "mssql",
         [
             f"DROP TABLE IF EXISTS {table}",
             f"CREATE TABLE {table} (id int PRIMARY KEY, d2 datetime2(7), "
-            "tm time(7), dto datetimeoffset(7))",
+            "tm time(7), dto datetimeoffset(7), d6 datetime2(6))",
             f"INSERT INTO {table} VALUES "
-            "(1, '2020-01-02 03:04:05.1234560', '03:04:05.1234560', "
-            "'2020-01-02 03:04:05.1234560 +00:00'), "
-            "(2, '2020-01-02 03:04:05.123457', '03:04:05.123457', "
-            "'2020-01-02 03:04:05.123457 +00:00')",
+            "(1, '2020-01-02 03:04:05.1234567', '03:04:05.1234567', "
+            "'2020-01-02 03:04:05.1234567 +05:30', '2020-01-02 03:04:05.123456'), "
+            "(2, '2020-01-02 03:04:05.123456', '03:04:05.123456', "
+            "'2020-01-02 03:04:05.123456 +00:00', NULL), "
+            "(3, NULL, NULL, NULL, NULL)",
         ],
     )
+    drivers = ["connectorx", "pymssql", "adbc", "sqlalchemy", "pyodbc", "arrow_odbc"]
+    for source in [table, f"SELECT * FROM {table}"]:
+        # (pyodbc can't describe a `datetimeoffset` of a query's result: #537)
+        read_by = [d for d in drivers if d != "pyodbc" or source == table]
+        frames, errors = _read_by_every_driver("mssql", source, read_by)
+        _assert_drivers_agree(frames, errors, source)
+        df = next(iter(frames.values())).sort("id")
+        assert df.schema["d2"] == pl.Datetime("ns"), source
+        assert df.schema["dto"] == pl.Datetime("ns", "UTC"), source
+        assert df.schema["tm"] == pl.Time, source
+        assert df.schema["d6"] == pl.Datetime("us"), source
+        assert df["d2"].dt.nanosecond().to_list() == [123456700, 123456000, None]
+        assert df["tm"].dt.nanosecond().to_list() == [123456700, 123456000, None]
+        assert df["dto"][0] == datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC)
     when = datetime(2020, 1, 2, 3, 4, 5, 123456)
     predicates = [
         pl.col("d2") == when,
@@ -8497,22 +8515,41 @@ def test_mssql_sub_microsecond_columns_fail_the_read_and_are_not_compared() -> N
         pl.col("d2") > when,
         pl.col("tm") == dtime(3, 4, 5, 123456),
         pl.col("tm") > dtime(3, 4, 5, 123456),
-        pl.col("dto") == when.replace(tzinfo=UTC),
-        pl.col("dto") > when.replace(tzinfo=UTC),
+        pl.col("dto") == datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC),
+        pl.col("dto") > datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC),
     ]
-    # (arrow-odbc refuses the fraction it would cut, pyodbc can't read `datetimeoffset`)
-    drivers = ["connectorx", "pymssql", "adbc", "sqlalchemy"]
     _check_filters_by_driver("mssql", table, predicates, drivers)
-    for column, value in [
-        ("d2", "'2020-01-02 03:04:05.1234567'"),
-        ("tm", "'03:04:05.1234567'"),
-        ("dto", "'2020-01-02 03:04:05.1234567 +00:00'"),
-    ]:
-        _execute("mssql", [f"UPDATE {table} SET {column} = {value} WHERE id = 1"])
-        for driver in drivers:
-            with pytest.raises(Exception, match="below the microsecond"):
-                _scan("mssql", driver, table).collect()
-        _execute("mssql", [f"UPDATE {table} SET {column} = NULL WHERE id = 1"])
+
+
+@needs_mssql
+def test_mssql_datetime2_outside_the_nanosecond_range_fails_and_reads_with_an_override() -> (
+    None
+):
+    # a `datetime2` holds years 0001 to 9999, nanoseconds only 1677 to 2262: the read fails
+    # naming the column and the override, which reads microseconds
+    table = "review_ns_range"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, d2 datetime2)",
+            f"INSERT INTO {table} VALUES (1, '0001-01-01'), "
+            "(2, '9999-12-31 23:59:59.999999'), (3, '2020-01-02 03:04:05.5')",
+        ],
+    )
+    for driver in ["connectorx", "pymssql", "adbc", "sqlalchemy"]:
+        with pytest.raises(
+            Exception, match=r"outside the range[\s\S]*schema_overrides"
+        ):
+            _scan("mssql", driver, table).collect()
+        df = _scan(
+            "mssql", driver, table, schema_overrides={"d2": pl.Datetime("us")}
+        ).collect()
+        assert df.sort("id")["d2"].to_list() == [
+            datetime(1, 1, 1),
+            datetime(9999, 12, 31, 23, 59, 59, 999999),
+            datetime(2020, 1, 2, 3, 4, 5, 500000),
+        ], driver
 
 
 def _mssql_masked_connection(create: bool = True) -> Any:
@@ -8567,15 +8604,22 @@ def test_mssql_masked_columns_are_not_compared_in_the_database() -> None:
                 assert got == sorted(df.filter(p)["id"].to_list()), (source, str(p))
     finally:
         conn.close()
-    # `UNMASK` granted for the database but denied on one column: that column still reads
-    # masked, the others don't
-    _execute(
-        "mssql",
-        [
-            "GRANT UNMASK TO review_mask_user",
-            "DENY UNMASK ON review_masked(n) TO review_mask_user",
-        ],
-    )
+    # `UNMASK` granted for the table but denied on one column: that column still reads
+    # masked, the others don't (a grant on the database would deadlock with the catalog
+    # reads of tests running alongside)
+    for attempt in range(3):
+        try:
+            _execute(
+                "mssql",
+                [
+                    "GRANT UNMASK ON OBJECT::review_masked TO review_mask_user",
+                    "DENY UNMASK ON review_masked(n) TO review_mask_user",
+                ],
+            )
+            break
+        except Exception as e:  # a deadlock victim (1205) is rerun
+            if "1205" not in str(e) or attempt == 2:
+                raise
     conn = _mssql_masked_connection(create=False)
     try:
         for source in ["review_masked", "SELECT * FROM review_masked"]:
