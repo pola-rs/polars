@@ -515,11 +515,25 @@ impl Column {
         self.as_materialized_series().duration()
     }
 
+    /// Strict cast of a dictionary column: casts the used values without failing, and only when
+    /// that nulls a value (or errors) casts the rows strictly, so that the error counts failing
+    /// rows, not distinct values.
+    fn strict_cast_dictionary(&self, d: &DictionaryColumn, dtype: &DataType) -> PolarsResult<Self> {
+        let out = d.apply_elementwise(|s| s.cast_with_options(dtype, CastOptions::NonStrict));
+        match out {
+            Ok(out) if out.null_count() == d.null_count() => Ok(out),
+            _ => self.as_materialized_series().strict_cast(dtype).map(Column::from),
+        }
+    }
+
     // # Casting
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         match self {
             Column::Dictionary(_) if dtype == &DataType::String => Ok(self.clone()),
             // Casts each used dictionary value once, e.g. into a Categorical.
+            Column::Dictionary(d) if matches!(options, CastOptions::Strict) => {
+                self.strict_cast_dictionary(d, dtype)
+            },
             Column::Dictionary(d) => d.apply_elementwise(|s| s.cast_with_options(dtype, options)),
             Column::Series(s) => s.cast_with_options(dtype, options).map(Column::from),
             Column::Scalar(s) => s.cast_with_options(dtype, options).map(Column::from),
@@ -529,7 +543,7 @@ impl Column {
         match self {
             Column::Dictionary(_) if dtype == &DataType::String => Ok(self.clone()),
             // Casts each used dictionary value once, e.g. into a Categorical.
-            Column::Dictionary(d) => d.apply_elementwise(|s| s.strict_cast(dtype)),
+            Column::Dictionary(d) => self.strict_cast_dictionary(d, dtype),
             Column::Series(s) => s.strict_cast(dtype).map(Column::from),
             Column::Scalar(s) => s.strict_cast(dtype).map(Column::from),
         }
@@ -561,7 +575,7 @@ impl Column {
         match self {
             Column::Series(s) => s.clear().into(),
             Column::Scalar(s) => s.resize(0).into(),
-            Column::Dictionary(s) => s.clear().into(),
+            Column::Dictionary(s) => Series::new_empty(s.name().clone(), s.dtype()).into(),
         }
     }
 

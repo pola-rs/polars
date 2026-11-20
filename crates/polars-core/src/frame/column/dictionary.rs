@@ -254,6 +254,17 @@ pub struct DictionaryColumn {
     materialized: OnceLock<Series>,
 }
 
+/// Whether every valid code is below `dict_len`. Reads the arrays, not the sorted flag or other
+/// metadata of `codes`, which safe code can set wrongly.
+fn codes_in_bounds(codes: &UInt32Chunked, dict_len: usize) -> bool {
+    use polars_compute::min_max::MinMaxKernel;
+    codes
+        .downcast_iter()
+        .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+        .max()
+        .is_none_or(|m| (m as usize) < dict_len)
+}
+
 impl DictionaryColumn {
     /// # Safety
     /// Every valid code must be in bounds for `dict`.
@@ -263,7 +274,7 @@ impl DictionaryColumn {
         codes: UInt32Chunked,
     ) -> Self {
         debug_assert!(
-            codes.max().is_none_or(|m| (m as usize) < dict.len()),
+            codes_in_bounds(&codes, dict.len()),
             "dictionary code out of bounds"
         );
         Self {
@@ -281,7 +292,7 @@ impl DictionaryColumn {
         codes: UInt32Chunked,
     ) -> PolarsResult<Self> {
         polars_ensure!(
-            codes.max().is_none_or(|m| (m as usize) < dict.len()),
+            codes_in_bounds(&codes, dict.len()),
             ComputeError: "dictionary code out of bounds"
         );
         Ok(unsafe { Self::new_unchecked(name, dict, codes) })
@@ -426,10 +437,6 @@ impl DictionaryColumn {
         let mut out = self.with_codes(self.codes.reverse());
         out.sorted = self.sorted.reverse();
         out
-    }
-
-    pub fn clear(&self) -> Self {
-        self.with_codes(self.codes.clear())
     }
 
     /// Appends `other`'s codes. With another dictionary, `other`'s values that this dictionary
@@ -577,6 +584,13 @@ impl DictionaryColumn {
         f: impl FnOnce(&Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Column> {
         let max_evaluated = self.len() / 2;
+        // A dictionary larger than the rows (a slice or filter of a bigger column) can repeat its
+        // values at most as often as the rows allow, so what the dictionary pass saves is at most
+        // the one evaluation per row that the pass itself repeats for every expression on the
+        // column. Evaluate on the rows directly.
+        if self.dict.len() > self.len() {
+            return f(self.as_materialized_series()).map(Column::from);
+        }
         let Some((used, mut row_slots)) = self.used_codes(max_evaluated) else {
             return f(self.as_materialized_series()).map(Column::from);
         };
@@ -680,6 +694,7 @@ pub fn dictionary_codes_enabled() -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::chunked_array::cast::CastOptions;
     use crate::chunked_array::flags::StatisticsFlags;
 
     fn dict_column(dict: &[&str], codes: &[Option<u32>]) -> DictionaryColumn {
@@ -842,6 +857,46 @@ mod test {
                 .collect::<Vec<_>>(),
             [Some("a"), Some("b"), Some("c"), Some("b"), Some("c")],
         );
+    }
+
+    #[test]
+    fn try_new_ignores_sorted_flag() {
+        let values = Utf8ViewArray::from_slice_values(["a"]);
+        let mut codes = UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[5, 0]);
+        codes.set_sorted_flag(IsSorted::Ascending);
+        let dict = SharedDictionary::new(values);
+        assert!(DictionaryColumn::try_new("s".into(), dict, codes).is_err());
+    }
+
+    #[test]
+    fn clear_drops_the_dictionary() {
+        let col = Column::from(dict_column(&["x", "y"], &[Some(0), Some(1)]));
+        let mut empty = col.clear();
+        assert!(empty.as_dictionary_column().is_none());
+        assert_eq!(empty.dtype(), &DataType::String);
+        assert_eq!(empty.len(), 0);
+        // An empty plain column appends to and from dictionary columns.
+        let mut c = col.clone();
+        c.append(&empty).unwrap();
+        assert_eq!(c.len(), 2);
+        empty.append(&col).unwrap();
+        assert_eq!(empty.len(), 2);
+        assert_eq!(empty.str().unwrap().get(1), Some("y"));
+    }
+
+    #[test]
+    fn strict_cast_counts_rows() {
+        let codes: Vec<Option<u32>> = (0..100).map(|i| Some(u32::from(i >= 90))).collect();
+        let col = Column::from(dict_column(&["bad", "1"], &codes));
+        let err = col.strict_cast(&DataType::Int64).unwrap_err().to_string();
+        assert!(err.contains("90 out of 100"), "{err}");
+        let err = col
+            .cast_with_options(&DataType::Int64, CastOptions::Strict)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("90 out of 100"), "{err}");
+        let ok = Column::from(dict_column(&["2", "1"], &codes));
+        assert_eq!(ok.strict_cast(&DataType::Int64).unwrap().i64().unwrap().get(95), Some(1));
     }
 
     #[test]
