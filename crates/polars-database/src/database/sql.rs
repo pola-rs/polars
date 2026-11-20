@@ -392,6 +392,9 @@ pub struct QueryFacts {
     /// A join pairs rows by their place (`PASTE`, `POSITIONAL`): a filter pushed into the
     /// database changes which rows pair.
     pub positional_join: bool,
+    /// ClickHouse: a `SETTINGS` clause with a setting that may change the rows (an
+    /// `*_overflow_mode`, a `max_rows_to_*` limit): a filter pushed in changes the result.
+    pub unsafe_settings: bool,
     /// Postgres: the SQL doesn't parse (a user's operator of a name sqlglot doesn't know is one
     /// such), so its tables and types are unknown: any user's operator may run.
     pub any_operator: bool,

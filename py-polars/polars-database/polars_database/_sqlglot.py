@@ -954,6 +954,8 @@ def _unproven(node: Any, dialect: str | None, relations: set[str]) -> bool:
         )
     if isinstance(node, exp.Join):
         return _row_picking_join(node, dialect)
+    if isinstance(node, exp.Query) and _unsafe_settings(node):
+        return True
     if isinstance(node, exp.Func):
         if kind not in _PROVEN_FUNCTIONS:
             return True
@@ -1503,6 +1505,39 @@ def _inexact_aggregate(node: Any) -> bool:
     return type(node).__name__ in _FLOAT_SENSITIVE_AGGREGATES and not all(
         _exact_operand(a) for a in (node.args.get("this"), node.args.get("expression"))
     )
+
+
+# ClickHouse settings that change how a query runs, not what it returns (those with an
+# `*_overflow_mode` of `any` or `break`, `max_rows_to_*` limits and the like cut or
+# change the result)
+_HARMLESS_SETTINGS = frozenset(
+    {
+        "max_threads",
+        "max_block_size",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_bytes_before_external_group_by",
+        "max_bytes_before_external_sort",
+        "log_comment",
+    }
+)
+
+
+def _unsafe_settings(node: Any) -> bool:
+    """Whether a query's own `SETTINGS` clause has a setting outside the harmless ones."""
+    settings = node.args.get("settings")
+    if not settings:
+        return False
+    return not all(
+        isinstance(s, exp.EQ)
+        and isinstance(s.this, (exp.Column, exp.Identifier, exp.Var))
+        and s.this.name.lower() in _HARMLESS_SETTINGS
+        for s in settings
+    )
+
+
+def _any_unsafe_settings(stmt: Any) -> bool:
+    return any(_unsafe_settings(q) for q in stmt.find_all(exp.Query))
 
 
 def _positional_join(stmt: Any) -> bool:
@@ -2242,6 +2277,7 @@ def _no_facts() -> dict[str, Any]:
         "cast_types": [],
         "any_operator": False,
         "positional_join": False,
+        "unsafe_settings": False,
         "referenced_columns": None,
         "final_tables": [],
         "temporal_cast_columns": [],
@@ -2464,6 +2500,7 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     facts["known_functions"] = _known_functions(stmt, tokens, dialect)
     facts["collapses_rows"] = _collapses_rows(stmt)
     facts["positional_join"] = _positional_join(stmt)
+    facts["unsafe_settings"] = _any_unsafe_settings(stmt)
     facts["collated"] = _uses_collation(tokens, dialect)
     facts["unproven"] = sorted(
         {_describe(n, dialect) for n in unproven if not any(n is f for f in flagged)}

@@ -1794,7 +1794,12 @@ pub fn temporary_relation(
         DialectName::Postgresql => {
             let df = session
                 .catalog_query(&format!(
-                    "SELECT c.relpersistence = 't' FROM pg_class c WHERE c.oid = to_regclass({})",
+                    // the relation or any table inheriting from it (a temporary child is read
+                    // through its parent, by the session that made it only)
+                    "WITH RECURSIVE d(oid) AS (SELECT to_regclass({})::oid UNION ALL \
+                    SELECT i.inhrelid FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
+                    SELECT COALESCE(bool_or(c.relpersistence = 't'), false) FROM d \
+                    JOIN pg_class c ON c.oid = d.oid",
                     dialect.quote_str(&qualified)
                 ))
                 .ok()?;
@@ -1818,7 +1823,7 @@ pub fn temporary_relation(
 }
 
 /// Whether what an Oracle object shows depends on the session or the user: a global temporary
-/// table (each session has its own rows) or an enabled VPD policy (`DBMS_RLS`, whose predicate
+/// table (each session has its own rows), an enabled Data Redaction policy, or an enabled VPD policy (`DBMS_RLS`, whose predicate
 /// may differ on each read, as `DBMS_RANDOM` does). A failed lookup counts as bound.
 fn oracle_session_bound(
     run: &mut impl FnMut(&str) -> Option<DataFrame>,
@@ -1835,7 +1840,20 @@ fn oracle_session_bound(
     )) else {
         return true;
     };
-    cell_u64(&df, 0, 0) != Some(0) || cell_u64(&df, 1, 0) != Some(0)
+    if cell_u64(&df, 0, 0) != Some(0) || cell_u64(&df, 1, 0) != Some(0) {
+        return true;
+    }
+    // Data Redaction (`DBMS_REDACT`): the query returns redacted values, which a filter pushed
+    // into the database doesn't see (it compares the stored ones)
+    let Some(df) = run(&format!(
+        "SELECT COUNT(*) FROM redaction_policies WHERE object_owner = {} AND object_name = {} \
+        AND enable = 'YES'",
+        s(owner),
+        s(name)
+    )) else {
+        return true;
+    };
+    cell_u64(&df, 0, 0) != Some(0)
 }
 
 fn oracle_lookup(

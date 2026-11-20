@@ -5701,7 +5701,7 @@ def _duckdb_file(tmp_path: Any) -> str:
         "SELECT l.id, r.v AS k FROM l POSITIONAL JOIN r",
     ],
 )
-def test_duckdb_row_picking_joins_are_not_partitioned_nor_filtered_in_the_database(
+def test_duckdb_row_picking_joins_are_not_partitioned(
     tmp_path: Any, source: str
 ) -> None:
     # #549, #550: which right row an ASOF join takes among ties, and which rows a POSITIONAL
@@ -5710,10 +5710,17 @@ def test_duckdb_row_picking_joins_are_not_partitioned_nor_filtered_in_the_databa
     uri = f"duckdb:///{path}"
     with pytest.raises(pl.exceptions.InvalidOperationError, match="can't be partitioned"):
         pl.scan_database(source, uri, partition_on="id", partition_num=4).collect()
-    lf = pl.scan_database(source, uri)
-    assert "filters 0/" in lf.filter(pl.col("k") < 100).explain() or (
-        "pushed: " not in lf.filter(pl.col("k") < 100).explain()
-    )
+
+
+def test_duckdb_positional_join_filters_after_the_read(tmp_path: Any) -> None:
+    # #550: a filter pushed into the database changes which rows a positional join pairs
+    path = _duckdb_file(tmp_path)
+    source = "SELECT l.id, r.v AS k FROM l POSITIONAL JOIN r"
+    lf = pl.scan_database(source, f"duckdb:///{path}").filter(pl.col("k") < 100)
+    assert "filters 0/" in lf.explain()
+    df = lf.collect()
+    assert df.height == 99
+    assert (df["id"] == df["k"]).all()
 
 
 def test_duckdb_float_sum_is_not_a_partition_key(tmp_path: Any) -> None:

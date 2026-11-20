@@ -163,9 +163,6 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     if dialect == DialectName::Mssql && facts.top_level_order_by_without_limit {
         return Some("SQL Server does not allow ORDER BY without TOP inside a derived table");
     }
-    if facts.positional_join {
-        return Some("a positional join (PASTE, POSITIONAL) pairs rows by their place, which a pushed filter changes");
-    }
     if let Some(cols) = &facts.output_columns {
         let mut seen = PlHashSet::with_capacity(cols.len());
         if !cols.iter().all(|c| seen.insert(c)) {
@@ -481,6 +478,20 @@ pub fn resolve_scan(
             && pushdown_disabled.is_none()
         {
             pushdown_disabled = Some(reason);
+        }
+        if facts.as_ref().is_ok_and(|f| f.positional_join) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(
+                "a positional join (PASTE, POSITIONAL) pairs rows by their place, which a \
+                pushed filter changes"
+                    .into(),
+            );
+        }
+        if facts.as_ref().is_ok_and(|f| f.unsafe_settings) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(
+                "a SETTINGS clause (an overflow mode, a row limit) may cut or change the rows, \
+                which a pushed filter changes"
+                    .into(),
+            );
         }
         if query.derived_order_by {
             if dialect.keeps_derived_table_order().is_none() {
@@ -3857,7 +3868,7 @@ fn source_volatility(
             }
             collapses |= view.collapses_rows;
             collated |= view.collated;
-            out.positional |= view.positional_join;
+            out.positional |= view.positional_join || view.unsafe_settings;
             union_refs(&mut refs, &view);
             cast_columns.extend(view.temporal_cast_columns.iter().cloned());
             casts.extend(view.cast_types.iter().cloned());
