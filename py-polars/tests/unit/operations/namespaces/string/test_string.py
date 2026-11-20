@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import struct
 from datetime import date, datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pytest
@@ -19,6 +19,9 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_str_slice() -> None:
@@ -1419,6 +1422,50 @@ def test_replace_all() -> None:
         pl.Series([r"(.)(\?)(\?)"]).str.replace_all("\\?", "$0", literal=False)[0]
         == "(.)(\\?)(\\?)"
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_column_pattern(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "s": ["abcab", "a1b2", None, "aaa", "a.b"],
+            "p": ["ab", r"(\d)", "a", "b", "."],
+            "v": ["X", "<$1>", "q", "z", "!"],
+        }
+    )
+    out = lf.select(
+        all_lit=pl.col("s").str.replace_all(pl.col("p"), pl.col("v"), literal=True),
+        one_lit=pl.col("s").str.replace(pl.col("p"), pl.col("v"), literal=True),
+        all_re=pl.col("s").str.replace_all(pl.col("p"), pl.col("v")),
+        one_re=pl.col("s").str.replace(pl.col("p"), pl.col("v")),
+        two=pl.col("s").str.replace(pl.col("p"), "_", literal=True, n=2),
+        none=pl.col("s").str.replace(pl.col("p"), "_", n=0),
+        bcast=pl.lit("abab").str.replace_all(pl.col("p"), "_", literal=True),
+    ).collect(engine=engine)
+    assert out.to_dict(as_series=False) == {
+        "all_lit": ["XcX", "a1b2", None, "aaa", "a!b"],
+        "one_lit": ["Xcab", "a1b2", None, "aaa", "a!b"],
+        "all_re": ["XcX", "a<1>b<2>", None, "aaa", "!!!"],
+        "one_re": ["Xcab", "a<1>b2", None, "aaa", "!.b"],
+        "two": ["_c_", "a1b2", None, "aaa", "a_b"],
+        "none": ["abcab", "a1b2", None, "aaa", "a.b"],
+        "bcast": ["__", "abab", "_b_b", "a_a_", "abab"],
+    }
+
+    # The rules for a single pattern hold in every row.
+    lf = pl.LazyFrame({"s": ["aa", "bb"], "p": ["a", None], "r": ["(a)", "(b)"]})
+    with pytest.raises(ComputeError, match="pattern cannot be 'null'"):
+        lf.select(pl.col("s").str.replace_all(pl.col("p"), "x")).collect(engine=engine)
+    with pytest.raises(ComputeError, match="n > 1"):
+        lf.select(pl.col("s").str.replace(pl.col("r"), "x", n=2)).collect(engine=engine)
+    # A null value keeps the source without looking at the pattern.
+    lf = pl.LazyFrame({"s": ["aa", "bb"], "p": ["[", "b"], "v": [None, "x"]})
+    q = lf.select(pl.col("s").str.replace(pl.col("p"), pl.col("v")))
+    assert q.collect(engine=engine)["s"].to_list() == ["aa", "xb"]
+
+
+def test_replace_regex_zero_count() -> None:
+    assert pl.Series(["aaa"]).str.replace("(a)", "b", n=0).to_list() == ["aaa"]
 
 
 def test_replace_all_literal_no_captures() -> None:
