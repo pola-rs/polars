@@ -757,9 +757,9 @@ def test_postgres_credential_provider(driver: str) -> None:
 def test_postgres_partition_added_after_planning_does_not_fail_the_resolution_check() -> (
     None
 ):
-    # G1: the resolution fingerprint listed every permanent child of a partitioned table,
-    # so a partition added (or detached) between two collects of a cached LazyFrame failed
-    # as if the pooled session's state had changed
+    # G1: the resolution fingerprint listed every permanent child of a partitioned
+    # table, so a partition added (or detached) between two collects of a cached
+    # LazyFrame failed as if the pooled session's state had changed
     server = SERVERS["postgres17"]
     assert server.factory is not None
     assert server.uri is not None
@@ -9843,19 +9843,19 @@ def test_mssql_schema_declared_datetimes_are_exact_for_every_source_type() -> No
             "'1969-12-31 23:59:59.993', '1969-12-31 23:59', '1969-12-31')",
         ],
     )
-    dt = {
+    dt: dict[int, tuple[datetime | None, int]] = {
         1: (datetime(2024, 1, 1, 1, 30, 0, 997000), 997000000),
         2: (datetime(1753, 1, 1, 0, 0, 0, 3000), 3000000),
         3: (datetime(9999, 12, 31, 23, 59, 59, 997000), 997000000),
-        4: (None, None),
+        4: (None, 0),
         5: (datetime(1969, 12, 31, 23, 59, 59, 993000), 993000000),
     }
     # the UTC instants of the `datetimeoffset` column, to the digit
-    dto = {
+    dto: dict[int, tuple[datetime | None, int]] = {
         1: (datetime(2023, 12, 31, 20, 0, 0), 123456700),
         2: (datetime(1, 1, 1, 0, 0, 0), 0),
         3: (datetime(9999, 12, 31, 23, 59, 59), 999999900),
-        4: (None, None),
+        4: (None, 0),
         5: (datetime(1969, 12, 31, 23, 59, 59), 999999900),
     }
     for driver in _runnable_drivers("mssql", _MSSQL_DRIVERS):
@@ -9902,7 +9902,9 @@ def test_mssql_schema_declared_datetimes_are_exact_for_every_source_type() -> No
                 assert naive["sdt"][0] == datetime(2024, 1, 1, 1, 30), label
                 assert naive["dat"][0] == datetime(2024, 1, 1), label
                 # a filter on the exact value finds the row
-                value = datetime(2024, 1, 1, 1, 30, 0, 997000, tzinfo=UTC if tz else None)
+                value = datetime(
+                    2024, 1, 1, 1, 30, 0, 997000, tzinfo=UTC if tz else None
+                )
                 found = (
                     lf.filter(pl.col("id").is_in(ids) & (pl.col("dt") == value))
                     .collect()["id"]
