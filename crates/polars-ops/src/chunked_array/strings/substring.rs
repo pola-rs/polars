@@ -317,12 +317,17 @@ pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringC
                 return Ok(StringChunked::full_null(ca.name().clone(), len));
             };
 
-            Ok(unsafe {
+            let mut out = unsafe {
                 ca.apply_views(|view, val| {
                     let end = head_binary_values(val, n);
                     update_view(view, 0, end, val)
                 })
-            })
+            };
+            // A prefix keeps the order, removing a suffix does not.
+            if n < 0 {
+                out.set_sorted_flag(IsSorted::Not);
+            }
+            Ok(out)
         },
         // TODO! below should also work on only views
         (1, _) => {
