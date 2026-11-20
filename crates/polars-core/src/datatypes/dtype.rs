@@ -842,6 +842,8 @@ impl DataType {
             Array(inner, _) => inner.contains_time_units(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_time_units()),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.contains_time_units() || value.contains_time_units(),
             _ => false,
         }
     }
@@ -875,6 +877,8 @@ impl DataType {
             Struct(fields) => fields
                 .iter()
                 .all(|field| field.dtype.has_finest_time_units()),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.has_finest_time_units() && value.has_finest_time_units(),
             _ => true,
         }
     }
@@ -904,6 +908,11 @@ impl DataType {
                         field.dtype.merge_finest_time_units(&other.dtype);
                     }
                 }
+            },
+            #[cfg(feature = "dtype-map")]
+            (Map(key, value), Map(other_key, other_value)) => {
+                key.merge_finest_time_units(other_key);
+                value.merge_finest_time_units(other_value);
             },
             _ => {},
         }

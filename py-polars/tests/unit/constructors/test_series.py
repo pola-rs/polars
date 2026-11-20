@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+import io
+import zoneinfo
+from datetime import UTC, date, datetime, time, timedelta, timezone
+from importlib import resources
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import dateutil.tz
@@ -15,6 +19,9 @@ from polars.testing.asserts.frame import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from datetime import tzinfo
+
     from polars._typing import PolarsDataType, TimeUnit
 
 
@@ -206,11 +213,41 @@ def test_series_init_pytz_datetime(value: datetime) -> None:
     assert ts == (value - epoch) // timedelta(microseconds=1)
 
 
-def test_series_init_pandas_timestamp_unsupported_time_zone() -> None:
-    # zones that are neither named nor fixed-offset are not silently made UTC
-    value = pd.Timestamp("2021-06-15 12:30", tz=dateutil.tz.gettz("Europe/Paris"))
+def _zone_file(key: str) -> io.BytesIO:
+    # (as `zoneinfo` resolves keys: the system time zone database, else `tzdata`)
+    for root in zoneinfo.TZPATH:
+        if (path := Path(root, key)).is_file():
+            return io.BytesIO(path.read_bytes())
+    return io.BytesIO(resources.files("tzdata.zoneinfo").joinpath(key).read_bytes())
+
+
+@pytest.mark.parametrize(
+    "tz_from_file", [zoneinfo.ZoneInfo.from_file, dateutil.tz.tzfile]
+)
+@pytest.mark.parametrize("as_pandas", [False, True])
+def test_series_init_unnamed_time_zone(
+    tz_from_file: Callable[[io.BytesIO], tzinfo], as_pandas: bool
+) -> None:
+    # zones loaded from a file are neither named (their `key` is None, or absent in
+    # older dateutil versions) nor fixed-offset, so must not be silently made UTC
+    tz = tz_from_file(_zone_file("Europe/Paris"))
+    value = datetime(2021, 6, 15, 12, 30, tzinfo=tz)
     with pytest.raises(TypeError, match="is not a fixed offset timezone"):
-        pl.Series([value])
+        pl.Series([pd.Timestamp(value) if as_pandas else value])
+
+
+@pytest.mark.skipif(
+    getattr(dateutil.tz.gettz("Europe/Paris"), "key", None) is None,
+    reason="dateutil version does not name its time zones",
+)
+@pytest.mark.parametrize("as_pandas", [False, True])
+def test_series_init_dateutil_named_time_zone(as_pandas: bool) -> None:
+    value = datetime(2021, 6, 15, 12, 30, tzinfo=dateutil.tz.gettz("Europe/Paris"))
+    s = pl.Series([pd.Timestamp(value) if as_pandas else value])
+    assert s.dtype.time_zone == "Europe/Paris"  # type: ignore[attr-defined]
+    assert s.dt.convert_time_zone("UTC").item() == datetime(
+        2021, 6, 15, 10, 30, tzinfo=UTC
+    )
 
 
 def test_series_init_pandas_nat() -> None:

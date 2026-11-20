@@ -347,6 +347,13 @@ pub(crate) fn py_object_to_any_value(
         tzinfo.is_instance(ZONEINFO_TYPE.import(tzinfo.py(), "zoneinfo", "ZoneInfo")?)
     }
 
+    /// The name of a `zoneinfo` (or `dateutil` >= 4) time zone.
+    fn time_zone_key<'py>(tzinfo: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        Ok(tzinfo
+            .getattr_opt(intern!(tzinfo.py(), "key"))?
+            .filter(|key| !key.is_none()))
+    }
+
     fn get_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
         let tzinfo = ob.getattr(intern!(py, "tzinfo"))?;
@@ -380,7 +387,7 @@ pub(crate) fn py_object_to_any_value(
             ));
         }
 
-        let is_named = is_zoneinfo || (!is_fixed_offset && tzinfo.hasattr(intern!(py, "key"))?);
+        let is_named = !is_fixed_offset && time_zone_key(&tzinfo)?.is_some();
         let (timestamp, tz) = if is_named {
             let datetime = ob.extract::<DateTime<Tz>>()?;
             let tz = unsafe { TimeZone::from_static(datetime.timezone().name()) };
@@ -539,7 +546,7 @@ pub(crate) fn py_object_to_any_value(
         }
     }
 
-    /// The polars time zone of a (non-null) `tzinfo`; named (`zoneinfo`/`pytz`) time zones
+    /// The polars time zone of a (non-null) `tzinfo`; named (`zoneinfo`/`pytz`/`dateutil`) zones
     /// keep their name, fixed offsets become UTC, and others raise (as in `get_datetime`).
     fn get_time_zone(tzinfo: &Bound<'_, PyAny>) -> PyResult<TimeZone> {
         let py = tzinfo.py();
@@ -547,15 +554,13 @@ pub(crate) fn py_object_to_any_value(
         if tzinfo.get_type().is(PyTzInfo::utc(py)?.get_type()) {
             return Ok(TimeZone::UTC);
         }
-        let name = if is_zoneinfo(tzinfo)? {
-            tzinfo.getattr(intern!(py, "key"))?
-        } else if let Some(zone) = tzinfo
-            .getattr(intern!(py, "zone"))
-            .ok()
+        let name = if let Some(zone) = (!is_zoneinfo(tzinfo)?)
+            .then(|| tzinfo.getattr(intern!(py, "zone")).ok())
+            .flatten()
             .filter(|zone| !zone.is_none())
         {
             zone
-        } else if let Ok(key) = tzinfo.getattr(intern!(py, "key")) {
+        } else if let Some(key) = time_zone_key(tzinfo)? {
             key
         } else {
             let offset = tzinfo.call_method1(intern!(py, "utcoffset"), (py.None(),))?;
