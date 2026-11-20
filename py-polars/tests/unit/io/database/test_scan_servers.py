@@ -8708,7 +8708,8 @@ def test_temporary_table_in_a_pool_is_not_read_by_partitions(name: str) -> None:
         finally:
             for c in conns:
                 c.close()
-        # an Engine is read through one pinned connection: its temporary table, all of it
+        # an Engine is read through one pinned connection: its temporary table, all of
+        # it
         lf = pl.scan_database(t, engine, partition_on="id", partition_num=4)
         for _ in range(3):
             assert sorted(lf.collect()["id"].to_list()) == list(range(1, 201))
@@ -8899,8 +8900,8 @@ def test_float_sum_as_a_partition_key_is_refused(name: str) -> None:
 
 def test_postgres_user_operator_on_literals_and_attribute_functions() -> None:
     # #551: `true # false` runs a user's `#`(boolean, boolean) though no column has the
-    # type (an operator on `int4` or `numeric` would make other tests' sources unproven);
-    # #516: `c.f` is `f(c)`
+    # type (an operator on `int4` or `numeric` would make other tests' sources
+    # unproven); #516: `c.f` is `f(c)`
     name = "postgres17"
     _execute(
         name,
@@ -8972,7 +8973,8 @@ def _prime_pool(engine: Any, statements: list[str], idle: int = 3) -> None:
 
 
 def test_postgres_engine_reads_one_session_for_every_partition() -> None:
-    # #576: `search_path` set on one pooled connection decided which table a partition read
+    # #576: `search_path` set on one pooled connection decided which table a partition
+    # read
     sqlalchemy = pytest.importorskip("sqlalchemy")
     if not _installed("psycopg"):
         pytest.skip("psycopg is not installed")
@@ -9021,7 +9023,8 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
-    # #576: `div_precision_increment` of one pooled session changes the value of a `/` key
+    # #576: `div_precision_increment` of one pooled session changes the value of a `/`
+    # key
     sqlalchemy = pytest.importorskip("sqlalchemy")
     if not _installed("pymysql"):
         pytest.skip("pymysql is not installed")
@@ -9143,7 +9146,8 @@ def test_clickhouse_settings_that_cut_the_read_are_not_proven() -> None:
 
 
 def test_oracle_redacted_columns_are_neither_pushed_nor_partition_keys() -> None:
-    # #579: Data Redaction returns redacted values while a pushed filter compares the stored
+    # #579: Data Redaction returns redacted values while a pushed filter compares the
+    # stored
     oracledb = pytest.importorskip("oracledb")
     uri = SERVERS["oracle"].uri
     if uri is None:

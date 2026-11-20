@@ -211,8 +211,8 @@ def _pinned_checkout(engine: Any) -> Any:
     """
     One SQLAlchemy `Connection` of an Engine, held for the scan.
 
-    The checkout (and its listeners) runs here, in the caller's thread and context. The
-    scan plans and reads every partition on its one DB-API connection, one after another,
+    scan plans and reads every partition on its one DB-API connection, one after the
+    other, and gives the checkout back (with the pool's own reset) when it is dropped.
     and gives the checkout back (with the pool's own reset) when it is dropped.
     """
     import weakref

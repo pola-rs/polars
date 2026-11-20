@@ -1501,7 +1501,7 @@ def _row_picking_join(node: Any, dialect: str | None) -> bool:
 
 
 def _inexact_aggregate(node: Any) -> bool:
-    """Whether `node` is a float-sensitive aggregate over an argument not shown exact."""
+    """Whether `node` is a float-sensitive aggregate of an argument not shown exact."""
     return type(node).__name__ in _FLOAT_SENSITIVE_AGGREGATES and not all(
         _exact_operand(a) for a in (node.args.get("this"), node.args.get("expression"))
     )
@@ -1524,7 +1524,7 @@ _HARMLESS_SETTINGS = frozenset(
 
 
 def _unsafe_settings(node: Any) -> bool:
-    """Whether a query's own `SETTINGS` clause has a setting outside the harmless ones."""
+    """Whether a query's `SETTINGS` clause has a setting outside the harmless ones."""
     settings = node.args.get("settings")
     if not settings:
         return False
@@ -2096,8 +2096,8 @@ def _known_functions(
         if dialect == "duckdb" and word == "escape":
             names.update(("like_escape", "not_like_escape", "ilike_escape"))
     if stmt is not None and dialect in ("postgres", "redshift"):
-        # attribute notation calls a function of the row: `c.f` and `(c).f` are `f(c)` where
-        # `c` has no column `f`
+        # attribute notation calls a function of the row: `c.f` and `(c).f` are `f(c)`
+        # where `c` has no column `f`
         names.update(
             c.name.lower()
             for c in stmt.find_all(exp.Column)
@@ -2109,7 +2109,8 @@ def _known_functions(
             if isinstance(d.expression, exp.Identifier)
         )
     if stmt is not None and dialect == "oracle":
-        # a function without parentheses is read as a column where no column has its name
+        # a function without parentheses is read as a column where no column has its
+        # name
         names.update(
             c.name.lower()
             for c in stmt.find_all(exp.Column)
@@ -2567,10 +2568,10 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
                 matched |= names & set(written)
                 flagged.append(f)
         unproven.extend(f for f in flagged if not any(f is u for u in unproven))
-    # A float aggregate's value changes in its last bits between runs (a parallel aggregate
-    # adds in another order): as an output column it isn't a partition key (the column is
-    # listed as volatile), anywhere else (a `HAVING`, a subquery, a join condition) it
-    # decides which rows there are.
+    # A float aggregate's value changes in its last bits between runs (a parallel
+    # aggregate adds in another order): as an output column it isn't a partition key
+    # (the column is listed as volatile), anywhere else (a `HAVING`, a subquery, a join
+    # condition) it decides which rows there are.
     projections = (
         {id(p) for p in stmt.selects} if isinstance(stmt, exp.Select) else set()
     )

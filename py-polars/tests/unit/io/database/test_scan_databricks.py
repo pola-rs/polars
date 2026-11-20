@@ -1061,8 +1061,8 @@ def test_user_function_named_like_another_dialects_builtin() -> None:
 
 
 def test_a_column_mask_makes_a_table_unproven() -> None:
-    # #521: a mask's function (`rand()`) runs on each read, whatever the key: the
-    # plan of a masked table is a secure view, which neither DESCRIBE nor the information
+    # #521: a mask's function (`rand()`) runs on each read, whatever the key: the plan
+    # of a masked table is a secure view, which neither DESCRIBE nor the information
     # schema shows for a policy (ABAC)
     from tests.unit.io.database._databricks import connect, execute, parts
 

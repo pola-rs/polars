@@ -2721,7 +2721,8 @@ def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> Non
         ),
         ("clickhouse", "SELECT l.id, r.v FROM l ALL INNER JOIN r ON l.k = r.k", True),
         ("duckdb", "SELECT a.id, b.v FROM a LEFT JOIN b ON a.k = b.k", True),
-        # a float aggregate anywhere but an output column decides which rows there are (#546)
+        # a float aggregate anywhere but an output column decides which rows there are
+        # (#546)
         ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(x) > 5", False),
         ("duckdb", "SELECT g FROM (SELECT g, avg(x) AS a FROM t GROUP BY g) q", False),
         ("clickhouse", "SELECT g FROM t GROUP BY g HAVING stddevPop(x) > 1", False),
@@ -2741,8 +2742,8 @@ def test_row_picking_joins_and_float_aggregates_are_not_repeatable(
 def test_a_float_aggregate_output_column_is_volatile_not_the_whole_query(
     dialect: str,
 ) -> None:
-    # #546: its value changes in the last bits between runs, so it is no partition key; the
-    # rows of the query don't change
+    # #546: its value changes in the last bits between runs, so it is no partition key;
+    # the rows of the query don't change
     from polars_database._sqlglot import inspect_query
 
     facts = inspect_query(

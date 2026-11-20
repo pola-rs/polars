@@ -5833,8 +5833,8 @@ def _duckdb_file(tmp_path: Any) -> str:
 def test_duckdb_row_picking_joins_are_not_partitioned(
     tmp_path: Any, source: str
 ) -> None:
-    # #549, #550: which right row an ASOF join takes among ties, and which rows a POSITIONAL
-    # join pairs, change from run to run and with a pushed filter
+    # #549, #550: which right row an ASOF join takes among ties, and which rows a
+    # POSITIONAL join pairs, change from run to run and with a pushed filter
     path = _duckdb_file(tmp_path)
     uri = f"duckdb:///{path}"
     with pytest.raises(
