@@ -5258,6 +5258,45 @@ def test_parquet_nested_dictionary_multipage(tmp_path: Path) -> None:
     assert data_pages == 2, f"Expected 2 data pages, got {data_pages}"
 
 
+@pytest.mark.parametrize(
+    ("encoding", "pattern", "offset", "byte"),
+    [
+        # DELTA_BINARY_PACKED header: <block size 256> <4 miniblocks> <count 1000> <0>.
+        ("delta", b"\x80\x02\x04\xe8\x07\x00", 0, 0x8A),  # block size 266
+        ("delta", b"\x80\x02\x04\xe8\x07\x00", 2, 0x00),  # no miniblocks
+        ("delta", b"\x80\x02\x04\xe8\x07\x00", 2, 0x05),  # 256 % 5 != 0
+        ("delta", b"\x80\x02\x04\xe8\x07\x00", 2, 0x10),  # 16 values per miniblock
+        # Dictionary indices: <bit width 1> <one bitpacked run of 8 groups>.
+        ("dictionary", b"\x01\x11" + b"\xaa" * 8, 0, 33),
+        ("dictionary", b"\x01\x11" + b"\xaa" * 8, 0, 255),
+    ],
+)
+def test_read_parquet_malformed_page_raises_30923(
+    encoding: str, pattern: bytes, offset: int, byte: int, tmp_path: Path
+) -> None:
+    path = tmp_path / "malformed.parquet"
+    n = 1000 if encoding == "delta" else 64
+    pq.write_table(
+        pa.table(
+            {"a": list(range(n)) if encoding == "delta" else [i % 2 for i in range(n)]},
+            schema=pa.schema([pa.field("a", pa.int64(), nullable=False)]),
+        ),
+        path,
+        use_dictionary=encoding == "dictionary",
+        column_encoding={"a": "DELTA_BINARY_PACKED"} if encoding == "delta" else None,
+        compression="none",
+        data_page_version="1.0",
+        write_statistics=False,
+    )
+    data = bytearray(path.read_bytes())
+    assert data.count(pattern) == 1
+
+    data[data.index(pattern) + offset] = byte
+    path.write_bytes(data)
+    with pytest.raises(pl.exceptions.ComputeError, match="out of specification"):
+        pl.read_parquet(path)
+
+
 def test_parquet_dict_and_data_page_offset_26531(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {

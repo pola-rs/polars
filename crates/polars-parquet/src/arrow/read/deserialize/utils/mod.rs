@@ -921,8 +921,16 @@ pub(super) fn dict_indices_decoder(
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),
     // SPEC: followed by the values encoded using RLE/Bit packed described above (with the given bit width).
-    let bit_width = indices_buffer[0];
-    let indices_buffer = &indices_buffer[1..];
+    let Some((&bit_width, indices_buffer)) = indices_buffer.split_first() else {
+        return Err(ParquetError::oos(
+            "Dictionary-encoded page without a bit width",
+        ));
+    };
+    if bit_width > 32 {
+        return Err(ParquetError::oos(format!(
+            "Dictionary-encoded page bit width {bit_width} exceeds 32"
+        )));
+    }
 
     Ok(hybrid_rle::HybridRleDecoder::new(
         indices_buffer,
