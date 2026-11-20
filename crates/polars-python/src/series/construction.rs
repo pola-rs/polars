@@ -225,10 +225,13 @@ impl PySeries {
     #[staticmethod]
     fn new_opt_u128(name: &str, obj: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
         new_primitive::<UInt128Type, _>(name, obj, strict, |v| {
+            let py = v.py();
+            let int =
+                unsafe { Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyNumber_Index(v.as_ptr()))? };
             // On Python >= 3.14 negative values raise a ValueError instead of an OverflowError.
-            v.extract::<u128>().map_err(|err| {
-                if err.is_instance_of::<PyValueError>(v.py()) {
-                    PyOverflowError::new_err(err.value(v.py()).to_string())
+            int.extract::<u128>().map_err(|err| {
+                if err.is_instance_of::<PyValueError>(py) {
+                    PyOverflowError::new_err(err.value(py).to_string())
                 } else {
                     err
                 }

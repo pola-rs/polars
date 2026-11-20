@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -155,6 +156,44 @@ def test_series_init_pandas_timestamp_18127() -> None:
     result = pl.Series([pd.Timestamp("2000-01-01T00:00:00.123456789", tz="UTC")])
     # Note: time unit is not (yet) respected, it should be Datetime('ns', 'UTC').
     assert result.dtype == pl.Datetime("us", "UTC")
+
+
+def test_series_init_pandas_timestamp_out_of_datetime_range() -> None:
+    result = pl.Series([pd.Timestamp(np.datetime64("10000-01-01", "s"))])
+    assert result.dtype == pl.Datetime("us")
+    assert result.dt.year().item() == 10000
+    assert result.dt.epoch("s").item() == 253402300800
+
+
+def test_series_init_pandas_timestamp_time_zone() -> None:
+    result = pl.Series([pd.Timestamp("2200-07-01 12:00", tz="Europe/Amsterdam")])
+    assert result.dtype == pl.Datetime("us", "Europe/Amsterdam")
+    assert result.item() == datetime(
+        2200, 7, 1, 12, tzinfo=ZoneInfo("Europe/Amsterdam")
+    )
+
+
+def test_series_init_pandas_timestamp_nanoseconds_before_epoch() -> None:
+    result = pl.Series([pd.Timestamp("1969-12-31T23:59:59.999999999")])
+    assert result.item() == datetime(1969, 12, 31, 23, 59, 59, 999999)
+
+
+def test_series_init_pandas_nat() -> None:
+    with pytest.raises(TypeError, match="cannot convert pandas NaT"):
+        pl.Series([pd.NaT])
+
+
+def test_series_init_uint128_index_error_propagates() -> None:
+    class Index:
+        def __index__(self) -> int:
+            msg = "bad index"
+            raise ValueError(msg)
+
+        def __float__(self) -> float:
+            return 7.0
+
+    with pytest.raises(ValueError, match="bad index"):
+        pl.Series([1, Index()], dtype=pl.UInt128, strict=False)
 
 
 def test_series_init_np_2d_zero_zero_shape() -> None:

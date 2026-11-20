@@ -395,6 +395,32 @@ pub(crate) fn py_object_to_any_value(
         ))
     }
 
+    /// The datetime fields of a pandas Timestamp hold a placeholder year when the year is out of
+    /// range for a Python datetime, so only use those for the time zone.
+    fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        let py = ob.py();
+        let AnyValue::Datetime(value, time_unit, _) =
+            get_numpy_temporal(&ob.getattr(intern!(py, "asm8"))?, true)?
+        else {
+            unreachable!()
+        };
+        let timestamp = match time_unit {
+            TimeUnit::Nanoseconds => value.div_euclid(1000),
+            TimeUnit::Microseconds => value,
+            TimeUnit::Milliseconds => value.checked_mul(1000).ok_or_else(|| {
+                PyOverflowError::new_err(format!("pandas Timestamp {ob} is out of range"))
+            })?,
+        };
+
+        Ok(match get_datetime(ob, strict)? {
+            AnyValue::Datetime(_, time_unit, tz) => AnyValue::Datetime(timestamp, time_unit, tz),
+            AnyValue::DatetimeOwned(_, time_unit, tz) => {
+                AnyValue::DatetimeOwned(timestamp, time_unit, tz)
+            },
+            _ => unreachable!(),
+        })
+    }
+
     fn get_pandas_nat(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         Err(PyTypeError::new_err(
             "cannot convert pandas NaT; use None for missing values",
@@ -686,10 +712,13 @@ pub(crate) fn py_object_to_any_value(
         // note: datetime must be checked *before* date
         // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
-            // pandas NaT is a datetime subclass that holds no valid date.
             let ty = ob.get_type();
-            if ty.qualname()? == "NaTType" && ty.module()?.to_str()?.starts_with("pandas") {
-                Ok(get_pandas_nat as InitFn)
+            if ty.module()?.to_str()?.starts_with("pandas") {
+                if ty.qualname()? == "NaTType" {
+                    Ok(get_pandas_nat as InitFn)
+                } else {
+                    Ok(get_pandas_timestamp as InitFn)
+                }
             } else {
                 Ok(get_datetime as InitFn)
             }
