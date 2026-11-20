@@ -23,6 +23,37 @@ pub struct CallbackSinkNode {
     schema: Option<Vec<(PlSmallStr, DataType)>>,
 }
 
+/// Checks the names and types of `df` against `schema` and casts the columns that match it only
+/// through a Null type.
+fn conform_to_schema(schema: &[(PlSmallStr, DataType)], df: DataFrame) -> PolarsResult<DataFrame> {
+    polars_ensure!(
+        schema.len() == df.width()
+            && schema.iter().zip(df.columns()).all(|((n, _), c)| n == c.name()),
+        SchemaMismatch: "schema of a morsel differs from that of the first"
+    );
+    let mut must_cast = false;
+    for ((_, expected), c) in schema.iter().zip(df.columns()) {
+        must_cast |= c.dtype().matches_schema_type(expected)?;
+    }
+    if !must_cast {
+        return Ok(df);
+    }
+    let height = df.height();
+    let columns = schema
+        .iter()
+        .zip(df.into_columns())
+        .map(|((_, expected), c)| {
+            if c.dtype() == expected {
+                Ok(c)
+            } else {
+                c.cast(expected)
+            }
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+    // SAFETY: casts keep the height.
+    Ok(unsafe { DataFrame::new_unchecked(height, columns) })
+}
+
 impl CallbackSinkNode {
     pub fn new(
         function: PlanCallback<DataFrame, bool>,
@@ -104,25 +135,21 @@ impl ComputeNode for CallbackSinkNode {
 
                 let df = sf.into_df().await;
 
-                // Morsels are not always appended to the buffer, which would check this.
-                match &self.schema {
+                // Morsels are not always appended to the buffer, so check them here, and cast
+                // a column whose type is (nested) Null to the type of the first morsel's, as the
+                // vstack did: all batches have the same types.
+                let df = match &self.schema {
                     None => {
                         self.schema = Some(
                             df.columns()
                                 .iter()
                                 .map(|c| (c.name().clone(), c.dtype().clone()))
                                 .collect(),
-                        )
+                        );
+                        df
                     },
-                    Some(schema) => polars_ensure!(
-                        schema.len() == df.width()
-                            && schema
-                                .iter()
-                                .zip(df.columns())
-                                .all(|((n, d), c)| n == c.name() && d == c.dtype()),
-                        SchemaMismatch: "schema of a morsel differs from that of the first"
-                    ),
-                }
+                    Some(schema) => conform_to_schema(schema, df)?,
+                };
 
                 // Without a chunk size every morsel is passed on as it is: buffering it would
                 // only append it to an empty frame.
@@ -180,5 +207,29 @@ impl ComputeNode for CallbackSinkNode {
 
             Ok(())
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn null_morsels_are_cast_to_the_first_schema() {
+        let schema = vec![("a".into(), DataType::Int64)];
+        let null =
+            DataFrame::new_infer_height(vec![Column::full_null("a".into(), 3, &DataType::Null)])
+                .unwrap();
+        let out = conform_to_schema(&schema, null).unwrap();
+        assert_eq!(out.height(), 3);
+        assert_eq!(out.column("a").unwrap().dtype(), &DataType::Int64);
+        assert_eq!(out.column("a").unwrap().null_count(), 3);
+
+        let strings = df!("a" => ["x"]).unwrap();
+        assert!(conform_to_schema(&schema, strings).is_err());
+        let renamed = df!("b" => [1i64]).unwrap();
+        assert!(conform_to_schema(&schema, renamed).is_err());
     }
 }
