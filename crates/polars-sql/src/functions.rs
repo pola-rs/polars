@@ -2089,28 +2089,14 @@ impl SQLFunctionVisitor<'_> {
                 Ok(match length {
                     Expr::Literal(lv) if lv.is_null() => lit(lv),
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => typed_lit(""),
-                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
-                        let n: i64 = n.try_into().unwrap();
-                        let offset = if n < 0 {
-                            lit(n.abs())
-                        } else {
-                            e.clone().str().len_chars().cast(DataType::Int32) - lit(n)
-                        };
-                        e.str().slice(offset, lit(LiteralValue::untyped_null()))
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
+                        e.str().tail(length)
                     },
                     Expr::Literal(v) => {
                         polars_bail!(SQLSyntax: "invalid 'n_chars' for RIGHT ({:?})", v)
                     },
-                    _ => when(length.clone().lt(lit(0)))
-                        .then(
-                            e.clone()
-                                .str()
-                                .slice(length.clone().abs(), lit(LiteralValue::untyped_null())),
-                        )
-                        .otherwise(e.clone().str().slice(
-                            e.str().len_chars().cast(DataType::Int32) - length.clone(),
-                            lit(LiteralValue::untyped_null()),
-                        )),
+                    // A negative length takes all but the first characters.
+                    _ => e.str().tail(length),
                 })
             }),
             SplitPart => {
