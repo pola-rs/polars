@@ -3,10 +3,11 @@ use std::ops::Range;
 use polars_arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
+use crate::frame::column::ScalarColumn;
 use crate::prelude::*;
 use crate::runtime::RAYON;
 use crate::series::arrow_export::{
-    MAX_MAP_ENTRIES, arrow_export_row_ranges, contains_arrow_map, max_map_span,
+    MAX_MAP_ENTRIES, arrow_export_cut, contains_arrow_map, map_spans_fit, max_map_span,
 };
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 
@@ -112,55 +113,13 @@ impl DataFrame {
     }
 }
 
+/// The one row a Scalar column repeats, as an array; `None` for an empty column, which has none.
+pub(crate) fn scalar_column_row(sc: &ScalarColumn) -> Option<ArrayRef> {
+    let row = sc.as_single_value_series().rechunk();
+    row.chunks().first().filter(|row| row.len() == 1).cloned()
+}
+
 impl DataFrame {
-    /// The one row of each Scalar column that exports to `arrow_dtypes` with an arrow MAP, for
-    /// [`DataFrame::arrow_export_ranges`] to plan from; `None` for every other column.
-    pub(crate) fn arrow_export_scalar_rows(
-        &self,
-        arrow_dtypes: &[&ArrowDataType],
-    ) -> Vec<Option<ArrayRef>> {
-        self.columns()
-            .iter()
-            .zip(arrow_dtypes)
-            .map(|(c, dtype)| {
-                let sc = c.as_scalar_column().filter(|_| contains_arrow_map(dtype))?;
-                let row = sc.as_single_value_series();
-                let row = if row.n_chunks() > 1 {
-                    row.rechunk()
-                } else {
-                    row
-                };
-                row.chunks().first().filter(|row| row.len() == 1).cloned()
-            })
-            .collect()
-    }
-
-    /// Row ranges cutting chunk `chunk_idx` of this aligned frame, which holds `rows`, so that
-    /// each exports to `arrow_dtypes` without overflowing the `i32` offsets of an arrow MAP; see
-    /// [`arrow_export_row_ranges`]. `None` if no cut is needed.
-    pub(crate) fn arrow_export_ranges(
-        &self,
-        arrow_dtypes: &[&ArrowDataType],
-        scalar_rows: &[Option<ArrayRef>],
-        chunk_idx: usize,
-        rows: Range<usize>,
-    ) -> Option<Vec<Range<usize>>> {
-        let mut columns = Vec::new();
-        for ((c, dtype), scalar_row) in self.columns().iter().zip(arrow_dtypes).zip(scalar_rows) {
-            if !contains_arrow_map(dtype) {
-                continue;
-            }
-            match (c.as_series(), scalar_row) {
-                (Some(s), _) => columns.push((&*s.chunks()[chunk_idx], *dtype, false)),
-                (None, Some(row)) => columns.push((&**row, *dtype, true)),
-                // An empty Scalar column has no row, and the chunk then holds none either. A
-                // Dictionary column is a String, never a MAP.
-                (None, None) => {},
-            }
-        }
-        arrow_export_row_ranges(&columns, rows.len())
-    }
-
     /// Slices of this frame that each export to `arrow_dtypes`, one per column, without
     /// overflowing the `i32` offsets of an arrow MAP; just the frame unless one would.
     ///
@@ -178,32 +137,30 @@ impl DataFrame {
         if height == 0 || !dtypes.iter().any(|d| contains_arrow_map(d)) {
             return vec![self];
         }
-        let scalar_rows = self.arrow_export_scalar_rows(&dtypes);
+        // Each MAP column, with the one row it repeats if it is a Scalar column.
         let map_columns: Vec<_> = self
             .columns()
             .iter()
             .zip(&dtypes)
-            .zip(&scalar_rows)
-            .filter(|((_, dtype), _)| contains_arrow_map(dtype))
-            .map(|((c, dtype), row)| (c, *dtype, row))
+            .filter(|(_, dtype)| contains_arrow_map(dtype))
+            .map(|(c, dtype)| (c, *dtype, c.as_scalar_column().and_then(scalar_column_row)))
             .collect();
 
         // The spans of all chunks added up bound every MAP of the frame.
-        let fits = map_columns.iter().all(|(c, dtype, row)| {
-            let span = match (c.as_scalar_column(), row) {
-                (Some(_), Some(row)) => {
-                    max_map_span(row.as_ref(), 0..1, dtype).saturating_mul(height as u64)
+        let fits = map_columns
+            .iter()
+            .all(|(c, dtype, row)| match (c.as_scalar_column(), row) {
+                (Some(_), Some(row)) => map_spans_fit(row.as_ref(), dtype, 0..1, height),
+                (Some(_), None) => true,
+                (None, _) => {
+                    c.as_materialized_series()
+                        .chunks()
+                        .iter()
+                        .map(|arr| max_map_span(arr.as_ref(), 0..arr.len(), dtype))
+                        .fold(0u64, u64::saturating_add)
+                        <= MAX_MAP_ENTRIES
                 },
-                (Some(_), None) => 0,
-                (None, _) => c
-                    .as_materialized_series()
-                    .chunks()
-                    .iter()
-                    .map(|arr| max_map_span(arr.as_ref(), 0..arr.len(), dtype))
-                    .fold(0u64, u64::saturating_add),
-            };
-            span <= MAX_MAP_ENTRIES
-        });
+            });
         if fits {
             return vec![self];
         }
@@ -241,17 +198,20 @@ impl DataFrame {
                     Some((arr, *dtype, false))
                 })
                 .collect();
-            let columns: Vec<_> = arrays
-                .iter()
-                .map(|(arr, dtype, repeated)| (arr.as_ref(), *dtype, *repeated))
-                .collect();
-            match arrow_export_row_ranges(&columns, candidate.len()) {
-                None => ranges.push(candidate),
-                Some(pieces) => ranges.extend(
-                    pieces
-                        .into_iter()
-                        .map(|r| candidate.start + r.start..candidate.start + r.end),
-                ),
+            let fits = |r: Range<usize>| {
+                arrays.iter().all(|(arr, dtype, repeated)| {
+                    if *repeated {
+                        map_spans_fit(arr.as_ref(), dtype, 0..1, r.len())
+                    } else {
+                        map_spans_fit(arr.as_ref(), dtype, r.clone(), 1)
+                    }
+                })
+            };
+            let mut start = 0;
+            while start < candidate.len() {
+                let end = arrow_export_cut(start..candidate.len(), fits);
+                ranges.push(candidate.start + start..candidate.start + end);
+                start = end;
             }
         }
 

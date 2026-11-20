@@ -20,9 +20,8 @@ use either::Either;
 use polars_compute::cast::cast_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
-use split::fits_arrow_map;
 pub(crate) use split::{
-    MAX_MAP_ENTRIES, arrow_export_row_ranges, contains_arrow_map, max_map_span,
+    MAX_MAP_ENTRIES, arrow_export_cut, contains_arrow_map, map_spans_fit, max_map_span,
 };
 
 use crate::prelude::{
@@ -122,19 +121,25 @@ impl Series {
     ) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send + use<> {
         let arrow_dtype = self.dtype().to_arrow(compat_level);
         let chunk = self.chunks()[chunk_idx].as_ref();
-        let ranges = contains_arrow_map(&arrow_dtype)
-            .then(|| arrow_export_row_ranges(&[(chunk, &arrow_dtype, false)], chunk.len()))
-            .flatten();
-        let Some(ranges) = ranges else {
+        if !contains_arrow_map(&arrow_dtype)
+            || map_spans_fit(chunk, &arrow_dtype, 0..chunk.len(), 1)
+        {
             return Either::Left(std::iter::once(self.try_to_arrow(chunk_idx, compat_level)));
-        };
+        }
 
         let chunk = self.select_chunk(chunk_idx);
-        Either::Right(
-            ranges
-                .into_iter()
-                .map(move |r| chunk.slice(r).try_to_arrow(0, compat_level)),
-        )
+        let mut start = 0;
+        Either::Right(std::iter::from_fn(move || {
+            let arr = chunk.chunks()[0].as_ref();
+            let rows = start..arr.len();
+            if rows.is_empty() {
+                return None;
+            }
+            let end = arrow_export_cut(rows, |r| map_spans_fit(arr, &arrow_dtype, r, 1));
+            let piece = chunk.slice(start..end).try_to_arrow(0, compat_level);
+            start = end;
+            Some(piece)
+        }))
     }
 
     /// Export this Series to an arrow array. The dtype of the returned array will match the
@@ -263,7 +268,12 @@ impl ToArrowConverter {
                 // whole child may overflow the `i32` offsets of an arrow MAP.
                 let item_dtype_arrow = arrow_item_field.dtype();
                 let trimmed = (contains_arrow_map(item_dtype_arrow)
-                    && !fits_arrow_map(arr.values().as_ref(), item_dtype_arrow))
+                    && !map_spans_fit(
+                        arr.values().as_ref(),
+                        item_dtype_arrow,
+                        0..arr.values().len(),
+                        1,
+                    ))
                 .then(|| trim_list_child(arr))
                 .flatten();
                 let arr = trimmed.as_ref().unwrap_or(arr);

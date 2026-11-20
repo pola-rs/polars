@@ -19,11 +19,6 @@ pub(crate) fn contains_arrow_map(dtype: &ArrowDataType) -> bool {
     }
 }
 
-/// Whether every arrow MAP that exporting all of `array` to `dtype` builds fits in `i32` offsets.
-pub(crate) fn fits_arrow_map(array: &dyn Array, dtype: &ArrowDataType) -> bool {
-    max_map_span(array, 0..array.len(), dtype) <= MAX_MAP_ENTRIES
-}
-
 /// The most entries any MAP of `dtype` spans over `rows` of `array`, a Polars physical array laid
 /// out as `ToArrowConverter` expects; reads two offsets per list level.
 ///
@@ -49,7 +44,11 @@ pub(crate) fn max_map_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowD
             ))
         },
         ArrowDataType::FixedSizeList(item, width) => {
-            let Some(arr) = array.as_any().downcast_ref::<FixedSizeListArray>() else {
+            let Some(arr) = array
+                .as_any()
+                .downcast_ref::<FixedSizeListArray>()
+                .filter(|arr| arr.size() == *width)
+            else {
                 return 0;
             };
             let child_rows = rows.start * width..rows.end * width;
@@ -71,64 +70,47 @@ pub(crate) fn max_map_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowD
     }
 }
 
-/// Row ranges cutting the `height` rows of `columns` for export; `None` if no cut is needed.
-///
-/// Each range either fits, as every arrow MAP it exports spans at most `i32::MAX` entries, or is
-/// a single row, which conversion must check. Ranges are as long as that allows.
-///
-/// Each column is one array with the arrow dtype it exports to. A `repeated` column holds one row
-/// that stands for each of the `height` rows, so a scalar column is planned from one row.
-///
-/// If `0..height` fits, this costs two offset reads per list level; otherwise that times
-/// `log2(height)` per range.
-pub(crate) fn arrow_export_row_ranges(
-    columns: &[(&dyn Array, &ArrowDataType, bool)],
-    height: usize,
-) -> Option<Vec<Range<usize>>> {
-    if height == 0 {
-        return None;
-    }
-    let fits = |rows: Range<usize>| {
-        columns.iter().all(|&(array, dtype, repeated)| {
-            let span = if repeated {
-                max_map_span(array, 0..1, dtype).saturating_mul(rows.len() as u64)
-            } else {
-                max_map_span(array, rows.clone(), dtype)
-            };
-            span <= MAX_MAP_ENTRIES
-        })
-    };
-    if fits(0..height) {
-        return None;
-    }
+/// Whether every arrow MAP that exporting `rows` of `array` to `dtype` builds fits in `i32`
+/// offsets, with `rows` repeated `repeat` times, as a scalar column repeats its one row.
+pub(crate) fn map_spans_fit(
+    array: &dyn Array,
+    dtype: &ArrowDataType,
+    rows: Range<usize>,
+    repeat: usize,
+) -> bool {
+    max_map_span(array, rows, dtype).saturating_mul(repeat as u64) <= MAX_MAP_ENTRIES
+}
 
-    let mut ranges = Vec::new();
-    let mut start = 0;
-    while start < height {
-        // Spans only grow with the range, so binary search for the longest one that fits.
-        let (mut end, mut hi) = (start + 1, height);
-        while end < hi {
-            let mid = end + (hi - end).div_ceil(2);
-            if fits(start..mid) {
-                end = mid;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        ranges.push(start..end);
-        start = end;
+/// The end of the longest range from `rows.start` within `rows` that `fits`, or the single row
+/// at `rows.start`, which conversion must then check.
+///
+/// `fits` must stay false once a range doesn't fit, as spans only grow with the range; this
+/// calls it `log2(rows.len())` times.
+pub(crate) fn arrow_export_cut(rows: Range<usize>, fits: impl Fn(Range<usize>) -> bool) -> usize {
+    if rows.is_empty() || fits(rows.clone()) {
+        return rows.end;
     }
-    Some(ranges)
+    let (mut end, mut hi) = (rows.start + 1, rows.end - 1);
+    while end < hi {
+        let mid = end + (hi - end).div_ceil(2);
+        if fits(rows.start..mid) {
+            end = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    end
 }
 
 #[cfg(all(test, feature = "dtype-map"))]
 mod tests {
     use std::borrow::Cow;
 
-    use polars_arrow::array::{BooleanArray, Int32Array, MapArray, NullArray};
+    use polars_arrow::array::{BooleanArray, FixedSizeListArray, Int32Array, MapArray, NullArray};
     use polars_arrow::bitmap::Bitmap;
     use polars_arrow::offset::Offsets;
 
+    use super::arrow_export_cut;
     use crate::frame::RecordBatchIter;
     use crate::frame::column::ScalarColumn;
     use crate::prelude::*;
@@ -213,7 +195,7 @@ mod tests {
         );
         let df = DataFrame::new_infer_height(vec![m.into_column(), i.into_column()]).unwrap();
 
-        let mut batches = RecordBatchIter::new(&df, CompatLevel::newest(), false);
+        let mut batches = RecordBatchIter::new(Cow::Borrowed(&df), CompatLevel::newest(), false);
 
         let err = batches.next().unwrap().unwrap_err();
         assert!(matches!(err, PolarsError::ShapeMismatch(_)), "{err}");
@@ -267,6 +249,44 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_target_width_that_does_not_match_the_array_errors() {
+        let map = map_chunk(&[1], None);
+        let array_dtype = DataType::Array(Box::new(map_dtype()), 1);
+        let fsl = FixedSizeListArray::new(
+            array_dtype.to_physical().to_arrow(CompatLevel::newest()),
+            1,
+            map,
+            None,
+        );
+        let list = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(fsl.dtype().clone()),
+            Offsets::try_from_lengths([1].into_iter()).unwrap().into(),
+            fsl.boxed(),
+            None,
+        );
+        let s = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                "l".into(),
+                vec![list.boxed()],
+                &DataType::List(Box::new(array_dtype)),
+            )
+        };
+        let map = ArrowField::new(
+            "item".into(),
+            map_dtype().to_arrow(CompatLevel::newest()),
+            true,
+        );
+        let item = ArrowField::new(
+            "item".into(),
+            ArrowDataType::FixedSizeList(Box::new(map), 2),
+            true,
+        );
+        let field = ArrowField::new("l".into(), ArrowDataType::LargeList(Box::new(item)), true);
+
+        assert!(s.to_arrow_with_field(0, Cow::Owned(field), true).is_err());
+    }
+
     /// A scalar column repeating one map with `keys`, held in two chunks, over `height` rows.
     fn scalar_map_column(keys: Vec<i32>, height: usize) -> Column {
         let dtype = DataType::Map(Box::new(DataType::Int32), Box::new(DataType::Null));
@@ -302,18 +322,16 @@ mod tests {
         let scalar = scalar_map_column((0..1 << 20).collect(), 4096);
         let small = map_series(vec![map_chunk(&[1; 4096], None)]).with_name("small".into());
         let df = DataFrame::new_infer_height(vec![small.into_column(), scalar]).unwrap();
-        let dtypes: Vec<_> = df
-            .columns()
-            .iter()
-            .map(|c| c.dtype().to_arrow(CompatLevel::newest()))
-            .collect();
-        let dtypes: Vec<_> = dtypes.iter().collect();
-
-        let scalar_rows = df.arrow_export_scalar_rows(&dtypes);
-        let ranges = df.arrow_export_ranges(&dtypes, &scalar_rows, 0, 0..4096);
+        let batches = RecordBatchIter::new(Cow::Borrowed(&df), CompatLevel::newest(), false);
+        let mut ends = vec![];
+        let mut start = 0;
+        while start < df.height() {
+            start = arrow_export_cut(start..df.height(), |r| batches.fits(&df, 0, r));
+            ends.push(start);
+        }
 
         // 2047 rows of 2^20 entries is the most that fits in `i32` offsets.
-        assert_eq!(ranges, Some(vec![0..2047, 2047..4094, 4094..4096]));
+        assert_eq!(ends, [2047, 4094, 4096]);
         let sc = df.columns()[1].as_scalar_column().unwrap();
         assert!(sc.lazy_as_materialized_series().is_none());
     }

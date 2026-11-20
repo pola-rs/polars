@@ -1803,7 +1803,7 @@ impl Iterator for ArrowStreamIterator {
                 Err(err) => return Some(Err(err)),
                 Ok(mut df) => {
                     df.rechunk_mut();
-                    self.arrays = Some(frame_to_struct_arrays(&df, self.dtype.clone()));
+                    self.arrays = Some(frame_to_struct_arrays(df, self.dtype.clone()));
                 },
             }
         }
