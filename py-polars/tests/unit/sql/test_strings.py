@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -437,6 +438,65 @@ def test_string_right_beyond_length() -> None:
         ("", "abc", "bc"),
         ("lo", "éllo", "éllo"),
     ]
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "LEFT(MIN(s), NULL)",
+        "RIGHT(MIN(s), NULL)",
+        "SUBSTR(MIN(s), NULL)",
+        "SUBSTR(MIN(s), 2, NULL)",
+        "SUBSTRING(MIN(s) FROM NULL FOR 2)",
+        "REPLACE(MIN(s), NULL, 'x')",
+        "DATE_DIFF(NULL, MIN(d), MAX(d))",
+        "DATE_TRUNC(NULL, MIN(d))",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_null_argument_keeps_aggregate(expr: str, n_rows: int) -> None:
+    df = pl.DataFrame({"s": ["abc", "de", "f"], "d": [date(2024, 1, 1)] * 3}).head(
+        n_rows
+    )
+    assert df.sql(f"SELECT {expr} AS x FROM self").rows() == [(None,)]
+
+
+def test_replace_null_argument() -> None:
+    df = pl.DataFrame(
+        {"s": ["ab", "cd", "ab"], "r": [None, "x", "y"]},
+        schema_overrides={"r": pl.Enum(["x", "y"])},
+    )
+    res = df.sql(
+        """
+        SELECT
+          REPLACE(s, CAST(NULL AS VARCHAR), 'z') AS a,
+          REPLACE(s, 'a', r) AS b,
+          REPLACE(s, 'a', CAST(NULL AS VARCHAR)) AS c
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "a": [None, None, None],
+        "b": [None, "cd", "yb"],
+        "c": [None, None, None],
+    }
+    res = df.head(0).sql(
+        "SELECT REPLACE(MAX(s), 'a', LEFT(MIN(s), NULL)) AS x FROM self"
+    )
+    assert res.rows() == [(None,)]
+
+
+def test_null_argument_shortcuts() -> None:
+    df = pl.DataFrame({"d": [date(2024, 1, 1)]})
+    res = df.sql(
+        """
+        SELECT
+          REPLACE('abc', 'a', LEFT('abc', NULL)) AS a,
+          EXTRACT(HOUR FROM DATE_TRUNC(NULL, MIN(d))) AS b
+        FROM self
+        """
+    )
+    assert res.rows() == [(None, None)]
 
 
 def test_string_left_negative_expr() -> None:
