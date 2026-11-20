@@ -105,8 +105,143 @@ pub enum LiteralValue {
     /// A dynamically inferred literal value. This needs to be materialized into a specific type.
     Dyn(DynLiteralValue),
     Scalar(Scalar),
-    Series(SpecialEq<Series>),
+    Series(SpecialEq<LiteralColumn>),
     Range(RangeLiteralValue),
+}
+
+/// The column of a [`LiteralValue::Series`].
+///
+/// Holds a [`Column`], so a `Column::Scalar` or `Column::Dictionary` survives into the result
+/// of `with_columns(s)`. It dereferences to the materialised [`Series`] (through the column's
+/// shared cache), and serialises as that `Series`, so the serialised format is unchanged.
+#[derive(Clone)]
+pub struct LiteralColumn(Column);
+
+impl LiteralColumn {
+    pub fn new(column: Column) -> Self {
+        Self(column)
+    }
+
+    /// The column to evaluate to. A series literal always went through `Series::into_column`
+    /// (a length-1 one becomes a `Column::Scalar`), so that is kept for a `Column::Series` and
+    /// a length-1 `Column::Dictionary`; the other columns are kept as they are.
+    pub fn to_column(&self) -> Column {
+        match &self.0 {
+            Column::Series(_) => self.0.as_materialized_series().clone().into_column(),
+            Column::Dictionary(_) if self.0.len() == 1 => {
+                self.0.as_materialized_series().clone().into_column()
+            },
+            c => c.clone(),
+        }
+    }
+
+    pub fn into_series(self) -> Series {
+        self.0.take_materialized_series()
+    }
+}
+
+impl From<Series> for LiteralColumn {
+    fn from(s: Series) -> Self {
+        Self(Column::Series(s.into()))
+    }
+}
+
+impl From<Column> for LiteralColumn {
+    fn from(c: Column) -> Self {
+        Self(c)
+    }
+}
+
+impl LiteralColumn {
+    /// The materialised [`Series`], through the column's shared cache. Planning should use the
+    /// methods below instead, which do not materialise.
+    pub fn as_materialized_series(&self) -> &Series {
+        self.0.as_materialized_series()
+    }
+
+    pub fn name(&self) -> &PlSmallStr {
+        self.0.name()
+    }
+
+    /// The [`Series`] of a `Column::Series`, without materialising anything.
+    fn as_series_column(&self) -> Option<&Series> {
+        match &self.0 {
+            Column::Series(s) => Some(&**s),
+            _ => None,
+        }
+    }
+
+    /// The first `n` rows as a column of their own cache.
+    fn column_slice(&self, n: usize) -> Column {
+        self.0.slice((0i64, n))
+    }
+
+    pub fn dtype(&self) -> &DataType {
+        self.0.dtype()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn null_count(&self) -> usize {
+        self.0.null_count()
+    }
+
+    /// Casts the column, keeping a `Column::Scalar` or `Column::Dictionary` unmaterialised
+    /// where the cast allows. A `Column::Series` goes through [`Series::cast_with_options`].
+    pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
+        match &self.0 {
+            Column::Series(_) => Ok(self
+                .as_materialized_series()
+                .cast_with_options(dtype, options)?
+                .into()),
+            c => c.cast_with_options(dtype, options).map(Self),
+        }
+    }
+
+    pub fn field(&self) -> Field {
+        self.0.field().into_owned()
+    }
+}
+
+impl PartialEq for SpecialEq<LiteralColumn> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_materialized_series() == other.as_materialized_series()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for LiteralColumn {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_materialized_series().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for LiteralColumn {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Series::deserialize(deserializer).map(Self::from)
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for LiteralColumn {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        Series::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        Series::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        Series::json_schema(generator)
+    }
 }
 
 pub enum MaterializedLiteralValue {
@@ -424,7 +559,7 @@ impl LiteralValue {
         let series = match self.materialize() {
             LiteralValue::Dyn(_) => unreachable!(),
             LiteralValue::Scalar(scalar) => scalar.into_series(PlSmallStr::EMPTY),
-            LiteralValue::Series(series) => series.into_inner(),
+            LiteralValue::Series(series) => series.into_inner().into_series(),
             LiteralValue::Range(range) => {
                 let dtype = range.dtype.clone();
                 range.try_materialize_to_series(&dtype)?
@@ -643,7 +778,13 @@ impl Literal for NaiveDate {
 
 impl Literal for Series {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Series(SpecialEq::new(self)))
+        Expr::Literal(LiteralValue::Series(SpecialEq::new(self.into())))
+    }
+}
+
+impl Literal for Column {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Series(SpecialEq::new(self.into())))
     }
 }
 
@@ -668,14 +809,30 @@ impl Hash for LiteralValue {
         std::mem::discriminant(self).hash(state);
         match self {
             LiteralValue::Series(s) => {
-                state.write_usize(if s.len() > CHEAP_SERIES_HASH_LIMIT {
-                    Arc::as_ptr(&s.0) as *const () as usize
-                } else {
-                    0
+                let column: &LiteralColumn = s;
+                state.write_usize(match column.as_series_column() {
+                    Some(series) if series.len() > CHEAP_SERIES_HASH_LIMIT => {
+                        Arc::as_ptr(&series.0) as *const () as usize
+                    },
+                    _ => 0,
                 });
 
-                for av in s.iter().take(CHEAP_SERIES_HASH_LIMIT) {
-                    av.hash(state)
+                // A Scalar or Dictionary column hashes the values of a short slice, which
+                // does not fill its shared cache.
+                match column.as_series_column() {
+                    Some(series) => {
+                        for av in series.iter().take(CHEAP_SERIES_HASH_LIMIT) {
+                            av.hash(state)
+                        }
+                    },
+                    None => {
+                        // The length too: equal short heads of columns of other lengths differ.
+                        state.write_usize(column.len());
+                        let head = column.column_slice(CHEAP_SERIES_HASH_LIMIT);
+                        for av in head.as_materialized_series().iter() {
+                            av.hash(state)
+                        }
+                    },
                 }
             },
             LiteralValue::Range(range) => range.hash(state),

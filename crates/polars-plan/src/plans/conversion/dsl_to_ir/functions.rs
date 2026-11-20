@@ -976,7 +976,9 @@ pub(super) fn convert_functions(
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
             let quantile = match ctx.arena.get(e[1].node()) {
-                AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
+                AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => {
+                    s.as_materialized_series().get(0).ok()
+                },
                 AExpr::Literal(
                     lv @ (LiteralValue::Scalar(_)
                     | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),

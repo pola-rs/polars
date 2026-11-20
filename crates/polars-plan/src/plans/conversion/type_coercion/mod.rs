@@ -830,7 +830,11 @@ impl OptimizationRule for TypeCoercionRule {
                 let new_lv_ae: AExpr = match expr_arena.get(holiday_arg.node()) {
                     AExpr::Literal(LiteralValue::Series(s)) if s.dtype() == &DataType::Date => {
                         AExpr::Literal(LiteralValue::Series(SpecialEq::new(
-                            s.implode().unwrap().into_series(),
+                            s.as_materialized_series()
+                                .implode()
+                                .unwrap()
+                                .into_series()
+                                .into(),
                         )))
                     },
                     ae => {
@@ -1377,8 +1381,7 @@ fn try_inline_literal_cast(
 ) -> PolarsResult<Option<LiteralValue>> {
     let lv = match lv {
         LiteralValue::Series(s) => {
-            let s = s.cast_with_options(dtype, options)?;
-            LiteralValue::Series(SpecialEq::new(s))
+            LiteralValue::Series(SpecialEq::new(s.cast_with_options(dtype, options)?))
         },
         LiteralValue::Dyn(dyn_value) => dyn_value
             .clone()

@@ -88,6 +88,20 @@ fn dictionary_lookup_mask(
     Ok(BooleanChunked::with_chunk(name, arr))
 }
 
+impl DictionaryColumn {
+    /// The boolean `op` evaluated once per dictionary value that rows use (once on every
+    /// dictionary value when that is cheaper) and spread to the rows by code: a comparison of
+    /// the column with a constant. A null row gives what `op` gives for a null.
+    ///
+    /// The result is one chunk, whatever the chunks of the column.
+    pub fn compare_with(
+        &self,
+        op: impl Fn(&Series) -> PolarsResult<BooleanChunked>,
+    ) -> PolarsResult<BooleanChunked> {
+        dictionary_mask(self, op)
+    }
+}
+
 macro_rules! column_element_wise_broadcasting {
     ($lhs:expr, $rhs:expr, $op:expr) => {
         match ($lhs, $rhs) {

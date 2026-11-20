@@ -87,7 +87,9 @@ pub fn datatype_fn_to_aexpr(
                             dims.push(width as u32);
                             inner = *new_inner;
                         }
-                        LiteralValue::Series(SpecialEq::new(Series::new(get_literal_name(), dims)))
+                        LiteralValue::Series(SpecialEq::new(
+                            Series::new(get_literal_name(), dims).into(),
+                        ))
                     },
                 };
                 let value = AExpr::Literal(value);
@@ -102,15 +104,16 @@ pub fn datatype_fn_to_aexpr(
             };
 
             let value = match f {
-                StructDataTypeFunction::FieldNames => {
-                    LiteralValue::Series(SpecialEq::new(Series::new(
+                StructDataTypeFunction::FieldNames => LiteralValue::Series(SpecialEq::new(
+                    Series::new(
                         get_literal_name(),
                         fields
                             .iter()
                             .map(|f| f.name.as_str())
                             .collect::<Vec<&str>>(),
-                    )))
-                },
+                    )
+                    .into(),
+                )),
             };
             let value = AExpr::Literal(value);
             (value, get_literal_name())

@@ -146,8 +146,10 @@ fn expr(node: Node, arena: &Arena<AExpr>, ctx: &ToFieldContext<'_>) -> Value {
 fn is_in_values(node: Node, arena: &Arena<AExpr>) -> Option<Value> {
     let values = match arena.get(node) {
         AExpr::Literal(LiteralValue::Series(s)) => match s.dtype() {
-            DataType::List(_) if s.len() == 1 => s.list().ok()?.get_as_series(0)?,
-            _ => (**s).clone(),
+            DataType::List(_) if s.len() == 1 => {
+                s.as_materialized_series().list().ok()?.get_as_series(0)?
+            },
+            _ => s.as_materialized_series().clone(),
         },
         AExpr::Literal(LiteralValue::Scalar(sc)) => match sc.value() {
             AnyValue::List(s) => s.clone(),

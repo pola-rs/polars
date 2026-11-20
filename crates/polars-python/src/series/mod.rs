@@ -92,14 +92,31 @@ impl PySeries {
         }
     }
 
+    /// The Series a reduction reads when its answer does not depend on how many times a scalar
+    /// column repeats its value (`rows` of the length says how many rows tell it), so that the
+    /// column is not materialised: the first `rows(len)` rows of a `Column::Scalar`, flagged
+    /// sorted as its materialised Series is. The materialised Series of any other column.
+    pub(crate) fn repeat_invariant_series(&self, rows: impl FnOnce(usize) -> usize) -> Series {
+        match &*self.column.read() {
+            Column::Scalar(sc) => {
+                sc.as_n_values_series(rows(sc.len()))
+            },
+            c => c.as_materialized_series().clone(),
+        }
+    }
+
     /// Take the column out, to go into a `DataFrame`, as `Series::into_column` did: a
-    /// length-1 `Column::Series` becomes a `Column::Scalar`. Other variants pass through.
+    /// length-1 `Column::Series` becomes a `Column::Scalar`. A `Column::Scalar` is materialised
+    /// first (its cache is shared) and converted the same way, so that the engine sees the
+    /// column a plain Series would give (it computes other values and flags on a scalar
+    /// column). A `Column::Dictionary` passes through.
     ///
     /// The conversion is kept: the scalar column also hands out a normalised `Series` (a
     /// sliced nested array, say, comes back without its offset).
     pub(crate) fn into_frame_column(self) -> Column {
         match self.column.into_inner() {
             Column::Series(s) => s.take().into(),
+            Column::Scalar(sc) => sc.as_materialized_series().clone().into(),
             c => c,
         }
     }

@@ -272,7 +272,7 @@ impl Series {
         self.0._get_flags()
     }
 
-    pub(crate) fn set_flags(&mut self, flags: StatisticsFlags) {
+    pub fn set_flags(&mut self, flags: StatisticsFlags) {
         self._get_inner_mut()._set_flags(flags)
     }
 

@@ -578,6 +578,78 @@ impl DictionaryColumn {
         }
     }
 
+    /// The distinct values the rows use, in order of first use, each with how many rows have it;
+    /// a null (counted over the null rows) goes at the position of the first null row. A String
+    /// [`Series`] of this column's name, and the counts.
+    ///
+    /// Takes time in the rows (a pass over the codes), not in the string values: dictionary
+    /// values are compared only among the ones that rows use, which are few when this is worth
+    /// calling. Values that repeat in the dictionary are merged.
+    pub fn used_values_with_counts(&self) -> Option<(Series, Vec<IdxSize>)> {
+        let (used, row_slots) = self.used_codes(usize::MAX)?;
+        let codes = self.codes.rechunk();
+        let codes = codes.downcast_as_array();
+        let validity = codes.validity().filter(|v| v.unset_bits() > 0);
+
+        let mut counts: Vec<IdxSize> = vec![0; used.len()];
+        let mut null_count: IdxSize = 0;
+        let mut first_null: Option<usize> = None;
+        match validity {
+            None => {
+                for s in &row_slots {
+                    counts[*s as usize] += 1;
+                }
+            },
+            Some(v) => {
+                for (i, (s, is_valid)) in row_slots.iter().zip(v.iter()).enumerate() {
+                    if is_valid {
+                        counts[*s as usize] += 1;
+                    } else {
+                        null_count += 1;
+                        first_null.get_or_insert(i);
+                    }
+                }
+            },
+        }
+        // Rows before the first null are valid: the codes used before it are the slots up to the
+        // largest slot seen.
+        let null_position = first_null.map(|row| {
+            row_slots[..row]
+                .iter()
+                .max()
+                .map_or(0, |max_slot| *max_slot as usize + 1)
+        });
+
+        let values = StringChunked::with_chunk(self.name.clone(), self.dict.values.clone());
+        // SAFETY: the used codes are in bounds (invariant).
+        let taken = unsafe { values.take_unchecked(&IdxCa::from_vec(PlSmallStr::EMPTY, used)) };
+        let taken: Vec<&str> = taken.iter().map(|v| v.unwrap_or("")).collect();
+
+        let mut seen: PlHashMap<&str, usize> = PlHashMap::with_capacity(taken.len());
+        let mut out_values: Vec<Option<&str>> = Vec::with_capacity(taken.len() + 1);
+        let mut out_counts: Vec<IdxSize> = Vec::with_capacity(taken.len() + 1);
+        for (i, value) in taken.iter().enumerate() {
+            if null_position == Some(i) {
+                out_values.push(None);
+                out_counts.push(null_count);
+            }
+            match seen.get(value) {
+                Some(at) => out_counts[*at] += counts[i],
+                None => {
+                    seen.insert(value, out_values.len());
+                    out_values.push(Some(value));
+                    out_counts.push(counts[i]);
+                },
+            }
+        }
+        if null_position == Some(taken.len()) {
+            out_values.push(None);
+            out_counts.push(null_count);
+        }
+        let out = StringChunked::from_iter_options(self.name.clone(), out_values.into_iter());
+        Some((out.into_series(), out_counts))
+    }
+
     /// Evaluates an elementwise `f` once per dictionary value that a valid row uses, and once on
     /// a null if a row is null, and spreads the results to the rows by code. A String result stays
     /// dictionary-coded. `f` gets a String [`Series`] of this column's name and returns one value
@@ -708,6 +780,25 @@ mod test {
             .iter()
             .map(|v| v.map(str::to_owned))
             .collect()
+    }
+
+    #[test]
+    fn used_values_with_counts_merges_repeats_and_places_the_null() {
+        // "x" is in the dictionary twice, "z" is not used.
+        let c = dict_column(
+            &["x", "y", "x", "z"],
+            &[Some(2), Some(1), None, Some(0), Some(1), None, Some(1)],
+        );
+        let (values, counts) = c.used_values_with_counts().unwrap();
+        let values: Vec<Option<&str>> = values.str().unwrap().iter().collect();
+        // First use order, the null where the first null row is.
+        assert_eq!(values, [Some("x"), Some("y"), None]);
+        assert_eq!(counts, [2, 3, 2]);
+        let c = dict_column(&["x", "y"], &[None, Some(1), Some(0)]);
+        let (values, counts) = c.used_values_with_counts().unwrap();
+        assert_eq!(values.null_count(), 1);
+        assert_eq!(values.get(0).unwrap(), AnyValue::Null);
+        assert_eq!(counts, [1, 1, 1]);
     }
 
     #[test]

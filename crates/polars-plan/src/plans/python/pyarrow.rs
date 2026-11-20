@@ -44,11 +44,12 @@ pub(crate) fn needle_isin_haystack(
         && s.len() == 1
         && s.null_count() == 0
     {
-        s.explode(ExplodeOptions {
-            empty_as_null: false,
-            keep_nulls: false,
-        })
-        .ok()?
+        s.as_materialized_series()
+            .explode(ExplodeOptions {
+                empty_as_null: false,
+                keep_nulls: false,
+            })
+            .ok()?
     } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
         s
     } else {

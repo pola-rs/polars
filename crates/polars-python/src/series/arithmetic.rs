@@ -1,25 +1,87 @@
 use polars::prelude::*;
+use polars_core::frame::column::ScalarColumn;
 use pyo3::prelude::*;
 
 use super::PySeries;
 use crate::utils::EnterPolarsExt;
 
+impl PySeries {
+    /// An arithmetic operation of a scalar column that does not materialise it: `op` runs on
+    /// two rows of it (and on two rows of a full-length scalar right-hand side), and the result
+    /// is the first row repeated. Two rows rather than one, and with the flag the materialised
+    /// column has (sorted), so that the flags the operation sets on its result are the Series
+    /// path's.
+    ///
+    /// `None` (use the Series path) for a Series or Dictionary column, no rows, or any error.
+    fn scalar_arithmetic(
+        &self,
+        py: Python<'_>,
+        full: Option<ScalarColumn>,
+        op: impl Fn(&Series, Option<&Series>) -> PolarsResult<Series> + Send + Sync,
+    ) -> PyResult<Option<Self>> {
+        let Some(Column::Scalar(sc)) = self.compressed().filter(|c| !c.is_empty()) else {
+            return Ok(None);
+        };
+        let out = py.enter_polars_ok(|| {
+            let k = sc.len().min(2);
+            let rhs = full.as_ref().map(|f| f.as_n_values_series(k));
+            let lhs = sc.as_n_values_series(k);
+            let few = op(&lhs, rhs.as_ref()).ok()?;
+            if few.len() != k {
+                return None;
+            }
+            if k == sc.len() {
+                return Some(few);
+            }
+            let mut out = few.new_from_index(0, sc.len());
+            out.set_flags(few.get_flags());
+            Some(out)
+        })?;
+        Ok(out.map(PySeries::new))
+    }
+
+    fn arithmetic_with_series(
+        &self,
+        py: Python<'_>,
+        other: &PySeries,
+        op: impl Fn(&Series, &Series) -> PolarsResult<Series> + Send + Sync,
+    ) -> PyResult<Self> {
+        if let Some((one, full)) = self.broadcast_operand(other) {
+            if let Some(out) = self.scalar_arithmetic(py, full, |l, r| op(l, r.unwrap_or(&one)))? {
+                return Ok(out);
+            }
+        }
+        py.enter_polars_series(|| op(&self.series(), &other.series()))
+    }
+
+    fn arithmetic_with_const(
+        &self,
+        py: Python<'_>,
+        op: impl Fn(&Series) -> Series + Send + Sync,
+    ) -> PyResult<Self> {
+        if let Some(out) = self.scalar_arithmetic(py, None, |l, _| Ok(op(l)))? {
+            return Ok(out);
+        }
+        py.enter_polars_series(|| Ok(op(&self.series())))
+    }
+}
+
 #[pymethods]
 impl PySeries {
     fn add(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series() + &other.series())
+        self.arithmetic_with_series(py, other, |l, r| l + r)
     }
     fn sub(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series() - &other.series())
+        self.arithmetic_with_series(py, other, |l, r| l - r)
     }
     fn mul(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series() * &other.series())
+        self.arithmetic_with_series(py, other, |l, r| l * r)
     }
     fn div(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series() / &other.series())
+        self.arithmetic_with_series(py, other, |l, r| l / r)
     }
     fn rem(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &self.series() % &other.series())
+        self.arithmetic_with_series(py, other, |l, r| l % r)
     }
 }
 
@@ -28,7 +90,7 @@ macro_rules! impl_arithmetic {
         #[pymethods]
         impl PySeries {
             fn $name(&self, py: Python<'_>, other: $type) -> PyResult<Self> {
-                py.enter_polars_series(|| Ok({&self.series() $operand other}))
+                self.arithmetic_with_const(py, |l| l $operand other)
             }
         }
     };
@@ -99,7 +161,7 @@ macro_rules! impl_rhs_arithmetic {
         #[pymethods]
         impl PySeries {
             fn $name(&self, py: Python<'_>, other: $type) -> PyResult<Self> {
-                py.enter_polars_series(|| Ok(other.$operand(&self.series())))
+                self.arithmetic_with_const(py, |l| other.$operand(l))
             }
         }
     };

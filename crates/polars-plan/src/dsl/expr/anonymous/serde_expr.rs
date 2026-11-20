@@ -177,6 +177,27 @@ impl<'a> Deserialize<'a> for SpecialEq<Series> {
     }
 }
 
+impl Serialize for SpecialEq<crate::plans::LiteralColumn> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s: &crate::plans::LiteralColumn = self;
+        s.serialize(serializer)
+    }
+}
+
+impl<'a> Deserialize<'a> for SpecialEq<crate::plans::LiteralColumn> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        Ok(SpecialEq::new(crate::plans::LiteralColumn::deserialize(
+            deserializer,
+        )?))
+    }
+}
+
 impl<T: Serialize> Serialize for SpecialEq<Arc<T>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where

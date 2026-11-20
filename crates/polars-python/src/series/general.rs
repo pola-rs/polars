@@ -1,4 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::frame::column::DictionaryColumn;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyTypeError, PyValueError};
@@ -12,6 +13,67 @@ use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::py_modules::polars;
 use crate::utils::EnterPolarsExt;
+
+/// A zero-length result for a Scalar or Dictionary column, without materialising it. A Scalar
+/// runs `on_single` on its one-value Series (that keeps the flags of the Series path, a List's
+/// fast-explode among them); a Dictionary takes `dict_out`'s Series (zero rows: cheap).
+fn empty_result(
+    c: &Column,
+    on_single: impl FnOnce(&Series) -> Series,
+    dict_out: impl FnOnce() -> Column,
+) -> PySeries {
+    match c {
+        Column::Scalar(sc) => PySeries::new(on_single(&sc.as_single_value_series())),
+        _ => PySeries::new(dict_out().as_materialized_series().clone()),
+    }
+}
+
+/// `value_counts` of a dictionary column from the values its rows use, with the Series path's
+/// columns and checks. The order of the rows is unspecified, as it is there (a hash order), or
+/// by count when `sort`. `None` for a column with a sorted flag (as the Series path).
+fn dictionary_value_counts(
+    d: &DictionaryColumn,
+    sort: bool,
+    parallel: bool,
+    name: &str,
+    normalize: bool,
+) -> PolarsResult<Option<DataFrame>> {
+    polars_ensure!(
+        d.name().as_str() != name,
+        Duplicate: "using `value_counts` on a column/series named '{}' would lead to duplicate \
+        column names; change `name` to fix", name,
+    );
+    if d.is_sorted_flag() != IsSorted::Not || d.is_empty() {
+        return Ok(None);
+    }
+    let Some((values, counts)) = d.used_values_with_counts() else {
+        return Ok(None);
+    };
+    let height = counts.len();
+    let counts = IdxCa::from_vec(name.into(), counts);
+    let counts = if normalize {
+        let len = d.len() as f64;
+        let counts: Float64Chunked =
+            polars_core::prelude::arity::unary_elementwise_values(&counts, |count| {
+                count as f64 / len
+            });
+        counts.into_column()
+    } else {
+        counts.into_column()
+    };
+    let df = unsafe { DataFrame::new_unchecked(height, vec![values.into(), counts]) };
+    if sort {
+        df.sort(
+            [name],
+            SortMultipleOptions::default()
+                .with_order_descending(true)
+                .with_multithreaded(parallel),
+        )
+        .map(Some)
+    } else {
+        Ok(Some(df))
+    }
+}
 
 #[pymethods]
 impl PySeries {
@@ -199,6 +261,22 @@ impl PySeries {
         self.column_kind()
     }
 
+    /// A copy of this Series holding a `Column::Series` of the materialised column (its
+    /// cache is shared), for running an expression on a Scalar-backed Series as on a plain one.
+    fn _materialized(&self) -> Self {
+        self.series().into()
+    }
+
+    /// Whether the column holds a materialised `Series`: always for a `Column::Series`, else
+    /// when the (shared) cache is filled. For tests only.
+    fn _is_materialised(&self) -> bool {
+        match &*self.column.read() {
+            Column::Series(_) => true,
+            Column::Scalar(s) => s.lazy_as_materialized_series().is_some(),
+            Column::Dictionary(d) => d.lazy_as_materialized_series().is_some(),
+        }
+    }
+
     fn n_chunks(&self) -> usize {
         self.series().n_chunks()
     }
@@ -235,10 +313,15 @@ impl PySeries {
         if index >= self.len() {
             return Err(PyValueError::new_err("index is out of bounds"));
         }
-        // A zero-length result goes the Series path (a scalar column loses the fast-explode
-        // flag of a List there).
-        if let (Some(c), true) = (self.compressed(), length > 0) {
-            return py.enter_polars_column(|| Ok(c.new_from_index(index, length)));
+        if let Some(c) = self.compressed() {
+            if length > 0 {
+                return py.enter_polars_column(|| Ok(c.new_from_index(index, length)));
+            }
+            return Ok(empty_result(
+                &c,
+                |one| one.new_from_index(0, 0),
+                || c.new_from_index(index, 0),
+            ));
         }
         let s = self.series();
         py.enter_polars_series(|| Ok(s.new_from_index(index, length)))
@@ -257,6 +340,7 @@ impl PySeries {
                     if !out.is_empty() {
                         return Ok(Self::from_column(out));
                     }
+                    return Ok(empty_result(&c, |one| one.head(Some(0)), || out.clone()));
                 }
             }
             py.enter_polars_series(|| self.series().filter(ca))
@@ -371,7 +455,11 @@ impl PySeries {
     }
 
     fn n_unique(&self, py: Python) -> PyResult<usize> {
-        py.enter_polars(|| self.series().n_unique())
+        py.enter_polars(|| match self.compressed() {
+            // One row of a scalar column says it; the values a dictionary column's rows use.
+            Some(c @ Column::Dictionary(_)) => c.n_unique(),
+            _ => self.repeat_invariant_series(|n| n.min(1)).n_unique(),
+        })
     }
 
     fn floor(&self, py: Python) -> PyResult<Self> {
@@ -489,15 +577,29 @@ impl PySeries {
             maintain_order: false,
             limit: None,
         };
-        py.enter_polars(|| self.series().is_sorted(options))
+        py.enter_polars(|| {
+            // Two rows of a scalar column are sorted as all of them are.
+            self.repeat_invariant_series(|n| n.min(2))
+                .is_sorted(options)
+        })
     }
 
     fn clear(&self) -> Self {
-        self.series().clear().into()
+        match self.compressed() {
+            Some(c) => empty_result(&c, |one| one.clear(), || c.clear()),
+            None => self.series().clear().into(),
+        }
     }
 
     fn head(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
-        if let Some(c) = self.compressed().filter(|_| n > 0) {
+        if let Some(c) = self.compressed() {
+            if n == 0 {
+                return Ok(empty_result(
+                    &c,
+                    |one| one.head(Some(0)),
+                    || c.head(Some(0)),
+                ));
+            }
             let out = py.enter_polars_column(|| Ok(c.head(Some(n))))?;
             if out.len() > 0 {
                 return Ok(out);
@@ -507,7 +609,14 @@ impl PySeries {
     }
 
     fn tail(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
-        if let Some(c) = self.compressed().filter(|_| n > 0) {
+        if let Some(c) = self.compressed() {
+            if n == 0 {
+                return Ok(empty_result(
+                    &c,
+                    |one| one.head(Some(0)),
+                    || c.tail(Some(0)),
+                ));
+            }
             let out = py.enter_polars_column(|| Ok(c.tail(Some(n))))?;
             if out.len() > 0 {
                 return Ok(out);
@@ -525,6 +634,11 @@ impl PySeries {
         normalize: bool,
     ) -> PyResult<PyDataFrame> {
         py.enter_polars_df(|| {
+            if let Some(Column::Dictionary(d)) = self.compressed() {
+                if let Some(df) = dictionary_value_counts(&d, sort, parallel, &name, normalize)? {
+                    return Ok(df);
+                }
+            }
             self.series()
                 .value_counts(sort, parallel, name.into(), normalize)
         })
@@ -533,6 +647,7 @@ impl PySeries {
     #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         if let Some(c) = self.compressed() {
+            let c_orig = c.clone();
             let out = match Slice::new(offset, length) {
                 Some(slice) => c.slice(slice),
                 None => c,
@@ -542,6 +657,7 @@ impl PySeries {
             if !out.is_empty() {
                 return Self::from_column(out);
             }
+            return empty_result(&c_orig, |one| one.head(Some(0)), || out.clone());
         }
         let s = self.series();
         match Slice::new(offset, length) {

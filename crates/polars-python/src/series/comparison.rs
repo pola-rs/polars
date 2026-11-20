@@ -1,4 +1,6 @@
 use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
+use polars_core::frame::column::ScalarColumn;
+use polars_core::series::IsSorted;
 use pyo3::prelude::*;
 
 use crate::PySeries;
@@ -6,30 +8,157 @@ use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::utils::EnterPolarsExt;
 
+/// `ca` cut into chunks of `lengths` (the chunking the Series path keeps for a Dictionary
+/// column's rows).
+fn chunked_like(ca: BooleanChunked, lengths: &[usize]) -> BooleanChunked {
+    if lengths.len() <= 1 || ca.chunks().len() != 1 {
+        return ca;
+    }
+    let mut offset = 0i64;
+    let mut chunks = Vec::with_capacity(lengths.len());
+    for len in lengths {
+        let part = ca.slice(Slice::new(offset, Some(*len)).unwrap());
+        chunks.extend(part.chunks().iter().cloned());
+        offset += *len as i64;
+    }
+    // SAFETY: the chunks are boolean arrays of `ca`.
+    unsafe { BooleanChunked::from_chunks_and_dtype(ca.name().clone(), chunks, DataType::Boolean) }
+}
+
+impl PySeries {
+    /// A comparison of a Scalar or Dictionary column that does not materialise it: `op` runs
+    /// on the one value of a scalar column (and is broadcast), or on the dictionary values the
+    /// rows use. The result is a plain Series, as the Series path's: a scalar column's flags
+    /// (it reports itself sorted) would show on a scalar result.
+    ///
+    /// `None` (use the Series path) for a plain column, no rows, or any error, so that errors
+    /// and their messages are the Series path's.
+    fn compare_compressed(
+        &self,
+        py: Python<'_>,
+        full: Option<ScalarColumn>,
+        one_chunk: bool,
+        op: impl Fn(&Series, Option<&Series>) -> PolarsResult<BooleanChunked> + Send + Sync,
+    ) -> PyResult<Option<Self>> {
+        let Some(c) = self.compressed().filter(|c| !c.is_empty()) else {
+            return Ok(None);
+        };
+        let out = py.enter_polars_ok(|| match &c {
+            Column::Scalar(sc) => {
+                // The comparison runs on two rows: the flags it sets on its result depend on
+                // the operands being sorted (they are, the rows are equal), and on the
+                // right-hand side being a full-length column, not on the values.
+                let k = sc.len().min(2);
+                let rhs = full.as_ref().map(|f| f.as_n_values_series(k));
+                let lhs = sc.as_n_values_series(k);
+                let few = op(&lhs, rhs.as_ref()).ok()?;
+                if few.len() != k {
+                    return None;
+                }
+                if k == sc.len() {
+                    return Some(few);
+                }
+                let mut out = few.new_from_index(0, sc.len());
+                out.set_flags(few.get_flags());
+                Some(out)
+            },
+            Column::Dictionary(d) => {
+                // A full-length column of a non-String scalar compares on the Series path.
+                if full.as_ref().is_some_and(|f| f.dtype() != &DataType::String) {
+                    return None;
+                }
+                if d.is_sorted_flag() != IsSorted::Not {
+                    return None;
+                }
+                // A null right-hand side gives one chunk (all null) on the Series path
+                // too.
+                let lengths: Vec<usize> = if !one_chunk {
+                    d.codes().chunk_lengths().collect()
+                } else {
+                    vec![d.len()]
+                };
+                let ca = d.compare_with(|v| op(v, None)).ok()?;
+                (ca.len() == d.len()).then(|| chunked_like(ca, &lengths))
+            },
+            Column::Series(_) => None,
+        })?;
+        Ok(out.map(|ca| PySeries::new(ca.into_series())))
+    }
+
+    /// The right-hand side of a comparison as one value that broadcasts over this column's
+    /// rows, when it is one: a length-1 Series, or a scalar column as long as this one (the
+    /// second item then).
+    pub(super) fn broadcast_operand(
+        &self,
+        rhs: &PySeries,
+    ) -> Option<(Series, Option<ScalarColumn>)> {
+        let n = self.column.read().len();
+        let rhs = rhs.column.read().clone();
+        match &rhs {
+            Column::Series(_) if rhs.len() == 1 => {
+                Some((rhs.as_materialized_series().clone(), None))
+            },
+            Column::Scalar(sc) if sc.len() == 1 => Some((sc.as_single_value_series(), None)),
+            Column::Scalar(sc) if sc.len() == n => {
+                Some((sc.as_single_value_series(), Some(sc.clone())))
+            },
+            _ => None,
+        }
+    }
+
+    fn compare_with_series(
+        &self,
+        py: Python<'_>,
+        rhs: &PySeries,
+        op: impl Fn(&Series, &Series) -> PolarsResult<BooleanChunked> + Send + Sync,
+    ) -> PyResult<Self> {
+        if let Some((one, full)) = self.broadcast_operand(rhs) {
+            let one_chunk = full.is_none() && one.null_count() > 0;
+            if let Some(out) =
+                self.compare_compressed(py, full, one_chunk, |l, r| op(l, r.unwrap_or(&one)))?
+            {
+                return Ok(out);
+            }
+        }
+        py.enter_polars_series(|| op(&self.series(), &rhs.series()))
+    }
+
+    fn compare_with_const(
+        &self,
+        py: Python<'_>,
+        op: impl Fn(&Series) -> PolarsResult<BooleanChunked> + Send + Sync,
+    ) -> PyResult<Self> {
+        if let Some(out) = self.compare_compressed(py, None, false, |l, _| op(l))? {
+            return Ok(out);
+        }
+        py.enter_polars_series(|| op(&self.series()))
+    }
+}
+
 #[pymethods]
 impl PySeries {
     fn eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series().equal(&rhs.series()))
+        self.compare_with_series(py, rhs, |l, r| l.equal(r))
     }
 
     fn neq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series().not_equal(&rhs.series()))
+        self.compare_with_series(py, rhs, |l, r| l.not_equal(r))
     }
 
     fn gt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series().gt(&rhs.series()))
+        self.compare_with_series(py, rhs, |l, r| l.gt(r))
     }
 
     fn gt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series().gt_eq(&rhs.series()))
+        self.compare_with_series(py, rhs, |l, r| l.gt_eq(r))
     }
 
     fn lt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series().lt(&rhs.series()))
+        self.compare_with_series(py, rhs, |l, r| l.lt(r))
     }
 
     fn lt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series().lt_eq(&rhs.series()))
+        self.compare_with_series(py, rhs, |l, r| l.lt_eq(r))
     }
 }
 
@@ -38,7 +167,7 @@ macro_rules! impl_op {
         #[pymethods]
         impl PySeries {
             fn $name(&self, py: Python<'_>, rhs: $type) -> PyResult<Self> {
-                py.enter_polars_series(|| self.series().$op(rhs))
+                self.compare_with_const(py, |s| s.$op(rhs))
             }
         }
     };
@@ -189,7 +318,7 @@ macro_rules! impl_decimal {
                     PlSmallStr::from_static("decimal"),
                     &[AnyValue::Decimal(rhs.0, rhs.1, rhs.2)],
                 );
-                py.enter_polars_series(|| self.series().$method(&rhs))
+                self.compare_with_const(py, |s| s.$method(&rhs))
             }
         }
     };

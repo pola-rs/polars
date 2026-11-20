@@ -1,6 +1,6 @@
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
-use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
+use polars::prelude::{ArrayRef, ArrowField, Column, PlSmallStr, SchemaExt};
 use polars::series::Series;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::ffi;
@@ -73,6 +73,41 @@ pub(crate) fn series_to_stream<'py>(
     let iter = Box::new(
         (0..series.n_chunks()).map(move |i| Ok(series.to_arrow(i, CompatLevel::newest()))),
     ) as _;
+
+    let stream = ffi::export_iterator(iter, field);
+    PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
+}
+
+/// Export a column to a C stream like [`series_to_stream`]. A not yet materialised
+/// `Column::Dictionary` gathers its values batch by batch (one per chunk of its codes, as the
+/// chunks of its materialised series), without filling the column's shared cache.
+pub(crate) fn column_to_stream<'py>(
+    column: &Column,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let Column::Dictionary(d) = column else {
+        return series_to_stream(column.as_materialized_series(), py);
+    };
+    if d.lazy_as_materialized_series().is_some() {
+        return series_to_stream(column.as_materialized_series(), py);
+    }
+
+    let field = column.field().to_arrow(CompatLevel::newest());
+    let lengths = d
+        .codes()
+        .chunks()
+        .iter()
+        .map(|c| c.len())
+        .collect::<Vec<_>>();
+    let column = column.clone();
+    let mut offset = 0i64;
+    let iter = Box::new(lengths.into_iter().map(move |len| {
+        let array = column
+            .slice((offset, len))
+            .rechunk_to_arrow(CompatLevel::newest());
+        offset += len as i64;
+        Ok(array)
+    })) as _;
 
     let stream = ffi::export_iterator(iter, field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")

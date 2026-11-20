@@ -6,7 +6,7 @@ use pyo3::types::{PyCapsule, PyList};
 use super::PySeries;
 use crate::error::PyPolarsErr;
 use crate::interop;
-use crate::interop::arrow::to_py::series_to_stream;
+use crate::interop::arrow::to_py::column_to_stream;
 use crate::prelude::*;
 use crate::utils::EnterPolarsExt;
 
@@ -188,7 +188,18 @@ impl PySeries {
         // lock across that lets any thread blocking on the write lock (which it does while
         // holding the GIL) deadlock against us.
         let (array, field) = py.enter_polars_ok(|| {
-            let s = self.series();
+            let column = self.column.read().clone();
+            // A dictionary column gathers its values without filling its shared cache.
+            if let Column::Dictionary(d) = &column
+                && d.lazy_as_materialized_series().is_none()
+            {
+                let field = column.field().to_arrow(compat_level.0);
+                let array = column
+                    .slice((0i64, column.len()))
+                    .rechunk_to_arrow(compat_level.0);
+                return (array, field);
+            }
+            let s = column.take_materialized_series();
             (
                 s.to_arrow(0, compat_level.0),
                 s.field().to_arrow(compat_level.0),
@@ -205,7 +216,8 @@ impl PySeries {
         py: Python<'py>,
         requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        series_to_stream(&self.series(), py)
+        let column = self.column.read().clone();
+        column_to_stream(&column, py)
     }
 
     pub fn _export(&self, _py: Python<'_>, location: usize) {

@@ -298,7 +298,8 @@ fn no_needle_in_range(
         let above = max_is_defined.and(max.lt(first, arena), arena);
 
         // No needle lies in [min, max] iff as many needles are below min as are up to max.
-        let needles = AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(needles)), arena);
+        let needles =
+            AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(needles.into())), arena);
         let mut search = |stat: AExprBuilder, side| {
             let input = vec![needles.expr_ir_unnamed(), stat.expr_ir_unnamed()];
             let function = IRFunctionExpr::SearchSorted {

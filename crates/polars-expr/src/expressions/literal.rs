@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::ops::Deref;
 
 use polars_arrow::temporal_conversions::NANOSECONDS_IN_DAY;
 use polars_core::prelude::*;
@@ -32,7 +31,7 @@ impl LiteralExpr {
 
                 sc.clone().into_column(get_literal_name())
             },
-            L::Series(s) => s.deref().clone().into_column(),
+            L::Series(s) => s.to_column(),
             lv @ L::Dyn(_) => polars_core::prelude::Series::from_any_values(
                 get_literal_name(),
                 &[lv.to_any_value().unwrap()],

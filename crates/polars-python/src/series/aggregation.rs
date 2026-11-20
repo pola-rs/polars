@@ -10,11 +10,53 @@ fn scalar_to_py(scalar: PyResult<Scalar>, py: Python<'_>) -> PyResult<Bound<'_, 
     Wrap(scalar?.as_any_value()).into_pyobject(py)
 }
 
+impl PySeries {
+    /// `arg_min`/`arg_max` of a scalar column from its first rows: the same index for every
+    /// length (the first row, or no index), or the last row for every length (the last
+    /// of equal values wins, for `arg_max` of most dtypes). `None` where the first three lengths
+    /// show neither (and for any other column): ask the materialised Series.
+    fn scalar_arg_extreme(&self, f: fn(&Series) -> Option<usize>) -> Option<Option<usize>> {
+        let n = match &*self.column.read() {
+            Column::Scalar(sc) => sc.len(),
+            _ => return None,
+        };
+        if matches!(self.column.read().dtype(), DataType::Object(_)) {
+            return None;
+        }
+        let at = |k: usize| f(&self.repeat_invariant_series(|n| n.min(k)));
+        let (r1, r2, r3) = (at(1), at(2), at(3));
+        if n <= 3 {
+            return Some(at(n));
+        }
+        if r1 == r2 && r2 == r3 {
+            Some(r1)
+        } else if (r1, r2, r3) == (Some(0), Some(1), Some(2)) {
+            Some(Some(n - 1))
+        } else {
+            None
+        }
+    }
+
+    /// `min`/`max` of the column: of one row of a scalar column, of the values a dictionary
+    /// column's rows use.
+    fn min_max_reduce(&self, max: bool) -> PolarsResult<Scalar> {
+        let compressed = self.compressed();
+        match &compressed {
+            Some(Column::Dictionary(_)) if max => compressed.unwrap().max_reduce(),
+            Some(Column::Dictionary(_)) => compressed.unwrap().min_reduce(),
+            _ => {
+                let s = self.repeat_invariant_series(|n| n.min(1));
+                if max { s.max_reduce() } else { s.min_reduce() }
+            },
+        }
+    }
+}
+
 #[pymethods]
 impl PySeries {
     fn any(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<Option<bool>> {
         py.enter_polars(|| {
-            let s = self.series();
+            let s = self.repeat_invariant_series(|n| n.min(1));
             let s = s.bool()?;
             PolarsResult::Ok(if ignore_nulls {
                 Some(s.any())
@@ -26,7 +68,7 @@ impl PySeries {
 
     fn all(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<Option<bool>> {
         py.enter_polars(|| {
-            let s = self.series();
+            let s = self.repeat_invariant_series(|n| n.min(1));
             let s = s.bool()?;
             PolarsResult::Ok(if ignore_nulls {
                 Some(s.all())
@@ -38,7 +80,7 @@ impl PySeries {
 
     fn is_empty(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<bool> {
         py.enter_polars(|| {
-            let s = self.series();
+            let s = self.repeat_invariant_series(|n| n.min(1));
             PolarsResult::Ok(if ignore_nulls {
                 s.is_full_null()
             } else {
@@ -49,7 +91,10 @@ impl PySeries {
 
     fn arg_max(&self, py: Python) -> PyResult<Option<usize>> {
         py.enter_polars(|| {
-            let s = self.series();
+            let s = match self.scalar_arg_extreme(Series::arg_max) {
+                Some(answer) => return PolarsResult::Ok(answer),
+                None => self.series(),
+            };
             polars_ensure!(
                 !s.dtype().is_object(),
                 InvalidOperation: "`arg_max` operation not supported for dtype `{}`",
@@ -61,7 +106,10 @@ impl PySeries {
 
     fn arg_min(&self, py: Python) -> PyResult<Option<usize>> {
         py.enter_polars(|| {
-            let s = self.series();
+            let s = match self.scalar_arg_extreme(Series::arg_min) {
+                Some(answer) => return PolarsResult::Ok(answer),
+                None => self.series(),
+            };
             polars_ensure!(
                 !s.dtype().is_object(),
                 InvalidOperation: "`arg_min` operation not supported for dtype `{}`",
@@ -72,11 +120,11 @@ impl PySeries {
     }
 
     fn min<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series().min_reduce()), py)
+        scalar_to_py(py.enter_polars(|| self.min_max_reduce(false)), py)
     }
 
     fn max<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series().max_reduce()), py)
+        scalar_to_py(py.enter_polars(|| self.min_max_reduce(true)), py)
     }
 
     fn mean<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -93,7 +141,9 @@ impl PySeries {
     }
 
     fn median<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let s = self.series();
+        // The middle rows of a scalar column are the same two (or one) values whatever its
+        // length: as many rows as it has, up to the parity.
+        let s = self.repeat_invariant_series(|n| if n % 2 == 0 { n.min(2) } else { n.min(3) });
         match s.dtype() {
             Boolean => scalar_to_py(
                 py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().median_reduce()),
@@ -148,19 +198,21 @@ impl PySeries {
     }
 
     fn first<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        let s = self.repeat_invariant_series(|n| n.min(1));
         let result = if ignore_nulls {
-            py.enter_polars_ok(|| self.series().first_non_null())
+            py.enter_polars_ok(|| s.first_non_null())
         } else {
-            py.enter_polars_ok(|| self.series().first())
+            py.enter_polars_ok(|| s.first())
         };
         scalar_to_py(result, py)
     }
 
     fn last<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
+        let s = self.repeat_invariant_series(|n| n.min(1));
         let result = if ignore_nulls {
-            py.enter_polars_ok(|| self.series().last_non_null())
+            py.enter_polars_ok(|| s.last_non_null())
         } else {
-            py.enter_polars_ok(|| self.series().last())
+            py.enter_polars_ok(|| s.last())
         };
         scalar_to_py(result, py)
     }
