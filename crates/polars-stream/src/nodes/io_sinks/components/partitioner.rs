@@ -177,7 +177,11 @@ impl KeyedPartitioner {
                         1,
                         key_columns
                             .iter()
-                            .map(|c| c.take_slice_unchecked(&[first_idx]))
+                            // Materialized, so that the key does not pin its column's dictionary.
+                            .map(|c| match c.take_slice_unchecked(&[first_idx]) {
+                                c @ Column::Dictionary(_) => c.take_materialized_series().into(),
+                                c => c,
+                            })
                             .collect(),
                     )
                 };

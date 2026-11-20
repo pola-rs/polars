@@ -618,18 +618,20 @@ def test_dictionary_codes_partitioned_sink_across_row_groups(
     idx = pl.int_range(n, eager=True)
     # Each row group sees a different mix of values, so partition buffers see other dictionaries.
     s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(
-        (idx.hash(1) % 3_000 + idx // 3_000) % 3_000
+        ((idx.hash(1) % 3_000).cast(pl.Int64) + idx // 3_000) % 3_000
     )
     df = pl.DataFrame({"p": idx.hash(2) % 7, "k": s, "v": idx})
     path = _write(df, tmp_path / "f.parquet", row_group_size=3_000)
     out_dir = tmp_path / "out"
     pl.scan_parquet(path).sink_parquet(
-        pl.PartitionBy(out_dir, key="p", include_key=include_key)
+        pl.PartitionBy(out_dir, key="p", include_key=include_key),
+        mkdir=True,
     )
-    got = pl.scan_parquet(out_dir / "**/*.parquet", hive_partitioning=True).collect()
-    got = got.select("p", "k", "v") if not include_key else got.select(df.columns)
-    assert_frame_equal(
-        got.with_columns(pl.col("p").cast(pl.UInt64)).sort("v"),
-        df.sort("v"),
-        check_dtypes=False,
-    )
+    parts = []
+    for f in sorted(out_dir.glob("**/*.parquet")):
+        part = pl.read_parquet(f, hive_partitioning=False)
+        if not include_key:
+            key = int(f.parent.name.split("=")[1])
+            part = part.with_columns(p=pl.lit(key, dtype=df.schema["p"]))
+        parts.append(part.select(df.columns))
+    assert_frame_equal(pl.concat(parts).sort("v"), df.sort("v"))
