@@ -257,8 +257,9 @@ impl DialectName {
     }
 
     /// Whether float comparisons agree with Polars. Polars uses a total order (NaN equals NaN
-    /// and sorts above all numbers). Postgres and DuckDB do the same; MySQL, SQL Server, Oracle
-    /// `NUMBER` and SQLite can't store NaN. Other dialects are not verified, so float
+    /// and sorts above all numbers). Postgres and DuckDB do the same; MySQL, Oracle
+    /// `NUMBER` and SQLite can't store NaN. SQL Server isn't: it parses float literals inexactly
+    /// (`x = 1.877474430782875e+16` misses the stored value). Other dialects are not verified, so float
     /// predicates are not pushed there.
     pub fn float_comparisons_exact(self) -> bool {
         matches!(
@@ -267,7 +268,6 @@ impl DialectName {
                 | Self::Redshift
                 | Self::Duckdb
                 | Self::Mysql
-                | Self::Mssql
                 | Self::Oracle
                 | Self::Sqlite
         )
@@ -360,6 +360,8 @@ impl DialectName {
                 },
                 _ => format!("CAST({column} AS VARCHAR)"),
             }),
+            // ConnectorX panics on it, pyodbc can't read it: its text, as the base type writes it
+            Self::Mssql if t == "sql_variant" => Some(self.cast_to_text(column)),
             Self::Oracle if t == "json" => Some(format!("JSON_SERIALIZE({column} RETURNING CLOB)")),
             Self::Oracle if t == "rowid" || t == "urowid" => Some(format!("ROWIDTOCHAR({column})")),
             // `INTERVAL … TO …`: Arrow's month-day-nano intervals have no Polars dtype

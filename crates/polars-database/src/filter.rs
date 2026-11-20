@@ -1127,6 +1127,27 @@ impl Translator<'_> {
             })
     }
 
+    /// Whether a SQL Server date-time column's values are ones a microsecond literal
+    /// compares exactly, as far as its declared type tells: not the legacy `datetime` and
+    /// `smalldatetime`, nor fractional seconds beyond 6 digits (`datetime2`, `time` and
+    /// `datetimeoffset` without digits have 7), nor a type that isn't known.
+    fn mssql_temporal_matches(&self, name: &str) -> bool {
+        let Some(t) = self.config.column(name).and_then(|c| c.db_type.as_deref()) else {
+            return false;
+        };
+        let t = t.trim().to_ascii_lowercase();
+        let (base, args) = t.split_once('(').unwrap_or((&t, ""));
+        match base.trim() {
+            "datetime" | "smalldatetime" => false,
+            "datetime2" | "datetimeoffset" | "time" => args
+                .trim_end_matches(')')
+                .trim()
+                .parse::<u32>()
+                .is_ok_and(|scale| scale <= 6),
+            _ => true,
+        }
+    }
+
     /// The class of `column <op> literal`, from the column's type and semantics.
     fn leaf_class(&self, name: &str, dtype: &DataType, op: CmpOp) -> Option<Class> {
         match dtype {
@@ -1134,20 +1155,12 @@ impl Translator<'_> {
             // is its epoch count, which the database compares as a number (MySQL: 20231231).
             dt if dt.is_integer() => (!self.temporal_db_type(name)).then_some(Class::Exact),
             DataType::Boolean => self.dialect().supports_boolean().then_some(Class::Exact),
-            // SQL Server's legacy `datetime` holds 1/300 s ticks, which the microsecond
-            // literal doesn't match exactly.
-            DataType::Datetime(_, _)
-                if self.dialect() == DialectName::Mssql
-                    && self
-                        .config
-                        .column(name)
-                        .and_then(|c| c.db_type.as_deref())
-                        .is_some_and(|t| {
-                            matches!(
-                                t.trim().to_ascii_lowercase().as_str(),
-                                "datetime" | "smalldatetime"
-                            )
-                        }) =>
+            // SQL Server's legacy `datetime` holds 1/300 s ticks, and `datetime2(7)`,
+            // `time(7)` and `datetimeoffset(7)` 100 ns, which every driver cuts to
+            // microseconds: the microsecond literal doesn't match them exactly. Without
+            // the column's type (a synonym, a failed lookup) it may be any of them.
+            DataType::Datetime(_, _) | DataType::Time
+                if self.dialect() == DialectName::Mssql && !self.mssql_temporal_matches(name) =>
             {
                 None
             },

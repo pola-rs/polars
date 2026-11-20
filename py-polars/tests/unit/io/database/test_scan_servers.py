@@ -58,6 +58,7 @@ from tests.unit.io.database._scan_corpus import (
     corpus_for_mode,
     expected_ids,
     ids,
+    planned_sql,
     predicate_strategy,
 )
 
@@ -7762,7 +7763,7 @@ def test_mssql_adbc_naive_datetimes_stay_naive() -> None:
             f"DROP TABLE IF EXISTS {table}",
             f"CREATE TABLE {table} (id int, a datetime2(6), b datetime, c smalldatetime)",
             f"INSERT INTO {table} VALUES (1, '2020-01-02 03:04:05.123456', "
-            "'2020-01-02 03:04:05.003', '2020-01-02 03:04:00')",
+            "'2020-01-02 03:04:05.010', '2020-01-02 03:04:00')",
         ],
     )
     frames, errors = _read_by_every_driver("mssql", table)
@@ -7774,8 +7775,9 @@ def test_mssql_adbc_naive_datetimes_stay_naive() -> None:
 @needs_mssql
 def test_mssql_legacy_and_offset_datetimes() -> None:
     # `datetime` (3.33 ms), `smalldatetime` (minutes), `datetimeoffset(7)` (100 ns, any
-    # offset), `datetime2(7)` and `time(7)` (100 ns): read alike by every driver, and a
-    # filter on them keeps every row Polars keeps, whatever the database rounds
+    # offset), `datetime2(7)` and `time(7)` (100 ns): read alike by every driver (the 7
+    # digit types exactly, as nanoseconds), and a filter on them keeps every row Polars
+    # keeps, whatever the database rounds
     table = "review_legacy_dt"
     _execute(
         "mssql",
@@ -7788,9 +7790,9 @@ def test_mssql_legacy_and_offset_datetimes() -> None:
             "'2020-01-02 03:04:05.1234567 +05:30', '2020-01-02 03:04:05.1234567', "
             "'03:04:05.1234567'), "
             "(2, '1753-01-01 00:00:00', '1900-01-01 00:00:00', "
-            "'0001-01-01 00:00:00 +00:00', '0001-01-01 00:00:00', '00:00:00'), "
+            "'1677-09-22 00:00:00 +00:00', '1677-09-22 00:00:00', '00:00:00'), "
             "(3, '9999-12-31 23:59:59.997', '2079-06-06 23:59:00', "
-            "'9999-12-31 23:59:59.9999999 +00:00', '9999-12-31 23:59:59.9999999', "
+            "'2262-04-11 23:47:16.8547758 +00:00', '2262-04-11 23:47:16.8547758', "
             "'23:59:59.9999999'), "
             "(4, '2020-06-01 12:00:00', '2020-06-01 12:00:00', "
             "'2020-06-01 12:00:00 -08:00', '2020-06-01 12:00:00', '12:00:00'), "
@@ -7802,6 +7804,9 @@ def test_mssql_legacy_and_offset_datetimes() -> None:
     df = next(iter(frames.values())).sort("id")
     assert df["dt"][0] == datetime(2020, 1, 2, 3, 4, 5, 3000)
     assert df["dto"][0] == datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC)
+    assert df["d2"].dtype == pl.Datetime("ns")
+    assert df["d2"].dt.nanosecond()[0] == 123456700
+    assert df["tm"].dtype == pl.Time
     assert df["dto"][3] == datetime(2020, 6, 1, 20, 0, tzinfo=UTC)
     predicates = [
         pl.col("dt") == datetime(2020, 1, 2, 3, 4, 5, 3000),
@@ -7818,7 +7823,7 @@ def test_mssql_legacy_and_offset_datetimes() -> None:
         pl.col("dto") < datetime(2020, 6, 1, 20, 0, 0, 1, tzinfo=UTC),
         pl.col("d2") == datetime(2020, 1, 2, 3, 4, 5, 123456),
         pl.col("d2") != datetime(2020, 1, 2, 3, 4, 5, 123456),
-        pl.col("d2") >= datetime(9999, 12, 31, 23, 59, 59, 999999),
+        pl.col("d2") >= datetime(2262, 4, 11, 23, 47, 16, 854775),
         pl.col("tm") == dtime(3, 4, 5, 123456),
         pl.col("tm") != dtime(3, 4, 5, 123456),
         pl.col("tm") >= dtime(23, 59, 59, 999999),
@@ -9197,3 +9202,422 @@ def test_oracle_redacted_columns_are_neither_pushed_nor_partition_keys() -> None
             cur.execute("REVOKE SELECT_CATALOG_ROLE FROM polars")
     finally:
         _execute("oracle", ["DROP TABLE VOL_RED PURGE"])
+
+
+@needs_mssql
+def test_mssql_real_columns_compare_like_polars() -> None:
+    # SQL Server converts the numeric literal `0.1` to `real` when it is compared with a
+    # `real` column, so the literal equals the stored value (0.10000000149...) where
+    # Polars compares the stored value with the double 0.1: float comparisons aren't pushed
+    # (it also parses float literals inexactly)
+    table = "review_real_cmp"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, r real, f float(24), d float)",
+            f"INSERT INTO {table} VALUES (1, 0.1, 0.1, 0.1), (2, 0.5, 0.5, 0.5), "
+            "(3, 1.5, 1.5, 1.5), (4, NULL, NULL, NULL)",
+        ],
+    )
+    frames, errors = _read_by_every_driver("mssql", table)
+    _assert_drivers_agree(frames, errors, "real and float columns")
+    predicates = []
+    for column in ["r", "f", "d"]:
+        c = pl.col(column)
+        predicates += [
+            c > 0.1,
+            c >= 0.1,
+            c == 0.1,
+            c != 0.1,
+            c < 0.1,
+            c <= 0.1,
+            c.is_in([0.1, 1.5]),
+        ]
+    _check_filters_by_driver("mssql", table, predicates)
+
+
+@needs_mssql
+def test_mssql_synonym_of_a_legacy_datetime_is_looked_up_through() -> None:
+    # a synonym has no columns of its own: the types, and with them the `datetime` guard
+    # (a 1/300 s tick the microsecond literal doesn't match), are the base table's
+    _execute(
+        "mssql",
+        [
+            "DROP SYNONYM IF EXISTS review_syn_dt",
+            "DROP TABLE IF EXISTS review_syn_dt_base",
+            "CREATE TABLE review_syn_dt_base (id int PRIMARY KEY, dt datetime)",
+            "INSERT INTO review_syn_dt_base VALUES "
+            "(1, '2020-01-02 03:04:05.003'), (2, '2020-01-02 03:04:05.007')",
+            "CREATE SYNONYM review_syn_dt FOR review_syn_dt_base",
+        ],
+    )
+    predicates = [
+        pl.col("dt") == datetime(2020, 1, 2, 3, 4, 5, 3333),
+        pl.col("dt") == datetime(2020, 1, 2, 3, 4, 5, 6666),
+        pl.col("dt") <= datetime(2020, 1, 2, 3, 4, 5, 3333),
+        pl.col("dt") > datetime(2020, 1, 2, 3, 4, 5, 3333),
+    ]
+    _check_filters_by_driver("mssql", "review_syn_dt", predicates)
+    _check_filters_by_driver("mssql", "review_syn_dt_base", predicates)
+
+
+@needs_mssql
+def test_mssql_seven_digit_times_are_read_exactly_as_nanoseconds() -> None:
+    # `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, which drivers cut to
+    # microseconds: they are read as text, planned as nanoseconds, and not compared in the
+    # database (a pushed microsecond literal would drop or add the rows the fraction decides)
+    table = "review_subus"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, d2 datetime2(7), "
+            "tm time(7), dto datetimeoffset(7), d6 datetime2(6))",
+            f"INSERT INTO {table} VALUES "
+            "(1, '2020-01-02 03:04:05.1234567', '03:04:05.1234567', "
+            "'2020-01-02 03:04:05.1234567 +05:30', '2020-01-02 03:04:05.123456'), "
+            "(2, '2020-01-02 03:04:05.123456', '03:04:05.123456', "
+            "'2020-01-02 03:04:05.123456 +00:00', NULL), "
+            "(3, NULL, NULL, NULL, NULL)",
+        ],
+    )
+    drivers = ["connectorx", "pymssql", "adbc", "sqlalchemy", "pyodbc", "arrow_odbc"]
+    for source in [table, f"SELECT * FROM {table}"]:
+        # (pyodbc can't describe a `datetimeoffset` of a query's result: #537)
+        read_by = [d for d in drivers if d != "pyodbc" or source == table]
+        frames, errors = _read_by_every_driver("mssql", source, read_by)
+        _assert_drivers_agree(frames, errors, source)
+        df = next(iter(frames.values())).sort("id")
+        assert df.schema["d2"] == pl.Datetime("ns"), source
+        assert df.schema["dto"] == pl.Datetime("ns", "UTC"), source
+        assert df.schema["tm"] == pl.Time, source
+        assert df.schema["d6"] == pl.Datetime("us"), source
+        assert df["d2"].dt.nanosecond().to_list() == [123456700, 123456000, None]
+        assert df["tm"].dt.nanosecond().to_list() == [123456700, 123456000, None]
+        assert df["dto"][0] == datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC)
+    when = datetime(2020, 1, 2, 3, 4, 5, 123456)
+    predicates = [
+        pl.col("d2") == when,
+        pl.col("d2") <= when,
+        pl.col("d2") > when,
+        pl.col("tm") == dtime(3, 4, 5, 123456),
+        pl.col("tm") > dtime(3, 4, 5, 123456),
+        pl.col("dto") == datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC),
+        pl.col("dto") > datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC),
+    ]
+    _check_filters_by_driver("mssql", table, predicates, drivers)
+
+
+@needs_mssql
+def test_mssql_datetime2_outside_the_nanosecond_range_fails_and_reads_with_an_override() -> (
+    None
+):
+    # a `datetime2` holds years 0001 to 9999, nanoseconds only 1677 to 2262: the read fails
+    # naming the column and the override, which reads microseconds
+    table = "review_ns_range"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, d2 datetime2)",
+            f"INSERT INTO {table} VALUES (1, '0001-01-01'), "
+            "(2, '9999-12-31 23:59:59.999999'), (3, '2020-01-02 03:04:05.5')",
+        ],
+    )
+    for driver in ["connectorx", "pymssql", "adbc", "sqlalchemy"]:
+        with pytest.raises(
+            Exception, match=r"outside the range[\s\S]*schema_overrides"
+        ):
+            _scan("mssql", driver, table).collect()
+        df = _scan(
+            "mssql", driver, table, schema_overrides={"d2": pl.Datetime("us")}
+        ).collect()
+        assert df.sort("id")["d2"].to_list() == [
+            datetime(1, 1, 1),
+            datetime(9999, 12, 31, 23, 59, 59, 999999),
+            datetime(2020, 1, 2, 3, 4, 5, 500000),
+        ], driver
+
+
+def _mssql_masked_connection(create: bool = True) -> Any:
+    """A pymssql connection that runs as a user without `UNMASK`."""
+    if create:
+        _execute(
+            "mssql",
+            [
+                "DROP TABLE IF EXISTS review_masked",
+                "IF USER_ID('review_mask_user') IS NOT NULL DROP USER review_mask_user",
+                "CREATE TABLE review_masked (id int PRIMARY KEY, "
+                "n int MASKED WITH (FUNCTION = 'default()'), "
+                "email varchar(50) MASKED WITH (FUNCTION = 'email()'), "
+                "d date MASKED WITH (FUNCTION = 'default()'), plain int)",
+                "INSERT INTO review_masked VALUES "
+                "(1, 5, 'alice@example.com', '2020-01-01', 1), "
+                "(2, 0, 'bob@example.org', '1900-01-01', 2), "
+                "(3, 7, 'carol@example.com', '2021-02-03', 3)",
+                "CREATE USER review_mask_user WITHOUT LOGIN",
+                "GRANT SELECT ON review_masked TO review_mask_user",
+            ],
+        )
+    server = SERVERS["mssql"]
+    assert server.factory is not None
+    assert server.uri is not None
+    conn = server.factory(server.uri)()
+    conn.cursor().execute("EXECUTE AS USER = 'review_mask_user'")
+    return conn
+
+
+@needs_mssql
+def test_mssql_masked_columns_are_not_compared_in_the_database() -> None:
+    # a login without UNMASK reads masked values (`0`, `aXXX@XXXX.com`, `1900-01-01`)
+    # while a pushed filter compares the real ones: the rows Polars keeps on the values
+    # it read are not the rows the database kept
+    conn = _mssql_masked_connection()
+    try:
+        for source in ["review_masked", "SELECT * FROM review_masked"]:
+            lf = pl.scan_database(source, conn)
+            df = lf.collect()
+            assert df["n"].to_list() == [0, 0, 0]
+            for p in [
+                pl.col("n") == 0,
+                pl.col("n") > 0,
+                pl.col("n").is_in([0, 5]),
+                pl.col("email") == "aXXX@XXXX.com",
+                pl.col("email").str.starts_with("a"),
+                pl.col("d") == date(1900, 1, 1),
+                pl.col("plain") > 1,
+            ]:
+                got = sorted(lf.filter(p).collect()["id"].to_list())
+                assert got == sorted(df.filter(p)["id"].to_list()), (source, str(p))
+    finally:
+        conn.close()
+    # `UNMASK` granted for the table but denied on one column: that column still reads
+    # masked, the others don't (a grant on the database would deadlock with the catalog
+    # reads of tests running alongside)
+    for attempt in range(3):
+        try:
+            _execute(
+                "mssql",
+                [
+                    "GRANT UNMASK ON OBJECT::review_masked TO review_mask_user",
+                    "DENY UNMASK ON review_masked(n) TO review_mask_user",
+                ],
+            )
+            break
+        except Exception as e:  # a deadlock victim (1205) is rerun
+            if "1205" not in str(e) or attempt == 2:
+                raise
+    conn = _mssql_masked_connection(create=False)
+    try:
+        for source in ["review_masked", "SELECT * FROM review_masked"]:
+            lf = pl.scan_database(source, conn)
+            df = lf.collect()
+            assert df["n"].to_list() == [0, 0, 0]
+            assert df["email"].to_list()[0] == "alice@example.com"
+            for p in [pl.col("n") == 0, pl.col("n") > 0, pl.col("plain") > 1]:
+                got = sorted(lf.filter(p).collect()["id"].to_list())
+                assert got == sorted(df.filter(p)["id"].to_list()), (source, str(p))
+    finally:
+        conn.close()
+    # the owner reads the real values, so a filter on a masked column is pushed
+    lf = _scan("mssql", "pymssql", "review_masked").filter(pl.col("n") == 5)
+    assert "[n]" in planned_sql(lf) or '"n"' in planned_sql(lf).lower()
+    assert lf.collect()["id"].to_list() == [1]
+
+
+@needs_mssql
+def test_mssql_pyodbc_connection_and_factory_are_planned_as_sql_server() -> None:
+    # a pyodbc connection is any ODBC database's: it is the DBMS's name that tells the
+    # dialect; planned as the generic one every column read as text and partitioning
+    # was refused
+    pyodbc = pytest.importorskip("pyodbc")
+    if (reason := _no_odbc_driver()) is not None:
+        pytest.skip(reason)
+    uri = SERVERS["mssql"].uri
+    assert uri is not None
+    _ids_table("mssql", "review_cat_ids")
+    odbc = _mssql_odbc_string(uri)
+    want = _scan("mssql", "pyodbc", "review_cat_ids").collect_schema()
+    assert want["id"] != pl.String
+    conn = pyodbc.connect(odbc)
+    try:
+        for target in [conn, lambda: pyodbc.connect(odbc)]:
+            lf = pl.scan_database(
+                "review_cat_ids", target, partition_on="id", partition_num=4
+            )
+            assert lf.collect_schema() == want
+            assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+    finally:
+        conn.close()
+
+
+@needs_mssql
+def test_mssql_datetimeoffset_is_read_as_the_same_instant_by_the_drivers_that_read_it() -> (
+    None
+):
+    # ConnectorX shifted a `datetimeoffset` of another offset than UTC twice (`01:30
+    # +05:30` read as 14:30 UTC, not 20:00); pyodbc can't read the type, arrow-odbc
+    # reads it as text
+    table = "review_dto_instants"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, dto datetimeoffset(6))",
+            f"INSERT INTO {table} VALUES "
+            "(1, '2026-03-29 01:30:00 +00:00'), (2, '2026-03-29 01:30:00 +05:30'), "
+            "(3, '2026-10-25 02:30:00 -07:00'), (4, NULL)",
+        ],
+    )
+    drivers = ["connectorx", "pymssql", "adbc", "sqlalchemy"]
+    for source in [
+        table,
+        f"SELECT id, dto FROM {table}",
+    ]:
+        frames, errors = _read_by_every_driver("mssql", source, drivers)
+        _assert_drivers_agree(frames, errors, source)
+        df = next(iter(frames.values())).sort("id")
+        assert df["dto"][1] == datetime(2026, 3, 28, 20, 0, tzinfo=UTC), source
+        assert df["dto"][2] == datetime(2026, 10, 25, 9, 30, tzinfo=UTC), source
+
+
+@needs_mssql
+def test_mssql_query_sources_keep_the_types_of_their_columns() -> None:
+    # a query the drivers can't type from rows (a table-valued function is not sampled)
+    # or that ConnectorX reads through its own conversion read a `float`, a `date`, a
+    # `datetime2` or a `decimal(38, 10)` as text
+    table = "review_query_types"
+    _execute(
+        "mssql",
+        [
+            "DROP FUNCTION IF EXISTS review_query_types_f",
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, f float, r real, d date, "
+            "t2 datetime2(6), n decimal(38, 10), m decimal(18, 2))",
+            f"INSERT INTO {table} VALUES "
+            "(1, 0.25, 0.5, '2020-01-02', '2020-01-02 03:04:05.123456', "
+            "1234567890123456789.0123456789, 12.50), "
+            "(2, 1.5, 1.5, '2021-02-03', '2021-02-03 04:05:06', -0.0000000001, -0.01)",
+            f"CREATE FUNCTION review_query_types_f() RETURNS TABLE AS RETURN "
+            f"(SELECT * FROM {table})",
+        ],
+    )
+    for source in [
+        f"SELECT * FROM {table}",
+        "SELECT * FROM review_query_types_f()",
+    ]:
+        frames, errors = _read_by_every_driver("mssql", source, drivers_with_types())
+        _assert_drivers_agree(frames, errors, source)
+        df = next(iter(frames.values())).sort("id")
+        assert df.schema["f"] == pl.Float64, source
+        assert df.schema["d"] == pl.Date, source
+        assert df.schema["t2"] == pl.Datetime("us"), source
+        assert df.schema["n"] == pl.Decimal(38, 10), source
+        assert df["n"][0] == Decimal("1234567890123456789.0123456789"), source
+        for driver in frames:
+            lf = _scan("mssql", driver, source)
+            assert sorted(lf.filter(pl.col("f") > 1).collect()["id"].to_list()) == [2]
+            assert sorted(
+                lf.filter(pl.col("d") > date(2020, 6, 1)).collect()["id"]
+            ) == [2]
+
+
+def drivers_with_types() -> list[str]:
+    # (arrow-odbc reads `real` as Float32, which `_assert_drivers_agree` compares: it is
+    # left to the tests of its own reads)
+    return ["connectorx", "pymssql", "adbc", "pyodbc", "sqlalchemy"]
+
+
+@needs_mssql
+def test_mssql_row_level_security_tables_are_not_partitioned() -> None:
+    # a filter predicate on the time shows each statement other rows: the partitions of
+    # one read would not add up to the table
+    table = "review_rls"
+    _execute(
+        "mssql",
+        [
+            "DROP SECURITY POLICY IF EXISTS dbo.review_rls_pol",
+            "DROP FUNCTION IF EXISTS dbo.review_rls_pred",
+            f"DROP TABLE IF EXISTS dbo.{table}",
+            f"CREATE TABLE dbo.{table} (id int PRIMARY KEY)",
+            f"INSERT INTO dbo.{table} SELECT TOP 2000 ROW_NUMBER() OVER "
+            "(ORDER BY (SELECT NULL)) FROM sys.all_objects a CROSS JOIN sys.all_objects b",
+            "CREATE FUNCTION dbo.review_rls_pred(@id int) RETURNS TABLE "
+            "WITH SCHEMABINDING AS RETURN SELECT 1 AS ok "
+            "WHERE DATEPART(microsecond, SYSDATETIME()) % 1000 < 500",
+            "CREATE SECURITY POLICY dbo.review_rls_pol ADD FILTER PREDICATE "
+            f"dbo.review_rls_pred(id) ON dbo.{table} WITH (STATE = ON)",
+        ],
+    )
+    try:
+        for driver in ["connectorx", "pymssql"]:
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                _scan(
+                    "mssql", driver, table, partition_on="id", partition_num=4
+                ).collect()
+            lf = _scan("mssql", driver, table)
+            for _ in range(3):
+                ids_read = lf.collect()["id"].to_list()
+                assert len(ids_read) == len(set(ids_read)), driver
+    finally:
+        _execute(
+            "mssql",
+            [
+                "DROP SECURITY POLICY IF EXISTS dbo.review_rls_pol",
+                "DROP FUNCTION IF EXISTS dbo.review_rls_pred",
+                f"DROP TABLE IF EXISTS dbo.{table}",
+            ],
+        )
+
+
+@needs_mssql
+def test_mssql_money_is_read_exactly_and_not_compared_as_a_double() -> None:
+    # ConnectorX read `money` as a double (`922337203685477.5807` as `…477.6`), and a
+    # pushed comparison with the value read then compared the exact one
+    table = "review_money_exact"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, m money, sm smallmoney)",
+            f"INSERT INTO {table} VALUES (1, 922337203685477.5807, 214748.3647), "
+            "(2, -922337203685477.5808, -214748.3648), (3, 0.0001, 0.0001)",
+        ],
+    )
+    drivers = ["connectorx", "pymssql", "adbc", "sqlalchemy"]
+    for source in [table, f"SELECT * FROM {table}"]:
+        frames, errors = _read_by_every_driver("mssql", source, drivers)
+        _assert_drivers_agree(frames, errors, source)
+        df = next(iter(frames.values())).sort("id")
+        assert df["m"][0] == Decimal("922337203685477.5807"), source
+        assert df["sm"][1] == Decimal("-214748.3648"), source
+        predicates = [
+            pl.col("m") == Decimal("922337203685477.5807"),
+            pl.col("m") >= Decimal("922337203685477.5807"),
+            pl.col("sm") <= Decimal("-214748.3648"),
+            pl.col("m") > Decimal("0"),
+        ]
+        _check_filters_by_driver("mssql", source, predicates, drivers)
+
+
+@needs_mssql
+def test_mssql_float_literals_are_not_pushed() -> None:
+    # SQL Server reads a float literal below the smallest normal double as 0, and parses
+    # others inexactly (`x = 1.877474430782875e+16` misses the stored value): float
+    # comparisons are filtered by Polars
+    table = "review_subnormal"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, f float)",
+            f"INSERT INTO {table} VALUES (1, 0), (2, 1), (3, -0.0), (4, NULL), "
+            "(5, 1.877474430782875e+16), (6, 5e-324)",
+        ],
+    )
+    predicates = []
+    for v in [1e-310, 5e-324, -1e-310, 1.877474430782875e16]:
+        c = pl.col("f")
+        predicates += [c < v, c <= v, c == v, c != v, c > v, c >= v, c.is_in([v, 1.0])]
+    _check_filters_by_driver("mssql", table, predicates)

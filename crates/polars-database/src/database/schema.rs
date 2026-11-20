@@ -56,6 +56,22 @@ pub fn normalize_dtype(dtype: &DataType) -> DataType {
 /// `schema_overrides` for another precision.
 pub const UNCONSTRAINED_DECIMAL: DataType = DataType::Decimal(38, 9);
 
+/// The base type (`datetime2`, `datetimeoffset` or `time`) of a SQL Server column of 7
+/// fractional digits, which a bare name has (the scale defaults to 7): the ones drivers cut
+/// to microseconds.
+pub fn mssql_nanosecond_type(db_type: &str) -> Option<&'static str> {
+    let t = db_type.trim().to_ascii_lowercase();
+    let (base, args) = t.split_once('(').unwrap_or((&t, ""));
+    let base = match base.trim() {
+        "datetime2" => "datetime2",
+        "datetimeoffset" => "datetimeoffset",
+        "time" => "time",
+        _ => return None,
+    };
+    let args = args.trim_end_matches(')').trim();
+    (args.is_empty() || args.parse::<u32>().is_ok_and(|scale| scale > 6)).then_some(base)
+}
+
 /// The dtype of a declared database type, where the declaration fixes it whatever the driver
 /// returns. Drivers differ here: ADBC Postgres returns `NUMERIC` as text and ConnectorX as a
 /// wider decimal; row-wise drivers return every integer as `Int64`.
@@ -129,6 +145,37 @@ pub fn declared_dtype(dialect: DialectName, db_type: &str) -> Option<DataType> {
             || (t.starts_with("time(") && t.ends_with(") without time zone")))
     {
         return Some(DataType::Time);
+    }
+    // SQL Server's `datetime2`, `datetime` and `smalldatetime` have no time zone: ADBC reads
+    // them as UTC timestamps, the others as naive ones. A `real` is read as a `float`, as
+    // the row drivers do (the stored value, which a pushed `float` literal compares with
+    // exactly). A query the drivers can't type from rows (a table-valued function) reads
+    // float and date columns as text otherwise.
+    if dialect == DialectName::Mssql {
+        // 7 fractional digits (100 ns): read as text, as nanoseconds (see `column_conversion`)
+        match mssql_nanosecond_type(&t) {
+            Some("time") => return Some(DataType::Time),
+            Some("datetimeoffset") => {
+                return Some(DataType::Datetime(
+                    TimeUnit::Nanoseconds,
+                    Some(TimeZone::UTC),
+                ));
+            },
+            Some(_) => return Some(DataType::Datetime(TimeUnit::Nanoseconds, None)),
+            None => {},
+        }
+        match t.split('(').next().unwrap_or("").trim() {
+            "datetime" | "smalldatetime" | "datetime2" => {
+                return Some(DataType::Datetime(TimeUnit::Microseconds, None));
+            },
+            "float" | "real" => return Some(DataType::Float64),
+            // ConnectorX reads them as doubles, the other drivers as decimals of other
+            // precisions
+            "money" => return Some(DataType::Decimal(19, 4)),
+            "smallmoney" => return Some(DataType::Decimal(10, 4)),
+            "date" => return Some(DataType::Date),
+            _ => {},
+        }
     }
     // Drivers disagree on the width of MySQL `YEAR` and `FLOAT` (4 bytes).
     if matches!(dialect, DialectName::Mysql | DialectName::Singlestore) {

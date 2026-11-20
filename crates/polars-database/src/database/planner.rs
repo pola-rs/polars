@@ -588,6 +588,8 @@ pub fn resolve_scan(
     let mut stats = TableStats::default();
     let mut mixed_found: Vec<PlSmallStr> = Vec::new();
     let schema: SchemaRef;
+    // the query columns SQL Server declares `money` or `smallmoney`
+    let mut money_columns: PlHashMap<PlSmallStr, String> = PlHashMap::default();
     let volatility_unchecked = user_schema.is_some();
     let user_typed = user_schema.is_some();
 
@@ -954,6 +956,16 @@ pub fn resolve_scan(
                 c.db_type = Some("float".into());
             }
         }
+        if dialect == DialectName::Mssql {
+            for (name, t) in info.compare_types.iter() {
+                if matches!(
+                    t.trim().to_ascii_lowercase().as_str(),
+                    "money" | "smallmoney"
+                ) {
+                    money_columns.insert(name.clone(), t.clone());
+                }
+            }
+        }
         schema = Arc::new(discovered);
     }
 
@@ -974,7 +986,9 @@ pub fn resolve_scan(
                 column to text in the query",
                 c.name, pushdown_disabled.as_deref().unwrap_or("")
             );
-            c.db_type = Some(CONNECTORX_DECIMAL.into());
+            // SQL Server's `money` as text has 2 places: its own conversion (`column_conversion`)
+            let money = money_columns.get(c.name.as_str());
+            c.db_type = Some(money.map_or(CONNECTORX_DECIMAL, |t| t.as_str()).into());
             c.comparable &= !alias_shadows_column(dialect);
         }
     }
@@ -2165,12 +2179,52 @@ fn column_conversion(
             return clickhouse_array_nanoseconds(db_type, column, 0);
         }
     }
+    // ConnectorX reads `money` as a double (`922337203685477.5807` as `…477.6`)
+    if dialect == DialectName::Mssql && matches!(backend, BackendKind::ConnectorX) {
+        match db_type.trim().to_ascii_lowercase().as_str() {
+            // as exact text (a decimal reaches ConnectorX as a double too), parsed as the
+            // planned decimal
+            "money" => {
+                return Some(dialect.cast_to_text(&format!("CAST({column} AS DECIMAL(19, 4))")));
+            },
+            "smallmoney" => {
+                return Some(dialect.cast_to_text(&format!("CAST({column} AS DECIMAL(10, 4))")));
+            },
+            _ => {},
+        }
+    }
+    // `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, which drivers cut to
+    // microseconds (and read differently): read as text, parsed as the planned nanosecond
+    // type (a `datetimeoffset` as its UTC wall-clock time: its own text has the offset)
+    if dialect == DialectName::Mssql
+        && let Some(base) = super::schema::mssql_nanosecond_type(db_type)
+    {
+        let x = if base == "datetimeoffset" {
+            format!("CAST(SWITCHOFFSET({column}, '+00:00') AS DATETIME2(7))")
+        } else {
+            column.to_string()
+        };
+        return Some(format!("CONVERT(VARCHAR(40), {x}, 121)"));
+    }
+    // ConnectorX shifts a `datetimeoffset` of another offset than UTC twice (`01:30 +05:30`
+    // reads as 14:30 UTC, not 20:00): at offset 0 its read is right.
+    if dialect == DialectName::Mssql
+        && matches!(backend, BackendKind::ConnectorX)
+        && db_type
+            .trim()
+            .to_ascii_lowercase()
+            .starts_with("datetimeoffset")
+    {
+        return Some(format!("SWITCHOFFSET({column}, '+00:00')"));
+    }
     // Read as text and parse the exact value; the planned dtype stays the declared decimal.
-    // ConnectorX reads decimals with at most 10 decimal places, dropping digits; an
+    // ConnectorX reads decimals with at most 10 decimal places, dropping digits (and panics on
+    // SQL Server decimals of more than 28 digits); an
     // unconstrained `numeric` / `NUMBER` reaches some drivers as a float (oracledb), and
     // its values may have more digits than the planned scale (an error then, not rounding).
     if let Some(DataType::Decimal(p, scale)) = declared_dtype(dialect, db_type)
-        && ((matches!(backend, BackendKind::ConnectorX) && scale > 10)
+        && ((matches!(backend, BackendKind::ConnectorX)
+            && (scale > 10 || (dialect == DialectName::Mssql && p > 28)))
             || DataType::Decimal(p, scale) == super::schema::UNCONSTRAINED_DECIMAL)
     {
         if dialect == DialectName::Oracle {

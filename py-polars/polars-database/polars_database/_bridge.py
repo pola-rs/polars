@@ -382,6 +382,12 @@ def _connection_info(obj: Any) -> tuple[str, str]:
         with contextlib.suppress(Exception):
             vendor = str(obj.adbc_get_info().get("vendor_name", "")).lower()
             return _ADBC_VENDORS.get(vendor, ""), module
+    if module == "pyodbc":
+        # an ODBC driver of any DBMS: `SQL_DBMS_NAME` (17) says which. Only SQL Server's
+        # is checked; the others stay generic.
+        with contextlib.suppress(Exception):
+            if str(obj.getinfo(17)).lower() == "microsoft sql server":
+                return "mssql", module
     if module == "sqlalchemy":
         _require_sqlalchemy()
         engine = getattr(obj, "engine", None) or getattr(obj, "bind", None)
@@ -2854,6 +2860,15 @@ class _Session:
                     else {}
                 )
                 if on_connection:
+                    frames = iter(list(frames))
+                if (
+                    not self.owned
+                    and _module_of(_cancel_target(self.conn)) == "pymssql"
+                ):
+                    # pymssql has no MARS: a connection runs one statement at a time,
+                    # and another scan's statement while this result is unread would
+                    # discard it (no rows, the other's rows, or a shape error). Read
+                    # whole here, under the lock.
                     frames = iter(list(frames))
                 if idle and _transaction_idle(self.conn) is False:
                     frames = iter(list(frames))
