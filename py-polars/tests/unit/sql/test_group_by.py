@@ -1756,3 +1756,15 @@ def test_group_by_constant_projection_with_literal_key() -> None:
     assert res.rows() == [(1, "bc"), (None, "bc")]
     res = df.sql("SELECT 42 AS k, 42 + 1 FROM self GROUP BY GROUPING SETS ((k))")
     assert res.rows() == [(42, 43)]
+
+
+def test_group_by_keys_computed_from_other_keys() -> None:
+    df = pl.DataFrame({"ip": [5, 7, 5, None, 5, 7]})
+    q = pl.SQLContext(hits=df).execute(
+        """
+        SELECT ip, ip - 1, ip - 2, COUNT(*) AS c FROM hits
+        GROUP BY ip, ip - 1, ip - 2 ORDER BY c DESC
+        """
+    )
+    assert 'BY [col("ip")]' in q.explain()
+    assert q.collect().rows() == [(5, 4, 3, 3), (7, 6, 5, 2), (None, None, None, 1)]
