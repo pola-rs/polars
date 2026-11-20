@@ -721,6 +721,35 @@ impl<R: Reducer> VecGroupedReduction<R> {
             reducer,
         }
     }
+
+    /// Reduces the rows `subset` into the groups `group_idxs` masked by `idx_mask`, a run of
+    /// equal groups at a time.
+    ///
+    /// # Safety
+    /// The subset and group_idxs are in-bounds.
+    #[inline(never)]
+    unsafe fn reduce_group_runs(
+        &mut self,
+        arr: &<R::Dtype as PolarsDataType>::Array,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+        idx_mask: IdxSize,
+        seq_id: u64,
+    ) {
+        let reducer = &self.reducer;
+        let slots = self.values.as_mut_slice();
+        unsafe {
+            reduce_runs(
+                reducer,
+                arr,
+                subset,
+                group_idxs,
+                idx_mask,
+                seq_id,
+                |g, run, _| reducer.combine(slots.get_unchecked_mut(g), run),
+            );
+        }
+    }
 }
 
 impl<R> GroupedReduction for VecGroupedReduction<R>
@@ -782,19 +811,7 @@ where
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         if R::ORDER_INDEPENDENT && self.layout.num_lanes() == 1 && has_long_runs(group_idxs) {
-            let reducer = &self.reducer;
-            let slots = self.values.as_mut_slice();
-            unsafe {
-                reduce_runs(
-                    reducer,
-                    arr,
-                    subset,
-                    group_idxs,
-                    IdxSize::MAX,
-                    seq_id,
-                    |g, run, _| reducer.combine(slots.get_unchecked_mut(g), run),
-                );
-            }
+            unsafe { self.reduce_group_runs(arr, subset, group_idxs, IdxSize::MAX, seq_id) };
             return Ok(());
         }
         let stride = self.layout.stride;
@@ -850,26 +867,21 @@ where
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         if R::ORDER_INDEPENDENT && has_long_runs(EvictIdx::cast_to_idxs(group_idxs)) {
-            let reducer = &self.reducer;
-            let slots = self.values.as_mut_slice();
             for range in eviction_ranges(group_idxs) {
                 unsafe {
                     let g = group_idxs.get_unchecked(range.start);
                     if g.should_evict() {
-                        let grp = slots.get_unchecked_mut(g.idx());
-                        let old = core::mem::replace(grp, reducer.init());
+                        let grp = self.values.get_unchecked_mut(g.idx());
+                        let old = core::mem::replace(grp, self.reducer.init());
                         self.evicted_values.push(old);
                     }
                     let group_idxs = EvictIdx::cast_to_idxs(&group_idxs[range.clone()]);
-                    let subset = &subset[range];
-                    reduce_runs(
-                        reducer,
+                    self.reduce_group_runs(
                         arr,
-                        subset,
+                        &subset[range],
                         group_idxs,
                         IdxSize::MAX >> 1,
                         seq_id,
-                        |g, run, _| reducer.combine(slots.get_unchecked_mut(g), run),
                     );
                 }
             }
@@ -926,6 +938,9 @@ where
         runs: &[GroupRun],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        if !R::ORDER_INDEPENDENT {
+            unreachable!()
+        }
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let reducer = &self.reducer;
         for_each_group_run(
@@ -1077,6 +1092,41 @@ impl<R: Reducer> VecMaskGroupedReduction<R> {
             reducer,
         }
     }
+
+    /// Reduces the rows `subset` into the groups `group_idxs` masked by `idx_mask`, a run of
+    /// equal groups at a time, and sets the bits of the groups that got a valid value.
+    ///
+    /// # Safety
+    /// The subset and group_idxs are in-bounds.
+    #[inline(never)]
+    unsafe fn reduce_group_runs(
+        &mut self,
+        arr: &<R::Dtype as PolarsDataType>::Array,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+        idx_mask: IdxSize,
+        seq_id: u64,
+    ) {
+        let reducer = &self.reducer;
+        let slots = self.values.as_mut_slice();
+        let mask = self.mask.as_mut_slice();
+        unsafe {
+            reduce_runs(
+                reducer,
+                arr,
+                subset,
+                group_idxs,
+                idx_mask,
+                seq_id,
+                |g, run, valid| {
+                    if valid {
+                        reducer.combine(slots.get_unchecked_mut(g), run);
+                        set_bit_unchecked(mask, g, true);
+                    }
+                },
+            );
+        }
+    }
 }
 
 impl<R> GroupedReduction for VecMaskGroupedReduction<R>
@@ -1142,25 +1192,15 @@ where
         }
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         if R::ORDER_INDEPENDENT && self.layout.num_lanes() == 1 && has_long_runs(group_idxs) {
-            let reducer = &self.reducer;
-            let slots = self.values.as_mut_slice();
-            let mask = self.mask.as_mut_slice();
             unsafe {
-                reduce_runs(
-                    reducer,
+                self.reduce_group_runs(
                     ca.downcast_as_array(),
                     subset,
                     group_idxs,
                     IdxSize::MAX,
                     seq_id,
-                    |g, run, valid| {
-                        if valid {
-                            reducer.combine(slots.get_unchecked_mut(g), run);
-                            set_bit_unchecked(mask, g, true);
-                        }
-                    },
-                );
-            }
+                )
+            };
             return Ok(());
         }
         unsafe {
@@ -1199,34 +1239,23 @@ where
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         if R::ORDER_INDEPENDENT && has_long_runs(EvictIdx::cast_to_idxs(group_idxs)) {
-            let reducer = &self.reducer;
-            let slots = self.values.as_mut_slice();
             for range in eviction_ranges(group_idxs) {
                 unsafe {
                     let g = group_idxs.get_unchecked(range.start);
                     if g.should_evict() {
-                        let grp = slots.get_unchecked_mut(g.idx());
-                        let old = core::mem::replace(grp, reducer.init());
+                        let grp = self.values.get_unchecked_mut(g.idx());
+                        let old = core::mem::replace(grp, self.reducer.init());
                         self.evicted_values.push(old);
                         self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
                         self.mask.set_unchecked(g.idx(), false);
                     }
-                    let mask = self.mask.as_mut_slice();
                     let group_idxs = EvictIdx::cast_to_idxs(&group_idxs[range.clone()]);
-                    let subset = &subset[range];
-                    reduce_runs(
-                        reducer,
+                    self.reduce_group_runs(
                         arr,
-                        subset,
+                        &subset[range],
                         group_idxs,
                         IdxSize::MAX >> 1,
                         seq_id,
-                        |g, run, valid| {
-                            if valid {
-                                reducer.combine(slots.get_unchecked_mut(g), run);
-                                set_bit_unchecked(mask, g, true);
-                            }
-                        },
                     );
                 }
             }
@@ -1264,6 +1293,9 @@ where
         runs: &[GroupRun],
         seq_id: u64,
     ) -> PolarsResult<()> {
+        if !R::ORDER_INDEPENDENT {
+            unreachable!()
+        }
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let reducer = &self.reducer;
         for_each_group_run(

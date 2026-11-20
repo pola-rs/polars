@@ -14,10 +14,10 @@ use crate::prelude::{ChunkFullNull, StringChunked};
 /// `op` evaluated on each used value of `column` and spread to its rows.
 fn dictionary_mask(
     column: &DictionaryColumn,
-    op: impl Fn(&Series) -> PolarsResult<BooleanChunked>,
+    op: &dyn Fn(&Series) -> PolarsResult<BooleanChunked>,
 ) -> PolarsResult<BooleanChunked> {
     if column.dict().len() <= column.len() {
-        match dictionary_lookup_mask(column, &op) {
+        match dictionary_lookup_mask(column, op) {
             Ok(mask) => return Ok(mask),
             Err(err) => {
                 // A value no row uses may fail where the used ones don't; that falls back to the
@@ -36,7 +36,7 @@ fn dictionary_mask(
 /// `op` evaluated once on every dictionary value and on a null, then looked up per row by code.
 fn dictionary_lookup_mask(
     column: &DictionaryColumn,
-    op: impl Fn(&Series) -> PolarsResult<BooleanChunked>,
+    op: &dyn Fn(&Series) -> PolarsResult<BooleanChunked>,
 ) -> PolarsResult<BooleanChunked> {
     let n = column.dict().len();
     let mut values =
@@ -88,75 +88,69 @@ fn dictionary_lookup_mask(
     Ok(BooleanChunked::with_chunk(name, arr))
 }
 
-macro_rules! column_element_wise_broadcasting {
-    ($lhs:expr, $rhs:expr, $op:expr) => {
-        match ($lhs, $rhs) {
-            // Compare each used dictionary value with the constant once. Only when the result has
-            // the dictionary column's length: a length-1 one broadcasts to a longer constant.
-            (Column::Dictionary(lhs), rhs)
-                if rhs.len() == 1
-                    || (rhs.len() == lhs.len() && rhs.as_scalar_column().is_some()) =>
-            {
-                let rhs = rhs.as_materialized_series_maintain_scalar();
-                dictionary_mask(lhs, |values| $op(values, &rhs))
-            },
-            (lhs, Column::Dictionary(rhs))
-                if lhs.len() == 1
-                    || (lhs.len() == rhs.len() && lhs.as_scalar_column().is_some()) =>
-            {
-                let lhs = lhs.as_materialized_series_maintain_scalar();
-                dictionary_mask(rhs, |values| $op(&lhs, values))
-            },
-            (Column::Series(lhs), Column::Scalar(rhs)) => $op(lhs, &rhs.as_single_value_series()),
-            (Column::Scalar(lhs), Column::Series(rhs)) => $op(&lhs.as_single_value_series(), rhs),
-            (Column::Scalar(lhs), Column::Scalar(rhs)) => {
-                let length = broadcast_len([lhs, rhs])?;
-                $op(&lhs.as_single_value_series(), &rhs.as_single_value_series()).map(|ca| {
-                    if ca.len() == 0 {
-                        ca
-                    } else {
-                        ca.new_from_index(0, length)
-                    }
-                })
-            },
-            (lhs, rhs) => $op(lhs.as_materialized_series(), rhs.as_materialized_series()),
-        }
-    };
+type CompareFn = fn(&Series, &Series) -> PolarsResult<BooleanChunked>;
+
+fn compare_broadcasting(lhs: &Column, rhs: &Column, op: CompareFn) -> PolarsResult<BooleanChunked> {
+    match (lhs, rhs) {
+        // Compare each used dictionary value with the constant once. Only when the result has
+        // the dictionary column's length: a length-1 one broadcasts to a longer constant.
+        (Column::Dictionary(lhs), rhs)
+            if rhs.len() == 1 || (rhs.len() == lhs.len() && rhs.as_scalar_column().is_some()) =>
+        {
+            let rhs = rhs.as_materialized_series_maintain_scalar();
+            dictionary_mask(lhs, &|values| op(values, &rhs))
+        },
+        (lhs, Column::Dictionary(rhs))
+            if lhs.len() == 1 || (lhs.len() == rhs.len() && lhs.as_scalar_column().is_some()) =>
+        {
+            let lhs = lhs.as_materialized_series_maintain_scalar();
+            dictionary_mask(rhs, &|values| op(&lhs, values))
+        },
+        (Column::Series(lhs), Column::Scalar(rhs)) => op(lhs, &rhs.as_single_value_series()),
+        (Column::Scalar(lhs), Column::Series(rhs)) => op(&lhs.as_single_value_series(), rhs),
+        (Column::Scalar(lhs), Column::Scalar(rhs)) => {
+            let length = broadcast_len([lhs, rhs])?;
+            op(&lhs.as_single_value_series(), &rhs.as_single_value_series()).map(|ca| {
+                if ca.is_empty() {
+                    ca
+                } else {
+                    ca.new_from_index(0, length)
+                }
+            })
+        },
+        (lhs, rhs) => op(lhs.as_materialized_series(), rhs.as_materialized_series()),
+    }
 }
 
 impl ChunkCompareEq<&Column> for Column {
     type Item = PolarsResult<BooleanChunked>;
 
     /// Create a boolean mask by checking for equality.
-    #[inline]
     fn equal(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
-        column_element_wise_broadcasting!(self, rhs, <Series as ChunkCompareEq<&Series>>::equal)
+        compare_broadcasting(self, rhs, |l: &Series, r: &Series| {
+            <Series as ChunkCompareEq<&Series>>::equal(l, r)
+        })
     }
 
     /// Create a boolean mask by checking for equality.
-    #[inline]
     fn equal_missing(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
-        column_element_wise_broadcasting!(
-            self,
-            rhs,
-            <Series as ChunkCompareEq<&Series>>::equal_missing
-        )
+        compare_broadcasting(self, rhs, |l: &Series, r: &Series| {
+            <Series as ChunkCompareEq<&Series>>::equal_missing(l, r)
+        })
     }
 
     /// Create a boolean mask by checking for inequality.
-    #[inline]
     fn not_equal(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
-        column_element_wise_broadcasting!(self, rhs, <Series as ChunkCompareEq<&Series>>::not_equal)
+        compare_broadcasting(self, rhs, |l: &Series, r: &Series| {
+            <Series as ChunkCompareEq<&Series>>::not_equal(l, r)
+        })
     }
 
     /// Create a boolean mask by checking for inequality.
-    #[inline]
     fn not_equal_missing(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
-        column_element_wise_broadcasting!(
-            self,
-            rhs,
-            <Series as ChunkCompareEq<&Series>>::not_equal_missing
-        )
+        compare_broadcasting(self, rhs, |l: &Series, r: &Series| {
+            <Series as ChunkCompareEq<&Series>>::not_equal_missing(l, r)
+        })
     }
 }
 
@@ -164,26 +158,30 @@ impl ChunkCompareIneq<&Column> for Column {
     type Item = PolarsResult<BooleanChunked>;
 
     /// Create a boolean mask by checking if self > rhs.
-    #[inline]
     fn gt(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
-        column_element_wise_broadcasting!(self, rhs, <Series as ChunkCompareIneq<&Series>>::gt)
+        compare_broadcasting(self, rhs, |l: &Series, r: &Series| {
+            <Series as ChunkCompareIneq<&Series>>::gt(l, r)
+        })
     }
 
     /// Create a boolean mask by checking if self >= rhs.
-    #[inline]
     fn gt_eq(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
-        column_element_wise_broadcasting!(self, rhs, <Series as ChunkCompareIneq<&Series>>::gt_eq)
+        compare_broadcasting(self, rhs, |l: &Series, r: &Series| {
+            <Series as ChunkCompareIneq<&Series>>::gt_eq(l, r)
+        })
     }
 
     /// Create a boolean mask by checking if self < rhs.
-    #[inline]
     fn lt(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
-        column_element_wise_broadcasting!(self, rhs, <Series as ChunkCompareIneq<&Series>>::lt)
+        compare_broadcasting(self, rhs, |l: &Series, r: &Series| {
+            <Series as ChunkCompareIneq<&Series>>::lt(l, r)
+        })
     }
 
     /// Create a boolean mask by checking if self <= rhs.
-    #[inline]
     fn lt_eq(&self, rhs: &Column) -> PolarsResult<BooleanChunked> {
-        column_element_wise_broadcasting!(self, rhs, <Series as ChunkCompareIneq<&Series>>::lt_eq)
+        compare_broadcasting(self, rhs, |l: &Series, r: &Series| {
+            <Series as ChunkCompareIneq<&Series>>::lt_eq(l, r)
+        })
     }
 }

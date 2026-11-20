@@ -1739,7 +1739,7 @@ def test_create_catalog_table_hidden_by_registered_table(
         with pytest.raises(
             SQLInterfaceError,
             match=rf"table '{name}' would be hidden by registered table "
-            r"'lake\.tpch\.u'; unregister it$",
+            r"'lake\.tpch\.u'; unregister it(\n|$)",
         ):
             ctx.execute(f"CREATE TABLE {name} (x INT)")
     assert not lake.table_exists(("tpch", "u"))
@@ -1764,7 +1764,7 @@ def test_create_table_without_namespace(lake: CountingCatalog) -> None:
             ),
         ):
             ctx.execute(statement)
-    with pytest.raises(SQLInterfaceError, match=r"write 'lake\.<namespace>\.t'$"):
+    with pytest.raises(SQLInterfaceError, match=r"write 'lake\.<namespace>\.t'(\n|$)"):
         ctx.execute("CREATE TABLE lake.t (x INT)")
     ctx.execute("CREATE TEMP TABLE t AS SELECT 1 AS x")
     ctx.execute("CREATE TABLE tpch.t2 (x INT)")

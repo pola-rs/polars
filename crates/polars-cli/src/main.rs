@@ -38,7 +38,8 @@ fn run_command() -> ExitCode {
         Err(error) => return report(error),
     };
     let format = args.format();
-    let read_only = args.read_only();
+    let read_only = args.read_only_origin();
+    let verbose = args.verbose();
     let on_terminal = io::stdout().is_terminal();
     // Checked before the script is read, which can wait for standard input.
     if format.is_one_file() && on_terminal {
@@ -47,7 +48,9 @@ fn run_command() -> ExitCode {
             format!("format '{format}' is binary; send the output to a file or a pipe"),
         ));
     }
-    let script = match read_script(args.input()) {
+    let input = args.input();
+    let source = input.name();
+    let script = match read_script(input) {
         Ok(script) => script,
         Err(error) => return report(error),
     };
@@ -61,7 +64,10 @@ fn run_command() -> ExitCode {
     let interrupted = handle_interrupts();
     // Not locked: Polars and the panic hook write to these streams from other threads.
     let stdout = BufWriter::new(io::stdout());
-    let mut printer = Printer::new(stdout, io::stderr(), format).on_terminal(on_terminal);
+    let mut printer = Printer::new(stdout, io::stderr(), format)
+        .on_terminal(on_terminal)
+        .source(source)
+        .verbose(verbose);
     let code = run(&script, read_only, &mut printer);
     // An interrupt that arrived while the last result was printed stopped nothing.
     if code == exit_code::OK && interrupted.load(Ordering::SeqCst) {
