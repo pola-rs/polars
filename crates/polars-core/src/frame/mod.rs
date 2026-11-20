@@ -87,7 +87,28 @@ pub enum PivotColumnNaming {
     Auto,
 }
 
+/// The chunk lengths of a column that has chunks of its own: a series, or the codes of a
+/// dictionary column (which materializes with the same chunks). Scalar columns have none.
+fn column_chunk_lengths(c: &Column) -> Option<Box<dyn Iterator<Item = usize> + '_>> {
+    match c {
+        Column::Series(_) => c.as_series().map(|s| Box::new(s.chunk_lengths()) as _),
+        Column::Dictionary(d) => Some(Box::new(d.codes().chunk_lengths())),
+        Column::Scalar(_) => None,
+    }
+}
+
 impl DataFrame {
+    /// The chunk lengths the frame is laid out along: those of the first series column, as the
+    /// chunks of series columns are selected by index; only without one, those of the first
+    /// dictionary column's codes (which are sliced by offset).
+    fn chunk_lengths_of_leading_column(&self) -> Option<Box<dyn Iterator<Item = usize> + '_>> {
+        self.columns()
+            .iter()
+            .find(|c| matches!(c, Column::Series(_)))
+            .and_then(column_chunk_lengths)
+            .or_else(|| self.columns().iter().find_map(column_chunk_lengths))
+    }
+
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns().iter().map(Column::as_materialized_series)
     }
@@ -348,18 +369,14 @@ impl DataFrame {
         if !self
             .columns()
             .iter()
-            .filter_map(Column::as_series)
-            .map(|s| s.n_chunks())
+            .filter_map(column_chunk_lengths)
+            .map(|cl| cl.size_hint().0)
             .all_equal()
         {
             return true;
         }
 
-        let mut chunk_lengths = self
-            .columns()
-            .iter()
-            .filter_map(Column::as_series)
-            .map(|s| s.chunk_lengths());
+        let mut chunk_lengths = self.columns().iter().filter_map(column_chunk_lengths);
         match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {
@@ -473,18 +490,18 @@ impl DataFrame {
 
     /// The number of chunks for the first column.
     pub fn first_col_n_chunks(&self) -> usize {
-        match self.columns().iter().find_map(|col| col.as_series()) {
+        match self.chunk_lengths_of_leading_column() {
             None if self.width() == 0 => 0,
             None => 1,
-            Some(s) => s.n_chunks(),
+            Some(cl) => cl.size_hint().0,
         }
     }
 
     /// The chunk lengths of the first column that has chunks, see [`Self::first_col_n_chunks`].
     pub(crate) fn first_col_chunk_lengths(&self) -> impl Iterator<Item = usize> + '_ {
-        match self.columns().iter().find_map(|col| col.as_series()) {
+        match self.chunk_lengths_of_leading_column() {
             None => Either::Right((self.width() > 0).then_some(self.height()).into_iter()),
-            Some(s) => Either::Left(s.chunk_lengths()),
+            Some(cl) => Either::Left(cl),
         }
     }
 
@@ -492,7 +509,7 @@ impl DataFrame {
     pub fn max_n_chunks(&self) -> usize {
         self.columns()
             .iter()
-            .map(|s| s.as_series().map(|s| s.n_chunks()).unwrap_or(1))
+            .map(|c| column_chunk_lengths(c).map_or(1, |cl| cl.size_hint().0))
             .max()
             .unwrap_or(0)
     }
@@ -2686,23 +2703,21 @@ impl DataFrame {
 
 /// Cursor over the chunks a [`DataFrame`] is laid out along.
 struct ChunkCursor<'a> {
-    /// The chunks of the first column that has any; empty when no column does.
-    chunks: &'a [ArrayRef],
+    /// The chunk lengths of the first column that has chunks (a series, or a dictionary
+    /// column's codes), as `first_col_chunk_lengths`; empty when no column has.
+    chunks: Vec<usize>,
     height: usize,
     idx: usize,
+    _df: std::marker::PhantomData<&'a DataFrame>,
 }
 
 impl<'a> ChunkCursor<'a> {
     fn new(df: &'a DataFrame) -> Self {
-        let chunks = match df.columns().iter().find_map(Column::as_series) {
-            Some(s) => s.chunks().as_slice(),
-            None => &[],
-        };
-
         Self {
-            chunks,
+            chunks: df.first_col_chunk_lengths().collect(),
             height: df.height(),
             idx: 0,
+            _df: std::marker::PhantomData,
         }
     }
 
@@ -2718,7 +2733,7 @@ impl<'a> ChunkCursor<'a> {
         }
 
         self.idx += 1;
-        Some((idx, self.chunks.get(idx).map_or(self.height, |c| c.len())))
+        Some((idx, self.chunks.get(idx).copied().unwrap_or(self.height)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -2745,7 +2760,8 @@ impl Iterator for RecordBatchIter<'_> {
         let offset = self.offset;
         self.offset += length;
 
-        // A dictionary column's codes need not have the chunks of the other columns.
+        // Dictionary columns are sliced by offset: their codes need not have the chunks of the
+        // series columns, which are selected by index.
         let to_arrow = |c: &Column| match c.as_series() {
             Some(s) => s.to_arrow(idx, self.compat_level),
             None => c
