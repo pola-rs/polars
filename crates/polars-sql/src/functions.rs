@@ -2116,18 +2116,24 @@ impl SQLFunctionVisitor<'_> {
             SplitPart => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    3 => self.try_visit_ternary(|e, sep, idx| {
+                    3 => self.try_visit_ternary(|e, sep: Expr, idx: Expr| {
+                        // A NULL argument gives NULL; an index past the parts gives ''.
+                        let has_args = e
+                            .clone()
+                            .is_not_null()
+                            .and(sep.clone().is_not_null())
+                            .and(idx.clone().is_not_null());
                         let idx = adjust_one_indexed_param(idx, true);
-                        Ok(when(e.clone().is_not_null())
+                        Ok(when(has_args)
                             .then(
-                                e.clone()
+                                e.cast(DataType::String)
                                     .str()
-                                    .split(sep)
+                                    .split(sep.cast(DataType::String))
                                     .list()
                                     .get(idx, true)
                                     .fill_null(lit("")),
                             )
-                            .otherwise(e))
+                            .otherwise(lit(LiteralValue::untyped_null())))
                     }),
                     _ => {
                         polars_bail!(SQLSyntax: "SPLIT_PART expects 3 arguments (found {})", args.len())

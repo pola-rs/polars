@@ -861,6 +861,46 @@ def test_string_split_part() -> None:
     }
 
 
+def test_string_split_part_null_args() -> None:
+    df = pl.DataFrame(
+        {"s": ["a,b", "a,b", "a,b"], "sep": [",", None, ","], "i": [2, 2, None]}
+    )
+    res = df.sql(
+        """
+        SELECT
+          SPLIT_PART(s, sep, i) AS a,
+          SPLIT_PART(s, ',', NULL) AS b,
+          SPLIT_PART(s, NULL, 1) AS c,
+          SPLIT_PART(s, ',', 3) AS d
+        FROM self
+        """
+    )
+    assert res.rows() == [
+        ("b", None, None, ""),
+        (None, None, None, ""),
+        (None, None, None, ""),
+    ]
+
+    df = pl.DataFrame({"s": ["a", "b"], "sep": [None, None]})
+    res = df.sql(
+        """
+        SELECT s, FIRST(SPLIT_PART(s, sep, 1)) AS a, FIRST(SPLIT_PART(NULL, s, 1)) AS b
+        FROM self GROUP BY s ORDER BY s
+        """
+    )
+    assert res.rows() == [("a", None, None), ("b", None, None)]
+
+    df = pl.DataFrame({"g": [1, 1], "i": [1, 2], "s": [None, None]})
+    res = df.sql(
+        """
+        SELECT g, ARRAY_AGG(SPLIT_PART('a,b', NULL, i)) AS a,
+          FIRST(SPLIT_PART(s, ',', NULL)) AS b
+        FROM self GROUP BY g
+        """
+    )
+    assert res.rows() == [(1, [None, None], None)]
+
+
 def test_string_substr() -> None:
     df = pl.DataFrame(
         {
