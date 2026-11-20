@@ -7566,19 +7566,23 @@ impl SQLContext {
                 // inside them run in the group context. The same holds for anything
                 // combining aggregates with grouped keys or `GROUPING()` values.
                 let bound = bind_keys(strip_outer_alias(e));
+                // An output named like a group key is stored under another name, so that
+                // it does not replace the key that other projections read.
+                let mut name = field.name.clone();
+                if group_by_keys_schema.get(&field.name).is_some() {
+                    name = format_pl_smallstr!("__POLARS_AGG_{}", field.name);
+                    aliased_aggregations.insert(field.name.clone(), name.clone());
+                }
                 if splitter.needs_post_aggregation(&bound) {
                     let post_agg_expr = splitter.hoist(bound)?;
-                    post_agg_projection.push(post_agg_expr.alias(field.name.clone()));
+                    post_agg_projection.push(post_agg_expr.alias(name));
                     continue;
                 }
-                let mut e = e.clone();
-                // If aggregation colname conflicts with a group key,
-                // alias it to avoid duplicate/mis-tracked columns
-                if group_by_keys_schema.get(&field.name).is_some() {
-                    let alias_name = format_pl_smallstr!("__POLARS_AGG_{}", field.name);
-                    e = e.alias(alias_name.clone());
-                    aliased_aggregations.insert(field.name.clone(), alias_name);
-                }
+                let e = if name == field.name {
+                    e.clone()
+                } else {
+                    e.clone().alias(name)
+                };
                 splitter.aggregates.push(e);
             } else if !matches_group_key {
                 // Non-aggregated columns must be part of the GROUP BY clause
