@@ -2692,23 +2692,21 @@ impl DataFrame {
 
 /// Cursor over the chunks a [`DataFrame`] is laid out along.
 struct ChunkCursor<'a> {
-    /// The chunks of the first column that has any; empty when no column does.
-    chunks: &'a [ArrayRef],
+    /// The chunk lengths of the first column that has chunks (a series, or a dictionary
+    /// column's codes), as `first_col_chunk_lengths`; empty when no column has.
+    chunks: Vec<usize>,
     height: usize,
     idx: usize,
+    _df: std::marker::PhantomData<&'a DataFrame>,
 }
 
 impl<'a> ChunkCursor<'a> {
     fn new(df: &'a DataFrame) -> Self {
-        let chunks = match df.columns().iter().find_map(Column::as_series) {
-            Some(s) => s.chunks().as_slice(),
-            None => &[],
-        };
-
         Self {
-            chunks,
+            chunks: df.first_col_chunk_lengths().collect(),
             height: df.height(),
             idx: 0,
+            _df: std::marker::PhantomData,
         }
     }
 
@@ -2724,7 +2722,7 @@ impl<'a> ChunkCursor<'a> {
         }
 
         self.idx += 1;
-        Some((idx, self.chunks.get(idx).map_or(self.height, |c| c.len())))
+        Some((idx, self.chunks.get(idx).copied().unwrap_or(self.height)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

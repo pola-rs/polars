@@ -439,6 +439,17 @@ impl DictionaryColumn {
         out
     }
 
+    /// An empty column that holds no dictionary of its own to keep alive: it adopts the
+    /// dictionary of the first column appended to it.
+    pub fn new_empty(name: PlSmallStr) -> Self {
+        let dict = SharedDictionary::new(Utf8ViewArray::new_empty(
+            polars_arrow::datatypes::ArrowDataType::Utf8View,
+        ));
+        let codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, Vec::new());
+        // SAFETY: there are no rows.
+        unsafe { Self::new_unchecked(name, dict, codes) }
+    }
+
     /// Appends `other`'s codes. With another dictionary, `other`'s values that this dictionary
     /// lacks are added to it (into a new dictionary, unless there are none) and `other`'s codes
     /// remapped, if the merged dictionary has no more values than the rows of both, as otherwise
@@ -450,6 +461,9 @@ impl DictionaryColumn {
     /// the existing dictionary's views, lookup and cached hashes, so this method returns false
     /// when that extension would copy more existing entries than `other` has rows.
     pub fn try_append(&mut self, other: &DictionaryColumn) -> bool {
+        if other.is_empty() {
+            return true;
+        }
         if self.dict.id != other.dict.id {
             if self.is_empty() {
                 // Nothing to keep: take `other`'s dictionary and codes, as they are.
@@ -622,19 +636,14 @@ impl DictionaryColumn {
     /// per input value.
     ///
     /// Only values that rows use are evaluated, so `f` errors exactly when it would on the rows.
-    /// When that is not fewer values than rows, `f` is evaluated on the materialized column.
+    /// When that is not fewer values than rows, `f` is evaluated on the materialized column. A
+    /// dictionary larger than the rows (a slice or filter) is not a reason: `used_codes` finds the
+    /// used values in time linear in the rows.
     pub fn apply_elementwise(
         &self,
         f: impl FnOnce(&Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Column> {
         let max_evaluated = self.len() / 2;
-        // A dictionary larger than the rows (a slice or filter of a bigger column) can repeat its
-        // values at most as often as the rows allow, so what the dictionary pass saves is at most
-        // the one evaluation per row that the pass itself repeats for every expression on the
-        // column. Evaluate on the rows directly.
-        if self.dict.len() > self.len() {
-            return f(self.as_materialized_series()).map(Column::from);
-        }
         let Some((used, mut row_slots)) = self.used_codes(max_evaluated) else {
             return f(self.as_materialized_series()).map(Column::from);
         };
@@ -956,19 +965,41 @@ mod test {
     }
 
     #[test]
-    fn clear_drops_the_dictionary() {
+    fn clear_keeps_a_dictionary_column_without_its_dictionary() {
         let col = Column::from(dict_column(&["x", "y"], &[Some(0), Some(1)]));
         let mut empty = col.clear();
-        assert!(empty.as_dictionary_column().is_none());
+        let d = empty.as_dictionary_column().unwrap();
+        assert_eq!(d.dict().len(), 0);
         assert_eq!(empty.dtype(), &DataType::String);
         assert_eq!(empty.len(), 0);
-        // An empty plain column appends to and from dictionary columns.
-        let mut c = col.clone();
-        c.append(&empty).unwrap();
-        assert_eq!(c.len(), 2);
+        // It adopts the dictionary of the next column appended, and stays coded.
         empty.append(&col).unwrap();
-        assert_eq!(empty.len(), 2);
+        let d = empty.as_dictionary_column().unwrap();
+        assert_eq!(d.dict().len(), 2);
         assert_eq!(empty.str().unwrap().get(1), Some("y"));
+    }
+
+    #[test]
+    fn try_append_empty_other_is_a_no_op() {
+        let mut a = dict_column(&["x", "y", "z"], &[Some(0)]);
+        let id = a.dict().id();
+        let b = dict_column(&["q"], &[]);
+        assert!(a.try_append(&b));
+        assert_eq!(a.dict().id(), id);
+        assert_eq!(a.len(), 1);
+    }
+
+    #[test]
+    fn apply_elementwise_on_a_filtered_big_dictionary_stays_coded() {
+        let dict: Vec<String> = (0..2000).map(|i| format!("value-{i}")).collect();
+        let dict: Vec<&str> = dict.iter().map(String::as_str).collect();
+        let codes: Vec<Option<u32>> = (0..200).map(|i| Some((i % 5) * 7)).collect();
+        let col = dict_column(&dict, &codes);
+        let out = col.apply_elementwise(|s| Ok(s.clone())).unwrap();
+        // Only the 5 used values were evaluated: the result has a 5-value dictionary.
+        let d = out.as_dictionary_column().expect("stays coded");
+        assert_eq!(d.dict().len(), 5);
+        assert_eq!(out.str().unwrap().get(8), Some("value-21"));
     }
 
     #[test]
@@ -991,6 +1022,63 @@ mod test {
                 .get(95),
             Some(1)
         );
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-struct")]
+    fn strict_cast_to_nested_checks_the_fields() {
+        let col = Column::from(dict_column(&["bad", "1"], &[Some(0), Some(1), Some(1)]));
+        let dtype = DataType::Struct(vec![Field::new("n".into(), DataType::Int64)]);
+        // The equivalent String column raises; so must the dictionary column.
+        assert!(col.as_materialized_series().strict_cast(&dtype).is_err());
+        assert!(col.strict_cast(&dtype).is_err());
+        assert!(col.cast_with_options(&dtype, CastOptions::Strict).is_err());
+    }
+
+    #[test]
+    fn split_chunks_of_a_dictionary_only_frame() {
+        let values = Utf8ViewArray::from_slice_values(["x", "y"]);
+        let mut codes = UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[0, 1, 0]);
+        codes
+            .append(&UInt32Chunked::from_slice(PlSmallStr::EMPTY, &[1, 1]))
+            .unwrap();
+        assert_eq!(codes.chunks().len(), 2);
+        let col =
+            DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
+        let mut df = DataFrame::new_infer_height(vec![Column::from(col)]).unwrap();
+        assert_eq!(df.first_col_n_chunks(), 2);
+        let parts: Vec<DataFrame> = df.split_chunks().collect();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].height(), 3);
+        assert_eq!(parts[1].height(), 2);
+        for p in &parts {
+            assert_eq!(p.columns()[0].len(), p.height());
+        }
+        let last = parts[1].columns()[0]
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .clone();
+        assert_eq!(last.get(0), Some("y"));
+    }
+
+    #[test]
+    fn chunk_iterators_and_split_follow_dictionary_code_chunks() {
+        let values = Utf8ViewArray::from_slice_values(["x", "y"]);
+        let mut codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, vec![0; 1000]);
+        codes
+            .append(&UInt32Chunked::from_vec(PlSmallStr::EMPTY, vec![1; 1000]))
+            .unwrap();
+        let col =
+            DictionaryColumn::try_new("s".into(), SharedDictionary::new(values), codes).unwrap();
+        let df = DataFrame::new_infer_height(vec![Column::from(col)]).unwrap();
+        assert_eq!(df.iter_chunks(CompatLevel::newest(), false).count(), 2);
+        assert_eq!(df.iter_chunks_physical().count(), 2);
+        let parts = crate::utils::split(&df, 2);
+        assert_eq!(parts.len(), 2);
+        assert!(parts.iter().all(|p| p.height() == 1000));
+        let parts = crate::utils::split_and_flatten(&df, 2);
+        assert_eq!(parts.len(), 2);
     }
 
     #[test]

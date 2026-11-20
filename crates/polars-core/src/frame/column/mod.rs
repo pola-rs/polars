@@ -519,6 +519,14 @@ impl Column {
     /// that nulls a value (or errors) casts the rows strictly, so that the error counts failing
     /// rows, not distinct values.
     fn strict_cast_dictionary(&self, d: &DictionaryColumn, dtype: &DataType) -> PolarsResult<Self> {
+        // Nested targets null fields inside a valid outer value, which the outer null count
+        // cannot see: always cast the rows strictly.
+        if dtype.is_nested() {
+            return self
+                .as_materialized_series()
+                .strict_cast(dtype)
+                .map(Column::from);
+        }
         let out = d.apply_elementwise(|s| s.cast_with_options(dtype, CastOptions::NonStrict));
         match out {
             Ok(out) if out.null_count() == d.null_count() => Ok(out),
@@ -578,7 +586,7 @@ impl Column {
         match self {
             Column::Series(s) => s.clear().into(),
             Column::Scalar(s) => s.resize(0).into(),
-            Column::Dictionary(s) => Series::new_empty(s.name().clone(), s.dtype()).into(),
+            Column::Dictionary(s) => DictionaryColumn::new_empty(s.name().clone()).into_column(),
         }
     }
 
