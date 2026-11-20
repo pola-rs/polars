@@ -165,12 +165,31 @@ def test_series_init_pandas_timestamp_out_of_datetime_range() -> None:
     assert result.dt.epoch("s").item() == 253402300800
 
 
+def test_series_init_pandas_timestamp_out_of_datetime_range_time_zone() -> None:
+    ts = pd.Timestamp(np.datetime64("10000-01-01", "s"))
+    try:
+        ts = ts.tz_localize("America/New_York")
+    except (NotImplementedError, ValueError):
+        pytest.skip("this pandas version cannot localize out-of-range Timestamps")
+    result = pl.Series([ts])
+    assert result.dtype == pl.Datetime("us", "America/New_York")
+    assert result.dt.epoch("s").item() == 253402300800 + 5 * 3600
+
+
 def test_series_init_pandas_timestamp_time_zone() -> None:
-    result = pl.Series([pd.Timestamp("2200-07-01 12:00", tz="Europe/Amsterdam")])
+    tz = ZoneInfo("Europe/Amsterdam")
+    result = pl.Series([pd.Timestamp("2200-07-01 12:00", tz=tz)])
     assert result.dtype == pl.Datetime("us", "Europe/Amsterdam")
-    assert result.item() == datetime(
-        2200, 7, 1, 12, tzinfo=ZoneInfo("Europe/Amsterdam")
-    )
+    assert result.item() == datetime(2200, 7, 1, 12, tzinfo=tz)
+
+
+def test_series_init_datetime_subclass_from_pandas_named_module() -> None:
+    class Datetime(datetime):
+        pass
+
+    Datetime.__module__ = "pandas_helpers"
+    result = pl.Series([Datetime(2000, 1, 1)])
+    assert result.item() == datetime(2000, 1, 1)
 
 
 def test_series_init_pandas_timestamp_nanoseconds_before_epoch() -> None:

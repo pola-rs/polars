@@ -213,6 +213,12 @@ jobs:
           pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_iceberg.py
           pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_iceberg_plugin_suite.py
 
+      - name: Run free-threaded tests
+        if: github.event_name != 'push' && matrix.python-version == '3.15t'
+        run: |
+          uv pip install $(grep -E '^(numpy|pandas|pyarrow|pydantic|hypothesis|pytest|pytest-xdist)([<>=!~]|$)' requirements-dev.txt)
+          pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/constructors tests/unit/operations/test_comparison.py
+
       - name: Check import without optional dependencies
         if: github.event_name != 'push' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.15t')
         run: |

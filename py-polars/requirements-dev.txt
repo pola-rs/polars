@@ -6,7 +6,7 @@
 # BUILD
 # -----
 
-maturin>=1.14.0
+maturin>=1.15.0
 # extra dependency for maturin (linux-only)
 patchelf; platform_system == 'Linux'
 pip

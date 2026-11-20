@@ -325,6 +325,17 @@ jobs:
           manylinux: auto
           maturin-version: 1.15.0
 
+      - name: Check wheel tag
+        env:
+          TAG: ${{ matrix.abi == 'abi3t' && 'cp315-abi3.abi3t' || 'cp311-abi3' }}
+        run: |
+          for wheel in dist/*.whl; do
+            if [[ "$(basename "$wheel")" != *"-$TAG-"* ]]; then
+              echo "::error::$wheel does not have the $TAG tag"
+              exit 1
+            fi
+          done
+
       - name: Test wheel
         # Testing on entire matrix except musl targets, which are missing on all ubuntu-x images.
         if: endsWith(matrix.target, '-musl') == false

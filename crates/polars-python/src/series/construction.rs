@@ -7,12 +7,12 @@ use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::types::NativeType;
 use polars_buffer::{Buffer, SharedStorage};
-use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::PySeries;
-use crate::conversion::Wrap;
 use crate::conversion::any_value::py_object_to_any_value;
+use crate::conversion::{Wrap, py_int_to_u128};
 use crate::error::PyPolarsErr;
 use crate::interop::arrow::to_rust::array_to_rust;
 use crate::prelude::ObjectValue;
@@ -224,19 +224,7 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 impl PySeries {
     #[staticmethod]
     fn new_opt_u128(name: &str, obj: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
-        new_primitive::<UInt128Type, _>(name, obj, strict, |v| {
-            let py = v.py();
-            let int =
-                unsafe { Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyNumber_Index(v.as_ptr()))? };
-            // On Python >= 3.14 negative values raise a ValueError instead of an OverflowError.
-            int.extract::<u128>().map_err(|err| {
-                if err.is_instance_of::<PyValueError>(py) {
-                    PyOverflowError::new_err(err.value(py).to_string())
-                } else {
-                    err
-                }
-            })
-        })
+        new_primitive::<UInt128Type, _>(name, obj, strict, |v| py_int_to_u128(&v))
     }
 }
 
