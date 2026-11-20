@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::array::{Array, StructArray};
+use polars_arrow::array::StructArray;
 use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
@@ -79,7 +79,7 @@ pub struct MorselSerializer {
 }
 
 impl MorselSerializer {
-    pub async fn serialize_morsel(mut self, mut df: DataFrame) -> PolarsResult<Self> {
+    pub async fn serialize_morsel(mut self, df: DataFrame) -> PolarsResult<Self> {
         let MorselSerializer {
             serialized_data,
             allocation_size,
@@ -87,30 +87,41 @@ impl MorselSerializer {
         } = &mut self;
 
         let task_metrics = task_metrics.as_deref();
-        rechunk_par(unsafe { df.columns_mut_retain_schema() }, task_metrics).await;
 
         serialized_data.clear();
         serialized_data.reserve_exact(*allocation_size);
 
-        let height = df.height();
+        // Only a Polars Map exports to an arrow MAP here.
+        let pieces = if df.columns().iter().any(|c| c.dtype().contains_map()) {
+            let arrow_dtypes: Vec<_> = df
+                .columns()
+                .iter()
+                .map(|c| c.dtype().to_arrow(CompatLevel::newest()))
+                .collect();
+            // Planned before rechunking, so that an oversized Map is never copied into one chunk.
+            df.split_for_arrow_export(&arrow_dtypes)
+        } else {
+            vec![df]
+        };
+        for mut df in pieces {
+            rechunk_par(unsafe { df.columns_mut_retain_schema() }, task_metrics).await;
+            let height = df.height();
 
-        let (arrays, fields): (Vec<Box<dyn Array>>, Vec<ArrowField>) = df
-            .into_columns()
-            .into_iter()
-            .map(|c| {
+            let mut arrays = Vec::with_capacity(df.width());
+            let mut fields = Vec::with_capacity(df.width());
+            for c in df.into_columns() {
                 let name = c.name().clone();
-                let arr = c.rechunk_to_arrow(CompatLevel::newest());
+                let s = c.take_materialized_series();
+                debug_assert_eq!(s.n_chunks(), 1);
+                let arr = s.try_to_arrow(0, CompatLevel::newest())?;
+                fields.push(ArrowField::new(name, arr.dtype().clone(), true));
+                arrays.push(arr);
+            }
 
-                let field = ArrowField::new(name, arr.dtype().clone(), true);
-
-                (arr, field)
-            })
-            .unzip();
-
-        let array = StructArray::new(ArrowDataType::Struct(fields), height, arrays, None);
-        let serializer = polars_json::json::write::new_serializer(&array, 0, usize::MAX);
-
-        serializer.serialize_json_lines_to_vec(serialized_data, height);
+            let array = StructArray::new(ArrowDataType::Struct(fields), height, arrays, None);
+            let serializer = polars_json::json::write::new_serializer(&array, 0, usize::MAX);
+            serializer.serialize_json_lines_to_vec(serialized_data, height);
+        }
         *allocation_size = usize::max(*allocation_size, serialized_data.capacity());
 
         Ok(self)

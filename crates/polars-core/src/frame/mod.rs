@@ -2809,13 +2809,9 @@ impl<'a> RecordBatchIter<'a> {
                 let Some(sc) = c.as_scalar_column() else {
                     return Some(MapColumn { idx, row: None });
                 };
-                let row = sc.as_single_value_series().rechunk();
                 // An empty Scalar column has no row, and the frame then has none either.
-                let row = row.chunks().first().filter(|row| row.len() == 1)?.clone();
-                Some(MapColumn {
-                    idx,
-                    row: Some(row),
-                })
+                let row = Some(chunks::scalar_column_row(sc)?);
+                Some(MapColumn { idx, row })
             })
             .collect();
 

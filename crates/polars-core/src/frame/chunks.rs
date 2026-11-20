@@ -3,8 +3,12 @@ use std::ops::Range;
 use polars_arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
+use crate::frame::column::ScalarColumn;
 use crate::prelude::*;
 use crate::runtime::RAYON;
+use crate::series::arrow_export::{
+    MAX_MAP_ENTRIES, arrow_export_cut, contains_arrow_map, map_spans_fit, max_map_span,
+};
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 
 impl From<RecordBatch> for DataFrame {
@@ -105,6 +109,129 @@ impl DataFrame {
         self.into_columns()
             .into_iter()
             .map(|c| c.rechunk_to_arrow(compat_level))
+            .collect()
+    }
+}
+
+/// The one row a Scalar column repeats, as an array; `None` for an empty column, which has none.
+pub(crate) fn scalar_column_row(sc: &ScalarColumn) -> Option<ArrayRef> {
+    let row = sc.as_single_value_series().rechunk();
+    row.chunks().first().filter(|row| row.len() == 1).cloned()
+}
+
+impl DataFrame {
+    /// Slices of this frame that each export to `arrow_dtypes`, one per column, without
+    /// overflowing the `i32` offsets of an arrow MAP; just the frame unless one would.
+    ///
+    /// The columns may be chunked differently, and nothing is rechunked: a frame that may
+    /// overflow is first cut at the chunk boundaries of its MAP columns, which can give more
+    /// slices than needed.
+    pub fn split_for_arrow_export<'a>(
+        self,
+        arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
+    ) -> Vec<DataFrame> {
+        let dtypes: Vec<_> = arrow_dtypes.into_iter().collect();
+        assert_eq!(dtypes.len(), self.width(), "one arrow dtype per column");
+        let height = self.height();
+        // Before any row is read, as an empty Scalar column has none.
+        if height == 0 || !dtypes.iter().any(|d| contains_arrow_map(d)) {
+            return vec![self];
+        }
+        // Each MAP column, with the one row it repeats if it is a Scalar column.
+        let map_columns: Vec<_> = self
+            .columns()
+            .iter()
+            .zip(&dtypes)
+            .filter(|(_, dtype)| contains_arrow_map(dtype))
+            .map(|(c, dtype)| (c, *dtype, c.as_scalar_column().and_then(scalar_column_row)))
+            .collect();
+
+        // The spans of all chunks added up bound every MAP of the frame.
+        let fits = map_columns
+            .iter()
+            .all(|(c, dtype, row)| match (c.as_scalar_column(), row) {
+                (Some(_), Some(row)) => map_spans_fit(row.as_ref(), dtype, 0..1, height),
+                (Some(_), None) => true,
+                (None, _) => {
+                    c.as_materialized_series()
+                        .chunks()
+                        .iter()
+                        .map(|arr| max_map_span(arr.as_ref(), 0..arr.len(), dtype))
+                        .fold(0u64, u64::saturating_add)
+                        <= MAX_MAP_ENTRIES
+                },
+            });
+        if fits {
+            return vec![self];
+        }
+
+        // Within a candidate, each chunked MAP column is a slice of one of its chunks.
+        let mut cuts = vec![0, height];
+        for (c, _, _) in &map_columns {
+            if c.as_scalar_column().is_none() {
+                let lengths = c.as_materialized_series().chunk_lengths();
+                cuts.extend(lengths.scan(0, |end, len| {
+                    *end += len;
+                    Some(*end)
+                }));
+            }
+        }
+        cuts.sort_unstable();
+        cuts.dedup();
+
+        let mut cursors = vec![(0, 0); map_columns.len()];
+        let mut ranges = Vec::new();
+        for candidate in cuts.windows(2).map(|w| w[0]..w[1]) {
+            let arrays: Vec<(ArrayRef, &ArrowDataType, bool)> = map_columns
+                .iter()
+                .zip(&mut cursors)
+                .filter_map(|((c, dtype, row), (idx, start))| {
+                    if c.as_scalar_column().is_some() {
+                        return row.as_ref().map(|row| (row.clone(), *dtype, true));
+                    }
+                    let chunks = c.as_materialized_series().chunks();
+                    while *start + chunks[*idx].len() <= candidate.start {
+                        *start += chunks[*idx].len();
+                        *idx += 1;
+                    }
+                    let arr = chunks[*idx].sliced(candidate.start - *start, candidate.len());
+                    Some((arr, *dtype, false))
+                })
+                .collect();
+            let fits = |r: Range<usize>| {
+                arrays.iter().all(|(arr, dtype, repeated)| {
+                    if *repeated {
+                        map_spans_fit(arr.as_ref(), dtype, 0..1, r.len())
+                    } else {
+                        map_spans_fit(arr.as_ref(), dtype, r.clone(), 1)
+                    }
+                })
+            };
+            let mut start = 0;
+            while start < candidate.len() {
+                let end = arrow_export_cut(start..candidate.len(), fits);
+                ranges.push(candidate.start + start..candidate.start + end);
+                start = end;
+            }
+        }
+
+        ranges
+            .into_iter()
+            .map(|r| {
+                let columns = self
+                    .columns()
+                    .iter()
+                    .map(|c| match c {
+                        // `Column::slice` makes a one-row Series a Scalar by reading its row,
+                        // which can panic where the export of that row would return an error.
+                        Column::Series(s) => Column::Series(s.slice(r.clone()).into()),
+                        _ => c.slice(r.clone()),
+                    })
+                    .collect();
+                // SAFETY: every column is sliced to the `r.len()` rows of `r`, and keeps its
+                // name and dtype.
+                unsafe { DataFrame::new_unchecked(r.len(), columns).with_schema_from(&self) }
+            })
             .collect()
     }
 }

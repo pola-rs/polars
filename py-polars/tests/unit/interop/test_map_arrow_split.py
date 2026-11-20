@@ -8,13 +8,14 @@ from itertools import accumulate
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 # One xdist worker, so that only one copy of the ~1 GB `df` fixture is alive.
 pytestmark = [pytest.mark.slow, pytest.mark.xdist_group("map_arrow_split")]
@@ -222,6 +223,83 @@ def test_write_ipc_stream_splits_an_oversized_map_chunk(df: pl.DataFrame) -> Non
 
     assert batch_rows(table) == [3, 3]
     assert table.column("i").to_pylist() == [0, 1, 2, 3, 4, 5]
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda df, f: df.write_ipc(f, compression="zstd"),
+        lambda df, f: df.lazy().sink_ipc(f, compression="zstd"),
+    ],
+    ids=["write_ipc", "sink_ipc"],
+)
+def test_ipc_file_writers_split_an_oversized_map_chunk(
+    df: pl.DataFrame, write: Callable[[pl.DataFrame, io.BytesIO], object]
+) -> None:
+    f = io.BytesIO()
+    write(df, f)
+    f.seek(0)
+    table = pa.ipc.open_file(f).read_all()
+
+    assert batch_rows(table) == [3, 3]
+    assert table.column("i").to_pylist() == [0, 1, 2, 3, 4, 5]
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda df, f: df.write_ipc(f),
+        lambda df, f: df.lazy().sink_ipc(f),
+    ],
+    ids=["write_ipc", "sink_ipc"],
+)
+def test_ipc_file_writers_split_a_struct_of_a_map_and_a_categorical(
+    df: pl.DataFrame, write: Callable[[pl.DataFrame, io.BytesIO], object]
+) -> None:
+    c = pl.Series(["x"] * 3 + ["y"] * 3, dtype=pl.Categorical)
+    out = df.select(n=pl.struct("m", c=c))
+
+    f = io.BytesIO()
+    write(out, f)
+    f.seek(0)
+    table = pa.ipc.open_file(f).read_all()
+
+    assert batch_rows(table) == [3, 3]
+    n_c = [batch["n"].field("c").to_pylist() for batch in table.to_batches()]
+    assert n_c == [["x"] * 3, ["y"] * 3]
+
+
+def test_sink_ipc_exports_a_one_row_piece(df: pl.DataFrame) -> None:
+    # Reading the last row of `l` as a value would build a Series of 2^32 nulls,
+    # which overflows the index type of the 32-bit runtime.
+    n = 2**32
+    offsets = pa.array([0, 0, 0, 0, n], pa.int64())
+    lists = pl.Series(pa.LargeListArray.from_arrays(offsets, pa.nulls(n)))
+    four = df.slice(1, 4).with_columns(l=lists)
+
+    f = io.BytesIO()
+    four.lazy().sink_ipc(f)
+    f.seek(0)
+    table = pa.ipc.open_file(f).read_all()
+
+    assert batch_rows(table) == [3, 1]
+    assert pc.list_value_length(table.column("l")).to_pylist() == [0, 0, 0, n]
+
+
+def test_sink_ipc_splits_a_map_column_with_several_chunks() -> None:
+    chunk = map_chunk([ROW, ROW])
+    table = pa.table({"m": pa.chunked_array([chunk, chunk, chunk])})
+    df = pl.from_arrow(table)
+    assert isinstance(df, pl.DataFrame)
+    assert df.n_chunks() == 3
+
+    f = io.BytesIO()
+    df.lazy().sink_ipc(f)
+    f.seek(0)
+
+    entries = map_entries(pa.ipc.open_file(f).read_all(), "m")
+    assert sum(entries) == 6 * ROW
+    assert all(n <= MAX_ENTRIES for n in entries)
 
 
 def test_serialize_splits_an_oversized_map_chunk(df: pl.DataFrame) -> None:
