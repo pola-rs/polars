@@ -28,6 +28,18 @@ pub fn filter_values<T: Pod>(values: &[T], mask: &Bitmap) -> Vec<T> {
     }
 }
 
+/// Writes the values that `mask` selects to `out`.
+///
+/// # Safety
+/// `out` must have room for `mask.set_bits() + 1` values: the last write may be speculative.
+pub unsafe fn filter_values_into<T: Pod>(values: &[T], mask: &Bitmap, out: *mut T) {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let (values, mask_bytes, out) = scalar_filter_offset(values, mask, out);
+        scalar_filter(values, mask_bytes, out);
+    }
+}
+
 fn filter_values_u8(values: &[u8], mask: &Bitmap) -> Vec<u8> {
     #[cfg(all(target_arch = "x86_64", feature = "simd"))]
     if is_avx512_enabled() && std::arch::is_x86_feature_detected!("avx512vbmi2") {
