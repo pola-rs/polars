@@ -302,6 +302,7 @@ jobs:
           args: >
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
+            --compression-level 9
             --out dist
           manylinux: auto
           maturin-version: 1.15.0
