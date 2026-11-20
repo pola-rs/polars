@@ -195,7 +195,7 @@ mod tests {
         );
         let df = DataFrame::new_infer_height(vec![m.into_column(), i.into_column()]).unwrap();
 
-        let mut batches = RecordBatchIter::new(&df, CompatLevel::newest(), false);
+        let mut batches = RecordBatchIter::new(Cow::Borrowed(&df), CompatLevel::newest(), false);
 
         let err = batches.next().unwrap().unwrap_err();
         assert!(matches!(err, PolarsError::ShapeMismatch(_)), "{err}");
@@ -322,7 +322,7 @@ mod tests {
         let scalar = scalar_map_column((0..1 << 20).collect(), 4096);
         let small = map_series(vec![map_chunk(&[1; 4096], None)]).with_name("small".into());
         let df = DataFrame::new_infer_height(vec![small.into_column(), scalar]).unwrap();
-        let batches = RecordBatchIter::new(&df, CompatLevel::newest(), false);
+        let batches = RecordBatchIter::new(Cow::Borrowed(&df), CompatLevel::newest(), false);
         let mut ends = vec![];
         let mut start = 0;
         while start < df.height() {

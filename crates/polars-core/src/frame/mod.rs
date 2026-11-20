@@ -2162,20 +2162,23 @@ impl DataFrame {
     /// Like [`DataFrame::iter_chunks`], but yields export errors, such as a row with more map
     /// entries than the `i32` offsets of an arrow MAP can hold.
     ///
-    /// The columns' chunks must be aligned, as for [`DataFrame::iter_chunks`]. The iterator holds
-    /// a clone of the frame, so it doesn't borrow it.
+    /// The columns' chunks must be aligned, as for [`DataFrame::iter_chunks`].
     pub fn try_iter_chunks(
         &self,
         compat_level: CompatLevel,
         parallel: bool,
-    ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + use<> {
-        debug_assert!(!self.should_rechunk(), "expected equal chunks");
+    ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + '_ {
+        RecordBatchIterWrap::new(Cow::Borrowed(self), compat_level, parallel)
+    }
 
-        if self.width() == 0 {
-            return RecordBatchIterWrap::new_zero_width(self.height());
-        }
-
-        RecordBatchIterWrap::Batches(RecordBatchIter::new(self, compat_level, parallel))
+    /// Like [`DataFrame::try_iter_chunks`], but the iterator owns the frame, for consumers that
+    /// outlive it, such as an arrow C stream.
+    pub fn into_try_iter_chunks(
+        self,
+        compat_level: CompatLevel,
+        parallel: bool,
+    ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + 'static {
+        RecordBatchIterWrap::new(Cow::Owned(self), compat_level, parallel)
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches as physical values.
@@ -2724,8 +2727,8 @@ impl ChunkCursor {
     }
 }
 
-pub struct RecordBatchIter {
-    df: DataFrame,
+pub struct RecordBatchIter<'a> {
+    df: Cow<'a, DataFrame>,
     schema: ArrowSchemaRef,
     cursor: ChunkCursor,
     compat_level: CompatLevel,
@@ -2776,9 +2779,9 @@ fn column_to_arrow(
     }
 }
 
-impl RecordBatchIter {
+impl<'a> RecordBatchIter<'a> {
     /// See [`DataFrame::try_iter_chunks`], for a `df` with at least one column.
-    pub(crate) fn new(df: &DataFrame, compat_level: CompatLevel, parallel: bool) -> Self {
+    pub(crate) fn new(df: Cow<'a, DataFrame>, compat_level: CompatLevel, parallel: bool) -> Self {
         // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.
         let must_convert = compat_level.0 == 0;
@@ -2817,9 +2820,9 @@ impl RecordBatchIter {
             .collect();
 
         Self {
-            df: df.clone(),
+            cursor: ChunkCursor::new(&df),
+            df,
             schema,
-            cursor: ChunkCursor::new(df),
             compat_level,
             parallel,
             map_columns,
@@ -2920,7 +2923,7 @@ impl RecordBatchIter {
     }
 }
 
-impl Iterator for RecordBatchIter {
+impl Iterator for RecordBatchIter<'_> {
     type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -3005,11 +3008,21 @@ pub enum RecordBatchIterWrap<'a> {
         remaining_height: usize,
         chunk_size: usize,
     },
-    Batches(RecordBatchIter),
+    Batches(RecordBatchIter<'a>),
     PhysicalBatches(PhysRecordBatchIter<'a>),
 }
 
 impl<'a> RecordBatchIterWrap<'a> {
+    fn new(df: Cow<'a, DataFrame>, compat_level: CompatLevel, parallel: bool) -> Self {
+        debug_assert!(!df.should_rechunk(), "expected equal chunks");
+
+        if df.width() == 0 {
+            return Self::new_zero_width(df.height());
+        }
+
+        Self::Batches(RecordBatchIter::new(df, compat_level, parallel))
+    }
+
     fn new_zero_width(height: usize) -> Self {
         Self::ZeroWidth {
             remaining_height: height,
