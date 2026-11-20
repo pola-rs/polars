@@ -928,7 +928,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// the end of the string.
     fn str_head(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        let n = n.strict_cast(&DataType::Int64)?;
+        let n = crate::chunked_array::count_as_i64(n)?;
 
         substring::head(ca, n.i64()?)
     }
@@ -939,7 +939,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// negative, in which case the slice begins `n` characters from the start of the string.
     fn str_tail(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        let n = n.strict_cast(&DataType::Int64)?;
+        let n = crate::chunked_array::count_as_i64(n)?;
 
         substring::tail(ca, n.i64()?)
     }

@@ -90,7 +90,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     /// element. `n` can be negative, in which case the slice ends `n` bytes from the end.
     fn bin_head(&self, n: &Column) -> PolarsResult<BinaryChunked> {
         let ca = self.as_binary();
-        let n = n.strict_cast(&DataType::Int64)?;
+        let n = crate::chunked_array::count_as_i64(n)?;
 
         super::slice::head(ca, n.i64()?)
     }
@@ -101,7 +101,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     /// negative, in which case the slice begins `n` bytes from the start.
     fn bin_tail(&self, n: &Column) -> PolarsResult<BinaryChunked> {
         let ca = self.as_binary();
-        let n = n.strict_cast(&DataType::Int64)?;
+        let n = crate::chunked_array::count_as_i64(n)?;
 
         super::slice::tail(ca, n.i64()?)
     }
