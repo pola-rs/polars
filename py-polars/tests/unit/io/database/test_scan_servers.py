@@ -9009,7 +9009,12 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
         ]
         for kwargs in variants:
             for _ in range(3):
-                ids = pl.scan_database(table, engine, **kwargs).collect()["id"]
+                try:
+                    ids = pl.scan_database(table, engine, **kwargs).collect()["id"]
+                except pl.exceptions.InvalidOperationError as e:
+                    # planned on a session that resolves the name to the other table
+                    assert "pooled connection" in str(e), str(e)
+                    continue
                 # whichever session was pinned, all rows come from its one table
                 assert ids.len() == 400
                 assert ids.min() in (1, 100001)
@@ -9067,6 +9072,153 @@ def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
     finally:
         engine.dispose()
         _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def _pool_sources(engine: Any, table: str) -> dict[str, Any]:
+    """The two ways a user's pool reaches a scan: an Engine, a factory over it."""
+    return {
+        "engine": lambda **kw: pl.scan_database(table, engine, **kw),
+        "factory": lambda **kw: pl.scan_database(
+            table, lambda: engine.raw_connection(), **kw
+        ),
+    }
+
+
+def _collect_pooled(make: Any, rounds: int = 6) -> tuple[int, list[pl.DataFrame]]:
+    """Collects a scan several times (the pool hands out its connections in turn): how
+    many raised the resolution error, and the frames of those that read."""
+    refused, frames = 0, []
+    for _ in range(rounds):
+        try:
+            frames.append(make().collect())
+        except pl.exceptions.InvalidOperationError as e:
+            assert "resolves" in str(e) and "pooled connection" in str(e), str(e)
+            refused += 1
+    return refused, frames
+
+
+@pytest.mark.parametrize("kind", ["engine", "factory"])
+def test_postgres_pool_session_resolving_another_relation_is_refused(
+    kind: str,
+) -> None:
+    # #576, round 44 fix review lead 1: planning on one pooled session and reading on
+    # another that resolves the name to another relation (a `search_path`, a temporary
+    # table, a temporary child) read the other relation, silently
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    schema, table = "vol_pg_rs_schema", "vol_pg_rs_t"
+    setup = [
+        f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+        f"DROP TABLE IF EXISTS public.{table} CASCADE",
+        f"CREATE SCHEMA {schema}",
+        f"CREATE TABLE public.{table} (id int, v int)",
+        f"INSERT INTO public.{table} SELECT g, g FROM generate_series(1, 100) g",
+        f"CREATE TABLE {schema}.{table} (id int, v int)",
+        f"INSERT INTO {schema}.{table} SELECT g + 1000, -1 FROM generate_series(1, 100) g",
+    ]
+    _execute("postgres17", setup)
+    try:
+        for variant, statements in {
+            "search_path": [f"SET search_path TO {schema}, public"],
+            "temporary table": [
+                f"CREATE TEMPORARY TABLE {table} (id int, v int)",
+                f"INSERT INTO {table} SELECT g + 1000, -1 FROM generate_series(1, 100) g",
+            ],
+            "temporary child": [
+                f"CREATE TEMPORARY TABLE {table}_child () INHERITS (public.{table})",
+                f"INSERT INTO {table}_child SELECT g + 1000, -1 "
+                "FROM generate_series(1, 100) g",
+            ],
+        }.items():
+            engine = sqlalchemy.create_engine(
+                _sqlalchemy_url(server.uri, "psycopg"), pool_size=4
+            )
+            try:
+                _prime_pool(engine, statements, idle=4)
+                make = _pool_sources(engine, table)[kind]
+                refused, frames = _collect_pooled(make)
+                assert refused > 0, variant
+                # what is read is the relation planned on: never the other's rows
+                for df in frames:
+                    assert df.height in (100, 200), variant
+            finally:
+                engine.dispose()
+    finally:
+        _execute(
+            "postgres17",
+            [
+                f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+                f"DROP TABLE IF EXISTS public.{table} CASCADE",
+            ],
+        )
+
+
+@pytest.mark.parametrize("kind", ["engine", "factory"])
+@pytest.mark.parametrize("name", ["postgres17", "mysql", "mariadb"])
+def test_pool_temp_table_on_one_session_is_refused_unless_all_have_one(
+    name: str, kind: str
+) -> None:
+    # lead 1: an unpartitioned read, a temporary table on one pooled connection that
+    # shadows a permanent one. Where every connection has its own temporary table of the
+    # name (a factory that makes one per connection) the read is fine.
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    driver = "psycopg" if name.startswith("postgres") else "pymysql"
+    if not _installed(driver):
+        pytest.skip(f"{driver} is not installed")
+    t = "vol_rs_shadow"
+    rows = ", ".join(f"({i}, {i})" for i in range(1, 101))
+    temp_rows = ", ".join(f"({i}, -1)" for i in range(1001, 1101))
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {t}",
+            f"CREATE TABLE {t} (id int, v int)",
+            f"INSERT INTO {t} VALUES {rows}",
+        ],
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, driver), pool_size=4, max_overflow=0
+    )
+    try:
+        _prime_pool(
+            engine,
+            [
+                f"CREATE TEMPORARY TABLE {t} (id int, v int)",
+                f"INSERT INTO {t} VALUES {temp_rows}",
+            ],
+            idle=4,
+        )
+        make = _pool_sources(engine, t)[kind]
+        refused, frames = _collect_pooled(make, rounds=8)
+        assert refused > 0
+        for df in frames:
+            assert df.height == 100
+        engine.dispose()
+        engine = sqlalchemy.create_engine(
+            _sqlalchemy_url(server.uri, driver), pool_size=4, max_overflow=0
+        )
+        # control: every pooled connection has its own temporary table of the name
+        conns = [engine.connect() for _ in range(4)]
+        for c in conns:
+            c.exec_driver_sql(f"CREATE TEMPORARY TABLE {t} (id int, v int)")
+            c.exec_driver_sql(f"INSERT INTO {t} VALUES {temp_rows}")
+            c.commit()
+        for c in conns:
+            c.close()
+        make = _pool_sources(engine, t)[kind]
+        refused, frames = _collect_pooled(make, rounds=8)
+        assert refused == 0
+        assert [df["id"].min() for df in frames] == [1001] * 8
+    finally:
+        engine.dispose()
+        _execute(name, [f"DROP TABLE IF EXISTS {t}"])
 
 
 def test_postgres_checkout_listener_sees_the_callers_context() -> None:

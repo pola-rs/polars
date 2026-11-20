@@ -1985,6 +1985,78 @@ pub fn temporary_relation(
     })
 }
 
+/// Whether `dialect` has a [`resolution_fingerprint`]: the dialects where a session's own state
+/// (Postgres' `search_path` and temporary tables, MySQL's default database and temporary tables)
+/// changes which relation a name resolves to.
+pub fn has_resolution_fingerprint(dialect: DialectName) -> bool {
+    matches!(
+        dialect,
+        DialectName::Postgresql | DialectName::Mysql | DialectName::Singlestore
+    )
+}
+
+/// How each of `names` resolves on this session, as text that is equal for two sessions that
+/// resolve a name to the same relation, or to a temporary table of their own: for Postgres each
+/// relation the name reads (the name itself and the tables inheriting from it) as
+/// `perm:schema.name:relkind` or `temp:relkind`; for MySQL / MariaDB / SingleStore the database
+/// and `temp` or `perm`. Session-specific ids (a temporary table's `pg_temp_N` schema, OIDs) are
+/// left out (and the temporary tables of other sessions, which `pg_class` lists too). One catalog statement on Postgres; MySQL has none that lists temporary tables, so
+/// one per name. `None`: the dialect has none, or the lookup failed.
+pub fn resolution_fingerprint(
+    session: &mut dyn DatabaseSession,
+    dialect: DialectName,
+    names: &[Vec<PlSmallStr>],
+) -> Option<Vec<String>> {
+    if names.is_empty() {
+        return None;
+    }
+    let qualified = |parts: &[PlSmallStr]| {
+        parts
+            .iter()
+            .map(|p| dialect.quote_ident(p))
+            .collect::<Vec<_>>()
+            .join(".")
+    };
+    match dialect {
+        DialectName::Postgresql => {
+            let cols = names
+                .iter()
+                .map(|parts| {
+                    format!(
+                        "(WITH RECURSIVE d(oid) AS (SELECT to_regclass({})::oid UNION ALL \
+                        SELECT i.inhrelid FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
+                        SELECT COALESCE(string_agg(x, '|' ORDER BY x), 'none') FROM (SELECT \
+                        CASE WHEN c.relpersistence = 't' THEN 'temp:' || c.relkind::text \
+                        ELSE 'perm:' || n.nspname || '.' || c.relname || ':' || c.relkind::text END \
+                        AS x FROM d JOIN pg_class c ON c.oid = d.oid \
+                        JOIN pg_namespace n ON n.oid = c.relnamespace \
+                        WHERE c.relpersistence <> 't' OR c.relnamespace = pg_my_temp_schema()) s)::text",
+                        dialect.quote_str(&qualified(parts))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let df = session.catalog_query(&format!("SELECT {cols}")).ok()?;
+            (0..names.len()).map(|i| cell_str(&df, i, 0)).collect()
+        },
+        DialectName::Mysql | DialectName::Singlestore => {
+            let df = session.catalog_query("SELECT DATABASE()").ok()?;
+            let default_db = cell_str(&df, 0, 0).unwrap_or_default();
+            let mut out = Vec::with_capacity(names.len());
+            for parts in names {
+                let db = match parts.as_slice() {
+                    [db, _] => db.to_string(),
+                    _ => default_db.clone(),
+                };
+                let temporary = temporary_relation(session, dialect, parts).is_some();
+                out.push(format!("{}:{db}", if temporary { "temp" } else { "perm" }));
+            }
+            Some(out)
+        },
+        _ => None,
+    }
+}
+
 /// Whether what an Oracle object shows depends on the session or the user: a global temporary
 /// table (each session has its own rows), an enabled Data Redaction policy, or an enabled VPD policy (`DBMS_RLS`, whose predicate
 /// may differ on each read, as `DBMS_RANDOM` does). A failed lookup of the first two counts as bound; the redaction view may be hidden from the user (no policy is seen then).

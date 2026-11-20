@@ -586,6 +586,7 @@ pub fn resolve_scan(
     // their values as text, whatever they are read as.
     let mut text_affinity: PlHashSet<PlSmallStr> = PlHashSet::new();
     let mut stats = TableStats::default();
+    let mut resolution: Option<Vec<String>> = None;
     let mut mixed_found: Vec<PlSmallStr> = Vec::new();
     let schema: SchemaRef;
     // the query columns SQL Server declares `money` or `smallmoney`
@@ -704,6 +705,9 @@ pub fn resolve_scan(
             };
         stats = info.stats;
         mixed_found = mixed_blobs;
+        if !options.connection.opened_by_plugin() && !options.connection.is_live() {
+            resolution = session_resolution(session.as_mut(), dialect, &options);
+        }
         let names = discovered.iter_names().cloned().collect::<Vec<_>>();
         volatility = source_volatility(
             session.as_mut(),
@@ -1339,6 +1343,7 @@ pub fn resolve_scan(
         user_schema: user_typed,
         derived_order_dropped,
         refused_columns: refused,
+        resolution,
         bounds_cache: Default::default(),
     })
 }
@@ -1453,6 +1458,91 @@ pub fn check_mysql_session_zone(
     Ok(())
 }
 
+/// The relations a source names (a table's name; the tables a query reads, if it parses).
+fn named_relations(options: &DatabaseScanOptions, dialect: DialectName) -> Vec<Vec<PlSmallStr>> {
+    match &options.relation {
+        DatabaseRelation::Table { parts, .. } => vec![parts.to_vec()],
+        DatabaseRelation::Query { sql } => {
+            match sql_renderer().and_then(|r| r.inspect_query(sql, dialect)) {
+                Ok(f) => f.tables,
+                // can't tell which tables it reads
+                Err(_) => vec![],
+            }
+        },
+    }
+}
+
+/// How the session resolves the relations the source names
+/// ([`catalog::resolution_fingerprint`]); `None` where there is nothing to compare.
+pub fn session_resolution(
+    session: &mut dyn DatabaseSession,
+    dialect: DialectName,
+    options: &DatabaseScanOptions,
+) -> Option<Vec<String>> {
+    if !catalog::has_resolution_fingerprint(dialect) {
+        return None;
+    }
+    catalog::resolution_fingerprint(session, dialect, &named_relations(options, dialect))
+}
+
+/// Postgres, MySQL, MariaDB, SingleStore: a read over connections the user made (a factory, an
+/// Engine's pool) must read the relation it planned. Pooled sessions differ in state the plugin
+/// can't list (`search_path`, a temporary table that shadows a permanent one, a temporary child
+/// of an inheritance parent), so planning on one checkout and reading on another can read another
+/// relation. Each session opened for a read resolves the planned names again, and a different
+/// answer is an error. `baseline` holds the first session's answer for a source planned without
+/// I/O (`schema=`), which then has none of its own.
+pub fn check_resolution(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+    baseline: &std::sync::Mutex<Option<Vec<String>>>,
+) -> PolarsResult<()> {
+    if config.options.connection.opened_by_plugin()
+        || config.options.connection.is_live()
+        || !catalog::has_resolution_fingerprint(config.dialect)
+    {
+        return Ok(());
+    }
+    let names = named_relations(&config.options, config.dialect);
+    if names.is_empty() {
+        return Ok(());
+    }
+    let found = catalog::resolution_fingerprint(session, config.dialect, &names);
+    let Some(found) = found else {
+        // planned with a fingerprint, but this session can't give one: not the same state
+        polars_ensure!(
+            config.resolution.is_none(),
+            InvalidOperation:
+            "could not check how this connection resolves the table names of the scan, which \
+            the scan was planned on another connection's session for"
+        );
+        return Ok(());
+    };
+    let mut guard = baseline.lock().unwrap();
+    let planned = match &config.resolution {
+        Some(p) => p,
+        None => guard.get_or_insert_with(|| found.clone()),
+    };
+    if let Some(i) = planned.iter().zip(&found).position(|(a, b)| a != b) {
+        let name = names[i]
+            .iter()
+            .map(|p| p.as_str())
+            .collect::<Vec<_>>()
+            .join(".");
+        polars_bail!(
+            InvalidOperation:
+            "this connection resolves '{name}' to {}, but the scan was planned on a session \
+            where it is {}: a pooled connection's session state (search_path, temporary \
+            tables, default database) differs from the one planned on. Read from one \
+            connection (a live connection, or a factory that returns a configured one), or \
+            qualify the name",
+            found[i],
+            planned[i]
+        );
+    }
+    Ok(())
+}
+
 /// Postgres, MySQL, MariaDB: a partitioned read over connections the user made (a factory, an
 /// Engine's pool) must not read a temporary table of a session. A temporary table shadows a
 /// permanent one of its name for the session that made it, so the partitions that land on other
@@ -1476,16 +1566,7 @@ pub fn check_temporary_relations(
     {
         return Ok(());
     }
-    let relations: Vec<Vec<PlSmallStr>> = match &config.options.relation {
-        DatabaseRelation::Table { parts, .. } => vec![parts.to_vec()],
-        DatabaseRelation::Query { sql } => {
-            match sql_renderer().and_then(|r| r.inspect_query(sql, config.dialect)) {
-                Ok(f) => f.tables,
-                // can't tell which tables it reads
-                Err(_) => vec![],
-            }
-        },
-    };
+    let relations = named_relations(&config.options, config.dialect);
     for parts in relations {
         if let Some(name) = catalog::temporary_relation(session, config.dialect, &parts) {
             polars_bail!(
