@@ -110,7 +110,7 @@ fn check_read_only(
 /// A query that is one `SELECT` without `INTO` (`SELECT … INTO t` creates a table), as far as
 /// its words show: a statement that can't be parsed is taken as a write otherwise. SQL Server
 /// runs statements with no `;` between them (`SELECT … FROM c EXEC('…')`): no word of the query
-/// may start a write there.
+/// may start a statement there ([`TSQL_STATEMENT_WORDS`]).
 fn plain_select(sql: &str, dialect: DialectName) -> bool {
     let sql = strip_statement_end(sql);
     let mut words = sql.split(|c: char| !c.is_alphanumeric() && c != '_');
@@ -118,7 +118,11 @@ fn plain_select(sql: &str, dialect: DialectName) -> bool {
         && !sql.contains(';')
         && !words.clone().any(|w| w.eq_ignore_ascii_case("INTO"))
         && !(dialect == DialectName::Mssql
-            && words.any(|w| WRITE_KEYWORDS.iter().any(|k| k.eq_ignore_ascii_case(w))))
+            && words.any(|w| {
+                TSQL_STATEMENT_WORDS
+                    .iter()
+                    .any(|k| k.eq_ignore_ascii_case(w))
+            }))
 }
 
 /// Whether every session of a scan is read-only, so that the database refuses a write: the
@@ -132,6 +136,57 @@ fn read_only_session(dialect: DialectName, backend: &BackendKind, live: bool) ->
             .iter()
             .any(|s| s.sql.contains("READ ONLY"))
 }
+
+/// Words that start a Transact-SQL statement, from SQL Server's reserved keywords (it rejects
+/// one as an alias, so one after a table is a statement). Not `FETCH` (`OFFSET … FETCH NEXT`).
+const TSQL_STATEMENT_WORDS: &[&str] = &[
+    "ALTER",
+    "BACKUP",
+    "BREAK",
+    "BULK",
+    "CHECKPOINT",
+    "CLOSE",
+    "COMMIT",
+    "CONTINUE",
+    "CREATE",
+    "DBCC",
+    "DEALLOCATE",
+    "DECLARE",
+    "DELETE",
+    "DENY",
+    "DROP",
+    "DUMP",
+    "EXEC",
+    "EXECUTE",
+    "GOTO",
+    "GRANT",
+    "IF",
+    "INSERT",
+    "KILL",
+    "LOAD",
+    "MERGE",
+    "OPEN",
+    "PRINT",
+    "RAISERROR",
+    "READTEXT",
+    "RECONFIGURE",
+    "RESTORE",
+    "RETURN",
+    "REVERT",
+    "REVOKE",
+    "ROLLBACK",
+    "SAVE",
+    "SET",
+    "SETUSER",
+    "SHUTDOWN",
+    "TRUNCATE",
+    "UPDATE",
+    "UPDATETEXT",
+    "USE",
+    "WAITFOR",
+    "WHILE",
+    "WRITETEXT",
+];
 
 /// The first word of a statement, after comments.
 fn first_keyword(sql: &str) -> &str {

@@ -2623,9 +2623,22 @@ def test_inspect_query_facts_do_not_cross_concurrent_calls(monkeypatch: Any) -> 
         "OPENXML",
         "x(a, b)",
         "y(EXEC)",
+        "AS EXEC",
+        "AS COMMIT",
+        "AS [x] EXEC('DELETE FROM victim')",
     ],
 )
-@pytest.mark.parametrize("head", ["SELECT id FROM c ", "SELECT id FROM s.c "])
+@pytest.mark.parametrize(
+    "head",
+    [
+        "SELECT id FROM c ",
+        "SELECT id FROM s.c ",
+        "SELECT id FROM c JOIN d ON c.id = d.id ",
+        "SELECT id FROM c INNER JOIN d x ON c.id = x.id LEFT JOIN e ",
+        "SELECT id FROM (SELECT 1 AS id) ",
+        "SELECT id FROM c WHERE id > 1 UNION SELECT id FROM d ",
+    ],
+)
 def test_tsql_a_statement_parsed_as_an_alias_is_not_read_only(
     head: str, tail: str
 ) -> None:

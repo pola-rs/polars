@@ -8440,10 +8440,16 @@ def test_mssql_exec_after_a_table_is_not_run_as_a_write() -> None:
             f"DELETE FROM {victim}",
             f"INSERT INTO {victim} VALUES (9)",
         ):
-            sql = f"WITH c AS (SELECT id FROM edge) SELECT id FROM c EXEC('{write}')"
-            for driver in _runnable_drivers("mssql"):
-                with pytest.raises(Exception, match="only runs read"):
-                    _scan("mssql", driver, sql).collect()
+            for sql in (
+                f"WITH c AS (SELECT id FROM edge) SELECT id FROM c EXEC('{write}')",
+                f"WITH c AS (SELECT id FROM edge) SELECT c.id FROM c JOIN edge e "
+                f"ON c.id = e.id EXEC('{write}')",
+                f"SELECT id FROM (SELECT id FROM edge) EXEC('{write}')",
+                f"SELECT id FROM (SELECT id FROM edge) AS d EXECUTE('{write}')",
+            ):
+                for driver in _runnable_drivers("mssql"):
+                    with pytest.raises(Exception, match="only runs read"):
+                        _scan("mssql", driver, sql).collect()
         left = _scan("mssql", _default_driver("mssql"), victim).collect()
         assert sorted(left["id"].to_list()) == [1, 2, 3]
     finally:
