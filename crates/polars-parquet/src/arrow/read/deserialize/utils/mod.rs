@@ -628,8 +628,13 @@ impl<D: Decoder> PageDecoder<D> {
 
         const MINIMUM_CHUNK_SIZE: usize = 256;
         let mut chunks = Vec::new();
+        let total_num_values = self.iter.total_num_values();
+        let mut num_values_seen = 0;
         while let Some(page) = self.iter.next() {
             let page = page?;
+
+            let num_values_remaining = total_num_values.saturating_sub(num_values_seen);
+            num_values_seen += page.num_values();
 
             let mut can_skip_page = false;
 
@@ -720,8 +725,13 @@ impl<D: Decoder> PageDecoder<D> {
                     if p.include_values && num_filtered_values > target.remaining_capacity() {
                         let previous_target = std::mem::replace(
                             &mut target,
-                            self.decoder
-                                .with_capacity(usize::max(num_filtered_values, MINIMUM_CHUNK_SIZE)),
+                            self.decoder.with_capacity(if D::CHUNKED {
+                                usize::max(num_filtered_values, MINIMUM_CHUNK_SIZE)
+                            } else {
+                                // One target for the rest of the column chunk rather than a
+                                // chunk per page, as `collect_flat` does.
+                                usize::max(num_filtered_values, num_values_remaining)
+                            }),
                         );
                         if previous_target.len() > 0 {
                             let chunk = self.decoder.finalize(
