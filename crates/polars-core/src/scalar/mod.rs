@@ -88,8 +88,8 @@ impl Scalar {
     }
 
     pub fn into_series(self, name: PlSmallStr) -> Series {
-        // A Map scalar holds deduplicated keys, so its row skips deduplication. 
-        // `from_any_values_and_dtype` can't skip it: Python dicts reach it with 
+        // A Map scalar holds deduplicated keys, so its row skips deduplication.
+        // `from_any_values_and_dtype` can't skip it: Python dicts reach it with
         // keys that collide after conversion (two NaNs, datetimes truncated to `ms`).
         #[cfg(feature = "dtype-map")]
         if let AnyValue::Map(entries) = &self.value
