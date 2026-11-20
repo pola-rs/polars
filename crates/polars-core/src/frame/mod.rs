@@ -2734,7 +2734,7 @@ pub struct RecordBatchIter<'a> {
     compat_level: CompatLevel,
     parallel: bool,
     /// The columns that export to an arrow MAP, whose `i32` offsets may make a chunk need several
-    /// batches.
+    /// batches; sorted by index.
     map_columns: Vec<MapColumn>,
     split: Option<SplitChunk>,
     /// The first row of the next chunk, to slice columns without chunks of their own.
@@ -2916,7 +2916,7 @@ impl<'a> RecordBatchIter<'a> {
         let chunk = self.df.chunk_frame(idx, rows);
         let length = chunk.height();
         let converted = self.per_column(chunk.width(), |i| {
-            if self.map_columns.iter().any(|m| m.idx == i) {
+            if self.map_columns.binary_search_by_key(&i, |m| m.idx).is_ok() {
                 return Ok(None);
             }
             column_to_arrow(&chunk.columns()[i], 0, 0..length, self.compat_level).map(Some)
