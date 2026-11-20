@@ -582,8 +582,9 @@ def test_dictionary_codes_predicate_keeping_few_rows_does_not_keep_dictionary(
     tmp_path: Path, parallel: str
 ) -> None:
     # The dictionary pays off for the chunk's rows, but not for the one row the
-    # predicate on the column keeps: that row is copied out of the dictionary. The predicate
-    # is not an equality, which would become a constant and never decode the column.
+    # predicate on the column keeps: that row is copied out of the dictionary. The
+    # predicate is not an equality, which would become a constant and never decode the
+    # column.
     once = "only-once" + "x" * 100
     s = [once] + [f"{i % 1000:04}" + "x" * 100 for i in range(1, 100_000)]
     df = pl.DataFrame({"a": range(len(s)), "s": s})
@@ -627,7 +628,8 @@ def test_dictionary_codes_partitioned_sink_across_row_groups(
 ) -> None:
     n = 12_000
     idx = pl.int_range(n, eager=True)
-    # Each row group sees a different mix of values, so partition buffers see other dictionaries.
+    # Each row group sees a different mix of values, so partition buffers see other
+    # dictionaries.
     s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(
         ((idx.hash(1) % 3_000).cast(pl.Int64) + idx // 3_000) % 3_000
     )
@@ -651,8 +653,8 @@ def test_dictionary_codes_partitioned_sink_across_row_groups(
 def test_dictionary_codes_file_size_partitioned_sink_across_row_groups(
     tmp_path: Path,
 ) -> None:
-    # No keys: dictionary columns reach the partition buffer as they are, and each row group
-    # brings a dictionary with other values (appended after the buffer's first one).
+    # No keys: dictionary columns reach the partition buffer as they are, and each row
+    # group brings a dictionary with other values (appended after the buffer's first).
     n = 12_000
     idx = pl.int_range(n, eager=True)
     s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(

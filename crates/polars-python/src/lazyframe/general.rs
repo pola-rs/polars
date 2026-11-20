@@ -1799,18 +1799,18 @@ impl Iterator for ArrowStreamIterator {
                 // Dictionary columns materialize here: do it for all columns in parallel, as
                 // with codes off the decoder did. Not with Object columns, which need the GIL.
                 let compat = CompatLevel::newest();
-                let arrays: Vec<ArrayRef> = if df.columns().iter().any(|c| c.dtype().contains_objects())
-                {
-                    df.rechunk_into_arrow(compat)
-                } else {
-                    polars_core::runtime::RAYON.install(|| {
-                        use rayon::prelude::*;
-                        df.into_columns()
-                            .into_par_iter()
-                            .map(|c| c.rechunk_to_arrow(compat))
-                            .collect()
-                    })
-                };
+                let arrays: Vec<ArrayRef> =
+                    if df.columns().iter().any(|c| c.dtype().contains_objects()) {
+                        df.rechunk_into_arrow(compat)
+                    } else {
+                        polars_core::runtime::RAYON.install(|| {
+                            use rayon::prelude::*;
+                            df.into_columns()
+                                .into_par_iter()
+                                .map(|c| c.rechunk_to_arrow(compat))
+                                .collect()
+                        })
+                    };
                 Some(Ok(Box::new(polars_arrow::array::StructArray::new(
                     self.dtype.clone(),
                     height,
