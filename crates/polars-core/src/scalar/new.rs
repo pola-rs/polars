@@ -42,28 +42,17 @@ impl Scalar {
         )
     }
 
-    /// One `Map` row from its flat key and value fields.
-    ///
-    /// Validation is deferred to `Series::from_any_values_and_dtype`, which calls
-    /// `MapChunked::try_from_storage`. Other consumers only read the entries.
+    /// One `Map` row from its `Struct {key, value}` entries; duplicate keys keep their first position and last value.
     #[cfg(feature = "dtype-map")]
-    pub fn new_map(keys: &Series, values: &Series) -> Self {
-        Scalar::new(
-            DataType::Map(
-                Box::new(keys.dtype().clone()),
-                Box::new(values.dtype().clone()),
-            ),
-            AnyValue::Map(crate::chunked_array::logical::pack_map_entries(
-                keys, values,
-            )),
-        )
-    }
+    pub(crate) fn map_from_entries(entries: Series) -> PolarsResult<Self> {
+        use crate::chunked_array::logical::MapChunked;
+        use crate::series::IntoSeries;
 
-    /// For callers that already hold one row's entries, such as deserialization.
-    #[cfg(feature = "dtype-map")]
-    pub(crate) fn map_from_entries(entries: Series) -> Self {
-        let value = AnyValue::Map(entries);
-        Scalar::new(value.dtype(), value)
+        let dtype = entries.dtype().map_from_named_entries_dtype()?;
+        let storage = entries.implode()?.into_series();
+        let map = MapChunked::try_from_storage(dtype.clone(), storage)?;
+        let value = map.get_any_value(0)?.into_static();
+        Ok(Scalar::new(dtype, value))
     }
 
     #[cfg(feature = "dtype-array")]
