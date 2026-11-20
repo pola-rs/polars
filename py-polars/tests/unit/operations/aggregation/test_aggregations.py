@@ -142,6 +142,38 @@ def test_median() -> None:
     assert s.median() == 2
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series(["a", "b"]),
+        pl.Series(["a", "b"], dtype=pl.Categorical),
+        pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"])),
+        pl.Series([b"a", b"b"]),
+        pl.Series([[1], [2]]),
+        pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1)),
+        pl.Series([{"a": 1}, {"a": 2}]),
+    ],
+)
+def test_series_mean_median_unsupported_dtype_raises(s: pl.Series) -> None:
+    with pytest.raises(InvalidOperationError, match="`mean` operation not supported"):
+        s.mean()
+    with pytest.raises(InvalidOperationError, match="`median` operation not supported"):
+        s.median()
+
+
+def test_series_mean_median_match_expr() -> None:
+    for s in [
+        pl.Series([0, 0, 1], dtype=pl.Float32),
+        pl.Series([True, False, True]),
+        pl.Series([None, None], dtype=pl.Null),
+    ]:
+        for agg in ["mean", "median"]:
+            expected = pl.select(getattr(pl.lit(s), agg)()).item()
+            assert getattr(s, agg)() == expected
+    # Float32 is averaged in f64 and rounded to f32, as in the expression.
+    assert pl.Series([0, 0, 1], dtype=pl.Float32).mean() == 0.3333333432674408
+
+
 def test_single_element_std() -> None:
     s = pl.Series([1])
     assert s.std(ddof=1) is None
