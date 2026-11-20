@@ -451,14 +451,41 @@ impl DictionaryColumn {
     /// when that extension would copy more existing entries than `other` has rows.
     pub fn try_append(&mut self, other: &DictionaryColumn) -> bool {
         if self.dict.id != other.dict.id {
+            if self.is_empty() {
+                // Nothing to keep: take `other`'s dictionary and codes, as they are.
+                self.dict = other.dict.clone();
+                self.codes = other.codes.clone().with_name(self.codes.name().clone());
+                self.sorted = IsSorted::Not;
+                self.materialized = OnceLock::new();
+                return true;
+            }
             let max_len = (self.len() + other.len()).min(u32::MAX as usize);
             if self.dict.len() > max_len {
                 return false;
             }
+            // With fewer rows than dictionary entries, resolve only the values that rows use, so
+            // that appending a small morsel costs its rows, not the size of its dictionary.
+            let used = if other.len() < other.dict.len() {
+                other.used_codes(other.len())
+            } else {
+                None
+            };
             let mut added = Vec::new();
             let mut added_code_of = PlHashMap::<&str, u32>::new();
-            let mut remap = Vec::with_capacity(other.dict.len());
-            for v in other.dict.values.values_iter() {
+            let mut remap = Vec::with_capacity(match &used {
+                Some((used, _)) => used.len(),
+                None => other.dict.len(),
+            });
+            let values = &other.dict.values;
+            let to_resolve: Box<dyn Iterator<Item = &str> + '_> = match &used {
+                // SAFETY: used codes are valid codes, which are in bounds (invariant).
+                Some((used, _)) => Box::new(
+                    used.iter()
+                        .map(|c| unsafe { values.value_unchecked(*c as usize) }),
+                ),
+                None => Box::new(values.values_iter()),
+            };
+            for v in to_resolve {
                 let c = match self.dict.code_of(v) {
                     Some(c) => c,
                     None => {
@@ -477,10 +504,27 @@ impl DictionaryColumn {
             if !added.is_empty() && self.dict.len() > other.len() {
                 return false;
             }
-            // Null slots may hold any value, out of bounds too.
-            let other_codes = other
-                .codes
-                .apply_values(|c| remap.get(c as usize).copied().unwrap_or(0));
+            let other_codes = match used {
+                Some((_, row_slots)) => {
+                    let codes = other.codes.rechunk();
+                    let arr = codes.downcast_as_array();
+                    // Null rows have slot 0, which is out of bounds if no row is valid.
+                    let new_codes: Vec<u32> = row_slots
+                        .iter()
+                        .map(|s| remap.get(*s as usize).copied().unwrap_or(0))
+                        .collect();
+                    let arr = PrimitiveArray::<u32>::new(
+                        ArrowDataType::UInt32,
+                        new_codes.into(),
+                        arr.validity().cloned(),
+                    );
+                    UInt32Chunked::with_chunk(PlSmallStr::EMPTY, arr)
+                },
+                // Null slots may hold any value, out of bounds too.
+                None => other
+                    .codes
+                    .apply_values(|c| remap.get(c as usize).copied().unwrap_or(0)),
+            };
             if !added.is_empty() {
                 self.dict = self.dict.extended(&added);
             }
@@ -744,6 +788,49 @@ mod test {
                 s("z"),
             ]
         );
+    }
+
+    #[test]
+    fn try_append_remaps_only_used_codes() {
+        // `b` has fewer rows than dictionary entries, one of its rows is null with a code out of
+        // the used ones, and the unused entries (never looked up) include a value `a` lacks.
+        let mut a = dict_column(
+            &["x", "y", "w"],
+            &[Some(0), Some(1), Some(2), Some(0), Some(1)],
+        );
+        let b = dict_column(
+            &[
+                "unused-1", "z", "x", "unused-2", "unused-3", "y", "unused-4",
+            ],
+            &[Some(1), None, Some(2), Some(5), Some(2)],
+        );
+        assert!(a.try_append(&b));
+        // Only "z" was added: the unused values are not.
+        assert_eq!(a.dict().len(), 4);
+        assert_eq!(a.dict().code_of("unused-1"), None);
+        a.check_invariants();
+        let s = |v: &str| Some(v.to_owned());
+        assert_eq!(values(&a)[5..], [s("z"), None, s("x"), s("y"), s("x")]);
+        // All rows null: nothing is looked up and nothing added.
+        let mut a = dict_column(&["x", "y", "w"], &[Some(0), Some(1), Some(2)]);
+        let b = dict_column(&["p", "q", "r", "s"], &[None, None]);
+        assert!(a.try_append(&b));
+        assert_eq!(a.dict().len(), 3);
+        assert_eq!(values(&a)[3..], [None, None]);
+        a.check_invariants();
+    }
+
+    #[test]
+    fn try_append_to_empty_adopts_the_other_dictionary() {
+        let mut a = dict_column(&["old-1", "old-2"], &[Some(0)]).clear();
+        let b = dict_column(&["x", "y", "z"], &[Some(2), None, Some(0)]);
+        assert!(a.is_empty());
+        assert!(a.try_append(&b));
+        assert_eq!(a.dict().id(), b.dict().id());
+        a.check_invariants();
+        let s = |v: &str| Some(v.to_owned());
+        assert_eq!(values(&a), [s("z"), None, s("x")]);
+        assert_eq!(a.name(), "s");
     }
 
     #[test]

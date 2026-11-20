@@ -98,8 +98,28 @@ impl ComputeNode for CallbackSinkNode {
             {
                 let (sf, _, _, consume_token) = m.into_inner();
 
+                let df = sf.into_df().await;
+
+                // Without a chunk size every morsel is passed on as it is: buffering it would
+                // only append it to an empty frame.
+                if self.chunk_size.is_none() {
+                    debug_assert_eq!(self.buffer.height(), 0);
+                    if df.height() > 0 {
+                        let function = self.function.clone();
+                        let should_stop = ASYNC
+                            .spawn_blocking(move || function.call(df))
+                            .await
+                            .unwrap()?;
+                        if should_stop {
+                            self.is_done = true;
+                        }
+                    }
+                    drop(consume_token);
+                    continue;
+                }
+
                 // @NOTE: This also performs schema validation.
-                self.buffer.vstack_mut_owned(sf.into_df().await)?;
+                self.buffer.vstack_mut_owned(df)?;
 
                 while self.buffer.height() > 0
                     && self
@@ -112,6 +132,11 @@ impl ComputeNode for CallbackSinkNode {
                     (df, self.buffer) = self
                         .buffer
                         .split_at(self.buffer.height().min(chunk_size) as i64);
+                    if self.buffer.height() == 0 {
+                        // Start afresh: an empty remainder would keep the flushed dictionaries
+                        // (or a materialized column) and have the next morsels merged into them.
+                        self.buffer = DataFrame::empty();
+                    }
 
                     let function = self.function.clone();
                     let should_stop = ASYNC

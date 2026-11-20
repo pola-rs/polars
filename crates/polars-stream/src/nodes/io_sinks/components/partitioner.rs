@@ -146,6 +146,21 @@ impl KeyedPartitioner {
                 .map(|x| PreComputedKeys::RowEncoded(x.downcast_as_array().clone()));
         }
 
+        // Dictionary columns are materialized here, on the parallel partitioning tasks: gathering
+        // keeps a morsel's whole dictionary in every partition's slice, and the distributor,
+        // which appends the slices serially, would then pay for it per slice.
+        let df = if df
+            .columns()
+            .iter()
+            .any(|c| matches!(c, Column::Dictionary(_)))
+        {
+            let mut df = df;
+            df.materialize_dictionary_columns();
+            df
+        } else {
+            df
+        };
+
         let gather_source_df: Cow<DataFrame> =
             if let Some(projection) = self.exclude_keys_projection.as_ref() {
                 let columns = df.columns();
@@ -177,7 +192,11 @@ impl KeyedPartitioner {
                         1,
                         key_columns
                             .iter()
-                            .map(|c| c.take_slice_unchecked(&[first_idx]))
+                            // Materialized, so that the key does not pin its column's dictionary.
+                            .map(|c| match c.take_slice_unchecked(&[first_idx]) {
+                                c @ Column::Dictionary(_) => c.take_materialized_series().into(),
+                                c => c,
+                            })
                             .collect(),
                     )
                 };
