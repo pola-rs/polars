@@ -1682,9 +1682,16 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
             },
         };
 
+        // Private planner option: not a `ScanCastOptions` field, but kept by an object that
+        // carries it (a policy read back from the dict `into_pyobject` produces).
+        let delta_type_widening = match ob.getattr(intern!(py, "delta_type_widening")) {
+            Ok(v) => v.extract::<bool>()?,
+            Err(_) => false,
+        };
+
         return Ok(Wrap(CastColumnsPolicy {
             integer_upcast,
-            delta_type_widening: false,
+            delta_type_widening,
             integer_to_float_cast,
             float_upcast,
             float_downcast,
@@ -1729,7 +1736,7 @@ impl<'py> IntoPyObject<'py> for Wrap<CastColumnsPolicy> {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let CastColumnsPolicy {
             integer_upcast,
-            delta_type_widening: _,
+            delta_type_widening,
             integer_to_float_cast,
             float_upcast,
             float_downcast,
@@ -1746,6 +1753,7 @@ impl<'py> IntoPyObject<'py> for Wrap<CastColumnsPolicy> {
 
         let out = PyDict::new(py);
         out.set_item("integer_upcast", integer_upcast)?;
+        out.set_item("delta_type_widening", delta_type_widening)?;
         out.set_item("integer_to_float_cast", integer_to_float_cast)?;
         out.set_item("float_upcast", float_upcast)?;
         out.set_item("float_downcast", float_downcast)?;

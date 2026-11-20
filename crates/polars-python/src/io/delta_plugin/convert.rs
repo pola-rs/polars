@@ -210,12 +210,17 @@ pub(super) fn build_scan(
         },
         mode => polars_bail!(ComputeError: "delta plugin invalid mapping mode {mode:?}"),
     };
+    // Same as `ScanCastOptions._default_iceberg()`, which the deltalake path uses, plus
+    // type widening.
     let cast_columns_policy = CastColumnsPolicy {
         integer_upcast: true,
         float_upcast: true,
+        float_downcast: true,
         delta_type_widening: true,
         datetime_nanoseconds_downcast: true,
         datetime_milliseconds_upcast: true,
+        datetime_convert_timezone: true,
+        categorical_to_string: true,
         missing_struct_fields: MissingColumnsPolicy::Insert,
         extra_struct_fields: ExtraColumnsPolicy::Ignore,
         ..Default::default()

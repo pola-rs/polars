@@ -2097,3 +2097,100 @@ def test_scan_delta_aggregates_do_not_load_column_statistics(
         # A duplicated subplan
         assert pl.concat([q, q]).collect().rows() == [expected, expected]
     assert calls == []
+
+
+def _planner_or_skip(plmonkeypatch: PlMonkeyPatch, planner: str) -> None:
+    if planner == "plugin":
+        pytest.importorskip("polars_delta")
+    plmonkeypatch.setenv("POLARS_DELTA_PLANNER", planner)
+
+
+def _set_reader_features(root: Path, features: list[str]) -> None:
+    import json
+
+    entry = root / "_delta_log" / f"{0:020}.json"
+    lines = []
+    for line in entry.read_text().splitlines():
+        action = json.loads(line)
+        if "protocol" in action:
+            action["protocol"] = {
+                "minReaderVersion": 3,
+                "minWriterVersion": 7,
+                "readerFeatures": features,
+                "writerFeatures": features,
+            }
+        lines.append(json.dumps(action))
+    entry.write_text("\n".join(lines) + "\n")
+
+
+@pytest.mark.parametrize("planner", ["deltalake", "plugin"])
+@pytest.mark.parametrize(
+    "features",
+    [
+        ["v2Checkpoint"],
+        ["vacuumProtocolCheck"],
+        ["vacuumProtocolCheck", "v2Checkpoint", "timestampNtz"],
+    ],
+)
+@pytest.mark.write_disk
+def test_scan_delta_log_only_reader_features(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, planner: str, features: list[str]
+) -> None:
+    # These features change how the log is read and what vacuum checks, not the data.
+    _planner_or_skip(plmonkeypatch, planner)
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    df.write_delta(tmp_path)
+    _set_reader_features(tmp_path, features)
+    assert_frame_equal(pl.read_delta(tmp_path), df)
+    assert_frame_equal(
+        pl.scan_delta(tmp_path).filter(pl.col("a") > 1).collect(), df[1:]
+    )
+
+
+@pytest.mark.parametrize("planner", ["deltalake", "plugin"])
+@pytest.mark.write_disk
+def test_scan_delta_unsupported_reader_feature_is_named(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, planner: str
+) -> None:
+    _planner_or_skip(plmonkeypatch, planner)
+    pl.DataFrame({"a": [1]}).write_delta(tmp_path)
+    _set_reader_features(tmp_path, ["v2Checkpoint", "somethingNew"])
+    with pytest.raises(
+        (
+            DeltaError,
+            DeltaProtocolError,
+            pl.exceptions.ComputeError,
+            NotImplementedError,
+        )
+    ) as e:
+        pl.read_delta(tmp_path)
+    assert "somethingNew" in str(e.value)
+    assert "v2Checkpoint" not in str(e.value)
+
+
+@pytest.mark.parametrize("planner", ["deltalake", "plugin"])
+@pytest.mark.write_disk
+def test_scan_delta_casts_files_written_by_other_writers(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, planner: str
+) -> None:
+    # A data file whose Parquet types differ from the table's (another timezone, a
+    # categorical or a wider float) reads as the table's schema, as with deltalake.
+    _planner_or_skip(plmonkeypatch, planner)
+    ts = datetime(2024, 1, 1, 12, tzinfo=UTC)
+    expected = pl.DataFrame(
+        {
+            "ts": pl.Series([ts, ts]).dt.convert_time_zone("UTC"),
+            "c": ["a", "b"],
+            "f": pl.Series([1.5, 2.5], dtype=pl.Float32),
+        }
+    )
+    expected.write_delta(tmp_path)
+    file = next(tmp_path.rglob("*.parquet"))
+    for other in [
+        {"ts": pl.col("ts").dt.convert_time_zone("Europe/Amsterdam")},
+        {"c": pl.col("c").cast(pl.Categorical)},
+        {"f": pl.col("f").cast(pl.Float64)},
+    ]:
+        expected.with_columns(**other).write_parquet(file)
+        _resize_delta_add_actions(tmp_path)
+        assert_frame_equal(pl.scan_delta(tmp_path).collect(), expected)

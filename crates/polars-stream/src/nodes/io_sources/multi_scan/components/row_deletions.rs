@@ -455,10 +455,20 @@ impl DeletionFilesProvider {
                             let decoder = match delta_deletion_vector_decoder() {
                                 Some(d) => d,
                                 // Loading takes the Python GIL: not on an executor thread.
-                                None => polars_core::runtime::ASYNC
-                                    .spawn_blocking(require_delta_deletion_vector_decoder)
-                                    .await
-                                    .unwrap()?,
+                                // Scans starting together load once, the rest wait for it
+                                // (an async lock holds neither a thread nor the GIL).
+                                None => {
+                                    static LOADING: tokio::sync::Mutex<()> =
+                                        tokio::sync::Mutex::const_new(());
+                                    let _loading = LOADING.lock().await;
+                                    match delta_deletion_vector_decoder() {
+                                        Some(d) => d,
+                                        None => polars_core::runtime::ASYNC
+                                            .spawn_blocking(require_delta_deletion_vector_decoder)
+                                            .await
+                                            .unwrap()?,
+                                    }
+                                },
                             };
                             let max_rows = deletion_vector_max_rows();
                             let bitmap = match vector.location {
@@ -1085,7 +1095,12 @@ impl DeletionVectorFiles {
                         .prefix
                         .get_or_init(|| async {
                             let reservation = this.try_reserve(span_end)?;
-                            let prefix = get(0..span_end as usize).await.ok();
+                            // Copied, so that what is kept for the scan is the counted
+                            // `span_end` bytes, whatever backing the store's buffer has.
+                            let prefix = get(0..span_end as usize)
+                                .await
+                                .ok()
+                                .map(|b| Buffer::from_vec(b.to_vec()));
                             if prefix.is_some() {
                                 reservation.commit();
                             }

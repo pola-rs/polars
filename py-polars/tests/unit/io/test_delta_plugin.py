@@ -289,6 +289,52 @@ def test_delta_plugin_type_widening(
     assert_frame_equal(pl.scan_delta(path).collect(), frame.cast({"a": target}))
 
 
+def test_delta_plugin_widening_flag_visible_to_visitor(tmp_path: Path) -> None:
+    # An engine that takes the plan through the node visitor (GPU) must see that the
+    # scan allows Delta type widening, or it rejects widened files.
+    field = _field(
+        "a",
+        "long",
+        **{"delta.typeChanges": [{"fromType": "integer", "toType": "long"}]},
+    )
+    path = _table(
+        tmp_path / "t",
+        [field],
+        [pl.DataFrame({"a": [1]}, schema={"a": pl.Int32})],
+        features=["typeWidening"],
+    )
+    import polars._plr as plr
+    from polars._utils.wrap import wrap_ldf
+    from polars.io.delta._plugin import _plugin_capsule
+    from polars.io.delta._utils import _resolve_delta_lake_uri
+
+    # The planner's own resolved scan: `scan_delta` returns an unresolved dataset scan,
+    # which the GPU engine cannot take (`IR::Resolver`) before it is resolved.
+    resolved, _ = plr._delta_plugin_scan(
+        _plugin_capsule(plr._IO_PLUGIN_IDS),
+        table_uri=_resolve_delta_lake_uri(str(path), strict=False),
+        version=None,
+        timestamp_ms=None,
+        projection=None,
+        filter_columns=None,
+        statistics_columns=None,
+        limit=None,
+        use_metadata_statistics=True,
+        verbose=False,
+        testing_fail=None,
+        storage_options=None,
+        credential_provider=None,
+        metadata_cache=plr.PyIcebergMetadataFileCache(1 << 20),
+    )
+    node = wrap_ldf(resolved)._ldf.visit().view_current_node()
+    policy = node.file_options.cast_columns_policy
+    assert policy["delta_type_widening"] is True
+    # The policy the deltalake path sets.
+    assert policy["float_downcast"] is True
+    assert policy["datetime_convert_timezone"] is True
+    assert policy["categorical_to_string"] is True
+
+
 def test_delta_plugin_partition_filter_limit(tmp_path: Path) -> None:
     path = _table(
         tmp_path / "t",

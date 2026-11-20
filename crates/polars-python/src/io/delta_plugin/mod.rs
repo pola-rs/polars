@@ -130,8 +130,10 @@ fn register_decoder(plugin: &'static delta_v1::Plugin) {
 /// the Python layer and let it load the installed plugin. Called at module init.
 pub fn install_decoder_loader() {
     polars::prelude::deletion::set_delta_deletion_vector_decoder_loader(Box::new(|| {
+        // This runs on a blocking-pool thread that can outlive the interpreter (a scan collected
+        // from a daemon thread or an atexit hook): `attach` would hang or crash there.
         // `attach` is reentrant for a thread that already holds the GIL.
-        Python::attach(|py| {
+        Python::try_attach(|py| {
             let reason = py
                 .import("polars.io.delta._plugin")
                 .and_then(|m| m.call_method0("dv_decoder_load_error"))
@@ -142,6 +144,7 @@ pub fn install_decoder_loader() {
                 Err(e) => Err(format!("failed to load: {e}")),
             }
         })
+        .unwrap_or_else(|| Err("the Python interpreter is shutting down".to_string()))
     }));
 }
 

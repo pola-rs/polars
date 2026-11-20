@@ -238,14 +238,24 @@ pub fn require_delta_deletion_vector_decoder() -> PolarsResult<Arc<dyn DeltaDele
             },
         };
     }
-    delta_deletion_vector_decoder().ok_or_else(|| {
-        let why = reason
-            .as_deref()
-            .unwrap_or("the `polars-delta` package is not installed or could not be loaded");
-        polars_err!(
+    delta_deletion_vector_decoder().ok_or_else(|| match (DELTA_DV_LOADER.get(), reason) {
+        // This build cannot load the plugin (no Python, or none with cloud and parquet): the
+        // plan was made elsewhere.
+        (None, _) => polars_err!(
             ComputeError:
-            "reading Delta deletion vectors natively requires the `polars-delta` package: {why} \
-            (`pip install -U polars-delta`)"
-        )
+            "reading Delta deletion vectors natively requires a decoder, which this build of \
+            Polars cannot load (builds with Python, cloud and parquet support load the \
+            `polars-delta` package's)"
+        ),
+        (Some(_), why) => {
+            let why = why
+                .as_deref()
+                .unwrap_or("the `polars-delta` package is not installed or could not be loaded");
+            polars_err!(
+                ComputeError:
+                "reading Delta deletion vectors natively requires the `polars-delta` package: {why} \
+                (`pip install -U polars-delta`)"
+            )
+        },
     })
 }

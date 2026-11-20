@@ -38,7 +38,14 @@ _MAX_READER_VERSION = 3
 # not supported: data files then store columns under physical names.
 _UNSUPPORTED_READER_VERSION = 2
 _SUPPORTED_FEATURES = frozenset(
-    {"deletionVectors", "timestampNtz", "variantType", "variantType-preview"}
+    {
+        "deletionVectors",
+        "timestampNtz",
+        "v2Checkpoint",
+        "vacuumProtocolCheck",
+        "variantType",
+        "variantType-preview",
+    }
 )
 
 

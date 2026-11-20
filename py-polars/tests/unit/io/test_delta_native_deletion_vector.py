@@ -380,3 +380,66 @@ def test_native_vector_in_fresh_process_loads_plugin(tmp_path: Path) -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     ).stdout
     assert out.strip() == "[0, 2, 4]"
+
+
+def _fresh_process(code: str, *, timeout: float = 60) -> str:
+    import subprocess
+    import sys
+
+    return subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=timeout,
+    ).stdout.strip()
+
+
+def test_native_vectors_starting_together_load_the_plugin_once(tmp_path: Path) -> None:
+    pytest.importorskip("polars_delta")
+    paths = []
+    for i in range(16):
+        paths.append(tmp_path / f"p{i}.parquet")
+        pl.DataFrame({"a": range(5)}).write_parquet(paths[-1])
+    # One vector per file, all different, so each file's scan loads on its own.
+    vectors = {i: (bitmap([i % 5]), 0, len(bitmap([i % 5])), 1) for i in range(16)}
+    code = (
+        "import time\n"
+        "import polars as pl\n"
+        "import polars.io.delta._plugin as plugin\n"
+        "calls = []\n"
+        "load = plugin.dv_decoder_load_error\n"
+        "def slow():\n"
+        "    calls.append(1)\n"
+        "    time.sleep(0.5)\n"
+        "    return load()\n"
+        "plugin.dv_decoder_load_error = slow\n"
+        f"lf = pl.scan_parquet({[str(p) for p in paths]!r}, _deletion_files=("
+        f"'delta-deletion-vector-native', {vectors!r}))\n"
+        "print(lf.collect().height, len(calls))\n"
+    )
+    assert _fresh_process(code) == "64 1"
+
+
+def test_native_vector_scan_while_interpreter_exits(tmp_path: Path) -> None:
+    # A scan collected from a daemon thread while the interpreter shuts down reaches the
+    # plugin loader from a Rust thread: it must neither hang nor crash the process.
+    pytest.importorskip("polars_delta")
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"a": range(5)}).write_parquet(path)
+    body = bitmap([1, 3])
+    code = (
+        "import threading\n"
+        "import polars as pl\n"
+        f"lf = pl.scan_parquet({str(path)!r}, _deletion_files=("
+        f"'delta-deletion-vector-native', {{0: ({body!r}, 0, {len(body)}, 2)}}))\n"
+        "def run():\n"
+        "    while True:\n"
+        "        try:\n"
+        "            lf.collect()\n"
+        "        except pl.exceptions.PolarsError:\n"
+        "            pass\n"
+        "threading.Thread(target=run, daemon=True).start()\n"
+    )
+    for _ in range(10):
+        _fresh_process(code, timeout=30)
