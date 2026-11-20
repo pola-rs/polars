@@ -69,29 +69,24 @@ impl StatTarget {
         let Some((expr, order_keeping, dtype)) = &self.order_keeping else {
             return self.stat(if min { "min" } else { "max" }, arena);
         };
-        let stat_names = |suffix: &str| {
-            PlIndexMap::from_iter([(
-                self.col.clone(),
-                format_pl_smallstr!("{}_{suffix}", self.col),
-            )])
-        };
         let suffix = if min == order_keeping.increasing {
             "min"
         } else {
             "max"
         };
-        let bound = rename_columns(*expr, arena, &stat_names(suffix));
+        let stat_names = PlIndexMap::from_iter([(
+            self.col.clone(),
+            format_pl_smallstr!("{}_{suffix}", self.col),
+        )]);
+        let bound = rename_columns(*expr, arena, &stat_names);
         // The expression keeps the order of the values between `min` and `max` only if it overflows
         // for neither. Otherwise the bound is null, which leaves it unknown.
-        let Some(no_overflow) = order_keeping.no_overflow(arena) else {
+        let [col_min, col_max] = ["min", "max"]
+            .map(|suffix| arena.add(AExpr::Column(format_pl_smallstr!("{}_{suffix}", self.col))));
+        let Some(in_range) = order_keeping.in_safe_range(col_min, col_max, arena) else {
             return AExprBuilder::new_from_node(bound);
         };
-        let at_min = rename_columns(no_overflow, arena, &stat_names("min"));
-        let at_max = rename_columns(no_overflow, arena, &stat_names("max"));
-        let no_overflow = AExprBuilder::new_from_node(at_min)
-            .and(at_max, arena)
-            .node();
-        AExprBuilder::new_from_node(null_unless(no_overflow, bound, dtype, arena))
+        AExprBuilder::new_from_node(null_unless(in_range, bound, dtype, arena))
     }
     fn null_count(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
         self.stat("nc", arena)

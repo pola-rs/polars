@@ -313,3 +313,44 @@ def test_overflow_in_row_group_keeps_its_other_rows(
         q = scan.with_columns(k=expr).sort("k", descending=descending).head(3)
         expected = df.with_columns(k=expr).sort("k", descending=descending).head(3)
         assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+def test_int128_multiply_overflowing_in_row_group_keeps_its_other_rows(
+    tmp_path: Path,
+) -> None:
+    # Parquet has no Int128 statistics, so this checks the results only.
+    values = [1, 2, 3, 2**126, 5, 6, 7, 8]
+    df = pl.DataFrame({"x": pl.Series(values, dtype=pl.Int128)})
+    path = tmp_path / "data.parquet"
+    df.write_parquet(path, row_group_size=4)
+
+    scan = pl.scan_parquet(path)
+    for predicate in [pl.col("x") * 2 == 6, pl.col("x") * 2 < 8, pl.col("x") * 2 > 8]:
+        assert_frame_equal(
+            scan.filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
+def test_long_chain_overflowing_in_row_group_keeps_its_other_rows(
+    tmp_path: Path,
+) -> None:
+    values = [1, 2, 3, 4, 5, 6, 7, 2**60, 9, 10, 11, 12, 13, 14, 15, 16]
+    df = pl.DataFrame({"x": pl.Series(values, dtype=pl.Int64)})
+    path = tmp_path / "data.parquet"
+    df.write_parquet(path, row_group_size=8)
+
+    x = pl.col("x")
+    expr = ((((x + 1) * 2 + 3) * 2 + 5) * 2 + 7) * 2 + 9
+    k = df.select(expr).to_series()
+    scan = pl.scan_parquet(path)
+    for v in [*k.sort().head(3), 0]:
+        for predicate in [expr == v, expr < v, expr > v]:
+            expected = df.filter(predicate)
+            for engine in ["in-memory", "streaming"]:
+                assert_frame_equal(
+                    scan.filter(predicate).collect(engine=engine),  # type: ignore[arg-type]
+                    expected,
+                    check_row_order=False,
+                )
