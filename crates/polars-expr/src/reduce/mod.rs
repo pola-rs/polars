@@ -726,7 +726,8 @@ impl<R: Reducer> VecGroupedReduction<R> {
     /// equal groups at a time.
     ///
     /// # Safety
-    /// The subset and group_idxs are in-bounds.
+    /// The rows of `subset` are in-bounds of `arr`, and `group_idxs` masked by `idx_mask` are
+    /// in-bounds of the groups.
     #[inline(never)]
     unsafe fn reduce_group_runs(
         &mut self,
@@ -1097,7 +1098,8 @@ impl<R: Reducer> VecMaskGroupedReduction<R> {
     /// equal groups at a time, and sets the bits of the groups that got a valid value.
     ///
     /// # Safety
-    /// The subset and group_idxs are in-bounds.
+    /// The rows of `subset` are in-bounds of `arr`, and `group_idxs` masked by `idx_mask` are
+    /// in-bounds of the groups.
     #[inline(never)]
     unsafe fn reduce_group_runs(
         &mut self,
