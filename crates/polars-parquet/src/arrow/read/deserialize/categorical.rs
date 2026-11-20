@@ -101,6 +101,8 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
     type DecodedState = (Vec<T>, BitmapBuilder);
     type Output = DictionaryArray<T>;
 
+    const PREDICATE_TARGET_GROWS: bool = true;
+
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<T>::with_capacity(capacity),
@@ -467,6 +469,14 @@ mod tests {
         );
         let state = (keys, BitmapBuilder::new());
         decoder.finalize(dtype, Some(dict.clone()), state).unwrap()
+    }
+
+    /// Only the codes decoder grows its predicate targets (its finalize is O(1)); others size them
+    /// for the matches, as unused capacity is not given back.
+    #[test]
+    fn only_the_codes_decoder_grows_predicate_targets() {
+        const { assert!(<CategoricalDecoder<u32> as utils::Decoder>::PREDICATE_TARGET_GROWS) };
+        const { assert!(!<BinViewDecoder as utils::Decoder>::PREDICATE_TARGET_GROWS) };
     }
 
     /// Chunks of one column chunk must share the dictionary page's views and buffers, not copy
