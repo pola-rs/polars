@@ -52,7 +52,7 @@ use crate::catalog::{
 use crate::copy::{self, CopyToStdout};
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::functions::{PolarsSQLFunctions, is_builtin_function, is_random};
+use crate::functions::{PolarsSQLFunctions, is_builtin_function, is_random, random_once};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
     check_columns_in_aggregates, has_marked_aggregate, has_random_outside_aggregates,
@@ -8112,7 +8112,7 @@ impl SQLContext {
             .collect();
         let mut parse = |expr: &SQLExpr| -> PolarsResult<Expr> {
             check_query_independent_value(expr, self)?;
-            parse_sql_expr(expr, self, Some(&Schema::default()))
+            parse_sql_expr(expr, self, Some(&Schema::default())).map(random_once)
         };
         let mut offset = offset.map(&mut parse).transpose()?;
         let mut limit = limit.map(&mut parse).transpose()?;

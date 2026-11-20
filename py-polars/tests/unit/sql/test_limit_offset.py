@@ -5,6 +5,7 @@ from typing import Literal
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -116,3 +117,83 @@ def test_limit_offset_literals_keep_slice(frames: dict[str, pl.DataFrame]) -> No
     )
     assert "slice: (2, 3" in plan
     assert ".slice(" not in plan
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT x FROM t ORDER BY x LIMIT FLOOR(RANDOM()) + 3",
+        "SELECT x FROM t ORDER BY x OFFSET FLOOR(RANDOM()) + 3",
+        (
+            "SELECT x FROM t ORDER BY x "
+            "LIMIT FLOOR(RANDOM()) + 3 OFFSET FLOOR(RANDOM()) + 3"
+        ),
+        (
+            "SELECT x FROM t ORDER BY x "
+            "OFFSET FLOOR(RANDOM()) + 3 ROWS FETCH NEXT 2 ROWS ONLY"
+        ),
+    ],
+)
+def test_limit_offset_random(query: str, frames: dict[str, pl.DataFrame]) -> None:
+    assert_sql_matches(frames=frames, query=query, compare_with="duckdb")
+    expected = pl.SQLContext(frames).execute(query).collect()
+    assert_frame_equal(frames["t"].sql(query.replace("FROM t", "FROM self")), expected)
+
+
+def test_limit_random_is_one_draw_per_query() -> None:
+    # A seed whose draw is neither 0 nor 1000 rows.
+    seed = 1
+    ctx = pl.SQLContext(
+        one=pl.DataFrame({"x": [0]}), t=pl.DataFrame({"x": range(1000)})
+    )
+    pl.set_random_seed(seed)
+    n = ctx.execute("SELECT FLOOR(RANDOM() * 1000) AS n FROM one").collect().item()
+    assert 0 < n < 1000
+
+    pl.set_random_seed(seed)
+    res = ctx.execute("SELECT x FROM t LIMIT FLOOR(RANDOM() * 1000)").collect()
+    assert res.height == n
+
+
+def test_limit_random_keeps_prefix(frames: dict[str, pl.DataFrame]) -> None:
+    query = "SELECT x FROM t ORDER BY x LIMIT RANDOM() * 5 + 2"
+    res = pl.SQLContext(frames).execute(query).collect()
+    assert 2 <= res.height <= 7
+    assert res["x"].to_list() == list(range(res.height))
+
+
+@pytest.mark.parametrize(
+    ("query", "max_height"),
+    [
+        ("SELECT y FROM one LIMIT RANDOM()", 1),
+        ("SELECT y FROM one OFFSET RANDOM()", 1),
+        ("SELECT x FROM t WHERE x < 0 LIMIT RANDOM()", 0),
+        ("SELECT x FROM t WHERE x < 0 OFFSET RANDOM()", 0),
+    ],
+)
+def test_limit_offset_random_small_input(
+    query: str, max_height: int, frames: dict[str, pl.DataFrame]
+) -> None:
+    ctx = pl.SQLContext(frames, one=pl.DataFrame({"y": [1]}))
+    assert ctx.execute(query).collect().height <= max_height
+
+
+@pytest.mark.parametrize(
+    ("clause", "error", "match"),
+    [
+        # The count doesn't depend on the input, so it is negative also on no rows.
+        (
+            "WHERE x < 0 LIMIT FLOOR(RANDOM()) - 1",
+            InvalidOperationError,
+            "conversion from",
+        ),
+    ],
+)
+def test_limit_offset_per_row_value_errors(
+    clause: str,
+    error: type[Exception],
+    match: str,
+    frames: dict[str, pl.DataFrame],
+) -> None:
+    with pytest.raises(error, match=match):
+        pl.SQLContext(frames).execute(f"SELECT x FROM t {clause}").collect()
