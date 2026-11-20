@@ -3437,6 +3437,7 @@ dependencies = [
  "futures",
  "glob",
  "hashbrown 0.17.1",
+ "http-body 1.1.0",
  "itoa",
  "libc",
  "memchr",
