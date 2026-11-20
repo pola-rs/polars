@@ -3393,7 +3393,7 @@ dependencies = [
 
 [[package]]
 name = "polars-iceberg"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "flate2",
@@ -3413,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "polars-iceberg-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "polars-iceberg",
  "pyo3",
