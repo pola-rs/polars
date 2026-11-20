@@ -173,6 +173,8 @@ impl SqlglotRenderer {
             PyResult::Ok(QueryFacts {
                 cast_types: strings("cast_types")?,
                 any_operator: get("any_operator")?,
+                positional_join: get("positional_join")?,
+                unsafe_settings: get("unsafe_settings")?,
                 temporal_cast_columns: strings("temporal_cast_columns")?,
                 referenced_columns,
                 final_tables: final_tables

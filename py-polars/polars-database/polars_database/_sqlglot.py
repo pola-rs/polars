@@ -952,6 +952,10 @@ def _unproven(node: Any, dialect: str | None, relations: set[str]) -> bool:
             name in _PROVEN_ANONYMOUS
             or name in _PROVEN_ANONYMOUS_BY_DIALECT.get(dialect or "", ())
         )
+    if isinstance(node, exp.Join):
+        return _row_picking_join(node, dialect)
+    if isinstance(node, exp.Query) and _unsafe_settings(node):
+        return True
     if isinstance(node, exp.Func):
         if kind not in _PROVEN_FUNCTIONS:
             return True
@@ -1413,6 +1417,136 @@ _KNOWN_AGGREGATES = frozenset(
         "total",
     }
 )
+
+
+# Aggregates whose float result depends on the order the rows are added in (a parallel
+# aggregate adds in another order each run). Exact over integers and decimals only.
+_FLOAT_SENSITIVE_AGGREGATES = frozenset(
+    {
+        "Sum",
+        "Avg",
+        "Stddev",
+        "StddevPop",
+        "StddevSamp",
+        "Variance",
+        "VariancePop",
+        "Corr",
+        "CovarPop",
+        "CovarSamp",
+        "Kurtosis",
+        "Skewness",
+    }
+)
+_EXACT_TYPES = frozenset(
+    getattr(exp.DataType.Type, name)
+    for name in (
+        "TINYINT",
+        "SMALLINT",
+        "INT",
+        "BIGINT",
+        "INT128",
+        "INT256",
+        "UTINYINT",
+        "USMALLINT",
+        "UINT",
+        "UBIGINT",
+        "UINT128",
+        "UINT256",
+        "DECIMAL",
+        "BIGDECIMAL",
+    )
+    if hasattr(exp.DataType.Type, name)
+)
+
+
+def _exact_operand(node: Any) -> bool:
+    """
+    Whether an aggregate's argument is exact (an integer or decimal, whose sum doesn't
+    depend on the order of rows) by what the SQL shows: an integer literal, a cast to an
+    integer or decimal type, a count, and sums and products of those. A column's type
+    isn't shown, so a column is not.
+    """
+    if node is None:
+        return True
+    if isinstance(node, exp.Distinct):
+        return all(_exact_operand(e) for e in node.expressions)
+    if isinstance(node, exp.Literal):
+        return not node.is_string and node.name.isdigit()
+    if isinstance(node, (exp.Cast, exp.TryCast)):
+        to = node.args.get("to")
+        return isinstance(to, exp.DataType) and to.this in _EXACT_TYPES
+    if isinstance(node, (exp.Count, exp.CountIf, exp.Length)):
+        return True
+    if isinstance(node, (exp.Paren, exp.Neg, exp.Abs)):
+        return _exact_operand(node.this)
+    if isinstance(node, (exp.Add, exp.Sub, exp.Mul)):
+        return _exact_operand(node.this) and _exact_operand(node.expression)
+    return False
+
+
+def _row_picking_join(node: Any, dialect: str | None) -> bool:
+    """
+    Whether a join gives other rows (or pairs them otherwise) on another run: `ASOF`
+    (which of tied right rows matches), ClickHouse's `ANY` and `SEMI` (any one match,
+    with its right columns), and the positional ones (`PASTE`, `POSITIONAL`), which pair
+    rows by their place in each side.
+    """
+    method = str(node.args.get("method") or "").upper()
+    kind = str(node.args.get("kind") or "").upper()
+    return (
+        method in ("ASOF", "POSITIONAL")
+        or kind in ("ASOF", "PASTE", "ANY")
+        or (dialect == "clickhouse" and kind == "SEMI")
+    )
+
+
+def _inexact_aggregate(node: Any) -> bool:
+    """Whether `node` is a float-sensitive aggregate over an argument not shown exact."""
+    return type(node).__name__ in _FLOAT_SENSITIVE_AGGREGATES and not all(
+        _exact_operand(a) for a in (node.args.get("this"), node.args.get("expression"))
+    )
+
+
+# ClickHouse settings that change how a query runs, not what it returns (those with an
+# `*_overflow_mode` of `any` or `break`, `max_rows_to_*` limits and the like cut or
+# change the result)
+_HARMLESS_SETTINGS = frozenset(
+    {
+        "max_threads",
+        "max_block_size",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_bytes_before_external_group_by",
+        "max_bytes_before_external_sort",
+        "log_comment",
+    }
+)
+
+
+def _unsafe_settings(node: Any) -> bool:
+    """Whether a query's own `SETTINGS` clause has a setting outside the harmless ones."""
+    settings = node.args.get("settings")
+    if not settings:
+        return False
+    return not all(
+        isinstance(s, exp.EQ)
+        and isinstance(s.this, (exp.Column, exp.Identifier, exp.Var))
+        and s.this.name.lower() in _HARMLESS_SETTINGS
+        for s in settings
+    )
+
+
+def _any_unsafe_settings(stmt: Any) -> bool:
+    return any(_unsafe_settings(q) for q in stmt.find_all(exp.Query))
+
+
+def _positional_join(stmt: Any) -> bool:
+    """Whether a join pairs rows by their place (`PASTE`, `POSITIONAL`)."""
+    return any(
+        str(j.args.get("method") or "").upper() == "POSITIONAL"
+        or str(j.args.get("kind") or "").upper() == "PASTE"
+        for j in stmt.find_all(exp.Join)
+    )
 
 
 def _is_scalar_min_max(node: Any) -> bool:
@@ -1961,6 +2095,26 @@ def _known_functions(
                 names.add("!" + operators[word])
         if dialect == "duckdb" and word == "escape":
             names.update(("like_escape", "not_like_escape", "ilike_escape"))
+    if stmt is not None and dialect in ("postgres", "redshift"):
+        # attribute notation calls a function of the row: `c.f` and `(c).f` are `f(c)` where
+        # `c` has no column `f`
+        names.update(
+            c.name.lower()
+            for c in stmt.find_all(exp.Column)
+            if c.table and c.name and not c.is_star
+        )
+        names.update(
+            d.expression.name.lower()
+            for d in stmt.find_all(exp.Dot)
+            if isinstance(d.expression, exp.Identifier)
+        )
+    if stmt is not None and dialect == "oracle":
+        # a function without parentheses is read as a column where no column has its name
+        names.update(
+            c.name.lower()
+            for c in stmt.find_all(exp.Column)
+            if not c.table and c.name and not c.is_star
+        )
     if dialect == "sqlite":
         if stmt is None:
             names.update(
@@ -2035,6 +2189,21 @@ def _cast_type_names(stmt: Any, dialect: str | None) -> list[str]:
     for dt in stmt.find_all(exp.DataType):
         with contextlib.suppress(sqlglot.errors.SqlglotError):
             names.add(dt.sql(dialect=dialect).split("(")[0].strip().lower())
+    if dialect in ("postgres", "redshift"):
+        # the types of its literals (marked `~`: they stand for operands, not for the
+        # target of a cast), for the operators a user defined on them (`0.5 * 2` runs a
+        # user's `*`(numeric, int4)), which no column or cast of the query names
+        literal: set[str] = set()
+        for lit in stmt.find_all(exp.Literal):
+            if lit.is_string:
+                literal.update(("text", "unknown"))
+            elif lit.name.isdigit():
+                literal.update(("int4", "int8"))
+            else:
+                literal.add("numeric")
+        if stmt.find(exp.Boolean) is not None:
+            literal.add("bool")
+        names.update(f"~{n}" for n in literal)
     return sorted(n for n in names if n)
 
 
@@ -2112,6 +2281,8 @@ def _no_facts() -> dict[str, Any]:
         "collated": False,
         "cast_types": [],
         "any_operator": False,
+        "positional_join": False,
+        "unsafe_settings": False,
         "referenced_columns": None,
         "final_tables": [],
         "temporal_cast_columns": [],
@@ -2396,7 +2567,27 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
                 matched |= names & set(written)
                 flagged.append(f)
         unproven.extend(f for f in flagged if not any(f is u for u in unproven))
-    columns = _volatile_columns(stmt, unproven)
+    # A float aggregate's value changes in its last bits between runs (a parallel aggregate
+    # adds in another order): as an output column it isn't a partition key (the column is
+    # listed as volatile), anywhere else (a `HAVING`, a subquery, a join condition) it
+    # decides which rows there are.
+    projections = (
+        {id(p) for p in stmt.selects} if isinstance(stmt, exp.Select) else set()
+    )
+    inexact: list[Any] = []
+    for node in stmt.find_all(exp.Func):
+        if not _inexact_aggregate(node):
+            continue
+        top = node
+        while top is not None and id(top) not in projections and top is not stmt:
+            top = top.parent
+        if top is not None and id(top) in projections:
+            if node.find_ancestor(exp.Select) is stmt:
+                inexact.append(node)
+                continue
+        if not any(node is u for u in unproven):
+            unproven.append(node)
+    columns = _volatile_columns(stmt, [*unproven, *inexact])
     if set(written) - matched:
         columns = None
     if columns is None or any(
@@ -2407,6 +2598,8 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
         facts["volatile_columns"] = columns
     facts["known_functions"] = _known_functions(stmt, tokens, dialect)
     facts["collapses_rows"] = _collapses_rows(stmt)
+    facts["positional_join"] = _positional_join(stmt)
+    facts["unsafe_settings"] = _any_unsafe_settings(stmt)
     facts["collated"] = _uses_collation(tokens, dialect)
     facts["unproven"] = sorted(
         {_describe(n, dialect) for n in unproven if not any(n is f for f in flagged)}

@@ -1973,6 +1973,8 @@ def test_postgres_live_connection_keeps_the_users_writes(
 def test_postgres_engine_params_and_literals_with_colons() -> None:
     # `text()` binds `:lo`, also inside a pushed literal: those stay in Polars
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy.orm")
+
     assert POSTGRES is not None
     _execute(
         "postgres17",
@@ -2228,7 +2230,7 @@ def test_pymysql_scan_after_a_stored_procedure_call(how: str) -> None:
 
 
 @pytest.mark.parametrize("server", ["mysql", "mariadb"])
-def test_autocommit_engine_still_streams_outside_postgres(server: str) -> None:
+def test_autocommit_engine_is_read_outside_postgres(server: str) -> None:
     # only a Postgres named cursor needs a transaction: other dialects stream in
     # AUTOCOMMIT too (the whole result in memory otherwise)
     uri = SERVERS[server].uri
@@ -2247,11 +2249,13 @@ def test_autocommit_engine_still_streams_outside_postgres(server: str) -> None:
             seen.append(type(cursor).__name__)
 
     try:
-        pl.scan_database("SELECT 1 AS polars_stream_probe", engine).collect()
+        df = pl.scan_database("SELECT 1 AS polars_stream_probe", engine).collect()
     finally:
         engine.dispose()
+    # an Engine is read through one pinned connection, as a live one: its results are
+    # read whole, with client-side cursors
+    assert df.item() == 1
     assert seen
-    assert all("SS" in name or "Unbuffered" in name for name in seen), seen
 
 
 @needs_postgres
@@ -4223,7 +4227,8 @@ def test_stopped_early_exits_cleanly(server: str, driver: str, stop: str) -> Non
 
 @needs_postgres
 def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
-    # an Engine's connections had no cancel: head() waited for the slowest partition
+    # an Engine is read on one connection, partition after partition: head() stops after
+    # the first, and gives the connection back with the LazyFrame
     sa = pytest.importorskip("sqlalchemy")
     pytest.importorskip("psycopg")
     # A plain table: a slow function in a view or key isn't proven repeatable, so it
@@ -4251,14 +4256,12 @@ def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
             partition_range=(1, 400),
             partition_num=4,
         )
-        start = time.perf_counter()
-        # k matches in every partition: none is pruned, the first answers at once
+        # k matches in every partition: none is pruned, the first answers; the others,
+        # read after it on the one pinned connection, are never started
         assert lf.filter(pl.col("k") == 1).head(1).collect().height == 1
-        # the last partition alone takes several seconds
-        assert time.perf_counter() - start < 3
-        # The cancelled partitions gave their connections back after `collect()`
-        # returned, from threads of their own: an Engine disposed then let them go
-        # unclosed. They are back before it returns.
+        # The scan holds its one pooled connection until the LazyFrame is dropped
+        assert engine.pool.checkedout() == 1
+        del lf
         assert engine.pool.checkedout() == 0
     finally:
         engine.dispose()
@@ -8604,3 +8607,525 @@ def test_mssql_exec_after_a_table_is_not_run_as_a_write() -> None:
         assert sorted(left["id"].to_list()) == [1, 2, 3]
     finally:
         _execute("mssql", [f"DROP TABLE IF EXISTS {victim}"])
+
+
+# ---- volatility and partition proofs, rounds 42 and 43 ----
+
+
+@pytest.mark.parametrize("name", ["postgres17", "postgres14", "mysql", "mariadb"])
+def test_temporary_table_in_a_pool_is_not_read_by_partitions(name: str) -> None:
+    # #547: a temporary table hides the permanent one of its name only on the session
+    # that made it; partitions read on the pool's other sessions
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    driver = "psycopg" if name.startswith("postgres") else "pymysql"
+    if not _installed(driver):
+        pytest.skip(f"{driver} is not installed")
+    t = "vol_tmp_shadow"
+    engine = sqlalchemy.create_engine(_sqlalchemy_url(server.uri, driver), pool_size=4)
+    try:
+        with engine.connect() as c:
+            c.exec_driver_sql(f"DROP TABLE IF EXISTS {t}")
+            c.exec_driver_sql(f"CREATE TABLE {t} (id int, v int)")
+            c.exec_driver_sql(f"INSERT INTO {t} VALUES (100001, -1), (100002, -1)")
+            c.commit()
+        # every session of the pool has its own temporary table of the name
+        conns = [engine.connect() for _ in range(4)]
+        try:
+            for c in conns:
+                c.exec_driver_sql(f"CREATE TEMPORARY TABLE {t} (id int, v int)")
+                c.exec_driver_sql(
+                    f"INSERT INTO {t} VALUES "
+                    + ", ".join(f"({i}, {i})" for i in range(1, 201))
+                )
+                c.commit()
+        finally:
+            for c in conns:
+                c.close()
+        # an Engine is read through one pinned connection: its temporary table, all of it
+        lf = pl.scan_database(t, engine, partition_on="id", partition_num=4)
+        for _ in range(3):
+            assert sorted(lf.collect()["id"].to_list()) == list(range(1, 201))
+        # a factory over the pool would read each partition on another session
+        lf = pl.scan_database(
+            t, lambda: engine.raw_connection(), partition_on="id", partition_num=4
+        )
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="temporary table"
+        ):
+            lf.collect()
+    finally:
+        engine.dispose()
+        eng = sqlalchemy.create_engine(_sqlalchemy_url(server.uri, driver))
+        with eng.connect() as c:
+            c.exec_driver_sql(f"DROP TABLE IF EXISTS {t}")
+            c.commit()
+        eng.dispose()
+
+
+def _oracle_ids(source: str, key: str) -> list[int]:
+    lf = _scan(
+        "oracle", _default_driver("oracle"), source, partition_on=key, partition_num=4
+    )
+    return sorted(lf.collect()["ID"].to_list())
+
+
+def test_oracle_global_temporary_table_is_not_partitioned() -> None:
+    # #547: the rows of a global temporary table are the session's
+    name = "oracle"
+    _execute(
+        name,
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_GTT PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE GLOBAL TEMPORARY TABLE VOL_GTT (id NUMBER(10), v NUMBER(10)) "
+            "ON COMMIT PRESERVE ROWS",
+        ],
+    )
+    try:
+        _refused(name, "VOL_GTT", "ID")
+    finally:
+        _execute(name, ["TRUNCATE TABLE VOL_GTT", "DROP TABLE VOL_GTT PURGE"])
+
+
+def test_oracle_vpd_policy_is_not_partitioned() -> None:
+    # #548: a policy's predicate (`DBMS_RANDOM`) may differ on each read
+    oracledb = pytest.importorskip("oracledb")
+    uri = SERVERS["oracle"].uri
+    if uri is None:
+        pytest.skip("no Oracle URI")
+    password = uri.split("//", 1)[1].split("@")[0].split(":", 1)[1]
+    host_port = uri.split("@", 1)[1].split("/", 1)[0]
+    try:
+        admin = oracledb.connect(
+            user="system", password=password, dsn=f"{host_port}/FREEPDB1"
+        )
+    except oracledb.Error:
+        pytest.skip("no SYSTEM access to create a VPD policy")
+    admin.autocommit = True
+    cur = admin.cursor()
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_VPD PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE TABLE VOL_VPD (id NUMBER(10) PRIMARY KEY, k NUMBER(10))",
+            "INSERT INTO VOL_VPD SELECT level, MOD(level, 100) FROM dual "
+            "CONNECT BY level <= 300",
+        ],
+    )
+    try:
+        cur.execute(
+            "CREATE OR REPLACE FUNCTION VOL_VPD_PF(s VARCHAR2, o VARCHAR2) "
+            "RETURN VARCHAR2 IS BEGIN RETURN 'DBMS_RANDOM.VALUE < 0.5'; END;"
+        )
+        cur.execute(
+            "BEGIN DBMS_RLS.ADD_POLICY(object_schema => 'POLARS', "
+            "object_name => 'VOL_VPD', policy_name => 'VOL_VPD_P', "
+            "function_schema => 'SYSTEM', policy_function => 'VOL_VPD_PF', "
+            "statement_types => 'SELECT', sec_relevant_cols => 'K', "
+            "sec_relevant_cols_opt => DBMS_RLS.ALL_ROWS); END;"
+        )
+        try:
+            _refused("oracle", "VOL_VPD", "K")
+            _refused("oracle", "SELECT * FROM VOL_VPD", "K")
+        finally:
+            cur.execute(
+                "BEGIN DBMS_RLS.DROP_POLICY(object_schema => 'POLARS', "
+                "object_name => 'VOL_VPD', policy_name => 'VOL_VPD_P'); END;"
+            )
+        # without the policy it partitions again
+        assert _oracle_ids("VOL_VPD", "K") == list(range(1, 301))
+    finally:
+        _execute("oracle", ["DROP TABLE VOL_VPD PURGE"])
+        cur.execute("BEGIN EXECUTE IMMEDIATE 'DROP FUNCTION VOL_VPD_PF'; END;")
+        admin.close()
+
+
+@needs_clickhouse
+@pytest.mark.parametrize("kind", ["DEFAULT", "MATERIALIZED"])
+def test_clickhouse_default_column_added_by_alter_is_not_proven(kind: str) -> None:
+    # #517: old parts compute the column on each read
+    name = "clickhouse"
+    t = f"vol_default_{kind.lower()}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {t}",
+            f"CREATE TABLE {t} (id UInt32) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {t} SELECT number + 1 FROM numbers(300)",
+            f"ALTER TABLE {t} ADD COLUMN k UInt32 {kind} rand() % 100",
+        ],
+    )
+    try:
+        _refused(name, t, "k")
+        _refused(name, f"SELECT * FROM {t}", "k")
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {t}"])
+
+
+@needs_clickhouse
+def test_clickhouse_paste_and_any_joins_are_not_partitioned() -> None:
+    # #549, #550: the pairing depends on the position or on which match comes first
+    name = "clickhouse"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS vol_pl",
+            "DROP TABLE IF EXISTS vol_pr",
+            "CREATE TABLE vol_pl (id UInt32) ENGINE = MergeTree ORDER BY id",
+            "CREATE TABLE vol_pr (n UInt32, v UInt32) ENGINE = MergeTree ORDER BY n",
+            "INSERT INTO vol_pl SELECT number + 1 FROM numbers(300)",
+            "INSERT INTO vol_pr SELECT number + 1, number + 1 FROM numbers(300)",
+        ],
+    )
+    try:
+        for source in [
+            "SELECT l.id, r.v AS k FROM vol_pl l PASTE JOIN "
+            "(SELECT v FROM vol_pr ORDER BY n) r",
+            "SELECT l.id, r.v AS k FROM vol_pl l ANY LEFT JOIN vol_pr r ON l.id = r.n",
+        ]:
+            _refused(name, source, "id")
+        # also unpartitioned, a filter on the paired column is applied after the read
+        source = (
+            "SELECT l.id, r.v AS k FROM vol_pl l PASTE JOIN "
+            "(SELECT v FROM vol_pr ORDER BY n) r"
+        )
+        df = (
+            _scan(name, _default_driver(name), source)
+            .filter(pl.col("k") < 100)
+            .collect()
+        )
+        assert df.height == 99
+        assert (df["id"] == df["k"]).all()
+    finally:
+        _execute(name, ["DROP TABLE IF EXISTS vol_pl", "DROP TABLE IF EXISTS vol_pr"])
+
+
+@pytest.mark.parametrize("name", ["clickhouse", "postgres17"])
+def test_float_sum_as_a_partition_key_is_refused(name: str) -> None:
+    # #546
+    table = "vol_floatsum"
+    if name == "clickhouse":
+        if SERVERS[name].uri is None:
+            pytest.skip("no ClickHouse URI")
+        statements = [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (g UInt32, x Float64) ENGINE = MergeTree ORDER BY g",
+            f"INSERT INTO {table} SELECT number % 50, number * 0.1 FROM numbers(2000)",
+        ]
+    else:
+        if SERVERS[name].uri is None:
+            pytest.skip("no Postgres URI")
+        statements = [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (g int, x float8)",
+            f"INSERT INTO {table} SELECT g % 50, g * 0.1 FROM generate_series(1, 2000) g",
+        ]
+    _execute(name, statements)
+    try:
+        source = f"SELECT g, sum(x) AS k FROM {table} GROUP BY g"
+        _refused(name, source, "k")
+        assert _partitions(name, source.replace("sum(x) AS k", "count(*) AS id"), "g")
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_postgres_user_operator_on_literals_and_attribute_functions() -> None:
+    # #551: `true # false` runs a user's `#`(boolean, boolean) though no column has the
+    # type (an operator on `int4` or `numeric` would make other tests' sources unproven);
+    # #516: `c.f` is `f(c)`
+    name = "postgres17"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS vol_pgq CASCADE",
+            "DROP OPERATOR IF EXISTS #(boolean, boolean)",
+            "DROP FUNCTION IF EXISTS vol_pgq_mul(boolean, boolean)",
+            "DROP FUNCTION IF EXISTS vol_pgq_k(vol_pgq)",
+            "CREATE TABLE vol_pgq (id int PRIMARY KEY)",
+            "INSERT INTO vol_pgq SELECT g FROM generate_series(1, 300) g",
+            "CREATE FUNCTION vol_pgq_mul(boolean, boolean) RETURNS int "
+            "LANGUAGE sql VOLATILE AS 'SELECT (random() * 100)::int'",
+            "CREATE OPERATOR # (LEFTARG = boolean, RIGHTARG = boolean, "
+            "FUNCTION = vol_pgq_mul)",
+            "CREATE FUNCTION vol_pgq_k(vol_pgq) RETURNS int "
+            "LANGUAGE sql VOLATILE AS 'SELECT (random() * 100)::int'",
+        ],
+    )
+    try:
+        _refused(name, "SELECT id, (true # false) AS kk FROM vol_pgq", "id")
+        _refused(name, "SELECT c.id, c.vol_pgq_k AS k FROM vol_pgq c", "id")
+        _refused(name, "SELECT c.id, (c).vol_pgq_k AS k FROM vol_pgq c", "id")
+        assert _partitions(name, "SELECT id, id * 2 AS kk FROM vol_pgq") == list(
+            range(1, 301)
+        )
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS vol_pgq CASCADE",
+                "DROP OPERATOR IF EXISTS #(boolean, boolean)",
+                "DROP FUNCTION IF EXISTS vol_pgq_mul(boolean, boolean)",
+                "DROP FUNCTION IF EXISTS vol_pgq_k(vol_pgq)",
+            ],
+        )
+
+
+def test_oracle_function_without_parentheses_is_not_a_column() -> None:
+    # #515: `SELECT id, f AS k` calls the function `f` where no column is named `f`
+    name = "oracle"
+    _execute(
+        name,
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_PAREN PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE TABLE VOL_PAREN (id NUMBER(10) PRIMARY KEY)",
+            "INSERT INTO VOL_PAREN SELECT level FROM dual CONNECT BY level <= 300",
+            "CREATE OR REPLACE FUNCTION VOL_PAREN_F RETURN NUMBER IS "
+            "BEGIN RETURN TRUNC(DBMS_RANDOM.VALUE(0, 1000)); END;",
+        ],
+    )
+    try:
+        _refused(name, "SELECT id, VOL_PAREN_F AS k FROM VOL_PAREN", "ID")
+        assert _oracle_ids("SELECT id, id AS k FROM VOL_PAREN", "ID") == list(
+            range(1, 301)
+        )
+    finally:
+        _execute(name, ["DROP TABLE VOL_PAREN PURGE", "DROP FUNCTION VOL_PAREN_F"])
+
+
+def _prime_pool(engine: Any, statements: list[str], idle: int = 3) -> None:
+    """Idle connections in the pool; the session statements run on the first."""
+    conns = [engine.connect() for _ in range(idle)]
+    for statement in statements:
+        conns[0].exec_driver_sql(statement)
+    conns[0].commit()
+    for c in conns:
+        c.close()
+
+
+def test_postgres_engine_reads_one_session_for_every_partition() -> None:
+    # #576: `search_path` set on one pooled connection decided which table a partition read
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    schema, table = "vol_sp_schema", "vol_sp_t"
+    _execute(
+        "postgres17",
+        [
+            f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+            f"DROP TABLE IF EXISTS public.{table}",
+            f"CREATE SCHEMA {schema}",
+            f"CREATE TABLE public.{table} (id int, v int)",
+            f"INSERT INTO public.{table} SELECT g, g FROM generate_series(1, 400) g",
+            f"CREATE TABLE {schema}.{table} (id int, v int)",
+            f"INSERT INTO {schema}.{table} SELECT g + 100000, -1 FROM generate_series(1, 400) g",
+        ],
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "psycopg"), pool_size=5
+    )
+    try:
+        _prime_pool(engine, [f"SET search_path TO {schema}, public"])
+        for kwargs in (
+            {},
+            {"partition_on": "id", "partition_num": 4},
+            {"partition_on": "id", "partition_num": 8, "max_connections": 4},
+        ):
+            for _ in range(3):
+                ids = pl.scan_database(table, engine, **kwargs).collect()["id"]
+                # whichever session was pinned, all rows come from its one table
+                assert ids.len() == 400
+                assert ids.min() in (1, 100001)
+                assert (ids.max() < 1000) == (ids.min() == 1)
+    finally:
+        engine.dispose()
+        _execute(
+            "postgres17",
+            [
+                f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+                f"DROP TABLE IF EXISTS public.{table}",
+            ],
+        )
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
+    # #576: `div_precision_increment` of one pooled session changes the value of a `/` key
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("pymysql"):
+        pytest.skip("pymysql is not installed")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    table = "vol_div_t"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, v int)",
+            f"INSERT INTO {table} VALUES "
+            + ", ".join(f"({i}, {i})" for i in range(1, 2001)),
+        ],
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "pymysql"), pool_size=5
+    )
+    try:
+        _prime_pool(engine, ["SET SESSION div_precision_increment = 0"])
+        source = f"SELECT id, (id / 1000) * 1000 AS k FROM {table}"
+        for kwargs in (
+            {},
+            {"partition_on": "k", "partition_num": 4},
+            {"partition_on": "id", "partition_num": 8, "max_connections": 4},
+        ):
+            for _ in range(3):
+                df = pl.scan_database(source, engine, **kwargs).collect()
+                # one session for the whole read: `(id / 1000) * 1000` is `id` at the
+                # default precision, and one of 0, 1000, 2000 at the primed one
+                same = (df["k"].cast(pl.Float64).round(3) == df["id"]).sum()
+                assert df.height == 2000
+                assert same in (2000, 2), same
+    finally:
+        engine.dispose()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_postgres_checkout_listener_sees_the_callers_context() -> None:
+    # #577: a `checkout` listener that reads a contextvar ran on a Polars thread
+    import contextvars
+
+    from sqlalchemy import event
+
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    statements = []
+    for tenant in ("a", "b"):
+        statements += [
+            f"DROP SCHEMA IF EXISTS vol_tenant_{tenant} CASCADE",
+            f"CREATE SCHEMA vol_tenant_{tenant}",
+            f"CREATE TABLE vol_tenant_{tenant}.orders (id int, tenant text)",
+            f"INSERT INTO vol_tenant_{tenant}.orders "
+            f"SELECT g, '{tenant}' FROM generate_series(1, 300) g",
+        ]
+    _execute("postgres17", statements)
+    tenant = contextvars.ContextVar("vol_tenant", default="vol_tenant_b")
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "psycopg"), pool_size=5
+    )
+
+    @event.listens_for(engine, "checkout")
+    def _set_tenant(dbapi_connection: Any, *_: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute(f"SET search_path TO {tenant.get()}")
+        cursor.close()
+
+    try:
+        tenant.set("vol_tenant_a")
+        for kwargs in ({}, {"partition_on": "id", "partition_num": 4}):
+            df = pl.scan_database("orders", engine, **kwargs).collect()
+            assert df["tenant"].unique().to_list() == ["a"]
+            df = pl.scan_database(
+                "orders", lambda: engine.raw_connection(), **kwargs
+            ).collect()
+            assert df["tenant"].unique().to_list() == ["a"]
+    finally:
+        engine.dispose()
+        _execute(
+            "postgres17",
+            [f"DROP SCHEMA IF EXISTS vol_tenant_{t} CASCADE" for t in ("a", "b")],
+        )
+
+
+def test_clickhouse_settings_that_cut_the_read_are_not_proven() -> None:
+    # #578: `max_rows_to_read` with `read_overflow_mode = 'break'` returns a partial,
+    # read-order-dependent result: no partitions, and no filter in the query either
+    name = "clickhouse"
+    table = "vol_settings"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id UInt32, v UInt32) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} SELECT number + 1, number % 13 FROM numbers(1000)",
+        ],
+    )
+    try:
+        cut = (
+            f"SELECT id, v FROM {table} SETTINGS max_rows_to_read = 300, "
+            "read_overflow_mode = 'break'"
+        )
+        _refused(name, cut, "id")
+        lf = _scan(name, _default_driver(name), cut).filter(pl.col("id") > 100)
+        assert "filters 1/1" not in lf.explain()
+        # a harmless setting is still proven
+        ok = f"SELECT id, v FROM {table} SETTINGS max_threads = 2"
+        df = _scan(
+            name, _default_driver(name), ok, partition_on="id", partition_num=4
+        ).collect()
+        assert df.height == 1000
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_oracle_redacted_columns_are_neither_pushed_nor_partition_keys() -> None:
+    # #579: Data Redaction returns redacted values while a pushed filter compares the stored
+    oracledb = pytest.importorskip("oracledb")
+    uri = SERVERS["oracle"].uri
+    if uri is None:
+        pytest.skip("no Oracle URI")
+    password = uri.split("//", 1)[1].split("@")[0].split(":", 1)[1]
+    host_port = uri.split("@", 1)[1].split("/", 1)[0]
+    try:
+        admin = oracledb.connect(
+            user="system", password=password, dsn=f"{host_port}/FREEPDB1"
+        )
+    except oracledb.Error:
+        pytest.skip("no SYSTEM access to create a redaction policy")
+    admin.autocommit = True
+    cur = admin.cursor()
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_RED PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE TABLE VOL_RED (id NUMBER(10) PRIMARY KEY, k NUMBER(10))",
+            "INSERT INTO VOL_RED SELECT level, MOD(level, 10) + 1 FROM dual "
+            "CONNECT BY level <= 300",
+        ],
+    )
+    try:
+        # a user sees the policies through `REDACTION_POLICIES`, once granted the role
+        cur.execute("GRANT SELECT_CATALOG_ROLE TO polars")
+        cur.execute(
+            "BEGIN DBMS_REDACT.ADD_POLICY(object_schema => 'POLARS', "
+            "object_name => 'VOL_RED', policy_name => 'VOL_RED_P', "
+            "column_name => 'K', function_type => DBMS_REDACT.FULL, "
+            "expression => '1=1'); END;"
+        )
+        try:
+            _refused("oracle", "VOL_RED", "K")
+            lf = _scan("oracle", _default_driver("oracle"), "VOL_RED").filter(
+                pl.col("K") == 3
+            )
+            assert "filters 1/1" not in lf.explain()
+            # the filter runs on what was read (redacted values: none is 3)
+            assert lf.collect().height == 0
+        finally:
+            cur.execute(
+                "BEGIN DBMS_REDACT.DROP_POLICY(object_schema => 'POLARS', "
+                "object_name => 'VOL_RED', policy_name => 'VOL_RED_P'); END;"
+            )
+            cur.execute("REVOKE SELECT_CATALOG_ROLE FROM polars")
+    finally:
+        _execute("oracle", ["DROP TABLE VOL_RED PURGE"])

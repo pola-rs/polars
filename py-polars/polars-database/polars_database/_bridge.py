@@ -1704,7 +1704,16 @@ def _transaction_idle(conn: Any) -> bool | None:
                     if status is not None:
                         return status
                 return True
-            return not in_transaction()
+            if in_transaction():
+                return False
+            # none of SQLAlchemy's, but the driver's connection may have one open (a
+            # `checkout` listener's `SET`, the user's own statements): that one stays
+            fairy = getattr(conn, "connection", None)
+            driver = getattr(fairy, "driver_connection", None)
+            if driver is not None and driver is not conn:
+                if _transaction_idle(driver) is False:
+                    return False
+            return True
         if isinstance(in_transaction, bool) and module in ("sqlite3", "mysql"):
             # sqlite3, and mysql.connector (the status of its last result)
             return not in_transaction

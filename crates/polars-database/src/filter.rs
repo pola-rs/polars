@@ -1562,6 +1562,7 @@ mod tests {
                 strings: StringSemantics::UNKNOWN,
                 is_key: false,
                 comparable: true,
+                unstable: false,
             })
             .collect();
         DatabaseScanConfig {

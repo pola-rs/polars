@@ -272,7 +272,13 @@ fn scan_resolver<'py>(
         "uri" => ConnectionTarget::Uri(connection.extract::<String>(py)?.into()),
         "odbc" => ConnectionTarget::Odbc(connection.extract::<String>(py)?.into()),
         "factory" => ConnectionTarget::Factory(Arc::new(PythonObject(connection))),
-        "live" => ConnectionTarget::Live(Arc::new(LiveConnection(PythonObject(connection)))),
+        "live" => ConnectionTarget::Live(Arc::new(LiveConnection(PythonObject(connection), None))),
+        // a SQLAlchemy `Connection` of an Engine, held for this scan: read live, and
+        // closed (given back to the pool) with the scan
+        "pinned" => ConnectionTarget::Live(Arc::new(LiveConnection(
+            PythonObject(connection.clone_ref(py)),
+            Some(PythonObject(connection)),
+        ))),
         k => return Err(value_err(format!("invalid connection kind: {k}"))),
     };
     let connection = ConnectionSpec {

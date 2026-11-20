@@ -24,9 +24,25 @@ pub enum ConnectionTarget {
 }
 
 /// A live connection object can't be sent anywhere, so it refuses to serialize.
+///
+/// The second field: the checkout of an Engine's pool that the scan holds the connection by
+/// (a pinned one). It is given back to the pool when the scan's last reference to the
+/// connection is dropped.
 #[cfg(feature = "python")]
-#[derive(Clone)]
-pub struct LiveConnection(pub PythonObject);
+pub struct LiveConnection(pub PythonObject, pub Option<PythonObject>);
+
+#[cfg(feature = "python")]
+impl Drop for LiveConnection {
+    fn drop(&mut self) {
+        if let Some(checkout) = &self.1 {
+            use pyo3::prelude::PyAnyMethods;
+            pyo3::Python::attach(|py| {
+                // (a checkout already given back is no error here)
+                let _ = checkout.0.bind(py).call_method0("close");
+            });
+        }
+    }
+}
 
 #[cfg(feature = "python")]
 impl Serialize for LiveConnection {

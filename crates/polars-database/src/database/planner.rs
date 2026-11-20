@@ -545,6 +545,12 @@ pub fn resolve_scan(
         if facts.as_ref().is_ok_and(|f| f.parses && f.with_ties) && pushdown_disabled.is_none() {
             pushdown_disabled = Some(WITH_TIES.into());
         }
+        if facts.as_ref().is_ok_and(|f| f.positional_join) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(POSITIONAL_REASON.into());
+        }
+        if facts.as_ref().is_ok_and(|f| f.unsafe_settings) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(SETTINGS_REASON.into());
+        }
         if query.derived_order_by {
             if dialect.keeps_derived_table_order().is_none() {
                 // Without I/O, the server may be a MariaDB (see below).
@@ -609,6 +615,7 @@ pub fn resolve_scan(
                     dt if dt.is_float() || dt.is_decimal() => false,
                     _ => true,
                 },
+                unstable: false,
             })
             .collect();
         // No I/O to ask the database about views and the functions sqlglot doesn't know.
@@ -704,6 +711,9 @@ pub fn resolve_scan(
             &names,
             true,
         );
+        if volatility.positional && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(POSITIONAL_VIEW_REASON.into());
+        }
         // a view's columns hold what its query gives, whatever `pragma_table_info` says
         // (the first branch's type, of a `UNION`)
         if dialect == DialectName::Sqlite && volatility.plain_table {
@@ -925,6 +935,7 @@ pub fn resolve_scan(
                                 )
                                 .is_some())
                     }),
+                unstable: false,
             })
             .collect();
         if is_query && dialect == DialectName::Oracle {
@@ -1003,6 +1014,16 @@ pub fn resolve_scan(
     query
         .volatile_columns
         .extend(volatility.columns.iter().cloned());
+
+    // The columns of volatile functions or float aggregates give other values on another run:
+    // not partition keys.
+    for c in columns.iter_mut() {
+        c.unstable |= query.all_columns_volatile
+            || query
+                .volatile_columns
+                .iter()
+                .any(|v| v.eq_ignore_ascii_case(&c.name));
+    }
 
     // A filter on a volatile function's column (`random() AS r`) isn't pushed: SQLite merges
     // the wrapped query into the filter's and calls the function again for it, returning
@@ -1373,6 +1394,53 @@ pub fn check_mysql_session_zone(
     Ok(())
 }
 
+/// Postgres, MySQL, MariaDB: a partitioned read over connections the user made (a factory, an
+/// Engine's pool) must not read a temporary table of a session. A temporary table shadows a
+/// permanent one of its name for the session that made it, so the partitions that land on other
+/// sessions of the pool would read the permanent table, or none. Run on each session opened.
+/// (Oracle's global temporary tables are in the catalog: `catalog::oracle_session_bound`.)
+pub fn check_temporary_relations(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+) -> PolarsResult<()> {
+    let partitioned = config
+        .compiled
+        .as_deref()
+        .is_some_and(|c| c.partitions.len() > 1);
+    if !partitioned
+        || config.options.connection.opened_by_plugin()
+        || config.max_connections() <= 1
+        || !matches!(
+            config.dialect,
+            DialectName::Postgresql | DialectName::Mysql | DialectName::Singlestore
+        )
+    {
+        return Ok(());
+    }
+    let relations: Vec<Vec<PlSmallStr>> = match &config.options.relation {
+        DatabaseRelation::Table { parts, .. } => vec![parts.to_vec()],
+        DatabaseRelation::Query { sql } => {
+            match sql_renderer().and_then(|r| r.inspect_query(sql, config.dialect)) {
+                Ok(f) => f.tables,
+                // can't tell which tables it reads
+                Err(_) => vec![],
+            }
+        },
+    };
+    for parts in relations {
+        if let Some(name) = catalog::temporary_relation(session, config.dialect, &parts) {
+            polars_bail!(
+                InvalidOperation:
+                "the table '{name}' is a temporary table of this session, which the other \
+                connections of the pool that the partitions read through don't see (they \
+                would read a permanent table of its name, or none): read it without \
+                partitioning (partition_on=None), or from one connection"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// [`source_volatility`] of a `schema=` source, whose planning didn't look it up, on
 /// `session`: its columns are the user's.
 fn unplanned_volatility(
@@ -1519,6 +1587,15 @@ fn in_utc(dtype: &DataType) -> DataType {
     }
 }
 
+/// Pushdown is off (a filter changes the rows), but the query is still wrapped for its
+/// conversions, as with `pushdown=False`.
+const POSITIONAL_REASON: &str = "a positional join (PASTE, POSITIONAL) pairs rows by their place, \
+    which a pushed filter changes";
+const POSITIONAL_VIEW_REASON: &str = "a view it reads pairs rows by their place (PASTE, \
+    POSITIONAL), which a pushed filter changes";
+const SETTINGS_REASON: &str = "a SETTINGS clause (an overflow mode, a row limit) may cut or \
+    change the rows, which a pushed filter changes";
+
 /// Whether the source is read with conversions in its select list: a table, or a query that
 /// is wrapped for them (with pushdown, or without it where it can be: see
 /// `compile_unwrapped`).
@@ -1530,8 +1607,14 @@ fn read_wrapped(
 ) -> bool {
     // only a derived `ORDER BY` (repeated outside the wrapper, `compile_unwrapped`) keeps the
     // pushdown off
+    // (and a filter that changes the rows it pairs or keeps, as `pushdown=False` does)
     let only_derived_order = pushdown_disabled.as_deref().is_some_and(|r| {
-        r == MARIADB_ORDER_BY || r == WITH_TIES || r == derived_order_by_reason(dialect).as_str()
+        r == MARIADB_ORDER_BY
+            || r == WITH_TIES
+            || r == derived_order_by_reason(dialect).as_str()
+            || r == POSITIONAL_REASON
+            || r == SETTINGS_REASON
+            || r == POSITIONAL_VIEW_REASON
     });
     match options.relation {
         DatabaseRelation::Table { .. } => true,
@@ -3684,6 +3767,8 @@ struct SourceVolatility {
     all_columns: bool,
     /// The source is a table the catalog says is no view: its declared types hold.
     plain_table: bool,
+    /// A view it reads has a positional join (`PASTE`, `POSITIONAL`): no filter is pushed.
+    positional: bool,
 }
 
 const UNKNOWN_FUNCTIONS: &str = "the functions or operators it calls, which the database \
@@ -3926,6 +4011,7 @@ fn source_volatility(
             }
             collapses |= view.collapses_rows;
             collated |= view.collated;
+            out.positional |= view.positional_join || view.unsafe_settings;
             union_refs(&mut refs, &view);
             cast_columns.extend(view.temporal_cast_columns.iter().cloned());
             casts.extend(view.cast_types.iter().cloned());
@@ -4492,6 +4578,14 @@ fn resolve_partitions(
     let Some(dtype) = config.schema.get(&column) else {
         polars_bail!(ColumnNotFound: "partition column '{column}' is not in the database source");
     };
+    polars_ensure!(
+        !config.column(&column).is_some_and(|m| m.unstable),
+        InvalidOperation:
+        "this source can't be partitioned on '{column}': it is computed by an aggregate over \
+        floats or a volatile function, whose values differ in their last bits (or more) \
+        between runs, so a row near a cut would be read by two partitions or none; partition \
+        on another column, or CAST the aggregate's argument to an integer or decimal type"
+    );
     // The cuts compare against the column: a decimal read as a float (`schema_overrides`)
     // keeps decimal cuts, which MySQL orders right (#201).
     let declared = config
