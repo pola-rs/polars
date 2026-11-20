@@ -5,7 +5,6 @@ from typing import Literal
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -77,6 +76,10 @@ def test_limit_offset_expressions(query: str, frames: dict[str, pl.DataFrame]) -
         ("LIMIT ROW_NUMBER() OVER ()", "must be one value for the query"),
         ("LIMIT UNNEST([1, 2])", "must be one value for the query"),
         ("LIMIT (SELECT y FROM c)", "single value"),
+        ("LIMIT ROW_NUMBER()", "LIMIT must be a single value"),
+        ("OFFSET ROW_NUMBER()", "OFFSET must be a single value"),
+        # The count doesn't depend on the input, so it is negative also on no rows.
+        ("WHERE x < 0 LIMIT FLOOR(RANDOM()) - 1", "conversion from"),
         ("LIMIT CAST('2020-01-01' AS DATE)", "must be a number"),
         ("LIMIT TRUE", "must be a number"),
     ],
@@ -176,26 +179,3 @@ def test_limit_offset_random_small_input(
 ) -> None:
     ctx = pl.SQLContext(frames, one=pl.DataFrame({"y": [1]}))
     assert ctx.execute(query).collect().height <= max_height
-
-
-@pytest.mark.parametrize(
-    ("clause", "error", "match"),
-    [
-        # The count doesn't depend on the input, so it is negative also on no rows.
-        (
-            "WHERE x < 0 LIMIT FLOOR(RANDOM()) - 1",
-            InvalidOperationError,
-            "conversion from",
-        ),
-        ("LIMIT ROW_NUMBER()", SQLSyntaxError, "LIMIT must be a single value"),
-        ("OFFSET ROW_NUMBER()", SQLSyntaxError, "OFFSET must be a single value"),
-    ],
-)
-def test_limit_offset_per_row_value_errors(
-    clause: str,
-    error: type[Exception],
-    match: str,
-    frames: dict[str, pl.DataFrame],
-) -> None:
-    with pytest.raises(error, match=match):
-        pl.SQLContext(frames).execute(f"SELECT x FROM t {clause}").collect()
