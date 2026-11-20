@@ -1561,8 +1561,6 @@ impl IRFunctionExpr {
             F::ArrayExpr(IRArrayFunction::CountMatches) => &[(1, "element")],
             #[cfg(feature = "list_count")]
             F::ListExpr(IRListFunction::CountMatches) => &[(1, "element")],
-            #[cfg(all(feature = "strings", feature = "regex"))]
-            F::StringExpr(IRStringFunction::Replace { .. }) => &[(1, "pattern")],
             #[cfg(all(feature = "strings", feature = "find_many"))]
             F::StringExpr(IRStringFunction::ContainsAny { .. }) => &[(1, "patterns")],
             #[cfg(all(feature = "strings", feature = "find_many"))]

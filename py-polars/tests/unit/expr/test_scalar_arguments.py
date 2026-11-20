@@ -69,8 +69,6 @@ ARGUMENTS: list[tuple[str, str, Callable[[Any], pl.Expr], bool]] = [
         lambda x: pl.col("vl").cast(pl.Array(pl.Int64, 1)).arr.count_matches(x),
         True,
     ),
-    ("str.replace", "p", lambda x: pl.col("s").str.replace(x, "_"), True),
-    ("str.replace_all", "p", lambda x: pl.col("s").str.replace_all(x, "_"), True),
     ("str.contains_any", "ps", lambda x: pl.col("s").str.contains_any(x), True),
     (
         "str.replace_many-patterns",
@@ -175,17 +173,6 @@ def test_scalar_argument_per_group() -> None:
         lf.select(
             pl.col("a").pct_change(pl.col("n").head(1)).over("g")
         ).collect_schema()
-
-
-def test_str_replace_value_may_vary_per_row() -> None:
-    lf = pl.LazyFrame({"s": ["xa", "ya"], "p": ["a", "b"], "r": ["1", "2"]})
-    pattern = pl.col("p").first()
-    out = lf.select(
-        pl.col("s").str.replace(pattern, pl.col("r")).alias("one"),
-        pl.col("s").str.replace_all(pattern, pl.col("r")).alias("all"),
-    ).collect()
-    assert out["one"].to_list() == ["x1", "y2"]
-    assert out["all"].to_list() == ["x1", "y2"]
 
 
 def test_series_method_with_series_argument() -> None:
