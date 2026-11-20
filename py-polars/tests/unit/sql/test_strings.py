@@ -427,6 +427,18 @@ def test_string_left_right_reverse() -> None:
             ctx.execute(f"""SELECT {func}(txt,{invalid_arg}) FROM df""").collect()
 
 
+def test_string_right_beyond_length() -> None:
+    df = pl.DataFrame({"s": ["abc", "abc", "héllo"], "n": [4, -4, 2]})
+    res = df.sql(
+        "SELECT RIGHT(s, n) AS a, RIGHT(s, 4) AS b, RIGHT(s, -1) AS c FROM self"
+    )
+    assert res.rows() == [
+        ("abc", "abc", "bc"),
+        ("", "abc", "bc"),
+        ("lo", "éllo", "éllo"),
+    ]
+
+
 def test_string_left_negative_expr() -> None:
     # negative values and expressions
     df = pl.DataFrame({"s": ["alphabet", "alphabet"], "n": [-6, 6]})
