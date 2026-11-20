@@ -1080,8 +1080,13 @@ def test_a_column_mask_makes_a_table_unproven() -> None:
             f"CREATE OR REPLACE FUNCTION {q}.vol_mask(k INT) RETURNS INT "
             "RETURN CAST(floor(rand() * 60) AS INT)",
         )
-        # a plain table partitions
-        lf = _scan(f"{q}.vol_masked", partition_on="k", partition_num=4)
+        # a plain table (another one: a scan caches what it found of a table) partitions
+        execute(
+            conn,
+            f"CREATE OR REPLACE TABLE {q}.vol_unmasked AS "
+            "SELECT CAST(id AS INT) AS id, CAST(id AS INT) AS k FROM range(0, 60)",
+        )
+        lf = _scan(f"{q}.vol_unmasked", partition_on="k", partition_num=4)
         assert sorted(lf.collect()["id"].to_list()) == list(range(60))
         execute(
             conn,
@@ -1099,5 +1104,6 @@ def test_a_column_mask_makes_a_table_unproven() -> None:
         assert _scan(f"{q}.vol_masked", partition_on=None).collect().height == 60
     finally:
         execute(conn, f"DROP TABLE IF EXISTS {q}.vol_masked")
+        execute(conn, f"DROP TABLE IF EXISTS {q}.vol_unmasked")
         execute(conn, f"DROP FUNCTION IF EXISTS {q}.vol_mask")
         conn.close()
