@@ -1,6 +1,10 @@
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{
+    POW10_F64, dec128_fits, f64_to_dec128, i128_to_dec128, str_to_dec128,
+};
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_core::chunked_array::temporal::string::infer::{
     DatetimeInfer, TryFromWithUnit, infer_pattern_single,
@@ -252,6 +256,30 @@ fn deserialize_all<'a>(
         return Ok(AnyValue::Null);
     }
     match dtype {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => {
+            let value = match json {
+                Value::String(s) => str_to_dec128(s.as_bytes(), *precision, *scale, false),
+                Value::Static(StaticNode::I64(v)) => i128_to_dec128(*v as i128, *precision, *scale),
+                Value::Static(StaticNode::U64(v)) => i128_to_dec128(*v as i128, *precision, *scale),
+                Value::Static(StaticNode::I128(v)) => i128_to_dec128(*v, *precision, *scale),
+                Value::Static(StaticNode::U128(v)) => i128::try_from(*v)
+                    .ok()
+                    .and_then(|v| i128_to_dec128(v, *precision, *scale)),
+                // Check the scaled range before the float converter's unchecked cast.
+                Value::Static(StaticNode::F64(v)) if v.abs() < POW10_F64[precision - scale] => {
+                    f64_to_dec128(*v, *precision, *scale).filter(|v| dec128_fits(*v, *precision))
+                },
+                _ => None,
+            };
+            return match value {
+                Some(v) => Ok(AnyValue::Decimal(v, *precision, *scale)),
+                None if ignore_errors => Ok(AnyValue::Null),
+                None => {
+                    polars_bail!(ComputeError: "cannot parse '{}' ({}) as {}", json, json.value_type(), dtype)
+                },
+            };
+        },
         #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
             let value = deserialize_datetime::<Int32Type>(
