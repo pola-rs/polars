@@ -20,7 +20,7 @@ use polars_plan::dsl::functions::{
 };
 use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
-    DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant, typed_lit,
+    DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant,
 };
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
@@ -1917,7 +1917,11 @@ impl SQLFunctionVisitor<'_> {
             Left => self.try_visit_binary(|e, length| {
                 Ok(match length {
                     Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
-                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => lit(""),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => {
+                        when(e.is_not_null())
+                            .then(lit(""))
+                            .otherwise(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                    },
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                         let len = if n > 0 {
                             lit(n)
@@ -2113,7 +2117,11 @@ impl SQLFunctionVisitor<'_> {
             Right => self.try_visit_binary(|e, length| {
                 Ok(match length {
                     Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
-                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => typed_lit(""),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => {
+                        when(e.is_null())
+                            .then(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                            .otherwise(lit(""))
+                    },
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
                         e.str().tail(length)
                     },

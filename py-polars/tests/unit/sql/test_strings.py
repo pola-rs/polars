@@ -499,6 +499,26 @@ def test_null_argument_shortcuts() -> None:
     assert res.rows() == [(None, None)]
 
 
+def test_string_left_right_zero_count() -> None:
+    df = pl.DataFrame({"s": ["ab", None, "ab"], "x": [None, None, None]})
+    res = df.sql(
+        """
+        SELECT LEFT(s, 0), RIGHT(s, 0), LEFT(x, 0) AS lx, RIGHT(x, 0) AS rx
+        FROM self
+        """
+    )
+    assert res.columns == ["literal", "literal:1", "lx", "rx"]
+    assert res.rows() == [
+        ("", "", None, None),
+        (None, None, None, None),
+        ("", "", None, None),
+    ]
+    res = df.sql("SELECT s, LEFT(s, 0) FROM self GROUP BY s ORDER BY s NULLS FIRST")
+    assert res.rows() == [(None, None), ("ab", "")]
+    res = df.sql("SELECT LEFT(MIN(s), 0) AS a, RIGHT(MAX(x), 0) AS b FROM self")
+    assert res.rows() == [("", None)]
+
+
 def test_string_left_negative_expr() -> None:
     # negative values and expressions
     df = pl.DataFrame({"s": ["alphabet", "alphabet"], "n": [-6, 6]})
