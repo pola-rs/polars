@@ -22,9 +22,22 @@ from polars_database._lib import (
     scan_resolver,
 )
 
+_at_exit_gave_up = False
+
+
+def _run_at_exit() -> None:
+    """
+    `_at_exit`, registered twice (see `_bridge._register_at_exit_before_duckdb`): the
+    second call only waits for queries started in between, unless the first gave up.
+    """
+    global _at_exit_gave_up
+    if not _at_exit_gave_up:
+        _at_exit_gave_up = not _at_exit()
+
+
 # Queries can outlive the call that started them (a `collect_batches()` iterator dropped
 # just before exit): their sessions are closed before Python finalizes, or left alone.
-atexit.register(_at_exit)
+atexit.register(_run_at_exit)
 
 __all__ = [
     "__build_commit__",
