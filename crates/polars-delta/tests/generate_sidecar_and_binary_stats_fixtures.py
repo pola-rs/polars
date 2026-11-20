@@ -115,7 +115,15 @@ pq.write_table(
 
 
 def checkpoint(
-    name, columns, add_type, rows, partitions=(), configuration=(), with_meta=True
+    name,
+    columns,
+    add_type,
+    rows,
+    partitions=(),
+    configuration=(),
+    with_meta=True,
+    row_group_size=None,
+    meta_first=False,
 ):
     """One checkpoint file with `rows` of add actions plus the table metadata and protocol."""
     meta = {
@@ -135,7 +143,9 @@ def checkpoint(
                         ("id", pa.string()),
                         (
                             "format",
-                            pa.struct([("provider", pa.string()), ("options", map_type)]),
+                            pa.struct(
+                                [("provider", pa.string()), ("options", map_type)]
+                            ),
                         ),
                         ("schemaString", pa.string()),
                         ("partitionColumns", pa.list_(pa.string())),
@@ -153,14 +163,16 @@ def checkpoint(
     )
     rows = [{"add": r} for r in rows]
     if with_meta:
-        rows += [
+        small = [
             {"metaData": meta},
             {"protocol": {"minReaderVersion": 1, "minWriterVersion": 2}},
         ]
+        rows = small + rows if meta_first else rows + small
     pq.write_table(
         pa.Table.from_pylist(rows, schema=schema),
         data / f"{name}.checkpoint.parquet",
         compression="zstd",
+        row_group_size=row_group_size,
     )
 
 
@@ -260,7 +272,10 @@ checkpoint(
 
 # Partition values stored as plain byte arrays (no string annotation).
 binary_map = pa.map_(pa.string(), pa.binary())
-for name, value in (("binary-partition", b"north"), ("binary-partition-invalid", b"\xff")):
+for name, value in (
+    ("binary-partition", b"north"),
+    ("binary-partition-invalid", b"\xff"),
+):
     checkpoint(
         name,
         [{"name": "p", "type": "string", "nullable": True, "metadata": {}}],
@@ -320,4 +335,85 @@ checkpoint(
             },
         }
     ],
+)
+
+
+# Multi-row-group checkpoints (row_group_size=2 unless noted).
+def parsed(path, low, high, n=5):
+    return {
+        "path": f"{path}.parquet",
+        "size": 10,
+        "partitionValues": [],
+        "stats": None,
+        "stats_parsed": {
+            "numRecords": n,
+            "minValues": {"x": low},
+            "maxValues": {"x": high},
+            "nullCount": {"x": 0},
+        },
+    }
+
+
+def textual(path, low, high, n=5):
+    return {
+        "path": f"{path}.parquet",
+        "size": 10,
+        "partitionValues": [],
+        "stats": text(n, low, high),
+        "stats_parsed": None,
+    }
+
+
+# Adds spread over row groups, the metadata and protocol rows in the last: [a b | c d | e f | meta protocol].
+checkpoint(
+    "rg-spread",
+    long_column,
+    partial_type,
+    [parsed(p, i * 10, i * 10 + 5) for i, p in enumerate("abcdef")],
+    row_group_size=2,
+)
+# One row group holds only metadata and protocol, the others only adds: [meta protocol | a b | c d].
+checkpoint(
+    "rg-meta-only",
+    long_column,
+    partial_type,
+    [parsed(p, i * 10, i * 10 + 5) for i, p in enumerate("abcd")],
+    row_group_size=2,
+    meta_first=True,
+)
+# Only the middle row group needs the `stats` text: [a b | c(text) d | e meta | protocol].
+checkpoint(
+    "rg-stats-text",
+    long_column,
+    partial_type,
+    [
+        parsed("a", 0, 5),
+        parsed("b", 10, 15),
+        textual("c", 20, 25),
+        parsed("d", 30, 35),
+        parsed("e", 40, 45),
+    ],
+    row_group_size=2,
+)
+# Two parts of several row groups each; the metadata is in the second part's first row group.
+checkpoint(
+    "rg-multipart-1",
+    long_column,
+    partial_type,
+    [parsed(p, i * 10, i * 10 + 5) for i, p in enumerate("abcde")],
+    with_meta=False,
+    row_group_size=2,
+)
+checkpoint(
+    "rg-multipart-2",
+    long_column,
+    partial_type,
+    [
+        textual("f", 50, 55),
+        parsed("g", 60, 65),
+        parsed("h", 70, 75),
+        textual("i", 80, 85),
+    ],
+    row_group_size=2,
+    meta_first=True,
 )

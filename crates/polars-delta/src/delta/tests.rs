@@ -1193,3 +1193,130 @@ fn every_part_of_a_multipart_checkpoint_gets_the_table_metadata() {
         ]
     );
 }
+
+/// `(path, x_min, x_max)` of every planned file, in plan order.
+fn planned_bounds(store: &Store) -> Vec<(String, Option<i128>, Option<i128>)> {
+    let min = planned_stats(store, &["x"], "x_min");
+    let max = planned_stats(store, &["x"], "x_max");
+    assert_eq!(min.len(), max.len());
+    min.into_iter()
+        .zip(max)
+        .map(|((p, lo), (q, hi))| {
+            assert_eq!(p, q);
+            (p, lo, hi)
+        })
+        .collect()
+}
+
+fn bounds(spec: &[(&str, i128)]) -> Vec<(String, Option<i128>, Option<i128>)> {
+    spec.iter()
+        .map(|(p, lo)| (format!("/table/{p}.parquet"), Some(*lo), Some(lo + 5)))
+        .collect()
+}
+
+#[test]
+fn multi_row_group_checkpoint_keeps_every_add_in_order() {
+    for (name, expected) in [
+        (
+            "rg-spread",
+            bounds(&[
+                ("a", 0),
+                ("b", 10),
+                ("c", 20),
+                ("d", 30),
+                ("e", 40),
+                ("f", 50),
+            ]),
+        ),
+        // The first row group holds only metadata and protocol.
+        (
+            "rg-meta-only",
+            bounds(&[("a", 0), ("b", 10), ("c", 20), ("d", 30)]),
+        ),
+        // The `stats` text is read only for the row group with file "c".
+        (
+            "rg-stats-text",
+            bounds(&[("a", 0), ("b", 10), ("c", 20), ("d", 30), ("e", 40)]),
+        ),
+    ] {
+        let store = checkpoint_store(&[(
+            "00000000000000000000.checkpoint.parquet",
+            match name {
+                "rg-spread" => fixture!("rg-spread.checkpoint.parquet"),
+                "rg-meta-only" => fixture!("rg-meta-only.checkpoint.parquet"),
+                _ => fixture!("rg-stats-text.checkpoint.parquet"),
+            },
+        )]);
+        assert_eq!(planned_bounds(&store), expected, "{name}");
+        let (header, paths) = planned(
+            &store,
+            Request {
+                use_metadata_statistics: true,
+                statistics_columns: Some(vec!["x".to_owned()]),
+                ..Request::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(paths.len(), expected.len(), "{name}");
+        assert_eq!(
+            header.row_count,
+            Some((5 * expected.len() as u64, 0)),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn multi_row_group_checkpoint_reconciles_with_later_commits() {
+    let mut store = checkpoint_store(&[(
+        "00000000000000000000.checkpoint.parquet",
+        fixture!("rg-spread.checkpoint.parquet"),
+    )]);
+    store.put(
+        "00000000000000000001.json",
+        &[
+            json!({"remove":{"path":"c.parquet","deletionTimestamp":1,"dataChange":true}}),
+            json!({"remove":{"path":"f.parquet","deletionTimestamp":1,"dataChange":true}}),
+            add("z.parquet"),
+        ],
+    );
+    let mut paths = planned_bounds(&store)
+        .into_iter()
+        .map(|(p, _, _)| p)
+        .collect::<Vec<_>>();
+    paths.sort();
+    assert_eq!(
+        paths,
+        ["a", "b", "d", "e", "z"].map(|p| format!("/table/{p}.parquet"))
+    );
+}
+
+#[test]
+fn multipart_checkpoint_with_several_row_groups_per_part() {
+    let store = checkpoint_store(&[
+        (
+            "00000000000000000000.checkpoint.0000000001.0000000002.parquet",
+            fixture!("rg-multipart-1.checkpoint.parquet"),
+        ),
+        (
+            "00000000000000000000.checkpoint.0000000002.0000000002.parquet",
+            fixture!("rg-multipart-2.checkpoint.parquet"),
+        ),
+    ]);
+    let mut got = planned_bounds(&store);
+    got.sort();
+    assert_eq!(
+        got,
+        bounds(&[
+            ("a", 0),
+            ("b", 10),
+            ("c", 20),
+            ("d", 30),
+            ("e", 40),
+            ("f", 50),
+            ("g", 60),
+            ("h", 70),
+            ("i", 80)
+        ])
+    );
+}
