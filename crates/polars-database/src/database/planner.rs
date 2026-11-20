@@ -81,6 +81,7 @@ fn check_read_only(
     sql: &str,
     facts: Option<&QueryFacts>,
     read_only_session: bool,
+    dialect: DialectName,
 ) -> PolarsResult<()> {
     if let Some(facts) = facts.filter(|f| f.parses) {
         polars_ensure!(
@@ -97,7 +98,7 @@ fn check_read_only(
         InvalidOperation: "{first} statements are not valid read queries for scan_database"
     );
     polars_ensure!(
-        read_only_session || plain_select(sql),
+        read_only_session || plain_select(sql, dialect),
         InvalidOperation:
         "scan_database only runs read queries, and this query can't be parsed to check that \
         it is one (a WITH may hold a write); write it as one plain SELECT (no INTO, no `;` \
@@ -107,14 +108,21 @@ fn check_read_only(
 }
 
 /// A query that is one `SELECT` without `INTO` (`SELECT … INTO t` creates a table), as far as
-/// its words show: a statement that can't be parsed is taken as a write otherwise.
-fn plain_select(sql: &str) -> bool {
+/// its words show: a statement that can't be parsed is taken as a write otherwise. SQL Server
+/// runs statements with no `;` between them (`SELECT … FROM c EXEC('…')`): no word of the query
+/// may start a statement there ([`TSQL_STATEMENT_WORDS`]).
+fn plain_select(sql: &str, dialect: DialectName) -> bool {
     let sql = strip_statement_end(sql);
+    let mut words = sql.split(|c: char| !c.is_alphanumeric() && c != '_');
     first_keyword(sql).eq_ignore_ascii_case("SELECT")
         && !sql.contains(';')
-        && !sql
-            .split(|c: char| !c.is_alphanumeric() && c != '_')
-            .any(|w| w.eq_ignore_ascii_case("INTO"))
+        && !words.clone().any(|w| w.eq_ignore_ascii_case("INTO"))
+        && !(dialect == DialectName::Mssql
+            && words.any(|w| {
+                TSQL_STATEMENT_WORDS
+                    .iter()
+                    .any(|k| k.eq_ignore_ascii_case(w))
+            }))
 }
 
 /// Whether every session of a scan is read-only, so that the database refuses a write: the
@@ -128,6 +136,57 @@ fn read_only_session(dialect: DialectName, backend: &BackendKind, live: bool) ->
             .iter()
             .any(|s| s.sql.contains("READ ONLY"))
 }
+
+/// Words that start a Transact-SQL statement, from SQL Server's reserved keywords (it rejects
+/// one as an alias, so one after a table is a statement). Not `FETCH` (`OFFSET … FETCH NEXT`).
+const TSQL_STATEMENT_WORDS: &[&str] = &[
+    "ALTER",
+    "BACKUP",
+    "BREAK",
+    "BULK",
+    "CHECKPOINT",
+    "CLOSE",
+    "COMMIT",
+    "CONTINUE",
+    "CREATE",
+    "DBCC",
+    "DEALLOCATE",
+    "DECLARE",
+    "DELETE",
+    "DENY",
+    "DROP",
+    "DUMP",
+    "EXEC",
+    "EXECUTE",
+    "GOTO",
+    "GRANT",
+    "IF",
+    "INSERT",
+    "KILL",
+    "LOAD",
+    "MERGE",
+    "OPEN",
+    "PRINT",
+    "RAISERROR",
+    "READTEXT",
+    "RECONFIGURE",
+    "RESTORE",
+    "RETURN",
+    "REVERT",
+    "REVOKE",
+    "ROLLBACK",
+    "SAVE",
+    "SET",
+    "SETUSER",
+    "SHUTDOWN",
+    "TRUNCATE",
+    "UPDATE",
+    "UPDATETEXT",
+    "USE",
+    "WAITFOR",
+    "WHILE",
+    "WRITETEXT",
+];
 
 /// The first word of a statement, after comments.
 fn first_keyword(sql: &str) -> &str {
@@ -376,7 +435,7 @@ pub fn resolve_scan(
         query_facts = facts.as_ref().ok().cloned();
         let read_only_session =
             read_only_session(dialect, &backend.kind, options.connection.is_live());
-        check_read_only(&sql, facts.as_ref().ok(), read_only_session)?;
+        check_read_only(&sql, facts.as_ref().ok(), read_only_session, dialect)?;
         // SQLite and DuckDB rename one of two names that differ only in case inside a derived
         // table (`x:1`, `x_1`), and a qualified name picks the first of them.
         if matches!(dialect, DialectName::Sqlite | DialectName::Duckdb)
@@ -4696,9 +4755,17 @@ mod tests {
     #[test]
     fn keyword_guard() {
         assert_eq!(first_keyword("  -- x\n /* y */ (SELECT 1)"), "SELECT");
-        assert!(check_read_only("DELETE FROM t", None, true).is_err());
-        assert!(check_read_only("/* c */ insert into t values (1)", None, true).is_err());
-        assert!(check_read_only("SELECT * FROM t", None, false).is_ok());
+        assert!(check_read_only("DELETE FROM t", None, true, DialectName::Generic).is_err());
+        assert!(
+            check_read_only(
+                "/* c */ insert into t values (1)",
+                None,
+                true,
+                DialectName::Generic
+            )
+            .is_err()
+        );
+        assert!(check_read_only("SELECT * FROM t", None, false, DialectName::Generic).is_ok());
         let facts = QueryFacts {
             unproven: vec![],
             parses: true,
@@ -4706,7 +4773,7 @@ mod tests {
             ..Default::default()
         };
         let cte = "WITH d AS (DELETE FROM t) SELECT 1";
-        assert!(check_read_only(cte, Some(&facts), true).is_err());
+        assert!(check_read_only(cte, Some(&facts), true, DialectName::Generic).is_err());
         // a query that doesn't parse: only plainly a SELECT, unless the session refuses
         // writes itself
         for sql in [
@@ -4715,10 +4782,28 @@ mod tests {
             "SELECT 1; DELETE FROM t",
             "WITH d AS (SELECT 1) SELECT * FROM d",
         ] {
-            assert!(check_read_only(sql, None, false).is_err(), "{sql}");
-            assert!(check_read_only(sql, None, true).is_ok(), "{sql}");
+            assert!(
+                check_read_only(sql, None, false, DialectName::Generic).is_err(),
+                "{sql}"
+            );
+            assert!(
+                check_read_only(sql, None, true, DialectName::Generic).is_ok(),
+                "{sql}"
+            );
         }
-        assert!(check_read_only("(SELECT a FROM t USING <);", None, false).is_ok());
+        assert!(
+            check_read_only(
+                "(SELECT a FROM t USING <);",
+                None,
+                false,
+                DialectName::Generic
+            )
+            .is_ok()
+        );
+        // SQL Server runs a statement after a query with no `;`
+        let exec = "SELECT a FROM c EXEC('DELETE FROM v') USING <";
+        assert!(check_read_only(exec, None, false, DialectName::Mssql).is_err());
+        assert!(check_read_only(exec, None, false, DialectName::Generic).is_ok());
         assert!(read_only_session(
             DialectName::Postgresql,
             &BackendKind::Python {

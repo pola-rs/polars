@@ -2624,3 +2624,81 @@ def test_query_facts_flag_with_ties(dialect: str, sql: str, with_ties: bool) -> 
     from polars_database._sqlglot import inspect_query
 
     assert inspect_query(sql, dialect)["with_ties"] is with_ties
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "EXEC('DELETE FROM victim')",
+        "EXECUTE('DELETE FROM victim')",
+        "exec ('DELETE FROM victim')",
+        "COMMIT",
+        "ROLLBACK",
+        "SHUTDOWN",
+        "RECONFIGURE",
+        "CHECKPOINT",
+        "REVERT",
+        "SETUSER",
+        "RETURN",
+        "PRINT('x')",
+        "RAISERROR('x', 16, 1)",
+        "OPENXML",
+        "x(a, b)",
+        "y(EXEC)",
+        "AS EXEC",
+        "AS COMMIT",
+        "AS [x] EXEC('DELETE FROM victim')",
+    ],
+)
+@pytest.mark.parametrize(
+    "head",
+    [
+        "SELECT id FROM c ",
+        "SELECT id FROM s.c ",
+        "SELECT id FROM c JOIN d ON c.id = d.id ",
+        "SELECT id FROM c INNER JOIN d x ON c.id = x.id LEFT JOIN e ",
+        "SELECT id FROM (SELECT 1 AS id) ",
+        "SELECT id FROM c WHERE id > 1 UNION SELECT id FROM d ",
+    ],
+)
+def test_tsql_a_statement_parsed_as_an_alias_is_not_read_only(
+    head: str, tail: str
+) -> None:
+    # SQL Server runs `SELECT … FROM c EXEC('…')` as a query and then the statement
+    # (statements need no `;`); sqlglot parses the word as `c`'s alias
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(head + tail, "tsql")["read_only"] is False
+    cte = f"WITH c AS (SELECT id FROM t) {head}{tail}"
+    assert inspect_query(cte, "tsql")["read_only"] is False
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT id FROM c x",
+        "SELECT id FROM c AS x",
+        "SELECT id FROM c AS x(a, b)",
+        "SELECT id FROM c [exec]",
+        'SELECT id FROM c "exec"',
+        "SELECT id x, id AS y FROM c INNER JOIN d ON c.id = d.id",
+        "SELECT a, b FROM (SELECT 1 a, 2 b) q",
+        "SELECT a FROM (VALUES (1)) AS v(a)",
+    ],
+)
+def test_tsql_ordinary_aliases_stay_read_only(sql: str) -> None:
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(sql, "tsql")["read_only"] is True
+
+
+@pytest.mark.parametrize(
+    "dialect", ["postgres", "mysql", "oracle", "sqlite", "duckdb", "snowflake"]
+)
+def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> None:
+    # (`c COMMIT` is an alias to sqlglot, and a syntax error to the database: no second
+    # statement runs without a `;`, which the parser sees)
+    from polars_database._sqlglot import inspect_query
+
+    facts = inspect_query("SELECT id FROM c; COMMIT", dialect)
+    assert facts["read_only"] is False

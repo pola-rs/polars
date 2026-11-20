@@ -2238,6 +2238,88 @@ def outer_order_by(
     return _outer_order_by(statements[0], dialect, columns, star_ordinals)
 
 
+# SQL Server's reserved keywords ("Reserved Keywords (Transact-SQL)"). It rejects one as
+# an unquoted alias, so a query that has one as an alias isn't valid to it as
+# written: but it runs statements with no `;` between them, and sqlglot parses
+# `SELECT … FROM c EXEC('…')` as `c`'s alias `EXEC`. Such a query isn't read only.
+_TSQL_RESERVED = frozenset(
+    {
+        "ADD", "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "AUTHORIZATION", "BACKUP",
+        "BEGIN", "BETWEEN", "BREAK", "BROWSE", "BULK", "BY", "CASCADE", "CASE", "CHECK",
+        "CHECKPOINT", "CLOSE", "CLUSTERED", "COALESCE", "COLLATE", "COLUMN", "COMMIT",
+        "COMPUTE", "CONSTRAINT", "CONTAINS", "CONTAINSTABLE", "CONTINUE", "CONVERT",
+        "CREATE", "CROSS", "CURRENT", "CURRENT_DATE", "CURRENT_TIME",
+        "CURRENT_TIMESTAMP", "CURRENT_USER", "CURSOR", "DATABASE", "DBCC", "DEALLOCATE",
+        "DECLARE", "DEFAULT", "DELETE", "DENY", "DESC", "DISK", "DISTINCT",
+        "DISTRIBUTED", "DOUBLE", "DROP", "DUMP", "ELSE", "END", "ERRLVL", "ESCAPE",
+        "EXCEPT", "EXEC", "EXECUTE", "EXISTS", "EXIT", "EXTERNAL", "FETCH", "FILE",
+        "FILLFACTOR", "FOR", "FOREIGN", "FREETEXT", "FREETEXTTABLE", "FROM", "FULL",
+        "FUNCTION", "GOTO", "GRANT", "GROUP", "HAVING", "HOLDLOCK", "IDENTITY",
+        "IDENTITY_INSERT", "IDENTITYCOL", "IF", "IN", "INDEX", "INNER", "INSERT",
+        "INTERSECT", "INTO", "IS", "JOIN", "KEY", "KILL", "LEFT", "LIKE", "LINENO",
+        "LOAD", "MERGE", "NATIONAL", "NOCHECK", "NONCLUSTERED", "NOT", "NULL", "NULLIF",
+        "OF", "OFF", "OFFSETS", "ON", "OPEN", "OPENDATASOURCE", "OPENQUERY",
+        "OPENROWSET", "OPENXML", "OPTION", "OR", "ORDER", "OUTER", "OVER", "PERCENT",
+        "PIVOT", "PLAN", "PRECISION", "PRIMARY", "PRINT", "PROC", "PROCEDURE", "PUBLIC",
+        "RAISERROR", "READ", "READTEXT", "RECONFIGURE", "REFERENCES", "REPLICATION",
+        "RESTORE", "RESTRICT", "RETURN", "REVERT", "REVOKE", "RIGHT", "ROLLBACK",
+        "ROWCOUNT", "ROWGUIDCOL", "RULE", "SAVE", "SCHEMA", "SECURITYAUDIT", "SELECT",
+        "SEMANTICKEYPHRASETABLE", "SEMANTICSIMILARITYDETAILSTABLE",
+        "SEMANTICSIMILARITYTABLE", "SESSION_USER", "SET", "SETUSER", "SHUTDOWN", "SOME",
+        "STATISTICS", "SYSTEM_USER", "TABLE", "TABLESAMPLE", "TEXTSIZE", "THEN", "TO",
+        "TOP", "TRAN", "TRANSACTION", "TRIGGER", "TRUNCATE", "TRY_CONVERT", "TSEQUAL",
+        "UNION", "UNIQUE", "UNPIVOT", "UPDATE", "UPDATETEXT", "USE", "USER", "VALUES",
+        "VARYING", "VIEW", "WAITFOR", "WHEN", "WHERE", "WHILE", "WITH", "WITHIN",
+        "WRITETEXT",
+    }
+)  # fmt: skip
+
+
+def _hides_statement(
+    statements: list[Any], tokens: list[Any], dialect: str | None
+) -> bool:
+    """
+    Whether an alias may be another statement's start (SQL Server only).
+
+    An unquoted alias, bare or after `AS`, that is a reserved keyword (`c EXEC(…)`,
+    `c COMMIT`), or a bare table alias with a column list (`c EXEC([…])` is `c` with the
+    alias `EXEC` and the columns `[…]`). Fail closed: such a query isn't read only,
+    whatever the AST says.
+    """
+    if dialect != "tsql":
+        return False
+    by_start = {t.start: i for i, t in enumerate(tokens)}
+
+    def bare(ident: Any) -> bool:
+        i = by_start.get(ident.meta.get("start", -1)) if ident.meta else None
+        # (no position, or the token isn't the one the identifier was made of: unknown)
+        if i is None:
+            return True
+        return i == 0 or tokens[i - 1].token_type != sqlglot.TokenType.ALIAS
+
+    for stmt in statements:
+        for node in stmt.find_all(exp.TableAlias, exp.Alias):
+            alias = node.args.get("alias") if isinstance(node, exp.Alias) else node.this
+            names = [alias]
+            if isinstance(node, exp.TableAlias):
+                names += node.args.get("columns") or []
+            for ident in names:
+                if (
+                    isinstance(ident, exp.Identifier)
+                    and not ident.args.get("quoted")
+                    and ident.name.upper() in _TSQL_RESERVED
+                ):
+                    return True
+            if (
+                isinstance(alias, exp.Identifier)
+                and isinstance(node, exp.TableAlias)
+                and node.args.get("columns")
+                and bare(alias)
+            ):
+                return True
+    return False
+
+
 def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     """Facts about a user query that decide whether it can be wrapped."""
     facts = _no_facts()
@@ -2268,7 +2350,11 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
             # only what the tokens say is the same query
             if sqlglot.parse(body, read=dialect) == statements:
                 facts["body"] = original[: tokens[-1].end + 1]
-    facts["read_only"] = len(statements) == 1 and _is_read_only(statements[0])
+    facts["read_only"] = (
+        len(statements) == 1
+        and _is_read_only(statements[0])
+        and not _hides_statement(statements, tokens, dialect)
+    )
     if len(statements) != 1 or not isinstance(statements[0], exp.Query):
         return facts
 
