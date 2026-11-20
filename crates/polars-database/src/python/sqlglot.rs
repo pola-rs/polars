@@ -188,6 +188,7 @@ impl SqlglotRenderer {
                 read_only: get("read_only")?,
                 repeatable: get("repeatable")?,
                 top_level_limit: get("top_level_limit")?,
+                with_ties: get("with_ties")?,
                 nested_queries: get("nested_queries")?,
                 side_effects: get("side_effects")?,
                 side_effects_outside_rows: get("side_effects_outside_rows")?,

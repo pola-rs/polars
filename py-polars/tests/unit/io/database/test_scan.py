@@ -5678,3 +5678,53 @@ def test_scan_sqlite_union_of_scans_differing_in_dtype_parameters(
                 lfs, optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
             )
             assert [df.schema["x"] for df in out] == [a, b], how
+
+
+def test_scan_sqlite_text_key_read_as_int_is_not_range_partitioned(
+    tmp_path: Path,
+) -> None:
+    # SQLite compares a TEXT column as text ('50' > '100'): integer cuts would
+    # overlap (#519)
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (k TEXT, v INTEGER)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(str(i), i) for i in range(300)]
+        )
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
+        pl.scan_database(
+            "t",
+            uri,
+            schema_overrides={"k": pl.Int64},
+            partition_on="k",
+            partition_num=6,
+            partition_range=(0, 300),
+        ).collect()
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
+        pl.scan_database(
+            "t", uri, schema_overrides={"k": pl.Int64}, order_by="k"
+        ).collect()
+    # as strings, and with an automatic partitioning, it reads whole
+    df = pl.scan_database("t", uri, schema_overrides={"k": pl.Int64}).collect()
+    assert df.height == 300
+
+
+def test_scan_sqlite_live_text_factory_bytes_reads_reals_exactly(
+    tmp_path: Path,
+) -> None:
+    # the exact-real marker reached the user on a connection returning text as
+    # bytes (#520)
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, x)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(1, 0.1), (2, "abc"), (3, 2.5)]
+        )
+        conn.commit()
+    with closing(sqlite3.connect(path, check_same_thread=False)) as conn:
+        conn.text_factory = bytes
+        lf = pl.scan_database("t", conn)
+        assert lf.collect()["x"].to_list() == ["0.1", "abc", "2.5"]
+        assert lf.filter(pl.col("x") == "0.1").collect()["id"].to_list() == [1]

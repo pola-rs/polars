@@ -607,6 +607,15 @@ impl Translator<'_> {
     /// decimal literal wider than its precision (DuckDB `HUGEINT` is read as
     /// `Decimal(38, 0)` but holds 39 digits) isn't a valid value.
     fn literal_fits(&self, name: &str, av: &AnyValue<'_>) -> bool {
+        // A Trino `char(n)` is read padded with blanks, and compared without them (`'a  '`
+        // read, `c = 'a  '` false): a literal ending in a blank may match what the
+        // database doesn't (#563).
+        if self.dialect() == DialectName::Trino
+            && let Some(s) = av.get_str()
+            && s.ends_with(' ')
+        {
+            return false;
+        }
         // Spark widens a FLOAT column to DOUBLE for the comparison: only a literal that is
         // exactly an f32 (as a double) meets the stored value (`float(1.1) = 1.1` is false).
         if self.dialect() == DialectName::Databricks
@@ -865,6 +874,10 @@ impl Translator<'_> {
         }
         let pat = lit.value().extract_str()?;
         if !self.writable(&SqlLiteral::String(pat.into())) {
+            return None;
+        }
+        // (a Trino `char(n)`: see `literal_fits`)
+        if self.dialect() == DialectName::Trino && pat.ends_with(' ') {
             return None;
         }
         // ClickHouse's `LIKE` misreads a pattern that holds a NUL: `s LIKE '%\0'` matches
@@ -1569,6 +1582,7 @@ mod tests {
             user_schema: false,
             derived_order_dropped: false,
             refused_columns: vec![],
+            sqlite_text_numbers: vec![],
             bounds_cache: Default::default(),
         }
     }

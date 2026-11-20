@@ -363,6 +363,9 @@ pub struct QueryFacts {
     /// A `LIMIT` / `OFFSET` / `FETCH` (or a lock clause) ends the query: it can't take
     /// another `LIMIT`.
     pub top_level_limit: bool,
+    /// A `WITH TIES` (`FETCH FIRST n ROWS WITH TIES`, `TOP n WITH TIES`) is in the query: a
+    /// `LIMIT` around it may be applied inside it by the server.
+    pub with_ties: bool,
     /// A CTE, a query inside the query (not just parenthesised or in a `UNION`), or a
     /// parenthesised one with a `LIMIT` of its own.
     pub nested_queries: bool,

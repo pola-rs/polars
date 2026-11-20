@@ -2129,6 +2129,22 @@ _DATABRICKS_TYPE_DTYPES = {
 }
 
 
+# Trino type names (`cursor.description`'s type codes) whose dtype is fixed. Left out
+# (typed from values): types with a zone or a variable precision, nested types, `json`, `uuid`,
+# intervals.
+_TRINO_TYPE_DTYPES = {
+    "boolean": "Boolean",
+    "tinyint": "Int8",
+    "smallint": "Int16",
+    "integer": "Int32",
+    "bigint": "Int64",
+    "real": "Float32",
+    "double": "Float64",
+    "varbinary": "Binary",
+    "date": "Date",
+}
+
+
 def _databricks_arrow_frame(cursor: Any, frame: DataFrame) -> DataFrame:
     """
     The empty frame of a `databricks.sql` result, typed by the driver's Arrow schema.
@@ -2429,7 +2445,25 @@ def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any
         name = _DATABRICKS_TYPE_DTYPES.get(type_name)
         return pl.Null if name is None else named(name)
 
+    def trino(d: Any) -> Any:
+        # `d[1]` is Trino's type name: `bigint`, `decimal(10,2)`, `varchar(5)`
+        type_name = str(d[1]).lower().strip()
+        if (m := re.fullmatch(r"decimal\((\d+),\s*(\d+)\)", type_name)) is not None:
+            p, s = int(m[1]), int(m[2])
+            return pl.Decimal(p, s) if 0 < p <= 38 and 0 <= s <= p else pl.Null
+        if (m := re.fullmatch(r"timestamp\((\d+)\)", type_name)) is not None:
+            # (a longer one is read as text, see `Dialect.text_conversion`)
+            return pl.Datetime("us") if int(m[1]) <= 6 else pl.Null
+        if (m := re.fullmatch(r"time\((\d+)\)", type_name)) is not None:
+            return pl.Time if int(m[1]) <= 6 else pl.Null
+        if re.fullmatch(r"(varchar|char)(\(\d+\))?", type_name):
+            return pl.String
+        name = _TRINO_TYPE_DTYPES.get(type_name)
+        return pl.Null if name is None else getattr(pl, name)
+
     module = _module_of(cursor)
+    if module == "trino":
+        return [trino(d) for d in description]
     if module == "duckdb":
         # (only nested types: a scalar column is typed from the catalog's type)
         return [_duckdb_type_dtype(str(d[1]), nested_only=True) for d in description]
@@ -2791,6 +2825,19 @@ class _Session:
                 empty_frame = _empty_frame(
                     cx.result, utc=self.owned or bool(timestamps)
                 )
+                # A column of NULLs only (a Trino batch) has no dtype from its
+                # values: the description's
+                import polars as pl
+
+                null_typed = (
+                    {
+                        name: dtype
+                        for name, dtype in empty_frame.schema.items()
+                        if dtype != pl.Null
+                    }
+                    if _module_of(cx.result) == "trino"
+                    else {}
+                )
                 if on_connection:
                     frames = iter(list(frames))
                 if idle and _transaction_idle(self.conn) is False:
@@ -2822,6 +2869,14 @@ class _Session:
                 if df is None:
                     break
                 empty = False
+                if null_typed:
+                    df = df.with_columns(
+                        [
+                            pl.col(c).cast(dtype)
+                            for c, dtype in null_typed.items()
+                            if c in df.columns and df.schema[c] == pl.Null
+                        ]
+                    )
                 yield df
             if empty:
                 yield empty_frame

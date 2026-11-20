@@ -8376,6 +8376,152 @@ def test_trino_edge_types_filters() -> None:
 
 
 @needs_trino
+def test_trino_named_zone_repeated_hour_reads_the_instants() -> None:
+    # a `timestamp with time zone` holds a zone's name, not its offset: the
+    # repeated hour of a named zone read as one instant (#559)
+    table = "review_trino_repeated_hour"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, tz timestamp(3) with time zone)",
+            f"INSERT INTO {table} VALUES "
+            "(1, TIMESTAMP '2026-10-25 00:30:00 UTC' AT TIME ZONE 'Europe/Paris'), "
+            "(2, TIMESTAMP '2026-10-25 01:30:00 UTC' AT TIME ZONE 'Europe/Paris'), "
+            "(3, TIMESTAMP '2026-11-01 05:30:00 UTC' AT TIME ZONE 'America/New_York'), "
+            "(4, TIMESTAMP '2026-11-01 06:30:00 UTC' AT TIME ZONE 'America/New_York')",
+        ],
+    )
+    expected = [
+        datetime(2026, 10, 25, 0, 30, tzinfo=UTC),
+        datetime(2026, 10, 25, 1, 30, tzinfo=UTC),
+        datetime(2026, 11, 1, 5, 30, tzinfo=UTC),
+        datetime(2026, 11, 1, 6, 30, tzinfo=UTC),
+    ]
+    for source in [table, f"SELECT id, tz FROM {table}"]:
+        frames, errors = _read_by_every_driver("trino", source)
+        assert not errors, errors
+        for driver, df in frames.items():
+            got = df.sort("id")["tz"].dt.convert_time_zone("UTC").to_list()
+            assert got == expected, (driver, source, got)
+
+
+@needs_trino
+def test_trino_query_with_ties_is_not_limited_around() -> None:
+    # Trino applies a LIMIT around `FETCH FIRST n ROWS WITH TIES` inside it (#560)
+    table = "review_trino_ties"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, v integer)",
+            f"INSERT INTO {table} VALUES (1, 9), (2, 9), (11, 1), (22, 1), (3, 5)",
+        ],
+    )
+    source = f"SELECT * FROM {table} ORDER BY v FETCH FIRST 1 ROWS WITH TIES"
+    for driver in _runnable_drivers("trino"):
+        lf = _scan("trino", driver, source)
+        off = _scan("trino", driver, source, pushdown=False)
+        for op in (lambda x: x.head(2), lambda x: x.slice(1, 1)):
+            assert op(lf).collect()["id"].to_list() == op(off).collect()["id"].to_list()
+        assert sorted(lf.collect()["id"].to_list()) == [11, 22], driver
+
+
+@needs_trino
+def test_trino_temporal_precision_above_six_is_read_exactly() -> None:
+    # `timestamp(7..12)` and `time(7..12)`: the `trino` driver rounded them to
+    # microseconds, ADBC aborted the process outside 1677-2262 (#561, #562)
+    table = "review_trino_wide_temporal"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, ts9 timestamp(9), "
+            "t12 time(12), tz9 timestamp(9) with time zone)",
+            f"INSERT INTO {table} VALUES "
+            "(1, TIMESTAMP '1969-12-31 23:59:59.999999999', "
+            "TIME '23:59:59.999999999999', "
+            "TIMESTAMP '1969-12-31 23:59:59.999999999 UTC'), "
+            "(2, TIMESTAMP '2300-01-01 00:00:00.000000001', "
+            "TIME '00:00:00.000000500000', "
+            "TIMESTAMP '2300-01-01 00:00:00.000000001 UTC')",
+        ],
+    )
+    for source in [table, f"SELECT * FROM {table}"]:
+        frames, errors = _read_by_every_driver("trino", source)
+        assert not errors, errors
+        for driver, df in frames.items():
+            df = df.sort("id")
+            assert df["ts9"].cast(pl.String).to_list() == [
+                "1969-12-31 23:59:59.999999999",
+                "2300-01-01 00:00:00.000000001",
+            ], (driver, source)
+            assert df["t12"].cast(pl.String).to_list() == [
+                "23:59:59.999999999999",
+                "00:00:00.000000500000",
+            ], (driver, source)
+    # a filter on it agrees with the value read
+    _check_filters_by_driver(
+        "trino",
+        table,
+        [pl.col("ts9") < "1970-01-01", pl.col("ts9").str.starts_with("2300")],
+    )
+
+
+@needs_trino
+def test_trino_char_literal_with_trailing_blanks_is_not_pushed() -> None:
+    # `c = 'a  '` is false for `char(3) 'a'` in Trino, while the column reads
+    # `'a  '` (#563)
+    source = "SELECT 1 AS id, CAST('a' AS char(3)) AS c"
+    _check_filters_by_driver(
+        "trino",
+        source,
+        [
+            pl.col("c") == "a  ",
+            pl.col("c").is_in(["a  "]),
+            pl.col("c").str.starts_with("a "),
+            pl.col("c").str.ends_with("  "),
+        ],
+    )
+
+
+@needs_trino
+def test_trino_unsampled_query_reads_its_declared_types() -> None:
+    # a query without a sample (`ORDER BY .. LIMIT`) read every column as String (#564)
+    table = "review_trino_unsampled"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, d decimal(10, 2), dt date, "
+            "vb varbinary, n integer)",
+            f"INSERT INTO {table} VALUES (1, 1.50, DATE '2020-01-02', X'00ff', NULL), "
+            "(2, NULL, NULL, NULL, NULL)",
+        ],
+    )
+    expected = {
+        driver: _scan("trino", driver, table).collect().sort("id")
+        for driver in _runnable_drivers("trino")
+    }
+    for driver in _runnable_drivers("trino"):
+        got = (
+            _scan("trino", driver, f"SELECT * FROM {table} ORDER BY id LIMIT 5")
+            .collect()
+            .sort("id")
+        )
+        assert got["id"].dtype.is_integer(), driver
+        assert got["d"].dtype == pl.Decimal(10, 2), driver
+        assert got["dt"].dtype == pl.Date, driver
+        assert got["vb"].to_list() == [b"\x00\xff", None], driver
+        assert got.columns == expected[driver].columns
+    # a column of NULLs only keeps its type, too
+    for driver in _runnable_drivers("trino"):
+        got = _scan("trino", driver, f"SELECT id, n, vb FROM {table} WHERE id = 2")
+        assert got.collect_schema()["vb"] == pl.Binary, driver
+        assert got.collect_schema()["n"].is_integer(), driver
+
+
+@needs_trino
 def test_trino_connectorx_reads_a_qualified_table_without_big_integers() -> None:
     # ConnectorX can read what has no schema to set and no bigint beyond 2**53
     pytest.importorskip("connectorx")

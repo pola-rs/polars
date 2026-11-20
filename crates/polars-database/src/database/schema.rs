@@ -100,6 +100,18 @@ pub fn declared_dtype(dialect: DialectName, db_type: &str) -> Option<DataType> {
         };
         return Some(DataType::Datetime(unit, tz));
     }
+    // Trino `timestamp(p) with time zone` (p <= 6; wider ones are read as text): an instant,
+    // read as UTC (see `column_conversion`): a value carries a zone of its own, and the
+    // drivers take the first of two instants of a named zone's repeated hour.
+    if dialect == DialectName::Trino
+        && t.starts_with("timestamp(")
+        && t.ends_with(" with time zone")
+    {
+        return Some(DataType::Datetime(
+            TimeUnit::Microseconds,
+            Some(TimeZone::UTC),
+        ));
+    }
     // Postgres `timestamptz` is an instant, read as UTC (a live connection's session zone
     // may be another: see `column_conversion`).
     if matches!(dialect, DialectName::Postgresql | DialectName::Redshift)

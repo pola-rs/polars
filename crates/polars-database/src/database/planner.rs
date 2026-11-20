@@ -163,6 +163,12 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     if dialect == DialectName::Mssql && facts.top_level_order_by_without_limit {
         return Some("SQL Server does not allow ORDER BY without TOP inside a derived table");
     }
+    if facts.with_ties {
+        return Some(
+            "the query has a WITH TIES, which a LIMIT or filter around it may not respect \
+            (Trino applies it inside the query)",
+        );
+    }
     if let Some(cols) = &facts.output_columns {
         let mut seen = PlHashSet::with_capacity(cols.len());
         if !cols.iter().all(|c| seen.insert(c)) {
@@ -510,6 +516,9 @@ pub fn resolve_scan(
     // The type affinity of a SQLite table's columns (`sqlite_affinity_dtype`): a REAL
     // column holds no integers, an INTEGER column no integral reals.
     let mut affinity: PlHashMap<PlSmallStr, DataType> = PlHashMap::new();
+    // The columns of TEXT affinity (declared CHAR, CLOB, TEXT): SQLite compares and sorts
+    // their values as text, whatever they are read as.
+    let mut text_affinity: PlHashSet<PlSmallStr> = PlHashSet::new();
     let mut stats = TableStats::default();
     let mut mixed_found: Vec<PlSmallStr> = Vec::new();
     let schema: SchemaRef;
@@ -638,6 +647,12 @@ pub fn resolve_scan(
         // a view's columns hold what its query gives, whatever `pragma_table_info` says
         // (the first branch's type, of a `UNION`)
         if dialect == DialectName::Sqlite && volatility.plain_table {
+            text_affinity.extend(
+                info.compare_types
+                    .iter()
+                    .filter(|(_, t)| sqlite_text_affinity(t))
+                    .map(|(n, _)| n.clone()),
+            );
             affinity.extend(
                 info.compare_types
                     .iter()
@@ -672,6 +687,7 @@ pub fn resolve_scan(
                     | DialectName::Mssql
                     | DialectName::Oracle
                     | DialectName::Clickhouse
+                    | DialectName::Trino
             ) {
                 info.types = names
                     .iter()
@@ -1155,7 +1171,19 @@ pub fn resolve_scan(
         pushdown_disabled = Some(reason.into());
     }
 
+    // A TEXT column read as a number (`schema_overrides=`): a range or an order on it follows
+    // the text (#519).
+    let sqlite_text_numbers = schema
+        .iter()
+        .filter(|(name, dtype)| {
+            (dtype.is_integer() || dtype.is_float() || dtype.is_decimal())
+                && text_affinity.contains(*name)
+        })
+        .map(|(name, _)| name.clone())
+        .collect();
+
     Ok(DatabaseScanConfig {
+        sqlite_text_numbers,
         fingerprint: options.fingerprint(),
         options,
         dialect,
@@ -1768,6 +1796,24 @@ pub(crate) fn decode_sqlite_reals(
         let Ok(col) = df.column(name) else {
             continue;
         };
+        // A connection with `text_factory=bytes` hands text over as bytes, the marker too.
+        let as_text;
+        let col = if let Ok(bytes) = col.binary() {
+            if let Ok(text) = col.cast(&DataType::String) {
+                as_text = text;
+                &as_text
+            } else {
+                polars_ensure!(
+                    !bytes.iter().flatten().any(|v| v.first() == Some(&1)),
+                    ComputeError:
+                    "database column '{name}' holds text that isn't valid UTF-8 next to a real \
+                    (a connection with `text_factory=bytes`): read it with a str text factory"
+                );
+                continue;
+            }
+        } else {
+            col
+        };
         let Ok(ca) = col.str() else {
             // all NULL
             continue;
@@ -1930,6 +1976,14 @@ fn column_conversion(
     }
     if let Some(sql) = dialect.text_conversion(db_type, column) {
         return Some(sql);
+    }
+    // Trino `timestamp(p) with time zone`: the instant in UTC (a named zone's repeated hour
+    // reads an hour off otherwise: the value holds the zone's name, not its offset)
+    if dialect == DialectName::Trino
+        && declared_dtype(dialect, db_type)
+            .is_some_and(|d| matches!(d, DataType::Datetime(_, Some(_))))
+    {
+        return Some(format!("{column} AT TIME ZONE 'UTC'"));
     }
     // ClickHouse `DateTime` (seconds) reaches Arrow as a plain UInt32; `DateTime64` is a
     // timestamp, and compares like the column. clickhouse_connect and ConnectorX cut a
@@ -2951,6 +3005,19 @@ fn sqlite_affinity_dtype(t: &str) -> DataType {
     }
 }
 
+/// A SQLite column of TEXT affinity that is read as a number (`schema_overrides=`/`schema=`):
+/// SQLite compares and sorts its values as text (`'50' > '100'`), so integer cuts or an
+/// `ORDER BY` on it don't follow the numbers read (#519).
+fn sqlite_text_read_as_number(config: &DatabaseScanConfig, column: &str) -> bool {
+    config.sqlite_text_numbers.iter().any(|c| c == column)
+}
+
+/// Whether a SQLite declared type has TEXT affinity (`CHAR`, `CLOB`, `TEXT`, and no `INT`).
+fn sqlite_text_affinity(t: &str) -> bool {
+    let t = t.to_ascii_uppercase();
+    !t.contains("INT") && (t.contains("CHAR") || t.contains("CLOB") || t.contains("TEXT"))
+}
+
 fn from_clause(options: &DatabaseScanOptions) -> SqlFrom {
     match &options.relation {
         DatabaseRelation::Table { parts, .. } => SqlFrom::Table(parts.clone()),
@@ -3008,6 +3075,12 @@ pub fn compile_scan(
         polars_ensure!(
             config.schema.contains(c),
             ColumnNotFound: "order_by column '{c}' is not in the database source"
+        );
+        polars_ensure!(
+            !sqlite_text_read_as_number(config, c),
+            InvalidOperation:
+            "order_by column '{c}' is a SQLite TEXT column read as a number: SQLite sorts its \
+            values as text ('100' before '50'). Read it as a string, or declare it INTEGER"
         );
     }
     columns.dedup();
@@ -3488,6 +3561,13 @@ fn compile_unwrapped(
                     polars_ensure!(
                         config.schema.contains(c),
                         ColumnNotFound: "order_by column '{c}' is not in the database source"
+                    );
+                    polars_ensure!(
+                        !sqlite_text_read_as_number(config, c),
+                        InvalidOperation:
+                        "order_by column '{c}' is a SQLite TEXT column read as a number: \
+                        SQLite sorts its values as text ('100' before '50'). Read it as a \
+                        string, or declare it INTEGER"
                     );
                 }
                 // the table's columns, not the select items that convert them
@@ -4362,6 +4442,17 @@ fn resolve_partitions(
         Some(d @ DataType::Decimal(..)) if dtype.is_float() => d,
         _ => dtype,
     };
+    if sqlite_text_read_as_number(config, &column) {
+        if why == "auto" {
+            return one();
+        }
+        polars_bail!(
+            InvalidOperation:
+            "partition column '{column}' is a SQLite TEXT column read as {dtype}: SQLite \
+            compares its values as text ('50' > '100'), so range cuts would overlap. Read it \
+            as a string, partition on an INTEGER column, or use partition_predicates"
+        );
+    }
     let Some(mut kind) = partition::range_kind(kind_dtype) else {
         if why == "auto" {
             return one();

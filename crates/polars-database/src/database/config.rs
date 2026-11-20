@@ -107,6 +107,10 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
+    /// SQLite columns of TEXT affinity that are read as numbers (`schema_overrides=`): the
+    /// database compares and sorts their values as text, so they are no range or order key.
+    #[serde(default)]
+    pub sqlite_text_numbers: Vec<PlSmallStr>,
     /// Columns the planner found unreadable right, with why: raised when one is read.
     #[serde(default)]
     pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,

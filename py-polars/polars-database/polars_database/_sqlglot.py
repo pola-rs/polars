@@ -881,15 +881,15 @@ def _sqlite_time_unproven(node: Any) -> bool:
     """
     SQLite's date and time functions read their first argument as a time value: without
     one, or with a modifier alone (`datetime('subsec')`), or `'now'`, they return the
-    current time. Proven only where it is not a text, or a text that starts with a
-    digit.
+    current time. SQLite is dynamically typed, so a column or expression may hold
+    `'now'`: proven only for a literal, a number or a text that starts with a digit.
     """
     first = next(iter(node.iter_expressions()), None)
     if first is None:
         return True
-    if isinstance(first, exp.Literal) and first.is_string:
-        return not first.name[:1].isdigit()
-    return False
+    if isinstance(first, exp.Literal):
+        return first.is_string and not first.name[:1].isdigit()
+    return True
 
 
 # ClickHouse functions of the rows read before (their number, or values, or the size of
@@ -2099,6 +2099,7 @@ def _no_facts() -> dict[str, Any]:
         "read_only": False,
         "repeatable": False,
         "top_level_limit": False,
+        "with_ties": False,
         "nested_queries": False,
         "side_effects": False,
         "side_effects_outside_rows": False,
@@ -2281,6 +2282,12 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     # what can't take another `LIMIT` after it
     facts["top_level_limit"] = any(
         stmt.args.get(k) for k in ("limit", "fetch", "offset", "locks")
+    )
+    # `FETCH FIRST n ROWS WITH TIES`, `TOP n WITH TIES`: a LIMIT around it may be pushed
+    # into it by the server (Trino), past the ties
+    facts["with_ties"] = any(
+        isinstance(node, exp.LimitOptions) and node.args.get("with_ties")
+        for node in stmt.walk()
     )
     facts["nested_queries"] = _nested_queries(stmt)
     relations = _relations(stmt)
