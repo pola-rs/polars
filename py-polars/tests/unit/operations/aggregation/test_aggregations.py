@@ -1695,6 +1695,21 @@ def test_invalid_agg_dtypes_should_raise(
         df.lazy().select(expr).collect(engine="streaming")
 
 
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime, pl.Time, pl.Categorical, pl.Enum(["a", "b"])],
+)
+def test_sum_unsupported_dtype_raises_in_all_contexts(dtype: pl.DataType) -> None:
+    values = ["a", "b"] if dtype in (pl.Categorical, pl.Enum) else [0, 1]
+    lf = pl.LazyFrame({"g": [1, 1], "v": pl.Series(values).cast(dtype)})
+    expr = pl.col("v").sum()
+    for q in [lf.select(expr), lf.group_by("g").agg(expr), lf.select(expr.over("g"))]:
+        with pytest.raises(
+            InvalidOperationError, match="`sum` operation not supported for dtype"
+        ):
+            q.collect_schema()
+
+
 @given(
     df=dataframes(
         min_size=1,
