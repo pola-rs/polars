@@ -74,6 +74,37 @@ where
     }
 }
 
+/// Builds a list of objects from series of a logical type backed by objects, and
+/// restores that logical inner dtype on finish.
+#[cfg(feature = "object")]
+struct LogicalObjectListBuilder {
+    inner: Box<dyn ListBuilderTrait>,
+    inner_dtype: DataType,
+}
+
+#[cfg(feature = "object")]
+impl ListBuilderTrait for LogicalObjectListBuilder {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
+        polars_ensure!(
+            s.dtype() == &self.inner_dtype,
+            SchemaMismatch: "cannot build list with different dtypes\n\nExpected {}, got {}.",
+            self.inner_dtype, s.dtype()
+        );
+        self.inner.append_series(&s.to_physical_repr())
+    }
+
+    fn append_null(&mut self) {
+        self.inner.append_null()
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        let mut ca = self.inner.finish();
+        // SAFETY: all values were appended from series of `inner_dtype`.
+        unsafe { ca.set_inner_dtype(self.inner_dtype.clone()) };
+        ca
+    }
+}
+
 type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
 type LargeListBinViewBuilder<T> = MutableListArray<i64, MutableBinaryViewArray<T>>;
 type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
@@ -95,7 +126,15 @@ pub fn get_list_builder(
                 value_capacity,
                 list_capacity,
             );
-            Box::new(builder)
+            if inner_type_logical == &physical_type {
+                Box::new(builder)
+            } else {
+                // E.g. an extension type with object storage.
+                Box::new(LogicalObjectListBuilder {
+                    inner: builder,
+                    inner_dtype: inner_type_logical.clone(),
+                })
+            }
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => Box::new(AnonymousOwnedListBuilder::new(
