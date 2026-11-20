@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
 from polars.io.iceberg._catalog_resolver import set_iceberg_catalog_resolver
 from polars.testing import assert_frame_equal
 
@@ -8418,3 +8418,470 @@ def test_call_rewrite_data_files_fails_after_commit(
     res = ctx.execute(rewrite_all("lineitem"), eager=True)
     assert res.rows()[0][:2] == (2, 1)
     assert len(table_rows(lake, "tpch", "lineitem")) == 4
+
+
+ADD_FILES_COUNTS = {"added_files_count": pl.Int64, "changed_partition_count": pl.Int64}
+
+
+def add_files_call(table: str, source: Path | str, *args: str) -> str:
+    extra = "".join(f", {arg}" for arg in args)
+    location = f"file://{source}" if isinstance(source, Path) else source
+    return f"CALL lake.system.add_files('{table}', 'parquet.`{location}`'{extra})"
+
+
+def write_files(folder: Path, files: dict[str, pl.DataFrame], **kwargs: Any) -> None:
+    for name, df in files.items():
+        (folder / name).parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(folder / name, **kwargs)
+
+
+@pytest.mark.write_disk
+def test_call_add_files(lake: CountingCatalog, tmp_path: Path) -> None:
+    from pyiceberg.table.snapshots import Operation
+
+    ctx = lake_ctx(lake)
+    table = lake.load_table(("tpch", "lineitem"))
+    # a merging append would rewrite the existing manifests
+    with table.transaction() as tx:
+        tx.set_properties(
+            {
+                "commit.manifest-merge.enabled": "true",
+                "commit.manifest.min-count-to-merge": "1",
+            }
+        )
+    manifests = {m.manifest_path for m in table.current_snapshot().manifests(table.io)}
+    folder = tmp_path / "landing"
+    write_files(
+        folder,
+        {
+            "a.parquet": pl.DataFrame({"k": [7, 8], "v": ["g", "h"]}),
+            "b.parquet": pl.DataFrame({"v": ["i"], "k": [9]}),
+            # hidden: skipped
+            "_tmp/c.parquet": pl.DataFrame({"k": [0], "v": ["x"]}),
+        },
+    )
+    (folder / ".a.parquet.crc").write_bytes(b"checksum")
+
+    res = ctx.execute(add_files_call("tpch.lineitem", folder), eager=True)
+    # from the snapshot summary, which has no partition count here
+    assert_frame_equal(res, pl.DataFrame([[2], [None]], schema=ADD_FILES_COUNTS))
+    table = lake.load_table(("tpch", "lineitem"))
+    snapshot = table.current_snapshot()
+    assert snapshot.summary.operation == Operation.APPEND
+    kept = {m.manifest_path for m in snapshot.manifests(table.io)}
+    assert manifests < kept
+    assert len(kept) == len(manifests) + 1
+    # files without field ids are read through the name mapping
+    assert table.metadata.name_mapping() is not None
+    # registered where they are, not copied
+    paths = {task.file.file_path for task in table.scan().plan_files()}
+    assert {f"file://{folder}/a.parquet", f"file://{folder}/b.parquet"} <= paths
+    assert table_rows(lake, "tpch", "lineitem") == [
+        (1, "a"),
+        (2, "b"),
+        (7, "g"),
+        (8, "h"),
+        (9, "i"),
+    ]
+    assert ctx.execute("SELECT k FROM lineitem WHERE v = 'i'", eager=True).item() == 9
+
+
+@pytest.mark.write_disk
+def test_call_add_files_partitions(lake: CountingCatalog, tmp_path: Path) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE p (k BIGINT, g VARCHAR) PARTITION BY (g)")
+    null = pl.DataFrame({"k": [3], "g": [None]}, schema_overrides={"g": pl.String})
+    # flat: each file's statistics prove its value, an all-NULL file is NULL
+    write_files(
+        tmp_path / "flat",
+        {"a.parquet": pl.DataFrame({"k": [1, 2], "g": ["b", "b"]}), "n.parquet": null},
+    )
+    # Hive folders: the folder gives the value; a file that holds it must agree
+    write_files(
+        tmp_path / "hive",
+        {
+            "g=c%2Fd/x.parquet": pl.DataFrame({"k": [4]}),
+            "g=e/y.parquet": pl.DataFrame({"k": [5], "g": ["e"]}),
+            "g=__HIVE_DEFAULT_PARTITION__/z.parquet": pl.DataFrame({"k": [6]}),
+        },
+    )
+    write_files(tmp_path / "one", {"f.parquet": pl.DataFrame({"k": [7], "g": ["f"]})})
+    for source in ("flat", "hive", "one/f.parquet"):
+        ctx.execute(add_files_call("tpch.p", tmp_path / source))
+    assert table_rows(lake, "tpch", "p") == [
+        (1, "b"),
+        (2, "b"),
+        (3, None),
+        (4, "c/d"),
+        (5, "e"),
+        (6, None),
+        (7, "f"),
+    ]
+    table = lake.load_table(("tpch", "p"))
+    partitions = sorted(
+        (str(task.file.partition[0]), task.file.record_count)
+        for task in table.scan().plan_files()
+    )
+    expected = [("None", 1), ("None", 1), ("b", 2), ("c/d", 1), ("e", 1), ("f", 1)]
+    assert partitions == expected
+    for where, n in (("g = 'b'", 2), ("g = 'c/d'", 1), ("g IS NULL", 2)):
+        assert (
+            ctx.execute(f"SELECT COUNT(*) FROM p WHERE {where}", eager=True).item() == n
+        )
+
+
+@pytest.mark.write_disk
+def test_call_add_files_partition_values(lake: CountingCatalog, tmp_path: Path) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField, StringType
+
+    ctx = lake_ctx(lake)
+    # an underscore partition column, a glob character in the folder name
+    ctx.execute("CREATE TABLE u (k BIGINT, _d VARCHAR) PARTITION BY (_d)")
+    write_files(tmp_path / "br[1]", {"_d=x/a.parquet": pl.DataFrame({"k": [1]})})
+    ctx.execute(add_files_call("tpch.u", tmp_path / "br[1]"))
+    assert table_rows(lake, "tpch", "u") == [(1, "x")]
+
+    # empty files: no row to prove a value for
+    ctx.execute("CREATE TABLE e (k BIGINT, g VARCHAR) PARTITION BY (g)")
+    empty = pl.DataFrame(schema={"k": pl.Int64})
+    write_files(tmp_path / "e1", {"a.parquet": empty})
+    write_files(tmp_path / "e2", {"g=z/a.parquet": empty})
+    for folder in ("e1", "e2"):
+        ctx.execute(add_files_call("tpch.e", tmp_path / folder))
+    assert table_rows(lake, "tpch", "e") == []
+
+    # a transform: several times on one day are one partition
+    ctx.execute("CREATE TABLE d (ts TIMESTAMP) PARTITION BY (day(ts))")
+    ts = [datetime(2026, 11, 20, 1), datetime(2026, 11, 20, 23)]
+    write_files(tmp_path / "days", {"a.parquet": pl.DataFrame({"ts": ts})})
+    ctx.execute(add_files_call("tpch.d", tmp_path / "days"))
+    [task] = lake.load_table(("tpch", "d")).scan().plan_files()
+    assert task.file.partition[0] == (date(2026, 11, 20) - date(1970, 1, 1)).days
+
+    # Hive's timestamp folder names, with a space
+    ctx.execute("CREATE TABLE h (k BIGINT, ts TIMESTAMP) PARTITION BY (ts)")
+    write_files(
+        tmp_path / "hts", {"ts=2026-11-20 10:00:00/a.parquet": pl.DataFrame({"k": [1]})}
+    )
+    ctx.execute(add_files_call("tpch.h", tmp_path / "hts"))
+    assert table_rows(lake, "tpch", "h") == [(1, datetime(2026, 11, 20, 10))]
+
+    # a removed partition field of a v1 table stays as `void`: NULL for every file
+    schema = Schema(
+        NestedField(1, "k", LongType(), required=False),
+        NestedField(2, "g", StringType(), required=False),
+    )
+    v1 = lake.create_table(("tpch", "v1"), schema, properties={"format-version": "1"})
+    with v1.update_spec() as update:
+        update.add_identity("g")
+    with v1.update_spec() as update:
+        update.remove_field("g")
+    write_files(
+        tmp_path / "void", {"a.parquet": pl.DataFrame({"k": [1, 2], "g": ["b", "c"]})}
+    )
+    ctx.execute(add_files_call("tpch.v1", tmp_path / "void"))
+    assert table_rows(lake, "tpch", "v1") == [(1, "b"), (2, "c")]
+
+
+def field_id_table(nested: bool) -> Any:
+    import pyarrow as pa
+
+    def field(name: str, dtype: Any, field_id: int | None) -> Any:
+        metadata = (
+            None if field_id is None else {b"PARQUET:field_id": str(field_id).encode()}
+        )
+        return pa.field(name, dtype, metadata=metadata)
+
+    if nested:
+        schema = pa.schema(
+            [
+                field("k", pa.int64(), None),
+                field("v", pa.list_(field("element", pa.string(), 3), 1), None),
+            ]
+        )
+        return pa.table({"k": [7], "v": [["g"]]}, schema=schema)
+    schema = pa.schema([field("k", pa.int64(), 1), field("v", pa.string(), 2)])
+    return pa.table({"k": [7], "v": ["g"]}, schema=schema)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("table", "files", "error", "match"),
+    [
+        (
+            "p",
+            {"a.parquet": {"k": [1, 2], "g": ["b", None]}},
+            "InvalidOperationError",
+            "nulls and values",
+        ),
+        (
+            "p",
+            {"a.parquet": {"k": [1, 2], "g": ["b", "c"]}},
+            "InvalidOperationError",
+            "single value",
+        ),
+        (
+            "p",
+            {"a.parquet": {"k": [1]}},
+            "InvalidOperationError",
+            "lacks the partition column",
+        ),
+        (
+            "p",
+            {"g=b/a.parquet": {"k": [1], "g": ["c"]}},
+            "InvalidOperationError",
+            "do not show only that value",
+        ),
+        (
+            "p",
+            {"a.parquet": {"k": [1], "g": ["b"]}, "g=b/b.parquet": {"k": [2]}},
+            "InvalidOperationError",
+            "col=value",
+        ),
+        (
+            "p",
+            {"a.parquet": {"k": [1], "g": ["b"]}, "nostats": True},
+            "InvalidOperationError",
+            "no statistics",
+        ),
+        (
+            "i",
+            {"i=99999999999/a.parquet": {"k": [1]}},
+            "InvalidOperationError",
+            "is not a int",
+        ),
+        ("i", {"i=1.5/a.parquet": {"k": [1]}}, "InvalidOperationError", "is not a int"),
+        ("n", {"s.g=5/a.parquet": {"k": [1]}}, "InvalidOperationError", "top-level"),
+        (
+            "f",
+            {"a.parquet": {"k": [1], "x": [1.5]}},
+            "InvalidOperationError",
+            "floating-point",
+        ),
+        (
+            "lineitem",
+            {"g=b/a.parquet": {"k": [1], "v": ["a"]}},
+            "InvalidOperationError",
+            "subfolders",
+        ),
+        (
+            "lineitem",
+            {"a.parquet": {"k": ["x"], "v": ["a"]}},
+            "SchemaError",
+            "do not fit",
+        ),
+        ("lineitem", {"field_ids": False}, "InvalidOperationError", "field ids"),
+        ("lineitem", {"field_ids": True}, "InvalidOperationError", "field ids"),
+        ("l", {"legacy_list": True}, "SchemaError", "does not name"),
+        (
+            "ts",
+            {"ts=2026-11-20 10:00:00,1234567/a.parquet": {"k": [1]}},
+            "InvalidOperationError",
+            "is not a timestamp",
+        ),
+        (
+            "ts",
+            {"ts=2026-11-20 10:00:00.1234567/a.parquet": {"k": [1]}},
+            "InvalidOperationError",
+            "is not a timestamp",
+        ),
+        ("lineitem", {"text": True}, "ComputeError", "not a Parquet file"),
+        ("lineitem", {}, "ComputeError", "found no files"),
+    ],
+)
+def test_call_add_files_refused(
+    lake: CountingCatalog,
+    tmp_path: Path,
+    table: str,
+    files: dict[str, Any],
+    error: str,
+    match: str,
+) -> None:
+    import pyarrow.parquet as pq
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE p (k BIGINT, g VARCHAR) PARTITION BY (g)")
+    ctx.execute("CREATE TABLE i (k BIGINT, i INT) PARTITION BY (i)")
+    ctx.execute("CREATE TABLE n (k BIGINT, s STRUCT<g VARCHAR>) PARTITION BY (s.g)")
+    ctx.execute("CREATE TABLE f (k BIGINT, x DOUBLE) PARTITION BY (x)")
+    ctx.execute("CREATE TABLE l (k BIGINT, l BIGINT[])")
+    ctx.execute("CREATE TABLE ts (k BIGINT, ts TIMESTAMP) PARTITION BY (ts)")
+    folder = tmp_path / "landing"
+    folder.mkdir()
+    files = dict(files)
+    statistics = not files.pop("nostats", False)
+    if (nested := files.pop("field_ids", None)) is not None:
+        pq.write_table(field_id_table(nested), folder / "a.parquet")
+    if files.pop("legacy_list", False):
+        data = pl.DataFrame({"k": [1], "l": [[1]]}).to_arrow()
+        pq.write_table(data, folder / "a.parquet", use_compliant_nested_type=False)
+    if files.pop("text", False):
+        (folder / "a.parquet").write_text("not parquet")
+    write_files(
+        folder,
+        {name: pl.DataFrame(data) for name, data in files.items()},
+        statistics=statistics,
+    )
+    before = lake.load_table(("tpch", table)).metadata.current_snapshot_id
+    with pytest.raises(getattr(pl.exceptions, error), match=match):
+        ctx.execute(add_files_call(f"tpch.{table}", folder))
+    assert lake.load_table(("tpch", table)).metadata.current_snapshot_id == before
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("args", "error", "match"),
+    [
+        ("'orc.`/tmp/x`'", NotImplementedError, "only Parquet"),
+        ("'tpch.other'", NotImplementedError, "only a path source"),
+        ("'parquet.`/tmp/x`', map('g', 'b')", NotImplementedError, "partition_filter"),
+        ("'parquet.`/tmp/x`', parallelism => 0", SQLInterfaceError, "parallelism"),
+        ("'parquet.`file:///tmp/a.parquet#x`'", InvalidOperationError, "'#'"),
+    ],
+)
+def test_call_add_files_arguments(
+    lake: CountingCatalog, args: str, error: type[Exception], match: str
+) -> None:
+    ctx = lake_ctx(lake)
+    with pytest.raises(error, match=match):
+        ctx.execute(f"CALL lake.system.add_files('tpch.lineitem', {args})")
+
+
+@pytest.mark.write_disk
+def test_call_add_files_duplicates(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._add_files import add_files
+
+    ctx = lake_ctx(lake)
+    folder = tmp_path / "landing"
+    write_files(folder, {"a.parquet": pl.DataFrame({"k": [7], "v": ["g"]})})
+    stale = lake.load_table(("tpch", "lineitem"))
+    # a relative path is registered as the absolute location
+    monkeypatch.chdir(tmp_path)
+    ctx.execute(add_files_call("tpch.lineitem", "landing"))
+    with pytest.raises(pl.exceptions.DuplicateError, match="already references"):
+        ctx.execute(add_files_call("tpch.lineitem", folder))
+    # a commit retried after another writer added the files is refused as well
+    with pytest.raises(pl.exceptions.DuplicateError, match="already references"):
+        add_files(stale, f"file://{folder}", check_duplicate_files=True)
+    assert len(table_rows(lake, "tpch", "lineitem")) == 3
+    # the check can be turned off
+    ctx.execute(
+        add_files_call("tpch.lineitem", folder, "check_duplicate_files => false")
+    )
+    assert len(table_rows(lake, "tpch", "lineitem")) == 4
+
+
+@pytest.mark.write_disk
+def test_call_add_files_v3(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.table import Table
+
+    write_files(
+        tmp_path / "landing", {"a.parquet": pl.DataFrame({"k": [7], "v": ["g"]})}
+    )
+    monkeypatch.setattr(Table, "format_version", property(lambda self: 3))
+    with pytest.raises(NotImplementedError, match="v3"):
+        lake_ctx(lake).execute(add_files_call("tpch.lineitem", tmp_path / "landing"))
+
+
+@pytest.mark.write_disk
+def test_call_add_files_incomplete_bounds(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    # pyarrow leaves out the min and max of a long string's row group
+    long = "a" * 4097
+    folder = tmp_path / "landing"
+    folder.mkdir()
+    data = pa.table({"k": [1, 2], "v": [long, "hello"]})
+    pq.write_table(data, folder / "a.parquet", row_group_size=1)
+    ctx = lake_ctx(lake)
+    ctx.execute(add_files_call("tpch.lineitem", folder))
+    query = f"SELECT k FROM lineitem WHERE v = '{long}'"
+    assert ctx.execute(query, eager=True).to_series().to_list() == [1]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("change", ["schema", "name mapping"])
+def test_call_add_files_concurrent_change(
+    lake: CountingCatalog, tmp_path: Path, change: str
+) -> None:
+    from pyiceberg.exceptions import ValidationException
+    from pyiceberg.types import LongType
+
+    from polars.io.iceberg._add_files import add_files
+
+    write_files(
+        tmp_path / "landing", {"a.parquet": pl.DataFrame({"k": [7], "v": ["g"]})}
+    )
+    stale = lake.load_table(("tpch", "lineitem"))
+    # another writer commits a snapshot, and changes what the files were checked with
+    table = lake.load_table(("tpch", "lineitem"))
+    with table.transaction() as tx:
+        if change == "schema":
+            with tx.update_schema() as update:
+                update.add_column("w", LongType())
+        else:
+            tx.set_properties(
+                {"schema.name-mapping.default": '[{"field-id": 1, "names": ["k"]}]'}
+            )
+    pl.DataFrame({"k": [3], "v": ["c"]}).write_iceberg(
+        lake.load_table(("tpch", "lineitem")), mode="append"
+    )
+    with pytest.raises(ValidationException, match=f"{change} .*changed"):
+        add_files(stale, f"file://{tmp_path / 'landing'}", check_duplicate_files=True)
+    assert len(table_rows(lake, "tpch", "lineitem")) == 3
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "mapping",
+    [
+        # without `v`: the file's `v` would read as NULL
+        '[{"field-id": 1, "names": ["k"]}]',
+        # `k` and `v` swapped: each would read as the other
+        '[{"field-id": 1, "names": ["v"]}, {"field-id": 2, "names": ["k"]}]',
+    ],
+)
+def test_call_add_files_name_mapping_refused(
+    lake: CountingCatalog, tmp_path: Path, mapping: str
+) -> None:
+    table = lake.load_table(("tpch", "lineitem"))
+    with table.transaction() as tx:
+        tx.set_properties({"schema.name-mapping.default": mapping})
+    write_files(
+        tmp_path / "landing", {"a.parquet": pl.DataFrame({"k": [7], "v": ["g"]})}
+    )
+    with pytest.raises(pl.exceptions.SchemaError, match="name mapping"):
+        lake_ctx(lake).execute(add_files_call("tpch.lineitem", tmp_path / "landing"))
+
+
+@pytest.mark.write_disk
+def test_call_add_files_fsspec(lake: CountingCatalog, tmp_path: Path) -> None:
+    catalog = CountingCatalog(
+        "lake",
+        uri=f"sqlite:///{tmp_path / 'catalog.db'}",
+        warehouse=f"file://{tmp_path}",
+        **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"},
+    )
+    write_files(
+        tmp_path / "landing",
+        {
+            "a.parquet": pl.DataFrame({"k": [7], "v": ["g"]}),
+            "_tmp/b.parquet": pl.DataFrame({"k": [0], "v": ["x"]}),
+        },
+    )
+    # hidden folders are not entered, so one that cannot be listed does not matter
+    hidden = tmp_path / "landing" / "_tmp"
+    hidden.chmod(0)
+    try:
+        lake_ctx(catalog).execute(add_files_call("tpch.lineitem", tmp_path / "landing"))
+    finally:
+        hidden.chmod(0o755)
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "a"), (2, "b"), (7, "g")]
