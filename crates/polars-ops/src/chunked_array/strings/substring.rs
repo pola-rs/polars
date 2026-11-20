@@ -4,6 +4,8 @@ use polars_core::prelude::{ChunkFullNull, Int64Chunked, StringChunked, UInt64Chu
 use polars_core::series::IsSorted;
 use polars_error::{PolarsResult, polars_ensure};
 
+use crate::chunked_array::saturating_usize;
+
 #[inline(always)]
 fn is_utf8_codepoint_start(b: u8) -> bool {
     // The top two bits of a continuation byte are 10. Any other value is a
@@ -131,10 +133,11 @@ fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
 }
 
 fn head_binary_values(str_val: &str, n: i64) -> usize {
+    let count = saturating_usize(n.unsigned_abs());
     if n >= 0 {
-        char_to_byte_idx(str_val, n as usize)
+        char_to_byte_idx(str_val, count)
     } else {
-        rev_char_to_byte_idx(str_val, (-n) as usize)
+        rev_char_to_byte_idx(str_val, count)
     }
 }
 
@@ -148,10 +151,11 @@ fn tail_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
 }
 
 fn tail_binary_values(str_val: &str, n: i64) -> usize {
+    let count = saturating_usize(n.unsigned_abs());
     if n >= 0 {
-        rev_char_to_byte_idx(str_val, n as usize)
+        rev_char_to_byte_idx(str_val, count)
     } else {
-        char_to_byte_idx(str_val, (-n) as usize)
+        char_to_byte_idx(str_val, count)
     }
 }
 
@@ -190,18 +194,20 @@ pub fn substring_ternary_offsets_value(
             return (0, 0);
         }
 
-        match rev_char_to_byte_idx_or_cp_count(str_val, (-offset) as usize) {
+        let rev_offset = offset.unsigned_abs();
+        match rev_char_to_byte_idx_or_cp_count(str_val, saturating_usize(rev_offset)) {
             Ok(so) => so,
             Err(n_cp) => {
                 // Our offset was so negative it is before the start of our string.
                 // This means our length must be reduced, assuming it is finite.
-                length = length.saturating_sub((-offset) as u64 - n_cp as u64);
+                length = length.saturating_sub(rev_offset - n_cp as u64);
                 0
             },
         }
     };
 
-    let stop_byte_offset = char_to_byte_idx(&str_val[start_byte_offset..], length as usize);
+    let stop_byte_offset =
+        char_to_byte_idx(&str_val[start_byte_offset..], saturating_usize(length));
     (start_byte_offset, start_byte_offset + stop_byte_offset)
 }
 
