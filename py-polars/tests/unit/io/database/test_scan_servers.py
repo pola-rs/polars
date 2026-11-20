@@ -4229,7 +4229,7 @@ def test_stopped_early_exits_cleanly(server: str, driver: str, stop: str) -> Non
 @needs_postgres
 def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
     # an Engine is read on one connection, partition after partition: head() stops after
-    # the first, and gives the connection back with the LazyFrame
+    # the first, and the connection goes back to the pool when that collect ends
     sa = pytest.importorskip("sqlalchemy")
     pytest.importorskip("psycopg")
     # A plain table: a slow function in a view or key isn't proven repeatable, so it
@@ -4260,9 +4260,7 @@ def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
         # k matches in every partition: none is pruned, the first answers; the others,
         # read after it on the one pinned connection, are never started
         assert lf.filter(pl.col("k") == 1).head(1).collect().height == 1
-        # The scan holds its one pooled connection until the LazyFrame is dropped
-        assert engine.pool.checkedout() == 1
-        del lf
+        # nothing is held between collects
         assert engine.pool.checkedout() == 0
     finally:
         engine.dispose()
@@ -9123,6 +9121,155 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
             "postgres17",
             [f"DROP SCHEMA IF EXISTS vol_tenant_{t} CASCADE" for t in ("a", "b")],
         )
+
+
+@pytest.mark.parametrize("isolation_level", [None, "REPEATABLE READ"])
+def test_postgres_engine_holds_nothing_between_collects(
+    isolation_level: str | None,
+) -> None:
+    # F1: a `checkout` listener that opens a transaction (psycopg2 does, on its first
+    # statement) left the scan's pinned session `idle in transaction` for the LazyFrame's
+    # whole life: it held a lock on the table, and under REPEATABLE READ a later collect
+    # read the old snapshot
+    from sqlalchemy import event
+
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("psycopg2"):
+        pytest.skip("psycopg2 is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    table = "fe_hold_t"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} AS SELECT g AS id FROM generate_series(1, 10) g",
+        ],
+    )
+    kwargs: dict[str, Any] = (
+        {"isolation_level": isolation_level} if isolation_level else {}
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "psycopg2"), pool_size=2, **kwargs
+    )
+
+    @event.listens_for(engine, "checkout")
+    def _set_search_path(dbapi_connection: Any, *_: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("SET search_path TO public")
+        cursor.close()
+
+    try:
+        lf = pl.scan_database(f"SELECT id FROM {table}", engine)
+        assert lf.collect().height == 10
+        # nothing is checked out between collects, and no lock is held
+        assert engine.pool.checkedout() == 0
+        _execute(
+            "postgres17",
+            [
+                "SET lock_timeout = '3s'",
+                f"ALTER TABLE {table} ADD COLUMN z int",
+                f"INSERT INTO {table} (id) VALUES (11)",
+            ],
+        )
+        assert lf.collect().height == 11
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_postgres_engine_scans_dont_hold_pool_connections() -> None:
+    # F3: the connection was checked out when `scan_database` was called and held while
+    # the LazyFrame lived: the 16th scan of a default pool, a second scan of a pool of
+    # one, or one made while the caller held the connection, waited `pool_timeout`
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    url = _sqlalchemy_url(server.uri, "psycopg")
+    engine = sqlalchemy.create_engine(
+        url, pool_size=1, max_overflow=0, pool_timeout=3
+    )
+    try:
+        with engine.connect():
+            # made while the caller holds the one connection: nothing is checked out
+            held = pl.scan_database("SELECT 1 AS a", engine)
+        scans = [
+            held,
+            *(pl.scan_database(f"SELECT {i} AS a", engine) for i in range(20)),
+        ]
+        assert engine.pool.checkedout() == 0
+        start = time.monotonic()
+        for i, lf in enumerate(scans[1:4], start=0):
+            assert lf.collect().item() == i
+        assert time.monotonic() - start < 3
+        assert engine.pool.checkedout() == 0
+        # a collect that fails gives the connection back too
+        with pytest.raises(pl.exceptions.ComputeError):
+            pl.scan_database("SELECT * FROM fe_no_such_table", engine).collect()
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
+    # F4: an Engine was read as a live connection: a `connect` listener's session zone
+    # (here one that has the fall-back hour twice) made a TIMESTAMP unreadable. The scan
+    # sets UTC on its checkout and restores the listener's zone before giving it back.
+    from sqlalchemy import event
+
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("pymysql"):
+        pytest.skip("pymysql is not installed")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    table = "fe_zone_t"
+    _execute(
+        name,
+        [
+            "SET time_zone = '+00:00'",
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, t timestamp(6) NULL)",
+            f"INSERT INTO {table} VALUES (1, '2021-11-07 05:30:00'), "
+            "(2, '2021-11-07 06:30:00'), (3, '2021-06-01 12:00:00')",
+        ],
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "pymysql"), pool_size=2
+    )
+
+    @event.listens_for(engine, "connect")
+    def _zone(dbapi_connection: Any, *_: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SET time_zone = 'America/New_York'")
+        except Exception:
+            # no time zone tables on this server: an offset still must read right
+            cursor.execute("SET time_zone = '-05:00'")
+        cursor.close()
+
+    try:
+        df = pl.scan_database(f"SELECT * FROM {table}", engine).collect().sort("id")
+        assert df.schema["t"] == pl.Datetime("us", "UTC")
+        assert df["t"].to_list() == [
+            datetime(2021, 11, 7, 5, 30, tzinfo=UTC),
+            datetime(2021, 11, 7, 6, 30, tzinfo=UTC),
+            datetime(2021, 6, 1, 12, 0, tzinfo=UTC),
+        ]
+        # the listener's zone is back on the pooled connection
+        assert engine.pool.checkedout() == 0
+        with engine.connect() as c:
+            zone = c.exec_driver_sql("SELECT @@SESSION.time_zone").scalar()
+        assert zone in ("America/New_York", "-05:00")
+    finally:
+        engine.dispose()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
 
 
 def test_clickhouse_settings_that_cut_the_read_are_not_proven() -> None:
