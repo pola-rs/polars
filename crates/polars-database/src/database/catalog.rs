@@ -1647,7 +1647,7 @@ fn generated_columns(
         ),
         DialectName::Clickhouse => format!(
             "SELECT name, default_expression FROM system.columns WHERE database = {} \
-            AND `table` = {} AND default_kind = 'ALIAS'",
+            AND `table` = {} AND default_kind IN ('ALIAS', 'DEFAULT', 'MATERIALIZED')",
             schema.map_or_else(|| "currentDatabase()".to_string(), s),
             s(name)
         ),
@@ -1778,6 +1778,66 @@ fn sqlite_generated_expressions(sql: &str) -> Vec<String> {
 /// of them.
 const ORACLE_SYNONYM_HOPS: usize = 8;
 
+/// The name of `parts` if the session resolves it to a temporary table (Postgres, MySQL, MariaDB:
+/// a temporary table hides a permanent one of its name for the session that made it).
+pub fn temporary_relation(
+    session: &mut dyn DatabaseSession,
+    dialect: DialectName,
+    parts: &[PlSmallStr],
+) -> Option<String> {
+    let qualified = parts
+        .iter()
+        .map(|p| dialect.quote_ident(p))
+        .collect::<Vec<_>>()
+        .join(".");
+    let temporary = match dialect {
+        DialectName::Postgresql => {
+            let df = session
+                .catalog_query(&format!(
+                    "SELECT c.relpersistence = 't' FROM pg_class c WHERE c.oid = to_regclass({})",
+                    dialect.quote_str(&qualified)
+                ))
+                .ok()?;
+            matches!(cell(&df, 0, 0), Some(AnyValue::Boolean(true)))
+        },
+        // (`SHOW CREATE TABLE` of a temporary table starts with `CREATE TEMPORARY TABLE`; an error:
+        // no such table, or a view)
+        DialectName::Mysql | DialectName::Singlestore => {
+            let df = session
+                .catalog_query(&format!("SHOW CREATE TABLE {qualified}"))
+                .ok()?;
+            cell_str(&df, 1, 0).is_some_and(|t| {
+                t.trim_start()
+                    .to_ascii_uppercase()
+                    .starts_with("CREATE TEMPORARY")
+            })
+        },
+        _ => false,
+    };
+    temporary.then(|| parts.iter().map(|p| p.as_str()).collect::<Vec<_>>().join("."))
+}
+
+/// Whether what an Oracle object shows depends on the session or the user: a global temporary
+/// table (each session has its own rows) or an enabled VPD policy (`DBMS_RLS`, whose predicate
+/// may differ on each read, as `DBMS_RANDOM` does). A failed lookup counts as bound.
+fn oracle_session_bound(
+    run: &mut impl FnMut(&str) -> Option<DataFrame>,
+    owner: &str,
+    name: &str,
+) -> bool {
+    let s = |v: &str| DialectName::Oracle.quote_str(v);
+    let Some(df) = run(&format!(
+        "SELECT (SELECT COUNT(*) FROM all_policies WHERE object_owner = {o} \
+        AND object_name = {n} AND enable = 'YES'), (SELECT COUNT(*) FROM all_tables \
+        WHERE owner = {o} AND table_name = {n} AND temporary = 'Y') FROM dual",
+        o = s(owner),
+        n = s(name)
+    )) else {
+        return true;
+    };
+    cell_u64(&df, 0, 0) != Some(0) || cell_u64(&df, 1, 0) != Some(0)
+}
+
 fn oracle_lookup(
     session: &mut dyn DatabaseSession,
     parts: &[PlSmallStr],
@@ -1859,6 +1919,9 @@ fn oracle_lookup(
                 if cell_u64(&t, 0, 0) != Some(0) {
                     return ViewLookup::Failed;
                 }
+                if oracle_session_bound(&mut run, &found_owner, &name) {
+                    return ViewLookup::Failed;
+                }
                 let virtuals = cell_u64(&t, 1, 0);
                 if virtuals == Some(0) {
                     return ViewLookup::Table { generated: vec![] };
@@ -1879,8 +1942,16 @@ fn oracle_lookup(
                     None => ViewLookup::Failed,
                 };
             },
-            "MATERIALIZED VIEW" => return ViewLookup::Table { generated: vec![] },
+            "MATERIALIZED VIEW" => {
+                if oracle_session_bound(&mut run, &found_owner, &name) {
+                    return ViewLookup::Failed;
+                }
+                return ViewLookup::Table { generated: vec![] };
+            },
             _ => {
+                if oracle_session_bound(&mut run, &found_owner, &name) {
+                    return ViewLookup::Failed;
+                }
                 let Some(v) = run(&format!(
                     "SELECT CASE WHEN v.text_length <= 4000 THEN v.text_vc END FROM all_views v \
                     WHERE v.owner = {} AND v.view_name = {}",
@@ -1984,10 +2055,28 @@ fn databricks_view(
     if kind != "VIEW" {
         // managed and external tables only: a materialized view, a metric view, a streaming or a
         // foreign table is read through what it runs
-        return if matches!(kind.as_str(), "MANAGED" | "EXTERNAL") {
-            ViewLookup::Table { generated: vec![] }
-        } else {
+        if !matches!(kind.as_str(), "MANAGED" | "EXTERNAL") {
+            return ViewLookup::Failed;
+        }
+        // A column mask or a row filter (direct, or from an ABAC policy at any level, which
+        // DESCRIBE and the information schema don't show) plans the table as a secure view; its
+        // function may return other values on each read. A plan that can't be read isn't proven.
+        let plan = match session.catalog_query(&format!("EXPLAIN EXTENDED SELECT * FROM {name}")) {
+            Ok(plan) => plan,
+            Err(e) => {
+                if verbose {
+                    eprintln!("[scan_database]: plan of a table failed: {e}");
+                }
+                return ViewLookup::Failed;
+            },
+        };
+        let secure = (0..plan.height())
+            .filter_map(|row| cell_str(&plan, 0, row))
+            .any(|text| text.to_ascii_lowercase().contains("secureview"));
+        return if secure {
             ViewLookup::Failed
+        } else {
+            ViewLookup::Table { generated: vec![] }
         };
     }
     // The view's names were resolved along its SQL path: a function of a user's schema may stand
@@ -3274,6 +3363,28 @@ mod tests {
             view_definition(&mut table, d, &["t".into()], &[]),
             ViewLookup::Table { generated: vec![] }
         );
+        // a masked table (a column mask or an ABAC policy, which DESCRIBE doesn't show) plans as a
+        // secure view
+        let mut masked = Recorder {
+            log: vec![],
+            answer: |sql: &str| {
+                if sql.starts_with("EXPLAIN") {
+                    describe(&[("== Photon Explanation ==\nPhotonSecureView [k]", "")])
+                } else {
+                    describe(&[
+                        ("id", "bigint"),
+                        ("", ""),
+                        ("# Detailed Table Information", ""),
+                        ("Type", "MANAGED"),
+                    ])
+                }
+            },
+        };
+        assert_eq!(
+            view_definition(&mut masked, d, &["t".into()], &[]),
+            ViewLookup::Failed
+        );
+        assert_eq!(masked.log[1], "EXPLAIN EXTENDED SELECT * FROM `t`");
         // a temporary view lists its columns only: its query isn't known
         let mut temp = Recorder {
             log: vec![],

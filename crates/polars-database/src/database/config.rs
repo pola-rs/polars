@@ -26,6 +26,11 @@ pub struct ColumnMeta {
     /// columns read through a conversion (`CAST(uuid AS TEXT)`) or retyped by
     /// `schema_overrides`: predicates on them aren't pushed.
     pub comparable: bool,
+    /// The column's values may differ from run to run (a volatile function, or a float
+    /// aggregate, whose last bits depend on the order its rows were added in): it can't be
+    /// a partition key, whose cuts each partition reads again.
+    #[serde(default)]
+    pub unstable: bool,
 }
 
 /// Cheap catalog statistics.

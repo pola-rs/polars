@@ -389,6 +389,9 @@ pub struct QueryFacts {
     pub collated: bool,
     /// Postgres: the type names it writes, which a user's cast to or from them runs for.
     pub cast_types: Vec<PlSmallStr>,
+    /// A join pairs rows by their place (`PASTE`, `POSITIONAL`): a filter pushed into the
+    /// database changes which rows pair.
+    pub positional_join: bool,
     /// Postgres: the SQL doesn't parse (a user's operator of a name sqlglot doesn't know is one
     /// such), so its tables and types are unknown: any user's operator may run.
     pub any_operator: bool,

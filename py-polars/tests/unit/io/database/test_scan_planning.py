@@ -2599,3 +2599,86 @@ def test_inspect_query_facts_do_not_cross_concurrent_calls(monkeypatch: Any) -> 
     monkeypatch.setattr(_sqlglot, "_no_facts", lambda: Facts(real()))
     facts = _sqlglot.inspect_query("SELECT x FROM t FINAL", "clickhouse")
     assert facts["final_tables"] == [["t"]]
+
+
+@pytest.mark.parametrize(
+    ("dialect", "query", "repeatable"),
+    [
+        # joins that pick one of several rows, or pair rows by their place (#549, #550)
+        ("duckdb", "SELECT a.id, b.v FROM a ASOF JOIN b ON a.k >= b.k", False),
+        ("duckdb", "SELECT a.id, b.v FROM a ASOF LEFT JOIN b ON a.k >= b.k", False),
+        ("duckdb", "SELECT a.id, b.v FROM a POSITIONAL JOIN b", False),
+        ("clickhouse", "SELECT l.id, r.v FROM l PASTE JOIN r", False),
+        ("clickhouse", "SELECT l.id, r.v FROM l ANY LEFT JOIN r ON l.k = r.k", False),
+        ("clickhouse", "SELECT l.id, r.v FROM l LEFT SEMI JOIN r USING k", False),
+        ("clickhouse", "SELECT l.id, r.v FROM l ASOF JOIN r ON l.k = r.k AND l.t >= r.t", False),
+        ("clickhouse", "SELECT l.id, r.v FROM l ALL INNER JOIN r ON l.k = r.k", True),
+        ("duckdb", "SELECT a.id, b.v FROM a LEFT JOIN b ON a.k = b.k", True),
+        # a float aggregate anywhere but an output column decides which rows there are (#546)
+        ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(x) > 5", False),
+        ("duckdb", "SELECT g FROM (SELECT g, avg(x) AS a FROM t GROUP BY g) q", False),
+        ("clickhouse", "SELECT g FROM t GROUP BY g HAVING stddevPop(x) > 1", False),
+        ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(CAST(x AS INT)) > 5", True),
+        ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(1) > 5", True),
+    ],
+)
+def test_row_picking_joins_and_float_aggregates_are_not_repeatable(
+    dialect: str, query: str, repeatable: bool
+) -> None:
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(query, dialect)["repeatable"] is repeatable
+
+
+@pytest.mark.parametrize("dialect", ["duckdb", "clickhouse", "postgres"])
+def test_a_float_aggregate_output_column_is_volatile_not_the_whole_query(
+    dialect: str,
+) -> None:
+    # #546: its value changes in the last bits between runs, so it is no partition key; the
+    # rows of the query don't change
+    from polars_database._sqlglot import inspect_query
+
+    facts = inspect_query("SELECT g, sum(x) AS k, count(*) AS n FROM t GROUP BY g", dialect)
+    assert facts["repeatable"] is True
+    assert facts["volatile_columns"] == ["k"]
+    assert not facts["all_columns_volatile"]
+    # exact arguments: no volatile column
+    facts = inspect_query(
+        "SELECT g, sum(CAST(x AS DECIMAL(18, 2))) AS k FROM t GROUP BY g", dialect
+    )
+    assert facts["repeatable"] is True
+    assert facts["volatile_columns"] == []
+
+
+def test_positional_joins_are_a_fact_for_pushdown() -> None:
+    # #550: a pushed filter changes which rows pair
+    from polars_database._sqlglot import inspect_query
+
+    for dialect, query in [
+        ("clickhouse", "SELECT l.id, r.v FROM l PASTE JOIN r"),
+        ("duckdb", "SELECT a.id, b.v FROM a POSITIONAL JOIN b"),
+    ]:
+        assert inspect_query(query, dialect)["positional_join"] is True, dialect
+    assert inspect_query("SELECT a.id FROM a JOIN b ON a.k = b.k", "duckdb")[
+        "positional_join"
+    ] is False
+
+
+def test_postgres_attribute_notation_and_oracle_bare_names_are_looked_up() -> None:
+    # #516: `c.f` and `(c).f` call `f(c)`; #515: a parameterless function is written
+    # without parentheses, as a column
+    from polars_database._sqlglot import inspect_query
+
+    pg = inspect_query("SELECT c.id, c.myf AS k, (c).myg AS h FROM t c", "postgres")
+    assert {"myf", "myg"} <= set(pg["known_functions"])
+    ora = inspect_query("SELECT t.id, myrand AS k FROM t", "oracle")
+    assert "myrand" in ora["known_functions"]
+
+
+def test_postgres_literal_types_are_looked_up_for_user_operators() -> None:
+    # #551: `0.5 * 2` runs a user's `*`(numeric, int4) when one is defined
+    from polars_database._sqlglot import inspect_query
+
+    facts = inspect_query("SELECT id, 0.5 * 2 AS kk, 'a' AS s FROM t", "postgres")
+    assert {"numeric", "int4", "text"} <= set(facts["cast_types"])
+    assert inspect_query("SELECT id FROM t", "postgres")["cast_types"] == []

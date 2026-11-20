@@ -1056,3 +1056,48 @@ def test_user_function_named_like_another_dialects_builtin() -> None:
             match=r"this query can't be partitioned.*total",
         ):
             lf.collect()
+
+
+def test_a_column_mask_makes_a_table_unproven() -> None:
+    # #521: a mask's function (`rand()`) runs on each read, also under `order_by=`: the
+    # plan of a masked table is a secure view, which neither DESCRIBE nor the information
+    # schema shows for a policy (ABAC)
+    from tests.unit.io.database._databricks import connect, execute, parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    p = parts(URI)
+    q = f"{p['catalog']}.{p['schema']}"
+    conn = connect(URI)
+    try:
+        execute(
+            conn,
+            f"CREATE OR REPLACE TABLE {q}.vol_masked AS "
+            "SELECT CAST(id AS INT) AS id, CAST(id AS INT) AS k FROM range(0, 60)",
+        )
+        execute(
+            conn,
+            f"CREATE OR REPLACE FUNCTION {q}.vol_mask(k INT) RETURNS INT "
+            "RETURN CAST(floor(rand() * 60) AS INT)",
+        )
+        # a plain table partitions
+        lf = _scan(f"{q}.vol_masked", partition_on="k", partition_num=4)
+        assert sorted(lf.collect()["id"].to_list()) == list(range(60))
+        execute(
+            conn,
+            f"ALTER TABLE {q}.vol_masked ALTER COLUMN k SET MASK {q}.vol_mask",
+        )
+        for kwargs in (
+            {"partition_on": "k", "partition_num": 4},
+            {"order_by": "k", "partition_num": 4},
+        ):
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="can't be partitioned"
+            ):
+                _scan(f"{q}.vol_masked", **kwargs).collect()
+        # one read still works
+        assert _scan(f"{q}.vol_masked", partition_on=None).collect().height == 60
+    finally:
+        execute(conn, f"DROP TABLE IF EXISTS {q}.vol_masked")
+        execute(conn, f"DROP FUNCTION IF EXISTS {q}.vol_mask")
+        conn.close()

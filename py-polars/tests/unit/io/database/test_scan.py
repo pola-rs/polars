@@ -5678,3 +5678,53 @@ def test_scan_sqlite_union_of_scans_differing_in_dtype_parameters(
                 lfs, optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
             )
             assert [df.schema["x"] for df in out] == [a, b], how
+
+
+def _duckdb_file(tmp_path: Any) -> str:
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "volatile.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute("CREATE TABLE l AS SELECT i AS id, i AS t FROM range(1, 401) r(i)")
+        # tied right rows: the ASOF match is any of them
+        conn.execute(
+            "CREATE TABLE r AS SELECT i AS rid, (i // 2) * 2 AS t, i AS v "
+            "FROM range(1, 401) r(i)"
+        )
+        conn.execute("CREATE TABLE f AS SELECT i % 100 AS g, i * 0.1 AS x FROM range(1, 401) r(i)")
+    return path
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "SELECT l.id, r.v AS k FROM l ASOF JOIN r ON l.t >= r.t",
+        "SELECT l.id, r.v AS k FROM l POSITIONAL JOIN r",
+    ],
+)
+def test_duckdb_row_picking_joins_are_not_partitioned_nor_filtered_in_the_database(
+    tmp_path: Any, source: str
+) -> None:
+    # #549, #550: which right row an ASOF join takes among ties, and which rows a POSITIONAL
+    # join pairs, change from run to run and with a pushed filter
+    path = _duckdb_file(tmp_path)
+    uri = f"duckdb:///{path}"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="can't be partitioned"):
+        pl.scan_database(source, uri, partition_on="id", partition_num=4).collect()
+    lf = pl.scan_database(source, uri)
+    assert "filters 0/" in lf.filter(pl.col("k") < 100).explain() or (
+        "pushed: " not in lf.filter(pl.col("k") < 100).explain()
+    )
+
+
+def test_duckdb_float_sum_is_not_a_partition_key(tmp_path: Any) -> None:
+    # #546: a float sum differs in its last bits between runs; an exact one doesn't
+    path = _duckdb_file(tmp_path)
+    uri = f"duckdb:///{path}"
+    source = "SELECT g, sum(x) AS k, count(*) AS n FROM f GROUP BY g"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="can't be partitioned"):
+        pl.scan_database(source, uri, partition_on="k", partition_num=4).collect()
+    df = pl.scan_database(source, uri, partition_on="g", partition_num=4).collect()
+    assert df.height == 100
+    exact = "SELECT g, sum(CAST(x AS DECIMAL(18, 1))) AS k FROM f GROUP BY g"
+    df = pl.scan_database(exact, uri, partition_on="g", partition_num=4).collect()
+    assert df.height == 100
