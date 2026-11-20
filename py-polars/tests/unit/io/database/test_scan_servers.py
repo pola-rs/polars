@@ -5482,16 +5482,9 @@ VOLATILE_VIEWS: dict[str, tuple[list[str], float]] = {
 VOLATILE_VIEWS["mariadb"] = VOLATILE_VIEWS["mysql"]
 
 
-# Cells whose every read fails for one known reason: left out of the loops over a
-# server's drivers (they would hide what the other drivers do), and run on their own
-_ONLY_IN_THEIR_CELLS = {("mssql", "arrow_odbc")}
-
-
 def _runnable_drivers(name: str, drivers: list[str] | None = None) -> list[str]:
     out = []
     for driver in drivers or list(SERVERS[name].drivers):
-        if (name, driver) in _ONLY_IN_THEIR_CELLS and drivers is None:
-            continue
         module = DRIVER_MODULES.get(driver, driver)
         if module is not None and not _installed(module):
             continue
@@ -7591,7 +7584,9 @@ def test_array_of_a_subquery_isnt_proven(name: str) -> None:
 # SQL Server and Trino
 # ---------------------------------------------------------------------------------------
 
-needs_mssql = pytest.mark.skipif(SERVERS["mssql"].uri is None, reason="no SQL Server URI")
+needs_mssql = pytest.mark.skipif(
+    SERVERS["mssql"].uri is None, reason="no SQL Server URI"
+)
 needs_trino = pytest.mark.skipif(SERVERS["trino"].uri is None, reason="no Trino URI")
 
 
@@ -7635,8 +7630,7 @@ def _assert_drivers_agree(
     """
     problems = [f"{d} failed: {e}" for d, e in errors.items()]
     frames = {
-        d: df.with_columns(cs.integer().cast(pl.Int64))
-        for d, df in frames.items()
+        d: df.with_columns(cs.integer().cast(pl.Int64)) for d, df in frames.items()
     }
     if frames:
         first, *rest = frames
@@ -7830,7 +7824,9 @@ def test_mssql_collations() -> None:
                 ["abc", "ABC", "Abc", "abc ", "é", "e", "É", "😀", "ß", "ss", "", "a_c"]
             )
         ]
-        + [f"INSERT INTO {table} VALUES (99, NULL, NULL, NULL, NULL, NULL, NULL, NULL)"],
+        + [
+            f"INSERT INTO {table} VALUES (99, NULL, NULL, NULL, NULL, NULL, NULL, NULL)"
+        ],
     )
     predicates = []
     for c in ["ci", "cs", "bin", "sc", "ai", "vci", "utf8"]:
@@ -8055,7 +8051,9 @@ def test_mssql_views_with_volatile_table_functions_filter_after_the_read() -> No
                 assert (df["r"] > 0.5).all(), (driver, source)
                 assert 0 < df.height < 300, (driver, source, df.height)
             except (AssertionError, pl.exceptions.PolarsError) as e:
-                problems.append(f"{driver} {source}: {type(e).__name__}: {str(e)[:200]}")
+                problems.append(
+                    f"{driver} {source}: {type(e).__name__}: {str(e)[:200]}"
+                )
     assert not problems, "\n".join(problems)
 
 
@@ -8123,32 +8121,46 @@ def test_trino_char_columns_pad_in_comparisons() -> None:
         ],
     )
     _check_filters_by_driver(
-            "trino",
-            table,
-            [
-                pl.col("c") == "a",
-                pl.col("c") != "a",
-                pl.col("c") == "a  ",
-                pl.col("c") == "ab",
-                pl.col("c") < "abc",
-                pl.col("c") >= "ab",
-                pl.col("c").is_in(["a", "abc"]),
-                ~pl.col("c").is_in(["a", "abc"]),
-                pl.col("c").str.starts_with("a"),
-                pl.col("c").str.ends_with("a"),
-                pl.col("c").str.len_chars() == 3,
-                pl.col("v") == "ab",
-                pl.col("v") != "ab",
-                pl.col("v").str.ends_with(" "),
-            ],
-        )
+        "trino",
+        table,
+        [
+            pl.col("c") == "a",
+            pl.col("c") != "a",
+            pl.col("c") == "a  ",
+            pl.col("c") == "ab",
+            pl.col("c") < "abc",
+            pl.col("c") >= "ab",
+            pl.col("c").is_in(["a", "abc"]),
+            ~pl.col("c").is_in(["a", "abc"]),
+            pl.col("c").str.starts_with("a"),
+            pl.col("c").str.ends_with("a"),
+            pl.col("c").str.len_chars() == 3,
+            pl.col("v") == "ab",
+            pl.col("v") != "ab",
+            pl.col("v").str.ends_with(" "),
+        ],
+    )
 
 
 @needs_trino
 def test_trino_strings_compare_by_code_point() -> None:
     # Trino has no collations: comparisons are by code point (UTF-8 bytes order)
     table = "review_trino_str"
-    values = ["abc", "ABC", "Abc", "abc ", "é", "e", "É", "😀", "ß", "ss", "", "a_c", "ﬁ"]
+    values = [
+        "abc",
+        "ABC",
+        "Abc",
+        "abc ",
+        "é",
+        "e",
+        "É",
+        "😀",
+        "ß",
+        "ss",
+        "",
+        "a_c",
+        "ﬁ",
+    ]
     _execute(
         "trino",
         [
@@ -8252,11 +8264,13 @@ def test_trino_time_zones_by_every_driver() -> None:
         frames, errors = _read_by_every_driver("trino", source)
         problems = [f"{d} failed: {e}" for d, e in errors.items()]
         instants = {
-            d: df.sort("id").select(
-                pl.col(df.columns[1]).dt.convert_time_zone("UTC").dt.replace_time_zone(
-                    None
-                )
-            )[df.columns[1]].to_list()
+            d: df.sort("id")
+            .select(
+                pl.col(df.columns[1])
+                .dt.convert_time_zone("UTC")
+                .dt.replace_time_zone(None)
+            )[df.columns[1]]
+            .to_list()
             for d, df in frames.items()
         }
         first, *rest = instants
@@ -8343,22 +8357,22 @@ def test_trino_declared_integer_width() -> None:
 @needs_trino
 def test_trino_edge_types_filters() -> None:
     _check_filters_by_driver(
-            "trino",
-            "edge_types",
-            [
-                pl.col("tstz") == datetime(2026, 3, 29, 1, 30, tzinfo=UTC),
-                pl.col("tstz") > datetime(2000, 1, 1, tzinfo=UTC),
-                pl.col("t") == dtime(13, 45, 30, 123456),
-                pl.col("t") < dtime(1),
-                pl.col("bin") == b"\x00\x01\xff",
-                pl.col("bin") == b"",
-                pl.col("nu") == Decimal("123.456789012345"),
-                pl.col("nu") == Decimal("-0.5"),
-                pl.col("j") == "[]",
-                pl.col("u") == "6f1b6a3e-9b8f-4f0e-8d2a-0c4b1f2e3a4d",
-                pl.col("u") == "6F1B6A3E-9B8F-4F0E-8D2A-0C4B1F2E3A4D",
-            ],
-        )
+        "trino",
+        "edge_types",
+        [
+            pl.col("tstz") == datetime(2026, 3, 29, 1, 30, tzinfo=UTC),
+            pl.col("tstz") > datetime(2000, 1, 1, tzinfo=UTC),
+            pl.col("t") == dtime(13, 45, 30, 123456),
+            pl.col("t") < dtime(1),
+            pl.col("bin") == b"\x00\x01\xff",
+            pl.col("bin") == b"",
+            pl.col("nu") == Decimal("123.456789012345"),
+            pl.col("nu") == Decimal("-0.5"),
+            pl.col("j") == "[]",
+            pl.col("u") == "6f1b6a3e-9b8f-4f0e-8d2a-0c4b1f2e3a4d",
+            pl.col("u") == "6F1B6A3E-9B8F-4F0E-8D2A-0C4B1F2E3A4D",
+        ],
+    )
 
 
 @needs_trino
@@ -8386,3 +8400,12 @@ def test_trino_volatile_view_is_filtered_after_the_read() -> None:
         )
         assert (df["r"] > 0.5).all(), driver
         assert 0 < df.height < 300, driver
+
+
+@needs_mssql
+def test_mssql_empty_results_keep_their_schema_with_every_driver() -> None:
+    # arrow-odbc yields no batch for an empty result: the scan found no schema
+    for driver in _runnable_drivers("mssql"):
+        df = _scan("mssql", driver, "SELECT * FROM orders WHERE 1 = 0").collect()
+        assert df.height == 0, driver
+        assert df.width > 1, driver
