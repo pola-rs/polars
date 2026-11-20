@@ -1759,10 +1759,8 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Conditional functions
             // ----
-            Coalesce => self.visit_temporal_variadic(coalesce),
-            Greatest => {
-                self.visit_temporal_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap())
-            },
+            Coalesce => self.visit_temporal_variadic(|exprs: &[Expr]| Ok(coalesce(exprs))),
+            Greatest => self.visit_temporal_variadic(|exprs: &[Expr]| max_horizontal(exprs)),
             If => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1778,21 +1776,21 @@ impl SQLFunctionVisitor<'_> {
             IfNull => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_temporal_variadic(coalesce),
+                    2 => self.visit_temporal_variadic(|exprs: &[Expr]| Ok(coalesce(exprs))),
                     _ => {
                         polars_bail!(SQLSyntax: "IFNULL expects 2 arguments (found {})", args.len())
                     },
                 }
             },
-            Least => self.visit_temporal_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
+            Least => self.visit_temporal_variadic(|exprs: &[Expr]| min_horizontal(exprs)),
             NullIf => {
                 let args = extract_args(function)?;
                 match args.len() {
                     2 => self.visit_temporal_variadic(|exprs: &[Expr]| {
                         let [l, r] = exprs else { unreachable!() };
-                        when(l.clone().eq(r.clone()))
+                        Ok(when(l.clone().eq(r.clone()))
                             .then(lit(LiteralValue::untyped_null()))
-                            .otherwise(l.clone())
+                            .otherwise(l.clone()))
                     }),
                     _ => {
                         polars_bail!(SQLSyntax: "NULLIF expects 2 arguments (found {})", args.len())
@@ -3026,8 +3024,16 @@ impl SQLFunctionVisitor<'_> {
     /// [`Self::visit_variadic`] for a function whose arguments share one type: a string
     /// literal is read as a value of the common temporal type of the other arguments, as
     /// in `COALESCE(date_col, '2020-01-01')`.
-    fn visit_temporal_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
+    fn visit_temporal_variadic(
+        &mut self,
+        f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
+    ) -> PolarsResult<Expr> {
         let mut expr_args = self.parse_variadic_args()?;
+        polars_ensure!(
+            !expr_args.is_empty(),
+            SQLSyntax: "{} expects at least 1 argument (found 0)",
+            self.func.name.to_string().to_uppercase()
+        );
         let is_string_literal =
             |e: &Expr| matches!(e, Expr::Literal(lv) if lv.extract_str().is_some());
         if expr_args.iter().any(is_string_literal) {
@@ -3045,7 +3051,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             }
         }
-        self.apply_window_spec(f(&expr_args))
+        self.apply_window_spec(f(&expr_args)?)
     }
 
     fn parse_variadic_args(&mut self) -> PolarsResult<Vec<Expr>> {
