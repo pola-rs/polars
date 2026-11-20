@@ -7084,6 +7084,66 @@ def _ids_table(name: str, table: str, extra: str = "") -> None:
     _execute(name, statements)
 
 
+@pytest.mark.parametrize("name", ["postgres17", "mysql", "mssql"])
+@pytest.mark.parametrize("consistency", ["none", "snapshot"])
+def test_negative_slices_under_a_concurrent_writer(name: str, consistency: str) -> None:
+    # #363: a tail is planned from COUNT(*) and read by a second statement, and the host
+    # stopped pulling at the end of the slice, so rows a writer inserted in between (here
+    # before every row: negative ids) shifted the slice, unchecked. It either takes the
+    # right rows or fails saying that the table changed.
+    import threading
+
+    _ids_table(name, "review_tail_ids")
+    stop = threading.Event()
+    inserted = 0
+
+    def writer() -> None:
+        nonlocal inserted
+        conn = _connect(name)
+        try:
+            cur = conn.cursor()
+            while not stop.is_set():
+                cur.execute(f"INSERT INTO review_tail_ids (id) VALUES ({-inserted - 1})")
+                conn.commit()
+                inserted += 1
+        finally:
+            conn.close()
+
+    cases = [
+        (lambda lf: lf.tail(5), list(range(295, 300))),
+        (lambda lf: lf.slice(-10, 5), list(range(290, 295))),
+    ]
+    thread = threading.Thread(target=writer)
+    thread.start()
+    runs = changed = 0
+    try:
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            for query, expected in cases:
+                lf = _scan(
+                    name,
+                    _default_driver(name),
+                    "review_tail_ids",
+                    order_by="id",
+                    partition_on=None,
+                    consistency=consistency,
+                )
+                try:
+                    got = query(lf).collect()["id"].to_list()
+                except pl.exceptions.ComputeError as e:
+                    assert "changed" in str(e), e
+                    changed += 1
+                    continue
+                runs += 1
+                assert got == expected
+    finally:
+        stop.set()
+        thread.join()
+        _execute(name, ["DROP TABLE IF EXISTS review_tail_ids"])
+    assert inserted > 0
+    assert runs + changed > 0
+
+
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_user_function_named_like_another_dialects_builtin(name: str) -> None:
     # `initcap`, `date_trunc` and `strpos` are sqlglot's, not MySQL's built-ins: a
