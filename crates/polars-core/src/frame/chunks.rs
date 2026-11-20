@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use polars_arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
@@ -43,28 +45,34 @@ impl DataFrame {
             .iter()
             .position(|col| col.as_series().is_some());
         let df_height = self.height();
-        let mut prev_height = 0;
-        (0..self.first_col_n_chunks()).map(move |i| unsafe {
+        let mut offset = 0;
+        (0..self.first_col_n_chunks()).map(move |i| {
             // There might still be scalar/partitioned columns after aligning,
             // so we follow the size of the chunked column, if any.
             let chunk_size = first_series_col_idx
                 .map(|c| self.columns()[c].as_series().unwrap().chunks()[i].len())
                 .unwrap_or(df_height);
-            let columns = self
-                .columns()
-                .iter()
-                .map(|col| match col {
-                    Column::Series(s) => Column::from(s.select_chunk(i)),
-                    Column::Scalar(_) | Column::Dictionary(_) => {
-                        col.slice((prev_height, chunk_size))
-                    },
-                })
-                .collect::<Vec<_>>();
-
-            prev_height += chunk_size;
-
-            DataFrame::new_unchecked(chunk_size, columns)
+            let rows = offset..offset + chunk_size;
+            offset += chunk_size;
+            self.chunk_frame(i, rows)
         })
+    }
+
+    /// Chunk `chunk_idx` of this aligned frame, which holds `rows`, as a frame of single chunks.
+    pub(crate) fn chunk_frame(&self, chunk_idx: usize, rows: Range<usize>) -> DataFrame {
+        let columns = self
+            .columns()
+            .iter()
+            .map(|col| match col {
+                // `Column::from` would turn a one-row chunk into a Scalar, which reads the row.
+                Column::Series(s) => Column::Series(s.select_chunk(chunk_idx).into()),
+                // These have no chunks of their own to follow.
+                Column::Scalar(_) | Column::Dictionary(_) => col.slice(rows.clone()),
+            })
+            .collect();
+
+        // SAFETY: each column holds the chunk's rows.
+        unsafe { DataFrame::new_unchecked(rows.len(), columns) }
     }
 
     pub fn split_chunks_by_n(self, n: usize, parallel: bool) -> Vec<DataFrame> {
@@ -80,7 +88,9 @@ impl DataFrame {
         }
     }
 
-    /// Convert the columns of this [DataFrame] to arrow arrays.
+    /// Convert the columns of this [DataFrame] to arrow arrays, one per column.
+    ///
+    /// Use [`DataFrame::try_iter_chunks`] for Map columns that may need several arrays.
     pub fn rechunk_to_arrow(&self, compat_level: CompatLevel) -> Vec<ArrayRef> {
         self.columns()
             .iter()
@@ -88,7 +98,9 @@ impl DataFrame {
             .collect()
     }
 
-    /// Convert the columns of this [DataFrame] to arrow arrays.
+    /// Convert the columns of this [DataFrame] to arrow arrays, one per column.
+    ///
+    /// Use [`DataFrame::try_iter_chunks`] for Map columns that may need several arrays.
     pub fn rechunk_into_arrow(self, compat_level: CompatLevel) -> Vec<ArrayRef> {
         self.into_columns()
             .into_iter()
@@ -101,6 +113,9 @@ impl DataFrame {
 /// maximum number of rows per chunk to ensure reasonable memory efficiency when
 /// reading the resulting file, and a minimum size per chunk to ensure
 /// reasonable performance when writing.
+///
+/// [`DataFrame::iter_chunks`] can still cut a chunk into several record batches, where its
+/// arrow MAP arrays would overflow their `i32` offsets.
 pub fn chunk_df_for_writing(
     df: &mut DataFrame,
     row_group_size: usize,

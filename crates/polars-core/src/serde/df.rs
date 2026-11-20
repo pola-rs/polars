@@ -68,9 +68,10 @@ impl DataFrame {
 
         ipc_writer.start(&schema.to_arrow(CompatLevel::newest()), None)?;
 
-        for batch in chunk_df_for_writing(self, 512 * 512)?.iter_chunks(CompatLevel::newest(), true)
+        for batch in
+            chunk_df_for_writing(self, 512 * 512)?.try_iter_chunks(CompatLevel::newest(), true)
         {
-            ipc_writer.write(&batch, None)?;
+            ipc_writer.write(&batch?, None)?;
         }
 
         ipc_writer.finish()?;

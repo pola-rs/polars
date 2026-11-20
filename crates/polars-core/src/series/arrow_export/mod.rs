@@ -11,13 +11,16 @@ macro_rules! bail_unhandled_arrow_conversion_dtype_pair {
 
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
+mod split;
 
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use either::Either;
 use polars_compute::cast::cast_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
+pub(crate) use split::{arrow_export_cut, contains_arrow_map, map_spans_fit};
 
 use crate::prelude::{
     Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType, ListArray,
@@ -51,6 +54,11 @@ fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
         return Some(compacted);
     }
 
+    trim_list_child(arr)
+}
+
+/// Slice the child of `arr` to the elements its offsets span; `None` if it already is.
+fn trim_list_child(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
     let offsets = arr.offsets();
     let first = *offsets.first() as usize;
     let len = offsets.range() as usize;
@@ -78,7 +86,20 @@ fn ensure_no_nulls(array: &dyn Array) -> PolarsResult<()> {
 impl Series {
     /// Export this Series to an arrow array. The dtype of the returned array will be chosen
     /// according to the provided `compat_level`.
+    ///
+    /// # Panics
+    /// Panics if the chunk cannot be exported, see [`Series::try_to_arrow`].
     pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
+        self.try_to_arrow(chunk_idx, compat_level).unwrap()
+    }
+
+    /// Export this Series to an arrow array, or error if the chunk does not fit the arrow
+    /// type, e.g. a Map chunk with more than `i32::MAX` entries.
+    pub fn try_to_arrow(
+        &self,
+        chunk_idx: usize,
+        compat_level: CompatLevel,
+    ) -> PolarsResult<ArrayRef> {
         self.to_arrow_with_field(
             chunk_idx,
             Cow::Owned(
@@ -87,7 +108,36 @@ impl Series {
             ),
             true,
         )
-        .unwrap()
+    }
+
+    /// Export a chunk of this Series as one or more arrow arrays, split at rows so that each
+    /// arrow MAP array fits in `i32` offsets; the pieces are converted as the iterator reaches them.
+    pub fn try_to_arrow_split(
+        &self,
+        chunk_idx: usize,
+        compat_level: CompatLevel,
+    ) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send + use<> {
+        let arrow_dtype = self.dtype().to_arrow(compat_level);
+        let chunk = self.chunks()[chunk_idx].as_ref();
+        if !contains_arrow_map(&arrow_dtype)
+            || map_spans_fit(chunk, &arrow_dtype, 0..chunk.len(), 1)
+        {
+            return Either::Left(std::iter::once(self.try_to_arrow(chunk_idx, compat_level)));
+        }
+
+        let chunk = self.select_chunk(chunk_idx);
+        let mut start = 0;
+        Either::Right(std::iter::from_fn(move || {
+            let arr = chunk.chunks()[0].as_ref();
+            let rows = start..arr.len();
+            if rows.is_empty() {
+                return None;
+            }
+            let end = arrow_export_cut(rows, |r| map_spans_fit(arr, &arrow_dtype, r, 1));
+            let piece = chunk.slice(start..end).try_to_arrow(0, compat_level);
+            start = end;
+            Some(piece)
+        }))
     }
 
     /// Export this Series to an arrow array. The dtype of the returned array will match the
@@ -210,8 +260,21 @@ impl ToArrowConverter {
 
                 Box::new(arr)
             },
-            (DataType::List(item_dtype), ArrowDataType::LargeList(_)) => {
+            (DataType::List(item_dtype), ArrowDataType::LargeList(arrow_item_field)) => {
                 let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+                // A split piece of a list of maps must export only the child it spans, as its
+                // whole child may overflow the `i32` offsets of an arrow MAP.
+                let item_dtype_arrow = arrow_item_field.dtype();
+                let trimmed = (contains_arrow_map(item_dtype_arrow)
+                    && !map_spans_fit(
+                        arr.values().as_ref(),
+                        item_dtype_arrow,
+                        0..arr.values().len(),
+                        1,
+                    ))
+                .then(|| trim_list_child(arr))
+                .flatten();
+                let arr = trimmed.as_ref().unwrap_or(arr);
 
                 let mut arrow_dtype = to_owned_dtype(arrow_field);
 
@@ -476,6 +539,17 @@ impl ToArrowConverter {
         let normalized = normalize_map_entries(arr);
         let arr = normalized.as_ref().unwrap_or(arr);
 
+        // Arrow's MAP offsets are `i32`, a Polars list's are `i64`. Checked before the entries
+        // are converted, which is the expensive part.
+        let offsets = OffsetsBuffer::<i32>::try_from(arr.offsets()).map_err(|_| {
+            polars_err!(
+                InvalidOperation:
+                "to_arrow() conversion failed: {} map entries overflow the i32 offsets \
+                of the arrow MAP type",
+                arr.offsets().last(),
+            )
+        })?;
+
         let mut arrow_dtype = to_owned_dtype(arrow_field);
 
         let ArrowDataType::Map(arrow_entries_field, _keys_sorted) = &mut arrow_dtype else {
@@ -492,16 +566,6 @@ impl ToArrowConverter {
             entries_dtype,
             Cow::Borrowed(arrow_entries_field.as_ref()),
         )?;
-
-        // Arrow's MAP offsets are `i32`, a Polars list's are `i64`.
-        let offsets = OffsetsBuffer::<i32>::try_from(arr.offsets()).map_err(|_| {
-            polars_err!(
-                InvalidOperation:
-                "to_arrow() conversion failed: {} map entries overflow the i32 offsets \
-                of the arrow MAP type",
-                arr.offsets().last(),
-            )
-        })?;
 
         Ok(Box::new(MapArray::try_new(
             arrow_dtype,
