@@ -2237,6 +2237,67 @@ def outer_order_by(
     return _outer_order_by(statements[0], dialect, columns, star_ordinals)
 
 
+# Words that start a statement. SQL Server takes statements without a `;` between them
+# and reads `SELECT … FROM c EXEC(…)`
+# as a query and then the statement: sqlglot parses the word as `c`'s alias instead.
+_STATEMENT_WORDS = frozenset(
+    {
+        "ALTER", "ANALYZE", "ATTACH", "BACKUP", "BEGIN", "BREAK", "BULK", "CALL", "CHECKPOINT",
+        "CLOSE", "COMMENT", "COMMIT", "CONTINUE", "COPY", "CREATE", "DBCC", "DEALLOCATE",
+        "DECLARE", "DELETE", "DENY", "DETACH", "DISABLE", "DO", "DROP", "ENABLE", "END",
+        "EXEC", "EXECUTE", "EXPLAIN", "FETCH", "FLUSH", "GOTO", "GRANT", "HANDLER", "IF",
+        "IMPORT", "INSERT", "KILL", "LOAD", "LOCK", "MERGE", "MOVE", "OPEN", "OPENXML",
+        "OPTIMIZE", "PRAGMA", "PREPARE", "PRINT", "RAISERROR", "READTEXT", "REASSIGN",
+        "RECONFIGURE", "REFRESH", "REINDEX", "RELEASE", "RENAME", "REPLACE", "RESET",
+        "RESTORE", "RETURN", "REVERT", "REVOKE", "ROLLBACK", "SAVE", "SAVEPOINT", "SECURITY",
+        "SETUSER", "SHOW", "SHUTDOWN", "START", "TEMPORARY", "THROW", "TRUNCATE", "UNLOAD",
+        "UNLOCK", "UPDATE", "UPDATETEXT", "USE", "VACUUM", "WAITFOR", "WHILE", "WRITETEXT",
+        "XA",
+    }
+)  # fmt: skip
+
+
+def _hides_statement(
+    statements: list[Any], tokens: list[Any], dialect: str | None
+) -> bool:
+    """
+    Whether an alias written without `AS` may be another statement's start.
+
+    A word that starts one (`c EXEC(…)`, `c COMMIT`), or a column list (`c EXEC([…])` is
+    `c` with the alias `EXEC` and the columns `[…]`). Fail closed: such a query isn't
+    read only, whatever the AST says. (Only SQL Server runs statements with no `;`.)
+    """
+    if dialect != "tsql":
+        return False
+    by_start = {t.start: i for i, t in enumerate(tokens)}
+    tt = sqlglot.TokenType
+
+    def bare(ident: Any) -> bool:
+        i = by_start.get(ident.meta.get("start", -1)) if ident.meta else None
+        # (no position, or the token isn't the one the identifier was made of: unknown)
+        if i is None:
+            return True
+        return i == 0 or tokens[i - 1].token_type != tt.ALIAS
+
+    for stmt in statements:
+        for node in stmt.find_all(exp.TableAlias, exp.Alias):
+            alias = node.args.get("alias") if isinstance(node, exp.Alias) else node.this
+            if not isinstance(alias, exp.Identifier) or alias.args.get("quoted"):
+                continue
+            if not alias.meta:
+                continue
+            is_bare = bare(alias)
+            if is_bare and alias.name.upper() in _STATEMENT_WORDS:
+                return True
+            if (
+                is_bare
+                and isinstance(node, exp.TableAlias)
+                and node.args.get("columns")
+            ):
+                return True
+    return False
+
+
 def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     """Facts about a user query that decide whether it can be wrapped."""
     facts = _no_facts()
@@ -2267,7 +2328,11 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
             # only what the tokens say is the same query
             if sqlglot.parse(body, read=dialect) == statements:
                 facts["body"] = original[: tokens[-1].end + 1]
-    facts["read_only"] = len(statements) == 1 and _is_read_only(statements[0])
+    facts["read_only"] = (
+        len(statements) == 1
+        and _is_read_only(statements[0])
+        and not _hides_statement(statements, tokens, dialect)
+    )
     if len(statements) != 1 or not isinstance(statements[0], exp.Query):
         return facts
 

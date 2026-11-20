@@ -8419,3 +8419,32 @@ def test_mssql_empty_results_keep_their_schema_with_every_driver() -> None:
         df = _scan("mssql", driver, "SELECT * FROM orders WHERE 1 = 0").collect()
         assert df.height == 0, driver
         assert df.width > 1, driver
+
+
+@needs_mssql
+def test_mssql_exec_after_a_table_is_not_run_as_a_write() -> None:
+    # sqlglot parses `… FROM c EXEC('…')` as an alias, so the query passed the read-only
+    # check, and ran unwrapped (a CTE can't be wrapped on SQL Server) with the write
+    # after it: a `DELETE` ran, an `INSERT` up to four times
+    victim = "review_ro_victim"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {victim}",
+            f"CREATE TABLE {victim} (id int)",
+            f"INSERT INTO {victim} VALUES (1), (2), (3)",
+        ],
+    )
+    try:
+        for write in (
+            f"DELETE FROM {victim}",
+            f"INSERT INTO {victim} VALUES (9)",
+        ):
+            sql = f"WITH c AS (SELECT id FROM edge) SELECT id FROM c EXEC('{write}')"
+            for driver in _runnable_drivers("mssql"):
+                with pytest.raises(Exception, match="only runs read"):
+                    _scan("mssql", driver, sql).collect()
+        left = _scan("mssql", _default_driver("mssql"), victim).collect()
+        assert sorted(left["id"].to_list()) == [1, 2, 3]
+    finally:
+        _execute("mssql", [f"DROP TABLE IF EXISTS {victim}"])
