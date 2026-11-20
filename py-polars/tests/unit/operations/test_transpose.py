@@ -1,6 +1,7 @@
 import io
 from collections.abc import Iterator
 from datetime import date, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -230,3 +231,30 @@ def test_transpose_duplicate_names_24907() -> None:
         pl.exceptions.DuplicateError, match="name 'x' has more than one"
     ):
         df.transpose(column_names=["x", "x", "x"])
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        ([Decimal("104011.54"), None], pl.Decimal(38, 6)),
+        ([[Decimal("1.50")], None], pl.List(pl.Decimal(10, 2))),
+        ([[Decimal("1.50")], None], pl.Array(pl.Decimal(10, 2), 1)),
+        ([{"x": Decimal("1.50")}, None], pl.Struct({"x": pl.Decimal(10, 2)})),
+    ],
+)
+def test_transpose_decimal_30977(values: list[object], dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"a": values, "b": values}, schema={"a": dtype, "b": dtype})
+    t = df.transpose()
+    assert t.dtypes == [dtype, dtype]
+    assert t.rows() == [tuple(values), tuple(values)]
+    assert_frame_equal(t.transpose(column_names=df.columns), df)
+
+
+def test_transpose_decimal_supertype_30977() -> None:
+    df = pl.DataFrame(
+        {"a": [Decimal("1.5")], "b": [Decimal("2.125")], "c": [7]},
+        schema={"a": pl.Decimal(10, 1), "b": pl.Decimal(10, 3), "c": pl.Int64},
+    )
+    t = df.transpose()
+    assert t.dtypes == [pl.Decimal(38, 3)]
+    assert t["column_0"].to_list() == [Decimal("1.5"), Decimal("2.125"), Decimal("7")]
