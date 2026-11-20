@@ -2673,6 +2673,8 @@ def test_tsql_a_statement_parsed_as_an_alias_is_not_read_only(
     # (statements need no `;`); sqlglot parses the word as `c`'s alias
     from polars_database._sqlglot import inspect_query
 
+    if head.endswith(") ") and tail == "x(a, b)":
+        return  # a derived table's alias and columns (below)
     assert inspect_query(head + tail, "tsql")["read_only"] is False
     cte = f"WITH c AS (SELECT id FROM t) {head}{tail}"
     assert inspect_query(cte, "tsql")["read_only"] is False
@@ -2689,6 +2691,13 @@ def test_tsql_a_statement_parsed_as_an_alias_is_not_read_only(
         "SELECT id x, id AS y FROM c INNER JOIN d ON c.id = d.id",
         "SELECT a, b FROM (SELECT 1 a, 2 b) q",
         "SELECT a FROM (VALUES (1)) AS v(a)",
+        # a bare alias with a column list, where the source is not a table name (F5)
+        "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) v(id, s)",
+        "SELECT a FROM (SELECT 1 AS id) x(a)",
+        "SELECT o.name, x.n FROM sys.objects o CROSS APPLY (SELECT LEN(o.name)) x(n)",
+        "SELECT o.name, x.n FROM sys.objects o OUTER APPLY (SELECT 1) x(n) WHERE 1 = 1",
+        "SELECT j.a FROM c CROSS APPLY OPENJSON(c.j) j(a)",
+        "WITH c AS (SELECT 1 AS a) SELECT * FROM (VALUES (1)) v(a) JOIN c ON c.a = v.a",
     ],
 )
 def test_tsql_ordinary_aliases_stay_read_only(sql: str) -> None:

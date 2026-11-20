@@ -1277,6 +1277,51 @@ pub fn resolve_scan(
         .map(|(name, _)| name.clone())
         .collect();
 
+    // SQL Server under `schema=`: no I/O says a column's type, so one declared a `Datetime`
+    // is read through the conversion of a `datetimeoffset` / `datetime2` (see
+    // `column_conversion`) where the driver would read another instant (ConnectorX shifts an
+    // offset twice, pyodbc not at all) or cut the 7th fractional digit (a declared
+    // nanosecond unit).
+    if dialect == DialectName::Mssql && user_typed {
+        let connectorx = matches!(backend.kind, BackendKind::ConnectorX);
+        let wrapped = read_wrapped(&options, &pushdown_disabled, &query, dialect);
+        for c in columns.iter_mut().filter(|c| c.db_type.is_none()) {
+            let DataType::Datetime(tu, tz) = &c.dtype else {
+                continue;
+            };
+            let shifted = connectorx && tz.is_some();
+            // (an aware column is read as text on every driver: pyodbc can't read a
+            // `datetimeoffset` at all)
+            if tz.is_none() && *tu != TimeUnit::Nanoseconds {
+                continue;
+            }
+            if !wrapped {
+                if shifted {
+                    refused.push((
+                        c.name.clone(),
+                        format!(
+                            "ConnectorX reads a SQL Server datetimeoffset in another zone as \
+                            another instant, and this query can't be wrapped to convert column \
+                            '{}', declared {}: pin another driver, or CAST the column in the \
+                            query to a datetime2 (UTC) and declare it without a time zone",
+                            c.name, c.dtype
+                        )
+                        .into(),
+                    ));
+                }
+                continue;
+            }
+            c.db_type = Some(
+                if tz.is_some() {
+                    MSSQL_INSTANT
+                } else {
+                    MSSQL_DATETIME
+                }
+                .into(),
+            );
+        }
+    }
+
     Ok(DatabaseScanConfig {
         sqlite_text_numbers,
         fingerprint: options.fingerprint(),
@@ -1707,6 +1752,13 @@ const DUCKDB_TEXT: &str = "<duckdb text>";
 /// driver without the type lookup, or under `schema=`): it may be a `DATE` / `DATETIME` /
 /// `TIMESTAMP` holding zero dates (`mysql_zero_date_type`).
 const MYSQL_DATE: &str = "<mysql date>";
+/// The `db_type` of a SQL Server column declared an aware `Datetime` under `schema=` (read as
+/// ConnectorX shifts a `datetimeoffset` of another offset, or at 7 fractional digits): the
+/// instant in UTC as text, which the read parses to the declared unit.
+const MSSQL_INSTANT: &str = "<mssql instant>";
+/// The `db_type` of a SQL Server column declared a naive nanosecond `Datetime` under `schema=`:
+/// its 7 fractional digits as text, which the read parses (drivers cut them to microseconds).
+const MSSQL_DATETIME: &str = "<mssql datetime>";
 /// The `db_type` of a SQLite Binary column: its blobs as they are, and no other value (a number or
 /// text, which drivers read as text, or as NULL, or lossily: an `%e` real) reads: the read fails on
 /// it (`explain_sqlite_error`). As an expression, it also has no declared type for ConnectorX to
@@ -2205,6 +2257,19 @@ fn column_conversion(
             column.to_string()
         };
         return Some(format!("CONVERT(VARCHAR(40), {x}, 121)"));
+    }
+    // A `Datetime` declared under `schema=` (no database type to go by): any of the types
+    // casts to the one the conversion reads
+    if dialect == DialectName::Mssql && db_type == MSSQL_INSTANT {
+        return Some(format!(
+            "CONVERT(VARCHAR(40), CAST(SWITCHOFFSET(CAST({column} AS DATETIMEOFFSET(7)), \
+            '+00:00') AS DATETIME2(7)), 121)"
+        ));
+    }
+    if dialect == DialectName::Mssql && db_type == MSSQL_DATETIME {
+        return Some(format!(
+            "CONVERT(VARCHAR(40), CAST({column} AS DATETIME2(7)), 121)"
+        ));
     }
     // ConnectorX shifts a `datetimeoffset` of another offset than UTC twice (`01:30 +05:30`
     // reads as 14:30 UTC, not 20:00): at offset 0 its read is right.
@@ -3535,6 +3600,36 @@ pub(crate) fn time_text_risk_columns(config: &DatabaseScanConfig) -> PlHashMap<P
                 format!("`{}`", config.dialect.cast_to_text(&quoted)),
             )
         })
+        .collect()
+}
+
+/// The SQL Server columns read as text whose digits below the planned unit are cut (toward
+/// the earlier instant): a `datetime2` / `datetimeoffset` of 7 fractional digits the user
+/// typed `Datetime("us")` or `("ms")` (`schema_overrides`, `schema=`): the digits are the
+/// ones the type has beyond the unit asked for, which isn't an error (and is not rounded: the
+/// maximum, `9999-12-31 23:59:59.9999999`, would overflow). Filters on such a column aren't
+/// pushed (it is retyped: not comparable).
+pub(crate) fn truncating_columns(config: &DatabaseScanConfig) -> PlHashSet<PlSmallStr> {
+    if config.dialect != DialectName::Mssql {
+        return PlHashSet::new();
+    }
+    config
+        .columns
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.dtype,
+                DataType::Datetime(TimeUnit::Microseconds | TimeUnit::Milliseconds, _)
+            ) && c.db_type.as_deref().is_some_and(|t| {
+                t == MSSQL_INSTANT
+                    || t == MSSQL_DATETIME
+                    || matches!(
+                        super::schema::mssql_nanosecond_type(t),
+                        Some("datetime2" | "datetimeoffset")
+                    )
+            })
+        })
+        .map(|c| c.name.clone())
         .collect()
 }
 

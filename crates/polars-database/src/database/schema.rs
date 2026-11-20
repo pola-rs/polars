@@ -301,12 +301,15 @@ pub fn cast_to_user_schema(
         own_numbers,
         &PlHashSet::new(),
         &PlHashMap::new(),
+        &PlHashSet::new(),
     )
 }
 
 /// [`cast_to_user_schema`], where `plugin_converted` are the columns the plugin reads through a
 /// conversion of its own (a number as text, a decimal as text): their dtype is not the database's,
-/// so a text read for a number is no change of the column's kind.
+/// so a text read for a number is no change of the column's kind. `truncating`: the temporal
+/// columns read as text whose digits below the planned unit are cut (toward the earlier
+/// instant), as the user asked (see `truncating_columns`).
 pub fn cast_columns(
     df: &DataFrame,
     schema: &Schema,
@@ -315,6 +318,7 @@ pub fn cast_columns(
     own_numbers: &PlHashSet<PlSmallStr>,
     plugin_converted: &PlHashSet<PlSmallStr>,
     time_text_risk: &PlHashMap<PlSmallStr, String>,
+    truncating: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
     let height = df.height();
     let mut columns = Vec::with_capacity(schema.len());
@@ -341,7 +345,7 @@ pub fn cast_columns(
             None => col,
         };
         let parsed;
-        let col = match parse_temporal(col, dtype)? {
+        let col = match parse_temporal(col, dtype, truncating.contains(name))? {
             Some(p) => {
                 parsed = p;
                 &parsed
@@ -771,7 +775,10 @@ fn duration_to_time(col: &Column, dtype: &DataType) -> PolarsResult<Option<Colum
 /// Text of a temporal column (SQLite stores dates as text, some conversions write text)
 /// parsed to the planned dtype.
 /// Polars 2.0 has no string-to-temporal cast. A value that doesn't parse is an error.
-fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>> {
+/// `truncate`: fractional digits below the planned unit are cut toward the earlier instant
+/// (never rounded: `.9999999` of `9999-12-31` would overflow), where the user asked for the
+/// unit; otherwise a value the unit can't hold is an error.
+fn parse_temporal(col: &Column, dtype: &DataType, truncate: bool) -> PolarsResult<Option<Column>> {
     use polars_core::chunked_array::temporal::string::StringMethods;
 
     if !col.dtype().is_string() {
@@ -816,7 +823,7 @@ fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>
                     }
                     // (in i128: the last microsecond before the minimum starts below it)
                     let ns_value = v as i128 * 1000 + sub_ns as i128;
-                    if ns_value % unit != 0 {
+                    if !truncate && ns_value % unit != 0 {
                         let finer = if ns_value % 1000 == 0 { "us" } else { "ns" };
                         polars_bail!(
                             SchemaMismatch:
@@ -825,7 +832,7 @@ fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>
                             col.name(), ca.get(i).unwrap_or_default()
                         );
                     }
-                    let Ok(v) = i64::try_from(ns_value / unit) else {
+                    let Ok(v) = i64::try_from(ns_value.div_euclid(unit)) else {
                         polars_bail!(
                             SchemaMismatch:
                             "database column '{}' has the value {}, outside the range of \
