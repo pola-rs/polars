@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::Keyword;
-use sqlparser::tokenizer::{Location as TokenLocation, Token, TokenWithSpan, Tokenizer};
+use sqlparser::tokenizer::{Location as TokenLocation, Token, TokenWithSpan, Tokenizer, Word};
 
 use crate::error::{ErrorRecord, Location};
 
@@ -11,9 +11,24 @@ pub(crate) struct Statement<'a> {
     pub sql: &'a str,
     /// Where it starts in the script, in bytes.
     pub offset: usize,
-    /// Whether the result describes a table, a query or a plan, as that of `DESCRIBE` and
-    /// `EXPLAIN` does. Such a result is read as a whole.
-    pub describes: bool,
+    /// What the statement returns.
+    pub kind: StatementKind,
+}
+
+/// What the result of a statement is. The engine does not tell what kind of statement a
+/// result comes from, so the first keyword of the statement stands in for that, and `TO
+/// STDOUT` in a `COPY`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StatementKind {
+    /// Rows, as a query and `COPY ... TO STDOUT` return.
+    #[default]
+    Query,
+    /// A description of a table, a query or a plan, as `DESCRIBE` and `EXPLAIN` return. It is
+    /// read as a whole.
+    Description,
+    /// None: the statement changes the session or writes a file, as `CREATE` and `COPY ... TO`
+    /// a file do.
+    Effect,
 }
 
 /// A SQL script, split into its statements.
@@ -22,7 +37,7 @@ pub(crate) struct Statement<'a> {
 /// statement.
 pub struct Script {
     text: String,
-    statements: Vec<(Range<usize>, bool)>,
+    statements: Vec<(Range<usize>, StatementKind)>,
     /// Why the text after the last statement cannot be split, for example an unclosed string.
     error: Option<(String, Location)>,
 }
@@ -47,7 +62,7 @@ impl Script {
         let mut statements = Vec::new();
         let mut start = 0;
         let mut has_tokens = false;
-        let mut describes = false;
+        let mut kind = KindReader::default();
         // Where the executable comment that is being passed ends.
         let mut comment_end = 0;
         for TokenWithSpan { token, span } in &tokens {
@@ -63,22 +78,21 @@ impl Script {
                 Token::Whitespace(_) | Token::EOF => {},
                 Token::SemiColon if !in_comment => {
                     if has_tokens {
-                        statements.push((trimmed(&text, start..offset), describes));
+                        statements.push((trimmed(&text, start..offset), kind.kind()));
                     }
                     start = offset + 1;
                     has_tokens = false;
+                    kind = KindReader::default();
                 },
                 _ => {
-                    if !has_tokens {
-                        describes = starts_description(token);
-                    }
+                    kind.read(token);
                     has_tokens = true;
                 },
             }
         }
         // With an error, the text after the last separator is an incomplete statement.
         if error.is_none() && has_tokens {
-            statements.push((trimmed(&text, start..text.len()), describes));
+            statements.push((trimmed(&text, start..text.len()), kind.kind()));
         }
 
         Self {
@@ -95,10 +109,10 @@ impl Script {
 
     /// The statements that can be run, in order.
     pub(crate) fn statements(&self) -> impl Iterator<Item = Statement<'_>> {
-        self.statements.iter().map(|(range, describes)| Statement {
+        self.statements.iter().map(|(range, kind)| Statement {
             sql: &self.text[range.clone()],
             offset: range.start,
-            describes: *describes,
+            kind: *kind,
         })
     }
 
@@ -115,6 +129,21 @@ impl Script {
             line: before.matches('\n').count() + 1,
             column: before[line_start..].chars().count() + 1,
         }
+    }
+
+    /// Whether the last statement is the only one that returns rows, as a format that writes
+    /// one file needs. Text at the end that cannot be split is not a statement.
+    pub fn ends_in_its_only_result(&self) -> bool {
+        let mut kinds = self.statements.iter().rev().map(|(_, kind)| *kind);
+        kinds
+            .next()
+            .is_some_and(|last| last != StatementKind::Effect)
+            && kinds.all(|kind| kind == StatementKind::Effect)
+    }
+
+    /// Whether all of the text splits into statements.
+    pub fn can_be_split(&self) -> bool {
+        self.error.is_none()
     }
 
     /// The number of statements, counting the one that cannot be split.
@@ -134,15 +163,67 @@ impl Script {
     }
 }
 
-/// Whether a statement that starts with `first` describes a table, a query or a plan. The
-/// engine does not tell what kind of statement a result comes from, so its first keyword
-/// stands in for that.
-fn starts_description(first: &Token) -> bool {
-    matches!(
-        first,
-        Token::Word(word)
-            if matches!(word.keyword, Keyword::DESCRIBE | Keyword::DESC | Keyword::EXPLAIN)
-    )
+/// Reads the kind of a statement from its tokens, in order.
+#[derive(Default)]
+struct KindReader {
+    /// The kind that the first word gives. An executable comment can start with a `;`, so it is
+    /// the first word, not the first token.
+    first: Option<StatementKind>,
+    copy: bool,
+    /// The depth of parentheses, and whether the last token was `TO` outside them.
+    depth: usize,
+    after_to: bool,
+    to_stdout: bool,
+}
+
+impl KindReader {
+    fn read(&mut self, token: &Token) {
+        if self.first.is_none()
+            && let Token::Word(word) = token
+        {
+            self.first = Some(kind_of(word));
+            self.copy = word.keyword == Keyword::COPY;
+        }
+        let after_to = std::mem::take(&mut self.after_to);
+        match token {
+            Token::LParen => self.depth += 1,
+            Token::RParen => self.depth = self.depth.saturating_sub(1),
+            Token::Word(word) if self.depth == 0 => {
+                self.to_stdout |= after_to && word.keyword == Keyword::STDOUT;
+                self.after_to = word.keyword == Keyword::TO;
+            },
+            _ => {},
+        }
+    }
+
+    fn kind(&self) -> StatementKind {
+        if self.copy && self.to_stdout {
+            StatementKind::Query
+        } else {
+            self.first.unwrap_or_default()
+        }
+    }
+}
+
+/// The kind of a statement whose first word is `word`.
+fn kind_of(word: &Word) -> StatementKind {
+    match word.keyword {
+        Keyword::DESCRIBE | Keyword::DESC | Keyword::EXPLAIN => StatementKind::Description,
+        Keyword::ALTER
+        | Keyword::ATTACH
+        | Keyword::COPY
+        | Keyword::CREATE
+        | Keyword::DELETE
+        | Keyword::DETACH
+        | Keyword::DROP
+        | Keyword::INSERT
+        | Keyword::MERGE
+        | Keyword::REPLACE
+        | Keyword::TRUNCATE
+        | Keyword::UPDATE
+        | Keyword::USE => StatementKind::Effect,
+        _ => StatementKind::Query,
+    }
 }
 
 /// The length of the block comment that `text` starts with. Block comments nest.
@@ -236,14 +317,41 @@ mod tests {
     }
 
     #[test]
-    fn statements_that_describe_are_recognised() {
-        let script = Script::new(
-            "DESCRIBE t; desc t; -- how it runs\nEXPLAIN SELECT 1; SELECT 'DESCRIBE'; \
-             SELECT 1 AS \"desc\"; \"DESC\""
-                .to_string(),
-        );
-        let describes: Vec<bool> = script.statements().map(|s| s.describes).collect();
-        assert_eq!(describes, [true, true, true, false, false, false]);
+    fn statement_kinds_follow_the_first_keyword() {
+        use StatementKind::*;
+        for (sql, kind) in [
+            ("desc t", Description),
+            ("-- how it runs\nEXPLAIN SELECT 1", Description),
+            ("SELECT 'DESCRIBE'", Query),
+            ("\"DESC\"", Query),
+            ("(SELECT 1)", Query),
+            ("create table t AS SELECT 1", Effect),
+            ("COPY t TO 'f.csv'", Effect),
+            ("/*! ; */ CREATE TABLE t AS SELECT 1", Effect),
+            ("COPY (SELECT 1 AS \"to\") TO STDOUT (FORMAT csv)", Query),
+            ("COPY t TO 'stdout'", Effect),
+            ("REPLACE INTO t VALUES (2)", Effect),
+        ] {
+            let script = Script::new(sql.to_string());
+            assert_eq!(script.statements().next().unwrap().kind, kind, "{sql}");
+        }
+    }
+
+    #[test]
+    fn a_one_file_format_takes_one_result_last() {
+        for (sql, takes) in [
+            ("CREATE TABLE t AS SELECT 1; SELECT * FROM t", true),
+            (
+                "CREATE TABLE t AS SELECT 1; COPY t TO STDOUT (FORMAT parquet)",
+                true,
+            ),
+            ("CREATE TABLE t AS SELECT 1", false),
+            ("SELECT 1; SELECT 2", false),
+            ("SELECT 1; DROP TABLE t", false),
+        ] {
+            let script = Script::new(sql.to_string());
+            assert_eq!(script.ends_in_its_only_result(), takes, "{sql}");
+        }
     }
 
     #[test]
