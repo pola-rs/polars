@@ -2836,7 +2836,13 @@ impl<'a> RecordBatchIter<'a> {
         if self.parallel {
             RAYON.install(|| (0..width).into_par_iter().map(f).collect())
         } else {
-            (0..width).map(f).collect()
+            // Collecting into a `Result` can't reserve the length, so the `Vec` would grow as it
+            // fills.
+            let mut out = Vec::with_capacity(width);
+            for i in 0..width {
+                out.push(f(i)?);
+            }
+            Ok(out)
         }
     }
 
