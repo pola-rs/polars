@@ -5007,6 +5007,10 @@ def test_scan_assertion_pool_function_with_concurrent_connects(
         engine.dispose()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows resolves `..` textually, before following a symlink",
+)
 def test_scan_duckdb_shared_cursor_key_resolves_symlinks(tmp_path: Path) -> None:
     # `..` after a symlink is not the textual parent: abspath would key the two files as
     # one
