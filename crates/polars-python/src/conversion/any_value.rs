@@ -396,15 +396,22 @@ pub(crate) fn py_object_to_any_value(
     }
 
     /// The datetime fields of a pandas Timestamp hold a placeholder year when the year is out of
-    /// range for a Python datetime, so don't use them.
+    /// range for a Python datetime, so convert from its `asm8` value instead.
     fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
-        let AnyValue::Datetime(value, time_unit, _) =
-            get_numpy_temporal(&ob.getattr(intern!(py, "asm8"))?, true)?
-        else {
-            return Err(PyValueError::new_err(format!(
-                "cannot convert pandas Timestamp {ob}"
-            )));
+        let (value, time_unit) = match get_numpy_temporal(&ob.getattr(intern!(py, "asm8"))?, true)?
+        {
+            AnyValue::Datetime(value, time_unit, _) => (value, time_unit),
+            AnyValue::Null => {
+                return Err(PyTypeError::new_err(
+                    "cannot convert pandas NaT; use None for missing values",
+                ));
+            },
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "cannot convert pandas Timestamp {ob}"
+                )));
+            },
         };
         let timestamp = match time_unit {
             TimeUnit::Nanoseconds => value.div_euclid(1000),
@@ -438,12 +445,6 @@ pub(crate) fn py_object_to_any_value(
             timestamp,
             TimeUnit::Microseconds,
             Some(Arc::new(TimeZone::UTC)),
-        ))
-    }
-
-    fn get_pandas_nat(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        Err(PyTypeError::new_err(
-            "cannot convert pandas NaT; use None for missing values",
         ))
     }
 
@@ -733,21 +734,9 @@ pub(crate) fn py_object_to_any_value(
         // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
             if !ob.is_exact_instance_of::<PyDateTime>()
-                && let Ok(pandas) = py
-                    .import(intern!(py, "sys"))?
-                    .getattr(intern!(py, "modules"))?
-                    .get_item(intern!(py, "pandas"))
+                && ob.get_type().hasattr(intern!(py, "asm8"))?
             {
-                if let Ok(nat) = pandas.getattr(intern!(py, "NaT"))
-                    && ob.is_instance(&nat.get_type())?
-                {
-                    return Ok(get_pandas_nat as InitFn);
-                }
-                if let Ok(timestamp) = pandas.getattr(intern!(py, "Timestamp"))
-                    && ob.is_instance(&timestamp)?
-                {
-                    return Ok(get_pandas_timestamp as InitFn);
-                }
+                return Ok(get_pandas_timestamp as InitFn);
             }
             Ok(get_datetime as InitFn)
         } else if PyDate::type_check(ob) {
