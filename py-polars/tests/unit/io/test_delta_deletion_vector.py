@@ -5,6 +5,7 @@ import json
 import struct
 import sys
 import uuid
+import warnings
 import zlib
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
@@ -18,11 +19,16 @@ from deltalake import DeltaTable
 from pyroaring import BitMap  # type: ignore[import-not-found]
 
 import polars as pl
-from polars.io.delta._dataset import _extract_delta_deletion_vectors
+from polars.io.delta._scan_resolver import _extract_delta_deletion_vectors
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
+
+# Without the polars-delta plugin, deletion vectors are read eagerly through deltalake.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:Install or upgrade polars-delta to read Delta deletion vectors:polars.exceptions.PerformanceWarning"
+)
 
 # NOTE
 # This file contains temporary homegrown logic with the sole purpose of generating
@@ -643,11 +649,18 @@ def test_scan_delta_dv_single(
 
 @pytest.mark.slow
 @pytest.mark.write_disk
-@pytest.mark.xfail(
-    strict=True,
-    reason="canary: file_uris() and deletion_vector() both url-encode paths",
-)
-def test_scan_delta_dv_percent_encoded_path_canary(tmp_path: Path) -> None:
+def test_scan_delta_dv_percent_encoded_path_canary(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    from polars.io.delta._plugin import use_plugin_planner
+
+    if not use_plugin_planner():
+        request.node.add_marker(
+            pytest.mark.xfail(
+                strict=True,
+                reason="canary: file_uris() and deletion_vector() both url-encode paths",
+            )
+        )
     path = tmp_path / "file#1_delta"
     df = pl.DataFrame({"a": range(5)})
     create_dv_table(path, df.to_arrow(), deleted_rows=[1, 3])
@@ -1063,7 +1076,36 @@ def test_scan_delta_dv_requires_deltalake_version(
 
     import deltalake
 
+    # The native planner does not depend on deltalake's DV callback version.
+    monkeypatch.setenv("POLARS_DELTA_PLANNER", "deltalake")
     monkeypatch.setattr(deltalake, "__version__", "1.4.1")
 
     with pytest.raises(ImportError, match=r"deltalake >= 1.4.2"):
         pl.scan_delta(path).collect()
+
+
+@pytest.mark.write_disk
+def test_scan_delta_dv_falls_back_without_decoder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from polars.exceptions import PerformanceWarning
+
+    path = tmp_path / "delta_table"
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    create_dv_table(path, df.to_arrow(), deleted_rows=[0])
+
+    # Without the polars-delta plugin, descriptors cannot be decoded natively:
+    # use the eager DeltaTable.deletion_vectors() callback.
+    monkeypatch.setattr("polars.io.delta._plugin.dv_decoder_available", lambda: False)
+    monkeypatch.setattr("polars.io.delta._plugin.use_plugin_planner", lambda: False)
+    monkeypatch.delenv("POLARS_DELTA_PLANNER", raising=False)
+    with pytest.warns(PerformanceWarning, match="polars-delta.*lazily"):
+        out = pl.scan_delta(path).collect()
+    assert out["a"].to_list() == [2, 3]
+
+    # Choosing deltalake explicitly silences the warning.
+    monkeypatch.setenv("POLARS_DELTA_PLANNER", "deltalake")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert pl.scan_delta(path).collect()["a"].to_list() == [2, 3]

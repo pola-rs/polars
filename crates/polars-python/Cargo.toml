@@ -44,6 +44,7 @@ chrono-tz = { workspace = true }
 color-backtrace = { workspace = true, optional = true }
 either = { workspace = true }
 flate2 = { workspace = true }
+futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 itoa = { workspace = true }
 libc = { workspace = true }
@@ -223,8 +224,10 @@ cloud = [
   "polars/http",
   # I/O plugins (`io::iceberg_plugin`).
   "dep:object_store",
+  "dep:futures",
   "dep:polars-io-ext-ffi",
   "polars-io-ext-ffi/iceberg",
+  "polars-io-ext-ffi/delta",
   "dep:tokio",
 ]
 peaks = ["polars/peaks"]

@@ -18,6 +18,10 @@ on:
         description: Allow unreleased polars-database changes
         type: boolean
         default: false
+      allow-unreleased-delta-changes:
+        description: Allow unreleased polars-delta changes
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -325,6 +329,7 @@ jobs:
     outputs:
       iceberg: ${{ steps.iceberg.outputs.version }}
       database: ${{ steps.database.outputs.version }}
+      delta: ${{ steps.delta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -344,54 +349,77 @@ jobs:
           package: polars-database
           extra: database
 
+      - name: Get polars-delta version
+        id: delta
+        uses: ./.github/actions/optional-dependency-version
+        with:
+          package: polars-delta
+          extra: deltalake
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # The tests below run against the released plugin, so its sources here must be the ones
-      # that wheel was built from, or a plugin change (or its test) would be tested against old
-      # code. The wheel records its build commit; 0.1.0 predates that and falls back to its tag.
+      # The tests below run against the released plugins. Compare their wheel build commits with
+      # this checkout so a plugin change (or its test) cannot be tested against old code.
       # Not compared: the statically linked shared crates (polars-core, polars-arrow,
       # polars-utils, polars-config, polars-error, the rest of polars-io-ext-ffi), Cargo.lock and
       # the workspace's Cargo.toml, which would differ at nearly every release.
-      - name: Check polars-database has no unreleased changes
+      - name: Check for unreleased plugin changes
         env:
-          VERSION: ${{ steps.database.outputs.version }}
-          ALLOW: ${{ inputs.allow-unreleased-database-changes }}
+          DATABASE_VERSION: ${{ steps.database.outputs.version }}
+          DELTA_VERSION: ${{ steps.delta.outputs.version }}
+          ALLOW_DATABASE: ${{ inputs.allow-unreleased-database-changes }}
+          ALLOW_DELTA: ${{ inputs.allow-unreleased-delta-changes }}
         run: |
-          set -e
-          # A wheel only: a source build would embed nothing, or not the commit it was released from.
-          pip install --only-binary :all: --no-deps "polars-database==$VERSION"
-          # 0.1.0 predates `__build_commit__`: no attribute at all.
-          BASE=$(python -I -c 'import polars_database; print(getattr(polars_database, "__build_commit__", ""))')
-          if [[ -n "$BASE" ]]; then
-            echo "polars-database $VERSION was built from $BASE (its __build_commit__)"
-          else
-            if ! git fetch --no-tags --depth=1 origin "refs/tags/polars-database-$VERSION:refs/tags/polars-database-$VERSION"; then
-              echo "::error::polars-database $VERSION has no build commit and there is no tag polars-database-$VERSION to compare with"
-              exit 1
-            fi
-            BASE=$(git rev-parse "polars-database-$VERSION^{commit}")
-            echo "polars-database $VERSION has no build commit; using the commit of tag polars-database-$VERSION: $BASE"
-          fi
-          git fetch --no-tags --depth=1 origin "$BASE"
-          # Also the plugin's half of its FFI contract, in a crate the plugin otherwise shares.
-          PATHS=(crates/polars-database py-polars/polars-database crates/polars-io-ext-ffi/src/lazyframe_resolver_v1.rs)
-          if git diff --quiet "$BASE" HEAD -- "${PATHS[@]}"; then
-            echo "polars-database sources are unchanged since $VERSION"
-          else
-            git diff --stat "$BASE" HEAD -- "${PATHS[@]}"
-            MSG="Unreleased polars-database changes since $VERSION (built from $BASE): release polars-database and raise the lower bound of the 'database' extra, or rerun with allow-unreleased-database-changes"
-            if [[ "$ALLOW" == "true" ]]; then
-              echo "::warning::$MSG"
-            else
-              echo "::error::$MSG"
-              exit 1
-            fi
-          fi
+          # Arguments: package, extra, version, allow flag, FFI file; the allow input is named
+          # after the plugin (`allow-unreleased-<name>-changes`), the extra may differ from it.
+          check_plugin() {
+            local package=$1 extra=$2 version=$3 allow=$4 ffi_file=$5
+            local module="${package//-/_}" name="${package#polars-}"
+            local base tag msg
+            local paths=("crates/$package" "py-polars/$package" "crates/polars-io-ext-ffi/src/$ffi_file")
 
-  # Full Python test suite, with the polars-iceberg and polars-database plugins installed from PyPI
+            # A wheel only: a source build would embed nothing, or not the original build commit.
+            pip install --only-binary :all: --no-deps "$package==$version"
+            base=$(python -I -c 'import importlib, sys; print(getattr(importlib.import_module(sys.argv[1]), "__build_commit__", ""))' "$module")
+            if [[ -n "$base" ]]; then
+              if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::$package $version has an invalid __build_commit__"
+                exit 1
+              fi
+              echo "$package $version was built from $base (its __build_commit__)"
+            else
+              tag="$package-$version"
+              if ! git fetch --no-tags --depth=1 origin "refs/tags/$tag:refs/tags/$tag"; then
+                echo "::error::$package $version has no build commit and there is no tag $tag to compare with"
+                exit 1
+              fi
+              base=$(git rev-parse "$tag^{commit}")
+              echo "$package $version has no build commit; using the commit of tag $tag: $base"
+            fi
+
+            git fetch --no-tags --depth=1 origin "$base"
+            if git diff --quiet "$base" HEAD -- "${paths[@]}"; then
+              echo "$package sources are unchanged since $version"
+              return
+            fi
+
+            git diff --stat "$base" HEAD -- "${paths[@]}"
+            msg="Unreleased $package changes since $version (Polars checkout $base): release $package and raise the lower bound of the '$extra' extra, or rerun with allow-unreleased-$name-changes"
+            if [[ "$allow" == "true" ]]; then
+              echo "::warning::$msg"
+            else
+              echo "::error::$msg"
+              exit 1
+            fi
+          }
+
+          check_plugin polars-database database "$DATABASE_VERSION" "$ALLOW_DATABASE" lazyframe_resolver_v1.rs
+          check_plugin polars-delta deltalake "$DELTA_VERSION" "$ALLOW_DELTA" delta_v1.rs
+
+  # Full Python test suite, with the polars-iceberg, polars-database and polars-delta plugins installed from PyPI
   # at the versions required in pyproject.toml.
   test-python:
     needs: [plugin-versions]
@@ -400,6 +428,7 @@ jobs:
       sha: ${{ inputs.sha }}
       polars-iceberg-version: ${{ needs.plugin-versions.outputs.iceberg }}
       polars-database-version: ${{ needs.plugin-versions.outputs.database }}
+      polars-delta-version: ${{ needs.plugin-versions.outputs.delta }}
 
   publish-to-pypi:
     needs: [base-package, create-sdist, build-wheels, test-python]

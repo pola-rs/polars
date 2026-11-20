@@ -1682,8 +1682,16 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
             },
         };
 
+        // Private planner option: not a `ScanCastOptions` field, but kept by an object that
+        // carries it (a policy read back from the dict `into_pyobject` produces).
+        let delta_type_widening = match ob.getattr(intern!(py, "delta_type_widening")) {
+            Ok(v) => v.extract::<bool>()?,
+            Err(_) => false,
+        };
+
         return Ok(Wrap(CastColumnsPolicy {
             integer_upcast,
+            delta_type_widening,
             integer_to_float_cast,
             float_upcast,
             float_downcast,
@@ -1728,6 +1736,7 @@ impl<'py> IntoPyObject<'py> for Wrap<CastColumnsPolicy> {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let CastColumnsPolicy {
             integer_upcast,
+            delta_type_widening,
             integer_to_float_cast,
             float_upcast,
             float_downcast,
@@ -1744,6 +1753,7 @@ impl<'py> IntoPyObject<'py> for Wrap<CastColumnsPolicy> {
 
         let out = PyDict::new(py);
         out.set_item("integer_upcast", integer_upcast)?;
+        out.set_item("delta_type_widening", delta_type_widening)?;
         out.set_item("integer_to_float_cast", integer_to_float_cast)?;
         out.set_item("float_upcast", float_upcast)?;
         out.set_item("float_downcast", float_downcast)?;
@@ -2155,9 +2165,56 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
                 DeletionFilesList::Iceberg(Arc::new(out))
             },
 
+            "delta-deletion-vector-native" => {
+                use polars::prelude::deletion::{DeltaDeletionVector, DeltaDeletionVectorLocation};
+                let descriptors: Bound<'_, PyDict> = ob.extract()?;
+                let mut out = PlIndexMap::with_capacity(descriptors.len());
+                for (key, value) in descriptors.iter() {
+                    // (absolute path or inline bytes, offset, size, cardinality).
+                    let (location, offset, size_in_bytes, cardinality): (
+                        Bound<'_, PyAny>,
+                        u64,
+                        u32,
+                        u64,
+                    ) = value.extract()?;
+                    if size_in_bytes as usize
+                        > polars::prelude::deletion::DELTA_DV_MAX_SERIALIZED_BYTES
+                    {
+                        return Err(PyValueError::new_err(
+                            "deletion vector exceeds 512 MiB serialized size resource limit",
+                        ));
+                    }
+                    let location = if let Ok(bytes) = location.cast::<pyo3::types::PyBytes>() {
+                        let bytes = bytes.as_bytes();
+                        if bytes.len() != size_in_bytes as usize {
+                            return Err(PyValueError::new_err(
+                                "inline deletion vector size mismatch",
+                            ));
+                        }
+                        DeltaDeletionVectorLocation::Inline(bytes.to_vec().into())
+                    } else {
+                        DeltaDeletionVectorLocation::File {
+                            path: location.extract::<Wrap<PlRefPath>>()?.0,
+                            offset,
+                        }
+                    };
+                    out.insert(
+                        key.extract::<usize>()?,
+                        DeltaDeletionVector {
+                            location,
+                            size_in_bytes,
+                            cardinality,
+                        },
+                    );
+                }
+                DeletionFilesList::Delta(Arc::new(out))
+            },
+
             "delta-deletion-vector" => {
                 let callback: Py<PyAny> = ob.extract()?;
-                DeletionFilesList::Delta(DeltaDeletionVectorProvider::new(PythonObject(callback)))
+                DeletionFilesList::DeltaPythonCallback(DeltaDeletionVectorProvider::new(
+                    PythonObject(callback),
+                ))
             },
 
             v => {

@@ -106,8 +106,15 @@ requirements-all:  ## Install/refresh all Python requirements (including those n
 # We set environment variables which will cause unnecessary re-builds if other cargo commands
 # (not run through maturin/Makefile) are ran. By updating .cargo/config.generated.toml (which is
 # gitignored and included from .cargo/config.toml) those environment variables are sticky.
+.PHONY: check-delta-source
+check-delta-source:
+	@test -f crates/polars-delta/Cargo.toml && test -f crates/polars-delta/src/codec.rs || { \
+		echo "Missing or outdated polars-delta source. Clone the pinned polars-delta revision into crates/polars-delta (see .github/actions/clone-polars-delta/action.yml)." >&2; \
+		exit 1; \
+	}
+
 .PHONY: update-cargo-env
-update-cargo-env: $(VENV_BIN)/python
+update-cargo-env: check-delta-source $(VENV_BIN)/python
 	@RUSTFLAGS="$(RUSTFLAGS)" CFLAGS="$(CFLAGS)" $(VENV_BIN)/python tools/update-cargo-env.py
 
 .PHONY: build
@@ -154,6 +161,10 @@ build-dist-release: update-cargo-env  ## Compile and install Python Polars binar
 	@unset CONDA_PREFIX \
 	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile dist-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
+
+.PHONY: build-polars-delta
+build-polars-delta: .venv  ## Compile and install the `polars_delta` I/O plugin (crates/polars-delta)
+	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
 
 .PHONY: build-polars-iceberg
 build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (py-polars/polars-iceberg)

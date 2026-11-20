@@ -149,7 +149,9 @@ def test_lazyframe_resolver_filter() -> None:
     q = resolver.lazy().filter("mask").drop("*")
     plan = q.explain()
 
-    assert "simple π 0/0 []" in plan[plan.index("RESOLVER") :]
+    assert plan.startswith("simple π 0/0 []")
+    assert 'FILTER col("mask")' in plan
+    assert resolver.resolve_lazyframe.call_args.kwargs["filter_drop_columns_idx"] == 0
     assert_frame_equal(
         q.collect(),
         pl.DataFrame(height=1),

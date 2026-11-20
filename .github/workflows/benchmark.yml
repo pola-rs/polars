@@ -5,6 +5,7 @@ on:
     paths:
       - crates/**
       - py-polars/polars-database/**
+      - py-polars/polars-delta/**
       - py-polars/polars-iceberg/**
       - Cargo.toml
       - py-polars/tests/benchmark/**
@@ -16,6 +17,7 @@ on:
     paths:
       - crates/**
       - py-polars/polars-database/**
+      - py-polars/polars-delta/**
       - py-polars/polars-iceberg/**
       - Cargo.toml
       - py-polars/tests/benchmark/**
@@ -151,6 +153,14 @@ jobs:
           maturin develop --uv --manifest-path polars-database/Cargo.toml
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_database'
+
+      - name: Install polars_delta plugin
+        working-directory: py-polars
+        run: |
+          # The venv is created by uv and has no pip.
+          maturin develop --uv --manifest-path polars-delta/Cargo.toml
+          # The plugin tests skip when the module is missing; fail here instead.
+          python -c 'import polars_delta; import polars._plr as plr; from polars.io.delta._plugin import _plugin_capsule; assert hasattr(plr, "_delta_plugin_scan"); assert _plugin_capsule(plr._IO_PLUGIN_IDS) is not None'
 
       - name: Run non-benchmark tests
         working-directory: py-polars

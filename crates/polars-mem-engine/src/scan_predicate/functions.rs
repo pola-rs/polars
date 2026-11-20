@@ -697,9 +697,21 @@ where
 
             out.map(|x| DeletionFilesList::Iceberg(Arc::new(x)))
         },
+        DeletionFilesList::Delta(deletions) => {
+            let out: PlIndexMap<_, _> = selected_path_indices
+                .clone()
+                .enumerate()
+                .filter_map(|(out_idx, source_idx)| {
+                    deletions.get(&source_idx).map(|v| (out_idx, v.clone()))
+                })
+                .collect();
+            (!out.is_empty()).then(|| DeletionFilesList::Delta(Arc::new(out)))
+        },
         // No-op - Delta takes scan paths at the execution stage.
         #[cfg(feature = "python")]
-        DeletionFilesList::Delta(provider) => Some(DeletionFilesList::Delta(provider)),
+        DeletionFilesList::DeltaPythonCallback(provider) => {
+            Some(DeletionFilesList::DeltaPythonCallback(provider))
+        },
     });
 
     *table_statistics = table_statistics.as_ref().map(|x| {

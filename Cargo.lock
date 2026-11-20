@@ -3291,6 +3291,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-delta"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "crc32fast",
+ "futures",
+ "percent-encoding",
+ "polars-arrow",
+ "polars-buffer",
+ "polars-error",
+ "polars-io-ext-ffi",
+ "polars-parquet",
+ "polars-utils",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "polars-delta-python"
+version = "0.1.0"
+dependencies = [
+ "polars-delta",
+ "pyo3",
+]
+
+[[package]]
 name = "polars-descriptions"
 version = "0.55.1"
 dependencies = [
@@ -3744,6 +3773,7 @@ dependencies = [
  "color-backtrace",
  "either",
  "flate2",
+ "futures",
  "hashbrown 0.17.1",
  "itoa",
  "libc",

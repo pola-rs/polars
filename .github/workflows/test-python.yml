@@ -18,8 +18,8 @@ on:
       - docs/source/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
-  # Called by the release workflow, which tests against the released polars-iceberg and
-  # polars-database from PyPI.
+  # Called by the release workflow, which tests against the released polars-iceberg,
+  # polars-database and polars-delta from PyPI.
   workflow_call:
     inputs:
       sha:
@@ -34,6 +34,10 @@ on:
         description: >
           Version of polars-database to install from PyPI. If omitted, build polars-database from
           this checkout.
+      polars-delta-version:
+        description: >
+          Version of polars-delta to install from PyPI. If omitted, build polars-delta from this
+          checkout.
         type: string
 
 concurrency:
@@ -176,6 +180,19 @@ jobs:
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_database'
 
+      - name: Install polars_delta plugin
+        if: matrix.python-version != '3.14t'
+        env:
+          POLARS_DELTA_VERSION: ${{ inputs.polars-delta-version }}
+        run: |
+          if [[ -n "$POLARS_DELTA_VERSION" ]]; then
+            uv pip install --no-deps "polars-delta==$POLARS_DELTA_VERSION"
+          else
+            maturin develop --manifest-path polars-delta/Cargo.toml
+          fi
+          # The plugin tests skip when the module is missing; fail here instead.
+          python -c 'import polars_delta; import polars._plr as plr; from polars.io.delta._plugin import _plugin_capsule; assert hasattr(plr, "_delta_plugin_scan"); assert _plugin_capsule(plr._IO_PLUGIN_IDS) is not None'
+
       - name: Run doctests
         if: github.event_name != 'push' && matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest' && !matrix.variant
         run: |
@@ -212,6 +229,7 @@ jobs:
           pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_scan_row_deletion.py
           pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_iceberg.py
           pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_iceberg_plugin_suite.py
+          pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_delta*.py
 
       - name: Check import without optional dependencies
         if: github.event_name != 'push' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.14t')

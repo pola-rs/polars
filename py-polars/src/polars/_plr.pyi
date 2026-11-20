@@ -2537,6 +2537,26 @@ def _iceberg_plugin_scan(
     metadata_cache: PyIcebergMetadataFileCache | None,
     metadata_cache_scope: str | None,
 ) -> PyLazyFrame: ...
+def _delta_plugin_register_decoder(capsule: Any) -> None: ...
+def _delta_plugin_decoder_registered() -> bool: ...
+def _delta_plugin_scan(
+    capsule: Any,
+    *,
+    table_uri: str,
+    version: int | None,
+    timestamp_ms: int | None,
+    projection: pylist[str] | None,
+    filter_columns: pylist[str] | None,
+    statistics_columns: pylist[str] | None,
+    limit: int | None,
+    use_metadata_statistics: bool,
+    schema_only: bool = False,
+    verbose: bool,
+    testing_fail: str | None,
+    storage_options: Any,
+    credential_provider: Any,
+    metadata_cache: PyIcebergMetadataFileCache,
+) -> tuple[PyLazyFrame, int]: ...
 
 class PyIcebergMetadataFileCache:
     def __init__(self, max_bytes: int) -> None: ...
