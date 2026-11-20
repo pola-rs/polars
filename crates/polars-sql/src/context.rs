@@ -7475,6 +7475,8 @@ impl SQLContext {
         let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
+        // Projections computed from the group keys alone, re-evaluated on the aggregated rows.
+        let mut key_expressions = PlHashSet::new();
 
         // Pre-compute group key data (alias-stripped expression + aggregated output
         // name) to avoid repeated work matching projections against the group keys
@@ -7583,6 +7585,7 @@ impl SQLContext {
                     }
                 } else {
                     splitter.check_columns_per_group(e_inner)?;
+                    key_expressions.insert(field.name.clone());
                 }
             }
         }
@@ -7742,6 +7745,8 @@ impl SQLContext {
                 } else if is_constant(projection_expr) {
                     // Constants are not part of the aggregation; re-evaluate them.
                     projection_expr.clone()
+                } else if key_expressions.contains(name) {
+                    bind_keys(projection_expr.clone()).alias(name.clone())
                 } else {
                     col(name.clone())
                 }

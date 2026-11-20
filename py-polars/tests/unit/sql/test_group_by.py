@@ -1728,3 +1728,31 @@ def test_percentile_within_group_errors(clause: str, err: str) -> None:
 def test_group_by_renamed_column(query: str) -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3], "b": [1, 1, 2, 3], "g": ["x", "x", "y", "y"]})
     assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
+def test_group_by_key_expression_without_key_name() -> None:
+    df = pl.DataFrame({"s": ["a", None, "a"], "n": [1, 2, 3]})
+    res = df.sql(
+        """
+        SELECT
+          s,
+          CASE WHEN s IS NULL THEN 'x' ELSE 'y' END,
+          CASE WHEN s IS NULL THEN 1 ELSE 2 END,
+          SUM(n) AS total
+        FROM self
+        GROUP BY s
+        ORDER BY s NULLS FIRST
+        """
+    )
+    assert res.columns == ["s", "literal", "literal:1", "total"]
+    assert res.rows() == [(None, "x", 1, 2), ("a", "y", 2, 4)]
+
+
+def test_group_by_constant_projection_with_literal_key() -> None:
+    df = pl.DataFrame({"n": [1, 2]})
+    res = df.sql(
+        "SELECT 1 AS k, SUBSTRING('abc' FROM 2) FROM self GROUP BY ROLLUP(k) ORDER BY k NULLS LAST"
+    )
+    assert res.rows() == [(1, "bc"), (None, "bc")]
+    res = df.sql("SELECT 42 AS k, 42 + 1 FROM self GROUP BY GROUPING SETS ((k))")
+    assert res.rows() == [(42, 43)]
