@@ -484,9 +484,9 @@ fn default_max_connections(dialect: &str) -> usize {
 /// driver call would be ended inside Rust frames too), and is given a moment more. Only
 /// then are driver calls stopped: with every query ended, a scan in a user's `atexit` hook
 /// that runs after this one (registered before the first scan imported this module) runs
-/// as usual.
+/// as usual. Returns whether every query ended.
 #[pyfunction]
-fn _at_exit(py: Python<'_>) {
+fn _at_exit(py: Python<'_>) -> bool {
     use std::time::Duration;
     let ended = py.detach(|| {
         crate::reader::wait_for_scans(Duration::from_secs(2)) || {
@@ -501,6 +501,7 @@ fn _at_exit(py: Python<'_>) {
     if !ended {
         bridge::EXITING.store(true, std::sync::atomic::Ordering::Release);
     }
+    ended
 }
 
 #[pymodule]
