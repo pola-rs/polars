@@ -29,6 +29,8 @@ impl PySeries {
             .collect())
     }
 
+    // From the materialised Series, as before: the flag of a `Column::Dictionary` was not
+    // checked to equal it. (A `Column::Scalar` says `Ascending`, as its Series does.)
     fn is_sorted_ascending_flag(&self) -> bool {
         matches!(self.series().is_sorted_flag(), IsSorted::Ascending)
     }
@@ -96,20 +98,30 @@ impl PySeries {
         // hold the read lock across calls into Python, so blocking on the lock while
         // holding the GIL deadlocks both threads.
         py.enter_polars_ok(|| {
-            let series = self.series().rechunk();
             if in_place {
-                self.set_series(series);
+                // One write lock, so the rechunk is atomic.
+                let mut column = self.column.write();
+                *column = rechunk_column(&column);
                 None
             } else {
-                Some(Self::from(series))
+                Some(Self::from_column(rechunk_column(&self.column.read())))
             }
         })
     }
 
     /// Get a value by index.
     fn get_index(&self, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-        let s = self.series();
-        let av = match s.get(index) {
+        // A scalar or dictionary column reads the value without materialising.
+        let column = self.compressed();
+        let series;
+        let got = match &column {
+            Some(c) => c.get(index),
+            None => {
+                series = self.series();
+                series.get(index)
+            },
+        };
+        let av = match got {
             Ok(v) => v,
             Err(PolarsError::OutOfBounds(err)) => {
                 return Err(PyIndexError::new_err(err.to_string()));
@@ -160,7 +172,7 @@ impl PySeries {
     }
 
     pub fn name(&self) -> String {
-        self.series().name().to_string()
+        self.column.read().name().to_string()
     }
 
     fn rename(&self, name: &str) {
@@ -168,7 +180,7 @@ impl PySeries {
     }
 
     fn dtype<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(self.series().dtype().clone()).into_pyobject(py)
+        Wrap(self.column.read().dtype().clone()).into_pyobject(py)
     }
 
     fn set_sorted_flag(&self, descending: bool) -> Self {
@@ -194,6 +206,11 @@ impl PySeries {
     fn append(&self, py: Python<'_>, other: &PySeries) -> PyResult<()> {
         py.enter_polars(|| {
             // Prevent self-append deadlocks.
+            // A scalar column keeps the Series path: it merges equal values into one chunk.
+            if matches!(self.compressed(), Some(Column::Dictionary(_))) {
+                let other = other.column.read().clone();
+                return self.column.write().append(&other).map(drop);
+            }
             let other = other.series();
             self.with_series_mut(|s| s.append(&other).map(drop))
         })
@@ -202,23 +219,46 @@ impl PySeries {
     fn extend(&self, py: Python<'_>, other: &PySeries) -> PyResult<()> {
         py.enter_polars(|| {
             // Prevent self-extend deadlocks.
+            // A scalar column keeps the Series path: `extend` clears the sorted flag of a
+            // String Series, which `Column::extend` (ascending, as a scalar column always
+            // is) would not.
+            if matches!(self.compressed(), Some(Column::Dictionary(_))) {
+                let other = other.column.read().clone();
+                return self.column.write().extend(&other).map(drop);
+            }
             let other = other.series();
             self.with_series_mut(|s| s.extend(&other).map(drop))
         })
     }
 
     fn new_from_index(&self, py: Python<'_>, index: usize, length: usize) -> PyResult<Self> {
-        let s = self.series();
-        if index >= s.len() {
-            Err(PyValueError::new_err("index is out of bounds"))
-        } else {
-            py.enter_polars_series(|| Ok(s.new_from_index(index, length)))
+        if index >= self.len() {
+            return Err(PyValueError::new_err("index is out of bounds"));
         }
+        // A zero-length result goes the Series path (a scalar column loses the fast-explode
+        // flag of a List there).
+        if let (Some(c), true) = (self.compressed(), length > 0) {
+            return py.enter_polars_column(|| Ok(c.new_from_index(index, length)));
+        }
+        let s = self.series();
+        py.enter_polars_series(|| Ok(s.new_from_index(index, length)))
     }
 
     fn filter(&self, py: Python<'_>, filter: &PySeries) -> PyResult<Self> {
         let filter_series = &filter.series();
         if let Ok(ca) = filter_series.bool() {
+            if let Some(c) = self.compressed() {
+                // A scalar column does not check the length of the mask. Any error is raised
+                // by the Series path below, so that its message is the same.
+                let len_ok = ca.len() == c.len() || ca.len() == 1;
+                if let Some(out) =
+                    py.enter_polars_ok(|| len_ok.then(|| c.filter(ca).ok()).flatten())?
+                {
+                    if !out.is_empty() {
+                        return Ok(Self::from_column(out));
+                    }
+                }
+            }
             py.enter_polars_series(|| self.series().filter(ca))
         } else {
             Err(PyRuntimeError::new_err("Expected a boolean mask"))
@@ -243,15 +283,26 @@ impl PySeries {
     }
 
     fn gather_with_series(&self, py: Python<'_>, indices: &PySeries) -> PyResult<Self> {
+        // A scalar column keeps the Series path: a gather clears the sorted flag of the
+        // Series, but a scalar column of any length reports itself as sorted.
+        if let Some(c @ Column::Dictionary(_)) = self.compressed() {
+            // Errors (non-index dtype, out of bounds) are raised by the Series path below.
+            let indices = indices.series();
+            let out = py.enter_polars_ok(|| indices.idx().ok().and_then(|i| c.take(i).ok()))?;
+            if let Some(out) = out {
+                return Ok(Self::from_column(out));
+            }
+            return py.enter_polars_series(|| self.series().take(indices.idx()?));
+        }
         py.enter_polars_series(|| self.series().take(indices.series().idx()?))
     }
 
     fn null_count(&self) -> PyResult<usize> {
-        Ok(self.series().null_count())
+        Ok(self.column.read().null_count())
     }
 
     fn has_nulls(&self) -> bool {
-        self.series().has_nulls()
+        self.column.read().has_nulls()
     }
 
     fn equals(
@@ -283,7 +334,7 @@ impl PySeries {
 
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
-        self.series().len()
+        self.column.read().len()
     }
 
     /// Rechunk and return a pointer to the start of the Series.
@@ -328,7 +379,16 @@ impl PySeries {
     }
 
     fn shrink_to_fit(&self, py: Python) -> PyResult<()> {
-        py.enter_polars_ok(|| self.with_series_mut(|s| s.shrink_to_fit()))
+        py.enter_polars_ok(|| {
+            let mut column = self.column.write();
+            // `Column::shrink_to_fit` does nothing for a dictionary column, while the Series
+            // rechunks (`n_chunks` shows it).
+            if matches!(&*column, Column::Dictionary(_)) {
+                column.into_materialized_series().shrink_to_fit();
+            } else {
+                column.shrink_to_fit();
+            }
+        })
     }
 
     fn dot<'py>(&self, other: &PySeries, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -396,6 +456,18 @@ impl PySeries {
         } else {
             CastOptions::NonStrict
         };
+        // Only a dictionary column cast to String (the column itself) runs on the column. Other
+        // targets differ from the Series path: a Scalar column reports itself as sorted after
+        // a cast, and a dictionary column's elementwise cast is one chunk and numbers a
+        // Categorical by the dictionary's order.
+        if let Some(c @ Column::Dictionary(_)) = self.compressed() {
+            if dtype.0 == DataType::String {
+                return Ok(Self::from_column(
+                    c.cast_with_options(&dtype.0, options)
+                        .map_err(PyPolarsErr::from)?,
+                ));
+            }
+        }
         py.enter_polars_series(|| self.series().cast_with_options(&dtype.0, options))
     }
 
@@ -425,10 +497,22 @@ impl PySeries {
     }
 
     fn head(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
+        if let Some(c) = self.compressed().filter(|_| n > 0) {
+            let out = py.enter_polars_column(|| Ok(c.head(Some(n))))?;
+            if out.len() > 0 {
+                return Ok(out);
+            }
+        }
         py.enter_polars_series(|| Ok(self.series().head(Some(n))))
     }
 
     fn tail(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
+        if let Some(c) = self.compressed().filter(|_| n > 0) {
+            let out = py.enter_polars_column(|| Ok(c.tail(Some(n))))?;
+            if out.len() > 0 {
+                return Ok(out);
+            }
+        }
         py.enter_polars_series(|| Ok(self.series().tail(Some(n))))
     }
 
@@ -448,6 +532,17 @@ impl PySeries {
 
     #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
+        if let Some(c) = self.compressed() {
+            let out = match Slice::new(offset, length) {
+                Some(slice) => c.slice(slice),
+                None => c,
+            };
+            // A zero-length result goes the Series path (a List scalar column loses the
+            // fast-explode flag).
+            if !out.is_empty() {
+                return Self::from_column(out);
+            }
+        }
         let s = self.series();
         match Slice::new(offset, length) {
             Some(slice) => s.slice(slice),
@@ -624,3 +719,12 @@ macro_rules! impl_get_phys {
 impl_get_phys!(get_date, date, i32);
 impl_get_phys!(get_datetime, datetime, i64);
 impl_get_phys!(get_duration, duration, i64);
+
+/// Rechunk a column. A `Column::Series` stays one (`Column::rechunk` would turn a length-1
+/// result into a `Column::Scalar`); other variants use their own rechunk.
+fn rechunk_column(column: &Column) -> Column {
+    match column {
+        Column::Series(s) => Column::Series(s.rechunk().into()),
+        c => c.rechunk(),
+    }
+}

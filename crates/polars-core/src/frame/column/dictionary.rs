@@ -250,8 +250,10 @@ pub struct DictionaryColumn {
     /// Whether the values are sorted, a hint as on a [`Series`].
     sorted: IsSorted,
 
-    /// A lazily materialized [`Series`] variant of this [`DictionaryColumn`].
-    materialized: OnceLock<Series>,
+    /// A lazily materialized [`Series`] variant of this [`DictionaryColumn`]. Clones share it, so
+    /// that the codes are gathered once however many copies of the column consume them; changing
+    /// the name or the sorted flag of one gives it a cache of its own.
+    materialized: Arc<OnceLock<Series>>,
 }
 
 impl DictionaryColumn {
@@ -271,7 +273,7 @@ impl DictionaryColumn {
             dict,
             codes: codes.with_name(PlSmallStr::EMPTY),
             sorted: IsSorted::Not,
-            materialized: OnceLock::new(),
+            materialized: Arc::default(),
         }
     }
 
@@ -291,10 +293,28 @@ impl DictionaryColumn {
         &self.name
     }
 
-    pub fn rename(&mut self, name: PlSmallStr) {
-        if let Some(s) = self.materialized.get_mut() {
-            s.rename(name.clone());
+    /// Applies `f` to the cached materialization, if any: in place when this column is its only
+    /// owner, else on a copy that becomes this column's cache of its own.
+    fn update_cache(&mut self, f: impl FnOnce(&mut Series)) {
+        if let Some(cache) = Arc::get_mut(&mut self.materialized) {
+            if let Some(s) = cache.get_mut() {
+                f(s);
+            }
+            return;
         }
+        let cache = OnceLock::new();
+        if let Some(s) = self.materialized.get() {
+            let mut s = s.clone();
+            f(&mut s);
+            _ = cache.set(s);
+        }
+        self.materialized = Arc::new(cache);
+    }
+
+    pub fn rename(&mut self, name: PlSmallStr) {
+        self.update_cache(|s| {
+            s.rename(name.clone());
+        });
         self.name = name;
     }
 
@@ -333,7 +353,7 @@ impl DictionaryColumn {
             dict: self.dict.clone(),
             codes,
             sorted: IsSorted::Not,
-            materialized: OnceLock::new(),
+            materialized: Arc::default(),
         }
     }
 
@@ -350,9 +370,7 @@ impl DictionaryColumn {
     }
 
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        if let Some(s) = self.materialized.get_mut() {
-            s.set_sorted_flag(sorted);
-        }
+        self.update_cache(|s| s.set_sorted_flag(sorted));
         self.sorted = sorted;
     }
 
@@ -385,14 +403,7 @@ impl DictionaryColumn {
 
     /// Take the [`DictionaryColumn`] and materialize as a [`Series`] if not already done.
     pub fn take_materialized_series(self) -> Series {
-        match self.materialized.into_inner() {
-            Some(s) => s,
-            None => Self {
-                materialized: OnceLock::new(),
-                ..self
-            }
-            .to_series(),
-        }
+        self.as_materialized_series().clone()
     }
 
     pub fn slice(&self, slice: impl Into<Slice>) -> Self {
@@ -482,7 +493,7 @@ impl DictionaryColumn {
             self.codes.append(&other.codes).unwrap();
         }
         self.sorted = IsSorted::Not;
-        self.materialized = OnceLock::new();
+        self.materialized = Arc::default();
         true
     }
 
@@ -504,6 +515,8 @@ impl DictionaryColumn {
             .map(|c| polars_arrow::compute::aggregate::estimated_bytes_size(c.as_ref()))
             .sum::<usize>()
             + dict_part
+            // The cache counts in full, whoever else shares it, so the size does not depend on
+            // how many clones are alive.
             + self.materialized.get().map_or(0, |s| s.estimated_size())
     }
 
@@ -695,6 +708,26 @@ mod test {
             .iter()
             .map(|v| v.map(str::to_owned))
             .collect()
+    }
+
+    #[test]
+    fn clones_share_the_materialized_cache() {
+        let a = dict_column(&["x", "y"], &[Some(0), Some(1), None]);
+        let mut b = a.clone();
+        let first = a.as_materialized_series();
+        // The clone sees the cache `a` filled: one gather for both.
+        assert!(std::ptr::eq(first, b.as_materialized_series()));
+        // Renaming or flagging one gives it a cache of its own.
+        b.rename("other".into());
+        assert_eq!(b.as_materialized_series().name().as_str(), "other");
+        assert_eq!(a.as_materialized_series().name().as_str(), "s");
+        let mut c = a.clone();
+        c.set_sorted_flag(IsSorted::Ascending);
+        assert_eq!(
+            c.as_materialized_series().is_sorted_flag(),
+            IsSorted::Ascending
+        );
+        assert_eq!(a.as_materialized_series().is_sorted_flag(), IsSorted::Not);
     }
 
     #[test]

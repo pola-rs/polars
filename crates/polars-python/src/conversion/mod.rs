@@ -173,7 +173,7 @@ pub(crate) fn extract_py_resolved_dsl(
 
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     let s = obj.getattr(intern!(obj.py(), "_s"))?;
-    Ok(s.extract::<PySeries>()?.into_series())
+    Ok(s.extract::<PyRef<PySeries>>()?.series())
 }
 
 pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny>> {

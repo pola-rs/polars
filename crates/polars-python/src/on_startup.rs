@@ -224,7 +224,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                 }),
                 series: Arc::new(|py_f| {
                     Python::attach(|py| {
-                        Ok(Box::new(py_f.extract::<PySeries>(py)?.into_series()) as _)
+                        Ok(Box::new(py_f.extract::<PyRef<PySeries>>(py)?.series()) as _)
                     })
                 }),
                 df: Arc::new(|py_f| {

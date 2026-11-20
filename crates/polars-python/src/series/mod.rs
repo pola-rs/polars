@@ -78,11 +78,25 @@ impl PySeries {
         self.column.read().as_materialized_series().clone()
     }
 
+    /// A clone of the column when it is a `Column::Scalar` or `Column::Dictionary`: the
+    /// variants whose methods run on the column without materialising. `None` for a
+    /// `Column::Series`, whose methods keep running on the [`Series`] (a `Column` method would
+    /// turn a length-1 result into a `Column::Scalar`).
+    ///
+    /// The lock is released before the clone is used, so that the operation can take other
+    /// locks (`s.append(s)`).
+    pub(crate) fn compressed(&self) -> Option<Column> {
+        match &*self.column.read() {
+            Column::Series(_) => None,
+            c => Some(c.clone()),
+        }
+    }
+
     /// Take the column out, to go into a `DataFrame`, as `Series::into_column` did: a
     /// length-1 `Column::Series` becomes a `Column::Scalar`. Other variants pass through.
     ///
-    /// Frame entry keeps this conversion for now: the scalar column also hands out a
-    /// normalised `Series` (a sliced nested array, say, comes back without its offset).
+    /// The conversion is kept: the scalar column also hands out a normalised `Series` (a
+    /// sliced nested array, say, comes back without its offset).
     pub(crate) fn into_frame_column(self) -> Column {
         match self.column.into_inner() {
             Column::Series(s) => s.take().into(),
@@ -122,5 +136,16 @@ pub(crate) trait ToColumns {
 impl ToColumns for Vec<PySeries> {
     fn to_columns(self) -> Vec<Column> {
         self.into_iter().map(PySeries::into_frame_column).collect()
+    }
+}
+
+pub(crate) trait ToPySeries {
+    fn to_pyseries(self) -> Vec<PySeries>;
+}
+
+/// Keeps each column's variant (nothing is materialised).
+impl ToPySeries for Vec<Column> {
+    fn to_pyseries(self) -> Vec<PySeries> {
+        self.into_iter().map(PySeries::from_column).collect()
     }
 }

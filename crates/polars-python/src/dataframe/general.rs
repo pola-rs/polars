@@ -14,7 +14,7 @@ use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::prelude::strings_to_pl_smallstr;
 use crate::py_modules::polars;
-use crate::series::{PySeries, ToColumns};
+use crate::series::{PySeries, ToColumns, ToPySeries};
 use crate::utils::{EnterPolarsExt, to_py_err};
 use crate::{PyExpr, PyLazyFrame};
 
@@ -143,12 +143,8 @@ impl PyDataFrame {
     }
 
     pub fn get_columns(&self) -> Vec<PySeries> {
-        // M1: materialise (a length-1 or dictionary column would otherwise reach `PySeries`
-        // as a `Column::Scalar`/`Column::Dictionary`).
         let cols = self.df.read().columns().to_vec();
-        cols.into_iter()
-            .map(|c| PySeries::new(c.take_materialized_series()))
-            .collect()
+        cols.to_pyseries()
     }
 
     /// Get column names
@@ -240,8 +236,7 @@ impl PyDataFrame {
             .write()
             .drop_in_place(name)
             .map_err(PyPolarsErr::from)?;
-        let s = s.take_materialized_series();
-        Ok(PySeries::new(s))
+        Ok(PySeries::from_column(s))
     }
 
     pub fn to_series(&self, index: isize) -> PyResult<PySeries> {
@@ -255,7 +250,7 @@ impl PyDataFrame {
 
         let s = index_adjusted.and_then(|i| df.select_at_idx(i));
         match s {
-            Some(s) => Ok(PySeries::new(s.as_materialized_series().clone())),
+            Some(s) => Ok(PySeries::from_column(s.clone())),
             None => Err(PyIndexError::new_err(
                 polars_err!(oob = index, df.width()).to_string(),
             )),
@@ -275,7 +270,7 @@ impl PyDataFrame {
             .df
             .read()
             .column(name)
-            .map(|s| PySeries::new(s.as_materialized_series().clone()))
+            .map(|s| PySeries::from_column(s.clone()))
             .map_err(PyPolarsErr::from)?;
         Ok(series)
     }
