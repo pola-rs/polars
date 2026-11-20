@@ -216,6 +216,69 @@ def test_str_tail_expr() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.parametrize(
+    ("n", "head", "tail"),
+    [
+        (-(2**63), "", ""),
+        (2**63 - 1, "aü", "aü"),
+        (pl.lit(2**63, pl.UInt64), "aü", "aü"),
+        (pl.lit(2**64 - 1, pl.UInt64), "aü", "aü"),
+    ],
+)
+def test_str_head_tail_extreme_count(n: int | pl.Expr, head: str, tail: str) -> None:
+    df = pl.DataFrame({"s": ["aü", None]})
+    out = df.select(
+        head=pl.col("s").str.head(n),
+        tail=pl.col("s").str.tail(n),
+        head_lit=pl.lit("aü").str.head(pl.repeat(n, 2)),
+        bin_head=pl.col("s").cast(pl.Binary).bin.head(n),
+        bin_tail=pl.col("s").cast(pl.Binary).bin.tail(n),
+    )
+    assert out.to_dict(as_series=False) == {
+        "head": [head, None],
+        "tail": [tail, None],
+        "head_lit": [head, head],
+        "bin_head": [head.encode(), None],
+        "bin_tail": [tail.encode(), None],
+    }
+
+
+def test_str_head_tail_repeated_count() -> None:
+    df = pl.DataFrame({"s": ["abc", "de", None]}).with_columns(n=pl.lit(2))
+    out = df.select(
+        head=pl.col("s").str.head("n"),
+        tail=pl.col("s").str.tail("n"),
+        bin_head=pl.col("s").cast(pl.Binary).bin.head("n"),
+        lit_head=pl.lit("xyz").str.head("n"),
+    )
+    assert out.to_dict(as_series=False) == {
+        "head": ["ab", "de", None],
+        "tail": ["bc", "de", None],
+        "bin_head": [b"ab", b"de", None],
+        "lit_head": ["xy", "xy", "xy"],
+    }
+    s = pl.Series("s", ["aba", "ac"]).sort()
+    out = s.to_frame().with_columns(n=pl.lit(-1)).select(pl.col("s").str.head("n"))
+    assert out["s"].to_list() == ["ab", "a"]
+    assert out["s"].min() == "a"
+
+
+def test_str_slice_min_offset() -> None:
+    df = pl.DataFrame({"s": ["aü", None]})
+    out = df.select(
+        rest=pl.col("s").str.slice(-(2**63)),
+        two=pl.col("s").str.slice(-(2**63), 2),
+        bin_rest=pl.col("s").cast(pl.Binary).bin.slice(-(2**63)),
+        bin_two=pl.col("s").cast(pl.Binary).bin.slice(-(2**63), 2),
+    )
+    assert out.to_dict(as_series=False) == {
+        "rest": ["aü", None],
+        "two": ["", None],
+        "bin_rest": ["aü".encode(), None],
+        "bin_two": [b"", None],
+    }
+
+
 def test_str_tail_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
     with pytest.raises(ShapeError):
