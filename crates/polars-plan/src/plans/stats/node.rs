@@ -262,12 +262,12 @@ pub(crate) fn node_stats_with_cache(
                 .iter()
                 .map(|k| into_column(k.node(), expr_arena))
                 .collect();
-            let ndv = source_columns(keys, expr_arena).map(|mut sources| {
+            let ndv = source_columns(keys, expr_arena).and_then(|mut sources| {
                 // Several keys reading one column split it no finer than one of
                 // them does, so it must be counted once.
                 sources.sort_unstable();
                 sources.dedup();
-                sources
+                inner.key_distinct_count_product(&sources)
             });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
             Some(one_row_per_group(
@@ -491,6 +491,7 @@ pub(crate) fn node_stats_with_cache(
                     unfiltered: acc.unfiltered.max(inner.unfiltered),
                     max_rows: acc.max_rows.zip(inner.max_rows).map(|(a, b)| a.max(b)),
                     columns: join_columns(&acc, &inner),
+                    unique_keys: Vec::new(),
                 };
             }
             // A shorter input is padded with nulls or broadcast, so its null counts
@@ -786,7 +787,7 @@ fn shadowed_columns(
         .filter_map(|e| Some((e.output_name(), literal_column(e, expr_arena)?)))
         .collect();
     let overwrites =
-        |e: &ExprIR| is_computed(e, expr_arena) && columns.contains_key(e.output_name());
+        |e: &ExprIR| e.plain_column(expr_arena).is_none() && columns.contains_key(e.output_name());
     if literals.is_empty() && !exprs.iter().any(overwrites) {
         return inner.columns.clone();
     }
@@ -1883,7 +1884,8 @@ mod tests {
         let inner = leaf(1_000_000.0, 250_000.0).unique_on(&["k"]);
         // A superset of a unique key is unique too.
         let keys = [&key("k"), &key("j")];
-        let groups = one_row_per_group(inner.clone(), &keys, Some(&keys), None);
+        let sources = [Some(keys[0]), Some(keys[1])];
+        let groups = one_row_per_group(inner.clone(), &keys, &sources, None, None);
 
         assert_eq!(groups.filtered, 250_000.0);
         assert_eq!(groups.unfiltered, 1_000_000.0);
@@ -1892,13 +1894,14 @@ mod tests {
         let groups = one_row_per_group(
             leaf(1_000_000.0, 250_000.0),
             &keys[..1],
-            Some(&keys[..1]),
+            &sources[..1],
+            None,
             None,
         );
         assert!(groups.filtered < 250_000.0);
 
         // A computed key such as `k % 2` keeps the column's name but not its uniqueness.
-        let groups = one_row_per_group(inner, &keys, None, None);
+        let groups = one_row_per_group(inner, &keys, &[None, None], None, None);
         assert!(groups.filtered < 250_000.0);
     }
 
