@@ -18,6 +18,7 @@ use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
 use polars_core::utils::{any_values_to_supertype, try_get_supertype};
 use polars_defs::time::duration::Duration;
+use polars_error::SqlLocationKind;
 use polars_lazy::prelude::*;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::functions::{DurationArgs, duration};
@@ -32,9 +33,9 @@ use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, DictionaryField, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentList, FunctionArguments, Ident, Interval, MapEntry,
-    OrderByOptions, OrderBySort, Query as Subquery, SelectItem, Statement, Subscript, TimezoneInfo,
-    TrimWhereField, TypedString, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan,
+    OrderByOptions, OrderBySort, Query as Subquery, SelectItem, Spanned, Statement, Subscript,
+    TimezoneInfo, TrimWhereField, TypedString, UnaryOperator as SQLUnaryOperator,
+    Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::{self, Keyword};
@@ -52,6 +53,7 @@ use crate::lambda::{
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
+use crate::location::{at_statement, complete_location, locate};
 use crate::positional_join::{attach_positional_aliases, extract_positional_joins};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::{is_correlated_subquery, strip_nested};
@@ -697,6 +699,22 @@ impl SQLExprVisitor<'_> {
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        self.visit_unlocated_expr(expr).map_err(|e| match expr {
+            // Their span is the operand's, without the keyword, type or field the error is about.
+            SQLExpr::Cast { .. }
+            | SQLExpr::Convert { .. }
+            | SQLExpr::Extract { .. }
+            | SQLExpr::Ceil { .. }
+            | SQLExpr::Floor { .. }
+            | SQLExpr::Position { .. }
+            | SQLExpr::Substring { .. }
+            | SQLExpr::Trim { .. }
+            | SQLExpr::Overlay { .. } => at_statement(e),
+            _ => locate(e, SqlLocationKind::Exact, expr.span()),
+        })
+    }
+
+    fn visit_unlocated_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         if self.ctx.lambda_depth > 0 {
             check_lambda_body_expr(expr)?;
         }
@@ -747,13 +765,8 @@ impl SQLExprVisitor<'_> {
                         .fold(root, |expr, field| struct_field(expr, field.value.as_str())));
                 }
                 // simple subscript access (eg: "array_col[1]")
-                if access_chain.len() == 1 {
-                    match &access_chain[0] {
-                        AccessExpr::Subscript(subscript) => {
-                            return self.visit_subscript(root, subscript);
-                        },
-                        AccessExpr::Dot(_) => {},
-                    }
+                if let [AccessExpr::Subscript(subscript)] = access_chain.as_slice() {
+                    return self.visit_subscript(root, subscript);
                 }
                 if let SQLExpr::Value(ValueWithSpan {
                     value: SQLValue::Placeholder(p),
@@ -1090,7 +1103,7 @@ impl SQLExprVisitor<'_> {
             polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not currently supported; found '{}'", escape_char.clone().unwrap());
         }
         if let Some((needle, null_as_empty)) = self.substring_like_needle(pattern) {
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let mut needle = self.visit_expr(needle)?.cast(DataType::String);
             if null_as_empty {
                 needle = needle.fill_null(lit(""));
@@ -1117,7 +1130,7 @@ impl SQLExprVisitor<'_> {
                 PlSmallStr::from_str(lv.extract_str().unwrap())
             },
             pattern => {
-                let expr = self.visit_expr(expr)?;
+                let expr = self.visit_string_input(expr)?;
                 let pattern = pattern.cast(DataType::String);
                 let matches = if case_insensitive {
                     expr.str()
@@ -1144,7 +1157,7 @@ impl SQLExprVisitor<'_> {
             };
             self.visit_binary_op(expr, &op, pattern)
         } else if !case_insensitive && let Some((matches, needle)) = literal_like_match(&pat) {
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let matches = matches(expr.str(), lit(needle.to_string()));
             Ok(if negated { matches.not() } else { matches })
         } else {
@@ -1161,7 +1174,7 @@ impl SQLExprVisitor<'_> {
                 end_anchor,
             );
 
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let matches = expr.str().contains(lit(rx), true);
             Ok(if negated { matches.not() } else { matches })
         }
@@ -1429,17 +1442,21 @@ impl SQLExprVisitor<'_> {
         // need special handling for interval offsets and comparisons
         let (mut lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
-                let duration = interval_to_duration(v, false)?;
+                let duration = interval_to_duration(v, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 return offset_by(self.visit_expr(left)?, format!("-{duration}"));
             },
             (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
-                let duration = interval_to_duration(v, false)?;
+                let duration = interval_to_duration(v, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 return offset_by(self.visit_expr(left)?, format!("{duration}"));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)
-                let d1 = interval_to_duration(v1, false)?;
-                let d2 = interval_to_duration(v2, false)?;
+                let d1 = interval_to_duration(v1, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, left.span()))?;
+                let d2 = interval_to_duration(v2, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 // Months have no fixed length: they are ordered as 28 days, but equal intervals
                 // have equal months.
                 let length = |d: &Duration| {
@@ -1759,6 +1776,7 @@ impl SQLExprVisitor<'_> {
             filter: None,
             window,
             reads_rows: false,
+            string_input: false,
         };
         let expr = visitor.visit_function();
         self.ctx.group_scope.in_window = in_window;
@@ -2525,6 +2543,11 @@ impl SQLExprVisitor<'_> {
         Ok(if negated { low.or(high) } else { low.and(high) })
     }
 
+    /// The string input of a string operation, where a NULL literal is a NULL string.
+    fn visit_string_input(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        Ok(null_as_string(self.visit_expr(expr)?))
+    }
+
     /// Visit a SQL `TRIM` function.
     /// See [sqlparser::ast::Expr::Trim] for more details
     fn visit_trim(
@@ -2538,7 +2561,7 @@ impl SQLExprVisitor<'_> {
             // TODO: allow compact snowflake/bigquery syntax?
             return Err(polars_err!(SQLSyntax: "unsupported TRIM syntax (custom chars)"));
         };
-        let expr = self.visit_expr(expr)?;
+        let expr = self.visit_string_input(expr)?;
         let trim_what = trim_what.as_ref().map(|e| self.visit_expr(e)).transpose()?;
         let trim_what = match trim_what {
             Some(Expr::Literal(lv)) if lv.extract_str().is_some() => {
@@ -2569,7 +2592,7 @@ impl SQLExprVisitor<'_> {
         substring_from: Option<&SQLExpr>,
         substring_for: Option<&SQLExpr>,
     ) -> PolarsResult<Expr> {
-        let e = self.visit_expr(expr)?;
+        let e = self.visit_string_input(expr)?;
 
         match (substring_from, substring_for) {
             // SUBSTRING(expr FROM start FOR length)
@@ -2753,8 +2776,11 @@ impl SQLExprVisitor<'_> {
 /// # }
 /// ```
 pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
+    sql_expr_str(s.as_ref())
+}
+
+fn sql_expr_str(s: &str) -> PolarsResult<Expr> {
     let mut ctx = SQLContext::new();
-    let s = s.as_ref();
 
     // `sql_expr` should only translate expressions, not statements or clauses
     let (mut ast, taken) = sql_parser(s)?;
@@ -2784,10 +2810,12 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     }
     let expr = match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
-            let expr = parse_sql_expr(expr, &mut ctx, None)?;
+            let expr = parse_sql_expr(expr, &mut ctx, None).map_err(|e| complete_location(e, s))?;
             expr.alias(alias.value.as_str())
         },
-        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
+        SelectItem::UnnamedExpr(expr) => {
+            parse_sql_expr(expr, &mut ctx, None).map_err(|e| complete_location(e, s))?
+        },
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s),
     };
     // The expression is used in a DataFrame query, whose row order must be kept.
@@ -2847,6 +2875,17 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
         polars_bail!(SQLSyntax: "fixed-duration interval cannot contain years, quarters, or months; found {}", s)
     };
     Ok(duration)
+}
+
+/// A NULL literal without a type as a NULL string; other expressions as they are.
+pub(crate) fn null_as_string(expr: Expr) -> Expr {
+    if let Expr::Literal(lv) = &expr
+        && lv.get_datatype().is_null()
+    {
+        expr.cast(DataType::String)
+    } else {
+        expr
+    }
 }
 
 pub(crate) fn parse_sql_expr(

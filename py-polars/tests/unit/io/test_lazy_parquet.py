@@ -23,7 +23,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import ParallelStrategy
+    from polars._typing import EngineType, ParallelStrategy
     from tests.conftest import PlMonkeyPatch
 
 
@@ -2172,3 +2172,22 @@ def test_scan_parquet_set_sorted_expr_keeps_order(tmp_path: Path) -> None:
 
     assert_frame_equal(q_group_by.collect(engine="streaming"), expected_group_by)
     assert_frame_equal(q_join.collect(engine="streaming"), expected_join)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scan_parquet_is_in_imploded_series_skips_row_groups_30922(
+    tmp_path: Path,
+    engine: EngineType,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"x": range(1000)}).write_parquet(path, row_group_size=100)
+    ids = pl.Series([305, 350, 312])
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    q = pl.scan_parquet(path).filter(pl.col("x").is_in(ids.implode()))
+    out = q.collect(engine=engine)
+    assert "reading 1 / 10 row groups" in capfd.readouterr().err
+    assert out["x"].to_list() == [305, 312, 350]

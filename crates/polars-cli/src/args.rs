@@ -48,6 +48,10 @@ pub struct Args {
     /// Refuse statements that write files, such as COPY to a file
     #[arg(long, env = "POLARS_READ_ONLY", value_parser = FalseyValueParser::new())]
     read_only: bool,
+
+    /// Show the plan and the context of an error
+    #[arg(long)]
+    verbose: bool,
 }
 
 /// Where the SQL script comes from.
@@ -60,6 +64,16 @@ pub enum Input {
     Stdin,
 }
 
+impl Input {
+    pub fn name(&self) -> String {
+        match self {
+            Input::Command(_) => "<command>".to_string(),
+            Input::File(path) => path.display().to_string(),
+            Input::Stdin => "<stdin>".to_string(),
+        }
+    }
+}
+
 impl Args {
     pub fn format(&self) -> Format {
         self.format
@@ -67,6 +81,23 @@ impl Args {
 
     pub fn read_only(&self) -> bool {
         self.read_only
+    }
+
+    pub fn read_only_origin(&self) -> Option<&'static str> {
+        let flag = || {
+            std::env::args_os().skip(1).any(|arg| {
+                arg == "--read-only" || arg.to_string_lossy().starts_with("--read-only=")
+            })
+        };
+        match (self.read_only, flag()) {
+            (false, _) => None,
+            (true, true) => Some("--read-only"),
+            (true, false) => Some("POLARS_READ_ONLY"),
+        }
+    }
+
+    pub fn verbose(&self) -> bool {
+        self.verbose
     }
 
     pub fn input(self) -> Input {

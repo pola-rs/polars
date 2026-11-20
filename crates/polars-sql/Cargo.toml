@@ -64,6 +64,7 @@ parquet = ["polars-lazy/parquet", "polars-plan/parquet", "polars-io/parquet", "p
 pivot = ["polars-lazy/pivot", "polars-lazy/replace"]
 rank = ["polars-lazy/rank"]
 rolling_window = ["polars-lazy/rolling_window"]
+rolling_window_by = ["polars-lazy/rolling_window_by"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
 serde = ["polars-utils/serde"]
 timezones = ["polars-lazy/timezones"]

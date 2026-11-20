@@ -39,9 +39,9 @@ use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::lambda::{is_lambda_arg, lambda_arg, lambda_element_name};
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
-    decimal_literal_to_f64, interval_to_duration, order_by_sort_options, parse_extract_date_part,
-    parse_sql_array, parse_sql_expr, resolve_expr_dtype, sql_binary, sql_position,
-    substring_offset, temporal_string_as,
+    decimal_literal_to_f64, interval_to_duration, null_as_string, order_by_sort_options,
+    parse_extract_date_part, parse_sql_array, parse_sql_expr, resolve_expr_dtype, sql_binary,
+    sql_position, substring_offset, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::types::sql_type_name;
@@ -58,6 +58,8 @@ pub(crate) struct SQLFunctionVisitor<'a> {
     /// Whether the value arguments are read once per row, as by an aggregate without `OVER`
     /// (see `parse_sql_arg`).
     pub(crate) reads_rows: bool,
+    /// Whether the next value argument parsed is the string input of a string function.
+    pub(crate) string_input: bool,
 }
 
 /// A parsed value argument. The constant argument of an aggregate is kept apart:
@@ -1133,6 +1135,21 @@ pub(crate) fn is_builtin_function(name: &Ident, ctx: &SQLContext) -> bool {
 }
 
 impl PolarsSQLFunctions {
+    /// Whether the first argument is a string, which a NULL literal is read as.
+    fn takes_string_input(&self) -> bool {
+        use PolarsSQLFunctions::*;
+        match self {
+            #[cfg(feature = "nightly")]
+            InitCap => true,
+            BitLength | Date | EndsWith | Left | LeftPad | LeftTrim | Length | Lower
+            | Normalize | OctetLength | RegexpExtract | RegexpLike | RegexpMatches
+            | RegexpReplace | Replace | Repeat | Reverse | Right | RightPad | RightTrim
+            | SplitPart | StartsWith | StrPos | Substring | StringToArray | Strptime
+            | TryStrptime | Time | Timestamp | Upper => true,
+            _ => false,
+        }
+    }
+
     pub(crate) fn keywords() -> &'static [&'static str] {
         &[
             "abs",
@@ -1544,7 +1561,11 @@ impl PolarsSQLFunctions {
                 if ctx.function_registry.contains(other) {
                     Self::Udf(other.to_string())
                 } else {
-                    polars_bail!(SQLInterface: "unsupported function '{}'", other);
+                    let error = polars_err!(SQLInterface: "unsupported function '{}'", other);
+                    return Err(match spelling_of(other) {
+                        Some(spelling) => error.with_hint(format!("use {spelling} instead")),
+                        None => error,
+                    });
                 }
             },
         })
@@ -1631,6 +1652,7 @@ impl SQLFunctionVisitor<'_> {
             self.filter = Some(pred);
         }
         self.reads_rows = function_name.is_builtin_aggregate();
+        self.string_input = function_name.takes_string_input();
         self.check_window_shape(&function_name)?;
         if self.window.is_some() && is_frame_aggregate(&function_name, self.is_distinct()) {
             return self.visit_window_aggregate(&function_name);
@@ -1737,10 +1759,8 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Conditional functions
             // ----
-            Coalesce => self.visit_temporal_variadic(coalesce),
-            Greatest => {
-                self.visit_temporal_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap())
-            },
+            Coalesce => self.visit_temporal_variadic(|exprs: &[Expr]| Ok(coalesce(exprs))),
+            Greatest => self.visit_temporal_variadic(|exprs: &[Expr]| max_horizontal(exprs)),
             If => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1756,21 +1776,21 @@ impl SQLFunctionVisitor<'_> {
             IfNull => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_temporal_variadic(coalesce),
+                    2 => self.visit_temporal_variadic(|exprs: &[Expr]| Ok(coalesce(exprs))),
                     _ => {
                         polars_bail!(SQLSyntax: "IFNULL expects 2 arguments (found {})", args.len())
                     },
                 }
             },
-            Least => self.visit_temporal_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
+            Least => self.visit_temporal_variadic(|exprs: &[Expr]| min_horizontal(exprs)),
             NullIf => {
                 let args = extract_args(function)?;
                 match args.len() {
                     2 => self.visit_temporal_variadic(|exprs: &[Expr]| {
                         let [l, r] = exprs else { unreachable!() };
-                        when(l.clone().eq(r.clone()))
+                        Ok(when(l.clone().eq(r.clone()))
                             .then(lit(LiteralValue::untyped_null()))
-                            .otherwise(l.clone())
+                            .otherwise(l.clone()))
                     }),
                     _ => {
                         polars_bail!(SQLSyntax: "NULLIF expects 2 arguments (found {})", args.len())
@@ -2030,8 +2050,23 @@ impl SQLFunctionVisitor<'_> {
             Replace => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    3 => self
-                        .try_visit_ternary(|e, old, new| Ok(e.str().replace_all(old, new, true))),
+                    3 => self.try_visit_ternary(|e, old: Expr, new: Expr| {
+                        let is_null = |e: &Expr| matches!(e, Expr::Literal(lv) if lv.is_null());
+                        Ok(if is_null(&old) || is_null(&new) {
+                            // NULL, still reading every argument, so that an aggregate in
+                            // one stays one.
+                            let read = |e: Expr| e.cast(DataType::String);
+                            when(lit(false))
+                                .then(read(e))
+                                .when(lit(false))
+                                .then(read(old))
+                                .when(lit(false))
+                                .then(read(new))
+                                .otherwise(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                        } else {
+                            e.str().replace_all(old, new, true)
+                        })
+                    }),
                     _ => {
                         polars_bail!(SQLSyntax: "REPLACE expects 3 arguments (found {})", args.len())
                     },
@@ -2641,12 +2676,10 @@ impl SQLFunctionVisitor<'_> {
                 return self
                     .apply_window_spec(lit(LiteralValue::untyped_null()).cast(DataType::Int64));
             },
-            Expr::Literal(p) if p.extract_str().is_some() => {
-                let p = p.extract_str().unwrap();
-                date_diff_unit(&p.to_ascii_lowercase()).ok_or_else(
-                    || polars_err!(SQLSyntax: "DATE_DIFF does not support '{}' part", p),
-                )?
-            },
+            Expr::Literal(ref p) if let Some(p) = p.extract_str() => date_diff_unit(
+                &p.to_ascii_lowercase(),
+            )
+            .ok_or_else(|| polars_err!(SQLSyntax: "DATE_DIFF does not support '{}' part", p))?,
             part => polars_bail!(SQLSyntax: "invalid 'part' for DATE_DIFF ({})", part),
         };
         let start = self.parse_sql_arg(start)?;
@@ -2753,17 +2786,12 @@ impl SQLFunctionVisitor<'_> {
             args.len() == 2,
             SQLSyntax: "{} expects 2 arguments (found {})", name, args.len()
         );
-        self.try_visit_binary(|e, fmt: String| {
-            check_strptime_format(&fmt)?;
-            Ok(e.str().strptime(
+        self.visit_binary(|e, opts: StrptimeOptions| {
+            e.str().strptime(
                 DataType::Datetime(TimeUnit::Microseconds, None),
-                StrptimeOptions {
-                    format: Some(fmt.into()),
-                    strict,
-                    ..Default::default()
-                },
+                StrptimeOptions { strict, ..opts },
                 lit("latest"),
-            ))
+            )
         })
     }
 
@@ -2783,7 +2811,10 @@ impl SQLFunctionVisitor<'_> {
     /// Parse a value argument, keeping a constant that is read once per row apart (see
     /// [`ValueArg`]).
     fn parse_value_arg(&mut self, expr: &SQLExpr) -> PolarsResult<ValueArg> {
-        let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        let mut parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        if std::mem::take(&mut self.string_input) {
+            parsed = null_as_string(parsed);
+        }
         if self.reads_rows {
             self.read_subqueries_per_row(&parsed);
         }
@@ -2993,8 +3024,16 @@ impl SQLFunctionVisitor<'_> {
     /// [`Self::visit_variadic`] for a function whose arguments share one type: a string
     /// literal is read as a value of the common temporal type of the other arguments, as
     /// in `COALESCE(date_col, '2020-01-01')`.
-    fn visit_temporal_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
+    fn visit_temporal_variadic(
+        &mut self,
+        f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
+    ) -> PolarsResult<Expr> {
         let mut expr_args = self.parse_variadic_args()?;
+        polars_ensure!(
+            !expr_args.is_empty(),
+            SQLSyntax: "{} expects at least 1 argument (found 0)",
+            self.func.name.to_string().to_uppercase()
+        );
         let is_string_literal =
             |e: &Expr| matches!(e, Expr::Literal(lv) if lv.extract_str().is_some());
         if expr_args.iter().any(is_string_literal) {
@@ -3012,7 +3051,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             }
         }
-        self.apply_window_spec(f(&expr_args))
+        self.apply_window_spec(f(&expr_args)?)
     }
 
     fn parse_variadic_args(&mut self) -> PolarsResult<Vec<Expr>> {
@@ -3781,8 +3820,7 @@ impl SQLFunctionVisitor<'_> {
             SQLInterface: "the lambda of {name} takes one parameter (found {n_params})"
         );
         let mut list = self.parse_sql_arg(list)?;
-        let typed = self.ctx.with_typed_subqueries(&list)?;
-        let element_dtype = match self.ctx.expr_dtype(&typed, self.active_schema) {
+        let element_dtype = match self.arg_dtype(&list)? {
             Some(DataType::Array(inner, _)) => {
                 list = list.arr().to_list();
                 Some(*inner)
@@ -4645,4 +4683,12 @@ fn date_diff_unit(part: &str) -> Option<DateDiffUnit> {
         "nanosecond" | "nanoseconds" | "ns" => DateDiffUnit::Nanosecond,
         _ => return None,
     })
+}
+
+/// The name Polars SQL gives a function that other dialects name `name`.
+fn spelling_of(name: &str) -> Option<&'static str> {
+    match name {
+        "len" => Some("LENGTH"),
+        _ => None,
+    }
 }

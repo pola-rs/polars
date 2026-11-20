@@ -143,20 +143,27 @@ fn sql_of_the_python_runtime_is_built_in() {
 #[test]
 fn a_failing_statement_reports_on_stderr() {
     assert_eq!(
-        run(&["-c", "SELECT * FROM missing"]),
+        run(&["-c", "SELECT LEN('x')"]),
         (
             1,
             String::new(),
-            "SQLInterfaceError: relation 'missing' was not found\n".to_string()
+            "SQLInterfaceError: unsupported function 'len'
+ --> <command>:1:8
+  |
+1 | SELECT LEN('x')
+  |        ^^^^^^^^
+  = hint: use LENGTH instead
+"
+            .to_string()
         )
     );
+}
 
-    let (code, out, err) = run(&["-c", "SELECT 1 +"]);
-    assert_eq!((code, out.as_str()), (1, ""));
-    assert!(
-        err.starts_with("SQLInterfaceError: sql parser error: "),
-        "{err}"
-    );
+#[test]
+fn a_syntax_error_is_located_in_the_script() {
+    let (code, _, err) = run(&["-c", "SELECT 1;\nSELECT 1 +* 2"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("\n --> <command>:2:11\n"), "{err}");
 }
 
 #[test]
@@ -209,7 +216,10 @@ fn read_only_refuses_to_write_a_file() {
 
     let (code, out, err) = run(&["--read-only", "-c", &copy]);
     assert_eq!((code, out.as_str()), (1, ""));
-    assert!(err.contains("writing files is disabled"), "{err}");
+    assert!(
+        err.contains("writing files is disabled by --read-only"),
+        "{err}"
+    );
 
     // The environment variable does the same.
     let output = common::polars()
@@ -218,6 +228,11 @@ fn read_only_refuses_to_write_a_file() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
+    let err = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        err.contains("writing files is disabled by POLARS_READ_ONLY"),
+        "{err}"
+    );
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
 
     // The session and reading files are not limited.
@@ -288,13 +303,11 @@ fn a_script_is_read_from_standard_input() {
 #[test]
 fn a_script_stops_at_the_first_failure() {
     let script = "SELECT 1 AS a; SELECT * FROM missing; SELECT 2 AS b";
-    assert_eq!(
-        run(&["--format", "csv", "-c", script]),
-        (
-            1,
-            "a\n1\n".to_string(),
-            "statement 2: SQLInterfaceError: relation 'missing' was not found\n".to_string()
-        )
+    let (code, out, err) = run(&["--format", "csv", "-c", script]);
+    assert_eq!((code, out.as_str()), (1, "a\n1\n"));
+    assert!(
+        err.starts_with("statement 2: SQLInterfaceError: relation 'missing' was not found\n"),
+        "{err}"
     );
 }
 

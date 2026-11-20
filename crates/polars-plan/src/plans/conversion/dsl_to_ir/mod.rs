@@ -11,7 +11,7 @@ use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::dynamic_boundary_dtype;
-use polars_error::{ErrorAttachment, feature_gated};
+use polars_error::{ErrorAttachment, SqlLocation, feature_gated};
 use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -969,7 +969,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt.lp_arena,
                 ctxt.expr_arena,
             )?;
-            return to_alp_impl(resolved, ctxt);
+            // Only the statement is known here.
+            return to_alp_impl(resolved, ctxt).map_err(|e| match e.sql_location() {
+                Some(_) => e,
+                None => {
+                    e.with_attachment(ErrorAttachment::SqlLocation(SqlLocation::statement(&query)))
+                },
+            });
         },
         DslPlan::PipeWithSchema { input, callback } => {
             // Derive the schema from the input

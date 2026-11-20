@@ -23,6 +23,7 @@ polars-ooc = { workspace = true, features = ["fast_alloc"] }
 clap = { workspace = true, features = ["env"] }
 signal-hook = "0.4"
 sqlparser = { workspace = true }
+unicode-width = { workspace = true }
 
 [dependencies.polars]
 workspace = true
