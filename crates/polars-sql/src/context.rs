@@ -61,7 +61,7 @@ use crate::group_context::{
 };
 use crate::grouping_sets::{
     GroupingCall, GroupingSets, bind_stored_keys, canonicalize_keys, contains_grouping_placeholder,
-    expand_grouping_sets, new_placeholder,
+    expand_grouping_sets, is_grouping_placeholder, new_placeholder,
 };
 use crate::iceberg_alter::{self, IcebergAlter, IcebergAlterOp, OtherStatement};
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
@@ -270,8 +270,8 @@ fn disambiguate_projection_cols(
 /// The first projection to claim a name keeps it, and a later unaliased projection that
 /// collides gets a `name:n` suffix. Two cases are deliberately left to collide: explicit
 /// `AS` aliases, which are never renamed (`SELECT 1 AS x, 2 AS x`), and an unaliased
-/// expression that verbatim repeats the one already holding the name (`SELECT a, a`),
-/// which is a duplicate selection rather than an incidental clash.
+/// column that repeats the one already holding the name (`SELECT a, a`), which is a
+/// duplicate selection rather than an incidental clash.
 fn disambiguate_output_names(exprs: Vec<(Expr, bool)>, schema: &Schema) -> PolarsResult<Vec<Expr>> {
     let protected: PlHashSet<PlSmallStr> = exprs
         .iter()
@@ -284,9 +284,16 @@ fn disambiguate_output_names(exprs: Vec<(Expr, bool)>, schema: &Schema) -> Polar
     let mut result = Vec::with_capacity(exprs.len());
     for (expr, is_explicit_alias) in exprs {
         let name = expr.to_field(schema)?.name;
-        // A repeated constant gets a new name, like other constants.
+        let is_column = match &expr {
+            Expr::Column(_) => true,
+            // A column the join resolution renamed back to its SQL name.
+            Expr::Alias(inner, _) => {
+                matches!(&**inner, Expr::Column(name) if !is_grouping_placeholder(name))
+            },
+            _ => false,
+        };
         let verbatim_repeat =
-            !is_constant(&expr) && claimed.get(&name).is_some_and(|claimant| claimant == &expr);
+            is_column && claimed.get(&name).is_some_and(|claimant| claimant == &expr);
         if is_explicit_alias
             || verbatim_repeat
             || (!used.contains(&name) && !protected.contains(&name))

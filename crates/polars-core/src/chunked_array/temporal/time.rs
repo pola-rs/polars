@@ -27,13 +27,12 @@ impl TimeChunked {
         };
         let err = || polars_err!(ComputeError: "cannot format Time with format '{}'", format);
         let items = StrftimeItems::new(format).parse().map_err(|_| err())?;
-        self.physical()
-            .try_apply_into_string_amortized(|val, buf| {
-                time64ns_to_time(val)
-                    .format_with_items(items.iter())
-                    .write_to(buf)
-            })
-            .map_err(|_| err())
+        self.physical().try_apply_into_string_amortized(|val, buf| {
+            time64ns_to_time(val)
+                .format_with_items(items.iter())
+                .write_to(buf)
+                .map_err(|_| err())
+        })
     }
 
     /// Convert from Time into String with the given format.

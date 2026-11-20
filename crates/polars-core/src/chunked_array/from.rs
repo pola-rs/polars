@@ -68,17 +68,17 @@ where
         }
     }
 
-    pub fn try_from_chunk_iter<I, A, E>(name: PlSmallStr, iter: I) -> Result<Self, E>
+    pub fn try_from_chunk_iter<I, A>(name: PlSmallStr, iter: I) -> PolarsResult<Self>
     where
-        I: IntoIterator<Item = Result<A, E>>,
+        I: IntoIterator<Item = PolarsResult<A>>,
         T: PolarsDataType<Array = A>,
         A: Array,
     {
-        let chunks: Result<_, _> = iter
+        let chunks = iter
             .into_iter()
             .map(|x| Ok(Box::new(x?) as Box<dyn Array>))
-            .collect();
-        unsafe { Ok(Self::from_chunks(name, chunks?)) }
+            .collect::<PolarsResult<_>>()?;
+        unsafe { Ok(Self::from_chunks(name, chunks)) }
     }
 
     pub(crate) fn from_chunk_iter_and_field<I>(field: Arc<Field>, chunks: I) -> Self

@@ -2599,10 +2599,11 @@ impl SQLExprVisitor<'_> {
             // SUBSTRING(expr FROM start FOR length)
             (Some(from_expr), Some(for_expr)) => {
                 let start = self.visit_expr(from_expr)?;
-                let length = clip_substring_length(approximate_literal(self.visit_expr(for_expr)?));
+                let raw_length = approximate_literal(self.visit_expr(for_expr)?);
+                let length = clip_substring_length(raw_length.clone());
 
                 // note: SQL is 1-indexed, so we need to adjust the offsets accordingly
-                Ok(match (start.clone(), length.clone()) {
+                let result = match (start.clone(), length.clone()) {
                     (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
                     (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                         polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", n)
@@ -2628,7 +2629,8 @@ impl SQLExprVisitor<'_> {
                             ))
                             .otherwise(e.str().slice(adjusted_start, length))
                     },
-                })
+                };
+                Ok(null_on_null_length(result, &raw_length))
             },
             // SUBSTRING(expr FROM start)
             (Some(from_expr), None) => {
@@ -3064,7 +3066,25 @@ pub(crate) fn substring_offset(start: Expr) -> Expr {
 pub(crate) fn clip_substring_length(length: Expr) -> Expr {
     match length {
         Expr::Literal(_) => length,
-        _ => length.clip_min(lit(0)),
+        _ => numeric_length(length).clip_min(lit(0)),
+    }
+}
+
+/// A length column as a number. Adding 0 keeps the dtype of a number, and gives a length of the
+/// Null dtype an integer dtype.
+pub(crate) fn numeric_length(length: Expr) -> Expr {
+    length + Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0)))
+}
+
+/// `result`, or NULL where the SUBSTRING `length` is NULL, which `str.slice` reads as the rest
+/// of the string.
+pub(crate) fn null_on_null_length(result: Expr, length: &Expr) -> Expr {
+    match (&result, length) {
+        (Expr::Literal(lv), _) if lv.is_null() => result,
+        (_, Expr::Literal(_)) => result,
+        _ => when(length.clone().is_not_null())
+            .then(result)
+            .otherwise(lit(LiteralValue::untyped_null())),
     }
 }
 

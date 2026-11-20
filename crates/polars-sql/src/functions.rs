@@ -39,9 +39,10 @@ use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::lambda::{is_lambda_arg, lambda_arg, lambda_element_name};
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
-    decimal_literal_to_f64, interval_to_duration, null_as_string, order_by_sort_options,
-    parse_extract_date_part, parse_sql_array, parse_sql_expr, resolve_expr_dtype, sql_binary,
-    sql_position, substring_offset, temporal_string_as,
+    decimal_literal_to_f64, interval_to_duration, null_as_string, null_on_null_length,
+    numeric_length, order_by_sort_options, parse_extract_date_part, parse_sql_array,
+    parse_sql_expr, resolve_expr_dtype, sql_binary, sql_position, substring_offset,
+    temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::types::sql_type_name;
@@ -1928,12 +1929,17 @@ impl SQLFunctionVisitor<'_> {
                     Expr::Literal(v) => {
                         polars_bail!(SQLSyntax: "invalid 'n_chars' for LEFT ({:?})", v)
                     },
-                    _ => when(length.clone().gt_eq(lit(0)))
-                        .then(e.clone().str().slice(lit(0), length.clone().abs()))
-                        .otherwise(e.clone().str().slice(
-                            lit(0),
-                            (e.str().len_chars() + length.clone()).clip_min(lit(0)),
-                        )),
+                    _ => {
+                        let raw_length = length;
+                        let length = numeric_length(raw_length.clone());
+                        let left = when(length.clone().gt_eq(lit(0)))
+                            .then(e.clone().str().slice(lit(0), length.clone().abs()))
+                            .otherwise(e.clone().str().slice(
+                                lit(0),
+                                (e.str().len_chars() + length.clone()).clip_min(lit(0)),
+                            ));
+                        null_on_null_length(left, &raw_length)
+                    },
                 })
             }),
             LeftPad | RightPad => {
@@ -2176,8 +2182,9 @@ impl SQLFunctionVisitor<'_> {
                         })
                     }),
                     3 => self.try_visit_ternary(|e: Expr, start: Expr, length: Expr| {
-                        let length = clip_substring_length(approximate_literal(length));
-                        Ok(match (start.clone(), length.clone()) {
+                        let raw_length = approximate_literal(length);
+                        let length = clip_substring_length(raw_length.clone());
+                        let result = match (start.clone(), length.clone()) {
                             (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
                             (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                                 polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", args[2])
@@ -2196,7 +2203,8 @@ impl SQLFunctionVisitor<'_> {
                                     .then(e.clone().str().slice(lit(0), (length.clone() + adjusted_start.clone()).clip_min(lit(0))))
                                     .otherwise(e.str().slice(adjusted_start, length))
                             }
-                        })
+                        };
+                        Ok(null_on_null_length(result, &raw_length))
                     }),
                     _ => polars_bail!(SQLSyntax: "SUBSTR expects 2-3 arguments (found {})", args.len()),
                 }
