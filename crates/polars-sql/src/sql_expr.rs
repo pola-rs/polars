@@ -2776,8 +2776,11 @@ impl SQLExprVisitor<'_> {
 /// # }
 /// ```
 pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
+    sql_expr_str(s.as_ref())
+}
+
+fn sql_expr_str(s: &str) -> PolarsResult<Expr> {
     let mut ctx = SQLContext::new();
-    let s = s.as_ref();
 
     // `sql_expr` should only translate expressions, not statements or clauses
     let (mut ast, taken) = sql_parser(s)?;
