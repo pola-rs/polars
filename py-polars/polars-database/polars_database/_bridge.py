@@ -2130,8 +2130,8 @@ _DATABRICKS_TYPE_DTYPES = {
 
 
 # Trino type names (`cursor.description`'s type codes) whose dtype is fixed. Left out
-# (typed from values): types with a zone or a variable precision, nested types, `json`, `uuid`,
-# intervals.
+# (typed from values): types with a zone or a variable precision, nested types,
+# `json`, `uuid`, intervals.
 _TRINO_TYPE_DTYPES = {
     "boolean": "Boolean",
     "tinyint": "Int8",

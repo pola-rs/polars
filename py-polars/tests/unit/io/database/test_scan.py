@@ -1271,9 +1271,13 @@ def test_scan_sqlite_float_filters_find_every_real(tmp_path: Path, driver: str) 
         assert i in lf.filter(pl.col("x") >= v).collect()["id"].to_list(), v
     got = lf.filter(pl.col("x").is_in(values)).collect()
     assert sorted(got["id"].to_list()) == list(range(len(values)))
-    parts = pl.scan_database(
-        "t", f"sqlite:///{path}", driver=driver, partition_on="x", partition_num=3
-    ) if driver != "connectorx" else None
+    parts = (
+        pl.scan_database(
+            "t", f"sqlite:///{path}", driver=driver, partition_on="x", partition_num=3
+        )
+        if driver != "connectorx"
+        else None
+    )
     if parts is not None:
         assert sorted(parts.collect()["id"].to_list()) == list(range(len(values)))
     else:

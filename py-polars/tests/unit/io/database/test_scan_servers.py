@@ -8422,7 +8422,11 @@ def test_trino_query_with_ties_is_not_limited_around() -> None:
     for driver in _runnable_drivers("trino"):
         lf = _scan("trino", driver, source)
         off = _scan("trino", driver, source, pushdown=False)
-        for op in (lambda x: x.head(2), lambda x: x.slice(1, 1)):
+        ops: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
+            lambda x: x.head(2),
+            lambda x: x.slice(1, 1),
+        ]
+        for op in ops:
             assert op(lf).collect()["id"].to_list() == op(off).collect()["id"].to_list()
         assert sorted(lf.collect()["id"].to_list()) == [11, 22], driver
 
@@ -8516,9 +8520,9 @@ def test_trino_unsampled_query_reads_its_declared_types() -> None:
         assert got.columns == expected[driver].columns
     # a column of NULLs only keeps its type, too
     for driver in _runnable_drivers("trino"):
-        got = _scan("trino", driver, f"SELECT id, n, vb FROM {table} WHERE id = 2")
-        assert got.collect_schema()["vb"] == pl.Binary, driver
-        assert got.collect_schema()["n"].is_integer(), driver
+        nulls = _scan("trino", driver, f"SELECT id, n, vb FROM {table} WHERE id = 2")
+        assert nulls.collect_schema()["vb"] == pl.Binary, driver
+        assert nulls.collect_schema()["n"].is_integer(), driver
 
 
 @needs_trino
