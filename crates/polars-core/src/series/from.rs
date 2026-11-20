@@ -794,6 +794,21 @@ unsafe fn to_physical_and_dtype(
         },
         ArrowDataType::Struct(_fields) => {
             feature_gated!("dtype-struct", {
+                // Arrow permits structs with duplicate field names, Polars does not.
+                // The top-level struct is checked by `ensure_names_unique` in the
+                // caller; nested structs (e.g. a list of structs) reach this
+                // function recursively, so check here as well instead of hitting
+                // an `unwrap` on the duplicate further down (see #24899).
+                {
+                    let mut seen = PlHashSet::with_capacity(_fields.len());
+                    for field in _fields.iter() {
+                        polars_ensure!(
+                            seen.insert(field.name.clone()),
+                            duplicate_field = &field.name
+                        );
+                    }
+                }
+
                 let mut pl_fields = None;
                 let mut out_arrays = Vec::with_capacity(arrays.len());
                 for arr in &arrays {
