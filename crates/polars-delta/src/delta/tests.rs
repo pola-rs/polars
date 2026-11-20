@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 struct Store(
     BTreeMap<String, (Vec<u8>, Option<i64>)>,
     std::sync::atomic::AtomicUsize,
+    std::sync::Mutex<Vec<String>>,
 );
 impl Store {
     fn put(&mut self, path: &str, actions: &[Value]) {
@@ -55,6 +56,11 @@ unsafe extern "C" fn get_storage(
     ready(Ok(StorageHandle(ctx)))
 }
 unsafe extern "C" fn get(s: StorageHandle, url: FfiStr) -> FfiFuture<FfiResult<FfiBuf>> {
+    unsafe { store(s) }
+        .2
+        .lock()
+        .unwrap()
+        .push(url.as_str().unwrap().to_owned());
     let data = unsafe { store(s) }
         .0
         .get(url.as_str().unwrap())
@@ -691,5 +697,345 @@ fn json_decimal_statistics_are_exact() {
     assert_eq!(
         planned_stats(&store, &["t"], "t_max"),
         [("/table/a.parquet".to_owned(), Some(-150000))]
+    );
+}
+
+impl Store {
+    fn put_raw(&mut self, path: &str, bytes: &[u8], mtime: i64) {
+        self.0.insert(
+            format!("/table/_delta_log/{path}"),
+            (bytes.to_vec(), Some(mtime)),
+        );
+    }
+    fn commit_gets(&self) -> usize {
+        self.2
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|u| u.ends_with(".json") && !u.ends_with("_last_checkpoint"))
+            .count()
+    }
+}
+fn version_name(v: i64) -> String {
+    format!("{v:020}.json")
+}
+
+#[test]
+fn schema_only_reads_no_file_actions() {
+    let mut s = Store::default();
+    s.put("00000000000000000000.json", &[protocol(), metadata()]);
+    // File actions that cannot be parsed: a schema-only plan must not look at them.
+    s.put_raw(&version_name(1), b"{\"add\":garbage}\n", 2000);
+    let request = Request {
+        schema_only: true,
+        use_metadata_statistics: true,
+        ..Request::default()
+    };
+    let (header, paths) = planned(&s, request).unwrap();
+    assert!(paths.is_empty());
+    assert_eq!(header.resolved_version, 1);
+    assert_eq!(header.row_count, None);
+    assert!(planned(&s, Request::default()).is_err());
+}
+
+#[test]
+fn schema_only_stops_at_the_newest_metadata_and_protocol() {
+    let mut s = Store::default();
+    s.put(
+        "00000000000000000000.json",
+        &[protocol(), metadata(), add("a.parquet")],
+    );
+    for v in 1..20 {
+        let mut actions = vec![add(&format!("f{v}.parquet"))];
+        if v == 19 {
+            actions.extend([protocol(), metadata()]);
+        }
+        s.put(&version_name(v), &actions);
+    }
+    let request = Request {
+        schema_only: true,
+        max_threads: Some(2),
+        ..Request::default()
+    };
+    let (header, _) = planned(&s, request).unwrap();
+    assert_eq!(header.resolved_version, 19);
+    // Newest first, with at most the read-ahead window in flight.
+    assert!(s.commit_gets() <= 4, "{}", s.commit_gets());
+    let before = s.commit_gets();
+    // Without them in the newest commits, the older ones are read.
+    s.put(&version_name(19), &[add("g.parquet")]);
+    let request = Request {
+        schema_only: true,
+        ..Request::default()
+    };
+    planned(&s, request).unwrap();
+    assert_eq!(s.commit_gets() - before, 20);
+}
+
+#[test]
+fn schema_only_reads_checkpoint_metadata_without_file_columns() {
+    let mut store = Store::default();
+    store.0.insert(
+        "/table/_delta_log/00000000000000000000.checkpoint.parquet".to_owned(),
+        (
+            include_bytes!("../../tests/data/wide-binary.checkpoint.parquet").to_vec(),
+            Some(1000),
+        ),
+    );
+    let (header, paths) = planned(
+        &store,
+        Request {
+            schema_only: true,
+            ..Request::default()
+        },
+    )
+    .unwrap();
+    assert!(paths.is_empty());
+    assert_eq!(header.resolved_version, 0);
+    let schema_only = store.1.load(std::sync::atomic::Ordering::Relaxed);
+    planned(&store, Request::default()).unwrap();
+    let full = store.1.load(std::sync::atomic::Ordering::Relaxed) - schema_only;
+    assert!(schema_only < full, "{schema_only} vs {full}");
+}
+
+/// The linear scan the planner used before binary search, as the oracle.
+fn linear_version_at(times: &[(i64, Option<i64>)], timestamp: i64) -> Option<i64> {
+    let (mut previous, mut chosen) = (None, None);
+    for (version, (mtime, ict)) in times.iter().enumerate() {
+        let time = match ict {
+            Some(ict) => *ict,
+            None => previous.map_or(*mtime, |p: i64| (*mtime).max(p + 1)),
+        };
+        previous = Some(time);
+        if time <= timestamp {
+            chosen = Some(version as i64)
+        } else {
+            break;
+        }
+    }
+    chosen
+}
+fn version_at_store(
+    times: &[(i64, Option<i64>)],
+    timestamp: i64,
+    ict_from: Option<i64>,
+) -> (Option<i64>, usize) {
+    let mut s = Store::default();
+    let mut commits = BTreeMap::new();
+    for (v, (mtime, ict)) in times.iter().enumerate() {
+        let v = v as i64;
+        let mut actions = vec![add(&format!("f{v}.parquet"))];
+        if let Some(ict) = ict {
+            actions.insert(
+                0,
+                json!({"commitInfo":{"inCommitTimestamp":ict,"operation":"WRITE"}}),
+            );
+        }
+        s.put(&version_name(v), &actions);
+        s.0.get_mut(&format!("/table/_delta_log/{}", version_name(v)))
+            .unwrap()
+            .1 = Some(*mtime);
+        commits.insert(
+            v,
+            super::host::Object {
+                url: format!("/table/_delta_log/{}", version_name(v)),
+                modified_ms: Some(*mtime),
+            },
+        );
+    }
+    let vtable = s.host();
+    let host = unsafe { super::host::Host::from_raw(&vtable, false) }.unwrap();
+    let found = super::runtime::block_on(None, async {
+        let storage = host.get_storage("/table").await?;
+        super::log::version_at(&storage, &commits, timestamp, ict_from).await
+    });
+    (found.ok(), s.commit_gets())
+}
+
+#[test]
+fn timestamp_travel_matches_the_linear_scan() {
+    // Modification times that go backwards are raised past the previous commit's time.
+    let mtimes = [5000, 4000, 4000, 9000, 9000, 9500, 20000];
+    let times = mtimes.iter().map(|m| (*m, None)).collect::<Vec<_>>();
+    for timestamp in 0..21000 {
+        assert_eq!(
+            version_at_store(&times, timestamp, None).0,
+            linear_version_at(&times, timestamp),
+            "mtimes, timestamp {timestamp}"
+        );
+    }
+    // In-commit timestamps from version 3: earlier versions keep adjusted modification times,
+    // and in-commit timestamps are used as written (they may be below a raised time).
+    let mut times = (0..3).map(|v| (3000 - v * 1000, None)).collect::<Vec<_>>();
+    times.extend((3..40).map(|v| (50, Some(10_000 + v * 100))));
+    for timestamp in (0..15000).step_by(7) {
+        assert_eq!(
+            version_at_store(&times, timestamp, Some(3)).0,
+            linear_version_at(&times, timestamp),
+            "in-commit, timestamp {timestamp}"
+        );
+    }
+}
+
+#[test]
+fn timestamp_travel_reads_logarithmically_many_commits() {
+    let times = (0..200)
+        .map(|v| (1000 + v, Some(100_000 + v * 10)))
+        .collect::<Vec<_>>();
+    for timestamp in [99_999, 100_000, 100_005, 101_000, 101_990, 105_000] {
+        let (found, reads) = version_at_store(&times, timestamp, Some(0));
+        assert_eq!(found, linear_version_at(&times, timestamp), "{timestamp}");
+        assert!(reads <= 9, "{reads} commit reads for {timestamp}");
+    }
+}
+
+#[test]
+fn timestamp_travel_at_the_latest_version_replays_once_with_files() {
+    let mut s = initial();
+    s.put(
+        "00000000000000000001.json",
+        &[json!({"remove":{"path":"a.parquet"}}), add("b.parquet")],
+    );
+    let (header, paths) = planned(
+        &s,
+        Request {
+            timestamp_ms: Some(10_000),
+            ..Request::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(header.resolved_version, 1);
+    assert_eq!(paths, vec!["/table/b.parquet"]);
+}
+
+fn v2_manifest(files: &[Value]) -> Vec<Value> {
+    let mut actions = vec![
+        protocol(),
+        metadata(),
+        json!({"checkpointMetadata":{"version":5}}),
+        json!({"sidecar":{"path":"sidecar.parquet","sizeInBytes":1}}),
+    ];
+    actions.extend_from_slice(files);
+    actions
+}
+fn v2_store(manifest: &[Value]) -> Store {
+    let mut s = Store::default();
+    s.put(
+        "00000000000000000005.checkpoint.12345678-1234-1234-1234-123456789abc.json",
+        manifest,
+    );
+    s.0.insert(
+        "/table/_delta_log/_sidecars/sidecar.parquet".to_owned(),
+        (
+            include_bytes!("../../tests/data/v2-sidecar.sidecar.parquet").to_vec(),
+            Some(1000),
+        ),
+    );
+    s
+}
+
+#[test]
+fn v2_manifest_with_sidecars_reads_them() {
+    let s = v2_store(&v2_manifest(&[]));
+    let (header, paths) = planned(&s, Request::default()).unwrap();
+    assert_eq!(header.resolved_version, 5);
+    assert_eq!(paths, ["/table/a.parquet", "/table/b.parquet"]);
+}
+
+#[test]
+fn v2_manifest_cannot_mix_inline_and_sidecar_file_actions() {
+    // PROTOCOL.md, "V2 Spec": all add and remove actions inline, or all in sidecars.
+    for inline in [add("c.parquet"), json!({"remove":{"path":"c.parquet"}})] {
+        let s = v2_store(&v2_manifest(&[inline]));
+        let error = planned(&s, Request::default()).unwrap_err();
+        assert!(
+            format!("{error:?}").contains("embedded file actions"),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
+fn unusable_checkpoint_statistics_types_leave_only_that_column_unknown() {
+    let mut store = Store::default();
+    store.0.insert(
+        "/table/_delta_log/00000000000000000000.checkpoint.parquet".to_owned(),
+        (
+            include_bytes!("../../tests/data/binary-stats.checkpoint.parquet").to_vec(),
+            Some(1000),
+        ),
+    );
+    assert_eq!(
+        planned_stats(&store, &["t", "b"], "t_min"),
+        [("/table/a.parquet".to_owned(), Some(1))]
+    );
+    assert_eq!(
+        planned_stats(&store, &["t", "b"], "t_max"),
+        [("/table/a.parquet".to_owned(), Some(5))]
+    );
+    let (header, _) = planned(
+        &store,
+        Request {
+            use_metadata_statistics: true,
+            statistics_columns: Some(vec!["t".to_owned(), "b".to_owned()]),
+            ..Request::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(header.row_count, Some((5, 0)));
+}
+
+#[test]
+fn one_bad_decimal_leaves_only_that_files_bound_unknown() {
+    let file = |path: &str, min: &str| {
+        json!({"add":{"path":path,"size":10,"partitionValues":{},"stats":
+            format!("{{\"numRecords\":5,\"minValues\":{{\"t\":{min}}},\"maxValues\":{{\"t\":9.50}},\"nullCount\":{{\"t\":0}}}}")}})
+    };
+    let mut store = Store::default();
+    store.put(
+        "00000000000000000000.json",
+        &[
+            protocol(),
+            single_column_metadata("decimal(5,2)"),
+            file("a.parquet", "1.25"),
+            // Three decimals do not fit scale 2.
+            file("b.parquet", "1.001"),
+            file("c.parquet", "-3.5"),
+        ],
+    );
+    assert_eq!(
+        planned_stats(&store, &["t"], "t_min"),
+        [
+            ("/table/a.parquet".to_owned(), Some(125)),
+            ("/table/b.parquet".to_owned(), None),
+            ("/table/c.parquet".to_owned(), Some(-350)),
+        ]
+    );
+    assert_eq!(
+        planned_stats(&store, &["t"], "t_max"),
+        [
+            ("/table/a.parquet".to_owned(), Some(950)),
+            ("/table/b.parquet".to_owned(), Some(950)),
+            ("/table/c.parquet".to_owned(), Some(950)),
+        ]
+    );
+}
+
+#[test]
+fn statistics_of_other_columns_are_not_parsed() {
+    // Statistics text that is invalid beyond the requested columns still serves the others.
+    let mut store = Store::default();
+    store.put(
+        "00000000000000000000.json",
+        &[
+            protocol(),
+            metadata(),
+            json!({"add":{"path":"a.parquet","size":10,"partitionValues":{},"stats":
+                "{\"numRecords\":5,\"minValues\":{\"y\":[1,{\"x\":2}],\"x\":4},\"maxValues\":{\"x\":9}}"}}),
+        ],
+    );
+    assert_eq!(
+        planned_stats(&store, &["x"], "x_min"),
+        [("/table/a.parquet".to_owned(), Some(4))]
     );
 }

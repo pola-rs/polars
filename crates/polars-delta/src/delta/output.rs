@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType as D, Field};
@@ -6,11 +8,11 @@ use polars_io_ext_ffi::common::{ArrowArrayStream, ArrowSchema};
 use polars_io_ext_ffi::delta_v1::{Output, OutputHeader, Request};
 use serde_json::Value;
 
-use super::actions::{string, u64_value};
 use super::error::{Result, invalid};
 use super::host::Host;
+use super::log;
 use super::schema::Schema;
-use super::{log, values};
+use super::values::{Builder, Sv, stat_dtype, stat_value};
 fn struct_array(fields: Vec<Field>, arrays: Vec<Box<dyn Array>>, n: usize) -> Result<StructArray> {
     StructArray::try_new(D::Struct(fields), n, arrays, None).map_err(invalid)
 }
@@ -47,39 +49,89 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
         snapshot.version,
         snapshot.files.len()
     ));
-    let files = &snapshot.files;
-    let n = files.len();
-    let paths = files
+    let n = snapshot.files.len();
+    let sources = &snapshot.sources;
+    let files = || {
+        snapshot
+            .files
+            .iter()
+            .map(|(s, r)| (&sources[*s as usize], *r as usize))
+    };
+    let mut paths = MutableBinaryViewArray::<str>::with_capacity(n);
+    let mut sizes = Vec::with_capacity(n);
+    for (source, row) in files() {
+        paths.push_value(log::absolute(&request.table_uri, source.path(row))?);
+        sizes.push(source.size(row));
+    }
+    // Statistics are read per file, once: the record count and only the columns asked for.
+    let statistics = !request.schema_only
+        && request.use_metadata_statistics
+        && (request.filter_columns.is_some()
+            || request
+                .statistics_columns
+                .as_ref()
+                .is_some_and(|c| !c.is_empty()));
+    let names = request
+        .filter_columns
         .iter()
-        .map(|v| log::absolute(&request.table_uri, string(v, "path")?))
-        .collect::<Result<Vec<_>>>()?;
-    let sizes = files
+        .chain(request.statistics_columns.iter())
+        .flatten()
+        .collect::<polars_utils::aliases::PlHashSet<_>>();
+    let stat_columns = schema
+        .columns
         .iter()
-        .map(|v| u64_value(v, "size"))
-        .collect::<Result<Vec<_>>>()?;
-    let stats = files
-        .iter()
-        .map(|v| {
-            if let Some(parsed) = v.get("stats_parsed").filter(|s| !s.is_null()) {
-                return parsed.clone();
-            }
-            v.get("stats")
-                .and_then(Value::as_str)
-                .and_then(values::parse_stats)
-                .unwrap_or(Value::Null)
-        })
-        .collect::<Vec<Value>>();
-    let counts = stats
-        .iter()
-        .map(|s| s.get("numRecords").and_then(Value::as_u64))
+        .filter(|c| statistics && names.contains(&c.field.name.to_string()))
         .collect::<Vec<_>>();
+    let wanted = stat_columns
+        .iter()
+        .map(|c| c.physical.as_str())
+        .collect::<Vec<_>>();
+    let lookups = sources
+        .iter()
+        .map(|s| s.stats_lookup(&wanted))
+        .collect::<Vec<_>>();
+    let mut counts = Vec::with_capacity(n);
+    let mut builders = stat_columns
+        .iter()
+        .map(|c| {
+            [
+                Builder::new(&stat_dtype(c, false), n),
+                Builder::new(&stat_dtype(c, false), n),
+                Builder::new(&stat_dtype(c, true), n),
+            ]
+        })
+        .collect::<Vec<_>>();
+    for (s, r) in &snapshot.files {
+        let stats = sources[*s as usize].file_stats(*r as usize, &wanted, &lookups[*s as usize]);
+        counts.push(stats.as_ref().and_then(|s| s.num_records));
+        for (k, column) in stat_columns.iter().enumerate() {
+            let [min, max, nc] = &mut builders[k];
+            let null = Sv::Null;
+            let (v_min, v_max, v_nc) = match &stats {
+                Some(s) => (&s.min[k], &s.max[k], &s.null_count[k]),
+                None => (&null, &null, &null),
+            };
+            // Optional statistics are never allowed to make the table unreadable: a value
+            // that does not convert is unknown.
+            min.push_or_null(&stat_value(column, v_min, false, false));
+            max.push_or_null(&stat_value(column, v_max, false, true));
+            if stats
+                .as_ref()
+                .is_some_and(|s| s.tight_bounds == Some(false))
+            {
+                nc.push_null();
+            } else {
+                nc.push_or_null(&stat_value(column, v_nc, true, false));
+            }
+        }
+    }
     let mut fields = Vec::new();
     let mut arrays = Vec::new();
     push(
         &mut fields,
         &mut arrays,
         "path",
-        Utf8ViewArray::from_slice_values(&paths).boxed(),
+        paths.freeze().boxed(),
         false,
     );
     push(
@@ -104,13 +156,17 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
             .iter()
             .find(|c| c.field.name.as_str() == name)
             .unwrap();
-        push(
-            &mut pf,
-            &mut pa,
-            name,
-            values::partition_array(c, files)?,
-            true,
-        )
+        let mut builder = Builder::new(&c.field.dtype, n);
+        for (source, row) in files() {
+            let value = source
+                .partition(row, &c.physical)
+                .ok_or_else(|| invalid(format!("missing partition value {}", c.physical)))?;
+            builder.push(&match value {
+                None | Some("") => Sv::Null,
+                Some(v) => Sv::Str(Cow::Borrowed(v)),
+            })?;
+        }
+        push(&mut pf, &mut pa, name, builder.finish(), true)
     }
     push(
         &mut fields,
@@ -119,6 +175,11 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
         struct_array(pf, pa, n)?.boxed(),
         false,
     );
+    let has_dv_feature = snapshot
+        .protocol
+        .get("readerFeatures")
+        .and_then(Value::as_array)
+        .is_some_and(|f| f.iter().any(|f| f == "deletionVectors"));
     let mut dv_paths = Vec::with_capacity(n);
     let mut inline = Vec::with_capacity(n);
     let mut offsets = Vec::with_capacity(n);
@@ -126,16 +187,11 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
     let mut cardinalities = Vec::with_capacity(n);
     let mut valid = Vec::with_capacity(n);
     let mut deleted = 0u64;
-    for (i, file) in files.iter().enumerate() {
-        let dv = file.get("deletionVector").filter(|v| !v.is_null());
+    for (i, (source, row)) in files().enumerate() {
+        let dv = source.dv(row)?;
         valid.push(dv.is_some());
         if let Some(dv) = dv {
-            if !snapshot
-                .protocol
-                .get("readerFeatures")
-                .and_then(Value::as_array)
-                .is_some_and(|f| f.iter().any(|f| f == "deletionVectors"))
-            {
+            if !has_dv_feature {
                 return Err(invalid(
                     "deletion vector without deletionVectors reader feature",
                 ));
@@ -143,19 +199,23 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
             if counts[i].is_none() {
                 return Err(invalid("deletion vector needs numRecords"));
             }
-            let size = u32::try_from(u64_value(dv, "sizeInBytes")?).map_err(invalid)?;
-            let cardinality = u64_value(dv, "cardinality")?;
+            let size = dv
+                .size_in_bytes
+                .ok_or_else(|| invalid("missing/invalid sizeInBytes"))
+                .and_then(|s| u32::try_from(s).map_err(invalid))?;
+            let cardinality = dv
+                .cardinality
+                .ok_or_else(|| invalid("missing/invalid cardinality"))?;
             if counts[i].is_some_and(|n| cardinality > n) {
                 return Err(invalid("DV cardinality exceeds numRecords"));
             }
             deleted = deleted
                 .checked_add(cardinality)
                 .ok_or_else(|| invalid("deleted count overflow"))?;
-            let encoded = string(dv, "pathOrInlineDv")?;
-            let kind = string(dv, "storageType")?;
-            let (path, bytes) = match kind {
+            let encoded = dv.id.path_or_inline;
+            let (path, bytes) = match dv.id.storage_type {
                 "i" => {
-                    if dv.get("offset").is_some_and(|o| !o.is_null()) {
+                    if dv.id.offset.is_some() {
                         return Err(invalid("inline DV has offset"));
                     }
                     let mut bytes = z85(encoded)?;
@@ -205,14 +265,7 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
             };
             dv_paths.push(path);
             inline.push(bytes);
-            offsets.push(
-                dv.get("offset")
-                    .filter(|v| !v.is_null())
-                    .map(Value::as_u64)
-                    .transpose_option()
-                    .ok_or_else(|| invalid("invalid DV offset"))?
-                    .unwrap_or(0),
-            );
+            offsets.push(dv.id.offset.unwrap_or(0));
             dv_sizes.push(size);
             cardinalities.push(cardinality);
         } else {
@@ -269,49 +322,15 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
         dv.boxed(),
         true,
     );
-    let statistics = request.use_metadata_statistics
-        && (request.filter_columns.is_some()
-            || request
-                .statistics_columns
-                .as_ref()
-                .is_some_and(|c| !c.is_empty()));
     if statistics {
-        let names = request
-            .filter_columns
-            .iter()
-            .chain(request.statistics_columns.iter())
-            .flatten()
-            .collect::<polars_utils::aliases::PlHashSet<_>>();
         let (mut sf, mut sa) = (Vec::new(), Vec::new());
-        for c in schema
-            .columns
-            .iter()
-            .filter(|c| names.contains(&c.field.name.to_string()))
-        {
-            for (suffix, key, nc, max) in [
-                ("_nc", "nullCount", true, false),
-                ("_min", "minValues", false, false),
-                ("_max", "maxValues", false, true),
-            ] {
-                let dtype = values::stat_dtype(c, nc);
-                let vals = stats
-                    .iter()
-                    .map(|s| {
-                        if nc && s.get("tightBounds") == Some(&Value::Bool(false)) {
-                            Value::Null
-                        } else {
-                            values::stat_value(c, s.get(key).unwrap_or(&Value::Null), nc, max)
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                // Optional statistics are never allowed to make the table unreadable.
-                let a = values::array(&dtype, &vals)
-                    .unwrap_or_else(|_| new_null_array(dtype.clone(), n));
+        for (column, [min, max, nc]) in stat_columns.iter().zip(builders) {
+            for (suffix, builder) in [("_nc", nc), ("_min", min), ("_max", max)] {
                 push(
                     &mut sf,
                     &mut sa,
-                    &format!("{}{suffix}", c.field.name),
-                    a,
+                    &format!("{}{suffix}", column.field.name),
+                    builder.finish(),
                     true,
                 );
             }
@@ -329,12 +348,14 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
     let physical = counts
         .iter()
         .try_fold(0u64, |sum, n| sum.checked_add((*n)?));
-    let row_count =
-        if request.use_metadata_statistics && (deleted == 0 || request.fast_deletion_count) {
-            physical.map(|n| (n, deleted))
-        } else {
-            None
-        };
+    let row_count = if !request.schema_only
+        && request.use_metadata_statistics
+        && (deleted == 0 || request.fast_deletion_count)
+    {
+        physical.map(|n| (n, deleted))
+    } else {
+        None
+    };
     let header = OutputHeader {
         resolved_version: snapshot.version,
         column_mapping_mode: schema.mode,
@@ -358,18 +379,6 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
         schema: unsafe { ArrowSchema::transmute_from(schema) },
         files: unsafe { ArrowArrayStream::transmute_from(stream) },
     })
-}
-trait TransposeOption<T> {
-    fn transpose_option(self) -> Option<Option<T>>;
-}
-impl<T> TransposeOption<T> for Option<Option<T>> {
-    fn transpose_option(self) -> Option<Option<T>> {
-        match self {
-            None => Some(None),
-            Some(None) => None,
-            Some(Some(v)) => Some(Some(v)),
-        }
-    }
 }
 fn z85(s: &str) -> Result<Vec<u8>> {
     crate::codec::decode_z85(s).map_err(invalid)

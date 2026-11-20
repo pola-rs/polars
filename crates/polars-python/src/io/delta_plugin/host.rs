@@ -163,6 +163,7 @@ unsafe extern "C" fn host_get_storage(
                 cloud_options: ctx.cloud_options.clone(),
                 metadata_cache: ctx.metadata_cache.clone(),
                 io_error_kinds: ctx.io_error_kinds.clone(),
+                listed: Default::default(),
             });
             Ok(StorageHandle(Arc::into_raw(storage) as *const c_void))
         })())
@@ -180,11 +181,26 @@ struct HostStorage {
     cloud_options: Option<CloudOptions>,
     metadata_cache: Option<ScopedMetadataCache>,
     io_error_kinds: IoErrorKinds,
+    /// Size and modification time of the log files this handle listed. A cached copy is keyed by
+    /// them as well, so a table recreated at the same path never serves the old table's files.
+    listed: Mutex<std::collections::HashMap<String, (u64, i64)>>,
 }
 
 struct ResolvedLocation {
     store: PolarsObjectStore,
     path: object_store::path::Path,
+    is_local: bool,
+}
+
+impl HostStorage {
+    /// The cache key of `url`: its scope and URL, with the identity of the listed object. A file
+    /// this handle did not list (a sidecar, named by a UUID) is immutable by name.
+    fn cache_key(&self, scope: impl std::fmt::Display, url: &str, suffix: &str) -> String {
+        match self.listed.lock().unwrap().get(url) {
+            Some((size, modified)) => format!("{scope}:{url}:{size}:{modified}{suffix}"),
+            None => format!("{scope}:{url}{suffix}"),
+        }
+    }
 }
 
 impl HostStorage {
@@ -206,7 +222,11 @@ impl HostStorage {
             object_path_from_str(&prefix)?
         };
 
-        Ok(ResolvedLocation { store, path })
+        Ok(ResolvedLocation {
+            store,
+            path,
+            is_local,
+        })
     }
 }
 
@@ -300,7 +320,7 @@ unsafe extern "C" fn storage_get(
 
             let bytes = match &storage.metadata_cache {
                 Some(c) if is_cacheable(&url) => {
-                    let key = format!("{}:{url}", c.scope);
+                    let key = storage.cache_key(&c.scope, &url, "");
                     c.cache.get_or_fetch(&key, &c.stats, fetch).await?
                 },
                 _ => fetch().await?,
@@ -373,7 +393,7 @@ unsafe extern "C" fn storage_get_range(
             };
             let bytes = match &storage.metadata_cache {
                 Some(c) if is_cacheable(&url) => {
-                    let key = format!("{}:{url}:range:{start}:{end}", c.scope);
+                    let key = storage.cache_key(&c.scope, &url, &format!(":range:{start}:{end}"));
                     c.cache.get_or_fetch(&key, &c.stats, fetch).await?
                 },
                 _ => fetch().await?,
@@ -401,15 +421,47 @@ unsafe extern "C" fn storage_list(
             let to_ffi_err = |e| storage.io_error_kinds.to_ffi_err(e);
             let loc = storage.resolve(&prefix).await.map_err(to_ffi_err)?;
             let path = &loc.path;
-            let listing = loc
-                .store
-                .exec_with_rebuild_retry_on_err(|s| async move {
-                    s.list_with_delimiter(Some(path)).await
-                })
-                .await
-                .map_err(to_ffi_err)?;
-            let mut objects = Vec::with_capacity(listing.objects.len());
-            for object in listing.objects {
+            // Every key of the table's log from `start_after` on, which a store lists from an
+            // offset in one request. A local directory walk is no cheaper with one. Offset listings
+            // are recursive, so entries below `_sidecars/` and `_commits/` are dropped.
+            let listing = match &start_after {
+                Some(start) if !loc.is_local => {
+                    let offset = prefix_offset(&loc.path, &prefix, start);
+                    let metas = loc
+                        .store
+                        .exec_with_rebuild_retry_on_err(|s| {
+                            let offset = offset.clone();
+                            async move {
+                                use futures::TryStreamExt;
+                                s.list_with_offset(Some(path), &offset)
+                                    .try_collect::<Vec<_>>()
+                                    .await
+                            }
+                        })
+                        .await
+                        .map_err(to_ffi_err)?;
+                    metas
+                        .into_iter()
+                        .filter(|m| {
+                            m.location
+                                .prefix_match(path)
+                                .is_some_and(|mut parts| parts.nth(1).is_none())
+                        })
+                        .collect::<Vec<_>>()
+                },
+                _ => {
+                    loc.store
+                        .exec_with_rebuild_retry_on_err(|s| async move {
+                            s.list_with_delimiter(Some(path)).await
+                        })
+                        .await
+                        .map_err(to_ffi_err)?
+                        .objects
+                },
+            };
+            let mut objects = Vec::with_capacity(listing.len());
+            let mut identities = Vec::with_capacity(listing.len());
+            for object in listing {
                 // Prefix lists only direct children; keep the caller's URL authority/path form.
                 let Some(name) = object.location.as_ref().rsplit('/').next() else {
                     continue;
@@ -418,14 +470,31 @@ unsafe extern "C" fn storage_list(
                 if start_after.as_ref().is_some_and(|start| url <= *start) {
                     continue;
                 }
+                let modified = object.last_modified.timestamp_millis();
+                identities.push((url.clone(), (object.size, modified)));
                 objects.push(ObjectMeta {
                     url: FfiBuf::from_string(url),
                     size: object.size,
-                    modified_ms: Some(object.last_modified.timestamp_millis()).into(),
+                    modified_ms: Some(modified).into(),
                 });
             }
+            storage.listed.lock().unwrap().extend(identities);
             objects.sort_unstable_by(|a, b| a.url.as_slice().cmp(b.url.as_slice()));
             Ok(FfiVec::from_vec(objects))
         })
     })
+}
+
+/// The object-store key `start` (a URL in the caller's form, under `prefix`) names, for an
+/// exclusive offset listing of `dir`.
+fn prefix_offset(
+    dir: &object_store::path::Path,
+    prefix: &str,
+    start: &str,
+) -> object_store::path::Path {
+    let name = start
+        .strip_prefix(prefix.trim_end_matches('/'))
+        .unwrap_or(start)
+        .trim_start_matches('/');
+    dir.child(name)
 }

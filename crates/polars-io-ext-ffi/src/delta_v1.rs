@@ -6,6 +6,8 @@
 //! path:nullable utf8view,inline:nullable binaryview,offset:u64,size_in_bytes:u32,cardinality:u64}.
 //! Exactly one DV path/inline is set; inline contains decoded bitmapData, file paths are absolute.
 //! The full snapshot is returned: request.limit never permits dropping files before host filtering.
+//! With request.schema_only only protocol and metadata are read: the files stream is empty (the
+//! usual columns, no rows, no statistics) and header.row_count is absent.
 //! Host and storage handles live only during plan; output streams own all returned data.
 use std::ffi::{CStr, c_void};
 
@@ -137,6 +139,8 @@ pub struct FfiRequest<'a> {
     pub max_threads: FfiOption<u64>,
     pub use_metadata_statistics: bool,
     pub fast_deletion_count: bool,
+    /// Resolve the schema and version only: no file actions are read.
+    pub schema_only: bool,
     pub verbose: bool,
     pub testing_fail: FfiOption<FfiStr<'a>>,
 }
@@ -153,6 +157,7 @@ pub struct Request {
     pub max_threads: Option<u64>,
     pub use_metadata_statistics: bool,
     pub fast_deletion_count: bool,
+    pub schema_only: bool,
     pub verbose: bool,
     pub testing_fail: Option<String>,
 }
@@ -176,6 +181,7 @@ impl Request {
             max_threads: self.max_threads.into(),
             use_metadata_statistics: self.use_metadata_statistics,
             fast_deletion_count: self.fast_deletion_count,
+            schema_only: self.schema_only,
             verbose: self.verbose,
             testing_fail: self.testing_fail.as_deref().map(FfiStr::new).into(),
         })
@@ -198,6 +204,7 @@ impl Request {
             max_threads: r.max_threads.into_option(),
             use_metadata_statistics: r.use_metadata_statistics,
             fast_deletion_count: r.fast_deletion_count,
+            schema_only: r.schema_only,
             verbose: r.verbose,
             testing_fail: r.testing_fail.into_option().map(string).transpose()?,
         })

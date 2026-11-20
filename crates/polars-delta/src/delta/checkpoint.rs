@@ -12,15 +12,36 @@ use polars_parquet::arrow::read::{BasicDecompressor, PageReader, column_iter_to_
 use polars_utils::aliases::PlHashSet;
 use serde_json::{Map, Value};
 
-use super::actions::{Action, from_row};
 use super::error::{Result, invalid};
+use super::files::{CheckpointFiles, Source};
 use super::host::Storage;
+use super::stats::timestamp_micros;
+use super::values::format_decimal;
+
+/// What a checkpoint file holds. File actions stay columnar in `sources`; the few other
+/// actions are JSON values.
+#[derive(Default)]
+pub struct Checkpoint {
+    pub metadata: Vec<Value>,
+    pub protocol: Vec<Value>,
+    pub checkpoint_metadata: Vec<Value>,
+    pub sidecars: Vec<Value>,
+    pub sources: Vec<Source>,
+    /// Whether the file embeds remove actions. Only looked for when it lists sidecars, which
+    /// the V2 spec allows only if all file actions are in them.
+    pub has_removes: bool,
+}
+/// Read a checkpoint file. `files` false reads no file actions (protocol and metadata only).
+///
+/// Remove actions of a checkpoint are tombstones for files older than the checkpoint, which a
+/// snapshot never reads, so the `remove` column is not read.
 pub async fn read(
     storage: &Storage,
     path: &str,
     request: &Request,
     inherited_metadata: Option<&Value>,
-) -> Result<Vec<Action>> {
+    files: bool,
+) -> Result<Checkpoint> {
     let size = storage.head(path).await?;
     if size < 12 {
         return Err(invalid("short parquet checkpoint"));
@@ -49,124 +70,149 @@ pub async fn read(
         },
     )
     .map_err(invalid)?;
-    let mut actions = Vec::new();
-    // Preserve row identity across the metadata/file passes without retaining
-    // decoded metadata arrays or reading unrelated action fields.
+    let mut out = Checkpoint::default();
+    // Preserve row identity across the passes without retaining decoded arrays.
     let mut occupied = metadata
         .row_groups
         .iter()
         .map(|rg| MutableBitmap::from_len_zeroed(rg.num_rows()))
         .collect::<Vec<_>>();
-    // Decode metadata before file actions, so requested logical statistics can be
-    // translated to physical names even when the metadata row follows the adds.
-    for file_actions in [false, true] {
-        let table_metadata = actions
-            .iter()
-            .find(|a: &&Action| a.kind == "metaData")
-            .map(|a| &a.value)
-            .or(inherited_metadata);
-        let stats = requested_stats(request, table_metadata)?;
-        for (rg, occupied) in metadata.row_groups.iter().zip(&mut occupied) {
-            let mut fields = Vec::new();
-            let mut arrays = Vec::new();
-            for field in schema.iter_values().filter(|f| {
-                if file_actions {
-                    matches!(f.name.as_str(), "add" | "remove")
-                } else {
-                    matches!(
-                        f.name.as_str(),
-                        "metaData" | "protocol" | "sidecar" | "checkpointMetadata"
-                    )
+    // Small actions first: the table metadata translates the requested logical statistics to
+    // physical names, even when the metadata row follows the adds.
+    for (rg_index, rg) in metadata.row_groups.iter().enumerate() {
+        for field in schema.iter_values().filter(|f| {
+            matches!(
+                f.name.as_str(),
+                "metaData" | "protocol" | "sidecar" | "checkpointMetadata"
+            )
+        }) {
+            let array = read_root(storage, path, rg, field).await?;
+            for row in (0..rg.num_rows()).filter(|r| !array.is_null(*r)) {
+                if occupied[rg_index].get(row) {
+                    return Err(invalid("multiple actions in one row"));
                 }
-            }) {
-                let Some(field) = project_field(field, &stats) else {
-                    continue;
-                };
-                let selected = rg
-                    .columns_under_root_iter(&field.name)
-                    .ok_or_else(|| invalid("missing checkpoint column"))?
-                    .filter(|column| {
-                        selected_leaf(&field, &column.descriptor().path_in_schema[1..])
-                    })
-                    .collect::<Vec<_>>();
-                let ranges = selected
-                    .iter()
-                    .map(|column| column.byte_range().map_err(invalid))
-                    .collect::<Result<Vec<_>>>()?;
-                // Adjacent selected chunks share a request, with a bounded group
-                // size. Read at most eight groups at once; never read skipped leaves.
-                let mut groups: Vec<std::ops::Range<u64>> = Vec::new();
-                for range in &ranges {
-                    if let Some(last) = groups.last_mut() {
-                        if last.end == range.start && range.end - last.start <= 8 * 1024 * 1024 {
-                            last.end = range.end;
-                            continue;
-                        }
-                    }
-                    groups.push(range.clone());
-                }
-                let bytes = futures::stream::iter(
-                    groups
-                        .iter()
-                        .cloned()
-                        .map(|r| async move { storage.range(path, r.start, r.end).await }),
-                )
-                .buffered(8)
-                .try_collect::<Vec<_>>()
-                .await?;
-                let mut columns = Vec::new();
-                let mut types = Vec::new();
-                for (column, range) in selected.iter().zip(ranges) {
-                    let group = groups
-                        .iter()
-                        .position(|r| r.start <= range.start && r.end >= range.end)
-                        .ok_or_else(|| invalid("checkpoint range grouping"))?;
-                    let start = (range.start - groups[group].start) as usize;
-                    let len = (range.end - range.start) as usize;
-                    let data = bytes[group].as_slice()[start..start + len].to_vec();
-                    let pages = PageReader::new(
-                        Cursor::new(Buffer::from_vec(data)),
-                        column,
-                        vec![],
-                        len.saturating_mul(8).saturating_add(1024),
-                    )
-                    .map_err(invalid)?;
-                    columns.push(BasicDecompressor::new(pages, vec![]));
-                    types.push(&column.descriptor().descriptor.primitive_type);
-                }
-                let (mut chunks, _) =
-                    column_iter_to_arrays(columns, types, field.clone(), None).map_err(invalid)?;
-                let array = if chunks.len() == 1 {
-                    chunks.pop().unwrap()
-                } else {
-                    polars_arrow::compute::concatenate::concatenate(
-                        &chunks.iter().map(|a| a.as_ref()).collect::<Vec<_>>(),
-                    )
-                    .map_err(invalid)?
-                };
-                fields.push(field);
-                arrays.push(array);
-            }
-            for row in 0..rg.num_rows() {
-                let mut object = Map::new();
-                for (field, array) in fields.iter().zip(&arrays) {
-                    if !array.is_null(row) {
-                        if occupied.get(row) {
-                            return Err(invalid("multiple actions in one row"));
-                        }
-                        occupied.set(row, true);
-                        object.insert(field.name.to_string(), json_value(array.as_ref(), row)?);
-                    }
-                }
-                if !object.is_empty() {
-                    if let Some(a) = from_row(Value::Object(object))? {
-                        actions.push(a)
-                    }
+                occupied[rg_index].set(row, true);
+                let value = json_value(array.as_ref(), row)?;
+                match field.name.as_str() {
+                    "metaData" => out.metadata.push(value),
+                    "protocol" => out.protocol.push(value),
+                    "sidecar" => out.sidecars.push(value),
+                    _ => out.checkpoint_metadata.push(value),
                 }
             }
         }
     }
-    Ok(actions)
+    if !files {
+        return Ok(out);
+    }
+    let stats = requested_stats(request, out.metadata.first().or(inherited_metadata))?;
+    let add = schema.iter_values().find(|f| f.name == "add");
+    let remove_path = (!out.sidecars.is_empty())
+        .then(|| {
+            schema
+                .iter_values()
+                .find(|f| f.name == "remove")
+                .and_then(|f| {
+                    let ArrowDataType::Struct(children) = &f.dtype else {
+                        return None;
+                    };
+                    let path = children.iter().find(|c| c.name == "path")?.clone();
+                    let mut f = f.clone();
+                    f.dtype = ArrowDataType::Struct(vec![path]);
+                    Some(f)
+                })
+        })
+        .flatten();
+    for (rg_index, rg) in metadata.row_groups.iter().enumerate() {
+        if let Some(field) = add.and_then(|f| project_add(f, &stats)) {
+            let array = read_root(storage, path, rg, &field).await?;
+            let add = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .ok_or_else(|| invalid("checkpoint add column is not a struct"))?;
+            for row in (0..rg.num_rows()).filter(|r| !add.is_null(*r)) {
+                if occupied[rg_index].get(row) {
+                    return Err(invalid("multiple actions in one row"));
+                }
+                occupied[rg_index].set(row, true);
+            }
+            out.sources
+                .push(Source::Checkpoint(Box::new(CheckpointFiles::new(add)?)));
+        }
+        if let Some(field) = &remove_path {
+            let array = read_root(storage, path, rg, field).await?;
+            out.has_removes |= array.null_count() < array.len();
+        }
+    }
+    Ok(out)
+}
+/// Decode one (projected) root column of a row group.
+async fn read_root(
+    storage: &Storage,
+    path: &str,
+    rg: &polars_parquet::parquet::metadata::RowGroupMetadata,
+    field: &Field,
+) -> Result<Box<dyn Array>> {
+    let selected = rg
+        .columns_under_root_iter(&field.name)
+        .ok_or_else(|| invalid("missing checkpoint column"))?
+        .filter(|column| selected_leaf(field, &column.descriptor().path_in_schema[1..]))
+        .collect::<Vec<_>>();
+    let ranges = selected
+        .iter()
+        .map(|column| column.byte_range().map_err(invalid))
+        .collect::<Result<Vec<_>>>()?;
+    // Adjacent selected chunks share a request, with a bounded group size. Read at most eight
+    // groups at once; never read skipped leaves.
+    let mut groups: Vec<std::ops::Range<u64>> = Vec::new();
+    for range in &ranges {
+        if let Some(last) = groups.last_mut() {
+            if last.end == range.start && range.end - last.start <= 8 * 1024 * 1024 {
+                last.end = range.end;
+                continue;
+            }
+        }
+        groups.push(range.clone());
+    }
+    let bytes = futures::stream::iter(
+        groups
+            .iter()
+            .cloned()
+            .map(|r| async move { storage.range(path, r.start, r.end).await }),
+    )
+    .buffered(8)
+    .try_collect::<Vec<_>>()
+    .await?;
+    let mut columns = Vec::new();
+    let mut types = Vec::new();
+    for (column, range) in selected.iter().zip(ranges) {
+        let group = groups
+            .iter()
+            .position(|r| r.start <= range.start && r.end >= range.end)
+            .ok_or_else(|| invalid("checkpoint range grouping"))?;
+        let start = (range.start - groups[group].start) as usize;
+        let len = (range.end - range.start) as usize;
+        let data = bytes[group].as_slice()[start..start + len].to_vec();
+        let pages = PageReader::new(
+            Cursor::new(Buffer::from_vec(data)),
+            column,
+            vec![],
+            len.saturating_mul(8).saturating_add(1024),
+        )
+        .map_err(invalid)?;
+        columns.push(BasicDecompressor::new(pages, vec![]));
+        types.push(&column.descriptor().descriptor.primitive_type);
+    }
+    let (mut chunks, _) =
+        column_iter_to_arrays(columns, types, field.clone(), None).map_err(invalid)?;
+    if chunks.len() == 1 {
+        Ok(chunks.pop().unwrap())
+    } else {
+        polars_arrow::compute::concatenate::concatenate(
+            &chunks.iter().map(|a| a.as_ref()).collect::<Vec<_>>(),
+        )
+        .map_err(invalid)
+    }
 }
 fn requested_stats(request: &Request, metadata: Option<&Value>) -> Result<PlHashSet<String>> {
     let names = request
@@ -205,41 +251,57 @@ fn requested_stats(request: &Request, metadata: Option<&Value>) -> Result<PlHash
         .map(str::to_owned)
         .collect())
 }
-fn project_field(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {
+/// The columns of `add` the planner reads. The `stats` text is only read when there is no typed
+/// `stats_parsed` with counts (which takes precedence for every file that has it).
+fn project_add(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {
     let ArrowDataType::Struct(children) = &field.dtype else {
         return Some(field.clone());
     };
+    let parsed_counts = children.iter().any(|c| {
+        c.name == "stats_parsed"
+            && matches!(&c.dtype, ArrowDataType::Struct(p) if p.iter().any(|p| p.name == "numRecords"))
+    });
     let selected = children
         .iter()
-        .filter_map(|child| {
-            let keep = match field.name.as_str() {
-                "add" => matches!(
-                    child.name.as_str(),
-                    "path"
-                        | "size"
-                        | "partitionValues"
-                        | "stats"
-                        | "stats_parsed"
-                        | "deletionVector"
-                ),
-                "remove" => matches!(child.name.as_str(), "path" | "deletionVector"),
-                "stats_parsed" => {
-                    matches!(child.name.as_str(), "numRecords" | "tightBounds") || !stats.is_empty()
-                },
-                "minValues" | "maxValues" | "nullCount" => stats.contains(child.name.as_str()),
-                _ => true,
-            };
-            if !keep {
-                return None;
-            }
-            if matches!(
-                child.name.as_str(),
-                "stats_parsed" | "minValues" | "maxValues" | "nullCount"
-            ) {
-                project_field(child, stats)
-            } else {
-                Some(child.clone())
-            }
+        .filter_map(|child| match child.name.as_str() {
+            "path" | "size" | "partitionValues" | "deletionVector" => Some(child.clone()),
+            "stats" => (!parsed_counts).then(|| child.clone()),
+            "stats_parsed" => project_parsed(child, stats),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return None;
+    }
+    let mut projected = field.clone();
+    projected.dtype = ArrowDataType::Struct(selected);
+    Some(projected)
+}
+fn project_parsed(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {
+    let ArrowDataType::Struct(children) = &field.dtype else {
+        return None;
+    };
+    let selected = children
+        .iter()
+        .filter_map(|child| match child.name.as_str() {
+            "numRecords" | "tightBounds" => Some(child.clone()),
+            "minValues" | "maxValues" | "nullCount" => {
+                let ArrowDataType::Struct(columns) = &child.dtype else {
+                    return None;
+                };
+                let columns = columns
+                    .iter()
+                    .filter(|c| stats.contains(c.name.as_str()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if columns.is_empty() {
+                    return None;
+                }
+                let mut projected = child.clone();
+                projected.dtype = ArrowDataType::Struct(columns);
+                Some(projected)
+            },
+            _ => None,
         })
         .collect::<Vec<_>>();
     if selected.is_empty() {
@@ -376,26 +438,4 @@ fn json_value(a: &dyn Array, i: usize) -> Result<Value> {
         },
         t => Err(invalid(format!("checkpoint value type {t:?}"))),
     }
-}
-fn timestamp_micros(v: i64, unit: TimeUnit) -> Option<i64> {
-    match unit {
-        TimeUnit::Second => v.checked_mul(1_000_000),
-        TimeUnit::Millisecond => v.checked_mul(1_000),
-        TimeUnit::Microsecond => Some(v),
-        TimeUnit::Nanosecond => Some(v.div_euclid(1_000)),
-    }
-}
-fn format_decimal(v: i128, scale: usize) -> String {
-    if scale == 0 {
-        return v.to_string();
-    }
-    let digits = v.unsigned_abs().to_string();
-    let digits = format!("{:0>width$}", digits, width = scale + 1);
-    let split = digits.len() - scale;
-    format!(
-        "{}{}.{}",
-        if v < 0 { "-" } else { "" },
-        &digits[..split],
-        &digits[split..]
-    )
 }

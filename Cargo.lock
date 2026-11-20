@@ -3772,6 +3772,7 @@ dependencies = [
  "color-backtrace",
  "either",
  "flate2",
+ "futures",
  "hashbrown 0.17.1",
  "itoa",
  "libc",

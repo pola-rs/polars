@@ -3,11 +3,13 @@ use polars_io_ext_ffi::delta_v1;
 mod actions;
 mod checkpoint;
 mod error;
+mod files;
 mod host;
 mod log;
 mod output;
 mod runtime;
 mod schema;
+mod stats;
 mod values;
 pub static PLUGIN_V1: delta_v1::Plugin = delta_v1::Plugin {
     plan,

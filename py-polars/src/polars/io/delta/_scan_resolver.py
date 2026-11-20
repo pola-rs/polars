@@ -195,7 +195,8 @@ class DeltaScanResolver(LazyFrameResolver):
     def schema(self) -> Schema:
         """Fetch the schema of the table."""
         if self._schema is None:
-            if (scan := self._plugin_scan()) is not None:
+            # Reads the log's protocol and metadata only, not its file actions.
+            if (scan := self._plugin_scan(schema_only=True)) is not None:
                 frame, _ = scan
                 assert frame is not None
                 self._schema = frame.collect_schema()

@@ -1212,3 +1212,21 @@ def test_delta_plugin_checkpoint_timestamp_statistics_unit(
         pl.col("t") < datetime(2024, 1, 2, tzinfo=UTC),
     ]:
         assert_frame_equal(scan.filter(predicate).collect(), expected)
+
+
+def test_delta_plugin_recreated_table_at_same_path(tmp_path: Path) -> None:
+    import shutil
+
+    path = tmp_path / "t"
+    pl.DataFrame({"a": [1, 2]}).write_delta(path)
+    held = pl.scan_delta(path)
+    assert_frame_equal(held.collect(), pl.DataFrame({"a": [1, 2]}))
+    # Same path and version (0), other files: nothing of the first table may be reused.
+    shutil.rmtree(path)
+    pl.DataFrame({"a": [7, 8, 9], "b": [1, 1, 1]}).write_delta(path)
+    assert_frame_equal(
+        pl.scan_delta(path).collect(), pl.DataFrame({"a": [7, 8, 9], "b": [1, 1, 1]})
+    )
+    # The held scan stays pinned to the first table's files: it fails, not mixes.
+    with pytest.raises(FileNotFoundError):
+        held.collect()

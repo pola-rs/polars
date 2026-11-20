@@ -2550,6 +2550,7 @@ def _delta_plugin_scan(
     statistics_columns: pylist[str] | None,
     limit: int | None,
     use_metadata_statistics: bool,
+    schema_only: bool = False,
     verbose: bool,
     testing_fail: str | None,
     storage_options: Any,

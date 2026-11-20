@@ -1,5 +1,6 @@
 mod convert;
 mod host;
+mod schema;
 use std::ffi::CStr;
 use std::sync::Arc;
 
@@ -166,7 +167,7 @@ pub fn _delta_plugin_decoder_registered() -> bool {
 }
 
 #[pyfunction]
-#[pyo3(signature = (capsule, *, table_uri, version, timestamp_ms, projection, filter_columns, statistics_columns, limit, use_metadata_statistics, verbose, testing_fail, storage_options, credential_provider, metadata_cache))]
+#[pyo3(signature = (capsule, *, table_uri, version, timestamp_ms, projection, filter_columns, statistics_columns, limit, use_metadata_statistics, schema_only=false, verbose, testing_fail, storage_options, credential_provider, metadata_cache))]
 #[allow(clippy::too_many_arguments)]
 pub fn _delta_plugin_scan(
     py: Python<'_>,
@@ -179,6 +180,7 @@ pub fn _delta_plugin_scan(
     statistics_columns: Option<Vec<String>>,
     limit: Option<u64>,
     use_metadata_statistics: bool,
+    schema_only: bool,
     verbose: bool,
     testing_fail: Option<String>,
     storage_options: OptPyCloudOptions,
@@ -201,6 +203,7 @@ pub fn _delta_plugin_scan(
         max_threads: Some(polars_config::config().max_threads() as u64),
         use_metadata_statistics,
         fast_deletion_count: true,
+        schema_only,
         verbose,
         testing_fail,
     };
@@ -209,7 +212,7 @@ pub fn _delta_plugin_scan(
         scope: "delta".into(),
         stats: Default::default(),
     };
-    let (dsl, version) = py.enter_polars(move || {
+    let (lf, version) = py.enter_polars(move || {
         let ctx = host::HostCtx {
             cloud_options: cloud_options.clone(),
             metadata_cache: Some(metadata_cache),
@@ -223,9 +226,18 @@ pub fn _delta_plugin_scan(
                 let io_kind = ctx.io_error_kinds.kind_of(&e.message());
                 ffi_to_polars_err(e, PLUGIN_NAME, io_kind)
             })?;
-        convert::build_scan(output, cloud_options)
+        if schema_only {
+            // An empty frame with the table's schema: the plan listed no files.
+            let (schema, version) = schema::schema_only(output)?;
+            let lf = polars::prelude::IntoLazy::lazy(
+                polars::prelude::DataFrame::empty_with_schema(&schema),
+            );
+            return PolarsResult::Ok((lf, version));
+        }
+        let (dsl, version) = convert::build_scan(output, cloud_options)?;
+        Ok((polars::prelude::LazyFrame::from(dsl), version))
     })?;
-    Ok((polars::prelude::LazyFrame::from(dsl).into(), version))
+    Ok((lf.into(), version))
 }
 
 fn ffi_to_polars_err(

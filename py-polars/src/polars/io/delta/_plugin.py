@@ -157,8 +157,11 @@ def plugin_scan(
         # Time travel selects one snapshot, just like a URI scan of latest. Retain
         # the first successfully resolved version when planning another request.
         version = dataset._resolved_version
-    if isinstance(version, int) and options.get("existing_resolved_version_key") == str(
-        version
+    schema_only = bool(options.get("schema_only"))
+    if (
+        not schema_only
+        and isinstance(version, int)
+        and options.get("existing_resolved_version_key") == str(version)
     ):
         # The host only supplies a key when its cached expansion covers this
         # request, including projection/filter columns, limit and statistics.
@@ -196,6 +199,7 @@ def plugin_scan(
         statistics_columns=options.get("statistics_columns"),
         limit=options.get("limit"),
         use_metadata_statistics=True,
+        schema_only=schema_only,
         verbose=verbose(),
         testing_fail=os.getenv("POLARS_DELTA_PLUGIN_TESTING_FAIL") or None,
         storage_options=dataset.storage_options,
