@@ -450,6 +450,9 @@ def test_cse_keys_params_by_utc_offset(tmp_path: Path) -> None:
         def utcoffset(self, dt: datetime | None) -> timedelta:
             return timedelta(hours=self.hours)
 
+        def tzname(self, dt: datetime | None) -> str:
+            return f"FixedTz{self.hours}"
+
         def dst(self, dt: datetime | None) -> None:
             return None
 

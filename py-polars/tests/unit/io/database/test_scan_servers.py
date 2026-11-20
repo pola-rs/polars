@@ -157,7 +157,7 @@ def _mssql_factory(uri: str) -> Callable[[], Any]:
 
 def _trino_factory(uri: str) -> Callable[[], Any]:
     def connect() -> Any:
-        import trino
+        import trino  # type: ignore[import-not-found]
 
         p = _parts(uri)
         catalog, _, schema = p["database"].partition("/")
@@ -326,8 +326,9 @@ SERVERS = {
         {"adbc": False, "clickhouse_connect": False, "connectorx": False},
         factory=_clickhouse_factory,
     ),
-    # `connectorx` first: the reference the other cells are compared with, and the one
-    # driver whose catalog lookups work (see `test_mssql_catalog_lookup_names_its_columns`)
+    # `connectorx` first: the reference the other cells are compared with, and the
+    # one driver whose catalog lookups work
+    # (see `test_mssql_catalog_lookup_names_its_columns`)
     "mssql": Server(
         "POLARS_TEST_MSSQL_URI",
         "SELECT * FROM edge",
@@ -2170,6 +2171,8 @@ def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> N
     uri = SERVERS["mysql"].uri
     assert uri is not None
     engine = None
+    cur: Any = None
+    result: Any = None
     if how == "pymysql":
         conn = pymysql.connect(**_parts(uri))
         cur = conn.cursor(pymysql.cursors.SSCursor)
@@ -2238,7 +2241,7 @@ def test_autocommit_engine_still_streams_outside_postgres(server: str) -> None:
     )
     seen: list[str] = []
 
-    @sqlalchemy.event.listens_for(engine, "before_cursor_execute")
+    @sqlalchemy.event.listens_for(engine, "before_cursor_execute")  # type: ignore[untyped-decorator]
     def hook(conn: Any, cursor: Any, stmt: str, *args: Any) -> None:
         if "polars_stream_probe" in stmt:
             seen.append(type(cursor).__name__)
@@ -3876,7 +3879,8 @@ def test_postgres_infinity_is_an_error_on_psycopg2_connections_of_the_user(
         }
         for column, dtype in types.items():
             for query in [table, f"SELECT id, {column} FROM {table}"]:
-                for schema in [None, {"id": pl.Int32, column: dtype}]:
+                schemas: list[Any] = [None, {"id": pl.Int32, column: dtype}]
+                for schema in schemas:
                     lf = pl.scan_database(
                         query, source, partition_on=None, schema=schema
                     )
@@ -5417,7 +5421,8 @@ VOLATILE_VIEWS: dict[str, tuple[list[str], float]] = {
         ],
         2.0**31,
     ),
-    # `RAND()` is one value per statement: a value per row needs `RAND(CHECKSUM(NEWID()))`
+    # `RAND()` is one value per statement: a value per row needs
+    # `RAND(CHECKSUM(NEWID()))`
     "mssql": (
         [
             "DROP SYNONYM IF EXISTS review_volatile_syn",
@@ -5436,7 +5441,8 @@ VOLATILE_VIEWS: dict[str, tuple[list[str], float]] = {
             "SELECT id, RAND(CHECKSUM(NEWID())) AS r FROM review_volatile_ids",
             "CREATE SYNONYM review_volatile_syn FOR review_volatile_v",
             # inline and multi-statement table-valued functions
-            # (NEWID() and RAND() aren't allowed in the body of any function: through the view)
+            # (NEWID() and RAND() aren't allowed in the body of any function:
+            # through the view)
             "CREATE FUNCTION review_volatile_itvf() RETURNS TABLE AS RETURN "
             "SELECT id, r FROM review_volatile_v",
             "CREATE FUNCTION review_volatile_itvf_dt() RETURNS TABLE AS RETURN "
@@ -6264,10 +6270,11 @@ def test_mysql_timestamp_read_as_text_is_the_same_on_every_live_path(name: str) 
         conn.cursor().execute("SET time_zone = '+05:00'")
         texts = set()
         for source in [table, f"SELECT id, ts FROM {table}"]:
-            for kwargs in [
+            kwargs_list: list[Any] = [
                 {"schema_overrides": {"ts": pl.String}},
                 {"schema": {"id": pl.Int32, "ts": pl.String}},
-            ]:
+            ]
+            for kwargs in kwargs_list:
                 out = pl.scan_database(
                     source, conn, partition_on=None, **kwargs
                 ).collect()
@@ -6411,10 +6418,11 @@ def test_mysql_sqlalchemy_connection_in_another_time_zone(name: str) -> None:
                 assert out["ts"].to_list() == [instant]
                 assert out["dt"].to_list() == [datetime(2024, 1, 1, 22)]
                 texts = set()
-                for kwargs in [
+                kwargs_list: list[Any] = [
                     {"schema_overrides": {"ts": pl.String}},
                     {"schema": {"id": pl.Int32, "ts": pl.String}},
-                ]:
+                ]
+                for kwargs in kwargs_list:
                     out = pl.scan_database(
                         source, conn, partition_on=None, **kwargs
                     ).collect()
@@ -6805,7 +6813,7 @@ def test_postgres_psycopg2_infinity_is_an_error_without_a_type_lookup() -> None:
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
-def test_mysql_view_column_list_permuting_the_querys_aliases(name: str) -> None:
+def test_mysql_view_column_list_permuting_the_query_aliases(name: str) -> None:
     # under `schema=` a view's columns were matched to its query's by name, but MySQL's
     # definition leaves out the view's column list: `a` here is `rand()`
     _execute(
@@ -7580,9 +7588,9 @@ def test_array_of_a_subquery_isnt_proven(name: str) -> None:
     ) == list(range(300))
 
 
-# ---------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------
 # SQL Server and Trino
-# ---------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------
 
 needs_mssql = pytest.mark.skipif(
     SERVERS["mssql"].uri is None, reason="no SQL Server URI"
@@ -8274,9 +8282,11 @@ def test_trino_time_zones_by_every_driver() -> None:
             for d, df in frames.items()
         }
         first, *rest = instants
-        for d in rest:
-            if instants[d] != instants[first]:
-                problems.append(f"{d}: {instants[d]} != {first}: {instants[first]}")
+        problems.extend(
+            f"{d}: {instants[d]} != {first}: {instants[first]}"
+            for d in rest
+            if instants[d] != instants[first]
+        )
         dtypes = {d: str(df.schema[df.columns[1]]) for d, df in frames.items()}
         if len(set(dtypes.values())) > 1:
             problems.append(f"dtypes differ: {dtypes}")

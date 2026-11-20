@@ -29,6 +29,10 @@ flate = "flate"
 authenticat = "authenticat"
 # ISO year pattern in SQL date templates.
 iy = "iy"
+# SQL `IIF` and ClickHouse `normL1`/`normL2` function names in `scan_database` function lists.
+iif = "iif"
+ist = "ist"
+norml = "norml"
 
 [default.extend-identifiers]
 AKS = "AKS"
@@ -39,6 +43,7 @@ extend-ignore-re = [
   '\.flags\.writeable\b',
   # Test data in the `scan_database` tests.
   'rvc_pg_nd',
+  'r_coll_nd',
   "'ABD'",
   "'abd'",
   '"abd"',

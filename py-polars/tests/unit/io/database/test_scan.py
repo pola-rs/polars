@@ -4963,11 +4963,11 @@ def test_postgres_family_includes_dialect_forks() -> None:
     class Fork(PGDialect):
         name = "timescaledb"
 
-    class Conn(sqlalchemy.engine.Connection):
+    class Conn(sqlalchemy.engine.Connection):  # type: ignore[misc,name-defined]
         def __init__(self, dialect: Any) -> None:
             self.dialect = dialect
 
-    assert _postgres_family(Conn(Fork()))
+    assert _postgres_family(Conn(Fork()))  # type: ignore[no-untyped-call]
     assert not _postgres_family(Conn(sqlalchemy.dialects.sqlite.dialect()))
 
 
@@ -5105,7 +5105,7 @@ def test_sqlite_redefined_functions_do_not_change_a_read(
             conn.commit()
             if redefine:
                 conn.create_function(name, n_args, func)
-            out = []
+            out: list[Any] = []
             for overrides in [None, {"w": pl.Int64}, {"z": pl.Float64}]:
                 lf = pl.scan_database(
                     "m", conn, partition_on=None, schema_overrides=overrides
@@ -5136,12 +5136,13 @@ def test_sqlite_replaced_binary_collation_that_passes_a_byte_order_probe(
         ]
 
     def compare(a: str, b: str) -> int:
-        ka, kb = (
+        keys: Any = (
             (natural_key(a), natural_key(b))
             if order == "natural"
             else ((len(a), a), (len(b), b))
         )
-        return (ka > kb) - (ka < kb)
+        ka, kb = keys
+        return int(ka > kb) - int(ka < kb)
 
     with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
         conn.create_collation("BINARY", compare)
@@ -5181,7 +5182,8 @@ def test_sqlite_pushed_conversions_call_no_function() -> None:
 
 def test_a_flight_sql_transport_takes_any_dialect() -> None:
     # `grpc://` is a transport, not a database: `dialect=` names the database
-    for kwargs in [{"dialect": "duckdb"}, {"dialect": "trino"}]:
+    kwargs_list: list[Any] = [{"dialect": "duckdb"}, {"dialect": "trino"}]
+    for kwargs in kwargs_list:
         with pytest.raises(pl.exceptions.PolarsError) as e:
             pl.scan_database(
                 "t", "grpc://127.0.0.1:1", driver="adbc:flightsql", **kwargs
@@ -5253,7 +5255,7 @@ def test_sqlite_redefined_count_fails_loudly() -> None:
             return self.n - 3
 
     with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
-        conn.create_aggregate("count", 0, Count)
+        conn.create_aggregate("count", 0, Count)  # type: ignore[arg-type]
         conn.execute("CREATE TABLE t (id INTEGER)")
         conn.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(10)])
         conn.commit()

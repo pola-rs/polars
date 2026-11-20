@@ -968,7 +968,7 @@ def _unproven(node: Any, dialect: str | None, relations: set[str]) -> bool:
         return False
     if isinstance(node, exp.DataType):
         # a user's type (Postgres): its casts and comparisons are the user's
-        return node.this == exp.DataType.Type.USERDEFINED
+        return bool(node.this == exp.DataType.Type.USERDEFINED)
     if isinstance(node, exp.Column):
         if node.is_star:
             return False

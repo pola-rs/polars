@@ -133,7 +133,6 @@ async fn fetch_metadata(
     encryption_sharing: &mut polars_io::parquet::encryption::EncryptionSharing,
     verbose: bool,
 ) -> PolarsResult<()> {
-    use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
         (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,

@@ -763,7 +763,7 @@ def test_engine_read_database_early_stop_gives_back_the_pooled_connection() -> N
         it = pl.read_database(
             "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
         )
-        gen = iter(it)
+        gen: Any = iter(it)
         next(gen)
         with pytest.raises(RuntimeError, match="boom"):
             gen.throw(RuntimeError("boom"))
@@ -882,11 +882,12 @@ def test_date_ranges_at_or_before_the_gregorian_cutover_are_refused() -> None:
     ]
     with _scratch(setup) as schema:
         name = f"{schema}.vol_dates"
-        for kwargs in (
+        kwargs_options: list[Any] = [
             {"partition_range": (date(1500, 1, 1), date(1700, 1, 1))},
             {"partition_range": (date(1582, 10, 15), date(1700, 1, 1))},
             {},  # MIN/MAX: the table's own first date is 1500
-        ):
+        ]
+        for kwargs in kwargs_options:
             lf = _scan(name, partition_on="d", partition_num=3, **kwargs)
             _refused(lf, "1582-10-15")
         # without an explicit key, one query reads every row
@@ -1001,10 +1002,11 @@ def test_bare_current_time_makes_the_query_volatile() -> None:
     # the statement's time, which each partition would read at another moment
     for expr in ("CURRENT_TIME", "CURRENT_TIME()", "CURRENT_TIMESTAMP", "CURRENT_DATE"):
         sql = f"SELECT id, {expr} AS stamp FROM range(8) AS t(id)"
-        for kwargs in (
+        kwargs_options: list[Any] = [
             {"partition_on": "id", "partition_num": 4},
             {"partition_predicates": ["id < 4", "id >= 4"]},
-        ):
+        ]
+        for kwargs in kwargs_options:
             _refused(_scan(sql, **kwargs), "partitioned")
 
 

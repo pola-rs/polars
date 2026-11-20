@@ -1693,17 +1693,17 @@ def test_databricks_sqlalchemy_engine_gives_back_the_connection_on_early_stop(
         assert engine.pool.checkedout() == 0
 
     it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
-    gen = iter(it)
+    gen: Any = iter(it)
     next(gen)
     gen.close()
     assert engine.pool.checkedout() == 0
 
     # a full read, then an error part-way through the batches
     it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
-    gen = iter(it)
-    next(gen)
+    thrown: Any = iter(it)
+    next(thrown)
     with pytest.raises(RuntimeError, match="boom"):
-        gen.throw(RuntimeError("boom"))
+        thrown.throw(RuntimeError("boom"))
     assert engine.pool.checkedout() == 0
     assert pl.read_database("SELECT a FROM t", engine).height == 5
     assert engine.pool.checkedout() == 0
