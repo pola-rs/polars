@@ -9128,9 +9128,9 @@ def test_postgres_engine_holds_nothing_between_collects(
     isolation_level: str | None,
 ) -> None:
     # F1: a `checkout` listener that opens a transaction (psycopg2 does, on its first
-    # statement) left the scan's pinned session `idle in transaction` for the LazyFrame's
-    # whole life: it held a lock on the table, and under REPEATABLE READ a later collect
-    # read the old snapshot
+    # statement) left the scan's pinned session `idle in transaction` for the
+    # LazyFrame's whole life: it held a lock on the table, and under REPEATABLE READ a
+    # later collect read the old snapshot
     from sqlalchemy import event
 
     sqlalchemy = pytest.importorskip("sqlalchemy")
@@ -9139,7 +9139,8 @@ def test_postgres_engine_holds_nothing_between_collects(
     server = SERVERS["postgres17"]
     if server.uri is None:
         pytest.skip("no postgres17 URI")
-    table = "fe_hold_t"
+    # (a table per variant: the variants run in parallel)
+    table = "fe_hold_" + (isolation_level or "default").replace(" ", "_").lower()
     _execute(
         "postgres17",
         [
@@ -9191,9 +9192,7 @@ def test_postgres_engine_scans_dont_hold_pool_connections() -> None:
     if server.uri is None:
         pytest.skip("no postgres17 URI")
     url = _sqlalchemy_url(server.uri, "psycopg")
-    engine = sqlalchemy.create_engine(
-        url, pool_size=1, max_overflow=0, pool_timeout=3
-    )
+    engine = sqlalchemy.create_engine(url, pool_size=1, max_overflow=0, pool_timeout=3)
     try:
         with engine.connect():
             # made while the caller holds the one connection: nothing is checked out
