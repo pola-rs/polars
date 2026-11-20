@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as dtime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
@@ -162,7 +162,7 @@ def _trino_factory(uri: str) -> Callable[[], Any]:
 
         p = _parts(uri)
         catalog, _, schema = p["database"].partition("/")
-        return trino.dbapi.connect(
+        return trino.dbapi.connect(  # type: ignore[no-untyped-call]
             host=p["host"],
             port=p["port"],
             user=p["user"],
@@ -9004,6 +9004,7 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
     )
     try:
         _prime_pool(engine, [f"SET search_path TO {schema}, public"])
+        kwargs: dict[str, Any]
         for kwargs in (
             {},
             {"partition_on": "id", "partition_num": 4},
@@ -9014,7 +9015,7 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
                 # whichever session was pinned, all rows come from its one table
                 assert ids.len() == 400
                 assert ids.min() in (1, 100001)
-                assert (ids.max() < 1000) == (ids.min() == 1)
+                assert (cast("int", ids.max()) < 1000) == (ids.min() == 1)
     finally:
         engine.dispose()
         _execute(
@@ -9052,6 +9053,7 @@ def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
     try:
         _prime_pool(engine, ["SET SESSION div_precision_increment = 0"])
         source = f"SELECT id, (id / 1000) * 1000 AS k FROM {table}"
+        kwargs: dict[str, Any]
         for kwargs in (
             {},
             {"partition_on": "k", "partition_num": 4},
@@ -9091,7 +9093,7 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
             f"SELECT g, '{tenant}' FROM generate_series(1, 300) g",
         ]
     _execute("postgres17", statements)
-    tenant = contextvars.ContextVar("vol_tenant", default="vol_tenant_b")
+    tenant_var = contextvars.ContextVar("vol_tenant", default="vol_tenant_b")
     engine = sqlalchemy.create_engine(
         _sqlalchemy_url(server.uri, "psycopg"), pool_size=5
     )
@@ -9099,11 +9101,12 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
     @event.listens_for(engine, "checkout")
     def _set_tenant(dbapi_connection: Any, *_: Any) -> None:
         cursor = dbapi_connection.cursor()
-        cursor.execute(f"SET search_path TO {tenant.get()}")
+        cursor.execute(f"SET search_path TO {tenant_var.get()}")
         cursor.close()
 
     try:
-        tenant.set("vol_tenant_a")
+        tenant_var.set("vol_tenant_a")
+        kwargs: dict[str, Any]
         for kwargs in ({}, {"partition_on": "id", "partition_num": 4}):
             df = pl.scan_database("orders", engine, **kwargs).collect()
             assert df["tenant"].unique().to_list() == ["a"]

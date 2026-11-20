@@ -1086,6 +1086,7 @@ def test_a_column_mask_makes_a_table_unproven() -> None:
             conn,
             f"ALTER TABLE {q}.vol_masked ALTER COLUMN k SET MASK {q}.vol_mask",
         )
+        kwargs: dict[str, Any]
         for kwargs in (
             {"partition_on": "k", "partition_num": 4},
             {"partition_on": "id", "partition_num": 4},

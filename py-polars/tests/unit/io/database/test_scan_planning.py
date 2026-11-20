@@ -616,9 +616,14 @@ def test_pin_is_final(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "pip install connectorx" in msg
 
 
-def test_no_driver_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_driver_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from polars_database import _bridge
 
+    # no manifest driver either: a `dbc install trino` in the user's own config would
+    # be a driver
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.delenv("ADBC_DRIVER_PATH", raising=False)
     _hide_modules(monkeypatch, "connectorx", "trino", "sqlalchemy", "adbc_driver_trino")
     # the hint is the same whether or not adbc_driver_manager is installed (it isn't on
     # Windows CI)

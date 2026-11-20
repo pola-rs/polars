@@ -1322,7 +1322,7 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
             # Trino takes a password only over HTTPS
             base["auth"] = BasicAuthentication(p["user"] or "", p["password"])
             base["http_scheme"] = "https"
-        return connect(**{**base, **kw, **options})
+        return connect(**{**base, **kw, **options})  # type: ignore[no-untyped-call]
     elif module == "databricks.sql":
         # `databricks://token:<access token>@<host>/<HTTP path>[?catalog=&schema=]`, the
         # ADBC driver's form
@@ -1350,7 +1350,7 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
         from clickhouse_connect.dbapi import connect  # type: ignore[import-not-found]
 
         base = _uri_part_kwargs(p, {"user": "username"})
-        return connect(**{**base, **kw, **options})
+        return connect(**{**base, **kw, **options})  # type: ignore[no-untyped-call]
     else:
         msg = (
             f"scan_database can't open a {module!r} connection from a URI; "
