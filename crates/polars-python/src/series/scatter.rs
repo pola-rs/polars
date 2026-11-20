@@ -12,16 +12,16 @@ impl PySeries {
         py.enter_polars(|| {
             // We take the value because we want a ref count of 1 so that we can
             // have mutable access cheaply via _get_inner_mut().
-            let mut lock = self.series.write();
-            let s = std::mem::take(&mut *lock);
-            let result = scatter(s, &idx.series.into_inner(), &values.series.into_inner());
+            let mut lock = self.column.write();
+            let s = std::mem::take(lock.into_materialized_series());
+            let result = scatter(s, &idx.into_series(), &values.into_series());
             match result {
                 Ok(out) => {
-                    *lock = out;
+                    *lock = Column::Series(out.into());
                     Ok(())
                 },
                 Err((s, e)) => {
-                    *lock = s; // Restore original series.
+                    *lock = Column::Series(s.into()); // Restore original series.
                     Err(e)
                 },
             }

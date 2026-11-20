@@ -341,7 +341,7 @@ impl PySeries {
     fn new_series_list(name: &str, values: Vec<Option<PySeries>>, _strict: bool) -> PyResult<Self> {
         let series: Vec<_> = values
             .into_iter()
-            .map(|ops| ops.map(|ps| ps.series.into_inner()))
+            .map(|ops| ops.map(|ps| ps.into_series()))
             .collect();
         if let Some(s) = series.iter().flatten().next() {
             if s.dtype().is_object() {

@@ -30,7 +30,7 @@ pub(crate) fn call_lambda_with_series(
     Ok(result
         .extract::<PySeries>(py)
         .map_err(PyErr::from)
-        .map(|s| s.series.into_inner().into_column())?)
+        .map(|s| s.into_frame_column())?)
 }
 
 pub fn map_expr(

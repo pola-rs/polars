@@ -1,6 +1,7 @@
 use std::panic::AssertUnwindSafe;
 
 use polars::frame::DataFrame;
+use polars::frame::column::Column;
 use polars::series::IntoSeries;
 use polars_error::PolarsResult;
 use polars_error::abort::{QueryAborted, catch_polars_abort};
@@ -123,6 +124,17 @@ pub trait EnterPolarsExt {
         F: Ungil + Send + FnOnce() -> PolarsResult<T>,
     {
         self.enter_polars(f).map(|s| PySeries::new(s.into_series()))
+    }
+
+    /// Same as enter_polars, but expects a PolarsResult<Column> as return, which is
+    /// kept as the column of the PySeries (not materialised).
+    #[inline(always)]
+    fn enter_polars_column<F>(self, f: F) -> PyResult<PySeries>
+    where
+        Self: Sized,
+        F: Ungil + Send + FnOnce() -> PolarsResult<Column>,
+    {
+        self.enter_polars(f).map(PySeries::from_column)
     }
 }
 

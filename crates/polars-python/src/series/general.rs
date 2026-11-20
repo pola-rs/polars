@@ -16,11 +16,11 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PySeries {
     fn struct_unnest(&self, py: Python) -> PyResult<PyDataFrame> {
-        py.enter_polars_df(|| Ok(self.series.read().struct_()?.clone().unnest()))
+        py.enter_polars_df(|| Ok(self.series().struct_()?.clone().unnest()))
     }
 
     fn struct_fields(&self) -> PyResult<Vec<String>> {
-        let s = self.series.read();
+        let s = self.series();
         let ca = s.struct_().map_err(PyPolarsErr::from)?;
         Ok(ca
             .struct_fields()
@@ -30,27 +30,27 @@ impl PySeries {
     }
 
     fn is_sorted_ascending_flag(&self) -> bool {
-        matches!(self.series.read().is_sorted_flag(), IsSorted::Ascending)
+        matches!(self.series().is_sorted_flag(), IsSorted::Ascending)
     }
 
     fn is_sorted_descending_flag(&self) -> bool {
-        matches!(self.series.read().is_sorted_flag(), IsSorted::Descending)
+        matches!(self.series().is_sorted_flag(), IsSorted::Descending)
     }
 
     fn can_fast_explode_flag(&self) -> bool {
-        match self.series.read().list() {
+        match self.series().list() {
             Err(_) => false,
             Ok(list) => list._can_fast_explode(),
         }
     }
 
     fn estimated_size(&self) -> usize {
-        self.series.read().estimated_size()
+        self.series().estimated_size()
     }
 
     #[cfg(feature = "object")]
     fn get_object<'py>(&self, py: Python<'py>, index: usize) -> PyResult<Bound<'py, PyAny>> {
-        let s = self.series.read();
+        let s = self.series();
         if matches!(s.dtype(), DataType::Object(_)) {
             let obj: Option<&ObjectValue> = s.get_object(index).map(|any| any.into());
             Ok(obj.into_pyobject(py)?)
@@ -66,12 +66,12 @@ impl PySeries {
             .map(ReshapeDimension::new)
             .collect::<Vec<_>>();
 
-        py.enter_polars_series(|| self.series.read().reshape_array(&dims))
+        py.enter_polars_series(|| self.series().reshape_array(&dims))
     }
 
     /// Returns the string format of a single element of the Series.
     fn get_fmt(&self, index: usize, str_len_limit: usize) -> String {
-        let s = self.series.read();
+        let s = self.series();
         let v = format!("{}", s.get(index).unwrap());
         if let DataType::String | DataType::Categorical(_, _) | DataType::Enum(_, _) = s.dtype() {
             let v_no_quotes = &v[1..v.len() - 1];
@@ -96,9 +96,9 @@ impl PySeries {
         // hold the read lock across calls into Python, so blocking on the lock while
         // holding the GIL deadlocks both threads.
         py.enter_polars_ok(|| {
-            let series = self.series.read().rechunk();
+            let series = self.series().rechunk();
             if in_place {
-                *self.series.write() = series;
+                self.set_series(series);
                 None
             } else {
                 Some(Self::from(series))
@@ -108,7 +108,7 @@ impl PySeries {
 
     /// Get a value by index.
     fn get_index(&self, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-        let s = self.series.read();
+        let s = self.series();
         let av = match s.get(index) {
             Ok(v) => v,
             Err(PolarsError::OutOfBounds(err)) => {
@@ -144,35 +144,35 @@ impl PySeries {
     }
 
     fn bitand(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &*self.series.read() & &*other.series.read())
+        py.enter_polars_series(|| &self.series() & &other.series())
     }
 
     fn bitor(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &*self.series.read() | &*other.series.read())
+        py.enter_polars_series(|| &self.series() | &other.series())
     }
 
     fn bitxor(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &*self.series.read() ^ &*other.series.read())
+        py.enter_polars_series(|| &self.series() ^ &other.series())
     }
 
     fn chunk_lengths(&self) -> Vec<usize> {
-        self.series.read().chunk_lengths().collect()
+        self.series().chunk_lengths().collect()
     }
 
     pub fn name(&self) -> String {
-        self.series.read().name().to_string()
+        self.series().name().to_string()
     }
 
     fn rename(&self, name: &str) {
-        self.series.write().rename(name.into());
+        self.column.write().rename(name.into());
     }
 
     fn dtype<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(self.series.read().dtype().clone()).into_pyobject(py)
+        Wrap(self.series().dtype().clone()).into_pyobject(py)
     }
 
     fn set_sorted_flag(&self, descending: bool) -> Self {
-        let mut out = self.series.read().clone();
+        let mut out = self.series();
         if descending {
             out.set_sorted_flag(IsSorted::Descending);
         } else {
@@ -181,32 +181,34 @@ impl PySeries {
         out.into()
     }
 
+    /// Which kind of column backs this Series: "series", "scalar" or "dictionary".
+    /// For tests only: there is no public Python API for it.
+    fn _column_kind(&self) -> &'static str {
+        self.column_kind()
+    }
+
     fn n_chunks(&self) -> usize {
-        self.series.read().n_chunks()
+        self.series().n_chunks()
     }
 
     fn append(&self, py: Python<'_>, other: &PySeries) -> PyResult<()> {
         py.enter_polars(|| {
             // Prevent self-append deadlocks.
-            let other = other.series.read().clone();
-            let mut s = self.series.write();
-            s.append(&other)?;
-            PolarsResult::Ok(())
+            let other = other.series();
+            self.with_series_mut(|s| s.append(&other).map(drop))
         })
     }
 
     fn extend(&self, py: Python<'_>, other: &PySeries) -> PyResult<()> {
         py.enter_polars(|| {
             // Prevent self-extend deadlocks.
-            let other = other.series.read().clone();
-            let mut s = self.series.write();
-            s.extend(&other)?;
-            PolarsResult::Ok(())
+            let other = other.series();
+            self.with_series_mut(|s| s.extend(&other).map(drop))
         })
     }
 
     fn new_from_index(&self, py: Python<'_>, index: usize, length: usize) -> PyResult<Self> {
-        let s = self.series.read();
+        let s = self.series();
         if index >= s.len() {
             Err(PyValueError::new_err("index is out of bounds"))
         } else {
@@ -215,9 +217,9 @@ impl PySeries {
     }
 
     fn filter(&self, py: Python<'_>, filter: &PySeries) -> PyResult<Self> {
-        let filter_series = &filter.series.read();
+        let filter_series = &filter.series();
         if let Ok(ca) = filter_series.bool() {
-            py.enter_polars_series(|| self.series.read().filter(ca))
+            py.enter_polars_series(|| self.series().filter(ca))
         } else {
             Err(PyRuntimeError::new_err("Expected a boolean mask"))
         }
@@ -231,7 +233,7 @@ impl PySeries {
         multithreaded: bool,
     ) -> PyResult<Self> {
         py.enter_polars_series(|| {
-            self.series.read().sort(
+            self.series().sort(
                 SortOptions::default()
                     .with_order_descending(descending)
                     .with_nulls_last(nulls_last)
@@ -241,15 +243,15 @@ impl PySeries {
     }
 
     fn gather_with_series(&self, py: Python<'_>, indices: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series.read().take(indices.series.read().idx()?))
+        py.enter_polars_series(|| self.series().take(indices.series().idx()?))
     }
 
     fn null_count(&self) -> PyResult<usize> {
-        Ok(self.series.read().null_count())
+        Ok(self.series().null_count())
     }
 
     fn has_nulls(&self) -> bool {
-        self.series.read().has_nulls()
+        self.series().has_nulls()
     }
 
     fn equals(
@@ -260,8 +262,8 @@ impl PySeries {
         check_names: bool,
         null_equal: bool,
     ) -> PyResult<bool> {
-        let s = self.series.read();
-        let o = other.series.read();
+        let s = self.series();
+        let o = other.series();
         if check_dtypes && (s.dtype() != o.dtype()) {
             return Ok(false);
         }
@@ -276,18 +278,18 @@ impl PySeries {
     }
 
     fn as_str(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self.series.read()))
+        Ok(format!("{:?}", self.series()))
     }
 
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
-        self.series.read().len()
+        self.series().len()
     }
 
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
     fn as_single_ptr(&self, py: Python) -> PyResult<usize> {
-        py.enter_polars(|| self.series.write().as_single_ptr())
+        py.enter_polars(|| self.with_series_mut(|s| s.as_single_ptr()))
     }
 
     fn clone(&self) -> Self {
@@ -295,9 +297,9 @@ impl PySeries {
     }
 
     fn zip_with(&self, py: Python<'_>, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
-        let ms = mask.series.read();
+        let ms = mask.series();
         let mask = ms.bool().map_err(PyPolarsErr::from)?;
-        py.enter_polars_series(|| self.series.read().zip_with(mask, &other.series.read()))
+        py.enter_polars_series(|| self.series().zip_with(mask, &other.series()))
     }
 
     #[pyo3(signature = (separator, drop_first, drop_nulls))]
@@ -308,34 +310,30 @@ impl PySeries {
         drop_first: bool,
         drop_nulls: bool,
     ) -> PyResult<PyDataFrame> {
-        py.enter_polars_df(|| {
-            self.series
-                .read()
-                .to_dummies(separator, drop_first, drop_nulls)
-        })
+        py.enter_polars_df(|| self.series().to_dummies(separator, drop_first, drop_nulls))
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {
-        let s = self.series.read();
+        let s = self.series();
         let ca = s.list().ok()?;
         Some(ca.get_as_series(index)?.into())
     }
 
     fn n_unique(&self, py: Python) -> PyResult<usize> {
-        py.enter_polars(|| self.series.read().n_unique())
+        py.enter_polars(|| self.series().n_unique())
     }
 
     fn floor(&self, py: Python) -> PyResult<Self> {
-        py.enter_polars_series(|| self.series.read().floor())
+        py.enter_polars_series(|| self.series().floor())
     }
 
     fn shrink_to_fit(&self, py: Python) -> PyResult<()> {
-        py.enter_polars_ok(|| self.series.write().shrink_to_fit())
+        py.enter_polars_ok(|| self.with_series_mut(|s| s.shrink_to_fit()))
     }
 
     fn dot<'py>(&self, other: &PySeries, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let s = &*self.series.read();
-        let o = &*other.series.read();
+        let s = &self.series();
+        let o = &other.series();
         let lhs_dtype = s.dtype();
         let rhs_dtype = o.dtype();
 
@@ -359,7 +357,7 @@ impl PySeries {
         // Used in pickle/pickling
         Ok(PyBytes::new(
             py,
-            &py.enter_polars(|| self.series.read().serialize_to_bytes())?,
+            &py.enter_polars(|| self.series().serialize_to_bytes())?,
         ))
     }
 
@@ -369,7 +367,7 @@ impl PySeries {
         match state.extract::<PyBackedBytes>(py).map_err(PyErr::from) {
             Ok(bytes) => py.enter_polars(|| {
                 let mut reader = std::io::Cursor::new(&*bytes);
-                *self.series.write() = Series::deserialize_from_reader(&mut reader)?;
+                self.set_series(Series::deserialize_from_reader(&mut reader)?);
                 PolarsResult::Ok(())
             }),
             Err(e) => Err(e),
@@ -377,11 +375,11 @@ impl PySeries {
     }
 
     fn skew(&self, py: Python<'_>, bias: bool) -> PyResult<Option<f64>> {
-        py.enter_polars(|| self.series.read().skew(bias))
+        py.enter_polars(|| self.series().skew(bias))
     }
 
     fn kurtosis(&self, py: Python<'_>, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
-        py.enter_polars(|| self.series.read().kurtosis(fisher, bias))
+        py.enter_polars(|| self.series().kurtosis(fisher, bias))
     }
 
     fn cast(
@@ -398,13 +396,13 @@ impl PySeries {
         } else {
             CastOptions::NonStrict
         };
-        py.enter_polars_series(|| self.series.read().cast_with_options(&dtype.0, options))
+        py.enter_polars_series(|| self.series().cast_with_options(&dtype.0, options))
     }
 
     fn get_chunks(&self) -> PyResult<Vec<Py<PyAny>>> {
         Python::attach(|py| {
             let wrap_s = py_modules::polars(py).getattr(py, "wrap_s").unwrap();
-            flatten_series(&self.series.read())
+            flatten_series(&self.series())
                 .into_iter()
                 .map(|s| wrap_s.call1(py, (Self::new(s),)))
                 .collect()
@@ -419,19 +417,19 @@ impl PySeries {
             maintain_order: false,
             limit: None,
         };
-        py.enter_polars(|| self.series.read().is_sorted(options))
+        py.enter_polars(|| self.series().is_sorted(options))
     }
 
     fn clear(&self) -> Self {
-        self.series.read().clear().into()
+        self.series().clear().into()
     }
 
     fn head(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
-        py.enter_polars_series(|| Ok(self.series.read().head(Some(n))))
+        py.enter_polars_series(|| Ok(self.series().head(Some(n))))
     }
 
     fn tail(&self, py: Python<'_>, n: usize) -> PyResult<Self> {
-        py.enter_polars_series(|| Ok(self.series.read().tail(Some(n))))
+        py.enter_polars_series(|| Ok(self.series().tail(Some(n))))
     }
 
     fn value_counts(
@@ -443,15 +441,14 @@ impl PySeries {
         normalize: bool,
     ) -> PyResult<PyDataFrame> {
         py.enter_polars_df(|| {
-            self.series
-                .read()
+            self.series()
                 .value_counts(sort, parallel, name.into(), normalize)
         })
     }
 
     #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
-        let s = self.series.read();
+        let s = self.series();
         match Slice::new(offset, length) {
             Some(slice) => s.slice(slice),
             None => s.clone(),
@@ -460,13 +457,12 @@ impl PySeries {
     }
 
     pub fn not_(&self, py: Python) -> PyResult<Self> {
-        py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series.read()))
+        py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series()))
     }
 
     pub fn shrink_dtype(&self, py: Python<'_>) -> PyResult<Self> {
         py.enter_polars(|| {
-            self.series
-                .read()
+            self.series()
                 .shrink_type()
                 .map(Into::into)
                 .map_err(PyPolarsErr::from)
@@ -484,9 +480,9 @@ impl PySeries {
     ) -> PyResult<Self> {
         Ok(py
             .enter_polars(|| {
-                let s = self.series.read();
+                let s = self.series();
                 let datetime_strings = s.str()?;
-                let ambiguous = ambiguous.series.into_inner();
+                let ambiguous = ambiguous.into_series();
                 let ambiguous = ambiguous.str()?;
 
                 polars_core::chunked_array::temporal::string::infer::to_datetime_with_inferred_tz(
@@ -503,7 +499,7 @@ impl PySeries {
 
     pub fn str_to_decimal_infer(&self, py: Python, inference_length: usize) -> PyResult<Self> {
         py.enter_polars_series(|| {
-            let s = self.series.read();
+            let s = self.series();
             let ca = s.str()?;
             ca.to_decimal_infer(inference_length).map(Series::from)
         })
@@ -516,7 +512,7 @@ impl PySeries {
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         py.enter_polars(|| {
-            let lock = self.series.read();
+            let lock = self.series();
             lock.str()?
                 .json_decode(None, infer_schema_length)
                 .map(|s| s.with_name(lock.name().clone()))
@@ -533,7 +529,7 @@ impl PySeries {
             ));
         };
 
-        let s = self.series.read();
+        let s = self.series();
 
         if storage.as_ref() != s.dtype() {
             return Err(PyErr::from(PyPolarsErr::from(polars_err!(SchemaMismatch:
@@ -547,15 +543,15 @@ impl PySeries {
     }
 
     fn ext_storage(&self) -> Self {
-        self.series.read().to_storage().clone().into()
+        self.series().to_storage().clone().into()
     }
 
     fn set(&self, py: Python<'_>, mask: PySeries, value: PySeries) -> PyResult<Self> {
         assert_eq!(value.len(), 1);
         py.enter_polars(|| {
-            let slf = self.series.read();
-            let mask = mask.series.read();
-            let value = value.series.read();
+            let slf = self.series();
+            let mask = mask.series();
+            let value = value.series();
 
             let mask = mask.bool()?;
 
@@ -576,7 +572,7 @@ macro_rules! impl_get {
         #[pymethods]
         impl PySeries {
             fn $name(&self, index: i64) -> Option<$type> {
-                let s = self.series.read();
+                let s = self.series();
                 if let Ok(ca) = s.$series_variant() {
                     let index = if index < 0 {
                         (ca.len() as i64 + index) as usize
@@ -609,7 +605,7 @@ macro_rules! impl_get_phys {
         #[pymethods]
         impl PySeries {
             fn $name(&self, index: i64) -> Option<$type> {
-                let s = self.series.read();
+                let s = self.series();
                 if let Ok(ca) = s.$series_variant() {
                     let index = if index < 0 {
                         (ca.len() as i64 + index) as usize

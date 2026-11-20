@@ -498,7 +498,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     } else if let Ok(pystr) = value.cast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
-        let s = series.series.into_inner();
+        let s = series.into_series();
         if is_scalar {
             let av = s
                 .get(0)
@@ -531,9 +531,8 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             AnyValue::ObjectOwned(_) => {
                 // Check again for object allowance as for cached addresses this is not checked.
                 if allow_object {
-                    let s = PySeries::new_object(py, "", vec![value.extract()?], false)
-                        .series
-                        .into_inner();
+                    let s =
+                        PySeries::new_object(py, "", vec![value.extract()?], false).into_series();
                     Ok(dsl::lit(s).into())
                 } else {
                     Err(raise())
