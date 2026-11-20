@@ -36,7 +36,7 @@ use crate::chunked_array::from_iterator_par::{
 };
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
-use crate::chunked_array::ops::aggregate::{quantile_of_nonnull, sorted_quantile};
+use crate::chunked_array::ops::aggregate::{quantile_of_nonnull, quantile_with, sorted_quantile};
 use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
@@ -224,7 +224,7 @@ where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    agg_helper_idx_on_all_with_scratch::<T, (), _>(groups, |_, idx| f(idx))
+    agg_helper_idx_on_all_with_scratch::<T, (), _>(groups, |_, _, idx| f(idx))
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
@@ -232,7 +232,7 @@ where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    agg_helper_slice_with_scratch::<T, (), _>(groups, |_, g| f(g))
+    agg_helper_slice_with_scratch::<T, (), _>(groups, |_, _, g| f(g))
 }
 
 pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
@@ -263,32 +263,34 @@ where
     ca.into_inner().into_series()
 }
 
-/// [`agg_helper_idx_on_all`] for an `f` that reuses a scratch value across groups.
+/// [`agg_helper_idx_on_all`] for an `f` that reuses a scratch value across groups and receives
+/// the group index.
 fn agg_helper_idx_on_all_with_scratch<T, S, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn(&mut S, &IdxVec) -> Option<T::Native> + Send + Sync,
+    F: Fn(&mut S, usize, &IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     S: Default,
 {
     let ca: ChunkedArray<T> = RAYON.install(|| {
         let all = groups.all();
         collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
-            f(scratch, &all[g])
+            f(scratch, g, &all[g])
         })
     });
     ca.into_series()
 }
 
-/// [`_agg_helper_slice`] for an `f` that reuses a scratch value across groups.
+/// [`_agg_helper_slice`] for an `f` that reuses a scratch value across groups and receives the
+/// group index.
 fn agg_helper_slice_with_scratch<T, S, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
-    F: Fn(&mut S, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
+    F: Fn(&mut S, usize, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     S: Default,
 {
     let ca: ChunkedArray<T> = RAYON.install(|| {
         collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
-            f(scratch, groups[g])
+            f(scratch, g, groups[g])
         })
     });
     ca.into_series()
@@ -321,10 +323,32 @@ unsafe fn quantile_of_rows<N: NumericNative>(
     quantile_of_nonnull(vals, quantile, method)
 }
 
+/// The `quantile` of `n` values, where `value_at(rank)` reads the value at an ascending rank.
+fn quantile_of_ranked<N: ToPrimitive + Copy + Default>(
+    n: usize,
+    quantile: f64,
+    method: QuantileMethod,
+    value_at: impl Fn(usize) -> N,
+) -> Option<f64> {
+    quantile_with(n, quantile, method, |ranks, out| {
+        for (o, &r) in out.iter_mut().zip(ranks) {
+            *o = value_at(r);
+        }
+    })
+}
+
+/// The quantile to take of each group.
+#[derive(Clone, Copy, Debug)]
+pub enum GroupQuantile<'a> {
+    Scalar(f64),
+    /// One quantile per group; a null quantile gives a null result.
+    PerGroup(&'a Float64Chunked),
+}
+
 unsafe fn agg_quantile_generic<T, K>(
     ca: &ChunkedArray<T>,
     groups: &GroupsType,
-    quantile: f64,
+    quantile: GroupQuantile<'_>,
     method: QuantileMethod,
 ) -> Series
 where
@@ -332,10 +356,19 @@ where
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
-    let invalid_quantile = !(0.0..=1.0).contains(&quantile);
-    if invalid_quantile {
-        return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
-    }
+    let in_range = |q: &f64| (0.0..=1.0).contains(q);
+    let (scalar, per_group) = match quantile {
+        GroupQuantile::Scalar(q) if !in_range(&q) => {
+            return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
+        },
+        GroupQuantile::Scalar(q) => (Some(q), None),
+        GroupQuantile::PerGroup(qs) => {
+            assert_eq!(qs.len(), groups.len());
+            (None, Some(qs.rechunk()))
+        },
+    };
+    let per_group = per_group.as_deref().map(|qs| qs.downcast_as_array());
+    let quantile_of_group = |g: usize| scalar.or_else(|| per_group?.get(g).filter(in_range));
     let to_out = |v: f64| -> K::Native { NumCast::from(v).unwrap() };
     match groups {
         GroupsType::Idx(groups) => {
@@ -343,8 +376,9 @@ where
             let arr = ca.downcast_as_array();
             let values = arr.values().as_slice();
             let validity = arr.validity();
-            agg_helper_idx_on_all_with_scratch::<K, ScratchVec<_>, _>(groups, |scratch, idx| {
+            agg_helper_idx_on_all_with_scratch::<K, ScratchVec<_>, _>(groups, |scratch, g, idx| {
                 debug_assert!(idx.iter().all(|&i| (i as usize) < values.len()));
+                let quantile = quantile_of_group(g)?;
                 let rows = idx.iter().map(|&i| i as usize);
                 quantile_of_rows(scratch, values, validity, rows, quantile, method).map(to_out)
             })
@@ -362,39 +396,54 @@ where
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
-                let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _, _>(
-                        values,
-                        offset_iter,
-                        Some(RollingFnParams::Quantile(RollingQuantileParams {
-                            prob: quantile,
-                            method,
-                        })),
-                    ),
+                // The windows only rank the values, so their own probability is unused.
+                let params = Some(RollingFnParams::Quantile(RollingQuantileParams {
+                    prob: 0.5,
+                    method,
+                }));
+                let windows = groups.iter().enumerate();
+                let out: ChunkedArray<K> = match arr.validity() {
+                    None => {
+                        let mut window = QuantileWindow::new(values, 0, 0, params, None);
+                        windows
+                            .map(|(g, [first, len])| {
+                                // SAFETY: the groups are in bounds.
+                                unsafe { window.update(*first as usize, (first + len) as usize) };
+                                let quantile = quantile_of_group(g)?;
+                                quantile_of_ranked(window.n_values(), quantile, method, |r| {
+                                    window.value_at_rank(r)
+                                })
+                                .map(to_out)
+                            })
+                            .collect()
+                    },
                     Some(validity) => {
-                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _, _>(
-                            values,
-                            validity,
-                            offset_iter,
-                            Some(RollingFnParams::Quantile(RollingQuantileParams {
-                                prob: quantile,
-                                method,
-                            })),
-                        )
+                        let mut window = rolling::nulls::QuantileWindow::new(
+                            values, validity, 0, 0, params, None,
+                        );
+                        windows
+                            .map(|(g, [first, len])| {
+                                // SAFETY: the groups are in bounds.
+                                unsafe { window.update(*first as usize, (first + len) as usize) };
+                                let quantile = quantile_of_group(g)?;
+                                quantile_of_ranked(window.n_values(), quantile, method, |r| {
+                                    window.value_at_rank(r)
+                                })
+                                .map(to_out)
+                            })
+                            .collect()
                     },
                 };
-                // The rolling kernels works on the dtype, this is not yet the
-                // float output type we need.
-                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
+                out.into_series()
             } else if let sorted @ (IsSorted::Ascending | IsSorted::Descending) =
                 ca.is_sorted_flag()
             {
                 // A contiguous slice of a sorted column is itself sorted, with its nulls at one end,
                 // so each group reads its order statistics directly.
                 let descending = sorted == IsSorted::Descending;
-                _agg_helper_slice::<K, _>(groups, |[first, len]| {
+                agg_helper_slice_with_scratch::<K, (), _>(groups, |_, g, [first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
+                    let quantile = quantile_of_group(g)?;
                     match len {
                         0 => None,
                         1 => ca.get(first as usize).map(|v| NumCast::from(v).unwrap()),
@@ -411,9 +460,10 @@ where
                 let validity = arr.validity();
                 agg_helper_slice_with_scratch::<K, ScratchVec<_>, _>(
                     groups,
-                    |scratch, [first, len]| {
+                    |scratch, g, [first, len]| {
                         let (first, len) = (first as usize, len as usize);
                         debug_assert!(first + len <= values.len());
+                        let quantile = quantile_of_group(g)?;
                         let rows = first..first + len;
                         quantile_of_rows(scratch, values, validity, rows, quantile, method)
                             .map(to_out)
@@ -1244,39 +1294,54 @@ impl Float16Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float16Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_quantile_generic::<_, Float16Type>(self, groups, 0.5, QuantileMethod::Linear)
+        agg_quantile_generic::<_, Float16Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 impl Float32Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_quantile_generic::<_, Float32Type>(self, groups, 0.5, QuantileMethod::Linear)
+        agg_quantile_generic::<_, Float32Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 impl Float64Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_quantile_generic::<_, Float64Type>(self, groups, 0.5, QuantileMethod::Linear)
+        agg_quantile_generic::<_, Float64Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 
@@ -1450,12 +1515,17 @@ where
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_quantile_generic::<_, Float64Type>(self, groups, 0.5, QuantileMethod::Linear)
+        agg_quantile_generic::<_, Float64Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
