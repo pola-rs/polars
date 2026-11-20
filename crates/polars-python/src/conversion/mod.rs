@@ -107,7 +107,6 @@ impl<T> From<T> for Wrap<T> {
     }
 }
 
-// extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
 pub(crate) fn py_int_to_u128(ob: &Bound<'_, PyAny>) -> PyResult<u128> {
     let py = ob.py();
     let int = unsafe { Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyNumber_Index(ob.as_ptr()))? };
@@ -121,6 +120,7 @@ pub(crate) fn py_int_to_u128(ob: &Bound<'_, PyAny>) -> PyResult<u128> {
     })
 }
 
+// extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
 pub(crate) fn get_df(obj: &Bound<'_, PyAny>) -> PyResult<DataFrame> {
     let pydf = obj.getattr(intern!(obj.py(), "_df"))?;
     Ok(pydf.extract::<PyDataFrame>()?.df.into_inner())

@@ -199,7 +199,25 @@ def test_series_init_pandas_timestamp_nanoseconds_before_epoch() -> None:
 
 def test_series_init_pandas_nat() -> None:
     with pytest.raises(TypeError, match="cannot convert pandas NaT"):
+        pl.Series([type(pd.NaT)()])
+    with pytest.raises(TypeError, match="cannot convert pandas NaT"):
         pl.Series([pd.NaT])
+
+
+def test_series_init_pandas_timestamp_subclass() -> None:
+    class Timestamp(pd.Timestamp):
+        pass
+
+    ts = pd.Timestamp(np.datetime64("10000-01-01", "s"))
+    ts.__class__ = Timestamp
+    assert pl.Series([ts]).dt.year().item() == 10000
+
+
+def test_series_init_pandas_timestamp_dateutil_time_zone() -> None:
+    from dateutil.tz import gettz
+
+    dt = datetime(2020, 7, 1, 12, tzinfo=gettz("America/New_York"))
+    assert_series_equal(pl.Series([pd.Timestamp(dt)]), pl.Series([dt]))
 
 
 def test_series_init_uint128_index_error_propagates() -> None:

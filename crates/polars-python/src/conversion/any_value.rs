@@ -397,7 +397,7 @@ pub(crate) fn py_object_to_any_value(
 
     /// The datetime fields of a pandas Timestamp hold a placeholder year when the year is out of
     /// range for a Python datetime, so don't use them.
-    fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
+    fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
         let AnyValue::Datetime(value, time_unit, _) =
             get_numpy_temporal(&ob.getattr(intern!(py, "asm8"))?, true)?
@@ -416,24 +416,27 @@ pub(crate) fn py_object_to_any_value(
         if tzinfo.is_none() {
             return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
         }
-        let mut tz = TimeZone::UTC;
         for attr in [intern!(py, "key"), intern!(py, "zone")] {
             if let Ok(name) = tzinfo.getattr(attr)
                 && let Ok(name) = name.cast::<PyString>()
             {
                 let name = name.to_str()?;
-                let parsed = name
+                let tz = name
                     .parse::<Tz>()
                     .map_err(|_| PyValueError::new_err(format!("unknown time zone '{name}'")))?;
-                tz = unsafe { TimeZone::from_static(parsed.name()) };
-                break;
+                return Ok(AnyValue::DatetimeOwned(
+                    timestamp,
+                    TimeUnit::Microseconds,
+                    Some(Arc::new(unsafe { TimeZone::from_static(tz.name()) })),
+                ));
             }
         }
-        Ok(AnyValue::DatetimeOwned(
-            timestamp,
-            TimeUnit::Microseconds,
-            Some(Arc::new(tz)),
-        ))
+        match get_datetime(ob, strict)? {
+            AnyValue::DatetimeOwned(_, time_unit, tz) => {
+                Ok(AnyValue::DatetimeOwned(timestamp, time_unit, tz))
+            },
+            _ => unreachable!(),
+        }
     }
 
     fn get_pandas_nat(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -727,10 +730,13 @@ pub(crate) fn py_object_to_any_value(
         // note: datetime must be checked *before* date
         // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
-            if ob.get_type().module()?.to_str()?.starts_with("pandas")
-                && let Ok(pandas) = py.import(intern!(py, "pandas"))
+            if !ob.is_exact_instance_of::<PyDateTime>()
+                && let Ok(pandas) = py
+                    .import(intern!(py, "sys"))?
+                    .getattr(intern!(py, "modules"))?
+                    .get_item(intern!(py, "pandas"))
             {
-                if ob.is(pandas.getattr(intern!(py, "NaT"))?) {
+                if ob.is_instance(&pandas.getattr(intern!(py, "NaT"))?.get_type())? {
                     return Ok(get_pandas_nat as InitFn);
                 } else if ob.is_instance(&pandas.getattr(intern!(py, "Timestamp"))?)? {
                     return Ok(get_pandas_timestamp as InitFn);
