@@ -250,9 +250,11 @@ def _select_item(item: Any) -> Any:
     if kind == "Column":
         return _column(x)
     if kind == "Min":
-        return exp.Min(this=_column(x))
+        # named: SQL Server's unnamed result columns share the name '', which readers
+        # (and Polars) refuse as duplicates
+        return exp.Alias(this=exp.Min(this=_column(x)), alias=_ident("pl_min"))
     if kind == "Max":
-        return exp.Max(this=_column(x))
+        return exp.Alias(this=exp.Max(this=_column(x)), alias=_ident("pl_max"))
     if kind == "Expr":
         # dialect conversion SQL from Polars' rules, e.g. CAST("u" AS TEXT)
         return exp.Alias(this=_raw(x["sql"]), alias=_ident(x["alias"]))
