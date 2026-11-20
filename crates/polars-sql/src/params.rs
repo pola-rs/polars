@@ -191,7 +191,7 @@ pub(crate) fn bind_params(
         return Err(err);
     }
     if found.next.is_empty() && !found.numbered && !found.named {
-        check_all_used(params, &[], &PlHashSet::new())?;
+        check_no_params(params)?;
         return Ok(None);
     }
     polars_ensure!(

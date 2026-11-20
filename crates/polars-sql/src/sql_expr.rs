@@ -747,13 +747,8 @@ impl SQLExprVisitor<'_> {
                         .fold(root, |expr, field| struct_field(expr, field.value.as_str())));
                 }
                 // simple subscript access (eg: "array_col[1]")
-                if access_chain.len() == 1 {
-                    match &access_chain[0] {
-                        AccessExpr::Subscript(subscript) => {
-                            return self.visit_subscript(root, subscript);
-                        },
-                        AccessExpr::Dot(_) => {},
-                    }
+                if let [AccessExpr::Subscript(subscript)] = access_chain.as_slice() {
+                    return self.visit_subscript(root, subscript);
                 }
                 if let SQLExpr::Value(ValueWithSpan {
                     value: SQLValue::Placeholder(p),

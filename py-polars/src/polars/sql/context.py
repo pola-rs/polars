@@ -111,13 +111,12 @@ def _query_params(
     values: list[Any] | dict[str, Any]
     if isinstance(params, Mapping):
         values = dict(params)
-        items = list(values.values())
     elif isinstance(params, (str, bytes)):
         msg = f"`params` must be a sequence or a mapping, got {qualified_type_name(params)!r}"
         raise TypeError(msg)
     else:
-        values = items = list(params)
-    for value in items:
+        values = list(params)
+    for value in values.values() if isinstance(values, dict) else values:
         if isinstance(value, (Expr, Series, DataFrame, LazyFrame)):
             msg = f"query parameter values must be scalars, got {qualified_type_name(value)!r}"
             raise TypeError(msg)
