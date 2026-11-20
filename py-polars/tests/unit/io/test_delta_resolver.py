@@ -12,6 +12,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import DeletionFiles
+
 
 @pytest.fixture(params=["plugin", "deltalake", "pyarrow"])
 def planner(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
@@ -21,7 +23,7 @@ def planner(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> 
         "POLARS_DELTA_PLANNER",
         "deltalake" if request.param == "pyarrow" else request.param,
     )
-    return request.param
+    return str(request.param)
 
 
 def test_resolver_operation_order_and_empty_projection(
@@ -220,7 +222,8 @@ def test_resolver_metadata_count_completeness_and_deletions() -> None:
         )
         is None
     )
-    vectors = ("delta-deletion-vector-native", {0: (b"", 0, 0, 8)})
+    descriptors: dict[int, tuple[str | bytes, int, int, int]] = {0: (b"", 0, 0, 8)}
+    vectors: DeletionFiles = ("delta-deletion-vector-native", descriptors)
     assert _metadata_row_count(
         pl.DataFrame({"len": [8]}), 1, vectors, has_deletion_vectors=True
     ) == (8, 8)

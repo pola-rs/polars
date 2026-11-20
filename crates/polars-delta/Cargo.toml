@@ -16,9 +16,10 @@ name = "polars_delta"
 crate-type = ["rlib"]
 
 [dependencies]
-crc32fast = "1"
 chrono = { workspace = true, optional = true }
+crc32fast = "1"
 futures = { workspace = true, optional = true }
+percent-encoding = { workspace = true, optional = true }
 polars-arrow = { workspace = true, optional = true }
 polars-buffer = { workspace = true, optional = true }
 polars-error = { workspace = true, optional = true }
@@ -28,7 +29,6 @@ polars-utils = { workspace = true, optional = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true, features = ["float_roundtrip"] }
 tokio = { workspace = true, optional = true, features = ["rt-multi-thread"] }
-percent-encoding = { workspace = true, optional = true }
 url = { version = "2", optional = true }
 
 pyo3 = { workspace = true, optional = true, features = ["abi3-py310", "extension-module"] }

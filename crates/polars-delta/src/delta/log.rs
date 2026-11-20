@@ -134,13 +134,22 @@ pub fn absolute(root: &str, path: &str) -> Result<String> {
         .decode_utf8()
         .map_err(invalid)?;
     let path = std::path::Path::new(decoded.as_ref());
-    Ok(if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::path::Path::new(root).join(path)
+    // A rooted path without a drive letter is not absolute on Windows, but it is
+    // never relative to the table.
+    if path.is_absolute() || decoded.starts_with('/') {
+        return Ok(decoded.into_owned());
     }
-    .to_string_lossy()
-    .into_owned())
+    // Join with `/` on every platform (Windows accepts it too), so the result is
+    // the same string the log listing prefixes use.
+    let separated = root.ends_with('/') || (cfg!(windows) && root.ends_with('\\'));
+    Ok(format!(
+        "{root}{}{decoded}",
+        if separated || root.is_empty() {
+            ""
+        } else {
+            "/"
+        }
+    ))
 }
 // Polars storage and scan paths contain raw object keys, unlike Delta action URIs.
 fn transport_path(url: &url::Url) -> Result<String> {
@@ -457,6 +466,7 @@ mod tests {
     fn action_paths_decode_once_for_polars_storage() {
         for (root, expected_root) in [
             ("/table%20literal", "/table%20literal"),
+            #[cfg(unix)]
             ("file:///table%2520literal", "/table%20literal"),
             ("s3://bucket/table%20literal", "s3://bucket/table%20literal"),
         ] {
@@ -481,6 +491,7 @@ mod tests {
                 format!("{expected_root}/_delta_log/_sidecars/a%20.parquet")
             );
         }
+        #[cfg(unix)]
         assert_eq!(
             absolute("/ignored", "file:///t/p=100%2525/a.parquet").unwrap(),
             "/t/p=100%25/a.parquet"
@@ -504,6 +515,8 @@ mod tests {
             absolute("/table", "/some/unqualified/with%20space/p%40%23h").unwrap(),
             "/some/unqualified/with space/p@#h"
         );
+        // `file:///table` has no drive letter, so it is not a Windows path.
+        #[cfg(unix)]
         assert_eq!(
             absolute("file:///table", "/some/unqualified/with%20space/p%40%23h").unwrap(),
             "/some/unqualified/with space/p@#h"

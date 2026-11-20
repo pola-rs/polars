@@ -343,7 +343,7 @@ class DeltaScanResolver(LazyFrameResolver):
         else:
             table_statistics = None
         hive_partitions = None
-        if add_actions is not None and partition_columns:
+        if partition_columns:
             if not all(
                 path.endswith(unquote(add_path))
                 for path, add_path in zip(paths, add_actions["path"], strict=True)

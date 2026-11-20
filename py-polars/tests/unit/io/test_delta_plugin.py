@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import struct
 import zlib
@@ -192,6 +193,7 @@ def test_delta_plugin_dropped_readded_name(tmp_path: Path, nested: bool) -> None
     )
     physical = pa.field("old", pa.int64(), metadata={b"PARQUET:field_id": b"2"})
     expected = pl.DataFrame({"a": [None]}, schema={"a": pl.Int64})
+    values: list[Any]
     if nested:
         field = _field(
             "s",
@@ -456,12 +458,10 @@ def test_delta_plugin_fallback_is_only_for_unsupported(
 def test_delta_plugin_missing_package(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, required: bool
 ) -> None:
-    from polars.io.delta import _plugin
-
     path = _table(tmp_path / "t", [_field("a", "long")], [pl.DataFrame({"a": [1]})])
     if not required:
         monkeypatch.delenv("POLARS_DELTA_PLANNER")
-    original_import = _plugin.importlib.import_module
+    original_import = importlib.import_module
 
     def missing(name: str, *args: Any, **kwargs: Any) -> Any:
         if name == "polars_delta":
@@ -469,7 +469,7 @@ def test_delta_plugin_missing_package(
             raise ModuleNotFoundError(msg, name="polars_delta")
         return original_import(name, *args, **kwargs)
 
-    monkeypatch.setattr(_plugin.importlib, "import_module", missing)
+    monkeypatch.setattr(importlib, "import_module", missing)
     if required:
         with pytest.raises(ModuleNotFoundError, match="polars_delta"):
             pl.scan_delta(path).collect()
@@ -510,16 +510,16 @@ def test_delta_plugin_nested_type_widening(tmp_path: Path, container: str) -> No
 
     change = {"fromType": "byte", "toType": "decimal(4,1)"}
     if container == "struct":
-        delta_type = {
+        delta_type: dict[str, Any] = {
             "type": "struct",
             "fields": [
                 _field("inner", "decimal(4,1)", **{"delta.typeChanges": [change]})
             ],
         }
         dtype = pa.struct([pa.field("inner", pa.int8())])
-        values = [{"inner": 12}]
-        target = pl.Struct({"inner": pl.Decimal(4, 1)})
-        metadata = {}
+        values: list[Any] = [{"inner": 12}]
+        target: pl.DataType = pl.Struct({"inner": pl.Decimal(4, 1)})
+        metadata: dict[str, Any] = {}
     elif container == "array":
         delta_type = {
             "type": "array",
@@ -872,7 +872,8 @@ def test_delta_plugin_reuses_only_covered_request(
         before, after = scan.filter(pl.col("a") > 0), scan.filter(pl.col("b") > 0)
     elif change == "predicate":
         before, after = scan.filter(pl.col("a") > 0), scan.filter(pl.col("a") > 1)
-    elif change == "limit":
+    else:
+        assert change == "limit"
         before, after = scan.head(1), scan.head(2)
 
     before.explain(optimized=True)
@@ -912,11 +913,12 @@ def test_delta_plugin_timestamp_pins_resolved_zero(
 
     import polars._plr as plr
 
-    version: str | datetime = datetime(2100, 1, 1, tzinfo=UTC)
+    aware = datetime(2100, 1, 1, tzinfo=UTC)
+    version: str | datetime = aware
     if selector == "string":
-        version = version.isoformat()
+        version = aware.isoformat()
     elif selector == "naive_datetime":
-        version = version.replace(tzinfo=None)
+        version = aware.replace(tzinfo=None)
     pl.DataFrame({"a": [0], "b": [10]}).write_delta(tmp_path)
     table = DeltaTable(tmp_path)
     native = plr._delta_plugin_scan

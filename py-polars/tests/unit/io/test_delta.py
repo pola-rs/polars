@@ -30,6 +30,7 @@ from polars.io.delta._utils import (
     _extract_table_statistics_from_delta_add_actions,
     _widen_truncated_timestamp_max,
 )
+from polars.io.parquet.functions import scan_parquet
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
@@ -1692,7 +1693,7 @@ def test_scan_delta_resolves_heavy_footers(
     plmonkeypatch.setattr(
         delta_resolver,
         "scan_parquet",
-        partial(delta_resolver.scan_parquet, _resolve_heavy_sources=4),
+        partial(scan_parquet, _resolve_heavy_sources=4),
     )
 
     # Heavy-footer resolution needs the file sizes recorded in the Delta log.
@@ -1793,7 +1794,7 @@ def test_scan_delta_resolves_heavy_footers_with_encoded_partition_values(
     plmonkeypatch.setattr(
         delta_resolver,
         "scan_parquet",
-        partial(delta_resolver.scan_parquet, _resolve_heavy_sources=4),
+        partial(scan_parquet, _resolve_heavy_sources=4),
     )
 
     # Encoded partition values must not disable sizes or heavy-footer resolution.
@@ -1846,7 +1847,7 @@ def test_scan_delta_resolves_heavy_footers_on_object_store(
     plmonkeypatch.setattr(
         delta_resolver,
         "scan_parquet",
-        partial(delta_resolver.scan_parquet, _resolve_heavy_sources=4),
+        partial(scan_parquet, _resolve_heavy_sources=4),
     )
 
     # Match encoded paths to sizes, then read source 0 and the heavy-file footer.
@@ -2081,7 +2082,7 @@ def test_scan_delta_aggregates_do_not_load_column_statistics(
     calls = []
     import polars.io.delta._scan_resolver as delta_resolver
 
-    extract = delta_resolver._extract_table_statistics_from_delta_add_actions
+    extract = _extract_table_statistics_from_delta_add_actions
 
     def count(*args: Any, **kwargs: Any) -> Any:
         calls.append(kwargs)

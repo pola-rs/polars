@@ -15,8 +15,14 @@ import pyarrow.parquet as pq
 
 UTC = dt.timezone.utc
 RANGES = {
-    "a.parquet": (dt.datetime(2024, 1, 1, tzinfo=UTC), dt.datetime(2024, 1, 2, tzinfo=UTC)),
-    "b.parquet": (dt.datetime(1500, 1, 1, tzinfo=UTC), dt.datetime(1500, 1, 2, tzinfo=UTC)),
+    "a.parquet": (
+        dt.datetime(2024, 1, 1, tzinfo=UTC),
+        dt.datetime(2024, 1, 2, tzinfo=UTC),
+    ),
+    "b.parquet": (
+        dt.datetime(1500, 1, 1, tzinfo=UTC),
+        dt.datetime(1500, 1, 2, tzinfo=UTC),
+    ),
 }
 map_type = pa.map_(pa.string(), pa.string())
 metadata = {
@@ -71,7 +77,9 @@ def write(name: str, unit: str | None) -> None:
                         ("id", pa.string()),
                         (
                             "format",
-                            pa.struct([("provider", pa.string()), ("options", map_type)]),
+                            pa.struct(
+                                [("provider", pa.string()), ("options", map_type)]
+                            ),
                         ),
                         ("schemaString", pa.string()),
                         ("partitionColumns", pa.list_(pa.string())),

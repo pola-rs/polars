@@ -14,6 +14,12 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import DeletionFiles
+
+
+def _native(vectors: dict[int, tuple[str | bytes, int, int, int]]) -> DeletionFiles:
+    return ("delta-deletion-vector-native", vectors)
+
 
 @pytest.fixture
 def plugin_decoder() -> None:
@@ -64,7 +70,7 @@ def test_native_descriptor_capability_and_validation() -> None:
         "delta-deletion-vector-native",
         {},
     )
-    dv = {
+    dv: dict[str, object] = {
         "storageType": "u",
         "pathOrInlineDv": "ab^-aqEH.-t@S}K{vb[*k^",
         "offset": 4,
@@ -116,6 +122,7 @@ def test_native_persisted_descriptor_offset(storage: str, offset: int | None) ->
     )
     assert result is not None
     # PROTOCOL and Spark default an absent persisted offset to zero.
+    assert isinstance(result[1], dict)
     assert result[1][0][1] == (0 if offset is None else offset)
 
 
@@ -157,10 +164,7 @@ def test_native_scan_deletions(
         location, offset = str(dv_path), 1
     lf = pl.scan_parquet(
         path,
-        _deletion_files=(
-            "delta-deletion-vector-native",
-            {0: (location, offset, len(body), 3)},
-        ),
+        _deletion_files=_native({0: (location, offset, len(body), 3)}),
     )
     expected = df.filter(~pl.col("a").is_in([1, 3, 8]))
     assert_frame_equal(lf.collect(), expected)
@@ -188,12 +192,11 @@ def test_native_lazy_reads_and_source_remapping(
                 "a_nc": pl.Series([0, 0], dtype=pl.UInt32),
             }
         ),
-        _deletion_files=(
-            "delta-deletion-vector-native",
+        _deletion_files=_native(
             {
                 0: (str(tmp_path / "missing.bin"), 1, len(body), 1),
                 1: (body, 0, len(body), 1),
-            },
+            }
         ),
     )
     assert lf.filter(pl.col("a") >= 10).collect()["a"].to_list() == [11]
@@ -270,10 +273,7 @@ def _scan_dv(
     dv_path.write_bytes(dv_file)
     return pl.scan_parquet(
         path,
-        _deletion_files=(
-            "delta-deletion-vector-native",
-            {0: (str(dv_path), offset, size, n)},
-        ),
+        _deletion_files=_native({0: (str(dv_path), offset, size, n)}),
     )
 
 
@@ -350,12 +350,11 @@ def test_native_bad_vector_does_not_fail_its_file_mates(
     dv_path.write_bytes(b"\x01" + good)
     lf = pl.scan_parquet(
         paths,
-        _deletion_files=(
-            "delta-deletion-vector-native",
+        _deletion_files=_native(
             {
                 0: (str(dv_path), 1, size, 3),
                 1: (str(dv_path), 1 + len(good), size, 3),
-            },
+            }
         ),
     )
     assert lf.head(2).collect()["a"].to_list() == [0, 2]
