@@ -33,7 +33,12 @@ use crate::plans::{
 use crate::prelude::{ProjectionOptions, WindowMapping};
 use crate::unique_column_name;
 
-pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+/// Returns whether any window was moved into an `IR::Window`.
+pub(super) fn extract_windows(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> bool {
     let mut visited = PlIndexSet::new();
     let mut stack = vec![root];
     let mut projections = Vec::new();
@@ -64,12 +69,14 @@ pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: 
         stack.extend(ir.inputs());
     }
 
+    let mut has_windows = false;
     for node in projections {
-        extract_from_projection(node, ir_arena, expr_arena);
+        has_windows |= extract_from_projection(node, ir_arena, expr_arena);
     }
     for node in filters {
-        extract_from_filter(node, ir_arena, expr_arena);
+        has_windows |= extract_from_filter(node, ir_arena, expr_arena);
     }
+    has_windows
 }
 
 /// Computes the predicate of a filter in an `HStack` below it, so its windows can be extracted
@@ -80,7 +87,13 @@ pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: 
 ///                            HSTACK [pred as tmp]
 ///                              input
 /// ```
-fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+///
+/// Returns whether any window was moved.
+fn extract_from_filter(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> bool {
     let IR::Filter { input, predicate } = ir_arena.get(node) else {
         unreachable!()
     };
@@ -97,7 +110,7 @@ fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Ar
         expr_arena,
     );
     if !extract_from_projection(hstack, ir_arena, expr_arena) {
-        return;
+        return false;
     }
     let filter = ir_arena.add(IR::Filter {
         input: hstack,
@@ -111,12 +124,14 @@ fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Ar
             columns,
         },
     );
+    true
 }
 
-#[derive(PartialEq)]
 struct WindowSpec {
     partition_by: Vec<CanonicalExprId>,
     order_by: Option<(CanonicalExprId, SortOptions)>,
+    /// Whether all windows of the spec may reorder the rows, see [`crate::dsl::Expr::Over`].
+    may_reorder: bool,
 }
 
 struct ExtractedWindow {
@@ -418,6 +433,7 @@ impl Extractor {
             partition_by,
             order_by,
             mapping: WindowMapping::GroupsToRows,
+            may_reorder,
         } = expr_arena.get(node)
         else {
             return None;
@@ -443,17 +459,25 @@ impl Extractor {
             }
         }
 
-        let spec = WindowSpec {
-            partition_by: partition_ids,
-            order_by: order_by
-                .as_ref()
-                .map(|(key, options)| (self.canonical.resolve(*key, expr_arena), *options)),
-        };
+        let order_by = order_by
+            .as_ref()
+            .map(|(key, options)| (self.canonical.resolve(*key, expr_arena), *options));
 
-        Some(match self.specs.iter().position(|s| *s == spec) {
-            Some(idx) => idx,
+        let existing = self
+            .specs
+            .iter()
+            .position(|s| s.partition_by == partition_ids && s.order_by == order_by);
+        Some(match existing {
+            Some(idx) => {
+                self.specs[idx].may_reorder &= *may_reorder;
+                idx
+            },
             None => {
-                self.specs.push(spec);
+                self.specs.push(WindowSpec {
+                    partition_by: partition_ids,
+                    order_by,
+                    may_reorder: *may_reorder,
+                });
                 self.windows.push(Vec::new());
                 self.specs.len() - 1
             },
@@ -751,6 +775,7 @@ fn extract_from_projection(
                         (key, o.window_options)
                     }),
                     mapping: WindowMapping::GroupsToRows,
+                    may_reorder: spec.may_reorder,
                 };
                 ExprIR::new(expr_arena.add(over), OutputName::Alias(p.name))
             })

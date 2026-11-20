@@ -10,7 +10,7 @@ use polars_core::chunked_array::cast::CastOptions;
 #[cfg(feature = "cutqcut")]
 use polars_plan::dsl::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
-use polars_plan::plans::python::pyarrow::predicate_to_pa;
+use polars_plan::plans::python::pyarrow::predicate_to_pa_with_list_limit;
 #[cfg(feature = "is_in")]
 use polars_plan::plans::{AExpr, ArenaExprIter, IRBooleanFunction, IRFunctionExpr};
 use polars_plan::plans::{
@@ -1010,21 +1010,21 @@ impl PyExpr {
             .into()
     }
 
-    fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_mean(&self, alpha: f64, adjust: bool, min_samples: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias: false,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_sum(&self, alpha: f64, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_sum(&self, alpha: f64, min_samples: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             bias: false,
-            min_periods,
+            min_samples,
             ignore_nulls,
             ..Default::default()
         };
@@ -1048,14 +1048,14 @@ impl PyExpr {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_std(options).into()
@@ -1065,14 +1065,14 @@ impl PyExpr {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_var(options).into()
@@ -1104,6 +1104,10 @@ impl PyExpr {
 
     fn log1p(&self) -> Self {
         self.inner.clone().log1p().into()
+    }
+
+    fn x_log_y(&self, y: PyExpr, base: f64) -> Self {
+        self.inner.clone().x_log_y(y.inner, base).into()
     }
 
     fn exp(&self) -> Self {
@@ -1179,7 +1183,7 @@ impl PyExpr {
         py.enter_polars(|| {
             let mut ctx = ExprToIRContext::new(&mut aexpr_arena, &schema.0);
             ctx.allow_unknown = true;
-            let node = to_expr_ir(self.inner.clone(), &mut ctx)?.node();
+            let node = to_expr_ir(&self.inner, &mut ctx)?.node();
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);
@@ -1196,12 +1200,14 @@ impl PyExpr {
     ///
     /// The predicate is type-coerced as in a Polars filter, so that operands
     /// Polars casts (e.g. a `Float32` column compared to a `Float64` literal)
-    /// show up as casts, which are not converted.
-    #[pyo3(signature = (schema))]
+    /// show up as casts, which are not converted. `list_limit` caps the length of
+    /// `is_in` lists (`None`: any length).
+    #[pyo3(signature = (schema, list_limit))]
     fn to_pyarrow_predicate(
         &self,
         py: Python<'_>,
         schema: Wrap<Schema>,
+        list_limit: Option<usize>,
     ) -> PyResult<Option<String>> {
         py.enter_polars(|| {
             let plan = DataFrame::empty_with_schema(&schema.0)
@@ -1245,7 +1251,14 @@ impl PyExpr {
             let converted = predicates
                 .iter()
                 .rev()
-                .map(|&predicate| predicate_to_pa(predicate, &plan.expr_arena, &schema.0))
+                .map(|&predicate| {
+                    predicate_to_pa_with_list_limit(
+                        predicate,
+                        &plan.expr_arena,
+                        &schema.0,
+                        list_limit,
+                    )
+                })
                 .collect::<Option<Vec<_>>>();
             PolarsResult::Ok(converted.map(|parts| {
                 if let [part] = parts.as_slice() {

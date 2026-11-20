@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -7,8 +8,14 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -86,6 +93,269 @@ def test_string_concat_errors(invalid_concat: str) -> None:
         match=r"CONCAT.*expects at least \d argument[s]? \(found \d\)",
     ):
         pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data").collect()
+
+
+def test_string_chr() -> None:
+    df = pl.DataFrame(
+        {
+            "n": [65, None, 233, 128512, 0, 0x10FFFF],
+            "small": pl.Series([97, None, 98, 99, 100, 101], dtype=pl.Int8),
+            "big": pl.Series([10, None, 66, 67, 68, 69], dtype=pl.UInt64),
+            "g": [1, 1, 2, 2, 3, 3],
+        }
+    )
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        "SELECT CHR(n) AS c, CHR(small) || CHR(big) AS d, CHR(65) AS a, CHR(NULL) AS z FROM df",
+        eager=True,
+    )
+    assert res.schema == {
+        "c": pl.String,
+        "d": pl.String,
+        "a": pl.String,
+        "z": pl.String,
+    }
+    assert res.rows() == [
+        ("A", "a\n", "A", None),
+        (None, None, "A", None),
+        ("é", "bB", "A", None),
+        ("😀", "cC", "A", None),
+        ("\x00", "dD", "A", None),
+        ("\U0010ffff", "eE", "A", None),
+    ]
+    res = ctx.execute(
+        "SELECT g, STRING_AGG(CHR(small), '' ORDER BY small) AS s FROM df GROUP BY g ORDER BY g",
+        eager=True,
+    )
+    assert res.rows() == [(1, "a"), (2, "bc"), (3, "de")]
+
+    # negative, above the last code point, and a UTF-16 surrogate
+    for n in (-1, 0x110000, 0xD800):
+        with pytest.raises(ComputeError, match=f"invalid Unicode code point: {n}"):
+            ctx.execute(f"SELECT CHR({n}) FROM df", eager=True)
+    # one invalid value: when the rows are split, the part that fails first is reported
+    with pytest.raises(ComputeError, match="invalid Unicode code point: -1"):
+        ctx.execute("SELECT CHR(small - 98) FROM df", eager=True)
+    for arg in ("65.5", "TRUE", "'65'"):
+        with pytest.raises(
+            InvalidOperationError, match="expected an integer code point"
+        ):
+            ctx.execute(f"SELECT CHR({arg}) FROM df", eager=True)
+
+
+def test_string_printf() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["a", "bcd", None],
+            "i": [42, -7, 1234567],
+            "f": [3.14159, -0.5, 2.5],
+        }
+    )
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        """
+        SELECT
+          PRINTF('%s|%5s|%-5s|%.2s', s, s, s, s) AS s,
+          PRINTF('%d|%5i|%-5d|%05d|%+ld|%,d|%+x|% #X|%+o', i, i, i, i, i, i, i, i, i) AS i,
+          PRINTF('%.2f|%8.3f|%e|%.3g|%%', f, f, f, f) AS f,
+          PRINTF('%2$d-%1$s', s, i) AS numbered,
+          PRINTF('%s/%s', f, i > 0) AS cast,
+          PRINTF('{%c%c}', 72, 105) AS chars,
+          PRINTF('plain') AS plain,
+          PRINTF('%f|%e|%.1f', 0.5, 0.5, 2.25) AS decimals,
+          PRINTF(NULL, i) AS null_format
+        FROM df
+        """,
+        eager=True,
+    )
+    assert res.schema == dict.fromkeys(res.columns, pl.String)
+    assert res.rows() == [
+        (
+            "a|    a|a    |a",
+            "42|   42|42   |00042|+42|42|2a|0X2A|52",
+            "3.14|   3.142|3.141590e+00|3.14|%",
+            "42-a",
+            "3.14159/true",
+            "{Hi}",
+            "plain",
+            "0.500000|5.000000e-01|2.2",
+            None,
+        ),
+        (
+            "bcd|  bcd|bcd  |bc",
+            "-7|   -7|-7   |-0007|-7|-7|-7|-0X7|-7",
+            "-0.50|  -0.500|-5.000000e-01|-0.5|%",
+            "-7-bcd",
+            "-0.5/false",
+            "{Hi}",
+            "plain",
+            "0.500000|5.000000e-01|2.2",
+            None,
+        ),
+        (
+            None,
+            "1234567|1234567|1234567|1234567|+1234567|1,234,567|12d687|0X12D687|4553207",
+            "2.50|   2.500|2.500000e+00|2.5|%",
+            None,
+            "2.5/true",
+            "{Hi}",
+            "plain",
+            "0.500000|5.000000e-01|2.2",
+            None,
+        ),
+    ]
+
+
+def test_string_printf_non_finite_and_null_rows() -> None:
+    df = pl.DataFrame({"x": [math.inf, -math.inf, math.nan, 1.5, None]})
+    res = df.sql("SELECT PRINTF('%08f|%+08.1f|%08e|%08F', x, x, x, x) AS a FROM self")
+    # as in C, the `0` flag pads infinity and NaN with spaces
+    assert res.to_series().to_list() == [
+        "     inf|    +inf|     inf|     INF",
+        "    -inf|    -inf|    -inf|    -INF",
+        "     nan|    +nan|     nan|     NAN",
+        "1.500000|+00001.5|1.500000e+00|1.500000",
+        None,
+    ]
+
+    df = pl.DataFrame({"s": ["x", None], "code": [65, -1]})
+    res = df.sql(
+        "SELECT PRINTF('%s%c', s, code) AS a, FORMAT('{}{:c}', s, code) AS b FROM self"
+    )
+    assert res.rows() == [("xA", "xA"), (None, None)]
+
+    # `%s` converts the value of a null row only after the row is known to be null
+    df = pl.DataFrame({"s": ["x", None], "b": [b"a", b"\xff"]})
+    res = df.sql(
+        """
+        SELECT PRINTF('%s%4s', s, b) AS a, FORMAT('{}{:>4}', s, b) AS b,
+          PRINTF('%s%.2s', s, b) AS c
+        FROM self
+        """
+    )
+    assert res.rows() == [("x   a", "x   a", "xa"), (None, None, None)]
+
+    res = pl.sql(
+        "SELECT PRINTF('%s|%5s|%-6s|%s', {'a': 1}, 42, 2.5, CAST(1.50 AS DECIMAL(4, 2)))",
+        eager=True,
+    )
+    assert res.item() == "{1}|   42|2.5   |1.50"
+
+
+@pytest.mark.parametrize(
+    ("query", "error", "match"),
+    [
+        ("SELECT PRINTF(s, i) FROM df", SQLSyntaxError, "must be a string literal"),
+        ("SELECT PRINTF('%#o', i) FROM df", SQLSyntaxError, "does not support '%#o'"),
+        (
+            "SELECT PRINTF('%.2x', i) FROM df",
+            InvalidOperationError,
+            "a precision is not allowed",
+        ),
+        (
+            "SELECT PRINTF('%s', [1, 2]) FROM df",
+            InvalidOperationError,
+            "cannot cast List type",
+        ),
+        ("SELECT PRINTF() FROM df", SQLSyntaxError, "at least 1 argument"),
+        ("SELECT PRINTF('%d %d', i) FROM df", SQLSyntaxError, "needs more arguments"),
+        ("SELECT PRINTF('%y', i) FROM df", SQLSyntaxError, "does not support '%y'"),
+        (
+            "SELECT PRINTF('%.2d', i) FROM df",
+            SQLSyntaxError,
+            r"does not support '%\.2d'",
+        ),
+        ("SELECT PRINTF('%*d', i) FROM df", SQLSyntaxError, r"does not support '%\*'"),
+        ("SELECT PRINTF('%', i) FROM df", SQLSyntaxError, "does not support '%'"),
+        ("SELECT PRINTF('%1$d %d', i) FROM df", SQLSyntaxError, "cannot mix"),
+        (
+            "SELECT PRINTF('%0$d', i) FROM df",
+            SQLSyntaxError,
+            r"does not support '%0\$d'",
+        ),
+        (
+            "SELECT PRINTF('%d', f) FROM df",
+            InvalidOperationError,
+            "'d' is not supported for f64",
+        ),
+        (
+            "SELECT PRINTF('%f', s) FROM df",
+            InvalidOperationError,
+            "'f' is not supported for str",
+        ),
+    ],
+)
+def test_string_printf_errors(query: str, error: type[Exception], match: str) -> None:
+    df = pl.DataFrame({"s": ["a"], "i": [1], "f": [1.5]})
+    with pytest.raises(error, match=match):
+        pl.SQLContext(df=df).execute(query, eager=True)
+
+
+def test_string_format() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["a", "bcd", None],
+            "i": [42, -7, 1234567],
+            "f": [3.14159, -0.5, 2.5],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          FORMAT('{} has {:.1f} ({:>5})', s, f, i) AS a,
+          FORMAT('{1:,}-{0}', s, i) AS b,
+          FORMAT('{{}} {:+.2e}', f) AS c,
+          FORMAT('{:.1%}|{:%}', f, 0.25) AS d
+        FROM self
+        """
+    )
+    assert res.rows() == [
+        ("a has 3.1 (   42)", "42-a", "{} +3.14e+00", "314.2%|25%"),
+        ("bcd has -0.5 (   -7)", "-7-bcd", "{} -5.00e-01", "-50.0%|25%"),
+        (None, None, "{} +2.50e+00", "250.0%|25%"),
+    ]
+    with pytest.raises(InvalidOperationError, match="'d' is not supported for f64"):
+        df.sql("SELECT FORMAT('{:d}', f) FROM self")
+    with pytest.raises(
+        SQLSyntaxError, match=r"does not support the placeholder '\{s\}'"
+    ):
+        df.sql("SELECT FORMAT('{s}') FROM self")
+    with pytest.raises(SQLSyntaxError, match="cannot mix numbered and unnumbered"):
+        df.sql("SELECT FORMAT('{} {0}', s) FROM self")
+    for placeholder in ("{+0}", "{00}", "{-1}"):
+        with pytest.raises(SQLSyntaxError, match="does not support the placeholder"):
+            df.sql(f"SELECT FORMAT('{placeholder}', s) FROM self")
+    with pytest.raises(SQLSyntaxError, match="unmatched brace"):
+        df.sql("SELECT FORMAT('{} }', s) FROM self")
+
+
+def test_string_format_unused_args() -> None:
+    df = pl.DataFrame({"x": [1, 2], "s": ["a", None], "l": [[1], None]})
+    res = df.sql(
+        """
+        SELECT
+          FORMAT('{0}{0}', x, s) AS a,
+          PRINTF('%d', x, 'unused') AS b,
+          FORMAT(NULL, x) AS c,
+          PRINTF('ok', l, x'ff') AS d
+        FROM self
+        """
+    )
+    assert res.rows() == [("11", "1", None, "ok"), (None, "2", None, None)]
+
+    # Unused and null-format arguments still aggregate.
+    for query in (
+        "SELECT PRINTF('total', SUM(x)) AS r FROM self",
+        "SELECT PRINTF(NULL, SUM(x)) AS r FROM self",
+        "SELECT FORMAT('n={}', COUNT(*)) AS r FROM self WHERE x > 5",
+    ):
+        assert df.sql(query).height == 1
+    assert (
+        df.sql("SELECT FORMAT('n={}', COUNT(*)) AS r FROM self WHERE x > 5").item()
+        == "n=0"
+    )
+    with pytest.raises(SQLSyntaxError, match="must be a string literal"):
+        df.sql("SELECT FORMAT(s) FROM self")
 
 
 def test_string_left_right_reverse() -> None:
@@ -491,8 +761,8 @@ def test_string_position() -> None:
                 },
                 schema={
                     "txt": pl.String,
-                    "match_E": pl.UInt32,
-                    "match_X": pl.UInt32,
+                    "match_E": pl.Int64,
+                    "match_X": pl.Int64,
                 },
             ),
         )
@@ -581,7 +851,9 @@ def test_string_substr() -> None:
                   {func}(scol{sep1}-3{sep2}5) AS "s-3_5",
                   {func}(scol{sep1}-10{sep2}13) AS "s-10_13",
                   {func}(scol{sep1}"n"{sep2}2) AS "s-n2",
-                  {func}(scol{sep1}2{sep2}"n"+3) AS "s-2n3"
+                  {func}(scol{sep1}2{sep2}"n"+3) AS "s-2n3",
+                  {func}(scol{sep1}"n") AS "s-n",
+                  {func}(scol{sep1}1{sep2}"n") AS "s-1n"
                 FROM df
                 """
             ).collect()
@@ -612,7 +884,54 @@ def test_string_substr() -> None:
             "s-10_13": ["ab", "ab", "ab", None],
             "s-n2": ["", "cd", "bc", None],
             "s-2n3": ["b", "bcde", "bc", None],
+            "s-n": ["abcdefg", "cde", "bc", None],
+            "s-1n": ["", "abc", "ab", None],
         }
+
+
+def test_string_length_arithmetic() -> None:
+    df = pl.DataFrame({"s": ["ab", "a b", "", None]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              LENGTH(s) - 3 AS len,
+              CHAR_LENGTH(s) - 3 AS char_len,
+              BIT_LENGTH(s) - 24 AS bit_len,
+              POSITION(' ' IN s) - 1 AS pos,
+              STRPOS(s, ' ') - 1 AS strpos,
+              SUBSTRING(s, 1, POSITION(' ' IN s) - 1) AS head
+            FROM self
+        """,
+        compare_with="duckdb",
+        check_dtypes=True,
+        expected={
+            "len": [-1, 0, -3, None],
+            "char_len": [-1, 0, -3, None],
+            "bit_len": [-8, 0, -24, None],
+            "pos": [-1, 1, -1, None],
+            "strpos": [-1, 1, -1, None],
+            "head": ["", "a", "", None],
+        },
+    )
+    assert df.sql("SELECT OCTET_LENGTH(s) - 3 AS n FROM self").to_dict(
+        as_series=False
+    ) == {"n": [-1, 0, -3, None]}
+    assert pl.sql(
+        "SELECT STRPOS(NULL, 'a') AS a, POSITION('a' IN NULL) AS b", eager=True
+    ).to_dict(as_series=False) == {"a": [None], "b": [None]}
+
+
+def test_string_substr_unsigned_start() -> None:
+    df = pl.DataFrame(
+        {"s": ["abc", "abc"], "n": [0, 2]}, schema_overrides={"n": pl.UInt32}
+    )
+    res = df.sql("SELECT SUBSTR(s, n) AS a, SUBSTRING(s, n, 2) AS b FROM self")
+    assert res.to_dict(as_series=False) == {"a": ["abc", "bc"], "b": ["a", "bc"]}
+
+    df = pl.DataFrame({"s": ["abc"], "n": ["bad"]})
+    with pytest.raises(InvalidOperationError):
+        df.sql("SELECT SUBSTRING(s FROM n) FROM self")
 
 
 def test_string_lpad_rpad() -> None:
@@ -667,3 +986,45 @@ def test_string_trim(foods_ipc_path: Path) -> None:
         lf.sql(
             "SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self"
         ).collect()
+
+
+def test_string_repeat() -> None:
+    df = pl.DataFrame({"s": ["ab", "c", "d", None], "n": [2, 0, -1, 1]})
+    res = df.sql(
+        """
+        SELECT
+          REPEAT(s, n) AS r1,
+          REPEAT('*', n) AS r2,
+          REPEAT(s, 2) AS r3,
+          REPEAT(s, NULL) AS r4
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "r1": ["abab", "", "", None],
+        "r2": ["**", "", "", "*"],
+        "r3": ["abab", "cc", "dd", None],
+        "r4": [None, None, None, None],
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT REPEAT(NULL, 2) AS r FROM self", [None, None]),
+        ("SELECT REPEAT(z, 2) AS r FROM self", [None, None]),
+        ("SELECT REPEAT('', 4294967296) AS r FROM self", ["", ""]),
+        (
+            "SELECT REPEAT(CAST(NULL AS VARCHAR), 4294967296) AS r FROM self",
+            [None, None],
+        ),
+    ],
+)
+def test_string_repeat_null_and_empty(query: str, expected: list[str | None]) -> None:
+    df = pl.DataFrame({"z": [None, None]})
+    assert df.sql(query)["r"].to_list() == expected
+
+
+def test_string_repeat_invalid_count() -> None:
+    with pytest.raises(InvalidOperationError, match="conversion"):
+        pl.sql("SELECT REPEAT('x', 'bad')", eager=True)

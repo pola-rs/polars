@@ -455,6 +455,8 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Float16(v), DataType::Boolean) => AnyValue::Boolean(*v != pf16::default()),
             (AnyValue::Float32(v), DataType::Boolean) => AnyValue::Boolean(*v != f32::default()),
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
+            #[cfg(feature = "dtype-decimal")]
+            (AnyValue::Decimal(v, _, _), DataType::Boolean) => AnyValue::Boolean(*v != 0),
 
             // Categorical casts.
             #[cfg(feature = "dtype-categorical")]
@@ -771,8 +773,24 @@ impl<'a> AnyValue<'a> {
 
     #[inline]
     pub fn extract_bool(&self) -> Option<bool> {
+        use AnyValue::*;
         match self {
-            AnyValue::Boolean(v) => Some(*v),
+            Boolean(v) => Some(*v),
+            Int8(v) => Some(*v != 0),
+            Int16(v) => Some(*v != 0),
+            Int32(v) => Some(*v != 0),
+            Int64(v) => Some(*v != 0),
+            Int128(v) => Some(*v != 0),
+            UInt8(v) => Some(*v != 0),
+            UInt16(v) => Some(*v != 0),
+            UInt32(v) => Some(*v != 0),
+            UInt64(v) => Some(*v != 0),
+            UInt128(v) => Some(*v != 0),
+            Float16(v) => Some(*v != pf16::default()),
+            Float32(v) => Some(*v != 0.0),
+            Float64(v) => Some(*v != 0.0),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(v, _, _) => Some(*v != 0),
             _ => None,
         }
     }

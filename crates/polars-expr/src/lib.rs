@@ -1,7 +1,7 @@
 #![cfg_attr(
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
-)] // Maybe be caused by some feature
+)] // May be caused by some feature
 pub mod dispatch;
 mod expressions;
 pub mod groups;
@@ -9,6 +9,7 @@ pub mod hash_keys;
 pub mod hot_groups;
 pub mod idx_table;
 mod key_rows;
+mod packed_keys;
 pub mod planner;
 pub mod prelude;
 pub mod reduce;

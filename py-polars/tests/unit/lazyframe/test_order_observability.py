@@ -362,7 +362,7 @@ lf6 = pl.LazyFrame({"a": [[1], [2]], "b": [[3], [4]]})
         (lf5, pl.col.a.drop_nulls(), [2, 3], False),
     ],
 )
-def test_order_sensitive_paramateric(
+def test_order_sensitive_parametric(
     lf: pl.LazyFrame,
     expr: pl.Expr,
     expected: pl.Series | list[Any] | None,

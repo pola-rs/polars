@@ -23,12 +23,12 @@ macro_rules! set_unwrapped_or_0 {
 }
 
 #[pyfunction]
-pub fn rolling_corr(x: PyExpr, y: PyExpr, window_size: IdxSize, min_periods: IdxSize) -> PyExpr {
+pub fn rolling_corr(x: PyExpr, y: PyExpr, window_size: IdxSize, min_samples: IdxSize) -> PyExpr {
     dsl::rolling_corr(
         x.inner,
         y.inner,
         RollingCovOptions {
-            min_periods,
+            min_samples,
             window_size,
             ddof: None,
         },
@@ -41,14 +41,14 @@ pub fn rolling_cov(
     x: PyExpr,
     y: PyExpr,
     window_size: IdxSize,
-    min_periods: IdxSize,
+    min_samples: IdxSize,
     ddof: u8,
 ) -> PyExpr {
     dsl::rolling_cov(
         x.inner,
         y.inner,
         RollingCovOptions {
-            min_periods,
+            min_samples,
             window_size,
             ddof: Some(ddof),
         },
@@ -107,6 +107,12 @@ pub fn coalesce(exprs: Vec<PyExpr>) -> PyExpr {
 #[pyfunction]
 pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
+}
+
+/// The column `name`; unlike `col`, a name such as `^a$` or `*` is not a selector.
+#[pyfunction]
+pub fn col_exact(name: &str) -> PyExpr {
+    Expr::Column(name.into()).into()
 }
 
 #[pyfunction]
@@ -309,6 +315,11 @@ pub fn cum_reduce(
 
     let func = PlanCallback::new_python(PythonObject(lambda));
     dsl::cum_reduce_exprs(func, exprs, returns_scalar, return_dtype.map(|v| v.inner)).into()
+}
+
+#[pyfunction]
+pub fn date_diff(start: PyExpr, end: PyExpr, unit: Wrap<DateDiffUnit>) -> PyExpr {
+    dsl::date_diff(start.inner, end.inner, unit.0).into()
 }
 
 #[pyfunction]

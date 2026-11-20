@@ -8,6 +8,7 @@ mod string;
 use std::borrow::Cow;
 
 pub use agg_list::*;
+pub(crate) use dispatch::nulls_at_one_end;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
@@ -16,7 +17,6 @@ use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::{MomentWindow, QuantileWindow, RollingAggWindowNoNulls};
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
-use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, ArgMinMaxWindow, MeanWindow, MinMaxWindow, QuantileMethod, RollingFnParams,
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
@@ -24,17 +24,19 @@ use polars_compute::rolling::{
 };
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
-#[cfg(feature = "dtype-f16")]
-use polars_utils::float16::pf16;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMax};
+use polars_utils::scratch_vec::ScratchVec;
 use rayon::prelude::*;
 
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::from_iterator_par::collect_primitive_opt_par;
+use crate::chunked_array::from_iterator_par::{
+    collect_primitive_opt_par, collect_primitive_opt_par_with_scratch,
+};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
+use crate::chunked_array::ops::aggregate::{quantile_of_nonnull, quantile_with, sorted_quantile};
 use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
@@ -47,6 +49,14 @@ use crate::utils::{Container, NoNull};
 #[inline]
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
+}
+
+/// Whether every index in `idx` is below `len`.
+///
+/// A group can repeat an index, so `idx.len()` can exceed `len`.
+#[inline]
+pub fn _idx_in_bounds(idx: &[IdxSize], len: usize) -> bool {
+    idx.iter().all(|&i| (i as usize) < len)
 }
 
 // Unlike `rolling_min` and `rolling_max`, group aggregations ignore NaN.
@@ -84,7 +94,7 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
     let phys_dtype = by_phys.dtype();
 
     assert!(
-        phys_dtype.is_primitive_numeric() && !dtype.is_categorical(),
+        phys_dtype.is_primitive_numeric() && !dtype.to_storage().is_categorical(),
         "rolling_numeric_minmax_by requires a numeric by column, got {dtype}",
     );
 
@@ -180,7 +190,7 @@ pub fn _slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize
 where
     T: PolarsDataType,
 {
-    ca.slice(first as i64, len as usize)
+    ca.slice((first as usize, len as usize))
 }
 
 /// Helper that combines the groups into a parallel iterator over `(first, all): (u32, &Vec<u32>)`.
@@ -214,11 +224,7 @@ where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = RAYON.install(|| {
-        let all = groups.all();
-        collect_primitive_opt_par(groups.len(), |g| f(&all[g]))
-    });
-    ca.into_series()
+    agg_helper_idx_on_all_with_scratch::<T, (), _>(groups, |_, _, idx| f(idx))
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
@@ -226,9 +232,7 @@ where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> =
-        RAYON.install(|| collect_primitive_opt_par(groups.len(), |g| f(groups[g])));
-    ca.into_series()
+    agg_helper_slice_with_scratch::<T, (), _>(groups, |_, _, g| f(g))
 }
 
 pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
@@ -259,82 +263,124 @@ where
     ca.into_inner().into_series()
 }
 
-/// Intermediate helper trait so we can have a single generic implementation
-/// This trait will ensure the specific dispatch works without complicating
-/// the trait bounds.
-trait QuantileDispatcher<K> {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<K>>;
-
-    fn _median(self) -> Option<K>;
-}
-
-impl<T> QuantileDispatcher<f64> for ChunkedArray<T>
+/// [`agg_helper_idx_on_all`] for an `f` that reuses a scratch value across groups and receives
+/// the group index.
+fn agg_helper_idx_on_all_with_scratch<T, S, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    T: PolarsIntegerType,
-    T::Native: Ord,
+    F: Fn(&mut S, usize, &IdxVec) -> Option<T::Native> + Send + Sync,
+    T: PolarsNumericType,
+    S: Default,
 {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
-        self.quantile_faster(quantile, method)
-    }
-    fn _median(self) -> Option<f64> {
-        self.median_faster()
-    }
+    let ca: ChunkedArray<T> = RAYON.install(|| {
+        let all = groups.all();
+        collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
+            f(scratch, g, &all[g])
+        })
+    });
+    ca.into_series()
 }
 
-#[cfg(feature = "dtype-f16")]
-impl QuantileDispatcher<pf16> for Float16Chunked {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<pf16>> {
-        self.quantile_faster(quantile, method)
-    }
-    fn _median(self) -> Option<pf16> {
-        self.median_faster()
-    }
+/// [`_agg_helper_slice`] for an `f` that reuses a scratch value across groups and receives the
+/// group index.
+fn agg_helper_slice_with_scratch<T, S, F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn(&mut S, usize, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
+    T: PolarsNumericType,
+    S: Default,
+{
+    let ca: ChunkedArray<T> = RAYON.install(|| {
+        collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
+            f(scratch, g, groups[g])
+        })
+    });
+    ca.into_series()
 }
 
-impl QuantileDispatcher<f32> for Float32Chunked {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f32>> {
-        self.quantile_faster(quantile, method)
+/// The `quantile` of the non-null values at `rows`, gathered into `scratch`.
+///
+/// # Safety
+/// Every row is in bounds of `values` and `validity`.
+unsafe fn quantile_of_rows<N: NumericNative>(
+    scratch: &mut ScratchVec<N>,
+    values: &[N],
+    validity: Option<&Bitmap>,
+    mut rows: impl ExactSizeIterator<Item = usize>,
+    quantile: f64,
+    method: QuantileMethod,
+) -> Option<f64> {
+    let is_valid = |i: usize| validity.is_none_or(|v| unsafe { v.get_bit_unchecked(i) });
+    let value = |i: usize| unsafe { *values.get_unchecked(i) };
+    if rows.len() == 1 {
+        let i = rows.next().unwrap();
+        return is_valid(i).then(|| value(i).to_f64().unwrap());
     }
-    fn _median(self) -> Option<f32> {
-        self.median_faster()
+    let vals = scratch.get();
+    // Without a validity the rows keep their exact length, so the copy is a single sized extend.
+    match validity {
+        None => vals.extend(rows.map(value)),
+        Some(_) => vals.extend(rows.filter(|&i| is_valid(i)).map(value)),
     }
+    quantile_of_nonnull(vals, quantile, method)
 }
-impl QuantileDispatcher<f64> for Float64Chunked {
-    fn _quantile(self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
-        self.quantile_faster(quantile, method)
-    }
-    fn _median(self) -> Option<f64> {
-        self.median_faster()
-    }
+
+/// The `quantile` of `n` values, where `value_at(rank)` reads the value at an ascending rank.
+fn quantile_of_ranked<N: ToPrimitive + Copy + Default>(
+    n: usize,
+    quantile: f64,
+    method: QuantileMethod,
+    value_at: impl Fn(usize) -> N,
+) -> Option<f64> {
+    quantile_with(n, quantile, method, |ranks, out| {
+        for (o, &r) in out.iter_mut().zip(ranks) {
+            *o = value_at(r);
+        }
+    })
+}
+
+/// The quantile to take of each group.
+#[derive(Clone, Copy, Debug)]
+pub enum GroupQuantile<'a> {
+    Scalar(f64),
+    /// One quantile per group; a null quantile gives a null result.
+    PerGroup(&'a Float64Chunked),
 }
 
 unsafe fn agg_quantile_generic<T, K>(
     ca: &ChunkedArray<T>,
     groups: &GroupsType,
-    quantile: f64,
+    quantile: GroupQuantile<'_>,
     method: QuantileMethod,
 ) -> Series
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: QuantileDispatcher<K::Native>,
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
-    let invalid_quantile = !(0.0..=1.0).contains(&quantile);
-    if invalid_quantile {
-        return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
-    }
+    let in_range = |q: &f64| (0.0..=1.0).contains(q);
+    let (scalar, per_group) = match quantile {
+        GroupQuantile::Scalar(q) if !in_range(&q) => {
+            return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
+        },
+        GroupQuantile::Scalar(q) => (Some(q), None),
+        GroupQuantile::PerGroup(qs) => {
+            assert_eq!(qs.len(), groups.len());
+            (None, Some(qs.rechunk()))
+        },
+    };
+    let per_group = per_group.as_deref().map(|qs| qs.downcast_as_array());
+    let quantile_of_group = |g: usize| scalar.or_else(|| per_group?.get(g).filter(in_range));
+    let to_out = |v: f64| -> K::Native { NumCast::from(v).unwrap() };
     match groups {
         GroupsType::Idx(groups) => {
             let ca = ca.rechunk();
-            agg_helper_idx_on_all::<K, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { ca.take_unchecked(idx) };
-                // checked with invalid quantile check
-                take._quantile(quantile, method).unwrap_unchecked()
+            let arr = ca.downcast_as_array();
+            let values = arr.values().as_slice();
+            let validity = arr.validity();
+            agg_helper_idx_on_all_with_scratch::<K, ScratchVec<_>, _>(groups, |scratch, g, idx| {
+                debug_assert!(idx.iter().all(|&i| (i as usize) < values.len()));
+                let quantile = quantile_of_group(g)?;
+                let rows = idx.iter().map(|&i| i as usize);
+                quantile_of_rows(scratch, values, validity, rows, quantile, method).map(to_out)
             })
         },
         GroupsType::Slice {
@@ -350,73 +396,80 @@ where
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
-                let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _, _>(
-                        values,
-                        offset_iter,
-                        Some(RollingFnParams::Quantile(RollingQuantileParams {
-                            prob: quantile,
-                            method,
-                        })),
-                    ),
+                // The windows only rank the values, so their own probability is unused.
+                let params = Some(RollingFnParams::Quantile(RollingQuantileParams {
+                    prob: 0.5,
+                    method,
+                }));
+                let windows = groups.iter().enumerate();
+                let out: ChunkedArray<K> = match arr.validity() {
+                    None => {
+                        let mut window = QuantileWindow::new(values, 0, 0, params, None);
+                        windows
+                            .map(|(g, [first, len])| {
+                                // SAFETY: the groups are in bounds.
+                                unsafe { window.update(*first as usize, (first + len) as usize) };
+                                let quantile = quantile_of_group(g)?;
+                                quantile_of_ranked(window.n_values(), quantile, method, |r| {
+                                    window.value_at_rank(r)
+                                })
+                                .map(to_out)
+                            })
+                            .collect()
+                    },
                     Some(validity) => {
-                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _, _>(
-                            values,
-                            validity,
-                            offset_iter,
-                            Some(RollingFnParams::Quantile(RollingQuantileParams {
-                                prob: quantile,
-                                method,
-                            })),
-                        )
+                        let mut window = rolling::nulls::QuantileWindow::new(
+                            values, validity, 0, 0, params, None,
+                        );
+                        windows
+                            .map(|(g, [first, len])| {
+                                // SAFETY: the groups are in bounds.
+                                unsafe { window.update(*first as usize, (first + len) as usize) };
+                                let quantile = quantile_of_group(g)?;
+                                quantile_of_ranked(window.n_values(), quantile, method, |r| {
+                                    window.value_at_rank(r)
+                                })
+                                .map(to_out)
+                            })
+                            .collect()
                     },
                 };
-                // The rolling kernels works on the dtype, this is not yet the
-                // float output type we need.
-                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
-            } else {
-                _agg_helper_slice::<K, _>(groups, |[first, len]| {
+                out.into_series()
+            } else if let sorted @ (IsSorted::Ascending | IsSorted::Descending) =
+                ca.is_sorted_flag()
+            {
+                // A contiguous slice of a sorted column is itself sorted, with its nulls at one end,
+                // so each group reads its order statistics directly.
+                let descending = sorted == IsSorted::Descending;
+                agg_helper_slice_with_scratch::<K, (), _>(groups, |_, g, [first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
+                    let quantile = quantile_of_group(g)?;
                     match len {
                         0 => None,
                         1 => ca.get(first as usize).map(|v| NumCast::from(v).unwrap()),
                         _ => {
-                            let arr_group = _slice_from_offsets(ca, first, len);
-                            // unwrap checked with invalid quantile check
-                            arr_group
-                                ._quantile(quantile, method)
-                                .unwrap_unchecked()
-                                .map(|flt| NumCast::from(flt).unwrap_unchecked())
+                            let group = _slice_from_offsets(ca, first, len);
+                            sorted_quantile(&group, descending, quantile, method).map(to_out)
                         },
                     }
                 })
+            } else {
+                let ca = ca.rechunk();
+                let arr = ca.downcast_as_array();
+                let values = arr.values().as_slice();
+                let validity = arr.validity();
+                agg_helper_slice_with_scratch::<K, ScratchVec<_>, _>(
+                    groups,
+                    |scratch, g, [first, len]| {
+                        let (first, len) = (first as usize, len as usize);
+                        debug_assert!(first + len <= values.len());
+                        let quantile = quantile_of_group(g)?;
+                        let rows = first..first + len;
+                        quantile_of_rows(scratch, values, validity, rows, quantile, method)
+                            .map(to_out)
+                    },
+                )
             }
-        },
-    }
-}
-
-unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: QuantileDispatcher<K::Native>,
-    K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
-{
-    match groups {
-        GroupsType::Idx(groups) => {
-            let ca = ca.rechunk();
-            agg_helper_idx_on_all::<K, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { ca.take_unchecked(idx) };
-                take._median()
-            })
-        },
-        GroupsType::Slice { .. } => {
-            agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileMethod::Linear)
         },
     }
 }
@@ -443,7 +496,7 @@ where
 
     match groups {
         GroupsType::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
-            debug_assert!(idx.len() <= s.len());
+            debug_assert!(_idx_in_bounds(idx, s.len()));
             if idx.is_empty() {
                 None
             } else {
@@ -491,6 +544,56 @@ where
     }
 }
 
+/// Group-wise arg min or arg max of `s` in its row-encoding (sort) order, skipping null rows.
+///
+/// # Safety
+///
+/// No bounds checks on `groups`.
+pub(crate) unsafe fn agg_arg_min_max_row_encoded(
+    s: &Series,
+    groups: &GroupsType,
+    is_max: bool,
+) -> Series {
+    let encoded = row_encode::row_encode_ordered_propagate_nulls(s)
+        .cast(&DataType::Binary)
+        .unwrap();
+    let encoded = encoded.binary().unwrap();
+    unsafe {
+        if is_max {
+            encoded.agg_arg_max(groups)
+        } else {
+            encoded.agg_arg_min(groups)
+        }
+    }
+}
+
+/// Group-wise min or max of `s` in its row-encoding (sort) order, skipping null rows.
+///
+/// # Safety
+///
+/// No bounds checks on `groups`.
+pub(crate) unsafe fn agg_min_max_row_encoded(
+    s: &Series,
+    groups: &GroupsType,
+    is_max: bool,
+) -> Series {
+    let idx_in_group = unsafe { agg_arg_min_max_row_encoded(s, groups, is_max) };
+    let idx_in_group = idx_in_group.idx().unwrap();
+    let idx: IdxCa = match groups {
+        GroupsType::Idx(g) => idx_in_group
+            .iter()
+            .zip(g.all())
+            .map(|(i, g)| i.map(|i| unsafe { *g.get_unchecked(i as usize) }))
+            .collect(),
+        GroupsType::Slice { groups, .. } => idx_in_group
+            .iter()
+            .zip(groups)
+            .map(|(i, [first, _])| i.map(|i| first + i))
+            .collect(),
+    };
+    unsafe { s.take_unchecked(&idx) }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
@@ -499,7 +602,7 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -517,7 +620,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= arr.len());
+                    debug_assert!(_idx_in_bounds(idx, arr.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -575,7 +678,7 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -682,9 +785,7 @@ where
         // Sorted fast-path. We skip this for floats because the largest value might be NaN, which
         // max is supposed to skip unless everything is NaN. We would need an
         // agg_first_non_null_non_nan.
-        if (!self.has_nulls() || matches!(groups, GroupsType::Slice { .. }))
-            && !T::Native::is_float()
-        {
+        if groups.has_sorted_idxs_in_groups() && !T::Native::is_float() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -700,7 +801,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= arr.len());
+                    debug_assert!(_idx_in_bounds(idx, arr.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -759,9 +860,7 @@ where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
         // Skipped for floats for the same reason as in `agg_max`.
-        if (!self.has_nulls() || matches!(groups, GroupsType::Slice { .. }))
-            && !T::Native::is_float()
-        {
+        if groups.has_sorted_idxs_in_groups() && !T::Native::is_float() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);
@@ -871,7 +970,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_no_null::<T, _>(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         T::Native::zero()
                     } else if idx.len() == 1 {
@@ -961,7 +1060,7 @@ where
                     // and thereby creating shorter columns than the original group tuples.
                     // the group tuples are modified, but if that's done incorrect there can be out of bounds
                     // access
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     let out = if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -1041,7 +1140,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= ca.len());
+                    debug_assert!(_idx_in_bounds(idx, ca.len()));
                     if idx.is_empty() {
                         return None;
                     }
@@ -1091,13 +1190,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|x| {
+                                if Float::is_finite(x) {
+                                    T::Native::zero()
                                 } else {
-                                    None
+                                    Float::nan()
                                 }
-                            },
+                            }),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1118,7 +1217,7 @@ where
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= ca.len());
+                    debug_assert!(_idx_in_bounds(idx, ca.len()));
                     if idx.is_empty() {
                         return None;
                     }
@@ -1171,13 +1270,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|x| {
+                                if Float::is_finite(x) {
+                                    T::Native::zero()
                                 } else {
-                                    None
+                                    Float::nan()
                                 }
-                            },
+                            }),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1195,39 +1294,54 @@ impl Float16Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float16Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float16Type>(self, groups)
+        agg_quantile_generic::<_, Float16Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 impl Float32Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float32Type>(self, groups)
+        agg_quantile_generic::<_, Float32Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 impl Float64Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float64Type>(self, groups)
+        agg_quantile_generic::<_, Float64Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 
@@ -1248,7 +1362,7 @@ where
                     // and thereby creating shorter columns than the original group tuples.
                     // the group tuples are modified, but if that's done incorrect there can be out of bounds
                     // access
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -1315,7 +1429,7 @@ where
                 let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= arr.len());
+                    debug_assert!(_idx_in_bounds(idx, arr.len()));
                     if idx.is_empty() {
                         return None;
                     }
@@ -1341,13 +1455,7 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
-                                } else {
-                                    None
-                                }
-                            },
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|_| 0.0),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof)
@@ -1365,7 +1473,7 @@ where
                 let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         return None;
                     }
@@ -1392,13 +1500,7 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => {
-                                if ddof == 0 {
-                                    NumCast::from(0)
-                                } else {
-                                    None
-                                }
-                            },
+                            1 => self.get(first as usize).filter(|_| ddof == 0).map(|_| 0.0),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof)
@@ -1413,12 +1515,17 @@ where
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_median_generic::<_, Float64Type>(self, groups)
+        agg_quantile_generic::<_, Float64Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }

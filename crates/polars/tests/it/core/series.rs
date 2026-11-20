@@ -70,3 +70,38 @@ fn test_borrowed_struct_values_matched_to_fields() -> PolarsResult<()> {
     assert_eq!(s.null_count(), 1);
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "dtype-struct")]
+fn test_borrowed_struct_values_fields_merged() -> PolarsResult<()> {
+    let to_series = |df: DataFrame| df.into_struct("s".into()).into_series();
+    let ordered = to_series(df!("a" => [1i64], "b" => ["x"])?);
+    let reordered = to_series(df!("b" => [None, Some("y")], "a" => [2i64, 3])?);
+    let extra = to_series(df!("c" => [None::<i32>], "a" => [4i64])?);
+    let values = [
+        AnyValue::Null,
+        ordered.get(0)?,
+        reordered.get(0)?,
+        reordered.get(1)?,
+        extra.get(0)?,
+    ];
+
+    // The fields of all values are merged in first-seen order, and keep their
+    // (common) data type, even if all of their values are null (ref: "c").
+    let s = Series::from_any_values("s".into(), &values, true)?;
+    let expected = df!(
+        "a" => [None, Some(1i64), Some(2), Some(3), Some(4)],
+        "b" => [None, Some("x"), None, Some("y"), None],
+        "c" => [None::<i32>, None, None, None, None],
+    )?;
+    let expected_dtype = DataType::Struct(expected.schema().iter_fields().collect());
+    assert_eq!(s.dtype(), &expected_dtype);
+    assert!(s.struct_()?.clone().unnest().equals_missing(&expected));
+    assert_eq!(s.null_count(), 1);
+
+    // Values of a field with mixed data types (eg: string/int) are invalid.
+    let conflicting = to_series(df!("a" => ["y"])?);
+    let values = [ordered.get(0)?, conflicting.get(0)?];
+    assert!(Series::from_any_values("s".into(), &values, true).is_err());
+    Ok(())
+}

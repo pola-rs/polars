@@ -1,7 +1,6 @@
 use polars_utils::slice::load_padded_le_u64;
 
 use super::Bitmap;
-use super::bitmask::BitMask;
 use crate::trusted_len::TrustedLen;
 
 /// Calculates how many iterations are remaining, assuming:
@@ -25,75 +24,225 @@ fn calc_iters_remaining(length: usize, min_length_for_iter: usize, consume: usiz
     1 + obvious_iters // Thus always exactly 1 more iter.
 }
 
+/// Iterator over the indices of the set bits.
+pub type TrueIdxIter<'a> = SetBitIdxIter<'a, false>;
+
+/// Iterator over the indices of the set bits, with an exact length.
+pub type ExactTrueIdxIter<'a> = SetBitIdxIter<'a, true>;
+
+/// Iterator over the indices of the set bits.
+///
+/// Consecutive words with all bits set are iterated as a plain range, so dense
+/// stretches cost about as much as counting.
+///
+/// If `EXACT` is true the number of set bits is known, making the size hint
+/// exact.
 #[derive(Clone)]
-pub struct TrueIdxIter<'a> {
-    mask: BitMask<'a>,
-    first_unknown: usize,
-    i: usize,
-    len: usize,
+pub struct SetBitIdxIter<'a, const EXACT: bool> {
+    /// Starts at the current word.
+    bytes: &'a [u8],
+    /// Number of bits from the start of the current word to the end.
+    bits_left: usize,
+    /// Set bits of the current word not yet returned.
+    word: u64,
+    /// Output index of bit 0 of the current word. Wraps below zero for the
+    /// first word if the offset is not byte-aligned.
+    word_start: usize,
+    /// Range of indices of set bits before the current word.
+    run_pos: usize,
+    run_end: usize,
+    /// Number of indices not yet returned. Only maintained if `EXACT`.
     remaining: usize,
 }
 
-impl<'a> TrueIdxIter<'a> {
+impl<'a> SetBitIdxIter<'a, false> {
+    pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
+        Self::new_impl(bytes, offset, len, 0)
+    }
+}
+
+impl<'a> SetBitIdxIter<'a, true> {
+    /// # Safety
+    /// `set_count` must be the number of set bits in the iterated range.
+    pub unsafe fn new_with_set_count(
+        bytes: &'a [u8],
+        offset: usize,
+        len: usize,
+        set_count: usize,
+    ) -> Self {
+        Self::new_impl(bytes, offset, len, set_count)
+    }
+
+    /// Iterates over the indices of the valid entries, or `0..len` if there
+    /// is no validity.
     #[inline]
-    pub fn new(len: usize, validity: Option<&'a Bitmap>) -> Self {
-        if let Some(bitmap) = validity {
-            assert!(len == bitmap.len());
-            Self {
-                mask: BitMask::from_bitmap(bitmap),
-                first_unknown: 0,
-                i: 0,
-                remaining: bitmap.len() - bitmap.unset_bits(),
-                len,
+    pub fn from_validity(len: usize, validity: Option<&'a Bitmap>) -> Self {
+        let Some(validity) = validity else {
+            return Self::all_set(len);
+        };
+        assert_eq!(len, validity.len());
+        let (bytes, offset, len) = validity.as_slice();
+        // SAFETY: the count is taken from the same bitmap.
+        unsafe { Self::new_with_set_count(bytes, offset, len, validity.set_bits()) }
+    }
+
+    /// Iterates over `0..len`, as if all bits are set.
+    #[inline]
+    pub fn all_set(len: usize) -> Self {
+        Self {
+            bytes: &[],
+            bits_left: 0,
+            word: 0,
+            word_start: 0,
+            run_pos: 0,
+            run_end: len,
+            remaining: len,
+        }
+    }
+}
+
+impl<'a, const EXACT: bool> SetBitIdxIter<'a, EXACT> {
+    fn new_impl(bytes: &'a [u8], offset: usize, len: usize, set_count: usize) -> Self {
+        assert!(bytes.len() * 8 >= offset + len);
+        let bytes = &bytes[offset / 8..];
+        let bit_offset = offset % 8;
+        let bits_left = bit_offset + len;
+        let mut iter = Self {
+            bytes,
+            bits_left,
+            word: load_word_to_end(bytes, bits_left) & (u64::MAX << bit_offset),
+            word_start: 0usize.wrapping_sub(bit_offset),
+            run_pos: 0,
+            run_end: 0,
+            remaining: set_count,
+        };
+        if iter.word == u64::MAX {
+            iter.start_run();
+        }
+        iter
+    }
+
+    /// Moves to the next word, returns false if there is none.
+    #[inline(always)]
+    fn advance(&mut self) -> bool {
+        if self.bits_left <= 64 {
+            return false;
+        }
+        self.bytes = &self.bytes[8..];
+        self.bits_left -= 64;
+        self.word_start = self.word_start.wrapping_add(64);
+        self.word = load_word_to_end(self.bytes, self.bits_left);
+        true
+    }
+
+    /// Starts a run at the current word, which must be full, extending it over
+    /// all directly following full words.
+    #[inline(always)]
+    fn start_run(&mut self) {
+        self.run_pos = self.word_start;
+        self.run_end = self.word_start;
+        loop {
+            self.run_end += 64;
+            if !self.advance() {
+                self.word = 0;
+                return;
             }
-        } else {
-            Self {
-                mask: BitMask::default(),
-                first_unknown: len,
-                i: 0,
-                remaining: len,
-                len,
+            if self.word != u64::MAX {
+                return;
             }
         }
     }
 }
 
-impl Iterator for TrueIdxIter<'_> {
+/// Loads the next 64 bits, with the bits at or after `bits_left` cleared.
+#[inline(always)]
+fn load_word_to_end(bytes: &[u8], bits_left: usize) -> u64 {
+    let word = load_padded_le_u64(bytes);
+    if bits_left < 64 {
+        word & ((1 << bits_left) - 1)
+    } else {
+        word
+    }
+}
+
+impl<const EXACT: bool> Iterator for SetBitIdxIter<'_, EXACT> {
     type Item = usize;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        // Fast path for many non-nulls in a row.
-        if self.i < self.first_unknown {
-            let ret = self.i;
-            self.i += 1;
-            self.remaining -= 1;
-            return Some(ret);
-        }
-
-        while self.i < self.len {
-            let mask = self.mask.get_u32(self.i);
-            let num_null = mask.trailing_zeros();
-            self.i += num_null as usize;
-            if num_null < 32 {
-                self.first_unknown = self.i + (mask >> num_null).trailing_ones() as usize;
-                let ret = self.i;
-                self.i += 1;
-                self.remaining -= 1;
-                return Some(ret);
+        loop {
+            if self.run_pos < self.run_end {
+                let idx = self.run_pos;
+                self.run_pos += 1;
+                if EXACT {
+                    self.remaining -= 1;
+                }
+                return Some(idx);
+            }
+            if self.word != 0 {
+                let idx = self
+                    .word_start
+                    .wrapping_add(self.word.trailing_zeros() as usize);
+                self.word &= self.word - 1;
+                if EXACT {
+                    self.remaining -= 1;
+                }
+                return Some(idx);
+            }
+            // Checking `loaded` after starting the run gives notably faster
+            // code for dense bitmaps.
+            let loaded = self.advance();
+            if self.word == u64::MAX {
+                self.start_run();
+            }
+            if !loaded {
+                return None;
             }
         }
-
-        None
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        if EXACT {
+            return (self.remaining, Some(self.remaining));
+        }
+        let in_hand = (self.run_end - self.run_pos) + self.word.count_ones() as usize;
+        (in_hand, Some(in_hand + self.bits_left.saturating_sub(64)))
+    }
+
+    // All-ones fast path in fold, hoists branch out of inner loop. Sum,
+    // for_each, etc, dispatch to fold.
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut acc = init;
+        for idx in self.run_pos..self.run_end {
+            acc = f(acc, idx);
+        }
+        loop {
+            if self.word == u64::MAX {
+                for i in 0..64 {
+                    acc = f(acc, self.word_start + i);
+                }
+            } else {
+                while self.word != 0 {
+                    let idx = self
+                        .word_start
+                        .wrapping_add(self.word.trailing_zeros() as usize);
+                    acc = f(acc, idx);
+                    self.word &= self.word - 1;
+                }
+            }
+            if !self.advance() {
+                return acc;
+            }
+        }
     }
 }
 
-unsafe impl TrustedLen for TrueIdxIter<'_> {}
+unsafe impl TrustedLen for SetBitIdxIter<'_, true> {}
 
 pub struct FastU32BitmapIter<'a> {
     bytes: &'a [u8],

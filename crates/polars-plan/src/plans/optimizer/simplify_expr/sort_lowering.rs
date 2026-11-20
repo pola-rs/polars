@@ -9,7 +9,7 @@ use crate::plans::*;
 /// - `x.sort_by(by).last()` -> `x.max_by(row_encode(by))`
 /// - `x.sort().first()` and `x.sort().slice(offset, len)` -> a sort that only has to output its
 ///   first `1` or `offset + len` rows.
-pub(super) fn lower_sort_reads(
+pub(crate) fn lower_sort_reads(
     node: Node,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
@@ -83,7 +83,7 @@ fn sort_with_limit(node: Node, limit: IdxSize, arena: &mut Arena<AExpr>) -> Opti
 }
 
 /// Whether `min`, `max`, `min_by` and `max_by` support `dtype` in the order `sort` uses.
-fn has_total_min_max(dtype: &DataType) -> bool {
+pub(super) fn has_total_min_max(dtype: &DataType) -> bool {
     #[cfg(feature = "dtype-f16")]
     if matches!(dtype, DataType::Float16) {
         return false;

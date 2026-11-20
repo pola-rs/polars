@@ -1,8 +1,9 @@
 //! Tests for writing encrypted files, checking parts of the file that aren't
-//! exercised by reading files back, such as the page indexes.
+//! exercised by reading files back, such as the page indexes, and reading keys
+//! from key metadata with a [`KeyRetriever`].
 
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use polars_arrow::array::{Array, Int64Array};
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, Field};
@@ -10,21 +11,26 @@ use polars_arrow::record_batch::RecordBatchT;
 use polars_buffer::Buffer;
 use polars_parquet_format::thrift::protocol::{ReadThrift, TCompactInputProtocol};
 use polars_parquet_format::{ColumnIndex, OffsetIndex};
+use polars_utils::aliases::PlHashMap;
 
 use super::ciphers::{AesGcmBlockDecryptor, BlockDecryptor};
-use super::decrypt::{FileDecryptionProperties, decrypt_module};
+use super::decrypt::{FileDecryptionProperties, KeyRetriever, decrypt_module};
 use super::encrypt::FileEncryptionProperties;
 use super::modules::{ModuleType, create_module_aad};
 use crate::arrow::write::{
     CompressionOptions, Encoding, FileWriter, RowGroupIterator, StatisticsOptions, Version,
     WriteOptions, to_parquet_schema,
 };
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetadata, FileMetadata};
-use crate::parquet::read::read_metadata_with_decryption;
+use crate::parquet::page::CompressedPage;
+use crate::parquet::read::{get_page_iterator, read_metadata_with_decryption};
 use crate::parquet::{ENCRYPTED_PARQUET_MAGIC, PARQUET_MAGIC};
 
 const FOOTER_KEY: &[u8] = b"0123456789012345";
 const COLUMN_KEY: &[u8] = b"1234567890123450";
+const FOOTER_KEY_METADATA: &[u8] = b"footer_key";
+const COLUMN_KEY_METADATA: &[u8] = b"column_key";
 const NUM_ROW_GROUPS: usize = 2;
 
 /// Write a file with two Int64 columns, `a` and `b`, and multiple row groups.
@@ -106,6 +112,99 @@ fn read_index_module(data: &[u8], offset: Option<i64>, length: Option<i32>) -> V
 
 fn decode<T: ReadThrift>(bytes: &[u8]) -> T {
     T::read_from_in_protocol(&mut TCompactInputProtocol::new(bytes, usize::MAX)).unwrap()
+}
+
+/// Read the values of an Int64 column chunk written by [`write_file`].
+fn read_column_values(data: &[u8], column: &ColumnChunkMetadata) -> ParquetResult<Vec<i64>> {
+    let reader = Cursor::new(Buffer::from(data.to_vec()));
+    let pages = get_page_iterator(column, reader, vec![], usize::MAX)?
+        .collect::<ParquetResult<Vec<_>>>()?;
+    let [CompressedPage::Data(page)] = pages.as_slice() else {
+        panic!("expected a single data page");
+    };
+    // The page is uncompressed and plain encoded, with the values after the
+    // definition levels.
+    let values = &page.buffer[page.buffer.len() - 8 * page.num_values()..];
+    Ok(values
+        .chunks_exact(8)
+        .map(|v| i64::from_le_bytes(v.try_into().unwrap()))
+        .collect())
+}
+
+/// Look up keys by their key metadata, recording the metadata of each request.
+struct TestKeyRetriever {
+    keys: PlHashMap<Vec<u8>, Vec<u8>>,
+    requests: Mutex<Vec<Vec<u8>>>,
+}
+
+impl TestKeyRetriever {
+    fn new(keys: &[(&[u8], &[u8])]) -> Arc<Self> {
+        Arc::new(Self {
+            keys: keys
+                .iter()
+                .map(|(metadata, key)| (metadata.to_vec(), key.to_vec()))
+                .collect(),
+            requests: Mutex::new(vec![]),
+        })
+    }
+
+    fn requested(&self, key_metadata: &[u8]) -> bool {
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|m| m == key_metadata)
+    }
+}
+
+impl KeyRetriever for TestKeyRetriever {
+    fn retrieve_key(&self, key_metadata: &[u8]) -> ParquetResult<Vec<u8>> {
+        self.requests.lock().unwrap().push(key_metadata.to_vec());
+        self.keys.get(key_metadata).cloned().ok_or_else(|| {
+            ParquetError::Encryption(format!(
+                "no key for metadata {:?}",
+                String::from_utf8_lossy(key_metadata)
+            ))
+        })
+    }
+}
+
+/// Write a file where the footer key and the key for column `a` have key metadata.
+fn write_file_with_key_metadata(plaintext_footer: bool) -> Vec<u8> {
+    let properties = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+        .with_footer_key_metadata(FOOTER_KEY_METADATA.to_vec())
+        .with_column_key_and_metadata("a", COLUMN_KEY.to_vec(), COLUMN_KEY_METADATA.to_vec())
+        .with_plaintext_footer(plaintext_footer)
+        .build()
+        .unwrap();
+    write_file(properties)
+}
+
+fn read_with_retriever(
+    data: &[u8],
+    retriever: Arc<TestKeyRetriever>,
+) -> ParquetResult<FileMetadata> {
+    let properties = FileDecryptionProperties::with_key_retriever(retriever)
+        .build()
+        .unwrap();
+    read_metadata_with_decryption(&mut Cursor::new(data), Some(&properties), None)
+}
+
+/// Check that both columns of every row group can be read.
+fn check_all_values(data: &[u8], metadata: &FileMetadata) {
+    for row_group in &metadata.row_groups {
+        let columns = row_group.parquet_columns();
+        assert!(columns[0].is_encrypted());
+        assert!(!columns[1].is_encrypted());
+        assert_eq!(
+            read_column_values(data, &columns[0]).unwrap(),
+            (0..100).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            read_column_values(data, &columns[1]).unwrap(),
+            (100..200).collect::<Vec<_>>()
+        );
+    }
 }
 
 #[test]
@@ -339,5 +438,84 @@ fn test_uniform_encryption_page_indexes_use_footer_key() {
             ));
             assert!(!column_index.min_values.is_empty());
         }
+    }
+}
+
+#[test]
+fn test_key_retriever_encrypted_footer() {
+    let data = write_file_with_key_metadata(false);
+    assert_eq!(data[..4], ENCRYPTED_PARQUET_MAGIC);
+
+    // The footer key comes from the key metadata in `FileCryptoMetaData`.
+    let retriever = TestKeyRetriever::new(&[
+        (FOOTER_KEY_METADATA, FOOTER_KEY),
+        (COLUMN_KEY_METADATA, COLUMN_KEY),
+    ]);
+    let metadata = read_with_retriever(&data, retriever.clone()).unwrap();
+    assert!(retriever.requested(FOOTER_KEY_METADATA));
+    check_all_values(&data, &metadata);
+    assert!(retriever.requested(COLUMN_KEY_METADATA));
+
+    // The wrong footer key can't decrypt the footer.
+    let retriever = TestKeyRetriever::new(&[(FOOTER_KEY_METADATA, COLUMN_KEY)]);
+    let err = read_with_retriever(&data, retriever).unwrap_err();
+    assert!(
+        err.to_string().contains("unable to decrypt parquet footer"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_key_retriever_plaintext_footer() {
+    let data = write_file_with_key_metadata(true);
+    assert_eq!(data[..4], PARQUET_MAGIC);
+
+    // The footer key comes from `footer_signing_key_metadata`, and is used to
+    // verify the footer signature.
+    let retriever = TestKeyRetriever::new(&[
+        (FOOTER_KEY_METADATA, FOOTER_KEY),
+        (COLUMN_KEY_METADATA, COLUMN_KEY),
+    ]);
+    let metadata = read_with_retriever(&data, retriever.clone()).unwrap();
+    assert!(retriever.requested(FOOTER_KEY_METADATA));
+    check_all_values(&data, &metadata);
+    assert!(retriever.requested(COLUMN_KEY_METADATA));
+
+    // The wrong footer key fails signature verification.
+    let retriever = TestKeyRetriever::new(&[
+        (FOOTER_KEY_METADATA, COLUMN_KEY),
+        (COLUMN_KEY_METADATA, COLUMN_KEY),
+    ]);
+    let err = read_with_retriever(&data, retriever).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Footer signature verification failed"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_key_retriever_missing_column_key() {
+    for plaintext_footer in [false, true] {
+        let data = write_file_with_key_metadata(plaintext_footer);
+        // The retriever refuses the column key.
+        let retriever = TestKeyRetriever::new(&[(FOOTER_KEY_METADATA, FOOTER_KEY)]);
+        let metadata = read_with_retriever(&data, retriever.clone()).unwrap();
+
+        for row_group in &metadata.row_groups {
+            let columns = row_group.parquet_columns();
+            // The unencrypted column can still be read.
+            assert_eq!(
+                read_column_values(&data, &columns[1]).unwrap(),
+                (100..200).collect::<Vec<_>>()
+            );
+            let err = read_column_values(&data, &columns[0]).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("no key for metadata \"column_key\""),
+                "{err}"
+            );
+        }
+        assert!(retriever.requested(COLUMN_KEY_METADATA));
     }
 }

@@ -144,7 +144,7 @@ fn build_column_chunk(
         .iter()
         .map(|x| x.header_size as i64 + x.header.compressed_page_size as i64)
         .sum();
-    // SPEC: the total compressed size is the total compressed size of each page + the header size
+    // SPEC: the total uncompressed size is the total uncompressed size of each page + the header size
     let total_uncompressed_size = specs
         .iter()
         .map(|x| x.header_size as i64 + x.header.uncompressed_page_size as i64)

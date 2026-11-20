@@ -12,7 +12,7 @@ use crate::prelude::row_encode::encode_rows_unordered;
 const N_UNIQUE_SORT_FALLBACK_THRESHOLD: usize = 16384;
 
 /// Whether the nulls of `s`, if any, are all at its start or all at its end.
-fn nulls_at_one_end(s: &Series) -> bool {
+pub(crate) fn nulls_at_one_end(s: &Series) -> bool {
     let null_count = s.null_count();
     if null_count == 0 {
         return true;
@@ -39,7 +39,7 @@ impl Series {
 
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idxs| {
-                debug_assert!(idxs.len() <= self.len());
+                debug_assert!(_idx_in_bounds(idxs, self.len()));
                 if let Some(v) = &valid {
                     let mut count = 0;
                     for idx in idxs.iter() {
@@ -354,7 +354,7 @@ impl Series {
                     .map_with(CloneWrapper(state), |state, &[start, len]| {
                         let len_us = len as usize;
                         if len_us > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
-                            col.slice(start as i64, len_us).n_unique().unwrap() as IdxSize
+                            col.slice((start as usize, len_us)).n_unique().unwrap() as IdxSize
                         } else {
                             state.0.n_unique_slice(values, start, len)
                         }
@@ -483,7 +483,7 @@ impl Series {
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         // Prevent a rechunk for every individual group.

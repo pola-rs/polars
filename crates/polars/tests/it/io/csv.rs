@@ -115,7 +115,7 @@ fn write_dates() {
         .expect_err("invalid date/time format should err");
 
     let with_timezone = polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
-        s2.slice(0, 1).datetime().unwrap(),
+        s2.slice(Slice::head(1)).datetime().unwrap(),
         TimeZone::opt_try_new(Some("America/New_York"))
             .unwrap()
             .as_ref(),

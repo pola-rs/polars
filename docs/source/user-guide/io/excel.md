@@ -12,7 +12,7 @@ to parse Excel files into a form that Polars can parse. The available engines ar
   and is (by far) the fastest reader.
 - xlsx2csv: This reader parses the .xlsx file to an in-memory CSV that Polars then reads with its
   own CSV reader.
-- openpyxl: Typically slower than xls2csv, but can provide more flexibility for files that are
+- openpyxl: Typically slower than xlsx2csv, but can provide more flexibility for files that are
   difficult to parse.
 
 We recommend working with the default fastexcel engine. The xlsx2csv and openpyxl engines are slower
@@ -41,7 +41,7 @@ name, the first sheet will be read.
 
 ## Write
 
-We need the xlswriter library installed as an additional dependency to write to Excel files.
+We need the xlsxwriter library installed as an additional dependency to write to Excel files.
 
 === ":fontawesome-brands-python: Python"
 

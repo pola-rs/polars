@@ -14,7 +14,7 @@ mod test {
 
         IpcStreamWriter::new(&mut buf)
             .finish(&mut df)
-            .expect("failed to write ICP stream");
+            .expect("failed to write IPC stream");
 
         buf.set_position(0);
 

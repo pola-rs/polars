@@ -38,12 +38,14 @@ def test_bitwise_count(df: pl.DataFrame) -> None:
         SELECT
           BITCOUNT(x) AS x_bits_set,
           BIT_COUNT(y) AS y_bits_set,
+          BIT_COUNT(y) - 1 AS y_bits_set_minus_1,
         FROM self
         """
     )
     assert res.to_dict(as_series=False) == {
         "x_bits_set": [2, 1, 3, 3, 1],
         "y_bits_set": [57, 0, 2, 64, None],
+        "y_bits_set_minus_1": [56, -1, 1, 63, None],
     }
 
 

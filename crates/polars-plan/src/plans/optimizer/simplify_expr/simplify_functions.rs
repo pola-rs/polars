@@ -417,9 +417,10 @@ pub(super) fn optimize_functions(
             let offset_i64: i64 = offset.try_into().unwrap_or(i64::MAX);
             let offset_node =
                 expr_arena.add(AExpr::Literal(LiteralValue::Scalar(offset_i64.into())));
-            let length_node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(
-                (usize::MAX as u64).into(),
-            )));
+            let length_node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::UInt64,
+                AnyValue::Null,
+            ))));
             Some(AExpr::Slice {
                 input: input[0].node(),
                 offset: offset_node,
@@ -435,10 +436,10 @@ pub(super) fn optimize_functions(
 fn is_string_concat(ae: &AExpr, ignore_nulls: bool) -> bool {
     matches!(ae, AExpr::Function {
                 function:IRFunctionExpr::StringExpr(
-                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_inore_nulls},
+                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_ignore_nulls},
                 ),
                 ..
-            } if sep.is_empty() && *func_inore_nulls == ignore_nulls)
+            } if sep.is_empty() && *func_ignore_nulls == ignore_nulls)
 }
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]

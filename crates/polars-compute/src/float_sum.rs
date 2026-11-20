@@ -242,7 +242,10 @@ where
 
 pub trait FloatSum<F>: Sized {
     fn sum(f: &[Self]) -> F;
-    fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F;
+    fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F {
+        Self::sum_with_mask(f, BitMask::from_bitmap(validity))
+    }
+    fn sum_with_mask(f: &[Self], mask: BitMask<'_>) -> F;
 }
 
 impl<T, F> FloatSum<F> for T
@@ -264,8 +267,7 @@ where
         mainsum + restsum
     }
 
-    fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F {
-        let mask = BitMask::from_bitmap(validity);
+    fn sum_with_mask(f: &[Self], mask: BitMask<'_>) -> F {
         assert!(f.len() == mask.len());
 
         let remainder = f.len() % PAIRWISE_RECURSION_LIMIT;

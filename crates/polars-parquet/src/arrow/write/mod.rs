@@ -1182,7 +1182,7 @@ fn get_encodings_recursive(dtype: &ArrowDataType, encodings: &mut Vec<Encoding>)
     }
 }
 
-/// Transverses the `dtype` up to its (parquet) columns and returns a vector of
+/// Traverses the `dtype` up to its (parquet) columns and returns a vector of
 /// items based on `map`.
 ///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)

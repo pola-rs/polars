@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 
-use num_traits::Zero;
+use num_traits::{NumCast, Zero};
 use polars_arrow::array::PrimitiveArray;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
+use polars_compute::float_sum::FloatSum;
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -70,7 +71,7 @@ impl<T> Clone for NumSumReducer<T> {
 impl<T> Reducer for NumSumReducer<T>
 where
     T: PolarsNumericType,
-    <T as PolarsNumericType>::Native: SumCast,
+    <T as PolarsNumericType>::Native: SumCast + FloatSum<f64>,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     type Dtype = T;
@@ -112,6 +113,23 @@ where
                 }
             }
         }
+    }
+
+    #[inline(always)]
+    unsafe fn reduce_range(
+        &self,
+        v: &mut Self::Value,
+        arr: &PrimitiveArray<T::Native>,
+        start: usize,
+        len: usize,
+        seq_id: u64,
+    ) -> bool {
+        if !T::Native::is_f64() {
+            return unsafe { reduce_range_per_row(self, v, arr, start, len, seq_id) };
+        }
+        let (sum, num_valid) = unsafe { float_sum_range(arr, start, len) };
+        *v += <Self::Value as NumCast>::from(sum).unwrap();
+        num_valid > 0
     }
 
     fn finish(
@@ -186,12 +204,30 @@ impl Reducer for DecimalSumReducer {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        if !is_sum_overflow(*v) {
-            *v = ca
-                .iter()
-                .flatten()
-                .try_fold(*v, i128::checked_add)
-                .unwrap_or(DECIMAL_SUM_OVERFLOW);
+        if is_sum_overflow(*v) {
+            return;
+        }
+        for arr in ca.downcast_iter() {
+            let sum = match arr.validity().filter(|_| arr.has_nulls()) {
+                Some(validity) => arr
+                    .values()
+                    .iter()
+                    .zip(validity)
+                    .try_fold(*v, |acc, (&x, valid)| {
+                        acc.checked_add(if valid { x } else { 0 })
+                    }),
+                None => arr
+                    .values()
+                    .iter()
+                    .try_fold(*v, |acc, &x| acc.checked_add(x)),
+            };
+            match sum {
+                Some(sum) => *v = sum,
+                None => {
+                    *v = DECIMAL_SUM_OVERFLOW;
+                    return;
+                },
+            }
         }
     }
 

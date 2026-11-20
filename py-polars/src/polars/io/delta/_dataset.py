@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 import polars as pl
 from polars._utils.logging import eprint
@@ -303,7 +303,9 @@ class DeltaDataset:
                         schema={"selection_vector": pl.List(pl.Boolean)},
                     )
                 return _extract_delta_deletion_vectors(
-                    requested_paths, delta_deletion_vectors
+                    requested_paths,
+                    delta_deletion_vectors,
+                    table_root=_table_root(table.table_uri),
                 )
 
             deletion_files = (
@@ -384,9 +386,29 @@ class DeltaDataset:
         self.__dict__ = state
 
 
+# Characters delta-rs leaves unescaped in cloud file_uris(): printable ASCII except the
+# URL path percent-encode set (space, `"`, `<`, `>`, backtick, `{` and `}`). Its URL
+# join reads `#` and `?` as fragment and query delimiters, so these stay unescaped too.
+_URL_PATH_SAFE = "!#$%&'()*+,-./:;=?@[\\]^_|~"
+
+
+def _dv_path_key(path: str, table_root: str | None) -> str:
+    """Return the deletion vector `path` as file_uris() gives it.
+
+    Below the table root, file_uris() decodes local paths and gives cloud paths as a
+    URL path, while deletion vector paths keep the log's percent-encoding.
+    """
+    root = table_root if table_root and path.startswith(table_root) else ""
+    rel = unquote(path[len(root) :])
+    if "://" in path:
+        rel = quote(rel, safe=_URL_PATH_SAFE)
+    return root + rel
+
+
 def _extract_delta_deletion_vectors(
     requested_paths: pl.DataFrame,
     delta_deletion_vectors: pl.DataFrame,
+    table_root: str | None = None,
 ) -> pl.DataFrame:
     """
     Extract the deletion_vectors for the provided requested_paths.
@@ -395,6 +417,8 @@ def _extract_delta_deletion_vectors(
     Output series schema is "selection_vector": List(Boolean), maintaining order.
 
     The selection_vector from deltalake is a keep-mask (True = keep).
+
+    `table_root` is the table prefix of the requested paths (see `_table_root`).
     """
     assert requested_paths.schema == {"path": pl.String}
 
@@ -403,6 +427,19 @@ def _extract_delta_deletion_vectors(
     assert delta_deletion_vectors.schema == delta_dv_schema
 
     file_prefix = "file://" if sys.platform != "win32" else "file:///"
+    delta_deletion_vectors = delta_deletion_vectors.with_columns(
+        pl.col("filepath")
+        .str.replace("^lakefs://", "s3://")
+        .str.strip_prefix(file_prefix)
+    )
+    # Only paths with a percent-escape can differ from their file_uris() form.
+    filepath = delta_deletion_vectors["filepath"]
+    escaped = filepath.str.contains("%", literal=True).fill_null(False).arg_true()
+    if len(escaped) > 0:
+        keys = [_dv_path_key(p, table_root) for p in filepath.gather(escaped).to_list()]
+        delta_deletion_vectors = delta_deletion_vectors.with_columns(
+            filepath.clone().scatter(escaped, keys)
+        )
     joined_df = (
         requested_paths.lazy()
         .with_columns(
@@ -411,11 +448,7 @@ def _extract_delta_deletion_vectors(
             .str.strip_prefix(file_prefix)
         )
         .join(
-            delta_deletion_vectors.lazy().with_columns(
-                pl.col("filepath")
-                .str.replace("^lakefs://", "s3://")
-                .str.strip_prefix(file_prefix)
-            ),
+            delta_deletion_vectors.lazy(),
             left_on="path",
             right_on="filepath",
             how="left",

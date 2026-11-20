@@ -106,7 +106,7 @@ fn update_groups_and_bounds(
 /// - offset
 ///
 /// And every window boundary we search for the values that fit that window by the given
-/// `ClosedWindow`. The groups are return as `GroupTuples` together with the lower bound and upper
+/// `ClosedWindow`. The groups are returned as `GroupTuples` together with the lower bound and upper
 /// bound timestamps. These timestamps indicate the start (lower) and end (upper) of the window of
 /// that group.
 ///
@@ -333,7 +333,7 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     }))
 }
 
-// window is with -1 periods of t
+// window is within -1 periods of t
 // ----t---
 //  [---]
 #[allow(clippy::too_many_arguments)]
@@ -464,21 +464,6 @@ pub(crate) fn group_by_values_iter_lookahead(
     })
 }
 
-#[cfg(feature = "rolling_window_by")]
-#[inline]
-pub(crate) fn group_by_values_iter(
-    period: Duration,
-    time: &[i64],
-    closed_window: ClosedWindow,
-    tu: TimeUnit,
-    tz: Option<Tz>,
-) -> PolarsResult<impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_> {
-    let mut offset = period;
-    offset.negative = true;
-    // t is at the right endpoint of the window
-    group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0, None)
-}
-
 /// Checks if the boundary elements don't split on duplicates.
 /// If they do we remove them
 fn prune_splits_on_duplicates(time: &[i64], thread_offsets: &mut Vec<(usize, usize)>) {
@@ -527,7 +512,7 @@ fn prune_splits_on_duplicates(time: &[i64], thread_offsets: &mut Vec<(usize, usi
 }
 
 #[allow(clippy::too_many_arguments)]
-fn group_by_values_iter_lookbehind_collected(
+pub(crate) fn group_by_values_iter_lookbehind_collected(
     period: Duration,
     offset: Duration,
     time: &[i64],
@@ -547,8 +532,12 @@ fn group_by_values_iter_lookbehind_collected(
         start_offset,
         upper_bound,
     )?;
-    iter.map(|result| result.map(|(offset, len)| [offset, len]))
-        .collect::<PolarsResult<Vec<_>>>()
+    let mut windows = Vec::with_capacity(iter.size_hint().0);
+    for result in iter {
+        let (offset, len) = result?;
+        windows.push([offset, len]);
+    }
+    Ok(windows)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -683,8 +672,8 @@ pub fn group_by_values(
         }
         // partial lookbehind
         // this one is still single threaded
-        // can make it parallel later, its a bit more complicated because the boundaries are unknown
-        // window is with -1 periods of t
+        // can make it parallel later, it's a bit more complicated because the boundaries are unknown
+        // window is within -1 periods of t
         // ----t---
         //  [---]
         else {

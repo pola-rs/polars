@@ -506,7 +506,7 @@ impl<'a> CoreReader<'a> {
                         results.lock().unwrap().push((b.as_ptr() as usize, result));
                     });
 
-                    // Check just after we spawned a chunk. That mean we processed all data up until
+                    // Check just after we spawned a chunk. That means we processed all data up until
                     // row count.
                     if self.n_rows.is_some() && total_line_count.load() > self.n_rows.unwrap() {
                         break;
@@ -542,7 +542,7 @@ impl<'a> CoreReader<'a> {
         // Let's slice to correct number of rows if possible.
         if let Some(n_rows) = self.n_rows {
             if n_rows < df.height() {
-                df = df.slice(0, n_rows)
+                df = df.slice(Slice::head(n_rows))
             }
         }
         Ok(df)

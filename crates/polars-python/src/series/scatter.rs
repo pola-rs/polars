@@ -91,7 +91,7 @@ fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, 
     }
 
     let mut phys = s.to_physical_repr().into_owned();
-    drop(s); // Reduce refcount to make use of in-place mutation of possible.
+    drop(s); // Reduce refcount to make use of in-place mutation if possible.
     let ret = scatter_impl(&mut phys, &logical_dtype, idx, &values);
     match ret {
         Ok(s) => Ok(unsafe { s.from_physical_unchecked(&logical_dtype).unwrap() }),

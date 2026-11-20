@@ -53,7 +53,7 @@ pub struct ArrowColumnStatistics {
     pub distinct_count: Option<u64>,
 
     // While these two are Box<dyn Array>, they will only ever contain one valid value. This might
-    // seems dumb, and don't get me wrong it is, but polars_arrow::Scalar is basically useless.
+    // seem dumb, and don't get me wrong it is, but polars_arrow::Scalar is basically useless.
     pub min_value: Option<Box<dyn Array>>,
     pub max_value: Option<Box<dyn Array>>,
 }

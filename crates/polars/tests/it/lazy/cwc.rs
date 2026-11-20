@@ -1,7 +1,7 @@
 use polars::prelude::*;
 
 #[test]
-#[ignore = "fuzz test: Takes to long"]
+#[ignore = "fuzz test: Takes too long"]
 fn fuzz_cluster_with_columns() {
     const PRIMES: &[i32] = &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29];
     use rand::RngExt;

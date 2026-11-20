@@ -2162,3 +2162,17 @@ def test_single_value_list_agg_state_edge_cases_23995() -> None:
     out = df.group_by("g").agg(pl.col("xs").list.set_union(pl.Series([[1]])))
     assert out.schema == {"g": pl.Int64, "xs": pl.List(pl.List(pl.Int64))}
     assert out.height == 0
+
+
+def test_is_in_row_wise_series_is_not_elementwise() -> None:
+    df = pl.DataFrame({"a": [0, 1, 2, 3], "b": [1, 2, 3, 4]})
+    haystack = pl.Series([[1], [9], [3]])
+
+    # The filters must not be fused, as `haystack` lines up with the filtered rows.
+    lf = df.lazy().filter(pl.col("b") > 1).filter(pl.col("a").is_in(haystack))
+    assert lf.collect()["a"].to_list() == [1, 3]
+
+    # The chunks must not be evaluated in parallel.
+    chunked = pl.concat([df[:2], df[2:]], rechunk=False)
+    out = chunked.with_columns(r=pl.col("a").is_in(pl.Series([[0], [9], [2], [9]])))
+    assert out["r"].to_list() == [True, False, True, False]

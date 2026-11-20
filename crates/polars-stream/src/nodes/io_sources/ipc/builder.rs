@@ -1,24 +1,20 @@
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_arrow::io::ipc::read::FileMetadata;
 use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_core::schema::SchemaRef;
 #[cfg(feature = "ipc")]
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
-#[cfg(feature = "ipc")]
-use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{ScanFieldSelection, ScanSource};
 #[cfg(feature = "ipc")]
 use polars_utils::pl_str::PlSmallStr;
 
-use super::super::shared::pipeline_budget::{
-    PipelineBudget, prefetch_kbytes_limit_from_env_or_default,
-};
+use super::super::shared::pipeline_budget::{ActiveScan, PipelineBudget, env_nonzero_usize};
 use super::{DynByteSourceBuilder, IpcFileReader};
 #[cfg(feature = "ipc")]
 use crate::metrics::IOMetrics;
@@ -29,6 +25,11 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 pub struct IpcReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
     pub options: Arc<IpcScanOptions>,
+    /// Struct fields to read of the columns not read whole.
+    pub field_selection: Option<Arc<ScanFieldSelection>>,
+    /// The full schema of the scan, set with `field_selection`. The pruned struct columns are
+    /// checked against it as if read whole, so that the cast policies raise as they would then.
+    pub scan_schema: Option<SchemaRef>,
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
@@ -40,6 +41,8 @@ impl std::fmt::Debug for IpcReaderBuilder {
         f.debug_struct("IpcBuilder")
             .field("first_metadata", &self.first_metadata)
             .field("options", &self.options)
+            .field("field_selection", &self.field_selection)
+            .field("scan_schema", &self.scan_schema)
             .field("pipeline_budget", &self.pipeline_budget)
             .finish()
     }
@@ -62,39 +65,21 @@ impl FileReaderBuilder for IpcReaderBuilder {
             self.task_metrics.set(task_metrics).ok().unwrap();
         }
 
-        let prefetch_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_SIZE")
-            .map(|x| {
-                x.parse::<NonZeroUsize>()
-                    .unwrap_or_else(|_| {
-                        panic!("invalid value for POLARS_RECORD_BATCH_PREFETCH_SIZE: {x}")
-                    })
-                    .get()
-            })
-            .unwrap_or(
-                // Similar to Parquet.
-                execution_state
-                    .num_pipelines
-                    .saturating_mul(2)
-                    .max(get_inflight_request_budget() as usize)
-                    .clamp(16, 2048),
-            )
-            .max(1);
-
-        let prefetch_kbytes_limit = prefetch_kbytes_limit_from_env_or_default(
-            "POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET",
+        let pipeline_budget = PipelineBudget::new(
+            env_nonzero_usize("POLARS_RECORD_BATCH_PREFETCH_SIZE"),
+            env_nonzero_usize("POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET"),
             execution_state.num_pipelines,
         );
 
         if config::verbose() {
-            eprintln!(
-                "[IpcReaderBuilder]: prefetch_limit: {}, prefetch_kbytes_limit: {}",
-                prefetch_limit, prefetch_kbytes_limit
-            );
+            eprintln!("[IpcReaderBuilder]: {}", pipeline_budget.describe_limits());
         }
 
-        self.pipeline_budget
-            .set(PipelineBudget::new(prefetch_limit, prefetch_kbytes_limit))
-            .unwrap()
+        self.pipeline_budget.set(pipeline_budget).unwrap()
+    }
+
+    fn active_scan(&self) -> Option<ActiveScan> {
+        self.pipeline_budget.get().map(PipelineBudget::active_scan)
     }
 
     fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
@@ -137,6 +122,8 @@ impl FileReaderBuilder for IpcReaderBuilder {
             scan_source,
             cloud_options,
             config,
+            field_selection: self.field_selection.clone(),
+            scan_schema: self.scan_schema.clone(),
             metadata,
             byte_source_builder,
             record_batch_prefetch_sync: RecordBatchPrefetchSync {

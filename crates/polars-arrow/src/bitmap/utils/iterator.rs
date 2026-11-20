@@ -48,7 +48,7 @@ impl<'a> BitmapIter<'a> {
         }
     }
 
-    /// Consume and returns the numbers of `1` / `true` values at the beginning of the iterator.
+    /// Consumes and returns the number of `1` / `true` values at the beginning of the iterator.
     ///
     /// This performs the same operation as `(&mut iter).take_while(|b| b).count()`.
     ///
@@ -88,7 +88,7 @@ impl<'a> BitmapIter<'a> {
         num_leading_ones
     }
 
-    /// Consume and returns the numbers of `0` / `false` values that the start of the iterator.
+    /// Consumes and returns the number of `0` / `false` values at the start of the iterator.
     ///
     /// This performs the same operation as `(&mut iter).take_while(|b| !b).count()`.
     ///
@@ -235,6 +235,33 @@ impl Iterator for BitmapIter<'_> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         let num_remaining = self.num_remaining();
         (num_remaining, Some(num_remaining))
+    }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut acc = init;
+        let mut word = self.word;
+        let mut word_len = self.word_len;
+        let mut bytes = self.bytes;
+        let mut rest_len = self.rest_len;
+        loop {
+            for i in 0..word_len {
+                acc = f(acc, (word >> i) & 1 != 0);
+            }
+            if rest_len == 0 {
+                return acc;
+            }
+            word_len = rest_len.min(64);
+            rest_len -= word_len;
+            unsafe {
+                let chunk = bytes.get_unchecked(..8).try_into().unwrap();
+                word = u64::from_le_bytes(chunk);
+                bytes = bytes.get_unchecked(8..);
+            }
+        }
     }
 
     #[inline]
@@ -477,7 +504,7 @@ mod tests {
                     // Check value.
                     assert_eq!(out, expected);
 
-                    // Check internal sate.
+                    // Check internal state.
                     let final_rest_len = iter_test.rest_len;
                     let final_word_len = iter_test.word_len;
                     match out {

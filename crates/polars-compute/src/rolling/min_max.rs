@@ -49,8 +49,8 @@ impl<'a, T: NativeType, P: MinMaxPolicy> RollingAggWindowNulls<T> for MinMaxWind
         unsafe { Some(*self.inner.values.get_unchecked(abs)) }
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        RollingAggWindowNulls::<T, IdxSize>::is_valid(&self.inner, min_periods)
+    fn is_valid(&self, min_samples: usize) -> bool {
+        RollingAggWindowNulls::<T, IdxSize>::is_valid(&self.inner, min_samples)
     }
 
     fn slice_len(&self) -> usize {

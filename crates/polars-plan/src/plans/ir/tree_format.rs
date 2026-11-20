@@ -38,7 +38,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 }
                 return f.write_char(')');
             },
-            AExpr::Column(name) => return write!(f, "col({name})"),
+            AExpr::Column(name) | AExpr::EvalColumn(name) => return write!(f, "col({name})"),
             #[cfg(feature = "dtype-struct")]
             AExpr::StructField(name) => return write!(f, "field({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
@@ -253,8 +253,9 @@ impl<'a> TreeFmtNode<'a> {
                         h,
                         &(if let Some(slice) = options.slice {
                             format!(
-                                "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                                options.maintain_order
+                                "SLICED UNION[maintain_order: {0}]: {1}",
+                                options.maintain_order,
+                                slice.fmt_tuple()
                             )
                         } else {
                             format!("UNION[maintain_order: {0}]", options.maintain_order)
@@ -398,8 +399,8 @@ impl<'a> TreeFmtNode<'a> {
                     ),
                     vec![self.lp_node(None, *input)],
                 ),
-                Slice { input, offset, len } => ND(
-                    wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
+                Slice { input, slice } => ND(
+                    wh(h, &format!("SLICE[{slice}]")),
                     vec![self.lp_node(None, *input)],
                 ),
                 MapFunction { input, function } => ND(
@@ -597,7 +598,7 @@ struct TreeViewColumn {
     center: usize,
 }
 
-/// Meta-info of a column in a populated `TreeFmtVisitor` required for the pretty-print of a tree
+/// Meta-info of a row in a populated `TreeFmtVisitor` required for the pretty-print of a tree
 #[derive(Clone, Default, Debug)]
 struct TreeViewRow {
     offset: usize,
@@ -901,7 +902,7 @@ impl From<TreeView<'_>> for Canvas {
             3 + value.rows.iter().map(|r| r.height).sum::<usize>() + 3 * (value.n_rows - 1);
         let mut canvas = Canvas::new(width, height, Glyphs::default());
 
-        // Axles
+        // Axes
         let (x, y) = (value.n_rows_width + 2, 1);
         canvas.draw_symbol(Point(x, y), '┌');
         canvas.draw_line(Point(x + 1, y), Orientation::Horizontal, width - x);

@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         CsvQuoteStyle,
         IpcCompression,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         PostOptCallback,
         StorageOptionsDict,
@@ -42,7 +43,6 @@ if TYPE_CHECKING:
     from polars.dataframe import DataFrame
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy, SinkedPathsCallback
     from polars.lazyframe.frame import LazyFrame
     from polars.lazyframe.opt_flags import QueryOptFlags
@@ -198,7 +198,7 @@ class Engine(ABC):
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
-        encryption: ParquetEncryptionProperties | None,
+        encryption: ParquetEncryption | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
@@ -495,7 +495,7 @@ class _LocalEngine(Engine):
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
-        encryption: ParquetEncryptionProperties | None,
+        encryption: ParquetEncryption | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
@@ -706,7 +706,7 @@ class InMemoryEngine(_LocalEngine):
     monitoring : bool, default None
         Whether to monitor queries run by this engine. ``None`` uses the setting from
         :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
-        this to ``True`` requires the ``polars-cloud`` package.
+        this to ``True`` requires the ``polars-nanook`` package.
     """
 
     _name = "in-memory"
@@ -721,7 +721,7 @@ class StreamingEngine(_LocalEngine):
     monitoring : bool, default None
         Whether to monitor queries run by this engine. ``None`` uses the setting from
         :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
-        this to ``True`` requires the ``polars-cloud`` package.
+        this to ``True`` requires the ``polars-nanook`` package.
 
     Examples
     --------

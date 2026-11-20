@@ -180,16 +180,16 @@ def test_cross_join_estimate_uses_the_range_of_sampled_row_groups(
 
 
 @pytest.mark.parametrize(
-    ("n_columns", "n_row_groups", "expected"),
+    ("n_columns", "n_row_groups"),
     [
-        # The planner reads row groups 0, 4 and 8; the filter keeps only the last.
-        (2_049, 12, "PreferRight"),
-        # It reads only row group 0, which says nothing about the others.
-        (4_097, 2, None),
+        # The planner samples row groups 0, 4 and 8; the filter keeps only the last.
+        (2_049, 12),
+        # It samples only row group 0.
+        (4_097, 2),
     ],
 )
 def test_filter_past_the_sampled_row_groups_is_not_estimated_empty(
-    tmp_path: Path, n_columns: int, n_row_groups: int, expected: str | None
+    tmp_path: Path, n_columns: int, n_row_groups: int
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     # `k` is the index of its row group; the many columns make the planner sample.
@@ -206,7 +206,8 @@ def test_filter_past_the_sampled_row_groups_is_not_estimated_empty(
     joined = small.join(small, on="k", suffix="_r").select("w")
 
     q = wide.join(joined, how="cross")
-    assert cross_join_build_side(q.explain()) == expected
+    # The range of `k` is read from every row group.
+    assert cross_join_build_side(q.explain()) == "PreferRight"
     assert q.select(pl.len()).collect(engine="streaming").item() == 1_000
 
 

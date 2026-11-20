@@ -146,10 +146,11 @@ impl OptPyCloudOptions<'_> {
             .with_rate_limit_config(rate_limit_config);
 
         #[cfg(feature = "cloud")]
-        let mut cloud_options =
-            cloud_options.with_credential_provider(credential_provider.map(
-                polars_io::cloud::credential_provider::PlCredentialProvider::from_python_builder,
-            ));
+        let mut cloud_options = cloud_options.with_credential_provider(
+            credential_provider
+                .map(|builder| credential_provider_from_python_builder(py, builder))
+                .transpose()?,
+        );
 
         #[cfg(feature = "cloud")]
         if file_cache_ttl > 0 {
@@ -159,4 +160,28 @@ impl OptPyCloudOptions<'_> {
 
         Ok(Some(cloud_options))
     }
+}
+
+/// Auto-initialized providers are passed as their plain config, so that query plans do not
+/// contain Python objects for them.
+#[cfg(feature = "cloud")]
+fn credential_provider_from_python_builder(
+    py: Python<'_>,
+    builder: Py<PyAny>,
+) -> PyResult<polars_io::cloud::credential_provider::PlCredentialProvider> {
+    use polars_io::cloud::credential_provider::PlCredentialProvider;
+
+    let name = intern!(py, "_auto_init_config_json");
+    let auto_init_config = if builder.bind(py).hasattr(name)? {
+        builder
+            .call_method0(py, name)?
+            .extract::<Option<PyBackedStr>>(py)?
+    } else {
+        None
+    };
+
+    Ok(match auto_init_config {
+        Some(json) => PlCredentialProvider::from_auto_init_json(&json).map_err(to_py_err)?,
+        None => PlCredentialProvider::from_python_builder(builder),
+    })
 }

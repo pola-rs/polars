@@ -255,7 +255,7 @@ pub(crate) fn try_build_http_header_map_from_items_slice<S: AsRef<str>>(
 }
 
 #[allow(dead_code)]
-/// Parse an untype configuration hashmap to a typed configuration for the given configuration key type.
+/// Parse an untyped configuration hashmap to a typed configuration for the given configuration key type.
 fn parse_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
     config: I,
 ) -> PolarsResult<Configs<T>>
@@ -310,37 +310,104 @@ impl CloudType {
             CloudScheme::Ext(scheme) => Self::Ext(scheme),
         }
     }
+
+    /// Whether Polars writes to paths of this type.
+    ///
+    /// Hugging Face paths are read-only. An external scheme needs a registered object
+    /// store builder.
+    pub fn is_writable(&self) -> bool {
+        match self {
+            Self::Aws => cfg!(feature = "aws"),
+            Self::Azure => cfg!(feature = "azure"),
+            Self::Gcp => cfg!(feature = "gcp"),
+            Self::Http => cfg!(feature = "http"),
+            Self::File => true,
+            Self::Hf => false,
+            #[cfg(feature = "cloud")]
+            Self::Ext(scheme) => super::has_object_store_builder(scheme),
+            #[cfg(not(feature = "cloud"))]
+            Self::Ext(_) => false,
+        }
+    }
 }
 
 pub static USER_AGENT: &str = concat!("polars", "/", env!("CARGO_PKG_VERSION"),);
 
+/// HTTP client timeouts from the environment, in whole seconds. 0 disables a timeout.
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+struct HttpTimeouts {
+    /// DNS lookup, TCP connect and TLS handshake.
+    connect: Option<std::time::Duration>,
+    /// Wait for the response headers, then each gap between reads of the body. The header
+    /// timer starts when the request is created, so it also limits sending a request body.
+    read: Option<std::time::Duration>,
+    /// One request attempt up to the end of the response body, whatever its progress.
+    request: Option<std::time::Duration>,
+}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+impl HttpTimeouts {
+    fn from_env() -> Self {
+        fn secs(name: &str, default: u64) -> Option<std::time::Duration> {
+            let secs = std::env::var(name).map_or(default, |x| {
+                x.parse::<u64>()
+                    .unwrap_or_else(|_| panic!("invalid value for {name}: {x}"))
+            });
+            (secs > 0).then(|| std::time::Duration::from_secs(secs))
+        }
+
+        Self {
+            connect: secs("POLARS_HTTP_CONNECT_TIMEOUT_SECONDS", 10),
+            read: secs("POLARS_HTTP_READ_TIMEOUT_SECONDS", 0),
+            request: secs("POLARS_HTTP_REQUEST_TIMEOUT_SECONDS", 0),
+        }
+    }
+}
+
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 pub(super) fn get_client_options() -> ClientOptions {
-    use std::num::NonZeroU64;
-
     use reqwest::header::HeaderValue;
 
-    ClientOptions::new()
-        // Disables the time limit for downloading the response body.
-        .with_timeout_disabled()
-        // Set the time limit for establishing the connection.
-        .with_connect_timeout(std::time::Duration::from_secs(
-            std::env::var("POLARS_HTTP_CONNECT_TIMEOUT_SECONDS")
-                .map(|x| {
-                    x.parse::<NonZeroU64>()
-                        .ok()
-                        .unwrap_or_else(|| {
-                            panic!("invalid value for POLARS_HTTP_CONNECT_TIMEOUT_SECONDS: {x}")
-                        })
-                        .get()
-                })
-                .unwrap_or(5 * 60),
-        ))
+    let HttpTimeouts {
+        connect,
+        read,
+        request,
+    } = HttpTimeouts::from_env();
+
+    let opts = ClientOptions::new()
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
         .with_dns_resolver(Arc::new(
             CachingResolver::new(DnsResolverConfig::from_env()),
-        ))
+        ));
+
+    // `ClientOptions::new()` sets a connect and a request timeout of its own.
+    let opts = match connect {
+        Some(v) => opts.with_connect_timeout(v),
+        None => opts.with_connect_timeout_disabled(),
+    };
+    let opts = match read {
+        Some(v) => opts.with_read_timeout(v),
+        None => opts.with_read_timeout_disabled(),
+    };
+    match request {
+        Some(v) => opts.with_timeout(v),
+        None => opts.with_timeout_disabled(),
+    }
+}
+
+/// Logs the timeouts of a client, as set by the environment and `storage_options`.
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+fn log_http_timeouts(get_config_value: impl Fn(object_store::ClientConfigKey) -> Option<String>) {
+    use object_store::ClientConfigKey as K;
+
+    let get = |key| get_config_value(key).unwrap_or_else(|| "disabled".to_string());
+    eprintln!(
+        "object-store http timeouts: connect: {}, read: {}, request: {}",
+        get(K::ConnectTimeout),
+        get(K::ReadTimeout),
+        get(K::Timeout),
+    );
 }
 
 #[cfg(feature = "aws")]
@@ -478,6 +545,10 @@ impl CloudOptions {
             }
         }
 
+        if polars_core::config::verbose() {
+            log_http_timeouts(|key| builder.get_config_value(&AmazonS3ConfigKey::Client(key)));
+        }
+
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
             .is_none()
@@ -508,8 +579,14 @@ impl CloudOptions {
                             "'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning."
                         );
                         let result = with_concurrency_budget(1, || async {
-                            reqwest::Client::builder()
+                            // A single HEAD that is not retried.
+                            let mut client = reqwest::Client::builder()
                                 .user_agent(USER_AGENT)
+                                .timeout(std::time::Duration::from_secs(30));
+                            if let Some(v) = HttpTimeouts::from_env().connect {
+                                client = client.connect_timeout(v);
+                            }
+                            client
                                 .build()
                                 .unwrap()
                                 .head(format!("https://{bucket}.s3.amazonaws.com"))
@@ -629,6 +706,10 @@ impl CloudOptions {
             }
         }
 
+        if verbose {
+            log_http_timeouts(|key| builder.get_config_value(&AzureConfigKey::Client(key)));
+        }
+
         let builder = builder
             .with_url(url.to_string())
             .with_retry(self.retry_config.into());
@@ -706,6 +787,10 @@ impl CloudOptions {
             }
         }
 
+        if polars_core::config::verbose() {
+            log_http_timeouts(|key| builder.get_config_value(&GoogleConfigKey::Client(key)));
+        }
+
         let builder = builder
             .with_url(url.to_string())
             .with_retry(self.retry_config.into());
@@ -745,6 +830,9 @@ impl CloudOptions {
             opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
                 headers.as_slice(),
             )?);
+        }
+        if polars_core::config::verbose() {
+            log_http_timeouts(|key| opts.get_config_value(&key));
         }
         Ok(opts)
     }

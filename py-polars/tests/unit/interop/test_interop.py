@@ -27,6 +27,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1017,6 +1019,28 @@ def test_from_arrow_invalid_time_zone() -> None:
         pl.from_arrow(arr)
 
 
+@pytest.mark.parametrize("time_zone", ["+05:30", "GMT+8", "Z", "not-a-zone"])
+@pytest.mark.parametrize("n_rows", [0, 1])
+def test_from_arrow_unreadable_time_zone_is_an_error_not_a_panic(
+    time_zone: str, n_rows: int
+) -> None:
+    # an empty batch took a path that unwrapped the time zone (a panic)
+    values = [datetime(2021, 1, 1)] * n_rows
+    ts = pa.array(values, type=pa.timestamp("us", tz=time_zone))
+    nested = pa.array([values] * n_rows, type=pa.list_(ts.type))
+    for table in [
+        pa.table({"ts": ts}),
+        pa.table({"x": nested}),
+        pa.table(
+            {"s": pa.array([{"t": v} for v in values], pa.struct([("t", ts.type)]))}
+        ),
+    ]:
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.from_arrow(table)
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.DataFrame(table)
+
+
 @pytest.mark.parametrize(
     ("fixed_offset", "etc_tz"),
     [
@@ -1040,7 +1064,7 @@ def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
     assert_series_equal(result, expected)
 
 
-def test_from_avro_valid_time_zone_13032() -> None:
+def test_from_arrow_valid_time_zone_13032() -> None:
     arr = pa.array(
         [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="00:00")
     )
@@ -1156,6 +1180,43 @@ def test_from_arrow_nested_decimal_29651() -> None:
     assert_frame_equal(df, expected)
 
 
+ARRAY_TEST_DATA = [[-250, 125], None, [125, None], [125, -250]]
+
+
+@pytest.mark.parametrize(
+    ("array", "inner_dtype"),
+    [
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.int32(), 2)), pl.Int32),
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal32(5, 2), 2)), pl.Decimal(5, 2)),
+        (
+            pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal64(12, 2), 2)),
+            pl.Decimal(12, 2),
+        ),
+        (
+            # child array with its own offset
+            pa.FixedSizeListArray.from_arrays(
+                pa.array([9, 9, -250, 125, 0, 0, 125, None, 125, -250]).slice(2),
+                2,
+                mask=pa.array([False, True, False, False]),
+            ),
+            pl.Int64,
+        ),
+        (pa.array([[], None, [], []], pa.list_(pa.int32(), 0)), pl.Int32),
+    ],
+)
+def test_from_arrow_sliced_fixed_size_list(
+    array: pa.FixedSizeListArray, inner_dtype: pl.DataType
+) -> None:
+    for source in (
+        array.slice(1, 2),
+        array.slice(2, 0),
+        pa.chunked_array([array.slice(0, 2), array.slice(2)]),
+    ):
+        series = pl.Series(source)
+        assert series.dtype == pl.Array(inner_dtype, array.type.list_size)
+        assert series.to_list() == source.to_pylist()
+
+
 def test_df_pycapsule_interface() -> None:
     df = pl.DataFrame(
         {
@@ -1213,7 +1274,7 @@ def test_to_arrow_empty_chunks_20627() -> None:
     assert df.to_arrow().shape == (1, 1)
 
 
-def test_from_arrow_recorbatch() -> None:
+def test_from_arrow_recordbatch() -> None:
     n_legs = pa.array([2, 2, 4, 4, 5, 100])
     animals = pa.array(
         ["Flamingo", "Parrot", "Dog", "Horse", "Brittle stars", "Centipede"]
@@ -1824,3 +1885,41 @@ def test_series_from_arrow_large_list_keeps_fast_explode_28626(
     assert imported.to_list() == values
     assert imported.flags["FAST_EXPLODE"] is fast_explode
     assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", ["x", "y", None, "x"], dtype=pl.Categorical),
+        pl.Series("a", ["x", "y", None, "x"], dtype=pl.Enum(["x", "y"])),
+        pl.Series("a", [["x", "y"], None], dtype=pl.List(pl.Categorical)),
+    ],
+)
+def test_export_arrow_to_c_logical_dtype(s: pl.Series) -> None:
+    import ctypes
+
+    # sizeof(struct ArrowArray) and sizeof(struct ArrowSchema) on 64-bit platforms.
+    c_array = ctypes.create_string_buffer(80)
+    c_schema = ctypes.create_string_buffer(72)
+    s._export_arrow_to_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
+    arr = pa.Array._import_from_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
+    arr.validate(full=True)
+    assert arr.equals(s.to_arrow(compat_level=CompatLevel.newest()))
+
+
+@pytest.mark.parametrize(
+    "export",
+    [
+        lambda df: pa.table(df),
+        lambda df: pa.RecordBatchReader.from_stream(df.lazy().collect_batches()),
+    ],
+    ids=["DataFrame", "LazyFrame.collect_batches"],
+)
+def test_arrow_c_stream_raises_on_a_nul_in_a_column_name(
+    export: Callable[[pl.DataFrame], Any],
+) -> None:
+    # Exporting the name panics in the stream's `get_schema` callback.
+    df = pl.DataFrame({"a\0b": [1]})
+
+    with pytest.raises(OSError, match="panic in an Arrow C stream callback"):
+        export(df)

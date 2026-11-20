@@ -478,6 +478,15 @@ pub(super) fn simplify_year_comparison(
         (AExpr::Literal(lv), _) => (right, op.swap_operands()?, lv),
         _ => return None,
     };
+    // A cast to `Int64` keeps every year.
+    let year_node = match expr_arena.get(year_node) {
+        AExpr::Cast {
+            expr,
+            dtype: DataType::Int64,
+            ..
+        } => *expr,
+        _ => year_node,
+    };
     let AExpr::Function {
         input,
         function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::Year),

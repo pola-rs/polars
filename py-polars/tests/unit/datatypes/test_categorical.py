@@ -845,7 +845,7 @@ def test_categorical_min_max() -> None:
 
 
 def test_ipc_categorical_roundtrip() -> None:
-    # Ensure dictionary IDs are offsetted correctly when there are nested columns
+    # Ensure dictionary IDs are offset correctly when there are nested columns
     # containing multiple categoricals.
     lf = pl.LazyFrame(
         {

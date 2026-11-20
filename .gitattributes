@@ -1,1 +1,9 @@
+# Notebooks are tutorials, not library code
 *.ipynb linguist-documentation
+
+# Force Rust: an empty .rs file is currently misdetected as RenderScript
+*.rs linguist-language=Rust
+
+# Linguist only auto-detects docs/ and examples/ at the repo root
+py-polars/docs/** linguist-documentation
+pyo3-polars/example/** linguist-documentation

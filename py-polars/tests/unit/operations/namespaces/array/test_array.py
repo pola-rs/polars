@@ -9,13 +9,14 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1036,6 +1037,31 @@ def test_array_count_matches_wildcard_expansion() -> None:
         "a": [0],
         "b": [1],
     }
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_arr_count_matches_scalar_element(engine: EngineType) -> None:
+    # More rows than threads, so that a streaming morsel holds several rows.
+    df = pl.DataFrame(
+        {"a": [[1, 2, 1]] * 300, "x": [1] * 300},
+        schema={"a": pl.Array(pl.Int64, 3), "x": pl.Int64},
+    )
+    out = (
+        df.lazy()
+        .select(pl.col("a").arr.count_matches(pl.col("x").first()))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [2] * 300
+
+
+@pytest.mark.parametrize("height", [1, 3])
+def test_arr_count_matches_element_per_row_raises(height: int) -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 1]] * height, "x": [1] * height},
+        schema={"a": pl.Array(pl.Int64, 3), "x": pl.Int64},
+    )
+    with pytest.raises(ShapeError, match="'element' must be a scalar value"):
+        df.select(pl.col("a").arr.count_matches(pl.col("x")))
 
 
 def test_array_to_struct() -> None:

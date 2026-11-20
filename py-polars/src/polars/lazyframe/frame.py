@@ -161,6 +161,7 @@ if TYPE_CHECKING:
         MaintainOrderJoin,
         Orientation,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         PivotAgg,
         PlanStage,
@@ -179,7 +180,6 @@ if TYPE_CHECKING:
     from polars.config import TableFormatNames
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.lazyframe.in_process import InProcessQuery
     from polars.lazyframe.query_result import QueryResult
 
@@ -1571,9 +1571,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Sort the LazyFrame by the given columns.
 
-        .. engine-support:: in-memory, partially-distributed
-            :partially-distributed: Distributed when every expression in by is
-                elementwise; a non-elementwise one is evaluated on a single node.
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -1683,11 +1681,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def sql(self, query: str, *, table_name: str = "self") -> LazyFrame:
+    def sql(
+        self,
+        query: str,
+        *,
+        table_name: str = "self",
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
+    ) -> LazyFrame:
         """
         Execute a SQL query against the LazyFrame.
 
-        .. engine-support:: streaming
+        .. engine-support:: streaming, distributed
 
         .. versionadded:: 0.20.23
 
@@ -1703,6 +1707,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         table_name
             Optionally provide an explicit name for the table that represents the
             calling frame (defaults to "self").
+        params
+            The values of the query parameters. A sequence gives the values of the
+            positional parameters `?` (in order) or `$1`, `$2`, ...; a mapping gives
+            the values of the named parameters `$name` or `:name`. A parameter acts as
+            a literal of its value, so it can never inject SQL.
 
         Notes
         -----
@@ -1767,7 +1776,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         with SQLContext(register_globals=False, eager=False) as ctx:
             name = table_name if table_name else "self"
             ctx.register(name=name, frame=self)
-            return ctx.execute(query)
+            return ctx.execute(query, params=params)
 
     @removed_parameters(
         RenamedParameter(
@@ -2416,7 +2425,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryption | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
@@ -2442,7 +2451,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryption | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
@@ -2472,7 +2481,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryption | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -2581,7 +2590,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 point without it being considered a breaking change.
         encryption
             Properties for writing Parquet files encrypted with Parquet modular
-            encryption. See :class:`ParquetEncryptionProperties`.
+            encryption. See :class:`ParquetEncryptionProperties`, or
+            :class:`~polars.io.parquet.encryption.ParquetEncryptionConfig` to use keys
+            managed by a KMS.
 
             When partitioning, the partition key values are written unencrypted in
             the file paths. Columns with their own encryption key can't be used as
@@ -2845,7 +2856,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        Sink a large than fits into memory dataset to a Delta Lake table.
+        Sink a larger than fits into memory dataset to a Delta Lake table.
 
         >>> lf = pl.scan_parquet(
         ...     "/path/to/my_larger_than_ram_file.parquet"
@@ -2959,7 +2970,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         from deltalake import DeltaTable, write_deltalake
 
-        _check_for_unsupported_types(self.collect_schema().dtypes())
+        from polars.io.delta._sink import _native_sink_state, _write_native
+
+        schema = self.collect_schema()
+        _check_for_unsupported_types(schema.dtypes())
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
@@ -2992,13 +3006,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 _get_credentials_from_provider_expiry_aware(provider) or {}
             )
 
-        # We aren't calling into polars-native write functions so we just update
-        # the storage_options here.
+        # The credentials are passed as storage options, to deltalake or to the
+        # native sink.
         storage_options = (
             {**(storage_options or {}), **credential_provider_creds}
             if storage_options is not None or credential_provider_builder is not None
             else None
         )
+
+        if (
+            sink_state := _native_sink_state(
+                target,
+                mode=mode,
+                storage_options=storage_options,
+                delta_write_options=delta_write_options,
+                schema=schema,
+            )
+        ) is not None:
+            _write_native(sink_state, self, engine=engine, optimizations=optimizations)
+            if isinstance(target, DeltaTable):
+                # `write_deltalake` also leaves the table object at the new version.
+                target.update_incremental()
+            return None
+
         stream = self.collect_batches(
             engine=engine,
             maintain_order=False,
@@ -3048,6 +3078,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
+        | str
         | None = None,
         storage_options: StorageOptionsDict | None = None,
         compression: ParquetCompression = "zstd",
@@ -3067,6 +3098,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         target
             A PyIceberg Table object, or a 'namespace.table_name' identifier string.
+            The data is partitioned by the table's partition spec as loaded. If the
+            table's partition spec changes before the commit, the sink fails.
         mode : {'append', 'overwrite'}
             How to handle existing data.
 
@@ -3099,8 +3132,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :func:`polars.delete_iceberg`. Columns nested within a nullable
               struct are not supported.
             - A PyIceberg ``BooleanExpression`` or filter string, e.g.
-              ``"date = '2026-10-01'"``, is used as-is, with the semantics of
-              PyIceberg's ``Table.overwrite(overwrite_filter=...)``.
+              ``"date = '2026-10-01'"``, deletes the rows for which it is true. A
+              comparison with null is null, which keeps the row, as in SQL. NaN
+              is equal to NaN and greater than any other number, as in Polars.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -3110,7 +3144,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             partitions that the incoming data is written to. Requires a table
             whose partition spec uses only identity transforms, on source columns
             that are not floating-point, nanosecond timestamps, or nested within a
-            nullable struct. If there is no incoming data, nothing is deleted.
+            nullable struct. If there is no incoming data, nothing is deleted. Data
+            files written under an earlier partition spec lose exactly the rows of
+            those partitions.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -3126,7 +3162,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             `Float32`, `Categorical` and `Enum` to `String`, `Array` to `List`, and
             `Datetime` to microseconds, with time zones converted to UTC. Columns
             without a lossless Iceberg type (e.g. `UInt64`, nanosecond `Datetime`,
-            `Duration`) raise an error before the table is created.
+            `Duration`) raise an error before the table is created. `Map` keys are
+            not cast, so a `Map` whose keys need a cast (e.g. `Int8`) or hold times
+            (nanoseconds in Polars, microseconds in Iceberg) raises too.
 
             The table is created before the query runs, so it remains (empty)
             if the query fails.
@@ -3135,15 +3173,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             they do not exist when the table is created. Requires
             `create_if_not_exists=True`.
         snapshot_properties
-            Custom properties to add to the Iceberg snapshot summary.
+            Custom properties to add to the Iceberg snapshot summary. Keys and values
+            must be strings.
         catalog
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
+
+            This can also be a catalog name, which will be resolved at plan and
+            commit time through `pyiceberg.catalog.load_catalog(name)`.
         storage_options
             Extra options for the storage backends supported by `pyiceberg`.
             For cloud storages, this may include configurations for authentication etc.
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+            Storage credentials vended by the table's catalog are used by default,
+            and renewed from the catalog before they expire, so the catalog's own
+            authentication must outlive the sink (e.g. PyIceberg's ``auth.type``
+            rather than a static ``token``). Credentials given here replace them.
+
+            Not renewed: credentials vended without an expiry, and those of a
+            table created by SQL ``CREATE TABLE AS``.
         compression
             Parquet compression codec.
         compression_level
@@ -3173,8 +3223,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ``mode="overwrite"`` replaces all table data, unless ``overwrite_filter`` or
         ``partition_overwrite`` is given. The delete and the append are committed
-        in a single transaction. Data files that only partially match the delete
-        filter are rewritten by PyIceberg during the commit.
+        as one snapshot. Data files whose rows all match the delete filter are
+        dropped. The other rows of data files that match only partly are written to
+        new files during the commit (copy-on-write), and rows removed by earlier
+        delete files stay deleted. Incremental scans
+        (``scan_iceberg(from_snapshot_id_exclusive=...)``) read appended snapshots
+        only, so they do not return the rows of an overwrite. Overwriting Iceberg v3
+        tables, and rewriting a data file whose delete files cannot be applied (such
+        as equality deletes or position deletes that cover several data files), is
+        not supported yet.
         ``schema_mode="overwrite"`` is not supported for
         partitioned tables or tables with a sort order. Custom location providers
         are not supported.
@@ -3598,7 +3655,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether to check if the filename matches the compression settings.
             Will raise an error if compression is set to 'uncompressed' and the
             filename ends in one of (".gz", ".zst", ".zstd") or if
-            compression != 'uncompressed' and the file uses an mismatched
+            compression != 'uncompressed' and the file uses a mismatched
             extension. Only applies if file is a path.
 
             .. warning::
@@ -3917,7 +3974,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether to check if the filename matches the compression settings.
             Will raise an error if compression is set to 'uncompressed' and the
             filename ends in one of (".gz", ".zst", ".zstd") or if
-            compression != 'uncompressed' and the file uses an mismatched
+            compression != 'uncompressed' and the file uses a mismatched
             extension. Only applies if file is a path.
 
             .. warning::
@@ -4855,7 +4912,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4    ┆ null ┆ c    │
         └──────┴──────┴──────┘
 
-        Provide constraints(s) using `**kwargs` syntax:
+        Provide constraint(s) using `**kwargs` syntax:
 
         >>> lf.remove(foo=0, bar=0).collect()
         shape: (4, 3)
@@ -4995,7 +5052,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Select columns from this LazyFrame.
 
-        This will run all expression sequentially instead of in parallel.
+        This will run all expressions sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         .. engine-support:: in-memory, streaming, distributed
@@ -5026,9 +5083,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Start a group by operation.
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: Distributed when maintain_order=False and every
-                key is an elementwise expression; otherwise it runs on a single node.
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -5191,9 +5246,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: Partitions over group_by; without it all rows
-                form a single group and the operation runs on a single node.
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. versionchanged:: 0.20.14
             The `by` parameter was renamed `group_by`.
@@ -5315,9 +5368,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         where `start` is determined by `start_by`, `offset`, `every`, and the earliest
         datapoint. See the `start_by` argument description for details.
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: Partitions over group_by; without it all rows
-                form a single group and the operation runs on a single node.
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. warning::
             The index column must be sorted in ascending order. If `group_by` is passed, then
@@ -5670,9 +5721,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The default is "backward".
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: Partitions over by (or by_left/by_right);
-                without those the right frame is broadcast to every worker.
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -5900,7 +5949,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
 
-        They `by` argument allows joining on another column first, before the asof join.
+        The `by` argument allows joining on another column first, before the asof join.
         In this example we join by `country` first, then asof join by date, as above.
 
         >>> gdp_dates = pl.date_range(  # fmt: skip
@@ -6059,9 +6108,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Add a join operation to the Logical Plan.
 
-        .. engine-support:: in-memory, streaming, partially-distributed
-            :partially-distributed: Distributed when maintain_order="none" (the
-                default) and every join key is an elementwise expression.
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.24
             The `join_nulls` parameter was renamed `nulls_equal`.
@@ -6158,7 +6205,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
         build_side: {'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}
-            Which side of the join will be used as the build side. This side will be
+            Which side of the join will be used as the build side. This side will
             likely be held in memory as a hash table. Note that unless a `force_`
             variant is chosen, the chosen side might differ across Polars versions or
             even between different runs.
@@ -6368,9 +6415,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Perform a join based on one or multiple (in)equality predicates.
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: Most joins are completely distributed. If the join
-                condition forces a range join, one cast might be broadcasted.
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. note::
             The row order of the input DataFrames is not preserved.
@@ -6721,7 +6766,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Added columns will replace existing columns with the same name.
 
-        This will run all expression sequentially instead of in parallel.
+        This will run all expressions sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
         .. engine-support:: in-memory, streaming, distributed
@@ -6929,7 +6974,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Shift values by the given number of indices.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7371,9 +7416,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Fill null values using the specified value or strategy.
 
         .. engine-support:: in-memory, streaming, partially-distributed
-            :partially-distributed: Distributed for value, and for strategy "zero"
-                and "one". The "forward", "backward", "mean", "min" and "max"
-                strategies run on a single node.
+            :partially-distributed: Distributed for value and every strategy except
+                "mean", "min" and "max", which run on a single node.
 
         Parameters
         ----------
@@ -7800,7 +7844,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their quantile value.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -7919,7 +7963,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * 'last': Keep the last unique row.
         maintain_order
             Keep the same order as the original DataFrame. This is more expensive
-            to compute. Settings this to `True` blocks the possibility to run on
+            to compute. Setting this to `True` blocks the possibility to run on
             the streaming engine.
 
         Returns
@@ -8228,7 +8272,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Create a spreadsheet-style pivot table as a DataFrame.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -8575,7 +8619,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         It is important that the function returns a Polars DataFrame.
 
-        .. engine-support:: in-memory, streaming, distributed
+        .. engine-support:: in-memory, streaming, partially-distributed
+            :partially-distributed: Distributed when streamable=True; otherwise it runs
+                on a single node.
 
         Parameters
         ----------
@@ -8598,7 +8644,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streamable
             Whether the function that is given is eligible to be running with the
             streaming engine. That means that the function must produce the same result
-            when it is executed in batches or when it is be executed on the full
+            when it is executed in batches or when it is executed on the full
             dataset.
 
         Warnings
@@ -8662,7 +8708,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Nulls at the beginning and end of the series remain null.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -9231,7 +9277,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         scaling_mode: pc._typing.ScalingMode = "auto",
     ) -> pc.LazyFrameRemote:
         """
-        Run a query remotely on Polars Cloud.
+        Run a query remotely on Polars Nanook.
 
         This allows you to run Polars remotely on
         one or more workers via several strategies
@@ -9335,23 +9381,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema
             Target schema to match or evolve to.
         missing_columns
-            Raise of insert missing columns from the input with respect to the `schema`.
+            Raise or insert missing columns from the input with respect to the `schema`.
 
             This can also be an expression per column with what to insert if it is
             missing.
         missing_struct_fields
-            Raise of insert missing struct fields from the input with respect to the
+            Raise or insert missing struct fields from the input with respect to the
             `schema`.
         extra_columns
-            Raise of ignore extra columns from the input with respect to the `schema`.
+            Raise or ignore extra columns from the input with respect to the `schema`.
         extra_struct_fields
-            Raise of ignore extra struct fields from the input with respect to the
+            Raise or ignore extra struct fields from the input with respect to the
             `schema`.
         integer_cast
-            Forbid of upcast for integer columns from the input to the respective column
+            Forbid or upcast for integer columns from the input to the respective column
             in `schema`.
         float_cast
-            Forbid of upcast for float columns from the input to the respective column
+            Forbid or upcast for float columns from the input to the respective column
             in `schema`.
 
         Examples

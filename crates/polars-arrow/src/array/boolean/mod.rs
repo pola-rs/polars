@@ -326,7 +326,7 @@ impl BooleanArray {
         MutableBooleanArray::from_trusted_len_iter(iterator).into()
     }
 
-    /// Creates a [`BooleanArray`] from an falible iterator of trusted length.
+    /// Creates a [`BooleanArray`] from a fallible iterator of trusted length.
     ///
     /// # Safety
     /// The iterator must be [`TrustedLen`](https://doc.rust-lang.org/std/iter/trait.TrustedLen.html).

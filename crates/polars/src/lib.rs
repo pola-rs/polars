@@ -1,7 +1,7 @@
 //! # Polars: *<small>DataFrames in Rust</small>*
 //!
 //! Polars is a DataFrame library for Rust. It is based on [Apache Arrow](https://arrow.apache.org/)'s memory model.
-//! Apache Arrow provides very cache efficient columnar data structures and is becoming the defacto
+//! Apache Arrow provides very cache efficient columnar data structures and is becoming the de facto
 //! standard for columnar data.
 //!
 //! ## Quickstart
@@ -89,7 +89,7 @@
 //! [`SeriesTrait`]: crate::series::SeriesTrait
 //!
 //! ### ChunkedArray
-//! [`ChunkedArray<T>`] are wrappers around an arrow array, that can contain multiples chunks, e.g.
+//! [`ChunkedArray<T>`] are wrappers around an arrow array, that can contain multiple chunks, e.g.
 //! [`Vec<dyn ArrowArray>`]. These are the root data structures of Polars, and implement many operations.
 //! Most operations are implemented by traits defined in [chunked_array::ops],
 //! or on the [`ChunkedArray`] struct.
@@ -117,7 +117,7 @@
 //!
 //! [`Expr`]: polars_lazy::dsl::Expr
 //!
-//! That may sound a bit strange, so lets give an example. The following is an expression:
+//! That may sound a bit strange, so let's give an example. The following is an expression:
 //!
 //! `col("foo").sort().head(2)`
 //!
@@ -225,7 +225,7 @@
 //!     - `semi_anti_join` - SEMI and ANTI joins.
 //!     - `row_hash` - Utility to hash [`DataFrame`] rows to [`UInt64Chunked`]
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
-//!     - `dataframe_arithmetic` - Arithmetic on ([`Dataframe`] and [`DataFrame`]s) and ([`DataFrame`] on [`Series`])
+//!     - `dataframe_arithmetic` - Arithmetic on ([`DataFrame`] and [`DataFrame`]s) and ([`DataFrame`] on [`Series`])
 //!     - `partition_by` - Split into multiple [`DataFrame`]s partitioned by groups.
 //! * [`Series`]/[`Expr`] operations:
 //!     - `is_in` - Check for membership in [`Series`].

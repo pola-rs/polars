@@ -51,7 +51,7 @@ pub trait RollingAggWindowNoNulls<T: NativeType, Out: NativeType = T> {
 pub(super) fn rolling_apply_agg_window<Agg, T, O, Fo>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     det_offsets_fn: Fo,
     params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
@@ -66,7 +66,7 @@ where
     let mut agg_window = Agg::new(values, start, end, params, Some(window_size));
     let out = (0..len).map(|idx| {
         let (start, end) = det_offsets_fn(idx, window_size, len);
-        if end - start < min_periods {
+        if end - start < min_samples {
             None
         } else {
             // SAFETY:
@@ -104,7 +104,7 @@ pub(super) fn det_weights_start(
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     det_offsets_fn: Fo,
     aggregator: Fa,
     weights: &[T],
@@ -128,7 +128,7 @@ where
         })
         .collect_trusted::<Vec<T>>();
 
-    let validity = create_validity(min_periods, len, window_size, det_offsets_fn, None, false);
+    let validity = create_validity(min_samples, len, window_size, det_offsets_fn, None, false);
     Ok(Box::new(PrimitiveArray::new(
         ArrowDataType::from(T::PRIMITIVE),
         out.into(),

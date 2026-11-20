@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from polars._typing import ClosedInterval
     from tests.conftest import PlMonkeyPatch
 
 
@@ -119,14 +120,17 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
         check_predicate_pushdown=True,
     )
 
-    for closed, n_expected in zip(
-        ["both", "left", "right", "none"], [3, 2, 2, 1], strict=True
-    ):
+    closed_intervals: list[ClosedInterval] = ["both", "left", "right", "none"]
+    for closed, n_expected in zip(closed_intervals, [3, 2, 2, 1], strict=True):
+
+        def query(lf: pl.LazyFrame, closed: ClosedInterval = closed) -> pl.LazyFrame:
+            return lf.filter(pl.col("int").is_between(1, 3, closed=closed)).select(
+                "bools", "floats", "date"
+            )
+
         helper_dataset_test(
             file_path,
-            lambda lf, closed=closed: lf.filter(  # type: ignore[misc]
-                pl.col("int").is_between(1, 3, closed=closed)
-            ).select("bools", "floats", "date"),
+            query,
             n_expected=n_expected,
             check_predicate_pushdown=True,
         )
@@ -442,8 +446,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "converted pyarrow predicate: <pyarrow.compute.Expression false>" in capture
-    assert "residual predicate: None" in capture
+    assert "residual predicate: None" not in capture
 
     assert_frame_equal(q.collect(), expected)
     assert_frame_equal(df.filter(pred), expected)
@@ -458,11 +461,49 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
 
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
 
-    assert "converted pyarrow predicate: <pyarrow.compute.Expression false>" in capture
-    assert "residual predicate: None" in capture
+    assert "residual predicate: None" not in capture
 
     assert_frame_equal(q.collect(), expected)
     assert_frame_equal(df.filter(pred), expected)
+
+
+def test_pyarrow_dataset_is_in_predicate_pushdown_null_and_zero_30531() -> None:
+    df = pl.DataFrame({"k": [None, 2, 3], "f": [-0.0, 0.0, None]})
+    lf = pl.scan_pyarrow_dataset(
+        ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+    )
+
+    assert_frame_equal(
+        lf.filter(~pl.col("k").is_in([2, 5])).collect(),
+        pl.DataFrame({"k": [3], "f": [None]}, schema=df.schema),
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("f").is_in([0.0])).collect(),
+        pl.DataFrame({"k": [None, 2], "f": [-0.0, 0.0]}, schema=df.schema),
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("f").is_in([-0.0])).collect(),
+        pl.DataFrame({"k": [None, 2], "f": [-0.0, 0.0]}, schema=df.schema),
+    )
+    assert_frame_equal(
+        lf.filter(~pl.col("k").is_in(pl.Series([], dtype=pl.Int64))).collect(),
+        pl.DataFrame({"k": [2, 3], "f": [0.0, None]}, schema=df.schema),
+    )
+    assert_frame_equal(
+        lf.filter(~pl.col("k").is_in(pl.lit(None, dtype=pl.List(pl.Int64)))).collect(),
+        df.clear(),
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("f").is_in([-0.0, None], nulls_equal=True)).collect(),
+        df,
+    )
+
+    df = pl.DataFrame({"f": [-0.0, 0.0, 1.0]}, schema={"f": pl.Float32})
+    lf = pl.scan_pyarrow_dataset(ds.dataset(df.to_arrow()))
+    assert_frame_equal(
+        lf.filter(pl.col("f").is_in([0.0])).collect(),
+        pl.DataFrame({"f": [-0.0, 0.0]}, schema=df.schema),
+    )
 
 
 def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:

@@ -324,7 +324,7 @@ pub fn num_edges(lhs: &Bitmap) -> usize {
         return 0;
     }
 
-    // @TODO: If is probably quite inefficient to do it like this because now either one is not
+    // @TODO: It is probably quite inefficient to do it like this because now either one is not
     // aligned. Maybe, we can implement a smarter way to do this.
     binary_fold(
         &unsafe { lhs.clone().sliced_unchecked(0, lhs.len() - 1) },

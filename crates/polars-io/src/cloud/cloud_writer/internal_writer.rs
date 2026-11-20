@@ -80,7 +80,7 @@ impl InternalCloudWriter {
         }
     }
 
-    /// Takes `self.state`, replacing with it `Finished`. Returns `None` if `self.state` is not
+    /// Takes `self.state`, replacing it with `Finished`. Returns `None` if `self.state` is not
     /// `Started`.
     fn take_started_state(&mut self) -> Option<StartedState> {
         if !matches!(&self.state, WriterState::Started(_)) {

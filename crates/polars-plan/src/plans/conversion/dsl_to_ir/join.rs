@@ -46,7 +46,7 @@ fn to_join_expr_irs(
     opt_flags: &OptFlags,
 ) -> PolarsResult<Vec<ExprIR>> {
     let mut ctx = ExprToIRContext::new_with_opt_eager(expr_arena, schema, opt_flags);
-    keys.into_iter()
+    keys.iter()
         .map(|e| to_expr_ir_materialized_lit(e, &mut ctx))
         .collect()
 }
@@ -546,7 +546,7 @@ fn resolve_join_where(
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
         let predicate = to_expr_ir_materialized_lit(
-            e,
+            &e,
             &mut ExprToIRContext::new_with_opt_eager(arena, &schema_merged, ctxt.opt_flags),
         )?;
         let node = predicate.node();

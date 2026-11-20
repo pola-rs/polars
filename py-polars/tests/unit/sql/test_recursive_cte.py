@@ -801,3 +801,47 @@ def test_recursive_with_cycle_unsupported(ctx: pl.SQLContext[pl.LazyFrame]) -> N
             """,
             eager=True,
         )
+
+
+def test_recursive_struct_fields_by_name() -> None:
+    anchor = pl.DataFrame({"s": [{"a": 1, "b": 2}]})
+    query = """
+        WITH RECURSIVE r(n, s) AS (
+            SELECT 0, s FROM anchor
+            UNION ALL
+            SELECT n + 1, steps.s FROM r CROSS JOIN steps WHERE n < 1
+        )
+        SELECT s FROM r
+    """
+    # Reordered and missing fields of the step are aligned to the anchor by name.
+    for step, row in [
+        ({"b": 3, "a": 4}, {"a": 4, "b": 3}),
+        ({"a": 4}, {"a": 4, "b": None}),
+    ]:
+        ctx = pl.SQLContext(anchor=anchor, steps=pl.DataFrame({"s": [step]}))
+        assert ctx.execute(query, eager=True)["s"].to_list() == [{"a": 1, "b": 2}, row]
+
+    # A step field the anchor lacks raises instead of being dropped, unless all
+    # values are null, as in `Series.cast`.
+    steps = pl.DataFrame({"s": [{"a": 4, "b": 3, "c": 5}]})
+    ctx = pl.SQLContext(anchor=anchor, steps=steps)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        ctx.execute(query, eager=True)
+    ctx = pl.SQLContext(anchor=anchor, steps=steps.clear(1))
+    assert ctx.execute(query, eager=True)["s"].to_list() == [{"a": 1, "b": 2}, None]
+
+    # Nested structs are aligned too, and value conversions stay strict.
+    anchor = pl.DataFrame(
+        {"s": [[{"a": 1, "b": 2}]]},
+        schema={"s": pl.Array(pl.Struct({"a": pl.Int8, "b": pl.Int64}), 1)},
+    )
+    ctx = pl.SQLContext(anchor=anchor, steps=pl.DataFrame({"s": [[{"b": 2, "a": 3}]]}))
+    assert ctx.execute(query, eager=True)["s"].to_list() == [
+        [{"a": 1, "b": 2}],
+        [{"a": 3, "b": 2}],
+    ]
+    ctx = pl.SQLContext(
+        anchor=anchor, steps=pl.DataFrame({"s": [[{"b": 2, "a": 300}]]})
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        ctx.execute(query, eager=True)

@@ -7,7 +7,7 @@ use crate::types::NativeType;
 
 /// Applies an unary and infallible function to a [`PrimitiveArray`].
 ///
-/// This is the /// fastest way to perform an operation on a [`PrimitiveArray`] when the benefits
+/// This is the fastest way to perform an operation on a [`PrimitiveArray`] when the benefits
 /// of a vectorized operation outweighs the cost of branching nulls and non-nulls.
 ///
 /// # Implementation

@@ -12,7 +12,7 @@ impl PolarsExtension {
         Self { array: Some(array) }
     }
 
-    /// Take the Array hold by [`PolarsExtension`] and forget polars extension,
+    /// Take the Array held by [`PolarsExtension`] and forget polars extension,
     /// so that drop is not called
     pub(crate) fn take_and_forget(self) -> FixedSizeBinaryArray {
         let mut md = ManuallyDrop::new(self);
@@ -42,7 +42,7 @@ impl PolarsExtension {
             if pid == *PROCESS_ID {
                 Box::from_raw(ptr as *const ExtensionSentinel as *mut ExtensionSentinel)
             } else {
-                panic!("pid did not mach process id")
+                panic!("pid did not match process id")
             }
         } else {
             panic!("should be extension type")

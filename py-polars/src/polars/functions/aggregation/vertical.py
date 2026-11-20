@@ -314,7 +314,7 @@ def cum_sum(*names: str) -> Expr:
 
     See Also
     --------
-    cumsum_horizontal
+    cum_sum_horizontal
 
     Examples
     --------

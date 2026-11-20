@@ -132,7 +132,7 @@ type TwoParents = [Option<Node>; 2];
 // Possible cases:
 // - NO FILTERS: run predicate pd from the cache nodes -> finish
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
-// - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
+// - There is a cache without predicates above the cache node -> run predicate from the cache nodes -> finish
 // - The predicates above the cache nodes are all different -> remove the cache nodes if that is
 //   estimated to be cheaper than sharing the subplan -> finish
 #[allow(clippy::too_many_arguments)]

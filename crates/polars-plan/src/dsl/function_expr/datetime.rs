@@ -1,3 +1,5 @@
+use polars_defs::time::date_diff::DateDiffUnit;
+
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -79,6 +81,7 @@ pub enum TemporalFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
     },
+    DateDiff(DateDiffUnit),
 }
 
 impl Display for TemporalFunction {
@@ -143,6 +146,7 @@ impl Display for TemporalFunction {
             ReplaceTimeZone(_, _) => "replace_time_zone",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),
             Combine(_) => "combine",
+            DateDiff(_) => return write!(f, "date_diff"),
         };
         write!(f, "dt.{s}")
     }

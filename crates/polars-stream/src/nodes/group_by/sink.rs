@@ -7,7 +7,7 @@ use polars_error::PolarsResult;
 use polars_expr::EvictIdx;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
-use polars_expr::reduce::GroupedReduction;
+use polars_expr::reduce::{GroupRun, GroupedReduction, find_group_runs};
 use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, memory_manager};
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::f2_sketch::F2Sketch;
@@ -23,6 +23,7 @@ use crate::expression::StreamExpr;
 use crate::hash_shuffle::frame_with_keys::{
     FrameWithKeys, FrameWithKeysBuilder, SpillFrameWithKeys,
 };
+use crate::hash_shuffle::split::rows_or_all;
 use crate::morsel::{Morsel, get_ideal_morsel_size};
 
 #[cfg(debug_assertions)]
@@ -202,7 +203,7 @@ impl LocalSink {
                     num_values += size.num_values as u64;
                     bytes += size.bytes as u64;
                 },
-                None => num_fixed += 1,
+                None => num_fixed += r.num_fixed_states() as u64,
             }
         }
         let growing = &mut self.growing_states_per_input[input_idx];
@@ -338,17 +339,7 @@ impl LocalSink {
             let frame_rows = get_ideal_morsel_size();
             let builder = self.cold_row_builders[input_idx]
                 .get_or_insert_with(|| FrameWithKeysBuilder::new(df.schema().clone(), &keys));
-            let idxs = match cold_idxs {
-                Some(idxs) => idxs,
-                None => {
-                    let n = self.all_row_idxs.len();
-                    if n < df.height() {
-                        self.all_row_idxs
-                            .extend(n as IdxSize..df.height() as IdxSize);
-                    }
-                    &self.all_row_idxs[..df.height()]
-                },
-            };
+            let idxs = rows_or_all(cold_idxs, &mut self.all_row_idxs, df.height());
             unsafe { builder.gather_extend(&df, &keys, idxs) };
             if builder.len() < frame_rows {
                 return;
@@ -480,7 +471,7 @@ impl LocalSink {
 }
 
 /// The node state while it receives its input.
-pub struct GroupBySink {
+pub struct SinkState {
     // Input stream i selects keys with key_selectors_per_input[i].
     key_selectors_per_input: Vec<Vec<StreamExpr>>,
     random_state: PlRandomState,
@@ -490,7 +481,7 @@ pub struct GroupBySink {
     locals: Vec<Option<LocalSink>>,
 }
 
-impl GroupBySink {
+impl SinkState {
     pub fn new(
         key_selectors_per_input: Vec<Vec<StreamExpr>>,
         random_state: PlRandomState,
@@ -528,6 +519,7 @@ impl GroupBySink {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut hot_idxs = Vec::new();
                 let mut hot_group_idxs = Vec::new();
+                let mut runs: Vec<GroupRun> = Vec::new();
                 let mut cold_idxs = Vec::new();
                 let mut identity_idxs: Vec<IdxSize> = Vec::new();
                 let num_inputs = key_selectors_per_input.len();
@@ -550,7 +542,7 @@ impl GroupBySink {
                     let cold_only = local.growing_states_per_input[input_idx].cold_only;
                     if !cold_only && local.hot_grouper_per_input[input_idx].is_none() {
                         local.hot_grouper_per_input[input_idx] = Some(new_hash_hot_grouper(
-                            params.key_schema.clone(),
+                            &params.key_encoder,
                             min_hot_table_size.min(local.hot_table_size),
                         ));
                     }
@@ -574,7 +566,10 @@ impl GroupBySink {
                     df.rechunk_mut(); // For gathers.
 
                     if cold_only {
-                        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+                        let hash_keys =
+                            params
+                                .key_encoder
+                                .try_hash_keys(&keys, random_state.clone(), true)?;
                         let may_store_whole =
                             df.height() >= local.min_rows_stored_whole(num_pipelines);
                         local
@@ -617,9 +612,12 @@ impl GroupBySink {
                         if hot_idxs.is_empty() {
                             evictions_before = slice_evictions_before;
                         }
-                        let slice_keys = keys.slice(offset as i64, slice_size);
-                        let hash_keys =
-                            HashKeys::from_df(&slice_keys, random_state.clone(), true, false);
+                        let slice_keys = keys.slice((offset, slice_size));
+                        let hash_keys = params.key_encoder.try_hash_keys(
+                            &slice_keys,
+                            random_state.clone(),
+                            true,
+                        )?;
                         let hot_start = hot_idxs.len();
                         cold_idxs.clear();
                         hot_grouper.insert_keys(
@@ -656,7 +654,7 @@ impl GroupBySink {
                             local
                                 .store_cold_rows(
                                     input_idx,
-                                    df.slice(offset as i64, slice_size),
+                                    df.slice((offset, slice_size)),
                                     hash_keys,
                                     Some(&cold_idxs),
                                     !fast_growth,
@@ -668,7 +666,7 @@ impl GroupBySink {
 
                         if reduce_per_slice || offset + slice_size >= df.height() {
                             let reduce_df = if reduce_per_slice {
-                                &df.slice(offset as i64, slice_size)
+                                &df.slice((offset, slice_size))
                             } else {
                                 &df
                             };
@@ -678,6 +676,10 @@ impl GroupBySink {
                             for red_idx in &params.reductions_per_input[input_idx] {
                                 local.hot_grouped_reductions[*red_idx].resize(num_groups);
                             }
+                            let has_runs = params.reductions_per_input[input_idx]
+                                .iter()
+                                .any(|i| local.hot_grouped_reductions[*i].supports_runs())
+                                && find_group_runs(&hot_idxs, &hot_group_idxs, &mut runs);
                             payload
                                 .update_reductions(
                                     reduce_df,
@@ -687,7 +689,15 @@ impl GroupBySink {
                                     &mut local.hot_grouped_reductions,
                                     &state.in_memory_exec_state,
                                     |reduction, in_cols, subset| unsafe {
-                                        if has_evictions {
+                                        if has_runs && reduction.supports_runs() {
+                                            reduction.update_groups_runs(
+                                                in_cols,
+                                                subset,
+                                                &hot_group_idxs,
+                                                &runs,
+                                                seq,
+                                            )
+                                        } else if has_evictions {
                                             reduction.update_groups_while_evicting(
                                                 in_cols,
                                                 subset,
@@ -746,7 +756,11 @@ impl GroupBySink {
         )?;
 
         let mut stats = InputStats {
-            num_reductions: params.grouped_reductions.len() as u64,
+            states_per_group: params
+                .grouped_reductions
+                .iter()
+                .map(|r| r.num_fixed_states() as u64)
+                .sum(),
             has_growing_states: params
                 .grouped_reductions
                 .iter()

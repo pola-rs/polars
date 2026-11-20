@@ -253,14 +253,11 @@ pub trait SeriesTrait:
 
     /// Take `num_elements` from the top as a zero copy view.
     fn limit(&self, num_elements: usize) -> Series {
-        self.slice(0, num_elements)
+        self.slice(Slice::head(num_elements))
     }
 
-    /// Get a zero copy view of the data.
-    ///
-    /// When offset is negative the offset is counted from the
-    /// end of the array
-    fn slice(&self, _offset: i64, _length: usize) -> Series;
+    /// Get a zero copy view of the elements `slice` selects.
+    fn slice(&self, _slice: Slice) -> Series;
 
     /// Get a zero copy view of the data.
     ///
@@ -279,14 +276,14 @@ pub trait SeriesTrait:
 
     /// Take from `self` at the indexes given by `idx`.
     ///
-    /// Null values in `idx` because null values in the output array.
+    /// Null values in `idx` become null values in the output array.
     ///
     /// This operation is clone.
     fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
     /// Take from `self` at the indexes given by `idx`.
     ///
-    /// Null values in `idx` because null values in the output array.
+    /// Null values in `idx` become null values in the output array.
     ///
     /// # Safety
     /// This doesn't check any bounds.

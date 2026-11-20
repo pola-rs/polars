@@ -1,5 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-//! Much more opinionated, but also much faster strptrime than the one given in Chrono.
+//! Much more opinionated, but also much faster strptime than the one given in Chrono.
 
 use chrono::{NaiveDate, NaiveDateTime};
 

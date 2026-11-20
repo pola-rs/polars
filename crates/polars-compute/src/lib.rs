@@ -23,6 +23,7 @@ pub mod find_validity_mismatch;
 pub mod float_sum;
 #[cfg(feature = "gather")]
 pub mod gather;
+pub mod horizontal_concat_list;
 pub mod horizontal_flatten;
 #[cfg(feature = "approx_unique")]
 pub mod hyperloglogplus;
@@ -34,6 +35,7 @@ pub mod propagate_dictionary;
 pub mod propagate_nulls;
 pub mod rebuild_list;
 pub mod rolling;
+pub mod selection;
 pub mod size;
 pub mod sum;
 pub mod trim_lists_to_normalized_offsets;

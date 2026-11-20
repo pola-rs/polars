@@ -22,26 +22,29 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, PlRandomState};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
-use polars_expr::groups::Grouper;
+use polars_expr::groups::new_hash_grouper;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::reduce::GroupedReduction;
 use polars_expr::state::ExecutionState;
-use polars_ooc::{MostRecentSpillContext, memory_manager};
+use polars_ooc::{MemoryGrant, MostRecentSpillContext, memory_manager};
 use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::mpsc::channel;
 
-use self::flush::Flush;
+use self::flush::FlushState;
 use self::pre_agg::SplitPreAggs;
-use self::sink::GroupBySink;
+use self::sink::SinkState;
 use self::table::{GroupByParams, PartitionTable};
 use self::tuning::GroupByTuning;
 use super::{ComputeNode, NodeMemoryUsage};
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;
-use crate::hash_shuffle::batches::{LoadedFrame, PrepareFrame, build_from_batches, make_batches};
-use crate::hash_shuffle::frame_with_keys::SpillFrameWithKeys;
+use crate::hash_shuffle::batches::{
+    BatchFrame, BuildPartition, LoadedFrame, build_from_batches, make_batches,
+};
+use crate::hash_shuffle::split::NullRows;
 use crate::hash_shuffle::store::StoredPartition;
 use crate::metrics::{Metric, MetricUnit, NodeMetricsRegistry, kind};
 use crate::pipe::{RecvPort, SendPort};
@@ -146,8 +149,8 @@ impl InputPayload {
 }
 
 enum GroupByState {
-    Sink(GroupBySink),
-    Flush(Box<Flush>),
+    Sink(SinkState),
+    Flush(FlushState),
     Done,
 }
 
@@ -165,12 +168,11 @@ pub struct GroupByNode {
 impl GroupByNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        key_schema: Arc<Schema>,
+        key_encoder: KeyEncoder,
         // Input stream i selects keys with key_selectors_per_input[i].
         key_selectors_per_input: Vec<Vec<StreamExpr>>,
         // Input stream i feeds grouped_reductions[k] for each k in reductions_per_input[i].
         reductions_per_input: Vec<Vec<usize>>,
-        grouper: Box<dyn Grouper>,
         // grouped_reductions[k] is passed input cols grouped_reduction_cols[k].
         grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
         payload_per_input: Vec<InputPayload>,
@@ -189,15 +191,16 @@ impl GroupByNode {
             .next_power_of_two()
             .max(hot_table_size);
         let num_inputs = key_selectors_per_input.len();
-        let sink = GroupBySink::new(
+        let sink = SinkState::new(
             key_selectors_per_input,
             random_state,
             hot_table_size,
             max_hot_table_size,
             num_pipelines,
         );
+        let grouper = new_hash_grouper(&key_encoder);
         let params = GroupByParams {
-            key_schema,
+            key_encoder,
             output_schema,
             reductions_per_input,
             grouped_reduction_cols,
@@ -222,16 +225,27 @@ impl GroupByNode {
         }
     }
 
-    /// Builds the results once all input is received. With at most one partition per pipeline
-    /// all partitions are built here; otherwise the cold rows are stored per partition, and the
-    /// partitions are built while the results are sent.
+    /// Builds the results once all input is received. The number of partitions follows the
+    /// memory grant taken here. With at most one partition per pipeline all partitions are built
+    /// here; otherwise the cold rows are stored per partition, and the partitions are built while
+    /// the results are sent.
     fn start_flush(
         &self,
-        sink: GroupBySink,
+        sink: SinkState,
         state: &StreamingExecutionState,
-    ) -> PolarsResult<Flush> {
+    ) -> PolarsResult<FlushState> {
         let (stats, frames, pre_aggs) = sink.finish_input(&self.params, &self.spill_ctx, state)?;
-        let num_partitions = self.tuning.num_partitions(&stats, self.num_pipelines);
+        let wanted_grant_bytes = self.tuning.wanted_grant_bytes(&stats);
+        let grant = MemoryGrant::take(wanted_grant_bytes, self.tuning.max_grant_fraction);
+        // A full grant keeps the partitions as large as the largest grant allows.
+        let memory_limit = if grant.bytes() < wanted_grant_bytes {
+            grant.bytes()
+        } else {
+            self.tuning.max_grant_bytes()
+        };
+        let num_partitions = self
+            .tuning
+            .num_partitions(&stats, self.num_pipelines, memory_limit);
         let partitioner = HashPartitioner::new(num_partitions, 0);
         let pre_aggs = SplitPreAggs::new(pre_aggs, &partitioner, state)?;
         let num_frames = frames.len();
@@ -245,10 +259,11 @@ impl GroupByNode {
                 "stored"
             };
             eprintln!(
-                "[group-by]: {num_partitions} partitions {how}, {num_frames} frames in {} batches, {} pre-aggregates, {} estimated groups",
+                "[group-by]: {num_partitions} partitions {how}, {num_frames} frames in {} batches, {} pre-aggregates, {} estimated groups, memory grant of {} bytes ({wanted_grant_bytes} wanted)",
                 batches.len(),
                 pre_aggs.len(),
-                stats.estimated_groups
+                stats.estimated_groups,
+                grant.bytes(),
             );
         }
         self.estimated_groups
@@ -259,13 +274,13 @@ impl GroupByNode {
         let (outputs, stored, pre_aggs) = if build_at_once {
             let outputs =
                 self.build_partitions(pre_aggs, batches, &partitioner, reserve_groups, state)?;
-            actual_groups.add(outputs.iter().map(|out| out.height() as i64).sum());
+            actual_groups.add(outputs.iter().map(|(out, _)| out.height() as i64).sum());
             (outputs, Vec::new(), SplitPreAggs::default())
         } else {
             let stored = self.store_partitions(batches, &partitioner, state)?;
             (Vec::new(), stored, pre_aggs)
         };
-        Ok(Flush::new(
+        Ok(FlushState::new(
             outputs,
             stored,
             pre_aggs,
@@ -273,27 +288,30 @@ impl GroupByNode {
             self.params.clone(),
             reserve_groups,
             actual_groups,
+            grant,
+            stats.partition_grant_bytes(num_partitions),
         ))
     }
 
     /// Builds every partition: first from the pre-aggregates, then from the cold frames one batch
-    /// at a time. Returns the non-empty results, or one empty result if all are empty.
+    /// at a time. Returns the non-empty results with their estimated sizes in bytes, or one empty
+    /// result if all are empty.
     fn build_partitions(
         &self,
         pre_aggs: SplitPreAggs,
-        batches: Vec<Vec<(usize, SpillFrameWithKeys)>>,
+        batches: Vec<Vec<BatchFrame>>,
         partitioner: &HashPartitioner,
         reserve_groups: usize,
         state: &StreamingExecutionState,
-    ) -> PolarsResult<Vec<DataFrame>> {
-        // The partition index, its table, and the result once finished.
-        type Partition = (usize, PartitionTable, DataFrame);
+    ) -> PolarsResult<Vec<(DataFrame, u64)>> {
+        // The partition index, its table, and the result and its size once finished.
+        type Partition = (usize, PartitionTable, (DataFrame, u64));
 
         let num_partitions = partitioner.num_partitions();
         let mut partitions: Vec<Partition> = (0..num_partitions)
             .map(|p| {
                 let table = PartitionTable::new(self.params.clone(), reserve_groups);
-                (p, table, DataFrame::empty())
+                (p, table, (DataFrame::empty(), 0))
             })
             .collect();
         {
@@ -312,13 +330,10 @@ impl GroupByNode {
         }
         pre_aggs.free(state)?;
 
-        let params = &*self.params;
-        let prepare: &PrepareFrame<'_> =
-            &move |input, frame| params.prepare_frame(input, frame, state).boxed();
-        let add_batch =
-            |(p, table, _): &mut Partition, batch: &[LoadedFrame]| -> PolarsResult<()> {
-                // Partitions start at different frames, so that tasks don't read the same frame at
-                // the same time.
+        let add_batch: &BuildPartition<'_, Partition> = &move |(p, table, _), batch, state| {
+            async move {
+                // Partitions start at different frames, so that tasks don't read the same frame
+                // at the same time.
                 let start = *p * batch.len() / num_partitions;
                 for i in 0..batch.len() {
                     let frame = &batch[(start + i) % batch.len()];
@@ -326,16 +341,20 @@ impl GroupByNode {
                     if rows.is_some_and(|rows| rows.is_empty()) {
                         continue;
                     }
-                    table.add_rows(frame.input, &frame.frame, rows)?;
+                    table
+                        .add_rows(frame.input, &frame.frame, rows, state)
+                        .await?;
                 }
                 Ok(())
-            };
+            }
+            .boxed()
+        };
         build_from_batches(
             batches,
             partitioner,
             &mut partitions,
-            Some(prepare),
-            &add_batch,
+            NullRows::FirstPartition,
+            add_batch,
             state,
         )?;
 
@@ -344,14 +363,19 @@ impl GroupByNode {
             table,
             out,
         )| async move {
-            *out = table.finish()?;
+            let frame = table.finish()?;
+            // Here, in parallel: the size of string columns is computed from all their views the
+            // first time, which takes long for large results (~80 ms for 56M strings).
+            let bytes = frame.estimated_size(false) as u64;
+            *out = (frame, bytes);
             memory_manager().spill().await;
             Ok(())
         })?;
-        let mut outputs: Vec<DataFrame> = partitions.into_iter().map(|(_, _, out)| out).collect();
+        let mut outputs: Vec<(DataFrame, u64)> =
+            partitions.into_iter().map(|(_, _, out)| out).collect();
         // An empty result is still sent, as one empty morsel.
-        if outputs.iter().any(|out| out.height() > 0) {
-            outputs.retain(|out| out.height() > 0);
+        if outputs.iter().any(|(out, _)| out.height() > 0) {
+            outputs.retain(|(out, _)| out.height() > 0);
         } else {
             outputs.truncate(1);
         }
@@ -362,7 +386,7 @@ impl GroupByNode {
     /// partitions can be built a few at a time while the results are sent.
     fn store_partitions(
         &self,
-        batches: Vec<Vec<(usize, SpillFrameWithKeys)>>,
+        batches: Vec<Vec<BatchFrame>>,
         partitioner: &HashPartitioner,
         state: &StreamingExecutionState,
     ) -> PolarsResult<Vec<StoredPartition>> {
@@ -375,10 +399,10 @@ impl GroupByNode {
             batches,
             partitioner,
             &mut stored,
-            None,
-            &|stored: &mut StoredPartition, batch: &[LoadedFrame]| {
+            NullRows::FirstPartition,
+            &|stored: &mut StoredPartition, batch: &[LoadedFrame], _| {
                 stored.write_batch(batch);
-                Ok(())
+                async { Ok(()) }.boxed()
             },
             state,
         )?;
@@ -420,7 +444,7 @@ impl ComputeNode for GroupByNode {
                 else {
                     unreachable!()
                 };
-                self.state = GroupByState::Flush(Box::new(self.start_flush(sink, state)?));
+                self.state = GroupByState::Flush(self.start_flush(sink, state)?);
             },
             GroupByState::Flush(flush) if flush.is_finished() => {
                 self.state = GroupByState::Done;

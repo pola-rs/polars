@@ -302,3 +302,50 @@ def test_replace_single_argument_not_mapping() -> None:
         match="`new` argument is required if `old` argument is not a Mapping type",
     ):
         df.select(pl.col("a").replace("b"))
+
+
+@pytest.mark.parametrize("height", [1, 3])
+@pytest.mark.parametrize(
+    "values",
+    [
+        pl.col("l"),
+        pl.col("l").head(1),
+        pl.lit(pl.Series([[1]])).list.drop_nulls(),
+    ],
+)
+def test_replace_list_of_values_per_row_raises(height: int, values: pl.Expr) -> None:
+    # Even a list that has one row at runtime must be a scalar in the plan.
+    df = pl.DataFrame({"a": [1] * height, "l": [[1]] * height})
+    with pytest.raises(InvalidOperationError, match="per row"):
+        df.lazy().select(pl.col("a").replace(values, 9)).collect()
+    with pytest.raises(InvalidOperationError, match="per row"):
+        df.lazy().select(pl.col("a").replace_strict(1, values)).collect()
+
+
+def test_replace_list_input_with_column_values() -> None:
+    df = pl.DataFrame(
+        {"x": [[1], [2], [1]], "y": [[1], [5], [7]], "z": [[10], [50], [70]]}
+    )
+    out = df.lazy().select(
+        r=pl.col("x").replace(pl.col("y"), pl.col("z")),
+        s=pl.col("x").replace_strict(
+            pl.col("y"), pl.col("z"), default=None, return_dtype=pl.List(pl.Int64)
+        ),
+    )
+    expected = pl.DataFrame(
+        {"r": [[10], [2], [10]], "s": [[10], None, [10]]},
+        schema={"r": pl.List(pl.Int64), "s": pl.List(pl.Int64)},
+    )
+    assert_frame_equal(out.collect(), expected)
+
+
+def test_replace_strict_list_input_infers_dtype_from_new() -> None:
+    lf = pl.LazyFrame({"x": [[1], [2], [1]]})
+    old = pl.lit([[1], [2]])
+    out = lf.select(
+        a=pl.col("x").replace_strict(old, pl.lit([10, 20])),
+        b=pl.col("x").replace_strict(old, pl.lit(10, dtype=pl.Int64)),
+    )
+    expected = pl.DataFrame({"a": [10, 20, 10], "b": [10, 10, 10]})
+    assert out.collect_schema() == expected.schema
+    assert_frame_equal(out.collect(), expected)

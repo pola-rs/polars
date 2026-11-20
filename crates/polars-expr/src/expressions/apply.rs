@@ -415,7 +415,7 @@ impl ApplyExpr {
 
         drop(iters);
 
-        // Take the first aggregation context that as that is the input series.
+        // Take the first aggregation context as that is the input series.
         let ac = acs.swap_remove(0);
         self.finish_apply_groups(ac, ca)
     }
@@ -475,6 +475,34 @@ fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> Pol
     Ok(())
 }
 
+/// Whether the first input is dictionary-coded and every other input is a constant that can
+/// broadcast to its length.
+fn first_input_is_dictionary(inputs: &[Column]) -> bool {
+    let Some((first, rest)) = inputs.split_first() else {
+        return false;
+    };
+    first.as_dictionary_column().is_some()
+        && rest
+            .iter()
+            .all(|c| c.len() == 1 || (c.len() == first.len() && c.as_scalar_column().is_some()))
+}
+
+fn can_evaluate_on_dictionary(expr: &Expr) -> bool {
+    match expr {
+        Expr::AnonymousFunction { .. }
+        | Expr::Function {
+            function: FunctionExpr::SetSortedFlag(_),
+            ..
+        } => false,
+        #[cfg(feature = "ffi_plugin")]
+        Expr::Function {
+            function: FunctionExpr::FfiPlugin { .. },
+            ..
+        } => false,
+        _ => true,
+    }
+}
+
 impl PhysicalExpr for ApplyExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
@@ -505,6 +533,47 @@ impl PhysicalExpr for ApplyExpr {
                 if c.len() > 1 {
                     *c = c.new_from_index(0, 1);
                 }
+            }
+        }
+
+        // An elementwise function of a dictionary-coded column (and constants) is evaluated once
+        // per dictionary value the rows use. User functions (including plugins) may depend on
+        // row order or count, and `set_sorted` describes the order of the rows.
+        if constant_len.is_none()
+            && self.flags.is_elementwise()
+            && can_evaluate_on_dictionary(&self.expr)
+            && first_input_is_dictionary(&inputs)
+        {
+            let dict_col = inputs[0].as_dictionary_column().unwrap().clone();
+            let in_name = inputs[0].name().clone();
+            let out = dict_col.apply_elementwise(|values| {
+                let n = values.len();
+                let mut value_inputs = inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        if i == 0 {
+                            values.clone().into_column()
+                        } else if c.len() == 1 {
+                            // Some kernels require a length-1 argument, e.g. `replace`'s mapping.
+                            c.clone()
+                        } else {
+                            c.new_from_index(0, n)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                Ok(self
+                    .eval_and_flatten(&mut value_inputs)?
+                    .take_materialized_series())
+            })?;
+            // A function that infers its output dtype from the values (e.g. `str.to_decimal`)
+            // may infer another one from the distinct values; then evaluate it per row.
+            if out.dtype() == self.output_field.dtype() {
+                return Ok(if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
+                    out
+                } else {
+                    out.with_name(in_name)
+                });
             }
         }
 
@@ -560,7 +629,7 @@ impl PhysicalExpr for ApplyExpr {
                     // - Any presence of LiteralScalar is immaterial as it gets broadcasted in the UDF.
                     // - Combination of AggregatedScalar and AggregatedList => NOT compatible.
                     // - Combination of AggregatedScalar and NotAggregated => NOT compatible.
-                    // - Any other combination => comptable, and thereforee allowed for elementwise.
+                    // - Any other combination => compatible, and therefore allowed for elementwise.
                     //   In this case, aggregated() on NotAggregated may be required; however, it can be
                     //   prohibitively memory expensive when dealing with overlapping (e.g., rolling) groups,
                     //   in which case we fall-back to group_aware.
@@ -578,7 +647,7 @@ impl PhysicalExpr for ApplyExpr {
                     // - sb = scalar broadcast, may fall back to group_aware
                     // - alit = all_literal
                     // - * = broadcast falls back to group_aware
-                    // - ~ = same a smirror pair (symmetric)
+                    // - ~ = same as mirror pair (symmetric)
                     //
                     //              | AggList | NotAgg   | AggScalar | LitScalar
                     //   --------------------------------------------------------
@@ -614,9 +683,11 @@ impl PhysicalExpr for ApplyExpr {
                     let mut not_agg_groups_may_diverge = false;
                     let mut has_non_unit_literal = false;
                     let mut has_large_groups = false;
+                    let mut has_objects = false;
 
                     let mut previous: Option<&AggregationContext<'_>> = None;
                     for ac in &acs {
+                        has_objects |= ac.get_values().dtype().contains_objects();
                         match ac.state {
                             AggState::AggregatedList(_) => {
                                 has_agg_list = true;
@@ -645,11 +716,14 @@ impl PhysicalExpr for ApplyExpr {
                     let elementwise_must_aggregate =
                         has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
                     let mixes_scalars_and_values = has_agg_scalar && (has_agg_list || has_not_agg);
-                    // The per-group loop matches a non-unit literal to each group's values.
+                    // The per-group loop matches a non-unit literal to each group's values. Object
+                    // values keep it as well: repeating the scalars over them would rechunk them or
+                    // rebuild lists from their inner values, which Object does not support.
                     let may_broadcast_scalars = mixes_scalars_and_values
                         && self.row_wise_inputs
                         && !self.is_scalar()
                         && !has_non_unit_literal
+                        && !has_objects
                         && !has_large_groups
                         && !has_not_agg_with_overlapping_groups
                         && !groups.is_empty();
@@ -725,4 +799,56 @@ fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
         .iter()
         .all(|c| c.len() == 1 || (c.len() == len && matches!(c, Column::Scalar(_))))
         .then_some(len)
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::Utf8ViewArray;
+    use polars_core::frame::column::{DictionaryColumn, SharedDictionary};
+
+    use super::*;
+
+    #[test]
+    fn dictionary_apply_accepts_only_broadcastable_scalar_lengths() {
+        let dict = SharedDictionary::new(Utf8ViewArray::from_slice_values(["a", "b"]));
+        let codes = UInt32Chunked::from_vec(PlSmallStr::EMPTY, [0, 1].repeat(128));
+        let coded: Column = DictionaryColumn::try_new("s".into(), dict, codes)
+            .unwrap()
+            .into();
+        for len in [0, 1, 2, 256, 257] {
+            let scalar = Column::new_scalar(
+                "constant".into(),
+                Scalar::new(DataType::String, AnyValue::StringOwned("x".into())),
+                len,
+            );
+            assert!(scalar.as_scalar_column().is_some());
+            for dict_idx in [0, 1] {
+                let mut inputs = [coded.clone(), scalar.clone()];
+                inputs.swap(0, dict_idx);
+                assert!(inputs[dict_idx].as_dictionary_column().is_some());
+                assert_eq!(
+                    first_input_is_dictionary(&inputs),
+                    dict_idx == 0 && matches!(len, 1 | 256)
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "ffi_plugin")]
+    #[test]
+    fn dictionary_apply_excludes_all_ffi_plugins() {
+        for is_deterministic in [false, true] {
+            let expr = Expr::Function {
+                input: vec![Expr::Column("s".into())],
+                function: FunctionExpr::FfiPlugin {
+                    flags: FunctionOptions::elementwise(),
+                    is_deterministic,
+                    lib: "test-plugin".into(),
+                    symbol: "test-function".into(),
+                    kwargs: Arc::default(),
+                },
+            };
+            assert!(!can_evaluate_on_dictionary(&expr));
+        }
+    }
 }

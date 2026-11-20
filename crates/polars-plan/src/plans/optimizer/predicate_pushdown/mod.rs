@@ -161,7 +161,7 @@ impl PredicatePushDown {
             let new_inputs = inputs
                 .into_iter()
                 .map(|node| {
-                    // first we check if we are able to push down the predicate passed this node
+                    // first we check if we are able to push down the predicate past this node
                     // it could be that this node just added the column where we base the predicate on
                     let input_schema = lp_arena.get(node).schema(lp_arena);
                     let mut pushdown_predicates =
@@ -326,7 +326,7 @@ impl PredicatePushDown {
 
                 // TODO!
                 // If a predicates result would be influenced by earlier applied
-                // predicates, we simply don't pushdown this one passed this node
+                // predicates, we simply don't pushdown this one past this node
                 // However, we can do better and let it pass but store the order of the predicates
                 // so that we can apply them in correct order at the deepest level
                 Ok(
@@ -370,20 +370,6 @@ impl PredicatePushDown {
                 output_schema,
                 maintain_order,
             } => {
-                let mut blocked_names = Vec::with_capacity(2);
-
-                // TODO: Allow predicates on file names, this should be supported by new-streaming.
-                if let Some(col) = unified_scan_args.include_file_paths.as_deref() {
-                    blocked_names.push(col);
-                }
-
-                let local_predicates = if blocked_names.is_empty() {
-                    vec![]
-                } else {
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
-                        blocked_names.contains(&name.as_ref())
-                    })
-                };
                 let predicate = combine_predicates(
                     Option::into_iter(predicate.clone()).chain(acc_predicates.into_values()),
                     expr_arena,
@@ -435,7 +421,7 @@ impl PredicatePushDown {
                     }
                 };
 
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                Ok(lp)
             },
             Distinct { input, options } => {
                 if options.slice.is_some() {
@@ -622,7 +608,7 @@ impl PredicatePushDown {
                     local_predicates.extend(acc_predicates.drain(..).map(|x| x.1));
                 }
 
-                if let Some((offset, len, None)) = slice
+                if let Some((slice_value, None)) = slice
                     && !by_column.is_empty()
                 {
                     let n = by_column[0].node();
@@ -634,7 +620,7 @@ impl PredicatePushDown {
                         };
                         let (dyn_pred_node, pred) =
                             new_dynamic_pred(n, expr_arena, Some(read_order));
-                        slice = Some((offset, len, Some(pred)));
+                        slice = Some((slice_value, Some(pred)));
 
                         let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);
                         insert_predicate_dedup(
@@ -676,11 +662,11 @@ impl PredicatePushDown {
             lp @ Select { .. } if !lp.exprs().any(|e| e.is_length_preserving(expr_arena)) => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
-            // Pushed down passed these nodes
+            // Pushed down past these nodes
             lp @ HStack { .. } | lp @ Select { .. } | lp @ SimpleProjection { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
-            // NOT Pushed down passed these nodes
+            // NOT Pushed down past these nodes
             // predicates influence slice sizes / indices
             lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)

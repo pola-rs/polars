@@ -1942,6 +1942,45 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     assert df.equals(round_trip_df)
 
 
+class _DictionaryExtensionType(pa.ExtensionType):  # type: ignore[misc]
+    def __init__(self, storage_type: pa.DataType) -> None:
+        super().__init__(storage_type, "test.dictionary")
+
+    def __arrow_ext_serialize__(self) -> bytes:
+        return b""
+
+    @classmethod
+    def __arrow_ext_deserialize__(
+        cls, storage_type: pa.DataType, serialized: bytes
+    ) -> Any:
+        return cls(storage_type)
+
+
+@pytest.mark.parametrize("via_pycapsule", [True, False])
+def test_extension_dictionary_29442(via_pycapsule: bool) -> None:
+    values = ["a", None, "b", "a"]
+    storage = pa.array(values).dictionary_encode()
+    arr = pa.ExtensionArray.from_storage(
+        _DictionaryExtensionType(storage.type), storage
+    )
+    s = pl.Series(PyCapsuleArrayHolder(arr) if via_pycapsule else arr)
+    assert s.to_list() == values
+
+    # The export keeps the dictionary values.
+    out = s.to_arrow()
+    assert pa.types.is_dictionary(out.type)
+    assert out.to_pylist() == values
+
+    # Nested inside a list and a struct.
+    list_arr = pa.ListArray.from_arrays(pa.array([0, 1, 4], pa.int32()), arr)
+    s = pl.Series(PyCapsuleArrayHolder(list_arr) if via_pycapsule else list_arr)
+    assert s.to_list() == [["a"], [None, "b", "a"]]
+
+    struct_arr = pa.StructArray.from_arrays([arr], names=["f"])
+    s = pl.Series(PyCapsuleArrayHolder(struct_arr) if via_pycapsule else struct_arr)
+    assert s.to_list() == [{"f": v} for v in values]
+
+
 @pytest.mark.parametrize(
     "tz",
     [
@@ -2072,3 +2111,51 @@ def test_dataframe_height() -> None:
 
     with pytest.raises(AssertionError):
         assert_frame_equal(pl.DataFrame(), pl.DataFrame(height=10))
+
+
+@dataclasses.dataclass
+class _Inner30471:
+    a: int
+    b: int
+
+
+@dataclasses.dataclass
+class _Row30471:
+    s: _Inner30471
+
+
+def test_struct_schema_overrides_match_fields_by_name_30471() -> None:
+    rows = [_Row30471(_Inner30471(1, 2))]
+    table = pa.table({"s": [{"a": 1, "b": 2}], "l": [[{"a": 1, "b": 2}]]})
+    reordered = pl.Struct({"b": pl.Int64, "a": pl.Int64})
+    added = pl.Struct({"a": pl.Int64, "b": pl.Int64, "c": pl.Int64})
+
+    # Struct fields are reordered and added by name.
+    assert pl.DataFrame(rows, schema_overrides={"s": reordered}).rows() == [
+        ({"b": 2, "a": 1},)
+    ]
+    assert pl.DataFrame(rows, schema_overrides={"s": added}).rows() == [
+        ({"a": 1, "b": 2, "c": None},)
+    ]
+    out = pl.DataFrame(table, schema_overrides={"s": reordered, "l": pl.List(added)})
+    assert out.rows() == [({"b": 2, "a": 1}, [{"a": 1, "b": 2, "c": None}])]
+
+    # Dropping a field and out-of-range values still raise.
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame(rows, schema_overrides={"s": pl.Struct({"a": pl.Int64})})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame(
+            [_Row30471(_Inner30471(1, 300))],
+            schema_overrides={"s": pl.Struct({"b": pl.Int8, "a": pl.Int64})},
+        )
+
+
+def test_init_rows_int_to_bool_nonstrict_30541() -> None:
+    result = pl.DataFrame(
+        [[1], [2], [0], [3], [-1], [1000]],
+        schema={"b": pl.Boolean},
+        orient="row",
+        strict=False,
+    )
+    expected = pl.DataFrame({"b": [True, True, False, True, True, True]})
+    assert_frame_equal(result, expected)

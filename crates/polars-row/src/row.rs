@@ -7,7 +7,7 @@ const BOOLEAN_FALSE_SENTINEL: u8 = 0x02;
 
 /// Additional context provided to row encoding regarding a column.
 ///
-/// This allows communication based on the Polars datatype instead on the Arrow datatype. Since
+/// This allows communication based on the Polars datatype instead of the Arrow datatype. Since
 /// polars-row is used under polars-core, we don't have access to the actual datatypes.
 #[derive(Debug, Clone)]
 pub enum RowEncodingContext {
@@ -28,7 +28,7 @@ bitflags::bitflags! {
     /// Options for the Polars Row Encoding.
     ///
     /// The row encoding provides a method to combine several columns into one binary column which
-    /// has the same sort-order as the original columns.test
+    /// has the same sort-order as the original columns.
     ///
     /// By default, the row encoding provides the ascending, nulls first sort-order of the columns.
     #[derive(Debug, Clone, Copy, Default)]

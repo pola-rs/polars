@@ -50,24 +50,26 @@ pub(super) fn set_join_build_sides(
             continue;
         }
         let (left, right) = (*input_left, *input_right);
-        // equi joins sample lopsideness at runtime.
+        // equi joins sample lopsidedness at runtime.
         // cross joins don't so, plan time estimates
         // are all we have. TODO!: change this if that
         // assumption changes.
         let may_estimate = options.args.how.is_cross();
-        let Some(side) = build_side(left, right, may_estimate, ir_arena, expr_arena, &mut stats)
-        else {
-            continue;
-        };
-        let IR::Join { options, .. } = ir_arena.get_mut(node) else {
-            unreachable!()
-        };
-        Arc::make_mut(options).args.build_side = Some(side);
+        match build_side(left, right, may_estimate, ir_arena, expr_arena, &mut stats) {
+            Some(side) => {
+                let IR::Join { options, .. } = ir_arena.get_mut(node) else {
+                    unreachable!()
+                };
+                Arc::make_mut(options).args.build_side = Some(side);
+            },
+            None if !may_estimate => set_estimated_rows(node, ir_arena, expr_arena, &mut stats),
+            None => {},
+        }
     }
 }
 
-/// Store the estimated rows of both inputs of a semi or anti join, which the
-/// streaming engine uses when it cannot sample either side to its end.
+/// Store the estimated rows of both inputs of a join without a build side, which
+/// the streaming engine uses when it cannot sample either side to its end.
 fn set_estimated_rows(
     node: Node,
     ir_arena: &mut Arena<IR>,

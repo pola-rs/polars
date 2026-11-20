@@ -52,12 +52,13 @@ num-traits = { workspace = true }
 numpy = { workspace = true }
 object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true }
+parquet-key-management = { workspace = true, optional = true }
 pyo3 = { workspace = true, features = ["abi3-py311", "chrono", "chrono-tz", "multiple-pymethods", "uuid"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true, features = ["raw_value"] }
 slotmap = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["sync"] }
 uuid = { workspace = true }
@@ -148,7 +149,13 @@ c_api = []
 avro = ["polars/avro"]
 async = ["polars-lazy/async", "polars-io/async"]
 catalog = ["polars-lazy/catalog"]
-parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
+parquet = [
+  "polars/parquet",
+  "polars-parquet",
+  "polars-mem-engine/parquet",
+  "polars-io/parquet_kms",
+  "dep:parquet-key-management",
+]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
@@ -162,6 +169,16 @@ json = [
   "polars-parquet?/serde",
 ]
 scan_lines = ["polars/scan_lines", "polars-mem-engine/scan_lines"]
+# Host side of the generic I/O plugin contracts (also used by `scan_database`).
+io_plugin_ffi = [
+  "dep:polars-io-ext-ffi",
+  "polars-io-ext-ffi/lazyframe_resolver",
+  "polars-io/io_plugin_ffi",
+  "polars-plan/io_plugin_ffi",
+  "polars-stream?/io_plugin_ffi",
+]
+# `scan_database`, through the `polars_database` I/O plugin.
+database = ["io_plugin_ffi"]
 trigonometry = ["polars/trigonometry"]
 sign = ["polars/sign"]
 asof_join = ["polars/asof_join"]
@@ -295,6 +312,7 @@ io = [
   "scan_lines",
   "cloud",
   "clipboard",
+  "database",
 ]
 
 optimizations = [

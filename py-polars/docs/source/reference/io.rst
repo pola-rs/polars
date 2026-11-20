@@ -38,6 +38,8 @@ Database
 
    read_database
    read_database_uri
+   scan_database
+   io.database.show_drivers
    DataFrame.write_database
 
 Delta Lake
@@ -140,6 +142,29 @@ Parquet
    scan_parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
+
+Parquet encryption
+~~~~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   ParquetDecryptionProperties
+   ParquetEncryptionProperties
+
+.. currentmodule:: polars.io.parquet.encryption
+
+.. autosummary::
+   :toctree: api/
+
+   CryptoFactory
+   DecryptionConfiguration
+   EncryptionConfiguration
+   KmsClient
+   KmsConnectionConfig
+   ParquetDecryptionConfig
+   ParquetEncryptionConfig
+
+.. currentmodule:: polars
 
 External
 ~~~~~~~~

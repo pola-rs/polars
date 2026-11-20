@@ -21,8 +21,17 @@ use super::*;
 pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRStringFunction::*;
     match func {
-        Format { format, insertions } => {
-            map_as_slice!(strings::format, format.as_str(), insertions.as_ref())
+        Format {
+            format,
+            insertions,
+            specs,
+        } => {
+            map_as_slice!(
+                strings::format,
+                format.as_str(),
+                insertions.as_ref(),
+                specs.as_ref()
+            )
         },
         #[cfg(feature = "regex")]
         Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
@@ -43,6 +52,7 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
         Find { literal, strict } => map_as_slice!(strings::find, literal, strict),
         LenBytes => map!(strings::len_bytes),
         LenChars => map!(strings::len_chars),
+        FromCodePoint => map!(strings::from_code_point),
         #[cfg(feature = "string_pad")]
         PadEnd { fill_char } => {
             map_as_slice!(strings::pad_end, fill_char)
@@ -153,8 +163,9 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
 #[cfg(feature = "find_many")]
 fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
-    polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
+    // A broadcast scalar is one list of patterns, not one per row.
+    let patterns = s[1].as_materialized_series_maintain_scalar();
+    polars_ops::chunked_array::strings::contains_any(ca, patterns.list()?, ascii_case_insensitive)
         .map(|out| out.into_column())
 }
 
@@ -165,12 +176,12 @@ fn replace_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
-    let replace_with = s[2].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
+    let replace_with = s[2].as_materialized_series_maintain_scalar();
     polars_ops::chunked_array::strings::replace_all(
         ca,
-        patterns,
-        replace_with,
+        patterns.list()?,
+        replace_with.list()?,
         ascii_case_insensitive,
         leftmost,
     )
@@ -185,11 +196,11 @@ fn extract_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
 
     polars_ops::chunked_array::strings::extract_many(
         ca,
-        patterns,
+        patterns.list()?,
         ascii_case_insensitive,
         overlapping,
         leftmost,
@@ -205,11 +216,11 @@ fn find_many(
     leftmost: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].list()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
 
     polars_ops::chunked_array::strings::find_many(
         ca,
-        patterns,
+        patterns.list()?,
         ascii_case_insensitive,
         overlapping,
         leftmost,
@@ -236,6 +247,27 @@ pub(super) fn titlecase(s: &Column) -> PolarsResult<Column> {
 pub(super) fn len_chars(s: &Column) -> PolarsResult<Column> {
     let ca = s.str()?;
     Ok(ca.str_len_chars().into_column())
+}
+
+pub(super) fn from_code_point(s: &Column) -> PolarsResult<Column> {
+    polars_ensure!(
+        s.dtype().is_integer() || s.dtype().is_null(),
+        InvalidOperation: "expected an integer code point, got {}", s.dtype()
+    );
+    // Values that do not fit in an Int64 become null here.
+    let codes = s.cast(&DataType::Int64)?;
+    if codes.null_count() != s.null_count() {
+        let out_of_range = s.is_not_null() & codes.is_null();
+        let invalid = s.filter(&out_of_range)?;
+        polars_bail!(ComputeError: "invalid Unicode code point: {}", invalid.get(0)?);
+    }
+    let out = codes.i64()?.try_apply_into_string_amortized(|n, buf| {
+        let c = u32::try_from(n).ok().and_then(char::from_u32);
+        let c = c.ok_or_else(|| polars_err!(ComputeError: "invalid Unicode code point: {}", n))?;
+        buf.push(c);
+        PolarsResult::Ok(())
+    })?;
+    Ok(out.into_column())
 }
 
 pub(super) fn len_bytes(s: &Column) -> PolarsResult<Column> {
@@ -276,7 +308,7 @@ pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     Ok(ca.starts_with_chunked(&prefix)?.into_column())
 }
 
-/// Extract a regex pattern from the a string value.
+/// Extract a regex pattern from a string value.
 pub(super) fn extract(s: &[Column], group_index: usize) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let pat = s[1].str()?;
@@ -755,8 +787,13 @@ fn replace_all(
     }
 }
 
-pub(super) fn format(s: &mut [Column], format: &str, insertions: &[usize]) -> PolarsResult<Column> {
-    polars_ops::series::str_format(s, format, insertions)
+pub(super) fn format(
+    s: &mut [Column],
+    format: &str,
+    insertions: &[usize],
+    specs: &[Option<PlSmallStr>],
+) -> PolarsResult<Column> {
+    polars_ops::series::str_format(s, format, insertions, specs)
 }
 
 #[cfg(feature = "regex")]

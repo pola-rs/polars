@@ -1249,7 +1249,12 @@ def test_read_database_exceptions(
     execute_options: dict[str, Any] | None,
     pre_execution_query: str | list[str] | None,
     kwargs: dict[str, Any] | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # ignore ADBC drivers installed on this machine (e.g. with `dbc`)
+    monkeypatch.setattr(
+        "polars.io.database._utils._find_installed_adbc_driver", lambda _: None
+    )
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
         params = {
@@ -1457,3 +1462,115 @@ def test_read_database_duckdb_uses_arrow(monkeypatch: pytest.MonkeyPatch) -> Non
             pl.read_database(
                 "SELECT CAST('x' AS INTEGER)", conn, iter_batches=True, batch_size=2
             )
+
+
+@pytest.mark.parametrize(
+    ("driver_name", "uri", "expected"),
+    [
+        ("duckdb", "/data/my%20db.duckdb", {"path": "/data/my db.duckdb"}),
+        ("duckdb", "", {"path": ":memory:"}),
+        (
+            "clickhouse",
+            "clickhouse://us%40er:p%3Aw@h:8123/db?secure=1&x=2",
+            {
+                "uri": "https://h:8123/?database=db&x=2",
+                "username": "us@er",
+                "password": "p:w",
+            },
+        ),
+        ("postgresql", "postgresql://h/db", {"uri": "postgresql://h/db"}),
+    ],
+)
+def test_adbc_manifest_driver_options(
+    driver_name: str, uri: str, expected: dict[str, str]
+) -> None:
+    from polars.io.database._utils import _adbc_db_kwargs
+
+    assert _adbc_db_kwargs(driver_name, uri) == expected
+
+
+def test_adbc_manifest_driver_bare_names_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # the URI's scheme is looked up as a driver name, never as a path, manifest or
+    # library: `find_adbc_driver` would load those
+    from polars.io.database._utils import _find_installed_adbc_driver
+
+    calls: list[str] = []
+
+    def find_adbc_driver(name: str) -> tuple[str, str | None] | None:
+        calls.append(name)
+        return None
+
+    fake = type(sys)("polars_database")
+    fake.find_adbc_driver = find_adbc_driver  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "polars_database", fake)
+
+    manifest = tmp_path / "driver.toml"
+    manifest.write_text('[Driver]\nshared = "/nonexistent/libdriver.so"\n')
+    for name in [str(manifest), "./libdriver.so", "x.toml", "Sqlite", "my-driver"]:
+        assert _find_installed_adbc_driver(name) is None
+    assert calls == []
+
+    # relative: an absolute Windows path starts with a drive letter, a bare scheme
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ModuleNotFoundError):
+        pl.read_database_uri("SELECT 1", f"{manifest.name}:x", engine="adbc")
+    assert calls == []
+
+    assert _find_installed_adbc_driver("some_driver2") is None
+    assert calls == ["some_driver2"]
+
+
+@pytest.mark.parametrize("failure", ["import", "search"])
+def test_adbc_manifest_driver_plugin_failure_keeps_advice(
+    failure: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a polars-database that fails to load (or to search) does not replace the
+    # "driver not detected ... pip install" advice of read_database_uri
+    if failure == "import":
+        pkg = tmp_path / "polars_database"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text(
+            "raise ImportError('libplugin.so: cannot open shared object file',"
+            " name='polars_database._native')\n"
+        )
+        monkeypatch.delitem(sys.modules, "polars_database", raising=False)
+        monkeypatch.syspath_prepend(str(tmp_path))
+    else:
+
+        def find_adbc_driver(name: str) -> tuple[str, str | None] | None:
+            msg = "libplugin.so: cannot open shared object file"
+            raise RuntimeError(msg)
+
+        fake = type(sys)("polars_database")
+        fake.find_adbc_driver = find_adbc_driver  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "polars_database", fake)
+
+    with pytest.raises(ModuleNotFoundError, match="driver not detected") as exc:
+        pl.read_database_uri("SELECT 1", "nosuchdb://h/db", engine="adbc")
+    notes = getattr(exc.value, "__notes__", [])
+    assert any("libplugin.so" in note for note in notes), notes
+
+
+def test_read_database_struct_schema_overrides_30471() -> None:
+    duckdb = pytest.importorskip("duckdb")
+    query = "SELECT {'a': 1, 'b': 2} AS s"
+    with duckdb.connect() as conn:
+        # Struct overrides reorder and add fields by name.
+        dtype = pl.Struct({"b": pl.Int64, "a": pl.Int64, "c": pl.Int64})
+        df = pl.read_database(query, conn, schema_overrides={"s": dtype})
+        assert df.schema["s"] == dtype
+        assert df["s"].to_list() == [{"b": 2, "a": 1, "c": None}]
+
+        # Dropping a field or overflowing a value raises.
+        for dtype in (
+            pl.Struct({"a": pl.Int64}),
+            pl.Struct({"a": pl.Int64, "b": pl.Int8}),
+        ):
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.read_database(
+                    "SELECT {'a': 1, 'b': 300} AS s",
+                    conn,
+                    schema_overrides={"s": dtype},
+                )

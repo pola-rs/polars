@@ -6,7 +6,6 @@ from contextlib import suppress
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Final, cast
 
-from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
 from polars.datatypes import N_INFER_DEFAULT
 from polars.exceptions import (
@@ -119,9 +118,11 @@ class ConnectionExecutor:
     @staticmethod
     def _apply_overrides(df: DataFrame, schema_overrides: SchemaDict) -> DataFrame:
         """Apply schema overrides to a DataFrame."""
+        from polars._utils.construction.dataframe import cast_column_by_field_names
+
         existing_schema = df.schema
         if cast_cols := [
-            F.col(col).cast(dtype)
+            cast_column_by_field_names(col, existing_schema[col], dtype, strict=True)
             for col, dtype in schema_overrides.items()
             if col in existing_schema and dtype != existing_schema[col]
         ]:
@@ -377,7 +378,7 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_async(conn: Any) -> bool:
-        """Check if the given connection is SQLALchemy async."""
+        """Check if the given connection is SQLAlchemy async."""
         try:
             from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
@@ -625,8 +626,10 @@ class ConnectionExecutor:
             )
             result = cursor_execute(query, *positional_options)
 
-        # note: some cursors execute in-place, some access results via a property
-        result = self.cursor if (result is None or result is True) else result
+        # note: some cursors execute in-place, some access results via a property, and
+        # some (eg: pymysql, MySQLdb) return the affected row count
+        if result is None or result is True or type(result) is int:
+            result = self.cursor
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
             result = result.cursor  # type: ignore[union-attr]
 

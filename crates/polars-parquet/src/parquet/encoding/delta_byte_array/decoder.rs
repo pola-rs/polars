@@ -10,9 +10,6 @@ pub struct Decoder<'a> {
     pub(crate) prefix_lengths: delta_bitpacked::Decoder<'a>,
     pub(crate) suffix_lengths: delta_bitpacked::Decoder<'a>,
     pub(crate) values: &'a [u8],
-
-    pub(crate) offset: usize,
-    pub(crate) last: Vec<u8>,
 }
 
 impl<'a> Decoder<'a> {
@@ -24,9 +21,6 @@ impl<'a> Decoder<'a> {
             prefix_lengths,
             suffix_lengths,
             values,
-
-            offset: 0,
-            last: Vec::with_capacity(32),
         })
     }
 
@@ -39,48 +33,6 @@ impl<'a> Decoder<'a> {
         self.prefix_lengths.len()
     }
 }
-
-impl Iterator for Decoder<'_> {
-    type Item = ParquetResult<Vec<u8>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.len() == 0 {
-            return None;
-        }
-
-        let mut prefix_length = vec![];
-        let mut suffix_length = vec![];
-        if let Err(e) = self.prefix_lengths.collect_n(&mut prefix_length, 1) {
-            return Some(Err(e));
-        }
-        if let Err(e) = self.suffix_lengths.collect_n(&mut suffix_length, 1) {
-            return Some(Err(e));
-        }
-        let prefix_length = prefix_length[0];
-        let suffix_length = suffix_length[0];
-
-        let prefix_length = prefix_length as usize;
-        let suffix_length = suffix_length as usize;
-
-        let mut value = Vec::with_capacity(prefix_length + suffix_length);
-
-        value.extend_from_slice(&self.last[..prefix_length]);
-        value.extend_from_slice(&self.values[self.offset..self.offset + suffix_length]);
-
-        self.last.clear();
-        self.last.extend_from_slice(&value);
-
-        self.offset += suffix_length;
-
-        Some(Ok(value))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.prefix_lengths.len(), Some(self.prefix_lengths.len()))
-    }
-}
-
-impl ExactSizeIterator for Decoder<'_> {}
 
 #[cfg(test)]
 mod tests {
@@ -98,8 +50,9 @@ mod tests {
         ];
 
         let decoder = Decoder::try_new(data)?;
-        let values = decoder.collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(values, vec![b"Hello".to_vec(), b"World".to_vec()]);
+        assert_eq!(decoder.prefix_lengths.collect::<Vec<i64>>()?, [0, 0]);
+        assert_eq!(decoder.suffix_lengths.collect::<Vec<i64>>()?, [5, 5]);
+        assert_eq!(decoder.values, b"HelloWorld\x01\x02\x03");
 
         Ok(())
     }
@@ -115,9 +68,11 @@ mod tests {
             1, 2, 3,
         ];
 
+        // "Hello", then "Helicopter" as the first 3 bytes of "Hello" and "icopter".
         let decoder = Decoder::try_new(data)?;
-        let prefixes = decoder.collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(prefixes, vec![b"Hello".to_vec(), b"Helicopter".to_vec()]);
+        assert_eq!(decoder.prefix_lengths.collect::<Vec<i64>>()?, [0, 3]);
+        assert_eq!(decoder.suffix_lengths.collect::<Vec<i64>>()?, [5, 7]);
+        assert_eq!(decoder.values, b"Helloicopter\x01\x02\x03");
 
         Ok(())
     }

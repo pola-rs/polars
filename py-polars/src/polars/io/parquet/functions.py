@@ -42,11 +42,11 @@ if TYPE_CHECKING:
         DeletionFiles,
         FileSource,
         ParallelStrategy,
+        ParquetDecryption,
         SchemaDict,
         StorageOptionsDict,
     )
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet.decryption import ParquetDecryptionProperties
     from polars.io.scan_options import ScanCastOptions
 
 
@@ -106,7 +106,7 @@ def read_parquet(
     memory_map: bool = True,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
-    decryption: ParquetDecryptionProperties | None = None,
+    decryption: ParquetDecryption | None = None,
     _expand_paths: bool = True,
 ) -> DataFrame:
     """
@@ -213,7 +213,9 @@ def read_parquet(
         * `raise`: Raises an error.
     decryption
         Properties for decrypting Parquet files encrypted with Parquet modular
-        encryption. See :class:`ParquetDecryptionProperties`.
+        encryption. See :class:`ParquetDecryptionProperties`, or
+        :class:`~polars.io.parquet.encryption.ParquetDecryptionConfig` to use keys
+        managed by a KMS.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -539,12 +541,13 @@ def scan_parquet(
     missing_columns: Literal["insert", "raise"] = "raise",
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
-    decryption: ParquetDecryptionProperties | None = None,
+    decryption: ParquetDecryption | None = None,
     _expand_paths: bool = True,
     _column_mapping: ColumnMapping | None = None,
     _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
     _table_statistics: DataFrame | None = None,
+    _table_statistics_tight: bool = False,
     _hive_partitions: DataFrame | None = None,
     _row_count: tuple[int, int] | None = None,
     _source_sizes: Sequence[int] | None = None,
@@ -671,7 +674,9 @@ def scan_parquet(
             at any point without it being considered a breaking change.
     decryption
         Properties for decrypting Parquet files encrypted with Parquet modular
-        encryption. See :class:`ParquetDecryptionProperties`.
+        encryption. See :class:`ParquetDecryptionProperties`, or
+        :class:`~polars.io.parquet.encryption.ParquetDecryptionConfig` to use keys
+        managed by a KMS.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -719,11 +724,17 @@ def scan_parquet(
         msg = "The `decryption` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
-        from polars.io.parquet.decryption import ParquetDecryptionProperties
+        from polars.io.parquet.encryption import (
+            ParquetDecryptionConfig,
+            ParquetDecryptionProperties,
+        )
 
-        if not isinstance(decryption, ParquetDecryptionProperties):
+        if not isinstance(
+            decryption, (ParquetDecryptionProperties, ParquetDecryptionConfig)
+        ):
             msg = (
-                "`decryption` must be a `ParquetDecryptionProperties`, "
+                "`decryption` must be a `ParquetDecryptionProperties` or "
+                "`ParquetDecryptionConfig`, "
                 f"got {qualified_type_name(decryption)!r}"
             )
             raise TypeError(msg)
@@ -742,9 +753,7 @@ def scan_parquet(
         parallel=parallel,
         low_memory=low_memory,
         use_statistics=use_statistics,
-        decryption_properties=(
-            decryption._pydecryptionproperties if decryption is not None else None
-        ),
+        decryption=(decryption._pydecryption if decryption is not None else None),
         scan_options=ScanOptions(
             row_index=(
                 (row_index_name, row_index_offset)
@@ -774,6 +783,7 @@ def scan_parquet(
             default_values=_default_values,
             deletion_files=_deletion_files,
             table_statistics=_table_statistics,
+            table_statistics_tight=_table_statistics_tight,
             hive_partitions=_hive_partitions,
             row_count=_row_count,
             source_sizes=_source_sizes,

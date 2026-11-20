@@ -63,7 +63,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         n
-            Number of business days to offset by. Can be a single number of an
+            Number of business days to offset by. Can be a single number or an
             expression.
         week_mask
             Which days of the week to count. The default is Monday to Friday.
@@ -1764,7 +1764,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
     def epoch(self, time_unit: EpochTimeUnit = "us") -> Expr:
         """
-        Get the time passed since the Unix EPOCH in the give time unit.
+        Get the time passed since the Unix EPOCH in the given time unit.
 
         Parameters
         ----------
@@ -2339,7 +2339,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         fractional
-            Whether to include return the result as a :class:`.Float64`.
+            Whether to return the result as a :class:`.Float64`.
             Because the smallest :type:`.TimeUnit` is `'ns'`, the
             fractional component will always be zero.
 

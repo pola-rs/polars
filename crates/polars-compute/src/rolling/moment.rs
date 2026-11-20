@@ -356,8 +356,8 @@ where
     }
 
     #[inline(always)]
-    fn is_valid(&self, min_periods: usize) -> bool {
-        ((self.end - self.start) - self.null_count) >= min_periods
+    fn is_valid(&self, min_samples: usize) -> bool {
+        ((self.end - self.start) - self.null_count) >= min_samples
     }
 
     fn slice_len(&self) -> usize {
@@ -432,7 +432,7 @@ fn rolling_co_moment<T, M>(
     y: &[T],
     validity: Option<&Bitmap>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     params: Option<RollingFnParams>,
 ) -> ArrayRef
 where
@@ -473,7 +473,7 @@ where
         }
         (start, end) = (new_start, new_end);
 
-        if (end - start) - null_count < min_periods {
+        if (end - start) - null_count < min_samples {
             return None;
         }
         stack.get_moment::<T>(&moment)
@@ -487,14 +487,14 @@ pub fn rolling_cov<T>(
     y: &[T],
     validity: Option<&Bitmap>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     ddof: u8,
 ) -> ArrayRef
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
 {
     let params = Some(RollingFnParams::Var(RollingVarParams { ddof }));
-    rolling_co_moment::<T, CovarianceMoment>(x, y, validity, window_size, min_periods, params)
+    rolling_co_moment::<T, CovarianceMoment>(x, y, validity, window_size, min_samples, params)
 }
 
 /// Rolling Pearson correlation of `x` and `y`, ignoring the pairs that are unset in `validity`.
@@ -503,10 +503,10 @@ pub fn rolling_corr<T>(
     y: &[T],
     validity: Option<&Bitmap>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
 ) -> ArrayRef
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
 {
-    rolling_co_moment::<T, PearsonMoment>(x, y, validity, window_size, min_periods, None)
+    rolling_co_moment::<T, PearsonMoment>(x, y, validity, window_size, min_samples, None)
 }

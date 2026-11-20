@@ -30,7 +30,7 @@ def num_cse_occurrences(explanation: str) -> int:
 def create_dataframe_source(
     source_df: pl.DataFrame,
     is_pure: bool,
-    validate_schame: bool = False,
+    validate_schema: bool = False,
 ) -> pl.LazyFrame:
     """Generates a custom io source based on the provided pl.DataFrame."""
 
@@ -50,7 +50,7 @@ def create_dataframe_source(
     return register_io_source(
         dataframe_source,
         schema=source_df.schema,
-        validate_schema=validate_schame,
+        validate_schema=validate_schema,
         is_pure=is_pure,
     )
 

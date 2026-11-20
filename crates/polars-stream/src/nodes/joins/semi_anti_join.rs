@@ -11,7 +11,7 @@ use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_expr::groups::{Grouper, new_hash_grouper};
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::{HashKeys, KeyEncoder};
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::IdxSize;
@@ -25,17 +25,20 @@ use rayon::prelude::*;
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
 use super::utils::{JoinSampleStats, LEFT_BUILD_MARGIN, UNIQUE_BUILD_MARGIN};
 use super::{
-    BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
-    select_key_columns, send_frames,
+    BufferedStream, LOPSIDED_ESTIMATE_FACTOR, LOPSIDED_SAMPLE_FACTOR, build_side_left,
+    emit_morsel_size, sample_sink, select_key_columns, send_frames,
 };
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
-/// How many times fewer estimated rows an incomplete left side needs to be built.
-const LOPSIDED_ESTIMATE_FACTOR: usize = 8;
-
-fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
-    HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
+fn hash_keys(
+    keys: &DataFrame,
+    params: &SemiAntiJoinParams,
+    null_is_valid: bool,
+) -> PolarsResult<HashKeys> {
+    params
+        .key_encoder
+        .try_hash_keys(keys, params.random_state.clone(), null_is_valid)
 }
 
 async fn select_keys(
@@ -46,10 +49,11 @@ async fn select_keys(
     state: &ExecutionState,
 ) -> PolarsResult<HashKeys> {
     let keys = select_key_columns(df, key_selectors, state).await?;
-    Ok(hash_keys(&keys, params, null_is_valid))
+    hash_keys(&keys, params, null_is_valid)
 }
 
 struct SemiAntiJoinParams {
+    key_encoder: KeyEncoder,
     left_is_build: Option<bool>,
     left_key_selectors: Vec<StreamExpr>,
     right_key_selectors: Vec<StreamExpr>,
@@ -112,7 +116,7 @@ pub struct SemiAntiJoinNode {
 impl SemiAntiJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        unique_key_schema: Arc<Schema>,
+        key_encoder: KeyEncoder,
         output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
@@ -149,7 +153,10 @@ impl SemiAntiJoinNode {
         // A filter is only published for the side the plan named. The keys of
         // both sides have the same dtypes.
         debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
+        let grouper = new_hash_grouper(&key_encoder);
+        let runtime_filters = RuntimeFilters::new(runtime_filters, key_encoder.schema());
         let params = SemiAntiJoinParams {
+            key_encoder,
             left_is_build,
             left_key_selectors,
             right_key_selectors,
@@ -159,7 +166,7 @@ impl SemiAntiJoinNode {
             return_bool,
             is_anti,
             build_side: args.build_side,
-            runtime_filters: RuntimeFilters::new(runtime_filters, &unique_key_schema),
+            runtime_filters,
             sample_limit,
             estimated_rows,
         };
@@ -177,16 +184,15 @@ impl SemiAntiJoinNode {
             } else {
                 params.planned_build_left()
             };
-            SemiAntiJoinState::Sample(SampleState {
-                only_side,
-                ..Default::default()
-            })
+            let spill_ctx =
+                MostRecentSpillContext::new("semi-anti-join-sample".into(), task_metrics.clone());
+            SemiAntiJoinState::Sample(SampleState::new(only_side, spill_ctx))
         };
 
         Ok(Self {
             state,
             params,
-            grouper: new_hash_grouper(unique_key_schema),
+            grouper,
             spill_ctx: MostRecentSpillContext::new("semi-anti-join".into(), task_metrics),
         })
     }
@@ -200,7 +206,6 @@ enum SemiAntiJoinState {
     Done,
 }
 
-#[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
     left_len: usize,
@@ -212,9 +217,23 @@ struct SampleState {
     /// filters, until it ends or reaches the sample limit. A side that ends is
     /// complete, so its keys are published before the other side is read.
     only_side: Option<bool>,
+    /// Keeps the sampled morsels spillable.
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl SampleState {
+    fn new(only_side: Option<bool>, spill_ctx: MostRecentSpillContext) -> Self {
+        Self {
+            left: Vec::new(),
+            left_len: 0,
+            right: Vec::new(),
+            right_len: 0,
+            limits: Default::default(),
+            only_side,
+            spill_ctx,
+        }
+    }
+
     fn len(&self, left: bool) -> usize {
         if left { self.left_len } else { self.right_len }
     }
@@ -444,6 +463,7 @@ impl SampleState {
             key_selectors,
             None,
             with_min_hash,
+            &params.key_encoder,
             null_is_valid,
             &params.random_state,
             params.sample_limit,
@@ -619,7 +639,7 @@ impl BuildState {
                 &keys,
                 params,
                 params.null_is_valid_when_built(params.left_is_build()),
-            );
+            )?;
 
             hash_keys.gen_idxs_per_partition(
                 &partitioner,
@@ -1135,10 +1155,20 @@ impl ComputeNode for SemiAntiJoinNode {
                     self.state = SemiAntiJoinState::Done;
                 } else {
                     let mut probe_state = build_state.finalize(&self.params, &*self.grouper, state);
-                    if self.params.left_is_build() {
-                        probe_state.mark_sampled(&self.params, state)?;
+                    // Null keys that can't match get no group, so without groups
+                    // nothing matches.
+                    let no_groups = probe_state
+                        .grouper_per_partition
+                        .iter()
+                        .all(|g| g.num_groups() == 0);
+                    if self.params.empty_build_gives_empty_output() && no_groups {
+                        self.state = SemiAntiJoinState::Done;
+                    } else {
+                        if self.params.left_is_build() {
+                            probe_state.mark_sampled(&self.params, state)?;
+                        }
+                        self.state = SemiAntiJoinState::Probe(probe_state);
                     }
-                    self.state = SemiAntiJoinState::Probe(probe_state);
                 }
             }
         }
@@ -1283,6 +1313,7 @@ impl ComputeNode for SemiAntiJoinNode {
                             &mut sample_state.left_len,
                             sample_state.limits[0].clone(),
                             sample_state.limits[1].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }
@@ -1295,6 +1326,7 @@ impl ComputeNode for SemiAntiJoinNode {
                             &mut sample_state.right_len,
                             sample_state.limits[1].clone(),
                             sample_state.limits[0].clone(),
+                            &sample_state.spill_ctx,
                         ),
                     ));
                 }

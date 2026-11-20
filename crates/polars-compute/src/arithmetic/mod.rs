@@ -4,7 +4,7 @@ use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::types::NativeType;
 
-// Low-level comparison kernel.
+// Low-level arithmetic kernel.
 pub trait ArithmeticKernel: Sized + Array {
     type Scalar;
     type TrueDivT: NativeType;

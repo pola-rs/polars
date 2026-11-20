@@ -97,7 +97,7 @@ pub fn try_infer_udf_output_dtype(
     infer_udf_output_dtype(f, input_fields).ok_or_else(||
         polars_err!(
             InvalidOperation:
-            "UDF called without return type, but was not able to infer the output type.\n\nThis used to be allowed but lead to unpredictable results. To fix this problem, either provide a return datatype or execute the UDF in an eager context (e.g. in `map_columns`)."
+            "UDF called without return type, but was not able to infer the output type.\n\nThis used to be allowed but led to unpredictable results. To fix this problem, either provide a return datatype or execute the UDF in an eager context (e.g. in `map_columns`)."
         )
     )
 }

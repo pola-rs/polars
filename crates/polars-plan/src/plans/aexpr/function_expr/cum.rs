@@ -20,6 +20,7 @@ pub(super) mod dtypes {
                 Int128 => Int128,
                 UInt32 => UInt32,
                 UInt64 => UInt64,
+                UInt128 => UInt128,
                 #[cfg(feature = "dtype-f16")]
                 Float16 => Float16,
                 Float32 => Float32,
@@ -39,6 +40,7 @@ pub(super) mod dtypes {
             Boolean => Int64,
             UInt64 => UInt64,
             Int128 => Int128,
+            UInt128 => UInt128,
             #[cfg(feature = "dtype-f16")]
             Float16 => Float16,
             Float32 => Float32,

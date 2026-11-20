@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_ooc::{ParameterFreeSpillContext, RandomSpillContext, SpillFrame};
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlRandomState;
@@ -113,22 +113,37 @@ impl SpillFrameSearchBuffer {
 
     pub(super) fn split_at(&mut self, mut at: usize) -> Self {
         at = at.clamp(0, self.total_rows);
-        let mut top = self.clone();
-        top.total_rows = at;
-        top.frozen = true;
+        let top = self.slice(0, at);
         self.skip_rows += at;
         self.total_rows -= at;
         self.gc();
         top
     }
 
-    pub(super) fn slice(mut self, offset: usize, len: usize) -> Self {
-        self.skip_rows += offset;
-        self.total_rows -= offset;
-        self.total_rows = usize::min(self.total_rows, len);
-        self.frozen = true;
-        self.gc();
-        self
+    /// Returns a frozen buffer that only holds the frames covering the given rows.
+    pub(super) fn slice(&self, offset: usize, len: usize) -> Self {
+        let offset = offset.min(self.total_rows);
+        let len = len.min(self.total_rows - offset);
+        let mut sfs_at_offsets = BTreeMap::new();
+        let mut skip_rows = 0;
+        if len > 0 {
+            let start = self.live_start() + offset;
+            let first_offset = *self.sfs_at_offsets.range(..=start).next_back().unwrap().0;
+            sfs_at_offsets.extend(
+                self.sfs_at_offsets
+                    .range(first_offset..start + len)
+                    .map(|(offset, frame)| (*offset, frame.clone())),
+            );
+            skip_rows = start - first_offset;
+        }
+        SpillFrameSearchBuffer {
+            schema: self.schema.clone(),
+            sfs_at_offsets,
+            spill_ctx: self.spill_ctx.clone(),
+            total_rows: len,
+            skip_rows,
+            frozen: true,
+        }
     }
 
     pub(super) async fn into_df(self) -> DataFrame {
@@ -148,7 +163,7 @@ impl SpillFrameSearchBuffer {
         for (_, frame) in self.sfs_at_offsets.range(first_offset..live_end) {
             acc.vstack_mut(&*frame.get().await).unwrap();
         }
-        acc.slice((live_start - first_offset) as i64, self.total_rows)
+        acc.slice((live_start - first_offset, self.total_rows))
     }
 
     fn gc(&mut self) {
@@ -258,6 +273,12 @@ unsafe fn series_get_bypass_validity<'a>(
 /// Bytes a hash table takes per key on top of the key itself.
 const KEY_SLOT_OVERHEAD: f64 = 16.0;
 
+/// Bytes retained by a table of `keys` distinct keys of `key_width` bytes, keeping `rows` rows
+/// of `row_width` bytes.
+pub fn table_bytes(keys: f64, key_width: f64, rows: f64, row_width: f64) -> f64 {
+    keys * (key_width + KEY_SLOT_OVERHEAD) + rows * (row_width + size_of::<IdxSize>() as f64)
+}
+
 /// A side with at least this key ratio is taken to have unique keys, allowing
 /// for some duplicates.
 pub(super) const UNIQUE_KEY_RATIO: f64 = 0.9;
@@ -302,6 +323,7 @@ impl JoinSampleStats {
         key_selectors: &[StreamExpr],
         payload_select: Option<&[Option<PlSmallStr>]>,
         with_min_hash: bool,
+        key_encoder: &KeyEncoder,
         null_is_valid: bool,
         random_state: &PlRandomState,
         sample_limit: usize,
@@ -343,7 +365,7 @@ impl JoinSampleStats {
                  df| {
                     let keys = ASYNC.block_on(select_key_columns(df, key_selectors, state))?;
                     let hash_keys =
-                        HashKeys::from_df(&keys, random_state.clone(), null_is_valid, false);
+                        key_encoder.try_hash_keys(&keys, random_state.clone(), null_is_valid)?;
                     match &mut min_hash {
                         Some(min_hash) => hash_keys.for_each_hash(|_, opt_h| {
                             sketch.insert(opt_h.unwrap_or(0));
@@ -420,13 +442,70 @@ impl JoinSampleStats {
 
     /// Bytes retained when building a table of the distinct keys of `rows` rows.
     pub fn distinct_keys_build_bytes(&self, rows: usize) -> f64 {
-        rows as f64 * self.key_ratio * (self.key_width + KEY_SLOT_OVERHEAD)
+        table_bytes(rows as f64 * self.key_ratio, self.key_width, 0.0, 0.0)
     }
 
     /// Bytes retained when building the distinct keys of `rows` rows and
     /// keeping every row.
     pub fn all_rows_build_bytes(&self, rows: usize) -> f64 {
-        self.distinct_keys_build_bytes(rows)
-            + rows as f64 * (self.row_width + size_of::<IdxSize>() as f64)
+        let rows = rows as f64;
+        table_bytes(rows * self.key_ratio, self.key_width, rows, self.row_width)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::df;
+
+    use super::*;
+
+    fn buffer(frames: usize, rows_per_frame: usize) -> SpillFrameSearchBuffer {
+        let schema = Arc::new(Schema::from_iter([Field::new("k".into(), DataType::Int64)]));
+        let mut buf = SpillFrameSearchBuffer::empty_with_schema(
+            schema,
+            RandomSpillContext::new("test".into(), None),
+        );
+        for i in 0..frames {
+            let start = (i * rows_per_frame) as i64;
+            let df =
+                df!("k" => (start..start + rows_per_frame as i64).collect::<Vec<_>>()).unwrap();
+            ASYNC.block_on(buf.push_sf(SpillFrame::new_unregistered(df)));
+        }
+        buf
+    }
+
+    fn keys(buf: &SpillFrameSearchBuffer) -> Vec<i64> {
+        let df = ASYNC.block_on(buf.clone().into_df());
+        df.column("k")
+            .unwrap()
+            .i64()
+            .unwrap()
+            .into_no_null_iter()
+            .collect()
+    }
+
+    #[test]
+    fn test_slice_keeps_only_covered_frames() {
+        let buf = buffer(100, 10);
+        let slice = buf.slice(25, 20);
+        assert_eq!(keys(&slice), (25..45).collect::<Vec<_>>());
+        assert_eq!(slice.sfs_at_offsets.len(), 3);
+
+        assert_eq!(keys(&buf.slice(990, 100)), (990..1000).collect::<Vec<_>>());
+        assert!(buf.slice(1000, 5).is_empty());
+    }
+
+    #[test]
+    fn test_split_at_keeps_only_covered_frames() {
+        let mut buf = buffer(100, 10);
+        let mut start = 0;
+        while !buf.is_empty() {
+            let top = buf.split_at(15);
+            let end = (start + 15).min(1000);
+            assert!(top.sfs_at_offsets.len() <= 3);
+            assert_eq!(keys(&top), (start..end).collect::<Vec<_>>());
+            start = end;
+        }
+        assert_eq!(start, 1000);
     }
 }

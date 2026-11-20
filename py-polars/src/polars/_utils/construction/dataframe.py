@@ -43,9 +43,11 @@ from polars._utils.various import (
 from polars._warnings import issue_warning
 from polars.datatypes import (
     N_INFER_DEFAULT,
+    Array,
     Categorical,
     Duration,
     Enum,
+    List,
     Object,
     String,
     Struct,
@@ -63,7 +65,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, MutableMapping
 
-    from polars import DataFrame, Series
+    from polars import DataFrame, Expr, Series
     from polars._plr import PySeries
     from polars._typing import (
         ArrayLike,
@@ -285,6 +287,44 @@ def _handle_columns_arg(
     return data
 
 
+def _match_struct_fields(
+    source: PolarsDataType, target: PolarsDataType
+) -> PolarsDataType:
+    """Return `source` with its struct fields reordered and completed as in `target`.
+
+    Matched fields keep their `source` dtype and fields missing from `source` get their
+    `target` dtype. A struct with fields that are not in `target` is left as is.
+    """
+    if isinstance(source, Struct) and isinstance(target, Struct):
+        fields = {f.name: f.dtype for f in source.fields}
+        if not fields.keys() <= {f.name for f in target.fields}:
+            return source
+        return Struct(
+            {
+                f.name: _match_struct_fields(fields[f.name], f.dtype)
+                if f.name in fields
+                else f.dtype
+                for f in target.fields
+            }
+        )
+    if isinstance(source, (List, Array)) and isinstance(target, (List, Array)):
+        inner = _match_struct_fields(source.inner, target.inner)
+        return List(inner) if isinstance(source, List) else Array(inner, source.size)
+    return source
+
+
+def cast_column_by_field_names(
+    name: str, source: PolarsDataType, target: PolarsDataType, *, strict: bool
+) -> Expr:
+    """Cast column `name` to `target`, reordering and adding struct fields by name."""
+    expr = F.col(name)
+    # A strict cast rejects reordered or missing struct fields, so first match them.
+    shape = _match_struct_fields(source, target)
+    if shape != source:
+        expr = expr.cast(shape, strict=False)
+    return expr.cast(target, strict=strict)
+
+
 def _post_apply_columns(
     pydf: PyDataFrame,
     columns: SchemaDefinition | None,
@@ -316,13 +356,21 @@ def _post_apply_columns(
         elif dtype == Enum != pydf_dtype:
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
         elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
-            column_casts.append(F.col(col).cast(struct, strict=strict)._pyexpr)
+            column_casts.append(
+                cast_column_by_field_names(
+                    col, pydf_dtype, struct, strict=strict
+                )._pyexpr
+            )
         elif dtype != Unknown and dtype != pydf_dtype:
             if dtype.is_temporal() and dtype != Duration and pydf_dtype == String:
                 temporal_cast = F.col(col).str.strptime(dtype, strict=strict)._pyexpr  # type: ignore[arg-type]
                 column_casts.append(temporal_cast)
             else:
-                column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
+                column_casts.append(
+                    cast_column_by_field_names(
+                        col, pydf_dtype, dtype, strict=strict
+                    )._pyexpr
+                )
 
     if column_casts or column_subset:
         pyldf = pydf.lazy()

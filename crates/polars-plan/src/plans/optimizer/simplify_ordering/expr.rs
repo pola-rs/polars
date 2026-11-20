@@ -192,14 +192,28 @@ impl ExprOrderSimplifier<'_> {
                 expr,
                 evaluation,
                 variant,
+                columns,
             } => {
                 check_return_cached!();
 
                 let expr = *expr;
                 let evaluation = *evaluation;
                 let variant = *variant;
+                let columns: Vec<Node> = columns.iter().map(|c| c.node()).collect();
 
                 let mut expr_ordering = self.rec(expr, RS::NO_DEORDER);
+                // The columns line up with the rows of `expr`.
+                if !columns.is_empty() {
+                    let mut acc = ExprOrderAcc::default();
+                    acc.add(expr_ordering, expr);
+                    for c in columns {
+                        acc.add(self.rec(c, RS::NO_DEORDER), c);
+                    }
+                    expr_ordering = acc.accumulated_orders();
+                    if acc.saw_mixed_inputs() {
+                        self.internal_observe(expr_ordering);
+                    }
+                }
 
                 match variant {
                     EvalVariant::Array { as_list: _ }
@@ -218,7 +232,7 @@ impl ExprOrderSimplifier<'_> {
 
                 expr_ordering
             },
-            AExpr::Element => O::INDEPENDENT,
+            AExpr::Element | AExpr::EvalColumn(_) => O::INDEPENDENT,
 
             #[cfg(feature = "dtype-struct")]
             AExpr::StructEval {
@@ -416,6 +430,7 @@ impl ExprOrderSimplifier<'_> {
                     partition_by,
                     order_by,
                     mapping: _,
+                    may_reorder: _,
                 } = self.expr_arena.get(current_ae_node)
                 else {
                     unreachable!()
@@ -776,6 +791,7 @@ pub(crate) fn is_order_insensitive_window(node: Node, arena: &Arena<AExpr>) -> b
         partition_by,
         order_by,
         mapping,
+        may_reorder: _,
     } = arena.get(node)
     else {
         return false;
@@ -880,8 +896,10 @@ fn drop_scalar_order_keys(node: Node, arena: &mut Arena<AExpr>) -> Option<AExpr>
             partition_by,
             order_by: Some((order_by, options)),
             mapping,
+            may_reorder,
         } => {
-            let (function, partition_by, mapping) = (*function, partition_by.clone(), *mapping);
+            let (function, partition_by, mapping, may_reorder) =
+                (*function, partition_by.clone(), *mapping, *may_reorder);
             let order_by = if is_scalar_ae(*order_by, arena) {
                 None
             } else {
@@ -897,6 +915,7 @@ fn drop_scalar_order_keys(node: Node, arena: &mut Arena<AExpr>) -> Option<AExpr>
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder,
             })
         },
         _ => None,

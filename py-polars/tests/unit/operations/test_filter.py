@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -12,7 +15,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
-    from tests.conftest import PlMonkeyPatch
 
 
 def test_simplify_expression_lit_true_4376() -> None:
@@ -417,42 +419,55 @@ def test_filter_wide_frame_single_chunk() -> None:
     assert_frame_equal(out, df.filter(df.get_column("m")))
 
 
-@pytest.mark.parametrize("run", [(10, 13), (0, 3), (999_997, 1_000_000)])
-@pytest.mark.parametrize(
-    "values",
-    [
-        pl.col("i"),
-        pl.when(pl.col("i") % 3 > 0).then(pl.col("i")),
-        pl.col("i") % 2 == 0,
-    ],
-)
-def test_filter_short_run_does_not_keep_input(
-    run: tuple[int, int], values: pl.Expr, plmonkeypatch: PlMonkeyPatch
-) -> None:
-    from polars._plr import _estimate_memory_usage
-
-    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
-    n = 1_000_000
-    s = pl.int_range(n, eager=True).to_frame("i").select(values).to_series()
-    expected = s.slice(run[0], run[1] - run[0]).to_list()
-    mask = pl.int_range(n, eager=True).is_between(run[0], run[1], closed="left")
-    out = s.filter(mask)
-    size = s.estimated_size()
-    before = _estimate_memory_usage()
-    del s
-    assert _estimate_memory_usage() < before - size // 2
-    assert out.to_list() == expected
+def _run_with_exact_memory_usage(code: str) -> None:
+    # A thread only adds its allocations to `_estimate_memory_usage`
+    # once they pass `POLARS_OOC_DRIFT_THRESHOLD`.
+    # Setting it to 0 only takes effect at a thread's next allocation.
+    # Threads left idle by earlier tests can make the estimate underflow to 0,
+    # so this runs in a fresh process, with the threshold set from the start.
+    env = {**os.environ, "POLARS_OOC_DRIFT_THRESHOLD": "0"}
+    subprocess.run([sys.executable, "-c", code], env=env, check=True)
 
 
-def test_filter_short_run_shares_string_data(plmonkeypatch: PlMonkeyPatch) -> None:
-    from polars._plr import _estimate_memory_usage
+def test_filter_short_run_does_not_keep_input() -> None:
+    _run_with_exact_memory_usage(
+        """\
+import polars as pl
+from polars._plr import _estimate_memory_usage
 
-    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
-    n = 100_000
-    s = pl.Series(["x" * 1024]).gather(pl.zeros(n, pl.UInt32, eager=True))
-    mask = pl.int_range(n, eager=True).is_between(10, 10_010, closed="left")
-    before = _estimate_memory_usage()
-    out = s.filter(mask)
-    assert _estimate_memory_usage() - before < 1 << 20
-    assert out.len() == 10_000
-    assert out[0] == "x" * 1024
+n = 1_000_000
+for values in [
+    pl.col("i"),
+    pl.when(pl.col("i") % 3 > 0).then(pl.col("i")),
+    pl.col("i") % 2 == 0,
+]:
+    for run in [(10, 13), (0, 3), (999_997, 1_000_000)]:
+        s = pl.int_range(n, eager=True).to_frame("i").select(values).to_series()
+        expected = s.slice(run[0], run[1] - run[0]).to_list()
+        mask = pl.int_range(n, eager=True).is_between(run[0], run[1], closed="left")
+        out = s.filter(mask)
+        size = s.estimated_size()
+        before = _estimate_memory_usage()
+        del s
+        assert _estimate_memory_usage() < before - size // 2, (values, run)
+        assert out.to_list() == expected, (values, run)
+"""
+    )
+
+
+def test_filter_short_run_shares_string_data() -> None:
+    _run_with_exact_memory_usage(
+        """\
+import polars as pl
+from polars._plr import _estimate_memory_usage
+
+n = 100_000
+s = pl.Series(["x" * 1024]).gather(pl.zeros(n, pl.UInt32, eager=True))
+mask = pl.int_range(n, eager=True).is_between(10, 10_010, closed="left")
+before = _estimate_memory_usage()
+out = s.filter(mask)
+assert _estimate_memory_usage() - before < 1 << 20
+assert out.len() == 10_000
+assert out[0] == "x" * 1024
+"""
+    )

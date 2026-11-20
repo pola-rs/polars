@@ -116,7 +116,7 @@ mod memory_mapped_hidden {
 
     impl Key {
         /// # Safety
-        /// The users guarantees that the arrow data in the given path is valid
+        /// The user guarantees that the arrow data in the given path is valid
         /// and remains valid throughout memory mapping.
         pub unsafe fn new(inner: Option<PathBuf>) -> Self {
             Self { inner }
@@ -208,7 +208,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
     /// The file name must be passed to register the memory mapped file.
     ///
     /// # Safety
-    /// The users guarantees that the arrow data in the given path is valid
+    /// The user guarantees that the arrow data in the given path is valid
     /// and remains valid throughout memory mapping.
     pub unsafe fn memory_mapped(mut self, path_buf: Option<PathBuf>) -> Self {
         self.memory_map = unsafe { memory_mapped_hidden::Key::new(path_buf) };

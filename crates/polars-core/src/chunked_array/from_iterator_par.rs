@@ -48,7 +48,7 @@ where
     I: IntoParallelIterator,
 {
     let it = par_iter.into_par_iter();
-    // be careful optimizing allocations. Its hard to figure out the size
+    // be careful optimizing allocations. It's hard to figure out the size
     // needed
     // https://github.com/pola-rs/polars/issues/1562
     it.fold(Vec::new, vec_push)
@@ -411,12 +411,27 @@ where
     T: PolarsNumericType,
     F: Fn(usize) -> Option<T::Native> + Send + Sync,
 {
+    collect_primitive_opt_par_with_scratch(len, || (), |_, i| f(i))
+}
+
+/// [`collect_primitive_opt_par`] for an `f` that reuses a scratch value, created by `init` once per
+/// rayon job rather than once per element.
+pub(crate) fn collect_primitive_opt_par_with_scratch<T, S, I, F>(
+    len: usize,
+    init: I,
+    f: F,
+) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    I: Fn() -> S + Send + Sync,
+    F: Fn(&mut S, usize) -> Option<T::Native> + Send + Sync,
+{
     let mut values: Vec<T::Native> = vec![T::Native::default(); len];
-    let validity = fill_blocks_of_8_par(&mut values, &|b, out| {
+    let validity = fill_blocks_of_8_par(&mut values, &init, &|scratch, b, out| {
         let lo = b * 8;
         let mut m = 0u8;
         for (bit, slot) in out.iter_mut().enumerate() {
-            if let Some(x) = f(lo + bit) {
+            if let Some(x) = f(scratch, lo + bit) {
                 *slot = x;
                 m |= 1 << bit;
             }
@@ -429,18 +444,19 @@ where
     ChunkedArray::from_vec_validity(PlSmallStr::EMPTY, values, validity)
 }
 
-/// Calls `fill(block_idx, block)` in parallel for every block of 8 values and returns the
-/// validity bytes it produced. `fill` is dynamic so that the rayon code is only generated once
-/// per value type.
-fn fill_blocks_of_8_par<N: Send>(
+/// Calls `fill(scratch, block_idx, block)` in parallel for every block of 8 values, with a
+/// `scratch` created by `init` once per rayon job, and returns the validity bytes it produced.
+/// `fill` is dynamic so that the rayon code is only generated once per value and scratch type.
+fn fill_blocks_of_8_par<N: Send, S>(
     values: &mut [N],
-    fill: &(dyn Fn(usize, &mut [N]) -> u8 + Sync),
+    init: &(dyn Fn() -> S + Sync),
+    fill: &(dyn Fn(&mut S, usize, &mut [N]) -> u8 + Sync),
 ) -> Vec<u8> {
     let mut validity: Vec<u8> = Vec::with_capacity(values.len().div_ceil(8));
     values
         .par_chunks_mut(8)
         .enumerate()
-        .map(|(b, out)| fill(b, out))
+        .map_init(init, |scratch, (b, out)| fill(scratch, b, out))
         .collect_into_vec(&mut validity);
     validity
 }

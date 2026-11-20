@@ -100,7 +100,7 @@ fn sort_by_groups_single_by(
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
-            let group = sort_by_s.slice(first as i64, len as usize);
+            let group = sort_by_s.slice((first as usize, len as usize));
             let sorted_idx = group.arg_sort(options);
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
@@ -169,6 +169,9 @@ fn sort_by_groups_no_match<'a>(
     });
     let c = ca?.with_name(s_in.name().clone()).into_column();
     ac_in.with_values(c, true, Some(expr))?;
+    if options.limit.is_some() {
+        ac_in.with_update_groups(UpdateGroups::WithSeriesLen);
+    }
     Ok(ac_in)
 }
 
@@ -204,7 +207,7 @@ fn sort_by_groups_multiple_by(
         GroupsIndicator::Slice([first, len]) => {
             let groups = sort_by_s
                 .iter()
-                .map(|s| s.slice(first as i64, len as usize))
+                .map(|s| s.slice((first as usize, len as usize)))
                 .map(Column::from)
                 .collect::<Vec<_>>();
 

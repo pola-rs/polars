@@ -1,7 +1,7 @@
 //! # (De)serializing Arrows Streaming IPC format.
 //!
 //! Arrow Streaming IPC is a [binary format](https://arrow.apache.org/docs/python/ipc.html).
-//! It used for sending an arbitrary length sequence of record batches.
+//! It is used for sending an arbitrary length sequence of record batches.
 //! The format must be processed from start to end, and does not support random access.
 //! It is different than IPC, if you can't deserialize a file with `IpcReader::new`, it's probably an IPC Stream File.
 //!

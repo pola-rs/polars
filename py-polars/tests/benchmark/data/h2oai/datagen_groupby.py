@@ -11,7 +11,7 @@ Examples
 $ python datagen_groupby.py 1e7 1e2 --null-percentage 0
 
 100 million rows, 10 groups, 5% nulls, sorted:
-$ python datagen_groupby.py 1e8 1e1 --null-percentage 5 --sorted
+$ python datagen_groupby.py 1e8 1e1 --null-percentage 5 --sort
 """
 
 import argparse

@@ -35,7 +35,7 @@ where
     let scratch_slice = unsafe { assume_init_mut(scratch_slice) };
     scratch_slice.sort_by(|key1, key2| key1.0.tot_cmp(&key2.0));
 
-    // Now we write the indexes in the same array. So from (T, Idxsize) to just IdxSize.
+    // Now we write the indexes in the same array. So from (T, IdxSize) to just IdxSize.
     unsafe {
         let src = scratch_slice.as_ptr();
         let (_, scratch_slice_aligned_to_idx, _) = scratch_slice.align_to_mut::<Idx>();

@@ -124,7 +124,7 @@ jobs:
           fi
           rm zensical-build.log
 
-          # prune build files befer publishing to avoid dragging that with us
+          # prune build files before publishing to avoid dragging that with us
           rm -rf \
             site/_build/API_REFERENCE_LINKS.yml \
             site/_build/overrides \

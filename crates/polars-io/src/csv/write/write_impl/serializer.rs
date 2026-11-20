@@ -671,7 +671,7 @@ pub(super) fn serializer_for<'a>(
     _time_zone: Option<Tz>,
 ) -> PolarsResult<Box<dyn Serializer<'a> + Send + 'a>> {
     // The needs_quotes flag captures the quote logic for the quote_wrapper! macro
-    // It is targeted at numerical types primarily; other types may required additional logic
+    // It is targeted at numerical types primarily; other types may require additional logic
     let needs_quotes = match dtype {
         DataType::Float16 | DataType::Float32 | DataType::Float64 => {
             // When comma is used as both the field separator and decimal separator, quoting

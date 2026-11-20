@@ -68,6 +68,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         exact
@@ -118,6 +120,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         time_unit : {None, 'us', 'ns', 'ms'}
             Unit of time for the resulting Datetime column. If set to None (default),
             the time unit is inferred from the format string if given, eg:
@@ -201,6 +205,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         cache
@@ -245,6 +251,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         exact
@@ -2327,6 +2335,38 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         └────────┴──────────┘
         """
         return wrap_expr(self._pyexpr.str_reverse())
+
+    def from_code_point(self) -> Expr:
+        """
+        Convert integer Unicode code points to strings of one character.
+
+        The input must be an integer column; the output is a string column.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Raises
+        ------
+        ComputeError
+            If a value is negative, above 1114111 (``0x10FFFF``), or a UTF-16
+            surrogate (55296 to 57343).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"code": [65, 233, 8364, None]})
+        >>> df.with_columns(pl.col("code").str.from_code_point().alias("char"))
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ code ┆ char │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 65   ┆ A    │
+        │ 233  ┆ é    │
+        │ 8364 ┆ €    │
+        │ null ┆ null │
+        └──────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.str_from_code_point())
 
     def slice(
         self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None

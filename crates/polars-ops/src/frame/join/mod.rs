@@ -17,7 +17,9 @@ use std::hash::Hash;
 
 pub use args::*;
 #[cfg(feature = "asof_join")]
-pub use asof::{_check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy};
+pub use asof::{
+    _asof_key_to_physical, _check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy,
+};
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
@@ -38,13 +40,11 @@ use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 pub(super) use polars_core::series::IsSorted;
-#[allow(unused_imports)]
-use polars_core::utils::slice_slice;
 use polars_defs::join::{
     JoinArgs, JoinCoalesce, JoinType, JoinTypeOptions, JoinValidation, MaintainOrderJoin,
 };
 use polars_utils::hashing::BytesHash;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 use rayon::prelude::*;
 
 use self::cross_join::fused_cross_filter;
@@ -142,6 +142,11 @@ pub trait DataFrameJoinOps: IntoDf {
         // This join has no per-candidate match condition, so it filters after the fact.
         if let Some(JoinTypeOptions::FusedPredicate(fused_options)) = &options {
             debug_assert!(args.slice.is_none());
+            // Filtering after an outer join would drop its unmatched rows.
+            polars_ensure!(
+                args.how.is_inner(),
+                InvalidOperation: "a fused join predicate is only supported for inner joins on the in-memory engine"
+            );
             let predicate = fused_options.predicate.clone();
             let joined = self._join_impl(
                 other,
@@ -594,9 +599,9 @@ trait DataFrameJoinOpsPrivate: IntoDf {
             );
         let need_sort = args.maintain_order != MaintainOrderJoin::None && !already_left_sorted;
 
-        if !need_sort && let Some((offset, len)) = args.slice {
-            join_tuples_left = slice_slice(join_tuples_left, offset, len);
-            join_tuples_right = slice_slice(join_tuples_right, offset, len);
+        if !need_sort && let Some(slice) = args.slice {
+            join_tuples_left = &join_tuples_left[slice];
+            join_tuples_right = &join_tuples_right[slice];
         }
 
         let other = if let Some(drop_names) = drop_names {
@@ -633,8 +638,8 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 
             df.sort_in_place(columns, options)?;
 
-            if let Some((offset, len)) = args.slice {
-                df = df.slice(offset, len);
+            if let Some(slice) = args.slice {
+                df = df.slice(slice);
             }
 
             let [mut a, b]: [Column; 2] = df.into_columns().try_into().unwrap();

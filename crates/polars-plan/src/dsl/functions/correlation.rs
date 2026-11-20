@@ -35,7 +35,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, propagate_nans: bool) -> Expr {
 fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool) -> Expr {
     let rolling_options = RollingOptionsFixedWindow {
         window_size: options.window_size as usize,
-        min_periods: options.min_periods as usize,
+        min_samples: options.min_samples as usize,
         ..Default::default()
     };
 

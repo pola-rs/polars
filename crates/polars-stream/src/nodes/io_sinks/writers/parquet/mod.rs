@@ -8,6 +8,7 @@ use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::prelude::{ParquetWriteOptions, get_encodings};
+use polars_parquet::arrow::geo::{GEO_KEY, validate_geo_schema};
 use polars_parquet::write::{
     CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
 };
@@ -36,14 +37,23 @@ impl ParquetWriterStarter {
         options: Arc<ParquetWriteOptions>,
         arrow_schema: ArrowSchemaRef,
     ) -> PolarsResult<Self> {
-        let initialized_state = match &options.encryption_properties {
-            Some(encryption_properties) => {
+        // Metadata that may set its own `geo` key skips the early checks,
+        // as that key replaces the derived one.
+        // A callable's keys are only known when each file ends,
+        // so for a callable any error comes from `FileWriter::end`.
+        if !options
+            .key_value_metadata
+            .as_ref()
+            .is_some_and(|kv| kv.may_contain(GEO_KEY))
+        {
+            validate_geo_schema(&arrow_schema)?;
+        }
+        let initialized_state = match &options.encryption {
+            Some(encryption) => {
                 // Check the encrypted columns exist before any file is opened, rather than
                 // when creating the writer for each file.
                 let state = InitializedState::new(&arrow_schema)?;
-                encryption_properties
-                    .0
-                    .validate_encrypted_column_names(&state.schema_descriptor)?;
+                encryption.validate_encrypted_column_names(&state.schema_descriptor)?;
                 Some(state)
             },
             None => None,
@@ -157,11 +167,7 @@ impl FileWriterStarter for ParquetWriterStarter {
                     encodings: Buffer::clone(&encodings),
                     key_value_metadata,
                     num_leaf_columns,
-                    encryption_properties: self
-                        .options
-                        .encryption_properties
-                        .as_ref()
-                        .map(|p| Arc::clone(&p.0)),
+                    encryption: self.options.encryption.clone(),
                 }
                 .run(),
             ),

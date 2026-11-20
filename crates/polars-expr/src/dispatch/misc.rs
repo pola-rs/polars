@@ -206,42 +206,12 @@ pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
     let quantile = s[1].as_materialized_series();
-    polars_ensure!(!quantile.is_empty(), ComputeError:
-        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
-        got an empty input"
-    );
-    polars_ensure!(quantile.len() == 1, ComputeError:
-        "polars does not support varying quantiles yet, \
-        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
-    );
-
-    match quantile.dtype() {
-        DataType::List(_) => {
-            let list = quantile.list()?;
-            let inner_s = list.get_as_series(0).ok_or_else(
-                || polars_err!(ComputeError: "quantile expression contains null values"),
-            )?;
-            if inner_s.has_nulls() {
-                polars_bail!(ComputeError: "quantile expression contains null values");
-            }
-
-            let v: Vec<f64> = inner_s
-                .cast(&DataType::Float64)?
-                .f64()?
-                .into_no_null_iter()
-                .collect();
-
-            input
-                .quantiles_reduce(&v, method)
-                .map(|sc| sc.into_column(input.name().clone()))
-        },
-        _ => {
-            let q: f64 = quantile.get(0).unwrap().try_extract()?;
-            input
-                .quantile_reduce(q, method)
-                .map(|sc| sc.into_column(input.name().clone()))
-        },
-    }
+    let quantiles = extract_quantiles(quantile)?;
+    let out = match quantile.dtype() {
+        DataType::List(_) => input.quantiles_reduce(&quantiles, method)?,
+        _ => input.quantile_reduce(quantiles[0], method)?,
+    };
+    Ok(out.into_column(input.name().clone()))
 }
 
 #[cfg(feature = "mode")]
@@ -380,24 +350,29 @@ pub(super) fn hist(
 
 #[cfg(feature = "replace")]
 pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
-    polars_ops::series::replace(s[0].as_materialized_series(), s[1].list()?, s[2].list()?)
+    // A broadcast scalar is one list of values, not one per row.
+    let old = s[1].as_materialized_series_maintain_scalar();
+    let new = s[2].as_materialized_series_maintain_scalar();
+    polars_ops::series::replace(s[0].as_materialized_series(), old.list()?, new.list()?)
         .map(Column::from)
 }
 
 #[cfg(feature = "replace")]
 pub(super) fn replace_strict(s: &[Column], return_dtype: Option<DataType>) -> PolarsResult<Column> {
+    let old = s[1].as_materialized_series_maintain_scalar();
+    let new = s[2].as_materialized_series_maintain_scalar();
     match s.get(3) {
         Some(default) => polars_ops::series::replace_or_default(
             s[0].as_materialized_series(),
-            s[1].list()?,
-            s[2].list()?,
+            old.list()?,
+            new.list()?,
             default.as_materialized_series(),
             return_dtype,
         ),
         None => polars_ops::series::replace_strict(
             s[0].as_materialized_series(),
-            s[1].list()?,
-            s[2].list()?,
+            old.list()?,
+            new.list()?,
             return_dtype,
         ),
     }
@@ -900,6 +875,16 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
 
     assert_eq!(columns.len(), 2);
     Column::try_apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
+}
+
+#[cfg(feature = "log")]
+pub(super) fn x_log_y(columns: &[Column], base: f64) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    assert_eq!(columns.len(), 2);
+    Column::try_apply_broadcasting_binary_elementwise(&columns[0], &columns[1], |x, y| {
+        x.x_log_y(y, base)
+    })
 }
 
 #[cfg(feature = "log")]

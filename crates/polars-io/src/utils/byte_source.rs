@@ -17,6 +17,8 @@ use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 use tokio::sync::Semaphore;
 
+#[cfg(feature = "cloud")]
+use crate::cloud::concurrency_config::PipelineWindow;
 use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
 use crate::cloud::options::CloudOptions;
 #[cfg(feature = "cloud")]
@@ -693,8 +695,12 @@ impl ObjectStoreByteSource {
         path: PlRefPath,
         cloud_options: Option<&CloudOptions>,
         io_metrics: Option<Arc<IOMetrics>>,
-        config: FetchConfig,
+        mut config: FetchConfig,
     ) -> PolarsResult<Self> {
+        // Local files (no scheme or `file:`) keep a fixed pipeline window.
+        if path.scheme().is_none_or(|s| s.is_file()) {
+            config.pipeline_window = PipelineWindow::Fixed;
+        }
         let (CloudLocation { prefix, .. }, mut store) =
             build_object_store(path, cloud_options, false).await?;
         let path = object_path_from_str(&prefix)?;
@@ -769,15 +775,18 @@ impl DynByteSource {
     }
 
     /// A clone of this object store source with a different fetch configuration. The clone
-    /// shares the underlying store, and this source keeps its configuration. Returns `None` for
-    /// non-object store sources.
+    /// shares the underlying store and its pipeline window, and this source keeps its
+    /// configuration. Returns `None` for non-object store sources.
     #[cfg_attr(not(feature = "cloud"), allow(unused_variables))]
     pub fn with_fetch_config(&self, config: FetchConfig) -> Option<Self> {
         match self {
             Self::Buffer(_) | Self::File(_) => None,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => Some(Self::Cloud(ObjectStoreByteSource {
-                config,
+                config: FetchConfig {
+                    pipeline_window: v.config.pipeline_window,
+                    ..config
+                },
                 ..v.clone()
             })),
         }
@@ -808,6 +817,29 @@ impl DynByteSource {
             Self::File(_) => None,
             #[cfg(feature = "cloud")]
             Self::Cloud(source) => Some(source.concurrency_strategy()),
+        }
+    }
+
+    /// In-flight budget that a scan's pipeline window follows: the store's, for a bytes-based
+    /// source with `PipelineWindow::FollowInflight`.
+    #[cfg(feature = "cloud")]
+    pub fn window_inflight_budget(&self) -> Option<Arc<crate::cloud::concurrency::InFlightBudget>> {
+        match self {
+            Self::Cloud(source)
+                if matches!(
+                    source.concurrency_strategy(),
+                    ConcurrencyStrategy::BytesBased
+                ) && source.config.pipeline_window == PipelineWindow::FollowInflight =>
+            {
+                Some(
+                    source
+                        .store
+                        .get_or_init_concurrency()
+                        .inflight_budget()
+                        .clone(),
+                )
+            },
+            _ => None,
         }
     }
 }

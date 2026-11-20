@@ -150,7 +150,7 @@ impl RecordBatchEncoder {
                 finish_record_batch_write_wg.wait().await;
                 Some(finish_record_batch_write_wg.token())
             } else {
-                // Comperssed: Encoding will require CPU effort, allow parallelism across all threads.
+                // Compressed: Encoding will require CPU effort, allow parallelism across all threads.
                 None
             };
 

@@ -1,5 +1,8 @@
+use std::ops::Range;
+
 use polars_arrow::bitmap::utils::BitmapIter;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
+use polars_arrow::trusted_len::TrustedLen;
 
 use super::utils::PageDecoder;
 use super::{Filter, utils};
@@ -19,6 +22,9 @@ pub struct Nested {
     // invalids. This, however, is a very common situation.
     num_valids: usize,
     num_invalids: usize,
+
+    // Whether a fixed-size list row was found with a number of children other than `width`.
+    is_misaligned: bool,
 }
 
 #[derive(Debug)]
@@ -44,6 +50,7 @@ impl Nested {
 
             num_valids: 0,
             num_invalids: 0,
+            is_misaligned: false,
         }
     }
 
@@ -57,6 +64,7 @@ impl Nested {
 
             num_valids: 0,
             num_invalids: 0,
+            is_misaligned: false,
         }
     }
 
@@ -69,6 +77,7 @@ impl Nested {
 
             num_valids: 0,
             num_invalids: 0,
+            is_misaligned: false,
         }
     }
 
@@ -81,15 +90,13 @@ impl Nested {
 
             num_valids: 0,
             num_invalids: 0,
+            is_misaligned: false,
         }
     }
 
     fn take(mut self) -> (usize, Vec<i64>, Option<BitmapBuilder>) {
         if !matches!(self.content, NestedContent::Primitive) {
-            if let Some(validity) = self.validity.as_mut() {
-                validity.extend_constant(self.num_valids, true);
-                validity.extend_constant(self.num_invalids, false);
-            }
+            self.flush_validity();
 
             debug_assert!(
                 self.validity
@@ -97,9 +104,6 @@ impl Nested {
                     .is_none_or(|v| v.len() == self.length)
             );
         }
-
-        self.num_valids = 0;
-        self.num_invalids = 0;
 
         match self.content {
             NestedContent::Primitive => {
@@ -125,15 +129,6 @@ impl Nested {
         }
     }
 
-    fn is_required(&self) -> bool {
-        match self.content {
-            NestedContent::Primitive => false,
-            NestedContent::List { .. } => false,
-            NestedContent::FixedSizeList { .. } => false,
-            NestedContent::Struct => true,
-        }
-    }
-
     /// number of rows
     fn len(&self) -> usize {
         self.length
@@ -148,64 +143,412 @@ impl Nested {
         }
     }
 
+    // Always inlined, as it is on the hot path of every collect loop.
+    #[inline(always)]
     fn push(&mut self, value: i64, is_valid: bool) {
         let is_primitive = matches!(self.content, NestedContent::Primitive);
 
         if is_valid && self.num_invalids != 0 {
-            debug_assert!(!is_primitive);
-
-            // @NOTE: Having invalid items might not necessarily mean that we have a validity mask.
-            //
-            // For instance, if we have a optional struct with a required list in it, that struct
-            // will have a validity mask and the list will not. In the arrow representation of this
-            // array, however, the list will still have invalid items where the struct is null.
-            //
-            // Array:
-            // [
-            //     { 'x': [1] },
-            //     None,
-            //     { 'x': [1, 2] },
-            // ]
-            //
-            // Arrow:
-            // struct = [ list[0] None list[2] ]
-            // list   = {
-            //     values  = [ 1, 1, 2 ],
-            //     offsets = [ 0, 1, 1, 3 ],
-            // }
-            //
-            // Parquet:
-            // [ 1, 1, 2 ] + definition + repetition levels
-            //
-            // As you can see we need to insert an invalid item into the list even though it does
-            // not have a validity mask.
-            if let Some(validity) = self.validity.as_mut() {
-                validity.extend_constant(self.num_valids, true);
-                validity.extend_constant(self.num_invalids, false);
-            }
-
-            self.num_valids = 0;
-            self.num_invalids = 0;
+            self.flush_validity();
         }
-
         self.num_valids += usize::from(!is_primitive & is_valid);
         self.num_invalids += usize::from(!is_primitive & !is_valid);
-
         self.length += 1;
         if let NestedContent::List { offsets } = &mut self.content {
             offsets.push(value);
         }
     }
 
+    /// Pushes `n` valid items, the same as `n` calls to `push` apart from the offsets of a list.
+    fn push_n_valids(&mut self, n: usize) {
+        let is_primitive = matches!(self.content, NestedContent::Primitive);
+        if self.num_invalids != 0 {
+            self.flush_validity();
+        }
+        self.num_valids += if is_primitive { 0 } else { n };
+        self.length += n;
+    }
+
+    /// Writes the batched validity out.
+    fn flush_validity(&mut self) {
+        debug_assert!(!matches!(self.content, NestedContent::Primitive));
+
+        // @NOTE: Having invalid items might not necessarily mean that we have a validity mask.
+        //
+        // For instance, if we have a optional struct with a required list in it, that struct
+        // will have a validity mask and the list will not. In the arrow representation of this
+        // array, however, the list will still have invalid items where the struct is null.
+        //
+        // Array:
+        // [
+        //     { 'x': [1] },
+        //     None,
+        //     { 'x': [1, 2] },
+        // ]
+        //
+        // Arrow:
+        // struct = [ list[0] None list[2] ]
+        // list   = {
+        //     values  = [ 1, 1, 2 ],
+        //     offsets = [ 0, 1, 1, 3 ],
+        // }
+        //
+        // Parquet:
+        // [ 1, 1, 2 ] + definition + repetition levels
+        //
+        // As you can see we need to insert an invalid item into the list even though it does
+        // not have a validity mask.
+        if let Some(validity) = self.validity.as_mut() {
+            validity.extend_constant(self.num_valids, true);
+            validity.extend_constant(self.num_invalids, false);
+        }
+        self.num_valids = 0;
+        self.num_invalids = 0;
+    }
+
+    /// Pushes an item per element of `is_valid`, valid where it is `true`, the same as calls to
+    /// `push` apart from the offsets of a list.
+    fn push_validities(&mut self, is_valid: impl TrustedLen<Item = bool>) {
+        self.flush_validity();
+        self.length += is_valid.size_hint().0;
+        if let Some(validity) = self.validity.as_mut() {
+            validity.extend_trusted_len_iter(is_valid);
+        }
+    }
+
     fn push_default(&mut self, length: i64) {
         let is_primitive = matches!(self.content, NestedContent::Primitive);
         self.num_invalids += usize::from(!is_primitive);
-
         self.length += 1;
         if let NestedContent::List { offsets } = &mut self.content {
             offsets.push(length);
         }
     }
+
+    /// Marks a fixed-size list as misaligned unless its rows before the one just pushed have
+    /// `width` children each, i.e. `child_len` in total. Null rows are padded to `width` children.
+    fn mark_if_misaligned(&mut self, child_len: usize) {
+        if let NestedContent::FixedSizeList { width } = self.content {
+            self.is_misaligned |= child_len != (self.length - 1) * width;
+        }
+    }
+}
+
+/// Bulk collection of runs of valid, non-empty rows of the innermost (fixed-size) list, with
+/// the same result as `collect_value` for each value.
+struct LeafRows<'a> {
+    /// A value reaches `nested[d]` iff its definition level is at least `def_levels[d]`, and
+    /// is valid (and, for a list, non-empty) there iff it is at least `def_levels[d + 1]`.
+    def_levels: &'a [u16],
+    /// A value starts a new item of `nested[d]` iff its repetition level is at most
+    /// `rep_levels[d]`, and otherwise continues the current one.
+    rep_levels: &'a [u16],
+    /// The indices into `nested` of the levels that each row adds a valid item to: the
+    /// structs right above the list, and the list itself.
+    depths: Range<usize>,
+    /// The repetition level of a value that starts a new row of the list;
+    /// a lower one also starts a row of an outer level.
+    row_rep: u16,
+    /// The repetition level of a value that adds an item to the current row, i.e. `row_rep + 1`.
+    item_rep: u16,
+    /// The lowest definition level of a value in a valid, non-empty row, i.e. of an item, which
+    /// can still be a null struct or leaf.
+    item_def: u16,
+    /// Whether the list is a fixed-size list.
+    is_fixed_size_list: bool,
+}
+
+impl<'a> LeafRows<'a> {
+    fn new(nested: &[Nested], def_levels: &'a [u16], rep_levels: &'a [u16]) -> Option<Self> {
+        let leaf = nested.len() - 1;
+        let list = nested.iter().rposition(Nested::is_repeated)?;
+        let row_rep = rep_levels[list];
+        Some(Self {
+            def_levels,
+            rep_levels,
+            depths: rep_levels.partition_point(|&rep| rep < row_rep)..list + 1,
+            row_rep,
+            item_rep: rep_levels[leaf],
+            item_def: def_levels[list + 1],
+            is_fixed_size_list: matches!(nested[list].content, NestedContent::FixedSizeList { .. }),
+        })
+    }
+
+    /// Collects the level values of a page, in bulk for runs of these rows and with
+    /// `collect_value` for any other value, and returns how many. It is not inlined,
+    /// to keep `decode_nested` lean.
+    #[inline(never)]
+    fn collect_values<const HAS_FIXED_SIZE_LIST: bool>(
+        &self,
+        page_def_levels: &[u16],
+        page_rep_levels: &[u16],
+        num_collects: &mut usize,
+        batched_collector: &mut BatchedNestedDecoder<'_>,
+        nested: &mut [Nested],
+    ) -> ParquetResult<usize> {
+        let collect_run = if self.is_fixed_size_list {
+            Self::collect_run::<true>
+        } else {
+            Self::collect_run::<false>
+        };
+
+        let mut i = 0;
+        while i < page_def_levels.len() && (*num_collects > 0 || page_rep_levels[i] != 0) {
+            // Only an item of a row can start a run.
+            let n = if page_def_levels[i] >= self.item_def {
+                collect_run(
+                    self,
+                    &page_def_levels[i..],
+                    &page_rep_levels[i..],
+                    num_collects,
+                    nested,
+                )
+            } else {
+                0
+            };
+            if n > 0 {
+                // Here rather than in `collect_run`, whose loop runs out of registers otherwise.
+                push_items(
+                    &page_def_levels[i..i + n],
+                    &mut nested[self.depths.end..],
+                    &self.def_levels[self.depths.end + 1..],
+                    batched_collector,
+                )?;
+                i += n;
+            } else {
+                collect_value::<HAS_FIXED_SIZE_LIST>(
+                    page_def_levels[i],
+                    page_rep_levels[i],
+                    num_collects,
+                    batched_collector,
+                    nested,
+                    self.def_levels,
+                    self.rep_levels,
+                )?;
+                i += 1;
+            }
+        }
+        Ok(i)
+    }
+
+    /// Pushes a valid item to each outer level that a row starting with repetition level `rep`
+    /// starts as well, where `num_row_items` is the length of the level below them. It is cold, so
+    /// that the loop of `collect_run` keeps its registers for the rows of the list.
+    #[cold]
+    fn push_outer_rows(&self, rep: u16, outer: &mut [Nested], num_row_items: usize) {
+        for depth in self.rep_levels.partition_point(|&r| r < rep)..outer.len() {
+            let child_len = outer
+                .get(depth + 1)
+                .map_or(num_row_items, |child| child.len());
+            outer[depth].push(child_len as i64, true);
+            outer[depth].mark_if_misaligned(child_len);
+        }
+    }
+
+    /// Collects the leading level values that continue the current row or start new rows, apart
+    /// from their items, which `push_items` pushes, and returns how many.
+    fn collect_run<const IS_FIXED_SIZE_LIST: bool>(
+        &self,
+        page_def_levels: &[u16],
+        page_rep_levels: &[u16],
+        num_collects: &mut usize,
+        nested: &mut [Nested],
+    ) -> usize {
+        let page_rep_levels = &page_rep_levels[..page_def_levels.len()];
+        let num_items = nested[self.depths.end].len();
+        let (outer, nested) = nested.split_at_mut(self.depths.start);
+        let rows = &mut nested[..self.depths.len()];
+        let num_row_items = rows[0].len();
+        let list = rows.last_mut().unwrap();
+        let num_list_rows = list.len();
+        // A run starts at most a row per value, so reserving that many offsets keeps reallocation,
+        // and the spilling of registers around it, out of the loop.
+        let (mut new_offsets, width) = match &mut list.content {
+            NestedContent::List { offsets } => {
+                offsets.reserve(page_def_levels.len());
+                (Some(offsets.spare_capacity_mut()), 0)
+            },
+            NestedContent::FixedSizeList { width } => (None, *width),
+            _ => unreachable!(),
+        };
+
+        // As in `collect_value`, each new top-level row takes a collect. These are the rows of the
+        // list if it is the top level, else those of the outermost level. Counting them is cheaper
+        // than checking the repetition level of each value.
+        let (max_rows, max_outer_rows) = if self.row_rep == 0 {
+            (*num_collects, 0)
+        } else {
+            (usize::MAX, *num_collects)
+        };
+        let mut num_rows = 0;
+        let mut num_outer_rows = 0;
+        let mut is_misaligned = false;
+        let mut n = 0;
+        loop {
+            // Values that continue the current row.
+            while n < page_def_levels.len()
+                && page_rep_levels[n] == self.item_rep
+                && page_def_levels[n] >= self.item_def
+            {
+                n += 1;
+            }
+
+            // A value that starts a row, and possibly rows of outer levels.
+            if n == page_def_levels.len() || page_def_levels[n] < self.item_def {
+                break;
+            }
+            let rep = page_rep_levels[n];
+            if rep == self.row_rep {
+                if num_rows == max_rows {
+                    break;
+                }
+            } else if rep < self.row_rep && (rep > 0 || num_outer_rows < max_outer_rows) {
+                num_outer_rows += usize::from(rep == 0);
+                self.push_outer_rows(rep, outer, num_row_items + num_rows);
+            } else {
+                break;
+            }
+
+            let child_len = num_items + n;
+            if IS_FIXED_SIZE_LIST {
+                // As in `Nested::mark_if_misaligned`.
+                is_misaligned |= child_len != (num_list_rows + num_rows) * width;
+            } else if let Some(new_offsets) = &mut new_offsets {
+                new_offsets[num_rows].write(child_len as i64);
+            }
+            num_rows += 1;
+            n += 1;
+
+            // The rest of a wide fixed-size list row is checked eight values at a time, which
+            // vectorizes. The loop above checks what remains.
+            if IS_FIXED_SIZE_LIST && width > 8 {
+                let row_end = (n + width - 1).min(page_def_levels.len());
+                while n + 8 <= row_end
+                    && page_rep_levels[n..n + 8]
+                        .iter()
+                        .zip(&page_def_levels[n..n + 8])
+                        .fold(true, |all, (&rep, &def)| {
+                            all & (rep == self.item_rep) & (def >= self.item_def)
+                        })
+                {
+                    n += 8;
+                }
+            }
+        }
+        if let NestedContent::List { offsets } = &mut list.content {
+            // SAFETY: The loop wrote the first `num_rows` spare offsets, one for each row.
+            unsafe { offsets.set_len(offsets.len() + num_rows) };
+        }
+        if n == 0 {
+            return 0;
+        }
+
+        *num_collects -= if self.row_rep == 0 {
+            num_rows
+        } else {
+            num_outer_rows
+        };
+        for nest in rows.iter_mut() {
+            nest.push_n_valids(num_rows);
+        }
+        rows.last_mut().unwrap().is_misaligned |= is_misaligned;
+        n
+    }
+}
+
+/// Pushes an item for each of the values `defs` to each of `levels`, i.e. the structs right above
+/// the leaf and the leaf, with the same result as `collect_value` for each. The item of
+/// `levels[d]` is valid iff its value is defined past that level, i.e. its definition level is at
+/// least `valid_defs[d]`.
+///
+/// Typically, all items are valid, which the lowest definition level tells. That case is inlined,
+/// as a run can be as short as a value.
+#[inline(always)]
+fn push_items(
+    defs: &[u16],
+    levels: &mut [Nested],
+    valid_defs: &[u16],
+    batched_collector: &mut BatchedNestedDecoder<'_>,
+) -> ParquetResult<()> {
+    let min_def = defs.iter().copied().min().unwrap_or(u16::MAX);
+    if min_def < *valid_defs.last().unwrap() {
+        return push_items_with_nulls(defs, levels, valid_defs, min_def, batched_collector);
+    }
+    for nest in levels {
+        nest.push_n_valids(defs.len());
+    }
+    batched_collector.push_n_valids(defs.len())
+}
+
+/// `push_items` for values `defs` whose lowest definition level, `min_def`, makes some item null.
+#[inline(never)]
+fn push_items_with_nulls(
+    defs: &[u16],
+    levels: &mut [Nested],
+    valid_defs: &[u16],
+    min_def: u16,
+    batched_collector: &mut BatchedNestedDecoder<'_>,
+) -> ParquetResult<()> {
+    let (leaf, structs) = levels.split_last_mut().unwrap();
+    for (nest, &valid_def) in structs.iter_mut().zip(valid_defs) {
+        if min_def >= valid_def {
+            nest.push_n_valids(defs.len());
+        } else {
+            nest.push_validities(defs.iter().map(|&def| def >= valid_def));
+        }
+    }
+    leaf.push_n_valids(defs.len());
+
+    let leaf_def = valid_defs[structs.len()];
+    batched_collector.push_validities(defs.iter().map(|&def| def >= leaf_def))
+}
+
+/// Collects the leading values of a page of a column without a list, e.g. of structs, in bulk, and
+/// returns how many. Each value is a row, with an item in each level.
+#[inline(never)]
+fn collect_rows_without_list(
+    defs: &[u16],
+    num_collects: &mut usize,
+    batched_collector: &mut BatchedNestedDecoder<'_>,
+    nested: &mut [Nested],
+    def_levels: &[u16],
+) -> ParquetResult<usize> {
+    let n = defs.len().min(*num_collects);
+    *num_collects -= n;
+    push_items(&defs[..n], nested, &def_levels[1..], batched_collector)?;
+    Ok(n)
+}
+
+/// Checks that each fixed-size list row so far has `width` children. With `is_partial`, the last
+/// row may still be missing children.
+#[inline(never)]
+fn check_fixed_size_list_rows(nested: &[Nested], is_partial: bool) -> ParquetResult<()> {
+    for pair in nested.windows(2) {
+        let (nest, child_len) = (&pair[0], pair[1].len());
+        if let NestedContent::FixedSizeList { width } = nest.content {
+            let expected_len = nest.length * width;
+            if nest.is_misaligned
+                || child_len > expected_len
+                || (!is_partial && child_len != expected_len)
+            {
+                return Err(fixed_size_list_row_len_err(width));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cold]
+fn fixed_size_list_row_len_err(width: usize) -> ParquetError {
+    let note = if width == 0 {
+        " (pyarrow writes non-null zero-width fixed-size lists this way)"
+    } else {
+        ""
+    };
+    ParquetError::oos(format!(
+        "definition and repetition levels encode a fixed-size list row whose number of elements \
+         differs from its width ({width}){note}"
+    ))
 }
 
 /// Utility structure to create a `Filter` and `Validity` mask for the leaf values.
@@ -224,26 +567,13 @@ impl BatchedNestedDecoder<'_> {
         self.push_n_valids(1)
     }
 
-    fn push_invalid(&mut self) -> ParquetResult<()> {
-        self.push_n_invalids(1)
-    }
-
     fn push_n_valids(&mut self, n: usize) -> ParquetResult<()> {
         if self.num_waiting_invalids == 0 {
             self.num_waiting_valids += n;
             return Ok(());
         }
-
-        self.filter.extend_constant(self.num_waiting_valids, true);
-        self.validity.extend_constant(self.num_waiting_valids, true);
-
-        self.filter.extend_constant(self.num_waiting_invalids, true);
-        self.validity
-            .extend_constant(self.num_waiting_invalids, false);
-
+        self.flush();
         self.num_waiting_valids = n;
-        self.num_waiting_invalids = 0;
-
         Ok(())
     }
 
@@ -252,34 +582,38 @@ impl BatchedNestedDecoder<'_> {
         Ok(())
     }
 
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if self.num_waiting_valids > 0 {
-            self.filter.extend_constant(self.num_waiting_valids, true);
-            self.validity.extend_constant(self.num_waiting_valids, true);
-            self.num_waiting_valids = 0;
-        }
-        if self.num_waiting_invalids > 0 {
-            self.filter.extend_constant(self.num_waiting_invalids, true);
-            self.validity
-                .extend_constant(self.num_waiting_invalids, false);
-            self.num_waiting_invalids = 0;
-        }
-
-        self.filter.extend_constant(n, false);
-        self.validity.extend_constant(n, true);
-
+    /// Pushes a value per element of `is_valid`, valid where it is `true`.
+    fn push_validities(&mut self, is_valid: impl TrustedLen<Item = bool>) -> ParquetResult<()> {
+        self.flush();
+        self.filter.extend_constant(is_valid.size_hint().0, true);
+        self.validity.extend_from_trusted_len_iter(is_valid);
         Ok(())
     }
 
-    fn finalize(self) -> ParquetResult<()> {
-        self.filter.extend_constant(self.num_waiting_valids, true);
-        self.validity.extend_constant(self.num_waiting_valids, true);
+    // Inlined into each instance of the generic `decode_nested`.
+    #[inline]
+    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
+        self.flush();
+        self.filter.extend_constant(n, false);
+        self.validity.extend_constant(n, true);
+        Ok(())
+    }
 
-        self.filter.extend_constant(self.num_waiting_invalids, true);
+    fn finalize(mut self) -> ParquetResult<()> {
+        self.flush();
+        Ok(())
+    }
+
+    /// Writes the waiting values out.
+    fn flush(&mut self) {
+        let num_waiting = self.num_waiting_valids + self.num_waiting_invalids;
+        self.filter.extend_constant(num_waiting, true);
+        self.validity.extend_constant(self.num_waiting_valids, true);
         self.validity
             .extend_constant(self.num_waiting_invalids, false);
 
-        Ok(())
+        self.num_waiting_valids = 0;
+        self.num_waiting_invalids = 0;
     }
 }
 
@@ -405,8 +739,77 @@ struct DecodingState {
     num_collects: Option<usize>,
 }
 
+/// Collects a single level value with the general per-level logic, for those that
+/// `LeafRows::collect_values` does not collect in bulk, e.g. of null and empty rows.
+#[inline(always)]
+fn collect_value<const HAS_FIXED_SIZE_LIST: bool>(
+    def: u16,
+    rep: u16,
+    num_collects: &mut usize,
+    batched_collector: &mut BatchedNestedDecoder<'_>,
+    nested: &mut [Nested],
+    def_levels: &[u16],
+    rep_levels: &[u16],
+) -> ParquetResult<()> {
+    let max_depth = nested.len();
+    *num_collects -= usize::from(rep == 0);
+
+    // The value is defined from the first level whose repetition level admits `rep`, down to the
+    // last one that `def` reaches. E.g. [ [ [ 1 ] ] ] is defined at [ ... ], [ [ ... ] ],
+    // [ [ [ ... ] ] ] and [ [ [ 1 ] ] ].
+    let first_depth = rep_levels[..max_depth].partition_point(|&r| r < rep);
+    for depth in first_depth..max_depth {
+        if def < def_levels[depth] {
+            break;
+        }
+        let length = nested
+            .get(depth + 1)
+            .map(|x| x.len() as i64)
+            // the last depth is the leaf, which is always increased by 1
+            .unwrap_or(1);
+
+        let nest = &mut nested[depth];
+        let is_valid = !nest.is_nullable() || def > def_levels[depth];
+        if !is_valid {
+            let mut num_elements = 1;
+            nest.push(length, is_valid);
+
+            for embed_depth in depth..max_depth {
+                let embed_length = nested
+                    .get(embed_depth + 1)
+                    .map(|x| x.len() as i64)
+                    // the last depth is the leaf, which is always increased by 1
+                    .unwrap_or(1);
+
+                let embed_nest = &mut nested[embed_depth];
+                if embed_depth > depth {
+                    for _ in 0..num_elements {
+                        embed_nest.push_default(embed_length);
+                    }
+                }
+                let embed_num_values = embed_nest.invalid_num_values();
+                num_elements *= embed_num_values;
+                if embed_num_values == 0 {
+                    break;
+                }
+            }
+            batched_collector.push_n_invalids(num_elements)?;
+            break;
+        }
+        nest.push(length, is_valid);
+        if depth == max_depth - 1 {
+            // The leaf is valid, as an invalid one is pushed above.
+            batched_collector.push_valid()?;
+        } else if HAS_FIXED_SIZE_LIST {
+            nest.mark_if_misaligned(length as usize);
+        }
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
-fn decode_nested(
+fn decode_nested<const HAS_FIXED_SIZE_LIST: bool>(
     mut current_def_levels: &[u16],
     mut current_rep_levels: &[u16],
 
@@ -420,8 +823,8 @@ fn decode_nested(
     def_levels: &[u16],
     rep_levels: &[u16],
 ) -> ParquetResult<()> {
-    let max_depth = nested.len();
     let leaf_def_level = *def_levels.last().unwrap();
+    let leaf_rows = LeafRows::new(nested, def_levels, rep_levels);
 
     while !current_def_levels.is_empty() {
         debug_assert_eq!(current_def_levels.len(), current_rep_levels.len());
@@ -456,88 +859,23 @@ fn decode_nested(
 
         // Handle collects
         if let Some(ref mut num_collects) = state.num_collects {
-            let mut i = 0;
-            while i < current_def_levels.len() && (*num_collects > 0 || current_rep_levels[i] != 0)
-            {
-                let def = current_def_levels[i];
-                let rep = current_rep_levels[i];
-
-                *num_collects -= usize::from(rep == 0);
-                i += 1;
-
-                let mut is_required = false;
-
-                for depth in 0..max_depth {
-                    // Defines whether this element is defined at `depth`
-                    //
-                    // e.g. [ [ [ 1 ] ] ] is defined at [ ... ], [ [ ... ] ], [ [ [ ... ] ] ] and
-                    // [ [ [ 1 ] ] ].
-                    let is_defined_at_this_depth =
-                        rep <= rep_levels[depth] && def >= def_levels[depth];
-
-                    let length = nested
-                        .get(depth + 1)
-                        .map(|x| x.len() as i64)
-                        // the last depth is the leaf, which is always increased by 1
-                        .unwrap_or(1);
-
-                    let nest = &mut nested[depth];
-
-                    let is_valid = !nest.is_nullable() || def > def_levels[depth];
-
-                    if is_defined_at_this_depth && !is_valid {
-                        let mut num_elements = 1;
-
-                        nest.push(length, is_valid);
-
-                        for embed_depth in depth..max_depth {
-                            let embed_length = nested
-                                .get(embed_depth + 1)
-                                .map(|x| x.len() as i64)
-                                // the last depth is the leaf, which is always increased by 1
-                                .unwrap_or(1);
-
-                            let embed_nest = &mut nested[embed_depth];
-
-                            if embed_depth > depth {
-                                for _ in 0..num_elements {
-                                    embed_nest.push_default(embed_length);
-                                }
-                            }
-
-                            let embed_num_values = embed_nest.invalid_num_values();
-                            num_elements *= embed_num_values;
-
-                            if embed_num_values == 0 {
-                                break;
-                            }
-                        }
-
-                        batched_collector.push_n_invalids(num_elements)?;
-
-                        break;
-                    }
-
-                    if is_required || is_defined_at_this_depth {
-                        nest.push(length, is_valid);
-
-                        if depth == max_depth - 1 {
-                            // the leaf / primitive
-                            let is_valid = (def != def_levels[depth]) || !nest.is_nullable();
-
-                            if is_valid {
-                                batched_collector.push_valid()?;
-                            } else {
-                                batched_collector.push_invalid()?;
-                            }
-                        }
-                    }
-
-                    is_required = (is_required || is_defined_at_this_depth)
-                        && nest.is_required()
-                        && !is_valid;
-                }
-            }
+            let i = match &leaf_rows {
+                Some(leaf_rows) => leaf_rows.collect_values::<HAS_FIXED_SIZE_LIST>(
+                    current_def_levels,
+                    current_rep_levels,
+                    num_collects,
+                    batched_collector,
+                    nested,
+                )?,
+                // No level is repeated, so each value is a row.
+                None => collect_rows_without_list(
+                    current_def_levels,
+                    num_collects,
+                    batched_collector,
+                    nested,
+                    def_levels,
+                )?,
+            };
 
             current_def_levels = &current_def_levels[i..];
             current_rep_levels = &current_rep_levels[i..];
@@ -640,6 +978,17 @@ impl<D: utils::Decoder> PageDecoder<D> {
 
         let mut top_level_filter = top_level_filter.iter();
 
+        // Only columns with a fixed-size list pay for checking its rows.
+        let has_fixed_size_list = nested_state
+            .nested
+            .iter()
+            .any(|n| matches!(n.content, NestedContent::FixedSizeList { .. }));
+        let decode_page = if has_fixed_size_list {
+            decode_nested::<true>
+        } else {
+            decode_nested::<false>
+        };
+
         let mut chunks = Vec::new();
         while let Some(page) = self.iter.next() {
             let page = page?;
@@ -669,7 +1018,7 @@ impl<D: utils::Decoder> PageDecoder<D> {
                 validity: &mut leaf_validity,
             };
 
-            decode_nested(
+            decode_page(
                 &current_def_levels,
                 &current_rep_levels,
                 &mut batched_collector,
@@ -679,6 +1028,11 @@ impl<D: utils::Decoder> PageDecoder<D> {
                 &def_levels,
                 &rep_levels,
             )?;
+            // A row may continue on the next page, so the last one is only checked for excess
+            // children.
+            if has_fixed_size_list {
+                check_fixed_size_list_rows(&nested_state.nested, true)?;
+            }
 
             batched_collector.finalize()?;
 
@@ -699,6 +1053,11 @@ impl<D: utils::Decoder> PageDecoder<D> {
             )?;
 
             self.iter.reuse_page_buffer(page);
+        }
+
+        // Rows don't span column chunks, so the last row must be complete here.
+        if has_fixed_size_list {
+            check_fixed_size_list_rows(&nested_state.nested, false)?;
         }
 
         // we pop the primitive off here.

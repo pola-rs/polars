@@ -35,7 +35,6 @@ simdutf8 = { workspace = true }
 ethnum = { workspace = true }
 
 # To efficiently cast numbers to strings
-atoi_simd = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
 streaming-iterator = { workspace = true }
 
@@ -127,7 +126,7 @@ timezones = [
   "chrono-tz",
 ]
 dtype-array = []
-dtype-decimal = ["atoi_simd", "itoa"]
+dtype-decimal = ["itoa"]
 bigidx = ["polars-utils/bigidx"]
 nightly = []
 performant = []

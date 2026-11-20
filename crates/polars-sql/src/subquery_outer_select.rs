@@ -18,7 +18,8 @@ use polars_core::prelude::*;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CaseWhen, Expr as SQLExpr, GroupByExpr, Query, Select,
-    SelectItem, SetExpr, UnaryOperator as SQLUnaryOperator, Value as SQLValue, VisitorMut,
+    SelectItem, SetExpr, TableFactor, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
+    VisitorMut,
 };
 
 use crate::SQLContext;
@@ -89,6 +90,21 @@ impl SQLContext {
 
             fn post_visit_expr(&mut self, _expr: &mut SQLExpr) -> ControlFlow<()> {
                 if self.skips.pop() == Some(true) {
+                    self.query_depth -= 1;
+                }
+                ControlFlow::Continue(())
+            }
+
+            // The expressions of a PIVOT read its input, not the relations of this select.
+            fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<()> {
+                if matches!(factor, TableFactor::Pivot { .. }) {
+                    self.query_depth += 1;
+                }
+                ControlFlow::Continue(())
+            }
+
+            fn post_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<()> {
+                if matches!(factor, TableFactor::Pivot { .. }) {
                     self.query_depth -= 1;
                 }
                 ControlFlow::Continue(())
@@ -235,7 +251,11 @@ impl SQLContext {
     }
 }
 
-fn when_then(condition: SQLExpr, result: SQLExpr, else_result: Option<SQLExpr>) -> SQLExpr {
+pub(crate) fn when_then(
+    condition: SQLExpr,
+    result: SQLExpr,
+    else_result: Option<SQLExpr>,
+) -> SQLExpr {
     SQLExpr::Case {
         case_token: AttachedToken::empty(),
         end_token: AttachedToken::empty(),
@@ -248,7 +268,7 @@ fn when_then(condition: SQLExpr, result: SQLExpr, else_result: Option<SQLExpr>) 
 /// Whether `expr` calls a function whose value depends on the query it is in: `UNNEST`,
 /// which can return several rows for one, `GROUPING` / `GROUPING_ID`, or a ranking or
 /// offset function, which may be called without OVER.
-fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
+pub(crate) fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
     visit_expressions(expr, |e| match e {
         SQLExpr::Function(function)
             if matches!(
@@ -277,7 +297,11 @@ fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
 /// `inner_schema`. An unqualified name binds to them when they have it; a qualified one
 /// when its qualifier names one of them or its first part is one of their (struct)
 /// columns.
-fn reads_inner_column(expr: &SQLExpr, inner_names: &[RelationName], inner_schema: &Schema) -> bool {
+pub(crate) fn reads_inner_column(
+    expr: &SQLExpr,
+    inner_names: &[RelationName],
+    inner_schema: &Schema,
+) -> bool {
     visit_expressions(expr, |e| {
         let inner = match e {
             SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),

@@ -107,10 +107,35 @@ pub enum PolarsError {
         error: Box<PolarsError>,
         expr: ErrString,
     },
+    /// An error with data attached, such as the plan it happened in.
+    Attached {
+        error: Box<PolarsError>,
+        attachment: Box<ErrorAttachment>,
+    },
     #[cfg(feature = "python")]
     Python {
         error: python::PyErrWrap,
     },
+}
+
+/// Data attached to an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ErrorAttachment {
+    /// The plan as far as it was resolved when the error happened.
+    ResolvedPlan { node: String, plan: String },
+}
+
+impl ErrorAttachment {
+    fn write_after_message(&self, out: &mut String) {
+        match self {
+            ErrorAttachment::ResolvedPlan { node, plan } => write!(
+                out,
+                "\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node} <---\n{plan}"
+            )
+            .unwrap(),
+        }
+    }
 }
 
 impl Error for PolarsError {
@@ -133,6 +158,7 @@ impl Error for PolarsError {
             PolarsError::IO { error, .. } => Some(error.as_ref()),
             PolarsError::Context { error, .. } => Some(error.as_ref()),
             PolarsError::ExprContext { error, .. } => Some(error.as_ref()),
+            PolarsError::Attached { error, .. } => Some(error.as_ref()),
             #[cfg(feature = "python")]
             PolarsError::Python { error } => error.deref().source(),
         }
@@ -164,6 +190,7 @@ impl Display for PolarsError {
             StructFieldNotFound(msg) => write!(f, "field not found: {msg}"),
             Context { error, msg } => write!(f, "{error}: {msg}"),
             ExprContext { error, expr: _ } => write!(f, "{error}"),
+            Attached { error, .. } => write!(f, "{error}"),
             #[cfg(feature = "python")]
             Python { error } => write!(f, "python: {error}"),
         }
@@ -238,12 +265,13 @@ pub type PolarsResult<T> = Result<T, PolarsError>;
 impl PolarsError {
     pub fn context_trace(self) -> Self {
         use PolarsError::*;
-        if !matches!(self, Context { .. } | ExprContext { .. }) {
+        if !matches!(self, Context { .. } | ExprContext { .. } | Attached { .. }) {
             return self;
         }
 
         let mut context_msgs = Vec::new();
         let mut context_exprs = Vec::new();
+        let mut attachments = Vec::new();
         let mut error = self;
         loop {
             match error {
@@ -257,6 +285,14 @@ impl PolarsError {
                     error = *e;
                 },
 
+                Attached {
+                    error: e,
+                    attachment,
+                } => {
+                    attachments.push(attachment);
+                    error = *e;
+                },
+
                 e => {
                     error = e;
                     break;
@@ -266,6 +302,10 @@ impl PolarsError {
 
         error.wrap_msg(|msg| {
             let mut out = msg.to_string();
+            // Innermost first.
+            for attachment in attachments.iter().rev() {
+                attachment.write_after_message(&mut out);
+            }
             if !context_exprs.is_empty() {
                 let first = context_exprs.first().unwrap();
                 let last = context_exprs.last().unwrap();
@@ -333,6 +373,10 @@ impl PolarsError {
                 error: Box::new(error.wrap_msg(func)),
                 expr: expr.clone(),
             },
+            Attached { error, attachment } => Attached {
+                error: Box::new(error.wrap_msg(func)),
+                attachment: attachment.clone(),
+            },
             #[cfg(feature = "python")]
             Python { error } => pyo3::Python::attach(|py| {
                 use pyo3::types::{PyAnyMethods, PyStringMethods};
@@ -376,17 +420,87 @@ impl PolarsError {
         }
     }
 
-    pub fn remove_context(mut self) -> Self {
-        while let Self::Context { error, .. } = self {
-            self = *error;
+    /// Removes the outer `Context` frames; attachments are kept.
+    pub fn remove_context(self) -> Self {
+        match self {
+            Self::Context { error, .. } => error.remove_context(),
+            Self::Attached { error, attachment } => {
+                error.remove_context().with_attachment(*attachment)
+            },
+            error => error,
         }
-        self
     }
 
     pub fn with_expr_context(self, expr: ErrString) -> Self {
         PolarsError::ExprContext {
             error: Box::new(self),
             expr,
+        }
+    }
+
+    pub fn with_attachment(self, attachment: ErrorAttachment) -> Self {
+        PolarsError::Attached {
+            error: Box::new(self),
+            attachment: Box::new(attachment),
+        }
+    }
+
+    /// The attachments, outermost first.
+    pub fn attachments(&self) -> Vec<&ErrorAttachment> {
+        use PolarsError::*;
+        let mut attachments = Vec::new();
+        let mut error = self;
+        loop {
+            match error {
+                Attached {
+                    error: e,
+                    attachment,
+                } => {
+                    attachments.push(attachment.as_ref());
+                    error = e;
+                },
+                Context { error: e, .. } | ExprContext { error: e, .. } => error = e,
+                _ => return attachments,
+            }
+        }
+    }
+
+    /// Keeps the attachments for which `keep` returns true.
+    pub fn retain_attachments<F: FnMut(&ErrorAttachment) -> bool>(self, mut keep: F) -> Self {
+        fn retain<F: FnMut(&ErrorAttachment) -> bool>(
+            error: PolarsError,
+            keep: &mut F,
+        ) -> PolarsError {
+            use PolarsError::*;
+            match error {
+                Attached { error, attachment } => {
+                    let kept = keep(&attachment);
+                    let error = retain(*error, keep);
+                    match kept {
+                        true => error.with_attachment(*attachment),
+                        false => error,
+                    }
+                },
+                Context { error, msg } => retain(*error, keep).context(msg),
+                ExprContext { error, expr } => retain(*error, keep).with_expr_context(expr),
+                error => error,
+            }
+        }
+        retain(self, &mut keep)
+    }
+
+    /// Writes the attachments into the innermost message.
+    pub fn inline_attachments(self) -> Self {
+        use PolarsError::*;
+        match self {
+            Attached { error, attachment } => error.inline_attachments().wrap_msg(|msg| {
+                let mut out = msg.to_string();
+                attachment.write_after_message(&mut out);
+                out
+            }),
+            Context { error, msg } => error.inline_attachments().context(msg),
+            ExprContext { error, expr } => error.inline_attachments().with_expr_context(expr),
+            error => error,
         }
     }
 }

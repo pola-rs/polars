@@ -106,6 +106,18 @@ def sequence_to_pyseries(
     pl_temporal_types = {Date, Datetime, Duration, Time}
 
     value = get_first_non_none(values)
+    if (
+        _check_for_numpy(value)
+        and isinstance(value, (np.datetime64, np.timedelta64))
+        and dtype != Object
+    ):
+        # The values carry their own time unit, so convert them as-is and only
+        # cast afterwards if another dtype was requested.
+        pyseries = PySeries.new_from_any_values(name, values, strict)
+        if dtype is not None and pyseries.dtype() != (dtype := parse_into_dtype(dtype)):
+            pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
+        return pyseries
+
     if value is not None:
         if (
             is_dataclass_instance(value)
