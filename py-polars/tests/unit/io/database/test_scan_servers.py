@@ -9004,12 +9004,12 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
     )
     try:
         _prime_pool(engine, [f"SET search_path TO {schema}, public"])
-        kwargs: dict[str, Any]
-        for kwargs in (
+        variants: list[dict[str, Any]] = [
             {},
             {"partition_on": "id", "partition_num": 4},
             {"partition_on": "id", "partition_num": 8, "max_connections": 4},
-        ):
+        ]
+        for kwargs in variants:
             for _ in range(3):
                 ids = pl.scan_database(table, engine, **kwargs).collect()["id"]
                 # whichever session was pinned, all rows come from its one table
@@ -9053,12 +9053,12 @@ def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
     try:
         _prime_pool(engine, ["SET SESSION div_precision_increment = 0"])
         source = f"SELECT id, (id / 1000) * 1000 AS k FROM {table}"
-        kwargs: dict[str, Any]
-        for kwargs in (
+        variants: list[dict[str, Any]] = [
             {},
             {"partition_on": "k", "partition_num": 4},
             {"partition_on": "id", "partition_num": 8, "max_connections": 4},
-        ):
+        ]
+        for kwargs in variants:
             for _ in range(3):
                 df = pl.scan_database(source, engine, **kwargs).collect()
                 # one session for the whole read: `(id / 1000) * 1000` is `id` at the
@@ -9106,8 +9106,11 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
 
     try:
         tenant_var.set("vol_tenant_a")
-        kwargs: dict[str, Any]
-        for kwargs in ({}, {"partition_on": "id", "partition_num": 4}):
+        variants: list[dict[str, Any]] = [
+            {},
+            {"partition_on": "id", "partition_num": 4},
+        ]
+        for kwargs in variants:
             df = pl.scan_database("orders", engine, **kwargs).collect()
             assert df["tenant"].unique().to_list() == ["a"]
             df = pl.scan_database(
