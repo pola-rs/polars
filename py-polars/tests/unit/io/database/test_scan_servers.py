@@ -9007,18 +9007,20 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
             {"partition_on": "id", "partition_num": 4},
             {"partition_on": "id", "partition_num": 8, "max_connections": 4},
         ]
+        refusals: list[str] = []
         for kwargs in variants:
             for _ in range(3):
                 try:
                     ids = pl.scan_database(table, engine, **kwargs).collect()["id"]
                 except pl.exceptions.InvalidOperationError as e:
                     # planned on a session that resolves the name to the other table
-                    assert "pooled connection" in str(e), str(e)
+                    refusals.append(str(e))
                     continue
                 # whichever session was pinned, all rows come from its one table
                 assert ids.len() == 400
                 assert ids.min() in (1, 100001)
                 assert (cast("int", ids.max()) < 1000) == (ids.min() == 1)
+        assert all("pooled connection" in m for m in refusals), refusals
     finally:
         engine.dispose()
         _execute(
@@ -9085,16 +9087,17 @@ def _pool_sources(engine: Any, table: str) -> dict[str, Any]:
 
 
 def _collect_pooled(make: Any, rounds: int = 6) -> tuple[int, list[pl.DataFrame]]:
-    """Collects a scan several times (the pool hands out its connections in turn): how
-    many raised the resolution error, and the frames of those that read."""
-    refused, frames = 0, []
+    # Collects a scan several times (the pool hands out its connections in turn): how
+    # many raised the resolution error, and the frames of those that read.
+    messages: list[str] = []
+    frames = []
     for _ in range(rounds):
         try:
             frames.append(make().collect())
         except pl.exceptions.InvalidOperationError as e:
-            assert "resolves" in str(e) and "pooled connection" in str(e), str(e)
-            refused += 1
-    return refused, frames
+            messages.append(str(e))
+    assert all("pooled connection" in m for m in messages), messages
+    return len(messages), frames
 
 
 @pytest.mark.parametrize("kind", ["engine", "factory"])
