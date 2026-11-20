@@ -504,6 +504,7 @@ fn create_physical_plan_impl(
                         expr_arena,
                         output_schema.as_ref().unwrap_or(&file_info.schema),
                         None, // hive_schema
+                        None, // file_path_col
                         &mut expr_conversion_state,
                         create_skip_batch_predicate,
                         false,

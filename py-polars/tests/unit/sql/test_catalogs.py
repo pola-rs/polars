@@ -1739,7 +1739,7 @@ def test_create_catalog_table_hidden_by_registered_table(
         with pytest.raises(
             SQLInterfaceError,
             match=rf"table '{name}' would be hidden by registered table "
-            r"'lake\.tpch\.u'; unregister it$",
+            r"'lake\.tpch\.u'; unregister it(\n|$)",
         ):
             ctx.execute(f"CREATE TABLE {name} (x INT)")
     assert not lake.table_exists(("tpch", "u"))
@@ -1764,7 +1764,7 @@ def test_create_table_without_namespace(lake: CountingCatalog) -> None:
             ),
         ):
             ctx.execute(statement)
-    with pytest.raises(SQLInterfaceError, match=r"write 'lake\.<namespace>\.t'$"):
+    with pytest.raises(SQLInterfaceError, match=r"write 'lake\.<namespace>\.t'(\n|$)"):
         ctx.execute("CREATE TABLE lake.t (x INT)")
     ctx.execute("CREATE TEMP TABLE t AS SELECT 1 AS x")
     ctx.execute("CREATE TABLE tpch.t2 (x INT)")
@@ -3530,6 +3530,211 @@ def test_alter_catalog_table_sort_order_errors(lake: CountingCatalog) -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
         pl.sql("ALTER TABLE df SET SORTED BY (a)")
+
+
+def ref_state(catalog: CountingCatalog, *identifier: str) -> dict[str, tuple[Any, ...]]:
+    refs = catalog.load_table(identifier).metadata.refs
+    return {
+        name: (
+            ref.snapshot_ref_type.value.lower(),
+            ref.snapshot_id,
+            ref.max_ref_age_ms,
+            ref.max_snapshot_age_ms,
+            ref.min_snapshots_to_keep,
+        )
+        for name, ref in refs.items()
+    }
+
+
+def current_snapshot(catalog: CountingCatalog, *identifier: str) -> int:
+    return catalog.load_table(identifier).current_snapshot().snapshot_id  # type: ignore[no-any-return]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_create_tag_30221(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    first = current_snapshot(lake, "tpch", "lineitem")
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    res = ctx.execute("ALTER TABLE lineitem CREATE TAG v1", eager=True)
+    assert res.item() == "ALTER TABLE lake.tpch.lineitem"
+    # a quoted name keeps its case
+    ctx.execute(
+        f'ALTER TABLE lineitem CREATE TAG "First-Load" AS OF VERSION {first} '
+        "RETAIN 2 DAYS"
+    )
+    tags = ctx.execute(
+        "SELECT name, snapshot_id, max_reference_age_in_ms FROM lineitem$refs "
+        "WHERE type = 'TAG' ORDER BY name",
+        eager=True,
+    )
+    second = current_snapshot(lake, "tpch", "lineitem")
+    assert tags.rows() == [("First-Load", first, 172_800_000), ("v1", second, None)]
+    read = "SELECT count(*) FROM lineitem FOR VERSION AS OF '{}'"
+    assert ctx.execute(read.format("First-Load"), eager=True).item() == 2
+    assert ctx.execute(read.format("v1"), eager=True).item() == 3
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_replace_and_drop_tag(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = lake_ctx(lake)
+    first = current_snapshot(lake, "tpch", "lineitem")
+    ctx.execute("ALTER TABLE lineitem CREATE TAG t RETAIN 3 HOURS")
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    second = current_snapshot(lake, "tpch", "lineitem")
+
+    # nothing changes: nothing is committed
+    commits: list[Any] = []
+    commit_table = lake.commit_table
+
+    def counting_commit(*args: Any) -> Any:
+        commits.append(args)
+        return commit_table(*args)
+
+    with monkeypatch.context() as m:
+        m.setattr(lake, "commit_table", counting_commit)
+        for statement in [
+            "CREATE TAG IF NOT EXISTS t",
+            "CREATE BRANCH IF NOT EXISTS t",
+            "CREATE TAG IF NOT EXISTS main",
+            f"REPLACE TAG t AS OF VERSION {first}",
+            "DROP TAG IF EXISTS gone",
+        ]:
+            ctx.execute(f"ALTER TABLE lineitem {statement}")
+    assert commits == []
+
+    # a replaced tag keeps the retention the statement does not set
+    ctx.execute("ALTER TABLE lineitem REPLACE TAG t")
+    assert ref_state(lake, "tpch", "lineitem")["t"] == (
+        "tag",
+        second,
+        10_800_000,
+        None,
+        None,
+    )
+    ctx.execute(
+        f"ALTER TABLE lineitem CREATE OR REPLACE TAG t AS OF VERSION {first} "
+        "RETAIN 1 MINUTES"
+    )
+    assert ref_state(lake, "tpch", "lineitem")["t"] == (
+        "tag",
+        first,
+        60_000,
+        None,
+        None,
+    )
+    ctx.execute("ALTER TABLE lineitem CREATE OR REPLACE TAG u")
+    ctx.execute("ALTER TABLE lineitem DROP TAG t")
+    assert sorted(ref_state(lake, "tpch", "lineitem")) == ["main", "u"]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_branch_30220(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    current = current_snapshot(lake, "tpch", "lineitem")
+    ctx.execute(
+        "ALTER TABLE lineitem CREATE BRANCH audit RETAIN 7 DAYS "
+        "WITH SNAPSHOT RETENTION 3 SNAPSHOTS 2 DAYS"
+    )
+    assert ref_state(lake, "tpch", "lineitem")["audit"] == (
+        "branch",
+        current,
+        604_800_000,
+        172_800_000,
+        3,
+    )
+    ctx.execute(
+        "ALTER TABLE lineitem REPLACE BRANCH audit WITH SNAPSHOT RETENTION 5 SNAPSHOTS"
+    )
+    assert ref_state(lake, "tpch", "lineitem")["audit"] == (
+        "branch",
+        current,
+        604_800_000,
+        172_800_000,
+        5,
+    )
+    ctx.execute("ALTER TABLE lineitem DROP BRANCH audit")
+    assert sorted(ref_state(lake, "tpch", "lineitem")) == ["main"]
+
+    # columns named like the statement words still drop
+    ctx.execute("CREATE TABLE c (id BIGINT, tag INT, branch INT)")
+    ctx.execute("ALTER TABLE c DROP tag")
+    ctx.execute("ALTER TABLE c DROP branch RESTRICT")
+    assert ctx.execute("SELECT * FROM c", eager=True).columns == ["id"]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_ref_concurrent(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitFailedException
+
+    ctx = lake_ctx(lake)
+    first = current_snapshot(lake, "tpch", "lineitem")
+    ctx.execute("INSERT INTO lineitem VALUES (3, 'c')")
+    # the statement checks a table loaded before another writer took the name
+    stale = lake.load_table(("tpch", "lineitem"))
+    other = lake.load_table(("tpch", "lineitem"))
+    other.manage_snapshots().create_tag(first, "v1").commit()
+    load_table, commit_table = lake.load_table, lake.commit_table
+    committing = False
+
+    def load(identifier: Any) -> Any:
+        return load_table(identifier) if committing else stale
+
+    def commit(*args: Any) -> Any:
+        nonlocal committing
+        committing = True
+        return commit_table(*args)
+
+    with monkeypatch.context() as m:
+        m.setattr(lake, "load_table", load)
+        m.setattr(lake, "commit_table", commit)
+        with pytest.raises(CommitFailedException) as error:
+            ctx.execute("ALTER TABLE lineitem CREATE TAG v1")
+    assert any("could not be altered" in note for note in error.value.__notes__)
+    assert ref_state(lake, "tpch", "lineitem")["v1"][1] == first
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_ref_errors(lake: CountingCatalog) -> None:
+    from polars.exceptions import DuplicateError, InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE lineitem CREATE BRANCH b")
+    for statement, error, match in [
+        ("CREATE TAG b", DuplicateError, "a branch named 'b' already exists"),
+        ("REPLACE TAG b", InvalidOperationError, "is a branch, not a tag"),
+        ("DROP TAG IF EXISTS b", InvalidOperationError, "is a branch, not a tag"),
+        ("REPLACE TAG nope", InvalidOperationError, "tag 'nope' .* does not exist"),
+        ("DROP TAG nope", InvalidOperationError, "tag 'nope' .* does not exist"),
+        ("CREATE TAG main", InvalidOperationError, "main branch"),
+        ("REPLACE BRANCH main", InvalidOperationError, "main branch"),
+        ("DROP BRANCH main", InvalidOperationError, "main branch"),
+        ("CREATE TAG t AS OF VERSION 1", ValueError, "snapshot ID not found: 1"),
+    ]:
+        with pytest.raises(error, match=match):
+            ctx.execute(f"ALTER TABLE lineitem {statement}")
+
+    ctx.execute("CREATE TABLE empty (id BIGINT)")
+    with pytest.raises(InvalidOperationError, match="has no snapshot"):
+        ctx.execute("ALTER TABLE empty CREATE BRANCH b")
+
+    for statement, match in [
+        ("CREATE TAG 'x'", "not in single quotes"),
+        ("CREATE TAG x AS OF VERSION 'v1'", r"\$refs"),
+        ("CREATE TAG x VERSION AS OF 1", "AS OF VERSION <snapshot id>"),
+        ("CREATE TAG x RETAIN 0 DAYS", "greater than 0"),
+        ("CREATE TAG x RETAIN 1 WEEKS", "DAYS, HOURS or MINUTES"),
+        ("CREATE TAG x WITH SNAPSHOT RETENTION 2 SNAPSHOTS", "for branches"),
+    ]:
+        with pytest.raises(SQLInterfaceError, match=match):
+            ctx.execute(f"ALTER TABLE lineitem {statement}")
+
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        pl.sql("ALTER TABLE df CREATE TAG t")
 
 
 @pytest.mark.write_disk

@@ -189,12 +189,13 @@ where
                 );
 
                 by.for_each(|opt_by| match opt_by {
+                    Some("") => builder.append_values_iter(split_chars(s)),
                     Some(by) => builder.append_values_iter(op(s, by)),
                     _ => builder.append_null(),
                 });
                 builder.finish()
             } else {
-                ListChunked::full_null_with_dtype(ca.name().clone(), ca.len(), &DataType::String)
+                ListChunked::full_null_with_dtype(ca.name().clone(), by.len(), &DataType::String)
             }
         },
         (_, 1) => {

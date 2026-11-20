@@ -11,6 +11,7 @@ use polars_defs::expr::RoundMode;
 #[cfg(feature = "asof_join")]
 use polars_defs::join::{AsOfOptions, AsofStrategy};
 use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
+use polars_error::SqlLocationKind;
 use polars_lazy::prelude::*;
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::plans::visitor::TreeWalker;
@@ -32,8 +33,8 @@ use sqlparser::ast::{
     MergeInsertExpr, MergeInsertKind, MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition,
     NamedWindowExpr, ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause,
     Query, RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
-    TableAlias, TableAliasColumnDef, TableFactor, TableObject, TableWithJoins, Truncate,
+    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Spanned, SqlOption,
+    Statement, TableAlias, TableAliasColumnDef, TableFactor, TableObject, TableWithJoins, Truncate,
     TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue,
     ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType,
     With,
@@ -60,10 +61,13 @@ use crate::group_context::{
 };
 use crate::grouping_sets::{
     GroupingCall, GroupingSets, bind_stored_keys, canonicalize_keys, contains_grouping_placeholder,
-    expand_grouping_sets, new_placeholder,
+    expand_grouping_sets, is_grouping_placeholder, new_placeholder,
 };
+use crate::iceberg_alter::{self, IcebergAlter, IcebergAlterOp, OtherStatement};
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
-use crate::layout_alter::{self, Layout, LayoutAlter, OtherStatement};
+use crate::location::{
+    complete_location, locate, locate_in_statement, without_macro_positions, without_positions,
+};
 use crate::macros::{MacroStatement, Macros, check_macro, is_callable_name};
 use crate::params::{QueryParams, bind_params, check_no_params};
 use crate::positional_join::{has_positional_join, is_positional_join};
@@ -266,8 +270,8 @@ fn disambiguate_projection_cols(
 /// The first projection to claim a name keeps it, and a later unaliased projection that
 /// collides gets a `name:n` suffix. Two cases are deliberately left to collide: explicit
 /// `AS` aliases, which are never renamed (`SELECT 1 AS x, 2 AS x`), and an unaliased
-/// expression that verbatim repeats the one already holding the name (`SELECT a, a`),
-/// which is a duplicate selection rather than an incidental clash.
+/// column that repeats the one already holding the name (`SELECT a, a`), which is a
+/// duplicate selection rather than an incidental clash.
 fn disambiguate_output_names(exprs: Vec<(Expr, bool)>, schema: &Schema) -> PolarsResult<Vec<Expr>> {
     let protected: PlHashSet<PlSmallStr> = exprs
         .iter()
@@ -280,9 +284,16 @@ fn disambiguate_output_names(exprs: Vec<(Expr, bool)>, schema: &Schema) -> Polar
     let mut result = Vec::with_capacity(exprs.len());
     for (expr, is_explicit_alias) in exprs {
         let name = expr.to_field(schema)?.name;
-        // A repeated constant gets a new name, like other constants.
+        let is_column = match &expr {
+            Expr::Column(_) => true,
+            // A column the join resolution renamed back to its SQL name.
+            Expr::Alias(inner, _) => {
+                matches!(&**inner, Expr::Column(name) if !is_grouping_placeholder(name))
+            },
+            _ => false,
+        };
         let verbatim_repeat =
-            !is_constant(&expr) && claimed.get(&name).is_some_and(|claimant| claimant == &expr);
+            is_column && claimed.get(&name).is_some_and(|claimant| claimant == &expr);
         if is_explicit_alias
             || verbatim_repeat
             || (!used.contains(&name) && !protected.contains(&name))
@@ -338,6 +349,7 @@ pub struct SQLContext {
     pub(crate) allow_file_reads: bool,
     /// Whether SQL may write files and URLs, through `COPY`.
     allow_file_writes: bool,
+    file_writes_disabled_by: Option<String>,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
@@ -388,6 +400,9 @@ pub struct SQLContext {
     /// The number of lambdas around the expression being parsed.
     pub(crate) lambda_depth: usize,
     macros: Macros,
+    /// Whether the current statement has macro bodies expanded into it, whose positions are in
+    /// the text that created the macro.
+    expanded_macros: bool,
 }
 
 /// The query of a view and the names it gives the query's columns.
@@ -443,9 +458,11 @@ impl Default for SQLContext {
             custom_function_registry: false,
             allow_file_reads: true,
             allow_file_writes: true,
+            file_writes_disabled_by: None,
             table_map: Default::default(),
             views: Default::default(),
             macros: Default::default(),
+            expanded_macros: false,
             view_frames: Default::default(),
             views_in_progress: Default::default(),
             cte_map: Default::default(),
@@ -560,8 +577,8 @@ impl SQLContext {
 
     /// The catalog tables that `query` reads, once per table and version.
     pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
-        // a layout change reads no table
-        let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
+        // these ALTER TABLE operations read no table
+        let Ok(mut stmt) = iceberg_alter::parse_single_statement_or_alter(query)? else {
             return Ok(Vec::new());
         };
         copy_table_as_query(&mut stmt)?;
@@ -587,14 +604,25 @@ impl SQLContext {
     /// The catalog statement of `query`, if any, for the caller to perform:
     /// [`SQLContext::execute`] rejects it.
     pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
-        let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
+        let mut stmt = match iceberg_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => {
-                return self.catalog_layout_alter(&alter).map(Some);
+                return self.catalog_iceberg_alter(&alter).map(Some);
             },
             Err(OtherStatement::Macro(_)) => return Ok(None),
         };
-        self.macros.expand(&mut stmt)?;
+        let expanded = self
+            .macros
+            .expand(&mut stmt)
+            .map_err(|e| locate_in_statement(e, query))?;
+        self.describe_catalog_statement(stmt)
+            .map_err(|e| locate_in_statement(without_macro_positions(e, expanded), query))
+    }
+
+    fn describe_catalog_statement(
+        &self,
+        stmt: Statement,
+    ) -> PolarsResult<Option<CatalogStatement>> {
         match &stmt {
             Statement::Drop {
                 object_type: ObjectType::Table,
@@ -784,7 +812,9 @@ impl SQLContext {
             .into_iter()
             .map(|(full_name, lf)| (full_name.join("."), lf))
             .collect();
-        let res = self.delete_predicate(query);
+        let res = self.delete_predicate(query).map_err(|e| {
+            locate_in_statement(without_macro_positions(e, self.expanded_macros), query)
+        });
         // the predicate is DSL: the plans built for it hold the table's scan
         self.lp_arena = Default::default();
         self.expr_arena = Default::default();
@@ -804,7 +834,9 @@ impl SQLContext {
             .into_iter()
             .map(|(full_name, lf)| (full_name.join("."), lf))
             .collect();
-        let res = self.update_plan(query);
+        let res = self.update_plan(query).map_err(|e| {
+            locate_in_statement(without_macro_positions(e, self.expanded_macros), query)
+        });
         self.lp_arena = Default::default();
         self.expr_arena = Default::default();
         self.clear_statement_state();
@@ -817,7 +849,8 @@ impl SQLContext {
         self.start_statement();
         let mut lf = lf;
         let res = parse_condition(condition)
-            .and_then(|condition| self.dml_predicate(&mut lf, Some(&condition), "CALL"));
+            .and_then(|condition| self.dml_predicate(&mut lf, Some(&condition), "CALL"))
+            .map_err(|e| complete_location(e, condition));
         self.lp_arena = Default::default();
         self.expr_arena = Default::default();
         self.clear_statement_state();
@@ -836,7 +869,9 @@ impl SQLContext {
             .into_iter()
             .map(|(full_name, lf)| (full_name.join("."), lf))
             .collect();
-        let res = self.merge_source(query);
+        let res = self.merge_source(query).map_err(|e| {
+            locate_in_statement(without_macro_positions(e, self.expanded_macros), query)
+        });
         self.lp_arena = Default::default();
         self.expr_arena = Default::default();
         self.clear_statement_state();
@@ -856,7 +891,9 @@ impl SQLContext {
             .into_iter()
             .map(|(full_name, lf)| (full_name.join("."), lf))
             .collect();
-        let res = self.merge_plan(query, source);
+        let res = self.merge_plan(query, source).map_err(|e| {
+            locate_in_statement(without_macro_positions(e, self.expanded_macros), query)
+        });
         self.lp_arena = Default::default();
         self.expr_arena = Default::default();
         self.clear_statement_state();
@@ -1219,7 +1256,7 @@ impl SQLContext {
     /// As `parse_catalog_dml`, on the clock of the statement's earlier planning calls.
     fn parse_catalog_dml_keeping_clock(&mut self, query: &str) -> PolarsResult<Statement> {
         let mut stmt = parse_single_statement(query)?;
-        self.macros.expand(&mut stmt)?;
+        self.expanded_macros = self.macros.expand(&mut stmt)?;
         self.catalog_spellings = self.rewrite_catalog_names(&mut stmt)?.1;
         desugar_quantified_subqueries(&mut stmt);
         Ok(stmt)
@@ -1415,18 +1452,21 @@ impl SQLContext {
         query: &str,
         params: &QueryParams,
     ) -> PolarsResult<LazyFrame> {
-        let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
+        let mut stmt = match iceberg_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => return Err(self.alter_table_error(&alter.name)),
             Err(OtherStatement::Macro(stmt)) => {
                 return self.execute_macro_statement(stmt, params);
             },
         };
-        let bound = bind_params(&mut stmt, params)?;
+        let bound = bind_params(&mut stmt, params).map_err(|e| locate_in_statement(e, query))?;
         copy_table_as_query(&mut stmt)?;
         // A view expands its macros when it is read.
-        let expanded =
-            !matches!(stmt, Statement::CreateView(_)) && self.macros.expand(&mut stmt)?;
+        let expanded = !matches!(stmt, Statement::CreateView(_))
+            && self
+                .macros
+                .expand(&mut stmt)
+                .map_err(|e| locate_in_statement(e, query))?;
 
         // The deferred plan holds the query text, which has the placeholders.
         if bound.is_none() && !expanded && self.can_defer(&stmt) {
@@ -1444,6 +1484,7 @@ impl SQLContext {
         }
 
         self.plan_statement(stmt, bound, Self::execute_statement)
+            .map_err(|e| locate_in_statement(without_macro_positions(e, expanded), query))
     }
 
     /// The plan that `plan` makes of `stmt`, with the values `bound` of its parameters,
@@ -1477,7 +1518,12 @@ impl SQLContext {
     /// its output: [`SQLContext::execute`] rejects it. It is not a file that SQL writes, so
     /// [`SQLContext::with_file_writes`] does not limit it.
     pub fn copy_to_stdout(&mut self, query: &str) -> PolarsResult<Option<CopyToStdout>> {
-        let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
+        self.describe_copy_to_stdout(query)
+            .map_err(|e| complete_location(e, query))
+    }
+
+    fn describe_copy_to_stdout(&mut self, query: &str) -> PolarsResult<Option<CopyToStdout>> {
+        let Ok(mut stmt) = iceberg_alter::parse_single_statement_or_alter(query)? else {
             return Ok(None);
         };
         if !matches!(
@@ -1613,7 +1659,9 @@ impl SQLContext {
         self.start_statement();
         std::mem::swap(&mut self.lp_arena, lp_arena);
         std::mem::swap(&mut self.expr_arena, expr_arena);
-        let res = self.execute_statement(stmt);
+        let res = self
+            .execute_statement(stmt)
+            .map_err(|e| locate_in_statement(e, query));
         std::mem::swap(&mut self.lp_arena, lp_arena);
         std::mem::swap(&mut self.expr_arena, expr_arena);
 
@@ -1629,6 +1677,7 @@ impl SQLContext {
     }
 
     fn clear_statement_state(&mut self) {
+        self.expanded_macros = false;
         self.cte_map.clear();
         self.params = Default::default();
         self.view_frames = Default::default();
@@ -1684,6 +1733,12 @@ impl SQLContext {
         self
     }
 
+    /// Name what turned file writes off, in the error of a statement that writes a file.
+    pub fn with_file_writes_disabled_by(mut self, origin: impl Into<String>) -> Self {
+        self.file_writes_disabled_by = Some(origin.into());
+        self
+    }
+
     /// Get the function registry of the SQLContext
     pub fn registry(&self) -> &Arc<dyn FunctionRegistry> {
         &self.function_registry
@@ -1705,6 +1760,7 @@ impl SQLContext {
             view_frames: self.view_frames.clone(),
             views_in_progress: self.views_in_progress.clone(),
             macros: self.macros.clone(),
+            expanded_macros: self.expanded_macros,
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
             from_item_frames: self.from_item_frames.clone(),
@@ -1955,6 +2011,11 @@ impl SQLContext {
     /// The frame of the CTE, registered table, view or catalog table `name`, with its name as
     /// written.
     fn get_named_table(&self, name: &ObjectName) -> PolarsResult<(String, LazyFrame)> {
+        self.get_unlocated_named_table(name)
+            .map_err(|e| locate(e, SqlLocationKind::Exact, name.span()))
+    }
+
+    fn get_unlocated_named_table(&self, name: &ObjectName) -> PolarsResult<(String, LazyFrame)> {
         let tbl_name = object_name_to_string(name);
         if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
             return Ok((tbl_name, lf));
@@ -2054,7 +2115,8 @@ impl SQLContext {
         if let Some(lf) = self.view_frames.lock().unwrap().get(&key) {
             return Ok(Some(lf.clone()));
         }
-        let lf = self.plan_view(&key, &view)?;
+        // Positions in the view's own text: locate at its name.
+        let lf = self.plan_view(&key, &view).map_err(without_positions)?;
         let reads_random = |query: &Query, _: &[String]| contains_random(query, true);
         if !self.view_reads(&view, &reads_random, &mut PlHashSet::new()) {
             self.view_frames.lock().unwrap().insert(key, lf.clone());
@@ -2970,10 +3032,14 @@ impl SQLContext {
         let CopySource::Query(query) = source else {
             polars_bail!(SQLInterface: "COPY of a table is not supported in this statement");
         };
-        polars_ensure!(
-            self.allow_file_writes,
-            SQLInterface: "writing files is disabled in this SQLContext"
-        );
+        if !self.allow_file_writes {
+            match &self.file_writes_disabled_by {
+                Some(origin) => {
+                    polars_bail!(SQLInterface: "writing files is disabled by {}", origin)
+                },
+                None => polars_bail!(SQLInterface: "writing files is disabled in this SQLContext"),
+            }
+        }
         let format = copy::write_format(Some(path), options, legacy_options)?;
         let target = SinkTarget::Path(expand_home_dir(PlRefPath::new(path))?);
         self.execute_query(query)?.sink(
@@ -3150,14 +3216,14 @@ impl SQLContext {
         }))
     }
 
-    /// The catalog statement of `ALTER TABLE ... SET | RESET PARTITIONED BY` or
-    /// `... SET | RESET SORTED BY`; only a catalog table has a layout to change.
-    fn catalog_layout_alter(&self, alter: &LayoutAlter) -> PolarsResult<CatalogStatement> {
+    /// The catalog statement of an `ALTER TABLE` of [`iceberg_alter`] (layout, tags and
+    /// branches); only a catalog table has them.
+    fn catalog_iceberg_alter(&self, alter: &IcebergAlter) -> PolarsResult<CatalogStatement> {
         let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
             return Err(self.catalog_tables_only("ALTER TABLE", &alter.name));
         };
-        let operation = match alter.layout.clone() {
-            Layout::Partitioning(mut fields) => {
+        let operation = match alter.operation.clone() {
+            IcebergAlterOp::Partitioning(mut fields) => {
                 for field in &mut fields {
                     self.macros.expand(field)?;
                 }
@@ -3165,7 +3231,7 @@ impl SQLContext {
                     fields: set_partitioning(&fields)?,
                 }
             },
-            Layout::SortOrder(mut fields) => {
+            IcebergAlterOp::SortOrder(mut fields) => {
                 for field in &mut fields {
                     self.macros.expand(field)?;
                 }
@@ -3173,6 +3239,7 @@ impl SQLContext {
                     fields: set_sort_order(&fields)?,
                 }
             },
+            IcebergAlterOp::Ref(operation) => operation,
         };
         Ok(CatalogStatement::AlterTable {
             name,
@@ -3963,7 +4030,8 @@ impl SQLContext {
                                 ),
                             },
                             keep_right,
-                        )?
+                        )
+                        .map_err(|e| in_join(e, join))?
                     },
                     #[cfg(feature = "asof_join")]
                     JoinOperator::AsOf {
@@ -3984,7 +4052,8 @@ impl SQLContext {
                         },
                         match_condition,
                         constraint,
-                    )?,
+                    )
+                    .map_err(|e| in_join(e, join))?,
                     op if is_positional_join(op) => {
                         // As in a CROSS JOIN, right columns the left has are suffixed.
                         let shared: Vec<PlSmallStr> = right_schema
@@ -7414,6 +7483,8 @@ impl SQLContext {
         let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
+        // Projections computed from the group keys alone, re-evaluated on the aggregated rows.
+        let mut key_expressions = PlHashSet::new();
 
         // Pre-compute group key data (alias-stripped expression + aggregated output
         // name) to avoid repeated work matching projections against the group keys
@@ -7495,19 +7566,23 @@ impl SQLContext {
                 // inside them run in the group context. The same holds for anything
                 // combining aggregates with grouped keys or `GROUPING()` values.
                 let bound = bind_keys(strip_outer_alias(e));
+                // An output named like a group key is stored under another name, so that
+                // it does not replace the key that other projections read.
+                let mut name = field.name.clone();
+                if group_by_keys_schema.get(&field.name).is_some() {
+                    name = format_pl_smallstr!("__POLARS_AGG_{}", field.name);
+                    aliased_aggregations.insert(field.name.clone(), name.clone());
+                }
                 if splitter.needs_post_aggregation(&bound) {
                     let post_agg_expr = splitter.hoist(bound)?;
-                    post_agg_projection.push(post_agg_expr.alias(field.name.clone()));
+                    post_agg_projection.push(post_agg_expr.alias(name));
                     continue;
                 }
-                let mut e = e.clone();
-                // If aggregation colname conflicts with a group key,
-                // alias it to avoid duplicate/mis-tracked columns
-                if group_by_keys_schema.get(&field.name).is_some() {
-                    let alias_name = format_pl_smallstr!("__POLARS_AGG_{}", field.name);
-                    e = e.alias(alias_name.clone());
-                    aliased_aggregations.insert(field.name.clone(), alias_name);
-                }
+                let e = if name == field.name {
+                    e.clone()
+                } else {
+                    e.clone().alias(name)
+                };
                 splitter.aggregates.push(e);
             } else if !matches_group_key {
                 // Non-aggregated columns must be part of the GROUP BY clause
@@ -7522,6 +7597,7 @@ impl SQLContext {
                     }
                 } else {
                     splitter.check_columns_per_group(e_inner)?;
+                    key_expressions.insert(field.name.clone());
                 }
             }
         }
@@ -7681,6 +7757,8 @@ impl SQLContext {
                 } else if is_constant(projection_expr) {
                     // Constants are not part of the aggregation; re-evaluate them.
                     projection_expr.clone()
+                } else if key_expressions.contains(name) {
+                    bind_keys(projection_expr.clone()).alias(name.clone())
                 } else {
                     col(name.clone())
                 }
@@ -8989,6 +9067,14 @@ fn is_constant(expr: &Expr) -> bool {
         .unwrap_or(false)
 }
 
+fn in_join(error: PolarsError, join: &Join) -> PolarsError {
+    locate(
+        error,
+        SqlLocationKind::Clause("JOIN".to_string()),
+        join.span(),
+    )
+}
+
 /// Build a unified schema from both tables; needed for multi/chained joins where suffixed
 /// intermediary/joined cols aren't in an existing schema.
 fn build_join_schema(tbl_left: &TableInfo, tbl_right: &TableInfo) -> PolarsResult<Schema> {
@@ -9211,7 +9297,7 @@ pub fn extract_table_identifiers(
     unique: bool,
 ) -> PolarsResult<Vec<String>> {
     let mut tables = Vec::new();
-    match layout_alter::parse_statements_or_alter(query)? {
+    match iceberg_alter::parse_statements_or_alter(query)? {
         Ok(ast) => {
             for stmt in &ast {
                 tables.extend(statement_table_identifiers(stmt, include_schema, false));
@@ -10473,7 +10559,7 @@ fn copy_table_as_query(stmt: &mut Statement) -> PolarsResult<()> {
         } = source
         && *to
     {
-        let columns = match columns.is_empty() {
+        let select_list = match columns.is_empty() {
             true => "*".to_string(),
             // in double quotes, so that each name is read as a column
             false => columns
@@ -10482,10 +10568,23 @@ fn copy_table_as_query(stmt: &mut Statement) -> PolarsResult<()> {
                 .collect::<Vec<_>>()
                 .join(", "),
         };
-        let select = format!("SELECT {columns} FROM {table_name}");
-        let Statement::Query(query) = parse_single_statement(&select)? else {
+        let select = format!("SELECT {select_list} FROM {table_name}");
+        let Statement::Query(mut query) = parse_single_statement(&select)? else {
             unreachable!()
         };
+        // Keep the positions of the statement's table and columns.
+        if let SetExpr::Select(select) = query.body.as_mut() {
+            for (item, column) in select.projection.iter_mut().zip(columns.iter()) {
+                if let SelectItem::UnnamedExpr(SQLExpr::Identifier(ident)) = item {
+                    ident.span = column.span;
+                }
+            }
+            if let Some(TableFactor::Table { name, .. }) =
+                select.from.first_mut().map(|from| &mut from.relation)
+            {
+                *name = table_name.clone();
+            }
+        }
         *source = CopySource::Query(query);
     }
     Ok(())
