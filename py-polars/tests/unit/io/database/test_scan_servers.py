@@ -753,6 +753,44 @@ def test_postgres_credential_provider(driver: str) -> None:
     assert str(password) not in lf.explain()
 
 
+@needs_postgres
+def test_postgres_partition_added_after_planning_does_not_fail_the_resolution_check() -> (
+    None
+):
+    # G1: the resolution fingerprint listed every permanent child of a partitioned table,
+    # so a partition added (or detached) between two collects of a cached LazyFrame failed
+    # as if the pooled session's state had changed
+    server = SERVERS["postgres17"]
+    assert server.factory is not None
+    assert server.uri is not None
+    table = "review_g1_parted"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table} CASCADE",
+            f"CREATE TABLE {table} (id int, v int) PARTITION BY RANGE (id)",
+            f"CREATE TABLE {table}_1 PARTITION OF {table} FOR VALUES FROM (0) TO (100)",
+            f"INSERT INTO {table} SELECT g, g FROM generate_series(0, 99) g",
+        ],
+    )
+    lf = pl.scan_database(table, server.factory(server.uri))
+    assert lf.select(pl.len()).collect().item() == 100
+    _execute(
+        "postgres17",
+        [
+            f"CREATE TABLE {table}_2 PARTITION OF {table} FOR VALUES FROM (100) TO (200)",
+            f"INSERT INTO {table} VALUES (150, 150)",
+        ],
+    )
+    assert lf.select(pl.len()).collect().item() == 101
+    _execute(
+        "postgres17",
+        [f"ALTER TABLE {table} DETACH PARTITION {table}_2", f"DROP TABLE {table}_2"],
+    )
+    assert lf.select(pl.len()).collect().item() == 100
+    _execute("postgres17", [f"DROP TABLE {table} CASCADE"])
+
+
 # Declared types and their dtypes, per dialect, whichever driver reads them
 EDGE_TYPES: dict[str, dict[str, PolarsDataType]] = {
     "postgres17": {
