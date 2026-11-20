@@ -23,7 +23,7 @@ from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from types import TracebackType
     from typing import Self
 
@@ -55,15 +55,16 @@ _INVALID_QUERY_TYPES: Final[set[str]] = {
 class CloseAfterFrameIter:
     """Allows cursor close to be deferred until the last batch is returned."""
 
-    def __init__(self, frames: Any, *, cursor: Cursor) -> None:
+    def __init__(self, frames: Any, *, close: Callable[[], None]) -> None:
         self._iter_frames = frames
-        self._cursor = cursor
+        self._close = close
 
     def __iter__(self) -> Iterator[DataFrame]:
-        yield from self._iter_frames
-
-        if hasattr(self._cursor, "close"):
-            self._cursor.close()
+        # (also on an early stop, when the generator is closed, and on an error)
+        try:
+            yield from self._iter_frames
+        finally:
+            self._close()
 
 
 class ConnectionExecutor:
@@ -72,6 +73,8 @@ class ConnectionExecutor:
     # indicate if we can/should close the cursor on scope exit. note that we
     # should never close the underlying connection, or a user-supplied cursor.
     can_close_cursor: bool = False
+    # a pooled connection checked out for the cursor, given back when it is closed
+    _pooled_raw: Any = None
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver_name = (
@@ -109,8 +112,18 @@ class ConnectionExecutor:
 
             if isinstance(self.cursor, AsyncConnection):
                 _run_async(self._close_async_cursor())
-        elif self.can_close_cursor and hasattr(self.cursor, "close"):
-            self.cursor.close()
+        elif self.can_close_cursor:
+            self._close_cursor()
+
+    def _close_cursor(self) -> None:
+        """Close the cursor and give back a pooled connection taken for it."""
+        try:
+            if hasattr(self.cursor, "close"):
+                self.cursor.close()
+        finally:
+            raw, self._pooled_raw = self._pooled_raw, None
+            if raw is not None:
+                raw.close()
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
@@ -454,9 +467,12 @@ class ConnectionExecutor:
                 return conn
             else:
                 # where possible, use the raw connection to access arrow integration
-                if conn.engine.driver == "databricks-sql-python":
+                # (the dialect's driver is "databricks" in databricks-sqlalchemy 2.x,
+                # "databricks-sql-python" before: not Arrow-typed rows, which lose
+                # nested values and the time zone of a TIMESTAMP)
+                if conn.engine.driver in ("databricks", "databricks-sql-python"):
                     self.driver_name = "databricks"
-                    return conn.engine.raw_connection().cursor()
+                    return self._databricks_cursor(conn)
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn
@@ -484,6 +500,32 @@ class ConnectionExecutor:
             "'execute' or 'cursor' method"
         )
         raise TypeError(msg)
+
+    def _databricks_cursor(self, conn: Any) -> Cursor:
+        """
+        A cursor of the driver's own on a Databricks SQLAlchemy `Engine`/`Connection`.
+
+        A `Connection` is its own DBAPI connection's session (its temporary views and
+        `SET`s). An `Engine`'s pooled connection is held until the cursor is closed,
+        which gives it back to the pool: it must not return while the cursor is in use.
+        """
+        if not self._is_alchemy_engine(conn):
+            # (the user's connection: only the cursor is ours to close)
+            self.can_close_cursor = True
+            return conn.connection.driver_connection.cursor()  # type: ignore[no-any-return]
+
+        raw = conn.raw_connection()
+        try:
+            cursor = raw.cursor()
+        except BaseException:
+            raw.close()
+            raise
+        # (held here, not in a closure patched onto the cursor: that is a reference
+        # cycle through the driver's connection, which the garbage collector never
+        # frees, so the pooled connection would stay checked out)
+        self._pooled_raw = raw
+        self.can_close_cursor = True
+        return cursor  # type: ignore[no-any-return]
 
     def _oracle_arrow_proxy(self) -> OracleCursorProxy | None:
         """Return an Arrow proxy for a SQLAlchemy "python-oracledb" connection."""
@@ -672,7 +714,9 @@ class ConnectionExecutor:
                 )
                 if frame is not None:
                     if defer_cursor_close:
-                        frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
+                        frame_cursor = CloseAfterFrameIter(
+                            frame, close=self._close_cursor
+                        )
                         frame = (df for df in frame_cursor)
                     return frame
         except BaseException:
