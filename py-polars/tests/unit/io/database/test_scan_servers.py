@@ -9818,6 +9818,99 @@ def test_mssql_schema_declared_datetimes_read_the_same_instants_on_every_driver(
         )
 
 
+@needs_mssql
+def test_mssql_schema_declared_datetimes_are_exact_for_every_source_type() -> None:
+    # G2-G4: a `datetime` declared as a `Datetime` of any unit (zone or not) reads its
+    # own digits (`.997`, not the `.9966667` of a conversion to `datetime2`), and a
+    # `datetimeoffset` declared with or without a zone reads its UTC instant (not the
+    # wall clock with the offset dropped, nor a double shift)
+    table = "review_g_declared"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, dt datetime, "
+            "dto datetimeoffset(7), d2 datetime2(3), sdt smalldatetime, dat date)",
+            f"INSERT INTO {table} VALUES "
+            "(1, '2024-01-01 01:30:00.997', '2024-01-01 01:30:00.1234567 +05:30', "
+            "'2024-01-01 01:30:00.123', '2024-01-01 01:30', '2024-01-01'), "
+            "(2, '1753-01-01 00:00:00.003', '0001-01-01 05:00:00 +05:00', "
+            "'0001-01-01 00:00:00.001', '1900-01-01', '0001-01-01'), "
+            "(3, '9999-12-31 23:59:59.997', '9999-12-31 18:59:59.9999999 -05:00', "
+            "'9999-12-31 23:59:59.999', '2079-06-06', '9999-12-31'), "
+            "(4, NULL, NULL, NULL, NULL, NULL), "
+            "(5, '1969-12-31 23:59:59.993', '1969-12-31 15:59:59.9999999 -08:00', "
+            "'1969-12-31 23:59:59.993', '1969-12-31 23:59', '1969-12-31')",
+        ],
+    )
+    dt = {
+        1: (datetime(2024, 1, 1, 1, 30, 0, 997000), 997000000),
+        2: (datetime(1753, 1, 1, 0, 0, 0, 3000), 3000000),
+        3: (datetime(9999, 12, 31, 23, 59, 59, 997000), 997000000),
+        4: (None, None),
+        5: (datetime(1969, 12, 31, 23, 59, 59, 993000), 993000000),
+    }
+    # the UTC instants of the `datetimeoffset` column, to the digit
+    dto = {
+        1: (datetime(2023, 12, 31, 20, 0, 0), 123456700),
+        2: (datetime(1, 1, 1, 0, 0, 0), 0),
+        3: (datetime(9999, 12, 31, 23, 59, 59), 999999900),
+        4: (None, None),
+        5: (datetime(1969, 12, 31, 23, 59, 59), 999999900),
+    }
+    for driver in _runnable_drivers("mssql", _MSSQL_DRIVERS):
+        for unit, div in [("ns", 1), ("us", 1000), ("ms", 1_000_000)]:
+            # (nanoseconds are out of range for the years 1 and 9999)
+            ids = [1, 4, 5] if unit == "ns" else [1, 2, 3, 4, 5]
+            for tz in [None, "UTC"]:
+                label = (driver, unit, tz)
+                dtype = pl.Datetime(unit, tz)  # type: ignore[arg-type]
+                lf = _scan(
+                    "mssql",
+                    driver,
+                    table,
+                    schema=dict.fromkeys(["dt", "dto", "d2", "sdt", "dat"], dtype)
+                    | {"id": pl.Int32},
+                )
+                df = lf.filter(pl.col("id").is_in(ids)).collect().sort("id")
+                assert df["id"].to_list() == ids, label
+                for col, expected in [("dt", dt), ("dto", dto)]:
+                    for i, v in zip(ids, df[col].to_list(), strict=True):
+                        base, ns = expected[i]
+                        if base is None:
+                            assert v is None, (label, col, i)
+                            continue
+                        # (the digits below the unit are cut toward the earlier instant)
+                        want = base.replace(microsecond=ns // div * div // 1000)
+                        if tz:
+                            want = want.replace(tzinfo=UTC)
+                        assert v == want, (label, col, i, v, want)
+                if unit == "ns":
+                    assert df["dt"].dt.nanosecond().to_list() == [
+                        997000000,
+                        None,
+                        993000000,
+                    ], label
+                    assert df["dto"].dt.nanosecond().to_list() == [
+                        123456700,
+                        None,
+                        999999900,
+                    ], label
+                # a `datetime2(3)`, `smalldatetime` and `date` keep their digits
+                naive = df.select(pl.col("d2", "sdt", "dat").dt.replace_time_zone(None))
+                assert naive["d2"][0] == datetime(2024, 1, 1, 1, 30, 0, 123000), label
+                assert naive["sdt"][0] == datetime(2024, 1, 1, 1, 30), label
+                assert naive["dat"][0] == datetime(2024, 1, 1), label
+                # a filter on the exact value finds the row
+                value = datetime(2024, 1, 1, 1, 30, 0, 997000, tzinfo=UTC if tz else None)
+                found = (
+                    lf.filter(pl.col("id").is_in(ids) & (pl.col("dt") == value))
+                    .collect()["id"]
+                    .to_list()
+                )
+                assert found == [1], label
+
+
 def _mssql_masked_connection(create: bool = True) -> Any:
     """A pymssql connection that runs as a user without `UNMASK`."""
     if create:
