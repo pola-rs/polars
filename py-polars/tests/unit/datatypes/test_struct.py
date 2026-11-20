@@ -2270,6 +2270,31 @@ def test_struct_with_fields_non_len_preserving() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.parametrize(
+    ("struct", "field", "expected"),
+    [
+        (pl.struct("a").first(), pl.col("v").get(1), [{"a": 1, "val": 20}]),
+        (pl.struct("a").first(), pl.col("v").sum(), [{"a": 1, "val": 60}]),
+        (
+            pl.struct("a").first(),
+            pl.field("a") + pl.col("v").sum(),
+            [{"a": 1, "val": 61}],
+        ),
+        (
+            pl.struct("a").filter(pl.col("a") > 1),
+            pl.field("a") * pl.col("v").sum(),
+            [{"a": 2, "val": 120}, {"a": 3, "val": 180}],
+        ),
+    ],
+)
+def test_struct_with_fields_reads_frame_aggregate(
+    struct: pl.Expr, field: pl.Expr, expected: list[dict[str, int]]
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "v": [10, 20, 30]})
+    out = lf.select(struct.struct.with_fields(val=field).alias("s")).collect()
+    assert out["s"].to_list() == expected
+
+
 def test_struct_with_fields_projection_pushdown() -> None:
     df = pl.DataFrame({"a": [1], "b": [2]})
     f = io.BytesIO()

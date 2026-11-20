@@ -369,6 +369,41 @@ fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -
     matches!(height, ExprProjectionHeight::Column)
 }
 
+/// Replaces the maximal non-elementwise subexpressions without a `StructField` by columns, pushing
+/// their definitions to `hoisted`.
+#[recursive::recursive]
+fn hoist_frame_subexprs(expr: Node, ctx: &mut LowerExprContext, hoisted: &mut Vec<ExprIR>) -> Node {
+    if !has_aexpr(expr, ctx.expr_arena, |e| matches!(e, AExpr::StructField(_))) {
+        if is_elementwise_rec_cached(expr, ctx.expr_arena, ctx.cache) {
+            return expr;
+        }
+        let name = unique_column_name();
+        hoisted.push(ExprIR::new(expr, OutputName::Alias(name.clone())));
+        return ctx.expr_arena.add(AExpr::Column(name));
+    }
+
+    let aexpr = ctx.expr_arena.get(expr).clone();
+    match aexpr {
+        // `function` is evaluated per window, not on the frame.
+        AExpr::Over { .. } => return expr,
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling { .. } => return expr,
+        _ => {},
+    }
+
+    let mut inputs = Vec::new();
+    aexpr.inputs_rev_strict(&mut inputs);
+    inputs.reverse();
+    let new_inputs = inputs
+        .iter()
+        .map(|input| hoist_frame_subexprs(*input, ctx, hoisted))
+        .collect_vec();
+    if new_inputs == inputs {
+        return expr;
+    }
+    ctx.expr_arena.add(aexpr.replace_inputs(&new_inputs))
+}
+
 fn build_fallback_node_with_ctx(
     input: PhysStream,
     exprs: &[ExprIR],
@@ -1760,12 +1795,23 @@ fn lower_exprs_with_ctx(
                 let mut expr_irs = Vec::new();
                 expr_irs.push(inner_expr_ir);
 
-                // Any column expression inside evaluation must be added explicitly.
+                // Subexpressions that read only the frame are evaluated on the input, which can
+                // have a different height than the struct (e.g. `pl.col("v").sum()`).
+                for e in evaluation.iter_mut() {
+                    e.set_node(hoist_frame_subexprs(e.node(), ctx, &mut expr_irs));
+                }
+                let hoisted_names: PlHashSet<_> = expr_irs[1..]
+                    .iter()
+                    .map(|e| e.output_name().clone())
+                    .collect();
+
+                // Any other column expression inside evaluation must be added explicitly.
                 let eval_col_names: PlHashSet<_> = evaluation
                     .iter()
                     .flat_map(|expr| {
                         polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena)
                     })
+                    .filter(|name| !hoisted_names.contains(*name))
                     .cloned()
                     .collect();
                 for name in eval_col_names {
