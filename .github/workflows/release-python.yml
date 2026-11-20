@@ -99,6 +99,7 @@ jobs:
       - name: Upload base package
         uses: actions/upload-artifact@v7
         with:
+          name: base-package
           path: dist
 
   create-sdist:
@@ -117,8 +118,8 @@ jobs:
       - name: Download base package
         uses: actions/download-artifact@v8
         with:
+          name: base-package
           path: dist
-          merge-multiple: true
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
@@ -218,8 +219,8 @@ jobs:
       - name: Download base package
         uses: actions/download-artifact@v8
         with:
+          name: base-package
           path: dist
-          merge-multiple: true
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux

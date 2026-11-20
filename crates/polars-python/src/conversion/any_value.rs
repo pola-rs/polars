@@ -397,10 +397,30 @@ pub(crate) fn py_object_to_any_value(
 
     /// The datetime fields of a pandas Timestamp hold a placeholder year when the year is out of
     /// range for a Python datetime, so convert from its `asm8` value instead.
+    fn has_pandas_base(ty: &Bound<'_, PyType>) -> PyResult<bool> {
+        for base in ty.mro().iter() {
+            if base
+                .cast::<PyType>()?
+                .module()?
+                .to_str()?
+                .starts_with("pandas")
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
-        let (value, time_unit) = match get_numpy_temporal(&ob.getattr(intern!(py, "asm8"))?, true)?
-        {
+        let asm8 = ob.getattr(intern!(py, "asm8"))?;
+        static DATETIME64_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+        if !asm8.is_instance(DATETIME64_TYPE.import(py, "numpy", "datetime64")?)? {
+            return Err(PyTypeError::new_err(format!(
+                "cannot convert pandas Timestamp {ob}"
+            )));
+        }
+        let (value, time_unit) = match get_numpy_temporal(&asm8, true)? {
             AnyValue::Datetime(value, time_unit, _) => (value, time_unit),
             AnyValue::Null => {
                 return Err(PyTypeError::new_err(
@@ -733,8 +753,10 @@ pub(crate) fn py_object_to_any_value(
         // note: datetime must be checked *before* date
         // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
+            let ty = ob.get_type();
             if !ob.is_exact_instance_of::<PyDateTime>()
-                && ob.get_type().hasattr(intern!(py, "asm8"))?
+                && ty.hasattr(intern!(py, "asm8"))?
+                && has_pandas_base(&ty)?
             {
                 return Ok(get_pandas_timestamp as InitFn);
             }

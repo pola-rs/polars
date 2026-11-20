@@ -192,6 +192,15 @@ def test_series_init_datetime_subclass_from_pandas_named_module() -> None:
     assert result.item() == datetime(2000, 1, 1)
 
 
+def test_series_init_datetime_subclass_with_asm8() -> None:
+    class Datetime(datetime):
+        @property
+        def asm8(self) -> np.timedelta64:
+            return np.timedelta64(1, "s")
+
+    assert pl.Series([Datetime(2025, 1, 2)]).item() == datetime(2025, 1, 2)
+
+
 def test_series_init_pandas_timestamp_nanoseconds_before_epoch() -> None:
     result = pl.Series([pd.Timestamp("1969-12-31T23:59:59.999999999")])
     assert result.item() == datetime(1969, 12, 31, 23, 59, 59, 999999)
