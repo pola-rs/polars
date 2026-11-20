@@ -358,6 +358,9 @@ impl PolarsTableFunctions {
                 ),
             });
         reader = reader.with_null_values(null_values);
+        if let Some(empty_string_is_null) = options.bool("empty_string_is_null")? {
+            reader = reader.with_missing_is_null(empty_string_is_null);
+        }
         if let Some(ignore_errors) = options.bool("ignore_errors")? {
             reader = reader.with_ignore_errors(ignore_errors);
         }
@@ -630,6 +633,7 @@ const READ_CSV_OPTIONS: &[&str] = &[
     "try_parse_dates",
     "decimal_comma",
     "null_values",
+    "empty_string_is_null",
     "ignore_errors",
     "truncate_ragged_lines",
     "missing_columns",
@@ -659,7 +663,6 @@ const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ("eol_char", ""),
     ("raise_if_empty", ""),
     ("glob", ""),
-    ("empty_string_is_null", ""),
     ("row_index_name", ""),
     ("row_index_offset", ""),
 ];
