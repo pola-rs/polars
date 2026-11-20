@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -213,10 +213,29 @@ def test_series_init_pandas_timestamp_subclass() -> None:
     assert pl.Series([ts]).dt.year().item() == 10000
 
 
-def test_series_init_pandas_timestamp_dateutil_time_zone() -> None:
-    from dateutil.tz import gettz
+class _VariableOffset(tzinfo):
+    def utcoffset(self, dt: datetime | None) -> timedelta | None:
+        if dt is None:
+            return None
+        return timedelta(hours=2 if 4 <= dt.month <= 9 else 1)
 
-    dt = datetime(2020, 7, 1, 12, tzinfo=gettz("America/New_York"))
+    def dst(self, dt: datetime | None) -> timedelta | None:
+        return None
+
+    def tzname(self, dt: datetime | None) -> str | None:
+        return None
+
+
+def test_series_init_pandas_timestamp_variable_offset_time_zone() -> None:
+    dt = datetime(2020, 7, 1, 12, tzinfo=_VariableOffset())
+    with pytest.raises(TypeError):
+        pl.Series([dt])
+    with pytest.raises(TypeError):
+        pl.Series([pd.Timestamp(dt)])
+
+
+def test_series_init_pandas_timestamp_fixed_offset_time_zone() -> None:
+    dt = datetime(2020, 7, 1, 12, tzinfo=timezone(timedelta(hours=2)))
     assert_series_equal(pl.Series([pd.Timestamp(dt)]), pl.Series([dt]))
 
 

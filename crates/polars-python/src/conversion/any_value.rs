@@ -397,12 +397,14 @@ pub(crate) fn py_object_to_any_value(
 
     /// The datetime fields of a pandas Timestamp hold a placeholder year when the year is out of
     /// range for a Python datetime, so don't use them.
-    fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+    fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
         let AnyValue::Datetime(value, time_unit, _) =
             get_numpy_temporal(&ob.getattr(intern!(py, "asm8"))?, true)?
         else {
-            unreachable!()
+            return Err(PyValueError::new_err(format!(
+                "cannot convert pandas Timestamp {ob}"
+            )));
         };
         let timestamp = match time_unit {
             TimeUnit::Nanoseconds => value.div_euclid(1000),
@@ -431,12 +433,12 @@ pub(crate) fn py_object_to_any_value(
                 ));
             }
         }
-        match get_datetime(ob, strict)? {
-            AnyValue::DatetimeOwned(_, time_unit, tz) => {
-                Ok(AnyValue::DatetimeOwned(timestamp, time_unit, tz))
-            },
-            _ => unreachable!(),
-        }
+        tzinfo.extract::<FixedOffset>()?;
+        Ok(AnyValue::DatetimeOwned(
+            timestamp,
+            TimeUnit::Microseconds,
+            Some(Arc::new(TimeZone::UTC)),
+        ))
     }
 
     fn get_pandas_nat(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -736,9 +738,14 @@ pub(crate) fn py_object_to_any_value(
                     .getattr(intern!(py, "modules"))?
                     .get_item(intern!(py, "pandas"))
             {
-                if ob.is_instance(&pandas.getattr(intern!(py, "NaT"))?.get_type())? {
+                if let Ok(nat) = pandas.getattr(intern!(py, "NaT"))
+                    && ob.is_instance(&nat.get_type())?
+                {
                     return Ok(get_pandas_nat as InitFn);
-                } else if ob.is_instance(&pandas.getattr(intern!(py, "Timestamp"))?)? {
+                }
+                if let Ok(timestamp) = pandas.getattr(intern!(py, "Timestamp"))
+                    && ob.is_instance(&timestamp)?
+                {
                     return Ok(get_pandas_timestamp as InitFn);
                 }
             }
