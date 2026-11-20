@@ -496,5 +496,5 @@ fn prefix_offset(
         .strip_prefix(prefix.trim_end_matches('/'))
         .unwrap_or(start)
         .trim_start_matches('/');
-    dir.child(name)
+    dir.clone().join(name)
 }

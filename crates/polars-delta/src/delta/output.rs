@@ -230,6 +230,7 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
                 },
                 "p" => {
                     if url::Url::parse(encoded).is_err()
+                        && !encoded.starts_with('/')
                         && !std::path::Path::new(encoded).is_absolute()
                     {
                         return Err(invalid("relative p DV path"));
