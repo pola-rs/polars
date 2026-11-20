@@ -870,20 +870,21 @@ fn decode_nested<const HAS_FIXED_SIZE_LIST: bool>(
 
         // Handle skips
         if let Some(ref mut num_skips) = state.num_skips {
-            let mut i = 0;
+            // A local count and equal-length slices keep the loop free of stores and bounds checks.
+            let rep_levels = &current_rep_levels[..current_def_levels.len()];
+            let mut remaining = *num_skips;
             let mut num_skipped_values = 0;
-            while i < current_def_levels.len() && (*num_skips > 0 || current_rep_levels[i] != 0) {
-                let def = current_def_levels[i];
-                let rep = current_rep_levels[i];
-
-                *num_skips -= usize::from(rep == 0);
-                i += 1;
+            let mut i = 0;
+            while i < current_def_levels.len() && (remaining > 0 || rep_levels[i] != 0) {
+                remaining -= usize::from(rep_levels[i] == 0);
 
                 // @NOTE:
-                // We don't need to account for higher def-levels that imply extra values, since we
-                // don't have those higher levels either.
-                num_skipped_values += usize::from(def == leaf_def_level);
+                // We don't need to account for higher def-levels that imply extra
+                // values, since we don't have those higher levels either.
+                num_skipped_values += usize::from(current_def_levels[i] == leaf_def_level);
+                i += 1;
             }
+            *num_skips = remaining;
             batched_collector.skip_in_place(num_skipped_values)?;
 
             current_def_levels = &current_def_levels[i..];
