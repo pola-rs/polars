@@ -23,7 +23,7 @@ from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Generator, Iterator
     from types import TracebackType
     from typing import Self
 
@@ -52,18 +52,27 @@ _INVALID_QUERY_TYPES: Final[set[str]] = {
 }
 
 
-class CloseAfterFrameIter:
-    """Allows cursor close to be deferred until the last batch is returned."""
+def _close_after_frames(
+    frames: Any, *, close: Callable[[], None]
+) -> Generator[DataFrame]:
+    """
+    Yield the frames, then close the cursor (also on an early stop or an error).
 
-    def __init__(self, frames: Any, *, cursor: Cursor) -> None:
-        self._iter_frames = frames
-        self._cursor = cursor
+    The query has already run when this is returned. A generator that never started
+    skips its `finally` when closed or collected, so it is primed here: it waits at
+    a first `yield` inside the `try`, and `close()` before the first `next()` works.
+    """
 
-    def __iter__(self) -> Iterator[DataFrame]:
-        yield from self._iter_frames
+    def gen() -> Generator[DataFrame]:
+        try:
+            yield None  # type: ignore[misc]  # (priming)
+            yield from frames
+        finally:
+            close()
 
-        if hasattr(self._cursor, "close"):
-            self._cursor.close()
+    g = gen()
+    next(g)
+    return g
 
 
 class ConnectionExecutor:
@@ -72,6 +81,10 @@ class ConnectionExecutor:
     # indicate if we can/should close the cursor on scope exit. note that we
     # should never close the underlying connection, or a user-supplied cursor.
     can_close_cursor: bool = False
+    # a pooled connection checked out for the cursor, given back when it is closed
+    _pooled_raw: Any = None
+    # a Databricks SQLAlchemy Engine/Connection whose cursor is chosen at `execute`
+    _databricks_source: Any = None
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver_name = (
@@ -109,8 +122,18 @@ class ConnectionExecutor:
 
             if isinstance(self.cursor, AsyncConnection):
                 _run_async(self._close_async_cursor())
-        elif self.can_close_cursor and hasattr(self.cursor, "close"):
-            self.cursor.close()
+        elif self.can_close_cursor:
+            self._close_cursor()
+
+    def _close_cursor(self) -> None:
+        """Close the cursor and give back a pooled connection taken for it."""
+        try:
+            if hasattr(self.cursor, "close"):
+                self.cursor.close()
+        finally:
+            raw, self._pooled_raw = self._pooled_raw, None
+            if raw is not None:
+                raw.close()
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
@@ -454,9 +477,16 @@ class ConnectionExecutor:
                 return conn
             else:
                 # where possible, use the raw connection to access arrow integration
-                if conn.engine.driver == "databricks-sql-python":
-                    self.driver_name = "databricks"
-                    return conn.engine.raw_connection().cursor()
+                # (the dialect's driver is "databricks" in databricks-sqlalchemy 2.x,
+                # "databricks-sql-python" before: not Arrow-typed rows, which lose
+                # nested values and the time zone of a TIMESTAMP)
+                if conn.engine.driver in ("databricks", "databricks-sql-python"):
+                    # str queries use the driver's own Arrow cursor, taken at
+                    # `execute`; SQLAlchemy statements keep SQLAlchemy's execution
+                    if not self._is_alchemy_engine(conn):
+                        _ = conn.connection  # (raises if closed)
+                    self._databricks_source = conn
+                    return conn
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn
@@ -484,6 +514,34 @@ class ConnectionExecutor:
             "'execute' or 'cursor' method"
         )
         raise TypeError(msg)
+
+    def _databricks_cursor(self, conn: Any) -> Cursor:
+        """
+        A cursor of the driver's own on a Databricks SQLAlchemy `Engine`/`Connection`.
+
+        A `Connection` is its own DBAPI connection's session (its temporary views and
+        `SET`s). An `Engine`'s pooled connection is held until the cursor is closed,
+        which gives it back to the pool: it must not return while the cursor is in use.
+        """
+        if not self._is_alchemy_engine(conn):
+            # (the user's connection: only the cursor is ours to close)
+            # (flagged once the cursor exists: a failure must not close the user's)
+            cursor = conn.connection.driver_connection.cursor()
+            self.can_close_cursor = True
+            return cursor  # type: ignore[no-any-return]
+
+        raw = conn.raw_connection()
+        try:
+            cursor = raw.cursor()
+        except BaseException:
+            raw.close()
+            raise
+        # (held here, not in a closure patched onto the cursor: that is a reference
+        # cycle through the driver's connection, which the garbage collector never
+        # frees, so the pooled connection would stay checked out)
+        self._pooled_raw = raw
+        self.can_close_cursor = True
+        return cursor  # type: ignore[no-any-return]
 
     def _oracle_arrow_proxy(self) -> OracleCursorProxy | None:
         """Return an Arrow proxy for a SQLAlchemy "python-oracledb" connection."""
@@ -573,6 +631,16 @@ class ConnectionExecutor:
                 raise UnsuitableSQLError(msg)
 
         options = options or {}
+
+        if (source := self._databricks_source) is not None:
+            self._databricks_source = None
+            if isinstance(query, str):
+                self.driver_name = "databricks"
+                self.cursor = self._databricks_cursor(source)
+            elif self._is_alchemy_engine(source):
+                # (a SQLAlchemy statement: compiled and bound by SQLAlchemy)
+                self.cursor = source.connect()
+                self.can_close_cursor = True
 
         if self._is_alchemy_object(self.cursor):
             # note: the Arrow "fetch_df_*" methods take raw SQL, so the Oracle fast-path
@@ -672,8 +740,7 @@ class ConnectionExecutor:
                 )
                 if frame is not None:
                     if defer_cursor_close:
-                        frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
-                        frame = (df for df in frame_cursor)
+                        frame = _close_after_frames(frame, close=self._close_cursor)
                     return frame
         except BaseException:
             # no frame iterator owns the cursor, so `__exit__` should close it
