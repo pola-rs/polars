@@ -13,6 +13,7 @@ pub use polars_row::RowEncodingOptions;
 pub use polars_utils::aliases::*;
 pub use polars_utils::index::{ChunkId, IdxSize, NullableIdxSize};
 pub use polars_utils::pl_str::PlSmallStr;
+pub use polars_utils::slice_enum::Slice;
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 pub(crate) use crate::chunked_array::ChunkLenIter;

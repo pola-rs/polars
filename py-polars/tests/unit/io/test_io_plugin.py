@@ -410,3 +410,21 @@ def test_io_plugin_io_source_survives_serialization() -> None:
 
     assert isinstance(_scan_fn(roundtripped).io_source, _CallableSource)
     assert_frame_equal(roundtripped.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
+
+def test_io_plugin_open_ended_slice_has_no_n_rows() -> None:
+    df = pl.DataFrame({"a": [0, 1, 2]})
+    seen_n_rows: list[int | None] = []
+
+    def _io_source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        seen_n_rows.append(n_rows)
+        yield df if n_rows is None else df.head(n_rows)
+
+    lf = register_io_source(_io_source, schema=df.schema)
+    assert_frame_equal(lf.slice(0).collect(), df)
+    assert seen_n_rows == [None]

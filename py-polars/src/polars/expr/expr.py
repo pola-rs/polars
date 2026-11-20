@@ -2805,6 +2805,10 @@ class Expr(metaclass=_Meta):
         """
         Get an index of a maximal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
@@ -2833,6 +2837,10 @@ class Expr(metaclass=_Meta):
     def arg_min(self) -> Expr:
         """
         Get an index of a minimal value.
+
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
 
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
@@ -3612,6 +3620,10 @@ class Expr(metaclass=_Meta):
         """
         Get maximum value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -3633,6 +3645,10 @@ class Expr(metaclass=_Meta):
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get maximum value, ordered by another expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
@@ -3669,6 +3685,10 @@ class Expr(metaclass=_Meta):
         """
         Get minimum value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -3690,6 +3710,10 @@ class Expr(metaclass=_Meta):
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get minimum value, ordered by another expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
@@ -12281,11 +12305,49 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.log1p())
 
+    def x_log_y(self, y: IntoExpr, base: float = math.e) -> Expr:
+        """
+        Compute `x * log(y)` to a given base, where `x` is this expression.
+
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
+
+        .. engine-support:: in-memory, streaming
+
+        Parameters
+        ----------
+        y
+            The expression to take the logarithm of. Accepts expression input;
+            strings are parsed as column names.
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3], "y": [0, 2, 4, 8]})
+        >>> df.select(pl.col("x").x_log_y("y", base=2))
+        shape: (4, 1)
+        ┌─────┐
+        │ x   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        │ 4.0 │
+        │ 9.0 │
+        └─────┘
+        """
+        y_pyexpr = parse_into_expression(y)
+        return wrap_expr(self._pyexpr.x_log_y(y_pyexpr, base))
+
     def entropy(self, base: float = math.e, *, normalize: bool = True) -> Expr:
         """
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+        `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
+        NaN. With `normalize=True`, input that sums to zero (including empty,
+        all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
         .. engine-support:: in-memory, streaming
 

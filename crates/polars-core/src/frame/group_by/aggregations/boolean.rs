@@ -127,7 +127,7 @@ impl BooleanChunked {
 impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -143,7 +143,7 @@ impl BooleanChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
+                debug_assert!(_idx_in_bounds(idx, self.len()));
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
@@ -174,7 +174,7 @@ impl BooleanChunked {
     }
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -189,7 +189,7 @@ impl BooleanChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= self.len());
+                debug_assert!(_idx_in_bounds(idx, self.len()));
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
@@ -221,7 +221,7 @@ impl BooleanChunked {
 
     pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -238,7 +238,7 @@ impl BooleanChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca_self.len());
+                debug_assert!(_idx_in_bounds(idx, ca_self.len()));
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
@@ -260,7 +260,7 @@ impl BooleanChunked {
 
     pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);
@@ -277,7 +277,7 @@ impl BooleanChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca_self.len());
+                debug_assert!(_idx_in_bounds(idx, ca_self.len()));
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {

@@ -159,7 +159,8 @@ pub(super) fn contains(s: &[Column], nulls_equal: bool) -> PolarsResult<Column> 
 #[cfg(feature = "array_count")]
 pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
-    let element = &args[1];
+    // A broadcast scalar is one element, not one per row.
+    let element = args[1].as_materialized_series_maintain_scalar();
     polars_ensure!(
         element.len() == 1,
         ComputeError: "argument expression in `arr.count_matches` must produce exactly one element, got {}",

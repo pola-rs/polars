@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -505,6 +505,7 @@ def test_qualified_table_name_ddl() -> None:
     [
         ("My Table", 'DROP TABLE "My Table"'),
         ("My Table", 'TRUNCATE TABLE "My Table"'),
+        ("My Table", 'DELETE FROM "My Table"'),
         ("frame", "DROP TABLE FRAME"),
     ],
 )
@@ -623,3 +624,365 @@ def test_ambiguous_column_hint_quotes_dotted_alias() -> None:
         pytest.raises(SQLInterfaceError, match=r'use one of: "a\.b"\.k, z\.k'),
     ):
         ctx.execute('SELECT k FROM u AS "a.b" CROSS JOIN v AS z', eager=True)
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+@pytest.mark.parametrize("temp", ["", "TEMP ", "TEMPORARY "])
+def test_create_view(eager_path: bool, temp: str) -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1, 2, 3], "g": ["x", "x", "y"]})) as ctx:
+        ctx.execute(f"CREATE {temp}VIEW v AS SELECT a * 10 AS b, g FROM t WHERE a > 1")
+        ctx.execute(f"CREATE {temp}VIEW w (n, total) AS SELECT COUNT(*), SUM(b) FROM v")
+        ctx.execute(f"CREATE {temp}VIEW u AS TABLE w")
+        assert ctx.tables() == ["t", "u", "v", "w"]
+        for query, expected in (
+            ("SELECT b FROM v ORDER BY b", [20, 30]),
+            ("SELECT v.b FROM v JOIN t ON v.g = t.g WHERE t.a = 3", [30]),
+            ("SELECT a FROM t WHERE a * 10 IN (SELECT b FROM v) ORDER BY a", [2, 3]),
+            ("SELECT x.b + w.total FROM v AS x, w WHERE x.g = 'y'", [80]),
+            ("WITH v AS (SELECT 1 AS b) SELECT b FROM v", [1]),
+            ("SELECT 0, 0 UNION ALL TABLE w", [0, 2]),
+            ("SELECT n FROM u", [2]),
+        ):
+            res = _execute(ctx, query, eager_path=eager_path)
+            assert sorted(res.to_series().to_list()) == expected
+
+        # a view reads the tables as they are when a query is executed
+        lf = ctx.execute("SELECT n FROM w")
+        ctx.register("t", pl.LazyFrame({"a": [4, 5, 6, 7], "g": ["x"] * 4}))
+        assert ctx.execute("SELECT n FROM w", eager=True).item() == 4
+        assert lf.collect().item() == 2
+
+
+def test_create_view_replace() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1, 2]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(SQLInterfaceError, match="view 'v' already exists"):
+            ctx.execute("CREATE VIEW v AS SELECT 1 AS a")
+
+        # an existing view (matched ignoring case) is left as it is, and the query of a
+        # no-op does not run
+        ctx.execute("CREATE VIEW IF NOT EXISTS V AS SELECT * FROM nosuch")
+        assert ctx.execute("SELECT COUNT(*) FROM v", eager=True).item() == 2
+
+        ctx.execute("CREATE OR REPLACE VIEW V AS SELECT a + 1 AS b FROM t")
+        assert ctx.tables() == ["t", "v"]
+        assert ctx.execute("SELECT b FROM v", eager=True).to_series().to_list() == [
+            2,
+            3,
+        ]
+
+        # registering a frame replaces a view of the same name (ignoring case)
+        ctx.register("V", pl.LazyFrame({"c": [0]}))
+        assert ctx.tables() == ["V", "t"]
+        assert ctx.execute("SELECT c FROM v", eager=True).item() == 0
+        ctx.unregister("V")
+        with pytest.raises(SQLInterfaceError, match="relation 'v' was not found"):
+            ctx.execute("SELECT * FROM v", eager=True)
+
+
+def test_view_planned_with_statement() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        ctx.execute("CREATE VIEW clock AS SELECT CURRENT_TIMESTAMP AS ts")
+        ctx.unregister("t")
+
+        # a CTE hides the view of its name, which is then not planned
+        res = ctx.execute("WITH v AS (SELECT 2 AS a) SELECT a FROM v", eager=True)
+        assert res.item() == 2
+        with pytest.raises(SQLInterfaceError, match="relation 't' was not found"):
+            ctx.execute("SELECT a FROM v", eager=True)
+
+        # a view reads the time of the statement that reads it
+        res = ctx.execute("SELECT ts = CURRENT_TIMESTAMP FROM clock", eager=True)
+        assert res.item() is True
+
+        # each read of a view draws its own random values, also through another view
+        ctx.execute("CREATE VIEW r AS SELECT RANDOM() AS x")
+        ctx.execute("CREATE VIEW r2 AS SELECT x FROM r")
+        for view in ("r", "r2"):
+            res = ctx.execute(
+                f"SELECT a.x = b.x AS same FROM {view} a CROSS JOIN {view} b",
+                eager=True,
+            )
+            assert res.item() is False
+
+
+@pytest.mark.parametrize(
+    ("sql", "error"),
+    [
+        ("CREATE VIEW t AS SELECT 1 AS x", "'t' is a table, not a view"),
+        ("CREATE OR REPLACE VIEW T AS SELECT 1 AS x", "'t' is a table, not a view"),
+        ("CREATE TABLE v AS SELECT 1 AS x", "'v' is a view, not a table"),
+        ("CREATE OR REPLACE VIEW v AS SELECT * FROM v", "view 'v' reads itself"),
+        ("CREATE OR REPLACE VIEW v AS SELECT * FROM w", "view 'v' reads itself"),
+        ("CREATE VIEW x AS SELECT * FROM nosuch", "relation 'nosuch' was not found"),
+        ("CREATE VIEW x (p, q) AS SELECT a FROM t", "number of columns"),
+        ("CREATE MATERIALIZED VIEW x AS SELECT 1", "MATERIALIZED VIEW"),
+        ("CREATE VIEW x COMMENT = 'c' AS SELECT 1", "CREATE VIEW supports only"),
+        ("DROP VIEW t", "view 't' does not exist"),
+        ("DROP VIEW v, nosuch", "view 'nosuch' does not exist"),
+    ],
+)
+def test_create_view_errors(sql: str, error: str) -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        ctx.execute("CREATE VIEW w AS SELECT a FROM v")
+        with pytest.raises((SQLInterfaceError, SQLSyntaxError), match=error):
+            ctx.execute(sql)
+        # a failed statement changes nothing
+        assert ctx.tables() == ["t", "v", "w"]
+        assert ctx.execute("SELECT a FROM w", eager=True).item() == 1
+
+
+def test_drop_view() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        for name in ("u", "v", "w"):
+            ctx.execute(f"CREATE VIEW {name} AS SELECT a FROM t")
+        ctx.execute("DROP VIEW U, v")
+        ctx.execute("DROP VIEW IF EXISTS v, nosuch")
+        assert ctx.tables() == ["t", "w"]
+        ctx.unregister("w")
+        assert ctx.tables() == ["t"]
+        with pytest.raises(SQLInterfaceError, match="relation 'w' was not found"):
+            ctx.execute("SELECT * FROM w", eager=True)
+
+
+@pytest.mark.parametrize("describe", ["DESCRIBE", "DESC"])
+def test_describe(describe: str, test_frame: pl.LazyFrame) -> None:
+    with pl.SQLContext(frame=test_frame) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT x * 2 AS x2, y FROM frame")
+        assert_frame_equal(
+            ctx.execute(f"{describe} frame", eager=True),
+            pl.DataFrame(
+                {
+                    "column_name": ["x", "y", "z"],
+                    "column_type": ["UTINYINT", "VARCHAR", "DATE"],
+                }
+            ),
+        )
+        assert ctx.execute(f"{describe} V", eager=True).rows() == [
+            ("x2", "UTINYINT"),
+            ("y", "VARCHAR"),
+        ]
+        # a query is described by the columns of its result
+        res = ctx.execute(
+            f"{describe} SELECT y, z, x::double precision AS f FROM frame WHERE x > 1",
+            eager=True,
+        )
+        assert res.rows() == [
+            ("y", "VARCHAR"),
+            ("z", "DATE"),
+            ("f", "DOUBLE PRECISION"),
+        ]
+        with pytest.raises(SQLInterfaceError, match="tables and queries only"):
+            ctx.execute(f"{describe} DROP TABLE frame")
+        assert ctx.tables() == ["frame", "v"]
+        with pytest.raises(SQLInterfaceError, match="relation 'nosuch' was not found"):
+            ctx.execute(f"{describe} nosuch")
+
+
+def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
+    with pl.SQLContext(frame=test_frame, df=pl.DataFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT x * 2 AS x2, y FROM frame")
+        assert_frame_equal(
+            ctx.execute("SELECT * FROM information_schema.columns", eager=True),
+            pl.DataFrame(
+                {
+                    "table_name": ["df", "frame", "frame", "frame", "v", "v"],
+                    "column_name": ["a", "x", "y", "z", "x2", "y"],
+                    "ordinal_position": pl.Series([1, 1, 2, 3, 1, 2], dtype=pl.Int32),
+                    "data_type": ["i64", "u8", "str", "date", "u8", "str"],
+                    "is_nullable": ["YES"] * 6,
+                }
+            ),
+        )
+        res = ctx.execute(
+            """
+            SELECT c.column_name, c.data_type
+            FROM INFORMATION_SCHEMA.COLUMNS AS c
+            WHERE c.table_name = 'frame' AND c.ordinal_position > 1
+            """,
+            eager=True,
+        )
+        assert res.rows() == [("y", "str"), ("z", "date")]
+
+        # in a view, the views reading the metadata are not listed
+        ctx.execute("CREATE VIEW meta AS SELECT * FROM information_schema.columns")
+        ctx.execute("CREATE VIEW meta2 AS SELECT * FROM meta")
+        ctx.execute(
+            "CREATE VIEW plain AS WITH meta AS (SELECT 1 AS a) SELECT * FROM meta"
+        )
+        ctx.execute(
+            'CREATE VIEW plain2 AS WITH "information_schema.columns" AS '
+            '(SELECT 1 AS a) SELECT * FROM "information_schema.columns"'
+        )
+        res = ctx.execute(
+            "SELECT DISTINCT table_name FROM meta2 ORDER BY 1", eager=True
+        )
+        assert res.to_series().to_list() == ["df", "frame", "plain", "plain2", "v"]
+        res = ctx.execute(
+            "SELECT table_name, COUNT(*) FROM information_schema.columns "
+            "WHERE table_name LIKE 'meta%' GROUP BY 1 ORDER BY 1",
+            eager=True,
+        )
+        assert res.rows() == [("meta", 5), ("meta2", 5)]
+        ctx.execute("DROP VIEW plain2")
+        ctx.execute("DROP VIEW plain")
+        ctx.execute("DROP VIEW meta2")
+        ctx.execute("DROP VIEW meta")
+
+        # TABLE reads it too
+        ctx.execute("CREATE VIEW meta AS TABLE information_schema.columns")
+        assert ctx.execute("SELECT COUNT(*) FROM meta", eager=True).item() == 6
+        res = ctx.execute(
+            "SELECT COUNT(*) FROM (TABLE information_schema.columns "
+            "UNION ALL TABLE information_schema.columns)",
+            eager=True,
+        )
+        assert res.item() == 22
+        ctx.execute("DROP VIEW meta")
+
+        # the context's tables are read when the query is planned
+        lf = ctx.execute("SELECT column_name FROM information_schema.columns")
+        ctx.unregister("df")
+        assert lf.collect()["column_name"].to_list() == ["a", "x", "y", "z", "x2", "y"]
+
+
+def test_delete_from_registered_table_30714() -> None:
+    # later statements see the deletion, as after TRUNCATE; DELETE returns the rest
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2, 3, 4, 5]})}) as ctx:
+        res = ctx.execute("DELETE FROM t WHERE a = 1", eager=True)
+        assert res["a"].to_list() == [2, 3, 4, 5]
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3, 4, 5]
+
+        # a lazy execute changes the table too
+        ctx.execute("DELETE FROM t WHERE a = 5")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3, 4]
+
+        # an alias names the same table
+        ctx.execute("DELETE FROM t AS x WHERE x.a = 4")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3]
+
+        # a subquery on the table sees it as before the DELETE
+        ctx.execute("DELETE FROM t WHERE a IN (SELECT min(a) FROM t)")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [3]
+        assert ctx.tables() == ["t"]
+
+        # without WHERE, as TRUNCATE
+        ctx.execute("DELETE FROM T")
+        out = ctx.execute("SELECT * FROM t", eager=True)
+        assert out.height == 0
+        assert out.columns == ["a"]
+
+
+@pytest.mark.write_disk
+def test_delete_leaves_sources_unchanged(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    path = tmp_path / "t.parquet"
+    df.write_parquet(path)
+    with pl.SQLContext({"scan": pl.scan_parquet(path), "frame": df}) as ctx:
+        ctx.execute("DELETE FROM scan WHERE a = 1")
+        ctx.execute("DELETE FROM frame WHERE a = 2")
+        assert ctx.execute("SELECT a FROM scan", eager=True)["a"].to_list() == [2, 3]
+        # the condition is pushed into the scan
+        assert "SELECTION" in ctx.execute("SELECT a FROM scan").explain()
+        assert ctx.execute("SELECT a FROM frame", eager=True)["a"].to_list() == [1, 3]
+    assert_frame_equal(pl.read_parquet(path), df)
+    assert df["a"].to_list() == [1, 2, 3]
+
+    # `df.sql` runs in its own context
+    assert df.sql("DELETE FROM self WHERE a = 1")["a"].to_list() == [2, 3]
+    assert df["a"].to_list() == [1, 2, 3]
+
+
+def test_delete_in_scope_persists() -> None:
+    # a table registered before the scope keeps the deletion, as after TRUNCATE
+    ctx = pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2]})})
+    with ctx:
+        ctx.execute("DELETE FROM t WHERE a = 1")
+    assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2]
+
+    # registering it again restores it
+    ctx.register("t", pl.LazyFrame({"a": [1, 2]}))
+    assert ctx.execute("SELECT count(*) FROM t", eager=True).item() == 2
+
+
+def test_delete_table_name_case() -> None:
+    frames = {
+        "Foo": pl.LazyFrame({"x": ["Foo", "Foo"]}),
+        "FOO": pl.LazyFrame({"x": ["FOO"]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        # the exact name wins
+        ctx.execute("DELETE FROM FOO")
+        assert ctx.execute("SELECT count(*) FROM FOO", eager=True).item() == 0
+        assert ctx.execute("SELECT count(*) FROM Foo", eager=True).item() == 2
+        with pytest.raises(SQLInterfaceError, match=r"foo.*matches more than one"):
+            ctx.execute("DELETE FROM foo")
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        (
+            "DELETE FROM (SELECT * FROM t) AS s WHERE a = 1",
+            "DELETE requires a registered table",
+        ),
+        ("DELETE FROM missing", "relation 'missing' was not found"),
+        # refused before its condition is checked
+        ("DELETE FROM v WHERE a = 'x'", "DELETE requires a registered table; 'v'"),
+    ],
+)
+def test_delete_requires_registered_table(query: str, error: str) -> None:
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1]})}) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(SQLInterfaceError, match=error):
+            ctx.execute(query)
+        assert ctx.execute("SELECT count(*) FROM t", eager=True).item() == 1
+
+
+@pytest.mark.parametrize(
+    ("condition", "error"),
+    [
+        ("missing = 1", pl.exceptions.ColumnNotFoundError),
+        ("a IN (SELECT s FROM u)", pl.exceptions.InvalidOperationError),
+    ],
+)
+def test_delete_failure_leaves_table_unchanged(
+    condition: str, error: type[Exception]
+) -> None:
+    frames = {"t": pl.LazyFrame({"a": [1, 2]}), "u": pl.LazyFrame({"s": ["x"]})}
+    with pl.SQLContext(frames) as ctx:
+        with pytest.raises(error):
+            ctx.execute(f"DELETE FROM t WHERE {condition}")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [1, 2]
+        ctx.execute("DELETE FROM t WHERE a = 1")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2]
+
+
+@pytest.mark.parametrize(
+    ("condition", "error"),
+    [
+        ("a = 'x'", pl.exceptions.ComputeError),
+        ("CAST(s AS INT) = 1", pl.exceptions.InvalidOperationError),
+    ],
+)
+def test_delete_condition_failing_on_read(
+    condition: str, error: type[Exception]
+) -> None:
+    # other errors show when the rows are read, on every read of the table
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2], "s": ["1", "x"]})}) as ctx:
+        ctx.execute(f"DELETE FROM t WHERE {condition}")
+        with pytest.raises(error):
+            ctx.execute("SELECT * FROM t", eager=True)
+
+
+def test_delete_reads_no_data() -> None:
+    # a lazy DELETE reads no source, also not the tables of its subqueries
+    def fail(df: pl.DataFrame) -> pl.DataFrame:
+        msg = "source was read"
+        raise RuntimeError(msg)
+
+    source = pl.LazyFrame({"a": [1, 2]}).map_batches(fail, schema={"a": pl.Int64})
+    with pl.SQLContext({"t": source, "u": source}) as ctx:
+        ctx.execute("DELETE FROM t WHERE a IN (SELECT a FROM u)")

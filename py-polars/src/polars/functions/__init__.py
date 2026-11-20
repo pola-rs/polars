@@ -45,6 +45,7 @@ from polars.functions.lazy import (
     cum_count,
     cum_fold,
     cum_reduce,
+    date_diff,
     element,
     exclude,
     explain_all,
@@ -148,6 +149,7 @@ __all__ = [
     "cum_fold",
     "cum_reduce",
     "date",  # named date_, see import above
+    "date_diff",
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",

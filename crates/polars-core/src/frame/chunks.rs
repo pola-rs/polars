@@ -55,7 +55,9 @@ impl DataFrame {
                 .iter()
                 .map(|col| match col {
                     Column::Series(s) => Column::from(s.select_chunk(i)),
-                    Column::Scalar(_) => col.slice(prev_height as i64, chunk_size),
+                    Column::Scalar(_) | Column::Dictionary(_) => {
+                        col.slice((prev_height, chunk_size))
+                    },
                 })
                 .collect::<Vec<_>>();
 
@@ -68,7 +70,7 @@ impl DataFrame {
     pub fn split_chunks_by_n(self, n: usize, parallel: bool) -> Vec<DataFrame> {
         let split = _split_offsets(self.height(), n);
 
-        let split_fn = |(offset, len)| self.slice(offset as i64, len);
+        let split_fn = |(offset, len)| self.slice((offset, len));
 
         if parallel {
             // Parallel so that null_counts run in parallel

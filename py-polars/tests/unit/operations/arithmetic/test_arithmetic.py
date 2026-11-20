@@ -900,6 +900,40 @@ def test_literal_subtract_schema_13284() -> None:
     ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.get_index_type())])
 
 
+@pytest.mark.parametrize(
+    ("expr", "dtype"),
+    [
+        (pl.lit(-1) * pl.len(), pl.Int64),
+        (pl.lit(-1) * pl.col("u64"), pl.Int64),
+        (pl.lit(-1) // pl.col("u64"), pl.Int64),
+        (pl.lit(-1) % pl.col("u64"), pl.Int64),
+        (pl.lit(-1) * pl.col("u8"), pl.Int16),
+        (pl.lit(300) * pl.col("u8"), pl.UInt16),
+        (pl.lit(2**40) * pl.col("i32"), pl.Int64),
+        (pl.lit(-1) & pl.col("u8"), pl.Int16),
+        (pl.lit(300) | pl.col("u8"), pl.UInt16),
+        (pl.lit(-1) ^ pl.col("u64"), pl.Int64),
+        (pl.col("u64") * pl.lit(-1), pl.Int64),
+        (pl.lit(-1) + pl.col("u64"), pl.Int64),
+        (pl.lit(1) * pl.col("u64"), pl.UInt64),
+        (pl.lit(1) * pl.col("u8"), pl.UInt8),
+        (pl.lit(1.5) * pl.col("f32"), pl.Float32),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_literal_lhs_arithmetic_schema(
+    expr: pl.Expr, dtype: PolarsDataType, engine: EngineType
+) -> None:
+    # When the literal doesn't fit the column dtype, the result has the supertype of
+    # both, e.g. Int16 for -1 * UInt8. The planned schema must say the same.
+    lf = pl.LazyFrame(
+        {"u64": [1, 2], "u8": [1, 2], "i32": [1, 2], "f32": [1.0, 2.0]},
+        schema={"u64": pl.UInt64, "u8": pl.UInt8, "i32": pl.Int32, "f32": pl.Float32},
+    ).select(o=expr)
+    assert lf.collect_schema() == {"o": dtype}
+    assert lf.collect(engine=engine).schema == {"o": dtype}
+
+
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_int_operator_stability(dtype: pl.DataType) -> None:
     s = pl.Series(values=[10], dtype=dtype)
@@ -1360,6 +1394,50 @@ def test_string_add_concatenates(other: Any, expected: list[str]) -> None:
     assert (s + other).to_list() == expected
 
 
+@pytest.mark.parametrize(
+    "left",
+    [
+        "i8",
+        "u8",
+        "i64",
+        "f16",
+        "f32",
+        "f64",
+        "bool",
+        "dec",
+        "lst",
+        "lit_int",
+        "lit_flt",
+    ],
+)
+@pytest.mark.parametrize("right", ["dur", "dt", "d", "t"])
+def test_truediv_numeric_by_temporal_raises(left: str, right: str) -> None:
+    lf = pl.LazyFrame(
+        {
+            "i8": pl.Series([2], dtype=pl.Int8),
+            "u8": pl.Series([2], dtype=pl.UInt8),
+            "i64": pl.Series([2], dtype=pl.Int64),
+            "f16": pl.Series([2.0], dtype=pl.Float16),
+            "f32": pl.Series([2.0], dtype=pl.Float32),
+            "f64": pl.Series([2.0], dtype=pl.Float64),
+            "bool": [True],
+            "dec": pl.Series([2]).cast(pl.Decimal(10, 2)),
+            "lst": pl.Series([[2]], dtype=pl.List(pl.Int64)),
+            "dur": pl.Series([1]).cast(pl.Duration("us")),
+            "dt": pl.Series([1]).cast(pl.Datetime("us")),
+            "d": pl.Series([1], dtype=pl.Int32).cast(pl.Date),
+            "t": pl.Series([1]).cast(pl.Time),
+        }
+    )
+    lefts = {"lit_int": pl.lit(2), "lit_flt": pl.lit(2.0)}
+    q = lf.select(r=lefts.get(left, pl.col(left)) / pl.col(right))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="is not allowed"):
+        q.collect_schema()
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        q.collect()
+
+
 @pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32])
 def test_truediv_int_literal_float_schema(float_dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"f": [4.0]}, schema={"f": float_dtype}).select(
@@ -1400,3 +1478,25 @@ def test_reflected_arithmetic_series_27752() -> None:
     assert_series_equal(lhs.__rmod__(rhs), rhs % lhs)
     assert_series_equal(lhs.__rpow__(rhs), rhs**lhs)
     assert_series_equal(lhs.__rsub__(np.array([5, 7, 9])), pl.Series("lhs", [3, 4, 5]))
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+@pytest.mark.parametrize("value", [2**64, -(2**64), 2**99, -(2**99)])
+def test_add_large_dyn_int_to_typed_int_20829(
+    dtype: PolarsIntegerType, value: int
+) -> None:
+    result = pl.select(pl.lit(1, dtype=dtype) + pl.lit(value))
+    expected_dtype = (
+        pl.UInt128 if dtype in UNSIGNED_INTEGER_DTYPES and value > 0 else pl.Int128
+    )
+    expected = pl.DataFrame(
+        {"literal": [value + 1]}, schema={"literal": expected_dtype}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_add_large_dyn_int_to_uint128_20829() -> None:
+    df = pl.DataFrame({"a": [2**127]}, schema={"a": pl.UInt128})
+    result = df.select(pl.col("a") + 2**70)
+    expected = pl.DataFrame({"a": [2**127 + 2**70]}, schema={"a": pl.UInt128})
+    assert_frame_equal(result, expected)

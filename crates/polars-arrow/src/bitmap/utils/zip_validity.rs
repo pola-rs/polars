@@ -56,6 +56,19 @@ where
             .zip(value)
             .map(|(is_valid, value)| is_valid.then(|| value))
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut values = self.values;
+        self.validity
+            .fold(init, |acc, is_valid| match values.next() {
+                Some(value) => f(acc, is_valid.then_some(value)),
+                None => acc,
+            })
+    }
 }
 
 impl<T, I, V> DoubleEndedIterator for ZipValidityIter<T, I, V>
@@ -164,6 +177,17 @@ where
             Self::Optional(zipped) => zipped.nth(n),
         }
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        match self {
+            Self::Required(values) => values.fold(init, |acc, value| f(acc, Some(value))),
+            Self::Optional(zipped) => zipped.fold(init, f),
+        }
+    }
 }
 
 impl<T, I, V> DoubleEndedIterator for ZipValidity<T, I, V>
@@ -176,6 +200,17 @@ where
         match self {
             Self::Required(values) => values.next_back().map(Some),
             Self::Optional(zipped) => zipped.next_back(),
+        }
+    }
+
+    #[inline]
+    fn rfold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        match self {
+            Self::Required(values) => values.rfold(init, |acc, value| f(acc, Some(value))),
+            Self::Optional(zipped) => zipped.rfold(init, f),
         }
     }
 }

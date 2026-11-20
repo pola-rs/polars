@@ -30,6 +30,7 @@ impl fmt::Display for Expr {
 }
 
 impl fmt::Debug for Expr {
+    #[recursive::recursive]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {

@@ -22,14 +22,15 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, Fetch, GroupByExpr, Ident,
     LimitClause, NamedWindowDefinition, NamedWindowExpr, OrderByKind, Query, Select, SelectItem,
-    SetExpr, Statement, TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator,
-    Value as SQLValue, ValueWithSpan, Visitor, VisitorMut, WindowSpec, WindowType,
+    SetExpr, TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
+    ValueWithSpan, VisitMut, Visitor, VisitorMut, WindowSpec, WindowType,
 };
 
 use crate::catalog::CatalogSpellings;
 use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
-    declared_relations, flatten_and_conditions, get_table_name, match_qualifier, relation_name,
+    declared_relations, flatten_and_conditions, get_table_name, join_idents, match_qualifier,
+    relation_name,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::functions::PolarsSQLFunctions;
@@ -220,7 +221,10 @@ impl SQLContext {
             left_keys.push(key);
         }
 
-        let mut inner_lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
+        let mut inner_lf = self.execute_isolated(|ctx| {
+            ctx.nesting += 1;
+            ctx.execute_query(subquery)
+        })?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
         if left_keys.len() == 1 {
             polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
@@ -576,9 +580,66 @@ impl SQLContext {
             )?;
         }
         self.set_join_base(&select.from);
-        self.check_select_column_refs(select)?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
+        self.check_select_column_refs(select, &inner_schema)?;
         Ok(Some((inner_names, inner_lf, inner_schema)))
+    }
+
+    /// The error for a dotted name of `subquery` whose first part names no relation or
+    /// column of the subquery, nor of this query (`outer_schema`), as this query reports
+    /// it. Only for a subquery that no other subquery encloses, whose names can't read a
+    /// scope further out; names in nested subqueries are not checked.
+    pub(crate) fn unknown_qualifier_err(
+        &self,
+        subquery: &Query,
+        outer_schema: Option<&Schema>,
+    ) -> Option<PolarsError> {
+        let SetExpr::Select(select) = subquery.body.as_ref() else {
+            return None;
+        };
+        if self.nesting > 0 {
+            return None;
+        }
+        let mut inner = self.isolated();
+        let (inner_names, _, inner_schema) = inner.resolve_subquery_from(select).ok()??;
+        let known = |parts: &[Ident]| {
+            match_qualifier(parts, inner_names.iter()).is_some()
+                || inner_schema.contains(&parts[0].value)
+                // An ambiguous qualifier is an error of its own, raised elsewhere.
+                || !matches!(self.resolve_qualifier(parts), Ok(None))
+                || outer_schema.is_some_and(|schema| schema.contains(&parts[0].value))
+        };
+        let projection = select.projection.iter().filter_map(|item| match item {
+            SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
+            _ => None,
+        });
+        let mut unknown = None;
+        for expr in projection.chain(&select.selection).chain(&select.having) {
+            let _ = visit_top_level_compound_idents(expr, |parts| {
+                if known(parts) {
+                    return ControlFlow::Continue(());
+                }
+                unknown = Some(parts.to_vec());
+                ControlFlow::Break(())
+            });
+            if unknown.is_some() {
+                break;
+            }
+        }
+        let parts = unknown?;
+        let hint = (1..parts.len())
+            .rev()
+            .find_map(|len| {
+                let qualifier = join_idents(&parts[..len]);
+                inner
+                    .hidden_by_alias_hint(&qualifier)
+                    .or_else(|| self.hidden_by_alias_hint(&qualifier))
+            })
+            .unwrap_or_default();
+        Some(polars_err!(
+            SQLInterface: "no table or struct column named '{}' found{}",
+            parts[0], hint
+        ))
     }
 
     // Split a subquery's WHERE conjuncts into a `SubqueryConjuncts`, or `None`
@@ -908,17 +969,14 @@ impl SQLContext {
             if ob.with_fill.is_some() || expr_has_window_functions(&ob.expr) {
                 return Ok(None);
             }
-            let mut expr = &ob.expr;
-            while let SQLExpr::Nested(inner) = expr {
-                expr = inner;
-            }
-            // The output column, by name or by position.
+            let expr = strip_nested(&ob.expr);
+            // The output column, by name or by position. A number in parentheses is no position.
             let is_output = match expr {
                 SQLExpr::Identifier(ident) => alias.is_some_and(|a| a.value == ident.value),
                 SQLExpr::Value(ValueWithSpan {
                     value: SQLValue::Number(n, _),
                     ..
-                }) => {
+                }) if !matches!(ob.expr, SQLExpr::Nested(_)) => {
                     if n != "1" {
                         return Ok(None);
                     }
@@ -2285,34 +2343,40 @@ impl SQLContext {
 
         let flag_name = format_pl_smallstr!("{prefix}exists");
         let uncorrelated_where = corr_preds.is_empty() && general.is_empty();
+        let Some(aggregates) =
+            exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema)
+        else {
+            return Ok(None);
+        };
+        if aggregates {
+            // The rows are not read, but the inner filters must still be valid.
+            let mut filtered = local_filters
+                .iter()
+                .cloned()
+                .fold(inner_lf.clone(), LazyFrame::filter);
+            ctx.get_frame_schema(&mut filtered)?;
+        }
         // An uncorrelated subquery is one value, which `visit_exists` takes.
         if uncorrelated_where && !is_correlated_subquery(subquery, self.catalog_spellings()) {
-            let exists =
-                match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
-                    None => return Ok(None),
-                    Some(true) => lit(true),
-                    Some(false) => {
-                        let inner = local_filters
-                            .into_iter()
-                            .fold(inner_lf, LazyFrame::filter)
-                            .select([len().gt(lit(0))]);
-                        inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
-                        reduced_subquery(inner, first().as_expr().item(true))
-                    },
-                };
+            let exists = if aggregates {
+                lit(true)
+            } else {
+                let inner = local_filters
+                    .into_iter()
+                    .fold(inner_lf, LazyFrame::filter)
+                    .select([len().gt(lit(0))]);
+                inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+                reduced_subquery(inner, first().as_expr().item(true))
+            };
             self.exists_values.push((subquery.clone(), exists));
             return Ok(None);
         }
-        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
-            None => return Ok(None),
-            // An aggregate without GROUP BY returns one row, even over no rows.
-            Some(true) => {
-                return Ok(Some((
-                    lf.with_column(lit(true).alias(flag_name.clone())),
-                    flag_name,
-                )));
-            },
-            Some(false) => {},
+        // An aggregate without GROUP BY returns one row, even over no rows.
+        if aggregates {
+            return Ok(Some((
+                lf.with_column(lit(true).alias(flag_name.clone())),
+                flag_name,
+            )));
         }
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
@@ -2824,7 +2888,8 @@ fn correlation_key_pair(
 
 // Whether every column the expression references resolves to the inner relation,
 // so it can be evaluated against the inner frame alone. A qualified name resolves
-// through its qualifier: only an inner relation's name or alias counts as inner.
+// through its qualifier: an inner relation's name or alias, or an inner struct
+// column, counts as inner.
 // An unqualified name binds to the innermost scope that has it, so the inner
 // schema wins over the outer one.
 fn binds_to_inner_relation(
@@ -2898,8 +2963,12 @@ fn binds_to_inner_column(
 ) -> bool {
     match expr {
         SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),
-        SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, inner_names.iter())
-            .is_some_and(|(_, len)| inner_schema.contains(&parts[len].value)),
+        SQLExpr::CompoundIdentifier(parts) => match match_qualifier(parts, inner_names.iter()) {
+            Some((_, len)) => inner_schema.contains(&parts[len].value),
+            // A field of an inner struct column (`s.f`), which an outer relation `s`
+            // doesn't hide.
+            None => matches!(inner_schema.get(&parts[0].value), Some(DataType::Struct(_))),
+        },
         _ => true,
     }
 }
@@ -3148,7 +3217,7 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
 // `FETCH FIRST 1 ROW ONLY`, `Some(false)` without a limit, `None` for any other
 // limit.
 pub(crate) fn first_row_limit(subquery: &Query) -> Option<bool> {
-    let is_one = |e: &SQLExpr| matches!(e, SQLExpr::Value(ValueWithSpan { value: SQLValue::Number(n, _), .. }) if n == "1");
+    let is_one = |e: &SQLExpr| matches!(strip_nested(e), SQLExpr::Value(ValueWithSpan { value: SQLValue::Number(n, _), .. }) if n == "1");
     match (&subquery.limit_clause, &subquery.fetch) {
         (None, None) => Some(false),
         (
@@ -3174,7 +3243,7 @@ pub(crate) fn first_row_limit(subquery: &Query) -> Option<bool> {
 // The rows the `LIMIT`/`OFFSET` or `FETCH FIRST` of `subquery` keeps, as an offset and a
 // count: `Some(None)` without a limit, `None` for one that isn't literal counts.
 fn literal_row_range(subquery: &Query) -> Option<Option<(u64, u64)>> {
-    let count = |e: &SQLExpr| match e {
+    let count = |e: &SQLExpr| match strip_nested(e) {
         SQLExpr::Value(ValueWithSpan {
             value: SQLValue::Number(n, _),
             ..
@@ -3583,6 +3652,40 @@ pub(crate) fn quantified_as_exists(ctx: &SQLContext, conj: &SQLExpr) -> Option<S
     })
 }
 
+/// Visit the dotted names of `expr` outside its nested subqueries.
+fn visit_top_level_compound_idents(
+    expr: &SQLExpr,
+    f: impl FnMut(&[Ident]) -> ControlFlow<()>,
+) -> ControlFlow<()> {
+    struct TopLevel<F> {
+        query_depth: usize,
+        f: F,
+    }
+
+    impl<F: FnMut(&[Ident]) -> ControlFlow<()>> Visitor for TopLevel<F> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match expr {
+                SQLExpr::CompoundIdentifier(parts) if self.query_depth == 0 => (self.f)(parts),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    dyn_visit::visit(expr, &mut TopLevel { query_depth: 0, f })
+}
+
 /// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`
 /// to `x NOT IN (subquery)`, which they are equivalent to.
 struct DesugarQuantified;
@@ -3617,8 +3720,8 @@ impl VisitorMut for DesugarQuantified {
     }
 }
 
-pub(crate) fn desugar_quantified_subqueries(stmt: &mut Statement) {
-    let _ = dyn_visit::visit_mut(stmt, &mut DesugarQuantified);
+pub(crate) fn desugar_quantified_subqueries(node: &mut impl VisitMut) {
+    let _ = dyn_visit::visit_mut(node, &mut DesugarQuantified);
 }
 
 /// Which correlated-subquery node kinds a lowering pass should claim.
@@ -3963,6 +4066,14 @@ fn correlation_keys(
             _ => None,
         };
         let Some((outer_cast, inner_cast)) = cast else {
+            // Group-by keys need distinct names, so a repeated inner column is copied.
+            let inner_key = if inner_on.contains(&inner_key) {
+                let inner_name = format_pl_smallstr!("{prefix}ikey{i}");
+                *inner = std::mem::take(inner).with_column(inner_key.alias(inner_name.clone()));
+                col(inner_name)
+            } else {
+                inner_key
+            };
             outer_on.push(outer_key);
             inner_on.push(inner_key);
             continue;

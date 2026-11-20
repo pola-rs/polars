@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import csv
 import gzip
 import io
+import random
 import re
 import sys
 import textwrap
@@ -33,7 +35,7 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
-    from polars._typing import CsvQuoteStyle, TimeUnit
+    from polars._typing import CsvQuoteStyle, EngineType, TimeUnit
     from tests.conftest import PlMonkeyPatch
 
 
@@ -3320,3 +3322,65 @@ A|B|C|D
         pl.scan_csv(f, has_header=False, new_columns=headers).collect(),
         pl.DataFrame({"a": 1, "b": 2, "c": 3, "d": 4}),
     )
+
+
+@pytest.mark.parametrize("eol", ["\n", "\r\n"])
+@pytest.mark.parametrize("columns", [None, ["c0", "c2"]])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_read_csv_short_mixed_quoted_fields(
+    eol: str, columns: list[str] | None, engine: EngineType
+) -> None:
+    rng = random.Random(0)
+    values = ["", "1", "ab", "xyz12", '""', '"q"', '"a,b"', '"x\ny"', '"a""b"', '","']
+    n_cols = 4
+    lines = [",".join(f"c{i}" for i in range(n_cols))]
+    lines += [",".join(rng.choice(values) for _ in range(n_cols)) for _ in range(500)]
+    data = eol.join(lines) + eol
+
+    rows = list(csv.reader(io.StringIO(data, newline="")))
+    header, body = rows[0], rows[1:]
+    expected = pl.DataFrame(
+        {name: [row[i] for row in body] for i, name in enumerate(header)},
+        schema=dict.fromkeys(header, pl.String),
+    )
+    if columns is not None:
+        expected = expected.select(columns)
+
+    out = (
+        pl.scan_csv(data.encode(), infer_schema=False, empty_string_is_null=False)
+        .select(columns or pl.all())
+        .collect(engine=engine)
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_read_csv_quote_char_inside_unquoted_field(engine: EngineType) -> None:
+    lines = ["c0,c1,c2,c3,c4"]
+    for pad in range(70):
+        lines.append(f'{"a" * pad},"",b",c",x')
+        lines.append(f'{"a" * pad},b",c",d,x')
+    data = "\n".join(lines) + "\n"
+
+    rows = list(csv.reader(io.StringIO(data, newline="")))
+    header, body = rows[0], rows[1:]
+    expected = pl.DataFrame(
+        {name: [row[i] for row in body] for i, name in enumerate(header)},
+        schema=dict.fromkeys(header, pl.String),
+    )
+
+    out = pl.scan_csv(
+        data.encode(), infer_schema=False, empty_string_is_null=False
+    ).collect(engine=engine)
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_read_csv_shared_categories_row_order(engine: EngineType) -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Categorical(cats)
+    out = pl.scan_csv(b"a,b\nx,z\ny,x\n", schema={"a": dtype, "b": dtype}).collect(
+        engine=engine
+    )
+    assert out["a"].to_physical().to_list() == [0, 2]
+    assert out["b"].to_physical().to_list() == [1, 0]

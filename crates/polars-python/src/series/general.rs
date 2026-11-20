@@ -452,8 +452,11 @@ impl PySeries {
     #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let s = self.series.read();
-        let length = length.unwrap_or(usize::MAX);
-        s.slice(offset, length).into()
+        match Slice::new(offset, length) {
+            Some(slice) => s.slice(slice),
+            None => s.clone(),
+        }
+        .into()
     }
 
     pub fn not_(&self, py: Python) -> PyResult<Self> {

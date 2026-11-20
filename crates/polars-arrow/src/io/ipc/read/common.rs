@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use polars_error::{PolarsResult, polars_bail, polars_err};
@@ -7,10 +6,10 @@ use polars_utils::bool::UnsafeBool;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::Dictionaries;
-use super::deserialize::{read, skip};
+use super::deserialize::{read_pruned, skip};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, ArrowSchema, Field};
-use crate::io::ipc::read::OutOfSpecKind;
+use crate::io::ipc::read::{OutOfSpecKind, ReadSeek};
 use crate::io::ipc::{IpcField, IpcSchema};
 use crate::record_batch::RecordBatchT;
 
@@ -76,7 +75,7 @@ impl<A, I: Iterator<Item = A>> Iterator for ProjectionIter<'_, A, I> {
 /// # Panic
 /// Panics iff the projection is not in increasing order (e.g. `[1, 0]` nor `[0, 1, 1]` are valid)
 #[allow(clippy::too_many_arguments)]
-pub fn read_record_batch<R: Read + Seek>(
+pub fn read_record_batch(
     batch: polars_arrow_format::ipc::RecordBatchRef,
     fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
@@ -84,11 +83,49 @@ pub fn read_record_batch<R: Read + Seek>(
     limit: Option<usize>,
     dictionaries: &Dictionaries,
     version: polars_arrow_format::ipc::MetadataVersion,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     scratch: &mut Vec<u8>,
     checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
+    read_record_batch_pruned(
+        batch,
+        fields,
+        ipc_schema,
+        projection,
+        None,
+        limit,
+        dictionaries,
+        version,
+        reader,
+        block_offset,
+        scratch,
+        checked,
+    )
+}
+
+/// [`read_record_batch`], reading the columns with a dtype in `pruned_dtypes` (indexed like
+/// `fields`) as that dtype: struct columns with only some of their fields (see
+/// [`read_pruned`]).
+#[allow(clippy::too_many_arguments)]
+pub fn read_record_batch_pruned(
+    batch: polars_arrow_format::ipc::RecordBatchRef,
+    fields: &ArrowSchema,
+    ipc_schema: &IpcSchema,
+    projection: Option<&[usize]>,
+    pruned_dtypes: Option<&[Option<ArrowDataType>]>,
+    limit: Option<usize>,
+    dictionaries: &Dictionaries,
+    version: polars_arrow_format::ipc::MetadataVersion,
+    reader: &mut dyn ReadSeek,
+    block_offset: u64,
+    scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
+) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
+    if let Some(pruned_dtypes) = pruned_dtypes {
+        assert_eq!(pruned_dtypes.len(), fields.len());
+    }
+    let pruned_dtype = |i: usize| pruned_dtypes.and_then(|pruned_dtypes| pruned_dtypes[i].as_ref());
     assert_eq!(fields.len(), ipc_schema.fields.len());
     let buffers = batch
         .buffers()
@@ -110,15 +147,19 @@ pub fn read_record_batch<R: Read + Seek>(
     let columns = if let Some(projection) = projection {
         let projection = ProjectionIter::new(
             projection,
-            fields.iter_values().zip(ipc_schema.fields.iter()),
+            fields
+                .iter_values()
+                .zip(ipc_schema.fields.iter())
+                .enumerate(),
         );
 
         projection
             .map(|maybe_field| match maybe_field {
-                ProjectionResult::Selected((field, ipc_field)) => Ok(Some(read(
+                ProjectionResult::Selected((i, (field, ipc_field))) => Ok(Some(read_pruned(
                     &mut field_nodes,
                     &mut variadic_buffer_counts,
                     field,
+                    pruned_dtype(i).unwrap_or(&field.dtype),
                     ipc_field,
                     &mut buffers,
                     reader,
@@ -133,7 +174,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     scratch,
                     checked,
                 )?)),
-                ProjectionResult::NotSelected((field, _)) => {
+                ProjectionResult::NotSelected((_, (field, _))) => {
                     skip(
                         &mut field_nodes,
                         &field.dtype,
@@ -149,11 +190,13 @@ pub fn read_record_batch<R: Read + Seek>(
         fields
             .iter_values()
             .zip(ipc_schema.fields.iter())
-            .map(|(field, ipc_field)| {
-                read(
+            .enumerate()
+            .map(|(i, (field, ipc_field))| {
+                read_pruned(
                     &mut field_nodes,
                     &mut variadic_buffer_counts,
                     field,
+                    pruned_dtype(i).unwrap_or(&field.dtype),
                     ipc_field,
                     &mut buffers,
                     reader,
@@ -180,7 +223,14 @@ pub fn read_record_batch<R: Read + Seek>(
         .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
     let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
-    let mut schema: ArrowSchema = fields.iter_values().cloned().collect();
+    let mut schema: ArrowSchema = fields
+        .iter_values()
+        .enumerate()
+        .map(|(i, field)| match pruned_dtype(i) {
+            Some(dtype) => field.with_dtype(dtype.clone()),
+            None => field.clone(),
+        })
+        .collect();
     if let Some(projection) = projection {
         schema = schema.try_project_indices(projection).unwrap();
     }
@@ -250,12 +300,12 @@ pub(crate) fn first_dict_field<'a>(
 /// Reads a dictionary from the reader,
 /// updating `dictionaries` with the resulting dictionary
 #[allow(clippy::too_many_arguments)]
-pub fn read_dictionary<R: Read + Seek>(
+pub fn read_dictionary(
     batch: polars_arrow_format::ipc::DictionaryBatchRef,
     fields: &ArrowSchema,
     ipc_schema: &IpcSchema,
     dictionaries: &mut Dictionaries,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
     block_offset: u64,
     scratch: &mut Vec<u8>,
     checked: UnsafeBool,

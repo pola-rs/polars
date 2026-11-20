@@ -48,13 +48,13 @@ pub fn materialize_left_join_from_series(
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let mut s_left = s_left.clone();
     // Eagerly limit left if possible.
-    if let Some((0, len)) = args.slice {
+    if let Some(Slice::Positive { offset: 0, len }) = args.slice {
         if !matches!(
             args.maintain_order,
             MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
         ) {
-            left = left.slice(0, len);
-            s_left = s_left.slice(0, len);
+            left = left.slice(Slice::head(len));
+            s_left = s_left.slice(Slice::head(len));
         }
     }
 
@@ -65,7 +65,16 @@ pub fn materialize_left_join_from_series(
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
     );
     let chunks_match_key = |df: &DataFrame, s: &Series| {
-        !df.should_rechunk() && df.chunk_lengths().eq(s.chunk_lengths())
+        // Dictionary columns are ignored by the frame's chunk-alignment checks, but their
+        // materialized chunks must also match the key before gathering by chunk-local ids.
+        df.columns()
+            .iter()
+            .filter(|c| c.as_scalar_column().is_none())
+            .all(|c| {
+                c.as_materialized_series()
+                    .chunk_lengths()
+                    .eq(s.chunk_lengths())
+            })
     };
 
     let mut right = Cow::Borrowed(right_);
@@ -209,8 +218,8 @@ fn materialize_left_join_idx_left(
     left_idx: &[IdxSize],
     args: &JoinArgs,
 ) -> DataFrame {
-    let left_idx = if let Some((offset, len)) = args.slice {
-        slice_slice(left_idx, offset, len)
+    let left_idx = if let Some(slice) = args.slice {
+        &left_idx[slice]
     } else {
         left_idx
     };
@@ -237,8 +246,8 @@ fn materialize_left_join_idx_right(
     right_idx: &[NullableIdxSize],
     args: &JoinArgs,
 ) -> DataFrame {
-    let right_idx = if let Some((offset, len)) = args.slice {
-        slice_slice(right_idx, offset, len)
+    let right_idx = if let Some(slice) = args.slice {
+        &right_idx[slice]
     } else {
         right_idx
     };
@@ -250,8 +259,8 @@ fn materialize_left_join_chunked_left(
     left_idx: &[ChunkId],
     args: &JoinArgs,
 ) -> DataFrame {
-    let left_idx = if let Some((offset, len)) = args.slice {
-        slice_slice(left_idx, offset, len)
+    let left_idx = if let Some(slice) = args.slice {
+        &left_idx[slice]
     } else {
         left_idx
     };
@@ -264,8 +273,8 @@ fn materialize_left_join_chunked_right(
     right_idx: &[ChunkId],
     args: &JoinArgs,
 ) -> DataFrame {
-    let right_idx = if let Some((offset, len)) = args.slice {
-        slice_slice(right_idx, offset, len)
+    let right_idx = if let Some(slice) = args.slice {
+        &right_idx[slice]
     } else {
         right_idx
     };

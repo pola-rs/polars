@@ -1065,6 +1065,66 @@ def test_round_int() -> None:
         pytest.param(
             pl.Series([0.0]), 2, pl.Series([0.0]), id="0 should remain the same"
         ),
+        pytest.param(
+            pl.Series([123456789, 234567890]),
+            4,
+            pl.Series([123500000, 234600000]),
+            id="i64 beyond f64 precision",
+        ),
+        pytest.param(
+            pl.Series([-123456789, 0, 7]),
+            2,
+            pl.Series([-120000000, 0, 7]),
+            id="i64 negative and small",
+        ),
+        pytest.param(
+            pl.Series([125, -125, 124], dtype=pl.Int16),
+            2,
+            pl.Series([130, -130, 120], dtype=pl.Int16),
+            id="i16 ties away from zero",
+        ),
+        pytest.param(
+            pl.Series([2**63 - 1, -(2**63)]),
+            3,
+            pl.Series([922 * 10**16, -922 * 10**16]),
+            id="i64 min max",
+        ),
+        pytest.param(
+            pl.Series([2**64 - 1], dtype=pl.UInt64),
+            18,
+            pl.Series([18446744073709551600], dtype=pl.UInt64),
+            id="u64 max",
+        ),
+        pytest.param(
+            pl.Series([2**127 - 1, -(2**127)], dtype=pl.Int128),
+            37,
+            pl.Series(
+                [
+                    170141183460469231731687303715884105700,
+                    -170141183460469231731687303715884105700,
+                ],
+                dtype=pl.Int128,
+            ),
+            id="i128 min max",
+        ),
+        pytest.param(
+            pl.Series([-(2**127)], dtype=pl.Int128),
+            3,
+            pl.Series([-17 * 10**37], dtype=pl.Int128),
+            id="i128 min",
+        ),
+        pytest.param(
+            pl.Series([2**128 - 1], dtype=pl.UInt128),
+            2,
+            pl.Series([34 * 10**37], dtype=pl.UInt128),
+            id="u128 max",
+        ),
+        pytest.param(
+            pl.Series([127, None], dtype=pl.Int8),
+            1,
+            pl.Series([100, None], dtype=pl.Int8),
+            id="i8 with null",
+        ),
     ],
 )
 def test_round_sig_figs(
@@ -1072,6 +1132,21 @@ def test_round_sig_figs(
 ) -> None:
     result = series.round_sig_figs(digits=digits)
     assert_series_equal(result, expected_result)
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "digits", "expected"),
+    [
+        ([126, -128, 15], pl.Int8, 2, [None, None, 15]),
+        ([2**64 - 1, 15], pl.UInt64, 1, [None, 20]),
+        ([2**127 - 1, 15], pl.Int128, 38, [None, 15]),
+    ],
+)
+def test_round_sig_figs_int_overflow_is_null(
+    values: list[int], dtype: pl.DataType, digits: int, expected: list[int | None]
+) -> None:
+    result = pl.Series(values, dtype=dtype).round_sig_figs(digits=digits)
+    assert_series_equal(result, pl.Series(expected, dtype=dtype))
 
 
 def test_round_sig_figs_raises_exc() -> None:

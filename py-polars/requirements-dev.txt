@@ -15,7 +15,7 @@ pip
 # DEPENDENCIES
 # ------------
 
-polars-cloud
+polars-nanook
 # Interop
 numba >= 0.54
 numpy
@@ -31,6 +31,7 @@ adbc-driver-manager; platform_system != 'Windows'
 adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
 connectorx>=0.4.5
+sqlglot
 # Cloud
 azure-identity
 boto3

@@ -54,7 +54,10 @@ pub(super) fn convert_functions(
                     needle_cast: None,
                 },
                 #[cfg(feature = "array_count")]
-                A::CountMatches => IA::CountMatches,
+                A::CountMatches => {
+                    polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'element' must be a scalar value");
+                    IA::CountMatches
+                },
                 A::Shift => IA::Shift,
                 A::Explode(options) => IA::Explode(options),
                 A::Concat => IA::Concat,
@@ -210,7 +213,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "list_gather")]
                 L::GatherEvery => IL::GatherEvery,
                 #[cfg(feature = "list_count")]
-                L::CountMatches => IL::CountMatches,
+                L::CountMatches => {
+                    polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'element' must be a scalar value");
+                    IL::CountMatches
+                },
                 L::Sum => IL::Sum,
                 L::Length => IL::Length,
                 L::Max => IL::Max,
@@ -240,7 +246,11 @@ pub(super) fn convert_functions(
             use IRStringFunction as IS;
             use StringFunction as S;
             I::StringExpr(match string_function {
-                S::Format { format, insertions } => {
+                S::Format {
+                    format,
+                    insertions,
+                    specs,
+                } => {
                     if input_is_empty {
                         polars_ensure!(
                             insertions.is_empty(),
@@ -254,7 +264,11 @@ pub(super) fn convert_functions(
 
                         return Ok((out, get_literal_name()));
                     } else {
-                        IS::Format { format, insertions }
+                        IS::Format {
+                            format,
+                            insertions,
+                            specs,
+                        }
                     }
                 },
                 #[cfg(feature = "concat_str")]
@@ -287,6 +301,7 @@ pub(super) fn convert_functions(
                 S::ToInteger { dtype, strict } => IS::ToInteger { dtype, strict },
                 S::LenBytes => IS::LenBytes,
                 S::LenChars => IS::LenChars,
+                S::FromCodePoint => IS::FromCodePoint,
                 S::Lowercase => IS::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 S::JsonDecode(dtype) => IS::JsonDecode(dtype.into_datatype(ctx.schema)?),
@@ -396,7 +411,10 @@ pub(super) fn convert_functions(
                 S::Drop(pl_small_strs, strict) => IS::DropFields(pl_small_strs, strict),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
-                S::SelectFields(_) => unreachable!("handled by expression expansion"),
+                // Expression expansion resolves these, but `Expr.meta` converts without it.
+                S::SelectFields(selector) => polars_bail!(
+                    InvalidOperation: "'Expr: struct.field({selector})' not allowed in this context/location"
+                ),
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
                 S::MapFieldNames(f) => IS::MapFieldNames(f),
@@ -466,6 +484,7 @@ pub(super) fn convert_functions(
                     IT::ReplaceTimeZone(time_zone, non_existent)
                 },
                 T::Combine(time_unit) => IT::Combine(time_unit),
+                T::DateDiff(unit) => IT::DateDiff(unit),
                 T::DatetimeFunction {
                     time_unit,
                     time_zone,
@@ -1013,6 +1032,8 @@ pub(super) fn convert_functions(
         F::InterpolateBy => I::InterpolateBy,
         #[cfg(feature = "log")]
         F::Entropy { base, normalize } => I::Entropy { base, normalize },
+        #[cfg(feature = "log")]
+        F::XLogY { base } => I::XLogY { base },
         #[cfg(feature = "log")]
         F::Log => I::Log,
         #[cfg(feature = "log")]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from datetime import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -469,7 +470,7 @@ def test_partition_empty_string_24545(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Date(), pl.Datetime()])
+@pytest.mark.parametrize("dtype", [pl.Int64(), pl.Date(), pl.Datetime(), pl.Time()])
 def test_partition_empty_dtype_24545(tmp_path: Path, dtype: pl.DataType) -> None:
     df = pl.DataFrame({"b": [1, 2, 3, 4]}).with_columns(
         a=pl.col.b.cast(dtype),
@@ -562,3 +563,31 @@ def test_partition_by_diff_expr_26370(tmp_path: Path) -> None:
     q.sink_parquet(pl.PartitionBy(tmp_path, key="z"))
 
     assert_frame_equal(pl.scan_parquet(tmp_path).collect(), q.collect())
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("include_key", [True, False])
+def test_partition_time_key_fractional_seconds_30046(
+    tmp_path: Path, include_key: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "k": [time(12, 0, 0, 100000), time(12, 0, 0, 200000), time(12), None],
+            "v": [0, 1, 2, 3],
+        }
+    )
+    df.lazy().sink_parquet(pl.PartitionBy(tmp_path, key="k", include_key=include_key))
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "k=12%3A00%3A00",
+        "k=12%3A00%3A00.100",
+        "k=12%3A00%3A00.200",
+        "k=__HIVE_DEFAULT_PARTITION__",
+    ]
+
+    assert_frame_equal(
+        pl.scan_parquet(tmp_path).collect(),
+        df,
+        check_row_order=False,
+        check_column_order=False,
+    )

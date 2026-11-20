@@ -109,6 +109,12 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+/// The column `name`; unlike `col`, a name such as `^a$` or `*` is not a selector.
+#[pyfunction]
+pub fn col_exact(name: &str) -> PyExpr {
+    Expr::Column(name.into()).into()
+}
+
 #[pyfunction]
 pub fn element() -> PyExpr {
     dsl::element().into()
@@ -309,6 +315,11 @@ pub fn cum_reduce(
 
     let func = PlanCallback::new_python(PythonObject(lambda));
     dsl::cum_reduce_exprs(func, exprs, returns_scalar, return_dtype.map(|v| v.inner)).into()
+}
+
+#[pyfunction]
+pub fn date_diff(start: PyExpr, end: PyExpr, unit: Wrap<DateDiffUnit>) -> PyExpr {
+    dsl::date_diff(start.inner, end.inner, unit.0).into()
 }
 
 #[pyfunction]

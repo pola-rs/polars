@@ -212,6 +212,19 @@ Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
+DateDiffUnit: TypeAlias = Literal[
+    "year",
+    "quarter",
+    "month",
+    "week",
+    "day",
+    "hour",
+    "minute",
+    "second",
+    "millisecond",
+    "microsecond",
+    "nanosecond",
+]
 CsvCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 ColumnMapping: TypeAlias = (
@@ -471,7 +484,7 @@ AsyncResult: TypeAlias = Union[
     "_GeventDataFrameResult[AsyncResultT]", "_AioDataFrameResult[AsyncResultT]"
 ]
 
-# Remote execution on Polars Cloud; mirrors `polars_cloud._typing`
+# Remote execution on Polars Nanook; mirrors `polars_nanook._typing`
 ScalingMode: TypeAlias = Literal["auto", "single-node", "distributed"]
 PlanTypePreference: TypeAlias = Literal["dot", "plain"]
 

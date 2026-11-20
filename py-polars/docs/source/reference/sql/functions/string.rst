@@ -9,6 +9,8 @@ String
      - Description
    * - :ref:`BIT_LENGTH <bit_length>`
      - Returns the length of the input string in bits.
+   * - :ref:`CHR <chr>`
+     - Returns the character of an integer Unicode code point.
    * - :ref:`CONCAT <concat>`
      - Returns all input expressions concatenated together as a string.
    * - :ref:`CONCAT_WS <concat_ws>`
@@ -17,6 +19,8 @@ String
      - Converts a formatted date string to an actual Date value.
    * - :ref:`ENDS_WITH <ends_with>`
      - Returns True if the value ends with the second argument.
+   * - :ref:`FORMAT <format>`
+     - Fills the `{}` placeholders of a format string, with an optional Python format specification such as `{:.2f}`.
    * - :ref:`INITCAP <initcap>`
      - Converts the first letter of each word to uppercase, and the rest to lowercase.
    * - :ref:`LEFT <left>`
@@ -33,10 +37,16 @@ String
      - Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
    * - :ref:`OCTET_LENGTH <octet_length>`
      - Returns the length of a given string in bytes.
+   * - :ref:`PRINTF <printf>`
+     - Fills the `%` conversions of a format string, as in C's printf.
    * - :ref:`POSITION <position>`
      - Returns the position of a substring within a string.
+   * - :ref:`REGEXP_EXTRACT <regexp_extract>`
+     - Returns the given capture group of the first match of `pattern` (optional: `group`, 0 for the whole match).
    * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
+   * - :ref:`REGEXP_MATCHES <regexp_matches>`
+     - Returns True if `pattern` matches the value (optional: `options`).
    * - :ref:`REGEXP_REPLACE <regexp_replace>`
      - Replaces the first match of `pattern` with `replacement` (optional: `flags`; 'g' replaces all matches).
    * - :ref:`REPEAT <repeat>`
@@ -66,8 +76,14 @@ String
      - Returns a slice of the string data (from a start index, with an optional length); note that `start` is 1-indexed.
    * - :ref:`TIMESTAMP <timestamp>`
      - Converts a formatted timestamp/datetime string to an actual Datetime value.
+   * - :ref:`TO_DATE <to_date>`
+     - Converts a string to a Date using a PostgreSQL template.
+   * - :ref:`TO_TIMESTAMP <to_timestamp>`
+     - Converts a string to a Datetime using a PostgreSQL template.
    * - :ref:`TRIM <trim>`
      - Strips characters from the left and/or right of a string.
+   * - :ref:`TRY_STRPTIME <try_strptime>`
+     - Like `STRPTIME`, but returns NULL for a string that does not match the format.
    * - :ref:`UPPER <upper>`
      - Returns an uppercased column.
 
@@ -96,6 +112,32 @@ Returns the length of the input string in bits.
     # │ ccc  ┆ 24     │
     # │ dddd ┆ 32     │
     # └──────┴────────┘
+
+.. _chr:
+
+CHR
+---
+Returns the character of an integer Unicode code point. Raises an error for a negative
+number, a number above 1114111 (``0x10FFFF``), or a UTF-16 surrogate (55296 to 57343).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"n": [65, 233, 8364]})
+    df.sql("""
+      SELECT n, CHR(n) AS c FROM self
+    """)
+    # shape: (3, 2)
+    # ┌──────┬─────┐
+    # │ n    ┆ c   │
+    # │ ---  ┆ --- │
+    # │ i64  ┆ str │
+    # ╞══════╪═════╡
+    # │ 65   ┆ A   │
+    # │ 233  ┆ é   │
+    # │ 8364 ┆ €   │
+    # └──────┴─────┘
 
 .. _concat:
 
@@ -231,6 +273,33 @@ Returns True if the value ends with the second argument.
     # │ cc  ┆ false  │
     # │ dd  ┆ false  │
     # └─────┴────────┘
+
+.. _format:
+
+FORMAT
+------
+Fills the ``{}`` placeholders of a format string with the other arguments. A placeholder
+can hold an argument index (``{1}``) and a Python format specification after a colon
+(``{:>8}``, ``{:.2f}``, ``{:,}``), as in :func:`polars.format`. Write ``{{`` and ``}}``
+for literal braces. The result is null if any argument is null.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"name": ["apple", "kiwi"], "price": [1.5, 1234.125]})
+    df.sql("""
+      SELECT FORMAT('{:<6}|{:>9,.2f}', name, price) AS fmt FROM self
+    """)
+    # shape: (2, 1)
+    # ┌──────────────────┐
+    # │ fmt              │
+    # │ ---              │
+    # │ str              │
+    # ╞══════════════════╡
+    # │ apple |     1.50 │
+    # │ kiwi  | 1,234.12 │
+    # └──────────────────┘
 
 .. _initcap:
 
@@ -485,6 +554,39 @@ Returns the length of a given string in bytes.
     # │ es       ┆ amarillo ┆ 8       ┆ 8       │
     # └──────────┴──────────┴─────────┴─────────┘
 
+.. _printf:
+
+PRINTF
+------
+Fills the ``%`` conversions of a format string with the other arguments, as in C's printf.
+Supports the flags ``-``, ``+``, space, ``#``, ``0`` and ``,`` (thousands separator), the
+width, the precision, argument numbers (``%2$s``) and the conversions ``d``, ``i``, ``u``,
+``f``, ``F``, ``e``, ``E``, ``g``, ``G``, ``x``, ``X``, ``o``, ``c`` and ``s``; ``%%`` writes
+a ``%``. ``%s`` converts any value that can be cast to a string, which excludes lists and
+arrays. A precision is not supported with ``d``, ``i``, ``u``, ``o``, ``x``, ``X`` and ``c``, nor
+is ``#`` with ``o``.
+Negative numbers keep their sign with ``u``, ``x``, ``X`` and ``o``, ``%#x`` writes ``0x0`` for
+zero, and ``%c`` writes the character of a Unicode code point. The result is null if any
+argument is null.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"name": ["apple", "kiwi"], "n": [3, 12], "price": [1.5, 0.25]})
+    df.sql("""
+      SELECT PRINTF('%-6s x%03d at %.2f', name, n, price) AS line FROM self
+    """)
+    # shape: (2, 1)
+    # ┌─────────────────────┐
+    # │ line                │
+    # │ ---                 │
+    # │ str                 │
+    # ╞═════════════════════╡
+    # │ apple  x003 at 1.50 │
+    # │ kiwi   x012 at 0.25 │
+    # └─────────────────────┘
+
 .. _position:
 
 POSITION
@@ -516,6 +618,32 @@ returning 0 if the substring is not found.
     # │ grape  ┆ 0   │
     # └────────┴─────┘
 
+.. _regexp_extract:
+
+REGEXP_EXTRACT
+--------------
+Returns the given capture group of the first match of `pattern` (optional: `group`, 0 for the
+whole match), or an empty string if there is no match.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["ab12-34", "x56-78", "abc"]})
+    df.sql(r"""
+      SELECT foo, REGEXP_EXTRACT(foo, '(\d+)-(\d+)', 2) AS second FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────────┬────────┐
+    # │ foo     ┆ second │
+    # │ ---     ┆ ---    │
+    # │ str     ┆ str    │
+    # ╞═════════╪════════╡
+    # │ ab12-34 ┆ 34     │
+    # │ x56-78  ┆ 78     │
+    # │ abc     ┆        │
+    # └─────────┴────────┘
+
 .. _regexp_like:
 
 REGEXP_LIKE
@@ -541,6 +669,37 @@ Returns True if `pattern` matches the value (optional: `flags`).
     # │ abc456 ┆ true          │
     # │ 321cba ┆ false         │
     # └────────┴───────────────┘
+
+.. _regexp_matches:
+
+REGEXP_MATCHES
+--------------
+Returns True if `pattern` matches the value. The optional `options` are 'c' (case-sensitive,
+the default), 'i' (case-insensitive), 'l' (match `pattern` literally), 's' (`.` also matches a
+newline) and 'm', 'n' or 'p' (`.` does not match a newline, the default).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["Polars", "python", "a.b"]})
+    df.sql("""
+      SELECT
+        s,
+        REGEXP_MATCHES(s, '^p', 'i') AS m1,
+        REGEXP_MATCHES(s, '.', 'l') AS m2
+      FROM self
+    """)
+    # shape: (3, 3)
+    # ┌────────┬───────┬───────┐
+    # │ s      ┆ m1    ┆ m2    │
+    # │ ---    ┆ ---   ┆ ---   │
+    # │ str    ┆ bool  ┆ bool  │
+    # ╞════════╪═══════╪═══════╡
+    # │ Polars ┆ true  ┆ false │
+    # │ python ┆ true  ┆ false │
+    # │ a.b    ┆ false ┆ true  │
+    # └────────┴───────┴───────┘
 
 .. _regexp_replace:
 
@@ -1027,6 +1186,79 @@ Strips characters from the left and/or right of a string.
     # │   test    ┆ test    ┆ test     ┆   test   │
     # └───────────┴─────────┴──────────┴──────────┘
 
+
+.. _to_date:
+
+TO_DATE
+-------
+Converts a string to a Date using a PostgreSQL template, such as 'DD Mon YYYY'; the patterns
+are those of :ref:`TO_CHAR <to_char>`. A template that contains `%` is read as a strftime
+format, and without a template ISO-8601 format is assumed.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["05 Jul 1978", "10 Apr 2020"]})
+    df.sql("SELECT s, TO_DATE(s, 'DD Mon YYYY') AS dt FROM self")
+    # shape: (2, 2)
+    # ┌─────────────┬────────────┐
+    # │ s           ┆ dt         │
+    # │ ---         ┆ ---        │
+    # │ str         ┆ date       │
+    # ╞═════════════╪════════════╡
+    # │ 05 Jul 1978 ┆ 1978-07-05 │
+    # │ 10 Apr 2020 ┆ 2020-04-10 │
+    # └─────────────┴────────────┘
+
+.. _to_timestamp:
+
+TO_TIMESTAMP
+------------
+Converts a string to a Datetime using a PostgreSQL template, such as 'YYYY-MM-DD HH24:MI:SS';
+the patterns are those of :ref:`TO_CHAR <to_char>`. A template that contains `%` is read as a
+strftime format, and without a template ISO-8601 format is assumed. A number is read as the
+seconds since the Unix epoch, giving a UTC Datetime.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["1978-07-05 10:30 AM", "2020-04-10 10:05 PM"]})
+    df.sql("SELECT s, TO_TIMESTAMP(s, 'YYYY-MM-DD HH12:MI AM') AS dtm FROM self")
+    # shape: (2, 2)
+    # ┌─────────────────────┬─────────────────────┐
+    # │ s                   ┆ dtm                 │
+    # │ ---                 ┆ ---                 │
+    # │ str                 ┆ datetime[μs]        │
+    # ╞═════════════════════╪═════════════════════╡
+    # │ 1978-07-05 10:30 AM ┆ 1978-07-05 10:30:00 │
+    # │ 2020-04-10 10:05 PM ┆ 2020-04-10 22:05:00 │
+    # └─────────────────────┴─────────────────────┘
+
+.. _try_strptime:
+
+TRY_STRPTIME
+------------
+Like :ref:`STRPTIME <strptime>`, but returns NULL for a string that does not match the format,
+instead of raising an error.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["2024-02-29", "2023-02-29", "not a date"]})
+    df.sql("SELECT s, TRY_STRPTIME(s, '%Y-%m-%d') AS dt FROM self")
+    # shape: (3, 2)
+    # ┌────────────┬─────────────────────┐
+    # │ s          ┆ dt                  │
+    # │ ---        ┆ ---                 │
+    # │ str        ┆ datetime[μs]        │
+    # ╞════════════╪═════════════════════╡
+    # │ 2024-02-29 ┆ 2024-02-29 00:00:00 │
+    # │ 2023-02-29 ┆ null                │
+    # │ not a date ┆ null                │
+    # └────────────┴─────────────────────┘
 
 .. _upper:
 

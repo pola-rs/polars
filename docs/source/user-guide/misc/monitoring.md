@@ -1,23 +1,22 @@
 # Query monitoring
 
 Polars can collect metrics while your queries run and send them to
-[Polars Cloud](https://cloud.pola.rs/). Each run shows up as a
-[query profile](https://docs.cloud.pola.rs/polars-cloud/run/query-profile/) in the dashboard, which
-shows you which part of a query is slow. That page explains what the metrics mean.
+[Polars Nanook](https://pola.rs/nanook/). Each run shows up as a
+[query profile](https://docs.nanook.pola.rs/run/query-profile/) in the dashboard, which shows you
+which part of a query is slow. That page explains what the metrics mean.
 
 Monitoring works for queries that run locally; you do not need to move your data or your compute to
-Polars Cloud to use it. Your data stays on your machine. No rows or column values are transmitted,
+Polars Nanook to use it. Your data stays on your machine. No rows or column values are transmitted,
 only the query plan and per-node runtime counters. The plan includes the schema, column names,
 source paths, and any literals you wrote into the query.
 
 ## Requirements
 
-- A Polars Cloud account. Get started at
-  [Polars Cloud](https://docs.cloud.pola.rs/polars-cloud/get-started/).
-- The `polars-cloud` package in the same environment as Polars:
+- A Polars Nanook account. Get started at [Polars Nanook](https://docs.nanook.pola.rs/get-started/).
+- The `polars-nanook` package in the same environment as Polars:
 
 ```bash
-pip install 'polars-cloud>=0.13.0'
+pip install 'polars-nanook>=0.13.0'
 ```
 
 ## Enabling monitoring
@@ -30,7 +29,7 @@ pl.Config.enable_monitoring()
 
 The first call opens a browser window to authenticate your session if you are not already logged in.
 Every query you collect afterward reports its metrics to your
-[Polars Cloud dashboard](https://cloud.pola.rs/portal).
+[Polars Nanook dashboard](https://nanook.pola.rs/portal).
 
 Use the streaming engine when monitoring. It is the only engine that reports per-node metrics, so
 enabling monitoring also sets the engine affinity to `"streaming"`.

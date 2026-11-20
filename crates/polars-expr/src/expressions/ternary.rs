@@ -1,7 +1,7 @@
-use polars_arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
+use polars_utils::broadcast::broadcast_len;
 use recursive::recursive;
 
 use super::*;
@@ -15,8 +15,14 @@ pub struct TernaryExpr {
     // Can be expensive on small data to run literals in parallel.
     run_par: bool,
     returns_scalar: bool,
-    truthy_mask_columns: Vec<PlSmallStr>,
-    falsy_mask_columns: Vec<PlSmallStr>,
+    // The input columns of an elementwise arm, which can be evaluated on a
+    // subset of the rows and has the height of these columns. Empty if the arm
+    // must be evaluated on all rows.
+    truthy_filter_columns: Vec<PlSmallStr>,
+    falsy_filter_columns: Vec<PlSmallStr>,
+    // Evaluate an arm with filter columns on only its selected rows, however
+    // many rows it selects.
+    always_filter: bool,
     // The dtype of this expression, which is the supertype of the arms and thus
     // can differ from the dtype of an individual arm.
     output_dtype: Option<DataType>,
@@ -31,8 +37,9 @@ impl TernaryExpr {
         expr: Expr,
         run_par: bool,
         returns_scalar: bool,
-        truthy_mask_columns: Vec<PlSmallStr>,
-        falsy_mask_columns: Vec<PlSmallStr>,
+        truthy_filter_columns: Vec<PlSmallStr>,
+        falsy_filter_columns: Vec<PlSmallStr>,
+        always_filter: bool,
         output_dtype: Option<DataType>,
     ) -> Self {
         Self {
@@ -42,8 +49,9 @@ impl TernaryExpr {
             expr,
             run_par,
             returns_scalar,
-            truthy_mask_columns,
-            falsy_mask_columns,
+            truthy_filter_columns,
+            falsy_filter_columns,
+            always_filter,
             output_dtype,
         }
     }
@@ -112,59 +120,66 @@ impl PhysicalExpr for TernaryExpr {
         // Don't cache window functions as they run in parallel.
         state.remove_cache_window_flag();
         let mask_series = self.predicate.evaluate(df, &state)?;
-        let mut mask = mask_series.bool()?.clone();
+        let mask = mask_series.bool()?;
 
         // Nulls count as false.
         let true_count = mask.num_trues();
         let false_count = mask.len() - true_count;
 
-        let mask_bitmap = (!self.truthy_mask_columns.is_empty()
-            || !self.falsy_mask_columns.is_empty())
-        .then(|| {
-            mask.rechunk_mut();
-            let arr = mask.downcast_as_array();
-            match arr.validity() {
-                Some(validity) => arr.values() & validity,
-                None => arr.values().clone(),
-            }
-        });
+        // An arm that selects some but not all rows is evaluated on only those
+        // rows if it selects at most a quarter of them or `always_filter` is set,
+        // otherwise on all rows.
+        let should_filter = |count: usize| {
+            count > 0 && (count * 4 <= mask.len() || self.always_filter && count < mask.len())
+        };
+        let filter_truthy = !self.truthy_filter_columns.is_empty() && should_filter(true_count);
+        let filter_falsy = !self.falsy_filter_columns.is_empty() && should_filter(false_count);
 
-        let masked_df = |names: &[PlSmallStr], mask: &Bitmap| -> PolarsResult<DataFrame> {
-            let columns: Vec<&Column> = names.iter().map(|c| df.column(c).unwrap()).collect();
-            // Common subexpression elimination can add a scalar column of one row to a frame
-            // with another height. A branch that only reads such columns under a scalar
-            // predicate is a scalar too.
-            let height = if mask.len() == 1 && columns.iter().all(|c| c.len() == 1) {
-                1
-            } else {
-                df.height()
-            };
-            let columns = columns
-                .into_iter()
-                .map(|c| {
-                    if c.len() != height {
-                        c.new_from_index(0, height).mask(mask)
+        let evaluate_filtered = |arm: &dyn PhysicalExpr,
+                                 names: &[PlSmallStr],
+                                 select_true: bool|
+         -> PolarsResult<Column> {
+            let selected = mask.rechunk().downcast_as_array().true_and_valid();
+            let selection = if select_true { selected } else { !&selected };
+            let height = selection.set_bits();
+            let filter = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, selection.clone());
+            // Common subexpression elimination can add columns of another height,
+            // of which only unit-length ones can be broadcast.
+            let columns = names
+                .iter()
+                .map(|name| {
+                    let c = df.column(name).unwrap();
+                    if c.len() == selection.len() {
+                        c.filter(&filter)
+                    } else if c.len() == 1 {
+                        Ok(c.clone())
                     } else {
-                        c.mask(mask)
+                        polars_bail!(ShapeMismatch: "mismatch between condition height ({}) and height of column '{}' ({}) in when/then/otherwise", selection.len(), c.name(), c.len())
                     }
                 })
-                .collect();
-            DataFrame::new(height, columns)
+                .collect::<PolarsResult<_>>()?;
+            let out = arm.evaluate(&DataFrame::new_with_broadcast(height, columns)?, &state)?;
+            polars_ensure!(out.len() == height, ShapeMismatch: "elementwise arm returned {} rows for {} selected rows in when/then/otherwise", out.len(), height);
+            Ok(out.deposit(&selection))
         };
         let op_truthy = || {
-            if self.truthy_mask_columns.is_empty() || false_count == 0 {
-                return self.truthy.evaluate(df, &state);
+            if filter_truthy {
+                evaluate_filtered(self.truthy.as_ref(), &self.truthy_filter_columns, true)
+            } else {
+                self.truthy.evaluate(df, &state)
             }
-            let mask_df = masked_df(&self.truthy_mask_columns, mask_bitmap.as_ref().unwrap())?;
-            self.truthy.evaluate(&mask_df, &state)
         };
         let op_falsy = || {
-            if self.falsy_mask_columns.is_empty() || true_count == 0 {
-                return self.falsy.evaluate(df, &state);
+            if filter_falsy {
+                evaluate_filtered(self.falsy.as_ref(), &self.falsy_filter_columns, false)
+            } else {
+                self.falsy.evaluate(df, &state)
             }
-            let mask_df = masked_df(&self.falsy_mask_columns, &!mask_bitmap.as_ref().unwrap())?;
-            self.falsy.evaluate(&mask_df, &state)
         };
+
+        // An elementwise arm has the height of its input columns.
+        let arm_height =
+            |names: &[PlSmallStr]| broadcast_len(names.iter().map(|n| df.column(n).unwrap()));
 
         let (truthy, falsy);
         if true_count == 0 {
@@ -172,6 +187,10 @@ impl PhysicalExpr for TernaryExpr {
             match (mask.len(), falsy.len()) {
                 (l, 1) if l != 1 => return self.cast_arm(falsy.new_from_index(0, l)),
                 (1, r) if r != 1 => return self.cast_arm(falsy),
+                (1, 1) if !self.truthy_filter_columns.is_empty() => {
+                    let height = arm_height(&self.truthy_filter_columns)?;
+                    return self.cast_arm(falsy.new_from_index(0, height));
+                },
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
                     polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and falsy height ({}) in when/then/otherwise", l, r);
@@ -184,6 +203,10 @@ impl PhysicalExpr for TernaryExpr {
             match (mask.len(), truthy.len()) {
                 (l, 1) if l != 1 => return self.cast_arm(truthy.new_from_index(0, l)),
                 (1, r) if r != 1 => return self.cast_arm(truthy),
+                (1, 1) if !self.falsy_filter_columns.is_empty() => {
+                    let height = arm_height(&self.falsy_filter_columns)?;
+                    return self.cast_arm(truthy.new_from_index(0, height));
+                },
                 (1, 1) => {}, // Forced to evaluate falsy to resolve broadcast height.
                 (l, r) => {
                     polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and truthy height ({}) in when/then/otherwise", l, r);
@@ -200,7 +223,7 @@ impl PhysicalExpr for TernaryExpr {
             falsy = op_falsy()?;
         };
 
-        truthy.zip_with(&mask, &falsy)
+        truthy.zip_with(mask, &falsy)
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

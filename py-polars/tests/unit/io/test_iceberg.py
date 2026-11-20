@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal as D
 from functools import partial
+from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 from unittest.mock import Mock, patch
@@ -73,7 +74,9 @@ import polars as pl
 from polars._utils.various import parse_version
 from polars.io._expand_paths import _expand_paths
 from polars.io.cloud._utils import NoPickleOption
+from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 from polars.io.iceberg._dataset import (
+    IcebergCatalogConfig,
     IcebergScanResolver,
     IcebergScanTableSerializer,
     IcebergTableWrap,
@@ -239,7 +242,12 @@ def resolved_table_statistics(
     """Min/max statistics passed to the resolved scan."""
     _, scan_args = resolve_scan(tbl, **kwargs)
     statistics = scan_args["table_statistics"]
-    return None if statistics is None else pl.read_ipc_stream(bytes(statistics))
+    if statistics is None:
+        return None
+    frame, bounds = statistics
+    # Iceberg bounds of non-string types are values of their file.
+    assert bounds == "Tight"
+    return pl.read_ipc_stream(bytes(frame))
 
 
 def new_iceberg_table(
@@ -250,11 +258,14 @@ def new_iceberg_table(
     sort_order: SortOrder | None = None,
     name: str = "table",
     properties: dict[str, str] | None = None,
+    catalog_properties: dict[str, str] | None = None,
 ) -> tuple[pyiceberg.table.Table, SqlCatalog]:
+    # `catalog_properties` are passed to the tables' FileIO, as vended credentials.
     catalog = SqlCatalog(
         "default",
         uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
         warehouse=format_file_uri_iceberg(tmp_path),
+        **(catalog_properties or {}),
     )
     namespace = uuid.uuid4().bytes.hex()
     catalog.create_namespace(namespace)
@@ -981,14 +992,289 @@ def test_sink_iceberg_overwrite_filter(tmp_path: Path, overwrite_filter: Any) ->
         _scan_sorted(tbl),
         pl.DataFrame({"a": [2, 5, None], "s": ["y", "new", "z"]}),
     )
-    # The delete and the append are committed together.
+    # The delete and the append are one snapshot.
     new_snapshots = tbl.metadata.snapshots[snapshot_count:]
-    assert [s.summary.operation.value for s in new_snapshots] == [  # type: ignore[union-attr]
-        "overwrite",
-        "append",
-    ]
-    assert len({s.sequence_number for s in new_snapshots}) == 2
+    assert [s.summary.operation.value for s in new_snapshots] == ["overwrite"]  # type: ignore[union-attr]
     assert tbl.metadata.snapshot_log[-1].snapshot_id == new_snapshots[-1].snapshot_id
+
+
+def _one_file_table(tmp_path: Path) -> tuple[pyiceberg.table.Table, str]:
+    """A table of one data file with rows k = 1, 2, 3, and its path."""
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+    )
+    pl.LazyFrame({"k": [1, 2, 3], "v": ["a", "b", "c"]}).sink_iceberg(
+        tbl, mode="append"
+    )
+    return tbl, next(iter(tbl.scan().plan_files())).file.file_path
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_filter_keeps_deleted_rows_30616(tmp_path: Path) -> None:
+    tbl, path = _one_file_table(tmp_path)
+    # bounds of the deleted row (k = 2) that the filter cannot match
+    k = struct.pack("<q", 2)
+    tbl = _add_position_deletes(tbl, {path: [1]}, row_bounds={1: (k, k)})
+
+    pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=pl.col("k") == 1
+    )
+
+    # k = 2, deleted earlier, stays deleted in the rewritten file
+    assert _scan_sorted(tbl).rows() == [(3, "c"), (9, "z")]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("rows_per_file", [6, 2, 1])
+@pytest.mark.parametrize(
+    ("overwrite_filter", "deleted"),
+    [
+        ("a != 1", [3, 6]),
+        ("a = 1 or b = 2", [1, 2, 4]),
+        ("not (a = 1 and b = 5)", [3, 4, 6]),
+        ("s not like 'ab%'", [2]),
+        ("x > 1", [1, 6]),
+        ("x < 1", [2, 3]),
+        ("x not in (1.0, 2.0)", [1, 2, 3, 6]),
+        ("f = 0.1", [1, 2, 5]),
+    ],
+)
+def test_sink_iceberg_overwrite_filter_string_rows(
+    tmp_path: Path, overwrite_filter: str, deleted: list[int], rows_per_file: int
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "a", LongType()),
+            NestedField(3, "b", LongType()),
+            NestedField(4, "x", DoubleType()),
+            NestedField(5, "s", StringType()),
+            NestedField(6, "f", FloatType()),
+        ),
+    )
+    nan = float("nan")
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "a": [1, 1, 7, None, None, 2],
+            "b": [None, 5, 7, 2, None, None],
+            "x": [nan, 0.2, 0.5, None, 1.0, nan],
+            "s": ["abc", "x", None, "ab", None, None],
+            "f": [0.1, 0.1, 0.3, None, 0.1, 2.5],
+        },
+        schema_overrides={"f": pl.Float32},
+    )
+    for part in df.iter_slices(rows_per_file):
+        part.lazy().sink_iceberg(tbl, mode="append")
+
+    pl.LazyFrame(schema=df.schema).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=overwrite_filter
+    )
+
+    # the rows for which the filter is true, NaN ordered above every number and a
+    # float literal compared as float32, in every file layout
+    assert _scan_sorted(tbl)["id"].to_list() == [
+        i for i in range(1, 7) if i not in deleted
+    ]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("kwargs", "keys", "operations"),
+    [
+        ({}, ["a"], ["overwrite"]),
+        ({"overwrite_filter": "p = 'a'"}, ["a"], ["overwrite"]),
+        ({"partition_overwrite": "dynamic"}, ["a"], ["overwrite"]),
+        ({}, [], ["delete"]),
+        ({"partition_overwrite": "dynamic"}, [], []),
+    ],
+)
+def test_sink_iceberg_overwrite_snapshots(
+    tmp_path: Path, kwargs: dict[str, Any], keys: list[str], operations: list[str]
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "p", StringType())
+        ),
+        partition_spec=PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "p")),
+    )
+    pl.LazyFrame({"k": [1, 2], "p": ["a", "b"]}).sink_iceberg(tbl, mode="append")
+    snapshot_count = len(tbl.metadata.snapshots)
+
+    pl.LazyFrame(
+        {"k": [9] * len(keys), "p": keys}, schema={"k": pl.Int64, "p": pl.String}
+    ).sink_iceberg(tbl, mode="overwrite", **kwargs)
+
+    # one snapshot, labelled by what it does
+    tbl.refresh()
+    new_snapshots = tbl.metadata.snapshots[snapshot_count:]
+    assert [s.summary.operation.value for s in new_snapshots] == operations  # type: ignore[union-attr]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_rejected_removes_rewritten_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    tbl, path = _one_file_table(tmp_path)
+    rewritten: list[str] = []
+    write_survivors = IcebergSinkState._write_survivors
+
+    def write_survivors_then_delete(*args: Any) -> Any:
+        files, sort_order_id = write_survivors(*args)
+        rewritten.extend(p for p, *_ in files)
+        # another writer deletes a row of the file being rewritten meanwhile
+        _add_position_deletes(tbl.catalog.load_table(tbl.name()), {path: [2]})
+        return files, sort_order_id
+
+    monkeypatch.setattr(
+        IcebergSinkState, "_write_survivors", write_survivors_then_delete
+    )
+    with pytest.raises(pyiceberg.exceptions.ValidationException):
+        pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+            tbl, mode="overwrite", overwrite_filter=pl.col("k") == 1
+        )
+
+    assert rewritten
+    assert not any(Path(p.removeprefix("file://")).exists() for p in rewritten)
+    assert _scan_sorted(tbl).rows() == [(1, "a"), (2, "b")]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_whole_files_from_metadata(tmp_path: Path) -> None:
+    tbl, path = _one_file_table(tmp_path)
+    # a delete file not limited to one data file, which the native reader refuses
+    tbl = _add_position_deletes(tbl, {path: [0]}, path_bounds=False)
+
+    pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="k >= 1"
+    )
+
+    # the statistics show that every row matches: the file is dropped unread
+    assert _scan_sorted(tbl).rows() == [(9, "z")]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_empty_input_schema(tmp_path: Path) -> None:
+    tbl, _ = _one_file_table(tmp_path)
+    snapshot_count = len(tbl.metadata.snapshots)
+
+    pl.LazyFrame(schema={"k": pl.Int64, "v": pl.String, "w": pl.Int64}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="k = 7", schema_mode="merge"
+    )
+
+    # the schema is merged, also with no rows to write or delete
+    assert _scan_sorted(tbl).rows() == [(1, "a", None), (2, "b", None), (3, "c", None)]
+    new_snapshots = tbl.metadata.snapshots[snapshot_count:]
+    assert [s.summary.operation.value for s in new_snapshots] == ["overwrite"]  # type: ignore[union-attr]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("predicate", "kept"),
+    [
+        (pyiceberg.expressions.EqualTo, [1.0]),
+        (pyiceberg.expressions.NotEqualTo, [float("inf")]),
+    ],
+)
+def test_sink_iceberg_overwrite_filter_float_infinity(
+    tmp_path: Path, predicate: Any, kept: list[float]
+) -> None:
+    from pyiceberg.expressions.literals import FloatLiteral
+
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "f", FloatType()))
+    )
+    df = pl.DataFrame({"f": [float("inf"), 1.0]}, schema={"f": pl.Float32})
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    pl.LazyFrame(schema=df.schema).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=predicate("f", FloatLiteral(math.inf))
+    )
+
+    # a typed float literal of infinity, kept as one
+    assert _scan_sorted(tbl)["f"].to_list() == kept
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_filter_required_column_added(tmp_path: Path) -> None:
+    tbl, _ = _one_file_table(tmp_path)
+    with tbl.update_schema(allow_incompatible_changes=True) as update:
+        update.add_column("r", LongType(), required=True)
+
+    pl.LazyFrame(schema={"k": pl.Int64, "v": pl.String, "r": pl.Int64}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="r is not null"
+    )
+
+    # the older file holds nulls for `r`, though `r` is required
+    assert _scan_sorted(tbl).height == 3
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_filter_double_partition(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "x", DoubleType()), NestedField(2, "k", LongType())
+        ),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x")),
+    )
+    pl.LazyFrame({"x": [0.1, 0.2], "k": [1, 2]}).sink_iceberg(tbl, mode="append")
+
+    pl.LazyFrame(schema={"x": pl.Float64, "k": pl.Int64}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter="x = 0.1"
+    )
+
+    # PyIceberg reads double partition values as float32: no pruning by them
+    assert _scan_sorted(tbl)["k"].to_list() == [2]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_rewrite_sort_order(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+        sort_order=SortOrder(SortField(source_id=1, transform=IdentityTransform())),
+    )
+    pl.LazyFrame({"k": [3, 1, 2], "v": ["c", "a", "b"]}).sink_iceberg(
+        tbl, mode="append"
+    )
+
+    pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=pl.col("k") == 1
+    )
+
+    # the rewritten file is sorted and recorded so
+    tbl.refresh()
+    order_id = tbl.sort_order().order_id
+    assert {t.file.sort_order_id for t in tbl.scan().plan_files()} == {order_id}
+
+
+@pytest.mark.write_disk
+def test_iceberg_overwrite_and_delete_v3_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = _one_file_table(tmp_path)
+    files = set(tmp_path.rglob("*.parquet"))
+    # PyIceberg can't write a v3 table yet
+    monkeypatch.setattr(
+        pyiceberg.table.Table, "format_version", property(lambda self: 3)
+    )
+
+    with pytest.raises(NotImplementedError, match="Iceberg v3 table"):
+        pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(tbl, mode="overwrite")
+    with pytest.raises(NotImplementedError, match="Iceberg v3 table"):
+        pl.delete_iceberg(tbl, pl.col("k") == 1)
+    # refused before writing data
+    assert set(tmp_path.rglob("*.parquet")) == files
 
 
 def _overwrite_filter_table(
@@ -1160,6 +1446,37 @@ def test_sink_iceberg_dynamic_partition_overwrite(tmp_path: Path) -> None:
         schema={"p": pl.String, "d": pl.Date, "v": pl.Int64}
     ).lazy().sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
     assert _scan_sorted(tbl).height == 6
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_dynamic_partition_overwrite_earlier_spec(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "g", StringType()),
+            NestedField(3, "h", LongType()),
+        ),
+    )
+    # one unpartitioned file with partitions (a, null), (b, 1), (b, null), (c, 2)
+    pl.LazyFrame(
+        {"id": [1, 2, 3, 4], "g": ["a", "b", "b", "c"], "h": [None, 1, None, 2]}
+    ).sink_iceberg(tbl, mode="append")
+    path = next(iter(tbl.scan().plan_files())).file.file_path
+    tbl = _add_position_deletes(tbl, {path: [3]})
+    with tbl.update_spec() as update:
+        update.add_identity("g")
+        update.add_identity("h")
+
+    pl.LazyFrame(
+        {"id": [10, 11], "g": ["a", "b"], "h": [None, 1]},
+        schema={"id": pl.Int64, "g": pl.String, "h": pl.Int64},
+    ).sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
+
+    # exactly the rows of (a, null) and (b, 1) go, and the deleted row stays deleted
+    assert _scan_sorted(tbl)["id"].to_list() == [3, 10, 11]
 
 
 @pytest.mark.write_disk
@@ -1460,6 +1777,18 @@ def test_sink_iceberg_create_if_not_exists_dtypes(
             "struct<x: long, y: string, z: list<list<int>>>",
             pl.Struct({"x": pl.Int64, "y": pl.String, "z": pl.List(pl.List(pl.Int32))}),
         ),
+        "map": (
+            [{"a": {"x": 1}, "b": None}],
+            pl.Map(pl.String, pl.Struct({"x": pl.UInt8})),
+            "map<string, struct<x: int>>",
+            pl.Map(pl.String, pl.Struct({"x": pl.Int32})),
+        ),
+        "list_map": (
+            [[{"a": 255}, {}]],
+            pl.List(pl.Map(pl.String, pl.UInt8)),
+            "list<map<string, int>>",
+            pl.List(pl.Map(pl.String, pl.Int32)),
+        ),
     }
 
     df = pl.DataFrame(
@@ -1596,6 +1925,11 @@ def test_sink_iceberg_overwrite_filter_validation(tmp_path: Path) -> None:
         (pl.Object(), r"'c' \(Object\)"),
         (pl.List(pl.UInt64), r"'c\[\]' \(UInt64\)"),
         (pl.Struct({"x": pl.Int64, "y": pl.Duration("ms")}), r"'c.y' \(Duration"),
+        # Polars cannot cast map keys
+        (pl.Map(pl.Int8, pl.String), r"'c' \(Map\(Int8, String\)\): .* keys to Int32"),
+        (pl.List(pl.Map(pl.Struct({"x": pl.Int8}), pl.String)), r"'c\[\]' \(Map.*cast"),
+        # Iceberg times are microseconds: nanosecond keys could merge
+        (pl.Map(pl.Time, pl.String), r"'c' \(Map\(Time, String\)\): .* microseconds"),
     ],
 )
 def test_sink_iceberg_create_if_not_exists_unsupported_dtypes(
@@ -2592,6 +2926,94 @@ def test_sink_iceberg_partition_key_name_collision_schema_merge(
     )
 
 
+def _pattern_like_names_table(
+    tmp_path: Path,
+    *,
+    partition_spec: PartitionSpec | None = None,
+    sort_order: SortOrder | None = None,
+) -> tuple[pyiceberg.table.Table, pl.DataFrame]:
+    # `ab` and `s.ab` match the patterns `^a.$` and `*`
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "ab", LongType()),
+            NestedField(2, "^a.$", LongType()),
+            NestedField(3, "*", LongType()),
+            NestedField(
+                4,
+                "s",
+                StructType(
+                    NestedField(5, "ab", LongType()), NestedField(6, "^a.$", LongType())
+                ),
+            ),
+        ),
+        partition_spec=partition_spec,
+        sort_order=sort_order,
+    )
+    df = pl.DataFrame(
+        {
+            "ab": [1, 1, 1],
+            "^a.$": [3, 1, 2],
+            "*": [4, 5, 6],
+            "s": [{"ab": 1, "^a.$": v} for v in [7, 8, 9]],
+        }
+    )
+    return tbl, df
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("source_id", "values"), [(2, [1, 2, 3]), (3, [4, 5, 6]), (6, [7, 8, 9])]
+)
+def test_sink_iceberg_partition_source_pattern_like_name(
+    tmp_path: Path, source_id: int, values: list[int]
+) -> None:
+    # a name such as `^a.$` or `*` is a column name, not a pattern
+    tbl, df = _pattern_like_names_table(
+        tmp_path,
+        partition_spec=PartitionSpec(
+            PartitionField(source_id, 1000, IdentityTransform(), "p")
+        ),
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+    tbl.refresh()
+    partitions = sorted(task.file.partition[0] for task in tbl.scan().plan_files())
+    assert partitions == values
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_sort_key_pattern_like_name(tmp_path: Path) -> None:
+    tbl, df = _pattern_like_names_table(
+        tmp_path,
+        sort_order=SortOrder(SortField(source_id=2, transform=IdentityTransform())),
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+    tbl.refresh()
+    [task] = tbl.scan().plan_files()
+    assert task.file.sort_order_id == tbl.sort_order().order_id
+    assert pl.scan_iceberg(tbl).collect()["^a.$"].to_list() == [1, 2, 3]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_create_if_not_exists_pattern_like_name(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    # only `^a.$` is cast to an Iceberg type, not the columns it would match
+    df = pl.DataFrame(
+        {"ab": [1], "^a.$": [2]}, schema={"ab": pl.Int64, "^a.$": pl.UInt8}
+    )
+    df.lazy().sink_iceberg(
+        "ns.t", mode="append", catalog=catalog, create_if_not_exists=True
+    )
+    result = pl.scan_iceberg(catalog.load_table("ns.t")).collect()
+    assert_frame_equal(result, df.with_columns(pl.nth(1).cast(pl.Int32)))
+
+
 @pytest.mark.parametrize("metrics_mode", ["none", "counts"])
 @pytest.mark.parametrize("column_override", [False, True])
 @pytest.mark.write_disk
@@ -3080,7 +3502,7 @@ def _sink_uncommitted(
     return state, sinked_files
 
 
-# A re-execution of the same sink invocation, as polars-cloud does when a
+# A re-execution of the same sink invocation, as polars-nanook does when a
 # committing worker dies. Pickling drops the loaded table.
 def _twin(state: IcebergSinkState) -> IcebergSinkState:
     twin: IcebergSinkState = pickle.loads(pickle.dumps(state))
@@ -3216,6 +3638,60 @@ def test_sink_iceberg_commit_twin_lands_during_retry_backoff(
         in capfd.readouterr().err
     )
     assert _tagged_snapshots(tbl, state) == [_landed_snapshot(tbl)]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_twin_lands_before_partition_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    state, sinked_files = _sink_uncommitted(monkeypatch, tbl)
+    twin = _twin(state)
+    twin_catalog = twin.table().catalog
+
+    commit_table = twin_catalog.commit_table
+    calls = 0
+
+    def commit_table_after_foreign_append(*args: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            _foreign_append(tbl, [7])
+        return commit_table(*args)
+
+    monkeypatch.setattr(twin_catalog, "commit_table", commit_table_after_foreign_append)
+
+    sleep = pyiceberg.table.time.sleep
+    slept = False
+
+    def sleep_while_original_commits_then_spec_changes(seconds: float) -> None:
+        nonlocal slept
+        if not slept:
+            slept = True
+            state.commit(sinked_files)
+            with tbl.catalog.load_table(tbl.name()).update_spec() as update:
+                update.add_identity("a")
+        sleep(0)
+
+    monkeypatch.setattr(
+        pyiceberg.table.time, "sleep", sleep_while_original_commits_then_spec_changes
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    # the twin's write landed before the spec changed: found, not refused
+    twin.commit(sinked_files)
+
+    assert slept
+    assert (
+        "IcebergSinkState[commit]: already committed, skipping"
+        in capfd.readouterr().err
+    )
+    assert _tagged_snapshots(tbl, state) == [_landed_snapshot(tbl)]
     assert _rows(tbl) == [7, 42]
 
 
@@ -3250,14 +3726,7 @@ def test_sink_iceberg_commit_updates_caller_table(
     [
         pytest.param("append", {}, id="append"),
         pytest.param("append", {"commit.retry.num-retries": "0"}, id="no-retries"),
-        pytest.param(
-            "overwrite",
-            {},
-            id="overwrite-empty-table",
-            marks=pytest.mark.filterwarnings(
-                "ignore:Delete operation did not match any records"
-            ),
-        ),
+        pytest.param("overwrite", {}, id="overwrite-empty-table"),
     ],
 )
 @pytest.mark.write_disk
@@ -3727,6 +4196,470 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
     assert new_md_path == tbl.metadata_location
 
 
+def _sql_catalog(tmp_path: Path, **properties: Any) -> SqlCatalog:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+        **properties,
+    )
+    catalog.create_namespace("ns")
+    catalog.create_table(("ns", "t"), IcebergSchema(NestedField(1, "a", LongType())))
+    return catalog
+
+
+def _capture_catalogs(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """The catalogs the sink loads its table from, after the plan round trip."""
+    catalogs = []
+    load_or_create = IcebergSinkState._load_or_create_table
+
+    def capture(self: IcebergSinkState, catalog: Any) -> Any:
+        catalogs.append(catalog)
+        return load_or_create(self, catalog)
+
+    monkeypatch.setattr(IcebergSinkState, "_load_or_create_table", capture)
+    return catalogs
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_non_string_catalog_properties(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # e.g. PyIceberg's `auth` config of a REST catalog (#30671)
+    properties = {
+        "auth": {"type": "noop", "scopes": ["a", None]},
+        "n": 1,
+        "f": 2.5,
+        "b": True,
+        "none": None,
+        "big": 2**64 - 1,
+    }
+    catalog = _sql_catalog(tmp_path, **properties)
+    catalogs = _capture_catalogs(monkeypatch)
+
+    pl.LazyFrame({"a": [1]}).sink_iceberg(catalog.load_table("ns.t"), mode="append")
+    # Locally, the caller's catalog is used.
+    pl.LazyFrame({"a": [2]}).sink_iceberg("ns.t", catalog=catalog, mode="append")
+    assert catalogs == [catalog]
+
+    # A serialized sink rebuilds the catalog, from properties of the same types.
+    q = IcebergSinkState.new("ns.t", catalog=catalog).attach_sink(
+        pl.LazyFrame({"a": [3]})
+    )
+    pickle.loads(pickle.dumps(q)).collect()
+
+    rebuilt = catalogs[1]
+    assert rebuilt is not catalog
+    assert {k: rebuilt.properties[k] for k in properties} == properties
+    assert type(rebuilt.properties["n"]) is int
+    assert type(rebuilt.properties["b"]) is bool
+    assert type(rebuilt.properties["big"]) is int
+
+    assert sorted(
+        pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list()
+    ) == [1, 2, 3]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_sql_non_string_catalog_properties(tmp_path: Path) -> None:
+    catalog = _sql_catalog(tmp_path, auth={"type": "noop"})
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog)
+        ctx.execute("INSERT INTO lake.ns.t VALUES (1), (2)")
+        ctx.execute("UPDATE lake.ns.t SET a = a + 10 WHERE a = 2")
+        out = ctx.execute("SELECT a FROM lake.ns.t ORDER BY a", eager=True)
+    assert out["a"].to_list() == [1, 12]
+
+
+@pytest.mark.parametrize(
+    ("value", "type_name"),
+    [
+        (object(), "object"),
+        (2**70, "int"),
+        ((1, "a"), "tuple"),
+        (HTTPStatus.OK, "http.HTTPStatus"),
+        ("\ud800", "str"),
+        (D("1.5"), "decimal.Decimal"),
+        (float("nan"), "float"),
+        (float("-inf"), "float"),
+        (b"x", "bytes"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_catalog_property_values_out_of_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: Any, type_name: str
+) -> None:
+    # Values that JSON can't carry: the dict is kept as it is in this process, and
+    # refused with the key when the plan is serialized.
+    catalog = _sql_catalog(tmp_path, nested={"value": value})
+    config = IcebergCatalogConfig.from_catalog(catalog)
+    q = IcebergSinkState.new("ns.t", catalog=config).attach_sink(
+        pl.LazyFrame({"a": [1]})
+    )
+
+    for serialize in (q.serialize, partial(pickle.dumps, q)):
+        with pytest.raises(
+            pl.exceptions.ComputeError,
+            match=rf"Iceberg property 'nested\.value' of type {re.escape(type_name)}",
+        ):
+            serialize()
+
+    # Without a catalog instance, the sink rebuilds it from the same objects.
+    catalogs = _capture_catalogs(monkeypatch)
+    q.collect()
+    assert catalogs[0].properties["nested"]["value"] is value
+    assert pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list() == [1]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_property_nesting_limit(tmp_path: Path) -> None:
+    catalog = _sql_catalog(tmp_path)
+    cyclic: dict[str, Any] = {}
+    cyclic["self"] = cyclic
+
+    with pytest.raises(TypeError, match="iceberg_storage_properties") as exc:
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            catalog.load_table("ns.t"), mode="append", storage_options={"x": cyclic}
+        )
+    assert "'x' is nested deeper than 64 levels" in str(exc.value.__cause__)
+
+    # A dotted key is named whole.
+    with pytest.raises(TypeError) as exc:
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            catalog.load_table("ns.t"),
+            mode="append",
+            storage_options={"s3.region": cyclic},
+        )
+    assert "'s3.region' is nested" in str(exc.value.__cause__)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_table_with_out_of_tree_catalog_property(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The caller's table and catalog are used as they are, in this process.
+    catalog = _sql_catalog(tmp_path, session=object())
+    catalogs = _capture_catalogs(monkeypatch)
+    pl.LazyFrame({"a": [1]}).sink_iceberg(catalog.load_table("ns.t"), mode="append")
+    pl.LazyFrame({"a": [2]}).sink_iceberg("ns.t", catalog=catalog, mode="append")
+    assert catalogs == [catalog]
+    assert sorted(
+        pl.scan_iceberg(catalog.load_table("ns.t")).collect()["a"].to_list()
+    ) == [1, 2]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_property_keys_must_be_distinct_str(tmp_path: Path) -> None:
+    class Key(str):
+        __hash__ = object.__hash__
+
+        def __eq__(self, other: object) -> bool:
+            return self is other
+
+    catalog = _sql_catalog(tmp_path)
+    tbl = catalog.load_table("ns.t")
+    cases: list[tuple[Any, str]] = [
+        ({"a": "1", Key("a"): "2"}, "duplicate Iceberg property key 'a'"),
+        ({"a": {1: "x"}}, r"keys must be str: got int in 'a'"),
+        ({1: "x"}, "keys must be str: got int at the top level"),
+    ]
+    for storage_options, match in cases:
+        with pytest.raises(TypeError) as exc:
+            pl.LazyFrame({"a": [1]}).sink_iceberg(
+                tbl, mode="append", storage_options=storage_options
+            )
+        assert re.search(match, str(exc.value.__cause__)), exc.value.__cause__
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_storage_options_keep_types_and_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = _sql_catalog(tmp_path)
+    seen = []
+    convert = IcebergSinkState._get_converted_storage_options
+
+    def capture(self: IcebergSinkState) -> dict[str, Any]:
+        seen.append(self.iceberg_storage_properties)
+        return convert(self)
+
+    monkeypatch.setattr(IcebergSinkState, "_get_converted_storage_options", capture)
+
+    # `max_retries` must stay an int; of two aliases, the later one wins.
+    storage_options = {"max_retries": 2, "s3.region": "first", "aws_region": "second"}
+    pl.LazyFrame({"a": [1]}).sink_iceberg(
+        catalog.load_table("ns.t"), mode="append", storage_options=storage_options
+    )
+
+    assert seen
+    assert all(
+        list(options.items()) == list(storage_options.items()) for options in seen
+    )
+    assert type(seen[-1]["max_retries"]) is int
+    assert (
+        convert(
+            IcebergSinkState.new("ns.t", catalog=catalog, storage_options=seen[-1])
+        )["aws_region"]
+        == "second"
+    )
+
+
+@pytest.mark.parametrize(
+    ("snapshot_properties", "match"),
+    [
+        ({"n": 1}, r"snapshot_properties\['n'\] must be a str mapped to a str"),
+        ({1: "x"}, r"snapshot_properties\[1\] must be a str mapped to a str"),
+        ([("n", "1")], "snapshot_properties must be a dict"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_snapshot_properties_must_be_strings(
+    tmp_path: Path, snapshot_properties: Any, match: str
+) -> None:
+    catalog = _sql_catalog(tmp_path)
+    tbl = catalog.load_table("ns.t")
+
+    with pytest.raises(TypeError, match=match):
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            tbl, mode="append", snapshot_properties=snapshot_properties
+        )
+    assert catalog.load_table("ns.t").current_snapshot() is None
+
+
+class _NameMappingRefusingCatalog(SqlCatalog):  # type: ignore[misc]
+    """Refuses to set the default name mapping, as Unity Catalog does."""
+
+    def commit_table(self, table: Any, requirements: Any, updates: Any) -> Any:
+        from pyiceberg.table.update import SetPropertiesUpdate
+
+        for update in updates:
+            if (
+                isinstance(update, SetPropertiesUpdate)
+                and "schema.name-mapping.default" in update.updates
+            ):
+                msg = "Table properties contain prohibited keys"
+                raise pyiceberg.exceptions.BadRequestError(msg)
+        return super().commit_table(table, requirements, updates)
+
+
+def _name_mapping_refusing_catalog(tmp_path: Path) -> SqlCatalog:
+    catalog = _NameMappingRefusingCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    return catalog
+
+
+def _iceberg_rows(table: pyiceberg.table.Table) -> list[tuple[Any, ...]]:
+    rows = pl.scan_iceberg(table).collect().sort("k").rows()
+    # PyIceberg reads the same rows
+    assert rows == pl.DataFrame(table.scan().to_arrow()).sort("k").rows()
+    return rows
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "write",
+    [
+        "append",
+        "overwrite",
+        "filtered_overwrite",
+        "partitioned",
+        "dynamic_overwrite",
+        "schema_merge",
+        "schema_overwrite",
+        "empty",
+    ],
+)
+def test_sink_iceberg_leaves_name_mapping_unset(tmp_path: Path, write: str) -> None:
+    # Data files carry field IDs, so a commit doesn't need to add a name mapping
+    catalog = _name_mapping_refusing_catalog(tmp_path)
+    spec = (
+        PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "k"))
+        if write in ("partitioned", "dynamic_overwrite")
+        else PartitionSpec()
+    )
+    table = catalog.create_table(
+        ("ns", "t"),
+        IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+        partition_spec=spec,
+    )
+    lf = pl.LazyFrame({"k": [1, 2], "v": ["a", "b"]})
+    expected: list[tuple[Any, ...]] = [(1, "a"), (2, "b")]
+    if write == "filtered_overwrite":
+        # rewrites the file holding k = 2, keeping k = 1
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [2], "v": ["c"]}).sink_iceberg(
+            table, mode="overwrite", overwrite_filter=pl.col("k") == 2
+        )
+        expected = [(1, "a"), (2, "c")]
+    elif write == "schema_overwrite":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [3], "w": [True]}).sink_iceberg(
+            table, mode="overwrite", schema_mode="overwrite"
+        )
+        expected = [(3, True)]
+    elif write == "empty":
+        lf.clear().sink_iceberg(table, mode="append")
+        expected = []
+    elif write == "dynamic_overwrite":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [2], "v": ["c"]}).sink_iceberg(
+            table, mode="overwrite", partition_overwrite="dynamic"
+        )
+        expected = [(1, "a"), (2, "c")]
+    elif write == "schema_merge":
+        lf.sink_iceberg(table, mode="append")
+        pl.LazyFrame({"k": [3], "v": ["c"], "w": [True]}).sink_iceberg(
+            table, mode="append", schema_mode="merge"
+        )
+        expected = [(1, "a", None), (2, "b", None), (3, "c", True)]
+    elif write == "overwrite":
+        pl.LazyFrame({"k": [9], "v": ["z"]}).sink_iceberg(table, mode="append")
+        lf.sink_iceberg(table, mode="overwrite")
+    else:
+        lf.sink_iceberg(table, mode="append")
+
+    table = catalog.load_table(("ns", "t"))
+    assert "schema.name-mapping.default" not in table.properties
+    assert _iceberg_rows(table) == expected
+
+
+@pytest.mark.write_disk
+def test_sql_catalog_writes_leave_name_mapping_unset(tmp_path: Path) -> None:
+    catalog = _name_mapping_refusing_catalog(tmp_path)
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog, default_namespace="ns", default=True)
+        ctx.execute("CREATE TABLE t (k BIGINT, v VARCHAR)")
+        ctx.execute("INSERT INTO t VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+        ctx.execute("UPDATE t SET v = 'B' WHERE k = 2")
+        ctx.execute("DELETE FROM t WHERE k = 3")
+        ctx.execute(
+            "MERGE INTO t USING (SELECT 4 AS k, 'd' AS v) AS s ON t.k = s.k "
+            "WHEN NOT MATCHED THEN INSERT VALUES (s.k, s.v)"
+        )
+        ctx.execute("CREATE TABLE t2 AS SELECT * FROM t")
+    for name in ("t", "t2"):
+        table = catalog.load_table(("ns", name))
+        assert "schema.name-mapping.default" not in table.properties
+        assert _iceberg_rows(table) == [(1, "a"), (2, "B"), (4, "d")]
+
+
+def _arrow_field_ids(schema: pa.Schema) -> dict[str, int]:
+    """Field IDs of an Arrow schema, nested fields included, by path."""
+
+    def walk(field: pa.Field, path: str) -> dict[str, int]:
+        out = {path: int(field.metadata[b"PARQUET:field_id"])}
+        if pa.types.is_struct(field.type):
+            for child in field.type:
+                out |= walk(child, f"{path}.{child.name}")
+        elif pa.types.is_map(field.type):
+            out |= walk(field.type.key_field, f"{path}.key")
+            out |= walk(field.type.item_field, f"{path}.value")
+        elif pa.types.is_list(field.type) or pa.types.is_large_list(field.type):
+            out |= walk(field.type.value_field, f"{path}[]")
+        return out
+
+    return {k: v for f in schema for k, v in walk(f, f.name).items()}
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_data_files_carry_field_ids(tmp_path: Path) -> None:
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()),
+            NestedField(
+                2,
+                "s",
+                StructType(
+                    NestedField(3, "a", LongType()), NestedField(4, "b", StringType())
+                ),
+            ),
+            NestedField(5, "l", ListType(6, LongType())),
+            NestedField(7, "m", MapType(8, StringType(), 9, LongType())),
+        ),
+    )
+    entries = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+    pl.LazyFrame(
+        {
+            "k": [1],
+            "s": [{"a": 1, "b": "x"}],
+            "l": [[1, 2]],
+            "m": [[{"key": "x", "value": 1}]],
+        },
+        schema_overrides={
+            "s": pl.Struct({"a": pl.Int64, "b": pl.String}),
+            "m": entries,
+        },
+    ).sink_iceberg(table, mode="append")
+    # a new column, nested, through schema evolution
+    pl.LazyFrame(
+        {"k": [2], "s": [{"a": 2, "b": "y"}], "l": [[3]], "t": [{"c": 1.5}]}
+    ).sink_iceberg(table, mode="append", schema_mode="merge")
+
+    table = table.refresh()
+    expected = _arrow_field_ids(schema_to_pyarrow(table.schema()))
+    paths = table.inspect.files().column("file_path").to_pylist()
+    got = [_arrow_field_ids(pq.read_schema(p.removeprefix("file://"))) for p in paths]
+    assert len(got) == 2
+    # every column of every file, nested ones included, has the table's field ID
+    for ids in got:
+        assert ids == {k: v for k, v in expected.items() if k in ids}
+    assert any({"m.key", "m.value"} <= ids.keys() for ids in got)
+    assert any({"t", "t.c"} <= ids.keys() for ids in got)
+    assert "schema.name-mapping.default" not in table.properties
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_without_name_mapping_rename_and_reuse(tmp_path: Path) -> None:
+    # Columns resolve by field ID: a renamed column keeps its values, and a new
+    # column reusing the old name doesn't read them
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+    )
+    pl.LazyFrame({"k": [1], "v": ["a"]}).sink_iceberg(table, mode="append")
+    with table.update_schema() as update:
+        update.rename_column("v", "w")
+    with table.update_schema() as update:
+        update.add_column("v", StringType())
+    table = table.refresh()
+    pl.LazyFrame({"k": [2], "w": ["b"], "v": ["c"]}).sink_iceberg(table, mode="append")
+    table = table.refresh()
+    assert "schema.name-mapping.default" not in table.properties
+    assert _iceberg_rows(table) == [(1, "a", None), (2, "b", "c")]
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_keeps_name_mapping_of_imported_files(tmp_path: Path) -> None:
+    # `add_files` sets a name mapping for files without field IDs; sinks keep it
+    table, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", StringType())
+        ),
+    )
+    path = tmp_path / "imported.parquet"
+    pq.write_table(pa.table({"k": [1], "v": ["a"]}), path)
+    table.add_files([format_file_uri_iceberg(path)])
+    table = table.refresh()
+    mapping = table.properties["schema.name-mapping.default"]
+
+    pl.LazyFrame({"k": [2], "v": ["b"]}).sink_iceberg(table, mode="append")
+    table = table.refresh()
+    assert table.properties["schema.name-mapping.default"] == mapping
+    assert _iceberg_rows(table) == [(1, "a"), (2, "b")]
+
+
 @pytest.mark.write_disk
 def test_sink_iceberg__attach_resolved_sink_deferred_to_ir_resolution(
     tmp_path: Path,
@@ -4178,6 +5111,747 @@ retry_max_backoff: Some(9.875s), \
 retry_base_multiplier: Some(TotalOrdWrap(3.14159)) }"""
         in capture
     )
+
+
+def _vended_table(
+    tmp_path: Path, catalog_properties: dict[str, str], scheme: str
+) -> tuple[pyiceberg.table.Table, SqlCatalog]:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        catalog_properties=catalog_properties,
+    )
+    # Credentials are renewed for the cloud of the table's location only.
+    tbl.metadata_location = f"{scheme}://bucket/t.metadata.json"
+    tbl.metadata = tbl.metadata.model_copy(update={"location": f"{scheme}://bucket/t"})
+    return tbl, catalog
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_native_unsupported_io_properties(tmp_path: Path) -> None:
+    # Remote signing is unsupported by object store, for tables on S3.
+    tbl, _ = _vended_table(
+        tmp_path, {"s3.signer": "S3V4RestSigner", "s3.region": "eu-west-1"}, "s3"
+    )
+    resolver = new_iceberg_scan_resolver(tbl)
+
+    # The catalog's FileIO properties are ignored; the user's options are used alone.
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options is None
+    assert scan_data.credential_provider == "auto"
+
+    resolver.table.iceberg_storage_properties = {"s3.region": "us-east-1"}
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"aws_region": "us-east-1"}
+
+    # Forcing the native reader is not an error either.
+    resolver.reader_override = "native"
+    assert isinstance(resolver._to_dataset_scan_impl(), _NativeIcebergScanData)
+
+
+def _gcs_vended_properties(token: str, expires_at: int) -> dict[str, str]:
+    return {
+        "gcs.oauth2.token": token,
+        "gcs.oauth2.token-expires-at": str(expires_at * 1000),
+    }
+
+
+def _native_credential_provider(tbl: pyiceberg.table.Table) -> Any:
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    # Renewed credentials are not passed as fixed values.
+    assert scan_data.storage_options is None
+    assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+    return scan_data.credential_provider.build_credential_provider()
+
+
+class _Clock:
+    def __init__(self, now: int) -> None:
+        self.now = now
+
+    def __call__(self) -> int:
+        return self.now
+
+
+def _fixed_clock(plmonkeypatch: PlMonkeyPatch, now: int) -> _Clock:
+    """Stop the clock of the credential renewals at `now`."""
+    import polars.io.iceberg._credentials as credentials
+
+    clock = _Clock(now)
+    plmonkeypatch.setattr(credentials, "_now", clock)
+    return clock
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_vended_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    clock = _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    provider = _native_credential_provider(tbl)
+
+    # Renewed a minute before they expire.
+    assert provider() == ({"bearer_token": "t1"}, now + 3600 - 60)
+
+    # By reloading the table from the catalog.
+    catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
+
+    # Credentials expiring within the minute are used until they expire.
+    clock.now += 60
+    catalog.properties.update(_gcs_vended_properties("t3", clock.now + 30))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t3"}, clock.now + 30)
+
+    # Cleared right after a renewal (rejected by the object store): renewed again.
+    catalog.properties.update(_gcs_vended_properties("t4", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t4"}, now + 7200 - 60)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_pickled_vended_credential_provider(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
+
+    # Other processes start with the scan's credentials, without a catalog request.
+    builder = pickle.loads(pickle.dumps(scan_data.credential_provider))
+    assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+    # And share its object store.
+    assert (
+        builder.stable_cache_key() == scan_data.credential_provider.stable_cache_key()
+    )
+    provider = builder.build_credential_provider()
+    assert provider() == ({"bearer_token": "t1"}, now + 3600 - 60)
+
+    # They renew them with a catalog created from its configuration.
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_vended_credentials_renewal_error(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    clock = _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    provider = _native_credential_provider(tbl)
+
+    def unreachable(identifier: Any) -> Any:
+        msg = "catalog unreachable"
+        raise ConnectionError(msg)
+
+    plmonkeypatch.setattr(catalog, "load_table", unreachable)
+
+    # The last credentials are used while they are valid, and the renewal retried.
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t1"}, now + 10)
+
+    clock.now = now + 3600
+    provider.clear_cached_credentials()
+    with pytest.raises(ConnectionError, match="catalog unreachable"):
+        provider()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_vended_credentials_by_catalog_name(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from polars.io.iceberg import _catalog_resolver
+    from polars.io.iceberg._dataset import IcebergCatalogTableDescriptor
+
+    now = int(datetime.now().timestamp())
+    _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    names = []
+
+    def resolve(name: str) -> SqlCatalog:
+        names.append(name)
+        return catalog
+
+    plmonkeypatch.setattr(_catalog_resolver, "ICEBERG_CATALOG_RESOLVER", resolve)
+
+    resolver = new_iceberg_scan_resolver(tbl)
+    resolver.table.table_descriptor_ = IcebergCatalogTableDescriptor(
+        table_identifier=tbl.name(), catalog_config="sales"
+    )
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    builder = scan_data.credential_provider
+    assert isinstance(builder, CredentialProviderBuilder)
+
+    # Only the catalog's name is carried, as by the scan.
+    pickled = pickle.dumps(builder)
+    assert b"sales" in pickled
+    assert b"sqlite" not in pickled
+    assert b"SqlCatalog" not in pickled
+
+    # Renewals resolve it.
+    provider: Any = builder.build_credential_provider()
+    catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
+    assert names == ["sales"]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scheme", "properties", "credentials"),
+    [
+        (
+            "s3",
+            {
+                "s3.access-key-id": "key",
+                "s3.secret-access-key": "secret",
+                "s3.session-token": "session",
+                "s3.session-token-expires-at-ms": "{expires_at_ms}",
+            },
+            {
+                "aws_access_key_id": "key",
+                "aws_secret_access_key": "secret",
+                "aws_session_token": "session",
+            },
+        ),
+        (
+            "abfss",
+            {
+                "adls.sas-token": "sas",
+                "adls.sas-token-expires-at-ms": "{expires_at_ms}",
+            },
+            {"sas_token": "sas"},
+        ),
+        (
+            "gs",
+            {
+                "gcs.oauth2.token": "t1",
+                "gcs.oauth2.token-expires-at": "{expires_at_ms}",
+                # Another cloud's, expired.
+                "s3.session-token-expires-at-ms": "1000",
+            },
+            {"bearer_token": "t1"},
+        ),
+    ],
+)
+def test_scan_iceberg_renews_vended_credentials_of_any_storage(
+    tmp_path: Path, scheme: str, properties: dict[str, str], credentials: dict[str, str]
+) -> None:
+    now = int(datetime.now().timestamp())
+    tbl, _ = _vended_table(
+        tmp_path,
+        {k: v.format(expires_at_ms=(now + 3600) * 1000) for k, v in properties.items()},
+        scheme,
+    )
+
+    assert _native_credential_provider(tbl)() == (credentials, now + 3600 - 60)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_expired_vended_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(tmp_path, _gcs_vended_properties("t1", now - 1), "gs")
+    catalog.properties.update(_gcs_vended_properties("t2", now + 3600))
+
+    provider = _native_credential_provider(tbl)
+    assert provider() == ({"bearer_token": "t2"}, now + 3600 - 60)
+
+    # Vended expired again: retried a while later, not on every request.
+    catalog.properties.update(_gcs_vended_properties("t3", now - 1))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t3"}, now + 10)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_vended_credentials_with_load_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    now = int(datetime.now().timestamp())
+    _fixed_clock(plmonkeypatch, now)
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    calls = []
+
+    def load_credentials(identifier: Any, location: str) -> dict[str, str]:
+        calls.append((identifier, location))
+        return _gcs_vended_properties("t2", now + 7200)
+
+    plmonkeypatch.setattr(catalog, "load_credentials", load_credentials, raising=False)
+    provider = _native_credential_provider(tbl)
+    provider.clear_cached_credentials()
+
+    assert provider() == ({"bearer_token": "t2"}, now + 7200 - 60)
+    # For the data path: catalogs match the location by prefix.
+    assert calls == [(tbl.name(), "gs://bucket/t/data/")]
+
+    # Catalogs whose server does not support the endpoint reload the table.
+    def unsupported(identifier: Any, location: str) -> dict[str, str]:
+        raise NotImplementedError
+
+    plmonkeypatch.setattr(catalog, "load_credentials", unsupported)
+    catalog.properties.update(_gcs_vended_properties("t3", now + 3600))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t3"}, now + 3600 - 60)
+
+    # As do credentials vended without an expiry, which could not be renewed.
+    def without_expiry(identifier: Any, location: str) -> dict[str, str]:
+        return {"gcs.oauth2.token": "no-expiry"}
+
+    plmonkeypatch.setattr(catalog, "load_credentials", without_expiry)
+    catalog.properties.update(_gcs_vended_properties("t4", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t4"}, now + 7200 - 60)
+
+    # And an endpoint that fails.
+    def failing(identifier: Any, location: str) -> dict[str, str]:
+        msg = "credentials endpoint failed"
+        raise ConnectionError(msg)
+
+    plmonkeypatch.setattr(catalog, "load_credentials", failing)
+    catalog.properties.update(_gcs_vended_properties("t5", now + 3600))
+    provider.clear_cached_credentials()
+    assert provider() == ({"bearer_token": "t5"}, now + 3600 - 60)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_fixed_vended_credentials(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    (tmp_path / "c").mkdir()
+    (tmp_path / "d").mkdir()
+
+    # Without an expiry.
+    tbl, _ = _vended_table(tmp_path / "a", {"gcs.oauth2.token": "t1"}, "gs")
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"bearer_token": "t1"}
+    assert scan_data.credential_provider == "auto"
+
+    # Replaced by the user's.
+    tbl, catalog = _vended_table(
+        tmp_path / "b", _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    resolver = new_iceberg_scan_resolver(tbl)
+    resolver.table.iceberg_storage_properties = {"gcs.oauth2.token": "user-token"}
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"bearer_token": "user-token"}
+    assert scan_data.credential_provider == "auto"
+
+    # Of a table without a catalog.
+    static_table = StaticTable.from_metadata(
+        catalog.load_table(tbl.name()).metadata_location,
+        _gcs_vended_properties("t1", now + 3600),
+    )
+    static_table.metadata_location = "gs://bucket/t.metadata.json"
+    static_table.metadata = tbl.metadata
+    scan_data = new_iceberg_scan_resolver(static_table)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"bearer_token": "t1"}
+    assert scan_data.credential_provider == "auto"
+
+    # Of another cloud than the table's: not used at all.
+    tbl, _ = _vended_table(
+        tmp_path / "c", _gcs_vended_properties("t1", now + 3600), "s3"
+    )
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options is None
+    assert scan_data.credential_provider == "auto"
+
+    # With an expiry that is not a timestamp.
+    tbl, _ = _vended_table(
+        tmp_path / "d",
+        {"gcs.oauth2.token": "t1", "gcs.oauth2.token-expires-at": "soon"},
+        "gs",
+    )
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"bearer_token": "t1"}
+    assert scan_data.credential_provider == "auto"
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_vended_credential_provider_cache_key(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    tbl, _ = _vended_table(
+        tmp_path / "a", _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+    other, _ = _vended_table(
+        tmp_path / "b", _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+
+    def cache_key(tbl: pyiceberg.table.Table) -> bytes:
+        scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+        assert isinstance(scan_data, _NativeIcebergScanData)
+        assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+        return scan_data.credential_provider.stable_cache_key()
+
+    # Scans of the same table share the object store (and its credentials).
+    assert cache_key(tbl) == cache_key(tbl)
+    assert cache_key(tbl) != cache_key(other)
+
+    # Keyed on the table, not on the scan's first data file (which pruning changes).
+    from polars.io.iceberg._credentials import renewing_credential_provider
+    from polars.io.iceberg._plugin import _data_location
+
+    _, builder = renewing_credential_provider(
+        tbl, {"bearer_token": "t1"}, None, _data_location(tbl)
+    )
+    assert isinstance(builder, CredentialProviderBuilder)
+    assert cache_key(tbl) == builder.stable_cache_key()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_vended_credential_provider_cache_key_expiry(
+    tmp_path: Path,
+) -> None:
+    now = int(datetime.now().timestamp())
+    tbl, _ = _vended_table(tmp_path, {}, "gs")
+
+    def cache_key(token: str, expires_at: int) -> bytes:
+        # As vended at the table's load: not part of the catalog's properties.
+        tbl.io.properties = _gcs_vended_properties(token, expires_at)
+        scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+        assert isinstance(scan_data, _NativeIcebergScanData)
+        assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+        return scan_data.credential_provider.stable_cache_key()
+
+    # The same credentials vended with a later expiry share the object store.
+    assert cache_key("t1", now + 3600) == cache_key("t1", now + 3605)
+    # Other credentials (a caller with different access) do not.
+    assert cache_key("t1", now + 3600) != cache_key("t2", now + 3600)
+
+
+@pytest.mark.write_disk
+def test_iceberg_catalog_table_descriptor_reuses_catalog(tmp_path: Path) -> None:
+    from pyiceberg.catalog.noop import NoopCatalog
+
+    from polars.io.iceberg._dataset import (
+        IcebergCatalogConfig,
+        IcebergCatalogTableDescriptor,
+    )
+
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+
+    # Constructed from the configuration, then reused: SqlCatalog is thread-safe.
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier=tbl.name(),
+        catalog_config=IcebergCatalogConfig.from_catalog(catalog),
+    )
+    constructed = descriptor.catalog()
+    assert isinstance(constructed, SqlCatalog)
+    assert constructed is not catalog
+    assert descriptor.catalog() is constructed
+
+    # A given instance is used as is.
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier=tbl.name(),
+        catalog_config=IcebergCatalogConfig.from_catalog(catalog),
+        catalog_=NoPickleOption(catalog),
+    )
+    assert descriptor.catalog() is catalog
+
+    # Catalogs that are not thread-safe are constructed per use.
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier=tbl.name(),
+        catalog_config=IcebergCatalogConfig.from_catalog(NoopCatalog("noop")),
+    )
+    assert descriptor.catalog() is not descriptor.catalog()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_only_provider_credentials(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+    tbl, _ = _vended_table(
+        tmp_path,
+        {
+            "adls.sas-token": "sas",
+            "adls.sas-token-expires-at-ms": str((now + 3600) * 1000),
+            # Not renewed: the credential provider cannot return it.
+            "adls.client-secret": "secret",
+        },
+        "abfss",
+    )
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.storage_options == {"azure_storage_client_secret": "secret"}
+    assert isinstance(scan_data.credential_provider, CredentialProviderBuilder)
+    provider = scan_data.credential_provider.build_credential_provider()
+    assert provider is not None
+    assert provider() == ({"sas_token": "sas"}, now + 3600 - 60)
+
+
+@pytest.mark.parametrize(
+    ("properties", "location", "expected"),
+    [
+        # The token of the URL's account, whatever its endpoint.
+        (
+            {
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        (
+            {"adls.sas-token.acct.dfs.core.windows.net": "sas"},
+            "wasbs://c@ACCT.blob.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        # Without an account in the URL, that of `adls.account-name`.
+        (
+            {
+                "adls.account-name": "acct",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "az://c/t",
+            {"azure_storage_account_name": "acct", "azure_storage_sas_key": "sas"},
+        ),
+        # The URL's account is the one accessed, as by object store.
+        (
+            {
+                "adls.account-name": "other",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_account_name": "other", "azure_storage_sas_key": "sas"},
+        ),
+        # It replaces `adls.sas-token`, which PyIceberg sets to any account's.
+        (
+            {
+                "adls.sas-token": "other",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        # Without one for the account, `adls.sas-token` is used.
+        (
+            {
+                "adls.sas-token": "plain",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "plain"},
+        ),
+        # Other accounts' tokens, empty ones, and tokens for an unknown account are
+        # not used.
+        (
+            {"adls.sas-token.other.dfs.core.windows.net": "other"},
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {},
+        ),
+        (
+            {"adls.sas-token.acct.dfs.core.windows.net": ""},
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {},
+        ),
+        ({"adls.sas-token.acct.dfs.core.windows.net": "sas"}, "az://c/t", {}),
+        ({"adls.sas-token.acct.dfs.core.windows.net": "sas"}, "s3://b/t", {}),
+    ],
+)
+def test_iceberg_per_account_sas_token(
+    properties: dict[str, str], location: str, expected: dict[str, str]
+) -> None:
+    from polars.io.iceberg._plugin import _catalog_storage_options, _storage_options
+
+    assert _catalog_storage_options(properties, location) == expected
+    # The user's credentials replace it.
+    assert _storage_options(properties, location, {"account_key": "k"}) == {
+        **{k: v for k, v in expected.items() if k != "azure_storage_sas_key"},
+        "account_key": "k",
+    }
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_per_account_sas_token(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+
+    def vended(token: str, expires_at: int) -> dict[str, str]:
+        properties = {}
+        for account in ("other", "acct"):
+            host = f"{account}.dfs.core.windows.net"
+            properties[f"adls.sas-token.{host}"] = f"{token}-{account}"
+            # The other account's token expires sooner.
+            properties[f"adls.sas-token-expires-at-ms.{host}"] = str(
+                (expires_at if account == "acct" else now + 120) * 1000
+            )
+        return properties
+
+    tbl, catalog = _vended_table(tmp_path, vended("sas", now + 3600), "abfss")
+    tbl.metadata = tbl.metadata.model_copy(
+        update={"location": "abfss://c@acct.dfs.core.windows.net/t"}
+    )
+    # As PyIceberg leaves it after a read: the first token, without its expiry.
+    tbl.io.properties["adls.sas-token"] = "sas-other"
+
+    provider = _native_credential_provider(tbl)
+    assert provider() == ({"sas_token": "sas-acct"}, now + 3600 - 60)
+
+    catalog.properties.update(vended("new", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"sas_token": "new-acct"}, now + 7200 - 60)
+
+
+class _SinkArgs(Exception):
+    pass
+
+
+def _sink_parquet_kwargs(
+    tbl: pyiceberg.table.Table | str, plmonkeypatch: PlMonkeyPatch, **sink_kwargs: Any
+) -> dict[str, Any]:
+    """Keyword arguments `sink_iceberg` passes to `sink_parquet` for `tbl`."""
+
+    def capture(self: pl.LazyFrame, *args: Any, **kwargs: Any) -> Any:
+        raise _SinkArgs(kwargs)
+
+    plmonkeypatch.setattr(pl.LazyFrame, "sink_parquet", capture)
+    with pytest.raises(_SinkArgs) as e:
+        pl.DataFrame({"a": [1]}).lazy().sink_iceberg(tbl, mode="append", **sink_kwargs)
+    kwargs: dict[str, Any] = e.value.args[0]
+    return kwargs
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_catalog_storage_options(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    tbl, _ = _vended_table(
+        tmp_path,
+        {
+            "s3.region": "eu-west-1",
+            "s3.access-key-id": "vended-key",
+            "s3.secret-access-key": "vended-secret",
+        },
+        "s3",
+    )
+
+    kwargs = _sink_parquet_kwargs(tbl, plmonkeypatch)
+    assert kwargs["storage_options"] == {
+        "aws_region": "eu-west-1",
+        "aws_access_key_id": "vended-key",
+        "aws_secret_access_key": "vended-secret",
+    }
+    assert kwargs["credential_provider"] == "auto"
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_renews_vended_credentials(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from polars.io.iceberg._credentials import renewing_credential_provider
+    from polars.io.iceberg._plugin import _native_storage_options
+
+    now = int(datetime.now().timestamp())
+    tbl, catalog = _vended_table(
+        tmp_path, _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+
+    kwargs = _sink_parquet_kwargs(tbl, plmonkeypatch)
+    assert kwargs["storage_options"] == {}
+    provider = kwargs["credential_provider"].build_credential_provider()
+    assert provider() == ({"bearer_token": "t1"}, now + 3600 - 60)
+
+    # A sink by catalog name carries only the name, as its state does.
+    from polars.io.iceberg import _catalog_resolver
+
+    plmonkeypatch.setattr(catalog, "load_table", lambda identifier: tbl)
+    plmonkeypatch.setattr(
+        _catalog_resolver, "ICEBERG_CATALOG_RESOLVER", lambda name: catalog
+    )
+    kwargs = _sink_parquet_kwargs("ns.t", plmonkeypatch, catalog="sales")
+    pickled = pickle.dumps(kwargs["credential_provider"])
+    assert b"sales" in pickled
+    assert b"SqlCatalog" not in pickled
+    plmonkeypatch.undo()
+
+    # A table staged by `CREATE TABLE AS` cannot be loaded before its commit.
+    staged = catalog.create_table_transaction(
+        (*tbl.name()[:-1], "staged"), tbl.schema()
+    )._table
+    location = "gs://bucket/staged/data"
+    storage_options = _native_storage_options(staged, None, location)
+    assert storage_options == {"bearer_token": "t1"}
+    assert renewing_credential_provider(staged, storage_options, None, location) == (
+        storage_options,
+        "auto",
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_commit_renews_file_io(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    import polars.io.iceberg._credentials as credentials
+
+    now = int(datetime.now().timestamp())
+    clock = _fixed_clock(plmonkeypatch, now)
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    tbl, catalog = _vended_table(
+        tmp_path / "a", _gcs_vended_properties("t1", now + 3600), "gs"
+    )
+
+    # The table's FileIO is kept while its credentials are valid.
+    file_io = tbl.io
+    credentials.refresh_file_io(tbl)
+    assert tbl.io is file_io
+
+    # A catalog that cannot be reached leaves it as it is.
+    clock.now = now + 3600
+    load_table = catalog.load_table
+    plmonkeypatch.setattr(catalog, "load_table", lambda identifier: 1 / 0)
+    credentials.refresh_file_io(tbl)
+    assert tbl.io is file_io
+
+    # A table the caller loaded already is not loaded again.
+    catalog.properties.update(_gcs_vended_properties("t2", now + 7200))
+    credentials.refresh_file_io(tbl, load_table(tbl.name()))
+    assert tbl.io.properties["gcs.oauth2.token"] == "t2"
+
+    plmonkeypatch.setattr(catalog, "load_table", load_table)
+    clock.now = now + 7200
+    catalog.properties.update(_gcs_vended_properties("t3", now + 9000))
+    credentials.refresh_file_io(tbl)
+    assert tbl.io.properties["gcs.oauth2.token"] == "t3"
+
+    # The sink does so before it commits: manifests are written with the FileIO.
+    refreshed: list[pyiceberg.table.Table] = []
+    plmonkeypatch.setattr(credentials, "refresh_file_io", refreshed.append)
+    tbl, _ = new_iceberg_table(
+        tmp_path / "b", schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.LazyFrame({"a": [1]}).sink_iceberg(tbl, mode="append")
+    assert [t is tbl for t in refreshed] == [True]
 
 
 @pytest.mark.write_disk
@@ -6035,6 +7709,290 @@ def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: Any) -> None:
     )
 
 
+def _statistics_catalog(tmp_path: Path) -> SqlCatalog:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+    return catalog
+
+
+def _remove_data_files(tbl: pyiceberg.table.Table) -> None:
+    for task in tbl.scan().plan_files():
+        Path(task.file.file_path.removeprefix("file://")).unlink()
+
+
+def _answered_from_statistics(capfd: pytest.CaptureFixture[str]) -> bool:
+    return "answered from table statistics" in capfd.readouterr().err
+
+
+_STATISTICS_FRAMES = [
+    {
+        "id": [1, 7],
+        "v": [None, None],
+        "d": [date(2026, 1, 1), date(2025, 3, 4)],
+        "ts": [datetime(2026, 1, 1, 12), datetime(2024, 1, 1)],
+        "dec": [D("1.25"), D("-3.50")],
+        "b": [True, True],
+        "t": [time(1, 2), time(23, 59)],
+        "s": ["b", "a"],
+        "f": [1.5, 2.5],
+    },
+    {
+        "id": [-4, 3],
+        "v": [10, None],
+        "d": [date(2020, 1, 1), date(2027, 1, 1)],
+        "ts": [datetime(2030, 1, 1), datetime(2023, 1, 1)],
+        "dec": [D("9.99"), D("0.01")],
+        "b": [False, True],
+        "t": [time(0, 0), time(12, 0)],
+        "s": ["z", "c"],
+        "f": [-1.0, 0.5],
+    },
+]
+_STATISTICS_SCHEMA: dict[str, Any] = {"v": pl.Int64, "dec": pl.Decimal(10, 2)}
+_STATISTICS_COLUMNS = ["id", "v", "d", "dec", "b", "t"]
+
+
+def _statistics_table(catalog: SqlCatalog) -> pyiceberg.table.Table:
+    for frame in _STATISTICS_FRAMES:
+        pl.LazyFrame(frame, schema_overrides=_STATISTICS_SCHEMA).sink_iceberg(
+            "ns.t", catalog=catalog, mode="append", create_if_not_exists=True
+        )
+    return catalog.load_table("ns.t")
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    tbl = _statistics_table(catalog)
+    aggs = [
+        *(
+            getattr(pl.col(c), f)().alias(f"{c}_{f}")
+            for c in _STATISTICS_COLUMNS
+            for f in ["min", "max", "count", "null_count"]
+        ),
+        # Timestamps: counts only
+        pl.col("ts").count().alias("ts_count"),
+        pl.col("ts").null_count().alias("ts_null_count"),
+        pl.len(),
+        (pl.col("id").max() - pl.col("id").min()).alias("range"),
+    ]
+    expected = pl.concat(
+        pl.DataFrame(f, schema_overrides=_STATISTICS_SCHEMA) for f in _STATISTICS_FRAMES
+    ).select(aggs)
+
+    # Without data files, only statistics can answer.
+    _remove_data_files(tbl)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    assert_frame_equal(pl.scan_iceberg(tbl).select(aggs).collect(), expected)
+    assert _answered_from_statistics(capfd)
+
+    with pl.SQLContext() as ctx:
+        ctx.register_catalog("lake", catalog)
+        out = ctx.execute(
+            "SELECT max(id) AS m, min(d) AS n, count(v) AS c, count(*) AS r "
+            "FROM lake.ns.t",
+            eager=True,
+        )
+    assert out.row(0) == (7, date(2020, 1, 1), 1, 4)
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # strings and floats: bounds may be truncated, NaN counts are not known
+        lambda lf: lf.select(pl.col("s").max()),
+        lambda lf: lf.select(pl.col("f").max()),
+        # timestamps: OneLake floors the bounds of Delta tables to milliseconds
+        lambda lf: lf.select(pl.col("ts").max()),
+        # not every row, or not only aggregates the statistics hold
+        lambda lf: lf.filter(pl.col("id") > 1).select(pl.col("id").max()),
+        lambda lf: lf.head(3).select(pl.col("id").max()),
+        lambda lf: lf.with_row_index().select(pl.col("index").max()),
+        lambda lf: lf.select(pl.col("id").max(), pl.col("id").sum().alias("sum")),
+        lambda lf: lf.select(pl.col("id").max() + pl.col("id").first()),
+        lambda lf: lf.select(pl.col("v").max(), pl.col("id")),
+        # nested evaluation contexts: the height or `len()` differ there
+        lambda lf: lf.select(pl.col("id").max().over(pl.lit(1))),
+        lambda lf: lf.select(
+            pl.col("id").max(), pl.lit([10, 20]).list.eval(pl.len()).alias("x")
+        ),
+    ],
+)
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_need_exact_statistics(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
+) -> None:
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    expected = query(pl.scan_iceberg(tbl)).collect(
+        optimizations=pl.QueryOptFlags.none()
+    )
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    out = query(pl.scan_iceberg(tbl)).collect()
+
+    assert not _answered_from_statistics(capfd)
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_fall_back(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    # No bounds for `id`
+    tbl = catalog.create_table(
+        ("ns", "counts"),
+        IcebergSchema(NestedField(1, "id", LongType())),
+        properties={"write.metadata.metrics.column.id": "counts"},
+    )
+    pl.DataFrame({"id": [1, 5]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "counts"))
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    max_id = pl.col("id").max()
+    assert pl.scan_iceberg(tbl).select(max_id).collect().item() == 5
+    assert not _answered_from_statistics(capfd)
+
+    # Deleted rows are still in the statistics.
+    tbl = _statistics_table(catalog)
+    paths = [task.file.file_path for task in tbl.scan().plan_files()]
+    tbl = _add_position_deletes(tbl, {paths[0]: [0, 1]})
+    expected = (
+        pl.scan_iceberg(tbl)
+        .select(max_id)
+        .collect(optimizations=pl.QueryOptFlags.none())
+    )
+    capfd.readouterr()
+    assert_frame_equal(pl.scan_iceberg(tbl).select(max_id).collect(), expected)
+    assert not _answered_from_statistics(capfd)
+
+    # Opted out, or without optimizations
+    tbl = catalog.create_table(
+        ("ns", "o"), IcebergSchema(NestedField(1, "id", LongType()))
+    )
+    pl.DataFrame({"id": [1, 5]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "o"))
+    capfd.readouterr()
+    lf = pl.scan_iceberg(tbl, use_metadata_statistics=False).select(max_id)
+    assert lf.collect().item() == 5
+    assert not _answered_from_statistics(capfd)
+    lf = pl.scan_iceberg(tbl).select(max_id)
+    assert lf.collect(optimizations=pl.QueryOptFlags.none()).item() == 5
+    assert not _answered_from_statistics(capfd)
+    assert lf.collect().item() == 5
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_promoted_and_empty(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    aggs = [
+        pl.col("id").min().alias("min"),
+        pl.col("id").max().alias("max"),
+        pl.col("id").count().alias("count"),
+        pl.len(),
+    ]
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    tbl = catalog.create_table(
+        ("ns", "e"), IcebergSchema(NestedField(1, "id", LongType()))
+    )
+    capfd.readouterr()
+    assert pl.scan_iceberg(tbl).select(aggs).collect().row(0) == (None, None, 0, 0)
+    assert _answered_from_statistics(capfd)
+
+    # Bounds of files written before an int -> long promotion are 4 bytes.
+    tbl = catalog.create_table(
+        ("ns", "p"), IcebergSchema(NestedField(1, "id", IntegerType()))
+    )
+    pl.DataFrame({"id": pl.Series([3, -7], dtype=pl.Int32)}).write_iceberg(
+        tbl, mode="append"
+    )
+    with tbl.update_schema() as update:
+        update.update_column("id", LongType())
+    tbl = catalog.load_table(("ns", "p"))
+    pl.DataFrame({"id": [2**40, 1]}).write_iceberg(tbl, mode="append")
+    tbl = catalog.load_table(("ns", "p"))
+    _remove_data_files(tbl)
+    capfd.readouterr()
+
+    assert pl.scan_iceberg(tbl).select(aggs).collect().row(0) == (-7, 2**40, 4, 4)
+    assert _answered_from_statistics(capfd)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_requests(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Statistics are only asked for when they can answer the whole select.
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    requests = []
+    to_dataset_scan = IcebergScanResolver.to_dataset_scan
+
+    def record(self: Any, *args: Any, **kwargs: Any) -> Any:
+        requests.append(kwargs.get("statistics_columns"))
+        return to_dataset_scan(self, *args, **kwargs)
+
+    plmonkeypatch.setattr(IcebergScanResolver, "to_dataset_scan", record)
+    max_id = pl.col("id").max()
+    cases: list[tuple[dict[str, Any], list[pl.Expr], list[str] | None]] = [
+        ({}, [max_id, pl.col("s").count()], ["id", "s"]),
+        ({}, [max_id, pl.col("s").max()], None),
+        ({"use_metadata_statistics": False}, [max_id], None),
+        ({"reader_override": "pyiceberg"}, [max_id], None),
+    ]
+    for scan_kwargs, exprs, statistics_columns in cases:
+        requests.clear()
+        lf = pl.scan_iceberg(tbl, **scan_kwargs).select(exprs)
+        expected = lf.collect(optimizations=pl.QueryOptFlags.none())
+        requests.clear()
+        assert_frame_equal(lf.collect(), expected)
+        assert requests[0] == statistics_columns
+        assert len(requests) == 1
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_duplicated_subplan(
+    tmp_path: Path,
+) -> None:
+    tbl = _statistics_table(_statistics_catalog(tmp_path))
+    for expr in [pl.col("id").max(), pl.col("s").max()]:
+        q = pl.scan_iceberg(tbl).select(expr)
+        expected = pl.concat([q, q]).collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(pl.concat([q, q]).collect(), expected)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_aggregates_from_statistics_empty_nested(tmp_path: Path) -> None:
+    catalog = _statistics_catalog(tmp_path)
+    tbl = catalog.create_table(
+        ("ns", "l"),
+        IcebergSchema(
+            NestedField(1, "xs", ListType(2, LongType(), element_required=False))
+        ),
+    )
+    lf = pl.scan_iceberg(tbl).select(pl.col("xs").min())
+    expected = pl.DataFrame({"xs": [None]}, schema={"xs": pl.List(pl.Int64)})
+    assert_frame_equal(lf.collect(optimizations=pl.QueryOptFlags.none()), expected)
+    assert_frame_equal(lf.collect(), expected)
+
+
 @pytest.mark.write_disk
 def test_scan_iceberg_passes_source_sizes(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
@@ -7010,10 +8968,7 @@ def test_scan_iceberg_reuses_catalog(
 
 @pytest.mark.write_disk
 def test_scan_iceberg_catalog_descriptor_without_instance(tmp_path: Path) -> None:
-    from polars.io.iceberg._dataset import (
-        IcebergCatalogConfig,
-        IcebergCatalogTableDescriptor,
-    )
+    from polars.io.iceberg._dataset import IcebergCatalogTableDescriptor
 
     tbl, catalog = new_iceberg_table(
         tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
@@ -9101,3 +11056,380 @@ def test_mm3_hash_null_and_unsupported() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.LazyFrame({"a": [1.0]}).select(pl.col("a")._mm3_hash()).collect_schema()
+
+
+def _add_position_deletes(
+    tbl: Any,
+    deletes: dict[str, list[int]],
+    *,
+    single_delete_file: bool = False,
+    partition: Any = None,
+    path_bounds: bool = True,
+    deletion_vectors: bool = False,
+    stale_deletion_vectors: dict[str, list[int]] | None = None,
+    row_bounds: dict[int, tuple[bytes, bytes]] | None = None,
+    summary: dict[str, str] | None = None,
+    equality_ids: list[int] | None = None,
+) -> Any:
+    """
+    Commit a snapshot adding one position delete file per data file.
+
+    `row_bounds` adds (lower, upper) bounds of the deleted rows' columns, by field ID.
+    `summary` holds properties of the snapshot summary, written as given.
+    With `equality_ids`, the delete files are listed as equality deletes of those field
+    IDs instead (for checks that refuse them from the manifests: the files are not).
+
+    With `single_delete_file`, one delete file holds the deletes of all data files (it
+    is then scoped to the partition rather than to a data file). `partition` is the
+    partition tuple of the delete files (default: unpartitioned). Without
+    `path_bounds`, the delete files have no `file_path` bounds, so they are scoped to
+    the partition even when they reference one data file.
+
+    With `deletion_vectors`, each data file gets a deletion vector (Puffin file) with
+    `referenced_data_file` set and no `file_path` bounds, as Iceberg Java writes them.
+    `stale_deletion_vectors` adds another deletion vector of the data file before it,
+    in the same Puffin file, which the delete file entry does not reference.
+
+    PyIceberg cannot write merge-on-read deletes, so the delete files, the delete
+    manifest and the manifest list are written with its low-level writers.
+    """
+    import uuid
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from pyiceberg.avro.file import AvroOutputFile
+    from pyiceberg.manifest import (
+        DataFile,
+        DataFileContent,
+        FileFormat,
+        ManifestContent,
+        ManifestEntry,
+        ManifestEntryStatus,
+        ManifestWriterV2,
+        write_manifest_list,
+    )
+    from pyiceberg.table.refs import SnapshotRefType
+    from pyiceberg.table.snapshots import Operation, Snapshot, Summary
+    from pyiceberg.table.update import AddSnapshotUpdate, SetSnapshotRefUpdate
+    from pyiceberg.typedef import Record
+
+    class DeleteManifestWriter(ManifestWriterV2):  # type: ignore[misc]
+        def content(self) -> ManifestContent:
+            return ManifestContent.DELETES
+
+        @property
+        def version(self) -> Any:
+            # Format version 3 data files hold `referenced_data_file`.
+            return 3 if deletion_vectors else 2
+
+        def new_writer(self) -> Any:
+            return AvroOutputFile[ManifestEntry](
+                output_file=self._output_file,
+                file_schema=self._with_partition(self.version),
+                record_schema=self._with_partition(self.version),
+                schema_name="manifest_entry",
+                metadata=self._meta,
+            )
+
+        @property
+        def _meta(self) -> dict[str, str]:
+            return {**super()._meta, "content": "deletes"}
+
+    path_field_id, pos_field_id = 2147483546, 2147483545
+    delete_schema = pa.schema(
+        [
+            pa.field(
+                "file_path",
+                pa.string(),
+                nullable=False,
+                metadata={"PARQUET:field_id": str(path_field_id)},
+            ),
+            pa.field(
+                "pos",
+                pa.int64(),
+                nullable=False,
+                metadata={"PARQUET:field_id": str(pos_field_id)},
+            ),
+        ]
+    )
+
+    parent = tbl.current_snapshot()
+    snapshot_id = uuid.uuid4().int >> 65
+    sequence_number = tbl.metadata.last_sequence_number + 1
+
+    groups = (
+        [deletes]
+        if single_delete_file
+        else [{data_path: positions} for data_path, positions in deletes.items()]
+    )
+    delete_files = []
+    if deletion_vectors:
+        assert not single_delete_file
+        for data_path, positions in deletes.items():
+            path = f"{tbl.location()}/data/dv-{uuid.uuid4()}.puffin"
+            local_path = path.removeprefix("file://")
+            stale = (stale_deletion_vectors or {}).get(data_path)
+            blobs = [
+                *([_deletion_vector_blob(stale)] if stale is not None else []),
+                _deletion_vector_blob(positions),
+            ]
+            cardinalities = [
+                *([len(stale)] if stale is not None else []),
+                len(positions),
+            ]
+            offsets = [4]
+            for b in blobs[:-1]:
+                offsets.append(offsets[-1] + len(b))
+            blob = blobs[-1]
+            footer = json.dumps(
+                {
+                    "blobs": [
+                        {
+                            "type": "deletion-vector-v1",
+                            "fields": [pos_field_id - 1],
+                            "snapshot-id": -1,
+                            "sequence-number": -1,
+                            "offset": offset,
+                            "length": len(b),
+                            "properties": {
+                                "referenced-data-file": data_path,
+                                "cardinality": str(cardinality),
+                            },
+                        }
+                        for b, offset, cardinality in zip(
+                            blobs, offsets, cardinalities, strict=True
+                        )
+                    ]
+                }
+            ).encode()
+            puffin = b"".join(
+                [
+                    b"PFA1",
+                    *blobs,
+                    b"PFA1",
+                    footer,
+                    len(footer).to_bytes(4, "little"),
+                    bytes(4),
+                    b"PFA1",
+                ]
+            )
+            Path(local_path).write_bytes(puffin)
+            data_file = DataFile.from_args(
+                _table_format_version=3,
+                content=DataFileContent.POSITION_DELETES,
+                file_path=path,
+                file_format=FileFormat.PUFFIN,
+                partition=Record() if partition is None else partition,
+                record_count=len(positions),
+                file_size_in_bytes=len(puffin),
+                referenced_data_file=data_path,
+                content_offset=offsets[-1],
+                content_size_in_bytes=len(blob),
+            )
+            data_file.spec_id = tbl.spec().spec_id
+            delete_files.append(data_file)
+        groups = []
+
+    for group in groups:
+        path = f"{tbl.location()}/data/delete-{uuid.uuid4()}.parquet"
+        local_path = path.removeprefix("file://")
+        rows = [(p, pos) for p in sorted(group) for pos in group[p]]
+        pq.write_table(
+            pa.table(
+                {"file_path": [p for p, _ in rows], "pos": [pos for _, pos in rows]},
+                schema=delete_schema,
+            ),
+            local_path,
+        )
+        data_file = DataFile.from_args(
+            content=(
+                DataFileContent.POSITION_DELETES
+                if equality_ids is None
+                else DataFileContent.EQUALITY_DELETES
+            ),
+            equality_ids=equality_ids,
+            file_path=path,
+            file_format=FileFormat.PARQUET,
+            partition=Record() if partition is None else partition,
+            record_count=len(rows),
+            file_size_in_bytes=Path(local_path).stat().st_size,
+            lower_bounds={
+                **({path_field_id: min(group).encode()} if path_bounds else {}),
+                **{i: lo for i, (lo, _) in (row_bounds or {}).items()},
+            },
+            upper_bounds={
+                **({path_field_id: max(group).encode()} if path_bounds else {}),
+                **{i: hi for i, (_, hi) in (row_bounds or {}).items()},
+            },
+        )
+        data_file.spec_id = tbl.spec().spec_id
+        delete_files.append(data_file)
+
+    manifest_path = f"{tbl.location()}/metadata/{uuid.uuid4()}-m0.avro"
+    with DeleteManifestWriter(
+        spec=tbl.spec(),
+        schema=tbl.schema(),
+        output_file=tbl.io.new_output(manifest_path),
+        snapshot_id=snapshot_id,
+        avro_compression="deflate",
+    ) as writer:
+        for data_file in delete_files:
+            writer.add(
+                ManifestEntry.from_args(
+                    status=ManifestEntryStatus.ADDED,
+                    snapshot_id=snapshot_id,
+                    data_file=data_file,
+                )
+            )
+    delete_manifest = writer.to_manifest_file()
+
+    list_path = f"{tbl.location()}/metadata/snap-{snapshot_id}-{uuid.uuid4()}.avro"
+    with write_manifest_list(
+        format_version=2,
+        output_file=tbl.io.new_output(list_path),
+        snapshot_id=snapshot_id,
+        parent_snapshot_id=parent.snapshot_id,
+        sequence_number=sequence_number,
+        avro_compression="deflate",
+    ) as list_writer:
+        list_writer.add_manifests([delete_manifest, *parent.manifests(tbl.io)])
+
+    snapshot = Snapshot.model_validate(
+        {
+            "snapshot-id": snapshot_id,
+            "parent-snapshot-id": parent.snapshot_id,
+            "sequence-number": sequence_number,
+            "manifest-list": list_path,
+            "summary": Summary(Operation.DELETE, **(summary or {})),
+            "schema-id": tbl.schema().schema_id,
+        }
+    )
+    set_ref = SetSnapshotRefUpdate.model_validate(
+        {"ref-name": "main", "type": SnapshotRefType.BRANCH, "snapshot-id": snapshot_id}
+    )
+    tbl.catalog.commit_table(
+        tbl,
+        requirements=(),
+        updates=(AddSnapshotUpdate(snapshot=snapshot), set_ref),
+    )
+    return tbl.catalog.load_table(tbl.name())
+
+
+def _deletion_vector_blob(positions: list[int]) -> bytes:
+    """A `deletion-vector-v1` Puffin blob deleting `positions` (< 2**32)."""
+    import zlib
+
+    from pyroaring import BitMap  # type: ignore[import-not-found]
+
+    # One 32-bit Roaring bitmap, of key 0 (the upper 32 bits of the positions).
+    vector: bytes = (
+        (1).to_bytes(8, "little")
+        + (0).to_bytes(4, "little")
+        + BitMap(positions).serialize()
+    )
+    body = b"\xd1\xd3\x39\x64" + vector
+    return len(body).to_bytes(4, "big") + body + zlib.crc32(body).to_bytes(4, "big")
+
+
+def test_iceberg_native_storage_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    import polars.io.iceberg._plugin as plugin
+
+    class Table:
+        def __init__(
+            self,
+            properties: dict[str, Any],
+            location: str = "s3://bucket/t",
+            table_properties: dict[str, str] | None = None,
+        ) -> None:
+            self.io = type("IO", (), {"properties": properties})()
+            self._location = location
+            self.properties = table_properties or {}
+
+        def location(self) -> str:
+            return self._location
+
+    # Polars' own reads and writes (PyIceberg planner, sink) take them as the plugin
+    table = Table(
+        {"s3.region": "eu-west-1", "s3.access-key-id": "k", "s3.secret-access-key": "s"}
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1",
+        "aws_access_key_id": "k",
+        "aws_secret_access_key": "s",
+    }
+    # the user's credentials replace the catalog's
+    assert plugin._native_storage_options(table, {"aws_profile": "p"}) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1",
+        "aws_profile": "p",
+    }
+    for key in (
+        "aws_container_authorization_token_file",
+        "container_authorization_token_file",
+    ):
+        assert plugin._native_storage_options(table, {key: "/f"}) == {  # type: ignore[arg-type]
+            "aws_region": "eu-west-1",
+            key: "/f",
+        }
+    # remote signing has no object store equivalent: the user's options alone
+    table = Table({"s3.remote-signing-enabled": "true", "s3.region": "eu-west-1"})
+    assert plugin._native_storage_options(table, None) is None  # type: ignore[arg-type]
+    assert plugin._native_storage_options(table, {"s3.region": "us-east-1"}) == {  # type: ignore[arg-type]
+        "aws_region": "us-east-1"
+    }
+    # with empty values unset
+    assert plugin._native_storage_options(table, {"s3.region": ""}) == {}  # type: ignore[arg-type]
+    # properties of other backends don't apply
+    table = Table({"s3.region": "eu-west-1", "adls.account-name": "a"}, "gs://b/t")
+    assert plugin._native_storage_options(table, None) == {}  # type: ignore[arg-type]
+    table = Table({"s3.region": "eu-west-1"}, "file:///tmp/t")
+    assert plugin._native_storage_options(table, None) == {}  # type: ignore[arg-type]
+    # unless the data files are elsewhere
+    table = Table(
+        {"s3.region": "eu-west-1"},
+        "file:///tmp/t",
+        {"write.data.path": "s3://bucket/data"},
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    # files read on another backend than the data path take that backend's
+    table = Table({"s3.region": "eu-west-1"}, "gs://b/t")
+    assert plugin._native_storage_options(table, None, "s3://b/f.parquet") == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    table = Table(
+        {"s3.region": "eu-west-1"}, "s3://b/t", {"write.data.path": "s3://b/d"}
+    )
+    assert plugin._native_storage_options(table, None, "gs://b/f.parquet") == {}  # type: ignore[arg-type]
+    # an alias of the same backend keeps the data path
+    assert plugin._native_storage_options(table, None, "s3a://b/f.parquet") == {  # type: ignore[arg-type]
+        "aws_region": "eu-west-1"
+    }
+    # boolean values, which PyIceberg takes
+    table = Table({"s3.force-virtual-addressing": True})
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "aws_virtual_hosted_style_request": "true"
+    }
+    # the storage host is not the OAuth authority host: the URL gives it
+    table = Table(
+        {"adls.account-host": "h.blob.core.windows.net", "adls.account-name": "a"},
+        "abfss://c@a.dfs.core.windows.net/t",
+    )
+    assert plugin._native_storage_options(table, None) == {  # type: ignore[arg-type]
+        "azure_storage_account_name": "a"
+    }
+    # the user's keys come last, in their order: of two aliases, the later one wins
+    table = Table({"s3.endpoint": "c"})
+    user = {"aws_endpoint": "first", "aws_endpoint_url": "last"}
+    out = plugin._native_storage_options(table, user)  # type: ignore[arg-type]
+    assert out is not None
+    assert list(out.items()) == [
+        ("aws_endpoint", "first"),
+        ("aws_endpoint_url", "last"),
+    ]
+    # empty user values are unset: they keep the catalog's credentials
+    table = Table({"s3.access-key-id": "k", "s3.secret-access-key": "s"})
+    assert plugin._native_storage_options(table, {"aws_session_token": ""}) == {  # type: ignore[arg-type]
+        "aws_access_key_id": "k",
+        "aws_secret_access_key": "s",
+    }
