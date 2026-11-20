@@ -10,8 +10,9 @@ use polars::prelude::{
     polars_ensure,
 };
 use polars_arrow::io::ipc::write::{StreamWriter as ArrowStream, WriteOptions};
+use unicode_width::UnicodeWidthChar;
 
-use crate::error::ErrorRecord;
+use crate::error::{ErrorRecord, LocationKind, SourceLocation};
 
 /// How results are written to the output.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -90,6 +91,10 @@ pub struct Printer<O: Write, E> {
     on_terminal: bool,
     /// Whether the table format prints the result of the current statement in full.
     in_full: bool,
+    /// The name errors give the script.
+    source: String,
+    /// Whether errors show the plan and the context they have.
+    verbose: bool,
 }
 
 enum ResultWriter<O: Write> {
@@ -113,7 +118,19 @@ impl<O: Write, E: Write> Printer<O, E> {
             several_statements: false,
             on_terminal: false,
             in_full: false,
+            source: "<command>".to_string(),
+            verbose: false,
         }
+    }
+
+    pub fn source(mut self, source: String) -> Self {
+        self.source = source;
+        self
+    }
+
+    pub fn verbose(mut self, verbose: bool) -> Self {
+        self.verbose = verbose;
+        self
     }
 
     /// Tells whether the output is a terminal, which does not take a binary format.
@@ -212,10 +229,13 @@ impl<O: Write, E: Write> Printer<O, E> {
                 // What was written of the results comes before the error. The output may be
                 // what failed, so the error is reported whether or not this works.
                 let _ = self.out.flush();
-                if self.several_statements {
-                    write!(self.err, "statement {}: ", error.statement)?;
-                }
-                writeln!(self.err, "{}: {}", error.class, error.message)?;
+                write_error(
+                    &mut self.err,
+                    &error,
+                    &self.source,
+                    self.several_statements,
+                    self.verbose,
+                )?;
                 self.err.flush()?;
             },
             Event::Interrupted => {
@@ -242,6 +262,132 @@ impl<O: Write, E: Write> Printer<O, E> {
             },
         })
     }
+}
+
+/// Writes `error` as a compiler writes a diagnostic.
+fn write_error(
+    err: &mut impl Write,
+    error: &ErrorRecord,
+    source: &str,
+    several_statements: bool,
+    verbose: bool,
+) -> io::Result<()> {
+    if several_statements {
+        write!(err, "statement {}: ", error.statement)?;
+    }
+    // The first paragraph heads the report; the others follow the location.
+    let (headline, rest) = match error.message.split_once("\n\n") {
+        Some((headline, rest)) => (headline, Some(rest)),
+        None => (error.message.as_str(), None),
+    };
+    writeln!(err, "{}: {headline}", error.class)?;
+    let digits = error
+        .location
+        .as_ref()
+        .map_or(1, |location| location.start.line.to_string().len());
+    let gutter = " ".repeat(digits + 1);
+    let exact = matches!(
+        error.location,
+        Some(SourceLocation {
+            kind: LocationKind::Exact,
+            ..
+        })
+    );
+    if let Some(location) = &error.location {
+        let label = match &location.kind {
+            LocationKind::Exact => String::new(),
+            LocationKind::Clause(clause) => format!(" (in this {clause} clause)"),
+            LocationKind::Statement => " (statement starts here)".to_string(),
+        };
+        let start = location.start;
+        writeln!(
+            err,
+            "{}--> {source}:{}:{}{label}",
+            &gutter[1..],
+            start.line,
+            start.column
+        )?;
+        let mut width = match location.end.line == start.line {
+            true => location.end.column.saturating_sub(start.column).max(1),
+            false => usize::MAX,
+        };
+        // The span of a function call ends at its last argument: take its parentheses too.
+        let chars: Vec<char> = location.line.chars().collect();
+        let from = start.column.saturating_sub(1);
+        if width != usize::MAX {
+            let mut open = chars
+                .iter()
+                .skip(from)
+                .take(width)
+                .fold(0, |open, c| match c {
+                    '(' => open + 1,
+                    ')' => open - 1,
+                    _ => open,
+                });
+            while open > 0 {
+                match (from + width..chars.len()).find(|&i| !chars[i].is_whitespace()) {
+                    Some(i) if chars[i] == ')' => {
+                        width = i + 1 - from;
+                        open -= 1;
+                    },
+                    _ => break,
+                }
+            }
+        }
+        let (text, caret, width) = excerpt(&location.line, from, width);
+        writeln!(err, "{gutter}|")?;
+        writeln!(err, "{} | {text}", start.line)?;
+        if exact {
+            writeln!(err, "{gutter}| {}{}", " ".repeat(caret), "^".repeat(width))?;
+        }
+    }
+    if let Some(expression) = error.expression.as_ref().filter(|_| !exact) {
+        writeln!(err, "{gutter}= expression: {expression}")?;
+    }
+    for hint in &error.hints {
+        writeln!(err, "{gutter}= hint: {hint}")?;
+    }
+    if let Some(rest) = rest {
+        writeln!(err, "\n{}", rest.trim_end())?;
+    }
+    if verbose && !error.details.is_empty() {
+        writeln!(err, "\n{}", error.details.trim_end())?;
+    }
+    Ok(())
+}
+
+const EXCERPT_WIDTH: usize = 100;
+
+/// The shown part of `line` around the `width` characters at `at`, and their terminal columns.
+fn excerpt(line: &str, at: usize, width: usize) -> (String, usize, usize) {
+    // One space per tab or other control character keeps the underline aligned.
+    let chars: Vec<char> = line
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let at = at.min(chars.len());
+    let (start, end) = match chars.len() <= EXCERPT_WIDTH {
+        true => (0, chars.len()),
+        false => {
+            let start = at
+                .saturating_sub(EXCERPT_WIDTH / 2)
+                .min(chars.len() - EXCERPT_WIDTH);
+            (start, start + EXCERPT_WIDTH)
+        },
+    };
+    let cells = |chars: &[char]| -> usize { chars.iter().map(|c| c.width().unwrap_or(0)).sum() };
+    let mut text = String::new();
+    let mut caret = cells(&chars[start..at]);
+    if start > 0 {
+        text.push_str("...");
+        caret += 3;
+    }
+    text.extend(&chars[start..end]);
+    if end < chars.len() {
+        text.push_str("...");
+    }
+    let shown = (at + width.min(end.saturating_sub(at))).min(end);
+    (text, caret, cells(&chars[at..shown]).max(1))
 }
 
 /// Writes every row of `table` as plain text, where the table format cuts rows and long

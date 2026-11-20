@@ -18,6 +18,7 @@ mod lambda;
 mod lateral;
 mod layout_alter;
 mod literal_folding;
+mod location;
 mod macros;
 mod params;
 mod pivot;

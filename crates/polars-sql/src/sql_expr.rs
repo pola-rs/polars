@@ -18,6 +18,7 @@ use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
 use polars_core::utils::{any_values_to_supertype, try_get_supertype};
 use polars_defs::time::duration::Duration;
+use polars_error::SqlLocationKind;
 use polars_lazy::prelude::*;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::functions::{DurationArgs, duration};
@@ -32,9 +33,9 @@ use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, DictionaryField, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentList, FunctionArguments, Ident, Interval, MapEntry,
-    OrderByOptions, OrderBySort, Query as Subquery, SelectItem, Statement, Subscript, TimezoneInfo,
-    TrimWhereField, TypedString, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan,
+    OrderByOptions, OrderBySort, Query as Subquery, SelectItem, Spanned, Statement, Subscript,
+    TimezoneInfo, TrimWhereField, TypedString, UnaryOperator as SQLUnaryOperator,
+    Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::{self, Keyword};
@@ -52,6 +53,7 @@ use crate::lambda::{
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
+use crate::location::{at_statement, complete_location, locate};
 use crate::positional_join::{attach_positional_aliases, extract_positional_joins};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::{is_correlated_subquery, strip_nested};
@@ -697,6 +699,22 @@ impl SQLExprVisitor<'_> {
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        self.visit_unlocated_expr(expr).map_err(|e| match expr {
+            // Their span is the operand's, without the keyword, type or field the error is about.
+            SQLExpr::Cast { .. }
+            | SQLExpr::Convert { .. }
+            | SQLExpr::Extract { .. }
+            | SQLExpr::Ceil { .. }
+            | SQLExpr::Floor { .. }
+            | SQLExpr::Position { .. }
+            | SQLExpr::Substring { .. }
+            | SQLExpr::Trim { .. }
+            | SQLExpr::Overlay { .. } => at_statement(e),
+            _ => locate(e, SqlLocationKind::Exact, expr.span()),
+        })
+    }
+
+    fn visit_unlocated_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         if self.ctx.lambda_depth > 0 {
             check_lambda_body_expr(expr)?;
         }
@@ -1424,17 +1442,21 @@ impl SQLExprVisitor<'_> {
         // need special handling for interval offsets and comparisons
         let (mut lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
-                let duration = interval_to_duration(v, false)?;
+                let duration = interval_to_duration(v, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 return offset_by(self.visit_expr(left)?, format!("-{duration}"));
             },
             (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
-                let duration = interval_to_duration(v, false)?;
+                let duration = interval_to_duration(v, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 return offset_by(self.visit_expr(left)?, format!("{duration}"));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)
-                let d1 = interval_to_duration(v1, false)?;
-                let d2 = interval_to_duration(v2, false)?;
+                let d1 = interval_to_duration(v1, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, left.span()))?;
+                let d2 = interval_to_duration(v2, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 // Months have no fixed length: they are ordered as 28 days, but equal intervals
                 // have equal months.
                 let length = |d: &Duration| {
@@ -2779,10 +2801,12 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     }
     let expr = match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
-            let expr = parse_sql_expr(expr, &mut ctx, None)?;
+            let expr = parse_sql_expr(expr, &mut ctx, None).map_err(|e| complete_location(e, s))?;
             expr.alias(alias.value.as_str())
         },
-        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
+        SelectItem::UnnamedExpr(expr) => {
+            parse_sql_expr(expr, &mut ctx, None).map_err(|e| complete_location(e, s))?
+        },
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s),
     };
     // The expression is used in a DataFrame query, whose row order must be kept.

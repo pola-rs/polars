@@ -1544,7 +1544,11 @@ impl PolarsSQLFunctions {
                 if ctx.function_registry.contains(other) {
                     Self::Udf(other.to_string())
                 } else {
-                    polars_bail!(SQLInterface: "unsupported function '{}'", other);
+                    let error = polars_err!(SQLInterface: "unsupported function '{}'", other);
+                    return Err(match spelling_of(other) {
+                        Some(spelling) => error.with_hint(format!("use {spelling} instead")),
+                        None => error,
+                    });
                 }
             },
         })
@@ -4637,4 +4641,12 @@ fn date_diff_unit(part: &str) -> Option<DateDiffUnit> {
         "nanosecond" | "nanoseconds" | "ns" => DateDiffUnit::Nanosecond,
         _ => return None,
     })
+}
+
+/// The name Polars SQL gives a function that other dialects name `name`.
+fn spelling_of(name: &str) -> Option<&'static str> {
+    match name {
+        "len" => Some("LENGTH"),
+        _ => None,
+    }
 }
