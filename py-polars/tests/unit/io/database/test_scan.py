@@ -1095,6 +1095,13 @@ def test_scan_sqlite_filter_on_large_integers_read_as_floats(
     ]:
         with pytest.raises(errors):
             lf.filter(predicate).collect()
+    if driver == "connectorx":
+        # no float comparison is pushed there (#594): the read meets the integer
+        for predicate in [pl.col("x") == big, pl.col("x") < 2]:
+            with pytest.raises(errors):
+                lf.filter(predicate).collect()
+        assert "WHERE" not in planned_sql(lf.filter(pl.col("x") == big))
+        return
     # the rows it doesn't satisfy are read: its true value isn't `2.0**53`
     for predicate, expected in [
         (pl.col("x") == big, []),
@@ -1245,6 +1252,43 @@ def test_scan_sqlite_connectorx_quotes_and_backslashes(tmp_path: Path) -> None:
         assert lf.filter(pl.col("s") == v).collect()["id"].to_list() == [i], v
         got = lf.filter(pl.col("s").str.contains(v, literal=True)).collect()
         assert i in got["id"].to_list(), v
+
+
+@pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
+def test_scan_sqlite_float_filters_find_every_real(tmp_path: Path, driver: str) -> None:
+    # ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond
+    # +-85): no float comparison is pushed there, and no range cuts on a real key (#594)
+    _importorskip_sqlite_driver(driver)
+    values = [1.989032661366619e244, -3.4e-130, 2.5e120, 1e-200, 0.1, 1.5, 7.0e300]
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, x REAL)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", list(enumerate(values)))
+        conn.commit()
+    lf = pl.scan_database("t", f"sqlite:///{path}", driver=driver)
+    for i, v in enumerate(values):
+        assert lf.filter(pl.col("x") == v).collect()["id"].to_list() == [i], v
+        assert i in lf.filter(pl.col("x") >= v).collect()["id"].to_list(), v
+    got = lf.filter(pl.col("x").is_in(values)).collect()
+    assert sorted(got["id"].to_list()) == list(range(len(values)))
+    parts = (
+        pl.scan_database(
+            "t", f"sqlite:///{path}", driver=driver, partition_on="x", partition_num=3
+        )
+        if driver != "connectorx"
+        else None
+    )
+    if parts is not None:
+        assert sorted(parts.collect()["id"].to_list()) == list(range(len(values)))
+    else:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="float literals"):
+            pl.scan_database(
+                "t",
+                f"sqlite:///{path}",
+                driver=driver,
+                partition_on="x",
+                partition_num=3,
+            ).collect()
 
 
 @pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
@@ -5684,3 +5728,53 @@ def test_scan_sqlite_union_of_scans_differing_in_dtype_parameters(
                 lfs, optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
             )
             assert [df.schema["x"] for df in out] == [a, b], how
+
+
+def test_scan_sqlite_text_key_read_as_int_is_not_range_partitioned(
+    tmp_path: Path,
+) -> None:
+    # SQLite compares a TEXT column as text ('50' > '100'): integer cuts would
+    # overlap (#519)
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (k TEXT, v INTEGER)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(str(i), i) for i in range(300)]
+        )
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
+        pl.scan_database(
+            "t",
+            uri,
+            schema_overrides={"k": pl.Int64},
+            partition_on="k",
+            partition_num=6,
+            partition_range=(0, 300),
+        ).collect()
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
+        pl.scan_database(
+            "t", uri, schema_overrides={"k": pl.Int64}, order_by="k"
+        ).collect()
+    # as strings, and with an automatic partitioning, it reads whole
+    df = pl.scan_database("t", uri, schema_overrides={"k": pl.Int64}).collect()
+    assert df.height == 300
+
+
+def test_scan_sqlite_live_text_factory_bytes_reads_reals_exactly(
+    tmp_path: Path,
+) -> None:
+    # the exact-real marker reached the user on a connection returning text as
+    # bytes (#520)
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, x)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(1, 0.1), (2, "abc"), (3, 2.5)]
+        )
+        conn.commit()
+    with closing(sqlite3.connect(path, check_same_thread=False)) as conn:
+        conn.text_factory = bytes
+        lf = pl.scan_database("t", conn)
+        assert lf.collect()["x"].to_list() == ["0.1", "abc", "2.5"]
+        assert lf.filter(pl.col("x") == "0.1").collect()["id"].to_list() == [1]

@@ -1216,7 +1216,10 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("sqlite", "SELECT unixepoch()", False),
         ("sqlite", "SELECT datetime(), date()", False),
         ("sqlite", "SELECT julianday('now')", False),
-        ("sqlite", "SELECT unixepoch(ts) FROM t", True),
+        # a column may hold 'now' (SQLite is dynamically typed, #581)
+        ("sqlite", "SELECT unixepoch(ts) FROM t", False),
+        ("sqlite", "SELECT id, unixepoch(d, 'subsec') AS k FROM t", False),
+        ("sqlite", "SELECT date('2024-01-01', '+1 day'), julianday(2460000.5)", True),
         # 'now' typed by what it meets is a time; one-argument age() is relative to
         # today
         ("postgres", "SELECT extract(epoch FROM ts - 'now') FROM t", False),
@@ -1423,7 +1426,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("oracle", "SELECT SESSIONTIMEZONE, DBTIMEZONE FROM dual", False),
         ("tsql", "SELECT SESSION_CONTEXT(N'a'), CONTEXT_INFO()", False),
         ("sqlite", "SELECT unixepoch('subsec'), datetime('subsec')", False),
-        ("sqlite", "SELECT datetime(ts, 'localtime') FROM t", True),
+        ("sqlite", "SELECT datetime(ts, 'localtime') FROM t", False),
         ("duckdb", "SELECT current_localtime()", False),
         ("clickhouse", "SELECT hostName(), groupArraySample(1)(a) FROM t", False),
         ("clickhouse", "SELECT _part, a FROM t", False),
@@ -2602,3 +2605,22 @@ def test_inspect_query_facts_do_not_cross_concurrent_calls(monkeypatch: Any) -> 
     monkeypatch.setattr(_sqlglot, "_no_facts", lambda: Facts(real()))
     facts = _sqlglot.inspect_query("SELECT x FROM t FINAL", "clickhouse")
     assert facts["final_tables"] == [["t"]]
+
+
+@pytest.mark.parametrize(
+    ("dialect", "sql", "with_ties"),
+    [
+        ("trino", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS WITH TIES", True),
+        ("postgres", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS WITH TIES", True),
+        ("oracle", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS WITH TIES", True),
+        ("tsql", "SELECT TOP 3 WITH TIES * FROM t ORDER BY v", True),
+        ("trino", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS ONLY", False),
+        ("tsql", "SELECT TOP 3 * FROM t ORDER BY v", False),
+        ("trino", "SELECT * FROM t ORDER BY v LIMIT 3", False),
+    ],
+)
+def test_query_facts_flag_with_ties(dialect: str, sql: str, with_ties: bool) -> None:
+    # a LIMIT around WITH TIES may be applied inside it by the server (Trino, #560)
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(sql, dialect)["with_ties"] is with_ties

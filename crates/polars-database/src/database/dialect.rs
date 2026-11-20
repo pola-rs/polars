@@ -37,6 +37,46 @@ impl fmt::Display for DialectName {
     }
 }
 
+/// How a Trino type holds a time or timestamp of more than 6 fractional digits.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrinoWide {
+    /// `timestamp(p) with time zone`
+    Instant,
+    /// `timestamp(p)`, `time(p)`, `time(p) with time zone`
+    Plain,
+    /// an array, map or row holding one
+    Nested,
+}
+
+/// Whether a (lower-case) Trino type is or holds a `timestamp(p)` / `time(p)` with `p > 6`.
+pub(crate) fn trino_wide_temporal(t: &str) -> Option<TrinoWide> {
+    let mut wide = false;
+    for key in ["timestamp(", "time("] {
+        let mut rest = t;
+        while let Some(i) = rest.find(key) {
+            // (`timestamp(` holds no `time(`; a column named `x_time(` isn't a type)
+            let after = &rest[i + key.len()..];
+            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+            if digits.parse::<u32>().is_ok_and(|p| p > 6) {
+                wide = true;
+            }
+            rest = after;
+        }
+    }
+    if !wide {
+        return None;
+    }
+    Some(
+        if t.starts_with("array(") || t.starts_with("map(") || t.starts_with("row(") {
+            TrinoWide::Nested
+        } else if t.starts_with("timestamp(") && t.ends_with("with time zone") {
+            TrinoWide::Instant
+        } else {
+            TrinoWide::Plain
+        },
+    )
+}
+
 /// How string comparisons behave in the database, relative to Polars' byte-wise comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StringSemantics {
@@ -310,6 +350,16 @@ impl DialectName {
             // (Map, Tuple, IPv4, FixedString, 128/256-bit integers, …): ConnectorX returns
             // wrong values and even wrong row counts for some of them.
             Self::Clickhouse if !clickhouse_native_type(t) => Some(format!("toString({column})")),
+            // `timestamp(7..12)` and `time(7..12)`: the `trino` driver rounds them to
+            // microseconds and ADBC panics outside 1677-2262 (as nanoseconds): their exact
+            // text, which a nested type holds as JSON.
+            Self::Trino if trino_wide_temporal(t).is_some() => Some(match trino_wide_temporal(t) {
+                Some(TrinoWide::Nested) => format!("json_format(CAST({column} AS JSON))"),
+                Some(TrinoWide::Instant) => {
+                    format!("CAST({column} AT TIME ZONE 'UTC' AS VARCHAR)")
+                },
+                _ => format!("CAST({column} AS VARCHAR)"),
+            }),
             Self::Oracle if t == "json" => Some(format!("JSON_SERIALIZE({column} RETURNING CLOB)")),
             Self::Oracle if t == "rowid" || t == "urowid" => Some(format!("ROWIDTOCHAR({column})")),
             // `INTERVAL … TO …`: Arrow's month-day-nano intervals have no Polars dtype

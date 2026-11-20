@@ -660,6 +660,18 @@ pub fn query_info(
                 }
             }
         }
+    } else if dialect == DialectName::Trino && !columns.is_empty() {
+        // `typeof` is the static type, so one row of NULLs joined to the query tells it
+        // without running the query.
+        let all = columns.iter().collect::<Vec<_>>();
+        let sql = pg_select(&|c| format!("typeof({c})"), &all);
+        if let Some(df) = run(session, "types", &sql) {
+            for (i, c) in columns.iter().enumerate() {
+                if let Some(t) = cell_str(&df, i, 0) {
+                    info.compare_types.insert(c.clone(), t);
+                }
+            }
+        }
     } else if dialect == DialectName::Postgresql && !columns.is_empty() {
         let all = columns.iter().collect::<Vec<_>>();
         let sql = pg_select(
@@ -1094,6 +1106,16 @@ impl CatalogQueries {
                 key: None,
                 collations: None,
                 types: Some(format!("DESCRIBE TABLE EXTENDED {qualified}")),
+                compare_types: None,
+                declared_sql: None,
+                stats: None,
+            },
+            // Trino has no `information_schema` we can rely on across connectors; `SHOW COLUMNS`
+            // lists a table's or view's columns with their types (`timestamp(9)`, `char(3)`).
+            DialectName::Trino => Self {
+                key: None,
+                collations: None,
+                types: Some(format!("SHOW COLUMNS FROM {qualified}")),
                 compare_types: None,
                 declared_sql: None,
                 stats: None,
