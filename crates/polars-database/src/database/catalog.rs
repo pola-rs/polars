@@ -6,7 +6,7 @@
 
 use polars_core::prelude::*;
 use polars_error::PolarsResult;
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{PlHashMap, PlHashSet};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::backend::DatabaseSession;
@@ -46,6 +46,10 @@ pub struct CatalogInfo {
     /// (Databricks: `DESCRIBE QUERY` reports `char(5)` as `string`, while Spark pads the
     /// literal compared with the column): string semantics are unknown.
     pub padding_unknown: bool,
+    /// Columns the login reads masked (SQL Server dynamic data masking, without `UNMASK`): the
+    /// database compares their real values and returns masked ones, so no filter on them is
+    /// pushed, and none is a key.
+    pub masked: PlHashSet<PlSmallStr>,
     pub stats: TableStats,
 }
 
@@ -137,6 +141,9 @@ impl CatalogInfo {
         column: &str,
         dtype: &DataType,
     ) -> bool {
+        if self.masked.contains(column) {
+            return false;
+        }
         let t = self.comparison_type(column);
         match dtype {
             // A non-text type read as text (`uuid`, enums, SQLite NUMERIC affinity): the
@@ -469,6 +476,31 @@ pub fn table_info(
             },
         };
     }
+    if dialect == DialectName::Mssql
+        && let Some(df) = run(
+            "masked columns",
+            &mssql_masked_columns_sql(
+                &parts
+                    .iter()
+                    .map(|p| dialect.quote_ident(p))
+                    .collect::<Vec<_>>()
+                    .join("."),
+            ),
+        )
+    {
+        for row in 0..df.height() {
+            if let Some(name) = cell_str(&df, 0, row) {
+                info.masked.insert(name.into());
+            }
+        }
+        if info
+            .key_column
+            .as_ref()
+            .is_some_and(|k| info.masked.contains(k))
+        {
+            info.key_column = None;
+        }
+    }
     // Without these, a column's comparison semantics would be assumed, not known: a
     // case-insensitive or blank-padded column could be compared as exact.
     info.incomplete = not_found
@@ -476,7 +508,7 @@ pub fn table_info(
         || failed.iter().any(|w| {
             matches!(
                 *w,
-                "column types" | "comparison types" | "the table definition"
+                "column types" | "comparison types" | "the table definition" | "masked columns"
             )
         });
     // Collations only decide string semantics (e.g. Oracle before 12.2 has none to show).
@@ -564,6 +596,9 @@ pub fn query_info(
                 if let (Some(name), Some(t)) = (cell_str(&df, 0, row), cell_str(&df, 1, row)) {
                     info.compare_types.insert(name.into(), t);
                 }
+            }
+            if dialect == DialectName::Mssql {
+                mssql_query_masked_columns(session, &mut info, from);
             }
             if dialect == DialectName::Databricks {
                 // `DESCRIBE QUERY` shows a `char(n)` column as `string`; which relations the
@@ -774,6 +809,75 @@ fn oracle_type_name(code: &str, precision: &str, scale: &str) -> Option<String> 
     )
 }
 
+/// SQL Server: the object id a table name reads. A synonym has no columns of its own, so its
+/// base object's are the ones read (`sys.synonyms`; a base in another database finds none,
+/// and its columns stay unknown). `qualified`: the quoted name.
+fn mssql_object_id(qualified: &str) -> String {
+    let named = format!("OBJECT_ID(N{})", DialectName::Mssql.quote_str(qualified));
+    format!(
+        "COALESCE((SELECT OBJECT_ID(sy.base_object_name) FROM sys.synonyms sy \
+        WHERE sy.object_id = {named}), {named})"
+    )
+}
+
+/// SQL Server: the columns of a query (`from`, the wrapped query) that the login reads masked.
+/// Where the database has masked columns and the login lacks `UNMASK`, the browse
+/// information of the query's description names the table column each result column is read
+/// from; where it can't be described that way (a `UNION`, say), every column may be masked.
+fn mssql_query_masked_columns(
+    session: &mut dyn DatabaseSession,
+    info: &mut CatalogInfo,
+    from: &str,
+) {
+    let verbose = polars_core::config::verbose();
+    let Ok(any) = session.query(
+        "SELECT CASE WHEN COALESCE(HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'UNMASK'), 0) = 0 \
+        AND EXISTS (SELECT 1 FROM sys.masked_columns WHERE is_masked = 1) THEN 1 ELSE 0 END AS m",
+    ) else {
+        info.incomplete = true;
+        return;
+    };
+    if cell_u64(&any, 0, 0).is_none_or(|m| m == 0) {
+        return;
+    }
+    let sql = format!(
+        "SELECT d.name, CASE WHEN d.source_database IS NOT NULL \
+        AND d.source_database <> DB_NAME() OR EXISTS (SELECT 1 FROM sys.masked_columns mc \
+        WHERE mc.is_masked = 1 AND mc.name = d.source_column AND mc.object_id = \
+        OBJECT_ID(QUOTENAME(d.source_schema) + '.' + QUOTENAME(d.source_table))) \
+        THEN 1 ELSE 0 END AS is_masked \
+        FROM sys.dm_exec_describe_first_result_set(N{}, NULL, 1) d WHERE d.is_hidden = 0",
+        DialectName::Mssql.quote_str(&format!("SELECT * FROM {from}"))
+    );
+    match session.query(&sql) {
+        Ok(df) => {
+            for row in 0..df.height() {
+                if let Some(name) = cell_str(&df, 0, row)
+                    && cell_u64(&df, 1, row).is_some_and(|m| m != 0)
+                {
+                    info.masked.insert(name.into());
+                }
+            }
+        },
+        Err(e) => {
+            if verbose {
+                eprintln!("[scan_database]: lookup of the query's masked columns failed: {e}");
+            }
+            info.masked.extend(info.compare_types.keys().cloned());
+        },
+    }
+}
+
+/// SQL Server: the columns of a table that the login reads masked. Only database-wide
+/// `UNMASK` is looked at: a column-level grant also reads as masked (no filter is pushed).
+fn mssql_masked_columns_sql(qualified: &str) -> String {
+    format!(
+        "SELECT c.name FROM sys.masked_columns c WHERE c.object_id = {} AND c.is_masked = 1 \
+        AND COALESCE(HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'UNMASK'), 0) = 0",
+        mssql_object_id(qualified)
+    )
+}
+
 /// The fixed per-dialect catalog SQL for one table. These don't go through the renderer.
 struct CatalogQueries {
     /// One row per key column: `name`.
@@ -891,7 +995,7 @@ impl CatalogQueries {
                 }
             },
             DialectName::Mssql => {
-                let object = format!("OBJECT_ID(N{})", s(&qualified));
+                let object = mssql_object_id(&qualified);
                 Self {
                     key: Some(format!(
                         "SELECT c.name FROM sys.indexes i \
@@ -902,10 +1006,13 @@ impl CatalogQueries {
                     collations: Some(format!(
                         "SELECT name, collation_name FROM sys.columns WHERE object_id = {object}"
                     )),
-                    // An alias type is named by its base type.
+                    // An alias type is named by its base type. The fractional second digits
+                    // of `datetime2`, `time` and `datetimeoffset` decide how a literal compares.
                     types: Some(format!(
                         "SELECT c.name, CASE WHEN b.name IN ('decimal', 'numeric') \
-                        THEN CONCAT(b.name, '(', c.precision, ',', c.scale, ')') ELSE b.name END \
+                        THEN CONCAT(b.name, '(', c.precision, ',', c.scale, ')') \
+                        WHEN b.name IN ('datetime2', 'time', 'datetimeoffset') \
+                        THEN CONCAT(b.name, '(', c.scale, ')') ELSE b.name END \
                         AS type_name FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id \
                         CROSS APPLY (SELECT CASE WHEN t.is_user_defined = 1 \
                         AND t.is_assembly_type = 0 AND t.is_table_type = 0 \
@@ -1543,6 +1650,25 @@ pub fn view_definition(
         _ => cell_u64(&df, 0, 0).is_some_and(|v| v != 0),
     };
     if !is_view {
+        // SQL Server row-level security: an enabled filter predicate (an inline function of
+        // the session, the time, ...) decides which rows each statement sees, so rows read
+        // by several statements needn't add up to the table's. A policy is looked at as
+        // present, not for the predicate's repeatability.
+        if dialect == DialectName::Mssql
+            && let Some(object) = cell_u64(&df, 3, 0)
+        {
+            let Some(policies) = run(&format!(
+                "SELECT COUNT(*) AS policies FROM sys.security_predicates sp \
+                JOIN sys.security_policies pol ON pol.object_id = sp.object_id \
+                WHERE sp.target_object_id = {object} AND pol.is_enabled = 1 \
+                AND sp.predicate_type = 0"
+            )) else {
+                return ViewLookup::Failed;
+            };
+            if cell_u64(&policies, 0, 0).is_none_or(|n| n > 0) {
+                return ViewLookup::Failed;
+            }
+        }
         if dialect == DialectName::Clickhouse
             && cell_str(&df, 3, 0).is_some_and(|sql| clickhouse_has_ttl(&sql))
         {
@@ -2742,6 +2868,11 @@ mod tests {
         }
     }
 
+    /// The answer of the row-level security lookup: no policies.
+    fn no_policies() -> DataFrame {
+        DataFrame::new(1, vec![Column::new("n".into(), vec![0i64])]).unwrap()
+    }
+
     fn rows(views: &[bool]) -> DataFrame {
         let def = views
             .iter()
@@ -2790,7 +2921,9 @@ mod tests {
             let mut s = Recorder {
                 log: vec![],
                 answer: move |sql: &str| {
-                    if sql.contains("OBJECT_ID(N'[dbo].[syn]')") {
+                    if sql.contains("sys.security_predicates") {
+                        no_policies()
+                    } else if sql.contains("OBJECT_ID(N'[dbo].[syn]')") {
                         syn_rows(&[(false, Some(base))])
                     } else {
                         target.take().unwrap_or_else(|| rows(&[]))
@@ -2935,7 +3068,9 @@ mod tests {
         let mut s = Recorder {
             log: vec![],
             answer: |sql: &str| {
-                if sql.contains("sys.computed_columns") {
+                if sql.contains("sys.security_predicates") {
+                    no_policies()
+                } else if sql.contains("sys.computed_columns") {
                     rows(&[])
                 } else {
                     rows(&[false])
@@ -2946,8 +3081,21 @@ mod tests {
             view_definition(&mut s, ms, &parts, &[]),
             ViewLookup::Table { generated: vec![] }
         );
-        assert_eq!(s.log.len(), 2);
-        assert!(s.log[1].contains("sys.computed_columns"));
+        assert_eq!(s.log.len(), 3);
+        assert!(s.log[1].contains("sys.security_predicates"));
+        assert!(s.log[2].contains("sys.computed_columns"));
+        // an enabled filter predicate: not a table that reads alike twice
+        let mut s = Recorder {
+            log: vec![],
+            answer: |sql: &str| {
+                if sql.contains("sys.security_predicates") {
+                    DataFrame::new(1, vec![Column::new("n".into(), vec![1i64])]).unwrap()
+                } else {
+                    rows(&[false])
+                }
+            },
+        };
+        assert_eq!(view_definition(&mut s, ms, &parts, &[]), ViewLookup::Failed);
     }
 
     #[test]

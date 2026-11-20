@@ -118,6 +118,25 @@ pub fn declared_dtype(dialect: DialectName, db_type: &str) -> Option<DataType> {
     {
         return Some(DataType::Time);
     }
+    // SQL Server's `datetime2`, `datetime` and `smalldatetime` have no time zone: ADBC reads
+    // them as UTC timestamps, the others as naive ones. A `real` is read as a `float`, as
+    // the row drivers do (the stored value, which a pushed `float` literal compares with
+    // exactly). A query the drivers can't type from rows (a table-valued function) reads
+    // float and date columns as text otherwise.
+    if dialect == DialectName::Mssql {
+        match t.split('(').next().unwrap_or("").trim() {
+            "datetime" | "smalldatetime" | "datetime2" => {
+                return Some(DataType::Datetime(TimeUnit::Microseconds, None));
+            },
+            "float" | "real" => return Some(DataType::Float64),
+            // ConnectorX reads them as doubles, the other drivers as decimals of other
+            // precisions
+            "money" => return Some(DataType::Decimal(19, 4)),
+            "smallmoney" => return Some(DataType::Decimal(10, 4)),
+            "date" => return Some(DataType::Date),
+            _ => {},
+        }
+    }
     // Drivers disagree on the width of MySQL `YEAR` and `FLOAT` (4 bytes).
     if matches!(dialect, DialectName::Mysql | DialectName::Singlestore) {
         if t == "year" || t.starts_with("year(") {
