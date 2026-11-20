@@ -107,6 +107,9 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
+    /// Columns the planner found unreadable right, with why: raised when one is read.
+    #[serde(default)]
+    pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,
     /// How the relations the source names resolved on the planning session
     /// ([`catalog::resolution_fingerprint`](super::catalog::resolution_fingerprint)); every session
     /// of a read over connections the user made (a pool's) must resolve them the same.

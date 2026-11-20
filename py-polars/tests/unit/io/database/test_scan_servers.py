@@ -3028,12 +3028,69 @@ def test_mysql_live_connection_in_another_time_zone(module: str) -> None:
         assert lf.collect_schema()["ts"] == pl.Datetime("us", "UTC")
         assert lf.collect().sort("id")["ts"].to_list() == [instant, None]
         assert lf.filter(pl.col("ts") == instant).collect()["id"].to_list() == [1]
-        # a query's column type is unknown: read as the session shows it, not as UTC
+        # a query's TIMESTAMP is the same instants, as the table reads them
         query = pl.scan_database(f"SELECT id, ts FROM {table}", conn)
-        assert query.collect_schema()["ts"] == pl.Datetime("us")
+        assert query.collect_schema()["ts"] == pl.Datetime("us", "UTC")
+        assert query.collect().sort("id")["ts"].to_list() == [instant, None]
     finally:
         conn.close()
         _execute("mysql", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_postgres
+@pytest.mark.parametrize(
+    "driver", ["psycopg", "psycopg2", "pg8000", "adbc", "connectorx"]
+)
+def test_postgres_time_declared_as_text_under_schema(driver: str) -> None:
+    # `schema=` has no type to look up: a plain `time` declared String reads its text; a
+    # `timetz` never loses its offset (a Python driver's description tells it; an Arrow
+    # driver can't, and refuses a String that is a time of day, naming Postgres' cast)
+    table = f"r44_pg_timetz_{driver}"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, t time, tz timetz)",
+            f"INSERT INTO {table} VALUES (1, '10:00:00', '10:00:00+02'), (2, NULL, NULL)",
+        ],
+    )
+    python = driver in ("psycopg", "psycopg2", "pg8000")
+    try:
+        schema: dict[str, PolarsDataType] = {"id": pl.Int32, "t": pl.String}
+        lf = _scan("postgres17", driver, table, schema=schema, partition_on=None)
+        if python:
+            assert lf.collect().sort("id")["t"].to_list() == ["10:00:00", None]
+            for dtype in [pl.String, pl.Time]:
+                lf = _scan(
+                    "postgres17",
+                    driver,
+                    table,
+                    schema={"id": pl.Int32, "tz": dtype},
+                    partition_on=None,
+                )
+                with pytest.raises(
+                    pl.exceptions.InvalidOperationError, match=r"TIMETZ.*CAST.*AS TEXT"
+                ):
+                    lf.collect()
+            # the advice works
+            out = _scan(
+                "postgres17",
+                driver,
+                f"SELECT id, CAST(tz AS TEXT) AS tz FROM {table}",
+                schema={"id": pl.Int32, "tz": pl.String},
+                partition_on=None,
+            ).collect()
+            assert out.sort("id")["tz"].to_list() == ["10:00:00+02", None]
+        else:
+            with pytest.raises(
+                pl.exceptions.SchemaError, match=r"TIMETZ.*CAST.*AS TEXT"
+            ):
+                lf.collect()
+        # (the table's own types read the same: the timetz as text, with its offset)
+        out = _scan("postgres17", driver, table, partition_on=None).collect()
+        assert out.sort("id")["tz"].to_list() == ["10:00:00+02", None]
+    finally:
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
 
 
 @needs_postgres
@@ -3608,6 +3665,82 @@ def test_postgres_infinity_is_an_error(driver: str) -> None:
                 ):
                     _scan("postgres17", driver, source).select(column).collect()
     finally:
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_postgres
+@pytest.mark.parametrize("how", ["live", "engine", "sa_connection", "sa_uri"])
+def test_postgres_infinity_is_an_error_on_psycopg2_connections_of_the_user(
+    how: str,
+) -> None:
+    # psycopg2 read `-infinity` as 0001-01-01 and `infinity` as 9999-12-31 on a
+    # connection the plugin didn't open too (also behind SQLAlchemy)
+    psycopg2 = pytest.importorskip("psycopg2")
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    assert POSTGRES is not None
+    table = f"r42_pg_inf_{how}"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, d date, ts timestamp, tz timestamptz, "
+            "da date[])",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01', '2024-01-01', "
+            "'2024-01-01 00:00:00+00', '{2024-01-01}'), (2, '-infinity', NULL, NULL, NULL), "
+            "(3, NULL, 'infinity', NULL, NULL), (4, NULL, NULL, '-infinity', NULL), "
+            "(5, NULL, NULL, NULL, '{2024-01-01,infinity}')",
+        ],
+    )
+    url = _sqlalchemy_url(POSTGRES, "psycopg2")
+    engine = None
+    conn: Any = None
+    if how == "live":
+        conn = source = psycopg2.connect(POSTGRES)
+    elif how == "engine":
+        source = engine = sqlalchemy.create_engine(url)
+    elif how == "sa_connection":
+        engine = sqlalchemy.create_engine(url)
+        conn = source = engine.connect()
+    else:
+        source = url
+    try:
+        # (`schema=`: nothing looks the columns' types up, as a typed read would)
+        types = {
+            "d": pl.Date,
+            "ts": pl.Datetime("us"),
+            "tz": pl.Datetime("us", "UTC"),
+            "da": pl.List(pl.Date),
+        }
+        for column, dtype in types.items():
+            for query in [table, f"SELECT id, {column} FROM {table}"]:
+                schemas: list[dict[str, Any] | None] = [
+                    None,
+                    {"id": pl.Int32, column: dtype},
+                ]
+                for schema in schemas:
+                    lf = pl.scan_database(
+                        query, source, partition_on=None, schema=schema
+                    )
+                    if schema is None or query != table:
+                        lf = lf.select("id", column)
+                    with pytest.raises(pl.exceptions.PolarsError, match="infinity"):
+                        lf.collect()
+        # the user's own statements keep the driver's reading of them
+        if how == "live":
+            cur = conn.cursor()
+            cur.execute(f"SELECT d FROM {table} WHERE id = 2")
+            assert cur.fetchone()[0].year == 1
+            conn.rollback()
+        # rows without one are read
+        lf = pl.scan_database(
+            f"SELECT * FROM {table} WHERE id = 1", source, partition_on=None
+        )
+        assert lf.collect()["d"].to_list() == [date(2024, 1, 1)]
+    finally:
+        if conn is not None:
+            conn.close()
+        if engine is not None:
+            engine.dispose()
         _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
 
 
@@ -5394,6 +5527,47 @@ def test_mysql_zero_dates_in_queries_and_under_schema(name: str) -> None:
         assert lf.collect()["id"].sort().to_list() == [1, 2, 3, 4], driver
 
 
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.String, pl.Date])
+def test_mysql_zero_dates_are_never_silently_dropped_by_a_null_test(
+    name: str, dtype: pl.DataType
+) -> None:
+    # under `schema=` of a dtype other than a date, `IS NULL` was pushed as stored and
+    # returned only the NULL row, the zero date (which the read refuses) left out
+    # silently
+    table = f"zero_date_{name}_{str(dtype).lower()}"
+    _execute(
+        name,
+        [
+            "SET SESSION sql_mode = ''",
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, dd date NULL)",
+            f"INSERT INTO {table} VALUES (1, '0000-00-00'), (2, NULL), (3, '2020-01-02')",
+        ],
+    )
+    try:
+        lf = _scan(
+            name,
+            "adbc",
+            table,
+            schema={"id": pl.Int32, "dd": dtype},
+        )
+        for predicate, expected in [
+            (pl.col("dd").is_null(), [1, 2]),
+            (pl.col("dd").is_not_null(), [3]),
+        ]:
+            if dtype == pl.Date:
+                # the zero date reads as NULL
+                got = lf.filter(predicate).collect()["id"].sort().to_list()
+                assert got == expected
+            else:
+                # the read refuses a zero date: it is not left out silently
+                with pytest.raises(pl.exceptions.ComputeError, match="zero"):
+                    lf.filter(predicate).collect()
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
 @pytest.mark.parametrize(
     ("name", "driver"),
     [
@@ -5795,6 +5969,105 @@ def test_mariadb_ordered_query_sorts_by_the_derived_table_column(driver: str) ->
 
 
 @pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
+def test_mariadb_star_order_by_position_under_a_reordered_schema() -> None:
+    # `ORDER BY 1` of a `SELECT *` is the database's first column, not the first of the
+    # user's `schema=`: it sorted by the date, silently
+    _execute(
+        "mariadb",
+        [
+            "DROP TABLE IF EXISTS r42_star",
+            "CREATE TABLE r42_star (id INT PRIMARY KEY, d DATE)",
+            "INSERT INTO r42_star VALUES (1, '2024-01-03'), (2, '2024-01-02'), "
+            "(3, '2024-01-01')",
+        ],
+    )
+    schema = {"d": pl.Date, "id": pl.Int32}
+    for driver in ["pymysql", "live"]:
+        lf = _scan(
+            "mariadb",
+            driver,
+            "SELECT * FROM r42_star ORDER BY 1 DESC",
+            schema=schema,
+            partition_on=None,
+        )
+        with pytest.raises(pl.exceptions.PolarsError, match="can't be kept"):
+            lf.collect()
+        lf = _scan(
+            "mariadb",
+            driver,
+            "SELECT * FROM r42_star ORDER BY id DESC",
+            schema=schema,
+            partition_on=None,
+        )
+        assert lf.collect()["id"].to_list() == [3, 2, 1], driver
+        # the database's own columns: the position is theirs
+        lf = _scan(
+            "mariadb",
+            driver,
+            "SELECT * FROM r42_star ORDER BY 1 DESC",
+            partition_on=None,
+        )
+        assert lf.collect()["id"].to_list() == [3, 2, 1], driver
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_timestamp_read_as_text_is_the_same_on_every_live_path(name: str) -> None:
+    # a TIMESTAMP typed String read `...+00:00` through a query or `schema=` and no
+    # offset through a table (the bridge converted its instants to UTC, the SQL did)
+    pymysql = pytest.importorskip("pymysql")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    u = urlsplit(server.uri)
+    table = f"r42_ts_text_{name}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01 22:00:00'), (2, NULL)",
+        ],
+    )
+    conn = pymysql.connect(
+        host=u.hostname,
+        port=u.port,
+        user=u.username,
+        password=u.password,
+        database=u.path.lstrip("/"),
+        autocommit=True,
+    )
+    try:
+        # (a session zone that isn't UTC: the instant is 17:00 there)
+        conn.cursor().execute("SET time_zone = '+05:00'")
+        texts = set()
+        for source in [table, f"SELECT id, ts FROM {table}"]:
+            kwargs_list: list[dict[str, Any]] = [
+                {"schema_overrides": {"ts": pl.String}},
+                {"schema": {"id": pl.Int32, "ts": pl.String}},
+            ]
+            for kwargs in kwargs_list:
+                out = pl.scan_database(
+                    source, conn, partition_on=None, **kwargs
+                ).collect()
+                texts.add(tuple(out.sort("id")["ts"].to_list()))
+        assert texts == {("2024-01-01 22:00:00.000000+00:00", None)}
+        # (through a URI the digits are the driver's, the instant the same)
+        for source in [table, f"SELECT id, ts FROM {table}"]:
+            out = pl.scan_database(
+                source,
+                server.uri,
+                partition_on=None,
+                schema_overrides={"ts": pl.String},
+            ).collect()
+            ts = out.sort("id")["ts"].to_list()
+            assert ts[0].startswith("2024-01-01 22:00:00")
+            assert ts[0].endswith("+00:00")
+    finally:
+        conn.close()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
 def test_mariadb_ordered_query_with_a_timestamp_in_a_live_session() -> None:
     # #423: the wrapper of a query's column conversions repeats the ORDER BY outside
     # (MariaDB drops it inside a derived table); a key that isn't a selected column
@@ -5841,7 +6114,10 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
     module: str,
 ) -> None:
     # #440: a TIMESTAMP is read in the session's time zone: under `schema=` its type
-    # isn't known, so the instants would be shifted silently
+    # isn't known, so the instants were shifted silently. The result's field type tells
+    # a TIMESTAMP, and the session's zone is read: the instants are right (a table of
+    # its own: the parametrizations run side by side)
+    table = f"r31_tz_{module.replace('.', '_')}"
     _execute(
         "mysql",
         [
@@ -5858,14 +6134,14 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
     expected = datetime(2024, 1, 1, 20, tzinfo=UTC)
     conn = _mysql_connection("mysql", module, "-08:00")
     try:
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="time zone"):
-            pl.scan_database("r31_tz", conn, schema=schema).collect()
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="time zone"):
-            pl.scan_database(
-                "SELECT id, ts FROM r31_tz",
-                conn,
-                schema_overrides={"ts": pl.Datetime("us", "UTC")},
-            ).collect()
+        out = pl.scan_database("r31_tz", conn, schema=schema).collect()
+        assert out["ts"].item() == expected
+        out = pl.scan_database(
+            "SELECT id, ts FROM r31_tz",
+            conn,
+            schema_overrides={"ts": pl.Datetime("us", "UTC")},
+        ).collect()
+        assert out["ts"].item() == expected
         # a table's declared type is known: the instant is read right
         out = pl.scan_database("r31_tz", conn).collect()
         assert out["ts"].item() == expected
@@ -5877,6 +6153,67 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
         assert out["ts"].item() == expected
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_sqlalchemy_connection_in_another_time_zone(name: str) -> None:
+    # a live SQLAlchemy `Connection` over a MySQL driver reads a TIMESTAMP in its
+    # session's zone as every other live MySQL connection: the instants, in UTC, as the
+    # table source reads them, for text and for an unknown type; a DATETIME stays naive
+    sa = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("pymysql")
+    uri = SERVERS[name].uri
+    if uri is None:
+        pytest.skip(f"no {name} URI")
+    table = f"r44_sa_tz_{name}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL, "
+            "dt DATETIME NULL)",
+            "SET time_zone = '+00:00'",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01 22:00:00', "
+            "'2024-01-01 22:00:00')",
+        ],
+    )
+    engine = sa.create_engine(_sqlalchemy_url(uri, "pymysql"))
+    instant = datetime(2024, 1, 1, 22, tzinfo=UTC)
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("SET time_zone = '+05:00'")
+            for source in [table, f"SELECT id, ts, dt FROM {table}"]:
+                lf = pl.scan_database(source, conn, partition_on=None)
+                assert lf.collect_schema()["ts"] == pl.Datetime("us", "UTC")
+                out = lf.collect()
+                assert out["ts"].to_list() == [instant]
+                assert out["dt"].to_list() == [datetime(2024, 1, 1, 22)]
+                texts = set()
+                kwargs_list: list[dict[str, Any]] = [
+                    {"schema_overrides": {"ts": pl.String}},
+                    {"schema": {"id": pl.Int32, "ts": pl.String}},
+                ]
+                for kwargs in kwargs_list:
+                    out = pl.scan_database(
+                        source, conn, partition_on=None, **kwargs
+                    ).collect()
+                    texts.add(out["ts"].item())
+                assert texts == {"2024-01-01 22:00:00.000000+00:00"}, source
+                out = pl.scan_database(
+                    source,
+                    conn,
+                    partition_on=None,
+                    schema={
+                        "id": pl.Int32,
+                        "ts": pl.Datetime("us", "UTC"),
+                        "dt": pl.Datetime("us"),
+                    },
+                ).collect()
+                assert out["ts"].to_list() == [instant]
+                assert out["dt"].to_list() == [datetime(2024, 1, 1, 22)]
+    finally:
+        engine.dispose()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
 
 
 @pytest.mark.parametrize("module", ["pymysql", "mysql.connector"])
@@ -5923,7 +6260,327 @@ def test_mysql_params_with_percent_in_names(module: str, name: str) -> None:
         conn.close()
 
 
+@needs_postgres
+def test_postgres_user_collations_named_like_builtin_ones() -> None:
+    # a collation is known by its identity, not its name: a user's ICU `"C"` (or
+    # `"default"`, `"POSIX"`, `ucs_basic`) is not the byte-wise built-in one
+    _execute(
+        "postgres17",
+        [
+            "DROP SCHEMA IF EXISTS r_coll_det CASCADE",
+            "DROP SCHEMA IF EXISTS coll_schema CASCADE",
+            "CREATE SCHEMA r_coll_det",
+            "CREATE SCHEMA coll_schema",
+            "CREATE COLLATION r_coll_det.\"C\" (provider = icu, locale = 'en-US')",
+            'CREATE TABLE r_coll_det.keys (id int, s text COLLATE r_coll_det."C")',
+            "INSERT INTO r_coll_det.keys VALUES (1, 'Z'), (2, 'a'), (3, 'z'), (4, 'A')",
+        ]
+        + [
+            f'CREATE COLLATION coll_schema."{name}" (provider = icu, '
+            "locale = 'und-u-ks-level2', deterministic = false)"
+            for name in ["C", "default", "POSIX", "ucs_basic"]
+        ]
+        + [
+            f'CREATE TABLE coll_schema.keys_{i} (id int, s text COLLATE coll_schema."{name}")'
+            for i, name in enumerate(["C", "default", "POSIX", "ucs_basic"])
+        ]
+        + [
+            f"INSERT INTO coll_schema.keys_{i} VALUES (1, 'Z'), (2, 'a'), (3, 'z'), (4, 'A')"
+            for i in range(4)
+        ],
+    )
+    try:
+        # the table path: ordering over a user collation named `C`
+        lf = _scan("postgres17", "psycopg", "r_coll_det.keys")
+        check_filter_ids(
+            lf,
+            [
+                pl.col("s") < "a",
+                pl.col("s") > "a",
+                pl.col("s") >= "Z",
+                pl.col("s") == "a",
+            ],
+        )
+        # the query path: the printed collation name is the user's, visible first on the
+        # search path
+        for i in range(4):
+            lf = _scan(
+                "postgres17",
+                "psycopg",
+                f"SELECT id, s FROM keys_{i}",
+                connect_options={"options": "-c search_path=coll_schema,pg_catalog"},
+            )
+            check_filter_ids(lf, [pl.col("s") == "a", pl.col("s") != "a"])
+    finally:
+        _execute(
+            "postgres17",
+            [
+                "DROP SCHEMA IF EXISTS r_coll_det CASCADE",
+                "DROP SCHEMA IF EXISTS coll_schema CASCADE",
+            ],
+        )
+
+
+@pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
+@ORACLE_GROUP
+def test_oracle_literals_in_the_1582_calendar_gap() -> None:
+    # Oracle reads a literal in 1582-10-05..14 back as 1582-10-15, which the stored
+    # values and Polars' comparison don't: it is not pushed
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE calendar_gap'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            'CREATE TABLE calendar_gap ("id" NUMBER(9), d DATE, t TIMESTAMP(6))',
+            "INSERT INTO calendar_gap VALUES (1, DATE '1582-10-04', TIMESTAMP '1582-10-04 00:00:00')",
+            "INSERT INTO calendar_gap VALUES (2, DATE '1582-10-15', TIMESTAMP '1582-10-15 00:00:00')",
+            "INSERT INTO calendar_gap VALUES (3, DATE '1582-10-16', TIMESTAMP '1582-10-16 00:00:00')",
+        ],
+    )
+    try:
+        lf = _scan("oracle", "oracledb", "CALENDAR_GAP")
+        literals = [
+            datetime(1582, 10, 10),
+            datetime(1582, 10, 5),
+            datetime(1582, 10, 14),
+        ]
+        predicates = []
+        for col in ("D", "T"):
+            for lit in literals:
+                c = pl.col(col)
+                predicates += [
+                    c == lit,
+                    c != lit,
+                    c < lit,
+                    c <= lit,
+                    c > lit,
+                    c >= lit,
+                    c.is_in([lit]),
+                ]
+        check_filter_ids(lf, predicates)
+    finally:
+        _execute("oracle", ["DROP TABLE calendar_gap"])
+
+
 # Silent value and type conversions.
+
+
+@pytest.mark.skipif(SERVERS["mariadb"].uri is None, reason="no MariaDB URI")
+@pytest.mark.parametrize("driver", ["pymysql", "connectorx", "live"])
+def test_mariadb_query_with_order_by_reads_the_dtypes_of_one_without(
+    driver: str,
+) -> None:
+    # the result types of a query with a top-level ORDER BY weren't looked up: a FLOAT
+    # holding 16777216 read as 6-digit text (16777200.0), a YEAR as String
+    if driver == "connectorx":
+        pytest.importorskip("connectorx")
+    table = f"t455_order_{driver}"
+    _execute(
+        "mariadb",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, f FLOAT, y YEAR)",
+            f"INSERT INTO {table} VALUES (1, 16777216, 2024), (2, 1.5, 1999)",
+        ],
+    )
+    try:
+        plain = _scan("mariadb", driver, f"SELECT id, f, y FROM {table}").collect()
+        ordered = _scan(
+            "mariadb", driver, f"SELECT id, f, y FROM {table} ORDER BY id"
+        ).collect()
+        assert plain.schema == ordered.schema
+        assert ordered["f"].to_list() == [16777216.0, 1.5]
+        assert ordered["y"].to_list() == plain["y"].to_list()
+    finally:
+        _execute("mariadb", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+@pytest.mark.parametrize("driver", ["pymysql", "live"])
+def test_mysql_select_star_order_by_is_kept_with_converted_columns(
+    name: str, driver: str
+) -> None:
+    # `SELECT * … ORDER BY id DESC` of a table with a FLOAT / DATE / DATETIME /
+    # TIMESTAMP column raised "the query's ORDER BY can't be kept" on MariaDB: the star
+    # is the planned columns
+    if SERVERS[name].uri is None:
+        pytest.skip(f"no {name} URI")
+    table = f"t457_star_{name}_{driver}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, f FLOAT, d DATE, "
+            "dt DATETIME, ts TIMESTAMP NULL)",
+            f"INSERT INTO {table} VALUES "
+            "(1, 16777216, '2024-01-01', '2024-01-01 01:02:03', '2024-01-01 01:02:03'), "
+            "(3, 1.5, '2024-01-03', '2024-01-03 01:02:03', '2024-01-03 01:02:03'), "
+            "(2, NULL, NULL, NULL, NULL)",
+        ],
+    )
+    try:
+        for query in [
+            f"SELECT * FROM {table} ORDER BY id DESC",
+            f"SELECT * FROM {table} ORDER BY {table}.id DESC",
+            f"SELECT * FROM {table} AS t ORDER BY 1 DESC",
+        ]:
+            lf = _scan(name, driver, query, partition_on=None)
+            out = lf.collect()
+            assert out["id"].to_list() == [3, 2, 1], query
+            assert out["f"].to_list() == [1.5, None, 16777216.0], query
+            assert out["d"].to_list() == [date(2024, 1, 3), None, date(2024, 1, 1)]
+            assert lf.head(2).collect()["id"].to_list() == [3, 2], query
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_live_query_timestamps_are_instants_in_a_non_utc_session(
+    name: str,
+) -> None:
+    # a query's TIMESTAMP on a live connection read as naive wall-clock time of the
+    # session's zone, where the table reads UTC instants: dt.date() put a row on another
+    # day. The zone is read from the session; where it can't be told apart, or a
+    # wall-clock time is ambiguous, the read fails
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    assert server.factory is not None
+    table = f"t76_live_{name}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL, "
+            "dt DATETIME)",
+            "SET time_zone = '+00:00'",
+            f"INSERT INTO {table} VALUES "
+            "(1, '2024-01-01 22:00:00', '2024-01-01 22:00:00'), "
+            "(2, NULL, NULL), "
+            "(3, '2024-11-03 09:30:00', '2024-11-03 09:30:00'), "
+            "(4, '2024-07-01 12:00:00', '2024-07-01 12:00:00')",
+        ],
+    )
+    conn = server.factory(server.uri)()
+    try:
+
+        def run(statement: str) -> None:
+            cur = conn.cursor()
+            cur.execute(statement)
+            cur.close()
+
+        run("SET time_zone = '+00:00'")
+        utc = (
+            pl.scan_database(f"SELECT * FROM {table}", conn, partition_on=None)
+            .collect()
+            .sort("id")
+        )
+        assert utc.schema["ts"] == pl.Datetime("us", "UTC")
+        for zone in ["-08:00", "+05:30", "SYSTEM"]:
+            run(f"SET time_zone = '{zone}'")
+            for source in [f"SELECT * FROM {table}", table]:
+                lf = pl.scan_database(source, conn, partition_on=None)
+                got = lf.collect().sort("id")
+                assert_frame_equal(got, utc)
+                assert got["ts"].dt.date().to_list()[0] == date(2024, 1, 1)
+        # the zone is read for each query
+        run("SET time_zone = '-08:00'")
+        for source in [f"SELECT id, ts FROM {table} WHERE id = 1", table]:
+            out = pl.scan_database(source, conn, partition_on=None).collect()
+            assert out["ts"].dt.convert_time_zone("UTC")[0] == datetime(
+                2024, 1, 1, 22, tzinfo=UTC
+            )
+        # a zone with daylight saving time: exact outside the repeated hour
+        try:
+            run("SET time_zone = 'America/Los_Angeles'")
+        except Exception:
+            pytest.skip("no time zone tables on this server")
+        out = pl.scan_database(
+            f"SELECT id, ts FROM {table} WHERE id IN (1, 4)", conn, partition_on=None
+        ).collect()
+        assert out.sort("id")["ts"].to_list() == [
+            datetime(2024, 1, 1, 22, tzinfo=UTC),
+            datetime(2024, 7, 1, 12, tzinfo=UTC),
+        ]
+        # 2024-11-03 09:30 UTC is 01:30 PST, a wall-clock time that happened twice
+        with pytest.raises(pl.exceptions.PolarsError):
+            pl.scan_database(
+                f"SELECT id, ts FROM {table} WHERE id = 3", conn, partition_on=None
+            ).collect()
+        # an abbreviation names no zone's rules
+        run("SET time_zone = 'SYSTEM'")
+    finally:
+        conn.close()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_clickhouse
+def test_clickhouse_datetime64_arrays_retyped_to_a_coarser_unit_are_not_misread() -> (
+    None
+):
+    # the nanosecond ticks of an Array(DateTime64(9)) read as microseconds (year 55972)
+    # under a List(Datetime("us")) override, a "ms" one panicked: each is an error or
+    # the right instant
+    pytest.importorskip("clickhouse_connect")
+    table = "t456_ch_ticks"
+    _execute(
+        "clickhouse",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id Int32, a Array(DateTime64(9, 'UTC'))) "
+            "ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} VALUES (1, ['2024-01-02 03:04:05.123456789'])",
+        ],
+    )
+    try:
+        for unit in ["us", "ms"]:
+            for source in [table, f"SELECT * FROM {table}"]:
+                lf = _scan(
+                    "clickhouse",
+                    "clickhouse_connect",
+                    source,
+                    schema_overrides={"a": pl.List(pl.Datetime(unit, "UTC"))},  # type: ignore[arg-type]
+                )
+                try:
+                    df = lf.collect()
+                except pl.exceptions.PolarsError:
+                    continue
+                [value] = df["a"][0].to_list()
+                assert value.replace(microsecond=0) == datetime(
+                    2024, 1, 2, 3, 4, 5, tzinfo=UTC
+                ), (unit, source)
+    finally:
+        _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_postgres
+def test_postgres_psycopg2_infinity_is_an_error_without_a_type_lookup() -> None:
+    # under `schema=` no type lookup ran, and psycopg2 read ±infinity as date.max /
+    # date.min
+    table = "t99_pg_inf"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, d date, tz timestamptz[])",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01', '{{2024-01-01 00:00+00}}'), "
+            "(2, '-infinity', NULL), (3, NULL, '{infinity}')",
+        ],
+    )
+    schema = {
+        "id": pl.Int32,
+        "d": pl.Date,
+        "tz": pl.List(pl.Datetime("us", "UTC")),
+    }
+    try:
+        for column in ["d", "tz"]:
+            lf = _scan("postgres17", "psycopg2", table, schema=schema)
+            with pytest.raises(pl.exceptions.PolarsError, match="infinity"):
+                lf.select(column).collect()
+        ok = _scan("postgres17", "psycopg2", table, schema=schema).select("id")
+        assert ok.collect()["id"].sort().to_list() == [1, 2, 3]
+    finally:
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
 
 
 # ---- pooled connections ----
