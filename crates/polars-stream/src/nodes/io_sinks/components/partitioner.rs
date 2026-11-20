@@ -3,7 +3,10 @@ use std::borrow::Cow;
 use polars_async::primitives::wait_group::WaitToken;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
-use polars_core::prelude::{BinaryOffsetChunked, Column, IntoGroupsType};
+use polars_core::prelude::{
+    AnyValue, BinaryOffsetChunked, Column, DataType, IdxSize, IntoGroupsType,
+};
+use polars_core::scalar::Scalar;
 use polars_error::PolarsResult;
 use polars_expr::hash_keys::{HashKeysVariant, hash_keys_variant_for_dtype};
 use polars_expr::state::ExecutionState;
@@ -192,11 +195,7 @@ impl KeyedPartitioner {
                         1,
                         key_columns
                             .iter()
-                            // Materialized, so that the key does not pin its column's dictionary.
-                            .map(|c| match c.take_slice_unchecked(&[first_idx]) {
-                                c @ Column::Dictionary(_) => c.take_materialized_series().into(),
-                                c => c,
-                            })
+                            .map(|c| key_column_at(c, first_idx as usize))
                             .collect(),
                     )
                 };
@@ -211,5 +210,41 @@ impl KeyedPartitioner {
             .collect();
 
         Ok(partitions_vec)
+    }
+}
+
+/// The stored one-row key column for row `idx` of `c`. A gathered row of a String or Binary
+/// column (or a dictionary column's) shares the data buffers of the whole column, so a key kept
+/// until the sink finishes would pin them: such keys are built from the owned value, in a scalar
+/// column whose materialized series is not cached.
+fn key_column_at(c: &Column, idx: usize) -> Column {
+    let owned_value = matches!(c, Column::Dictionary(_))
+        || matches!(c.dtype(), DataType::String | DataType::Binary);
+    if owned_value && let Ok(value) = c.get(idx) {
+        let value: AnyValue<'static> = value.into_static();
+        return Column::new_scalar(c.name().clone(), Scalar::new(c.dtype().clone(), value), 1);
+    }
+    // SAFETY: `idx` is the index of a row of the column.
+    unsafe { c.take_slice_unchecked(&[idx as IdxSize]) }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn string_key_is_an_owned_scalar_column() {
+        let s = Series::new("k".into(), ["a-string-longer-than-twelve-bytes", "b"]);
+        let key = key_column_at(&Column::from(s), 0);
+        assert!(matches!(key, Column::Scalar(_)), "{key:?}");
+        assert_eq!(key.len(), 1);
+        assert_eq!(
+            key.get(0).unwrap().get_str(),
+            Some("a-string-longer-than-twelve-bytes")
+        );
+        let ints = Column::new("i".into(), [1i64, 2]);
+        assert_eq!(key_column_at(&ints, 1).get(0).unwrap(), AnyValue::Int64(2));
     }
 }
