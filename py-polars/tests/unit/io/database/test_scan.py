@@ -4793,3 +4793,35 @@ def test_scan_duckdb_shared_cursor_key_resolves_symlinks(tmp_path: Path) -> None
             close_second()
     finally:
         close_first()
+
+
+def test_negative_slice_over_a_table_changed_after_the_count_fails_loudly(
+    tmp_path: Path,
+) -> None:
+    # a tail is planned from COUNT(*) and read by a second statement. The host
+    # stopped pulling at the end of the slice, so the rows past it (a writer's inserts
+    # between the two) were never counted against the count: it returned the wrong rows
+    db = tmp_path / "t.db"
+    with closing(sqlite3.connect(db)) as setup:
+        setup.execute("PRAGMA journal_mode=WAL")
+        setup.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+        setup.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(1, 101)])
+        setup.commit()
+    inserted = iter(range(-1, -100, -1))
+    writer = sqlite3.connect(db, check_same_thread=False)
+
+    def write_before_the_read(sql: str) -> None:
+        # a writer commits right after the count, as the read statement starts
+        if sql.startswith('SELECT "t"."id"'):
+            writer.execute("INSERT INTO t VALUES (?)", (next(inserted),))
+            writer.commit()
+
+    with closing(writer), closing(sqlite3.connect(db, check_same_thread=False)) as conn:
+        conn.set_trace_callback(write_before_the_read)
+        lf = pl.scan_database("t", conn, order_by="id", partition_on=None)
+        for q in [lf.tail(3), lf.slice(-10, 3)]:
+            with pytest.raises(pl.exceptions.ComputeError, match="changed"):
+                q.collect()
+        # (the same, without the writer)
+        conn.set_trace_callback(None)
+        assert lf.tail(3).collect()["id"].to_list() == [98, 99, 100]

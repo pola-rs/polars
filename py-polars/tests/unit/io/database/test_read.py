@@ -1574,3 +1574,185 @@ def test_read_database_struct_schema_overrides_30471() -> None:
                     conn,
                     schema_overrides={"s": dtype},
                 )
+
+
+def test_databricks_sqlalchemy_cursor_uses_the_right_dbapi_connection(
+    tmp_path: Any,
+) -> None:
+    # databricks-sqlalchemy 2.x: an Engine's pooled connection stays checked out while
+    # its cursor is used (it went back to the pool at once, to be handed out again), and
+    # a Connection's cursor is on the Connection's own DBAPI connection (its temporary
+    # views and `SET`s), not on another pooled one. A SQLite engine stands in for the
+    # driver.
+    import sqlite3
+
+    sa = pytest.importorskip("sqlalchemy")
+
+    class Cursor(sqlite3.Cursor):  # (a Python class, as the driver's, to patch)
+        pass
+
+    class Connection(sqlite3.Connection):
+        def cursor(self, factory: Any = Cursor) -> Any:  # type: ignore[override]
+            return super().cursor(factory)
+
+    path = str(tmp_path / "x.db")
+    engine = sa.create_engine(
+        f"sqlite:///{path}",
+        creator=lambda: sqlite3.connect(path, factory=Connection),
+        poolclass=sa.pool.QueuePool,
+    )
+    engine.dialect.driver = "databricks"  # type: ignore[misc]
+
+    executor = ConnectionExecutor(engine)
+    assert engine.pool.checkedout() == 0  # type: ignore[attr-defined]  # (lazy)
+    executor.execute("SELECT 1")
+    assert executor.driver_name == "databricks"
+    assert engine.pool.checkedout() == 1  # type: ignore[attr-defined]
+    other = engine.raw_connection()
+    assert other.driver_connection is not executor.cursor.connection  # type: ignore[attr-defined]
+    other.close()
+    assert executor.cursor.fetchall() == [(1,)]
+    executor.__exit__(None, None, None)
+    executor.__exit__(None, None, None)  # (closing twice is fine)
+    assert engine.pool.checkedout() == 0  # type: ignore[attr-defined]
+
+    with engine.connect() as conn:
+        conn.exec_driver_sql("CREATE TEMP TABLE tmp_view (x INTEGER)")
+        conn.exec_driver_sql("INSERT INTO tmp_view VALUES (7)")
+        executor = ConnectionExecutor(conn)
+        executor.execute("SELECT x FROM tmp_view")
+        assert executor.cursor.connection is conn.connection.driver_connection  # type: ignore[attr-defined]
+        assert executor.cursor.fetchall() == [(7,)]
+        executor.__exit__(None, None, None)
+        # the Connection is still the user's, and open
+        assert conn.exec_driver_sql("SELECT x FROM tmp_view").fetchall() == [(7,)]
+    engine.dispose()
+
+
+def _databricks_standin_engine(tmp_path: Any, closed: list[bool] | None = None) -> Any:
+    import sqlite3
+
+    sa = pytest.importorskip("sqlalchemy")
+
+    pa = pytest.importorskip("pyarrow")
+
+    class Cursor(sqlite3.Cursor):
+        # (the driver's Arrow methods)
+        def _arrow(self, rows: list[Any]) -> Any:
+            names = [d[0] for d in self.description]
+            return pa.table({n: [r[i] for r in rows] for i, n in enumerate(names)})
+
+        def close(self) -> None:
+            if closed is not None:
+                closed.append(True)
+            super().close()
+
+        def fetchmany_arrow(self, size: int) -> Any:
+            return self._arrow(self.fetchmany(size))
+
+        def fetchall_arrow(self) -> Any:
+            return self._arrow(self.fetchall())
+
+    class Connection(sqlite3.Connection):
+        def cursor(self, factory: Any = Cursor) -> Any:  # type: ignore[override]
+            return super().cursor(factory)
+
+    path = str(tmp_path / "x.db")
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE t (a INTEGER)")
+    c.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(5)])
+    c.commit()
+    c.close()
+    engine = sa.create_engine(
+        f"sqlite:///{path}",
+        creator=lambda: sqlite3.connect(path, factory=Connection),
+        poolclass=sa.pool.QueuePool,
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=0.5,
+    )
+    engine.dialect.driver = "databricks"
+    return engine
+
+
+def test_databricks_sqlalchemy_closed_connection_is_a_clear_error(
+    tmp_path: Any,
+) -> None:
+    engine = _databricks_standin_engine(tmp_path)
+    conn = engine.connect()
+    conn.close()
+    with pytest.raises(Exception, match=r"(?i)closed|invalidated"):
+        ConnectionExecutor(conn)
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_engine_gives_back_the_connection_on_early_stop(
+    tmp_path: Any,
+) -> None:
+    # dropping a batch iterator early (or an error while iterating) must return the
+    # pooled connection: it was held by a reference cycle that was never collected
+    engine = _databricks_standin_engine(tmp_path)
+    for _ in range(2):  # (a pool of one: the second read fails if the first leaked)
+        it = pl.read_database(
+            "SELECT a FROM t", engine, iter_batches=True, batch_size=2
+        )
+        next(iter(it))
+        del it
+        assert engine.pool.checkedout() == 0
+
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    gen: Any = iter(it)
+    next(gen)
+    gen.close()
+    assert engine.pool.checkedout() == 0
+
+    # an error part-way through the batches
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    next(it)
+    with pytest.raises(RuntimeError, match="boom"):
+        it.throw(RuntimeError("boom"))  # type: ignore[attr-defined]
+    assert engine.pool.checkedout() == 0
+    assert pl.read_database("SELECT a FROM t", engine).height == 5
+    assert engine.pool.checkedout() == 0
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_statement_objects_use_sqlalchemy(
+    tmp_path: Any,
+) -> None:
+    # SQLAlchemy statements (not str) are compiled by SQLAlchemy, as before
+    sa = pytest.importorskip("sqlalchemy")
+
+    engine = _databricks_standin_engine(tmp_path)
+    queries = [
+        sa.select(sa.literal(1)),
+        sa.text("SELECT 1"),
+        sa.text("SELECT a FROM t WHERE a = :a").bindparams(a=1),
+    ]
+    for q in queries:
+        df = pl.read_database(q, engine)
+        assert df.height == 1
+        assert engine.pool.checkedout() == 0
+        with engine.connect() as conn:
+            assert pl.read_database(q, conn).height == 1
+            assert conn.exec_driver_sql("SELECT 1").fetchall() == [(1,)]  # (still open)
+        assert engine.pool.checkedout() == 0
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_close_batches_before_first_next(
+    tmp_path: Any,
+) -> None:
+    closed: list[bool] = []
+    engine = _databricks_standin_engine(tmp_path, closed)
+    engine.connect().close()  # (SQLAlchemy's own first-connect cursors)
+    closed.clear()
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    assert engine.pool.checkedout() == 1
+    assert closed == []
+    it.close()  # type: ignore[attr-defined]
+    assert closed == [True]  # (the cursor itself)
+    assert engine.pool.checkedout() == 0
+    it.close()  # type: ignore[attr-defined]  # (idempotent)
+    assert closed == [True]
+    engine.dispose()
