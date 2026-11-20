@@ -63,8 +63,8 @@ use crate::grouping_sets::{
     GroupingCall, GroupingSets, bind_stored_keys, canonicalize_keys, contains_grouping_placeholder,
     expand_grouping_sets, new_placeholder,
 };
+use crate::iceberg_alter::{self, IcebergAlter, IcebergAlterOp, OtherStatement};
 use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
-use crate::layout_alter::{self, Layout, LayoutAlter, OtherStatement};
 use crate::location::{
     complete_location, locate, locate_in_statement, without_macro_positions, without_positions,
 };
@@ -570,8 +570,8 @@ impl SQLContext {
 
     /// The catalog tables that `query` reads, once per table and version.
     pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
-        // a layout change reads no table
-        let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
+        // these ALTER TABLE operations read no table
+        let Ok(mut stmt) = iceberg_alter::parse_single_statement_or_alter(query)? else {
             return Ok(Vec::new());
         };
         copy_table_as_query(&mut stmt)?;
@@ -597,10 +597,10 @@ impl SQLContext {
     /// The catalog statement of `query`, if any, for the caller to perform:
     /// [`SQLContext::execute`] rejects it.
     pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
-        let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
+        let mut stmt = match iceberg_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => {
-                return self.catalog_layout_alter(&alter).map(Some);
+                return self.catalog_iceberg_alter(&alter).map(Some);
             },
             Err(OtherStatement::Macro(_)) => return Ok(None),
         };
@@ -1445,7 +1445,7 @@ impl SQLContext {
         query: &str,
         params: &QueryParams,
     ) -> PolarsResult<LazyFrame> {
-        let mut stmt = match layout_alter::parse_single_statement_or_alter(query)? {
+        let mut stmt = match iceberg_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => return Err(self.alter_table_error(&alter.name)),
             Err(OtherStatement::Macro(stmt)) => {
@@ -1516,7 +1516,7 @@ impl SQLContext {
     }
 
     fn describe_copy_to_stdout(&mut self, query: &str) -> PolarsResult<Option<CopyToStdout>> {
-        let Ok(mut stmt) = layout_alter::parse_single_statement_or_alter(query)? else {
+        let Ok(mut stmt) = iceberg_alter::parse_single_statement_or_alter(query)? else {
             return Ok(None);
         };
         if !matches!(
@@ -3209,14 +3209,14 @@ impl SQLContext {
         }))
     }
 
-    /// The catalog statement of `ALTER TABLE ... SET | RESET PARTITIONED BY` or
-    /// `... SET | RESET SORTED BY`; only a catalog table has a layout to change.
-    fn catalog_layout_alter(&self, alter: &LayoutAlter) -> PolarsResult<CatalogStatement> {
+    /// The catalog statement of an `ALTER TABLE` of [`iceberg_alter`] (layout, tags and
+    /// branches); only a catalog table has them.
+    fn catalog_iceberg_alter(&self, alter: &IcebergAlter) -> PolarsResult<CatalogStatement> {
         let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
             return Err(self.catalog_tables_only("ALTER TABLE", &alter.name));
         };
-        let operation = match alter.layout.clone() {
-            Layout::Partitioning(mut fields) => {
+        let operation = match alter.operation.clone() {
+            IcebergAlterOp::Partitioning(mut fields) => {
                 for field in &mut fields {
                     self.macros.expand(field)?;
                 }
@@ -3224,7 +3224,7 @@ impl SQLContext {
                     fields: set_partitioning(&fields)?,
                 }
             },
-            Layout::SortOrder(mut fields) => {
+            IcebergAlterOp::SortOrder(mut fields) => {
                 for field in &mut fields {
                     self.macros.expand(field)?;
                 }
@@ -3232,6 +3232,7 @@ impl SQLContext {
                     fields: set_sort_order(&fields)?,
                 }
             },
+            IcebergAlterOp::Ref(operation) => operation,
         };
         Ok(CatalogStatement::AlterTable {
             name,
@@ -7475,6 +7476,8 @@ impl SQLContext {
         let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
+        // Projections computed from the group keys alone, re-evaluated on the aggregated rows.
+        let mut key_expressions = PlHashSet::new();
 
         // Pre-compute group key data (alias-stripped expression + aggregated output
         // name) to avoid repeated work matching projections against the group keys
@@ -7583,6 +7586,7 @@ impl SQLContext {
                     }
                 } else {
                     splitter.check_columns_per_group(e_inner)?;
+                    key_expressions.insert(field.name.clone());
                 }
             }
         }
@@ -7742,6 +7746,8 @@ impl SQLContext {
                 } else if is_constant(projection_expr) {
                     // Constants are not part of the aggregation; re-evaluate them.
                     projection_expr.clone()
+                } else if key_expressions.contains(name) {
+                    bind_keys(projection_expr.clone()).alias(name.clone())
                 } else {
                     col(name.clone())
                 }
@@ -9280,7 +9286,7 @@ pub fn extract_table_identifiers(
     unique: bool,
 ) -> PolarsResult<Vec<String>> {
     let mut tables = Vec::new();
-    match layout_alter::parse_statements_or_alter(query)? {
+    match iceberg_alter::parse_statements_or_alter(query)? {
         Ok(ast) => {
             for stmt in &ast {
                 tables.extend(statement_table_identifiers(stmt, include_schema, false));

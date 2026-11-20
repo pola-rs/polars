@@ -757,7 +757,7 @@ def test_postgres_credential_provider(driver: str) -> None:
 def test_postgres_partition_added_after_planning_does_not_fail_the_resolution_check() -> (
     None
 ):
-    # G1: the resolution fingerprint listed every permanent child of a partitioned
+    # the resolution fingerprint listed every permanent child of a partitioned
     # table, so a partition added (or detached) between two collects of a cached
     # LazyFrame failed as if the pooled session's state had changed
     server = SERVERS["postgres17"]
@@ -2212,8 +2212,6 @@ def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> N
     uri = SERVERS["mysql"].uri
     assert uri is not None
     engine = None
-    cur: Any = None
-    result: Any = None
     if how == "pymysql":
         conn = pymysql.connect(**_parts(uri))
         cur = conn.cursor(pymysql.cursors.SSCursor)
@@ -3922,7 +3920,10 @@ def test_postgres_infinity_is_an_error_on_psycopg2_connections_of_the_user(
         }
         for column, dtype in types.items():
             for query in [table, f"SELECT id, {column} FROM {table}"]:
-                schemas: list[Any] = [None, {"id": pl.Int32, column: dtype}]
+                schemas: list[dict[str, Any] | None] = [
+                    None,
+                    {"id": pl.Int32, column: dtype},
+                ]
                 for schema in schemas:
                     lf = pl.scan_database(
                         query, source, partition_on=None, schema=schema
@@ -5804,7 +5805,7 @@ def test_mysql_zero_dates_are_never_silently_dropped_by_a_null_test(
     # under `schema=` of a dtype other than a date, `IS NULL` was pushed as stored and
     # returned only the NULL row, the zero date (which the read refuses) left out
     # silently
-    table = f"r460_zero_{name}_{str(dtype).lower()}"
+    table = f"zero_date_{name}_{str(dtype).lower()}"
     _execute(
         name,
         [
@@ -6310,7 +6311,7 @@ def test_mysql_timestamp_read_as_text_is_the_same_on_every_live_path(name: str) 
         conn.cursor().execute("SET time_zone = '+05:00'")
         texts = set()
         for source in [table, f"SELECT id, ts FROM {table}"]:
-            kwargs_list: list[Any] = [
+            kwargs_list: list[dict[str, Any]] = [
                 {"schema_overrides": {"ts": pl.String}},
                 {"schema": {"id": pl.Int32, "ts": pl.String}},
             ]
@@ -6458,7 +6459,7 @@ def test_mysql_sqlalchemy_connection_in_another_time_zone(name: str) -> None:
                 assert out["ts"].to_list() == [instant]
                 assert out["dt"].to_list() == [datetime(2024, 1, 1, 22)]
                 texts = set()
-                kwargs_list: list[Any] = [
+                kwargs_list: list[dict[str, Any]] = [
                     {"schema_overrides": {"ts": pl.String}},
                     {"schema": {"id": pl.Int32, "ts": pl.String}},
                 ]
@@ -6537,24 +6538,24 @@ def test_postgres_user_collations_named_like_builtin_ones() -> None:
         "postgres17",
         [
             "DROP SCHEMA IF EXISTS r_coll_det CASCADE",
-            "DROP SCHEMA IF EXISTS r_coll_nd CASCADE",
+            "DROP SCHEMA IF EXISTS coll_schema CASCADE",
             "CREATE SCHEMA r_coll_det",
-            "CREATE SCHEMA r_coll_nd",
+            "CREATE SCHEMA coll_schema",
             "CREATE COLLATION r_coll_det.\"C\" (provider = icu, locale = 'en-US')",
             'CREATE TABLE r_coll_det.keys (id int, s text COLLATE r_coll_det."C")',
             "INSERT INTO r_coll_det.keys VALUES (1, 'Z'), (2, 'a'), (3, 'z'), (4, 'A')",
         ]
         + [
-            f'CREATE COLLATION r_coll_nd."{name}" (provider = icu, '
+            f'CREATE COLLATION coll_schema."{name}" (provider = icu, '
             "locale = 'und-u-ks-level2', deterministic = false)"
             for name in ["C", "default", "POSIX", "ucs_basic"]
         ]
         + [
-            f'CREATE TABLE r_coll_nd.keys_{i} (id int, s text COLLATE r_coll_nd."{name}")'
+            f'CREATE TABLE coll_schema.keys_{i} (id int, s text COLLATE coll_schema."{name}")'
             for i, name in enumerate(["C", "default", "POSIX", "ucs_basic"])
         ]
         + [
-            f"INSERT INTO r_coll_nd.keys_{i} VALUES (1, 'Z'), (2, 'a'), (3, 'z'), (4, 'A')"
+            f"INSERT INTO coll_schema.keys_{i} VALUES (1, 'Z'), (2, 'a'), (3, 'z'), (4, 'A')"
             for i in range(4)
         ],
     )
@@ -6577,7 +6578,7 @@ def test_postgres_user_collations_named_like_builtin_ones() -> None:
                 "postgres17",
                 "psycopg",
                 f"SELECT id, s FROM keys_{i}",
-                connect_options={"options": "-c search_path=r_coll_nd,pg_catalog"},
+                connect_options={"options": "-c search_path=coll_schema,pg_catalog"},
             )
             check_filter_ids(lf, [pl.col("s") == "a", pl.col("s") != "a"])
     finally:
@@ -6585,7 +6586,7 @@ def test_postgres_user_collations_named_like_builtin_ones() -> None:
             "postgres17",
             [
                 "DROP SCHEMA IF EXISTS r_coll_det CASCADE",
-                "DROP SCHEMA IF EXISTS r_coll_nd CASCADE",
+                "DROP SCHEMA IF EXISTS coll_schema CASCADE",
             ],
         )
 
@@ -6598,16 +6599,16 @@ def test_oracle_literals_in_the_1582_calendar_gap() -> None:
     _execute(
         "oracle",
         [
-            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE r512_gap'; "
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE calendar_gap'; "
             "EXCEPTION WHEN OTHERS THEN NULL; END;",
-            'CREATE TABLE r512_gap ("id" NUMBER(9), d DATE, t TIMESTAMP(6))',
-            "INSERT INTO r512_gap VALUES (1, DATE '1582-10-04', TIMESTAMP '1582-10-04 00:00:00')",
-            "INSERT INTO r512_gap VALUES (2, DATE '1582-10-15', TIMESTAMP '1582-10-15 00:00:00')",
-            "INSERT INTO r512_gap VALUES (3, DATE '1582-10-16', TIMESTAMP '1582-10-16 00:00:00')",
+            'CREATE TABLE calendar_gap ("id" NUMBER(9), d DATE, t TIMESTAMP(6))',
+            "INSERT INTO calendar_gap VALUES (1, DATE '1582-10-04', TIMESTAMP '1582-10-04 00:00:00')",
+            "INSERT INTO calendar_gap VALUES (2, DATE '1582-10-15', TIMESTAMP '1582-10-15 00:00:00')",
+            "INSERT INTO calendar_gap VALUES (3, DATE '1582-10-16', TIMESTAMP '1582-10-16 00:00:00')",
         ],
     )
     try:
-        lf = _scan("oracle", "oracledb", "R512_GAP")
+        lf = _scan("oracle", "oracledb", "CALENDAR_GAP")
         literals = [
             datetime(1582, 10, 10),
             datetime(1582, 10, 5),
@@ -6628,7 +6629,7 @@ def test_oracle_literals_in_the_1582_calendar_gap() -> None:
                 ]
         check_filter_ids(lf, predicates)
     finally:
-        _execute("oracle", ["DROP TABLE r512_gap"])
+        _execute("oracle", ["DROP TABLE calendar_gap"])
 
 
 # Silent value and type conversions.
@@ -7127,7 +7128,7 @@ def _ids_table(name: str, table: str, extra: str = "") -> None:
 @pytest.mark.parametrize("name", ["postgres17", "mysql", "mssql"])
 @pytest.mark.parametrize("consistency", ["none", "snapshot"])
 def test_negative_slices_under_a_concurrent_writer(name: str, consistency: str) -> None:
-    # #363: a tail is planned from COUNT(*) and read by a second statement, and the
+    # a tail is planned from COUNT(*) and read by a second statement, and the
     # host stopped pulling at the end of the slice, so rows a writer inserted in between
     # (here before every row: negative ids) shifted the slice, unchecked. It either
     # takes the right rows or fails saying that the table changed.
@@ -8496,7 +8497,7 @@ def test_trino_edge_types_filters() -> None:
 @needs_trino
 def test_trino_named_zone_repeated_hour_reads_the_instants() -> None:
     # a `timestamp with time zone` holds a zone's name, not its offset: the
-    # repeated hour of a named zone read as one instant (#559)
+    # repeated hour of a named zone read as one instant
     table = "review_trino_repeated_hour"
     _execute(
         "trino",
@@ -8526,7 +8527,7 @@ def test_trino_named_zone_repeated_hour_reads_the_instants() -> None:
 
 @needs_trino
 def test_trino_query_with_ties_is_not_limited_around() -> None:
-    # Trino applies a LIMIT around `FETCH FIRST n ROWS WITH TIES` inside it (#560)
+    # Trino applies a LIMIT around `FETCH FIRST n ROWS WITH TIES` inside it
     table = "review_trino_ties"
     _execute(
         "trino",
@@ -8552,7 +8553,7 @@ def test_trino_query_with_ties_is_not_limited_around() -> None:
 @needs_trino
 def test_trino_temporal_precision_above_six_is_read_exactly() -> None:
     # `timestamp(7..12)` and `time(7..12)`: the `trino` driver rounded them to
-    # microseconds, ADBC aborted the process outside 1677-2262 (#561, #562)
+    # microseconds, ADBC aborted the process outside 1677-2262
     table = "review_trino_wide_temporal"
     _execute(
         "trino",
@@ -8593,7 +8594,7 @@ def test_trino_temporal_precision_above_six_is_read_exactly() -> None:
 @needs_trino
 def test_trino_char_literal_with_trailing_blanks_is_not_pushed() -> None:
     # `c = 'a  '` is false for `char(3) 'a'` in Trino, while the column reads
-    # `'a  '` (#563)
+    # `'a  '`
     source = "SELECT 1 AS id, CAST('a' AS char(3)) AS c"
     _check_filters_by_driver(
         "trino",
@@ -8609,7 +8610,7 @@ def test_trino_char_literal_with_trailing_blanks_is_not_pushed() -> None:
 
 @needs_trino
 def test_trino_unsampled_query_reads_its_declared_types() -> None:
-    # a query without a sample (`ORDER BY .. LIMIT`) read every column as String (#564)
+    # a query without a sample (`ORDER BY .. LIMIT`) read every column as String
     table = "review_trino_unsampled"
     _execute(
         "trino",
@@ -8719,7 +8720,7 @@ def test_mssql_exec_after_a_table_is_not_run_as_a_write() -> None:
 
 @pytest.mark.parametrize("name", ["postgres17", "postgres14", "mysql", "mariadb"])
 def test_temporary_table_in_a_pool_is_not_read_by_partitions(name: str) -> None:
-    # #547: a temporary table hides the permanent one of its name only on the session
+    # a temporary table hides the permanent one of its name only on the session
     # that made it; partitions read on the pool's other sessions
     sqlalchemy = pytest.importorskip("sqlalchemy")
     server = SERVERS[name]
@@ -8779,7 +8780,7 @@ def _oracle_ids(source: str, key: str) -> list[int]:
 
 
 def test_oracle_global_temporary_table_is_not_partitioned() -> None:
-    # #547: the rows of a global temporary table are the session's
+    # the rows of a global temporary table are the session's
     name = "oracle"
     _execute(
         name,
@@ -8797,7 +8798,7 @@ def test_oracle_global_temporary_table_is_not_partitioned() -> None:
 
 
 def test_oracle_vpd_policy_is_not_partitioned() -> None:
-    # #548: a policy's predicate (`DBMS_RANDOM`) may differ on each read
+    # a policy's predicate (`DBMS_RANDOM`) may differ on each read
     oracledb = pytest.importorskip("oracledb")
     uri = SERVERS["oracle"].uri
     if uri is None:
@@ -8853,7 +8854,7 @@ def test_oracle_vpd_policy_is_not_partitioned() -> None:
 @needs_clickhouse
 @pytest.mark.parametrize("kind", ["DEFAULT", "MATERIALIZED"])
 def test_clickhouse_default_column_added_by_alter_is_not_proven(kind: str) -> None:
-    # #517: old parts compute the column on each read
+    # old parts compute the column on each read
     name = "clickhouse"
     t = f"vol_default_{kind.lower()}"
     _execute(
@@ -8874,7 +8875,7 @@ def test_clickhouse_default_column_added_by_alter_is_not_proven(kind: str) -> No
 
 @needs_clickhouse
 def test_clickhouse_paste_and_any_joins_are_not_partitioned() -> None:
-    # #549, #550: the pairing depends on the position or on which match comes first
+    # the pairing depends on the position or on which match comes first
     name = "clickhouse"
     _execute(
         name,
@@ -8912,7 +8913,7 @@ def test_clickhouse_paste_and_any_joins_are_not_partitioned() -> None:
 
 @pytest.mark.parametrize("name", ["clickhouse", "postgres17"])
 def test_float_sum_as_a_partition_key_is_refused(name: str) -> None:
-    # #546
+    # a float sum is not exact, so a sum used as a partition key is not repeatable
     table = "vol_floatsum"
     if name == "clickhouse":
         if SERVERS[name].uri is None:
@@ -8940,9 +8941,9 @@ def test_float_sum_as_a_partition_key_is_refused(name: str) -> None:
 
 
 def test_postgres_user_operator_on_literals_and_attribute_functions() -> None:
-    # #551: `true # false` runs a user's `#`(boolean, boolean) though no column has the
+    # `true # false` runs a user's `#`(boolean, boolean) though no column has the
     # type (an operator on `int4` or `numeric` would make other tests' sources
-    # unproven); #516: `c.f` is `f(c)`
+    # unproven); `c.f` is `f(c)`
     name = "postgres17"
     _execute(
         name,
@@ -8981,7 +8982,7 @@ def test_postgres_user_operator_on_literals_and_attribute_functions() -> None:
 
 
 def test_oracle_function_without_parentheses_is_not_a_column() -> None:
-    # #515: `SELECT id, f AS k` calls the function `f` where no column is named `f`
+    # `SELECT id, f AS k` calls the function `f` where no column is named `f`
     name = "oracle"
     _execute(
         name,
@@ -9014,7 +9015,7 @@ def _prime_pool(engine: Any, statements: list[str], idle: int = 3) -> None:
 
 
 def test_postgres_engine_reads_one_session_for_every_partition() -> None:
-    # #576: `search_path` set on one pooled connection decided which table a partition
+    # `search_path` set on one pooled connection decided which table a partition
     # read
     sqlalchemy = pytest.importorskip("sqlalchemy")
     if not _installed("psycopg"):
@@ -9072,7 +9073,7 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
-    # #576: `div_precision_increment` of one pooled session changes the value of a `/`
+    # `div_precision_increment` of one pooled session changes the value of a `/`
     # key
     sqlalchemy = pytest.importorskip("sqlalchemy")
     if not _installed("pymysql"):
@@ -9142,7 +9143,7 @@ def _collect_pooled(make: Any, rounds: int = 6) -> tuple[int, list[pl.DataFrame]
 def test_postgres_pool_session_resolving_another_relation_is_refused(
     kind: str,
 ) -> None:
-    # #576, round 44 fix review lead 1: planning on one pooled session and reading on
+    # planning on one pooled session and reading on
     # another that resolves the name to another relation (a `search_path`, a temporary
     # table, a temporary child) read the other relation, silently
     sqlalchemy = pytest.importorskip("sqlalchemy")
@@ -9263,7 +9264,7 @@ def test_pool_temp_table_on_one_session_is_refused_unless_all_have_one(
 
 
 def test_postgres_checkout_listener_sees_the_callers_context() -> None:
-    # #577: a `checkout` listener that reads a contextvar ran on a Polars thread
+    # a `checkout` listener that reads a contextvar ran on a Polars thread
     import contextvars
 
     from sqlalchemy import event
@@ -9320,7 +9321,7 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
 def test_postgres_engine_holds_nothing_between_collects(
     isolation_level: str | None,
 ) -> None:
-    # F1: a `checkout` listener that opens a transaction (psycopg2 does, on its first
+    # a `checkout` listener that opens a transaction (psycopg2 does, on its first
     # statement) left the scan's pinned session `idle in transaction` for the
     # LazyFrame's whole life: it held a lock on the table, and under REPEATABLE READ a
     # later collect read the old snapshot
@@ -9375,7 +9376,7 @@ def test_postgres_engine_holds_nothing_between_collects(
 
 
 def test_postgres_engine_scans_dont_hold_pool_connections() -> None:
-    # F3: the connection was checked out when `scan_database` was called and held while
+    # the connection was checked out when `scan_database` was called and held while
     # the LazyFrame lived: the 16th scan of a default pool, a second scan of a pool of
     # one, or one made while the caller held the connection, waited `pool_timeout`
     sqlalchemy = pytest.importorskip("sqlalchemy")
@@ -9410,7 +9411,7 @@ def test_postgres_engine_scans_dont_hold_pool_connections() -> None:
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
 def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
-    # F4: an Engine was read as a live connection: a `connect` listener's session zone
+    # an Engine was read as a live connection: a `connect` listener's session zone
     # (here one that has the fall-back hour twice) made a TIMESTAMP unreadable. The scan
     # sets UTC on its checkout and restores the listener's zone before giving it back.
     from sqlalchemy import event
@@ -9465,7 +9466,7 @@ def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
 
 
 def test_clickhouse_settings_that_cut_the_read_are_not_proven() -> None:
-    # #578: `max_rows_to_read` with `read_overflow_mode = 'break'` returns a partial,
+    # `max_rows_to_read` with `read_overflow_mode = 'break'` returns a partial,
     # read-order-dependent result: no partitions, and no filter in the query either
     name = "clickhouse"
     table = "vol_settings"
@@ -9496,7 +9497,7 @@ def test_clickhouse_settings_that_cut_the_read_are_not_proven() -> None:
 
 
 def test_oracle_redacted_columns_are_neither_pushed_nor_partition_keys() -> None:
-    # #579: Data Redaction returns redacted values while a pushed filter compares the
+    # Data Redaction returns redacted values while a pushed filter compares the
     # stored
     oracledb = pytest.importorskip("oracledb")
     uri = SERVERS["oracle"].uri
@@ -9630,7 +9631,7 @@ def test_mssql_seven_digit_times_are_read_exactly_as_nanoseconds() -> None:
     )
     drivers = ["connectorx", "pymssql", "adbc", "sqlalchemy", "pyodbc", "arrow_odbc"]
     for source in [table, f"SELECT * FROM {table}"]:
-        # (pyodbc can't describe a `datetimeoffset` of a query's result: #537)
+        # (pyodbc can't describe a `datetimeoffset` of a query's result)
         read_by = [d for d in drivers if d != "pyodbc" or source == table]
         frames, errors = _read_by_every_driver("mssql", source, read_by)
         _assert_drivers_agree(frames, errors, source)
@@ -9709,7 +9710,7 @@ def _mssql_seven_digit_table(table: str) -> None:
 
 @needs_mssql
 def test_mssql_seven_digit_columns_typed_as_microseconds_are_cut_not_refused() -> None:
-    # F2: the type's maximum (every current row of a system-versioned table) is
+    # the type's maximum (every current row of a system-versioned table) is
     # outside the nanosecond range; typed `Datetime("us")` / `("ms")` the column is
     # read with the digits beyond the unit cut toward the earlier instant (not
     # rounded: that would overflow 9999-12-31), and a filter on it is not pushed
@@ -9774,7 +9775,7 @@ def test_mssql_seven_digit_columns_typed_as_microseconds_are_cut_not_refused() -
 def test_mssql_schema_declared_datetimes_read_the_same_instants_on_every_driver() -> (
     None
 ):
-    # F7: under `schema=` no database type is looked up, and ConnectorX read a
+    # under `schema=` no database type is looked up, and ConnectorX read a
     # `datetimeoffset` of another offset as another instant (16:04:05 for 21:34:05 UTC)
     # and every driver cut the 7th digit of a declared nanosecond column
     table = "review_f7_schema"
@@ -9820,7 +9821,7 @@ def test_mssql_schema_declared_datetimes_read_the_same_instants_on_every_driver(
 
 @needs_mssql
 def test_mssql_schema_declared_datetimes_are_exact_for_every_source_type() -> None:
-    # G2-G4: a `datetime` declared as a `Datetime` of any unit (zone or not) reads its
+    # a `datetime` declared as a `Datetime` of any unit (zone or not) reads its
     # own digits (`.997`, not the `.9966667` of a conversion to `datetime2`), and a
     # `datetimeoffset` declared with or without a zone reads its UTC instant (not the
     # wall clock with the offset dropped, nor a double shift)
@@ -9964,7 +9965,7 @@ def test_mssql_masked_columns_are_not_compared_in_the_database() -> None:
                 got = sorted(lf.filter(p).collect()["id"].to_list())
                 assert got == sorted(df.filter(p)["id"].to_list()), (source, str(p))
         # a column computed from masked ones has no source column: read masked, so not
-        # compared in the database either (F6)
+        # compared in the database either
         lf = pl.scan_database(
             "SELECT id, n + 0 AS n2, email + '' AS e2 FROM review_masked", conn
         )

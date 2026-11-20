@@ -43,7 +43,6 @@ extend-ignore-re = [
   '\.flags\.writeable\b',
   # Test data in the `scan_database` tests.
   'rvc_pg_nd',
-  'r_coll_nd',
   "'ABD'",
   "'abd'",
   '"abd"',

@@ -724,7 +724,7 @@ def test_scan_query_that_isnt_repeatable_counts_its_own_rows(shop_uri: str) -> N
 def test_scan_query_that_isnt_repeatable_does_not_hold_a_big_count(
     shop_uri: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # #9: a result over the buffer limit is counted and dropped, and read again
+    # a result over the buffer limit is counted and dropped, and read again
     monkeypatch.setenv("POLARS_DATABASE_COUNT_BUFFER_BYTES", "1")
     lf = pl.scan_database("SELECT * FROM orders LIMIT 1000", shop_uri)
     expected = lf.collect()
@@ -1096,7 +1096,7 @@ def test_scan_sqlite_filter_on_large_integers_read_as_floats(
         with pytest.raises(errors):
             lf.filter(predicate).collect()
     if driver == "connectorx":
-        # no float comparison is pushed there (#594): the read meets the integer
+        # no float comparison is pushed there: the read meets the integer
         for predicate in [pl.col("x") == big, pl.col("x") < 2]:
             with pytest.raises(errors):
                 lf.filter(predicate).collect()
@@ -1257,7 +1257,7 @@ def test_scan_sqlite_connectorx_quotes_and_backslashes(tmp_path: Path) -> None:
 @pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
 def test_scan_sqlite_float_filters_find_every_real(tmp_path: Path, driver: str) -> None:
     # ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond
-    # +-85): no float comparison is pushed there, and no range cuts on a real key (#594)
+    # +-85): no float comparison is pushed there, and no range cuts on a real key
     _importorskip_sqlite_driver(driver)
     values = [1.989032661366619e244, -3.4e-130, 2.5e120, 1e-200, 0.1, 1.5, 7.0e300]
     path = tmp_path / "t.db"
@@ -5316,7 +5316,7 @@ def test_sqlite_redefined_count_fails_loudly() -> None:
 def test_negative_slice_over_a_table_changed_after_the_count_fails_loudly(
     tmp_path: Path,
 ) -> None:
-    # #363: a tail is planned from COUNT(*) and read by a second statement. The host
+    # a tail is planned from COUNT(*) and read by a second statement. The host
     # stopped pulling at the end of the slice, so the rows past it (a writer's inserts
     # between the two) were never counted against the count: it returned the wrong rows
     db = tmp_path / "t.db"
@@ -5348,7 +5348,7 @@ def test_negative_slice_over_a_table_changed_after_the_count_fails_loudly(
 def test_a_non_repeatable_source_over_the_count_buffer_says_so(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # #9: a source that returns other rows each time can't be counted, dropped and read
+    # a source that returns other rows each time can't be counted, dropped and read
     # again; it fails, saying why (not "the table changed"), on every collect
     calls = iter(range(1, 1000))
     with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
@@ -5761,7 +5761,7 @@ def test_scan_sqlite_text_key_read_as_int_is_not_range_partitioned(
     tmp_path: Path,
 ) -> None:
     # SQLite compares a TEXT column as text ('50' > '100'): integer cuts would
-    # overlap (#519)
+    # overlap
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
         conn.execute("CREATE TABLE t (k TEXT, v INTEGER)")
@@ -5792,7 +5792,7 @@ def test_scan_sqlite_live_text_factory_bytes_reads_reals_exactly(
     tmp_path: Path,
 ) -> None:
     # the exact-real marker reached the user on a connection returning text as
-    # bytes (#520)
+    # bytes
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
         conn.execute("CREATE TABLE t (id INTEGER, x)")
@@ -5833,7 +5833,7 @@ def _duckdb_file(tmp_path: Any) -> str:
 def test_duckdb_row_picking_joins_are_not_partitioned(
     tmp_path: Any, source: str
 ) -> None:
-    # #549, #550: which right row an ASOF join takes among ties, and which rows a
+    # which right row an ASOF join takes among ties, and which rows a
     # POSITIONAL join pairs, change from run to run and with a pushed filter
     path = _duckdb_file(tmp_path)
     uri = f"duckdb:///{path}"
@@ -5844,7 +5844,7 @@ def test_duckdb_row_picking_joins_are_not_partitioned(
 
 
 def test_duckdb_positional_join_filters_after_the_read(tmp_path: Any) -> None:
-    # #550: a filter pushed into the database changes which rows a positional join pairs
+    # a filter pushed into the database changes which rows a positional join pairs
     path = _duckdb_file(tmp_path)
     source = "SELECT l.id, r.v AS k FROM l POSITIONAL JOIN r"
     lf = pl.scan_database(source, f"duckdb:///{path}").filter(pl.col("k") < 100)
@@ -5855,7 +5855,7 @@ def test_duckdb_positional_join_filters_after_the_read(tmp_path: Any) -> None:
 
 
 def test_duckdb_float_sum_is_not_a_partition_key(tmp_path: Any) -> None:
-    # #546: a float sum differs in its last bits between runs; an exact one doesn't
+    # a float sum differs in its last bits between runs; an exact one doesn't
     path = _duckdb_file(tmp_path)
     uri = f"duckdb:///{path}"
     source = "SELECT g, sum(x) AS k, count(*) AS n FROM f GROUP BY g"

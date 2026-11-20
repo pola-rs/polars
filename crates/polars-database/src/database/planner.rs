@@ -1271,7 +1271,7 @@ pub fn resolve_scan(
     }
 
     // A TEXT column read as a number (`schema_overrides=`): a range or an order on it follows
-    // the text (#519).
+    // the text.
     let sqlite_text_numbers = schema
         .iter()
         .filter(|(name, dtype)| {
@@ -3334,7 +3334,7 @@ fn sqlite_affinity_dtype(t: &str) -> DataType {
 
 /// A SQLite column of TEXT affinity that is read as a number (`schema_overrides=`/`schema=`):
 /// SQLite compares and sorts its values as text (`'50' > '100'`), so integer cuts or an
-/// `ORDER BY` on it don't follow the numbers read (#519).
+/// `ORDER BY` on it don't follow the numbers read.
 fn sqlite_text_read_as_number(config: &DatabaseScanConfig, column: &str) -> bool {
     config.sqlite_text_numbers.iter().any(|c| c == column)
 }
@@ -4832,7 +4832,7 @@ fn resolve_partitions(
     };
 
     // ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond about
-    // +-85 miss the stored value), so a cut could lose rows (#594).
+    // +-85 miss the stored value), so a cut could lose rows.
     if matches!(kind, partition::RangeKind::Float)
         && config.dialect == DialectName::Sqlite
         && matches!(config.backend.kind, BackendKind::ConnectorX)

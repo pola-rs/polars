@@ -500,18 +500,18 @@ def _is_read_only(stmt: Any) -> bool:
 
 # ALLOWLIST OF REPEATABLE CONSTRUCTS
 #
-# Design (decided 2026-11-19, after 41 review rounds kept finding new volatile
-# constructs by listing what is volatile): a query is repeatable only on positive proof
-# that running it again returns the same rows. Every function, operator, cast, column
-# and table in it must be in the lists below (all small and conservative, per dialect
-# where they differ); anything else -- a function sqlglot doesn't know, a user's
-# function whatever its IMMUTABLE / DETERMINISTIC label, a clock, a session variable, a
-# table function, a typed node nobody listed -- is *not* repeatable. A refused case
-# costs a clear error (explicit `partition_on`) or one query (`partition_on="auto"`); a
-# case wrongly proven returns wrong rows, so a name is added only when it is known to be
-# deterministic. What the SQL can't show (a view's body, a table's kind, a generated
-# column, a user's overload of a built-in) is proven on the Rust side from the catalog
-# (`catalog.rs`, `planner.rs::source_volatility`) by the same rule.
+# Design: a query is repeatable only on positive proof that running it again returns the
+# same rows (listing what is volatile kept missing constructs). Every function,
+# operator, cast, column and table in it must be in the lists below (all small and
+# conservative, per dialect where they differ); anything else -- a function sqlglot
+# doesn't know, a user's function whatever its IMMUTABLE / DETERMINISTIC label, a clock,
+# a session variable, a table function, a typed node nobody listed -- is *not*
+# repeatable. A refused case costs a clear error (explicit `partition_on`) or one query
+# (`partition_on="auto"`); a case wrongly proven returns wrong rows, so a name is added
+# only when it is known to be deterministic. What the SQL can't show (a view's body, a
+# table's kind, a generated column, a user's overload of a built-in) is proven on the
+# Rust side from the catalog (`catalog.rs`, `planner.rs::source_volatility`) by the same
+# rule.
 
 # sqlglot's typed functions, by class name, whose value depends on their arguments only.
 # (Not: clocks, random and uuid functions, `ANY_VALUE` / `FIRST` / `LAST` / `ARG_MIN`

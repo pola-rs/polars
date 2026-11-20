@@ -306,19 +306,22 @@ def test_view_with_schema_evolution_has_the_current_collation() -> None:
     conn = connect(URI)
     try:
         for stmt in [
-            "DROP VIEW IF EXISTS r514_v",
-            "DROP TABLE IF EXISTS r514_t",
-            "CREATE TABLE r514_t (id INT, s STRING)",
-            "INSERT INTO r514_t VALUES (1,'abc'),(2,'ABC'),(3,'Abc'),(4,'abd'),(5,NULL)",
-            "CREATE VIEW r514_v WITH SCHEMA EVOLUTION AS SELECT * FROM r514_t",
-            "ALTER TABLE r514_t ALTER COLUMN s TYPE STRING COLLATE UTF8_LCASE",
+            "DROP VIEW IF EXISTS collation_v",
+            "DROP TABLE IF EXISTS collation_t",
+            "CREATE TABLE collation_t (id INT, s STRING)",
+            "INSERT INTO collation_t VALUES (1,'abc'),(2,'ABC'),(3,'Abc'),(4,'abd'),(5,NULL)",
+            "CREATE VIEW collation_v WITH SCHEMA EVOLUTION AS SELECT * FROM collation_t",
+            "ALTER TABLE collation_t ALTER COLUMN s TYPE STRING COLLATE UTF8_LCASE",
         ]:
             execute(conn, stmt)
         # the first scan, before anything reads the view
-        lf = pl.scan_database("r514_v", conn)
+        lf = pl.scan_database("collation_v", conn)
         assert _ids(lf.filter(pl.col("s") == "abc").collect()) == [1]
     finally:
-        for stmt in ["DROP VIEW IF EXISTS r514_v", "DROP TABLE IF EXISTS r514_t"]:
+        for stmt in [
+            "DROP VIEW IF EXISTS collation_v",
+            "DROP TABLE IF EXISTS collation_t",
+        ]:
             execute(conn, stmt)
         conn.close()
 
@@ -1061,7 +1064,7 @@ def test_user_function_named_like_another_dialects_builtin() -> None:
 
 
 def test_a_column_mask_makes_a_table_unproven() -> None:
-    # #521: a mask's function (`rand()`) runs on each read, whatever the key: the plan
+    # a mask's function (`rand()`) runs on each read, whatever the key: the plan
     # of a masked table is a secure view, which neither DESCRIBE nor the information
     # schema shows for a policy (ABAC)
     from tests.unit.io.database._databricks import connect, execute, parts

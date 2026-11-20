@@ -609,7 +609,7 @@ impl Translator<'_> {
     fn literal_fits(&self, name: &str, av: &AnyValue<'_>) -> bool {
         // A Trino `char(n)` is read padded with blanks, and compared without them (`'a  '`
         // read, `c = 'a  '` false): a literal ending in a blank may match what the
-        // database doesn't (#563).
+        // database doesn't.
         if self.dialect() == DialectName::Trino
             && let Some(s) = av.get_str()
             && s.ends_with(' ')
@@ -1261,7 +1261,7 @@ impl Translator<'_> {
                 matches!(self.spark_float(name), Some("double" | "float")).then_some(Class::Exact)
             },
             // ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond
-            // about +-85 miss the stored value): no float comparison is pushed (#594).
+            // about +-85 miss the stored value): no float comparison is pushed.
             dt if dt.is_float()
                 && self.dialect() == DialectName::Sqlite
                 && matches!(self.config.backend.kind, BackendKind::ConnectorX) =>

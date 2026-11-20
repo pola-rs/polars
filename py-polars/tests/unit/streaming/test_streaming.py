@@ -550,7 +550,7 @@ def test_streaming_with_row_index_then_projection(
     build: Callable[[pl.LazyFrame], pl.LazyFrame],
 ) -> None:
     # a projection above `with_row_index` that drops or reorders columns used to panic
-    # in streaming over some sources (#230, scan_database's resolver)
+    # in streaming over some sources (scan_database's resolver)
     lf = pl.LazyFrame({"a": range(10), "b": range(10, 20), "c": range(20, 30)})
     assert_frame_equal(
         build(lf).collect(engine="streaming"), build(lf).collect(engine="in-memory")

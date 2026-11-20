@@ -391,7 +391,7 @@ impl Drop for Scan {
     }
 }
 
-/// How much of a non-repeatable source's rows a count keeps for the read (#9); a bigger result is
+/// How much of a non-repeatable source's rows a count keeps for the read; a bigger result is
 /// counted and dropped.
 const COUNT_BUFFER_BYTES: usize = 256 << 20;
 
@@ -420,7 +420,7 @@ pub struct PartitionReader {
     /// these rows, the ones the count (and the slices planned from it) saw.
     counted_rows: Mutex<Option<DataFrame>>,
     /// The count of a source that isn't repeatable passed `COUNT_BUFFER_BYTES`: its rows weren't
-    /// kept, so the read runs the query again and must find as many rows (#9).
+    /// kept, so the read runs the query again and must find as many rows.
     count_unbuffered: Mutex<bool>,
     /// The running statement's cancel handle; replaced when a retry reconnects.
     cancel: Arc<Mutex<Option<CancelHandle>>>,
@@ -529,7 +529,7 @@ impl PartitionReader {
     ///
     /// Returns the number of rows, and the rows unless they passed `COUNT_BUFFER_BYTES`: a result
     /// that big is counted and dropped (the read runs the query again, and checks that it finds as
-    /// many rows), so a `tail(n)` can't hold the whole result (#9).
+    /// many rows), so a `tail(n)` can't hold the whole result.
     fn read_counted(&self, session: &mut Session) -> PolarsResult<(u64, Option<DataFrame>)> {
         let config = &self.shared.config;
         let overrides = config.options.schema_overrides.as_deref();

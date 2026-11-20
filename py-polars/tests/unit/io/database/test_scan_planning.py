@@ -437,7 +437,7 @@ def test_cse_of_identical_scans(tmp_path: Path) -> None:
 
 
 def test_cse_keys_params_by_utc_offset(tmp_path: Path) -> None:
-    # R9-3: a `tzinfo` whose repr hides its offset must not merge scans differing in it
+    # a `tzinfo` whose repr hides its offset must not merge scans differing in it
     from datetime import timedelta, tzinfo
 
     class FixedTz(tzinfo):
@@ -1221,7 +1221,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("sqlite", "SELECT unixepoch()", False),
         ("sqlite", "SELECT datetime(), date()", False),
         ("sqlite", "SELECT julianday('now')", False),
-        # a column may hold 'now' (SQLite is dynamically typed, #581)
+        # a column may hold 'now' (SQLite is dynamically typed)
         ("sqlite", "SELECT unixepoch(ts) FROM t", False),
         ("sqlite", "SELECT id, unixepoch(d, 'subsec') AS k FROM t", False),
         ("sqlite", "SELECT date('2024-01-01', '+1 day'), julianday(2460000.5)", True),
@@ -2625,7 +2625,7 @@ def test_inspect_query_facts_do_not_cross_concurrent_calls(monkeypatch: Any) -> 
     ],
 )
 def test_query_facts_flag_with_ties(dialect: str, sql: str, with_ties: bool) -> None:
-    # a LIMIT around WITH TIES may be applied inside it by the server (Trino, #560)
+    # a LIMIT around WITH TIES may be applied inside it by the server (Trino)
     from polars_database._sqlglot import inspect_query
 
     assert inspect_query(sql, dialect)["with_ties"] is with_ties
@@ -2691,7 +2691,7 @@ def test_tsql_a_statement_parsed_as_an_alias_is_not_read_only(
         "SELECT id x, id AS y FROM c INNER JOIN d ON c.id = d.id",
         "SELECT a, b FROM (SELECT 1 a, 2 b) q",
         "SELECT a FROM (VALUES (1)) AS v(a)",
-        # a bare alias with a column list, where the source is not a table name (F5)
+        # a bare alias with a column list, where the source is not a table name
         "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) v(id, s)",
         "SELECT a FROM (SELECT 1 AS id) x(a)",
         "SELECT o.name, x.n FROM sys.objects o CROSS APPLY (SELECT LEN(o.name)) x(n)",
@@ -2721,7 +2721,7 @@ def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> Non
 @pytest.mark.parametrize(
     ("dialect", "query", "repeatable"),
     [
-        # joins that pick one of several rows, or pair rows by their place (#549, #550)
+        # joins that pick one of several rows, or pair rows by their place
         ("duckdb", "SELECT a.id, b.v FROM a ASOF JOIN b ON a.k >= b.k", False),
         ("duckdb", "SELECT a.id, b.v FROM a ASOF LEFT JOIN b ON a.k >= b.k", False),
         ("duckdb", "SELECT a.id, b.v FROM a POSITIONAL JOIN b", False),
@@ -2736,7 +2736,7 @@ def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> Non
         ("clickhouse", "SELECT l.id, r.v FROM l ALL INNER JOIN r ON l.k = r.k", True),
         ("duckdb", "SELECT a.id, b.v FROM a LEFT JOIN b ON a.k = b.k", True),
         # a float aggregate anywhere but an output column decides which rows there are
-        # (#546)
+        #
         ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(x) > 5", False),
         ("duckdb", "SELECT g FROM (SELECT g, avg(x) AS a FROM t GROUP BY g) q", False),
         ("clickhouse", "SELECT g FROM t GROUP BY g HAVING stddevPop(x) > 1", False),
@@ -2756,7 +2756,7 @@ def test_row_picking_joins_and_float_aggregates_are_not_repeatable(
 def test_a_float_aggregate_output_column_is_volatile_not_the_whole_query(
     dialect: str,
 ) -> None:
-    # #546: its value changes in the last bits between runs, so it is no partition key;
+    # its value changes in the last bits between runs, so it is no partition key;
     # the rows of the query don't change
     from polars_database._sqlglot import inspect_query
 
@@ -2775,7 +2775,7 @@ def test_a_float_aggregate_output_column_is_volatile_not_the_whole_query(
 
 
 def test_positional_joins_are_a_fact_for_pushdown() -> None:
-    # #550: a pushed filter changes which rows pair
+    # a pushed filter changes which rows pair
     from polars_database._sqlglot import inspect_query
 
     for dialect, query in [
@@ -2792,7 +2792,7 @@ def test_positional_joins_are_a_fact_for_pushdown() -> None:
 
 
 def test_postgres_attribute_notation_and_oracle_bare_names_are_looked_up() -> None:
-    # #516: `c.f` and `(c).f` call `f(c)`; #515: a parameterless function is written
+    # `c.f` and `(c).f` call `f(c)`; a parameterless function is written
     # without parentheses, as a column
     from polars_database._sqlglot import inspect_query
 
@@ -2803,7 +2803,7 @@ def test_postgres_attribute_notation_and_oracle_bare_names_are_looked_up() -> No
 
 
 def test_postgres_literal_types_are_looked_up_for_user_operators() -> None:
-    # #551: `0.5 * 2` runs a user's `*`(numeric, int4) when one is defined
+    # `0.5 * 2` runs a user's `*`(numeric, int4) when one is defined
     from polars_database._sqlglot import inspect_query
 
     facts = inspect_query("SELECT id, 0.5 * 2 AS kk, 'a' AS s FROM t", "postgres")

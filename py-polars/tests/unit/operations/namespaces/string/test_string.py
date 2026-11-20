@@ -2443,6 +2443,20 @@ def test_str_split_self_broadcast() -> None:
         pl.Series(["a-/c"]).str.split(pl.Series(["-", "/", "+"])),
         pl.Series([["a", "/c"], ["a-", "c"], ["a-/c"]]),
     )
+    assert_series_equal(
+        pl.Series([None], dtype=pl.String).str.split(pl.Series(["-", "/"])),
+        pl.Series([None, None], dtype=pl.List(pl.String)),
+    )
+
+
+@pytest.mark.parametrize("inclusive", [False, True])
+def test_str_split_self_broadcast_empty_separator(inclusive: bool) -> None:
+    by = pl.Series(["", "b"])
+    expected = pl.Series([["a", "b"], ["ab"] if inclusive else ["a", ""]])
+    assert_series_equal(pl.Series(["ab"]).str.split(by, inclusive=inclusive), expected)
+    assert_series_equal(
+        pl.Series(["ab", "ab"]).str.split(by, inclusive=inclusive), expected
+    )
 
 
 def test_replace_many_mapping_in_list() -> None:
