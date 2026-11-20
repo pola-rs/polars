@@ -33,7 +33,7 @@ _FILE_URI = re.compile(r"^(sqlite|duckdb)(\+\w+)?:", re.IGNORECASE)
 
 
 def _connection_kind(connection: Any) -> tuple[str, Any]:
-    """Classify a connection as `uri`, `odbc`, `factory` or `live`."""
+    """Classify a connection as `uri`, `odbc`, `factory`, `engine` or `live`."""
     if isinstance(connection, str):
         # a URI first: a SQLAlchemy URI can carry an ODBC string (`?odbc_connect=…`)
         if _URI.match(connection) or _FILE_URI.match(connection):
@@ -86,10 +86,12 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
                 return "factory", _in_caller_context(connection.connect)
             # A pooled connection carries the state of its session (temporary tables,
             # `search_path`, session variables, a listener's settings): partitions read
-            # through several would each see their own. One connection is checked out
-            # now, held, and the scan plans and reads every partition on
-            # it, one after another.
-            return "pinned", _pinned_checkout(connection)
+            # through several would each see their own. Each execution of the scan
+            # (a collect) checks out ONE connection when it first needs one, reads every
+            # partition on it, one after another, and gives it back to the pool (its
+            # own reset, after the plugin restored what its session setup changed)
+            # when the execution ends: nothing is held between collects.
+            return "engine", _in_caller_context(connection.connect)
 
     if (engine := _session_shared_engine(connection)) is not None:
         # an ORM Session over such an Engine: the one connection is the user's too, and
@@ -205,42 +207,6 @@ def _in_caller_context(factory: Callable[[], Any]) -> Callable[[], Any]:
         return context.copy().run(factory)
 
     return in_context
-
-
-def _pinned_checkout(engine: Any) -> Any:
-    """
-    One SQLAlchemy `Connection` of an Engine, held for the scan.
-
-    scan plans and reads every partition on its one DB-API connection, one after the
-    other, and gives the checkout back (with the pool's own reset) when it is dropped.
-    and gives the checkout back (with the pool's own reset) when it is dropped.
-    """
-    import weakref
-
-    from sqlalchemy import event
-
-    connection = engine.connect()
-    fairy = connection.connection
-    pinned = getattr(engine, "_polars_pinned_checkouts", None)
-    if pinned is None:
-        pinned = weakref.WeakSet()
-
-        def invalidate_with_the_engine(*_: Any) -> None:
-            # disposing of the engine ends the scans' connections: a checkout given back
-            # to the disposed pool afterwards would be left open there
-            for checkout in list(pinned):
-                with contextlib.suppress(Exception):
-                    checkout.invalidate()
-            pinned.clear()
-
-        try:
-            engine._polars_pinned_checkouts = pinned
-            event.listen(engine, "engine_disposed", invalidate_with_the_engine)
-        except Exception:  # pragma: no cover
-            pass
-    with contextlib.suppress(TypeError):
-        pinned.add(fairy)
-    return connection
 
 
 def _shared_dbapi_connection(engine: Any) -> Any:
@@ -528,15 +494,17 @@ def scan_database(
         * a SQLAlchemy `URL` (as its URI), or `Engine`: the engine opens the
           connection, with its pool, `creator`, `connect_args` and checkout
           listeners. A pooled connection carries the state of its session
-          (temporary tables, `search_path`, session variables), so the scan checks
-          out ONE connection when `scan_database` is called (in the caller's thread
-          and context), and plans and reads every partition on it, one after another:
-          it is used as a live connection (see below), and a read through an Engine
-          is not parallel. The connection stays checked out of the pool for as long
-          as the LazyFrame (or one made from it) lives, and goes back to the pool,
-          with its reset, when that is dropped: a pool of one connection is blocked
-          meanwhile. For parallel reads pass a URI or a connection factory. An
-          Engine without pooling (`NullPool`) is read as a factory. An Engine with a
+          (temporary tables, `search_path`, session variables), so each collect
+          checks out ONE connection (on the scan's own thread, in a copy of the
+          `contextvars` of the caller of `scan_database`, so checkout listeners run
+          for every collect) and reads every partition on it, one after another: a
+          read through an Engine is not parallel. The scan sets the session up as
+          for a URI (read-only, UTC) and restores that before it gives the
+          connection back to the pool, at the end of the collect: nothing is held
+          between collects. A transaction a checkout listener left open is
+          committed by that setup. For parallel reads pass a URI or a connection
+          factory. An Engine without pooling (`NullPool`) is read as a factory. An
+          Engine with a
           `StaticPool`, `SingletonThreadPool` or
           `AssertionPool` shares one DB-API connection: it is used as a live
           connection (see below), so the scan sees uncommitted changes made on it
@@ -793,11 +761,12 @@ def scan_database(
 
     engine = connection
     connection_kind, connection = _connection_kind(connection)
-    # a pinned checkout is read as a live connection, and given back with the scan
-    plugin_kind = connection_kind
-    if connection_kind == "pinned":
-        connection_kind = "live"
-    if (
+    if connection_kind == "engine":
+        # a pooled Engine: one checkout per execution, partitions read one at a time
+        # (see `_connection_kind`)
+        connection_kind = "factory"
+        max_connections = 1
+    elif (
         connection_kind == "factory"
         and connection is not engine
         and (capacity := _engine_pool_capacity(engine)) is not None
@@ -840,7 +809,7 @@ def scan_database(
         source=source,
         source_type=source_type,
         connection=connection,
-        connection_kind=plugin_kind,
+        connection_kind=connection_kind,
         dialect=dialect,
         driver=driver,
         connect_options=_string_options(connect_options),
