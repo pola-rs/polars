@@ -3,7 +3,9 @@ use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+pub mod delta_sink_state;
 pub mod file_provider;
+pub mod iceberg_properties;
 pub mod iceberg_sink_state;
 pub mod sink;
 pub use polars_config::Engine;
@@ -23,6 +25,7 @@ use polars_io::ndjson::NDJsonWriterOptions;
 use polars_io::parquet::write::ParquetWriteOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use sink::{
@@ -119,7 +122,7 @@ pub struct UnpivotArgsDSL {
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
-    pub slice: Option<(i64, usize)>,
+    pub slice: Option<Slice>,
     // known row_output, estimated row output
     pub rows: (Option<usize>, usize),
     pub parallel: bool,
@@ -173,7 +176,7 @@ pub struct GroupbyOptions {
     #[cfg(feature = "dynamic_group_by")]
     pub rolling: Option<RollingGroupOptions>,
     /// Take only a slice of the result
-    pub slice: Option<(i64, usize)>,
+    pub slice: Option<Slice>,
 }
 
 impl GroupbyOptions {

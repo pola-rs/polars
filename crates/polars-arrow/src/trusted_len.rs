@@ -113,6 +113,14 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        self.iter.fold(init, f)
+    }
 }
 
 impl<I, J> ExactSizeIterator for TrustMyLength<I, J> where I: Iterator<Item = J> {}
@@ -124,5 +132,13 @@ where
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back()
+    }
+
+    #[inline]
+    fn rfold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        self.iter.rfold(init, f)
     }
 }

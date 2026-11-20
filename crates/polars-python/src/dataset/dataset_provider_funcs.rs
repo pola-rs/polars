@@ -46,6 +46,18 @@ pub fn schema(
     .map_err(Into::into)
 }
 
+pub fn has_tight_statistics(dataset_object: &PythonObject) -> PolarsResult<bool> {
+    Python::attach(|py| {
+        let name = intern!(py, "has_tight_statistics");
+        let object = dataset_object.bind(py);
+        if !object.hasattr(name)? {
+            return Ok(false);
+        }
+        object.call_method0(name)?.extract::<bool>()
+    })
+    .map_err(Into::into)
+}
+
 pub fn extract_schema(py: Python<'_>, schema_obj: Py<PyAny>) -> PolarsResult<SchemaRef> {
     let pyarrow_schema_cls = py
         .import("pyarrow")

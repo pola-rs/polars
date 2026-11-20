@@ -5,6 +5,7 @@ use std::ops::Deref;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+pub use super::aggregate::quantile::{order_statistics_physical, quantiles_without_nan};
 use crate::CHEAP_SERIES_HASH_LIMIT;
 use crate::prelude::*;
 use crate::utils::Wrap;
@@ -24,7 +25,9 @@ impl Breaks {
         );
         let n = breaks.len();
         if n >= 2 {
-            let non_decreasing = breaks.slice(0, n - 1).lt_eq(&breaks.slice(1, n - 1))?;
+            let non_decreasing = breaks
+                .slice(Slice::head(n - 1))
+                .lt_eq(&breaks.slice((1usize, n - 1)))?;
             polars_ensure!(
                 non_decreasing.all(),
                 ComputeError: "breakpoints must be non-decreasing"
@@ -147,7 +150,7 @@ impl Deref for Fractions {
 
 impl Hash for Breaks {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Wrap(self.0.slice(0, CHEAP_SERIES_HASH_LIMIT)).hash(state)
+        Wrap(self.0.slice(Slice::head(CHEAP_SERIES_HASH_LIMIT))).hash(state)
     }
 }
 

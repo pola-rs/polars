@@ -4,12 +4,13 @@ use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_buffer::Buffer;
 use polars_core::config;
+use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{ScanFieldSelection, ScanSource};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::shared::pipeline_budget::{ActiveScan, PipelineBudget, env_nonzero_usize};
@@ -23,6 +24,16 @@ pub struct ParquetReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
     pub bytes_per_source: Option<Buffer<u64>>,
     pub options: Arc<ParquetOptions>,
+    /// Struct fields to read of the columns not read whole.
+    pub field_selection: Option<Arc<ScanFieldSelection>>,
+    /// The full schema of the scan, set with `field_selection` or `prune_to_scan_schema`. The
+    /// pruned struct columns are checked against it as if read whole, so that the cast policies
+    /// raise as they would then.
+    pub scan_schema: Option<SchemaRef>,
+    /// Extra struct fields are ignored (`ScanCastOptions(extra_struct_fields="ignore")`): read
+    /// only the struct fields of the dtypes in `scan_schema`, e.g. of a `schema=` that leaves some
+    /// out.
+    pub prune_to_scan_schema: bool,
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     /// Shared with every file in the scan. Only relevant for `DynByteSourceBuilder::FilePread`.
@@ -37,6 +48,9 @@ impl std::fmt::Debug for ParquetReaderBuilder {
             .field("first_metadata", &self.first_metadata)
             .field("bytes_per_source", &self.bytes_per_source)
             .field("options", &self.options)
+            .field("field_selection", &self.field_selection)
+            .field("scan_schema", &self.scan_schema)
+            .field("prune_to_scan_schema", &self.prune_to_scan_schema)
             .field("pipeline_budget", &self.pipeline_budget)
             .field("read_context", &self.file_read_context)
             .finish()
@@ -133,6 +147,9 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             scan_source,
             cloud_options,
             config,
+            field_selection: self.field_selection.clone(),
+            scan_schema: self.scan_schema.clone(),
+            prune_to_scan_schema: self.prune_to_scan_schema,
             metadata: if scan_source_idx == 0 {
                 self.first_metadata.clone()
             } else {

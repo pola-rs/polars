@@ -181,7 +181,7 @@ def test_column_selection() -> None:
     assert_series_equal(df.get_column("b"), b)
 
     with pytest.raises(ColumnNotFoundError, match="x"):
-        df.get_column("x")
+        df.get_column("x")  # pyrefly: ignore[unknown-column]
 
     default_series = pl.Series("x", ["?", "?", "?"])
     assert_series_equal(df.get_column("x", default=default_series), default_series)
@@ -571,10 +571,10 @@ def test_to_series_bad_inputs() -> None:
     df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
 
     with pytest.raises(IndexError, match="index 5 is out of bounds"):
-        df.to_series(5)
+        df.to_series(5)  # pyrefly: ignore[unknown-column]
 
     with pytest.raises(IndexError, match="index -100 is out of bounds"):
-        df.to_series(-100)
+        df.to_series(-100)  # pyrefly: ignore[unknown-column]
 
     with pytest.raises(
         TypeError, match="'str' object cannot be interpreted as an integer"

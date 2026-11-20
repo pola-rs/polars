@@ -2,6 +2,7 @@ use polars_core::chunked_array::cast::CastOptions;
 
 use super::*;
 use crate::plans::aexpr::{ExprPushdownGroup, is_elementwise_rec, is_inherently_nondeterministic};
+use crate::plans::optimizer::join_predicate_fusion::can_fuse_predicate;
 
 fn commutes_with_filter(predicate: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     matches!(
@@ -675,6 +676,7 @@ pub fn try_rewrite_join_type(
                 left_on,
                 right_on,
                 expr_arena,
+                streaming,
             )? {
                 #[cfg(feature = "iejoin")]
                 try_rewrite_outer_iejoin(
@@ -1330,6 +1332,7 @@ pub fn try_rewrite_join_type(
 }
 
 /// Recognize an equi join independently of inequality algorithm restrictions.
+#[expect(clippy::too_many_arguments)]
 fn try_rewrite_outer_equi_join(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
@@ -1338,6 +1341,7 @@ fn try_rewrite_outer_equi_join(
     left_on: &mut Vec<ExprIR>,
     right_on: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
+    streaming: bool,
 ) -> PolarsResult<bool> {
     let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options else {
         return Ok(false);
@@ -1369,14 +1373,15 @@ fn try_rewrite_outer_equi_join(
     if keys.is_empty() {
         return Ok(false);
     }
+    let mut fused = Vec::new();
     if !remaining.is_empty() {
-        // A condition on one input gives a null key to the rows where it does not hold, and a
-        // null key matches nothing.
-        if nulls_equal {
-            return Ok(false);
-        }
         let mut left_mask = None;
         let mut right_mask = None;
+        // A condition on both inputs is checked by the join for each pair with equal keys. Only
+        // the streaming engine supports this for outer joins.
+        let can_fuse = streaming
+            && options.args.maintain_order == MaintainOrderJoin::None
+            && options.args.slice.is_none();
         let conditions: Vec<Node> = remaining
             .values()
             .flat_map(|p| MintermIter::new(p.node(), expr_arena))
@@ -1396,12 +1401,21 @@ fn try_rewrite_outer_equi_join(
             let mask = match origin {
                 ExprOrigin::Left | ExprOrigin::None => &mut left_mask,
                 ExprOrigin::Right => &mut right_mask,
+                _ if can_fuse && can_fuse_predicate(node, expr_arena) => {
+                    fused.push(ExprIR::from_node(node, expr_arena));
+                    continue;
+                },
                 _ => return Ok(false),
             };
             *mask = Some(match mask.take() {
                 Some(m) => AExprBuilder::new_from_node(m).and(node, expr_arena).node(),
                 None => node,
             });
+        }
+        // A condition on one input gives a null key to the rows where it does not hold, and a
+        // null key matches nothing.
+        if nulls_equal && (left_mask.is_some() || right_mask.is_some()) {
+            return Ok(false);
         }
         let key = &mut keys[0];
         for (mask, key) in [
@@ -1422,7 +1436,7 @@ fn try_rewrite_outer_equi_join(
     options.args.nulls_equal = nulls_equal;
     options.options = JoinTypeOptionsIR::Equi {
         on,
-        fused_predicate: None,
+        fused_predicate: combine_predicates(fused, expr_arena),
     };
     Ok(true)
 }

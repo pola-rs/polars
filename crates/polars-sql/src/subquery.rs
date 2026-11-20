@@ -22,8 +22,8 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, Fetch, GroupByExpr, Ident,
     LimitClause, NamedWindowDefinition, NamedWindowExpr, OrderByKind, Query, Select, SelectItem,
-    SetExpr, Statement, TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator,
-    Value as SQLValue, ValueWithSpan, Visitor, VisitorMut, WindowSpec, WindowType,
+    SetExpr, TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
+    ValueWithSpan, VisitMut, Visitor, VisitorMut, WindowSpec, WindowType,
 };
 
 use crate::catalog::CatalogSpellings;
@@ -969,17 +969,14 @@ impl SQLContext {
             if ob.with_fill.is_some() || expr_has_window_functions(&ob.expr) {
                 return Ok(None);
             }
-            let mut expr = &ob.expr;
-            while let SQLExpr::Nested(inner) = expr {
-                expr = inner;
-            }
-            // The output column, by name or by position.
+            let expr = strip_nested(&ob.expr);
+            // The output column, by name or by position. A number in parentheses is no position.
             let is_output = match expr {
                 SQLExpr::Identifier(ident) => alias.is_some_and(|a| a.value == ident.value),
                 SQLExpr::Value(ValueWithSpan {
                     value: SQLValue::Number(n, _),
                     ..
-                }) => {
+                }) if !matches!(ob.expr, SQLExpr::Nested(_)) => {
                     if n != "1" {
                         return Ok(None);
                     }
@@ -3220,7 +3217,7 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
 // `FETCH FIRST 1 ROW ONLY`, `Some(false)` without a limit, `None` for any other
 // limit.
 pub(crate) fn first_row_limit(subquery: &Query) -> Option<bool> {
-    let is_one = |e: &SQLExpr| matches!(e, SQLExpr::Value(ValueWithSpan { value: SQLValue::Number(n, _), .. }) if n == "1");
+    let is_one = |e: &SQLExpr| matches!(strip_nested(e), SQLExpr::Value(ValueWithSpan { value: SQLValue::Number(n, _), .. }) if n == "1");
     match (&subquery.limit_clause, &subquery.fetch) {
         (None, None) => Some(false),
         (
@@ -3246,7 +3243,7 @@ pub(crate) fn first_row_limit(subquery: &Query) -> Option<bool> {
 // The rows the `LIMIT`/`OFFSET` or `FETCH FIRST` of `subquery` keeps, as an offset and a
 // count: `Some(None)` without a limit, `None` for one that isn't literal counts.
 fn literal_row_range(subquery: &Query) -> Option<Option<(u64, u64)>> {
-    let count = |e: &SQLExpr| match e {
+    let count = |e: &SQLExpr| match strip_nested(e) {
         SQLExpr::Value(ValueWithSpan {
             value: SQLValue::Number(n, _),
             ..
@@ -3723,8 +3720,8 @@ impl VisitorMut for DesugarQuantified {
     }
 }
 
-pub(crate) fn desugar_quantified_subqueries(stmt: &mut Statement) {
-    let _ = dyn_visit::visit_mut(stmt, &mut DesugarQuantified);
+pub(crate) fn desugar_quantified_subqueries(node: &mut impl VisitMut) {
+    let _ = dyn_visit::visit_mut(node, &mut DesugarQuantified);
 }
 
 /// Which correlated-subquery node kinds a lowering pass should claim.
@@ -4069,6 +4066,14 @@ fn correlation_keys(
             _ => None,
         };
         let Some((outer_cast, inner_cast)) = cast else {
+            // Group-by keys need distinct names, so a repeated inner column is copied.
+            let inner_key = if inner_on.contains(&inner_key) {
+                let inner_name = format_pl_smallstr!("{prefix}ikey{i}");
+                *inner = std::mem::take(inner).with_column(inner_key.alias(inner_name.clone()));
+                col(inner_name)
+            } else {
+                inner_key
+            };
             outer_on.push(outer_key);
             inner_on.push(inner_key);
             continue;

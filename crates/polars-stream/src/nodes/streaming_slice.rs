@@ -1,21 +1,22 @@
+use polars_utils::slice_enum::Slice;
+
 use super::compute_node_prelude::*;
 
-/// A node that will pass-through up to length rows, starting at start_offset.
-/// Since start_offset must be non-negative this can be done in a streaming
-/// manner.
+/// A node that passes through the rows of a positive slice.
+/// Since the offset is non-negative this can be done in a streaming manner.
 pub struct StreamingSliceNode {
-    start_offset: usize,
-    length: usize,
-    stream_offset: usize,
+    /// The slice of the rows not yet received, `None` if it selects every row.
+    slice: Option<Slice>,
 }
 
 impl StreamingSliceNode {
-    pub fn new(start_offset: usize, length: usize) -> Self {
-        Self {
-            start_offset,
-            length,
-            stream_offset: 0,
-        }
+    pub fn new(slice: Option<Slice>) -> Self {
+        assert!(slice.is_none_or(|s| s.is_positive()));
+        Self { slice }
+    }
+
+    fn is_exhausted(&self) -> bool {
+        self.slice.is_some_and(|s| s.is_empty())
     }
 }
 
@@ -30,7 +31,7 @@ impl ComputeNode for StreamingSliceNode {
         send: &mut [PortState],
         _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
-        if self.stream_offset >= self.start_offset.saturating_add(self.length) || self.length == 0 {
+        if self.is_exhausted() {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
         } else {
@@ -51,25 +52,17 @@ impl ComputeNode for StreamingSliceNode {
         let mut recv = recv_ports[0].take().unwrap().serial();
         let mut send = send_ports[0].take().unwrap().serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let stop_offset = self.start_offset.saturating_add(self.length);
-
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel
                     .map(|df| {
                         let height = df.height();
+                        let range;
+                        (range, self.slice) = self
+                            .slice
+                            .map_or((0..height, None), |s| s.split_front(height));
 
-                        // Calculate start/stop offsets within df and update global offset.
-                        let relative_start_offset = self
-                            .start_offset
-                            .saturating_sub(self.stream_offset)
-                            .min(height);
-                        let relative_stop_offset =
-                            stop_offset.saturating_sub(self.stream_offset).min(height);
-                        self.stream_offset += height;
-
-                        let new_height = relative_stop_offset.saturating_sub(relative_start_offset);
-                        if new_height != height {
-                            df.slice(relative_start_offset as i64, new_height)
+                        if range.len() != height {
+                            df.slice(range)
                         } else {
                             df
                         }
@@ -79,7 +72,7 @@ impl ComputeNode for StreamingSliceNode {
                 // Technically not necessary, but it's nice to already tell the
                 // source to stop producing more morsels as we won't be
                 // interested in the results anyway.
-                if self.stream_offset >= stop_offset {
+                if self.is_exhausted() {
                     morsel.source_token().stop();
                 }
 
@@ -87,7 +80,7 @@ impl ComputeNode for StreamingSliceNode {
                     break;
                 }
 
-                if self.stream_offset >= stop_offset {
+                if self.is_exhausted() {
                     break;
                 }
             }

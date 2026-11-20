@@ -24,7 +24,7 @@ pub enum IrPropsDescription {
         subset: Option<Vec<String>>,
         maintain_order: bool,
         keep_strategy: String,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
     },
     Filter {
         predicate: Vec<String>,
@@ -36,7 +36,7 @@ pub enum IrPropsDescription {
         keys: Vec<String>,
         aggs: Vec<String>,
         maintain_order: bool,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
     },
     HConcat {
         num_inputs: usize,
@@ -58,11 +58,11 @@ pub enum IrPropsDescription {
         maintain_order: String,
         validation: String,
         suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
     },
     CrossJoin {
         maintain_order: String,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
         predicate: Option<Vec<String>>,
         suffix: Option<String>,
     },
@@ -77,7 +77,7 @@ pub enum IrPropsDescription {
         projection: Option<Vec<String>>,
         row_index_name: Option<String>,
         row_index_offset: Option<u64>,
-        pre_slice: Option<(i64, u64)>,
+        pre_slice: Option<(i64, Option<usize>)>,
         predicate: Option<Vec<String>>,
         predicate_file_skip_applied: Option<PredicateFileSkipDescription>,
         has_table_statistics: bool,
@@ -99,18 +99,18 @@ pub enum IrPropsDescription {
     },
     Slice {
         offset: i64,
-        len: u64,
+        len: Option<usize>,
     },
     Sort {
         sort_columns: Vec<SortColumnDescription>,
-        slice: Option<(i64, usize, Option<String>)>,
+        slice: Option<(i64, Option<usize>, Option<String>)>,
         maintain_order: bool,
         limit: Option<u64>,
     },
     Union {
         num_inputs: usize,
         maintain_order: bool,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
     },
     AsOfJoin {
         left_on: Vec<String>,
@@ -121,7 +121,7 @@ pub enum IrPropsDescription {
         /// [value, dtype_str]
         tolerance: Option<[String; 2]>,
         suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
         coalesce: String,
         allow_eq: bool,
         check_sortedness: bool,
@@ -131,7 +131,7 @@ pub enum IrPropsDescription {
         right_on: Vec<String>,
         inequality_operators: Vec<String>,
         suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
     },
     DynamicGroupBy {
         index_column: String,
@@ -152,7 +152,7 @@ pub enum IrPropsDescription {
         period: String,
         offset: String,
         closed_window: String,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
     },
     MergeSorted {
         keys: Vec<String>,
@@ -183,7 +183,7 @@ pub enum IrPropsDescription {
         name: Option<String>,
         schema_names: Vec<String>,
         projection: Option<Vec<String>>,
-        slice: Option<(i64, u64)>,
+        slice: Option<(i64, Option<usize>)>,
         filters: Vec<String>,
         filter_drop_columns_idx: Option<usize>,
         num_cached_resolves: usize,

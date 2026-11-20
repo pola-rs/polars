@@ -35,6 +35,7 @@ pub mod propagate_dictionary;
 pub mod propagate_nulls;
 pub mod rebuild_list;
 pub mod rolling;
+pub mod selection;
 pub mod size;
 pub mod sum;
 pub mod trim_lists_to_normalized_offsets;

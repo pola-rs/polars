@@ -47,3 +47,6 @@ dtype-array = ["polars/dtype-array"]
 dtype-categorical = ["polars/dtype-categorical"]
 dtype-extension = ["polars/dtype-extension"]
 dtype-map = ["polars/dtype-map"]
+
+[lints]
+workspace = true

@@ -9,6 +9,9 @@ use polars_arrow::ffi::{ArrowArray, ArrowSchema};
 use polars_core::error::PolarsResult;
 use polars_core::prelude::Series;
 
+/// Minor versions above 1 may only add capabilities. A plugin reporting a higher minor version
+/// than the engine knows must still work when called as the highest minor version the engine
+/// knows.
 pub const MAJOR: u16 = 0;
 pub const MINOR: u16 = 1;
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::schema::{Schema, SchemaRef};
+use polars_plan::dsl::ScanFieldSelection;
 use polars_plan::plans::hive::HivePartitionsDf;
 
 /// Returns the schema containing columns to project from the file.
@@ -16,6 +17,9 @@ pub fn resolve_projections(
     final_output_schema: &Schema,
     // Full schema inferred for the file
     file_schema: &SchemaRef,
+    // Struct fields selected by projection pushdown. These columns are read with their pruned
+    // dtypes from the final output schema.
+    field_selection: Option<&ScanFieldSelection>,
     // Hive parts
     hive_parts: &mut Option<HivePartitionsDf>,
 
@@ -39,8 +43,15 @@ pub fn resolve_projections(
             let in_hive = hive_schema.is_some_and(|x| x.contains(name));
             let is_row_index_col = row_index_name.is_some_and(|x| name == x);
             let is_file_path_col = include_file_paths.is_some_and(|x| name == x);
-            (in_final && !(in_hive || is_file_path_col || is_row_index_col))
-                .then(|| (name.clone(), dtype.clone()))
+            (in_final && !(in_hive || is_file_path_col || is_row_index_col)).then(|| {
+                let dtype = match field_selection {
+                    Some(field_selection) if field_selection.0.contains_key(name) => {
+                        final_output_schema.get(name).unwrap()
+                    },
+                    _ => dtype,
+                };
+                (name.clone(), dtype.clone())
+            })
         })
         .collect();
 

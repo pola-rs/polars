@@ -13,6 +13,8 @@ mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
+#[cfg(feature = "parquet")]
+pub(crate) mod encryption_sharing;
 pub mod expr_ir;
 mod functions;
 pub mod hive;
