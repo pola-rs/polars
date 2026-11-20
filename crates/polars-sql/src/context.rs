@@ -8122,7 +8122,7 @@ impl SQLContext {
             SubqueryShape::Scalar,
         )?;
         let schema = self.get_frame_schema(&mut frame)?;
-        let row_count = |value: Expr| -> PolarsResult<Expr> {
+        let row_count = |value: Expr, clause: &str| -> PolarsResult<Expr> {
             polars_ensure!(
                 expr_to_leaf_column_names_iter(&value).all(|name| placeholders.contains(&name)),
                 SQLSyntax: "LIMIT/OFFSET/FETCH cannot reference columns"
@@ -8136,16 +8136,20 @@ impl SQLContext {
                     SQLSyntax: "LIMIT/OFFSET/FETCH must be a number, found {}", dtype
                 ),
             };
+            polars_ensure!(
+                value.clone().meta().is_scalar(Some(&schema))?,
+                SQLSyntax: "{clause} must be a single value"
+            );
             Ok(value
                 .strict_cast(DataType::UInt64)
                 .strict_cast(DataType::Int64))
         };
         let offset = match offset {
-            Some(offset) => row_count(offset)?.fill_null(lit(0i64)),
+            Some(offset) => row_count(offset, "OFFSET")?.fill_null(lit(0i64)),
             None => lit(0i64),
         };
         let length = match limit {
-            Some(limit) => row_count(limit)?,
+            Some(limit) => row_count(limit, "LIMIT")?,
             None => lit(NULL).cast(DataType::Int64),
         };
         Ok(frame.select(

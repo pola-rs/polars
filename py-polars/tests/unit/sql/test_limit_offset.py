@@ -5,7 +5,7 @@ from typing import Literal
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import InvalidOperationError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -187,6 +187,8 @@ def test_limit_offset_random_small_input(
             InvalidOperationError,
             "conversion from",
         ),
+        ("LIMIT ROW_NUMBER()", SQLSyntaxError, "LIMIT must be a single value"),
+        ("OFFSET ROW_NUMBER()", SQLSyntaxError, "OFFSET must be a single value"),
     ],
 )
 def test_limit_offset_per_row_value_errors(
