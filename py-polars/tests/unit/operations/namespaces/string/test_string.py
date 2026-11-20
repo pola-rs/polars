@@ -2443,6 +2443,10 @@ def test_str_split_self_broadcast() -> None:
         pl.Series(["a-/c"]).str.split(pl.Series(["-", "/", "+"])),
         pl.Series([["a", "/c"], ["a-", "c"], ["a-/c"]]),
     )
+    assert_series_equal(
+        pl.Series([None], dtype=pl.String).str.split(pl.Series(["-", "/"])),
+        pl.Series([None, None], dtype=pl.List(pl.String)),
+    )
 
 
 def test_replace_many_mapping_in_list() -> None:
