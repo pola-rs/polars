@@ -9208,8 +9208,8 @@ def test_oracle_redacted_columns_are_neither_pushed_nor_partition_keys() -> None
 def test_mssql_real_columns_compare_like_polars() -> None:
     # SQL Server converts the numeric literal `0.1` to `real` when it is compared with a
     # `real` column, so the literal equals the stored value (0.10000000149...) where
-    # Polars compares the stored value with the double 0.1: float comparisons aren't pushed
-    # (it also parses float literals inexactly)
+    # Polars compares the stored value with the double 0.1: float comparisons aren't
+    # pushed (it also parses float literals inexactly)
     table = "review_real_cmp"
     _execute(
         "mssql",
@@ -9264,9 +9264,10 @@ def test_mssql_synonym_of_a_legacy_datetime_is_looked_up_through() -> None:
 
 @needs_mssql
 def test_mssql_seven_digit_times_are_read_exactly_as_nanoseconds() -> None:
-    # `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, which drivers cut to
-    # microseconds: they are read as text, planned as nanoseconds, and not compared in the
-    # database (a pushed microsecond literal would drop or add the rows the fraction decides)
+    # `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, which drivers cut
+    # to microseconds: they are read as text, planned as nanoseconds, and not compared
+    # in the database (a pushed microsecond literal would drop or add the rows the
+    # fraction decides)
     table = "review_subus"
     _execute(
         "mssql",
@@ -9313,8 +9314,8 @@ def test_mssql_seven_digit_times_are_read_exactly_as_nanoseconds() -> None:
 def test_mssql_datetime2_outside_the_nanosecond_range_fails_and_reads_with_an_override() -> (
     None
 ):
-    # a `datetime2` holds years 0001 to 9999, nanoseconds only 1677 to 2262: the read fails
-    # naming the column and the override, which reads microseconds
+    # a `datetime2` holds years 0001 to 9999, nanoseconds only 1677 to 2262: the read
+    # fails naming the column and the override, which reads microseconds
     table = "review_ns_range"
     _execute(
         "mssql",
