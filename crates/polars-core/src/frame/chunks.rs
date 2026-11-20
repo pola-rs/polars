@@ -5,7 +5,6 @@ use rayon::prelude::*;
 
 use crate::prelude::*;
 use crate::runtime::RAYON;
-use crate::series::arrow_export::{arrow_export_row_ranges, contains_arrow_map};
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 
 impl From<RecordBatch> for DataFrame {
@@ -107,56 +106,6 @@ impl DataFrame {
             .into_iter()
             .map(|c| c.rechunk_to_arrow(compat_level))
             .collect()
-    }
-}
-
-impl DataFrame {
-    /// The one row of each Scalar column that exports to `arrow_dtypes` with an arrow MAP, for
-    /// [`DataFrame::arrow_export_ranges`] to plan from; `None` for every other column.
-    pub(crate) fn arrow_export_scalar_rows(
-        &self,
-        arrow_dtypes: &[&ArrowDataType],
-    ) -> Vec<Option<ArrayRef>> {
-        self.columns()
-            .iter()
-            .zip(arrow_dtypes)
-            .map(|(c, dtype)| {
-                let sc = c.as_scalar_column().filter(|_| contains_arrow_map(dtype))?;
-                let row = sc.as_single_value_series();
-                let row = if row.n_chunks() > 1 {
-                    row.rechunk()
-                } else {
-                    row
-                };
-                row.chunks().first().filter(|row| row.len() == 1).cloned()
-            })
-            .collect()
-    }
-
-    /// Row ranges cutting chunk `chunk_idx` of this aligned frame, which holds `rows`, so that
-    /// each exports to `arrow_dtypes` without overflowing the `i32` offsets of an arrow MAP; see
-    /// [`arrow_export_row_ranges`]. `None` if no cut is needed.
-    pub(crate) fn arrow_export_ranges(
-        &self,
-        arrow_dtypes: &[&ArrowDataType],
-        scalar_rows: &[Option<ArrayRef>],
-        chunk_idx: usize,
-        rows: Range<usize>,
-    ) -> Option<Vec<Range<usize>>> {
-        let mut columns = Vec::new();
-        for ((c, dtype), scalar_row) in self.columns().iter().zip(arrow_dtypes).zip(scalar_rows) {
-            if !contains_arrow_map(dtype) {
-                continue;
-            }
-            match (c.as_series(), scalar_row) {
-                (Some(s), _) => columns.push((&*s.chunks()[chunk_idx], *dtype, false)),
-                (None, Some(row)) => columns.push((&**row, *dtype, true)),
-                // An empty Scalar column has no row, and the chunk then holds none either. A
-                // Dictionary column is a String, never a MAP.
-                (None, None) => {},
-            }
-        }
-        arrow_export_row_ranges(&columns, rows.len())
     }
 }
 

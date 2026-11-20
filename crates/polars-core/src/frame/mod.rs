@@ -55,7 +55,7 @@ use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::arg_sort;
 use crate::runtime::RAYON;
 use crate::series::IsSorted;
-use crate::series::arrow_export::contains_arrow_map;
+use crate::series::arrow_export::{arrow_export_cut, contains_arrow_map, map_spans_fit};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2730,22 +2730,30 @@ pub struct RecordBatchIter {
     cursor: ChunkCursor,
     compat_level: CompatLevel,
     parallel: bool,
-    /// Whether some column exports to an arrow MAP, so a chunk may need several batches.
-    has_arrow_map: bool,
-    /// See [`DataFrame::arrow_export_scalar_rows`]; empty without an arrow MAP.
-    scalar_rows: Vec<Option<ArrayRef>>,
+    /// The columns that export to an arrow MAP, whose `i32` offsets may make a chunk need several
+    /// batches.
+    map_columns: Vec<MapColumn>,
     split: Option<SplitChunk>,
     /// The first row of the next chunk, to slice columns without chunks of their own.
     offset: usize,
 }
 
-/// A chunk exported as one batch per row range.
+/// A column that exports to an arrow MAP.
+struct MapColumn {
+    idx: usize,
+    /// The one row a Scalar column repeats, so it is planned without materializing the column;
+    /// `None` for a Series column.
+    row: Option<ArrayRef>,
+}
+
+/// A chunk exported as one batch per piece, cut as the iterator reaches it.
 struct SplitChunk {
     chunk: DataFrame,
     /// The columns without an arrow MAP, converted once for the whole chunk so that their pieces
     /// share one dictionary; `None` for the columns converted per piece.
     converted: Vec<Option<ArrayRef>>,
-    ranges: std::vec::IntoIter<std::ops::Range<usize>>,
+    /// The first row of the next piece.
+    start: usize,
 }
 
 /// Export `rows` of `c`, which its chunk `idx` holds if it has chunks of its own.
@@ -2788,13 +2796,25 @@ impl RecordBatchIter {
                 .map(|c| c.field().to_arrow(compat_level))
                 .collect(),
         );
-        let has_arrow_map = schema.iter_values().any(|f| contains_arrow_map(f.dtype()));
-        let scalar_rows = if has_arrow_map {
-            let dtypes: Vec<_> = schema.iter_values().map(|f| f.dtype()).collect();
-            df.arrow_export_scalar_rows(&dtypes)
-        } else {
-            Vec::new()
-        };
+        let map_columns = df
+            .columns()
+            .iter()
+            .zip(schema.iter_values())
+            .enumerate()
+            .filter(|(_, (_, f))| contains_arrow_map(f.dtype()))
+            .filter_map(|(idx, (c, _))| {
+                let Some(sc) = c.as_scalar_column() else {
+                    return Some(MapColumn { idx, row: None });
+                };
+                let row = sc.as_single_value_series().rechunk();
+                // An empty Scalar column has no row, and the frame then has none either.
+                let row = row.chunks().first().filter(|row| row.len() == 1)?.clone();
+                Some(MapColumn {
+                    idx,
+                    row: Some(row),
+                })
+            })
+            .collect();
 
         Self {
             df: df.clone(),
@@ -2802,15 +2822,14 @@ impl RecordBatchIter {
             cursor: ChunkCursor::new(df),
             compat_level,
             parallel,
-            has_arrow_map,
-            scalar_rows,
+            map_columns,
             split: None,
             offset: 0,
         }
     }
 
     /// `f` of each column index below `width`, in parallel if this export is.
-    fn map_columns<T: Send>(
+    fn per_column<T: Send>(
         &self,
         width: usize,
         f: impl Fn(usize) -> PolarsResult<T> + Send + Sync,
@@ -2830,7 +2849,7 @@ impl RecordBatchIter {
         rows: std::ops::Range<usize>,
     ) -> PolarsResult<RecordBatch> {
         let length = rows.len();
-        let arrays = self.map_columns(df.width(), |i| {
+        let arrays = self.per_column(df.width(), |i| {
             column_to_arrow(&df.columns()[i], idx, rows.clone(), self.compat_level)
         })?;
         Ok(RecordBatch::new(length, self.schema.clone(), arrays))
@@ -2843,7 +2862,7 @@ impl RecordBatchIter {
         range: std::ops::Range<usize>,
     ) -> PolarsResult<RecordBatch> {
         let length = range.len();
-        let arrays = self.map_columns(split.chunk.width(), |i| match &split.converted[i] {
+        let arrays = self.per_column(split.chunk.width(), |i| match &split.converted[i] {
             Some(arr) => Ok(arr.sliced(range.start, length)),
             // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
             None => match split.chunk.columns()[i].as_series() {
@@ -2859,19 +2878,23 @@ impl RecordBatchIter {
         Ok(RecordBatch::new(length, self.schema.clone(), arrays))
     }
 
-    /// Cut chunk `idx`, which holds `rows`, into pieces if its arrow MAPs need it.
-    fn plan_split(
-        &self,
-        idx: usize,
-        rows: std::ops::Range<usize>,
-    ) -> PolarsResult<Option<SplitChunk>> {
-        let dtypes: Vec<&ArrowDataType> = self.schema.iter_values().map(|f| f.dtype()).collect();
-        let Some(ranges) =
-            self.df
-                .arrow_export_ranges(&dtypes, &self.scalar_rows, idx, rows.clone())
-        else {
-            return Ok(None);
-        };
+    /// Whether `rows` of chunk `idx` of `df` export without overflowing the `i32` offsets of an
+    /// arrow MAP; a chunk too short for `rows` doesn't, which leaves it to [`Self::split`] to report.
+    pub(crate) fn fits(&self, df: &DataFrame, idx: usize, rows: std::ops::Range<usize>) -> bool {
+        self.map_columns.iter().all(|m| {
+            let dtype = self.schema.get_at_index(m.idx).unwrap().1.dtype();
+            match (&m.row, df.columns()[m.idx].as_series()) {
+                (Some(row), _) => map_spans_fit(row.as_ref(), dtype, 0..1, rows.len()),
+                (None, Some(s)) => s.chunks().get(idx).is_some_and(|c| {
+                    rows.end <= c.len() && map_spans_fit(c.as_ref(), dtype, rows.clone(), 1)
+                }),
+                (None, None) => true,
+            }
+        })
+    }
+
+    /// Prepare chunk `idx`, which holds `rows`, to be exported in pieces.
+    fn split(&self, idx: usize, rows: std::ops::Range<usize>) -> PolarsResult<SplitChunk> {
         // The pieces slice every column to their rows, so `RecordBatch` would not catch a
         // misaligned chunk.
         for s in self.df.columns().iter().filter_map(Column::as_series) {
@@ -2883,17 +2906,17 @@ impl RecordBatchIter {
         }
         let chunk = self.df.chunk_frame(idx, rows);
         let length = chunk.height();
-        let converted = self.map_columns(chunk.width(), |i| {
-            if contains_arrow_map(dtypes[i]) {
+        let converted = self.per_column(chunk.width(), |i| {
+            if self.map_columns.iter().any(|m| m.idx == i) {
                 return Ok(None);
             }
             column_to_arrow(&chunk.columns()[i], 0, 0..length, self.compat_level).map(Some)
         })?;
-        Ok(Some(SplitChunk {
+        Ok(SplitChunk {
             chunk,
             converted,
-            ranges: ranges.into_iter(),
-        }))
+            start: 0,
+        })
     }
 }
 
@@ -2901,24 +2924,24 @@ impl Iterator for RecordBatchIter {
     type Item = PolarsResult<RecordBatch>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(split) = &mut self.split {
-            match split.ranges.next() {
-                Some(range) => {
-                    let split = self.split.as_ref().unwrap();
-                    return Some(self.export_piece(split, range));
-                },
-                None => self.split = None,
+        if let Some(split) = &self.split {
+            let height = split.chunk.height();
+            if split.start < height {
+                let end = arrow_export_cut(split.start..height, |r| self.fits(&split.chunk, 0, r));
+                let batch = self.export_piece(split, split.start..end);
+                self.split.as_mut().unwrap().start = end;
+                return Some(batch);
             }
+            self.split = None;
         }
 
         let (idx, length) = self.cursor.next(&self.df)?;
         let rows = self.offset..self.offset + length;
         self.offset += length;
-        if self.has_arrow_map {
-            match self.plan_split(idx, rows.clone()) {
-                Ok(None) => {},
+        if !self.fits(&self.df, idx, 0..length) {
+            match self.split(idx, rows) {
                 Ok(split) => {
-                    self.split = split;
+                    self.split = Some(split);
                     return self.next();
                 },
                 Err(err) => return Some(Err(err)),
@@ -2929,9 +2952,12 @@ impl Iterator for RecordBatchIter {
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (chunks, _) = self.cursor.size_hint();
-        let pieces = self.split.as_ref().map_or(0, |split| split.ranges.len());
-        let lower = chunks + pieces;
-        (lower, (!self.has_arrow_map).then_some(lower))
+        let piece = self
+            .split
+            .as_ref()
+            .is_some_and(|split| split.start < split.chunk.height());
+        let lower = chunks + piece as usize;
+        (lower, self.map_columns.is_empty().then_some(lower))
     }
 }
 
