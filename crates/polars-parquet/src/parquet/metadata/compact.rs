@@ -89,6 +89,8 @@ pub(crate) struct CompactColumnMetaData {
     /// Whether some data pages are not dictionary-encoded, from the page
     /// encoding stats. `None` when the writer doesn't record them.
     pub dictionary_fallback: Option<bool>,
+    /// Whether the page encoding stats have an entry for data pages.
+    pub has_data_page_encoding_stats: bool,
     /// Combined length in bytes of all byte array values in the chunk, from the
     /// size statistics. Every occurrence counts, so a value repeated ten times
     /// counts ten times. Nulls and the 4-byte length prefixes don't count.

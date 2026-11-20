@@ -1071,6 +1071,11 @@ impl DictionaryMerger {
         self.dicts.is_empty()
     }
 
+    /// The length of the merged dictionary: the codes shifted by the merger are below it.
+    pub fn merged_len(&self) -> usize {
+        self.merged_len
+    }
+
     /// Whether a column was refused: the others' codes are then not usable on their own.
     pub fn failed(&self) -> bool {
         self.failed

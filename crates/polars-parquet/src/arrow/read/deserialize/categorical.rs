@@ -35,7 +35,7 @@ impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
     type PlainDecoder = HybridRleDecoder<'a>;
 
     fn new(
-        _decoder: &CategoricalDecoder<T>,
+        decoder: &CategoricalDecoder<T>,
         page: &'a DataPage,
         _dict: Option<&'a <CategoricalDecoder<T> as Decoder>::Dict>,
         page_validity: Option<&Bitmap>,
@@ -44,6 +44,7 @@ impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
             Encoding::PlainDictionary | Encoding::RleDictionary => Ok(Self::Dictionary(
                 dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))?,
             )),
+            _ if decoder.codes_only => Err(ParquetError::NotDictionaryEncoded),
             Encoding::Plain => {
                 let values = split_buffer(page)?.values;
                 let num_values = page.num_values();
@@ -69,6 +70,9 @@ impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
 pub struct CategoricalDecoder<T> {
     /// Whether the values are String (valid UTF-8) rather than Binary.
     is_string: bool,
+    /// Decoding the codes into the dictionary page only: a page that is not dictionary-encoded
+    /// is an error ([`ParquetError::NotDictionaryEncoded`]) rather than appended to the dictionary.
+    codes_only: bool,
     dict_size: usize,
     decoder: BinViewDecoder,
     plain_page_dict: MutableBinaryViewArray<[u8]>,
@@ -96,6 +100,7 @@ impl<T> CategoricalDecoder<T> {
     fn new_with(is_string: bool) -> Self {
         Self {
             is_string,
+            codes_only: false,
             dict_size: usize::MAX,
             decoder: BinViewDecoder::new(is_string),
             plain_page_dict: MutableBinaryViewArray::new(),
@@ -445,7 +450,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
 
 /// Decodes a flat String or Binary column chunk into codes into its dictionary page.
 ///
-/// Every data page must be dictionary-encoded (see `PageReader::dictionary_only_len`). The
+/// Every data page must be dictionary-encoded (see `PageReader::data_pages_all_dictionary`). The
 /// dictionary values in the output share the dictionary page's buffers.
 pub fn decode_byte_dictionary_codes(
     field_name: &str,
@@ -467,10 +472,14 @@ pub fn decode_byte_dictionary_codes(
         field_name,
         pages,
         dtype,
-        if is_string {
-            CategoricalDecoder::<u32>::new()
-        } else {
-            CategoricalDecoder::<u32>::new_binary()
+        {
+            let mut decoder = if is_string {
+                CategoricalDecoder::<u32>::new()
+            } else {
+                CategoricalDecoder::<u32>::new_binary()
+            };
+            decoder.codes_only = true;
+            decoder
         },
         None,
     )?

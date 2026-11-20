@@ -2236,3 +2236,223 @@ def test_dictionary_codes_collect_files_of_other_dtypes(
             lf.collect()
         return
     assert_frame_equal(lf.collect(), expected)
+
+
+def _lying_uint32(values: list[int], dtype: pl.DataType) -> pl.LazyFrame:
+    """A frame whose batches are `UInt32` while its schema says `dtype`."""
+    return pl.LazyFrame({"a": values}, schema={"a": pl.UInt32}).map_batches(
+        lambda df: df, schema={"a": dtype}, validate_output_schema=False
+    )
+
+
+@pytest.mark.may_fail_lazy_schema
+def test_collect_plain_uint32_is_not_taken_for_dictionary_codes() -> None:
+    lf = _lying_uint32([1, 2, 3], pl.Int64)
+    in_memory = lf.collect(engine="in-memory")
+    assert in_memory["a"].to_list() == [1, 2, 3]
+    # The batches are not cast to the schema in memory, but are by the streaming engine.
+    assert_frame_equal(lf.collect(engine="streaming"), in_memory, check_dtypes=False)
+
+
+@pytest.mark.may_fail_lazy_schema
+@pytest.mark.parametrize("plain_first", [False, True])
+def test_collect_mixed_dictionary_codes_and_plain_uint32(
+    tmp_path: Path, plain_first: bool
+) -> None:
+    n = 20_000
+    df = pl.DataFrame({"a": [(i % 7) * 1_000_000_007 for i in range(n)]})
+    path = _write(df, tmp_path / "a.parquet", row_group_size=2_000)
+    scan = pl.scan_parquet(path)
+    assert scan.collect_schema()["a"] == pl.Int64
+    plain = _lying_uint32([5, 6, 7], pl.Int64)
+    parts = [plain, scan] if plain_first else [scan, plain]
+    lf = pl.concat(parts)
+
+    try:
+        expected = lf.collect(engine="in-memory")
+    except Exception as e:  # noqa: BLE001
+        # The engines may only agree on failing.
+        with pytest.raises(type(e)):
+            lf.collect(engine="streaming")
+        return
+    assert_frame_equal(lf.collect(engine="streaming"), expected)
+
+
+@pytest.mark.may_fail_lazy_schema
+@pytest.mark.parametrize(
+    ("columns", "schema"),
+    [
+        (["a"], {"a": pl.Int64, "b": pl.Int64}),
+        (["a", "b"], {"a": pl.Int64}),
+    ],
+)
+def test_collect_frames_of_another_width_than_the_schema(
+    columns: list[str], schema: dict[str, pl.DataType]
+) -> None:
+    base = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    lf = base.map_batches(
+        lambda df: df.select(columns), schema=schema, validate_output_schema=False
+    )
+    expected = lf.collect(engine="in-memory")
+    out = lf.collect(engine="streaming")
+    assert out.columns == expected.columns == columns
+    assert_frame_equal(out, expected)
+
+
+def _collected_size(path: Path, flag: str) -> int:
+    script = (
+        "import polars as pl, sys\n"
+        "(b,) = pl.scan_parquet(sys.argv[1]).collect_batches(chunk_size=1_000_000, engine='streaming')\n"
+        "print(b.select('c').estimated_size())\n"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", script, str(path)],
+        env={**os.environ, "POLARS_DICT_CODES": flag},
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    return int(out.stdout)
+
+
+def _int_table(n: int, mixed: bool) -> pa.Table:
+    low = np.arange(n // 2, dtype=np.int64) % 50 + 10**12
+    if mixed:
+        # Low cardinality, then unique values: the writer falls back to PLAIN pages.
+        c = np.concatenate([low, np.arange(n - n // 2, dtype=np.int64) * 7 + 10**15])
+    else:
+        c = np.arange(n, dtype=np.int64) % 50 + 10**12
+    return pa.table({"c": pa.array(c), "v": pa.array(np.arange(n, dtype=np.int64))})
+
+
+@pytest.mark.parametrize("version", ["1.0", "2.0"])
+def test_dictionary_codes_numeric_head_and_slice(tmp_path: Path, version: str) -> None:
+    n = 100_000
+    table = _int_table(n, mixed=False)
+    path = tmp_path / "a.parquet"
+    pq.write_table(
+        table,
+        path,
+        row_group_size=n,
+        data_page_size=1024,
+        data_page_version=version,
+        write_statistics=False,
+    )
+    expected = _from_arrow(table)
+    for lf in [
+        pl.scan_parquet(path).head(1),
+        pl.scan_parquet(path).slice(0, 1),
+        pl.scan_parquet(path).slice(60_000, 7),
+    ]:
+        assert_frame_equal(lf.collect(), lf.collect(engine="in-memory"))
+    assert_frame_equal(pl.scan_parquet(path).head(1).collect(), expected.head(1))
+    assert_frame_equal(
+        pl.scan_parquet(path).slice(60_000, 7).collect(), expected.slice(60_000, 7)
+    )
+
+
+def test_dictionary_codes_encoding_stats_still_give_codes(tmp_path: Path) -> None:
+    n = 100_000
+    table = _int_table(n, mixed=False)
+    path = tmp_path / "a.parquet"
+    pq.write_table(table, path, row_group_size=n, data_page_size=1024)
+    # pyarrow records page encoding stats, which answer the data pages' encoding without
+    # reading their headers (not exposed by pyarrow; checked on the footer by hand).
+    assert "RLE_DICTIONARY" in _encodings(path)
+    assert _collected_size(path, "1") != _collected_size(path, "0")
+    assert_frame_equal(pl.read_parquet(path), _from_arrow(table))
+
+
+def test_dictionary_codes_mixed_pages_give_values_without_codes(
+    tmp_path: Path,
+) -> None:
+    n = 100_000
+    table = _int_table(n, mixed=True)
+    path = tmp_path / "a.parquet"
+    pq.write_table(
+        table,
+        path,
+        row_group_size=n,
+        dictionary_pagesize_limit=200,
+        data_page_size=1024,
+    )
+    assert {"PLAIN", "RLE_DICTIONARY"} <= _encodings(path)
+    expected = _from_arrow(table)
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).head(1).collect(), expected.head(1))
+    assert _collected_size(path, "1") == _collected_size(path, "0")
+
+
+def _patch_encoding_stats(path: Path, replace: dict[bytes, bytes]) -> None:
+    """Rewrite the first entries of the footer's page encoding stats in place (same length).
+
+    An entry is page_type, encoding and count as zigzag-encoded i32 fields.
+    """
+    raw = path.read_bytes()
+    n = int.from_bytes(raw[-8:-4], "little")
+    footer = raw[-8 - n : -8]
+    for old, new in replace.items():
+        assert len(old) == len(new)
+        assert footer.count(old) >= 1, old
+        # The first column's (`c`) entry comes first.
+        footer = footer.replace(old, new, 1)
+    path.write_bytes(raw[: -8 - n] + footer + raw[-8:])
+
+
+def _mixed_table(kind: str, n: int) -> pa.Table:
+    half = n // 2
+    if kind == "int":
+        low = np.arange(half, dtype=np.int64) % 50 + 10**12
+        uniq = np.arange(n - half, dtype=np.int64) * 7 + 10**15
+        c = pa.array(np.concatenate([low, uniq]))
+    else:
+        c = pa.array(
+            [f"low-value-{i % 50:03d}" for i in range(half)]
+            + [f"unique-value-{i:08d}" for i in range(n - half)]
+        )
+    return pa.table({"c": c, "v": pa.array(np.arange(n, dtype=np.int64))})
+
+
+@pytest.mark.parametrize("kind", ["int", "str"])
+@pytest.mark.parametrize("patch", ["lying", "no_data_entries"])
+def test_dictionary_codes_encoding_stats_that_do_not_say_dictionary(
+    tmp_path: Path, kind: str, patch: str
+) -> None:
+    n = 60_000
+    table = _mixed_table(kind, n)
+    path = tmp_path / "a.parquet"
+    pq.write_table(
+        table,
+        path,
+        row_group_size=n,
+        dictionary_pagesize_limit=200,
+        data_page_size=1024,
+        write_statistics=False,
+    )
+    assert {"PLAIN", "RLE_DICTIONARY"} <= _encodings(path)
+    if patch == "lying":
+        # The PLAIN data page entry claims RLE_DICTIONARY.
+        _patch_encoding_stats(path, {b"\x15\x00\x15\x00\x15": b"\x15\x00\x15\x10\x15"})
+    else:
+        # Both data page entries become INDEX_PAGE ones: no entry says anything.
+        _patch_encoding_stats(
+            path,
+            {
+                b"\x15\x00\x15\x00\x15": b"\x15\x02\x15\x00\x15",
+                b"\x15\x00\x15\x10\x15": b"\x15\x02\x15\x10\x15",
+            },
+        )
+    expected = _from_arrow(table)
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).head(1).collect(), expected.head(1))
+    assert_frame_equal(
+        pl.scan_parquet(path).filter(pl.col("v") % 3 == 0).collect(),
+        expected.filter(pl.col("v") % 3 == 0),
+    )
+    assert_frame_equal(
+        pl.scan_parquet(path).group_by("c").agg(pl.sum("v")).collect(),
+        expected.group_by("c").agg(pl.sum("v")),
+        check_row_order=False,
+    )
+    # The chunk has plain pages, so it is read as values, not codes.
+    assert _collected_size(path, "1") == _collected_size(path, "0")

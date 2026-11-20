@@ -5,7 +5,18 @@ use polars_core::runtime::RAYON;
 use polars_utils::priority::Priority;
 use polars_utils::sync::SyncPtr;
 
-use crate::morsel::Morsel;
+use crate::morsel::{Morsel, MorselSeq};
+
+/// Something that has the sequence id of the morsel it holds.
+pub trait HasSeq {
+    fn morsel_seq(&self) -> MorselSeq;
+}
+
+impl HasSeq for Morsel {
+    fn morsel_seq(&self) -> MorselSeq {
+        self.seq()
+    }
+}
 
 /// Amount of morsels we need to consider spawning a thread during linearization.
 const MORSELS_PER_THREAD: usize = 256;
@@ -13,7 +24,7 @@ const MORSELS_PER_THREAD: usize = 256;
 /// Given a Vec<Morsel> for each pipe, it will output a linearized vec.
 /// If the items are ordered by their sequence ids within each vec, and no
 /// sequence ID occurs in multiple vecs, the output will follow the same order globally.
-pub fn linearize(mut morsels_per_pipe: Vec<Vec<Morsel>>) -> Vec<Morsel> {
+pub fn linearize<T: HasSeq + Send + Sync>(mut morsels_per_pipe: Vec<Vec<T>>) -> Vec<T> {
     let num_morsels: usize = morsels_per_pipe.iter().map(|p| p.len()).sum();
     if num_morsels == 0 {
         return vec![];
@@ -26,13 +37,13 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<Morsel>>) -> Vec<Morsel> {
     // Partitioning based on sequence number.
     let max_seq = morsels_per_pipe
         .iter()
-        .flat_map(|p| p.iter().map(|m| m.seq().to_u64()))
+        .flat_map(|p| p.iter().map(|m| m.morsel_seq().to_u64()))
         .max()
         .unwrap();
     let seqs_per_thread = (max_seq + 1).div_ceil(n_threads);
 
     let morsels_per_p = &morsels_per_pipe;
-    let mut out: Vec<Morsel> = Vec::with_capacity(num_morsels);
+    let mut out: Vec<T> = Vec::with_capacity(num_morsels);
     let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
     RAYON.scope(|s| {
         let mut out_offset = 0;
@@ -47,8 +58,8 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<Morsel>>) -> Vec<Morsel> {
             let cur_idx_per_pipe = stop_idx_per_pipe;
             stop_idx_per_pipe = Vec::with_capacity(morsels_per_p.len());
             for p in 0..morsels_per_p.len() {
-                let stop_idx =
-                    morsels_per_p[p].partition_point(|m| m.seq().to_u64() < partition_max_seq);
+                let stop_idx = morsels_per_p[p]
+                    .partition_point(|m| m.morsel_seq().to_u64() < partition_max_seq);
                 assert!(stop_idx >= cur_idx_per_pipe[p]);
                 out_offset += stop_idx - cur_idx_per_pipe[p];
                 stop_idx_per_pipe.push(stop_idx);
@@ -79,17 +90,17 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<Morsel>>) -> Vec<Morsel> {
     out
 }
 
-unsafe fn fill_partition(
-    morsels_per_pipe: &[Vec<Morsel>],
+unsafe fn fill_partition<T: HasSeq>(
+    morsels_per_pipe: &[Vec<T>],
     mut cur_idx_per_pipe: Vec<usize>,
     stop_idx_per_pipe: &[usize],
-    mut out_ptr: *mut Morsel,
+    mut out_ptr: *mut T,
 ) {
     // K-way merge, initialize priority queue with one element per pipe.
     let mut kmerge = BinaryHeap::with_capacity(morsels_per_pipe.len());
     for (p, morsels) in morsels_per_pipe.iter().enumerate() {
         if cur_idx_per_pipe[p] != stop_idx_per_pipe[p] {
-            let seq = morsels[cur_idx_per_pipe[p]].seq();
+            let seq = morsels[cur_idx_per_pipe[p]].morsel_seq();
             kmerge.push(Priority(Reverse(seq), p));
         }
     }
@@ -106,7 +117,7 @@ unsafe fn fill_partition(
 
             // Handle next element from this pipe.
             while *cur_idx != stop_idx_per_pipe[p] {
-                let new_seq = morsels[*cur_idx].seq();
+                let new_seq = morsels[*cur_idx].morsel_seq();
                 if new_seq <= seq.successor() {
                     // New sequence number is the same, or a direct successor, can output immediately.
                     core::ptr::copy_nonoverlapping(&morsels[*cur_idx], out_ptr, 1);

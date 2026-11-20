@@ -20,8 +20,7 @@ pub struct OverBudget;
 impl OverBudget {
     pub fn new() -> Self {
         for (var, val) in OVER_BUDGET_VARS {
-            unsafe { std::env::set_var(var, val) };
-            config().reload_env_var(var);
+            config().set_env_var_override(var, Some(val));
         }
         crate::global_alloc::add_test_usage(OVER_BUDGET_USAGE);
         OverBudget
@@ -38,7 +37,6 @@ impl Drop for OverBudget {
     fn drop(&mut self) {
         crate::global_alloc::add_test_usage(-OVER_BUDGET_USAGE);
         for (var, _) in OVER_BUDGET_VARS {
-            unsafe { std::env::remove_var(var) };
             config().reload_env_var(var);
         }
     }

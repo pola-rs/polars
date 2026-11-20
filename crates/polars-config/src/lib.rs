@@ -405,6 +405,15 @@ impl Config {
         self.recompute_derived();
     }
 
+    /// Applies `val` as the value of the environment variable `var` (`None`: unset) without
+    /// touching the process environment, which cannot be changed safely while other threads
+    /// run. Only for tests; [`Self::reload_env_var`] undoes it.
+    #[doc(hidden)]
+    pub fn set_env_var_override(&self, var: &str, val: Option<&str>) {
+        self.apply_env_var(var, val);
+        self.recompute_derived();
+    }
+
     fn recompute_derived(&self) {
         static LOGGED_TOTAL_MEMORY: Once = Once::new();
         if self.verbose() {

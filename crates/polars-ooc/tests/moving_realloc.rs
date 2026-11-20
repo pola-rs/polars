@@ -135,13 +135,7 @@ fn make_dirty(arena: u32, probe_arena: u32, bytes: usize) -> usize {
 }
 
 fn set_env(var: &str, value: Option<String>) {
-    unsafe {
-        match value {
-            Some(value) => std::env::set_var(var, value),
-            None => std::env::remove_var(var),
-        }
-    }
-    polars_config::config().reload_env_var(var);
+    polars_config::config().set_env_var_override(var, value.as_deref());
 }
 
 fn set_limits(dirty_limit: Option<usize>, oomkill_threshold: Option<usize>) {

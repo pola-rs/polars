@@ -46,8 +46,8 @@ impl<'a, D: Decoder> StateTranslation<'a, CodesDecoder<D>> for CodesTranslation<
                 page,
                 page_validity.map_or(0, |bm| bm.unset_bits()),
             )?)),
-            // The caller checked that every page is dictionary-encoded.
-            _ => Err(utils::not_implemented(page)),
+            // The page encoding stats said every page is dictionary-encoded, and they lied.
+            _ => Err(ParquetError::NotDictionaryEncoded),
         }
     }
 
