@@ -928,6 +928,7 @@ pub(super) fn convert_functions(
             ensure_scalar_ae(
                 quantile_input.node(),
                 ctx.arena,
+                ctx.struct_field_height,
                 "quantile",
                 "approx_quantile",
             )?;
@@ -1411,7 +1412,13 @@ pub(super) fn convert_functions(
         let input = e.get(idx).ok_or_else(
             || polars_err!(InvalidOperation: "missing argument '{arg}' in `{ir_function}`"),
         )?;
-        ensure_scalar_ae(input.node(), ctx.arena, arg, &ir_function)?;
+        ensure_scalar_ae(
+            input.node(),
+            ctx.arena,
+            ctx.struct_field_height,
+            arg,
+            &ir_function,
+        )?;
     }
 
     let mut options = ir_function.function_options();

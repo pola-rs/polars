@@ -55,6 +55,8 @@ pub struct ExprToIRContext<'a> {
     pub check_column_names: bool,
     /// In the evaluation of an `eval`: the columns of the frame it reads.
     pub(super) eval_columns: Option<PlIndexSet<PlSmallStr>>,
+    /// The height of a `StructField`, that of the struct whose fields are being evaluated.
+    pub(super) struct_field_height: ExprProjectionHeight,
 }
 
 impl<'a> ExprToIRContext<'a> {
@@ -66,6 +68,7 @@ impl<'a> ExprToIRContext<'a> {
             allow_unknown: false,
             check_column_names: true,
             eval_columns: None,
+            struct_field_height: ExprProjectionHeight::Unknown,
         }
     }
 
@@ -91,6 +94,7 @@ impl<'a> ExprToIRContext<'a> {
             allow_unknown: false,
             check_column_names: true,
             eval_columns: None,
+            struct_field_height: ExprProjectionHeight::Unknown,
         }
     }
 
@@ -213,7 +217,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
             let (idx, _) = to_aexpr_mat_lit!(idx)?;
             // `get` is classified as scalar, so its index has to be one.
             if *returns_scalar {
-                ensure_scalar_ae(idx, ctx.arena, "index", "get")?;
+                ensure_scalar_ae(idx, ctx.arena, ctx.struct_field_height, "index", "get")?;
             }
             (
                 AExpr::Gather {
@@ -492,8 +496,20 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
             let (input, output_name) = recurse!(input)?;
             let (offset, _) = to_aexpr_mat_lit!(offset)?;
             let (length, _) = to_aexpr_mat_lit!(length)?;
-            ensure_scalar_ae(offset, ctx.arena, "offset", "slice")?;
-            ensure_scalar_ae(length, ctx.arena, "length", "slice")?;
+            ensure_scalar_ae(
+                offset,
+                ctx.arena,
+                ctx.struct_field_height,
+                "offset",
+                "slice",
+            )?;
+            ensure_scalar_ae(
+                length,
+                ctx.arena,
+                ctx.struct_field_height,
+                "length",
+                "slice",
+            )?;
             (
                 AExpr::Slice {
                     input,
@@ -521,6 +537,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
                 allow_unknown: ctx.allow_unknown,
                 check_column_names: ctx.check_column_names,
                 eval_columns: Some(PlIndexSet::new()),
+                struct_field_height: ExprProjectionHeight::Unknown,
             };
             let (evaluation, _) = to_aexpr_impl(evaluation, &mut evaluation_ctx)?;
             // Read in the context of the `eval`, which may be the evaluation of another.
@@ -584,6 +601,16 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
 
             let mut eval_ir = Vec::with_capacity(evaluation.len());
 
+            let struct_field_height = aexpr_projection_height_rec_with(
+                expr,
+                ctx.arena,
+                &mut Default::default(),
+                &mut Default::default(),
+                ExprHeightOptions {
+                    struct_field: ctx.struct_field_height,
+                    ..Default::default()
+                },
+            );
             let mut field_names = PlIndexSet::new();
             for e in evaluation {
                 let mut eval_ctx = ExprToIRContext {
@@ -593,6 +620,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
                     allow_unknown: ctx.allow_unknown,
                     check_column_names: ctx.check_column_names,
                     eval_columns: ctx.eval_columns.take(),
+                    struct_field_height,
                 };
                 let exprir = to_expr_ir(e, &mut eval_ctx);
                 ctx.eval_columns = eval_ctx.eval_columns;

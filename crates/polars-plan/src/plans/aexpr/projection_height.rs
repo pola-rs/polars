@@ -6,6 +6,8 @@ use polars_utils::collection::{Collection, CollectionWrap};
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::WindowMapping;
+#[cfg(any(feature = "replace", feature = "search_sorted"))]
+use crate::plans::IRFunctionExpr;
 use crate::plans::{AExpr, aexpr_tree_traversal};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 
@@ -365,6 +367,19 @@ pub fn aexpr_projection_height(
                 }
             }
         },
+
+        // `old` and `new` are lookup tables, imploded by type coercion if they are flat.
+        #[cfg(feature = "replace")]
+        AExpr::Function {
+            function: IRFunctionExpr::Replace | IRFunctionExpr::ReplaceStrict { .. },
+            ..
+        } => input_heights?[0],
+        // One insertion index per search key.
+        #[cfg(feature = "search_sorted")]
+        AExpr::Function {
+            function: IRFunctionExpr::SearchSorted { .. },
+            ..
+        } => input_heights?[1],
 
         AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
             if options.flags.returns_scalar() {

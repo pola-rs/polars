@@ -1,5 +1,8 @@
 use super::*;
-use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
+use crate::plans::projection_height::{
+    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
+    aexpr_projection_height_rec_with,
+};
 
 pub fn is_scalar_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     use ExprProjectionHeight as H;
@@ -15,15 +18,28 @@ pub fn is_scalar_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     }
 }
 
-/// Raises unless the argument `arg` of `function` at `node` is a scalar.
+/// Raises unless the argument `arg` of `function` at `node` is a scalar, where a `StructField`
+/// has the height `struct_field`.
 pub fn ensure_scalar_ae(
     node: Node,
     arena: &Arena<AExpr>,
+    struct_field: ExprProjectionHeight,
     arg: &str,
     function: impl std::fmt::Display,
 ) -> PolarsResult<()> {
+    let options = ExprHeightOptions {
+        struct_field,
+        ..Default::default()
+    };
+    let height = aexpr_projection_height_rec_with(
+        node,
+        arena,
+        &mut Default::default(),
+        &mut Default::default(),
+        options,
+    );
     polars_ensure!(
-        is_scalar_ae(node, arena),
+        height == ExprProjectionHeight::Scalar,
         ShapeMismatch: "'{arg}' must be a scalar value in `{function}`; use a literal or an \
         aggregation such as `.item()`, `.first()` or, for a list, `.implode()`"
     );

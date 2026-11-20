@@ -175,6 +175,38 @@ def test_scalar_argument_per_group() -> None:
         ).collect_schema()
 
 
+def test_replace_with_lookup_lists_is_scalar() -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
+    x = pl.col("x")
+    for n in [
+        x.first().replace([1, 2], [2, 3]),
+        x.first().replace({1: 2, 2: 3}),
+        x.first().replace_strict([1], [2]),
+    ]:
+        assert lf.select(x.head(n)).collect().to_series().to_list() == [1, 2]
+
+
+def test_scalar_argument_from_field_of_scalar_struct() -> None:
+    lf = pl.LazyFrame({"idx": [1, 0], "v": [10, 20]})
+
+    def get(s: pl.Expr) -> pl.LazyFrame:
+        return lf.select(s.struct.with_fields(val=pl.col("v").get(pl.field("idx"))))
+
+    out = get(pl.struct("idx").first()).collect()
+    assert out.to_series()[0] == {"idx": 1, "val": 20}
+    with pytest.raises(ShapeError, match="'index' must be a scalar value"):
+        get(pl.struct("idx")).collect_schema()
+
+
+def test_search_sorted_with_one_key_is_scalar() -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
+    x = pl.col("x")
+    out = lf.select(x.get(x.search_sorted(2)), x.head(x.search_sorted(2)).alias("h"))
+    assert out.collect().to_dict(as_series=False) == {"x": [2], "h": [1]}
+    with pytest.raises(ShapeError, match="'index' must be a scalar value"):
+        lf.select(x.get(x.search_sorted(x))).collect_schema()
+
+
 def test_series_method_with_series_argument() -> None:
     s = pl.Series("a", [1.0, 2.0, 4.0])
     with pytest.raises(ShapeError, match="must be a scalar value"):
