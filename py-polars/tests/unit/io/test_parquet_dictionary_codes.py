@@ -582,7 +582,8 @@ def test_dictionary_codes_predicate_keeping_few_rows_does_not_keep_dictionary(
     tmp_path: Path, parallel: str
 ) -> None:
     # The dictionary pays off for the chunk's rows, but not for the one row the
-    # predicate on the column keeps: that row is copied out of the dictionary.
+    # predicate on the column keeps: that row is copied out of the dictionary. The predicate
+    # is not an equality, which would become a constant and never decode the column.
     once = "only-once" + "x" * 100
     s = [once] + [f"{i % 1000:04}" + "x" * 100 for i in range(1, 100_000)]
     df = pl.DataFrame({"a": range(len(s)), "s": s})
@@ -590,7 +591,7 @@ def test_dictionary_codes_predicate_keeping_few_rows_does_not_keep_dictionary(
 
     out = (
         pl.scan_parquet(path, parallel=parallel)  # type: ignore[arg-type]
-        .filter(pl.col("s") == once)
+        .filter(pl.col("s").str.starts_with("only-once"))
         .collect()
     )
     assert_frame_equal(out, df.head(1))
@@ -607,3 +608,28 @@ def test_dictionary_codes_set_sorted_is_kept(tmp_path: Path, engine: str) -> Non
     )
     assert_frame_equal(out, df)
     assert out["s"].flags["SORTED_ASC"]
+
+
+@pytest.mark.parametrize("include_key", [True, False])
+def test_dictionary_codes_partitioned_sink_across_row_groups(
+    tmp_path: Path, include_key: bool
+) -> None:
+    n = 12_000
+    idx = pl.int_range(n, eager=True)
+    # Each row group sees a different mix of values, so partition buffers see other dictionaries.
+    s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(
+        (idx.hash(1) % 3_000 + idx // 3_000) % 3_000
+    )
+    df = pl.DataFrame({"p": idx.hash(2) % 7, "k": s, "v": idx})
+    path = _write(df, tmp_path / "f.parquet", row_group_size=3_000)
+    out_dir = tmp_path / "out"
+    pl.scan_parquet(path).sink_parquet(
+        pl.PartitionBy(out_dir, key="p", include_key=include_key)
+    )
+    got = pl.scan_parquet(out_dir / "**/*.parquet", hive_partitioning=True).collect()
+    got = got.select("p", "k", "v") if not include_key else got.select(df.columns)
+    assert_frame_equal(
+        got.with_columns(pl.col("p").cast(pl.UInt64)).sort("v"),
+        df.sort("v"),
+        check_dtypes=False,
+    )
