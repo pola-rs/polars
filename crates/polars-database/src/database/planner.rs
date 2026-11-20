@@ -163,12 +163,6 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     if dialect == DialectName::Mssql && facts.top_level_order_by_without_limit {
         return Some("SQL Server does not allow ORDER BY without TOP inside a derived table");
     }
-    if facts.with_ties {
-        return Some(
-            "the query has a WITH TIES, which a LIMIT or filter around it may not respect \
-            (Trino applies it inside the query)",
-        );
-    }
     if let Some(cols) = &facts.output_columns {
         let mut seen = PlHashSet::with_capacity(cols.len());
         if !cols.iter().all(|c| seen.insert(c)) {
@@ -213,6 +207,10 @@ struct QueryDiscovery {
     /// (MySQL: [`mysql_query_probe`]).
     probe: Option<String>,
 }
+
+/// Why a query with a `WITH TIES` is read without pushdown: a `LIMIT` around it is applied
+/// inside it by Trino, past the ties (it is still wrapped, to find its schema and convert).
+const WITH_TIES: &str = "the query has a WITH TIES, which a LIMIT around it may not respect";
 
 const MARIADB_ORDER_BY: &str = "MariaDB ignores the ORDER BY of a query inside a derived table";
 
@@ -484,6 +482,9 @@ pub fn resolve_scan(
             && pushdown_disabled.is_none()
         {
             pushdown_disabled = Some(reason);
+        }
+        if facts.as_ref().is_ok_and(|f| f.parses && f.with_ties) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(WITH_TIES.into());
         }
         if query.derived_order_by {
             if dialect.keeps_derived_table_order().is_none() {
@@ -1470,9 +1471,9 @@ fn read_wrapped(
 ) -> bool {
     // only a derived `ORDER BY` (repeated outside the wrapper, `compile_unwrapped`) keeps the
     // pushdown off
-    let only_derived_order = pushdown_disabled
-        .as_deref()
-        .is_some_and(|r| r == MARIADB_ORDER_BY || r == derived_order_by_reason(dialect).as_str());
+    let only_derived_order = pushdown_disabled.as_deref().is_some_and(|r| {
+        r == MARIADB_ORDER_BY || r == WITH_TIES || r == derived_order_by_reason(dialect).as_str()
+    });
     match options.relation {
         DatabaseRelation::Table { .. } => true,
         DatabaseRelation::Query { .. } => {
@@ -4463,6 +4464,23 @@ fn resolve_partitions(
             float or date column (use partition_predicates for other types)"
         );
     };
+
+    // ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond about
+    // +-85 miss the stored value), so a cut could lose rows (#594).
+    if matches!(kind, partition::RangeKind::Float)
+        && config.dialect == DialectName::Sqlite
+        && matches!(config.backend.kind, BackendKind::ConnectorX)
+    {
+        if why == "auto" {
+            return one();
+        }
+        polars_bail!(
+            InvalidOperation:
+            "can't partition '{column}' by ranges: ConnectorX's SQLite reads float literals \
+            inexactly, so a range on a float column could lose rows. Use another driver, \
+            partition on an integer column, or use partition_predicates"
+        );
+    }
 
     if matches!(kind, partition::RangeKind::Int) && config.maybe_mysql_year(&column) {
         kind = partition::RangeKind::Year;

@@ -1095,6 +1095,13 @@ def test_scan_sqlite_filter_on_large_integers_read_as_floats(
     ]:
         with pytest.raises(errors):
             lf.filter(predicate).collect()
+    if driver == "connectorx":
+        # no float comparison is pushed there (#594): the read meets the integer
+        for predicate in [pl.col("x") == big, pl.col("x") < 2]:
+            with pytest.raises(errors):
+                lf.filter(predicate).collect()
+        assert "WHERE" not in planned_sql(lf.filter(pl.col("x") == big))
+        return
     # the rows it doesn't satisfy are read: its true value isn't `2.0**53`
     for predicate, expected in [
         (pl.col("x") == big, []),
@@ -1245,6 +1252,39 @@ def test_scan_sqlite_connectorx_quotes_and_backslashes(tmp_path: Path) -> None:
         assert lf.filter(pl.col("s") == v).collect()["id"].to_list() == [i], v
         got = lf.filter(pl.col("s").str.contains(v, literal=True)).collect()
         assert i in got["id"].to_list(), v
+
+
+@pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
+def test_scan_sqlite_float_filters_find_every_real(tmp_path: Path, driver: str) -> None:
+    # ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond
+    # +-85): no float comparison is pushed there, and no range cuts on a real key (#594)
+    _importorskip_sqlite_driver(driver)
+    values = [1.989032661366619e244, -3.4e-130, 2.5e120, 1e-200, 0.1, 1.5, 7.0e300]
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, x REAL)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", list(enumerate(values)))
+        conn.commit()
+    lf = pl.scan_database("t", f"sqlite:///{path}", driver=driver)
+    for i, v in enumerate(values):
+        assert lf.filter(pl.col("x") == v).collect()["id"].to_list() == [i], v
+        assert i in lf.filter(pl.col("x") >= v).collect()["id"].to_list(), v
+    got = lf.filter(pl.col("x").is_in(values)).collect()
+    assert sorted(got["id"].to_list()) == list(range(len(values)))
+    parts = pl.scan_database(
+        "t", f"sqlite:///{path}", driver=driver, partition_on="x", partition_num=3
+    ) if driver != "connectorx" else None
+    if parts is not None:
+        assert sorted(parts.collect()["id"].to_list()) == list(range(len(values)))
+    else:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="float literals"):
+            pl.scan_database(
+                "t",
+                f"sqlite:///{path}",
+                driver=driver,
+                partition_on="x",
+                partition_num=3,
+            ).collect()
 
 
 @pytest.mark.parametrize("driver", _SQLITE_DRIVERS)

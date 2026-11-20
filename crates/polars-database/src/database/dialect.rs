@@ -353,15 +353,13 @@ impl DialectName {
             // `timestamp(7..12)` and `time(7..12)`: the `trino` driver rounds them to
             // microseconds and ADBC panics outside 1677-2262 (as nanoseconds): their exact
             // text, which a nested type holds as JSON.
-            Self::Trino if trino_wide_temporal(t).is_some() => {
-                Some(match trino_wide_temporal(t) {
-                    Some(TrinoWide::Nested) => format!("json_format(CAST({column} AS JSON))"),
-                    Some(TrinoWide::Instant) => {
-                        format!("CAST({column} AT TIME ZONE 'UTC' AS VARCHAR)")
-                    },
-                    _ => format!("CAST({column} AS VARCHAR)"),
-                })
-            },
+            Self::Trino if trino_wide_temporal(t).is_some() => Some(match trino_wide_temporal(t) {
+                Some(TrinoWide::Nested) => format!("json_format(CAST({column} AS JSON))"),
+                Some(TrinoWide::Instant) => {
+                    format!("CAST({column} AT TIME ZONE 'UTC' AS VARCHAR)")
+                },
+                _ => format!("CAST({column} AS VARCHAR)"),
+            }),
             Self::Oracle if t == "json" => Some(format!("JSON_SERIALIZE({column} RETURNING CLOB)")),
             Self::Oracle if t == "rowid" || t == "urowid" => Some(format!("ROWIDTOCHAR({column})")),
             // `INTERVAL … TO …`: Arrow's month-day-nano intervals have no Polars dtype

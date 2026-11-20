@@ -2142,6 +2142,7 @@ _TRINO_TYPE_DTYPES = {
     "double": "Float64",
     "varbinary": "Binary",
     "date": "Date",
+    "json": "String",
 }
 
 
@@ -2451,11 +2452,16 @@ def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any
         if (m := re.fullmatch(r"decimal\((\d+),\s*(\d+)\)", type_name)) is not None:
             p, s = int(m[1]), int(m[2])
             return pl.Decimal(p, s) if 0 < p <= 38 and 0 <= s <= p else pl.Null
-        if (m := re.fullmatch(r"timestamp\((\d+)\)", type_name)) is not None:
-            # (a longer one is read as text, see `Dialect.text_conversion`)
-            return pl.Datetime("us") if int(m[1]) <= 6 else pl.Null
+        # (a precision above 6 is read as text, and an instant in UTC: the planner's
+        # conversions, `Dialect.text_conversion`, `column_conversion`)
+        if (
+            m := re.fullmatch(r"timestamp\((\d+)\)( with time zone)?", type_name)
+        ) is not None:
+            if int(m[1]) > 6:
+                return pl.String
+            return pl.Datetime("us", "UTC") if m[2] else pl.Datetime("us")
         if (m := re.fullmatch(r"time\((\d+)\)", type_name)) is not None:
-            return pl.Time if int(m[1]) <= 6 else pl.Null
+            return pl.Time if int(m[1]) <= 6 else pl.String
         if re.fullmatch(r"(varchar|char)(\(\d+\))?", type_name):
             return pl.String
         name = _TRINO_TYPE_DTYPES.get(type_name)

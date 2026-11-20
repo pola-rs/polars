@@ -1247,6 +1247,14 @@ impl Translator<'_> {
             dt if dt.is_float() && self.dialect() == DialectName::Databricks => {
                 matches!(self.spark_float(name), Some("double" | "float")).then_some(Class::Exact)
             },
+            // ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond
+            // about +-85 miss the stored value): no float comparison is pushed (#594).
+            dt if dt.is_float()
+                && self.dialect() == DialectName::Sqlite
+                && matches!(self.config.backend.kind, BackendKind::ConnectorX) =>
+            {
+                None
+            },
             dt if dt.is_float() => self
                 .dialect()
                 .float_comparisons_exact()
