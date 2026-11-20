@@ -230,11 +230,11 @@
   "mssql": {
     "all": {
       "pushed": "projection 11/11, filters 0/0 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "head": {
       "pushed": "projection 11/11, filters 0/0 (0 exact), limit: 10",
-      "sql": "SELECT TOP 10 [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT TOP 10 [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "select": {
       "pushed": "projection 2/11, filters 0/0 (0 exact), limit: no",
@@ -242,103 +242,103 @@
     },
     "int_cmp": {
       "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [i32] > 42"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [i32] > 42"
     },
     "int_between": {
       "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE ([i64] >= 0) AND ([i64] <= 10)"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE ([i64] >= 0) AND ([i64] <= 10)"
     },
     "float_cmp": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "decimal_cmp": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "str_eq": {
       "pushed": "projection 11/11, filters 1/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [s] = N'abc'"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [s] = N'abc'"
     },
     "str_ne": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "str_lt": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "str_quote": {
       "pushed": "projection 11/11, filters 1/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [s] = N'it''s'"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [s] = N'it''s'"
     },
     "str_backslash": {
       "pushed": "projection 11/11, filters 1/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [s] = N'a\\b'"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [s] = N'a\\b'"
     },
     "str_unicode": {
       "pushed": "projection 11/11, filters 1/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [s] = N'é'"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [s] = N'é'"
     },
     "str_empty": {
       "pushed": "projection 11/11, filters 1/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [s] = N''"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [s] = N''"
     },
     "like_prefix": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "like_contains": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "is_in": {
       "pushed": "projection 11/11, filters 1/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE ([s] IN (N'a', N'b')) OR ([s] IS NULL)"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE ([s] IN (N'a', N'b')) OR ([s] IS NULL)"
     },
     "is_in_long": {
       "pushed": "projection 11/11, filters 1/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [i64] BETWEEN 0 AND 4999"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [i64] BETWEEN 0 AND 4999"
     },
     "is_null": {
       "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [d] IS NULL"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [d] IS NULL"
     },
     "eq_missing_null": {
       "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [i16] IS NULL"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [i16] IS NULL"
     },
     "ne_missing": {
       "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE ([i16] IS NULL) OR ([i16] <> 3)"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE ([i16] IS NULL) OR ([i16] <> 3)"
     },
     "not_exact": {
       "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [i16] <= 0"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [i16] <= 0"
     },
     "not_superset": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "or": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "date_cmp": {
       "pushed": "projection 11/11, filters 1/1 (1 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t] WHERE [d] >= CAST('2026-01-01' AS DATE)"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t] WHERE [d] >= CAST('2026-01-01' AS DATE)"
     },
     "ts_cmp": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "bool_col": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     },
     "arithmetic": {
       "pushed": "projection 11/11, filters 0/1 (0 exact), limit: no",
-      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], [ts], [b] FROM [s].[t]"
+      "sql": "SELECT [id], [i16], [i32], [i64], [f64], [dec], [s], [sb], [d], CASE WHEN SQL_VARIANT_PROPERTY(CAST([ts] AS sql_variant), 'BaseType') = 'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET([ts], '+00:00') AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), [ts], 121) END AS [ts], [b] FROM [s].[t]"
     }
   },
   "oracle": {
