@@ -742,7 +742,10 @@ class Series(metaclass=_Meta):
 
         elif (
             isinstance(other, (PyDecimal, Fraction))
-            or (_check_for_numpy(other) and isinstance(other, np.floating))
+            or (
+                _check_for_numpy(other)
+                and isinstance(other, (np.float16, np.float32, np.float64))
+            )
         ) and self.dtype.is_integer():
             other = Series([other])
 
@@ -1075,7 +1078,10 @@ class Series(metaclass=_Meta):
                 isinstance(other, (float, date, datetime)) and not self.dtype.is_float()
             )
             or isinstance(other, (PyDecimal, Fraction))
-            or (_check_for_numpy(other) and isinstance(other, np.floating))
+            or (
+                _check_for_numpy(other)
+                and isinstance(other, (np.float16, np.float32, np.float64))
+            )
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:

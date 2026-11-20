@@ -2389,6 +2389,14 @@ def test_integer_series_comparison_preserves_fractional_scalars(scalar: Any) -> 
     assert (pl.Series([1, 2, 3]) >= scalar).to_list() == [False, True, True]
 
 
+def test_series_ops_with_numpy_longdouble_scalar() -> None:
+    # np.longdouble cannot be built into a Series, so it must keep the old path
+    scalar = np.longdouble("2.5")
+    assert (pl.Series([1.0, 2.0]) + scalar).to_list() == [3.5, 4.5]
+    assert (pl.Series([1, 2]) >= scalar).dtype == pl.Boolean
+    assert (pl.Series([1, 2]) * scalar).len() == 2
+
+
 def test_from_epoch_seq_input() -> None:
     seq_input = [1147880044]
     expected = pl.Series([datetime(2006, 5, 17, 15, 34, 4)])
