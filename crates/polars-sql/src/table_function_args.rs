@@ -7,21 +7,28 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 
 use polars_core::prelude::*;
+use polars_error::SqlLocationKind;
 #[cfg(feature = "csv")]
 use sqlparser::ast::Array as SQLArray;
 use sqlparser::ast::{
     DictionaryField, Expr as SQLExpr, FunctionArg as SQLFunctionArg,
-    FunctionArgExpr as SQLFunctionArgExpr, Value as SQLValue, ValueWithSpan as SQLValueWithSpan,
+    FunctionArgExpr as SQLFunctionArgExpr, Spanned, Value as SQLValue,
+    ValueWithSpan as SQLValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
+use sqlparser::tokenizer::Span;
 
+use crate::location::locate;
+use crate::subquery::strip_nested;
 use crate::types::map_sql_dtype_to_polars;
 
 /// The options of one table function call, validated against the options it accepts.
 pub(crate) struct TableFunctionOptions<'a> {
     function: &'static str,
     options: PlHashMap<String, &'a SQLExpr>,
+    /// The options as written, for a value without a position of its own.
+    args: PlHashMap<String, &'a SQLFunctionArg>,
 }
 
 /// A `schema_overrides` value: by column name, or by position.
@@ -29,6 +36,47 @@ pub(crate) struct TableFunctionOptions<'a> {
 pub(crate) enum DtypeOverrides {
     ByName(Schema),
     ByPosition(Vec<DataType>),
+}
+
+/// The checked name and value of option `arg`.
+fn option<'a>(
+    function: &str,
+    arg: &'a SQLFunctionArg,
+    valid: &[&str],
+    excluded: &[(&str, &str)],
+) -> PolarsResult<(String, &'a SQLExpr)> {
+    let (name, value) = match arg {
+        SQLFunctionArg::Named {
+            name,
+            arg: SQLFunctionArgExpr::Expr(value),
+            ..
+        } => (name, value),
+        SQLFunctionArg::Named { name, arg, .. } => polars_bail!(
+            SQLSyntax: "`{}` option '{}' expects a value; found: {}",
+            function, name.value.to_lowercase(), arg
+        ),
+        _ => polars_bail!(
+            SQLSyntax: "`{}` options must be named with '=>' (found: {})", function, arg
+        ),
+    };
+    let key = name.value.to_lowercase();
+    if !valid.contains(&key.as_str()) {
+        if let Some((_, reason)) = excluded.iter().find(|(name, _)| *name == key) {
+            let reason = if reason.is_empty() {
+                String::new()
+            } else {
+                format!(": {reason}")
+            };
+            polars_bail!(
+                SQLInterface: "`{}` option '{}' is not supported in SQL{}", function, key, reason
+            );
+        }
+        polars_bail!(
+            SQLInterface: "unknown `{}` option '{}'; valid options are: {}",
+            function, key, valid.join(", ")
+        );
+    }
+    Ok((key, value))
 }
 
 impl<'a> TableFunctionOptions<'a> {
@@ -52,54 +100,45 @@ impl<'a> TableFunctionOptions<'a> {
         );
 
         let mut options = PlHashMap::with_capacity(rest.len());
+        let mut named = PlHashMap::with_capacity(rest.len());
         for arg in rest {
-            let (name, value) = match arg {
-                SQLFunctionArg::Named {
-                    name,
-                    arg: SQLFunctionArgExpr::Expr(value),
-                    ..
-                } => (name, value),
-                SQLFunctionArg::Named { name, arg, .. } => polars_bail!(
-                    SQLSyntax: "`{}` option '{}' expects a value; found: {}",
-                    function, name.value.to_lowercase(), arg
-                ),
-                _ => polars_bail!(
-                    SQLSyntax: "`{}` options must be named with '=>' (found: {})", function, arg
-                ),
-            };
-            let key = name.value.to_lowercase();
-            if !valid.contains(&key.as_str()) {
-                if let Some((_, reason)) = excluded.iter().find(|(name, _)| *name == key) {
-                    let reason = if reason.is_empty() {
-                        String::new()
-                    } else {
-                        format!(": {reason}")
-                    };
-                    polars_bail!(
-                        SQLInterface: "`{}` option '{}' is not supported in SQL{}", function, key, reason
-                    );
-                }
-                polars_bail!(
-                    SQLInterface: "unknown `{}` option '{}'; valid options are: {}",
-                    function, key, valid.join(", ")
-                );
+            let at_arg = |e| locate(e, SqlLocationKind::Exact, arg.span());
+            let (key, value) = option(function, arg, valid, excluded).map_err(at_arg)?;
+            if options.insert(key.clone(), value).is_some() {
+                return Err(at_arg(polars_err!(
+                    SQLSyntax: "`{}` option '{}' is given more than once", function, key
+                )));
             }
-            polars_ensure!(
-                options.insert(key.clone(), value).is_none(),
-                SQLSyntax: "`{}` option '{}' is given more than once", function, key
-            );
+            named.insert(key, arg);
         }
-        Ok((first, Self { function, options }))
+        Ok((
+            first,
+            Self {
+                function,
+                options,
+                args: named,
+            },
+        ))
     }
 
     fn get(&self, name: &str) -> Option<&'a SQLExpr> {
         self.options.get(name).copied()
     }
 
+    /// Locates `error` at the value of option `name`.
+    fn at_value(&self, name: &str, error: PolarsError) -> PolarsError {
+        let span = match self.get(name).map(|expr| expr.span()) {
+            Some(span) if span != Span::empty() => span,
+            _ => self.args.get(name).map_or(Span::empty(), |arg| arg.span()),
+        };
+        locate(error, SqlLocationKind::Exact, span)
+    }
+
     fn type_error(&self, name: &str, expected: &str, found: &SQLExpr) -> PolarsError {
-        polars_err!(
+        let error = polars_err!(
             SQLSyntax: "`{}` option '{}' expects {}; found: {}", self.function, name, expected, found
-        )
+        );
+        locate(error, SqlLocationKind::Exact, found.span())
     }
 
     pub(crate) fn bool(&self, name: &str) -> PolarsResult<Option<bool>> {
@@ -229,6 +268,7 @@ impl<'a> TableFunctionOptions<'a> {
                     .transpose()
             })
             .transpose()
+            .map_err(|e| self.at_value(name, e))
     }
 
     #[cfg(feature = "csv")]
@@ -236,6 +276,7 @@ impl<'a> TableFunctionOptions<'a> {
         self.string(name)?
             .map(|s| self.expect_byte(name, &s))
             .transpose()
+            .map_err(|e| self.at_value(name, e))
     }
 
     #[cfg(feature = "csv")]
@@ -301,6 +342,7 @@ impl<'a> TableFunctionOptions<'a> {
                     .collect()
             })
             .transpose()
+            .map_err(|e| self.at_value(name, e))
     }
 
     /// A dictionary of column name to SQL type name, or a list of SQL type names by position.
@@ -317,7 +359,8 @@ impl<'a> TableFunctionOptions<'a> {
                         .ok_or_else(|| self.type_error(name, "a list of type names", expr))?;
                     self.parse_dtype(name, &sql_type)
                 })
-                .collect::<PolarsResult<_>>()?;
+                .collect::<PolarsResult<_>>()
+                .map_err(|e| self.at_value(name, e))?;
             return Ok(Some(DtypeOverrides::ByPosition(dtypes)));
         }
         Ok(self.schema(name)?.map(DtypeOverrides::ByName))
@@ -344,6 +387,7 @@ impl<'a> TableFunctionOptions<'a> {
                 })
             })
             .transpose()
+            .map_err(|e| self.at_value(name, e))
     }
 
     /// Parse a SQL type name such as `'INT'` or `'DECIMAL(10,2)'`, mapping it the way `CAST` does.
@@ -373,7 +417,7 @@ pub(crate) enum StringValues {
 }
 
 fn literal(expr: &SQLExpr) -> Option<&SQLValue> {
-    match expr {
+    match strip_nested(expr) {
         SQLExpr::Value(SQLValueWithSpan { value, .. }) => Some(value),
         _ => None,
     }
@@ -388,7 +432,7 @@ fn string_literal(expr: &SQLExpr) -> Option<String> {
 
 #[cfg(feature = "csv")]
 fn array_elements(expr: &SQLExpr) -> Option<&[SQLExpr]> {
-    match expr {
+    match strip_nested(expr) {
         SQLExpr::Array(SQLArray { elem, .. }) => Some(elem),
         _ => None,
     }

@@ -16,7 +16,7 @@ pub use polars_arrow;
 use polars_arrow::bitmap::Bitmap;
 pub use polars_arrow::legacy::utils::*;
 pub use polars_arrow::trusted_len::TrustMyLength;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 pub use rayon;
 use rayon::prelude::*;
 pub use schema::*;
@@ -120,7 +120,7 @@ pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
 
 #[allow(clippy::len_without_is_empty)]
 pub trait Container: Clone {
-    fn slice(&self, offset: i64, len: usize) -> Self;
+    fn slice(&self, slice: impl Into<Slice>) -> Self;
 
     fn split_at(&self, offset: i64) -> (Self, Self);
 
@@ -136,8 +136,8 @@ pub trait Container: Clone {
 }
 
 impl Container for DataFrame {
-    fn slice(&self, offset: i64, len: usize) -> Self {
-        DataFrame::slice(self, offset, len)
+    fn slice(&self, slice: impl Into<Slice>) -> Self {
+        DataFrame::slice(self, slice)
     }
 
     fn split_at(&self, offset: i64) -> (Self, Self) {
@@ -166,8 +166,8 @@ impl Container for DataFrame {
 }
 
 impl<T: PolarsDataType> Container for ChunkedArray<T> {
-    fn slice(&self, offset: i64, len: usize) -> Self {
-        ChunkedArray::slice(self, offset, len)
+    fn slice(&self, slice: impl Into<Slice>) -> Self {
+        ChunkedArray::slice(self, slice)
     }
 
     fn split_at(&self, offset: i64) -> (Self, Self) {
@@ -197,8 +197,8 @@ impl<T: PolarsDataType> Container for ChunkedArray<T> {
 }
 
 impl Container for Series {
-    fn slice(&self, offset: i64, len: usize) -> Self {
-        self.0.slice(offset, len)
+    fn slice(&self, slice: impl Into<Slice>) -> Self {
+        Series::slice(self, slice)
     }
 
     fn split_at(&self, offset: i64) -> (Self, Self) {
@@ -342,11 +342,6 @@ pub fn split_df(df: &mut DataFrame, target: usize, strict: bool) -> Vec<DataFram
     // make sure that chunks are aligned.
     df.align_chunks_par();
     split_df_as_ref(df, target, strict)
-}
-
-pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
-    let (raw_offset, slice_len) = slice_offsets(offset, len, vals.len());
-    &vals[raw_offset..raw_offset + slice_len]
 }
 
 /// Apply a macro on the Series

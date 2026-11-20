@@ -236,6 +236,7 @@ def test_column_missing_from_sampled_row_groups_has_exact_range(
         [pl.Int32, pl.Int16],
         [pl.Int8, pl.UInt16, pl.Date],
         [pl.Float32, pl.Boolean],
+        [pl.Int64, pl.Int32],
     ],
 )
 @pytest.mark.parametrize("nulls", [False, True])

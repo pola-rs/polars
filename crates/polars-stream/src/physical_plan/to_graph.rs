@@ -26,6 +26,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 use slotmap::{DenseSlotMap, SecondaryMap};
 
@@ -170,14 +171,10 @@ fn to_graph_rec<'a>(
             return Ok(node);
         },
 
-        StreamingSlice {
-            input,
-            offset,
-            length,
-        } => {
+        StreamingSlice { input, slice } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
-                nodes::streaming_slice::StreamingSliceNode::new(*offset, *length),
+                nodes::streaming_slice::StreamingSliceNode::new(Some(*slice)),
                 [(input_key, input.port)],
             )
         },
@@ -192,14 +189,14 @@ fn to_graph_rec<'a>(
 
         NegativeSlice {
             input,
-            offset,
+            offset_from_end,
             length,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.add_node_with_metrics(
                 |registry| {
                     nodes::negative_slice::NegativeSliceNode::new(
-                        *offset,
+                        Slice::tail(*offset_from_end).to_signed_offset_len().0,
                         *length,
                         registry.task_metrics(),
                     )
@@ -796,8 +793,10 @@ fn to_graph_rec<'a>(
             by_column,
             slice,
             sort_options,
+            projection,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm).clone();
+            let projection = projection.as_ref().map(|(names, _)| names.to_vec());
             let [by] = by_column.as_slice() else {
                 unreachable!()
             };
@@ -812,6 +811,7 @@ fn to_graph_rec<'a>(
                     nodes::sort::SortNode::new(
                         key,
                         input_schema,
+                        projection,
                         *slice,
                         sort_options.clone(),
                         registry.task_metrics(),
@@ -1111,6 +1111,7 @@ fn to_graph_rec<'a>(
                         ctx.expr_arena,
                         output_schema,
                         hive_parts.as_ref().map(|hp| hp.df().schema().as_ref()),
+                        include_file_paths.as_deref(),
                         &mut ctx.expr_conversion_state,
                         true, // create_skip_batch_predicate
                         file_reader_builder
@@ -1176,7 +1177,7 @@ fn to_graph_rec<'a>(
             let file_projection_builder = file_projection_builder.clone();
 
             let row_index = row_index.clone();
-            let pre_slice = pre_slice.clone();
+            let pre_slice = *pre_slice;
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
             let extra_columns_policy = *extra_columns_policy;
@@ -1535,6 +1536,7 @@ fn to_graph_rec<'a>(
             runtime_filters: _,
             estimated_rows: _,
             key_ranges,
+            pre_drop_schema: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1546,6 +1548,7 @@ fn to_graph_rec<'a>(
             runtime_filters: _,
             estimated_rows: _,
             key_ranges,
+            pre_drop_schema: _,
         } => {
             let args = args.clone();
             let output_schema = node.output_schema(0).clone();
@@ -1636,8 +1639,16 @@ fn to_graph_rec<'a>(
                     ref fused_predicate,
                     ref runtime_filters,
                     estimated_rows,
+                    ref pre_drop_schema,
                     ..
                 } => {
+                    // The predicate reads columns a fused drop does not output.
+                    let candidate_schema = pre_drop_schema
+                        .clone()
+                        .filter(|_| fused_predicate.is_some());
+                    let predicate_input_schema =
+                        candidate_schema.as_ref().unwrap_or(&output_schema);
+
                     // Compiled against a narrow frame of exactly the columns it reads, in
                     // the order the node gathers them.
                     let fused_predicate = fused_predicate
@@ -1651,7 +1662,7 @@ fn to_graph_rec<'a>(
                             names.dedup();
 
                             let fused_predicate_schema =
-                                Arc::new(output_schema.try_project(names.iter())?);
+                                Arc::new(predicate_input_schema.try_project(names.iter())?);
                             PolarsResult::Ok((
                                 create_stream_expr(fused_predicate, ctx, &fused_predicate_schema)?,
                                 fused_predicate_schema,
@@ -1668,6 +1679,7 @@ fn to_graph_rec<'a>(
                                 right_key_schema,
                                 key_encoder,
                                 output_schema,
+                                candidate_schema,
                                 left_key_selectors,
                                 right_key_selectors,
                                 fused_predicate,

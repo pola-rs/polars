@@ -1017,6 +1017,12 @@ def test_list_n_unique() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_list_get_null_list_broadcast() -> None:
+    df = pl.DataFrame({"i": [0, 1]})
+    out = df.select(pl.lit(None, dtype=pl.List(pl.String)).list.get(pl.col("i")))
+    assert out.to_series().to_list() == [None, None]
+
+
 def test_list_get_with_null() -> None:
     df = pl.DataFrame({"a": [None, [1, 2]], "b": [False, True]})
 

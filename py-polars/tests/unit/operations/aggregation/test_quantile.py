@@ -219,3 +219,84 @@ def test_quantile_group_by_sorted_values(
         )
 
     assert_frame_equal(run(flagged), run(df))
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_quantile_large_matches_sorted(method: QuantileMethod) -> None:
+    # Large enough for the selection to recurse in parallel; the sorted input takes the
+    # independent lookup path.
+    rng = random.Random(4)
+    values = [
+        None if rng.random() < 0.05 else rng.randint(-1000, 1000)
+        for _ in range(300_000)
+    ]
+    s = _chunked(values, pl.Int64())
+    qs = [i / 100 for i in range(101)]
+    assert_series_equal(_quantiles(s, qs, method), _quantiles(s.sort(), qs, method))
+
+
+@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize("kind", ["mostly_null", "two_values", "constant", "heavy"])
+def test_quantile_large_single_matches_sorted(
+    method: QuantileMethod, kind: str
+) -> None:
+    # A single quantile of a large column only copies the values near it, and counts
+    # those equal to the bounds around it when values repeat; mostly-null chunks are
+    # filtered first.
+    rng = random.Random(10)
+    n = 300_000
+    values: list[float | None]
+    if kind == "mostly_null":
+        values = [None if rng.random() < 0.7 else rng.uniform(-1, 1) for _ in range(n)]
+    elif kind == "two_values":
+        # The median lands just past the zeros, among the values equal to the upper
+        # bound.
+        values = [0.0 if i < n // 2 - 10 else 1.0 for i in range(n)]
+        rng.shuffle(values)
+    elif kind == "constant":
+        values = [2.5 for _ in range(n)]
+    else:
+        # The quantiles around 0.28 land at the start of the run of sevens.
+        values = [7.0 if rng.random() < 0.6 else rng.uniform(0, 10) for _ in range(n)]
+    s = _chunked(values, pl.Float64())
+    expected = s.sort()
+    for q in [0.0, 0.2, 0.27, 0.28, 0.29, 0.5, 0.7, 1.0]:
+        assert s.quantile(q, method) == expected.quantile(q, method)
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_quantile_large_floats_matches_sorted(method: QuantileMethod) -> None:
+    # The parallel selection with NaN, signed zeros and infinities, whose tie
+    # classes and NaN pivots the integer test doesn't reach.
+    rng = random.Random(5)
+    specials = [float("nan"), -0.0, 0.0, float("inf"), float("-inf")]
+
+    def value() -> float | None:
+        r = rng.random()
+        if r < 0.05:
+            return None
+        if r < 0.2:
+            return rng.choice(specials)
+        return rng.uniform(-1000, 1000)
+
+    values = [value() for _ in range(300_000)]
+    s = _chunked(values, pl.Float64())
+    qs = [i / 100 for i in range(101)]
+    assert_series_equal(_quantiles(s, qs, method), _quantiles(s.sort(), qs, method))
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_quantile_group_by_large_group(method: QuantileMethod) -> None:
+    # A group large enough for the selection to recurse in parallel inside the group-by.
+    rng = random.Random(6)
+    n = 200_000
+    df = pl.DataFrame(
+        {
+            "g": [0] * n + [1] * 5,
+            "v": [
+                None if rng.random() < 0.05 else rng.randint(-100, 100)
+                for _ in range(n + 5)
+            ],
+        }
+    ).sample(fraction=1.0, shuffle=True, seed=0)
+    _check_group_by(df, method)

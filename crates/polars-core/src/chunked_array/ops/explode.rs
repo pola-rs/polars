@@ -369,7 +369,7 @@ mod test {
         assert_eq!(out, &[1, 2, 3, 3, 1, 2]);
 
         // sliced explode
-        let exploded = ca.slice(0, 1).explode(ExplodeOptions {
+        let exploded = ca.slice(Slice::head(1)).explode(ExplodeOptions {
             empty_as_null: true,
             keep_nulls: true,
         })?;

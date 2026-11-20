@@ -90,10 +90,14 @@ pub fn to_rust_df(
         let columns = schema
             .iter_values()
             .map(|field| {
-                let field = Field::try_from(field).map_err(PyPolarsErr::from)?;
+                // (`Field::try_from` unwraps a time zone it can't read: an error here, as
+                // for the columns of a batch with rows)
+                DataType::check_arrow_time_zones(&field.dtype)?;
+                let field = Field::try_from(field)?;
                 Ok(Series::new_empty(field.name, &field.dtype).into_column())
             })
-            .collect::<PyResult<Vec<_>>>()?;
+            .collect::<PolarsResult<Vec<_>>>()
+            .map_err(PyPolarsErr::from)?;
 
         // no need to check as a record batch has the same guarantees
         return Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) });

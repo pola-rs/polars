@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "polars-database"
+description = "Native database scan plugin for Polars (dependency of the polars package)"
+readme = "README.pypi.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+version = "0.1.0"
+# The lowest sqlglot the tests pass with (2026-11-04): before 28.6, Oracle's SYSTIMESTAMP isn't
+# parsed as a volatile function, and 25.0 lacks `exp.Alter`.
+dependencies = ["sqlglot >= 28.6"]
+
+[project.urls]
+Homepage = "https://www.pola.rs/"
+Polars = "https://pypi.org/project/polars/"
+Repository = "https://github.com/pola-rs/polars"
+
+[tool.maturin]
+module-name = "polars_database._lib"
+python-source = "."

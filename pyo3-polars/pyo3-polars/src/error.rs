@@ -41,7 +41,9 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 },
                 PolarsError::SQLInterface(err) => SQLInterface::new_err(err.to_string()),
                 PolarsError::SQLSyntax(err) => SQLSyntax::new_err(err.to_string()),
-                PolarsError::Context { .. } | PolarsError::ExprContext { .. } => {
+                PolarsError::Context { .. }
+                | PolarsError::ExprContext { .. }
+                | PolarsError::Attached { .. } => {
                     let tmp = PyPolarsErr::Polars(err.context_trace());
                     PyErr::from(tmp)
                 },

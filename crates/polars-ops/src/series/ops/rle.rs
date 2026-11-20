@@ -69,7 +69,10 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
         _ => {},
     }
 
-    let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
+    let (s1, s2) = (
+        s.slice(Slice::head(s.len() - 1)),
+        s.slice((1usize, s.len())),
+    );
     let s_neq = s1.not_equal_missing(&s2)?;
     let n_runs = s_neq.sum().unwrap() + 1;
 
@@ -171,7 +174,10 @@ pub fn rle_id(s: &Column) -> PolarsResult<Column> {
         return Ok(Column::new_empty(s.name().clone(), &IDX_DTYPE));
     }
 
-    let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
+    let (s1, s2) = (
+        s.slice(Slice::head(s.len() - 1)),
+        s.slice((1usize, s.len())),
+    );
     let s_neq = s1
         .as_materialized_series()
         .not_equal_missing(s2.as_materialized_series())?;

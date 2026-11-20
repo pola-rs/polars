@@ -83,7 +83,7 @@ fn sort_with_limit(node: Node, limit: IdxSize, arena: &mut Arena<AExpr>) -> Opti
 }
 
 /// Whether `min`, `max`, `min_by` and `max_by` support `dtype` in the order `sort` uses.
-fn has_total_min_max(dtype: &DataType) -> bool {
+pub(super) fn has_total_min_max(dtype: &DataType) -> bool {
     #[cfg(feature = "dtype-f16")]
     if matches!(dtype, DataType::Float16) {
         return false;

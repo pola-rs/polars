@@ -1505,7 +1505,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 // so a slice with a non-negative offset is instead applied to the summed length.
                 if out_edge.projection() == Projection::Len
                     && !inputs.is_empty()
-                    && slice.is_none_or(|(offset, _)| offset >= 0)
+                    && slice.is_none_or(|slice| slice.is_positive())
                 {
                     let slice = slice.take();
                     *rechunk = false;
@@ -1560,13 +1560,14 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         let mut len = self.expr_arena.add(e);
 
                         // slice(offset, length).len() == min(max(len, offset) - offset, length)
-                        if let Some((offset, length)) = slice {
+                        if let Some(slice) = slice {
+                            let offset = slice.positive_offset();
                             let arena = &mut *self.expr_arena;
                             let mut lit = |v: usize| {
                                 let v = IdxSize::try_from(v).unwrap_or(IdxSize::MAX);
                                 arena.add(AExpr::Literal(Scalar::new_idxsize(v).into()))
                             };
-                            let (offset_lit, length_lit) = (lit(offset as usize), lit(length));
+                            let (offset_lit, length_lit) = (lit(offset), slice.len().map(lit));
                             let gt = |arena: &mut Arena<AExpr>, left, right| {
                                 arena.add(AExpr::BinaryExpr {
                                     left,
@@ -1589,12 +1590,14 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 });
                             }
 
-                            let predicate = gt(arena, len, length_lit);
-                            len = arena.add(AExpr::Ternary {
-                                predicate,
-                                truthy: length_lit,
-                                falsy: len,
-                            });
+                            if let Some(length_lit) = length_lit {
+                                let predicate = gt(arena, len, length_lit);
+                                len = arena.add(AExpr::Ternary {
+                                    predicate,
+                                    truthy: length_lit,
+                                    falsy: len,
+                                });
+                            }
                         }
 
                         len
@@ -2820,7 +2823,7 @@ fn extract_len_nodes(
             },
 
             // References the data of the input frame.
-            AExpr::Column(_) | AExpr::Element => return false,
+            AExpr::Column(_) | AExpr::Element | AExpr::EvalColumn(_) => return false,
             #[cfg(feature = "dtype-struct")]
             AExpr::StructField(_) => return false,
 

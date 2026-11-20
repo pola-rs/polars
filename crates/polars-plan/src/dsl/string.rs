@@ -419,6 +419,12 @@ impl StringNameSpace {
         self.0.map_unary(StringFunction::Reverse)
     }
 
+    /// The character of each integer Unicode code point. Raises for a negative number, a
+    /// number above `0x10FFFF`, or a UTF-16 surrogate.
+    pub fn from_code_point(self) -> Expr {
+        self.0.map_unary(StringFunction::FromCodePoint)
+    }
+
     /// Remove leading and trailing characters, or whitespace if matches is None.
     pub fn strip_chars(self, matches: Expr) -> Expr {
         self.0.map_binary(StringFunction::StripChars, matches)
