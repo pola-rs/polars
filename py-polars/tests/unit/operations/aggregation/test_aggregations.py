@@ -227,6 +227,17 @@ def test_multi_quantile_group_by_unsupported_26956() -> None:
         df.group_by("g").agg(pl.col("v").quantile([0.25, 0.75]))
 
 
+@pytest.mark.parametrize(
+    "s", [pl.Series([], dtype=pl.Date), pl.Series([None, None], dtype=pl.Date)]
+)
+def test_quantile_date_without_values(s: pl.Series) -> None:
+    assert s.quantile(0.5) is None
+    result = pl.LazyFrame({"a": s}).select(pl.col("a").quantile(0.5)).collect()
+    assert_frame_equal(
+        result, pl.DataFrame({"a": [None]}, schema={"a": pl.Datetime("us")})
+    )
+
+
 def test_quantile_date() -> None:
     s = pl.Series(
         "a", [date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3), date(2025, 1, 4)]
