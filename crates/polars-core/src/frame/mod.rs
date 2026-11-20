@@ -87,6 +87,16 @@ pub enum PivotColumnNaming {
     Auto,
 }
 
+/// The chunk lengths of a column that has chunks of its own: a series, or the codes of a
+/// dictionary column (which materializes with the same chunks). Scalar columns have none.
+fn column_chunk_lengths(c: &Column) -> Option<Box<dyn Iterator<Item = usize> + '_>> {
+    match c {
+        Column::Series(_) => c.as_series().map(|s| Box::new(s.chunk_lengths()) as _),
+        Column::Dictionary(d) => Some(Box::new(d.codes().chunk_lengths())),
+        Column::Scalar(_) => None,
+    }
+}
+
 impl DataFrame {
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns().iter().map(Column::as_materialized_series)
@@ -348,8 +358,8 @@ impl DataFrame {
         if !self
             .columns()
             .iter()
-            .filter_map(Column::as_series)
-            .map(|s| s.n_chunks())
+            .filter_map(column_chunk_lengths)
+            .map(|cl| cl.size_hint().0)
             .all_equal()
         {
             return true;
@@ -358,8 +368,7 @@ impl DataFrame {
         let mut chunk_lengths = self
             .columns()
             .iter()
-            .filter_map(Column::as_series)
-            .map(|s| s.chunk_lengths());
+            .filter_map(column_chunk_lengths);
         match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {
@@ -473,18 +482,18 @@ impl DataFrame {
 
     /// The number of chunks for the first column.
     pub fn first_col_n_chunks(&self) -> usize {
-        match self.columns().iter().find_map(|col| col.as_series()) {
+        match self.columns().iter().find_map(column_chunk_lengths) {
             None if self.width() == 0 => 0,
             None => 1,
-            Some(s) => s.n_chunks(),
+            Some(cl) => cl.size_hint().0,
         }
     }
 
     /// The chunk lengths of the first column that has chunks, see [`Self::first_col_n_chunks`].
     pub(crate) fn first_col_chunk_lengths(&self) -> impl Iterator<Item = usize> + '_ {
-        match self.columns().iter().find_map(|col| col.as_series()) {
+        match self.columns().iter().find_map(column_chunk_lengths) {
             None => Either::Right((self.width() > 0).then_some(self.height()).into_iter()),
-            Some(s) => Either::Left(s.chunk_lengths()),
+            Some(cl) => Either::Left(cl),
         }
     }
 
@@ -492,7 +501,7 @@ impl DataFrame {
     pub fn max_n_chunks(&self) -> usize {
         self.columns()
             .iter()
-            .map(|s| s.as_series().map(|s| s.n_chunks()).unwrap_or(1))
+            .map(|c| column_chunk_lengths(c).map_or(1, |cl| cl.size_hint().0))
             .max()
             .unwrap_or(0)
     }

@@ -607,3 +607,14 @@ def test_dictionary_codes_set_sorted_is_kept(tmp_path: Path, engine: str) -> Non
     )
     assert_frame_equal(out, df)
     assert out["s"].flags["SORTED_ASC"]
+
+
+def test_dictionary_codes_n_chunks_counts_codes(tmp_path: Path) -> None:
+    df = pl.DataFrame({"k": [LONG[i % 7] for i in range(4000)]})
+    path = _write(df, tmp_path / "f.parquet", row_group_size=4000)
+    batches = list(pl.scan_parquet(path).collect_batches(chunk_size=1000))
+    out = pl.concat(batches, rechunk=False)
+    assert out.n_chunks("all") == [4]
+    assert out.n_chunks() == 4
+    assert out.rows() == df.rows()
+    assert out.rechunk().n_chunks() == 1
