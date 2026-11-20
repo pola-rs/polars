@@ -3260,8 +3260,14 @@ class _ArrowOdbcSession:
             batch_size=batch_size or DEFAULT_BATCH_SIZE,
             **self.options,
         )
+        yielded = False
         for batch in reader:
+            yielded = True
             yield pl.DataFrame(batch)
+        if not yielded:
+            # the reader yields no batch for an empty result: the schema (read for
+            # the columns) comes from the reader
+            yield pl.DataFrame(reader.schema.empty_table())
 
     def execute_update(self, sql: str) -> None:
         msg = "arrow-odbc can't run session statements"

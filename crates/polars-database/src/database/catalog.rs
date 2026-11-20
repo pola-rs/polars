@@ -906,7 +906,7 @@ impl CatalogQueries {
                     types: Some(format!(
                         "SELECT c.name, CASE WHEN b.name IN ('decimal', 'numeric') \
                         THEN CONCAT(b.name, '(', c.precision, ',', c.scale, ')') ELSE b.name END \
-                        FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id \
+                        AS type_name FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id \
                         CROSS APPLY (SELECT CASE WHEN t.is_user_defined = 1 \
                         AND t.is_assembly_type = 0 AND t.is_table_type = 0 \
                         THEN TYPE_NAME(t.system_type_id) ELSE t.name END AS name) b \
@@ -1462,10 +1462,10 @@ pub fn view_definition(
         ),
         DialectName::Oracle => return oracle_lookup(session, parts, context),
         DialectName::Mssql => format!(
-            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
-            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
+            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
+            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END, o.object_id \
+            WHERE s.object_id = o.object_id) END AS base_object, o.object_id \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({}) AND o.type IN ('V', 'U', 'SN')",
             dialect.quote_nstr(&qualified)
         ),
@@ -1499,10 +1499,10 @@ pub fn view_definition(
             )
         });
         let Some(found) = run(&format!(
-            "SELECT TOP 2 CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
-            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
+            "SELECT TOP 2 CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
+            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END, o.object_id \
+            WHERE s.object_id = o.object_id) END AS base_object, o.object_id \
             FROM sys.objects o WHERE LOWER(o.name) = LOWER({}){in_schema} \
             AND o.type IN ('V', 'U', 'SN')",
             dialect.quote_nstr(name)
