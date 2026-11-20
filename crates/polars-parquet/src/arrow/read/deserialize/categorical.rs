@@ -101,8 +101,6 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
     type DecodedState = (Vec<T>, BitmapBuilder);
     type Output = DictionaryArray<T>;
 
-    const PREDICATE_TARGET_FOR_REMAINING: bool = true;
-
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<T>::with_capacity(capacity),
