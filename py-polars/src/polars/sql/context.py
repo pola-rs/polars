@@ -884,7 +884,9 @@ class SQLContext(Generic[FrameType]):
           COLUMN`, `DROP COLUMN`, `RENAME COLUMN`, `ALTER COLUMN ... SET DATA TYPE`
           (as the catalog allows: int to long, float to double, a wider decimal),
           `ALTER COLUMN ... DROP NOT NULL` and `SET TBLPROPERTIES`. Column names
-          are case-sensitive. See :ref:`ALTER TABLE <alter_table>`.
+          are case-sensitive. It also changes the table's partitioning and sort
+          order, and creates, replaces and drops its tags and branches. See
+          :ref:`ALTER TABLE <alter_table>`.
         * `INSERT INTO <name> [(<column>, ...)] <query>` appends the rows of a
           `VALUES` list or a query in one commit, and `INSERT OVERWRITE` replaces
           all of the table's rows. Values convert to the column types as described
@@ -2279,6 +2281,19 @@ def _alter_catalog_table(
         raise NoSuchTableError(msg) from error
 
     kind, column = op["op"], op.get("column")
+    if kind in ("set_ref", "drop_ref"):
+        from polars.io.iceberg._refs import change_ref
+
+        change_ref(
+            table,
+            op,
+            name,
+            note=(
+                f"table '{name}' could not be altered: catalog table "
+                f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
+            ),
+        )
+        return response
     if kind in ("set_partitioning", "set_sort_order"):
         from polars.io.iceberg._partition_evolution import (
             commit_spec_change,
