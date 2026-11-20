@@ -20,6 +20,7 @@ use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::FileWriteFormat;
+use crate::dsl::delta_sink_state::DeltaSinkState;
 use crate::dsl::file_provider::FileProviderType;
 use crate::dsl::iceberg_sink_state::IcebergSinkState;
 use crate::dsl::{AExpr, Expr, SpecialEq};
@@ -233,6 +234,7 @@ pub enum SinkType {
     File(FileSinkOptions),
     Partitioned(PartitionedSinkOptions),
     Iceberg(IcebergSinkState),
+    Delta(DeltaSinkState),
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -535,6 +537,7 @@ pub struct FileSinkOptions {
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub enum SinkedPathsCallback {
     IcebergCommit(Box<IcebergSinkState>),
+    DeltaCommit(Box<DeltaSinkState>),
     Callback(PlanCallback<SinkedPathsCallbackArgs, ()>),
 }
 
@@ -557,6 +560,63 @@ pub struct SinkedPathInfo {
     pub partition_keys: Option<Arc<DataFrame>>,
 }
 
+/// Calls `commit(files)` on a Python sink state, with each file as a tuple of
+/// `(path, num_rows, num_bytes, parquet_metadata, partition_keys)`.
+#[cfg(feature = "python")]
+fn commit_sinked_files(
+    format: &str,
+    py_sink_state: pyo3::Py<pyo3::PyAny>,
+    args: SinkedPathsCallbackArgs,
+) -> PolarsResult<()> {
+    use pyo3::Python;
+
+    Python::attach(|py| {
+        use pyo3::intern;
+        use pyo3::types::PyList;
+
+        let py_files = PyList::empty(py);
+
+        let SinkedPathsCallbackArgs { path_info_list } = args;
+
+        let convert_registry = polars_utils::python_convert_registry::get_python_convert_registry();
+
+        for SinkedPathInfo {
+            path,
+            num_rows,
+            num_bytes,
+            parquet_metadata,
+            partition_keys,
+        } in path_info_list
+        {
+            use pyo3::types::{PyBytes, PyListMethods};
+
+            let path: &str = path.as_str();
+            let parquet_metadata = parquet_metadata.ok_or_else(|| {
+                polars_err!(
+                    ComputeError:
+                    "{format} sink did not receive Parquet metadata for '{path}'"
+                )
+            })?;
+
+            let partition_keys = partition_keys
+                .map(|df| convert_registry.to_py.df_to_wrapped_pydf(df.as_ref()))
+                .transpose()?;
+
+            py_files.append((
+                path,
+                num_rows,
+                num_bytes,
+                PyBytes::new(py, &parquet_metadata),
+                partition_keys,
+            ))?;
+        }
+
+        py_sink_state.call_method1(py, intern!(py, "commit"), (py_files,))?;
+
+        PolarsResult::Ok(())
+    })
+}
+
 impl SinkedPathsCallback {
     pub fn call(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<()> {
         use PlanCallback as CB;
@@ -564,58 +624,20 @@ impl SinkedPathsCallback {
         match self {
             Self::IcebergCommit(sink_state) => {
                 feature_gated!("python", {
-                    use pyo3::Python;
-
-                    Python::attach(|py| {
-                        use pyo3::intern;
-                        use pyo3::types::PyList;
-
-                        let py_files = PyList::empty(py);
-
-                        let SinkedPathsCallbackArgs { path_info_list } = args;
-
-                        let convert_registry =
-                            polars_utils::python_convert_registry::get_python_convert_registry();
-
-                        for SinkedPathInfo {
-                            path,
-                            num_rows,
-                            num_bytes,
-                            parquet_metadata,
-                            partition_keys,
-                        } in path_info_list
-                        {
-                            use pyo3::types::{PyBytes, PyListMethods};
-
-                            let path: &str = path.as_str();
-                            let parquet_metadata = parquet_metadata.ok_or_else(|| {
-                                polars_err!(
-                                    ComputeError:
-                                    "Iceberg sink did not receive Parquet metadata for '{path}'"
-                                )
-                            })?;
-
-                            let partition_keys = partition_keys
-                                .map(|df| convert_registry.to_py.df_to_wrapped_pydf(df.as_ref()))
-                                .transpose()?;
-
-                            py_files.append((
-                                path,
-                                num_rows,
-                                num_bytes,
-                                PyBytes::new(py, &parquet_metadata),
-                                partition_keys,
-                            ))?;
-                        }
-
-                        sink_state
-                            .as_ref()
-                            .clone()
-                            .into_sink_state_obj()?
-                            .call_method1(py, intern!(py, "commit"), (py_files,))?;
-
-                        PolarsResult::Ok(())
-                    })
+                    commit_sinked_files(
+                        "Iceberg",
+                        sink_state.as_ref().clone().into_sink_state_obj()?,
+                        args,
+                    )
+                })
+            },
+            Self::DeltaCommit(sink_state) => {
+                feature_gated!("python", {
+                    commit_sinked_files(
+                        "Delta",
+                        sink_state.as_ref().clone().into_sink_state_obj()?,
+                        args,
+                    )
                 })
             },
             Self::Callback(CB::Rust(func)) => (func)(args),

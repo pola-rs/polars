@@ -114,6 +114,7 @@ python:
     link: https://docs.pola.rs/api/python/stable/reference/api/polars.read_database.html
     feature_flags: [connectorx]
   read_database_uri: https://docs.pola.rs/api/python/stable/reference/api/polars.read_database_uri.html
+  scan_database: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_database.html
   read_excel: https://docs.pola.rs/api/python/stable/reference/api/polars.read_excel.html
   read_ipc: https://docs.pola.rs/api/python/stable/reference/api/polars.read_ipc.html
   read_json: https://docs.pola.rs/api/python/stable/reference/api/polars.read_json.html
@@ -193,7 +194,7 @@ python:
   QueryResult: https://docs.nanook.pola.rs/api/python/stable/reference/query/result/query_result.html
   InteractiveQuery: https://docs.nanook.pola.rs/api/python/stable/reference/query/result/direct_query.html
   BatchQuery: https://docs.nanook.pola.rs/api/python/stable/reference/query/result/proxy_query.html
-  login: https://docs.nanook.pola.rs/api/python/stable/reference/auth/api/polars_cloud.login.html
+  login: https://docs.nanook.pola.rs/api/python/stable/reference/auth/api/polars_nanook.login.html
   register: https://docs.nanook.pola.rs/api/python/stable/reference/compute/compute.html
 
 rust:

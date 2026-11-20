@@ -443,7 +443,8 @@ fn hoist_uncorrelated(
             };
             let name = format!("{NESTED_PREFIX}{}", unique_column_name());
             let value_name = format!("{name}_v");
-            let Ok(query) = select_value(SQLExpr::Subquery(subquery.clone()), &value_name) else {
+            let Ok(query) = select_values([(SQLExpr::Subquery(subquery.clone()), &value_name)])
+            else {
                 return ControlFlow::Break(());
             };
             let mut ctx = self.x_ctx.isolated();
@@ -472,8 +473,10 @@ fn hoist_uncorrelated(
     Some((conj, hoist.tables))
 }
 
-/// `SELECT <value> AS <alias>`.
-fn select_value(value: SQLExpr, alias: &str) -> PolarsResult<Query> {
+/// `SELECT <value> AS <alias>, ...`.
+pub(crate) fn select_values<S: Into<String>>(
+    values: impl IntoIterator<Item = (SQLExpr, S)>,
+) -> PolarsResult<Query> {
     let mut query = Parser::new(&GenericDialect)
         .try_with_sql("SELECT NULL")
         .and_then(|mut parser| parser.parse_query())
@@ -481,10 +484,13 @@ fn select_value(value: SQLExpr, alias: &str) -> PolarsResult<Query> {
     let SetExpr::Select(select) = query.body.as_mut() else {
         unreachable!()
     };
-    select.projection = vec![SelectItem::ExprWithAlias {
-        expr: value,
-        alias: Ident::new(alias),
-    }];
+    select.projection = values
+        .into_iter()
+        .map(|(expr, alias)| SelectItem::ExprWithAlias {
+            expr,
+            alias: Ident::new(alias),
+        })
+        .collect();
     Ok(*query)
 }
 
@@ -1003,7 +1009,8 @@ fn first_row_order(y: &Query, select: &Select, exprs: &[OrderByExpr]) -> Option<
     // function would see the rows of the other keys.
     let unsupported = |e: &SQLExpr| match strip_nested(e) {
         SQLExpr::Identifier(ident) => alias.is_some_and(|a| a.value == ident.value),
-        SQLExpr::Value(_) => true,
+        // A number in parentheses is no position.
+        SQLExpr::Value(_) => !matches!(e, SQLExpr::Nested(_)),
         e => expr_has_window_functions(e),
     };
     if exprs
@@ -1469,7 +1476,10 @@ fn null_over_no_rows(ctx: &SQLContext, expr: &SQLExpr) -> bool {
     match strip_nested(expr) {
         SQLExpr::Function(function) if function.over.is_none() => matches!(
             PolarsSQLFunctions::try_from_sql(function, ctx),
-            Ok(Avg
+            Ok(ArbitraryValue
+                | Avg
+                | BoolAnd
+                | BoolOr
                 | Corr
                 | CovarPop
                 | CovarSamp
@@ -1477,8 +1487,10 @@ fn null_over_no_rows(ctx: &SQLContext, expr: &SQLExpr) -> bool {
                 | FirstValue
                 | Last
                 | Max
+                | MaxBy
                 | Median
                 | Min
+                | MinBy
                 | QuantileCont
                 | QuantileDisc
                 | StdDev

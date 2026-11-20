@@ -34,6 +34,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
+    from datetime import date, datetime, time
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -41,9 +42,11 @@ if TYPE_CHECKING:
     from polars._typing import (
         AsyncResult,
         CorrelationMethod,
+        DateDiffUnit,
         EngineType,
         EpochTimeUnit,
         IntoExpr,
+        IntoExprColumn,
         PolarsDataType,
         QuantileMethod,
     )
@@ -1826,6 +1829,95 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
         raise TypeError(msg)
 
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
+
+
+def date_diff(
+    start: date | datetime | time | IntoExprColumn,
+    end: date | datetime | time | IntoExprColumn,
+    unit: DateDiffUnit,
+) -> Expr:
+    """
+    Count the `unit` boundaries crossed from `start` to `end`.
+
+    This counts how often the calendar or clock moves into a new `unit` on the way
+    from `start` to `end`. For example, 2024-01-31 to 2024-02-01 is 1 month, while
+    2024-01-01 to 2024-01-31 is 0 months. The count is negative if `end` is before
+    `start`.
+
+    Weeks start on Monday. For time zone-aware datetimes, the boundaries are those
+    of the wall-clock time in their time zone.
+
+    .. engine-support:: in-memory, streaming, distributed
+
+    Parameters
+    ----------
+    start
+        Start values of type Date, Datetime or Time. Strings are parsed as column
+        names.
+    end
+        End values. A Date combined with a Datetime is taken as midnight, which is
+        midnight UTC for a time zone-aware Datetime, as in other operations.
+    unit
+        The unit to count: one of 'year', 'quarter', 'month', 'week', 'day',
+        'hour', 'minute', 'second', 'millisecond', 'microsecond' or 'nanosecond'.
+        Time values only support units shorter than a day.
+
+    Returns
+    -------
+    Expr
+        Expression of data type :class:`Int64`.
+
+    Examples
+    --------
+    >>> from datetime import date
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [date(2024, 1, 31), date(2024, 12, 31), date(2024, 3, 10)],
+    ...         "end": [date(2024, 2, 1), date(2025, 1, 1), date(2024, 3, 4)],
+    ...     }
+    ... )
+    >>> df.with_columns(
+    ...     days=pl.date_diff("start", "end", "day"),
+    ...     months=pl.date_diff("start", "end", "month"),
+    ...     years=pl.date_diff("start", "end", "year"),
+    ... )
+    shape: (3, 5)
+    ┌────────────┬────────────┬──────┬────────┬───────┐
+    │ start      ┆ end        ┆ days ┆ months ┆ years │
+    │ ---        ┆ ---        ┆ ---  ┆ ---    ┆ ---   │
+    │ date       ┆ date       ┆ i64  ┆ i64    ┆ i64   │
+    ╞════════════╪════════════╪══════╪════════╪═══════╡
+    │ 2024-01-31 ┆ 2024-02-01 ┆ 1    ┆ 1      ┆ 0     │
+    │ 2024-12-31 ┆ 2025-01-01 ┆ 1    ┆ 1      ┆ 1     │
+    │ 2024-03-10 ┆ 2024-03-04 ┆ -6   ┆ 0      ┆ 0     │
+    └────────────┴────────────┴──────┴────────┴───────┘
+
+    Only boundaries count, so 10:59 to 11:01 is one hour.
+
+    >>> from datetime import datetime
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [datetime(2024, 1, 1, 10, 59), datetime(2024, 1, 1, 10, 0)],
+    ...         "end": [datetime(2024, 1, 1, 11, 1), datetime(2024, 1, 1, 10, 59)],
+    ...     }
+    ... )
+    >>> df.with_columns(
+    ...     hours=pl.date_diff("start", "end", "hour"),
+    ...     minutes=pl.date_diff("start", "end", "minute"),
+    ... )
+    shape: (2, 4)
+    ┌─────────────────────┬─────────────────────┬───────┬─────────┐
+    │ start               ┆ end                 ┆ hours ┆ minutes │
+    │ ---                 ┆ ---                 ┆ ---   ┆ ---     │
+    │ datetime[μs]        ┆ datetime[μs]        ┆ i64   ┆ i64     │
+    ╞═════════════════════╪═════════════════════╪═══════╪═════════╡
+    │ 2024-01-01 10:59:00 ┆ 2024-01-01 11:01:00 ┆ 1     ┆ 2       │
+    │ 2024-01-01 10:00:00 ┆ 2024-01-01 10:59:00 ┆ 0     ┆ 59      │
+    └─────────────────────┴─────────────────────┴───────┴─────────┘
+    """
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
+    return wrap_expr(plr.date_diff(start_pyexpr, end_pyexpr, unit))
 
 
 def exclude(

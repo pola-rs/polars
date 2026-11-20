@@ -457,9 +457,9 @@ fn create_physical_plan_impl(
 
             Ok(Box::new(executors::HConcatExec { inputs, options }))
         },
-        Slice { input, offset, len } => {
+        Slice { input, slice } => {
             let input = recurse!(input, state)?;
-            Ok(Box::new(executors::SliceExec { input, offset, len }))
+            Ok(Box::new(executors::SliceExec { input, slice }))
         },
         Filter { input, predicate } => {
             let streamable = is_elementwise_rec(predicate.node(), expr_arena);
@@ -594,7 +594,7 @@ fn create_physical_plan_impl(
             Ok(Box::new(executors::SortExec {
                 input,
                 by_column,
-                slice: slice.map(|t| (t.0, t.1)),
+                slice: slice.map(|(slice, _dp)| slice),
                 sort_options,
             }))
         },

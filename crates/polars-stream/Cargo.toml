@@ -45,6 +45,7 @@ polars-descriptions = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
 polars-io = { workspace = true, features = ["async", "decompress", "file_cache"] }
+polars-io-ext-ffi = { workspace = true, optional = true, features = ["lazyframe_resolver"] }
 polars-json = { workspace = true, optional = true }
 polars-mem-engine = { workspace = true, features = ["dtype-struct"] }
 polars-observer = { workspace = true }
@@ -107,6 +108,7 @@ scan_lines = [
   "polars-plan/scan_lines",
   "polars-io/scan_lines",
 ]
+io_plugin_ffi = ["polars-plan/io_plugin_ffi", "polars-io/io_plugin_ffi", "dep:polars-io-ext-ffi"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 pivot = ["polars-mem-engine/pivot", "polars-plan/pivot", "polars-ops/pivot"]
 diff = ["polars-ops/diff", "polars-expr/diff", "polars-plan/diff", "polars-plan/abs", "polars-expr/abs"]

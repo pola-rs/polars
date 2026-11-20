@@ -1,0 +1,22 @@
+[package]
+name = "polars-database-python"
+# Released independently of Polars: the version of the PyPI package `polars-database`, equal to
+# `project.version` in `pyproject.toml` and the `version` of `crates/polars-database`.
+version = "0.1.0"
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+publish = false
+repository = "https://github.com/pola-rs/polars"
+description = "Python extension module (`polars_database._lib`) of the `polars-database` package."
+
+[lib]
+name = "_lib"
+crate-type = ["cdylib"]
+
+[dependencies]
+polars-database = { path = "../../crates/polars-database", features = ["python"] }
+pyo3 = { workspace = true, features = ["abi3-py310", "extension-module"] }
+
+[lints]
+workspace = true

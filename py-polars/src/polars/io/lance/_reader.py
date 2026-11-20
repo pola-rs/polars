@@ -145,7 +145,7 @@ class LanceFragmentReader(FileReader):
         *,
         columns: Sequence[str] = (),
         row_index: tuple[str, int] | None = None,
-        pre_slice: tuple[int, int] | None = None,
+        pre_slice: tuple[int, int | None] | None = None,
         filters: Sequence[FilterExpr] = (),
         num_pipelines: int,
     ) -> Iterator[pl.DataFrame]:
@@ -158,7 +158,8 @@ class LanceFragmentReader(FileReader):
         if pre_slice is not None:
             slice_offset, slice_len = pre_slice
             assert slice_offset >= 0
-            slice_limit = slice_offset + slice_len
+            if slice_len is not None:
+                slice_limit = slice_offset + slice_len
 
         if self.prev_reader_start_event is not None:
             self.prev_reader_start_event.wait()

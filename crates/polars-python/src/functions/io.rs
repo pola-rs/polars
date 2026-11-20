@@ -3,6 +3,7 @@ use std::io::BufReader;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
 use polars::prelude::CloudScheme;
+use polars_io::cloud::CloudType;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -25,6 +26,16 @@ pub fn read_ipc_schema(py: Python<'_>, py_f: Py<PyAny>) -> PyResult<Bound<'_, Py
     let dict = PyDict::new(py);
     fields_to_pydict(&metadata.schema, &dict)?;
     Ok(dict)
+}
+
+/// Whether `path` has a URI scheme that Polars writes to, e.g. `s3://` or `file://`.
+///
+/// False for a path without a scheme, and for a scheme that Polars doesn't know.
+/// Polars takes an unknown scheme as part of a local path, e.g. `memory:///t`.
+#[pyfunction]
+pub fn _has_writable_scheme(path: &str) -> bool {
+    CloudScheme::from_path(path)
+        .is_some_and(|scheme| CloudType::from_cloud_scheme(scheme).is_writable())
 }
 
 #[cfg(feature = "parquet")]

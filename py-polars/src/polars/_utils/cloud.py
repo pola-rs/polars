@@ -15,7 +15,7 @@ def prepare_cloud_plan(
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> tuple[bytes, int]:
     """
-    Prepare the given LazyFrame for execution on Polars Cloud.
+    Prepare the given LazyFrame for execution on Polars Nanook.
 
     Parameters
     ----------
@@ -32,7 +32,7 @@ def prepare_cloud_plan(
     Raises
     ------
     InvalidOperationError
-        If the given LazyFrame is not eligible to be run on Polars Cloud.
+        If the given LazyFrame is not eligible to be run on Polars Nanook.
         The following conditions will disqualify a LazyFrame from being eligible:
 
         - Contains a user-defined function
