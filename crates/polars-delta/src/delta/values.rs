@@ -19,6 +19,8 @@ pub enum Sv<'a> {
     Float(f64),
     /// Unscaled value and scale (checkpoint decimals).
     Decimal(i128, usize),
+    /// Days since the epoch (checkpoint `date` statistics).
+    Date(i32),
     /// A JSON number as written: integers, fractions and exponents alike.
     Num(Cow<'a, str>),
     Str(Cow<'a, str>),
@@ -49,6 +51,7 @@ impl<'a> Sv<'a> {
             Sv::UInt(v) => Cow::Owned(v.to_string()),
             Sv::Float(v) => Cow::Owned(v.to_string()),
             Sv::Decimal(v, scale) => Cow::Owned(format_decimal(*v, *scale)),
+            Sv::Date(d) => Cow::Owned(date_text(*d)?),
             Sv::Num(s) | Sv::Str(s) => Cow::Borrowed(s),
             Sv::Obj(_) => Cow::Borrowed("{}"),
         })
@@ -134,6 +137,13 @@ pub fn decimal(s: &str, scale: usize, precision: usize) -> Result<i128> {
     }
     Ok(if negative { -v } else { v })
 }
+const MICROS_PER_DAY: i64 = 86_400_000_000;
+/// `days` since the epoch as `YYYY-MM-DD`, `None` outside the representable years.
+fn date_text(days: i32) -> Option<String> {
+    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+    let d = epoch.checked_add_signed(chrono::Duration::try_days(days.into())?)?;
+    Some(d.format("%Y-%m-%d").to_string())
+}
 pub fn timestamp(s: &str, utc: bool) -> Result<i64> {
     if utc {
         if let Ok(v) = chrono::DateTime::parse_from_rfc3339(s) {
@@ -142,6 +152,13 @@ pub fn timestamp(s: &str, utc: bool) -> Result<i64> {
     }
     let v = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
         .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
+        .or_else(|e| {
+            // A widened `date` column: its bounds are midnights.
+            chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .ok()
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
+                .ok_or(e)
+        })
         .map_err(invalid)?;
     Ok(v.and_utc().timestamp_micros())
 }
@@ -323,6 +340,7 @@ impl Builder {
                     .transpose()?,
             }),
             Inner::Date(v) => v.push(match value {
+                Sv::Date(d) => Some(*d),
                 Sv::Int(i) => Some(i32::try_from(*i).map_err(invalid)?),
                 Sv::Str(s) => {
                     let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
@@ -340,6 +358,11 @@ impl Builder {
             }),
             Inner::Timestamp(v, utc) => v.push(match value {
                 Sv::Int(i) => Some(*i),
+                Sv::Date(d) => Some(
+                    i64::from(*d)
+                        .checked_mul(MICROS_PER_DAY)
+                        .ok_or_else(|| invalid("date out of range"))?,
+                ),
                 Sv::Str(s) => Some(timestamp(s, *utc)?),
                 Sv::Num(_) | Sv::UInt(_) => value.as_i64()?,
                 _ => return Err(invalid("invalid timestamp")),
@@ -439,6 +462,7 @@ pub fn stat_value<'a>(column: &Column, value: &Sv<'a>, null_count: bool, max: bo
         // Delta truncates timestamp maxima to milliseconds.
         let micros = match value {
             Sv::Int(v) => Some(*v),
+            Sv::Date(d) => i64::from(*d).checked_mul(MICROS_PER_DAY),
             Sv::Num(_) | Sv::UInt(_) => value.as_i64().ok().flatten(),
             Sv::Str(s) => {
                 timestamp(s, matches!(&column.field.dtype, D::Timestamp(_, Some(_)))).ok()

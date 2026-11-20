@@ -64,6 +64,27 @@ fn child<'a>(s: &'a StructArray, name: &str) -> Option<&'a dyn Array> {
 fn child_box(s: &StructArray, name: &str) -> Option<Box<dyn Array>> {
     child(s, name).map(|a| a.to_boxed())
 }
+/// A text column of the checkpoint. Parquet byte arrays without a string annotation come back
+/// as binary; they are text in the log's own definition, so decode them as UTF-8 (an error when
+/// invalid, as for any other malformed log value).
+fn text_column(a: Option<Box<dyn Array>>) -> Result<Option<Box<dyn Array>>> {
+    let Some(a) = a else {
+        return Ok(None);
+    };
+    match a.dtype() {
+        ArrowDataType::BinaryView => {
+            let view = a
+                .as_any()
+                .downcast_ref::<BinaryViewArray>()
+                .ok_or_else(|| invalid("checkpoint text column"))?;
+            let text = view
+                .to_utf8view()
+                .map_err(|_| invalid("checkpoint text column is not valid UTF-8"))?;
+            Ok(Some(text.boxed()))
+        },
+        _ => Ok(Some(a)),
+    }
+}
 pub fn str_at(a: &dyn Array, i: usize) -> Option<&str> {
     if a.is_null(i) {
         return None;
@@ -108,7 +129,7 @@ impl CheckpointFiles {
         let is_add = |i: usize| add_valid.as_ref().is_none_or(|v| v.get_bit(i));
         let missing = |what: &str| invalid(format!("checkpoint add action without {what}"));
         let any_add = (0..len).any(is_add);
-        let path = child_box(add, "path");
+        let path = text_column(child_box(add, "path"))?;
         let size = child_box(add, "size");
         let pv = child(add, "partitionValues");
         if any_add && (path.is_none() || size.is_none() || pv.is_none()) {
@@ -135,7 +156,11 @@ impl CheckpointFiles {
                 let [keys, values] = entries.values() else {
                     return Err(invalid("checkpoint partitionValues entries"));
                 };
-                (map.offsets().clone(), keys.to_boxed(), values.to_boxed())
+                (
+                    map.offsets().clone(),
+                    text_column(Some(keys.to_boxed()))?.unwrap(),
+                    text_column(Some(values.to_boxed()))?.unwrap(),
+                )
             },
             None => (
                 OffsetsBuffer::new(),
@@ -162,8 +187,8 @@ impl CheckpointFiles {
                     .ok_or_else(|| invalid("checkpoint deletionVector is not a struct"))?;
                 Ok::<_, polars_io_ext_ffi::common::FfiError>(DvColumns {
                     validity: dv.validity().cloned(),
-                    storage_type: child_box(dv, "storageType"),
-                    path_or_inline: child_box(dv, "pathOrInlineDv"),
+                    storage_type: text_column(child_box(dv, "storageType"))?,
+                    path_or_inline: text_column(child_box(dv, "pathOrInlineDv"))?,
                     offset: child_box(dv, "offset"),
                     size_in_bytes: child_box(dv, "sizeInBytes"),
                     cardinality: child_box(dv, "cardinality"),
@@ -186,10 +211,24 @@ impl CheckpointFiles {
             pv_offsets,
             pv_keys,
             pv_values,
-            stats: child_box(add, "stats"),
+            stats: text_column(child_box(add, "stats"))?,
             stats_parsed,
             dv,
         })
+    }
+    /// Whether an add row has no typed statistics, so that its `stats` text is needed and was
+    /// not read.
+    pub fn needs_stats_text(&self) -> bool {
+        self.stats.is_none()
+            && self
+                .stats_parsed
+                .as_ref()
+                .is_some_and(|p| (0..self.len).any(|r| self.is_add(r) && p.is_null(r)))
+    }
+    /// The `stats` text column of the same rows, read for rows without typed statistics.
+    pub fn set_stats_text(&mut self, add: &StructArray) -> Result<()> {
+        self.stats = text_column(child_box(add, "stats"))?;
+        Ok(())
     }
     fn is_add(&self, row: usize) -> bool {
         self.add_valid.as_ref().is_none_or(|v| v.get_bit(row))
@@ -397,12 +436,13 @@ pub fn reconcile(sources: &[Source]) -> Result<Vec<(u32, u32)>> {
             },
         }
     }
-    survivors.sort_unstable_by(|a, b| {
-        sources[a.0 as usize]
-            .path(a.1 as usize)
-            .cmp(sources[b.0 as usize].path(b.1 as usize))
-    });
-    Ok(survivors)
+    // Resolve each path once: sorting by it through the source enum costs a lookup per compare.
+    let mut keyed = survivors
+        .iter()
+        .map(|&(s, r)| (sources[s as usize].path(r as usize), s, r))
+        .collect::<Vec<_>>();
+    keyed.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    Ok(keyed.into_iter().map(|(_, s, r)| (s, r)).collect())
 }
 /// Whether any row of the batch is an add (for checks on embedded file actions).
 pub fn has_adds(source: &Source) -> bool {

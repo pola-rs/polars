@@ -79,26 +79,44 @@ pub async fn read(
         .collect::<Vec<_>>();
     // Small actions first: the table metadata translates the requested logical statistics to
     // physical names, even when the metadata row follows the adds.
-    for (rg_index, rg) in metadata.row_groups.iter().enumerate() {
-        for field in schema.iter_values().filter(|f| {
+    let small = schema
+        .iter_values()
+        .filter(|f| {
             matches!(
                 f.name.as_str(),
                 "metaData" | "protocol" | "sidecar" | "checkpointMetadata"
             )
-        }) {
-            let array = read_root(storage, path, rg, field).await?;
-            for row in (0..rg.num_rows()).filter(|r| !array.is_null(*r)) {
-                if occupied[rg_index].get(row) {
-                    return Err(invalid("multiple actions in one row"));
-                }
-                occupied[rg_index].set(row, true);
-                let value = json_value(array.as_ref(), row)?;
-                match field.name.as_str() {
-                    "metaData" => out.metadata.push(value),
-                    "protocol" => out.protocol.push(value),
-                    "sidecar" => out.sidecars.push(value),
-                    _ => out.checkpoint_metadata.push(value),
-                }
+        })
+        .collect::<Vec<_>>();
+    // Every (row group, action column) with a non-null row is read, many at a time: a
+    // checkpoint of a hundred row groups would otherwise take hundreds of sequential requests.
+    let wanted = metadata
+        .row_groups
+        .iter()
+        .enumerate()
+        .flat_map(|(i, rg)| small.iter().map(move |f| (i, rg, *f)))
+        .filter(|(_, rg, f)| !all_null(rg, &f.name))
+        .collect::<Vec<_>>();
+    let arrays = futures::stream::iter(
+        wanted
+            .iter()
+            .map(|(_, rg, field)| read_root(storage, path, rg, field)),
+    )
+    .buffered(16)
+    .try_collect::<Vec<_>>()
+    .await?;
+    for ((rg_index, rg, field), array) in wanted.iter().zip(arrays) {
+        for row in (0..rg.num_rows()).filter(|r| !array.is_null(*r)) {
+            if occupied[*rg_index].get(row) {
+                return Err(invalid("multiple actions in one row"));
+            }
+            occupied[*rg_index].set(row, true);
+            let value = json_value(array.as_ref(), row)?;
+            match field.name.as_str() {
+                "metaData" => out.metadata.push(value),
+                "protocol" => out.protocol.push(value),
+                "sidecar" => out.sidecars.push(value),
+                _ => out.checkpoint_metadata.push(value),
             }
         }
     }
@@ -123,6 +141,7 @@ pub async fn read(
                 })
         })
         .flatten();
+    let add_field = add;
     for (rg_index, rg) in metadata.row_groups.iter().enumerate() {
         if let Some(field) = add.and_then(|f| project_add(f, &stats)) {
             let array = read_root(storage, path, rg, &field).await?;
@@ -136,8 +155,22 @@ pub async fn read(
                 }
                 occupied[rg_index].set(row, true);
             }
-            out.sources
-                .push(Source::Checkpoint(Box::new(CheckpointFiles::new(add)?)));
+            let mut files = CheckpointFiles::new(add)?;
+            // `stats` is skipped when `stats_parsed` serves; a file without typed statistics
+            // (a writer that wrote them for some files only) falls back to its text, which is
+            // read for the row group only when such a file exists, so that the common case
+            // never reads the bulk of the checkpoint.
+            if files.needs_stats_text() {
+                if let Some(field) = add_field.and_then(stats_text_field) {
+                    let array = read_root(storage, path, rg, &field).await?;
+                    let text = array
+                        .as_any()
+                        .downcast_ref::<StructArray>()
+                        .ok_or_else(|| invalid("checkpoint add column is not a struct"))?;
+                    files.set_stats_text(text)?;
+                }
+            }
+            out.sources.push(Source::Checkpoint(Box::new(files)));
         }
         if let Some(field) = &remove_path {
             let array = read_root(storage, path, rg, field).await?;
@@ -145,6 +178,22 @@ pub async fn read(
         }
     }
     Ok(out)
+}
+/// Whether the row group's statistics show every value under the root column null (no action
+/// of that kind), so that its data need not be read. Without statistics: read it.
+fn all_null(rg: &polars_parquet::parquet::metadata::RowGroupMetadata, root: &str) -> bool {
+    let Some(columns) = rg.columns_under_root_iter(root) else {
+        return false;
+    };
+    let mut any = false;
+    for column in columns {
+        any = true;
+        match (column.null_count(), column.num_values().ok()) {
+            (Some(nulls), Some(values)) if nulls == values => {},
+            _ => return false,
+        }
+    }
+    any
 }
 /// Decode one (projected) root column of a row group.
 async fn read_root(
@@ -275,6 +324,16 @@ fn project_add(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {
     }
     let mut projected = field.clone();
     projected.dtype = ArrowDataType::Struct(selected);
+    Some(projected)
+}
+/// `add` reduced to its `stats` text column.
+fn stats_text_field(field: &Field) -> Option<Field> {
+    let ArrowDataType::Struct(children) = &field.dtype else {
+        return None;
+    };
+    let stats = children.iter().find(|c| c.name == "stats")?.clone();
+    let mut projected = field.clone();
+    projected.dtype = ArrowDataType::Struct(vec![stats]);
     Some(projected)
 }
 fn project_parsed(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {

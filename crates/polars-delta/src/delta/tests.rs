@@ -1039,3 +1039,157 @@ fn statistics_of_other_columns_are_not_parsed() {
         [("/table/a.parquet".to_owned(), Some(4))]
     );
 }
+
+macro_rules! fixture {
+    ($name:literal) => {
+        include_bytes!(concat!("../../tests/data/", $name)).to_vec()
+    };
+}
+fn checkpoint_store(files: &[(&str, Vec<u8>)]) -> Store {
+    let mut store = Store::default();
+    for (name, bytes) in files {
+        store.0.insert(
+            format!("/table/_delta_log/{name}"),
+            (bytes.clone(), Some(1000)),
+        );
+    }
+    store
+}
+const DAY_MICROS: i128 = 86_400_000_000;
+
+#[test]
+fn widened_date_checkpoint_bounds_are_days_in_microseconds() {
+    let store = checkpoint_store(&[(
+        "00000000000000000000.checkpoint.parquet",
+        fixture!("date-widened.checkpoint.parquet"),
+    )]);
+    assert_eq!(
+        planned_stats(&store, &["x"], "x_min"),
+        [("/table/a.parquet".to_owned(), Some(18262 * DAY_MICROS))]
+    );
+    // Timestamp maxima are raised by a millisecond (they are truncated to milliseconds).
+    assert_eq!(
+        planned_stats(&store, &["x"], "x_max"),
+        [(
+            "/table/a.parquet".to_owned(),
+            Some(18292 * DAY_MICROS + 1000)
+        )]
+    );
+}
+
+#[test]
+fn widened_date_json_bounds_are_midnights() {
+    let mut store = Store::default();
+    let column = json!({"name":"x","type":"timestamp_ntz","nullable":true,"metadata":
+        {"delta.typeChanges":[{"fromType":"date","toType":"timestamp_ntz"}]}});
+    let metadata = json!({"metaData":{"id":"id","format":{"provider":"parquet","options":{}},
+        "schemaString":json!({"type":"struct","fields":[column]}).to_string(),
+        "partitionColumns":[],"configuration":{}}});
+    store.put(
+        "00000000000000000000.json",
+        &[
+            protocol(),
+            metadata,
+            json!({"add":{"path":"a.parquet","size":10,"partitionValues":{},"stats":
+                "{\"numRecords\":5,\"minValues\":{\"x\":\"2020-01-01\"},\"maxValues\":{\"x\":\"2020-01-31\"},\"nullCount\":{\"x\":0}}"}}),
+        ],
+    );
+    assert_eq!(
+        planned_stats(&store, &["x"], "x_min"),
+        [("/table/a.parquet".to_owned(), Some(18262 * DAY_MICROS))]
+    );
+}
+
+#[test]
+fn checkpoint_rows_without_typed_statistics_use_their_text() {
+    let store = checkpoint_store(&[(
+        "00000000000000000000.checkpoint.parquet",
+        fixture!("partial-parsed.checkpoint.parquet"),
+    )]);
+    assert_eq!(
+        planned_stats(&store, &["x"], "x_min"),
+        [
+            ("/table/a.parquet".to_owned(), Some(1)),
+            ("/table/b.parquet".to_owned(), Some(10))
+        ]
+    );
+    let (header, _) = planned(
+        &store,
+        Request {
+            use_metadata_statistics: true,
+            statistics_columns: Some(vec!["x".to_owned()]),
+            ..Request::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(header.row_count, Some((12, 0)));
+}
+
+fn planned_partitions(s: &Store, column: &str) -> Result<Vec<Option<String>>, FfiError> {
+    let r = Request {
+        table_uri: "/table".into(),
+        ..Request::default()
+    };
+    let host = s.host();
+    let output = r
+        .with_ffi(|r| unsafe { super::plan(&host, r) })
+        .into_result()?;
+    let stream: ffi::ArrowArrayStream = unsafe { output.files.transmute_into() };
+    let mut reader = unsafe { ffi::ArrowArrayStreamReader::try_new(Box::new(stream)) }.unwrap();
+    let mut out = Vec::new();
+    while let Some(batch) = unsafe { reader.next() } {
+        let batch = batch.unwrap();
+        let a = batch.as_any().downcast_ref::<StructArray>().unwrap();
+        let get = |a: &StructArray, name: &str| {
+            let polars_arrow::datatypes::ArrowDataType::Struct(f) = a.dtype() else {
+                unreachable!()
+            };
+            a.values()[f.iter().position(|f| f.name == name).unwrap()].clone()
+        };
+        let pv = get(a, "partition_values");
+        let pv = pv.as_any().downcast_ref::<StructArray>().unwrap();
+        let v = get(pv, column);
+        let v = v.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+        out.extend(v.iter().map(|s| s.map(str::to_owned)));
+    }
+    Ok(out)
+}
+
+#[test]
+fn byte_array_partition_values_are_text() {
+    let store = checkpoint_store(&[(
+        "00000000000000000000.checkpoint.parquet",
+        fixture!("binary-partition.checkpoint.parquet"),
+    )]);
+    assert_eq!(
+        planned_partitions(&store, "p").unwrap(),
+        [Some("north".to_owned())]
+    );
+    let store = checkpoint_store(&[(
+        "00000000000000000000.checkpoint.parquet",
+        fixture!("binary-partition-invalid.checkpoint.parquet"),
+    )]);
+    let error = planned_partitions(&store, "p").unwrap_err();
+    assert!(format!("{error:?}").contains("UTF-8"), "{error:?}");
+}
+
+#[test]
+fn every_part_of_a_multipart_checkpoint_gets_the_table_metadata() {
+    let store = checkpoint_store(&[
+        (
+            "00000000000000000000.checkpoint.0000000001.0000000002.parquet",
+            fixture!("multipart-1.checkpoint.parquet"),
+        ),
+        (
+            "00000000000000000000.checkpoint.0000000002.0000000002.parquet",
+            fixture!("multipart-2.checkpoint.parquet"),
+        ),
+    ]);
+    assert_eq!(
+        planned_stats(&store, &["x"], "x_min"),
+        [
+            ("/table/a.parquet".to_owned(), Some(1)),
+            ("/table/b.parquet".to_owned(), Some(10))
+        ]
+    );
+}

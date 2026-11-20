@@ -272,11 +272,40 @@ async fn snapshot(
     let mut cp = Checkpoint::default();
     if let Some((v, groups)) = checkpoint {
         let group = &groups[0];
-        for o in group {
-            merge(
-                &mut cp,
-                read_checkpoint_file(storage, &o.url, request, None, read_files).await?,
+        if group.len() > 1 && read_files {
+            // The table metadata is in one part only and tells which statistics columns every
+            // part's adds need: read the small actions of all parts first, then the files.
+            let heads = futures::future::try_join_all(
+                group
+                    .iter()
+                    .map(|o| read_checkpoint_file(storage, &o.url, request, None, false)),
             )
+            .await?;
+            let inherited = heads.iter().find_map(|h| h.metadata.first()).cloned();
+            let inherited = inherited.as_ref();
+            let full = futures::future::try_join_all(
+                group
+                    .iter()
+                    .map(|o| read_checkpoint_file(storage, &o.url, request, inherited, true)),
+            )
+            .await?;
+            for (head, full) in heads.into_iter().zip(full) {
+                merge(
+                    &mut cp,
+                    Checkpoint {
+                        sources: full.sources,
+                        has_removes: full.has_removes,
+                        ..head
+                    },
+                );
+            }
+        } else {
+            for o in group {
+                merge(
+                    &mut cp,
+                    read_checkpoint_file(storage, &o.url, request, None, read_files).await?,
+                )
+            }
         }
         validate_checkpoint(&cp, read_files, *v)?;
         let uuid = matches!(
