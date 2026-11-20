@@ -243,6 +243,26 @@ def test_str_head_tail_extreme_count(n: int | pl.Expr, head: str, tail: str) -> 
     }
 
 
+def test_str_head_tail_repeated_count() -> None:
+    df = pl.DataFrame({"s": ["abc", "de", None]}).with_columns(n=pl.lit(2))
+    out = df.select(
+        head=pl.col("s").str.head("n"),
+        tail=pl.col("s").str.tail("n"),
+        bin_head=pl.col("s").cast(pl.Binary).bin.head("n"),
+        lit_head=pl.lit("xyz").str.head("n"),
+    )
+    assert out.to_dict(as_series=False) == {
+        "head": ["ab", "de", None],
+        "tail": ["bc", "de", None],
+        "bin_head": [b"ab", b"de", None],
+        "lit_head": ["xy", "xy", "xy"],
+    }
+    s = pl.Series("s", ["aba", "ac"]).sort()
+    out = s.to_frame().with_columns(n=pl.lit(-1)).select(pl.col("s").str.head("n"))
+    assert out["s"].to_list() == ["ab", "a"]
+    assert out["s"].min() == "a"
+
+
 def test_str_slice_min_offset() -> None:
     df = pl.DataFrame({"s": ["aü", None]})
     out = df.select(
