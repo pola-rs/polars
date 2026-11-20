@@ -21,6 +21,7 @@ fn keys(df: &DataFrame, null_is_valid: bool, random_state: &PlRandomState) -> Ke
         Arc::new(layout.unwrap()),
         random_state,
         null_is_valid,
+        true,
     )
 }
 
@@ -156,7 +157,7 @@ fn columns_of_unequal_length_are_rejected() {
         Column::new("b".into(), [1i64]),
     ];
     let layout = KeyRowLayout::new(columns.iter().map(|c| c.dtype())).unwrap();
-    KeyRowKeys::from_columns(&columns, Arc::new(layout), &PlRandomState::default(), true);
+    KeyRowKeys::from_columns(&columns, Arc::new(layout), &PlRandomState::default(), true, false);
 }
 
 #[test]
