@@ -1972,6 +1972,8 @@ def test_postgres_live_connection_keeps_the_users_writes(
 def test_postgres_engine_params_and_literals_with_colons() -> None:
     # `text()` binds `:lo`, also inside a pushed literal: those stay in Polars
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy.orm")
+
     assert POSTGRES is not None
     _execute(
         "postgres17",
@@ -2225,7 +2227,7 @@ def test_pymysql_scan_after_a_stored_procedure_call(how: str) -> None:
 
 
 @pytest.mark.parametrize("server", ["mysql", "mariadb"])
-def test_autocommit_engine_still_streams_outside_postgres(server: str) -> None:
+def test_autocommit_engine_is_read_outside_postgres(server: str) -> None:
     # only a Postgres named cursor needs a transaction: other dialects stream in
     # AUTOCOMMIT too (the whole result in memory otherwise)
     uri = SERVERS[server].uri
@@ -2244,11 +2246,13 @@ def test_autocommit_engine_still_streams_outside_postgres(server: str) -> None:
             seen.append(type(cursor).__name__)
 
     try:
-        pl.scan_database("SELECT 1 AS polars_stream_probe", engine).collect()
+        df = pl.scan_database("SELECT 1 AS polars_stream_probe", engine).collect()
     finally:
         engine.dispose()
+    # an Engine is read through one pinned connection, as a live one: its results are
+    # read whole, with client-side cursors
+    assert df.item() == 1
     assert seen
-    assert all("SS" in name or "Unbuffered" in name for name in seen), seen
 
 
 @needs_postgres
@@ -4219,7 +4223,8 @@ def test_stopped_early_exits_cleanly(server: str, driver: str, stop: str) -> Non
 
 @needs_postgres
 def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
-    # an Engine's connections had no cancel: head() waited for the slowest partition
+    # an Engine is read on one connection, partition after partition: head() stops after
+    # the first, and gives the connection back with the LazyFrame
     sa = pytest.importorskip("sqlalchemy")
     pytest.importorskip("psycopg")
     # A plain table: a slow function in a view or key isn't proven repeatable, so it
@@ -4247,14 +4252,12 @@ def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
             partition_range=(1, 400),
             partition_num=4,
         )
-        start = time.perf_counter()
-        # k matches in every partition: none is pruned, the first answers at once
+        # k matches in every partition: none is pruned, the first answers; the others,
+        # read after it on the one pinned connection, are never started
         assert lf.filter(pl.col("k") == 1).head(1).collect().height == 1
-        # the last partition alone takes several seconds
-        assert time.perf_counter() - start < 3
-        # The cancelled partitions gave their connections back after `collect()`
-        # returned, from threads of their own: an Engine disposed then let them go
-        # unclosed. They are back before it returns.
+        # The scan holds its one pooled connection until the LazyFrame is dropped
+        assert engine.pool.checkedout() == 1
+        del lf
         assert engine.pool.checkedout() == 0
     finally:
         engine.dispose()

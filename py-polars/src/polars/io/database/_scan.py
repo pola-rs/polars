@@ -209,7 +209,7 @@ def _in_caller_context(factory: Callable[[], Any]) -> Callable[[], Any]:
 
 def _pinned_checkout(engine: Any) -> Any:
     """
-    One checkout of an Engine's pool, held for the scan.
+    One SQLAlchemy `Connection` of an Engine, held for the scan.
 
     The checkout (and its listeners) runs here, in the caller's thread and context. The
     scan plans and reads every partition on its one DB-API connection, one after another,
@@ -219,7 +219,8 @@ def _pinned_checkout(engine: Any) -> Any:
 
     from sqlalchemy import event
 
-    fairy = engine.raw_connection()
+    connection = engine.connect()
+    fairy = connection.connection
     pinned = getattr(engine, "_polars_pinned_checkouts", None)
     if pinned is None:
         pinned = weakref.WeakSet()
@@ -239,7 +240,7 @@ def _pinned_checkout(engine: Any) -> Any:
             pass
     with contextlib.suppress(TypeError):
         pinned.add(fairy)
-    return fairy
+    return connection
 
 
 def _shared_dbapi_connection(engine: Any) -> Any:
@@ -826,9 +827,7 @@ def scan_database(
             )
             raise ValueError(msg)
     if connection_kind == "live":
-        _check_live_sqlite3(
-            connection.driver_connection if plugin_kind == "pinned" else connection
-        )
+        _check_live_sqlite3(connection)
 
     from polars import DataFrame, Series
 
