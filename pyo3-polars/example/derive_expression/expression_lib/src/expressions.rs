@@ -77,7 +77,7 @@ fn pig_latinnify_with_parallelism(
             let chunks: Vec<_> = splits
                 .into_par_iter()
                 .map(|(offset, len)| {
-                    let sliced = ca.slice(offset as i64, len);
+                    let sliced = ca.slice((offset, len));
                     let out = sliced.apply_into_string_amortized(|value, output| {
                         pig_latin_str(value, kwargs.capitalize, output)
                     });

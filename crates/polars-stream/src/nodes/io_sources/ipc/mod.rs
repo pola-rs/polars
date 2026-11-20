@@ -544,10 +544,8 @@ impl FileReader for IpcFileReader {
                 }
 
                 if let Some(row_position_on_end_tx) = row_position_on_end_tx.take() {
-                    _ = row_position_on_end_tx.send(calc_row_position_after_slice(
-                        n_rows_in_file,
-                        pre_slice_arg.clone(),
-                    ));
+                    _ = row_position_on_end_tx
+                        .send(calc_row_position_after_slice(n_rows_in_file, pre_slice_arg));
                 }
             }
 

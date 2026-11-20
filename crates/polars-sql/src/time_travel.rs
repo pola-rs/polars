@@ -10,8 +10,8 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    DataType as SQLDataType, Expr as SQLExpr, ObjectName, Statement, TableFactor, TableVersion,
-    TimezoneInfo, UnaryOperator, Value as SQLValue, VisitorMut,
+    DataType as SQLDataType, Expr as SQLExpr, ObjectName, TableFactor, TableVersion, TimezoneInfo,
+    UnaryOperator, Value as SQLValue, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::{Keyword, RESERVED_FOR_TABLE_ALIAS};
@@ -28,13 +28,13 @@ pub(crate) struct TableVersions(PlHashMap<(u64, u64), TableVersion>);
 
 impl TableVersions {
     /// Put each clause on the table factor whose name starts at its position.
-    pub(crate) fn attach(mut self, stmts: &mut [Statement]) -> PolarsResult<()> {
+    pub(crate) fn attach<T: VisitMut>(mut self, nodes: &mut [T]) -> PolarsResult<()> {
         if self.0.is_empty() {
             return Ok(());
         }
         let mut attach = Attach(&mut self.0);
-        for stmt in stmts {
-            if let ControlFlow::Break(err) = dyn_visit::visit_mut(stmt, &mut attach) {
+        for node in nodes {
+            if let ControlFlow::Break(err) = dyn_visit::visit_mut(node, &mut attach) {
                 return Err(err);
             }
         }

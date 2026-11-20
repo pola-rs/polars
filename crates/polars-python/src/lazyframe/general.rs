@@ -1060,6 +1060,7 @@ impl PyLazyFrame {
 
     fn rolling(
         &self,
+        py: Python<'_>,
         index_column: PyExpr,
         period: &str,
         offset: &str,
@@ -1072,22 +1073,22 @@ impl PyLazyFrame {
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
-        let lazy_gb = ldf.rolling(
-            index_column.inner,
-            by,
-            RollingGroupOptions {
-                index_column: "".into(),
-                period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
-                offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
-                closed_window,
-            },
-        );
+        let options = RollingGroupOptions {
+            index_column: "".into(),
+            period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+            offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
+            closed_window,
+        };
+        // Without the GIL: an expression index column resolves the schema, which may come
+        // from Python (an I/O plugin).
+        let lazy_gb = py.enter_polars_ok(move || ldf.rolling(index_column.inner, by, options))?;
 
         Ok(PyLazyGroupBy { lgb: Some(lazy_gb) })
     }
 
     fn group_by_dynamic(
         &self,
+        py: Python<'_>,
         index_column: PyExpr,
         every: &str,
         period: &str,
@@ -1104,20 +1105,19 @@ impl PyLazyFrame {
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
         let ldf = self.ldf.read().clone();
-        let lazy_gb = ldf.group_by_dynamic(
-            index_column.inner,
-            group_by,
-            DynamicGroupOptions {
-                every: Duration::try_parse(every).map_err(PyPolarsErr::from)?,
-                period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
-                offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
-                label: label.0,
-                include_boundaries,
-                closed_window,
-                start_by: start_by.0,
-                ..Default::default()
-            },
-        );
+        let options = DynamicGroupOptions {
+            every: Duration::try_parse(every).map_err(PyPolarsErr::from)?,
+            period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+            offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
+            label: label.0,
+            include_boundaries,
+            closed_window,
+            start_by: start_by.0,
+            ..Default::default()
+        };
+        // Without the GIL, as `rolling`
+        let lazy_gb = py
+            .enter_polars_ok(move || ldf.group_by_dynamic(index_column.inner, group_by, options))?;
 
         Ok(PyLazyGroupBy { lgb: Some(lazy_gb) })
     }
@@ -1516,9 +1516,13 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (offset, len=None))]
-    fn slice(&self, offset: i64, len: Option<IdxSize>) -> Self {
+    fn slice(&self, offset: i64, len: Option<usize>) -> Self {
         let ldf = self.ldf.read().clone();
-        ldf.slice(offset, len.unwrap_or(IdxSize::MAX)).into()
+        match Slice::new(offset, len) {
+            Some(slice) => ldf.slice(slice),
+            None => ldf,
+        }
+        .into()
     }
 
     fn tail(&self, n: IdxSize) -> Self {
@@ -1792,7 +1796,21 @@ impl Iterator for ArrowStreamIterator {
             Some(Err(err)) => Some(Err(err)),
             Some(Ok(df)) => {
                 let height = df.height();
-                let arrays = df.rechunk_into_arrow(CompatLevel::newest());
+                // Dictionary columns materialize here: do it for all columns in parallel, as
+                // with codes off the decoder did. Not with Object columns, which need the GIL.
+                let compat = CompatLevel::newest();
+                let arrays: Vec<ArrayRef> =
+                    if df.columns().iter().any(|c| c.dtype().contains_objects()) {
+                        df.rechunk_into_arrow(compat)
+                    } else {
+                        polars_core::runtime::RAYON.install(|| {
+                            use rayon::prelude::*;
+                            df.into_columns()
+                                .into_par_iter()
+                                .map(|c| c.rechunk_to_arrow(compat))
+                                .collect()
+                        })
+                    };
                 Some(Ok(Box::new(polars_arrow::array::StructArray::new(
                     self.dtype.clone(),
                     height,

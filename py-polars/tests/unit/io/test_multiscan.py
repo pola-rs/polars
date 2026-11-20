@@ -99,18 +99,214 @@ def test_include_file_paths_predicate_skips_row_groups_22413(
     pl.DataFrame({"a": range(10)}).write_parquet(a_path, row_group_size=5)
     pl.DataFrame({"a": range(10, 20)}).write_parquet(b_path, row_group_size=5)
 
+    # The path predicate is mixed with a data column, so no file is skipped and the
+    # reader has to prune row groups.
     q = pl.scan_parquet([a_path, b_path], include_file_paths="f").filter(
-        pl.col("f") == normalize_path_separator_pl(pl.lit(str(a_path)))
+        (pl.col("f") == normalize_path_separator_pl(pl.lit(str(a_path))))
+        | (pl.col("a") >= 15)
     )
     # The reader prunes row groups only with its capabilities.
     plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
     out, capture = _collect_verbose(q, plmonkeypatch, capfd)
 
-    assert out["a"].to_list() == list(range(10))
+    assert out["a"].to_list() == [*range(10), *range(15, 20)]
     # The path column is not stored in the files, so the reader uses the path as its
     # min / max statistics.
     assert "Predicate pushdown: reading 2 / 2 row groups" in capture
-    assert "Predicate pushdown: reading 0 / 2 row groups" in capture
+    assert "Predicate pushdown: reading 1 / 2 row groups" in capture
+
+
+def _write_three_files(tmp_path: Path, write: Any) -> tuple[list[Path], pl.DataFrame]:
+    paths = [tmp_path / "a", tmp_path / "b", tmp_path / "c"]
+    dfs = [
+        pl.DataFrame({"a": [5, 10]}),
+        pl.DataFrame({"a": [1996]}),
+        pl.DataFrame({"a": [7, 8, 9]}),
+    ]
+    for path, df in zip(paths, dfs, strict=True):
+        write(df, path)
+    expected = pl.concat(
+        [df.with_columns(f=pl.lit(str(p))) for p, df in zip(paths, dfs, strict=True)]
+    ).with_columns(normalize_path_separator_pl(pl.col("f")))
+    return paths, expected
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_include_file_paths_predicate_skips_files(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    scan: Any,
+    write: Any,
+) -> None:
+    (a, b, c), expected = _write_three_files(tmp_path, write)
+    lf = scan([a, b, c], include_file_paths="f")
+
+    def lit(p: Path) -> pl.Expr:
+        expr: pl.Expr = normalize_path_separator_pl(pl.lit(str(p)))
+        return expr
+
+    cases = [
+        # (predicate, number of skipped files)
+        (pl.col("f") == lit(a), 2),
+        (pl.col("f") != lit(a), 1),
+        (pl.col("f").str.ends_with("b"), 2),
+        (
+            pl.col("f").is_in(normalize_path_separator_pl(pl.Series([str(a), str(c)]))),
+            1,
+        ),
+        ((pl.col("f") == lit(a)) & (pl.col("a") > 5), 2),
+        ((pl.col("f") != lit(b)) & (pl.col("a") < 9), 1),
+        # Mixed in an OR: nothing can be decided per file.
+        ((pl.col("f") == lit(a)) | (pl.col("a") > 100), 0),
+    ]
+
+    for predicate, n_skipped in cases:
+        out, capture = _collect_verbose(lf.filter(predicate), plmonkeypatch, capfd)
+        assert_frame_equal(out, expected.filter(predicate))
+        if n_skipped > 0:
+            assert f"allows skipping {n_skipped} / 3 files" in capture
+        else:
+            assert "allows skipping" not in capture
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+def test_include_file_paths_predicate_does_not_open_skipped_files(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a_path = tmp_path / "a"
+    b_path = tmp_path / "b"
+    pl.DataFrame({"a": [1, 2]}).write_parquet(a_path)
+    # Not a valid file: opening it would fail.
+    b_path.write_bytes(b"not a parquet file")
+
+    q = pl.scan_parquet(
+        [a_path, b_path], include_file_paths="f", schema={"a": pl.Int64}
+    ).filter(pl.col("f") == normalize_path_separator_pl(pl.lit(str(a_path))))
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    assert out["a"].to_list() == [1, 2]
+    assert "allows skipping 1 / 2 files" in capture
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+@pytest.mark.parametrize("row_index", [False, True])
+def test_include_file_paths_literal_predicate(
+    tmp_path: Path, scan: Any, write: Any, row_index: bool
+) -> None:
+    (a, b, _), expected = _write_three_files(tmp_path, write)
+    kwargs: dict[str, Any] = {"row_index_name": "i"} if row_index else {}
+    lf = scan([a, b], include_file_paths="f", **kwargs)
+    expected = expected.head(3)
+    if row_index:
+        expected = expected.with_row_index("i")
+
+    for predicate in [
+        pl.lit(False),
+        pl.lit(None, dtype=pl.Boolean),
+        pl.lit(False) & (pl.col("a") > 0),
+        pl.lit(True),
+        pl.lit(True) & (pl.col("a") > 5),
+    ]:
+        assert_frame_equal(lf.filter(predicate).collect(), expected.filter(predicate))
+
+
+def test_include_file_paths_literal_predicate_buffers() -> None:
+    bufs: list[IO[bytes]] = [io.BytesIO(), io.BytesIO()]
+    pl.DataFrame({"a": [1, 2]}).write_parquet(bufs[0])
+    pl.DataFrame({"a": [3]}).write_parquet(bufs[1])
+    for buf in bufs:
+        buf.seek(0)
+    lf = pl.scan_parquet(bufs, include_file_paths="f")
+    for predicate, n in [
+        (pl.lit(False), 0),
+        (pl.lit(None, dtype=pl.Boolean), 0),
+        (pl.lit(False) & (pl.col("a") > 0), 0),
+        (pl.lit(True), 3),
+        (pl.col("f") == "in-mem", 3),
+        (pl.col("f") == "other", 0),
+    ]:
+        assert lf.filter(predicate).collect().height == n
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+    ],
+)
+def test_include_file_paths_predicate_with_hive(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    scan: Any,
+    write: Any,
+) -> None:
+    paths = []
+    frames = []
+    for i in range(4):
+        d = tmp_path / f"h={i % 2}"
+        d.mkdir(exist_ok=True)
+        path = d / f"f{i}"
+        df = pl.DataFrame({"a": [i, i + 10]})
+        write(df, path)
+        paths.append(path)
+        frames.append(
+            df.with_columns(h=pl.lit(i % 2, dtype=pl.Int64), f=pl.lit(str(path)))
+        )
+    expected = pl.concat(frames).with_columns(normalize_path_separator_pl(pl.col("f")))
+
+    lf = scan(paths, include_file_paths="f", hive_partitioning=True).select(
+        "a", "h", "f"
+    )
+    f_lit = normalize_path_separator_pl(pl.lit(str(paths[2])))
+    for predicate, n_skipped in [
+        ((pl.col("h") == 0) & (pl.col("f") != f_lit), 3),
+        ((pl.col("h") == 1) & (pl.col("f") == f_lit), 4),
+        ((pl.col("h") == 0) & (pl.col("f") != f_lit) & (pl.col("a") > 0), 3),
+        ((pl.col("h") == 1) | (pl.col("f") == f_lit), 1),
+        ((pl.col("h") == 1) | (pl.col("f") == f_lit) | (pl.col("a") > 100), 0),
+    ]:
+        out, capture = _collect_verbose(lf.filter(predicate), plmonkeypatch, capfd)
+        assert_frame_equal(out, expected.filter(predicate), check_row_order=False)
+        if n_skipped > 0:
+            assert f"allows skipping {n_skipped} / 4 files" in capture
+        else:
+            assert "allows skipping" not in capture
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_include_file_paths_predicate_with_row_index_and_slice(
+    tmp_path: Path, scan: Any, write: Any
+) -> None:
+    (a, b, c), expected = _write_three_files(tmp_path, write)
+    a_lit = normalize_path_separator_pl(pl.lit(str(a)))
+    c_lit = normalize_path_separator_pl(pl.lit(str(c)))
+
+    lf = scan([a, b, c], include_file_paths="f", row_index_name="i")
+    expected_i = expected.with_row_index("i")
+    for predicate in [pl.col("f") == c_lit, pl.col("f") != a_lit]:
+        assert_frame_equal(lf.filter(predicate).collect(), expected_i.filter(predicate))
+        assert_frame_equal(
+            lf.filter(predicate).head(2).collect(),
+            expected_i.filter(predicate).head(2),
+        )
+
+    lf = scan([a, b, c], include_file_paths="f")
+    for predicate in [pl.col("f") == c_lit, pl.col("f") != a_lit]:
+        assert_frame_equal(
+            lf.head(4).filter(predicate).collect(), expected.head(4).filter(predicate)
+        )
+        assert_frame_equal(
+            lf.filter(predicate).head(2).collect(), expected.filter(predicate).head(2)
+        )
 
 
 @pytest.mark.parametrize(
@@ -558,15 +754,16 @@ def test_multiscan_slice_middle(
 
 
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
-@given(offset=st.integers(-100, 100), length=st.integers(0, 101))
+@given(offset=st.integers(-100, 100), length=st.none() | st.integers(0, 101))
 def test_multiscan_slice_parametric(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     offset: int,
-    length: int,
+    length: int | None,
 ) -> None:
+    ref_df = pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame()
     ref = io.BytesIO()
-    write(pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame(), ref)
+    write(ref_df, ref)
     ref.seek(0)
 
     fs = [io.BytesIO() for _ in range(13)]
@@ -575,7 +772,7 @@ def test_multiscan_slice_parametric(
         f.seek(0)
 
     assert_frame_equal(
-        scan(ref).slice(offset, length).collect(),
+        ref_df.slice(offset, length),
         scan(fs).slice(offset, length).collect(engine="streaming"),
     )
 

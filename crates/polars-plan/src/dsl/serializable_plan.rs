@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 #[cfg(feature = "pivot")]
 use polars_core::frame::PivotColumnNaming;
+use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 use serde::{Deserialize, Serialize};
@@ -119,13 +120,12 @@ pub(crate) enum SerializableDslPlanNode {
     Sort {
         input: DslPlanKey,
         by_column: Vec<Expr>,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         sort_options: SortMultipleOptions,
     },
     Slice {
         input: DslPlanKey,
-        offset: i64,
-        len: IdxSize,
+        slice: Slice,
     },
     MapFunction {
         input: DslPlanKey,
@@ -346,10 +346,9 @@ fn convert_dsl_plan_to_serializable_plan(
             slice: *slice,
             sort_options: sort_options.clone(),
         },
-        DP::Slice { input, offset, len } => SP::Slice {
+        DP::Slice { input, slice } => SP::Slice {
             input: dsl_plan_key(input, arenas),
-            offset: *offset,
-            len: *len,
+            slice: *slice,
         },
         DP::MapFunction { input, function } => SP::MapFunction {
             input: dsl_plan_key(input, arenas),
@@ -637,10 +636,9 @@ fn try_convert_serializable_plan_to_dsl_plan(
             slice: *slice,
             sort_options: sort_options.clone(),
         }),
-        SP::Slice { input, offset, len } => Ok(DP::Slice {
+        SP::Slice { input, slice } => Ok(DP::Slice {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
-            offset: *offset,
-            len: *len,
+            slice: *slice,
         }),
         SP::MapFunction { input, function } => Ok(DP::MapFunction {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,

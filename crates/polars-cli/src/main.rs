@@ -38,28 +38,41 @@ fn run_command() -> ExitCode {
         Err(error) => return report(error),
     };
     let format = args.format();
+    let read_only = args.read_only_origin();
+    let verbose = args.verbose();
+    let on_terminal = io::stdout().is_terminal();
     // Checked before the script is read, which can wait for standard input.
-    if format.is_one_file() && io::stdout().is_terminal() {
+    if format.is_one_file() && on_terminal {
         return report(usage_error(
             ErrorKind::InvalidValue,
             format!("format '{format}' is binary; send the output to a file or a pipe"),
         ));
     }
-    let script = match read_script(args.input()) {
+    let input = args.input();
+    let source = input.name();
+    let script = match read_script(input) {
         Ok(script) => script,
         Err(error) => return report(error),
     };
-    if format.is_one_file() && script.len() != 1 {
+    // A script that cannot be split is reported as such when it runs.
+    if format.is_one_file() && script.can_be_split() && !script.ends_in_its_only_result() {
         return report(usage_error(
             ErrorKind::InvalidValue,
-            format!("format '{format}' writes one file, so it takes a script of one statement"),
+            format!(
+                "format '{format}' writes one file, so the last statement must be the only one \
+                 that returns rows"
+            ),
         ));
     }
 
     let interrupted = handle_interrupts();
     // Not locked: Polars and the panic hook write to these streams from other threads.
     let stdout = BufWriter::new(io::stdout());
-    let code = run(&script, &mut Printer::new(stdout, io::stderr(), format));
+    let mut printer = Printer::new(stdout, io::stderr(), format)
+        .on_terminal(on_terminal)
+        .source(source)
+        .verbose(verbose);
+    let code = run(&script, read_only, &mut printer);
     // An interrupt that arrived while the last result was printed stopped nothing.
     if code == exit_code::OK && interrupted.load(Ordering::SeqCst) {
         ExitCode::from(exit_code::INTERRUPTED)

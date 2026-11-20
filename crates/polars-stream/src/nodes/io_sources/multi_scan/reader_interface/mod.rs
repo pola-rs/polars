@@ -100,6 +100,12 @@ pub trait FileReader: Send + Sync {
         &mut self,
         pre_slice: Option<Slice>,
     ) -> PolarsResult<IdxSize> {
+        // Normalize positive slices, as some row-skipping codepaths are single-threaded (e.g. NDJSON).
+        let pre_slice = match pre_slice {
+            Some(v) if v.is_positive() => v.end_position().map(Slice::head),
+            v => v,
+        };
+
         let Some(pre_slice) = pre_slice else {
             return self.n_rows_in_file().await;
         };
@@ -107,14 +113,7 @@ pub trait FileReader: Send + Sync {
         let (tx, rx) = oneshot_channel::channel();
 
         let (mut morsel_receivers, handle) = self.begin_read(BeginReadArgs {
-            pre_slice: Some(match pre_slice {
-                // Normalize positive slices, as some row-skipping codepaths are single-threaded (e.g. NDJSON).
-                v @ Slice::Positive { .. } => Slice::Positive {
-                    offset: 0,
-                    len: v.end_position(),
-                },
-                v @ Slice::Negative { .. } => v,
-            }),
+            pre_slice: Some(pre_slice),
             callbacks: FileReaderCallbacks {
                 row_position_on_end_tx: Some(tx),
                 ..Default::default()
@@ -263,7 +262,7 @@ pub fn calc_row_position_after_slice(n_rows_in_file: IdxSize, pre_slice: Option<
 
     let out = match pre_slice {
         None => n_rows_in_file,
-        Some(v) => v.restrict_to_bounds(n_rows_in_file).end_position(),
+        Some(v) => v.resolve(n_rows_in_file).end,
     };
 
     IdxSize::try_from(out).unwrap_or(IdxSize::MAX)

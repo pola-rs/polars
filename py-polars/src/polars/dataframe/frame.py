@@ -4649,14 +4649,19 @@ class DataFrame:
                 # Ref: https://github.com/apache/arrow-adbc/issues/2828
                 if isinstance(connection, str):
                     adbc_module_name = _get_adbc_module_name_from_uri(connection)
-                    adbc_driver = _import_optional_adbc_driver(
-                        adbc_module_name, dbapi_submodule=False
-                    )
-                    adbc_driver_str_version = getattr(
-                        adbc_driver,
-                        "__version__",
-                        driver_manager_str_version,
-                    )
+                    try:
+                        adbc_driver = _import_optional_adbc_driver(
+                            adbc_module_name, dbapi_submodule=False
+                        )
+                        adbc_driver_str_version = getattr(
+                            adbc_driver,
+                            "__version__",
+                            driver_manager_str_version,
+                        )
+                    except ModuleNotFoundError:
+                        # not a pip package: the connection was opened from a
+                        # driver manifest (e.g. installed with `dbc`)
+                        adbc_driver_str_version = driver_manager_str_version
                 elif _PYARROW_AVAILABLE:
                     adbc_module_name = (
                         f"adbc_driver_{conn.adbc_get_info()['vendor_name'].lower()}"
@@ -6305,7 +6310,13 @@ class DataFrame:
             ._collect_eager(optimizations=optimizations)
         )
 
-    def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
+    def sql(
+        self,
+        query: str,
+        *,
+        table_name: str = "self",
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
+    ) -> DataFrame:
         """
         Execute a SQL query against the DataFrame.
 
@@ -6323,6 +6334,11 @@ class DataFrame:
         table_name
             Optionally provide an explicit name for the table that represents the
             calling frame (defaults to "self").
+        params
+            The values of the query parameters. A sequence gives the values of the
+            positional parameters `?` (in order) or `$1`, `$2`, ...; a mapping gives
+            the values of the named parameters `$name` or `:name`. A parameter acts as
+            a literal of its value, so it can never inject SQL.
 
         Notes
         -----
@@ -6395,7 +6411,7 @@ class DataFrame:
         with SQLContext(register_globals=False, eager=True) as ctx:
             name = table_name if table_name else "self"
             ctx.register(name=name, frame=self)
-            return ctx.execute(query)
+            return ctx.execute(query, params=params)
 
     @removed_parameters(
         RenamedParameter(

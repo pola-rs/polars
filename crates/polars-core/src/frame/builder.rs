@@ -98,7 +98,7 @@ impl DataFrameBuilder {
             match column {
                 // Only the rows taken are materialized, not the whole dictionary column.
                 Column::Dictionary(d) if d.lazy_as_materialized_series().is_none() => {
-                    let s = d.slice(start as i64, length).take_materialized_series();
+                    let s = d.slice((start, length)).take_materialized_series();
                     builder.subslice_extend(&s, 0, s.len(), share);
                 },
                 Column::Series(_) | Column::Dictionary(_) => {
@@ -131,7 +131,7 @@ impl DataFrameBuilder {
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
                 Column::Dictionary(d) if d.lazy_as_materialized_series().is_none() => {
-                    let s = d.slice(start as i64, length).take_materialized_series();
+                    let s = d.slice((start, length)).take_materialized_series();
                     builder.subslice_extend_repeated(&s, 0, s.len(), repeats, share);
                 },
                 Column::Series(_) | Column::Dictionary(_) => {
@@ -171,7 +171,7 @@ impl DataFrameBuilder {
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
                 Column::Dictionary(d) if d.lazy_as_materialized_series().is_none() => {
-                    let s = d.slice(start as i64, length).take_materialized_series();
+                    let s = d.slice((start, length)).take_materialized_series();
                     builder.subslice_extend_each_repeated(&s, 0, s.len(), repeats, share);
                 },
                 Column::Series(_) | Column::Dictionary(_) => {

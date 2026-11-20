@@ -240,6 +240,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::arctan2)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::datetime))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::date_diff))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_expr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_lf_diagonal))

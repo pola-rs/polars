@@ -153,3 +153,31 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+@pytest.mark.parametrize("chunk_size", [None, 150_000, 400_000])
+def test_sink_batches_null_column_after_typed_batches(chunk_size: int | None) -> None:
+    # A batch whose column was inferred as Null is cast to the type of the first batch.
+    n = 200_000
+    lf = pl.LazyFrame({"a": pl.int_range(3 * n, eager=True)})
+    calls = {"null": 0}
+
+    def f(df: pl.DataFrame) -> pl.DataFrame:
+        if df.item(0, 0) >= n:
+            calls["null"] += 1
+            return pl.DataFrame({"a": pl.Series("a", [None] * df.height)})
+        return df
+
+    frames: list[pl.DataFrame] = []
+    lf.map_batches(f, streamable=True, validate_output_schema=False).sink_batches(
+        lambda df: frames.append(df),  # type: ignore[arg-type]
+        chunk_size=chunk_size,
+        engine="streaming",
+    )
+
+    assert calls["null"] > 0
+    assert all(df.schema == {"a": pl.Int64} for df in frames)
+    out = pl.concat(frames)["a"]
+    assert out.len() == 3 * n
+    assert out.head(1).to_list() == [0]
+    assert out.tail(1).to_list() == [None]

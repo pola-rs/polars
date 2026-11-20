@@ -137,7 +137,7 @@ impl FileReader for CsvFileReader {
             // the FileReaderBuilder does not indicate PRE_SLICE support when we have a comment
             // prefix.
             Some(pre_slice)
-                if self.options.parse_options.comment_prefix.is_some() && pre_slice.len() > 0 =>
+                if self.options.parse_options.comment_prefix.is_some() && !pre_slice.is_empty() =>
             {
                 panic!("{pre_slice:?}")
             },

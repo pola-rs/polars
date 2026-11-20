@@ -1017,6 +1017,29 @@ def test_list_n_unique() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_list_get_null_list_broadcast() -> None:
+    df = pl.DataFrame({"i": [0, 1]})
+    out = df.select(pl.lit(None, dtype=pl.List(pl.String)).list.get(pl.col("i")))
+    assert out.to_series().to_list() == [None, None]
+
+
+@pytest.mark.parametrize("index", [-(2**63), 2**63 - 1])
+def test_list_get_extreme_index(index: int) -> None:
+    df = pl.DataFrame({"a": [[1], None, [], [1, 2]]})
+    out = df.select(
+        scalar=pl.col("a").list.get(index, null_on_oob=True),
+        column=pl.col("a").list.get(pl.repeat(index, 4), null_on_oob=True),
+    )
+    assert out.to_dict(as_series=False) == {
+        "scalar": [None] * 4,
+        "column": [None] * 4,
+    }
+    gets: list[int | pl.Expr] = [index, pl.repeat(index, 4)]
+    for get in gets:
+        with pytest.raises(ComputeError, match="out of bounds"):
+            df.select(pl.col("a").list.get(get))
+
+
 def test_list_get_with_null() -> None:
     df = pl.DataFrame({"a": [None, [1, 2]], "b": [False, True]})
 

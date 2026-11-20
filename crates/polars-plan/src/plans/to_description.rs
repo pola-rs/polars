@@ -82,7 +82,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 .map(|x| x.iter().map(ToString::to_string).collect()),
             maintain_order: *maintain_order,
             keep_strategy: format!("{:?}", keep_strategy),
-            slice: *slice,
+            slice: slice.map(|s| s.to_signed_offset_len()),
         },
         IR::Filter { predicate, .. } => IrPropsDescription::Filter {
             predicate: fmt_predicate(predicate, expr_arena),
@@ -94,7 +94,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             options,
             ..
         } => {
-            let slice = options.slice;
+            let slice = options.slice.map(|s| s.to_signed_offset_len());
             let keys = fmt_exprs(keys, expr_arena);
             let aggs = fmt_exprs(aggs, expr_arena);
 
@@ -222,13 +222,13 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 maintain_order: fmt_from_static_str(args.maintain_order),
                 validation: fmt_from_static_str(args.validation),
                 suffix: args.suffix.as_ref().map(ToString::to_string),
-                slice: args.slice,
+                slice: args.slice.map(|s| s.to_signed_offset_len()),
             };
 
             match &args.how {
                 JoinType::Cross => IrPropsDescription::CrossJoin {
                     maintain_order: fmt_from_static_str(args.maintain_order),
-                    slice: args.slice,
+                    slice: args.slice.map(|s| s.to_signed_offset_len()),
                     predicate: match &o.options {
                         JoinTypeOptionsIR::CrossAndFilter { predicate } => {
                             Some(fmt_predicate(predicate, expr_arena))
@@ -268,7 +268,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                             ]
                         }),
                         suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice,
+                        slice: args.slice.map(|s| s.to_signed_offset_len()),
                         coalesce: fmt_from_static_str(args.coalesce),
                         allow_eq: *allow_eq,
                         check_sortedness: *check_sortedness,
@@ -295,7 +295,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                             vec![fmt_from_static_str(operator1)]
                         },
                         suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice,
+                        slice: args.slice.map(|s| s.to_signed_offset_len()),
                     },
                     _ => generic_join(),
                 },
@@ -347,10 +347,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     .map(|cols| cols.iter().map(|x| x.to_string()).collect()),
                 row_index_name: row_index.as_ref().map(|ri| ri.name.to_string()),
                 row_index_offset: row_index.as_ref().map(|ri| idxsize_to_u64(ri.offset)),
-                pre_slice: pre_slice
-                    .as_ref()
-                    .map(|x| x.to_signed_offset_len())
-                    .map(|x| (x.0, idxsize_to_u64(x.1))),
+                pre_slice: pre_slice.as_ref().map(|x| x.to_signed_offset_len()),
                 predicate: predicate.as_ref().map(|e| fmt_predicate(e, expr_arena)),
                 predicate_file_skip_applied: predicate_file_skip_applied.map(|pfs| {
                     PredicateFileSkipDescription {
@@ -393,9 +390,9 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
         IR::SinkMultiple { inputs, .. } => IrPropsDescription::SinkMultiple {
             num_inputs: inputs.len(),
         },
-        IR::Slice { offset, len, .. } => IrPropsDescription::Slice {
-            offset: *offset,
-            len: idxsize_to_u64(*len),
+        IR::Slice { slice, .. } => {
+            let (offset, len) = slice.to_signed_offset_len();
+            IrPropsDescription::Slice { offset, len }
         },
         IR::Sort {
             by_column,
@@ -420,8 +417,9 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     nulls_last,
                 })
                 .collect(),
-            slice: slice.as_ref().map(|(offset, len, dyn_pred)| {
-                (*offset, *len, dyn_pred.as_ref().map(|dp| format!("{dp:?}")))
+            slice: slice.as_ref().map(|(slice, dyn_pred)| {
+                let (offset, len) = slice.to_signed_offset_len();
+                (offset, len, dyn_pred.as_ref().map(|dp| format!("{dp:?}")))
             }),
             maintain_order: *maintain_order,
             limit: limit.map(idxsize_to_u64),
@@ -438,7 +436,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
         } => IrPropsDescription::Union {
             num_inputs: inputs.len(),
             maintain_order: *maintain_order,
-            slice: *slice,
+            slice: slice.map(|s| s.to_signed_offset_len()),
         },
         #[cfg(feature = "python")]
         IR::PythonScan {
@@ -522,7 +520,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             projection: projection
                 .as_deref()
                 .map(|cols| cols.iter().map(ToString::to_string).collect()),
-            slice: *slice,
+            slice: slice.map(|s| s.to_signed_offset_len()),
             filters: fmt_exprs(filters, expr_arena),
             filter_drop_columns_idx: *filter_drop_columns_idx,
             num_cached_resolves: resolved_dsl.lock().unwrap().len(),

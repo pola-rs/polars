@@ -5,10 +5,11 @@ use polars_arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{
-    Column, DataFrame, IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet, Scalar,
+    Column, DataFrame, IDX_DTYPE, IdxCa, InitHashMaps, IntoColumn, NewChunkedArray, PlHashMap,
+    PlIndexMap, PlIndexSet, Scalar, StringChunked,
 };
 use polars_core::schema::Schema;
-use polars_error::polars_warn;
+use polars_error::{polars_ensure, polars_warn};
 use polars_expr::prelude::PhysicalExpr;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::{
@@ -43,6 +44,7 @@ pub fn create_scan_predicate(
     expr_arena: &mut Arena<AExpr>,
     schema: &Arc<Schema>,
     hive_schema: Option<&Schema>,
+    file_path_col: Option<&str>,
     state: &mut ExpressionConversionState,
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
@@ -59,10 +61,16 @@ pub fn create_scan_predicate(
 
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
+    let mut hive_predicate_reads_file_path = false;
 
     'set_scan_predicate: {
-        let Some(hive_schema) = hive_schema else {
+        if hive_schema.is_none() && file_path_col.is_none() {
             break 'set_scan_predicate;
+        }
+
+        // Columns that are constant within a file: hive columns and the file path column.
+        let is_file_constant_col = |name: &str| {
+            hive_schema.is_some_and(|s| s.contains(name)) || file_path_col == Some(name)
         };
 
         let mut hive_predicate_parts = vec![];
@@ -70,8 +78,14 @@ pub fn create_scan_predicate(
 
         for predicate_part in MintermIter::new(predicate.node(), expr_arena) {
             if aexpr_to_leaf_names_iter(predicate_part, expr_arena)
-                .all(|name| hive_schema.contains(name))
+                .all(|name| is_file_constant_col(name))
             {
+                if let Some(file_path_col) = file_path_col
+                    && aexpr_to_leaf_names_iter(predicate_part, expr_arena)
+                        .any(|name| name == file_path_col)
+                {
+                    hive_predicate_reads_file_path = true;
+                }
                 hive_predicate_parts.push(predicate_part)
             } else {
                 non_hive_predicate_parts.push(predicate_part)
@@ -201,6 +215,7 @@ pub fn create_scan_predicate(
         runtime_ranges,
         hive_predicate,
         hive_predicate_is_full_predicate,
+        hive_predicate_reads_file_path,
     })
 }
 
@@ -357,11 +372,44 @@ pub struct InitializeScanPredicateResult {
     pub can_skip_scan_predicate: bool,
 }
 
+/// One row per source holding the file-constant columns: the hive columns, and the file path
+/// column if `file_path_col` is given. Without any such columns it has zero width, so that
+/// predicate parts without column leaves are still evaluated per file.
+fn file_constant_columns_df(
+    hive_parts: Option<&HivePartitionsDf>,
+    sources: &ScanSources,
+    file_path_col: Option<&str>,
+) -> PolarsResult<DataFrame> {
+    let mut df = match hive_parts {
+        Some(hp) => hp.df().clone(),
+        None => DataFrame::new(sources.len(), vec![])?,
+    };
+
+    if let Some(name) = file_path_col
+        && !df.schema().contains(name)
+    {
+        // Same values the multiscan materializes for the column.
+        let paths: StringChunked = StringChunked::from_iter_values(
+            name.into(),
+            sources
+                .iter()
+                .map(|source| source.to_include_path_name().to_owned()),
+        );
+        let column = paths.into_column();
+
+        df.with_column(column)?;
+    }
+
+    Ok(df)
+}
+
 /// # Returns
 /// (skip_files_mask, predicate)
 pub fn initialize_scan_predicate(
     predicate: Option<&ScanIOPredicate>,
     hive_parts: Option<&HivePartitionsDf>,
+    sources: &ScanSources,
+    file_path_col: Option<&str>,
     table_statistics: Option<&TableStatistics>,
     verbose: bool,
 ) -> PolarsResult<InitializeScanPredicateResult> {
@@ -372,10 +420,14 @@ pub fn initialize_scan_predicate(
     let mut hive_inclusion: Option<Bitmap> = None;
     let mut stats_exclusion: Option<Bitmap> = None;
 
-    // Hive partitioning pruning.
-    if let Some(hive_parts) = hive_parts
-        && let Some(hive_predicate) = &predicate.hive_predicate
-    {
+    // File-constant column pruning (hive columns and the file path column).
+    if let Some(hive_predicate) = &predicate.hive_predicate {
+        let file_df = file_constant_columns_df(
+            hive_parts,
+            sources,
+            file_path_col.filter(|_| predicate.hive_predicate_reads_file_path),
+        )?;
+
         if verbose {
             eprintln!(
                 "initialize_scan_predicate: Source filter mask initialization via hive partitions"
@@ -383,7 +435,7 @@ pub fn initialize_scan_predicate(
         }
 
         let hive_inclusion_bitmap = hive_predicate
-            .evaluate_io(hive_parts.df())?
+            .evaluate_io(&file_df)?
             .bool()?
             .rechunk()
             .into_owned()
@@ -392,10 +444,17 @@ pub fn initialize_scan_predicate(
             .unwrap()
             .true_and_valid();
 
-        let hive_len = hive_parts.df().height();
+        let hive_len = file_df.height();
         let mask_len = hive_inclusion_bitmap.len();
 
         if hive_len != mask_len {
+            // The row predicate is `true`, so the files must not be read unfiltered.
+            polars_ensure!(
+                !predicate.hive_predicate_is_full_predicate,
+                ComputeError:
+                "initialize_scan_predicate: filter mask length mismatch \
+                (mask: {mask_len}, hive: {hive_len}); this is a bug"
+            );
             polars_warn!(
                 "WARNING: \
             initialize_scan_predicate: \
@@ -548,6 +607,7 @@ pub fn apply_scan_predicate_to_scan_ir(
         expr_arena,
         &scan_ir_schema,
         hive_parts.as_ref().map(|hp| hp.df().schema().as_ref()),
+        unified_scan_args.include_file_paths.as_deref(),
         &mut ExpressionConversionState::new(true),
         true,  // create_skip_batch_predicate
         false, // create_column_predicates
@@ -561,6 +621,8 @@ pub fn apply_scan_predicate_to_scan_ir(
     } = initialize_scan_predicate(
         Some(&scan_predicate),
         hive_parts.as_ref(),
+        sources,
+        unified_scan_args.include_file_paths.as_deref(),
         unified_scan_args.table_statistics.as_ref(),
         verbose,
     )?;

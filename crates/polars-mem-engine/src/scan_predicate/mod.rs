@@ -94,9 +94,13 @@ pub struct ScanPredicate {
     /// Columns whose batches are skipped by a range published at run time.
     pub runtime_ranges: Vec<RuntimeRangeHint>,
 
-    /// Predicate only referring to hive columns.
+    /// Predicate only referring to file-constant columns (hive columns and the file path column).
+    /// It settles whole files.
     pub hive_predicate: Option<Arc<dyn PhysicalExpr>>,
+    /// Every part of the predicate is in `hive_predicate`.
     pub hive_predicate_is_full_predicate: bool,
+    /// `hive_predicate` reads the file path column.
+    pub hive_predicate_reads_file_path: bool,
 }
 
 impl fmt::Debug for ScanPredicate {
@@ -141,6 +145,7 @@ impl ScanPredicate {
                 runtime_ranges: self.runtime_ranges.clone(),
                 hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
                 hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,
+                hive_predicate_reads_file_path: self.hive_predicate_reads_file_path,
             },
             self.predicate_minterm_eirs.clone(),
         )

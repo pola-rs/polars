@@ -180,6 +180,14 @@ def test_greatest_least() -> None:
         )
 
 
+@pytest.mark.parametrize("func", ["GREATEST", "LEAST", "COALESCE"])
+def test_variadic_no_arguments(func: str) -> None:
+    with pytest.raises(
+        SQLSyntaxError, match=f"{func} expects at least 1 argument \\(found 0\\)"
+    ):
+        pl.sql(f"SELECT {func}() AS x").collect()
+
+
 @pytest.mark.parametrize(
     "expr",
     [
