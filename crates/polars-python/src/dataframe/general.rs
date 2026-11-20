@@ -14,7 +14,7 @@ use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::prelude::strings_to_pl_smallstr;
 use crate::py_modules::polars;
-use crate::series::{PySeries, ToPySeries, ToSeries};
+use crate::series::{PySeries, ToColumns, ToPySeries};
 use crate::utils::{EnterPolarsExt, to_py_err};
 use crate::{PyExpr, PyLazyFrame};
 
@@ -22,9 +22,7 @@ use crate::{PyExpr, PyLazyFrame};
 impl PyDataFrame {
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
-        let columns = columns.to_series();
-        // @scalar-opt
-        let columns = columns.into_iter().map(|s| s.into()).collect();
+        let columns = columns.to_columns();
         let df = DataFrame::new_infer_height(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -52,23 +50,23 @@ impl PyDataFrame {
     }
 
     pub fn add(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
-        py.enter_polars_df(|| &*self.df.read() + &*s.series.read())
+        py.enter_polars_df(|| &*self.df.read() + &s.series())
     }
 
     pub fn sub(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
-        py.enter_polars_df(|| &*self.df.read() - &*s.series.read())
+        py.enter_polars_df(|| &*self.df.read() - &s.series())
     }
 
     pub fn mul(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
-        py.enter_polars_df(|| &*self.df.read() * &*s.series.read())
+        py.enter_polars_df(|| &*self.df.read() * &s.series())
     }
 
     pub fn div(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
-        py.enter_polars_df(|| &*self.df.read() / &*s.series.read())
+        py.enter_polars_df(|| &*self.df.read() / &s.series())
     }
 
     pub fn rem(&self, py: Python<'_>, s: &PySeries) -> PyResult<Self> {
-        py.enter_polars_df(|| &*self.df.read() % &*s.series.read())
+        py.enter_polars_df(|| &*self.df.read() % &s.series())
     }
 
     pub fn add_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
@@ -111,7 +109,7 @@ impl PyDataFrame {
         py.enter_polars_df(|| {
             self.df
                 .read()
-                .sample_n(&n.series.read(), with_replacement, shuffle, seed)
+                .sample_n(&n.series(), with_replacement, shuffle, seed)
         })
     }
 
@@ -127,7 +125,7 @@ impl PyDataFrame {
         py.enter_polars_df(|| {
             self.df
                 .read()
-                .sample_frac(&frac.series.read(), with_replacement, shuffle, seed)
+                .sample_frac(&frac.series(), with_replacement, shuffle, seed)
         })
     }
 
@@ -199,16 +197,12 @@ impl PyDataFrame {
     }
 
     pub fn hstack(&self, py: Python<'_>, columns: Vec<PySeries>) -> PyResult<Self> {
-        let columns = columns.to_series();
-        // @scalar-opt
-        let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
+        let columns = columns.to_columns();
         py.enter_polars_df(|| self.df.read().hstack(&columns))
     }
 
     pub fn hstack_mut(&self, py: Python<'_>, columns: Vec<PySeries>) -> PyResult<()> {
-        let columns = columns.to_series();
-        // @scalar-opt
-        let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
+        let columns = columns.to_columns();
         py.enter_polars(|| self.df.write().hstack_mut(&columns).map(drop))?;
         Ok(())
     }
@@ -242,8 +236,7 @@ impl PyDataFrame {
             .write()
             .drop_in_place(name)
             .map_err(PyPolarsErr::from)?;
-        let s = s.take_materialized_series();
-        Ok(PySeries::from(s))
+        Ok(PySeries::from_column(s))
     }
 
     pub fn to_series(&self, index: isize) -> PyResult<PySeries> {
@@ -257,7 +250,7 @@ impl PyDataFrame {
 
         let s = index_adjusted.and_then(|i| df.select_at_idx(i));
         match s {
-            Some(s) => Ok(PySeries::new(s.as_materialized_series().clone())),
+            Some(s) => Ok(PySeries::from_column(s.clone())),
             None => Err(PyIndexError::new_err(
                 polars_err!(oob = index, df.width()).to_string(),
             )),
@@ -277,7 +270,7 @@ impl PyDataFrame {
             .df
             .read()
             .column(name)
-            .map(|s| PySeries::new(s.as_materialized_series().clone()))
+            .map(|s| PySeries::from_column(s.clone()))
             .map_err(PyPolarsErr::from)?;
         Ok(series)
     }
@@ -293,7 +286,7 @@ impl PyDataFrame {
     }
 
     pub fn gather_with_series(&self, py: Python<'_>, indices: &PySeries) -> PyResult<Self> {
-        let idx_s = indices.series.read();
+        let idx_s = indices.series();
         let indices = idx_s.idx().map_err(PyPolarsErr::from)?;
         py.enter_polars_df(|| self.df.read().take(indices))
     }
@@ -301,7 +294,7 @@ impl PyDataFrame {
     pub fn replace(&self, column: &str, new_col: PySeries) -> PyResult<()> {
         self.df
             .write()
-            .replace(column, new_col.series.into_inner().into_column())
+            .replace(column, new_col.into_frame_column())
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -309,7 +302,7 @@ impl PyDataFrame {
     pub fn replace_column(&self, index: usize, new_column: PySeries) -> PyResult<()> {
         self.df
             .write()
-            .replace_column(index, new_column.series.into_inner().into_column())
+            .replace_column(index, new_column.into_frame_column())
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
@@ -317,7 +310,7 @@ impl PyDataFrame {
     pub fn insert_column(&self, index: usize, column: PySeries) -> PyResult<()> {
         self.df
             .write()
-            .insert_column(index, column.series.into_inner().into_column())
+            .insert_column(index, column.into_frame_column())
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }

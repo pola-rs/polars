@@ -14,7 +14,7 @@ fn scalar_to_py(scalar: PyResult<Scalar>, py: Python<'_>) -> PyResult<Bound<'_, 
 impl PySeries {
     fn any(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<Option<bool>> {
         py.enter_polars(|| {
-            let s = self.series.read();
+            let s = self.series();
             let s = s.bool()?;
             PolarsResult::Ok(if ignore_nulls {
                 Some(s.any())
@@ -26,7 +26,7 @@ impl PySeries {
 
     fn all(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<Option<bool>> {
         py.enter_polars(|| {
-            let s = self.series.read();
+            let s = self.series();
             let s = s.bool()?;
             PolarsResult::Ok(if ignore_nulls {
                 Some(s.all())
@@ -38,7 +38,7 @@ impl PySeries {
 
     fn is_empty(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<bool> {
         py.enter_polars(|| {
-            let s = self.series.read();
+            let s = self.series();
             PolarsResult::Ok(if ignore_nulls {
                 s.is_full_null()
             } else {
@@ -49,7 +49,7 @@ impl PySeries {
 
     fn arg_max(&self, py: Python) -> PyResult<Option<usize>> {
         py.enter_polars(|| {
-            let s = self.series.read();
+            let s = self.series();
             polars_ensure!(
                 !s.dtype().is_object(),
                 InvalidOperation: "`arg_max` operation not supported for dtype `{}`",
@@ -61,7 +61,7 @@ impl PySeries {
 
     fn arg_min(&self, py: Python) -> PyResult<Option<usize>> {
         py.enter_polars(|| {
-            let s = self.series.read();
+            let s = self.series();
             polars_ensure!(
                 !s.dtype().is_object(),
                 InvalidOperation: "`arg_min` operation not supported for dtype `{}`",
@@ -72,15 +72,15 @@ impl PySeries {
     }
 
     fn min<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().min_reduce()), py)
+        scalar_to_py(py.enter_polars(|| self.series().min_reduce()), py)
     }
 
     fn max<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().max_reduce()), py)
+        scalar_to_py(py.enter_polars(|| self.series().max_reduce()), py)
     }
 
     fn mean<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let s = self.series.read();
+        let s = self.series();
         match s.dtype() {
             Boolean => scalar_to_py(
                 py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().mean_reduce()),
@@ -93,7 +93,7 @@ impl PySeries {
     }
 
     fn median<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let s = self.series.read();
+        let s = self.series();
         match s.dtype() {
             Boolean => scalar_to_py(
                 py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().median_reduce()),
@@ -106,7 +106,7 @@ impl PySeries {
     }
 
     fn product<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().product()), py)
+        scalar_to_py(py.enter_polars(|| self.series().product()), py)
     }
 
     fn quantile<'py>(
@@ -119,17 +119,13 @@ impl PySeries {
         if let Ok(q_float) = quantile.extract::<f64>() {
             // Single quantile: use quantile_reduce
             scalar_to_py(
-                py.enter_polars(|| self.series.read().quantile_reduce(q_float, interpolation.0)),
+                py.enter_polars(|| self.series().quantile_reduce(q_float, interpolation.0)),
                 py,
             )
         } else if let Ok(q_list) = quantile.extract::<Vec<f64>>() {
             // Multiple quantiles: use quantiles_reduce
             scalar_to_py(
-                py.enter_polars(|| {
-                    self.series
-                        .read()
-                        .quantiles_reduce(&q_list, interpolation.0)
-                }),
+                py.enter_polars(|| self.series().quantiles_reduce(&q_list, interpolation.0)),
                 py,
             )
         } else {
@@ -140,52 +136,52 @@ impl PySeries {
     }
 
     fn std<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().std_reduce(ddof)), py)
+        scalar_to_py(py.enter_polars(|| self.series().std_reduce(ddof)), py)
     }
 
     fn var<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().var_reduce(ddof)), py)
+        scalar_to_py(py.enter_polars(|| self.series().var_reduce(ddof)), py)
     }
 
     fn sum<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().sum_reduce()), py)
+        scalar_to_py(py.enter_polars(|| self.series().sum_reduce()), py)
     }
 
     fn first<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
         let result = if ignore_nulls {
-            py.enter_polars_ok(|| self.series.read().first_non_null())
+            py.enter_polars_ok(|| self.series().first_non_null())
         } else {
-            py.enter_polars_ok(|| self.series.read().first())
+            py.enter_polars_ok(|| self.series().first())
         };
         scalar_to_py(result, py)
     }
 
     fn last<'py>(&self, py: Python<'py>, ignore_nulls: bool) -> PyResult<Bound<'py, PyAny>> {
         let result = if ignore_nulls {
-            py.enter_polars_ok(|| self.series.read().last_non_null())
+            py.enter_polars_ok(|| self.series().last_non_null())
         } else {
-            py.enter_polars_ok(|| self.series.read().last())
+            py.enter_polars_ok(|| self.series().last())
         };
         scalar_to_py(result, py)
     }
 
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self, py: Python) -> PyResult<IdxSize> {
-        py.enter_polars(|| self.series.read().approx_n_unique())
+        py.enter_polars(|| self.series().approx_n_unique())
     }
 
     #[cfg(feature = "bitwise")]
     fn bitwise_and<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().and_reduce()), py)
+        scalar_to_py(py.enter_polars(|| self.series().and_reduce()), py)
     }
 
     #[cfg(feature = "bitwise")]
     fn bitwise_or<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().or_reduce()), py)
+        scalar_to_py(py.enter_polars(|| self.series().or_reduce()), py)
     }
 
     #[cfg(feature = "bitwise")]
     fn bitwise_xor<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        scalar_to_py(py.enter_polars(|| self.series.read().xor_reduce()), py)
+        scalar_to_py(py.enter_polars(|| self.series().xor_reduce()), py)
     }
 }

@@ -263,7 +263,7 @@ impl PyExpr {
         include_intervals: bool,
         right_closed: bool,
     ) -> Self {
-        let breaks = intervals.series.into_inner();
+        let breaks = intervals.into_series();
 
         self.inner
             .clone()

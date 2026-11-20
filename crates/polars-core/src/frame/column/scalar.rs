@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use polars_error::PolarsResult;
 use polars_utils::broadcast::BroadcastLength;
@@ -22,8 +22,10 @@ pub struct ScalarColumn {
     // materialized.len() == length
     // materialized.dtype() == value.dtype
     // materialized[i] == value, for all 0 <= i < length
-    /// A lazily materialized [`Series`] variant of this [`ScalarColumn`]
-    materialized: OnceLock<Series>,
+    /// A lazily materialized [`Series`] variant of this [`ScalarColumn`]. Clones share it, so
+    /// that a column is expanded once however many copies of it are read; changing the name or
+    /// the value of one gives it a cache of its own.
+    materialized: Arc<OnceLock<Series>>,
 }
 
 impl ScalarColumn {
@@ -34,7 +36,7 @@ impl ScalarColumn {
             scalar,
             length,
 
-            materialized: OnceLock::new(),
+            materialized: Arc::default(),
         }
     }
 
@@ -45,7 +47,7 @@ impl ScalarColumn {
             scalar: Scalar::new(dtype, AnyValue::Null),
             length: 0,
 
-            materialized: OnceLock::new(),
+            materialized: Arc::default(),
         }
     }
 
@@ -109,9 +111,11 @@ impl ScalarColumn {
 
     /// Take the [`ScalarColumn`] and materialize as a [`Series`] if not already done.
     pub fn take_materialized_series(self) -> Series {
-        self.materialized
-            .into_inner()
-            .unwrap_or_else(|| Self::_to_series(self.name, self.scalar, self.length))
+        match Arc::try_unwrap(self.materialized) {
+            Ok(cache) => cache.into_inner(),
+            Err(shared) => shared.get().cloned(),
+        }
+        .unwrap_or_else(|| Self::_to_series(self.name, self.scalar, self.length))
     }
 
     /// Estimated size of the column, see [`Series::estimated_size`].
@@ -160,7 +164,7 @@ impl ScalarColumn {
         let value = value.into_static();
         let value = Scalar::new(series.dtype().clone(), value);
         let mut sc = ScalarColumn::new(series.name().clone(), value, 1);
-        sc.materialized = OnceLock::from(series);
+        sc.materialized = Arc::new(OnceLock::from(series));
         sc
     }
 
@@ -197,12 +201,12 @@ impl ScalarColumn {
             name: self.name.clone(),
             scalar: self.scalar.clone(),
             length,
-            materialized: OnceLock::new(),
+            materialized: Arc::default(),
         };
 
         if length == self.length || (length < self.length && length > 1) {
             if let Some(materialized) = self.materialized.get() {
-                resized.materialized = OnceLock::from(materialized.head(Some(length)));
+                resized.materialized = Arc::new(OnceLock::from(materialized.head(Some(length))));
                 debug_assert_eq!(resized.materialized.get().unwrap().len(), length);
             }
         }
@@ -235,7 +239,7 @@ impl ScalarColumn {
         }
 
         self.length += other.length;
-        self.materialized.take();
+        self.materialized = Arc::default();
         true
     }
 
@@ -260,7 +264,7 @@ impl ScalarColumn {
                         self.length,
                     )
                 };
-                casted.materialized = OnceLock::from(materialized);
+                casted.materialized = Arc::new(OnceLock::from(materialized));
                 Ok(casted)
             },
             None => {
@@ -308,7 +312,7 @@ impl ScalarColumn {
                         self.length,
                     )
                 };
-                casted.materialized = OnceLock::from(materialized);
+                casted.materialized = Arc::new(OnceLock::from(materialized));
                 Ok(casted)
             },
             None => {
@@ -324,10 +328,28 @@ impl ScalarColumn {
         }
     }
 
-    pub fn rename(&mut self, name: PlSmallStr) -> &mut Self {
-        if let Some(series) = self.materialized.get_mut() {
-            series.rename(name.clone());
+    /// Applies `f` to the cached materialization, if any: in place when this column is its only
+    /// owner, else on a copy that becomes this column's cache of its own.
+    fn update_cache(&mut self, f: impl FnOnce(&mut Series)) {
+        if let Some(cache) = Arc::get_mut(&mut self.materialized) {
+            if let Some(s) = cache.get_mut() {
+                f(s);
+            }
+            return;
         }
+        let cache = OnceLock::new();
+        if let Some(s) = self.materialized.get() {
+            let mut s = s.clone();
+            f(&mut s);
+            _ = cache.set(s);
+        }
+        self.materialized = Arc::new(cache);
+    }
+
+    pub fn rename(&mut self, name: PlSmallStr) -> &mut Self {
+        self.update_cache(|s| {
+            s.rename(name.clone());
+        });
 
         self.name = name;
         self
@@ -347,6 +369,7 @@ impl ScalarColumn {
 
     pub fn into_nulls(mut self) -> Self {
         self.scalar.update(AnyValue::Null);
+        self.materialized = Arc::default();
         self
     }
 
@@ -359,11 +382,11 @@ impl ScalarColumn {
 
     pub fn map_scalar(&mut self, map_scalar: impl Fn(Scalar) -> Scalar) {
         self.scalar = map_scalar(std::mem::take(&mut self.scalar));
-        self.materialized.take();
+        self.materialized = Arc::default();
     }
     pub fn with_value(&mut self, value: AnyValue<'static>) -> &mut Self {
         self.scalar.update(value);
-        self.materialized.take();
+        self.materialized = Arc::default();
         self
     }
 }
@@ -494,7 +517,6 @@ impl schemars::JsonSchema for ScalarColumn {
 
 #[cfg(feature = "serde")]
 mod serde_impl {
-    use std::sync::OnceLock;
 
     use polars_error::PolarsError;
     use polars_utils::pl_str::PlSmallStr;
@@ -532,7 +554,7 @@ mod serde_impl {
                     value.unit_series.get(0)?.into_static(),
                 ),
                 length: value.length,
-                materialized: OnceLock::new(),
+                materialized: std::sync::Arc::default(),
             };
 
             Ok(slf)
@@ -577,6 +599,31 @@ mod test {
 
         let materialized_size = sc.as_materialized_series().estimated_size();
         assert_eq!(sc.estimated_size(false), materialized_size);
+    }
+
+    #[test]
+    fn clones_share_the_materialized_cache() {
+        let a = ScalarColumn::new(
+            "a".into(),
+            Scalar::new(DataType::Int64, AnyValue::Int64(7)),
+            5,
+        );
+        let mut b = a.clone();
+        let first = a.as_materialized_series();
+        assert!(std::ptr::eq(first, b.as_materialized_series()));
+        b.rename("b".into());
+        assert_eq!(b.as_materialized_series().name().as_str(), "b");
+        assert_eq!(a.as_materialized_series().name().as_str(), "a");
+        let mut c = a.clone();
+        c.with_value(AnyValue::Int64(8));
+        assert_eq!(
+            c.as_materialized_series().get(0).unwrap(),
+            AnyValue::Int64(8)
+        );
+        assert_eq!(
+            a.as_materialized_series().get(0).unwrap(),
+            AnyValue::Int64(7)
+        );
     }
 
     #[test]

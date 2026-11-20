@@ -40,7 +40,7 @@ macro_rules! impl_ufuncs {
                     match lambda.call1((&out_array,)) {
                         Ok(_) => {
                             let (name, validity) = {
-                                let s = self.series.read();
+                                let s = self.series();
                                 (s.name().clone(), s.chunks()[0].validity().cloned())
                             };
 

@@ -7,19 +7,19 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PySeries {
     fn add(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &*self.series.read() + &*other.series.read())
+        py.enter_polars_series(|| &self.series() + &other.series())
     }
     fn sub(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &*self.series.read() - &*other.series.read())
+        py.enter_polars_series(|| &self.series() - &other.series())
     }
     fn mul(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &*self.series.read() * &*other.series.read())
+        py.enter_polars_series(|| &self.series() * &other.series())
     }
     fn div(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &*self.series.read() / &*other.series.read())
+        py.enter_polars_series(|| &self.series() / &other.series())
     }
     fn rem(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
-        py.enter_polars_series(|| &*self.series.read() % &*other.series.read())
+        py.enter_polars_series(|| &self.series() % &other.series())
     }
 }
 
@@ -28,7 +28,7 @@ macro_rules! impl_arithmetic {
         #[pymethods]
         impl PySeries {
             fn $name(&self, py: Python<'_>, other: $type) -> PyResult<Self> {
-                py.enter_polars_series(|| Ok({&*self.series.read() $operand other}))
+                py.enter_polars_series(|| Ok({&self.series() $operand other}))
             }
         }
     };
@@ -99,7 +99,7 @@ macro_rules! impl_rhs_arithmetic {
         #[pymethods]
         impl PySeries {
             fn $name(&self, py: Python<'_>, other: $type) -> PyResult<Self> {
-                py.enter_polars_series(|| Ok(other.$operand(&self.series.read())))
+                py.enter_polars_series(|| Ok(other.$operand(&self.series())))
             }
         }
     };

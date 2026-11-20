@@ -15,7 +15,7 @@ impl PySeries {
     /// Convert this Series to a Python list.
     /// This operation copies data.
     pub fn to_list<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let series = &self.series.read();
+        let series = &self.series();
 
         fn to_list_recursive<'py>(py: Python<'py>, series: &Series) -> PyResult<Bound<'py, PyAny>> {
             let pylist = match series.dtype() {
@@ -188,7 +188,7 @@ impl PySeries {
         // lock across that lets any thread blocking on the write lock (which it does while
         // holding the GIL) deadlock against us.
         let (array, field) = py.enter_polars_ok(|| {
-            let s = self.series.read();
+            let s = self.series();
             (
                 s.to_arrow(0, compat_level.0),
                 s.field().to_arrow(compat_level.0),
@@ -205,11 +205,11 @@ impl PySeries {
         py: Python<'py>,
         requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        series_to_stream(&self.series.read(), py)
+        series_to_stream(&self.series(), py)
     }
 
     pub fn _export(&self, _py: Python<'_>, location: usize) {
-        let export = polars_ffi::version_0::export_series(&self.series.read());
+        let export = polars_ffi::version_0::export_series(&self.series());
         unsafe {
             (location as *mut SeriesExport).write(export);
         }
