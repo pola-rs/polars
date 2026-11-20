@@ -1103,7 +1103,7 @@ impl SQLExprVisitor<'_> {
             polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not currently supported; found '{}'", escape_char.clone().unwrap());
         }
         if let Some((needle, null_as_empty)) = self.substring_like_needle(pattern) {
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let mut needle = self.visit_expr(needle)?.cast(DataType::String);
             if null_as_empty {
                 needle = needle.fill_null(lit(""));
@@ -1130,7 +1130,7 @@ impl SQLExprVisitor<'_> {
                 PlSmallStr::from_str(lv.extract_str().unwrap())
             },
             pattern => {
-                let expr = self.visit_expr(expr)?;
+                let expr = self.visit_string_input(expr)?;
                 let pattern = pattern.cast(DataType::String);
                 let matches = if case_insensitive {
                     expr.str()
@@ -1157,7 +1157,7 @@ impl SQLExprVisitor<'_> {
             };
             self.visit_binary_op(expr, &op, pattern)
         } else if !case_insensitive && let Some((matches, needle)) = literal_like_match(&pat) {
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let matches = matches(expr.str(), lit(needle.to_string()));
             Ok(if negated { matches.not() } else { matches })
         } else {
@@ -1174,7 +1174,7 @@ impl SQLExprVisitor<'_> {
                 end_anchor,
             );
 
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let matches = expr.str().contains(lit(rx), true);
             Ok(if negated { matches.not() } else { matches })
         }
@@ -1776,6 +1776,7 @@ impl SQLExprVisitor<'_> {
             filter: None,
             window,
             reads_rows: false,
+            string_input: false,
         };
         let expr = visitor.visit_function();
         self.ctx.group_scope.in_window = in_window;
@@ -2542,6 +2543,11 @@ impl SQLExprVisitor<'_> {
         Ok(if negated { low.or(high) } else { low.and(high) })
     }
 
+    /// The string input of a string operation, where a NULL literal is a NULL string.
+    fn visit_string_input(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        Ok(null_as_string(self.visit_expr(expr)?))
+    }
+
     /// Visit a SQL `TRIM` function.
     /// See [sqlparser::ast::Expr::Trim] for more details
     fn visit_trim(
@@ -2555,7 +2561,7 @@ impl SQLExprVisitor<'_> {
             // TODO: allow compact snowflake/bigquery syntax?
             return Err(polars_err!(SQLSyntax: "unsupported TRIM syntax (custom chars)"));
         };
-        let expr = self.visit_expr(expr)?;
+        let expr = self.visit_string_input(expr)?;
         let trim_what = trim_what.as_ref().map(|e| self.visit_expr(e)).transpose()?;
         let trim_what = match trim_what {
             Some(Expr::Literal(lv)) if lv.extract_str().is_some() => {
@@ -2586,7 +2592,7 @@ impl SQLExprVisitor<'_> {
         substring_from: Option<&SQLExpr>,
         substring_for: Option<&SQLExpr>,
     ) -> PolarsResult<Expr> {
-        let e = self.visit_expr(expr)?;
+        let e = self.visit_string_input(expr)?;
 
         match (substring_from, substring_for) {
             // SUBSTRING(expr FROM start FOR length)
@@ -2866,6 +2872,17 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
         polars_bail!(SQLSyntax: "fixed-duration interval cannot contain years, quarters, or months; found {}", s)
     };
     Ok(duration)
+}
+
+/// A NULL literal without a type as a NULL string; other expressions as they are.
+pub(crate) fn null_as_string(expr: Expr) -> Expr {
+    if let Expr::Literal(lv) = &expr
+        && lv.get_datatype().is_null()
+    {
+        expr.cast(DataType::String)
+    } else {
+        expr
+    }
 }
 
 pub(crate) fn parse_sql_expr(
