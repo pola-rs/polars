@@ -310,6 +310,7 @@ pub fn cast_to_user_schema(
 /// so a text read for a number is no change of the column's kind. `truncating`: the temporal
 /// columns read as text whose digits below the planned unit are cut (toward the earlier
 /// instant), as the user asked (see `truncating_columns`).
+#[allow(clippy::too_many_arguments)]
 pub fn cast_columns(
     df: &DataFrame,
     schema: &Schema,
