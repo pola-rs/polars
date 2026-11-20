@@ -362,6 +362,7 @@ fn help() {
         "-f, --file <FILE>",
         "--format <FMT>",
         "--read-only",
+        "read_csv(",
         "Exit codes:",
         "This command is unstable",
     ];
