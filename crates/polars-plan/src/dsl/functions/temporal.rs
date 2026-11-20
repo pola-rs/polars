@@ -334,17 +334,6 @@ impl DurationArgs {
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 
     fn as_literal(&self) -> Option<Expr> {
-        let overflows_i64 = |e: &&Expr| {
-            let Expr::Literal(lv) = e else { return false };
-            let av = lv.to_any_value();
-            match av {
-                Some(AnyValue::UInt128(x)) => x > i64::MAX as u128,
-                Some(AnyValue::UInt64(x)) => x > i64::MAX as u64,
-                Some(AnyValue::Int128(x)) => x < i64::MIN as i128 || x > i64::MAX as i128,
-                _ => false,
-            }
-        };
-
         let fields = [
             &self.weeks,
             &self.days,
@@ -356,14 +345,9 @@ impl DurationArgs {
             &self.nanoseconds,
         ];
 
-        // go into the function expr implementation to throw an error
-        // (the same applies to totals that do not fit into the time unit)
-        if fields.iter().any(overflows_i64) {
-            return None;
-        }
-
         // Fold exactly as the function expr evaluates: each component is rescaled separately,
-        // integers are summed exactly, and floats are then added (in component order)
+        // integers are summed exactly, and floats are then added (in component order); values
+        // or totals that do not fit into i64 are not folded, so that the function expr raises
         let mut int_total = 0i128;
         let mut float_terms = Vec::new();
         for (e, rescale) in fields

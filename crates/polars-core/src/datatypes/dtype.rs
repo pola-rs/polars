@@ -831,19 +831,24 @@ impl DataType {
 
     /// Check if this [`DataType`] is, or contains, a type with a [`TimeUnit`].
     pub fn contains_time_units(&self) -> bool {
+        self.any_time_unit(|_| true)
+    }
+
+    /// Check if any (possibly nested) [`TimeUnit`] in this [`DataType`] satisfies `f`.
+    fn any_time_unit(&self, f: impl Fn(TimeUnit) -> bool + Copy) -> bool {
         use DataType::*;
         match self {
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_, _) => true,
+            Datetime(tu, _) => f(*tu),
             #[cfg(feature = "dtype-duration")]
-            Duration(_) => true,
-            List(inner) => inner.contains_time_units(),
+            Duration(tu) => f(*tu),
+            List(inner) => inner.any_time_unit(f),
             #[cfg(feature = "dtype-array")]
-            Array(inner, _) => inner.contains_time_units(),
+            Array(inner, _) => inner.any_time_unit(f),
             #[cfg(feature = "dtype-struct")]
-            Struct(fields) => fields.iter().any(|field| field.dtype.contains_time_units()),
+            Struct(fields) => fields.iter().any(|field| field.dtype.any_time_unit(f)),
             #[cfg(feature = "dtype-map")]
-            Map(key, value) => key.contains_time_units() || value.contains_time_units(),
+            Map(key, value) => key.any_time_unit(f) || value.any_time_unit(f),
             _ => false,
         }
     }
@@ -855,31 +860,10 @@ impl DataType {
         others: impl IntoIterator<Item = impl Borrow<DataType>>,
     ) {
         let mut others = others.into_iter();
-        while !self.has_finest_time_units()
+        while self.any_time_unit(|tu| tu != TimeUnit::Nanoseconds)
             && let Some(other) = others.next()
         {
             self.merge_finest_time_units(other.borrow());
-        }
-    }
-
-    /// Check if all [`TimeUnit`]s in this [`DataType`] (if any) are already the finest.
-    fn has_finest_time_units(&self) -> bool {
-        use DataType::*;
-        match self {
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(tu, _) => *tu == TimeUnit::Nanoseconds,
-            #[cfg(feature = "dtype-duration")]
-            Duration(tu) => *tu == TimeUnit::Nanoseconds,
-            List(inner) => inner.has_finest_time_units(),
-            #[cfg(feature = "dtype-array")]
-            Array(inner, _) => inner.has_finest_time_units(),
-            #[cfg(feature = "dtype-struct")]
-            Struct(fields) => fields
-                .iter()
-                .all(|field| field.dtype.has_finest_time_units()),
-            #[cfg(feature = "dtype-map")]
-            Map(key, value) => key.has_finest_time_units() && value.has_finest_time_units(),
-            _ => true,
         }
     }
 

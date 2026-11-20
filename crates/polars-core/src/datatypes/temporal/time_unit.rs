@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 #[cfg(feature = "temporal")]
 use chrono::NaiveDateTime;
 #[cfg(feature = "temporal")]
@@ -125,27 +123,17 @@ impl TimeUnitRescale {
     /// nanoseconds) duration component is rescaled to `time_unit`: multiplied if coarser,
     /// or truncated if finer (each component separately).
     pub fn duration_components(time_unit: TimeUnit) -> [Self; 8] {
-        const NS: i64 = 1_000_000_000;
-        const SCALE_NS: [i64; 8] = [
-            NS * 86_400 * 7, // weeks
-            NS * 86_400,     // days
-            NS * 3_600,      // hours
-            NS * 60,         // minutes
-            NS,              // seconds
-            1_000_000,       // milliseconds
-            1_000,           // microseconds
-            1,               // nanoseconds
-        ];
-        let unit_ns = match time_unit {
-            TimeUnit::Nanoseconds => 1,
-            TimeUnit::Microseconds => 1_000,
-            TimeUnit::Milliseconds => 1_000_000,
-        };
-        SCALE_NS.map(|ns| match ns.cmp(&unit_ns) {
-            Ordering::Greater => TimeUnitRescale::Multiply(ns / unit_ns),
-            Ordering::Less => TimeUnitRescale::Divide(unit_ns / ns),
-            Ordering::Equal => TimeUnitRescale::Unchanged,
-        })
+        let per_second = 1_000_000_000 / time_unit.nanoseconds();
+        [
+            Self::Multiply(per_second * 86_400 * 7), // weeks
+            Self::Multiply(per_second * 86_400),     // days
+            Self::Multiply(per_second * 3_600),      // hours
+            Self::Multiply(per_second * 60),         // minutes
+            Self::Multiply(per_second),              // seconds
+            TimeUnit::Milliseconds.rescale_to(time_unit),
+            TimeUnit::Microseconds.rescale_to(time_unit),
+            TimeUnit::Nanoseconds.rescale_to(time_unit),
+        ]
     }
 
     /// Rescales a datetime timestamp, rounding down; `None` on overflow.

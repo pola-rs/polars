@@ -21,7 +21,7 @@ use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
 use polars_core::utils::polars_arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
-use pyo3::exceptions::{PyAttributeError, PyOverflowError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
@@ -341,17 +341,37 @@ pub(crate) fn py_object_to_any_value(
         Ok(AnyValue::Date(elapsed.num_days() as i32))
     }
 
-    /// Whether `tzinfo` is a `zoneinfo` time zone.
-    fn is_zoneinfo(tzinfo: &Bound<'_, PyAny>) -> PyResult<bool> {
-        static ZONEINFO_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
-        tzinfo.is_instance(ZONEINFO_TYPE.import(tzinfo.py(), "zoneinfo", "ZoneInfo")?)
+    /// The kinds of (non-null) `tzinfo`, with the names of named time zones.
+    enum TzKind<'py> {
+        /// A `datetime.timezone` (a fixed offset, such as UTC).
+        Fixed,
+        /// A `pytz` time zone (its `zone`).
+        Pytz(Bound<'py, PyAny>),
+        /// A `zoneinfo` (or `dateutil` >= 4) time zone (its `key`).
+        Named(Bound<'py, PyAny>),
+        /// Anything else (including zones loaded from a file, which have no `key`).
+        Other,
     }
 
-    /// The name of a `zoneinfo` (or `dateutil` >= 4) time zone.
-    fn time_zone_key<'py>(tzinfo: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
-        Ok(tzinfo
-            .getattr_opt(intern!(tzinfo.py(), "key"))?
-            .filter(|key| !key.is_none()))
+    #[inline(always)]
+    fn tz_kind<'py>(tzinfo: &Bound<'py, PyAny>) -> PyResult<TzKind<'py>> {
+        static ZONEINFO_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+        let py = tzinfo.py();
+        // (failed attribute lookups are comparatively expensive, so fixed offsets and `zoneinfo`
+        // time zones are identified by type, before looking for `pytz` time zones)
+        if tzinfo.get_type().is(PyTzInfo::utc(py)?.get_type()) {
+            return Ok(TzKind::Fixed);
+        }
+        if !tzinfo.is_instance(ZONEINFO_TYPE.import(py, "zoneinfo", "ZoneInfo")?)?
+            && let Some(zone) = tzinfo.getattr_opt(intern!(py, "zone"))?
+            && !zone.is_none()
+        {
+            return Ok(TzKind::Pytz(zone));
+        }
+        let key = tzinfo.getattr_opt(intern!(py, "key"))?;
+        Ok(key
+            .filter(|key| !key.is_none())
+            .map_or(TzKind::Other, TzKind::Named))
     }
 
     fn get_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -365,30 +385,20 @@ pub(crate) fn py_object_to_any_value(
             return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
         }
 
-        // (failed attribute lookups are comparatively expensive, so fixed offsets such as UTC and
-        // `zoneinfo` time zones are identified by type, before looking for `pytz` time zones)
-        let is_fixed_offset = tzinfo.get_type().is(PyTzInfo::utc(py)?.get_type());
-        let is_zoneinfo = !is_fixed_offset && is_zoneinfo(&tzinfo)?;
-
+        let kind = tz_kind(&tzinfo)?;
         // For `pytz` time zones, converting to UTC is much cheaper than converting to `zoneinfo`
-        if let Some(tz) = (!is_fixed_offset && !is_zoneinfo)
-            .then(|| tzinfo.getattr(intern!(py, "zone")).ok())
-            .flatten()
-            .filter(|tz| !tz.is_none())
-        {
+        if let TzKind::Pytz(zone) = &kind {
             let utc = ob
                 .call_method1(intern!(py, "astimezone"), (PyTzInfo::utc(py)?,))?
                 .extract::<DateTime<Utc>>()?;
-
             return Ok(AnyValue::DatetimeOwned(
                 utc.timestamp_micros(),
                 TimeUnit::Microseconds,
-                Some(Arc::new(parse_time_zone(&tz)?)),
+                Some(Arc::new(parse_time_zone(zone)?)),
             ));
         }
 
-        let is_named = !is_fixed_offset && time_zone_key(&tzinfo)?.is_some();
-        let (timestamp, tz) = if is_named {
+        let (timestamp, tz) = if let TzKind::Named(_) = kind {
             let datetime = ob.extract::<DateTime<Tz>>()?;
             let tz = unsafe { TimeZone::from_static(datetime.timezone().name()) };
             if datetime.year() >= 2100 {
@@ -501,19 +511,16 @@ pub(crate) fn py_object_to_any_value(
         dtype: fn(TimeUnit) -> DataType,
     ) -> PyResult<(i64, TimeUnit)> {
         let py = ob.py();
-        let unit = match ob.getattr(intern!(py, "unit")) {
-            Ok(unit) => unit.extract::<PyBackedStr>()?,
-            // Older pandas versions have no `unit` attribute (always "ns")
-            Err(err) if err.is_instance_of::<PyAttributeError>(py) => {
-                let ns = ob.getattr(intern!(py, "value"))?.extract::<i64>()?;
-                return Ok((ns, TimeUnit::Nanoseconds));
-            },
-            Err(err) => return Err(err),
+        // Older pandas versions have no `unit` attribute (always "ns")
+        let Some(unit) = ob.getattr_opt(intern!(py, "unit"))? else {
+            let ns = ob.getattr(intern!(py, "value"))?.extract::<i64>()?;
+            return Ok((ns, TimeUnit::Nanoseconds));
         };
-        let (time_unit, ns_per_tick) = match &*unit {
-            "ns" => (TimeUnit::Nanoseconds, 1),
-            "us" => (TimeUnit::Microseconds, 1_000),
-            "ms" | "s" => (TimeUnit::Milliseconds, 1_000_000),
+        let unit = unit.extract::<PyBackedStr>()?;
+        let time_unit = match &*unit {
+            "ns" => TimeUnit::Nanoseconds,
+            "us" => TimeUnit::Microseconds,
+            "ms" | "s" => TimeUnit::Milliseconds,
             unit => {
                 return Err(PyValueError::new_err(format!(
                     "unsupported time unit for {}: {unit}",
@@ -524,7 +531,7 @@ pub(crate) fn py_object_to_any_value(
         // `value` (always nanoseconds) is much cheaper than `asm8`, but overflows
         // for values outside the nanosecond range
         match ob.getattr(intern!(py, "value")) {
-            Ok(ns) => return Ok((ns.extract::<i64>()? / ns_per_tick, time_unit)),
+            Ok(ns) => return Ok((ns.extract::<i64>()? / time_unit.nanoseconds(), time_unit)),
             Err(err) if !err.is_instance_of::<PyOverflowError>(py) => return Err(err),
             Err(_) => {},
         }
@@ -549,29 +556,22 @@ pub(crate) fn py_object_to_any_value(
     /// The polars time zone of a (non-null) `tzinfo`; named (`zoneinfo`/`pytz`/`dateutil`) zones
     /// keep their name, fixed offsets become UTC, and others raise (as in `get_datetime`).
     fn get_time_zone(tzinfo: &Bound<'_, PyAny>) -> PyResult<TimeZone> {
-        let py = tzinfo.py();
-        // (ordered to avoid failed attribute lookups, which are comparatively expensive)
-        if tzinfo.get_type().is(PyTzInfo::utc(py)?.get_type()) {
-            return Ok(TimeZone::UTC);
+        match tz_kind(tzinfo)? {
+            TzKind::Fixed => Ok(TimeZone::UTC),
+            TzKind::Pytz(name) | TzKind::Named(name) => parse_time_zone(&name),
+            TzKind::Other => {
+                let py = tzinfo.py();
+                if tzinfo
+                    .call_method1(intern!(py, "utcoffset"), (py.None(),))?
+                    .is_none()
+                {
+                    return Err(PyTypeError::new_err(format!(
+                        "{tzinfo} is not a fixed offset timezone"
+                    )));
+                }
+                Ok(TimeZone::UTC)
+            },
         }
-        let name = if let Some(zone) = (!is_zoneinfo(tzinfo)?)
-            .then(|| tzinfo.getattr(intern!(py, "zone")).ok())
-            .flatten()
-            .filter(|zone| !zone.is_none())
-        {
-            zone
-        } else if let Some(key) = time_zone_key(tzinfo)? {
-            key
-        } else {
-            let offset = tzinfo.call_method1(intern!(py, "utcoffset"), (py.None(),))?;
-            if offset.is_none() {
-                return Err(PyTypeError::new_err(format!(
-                    "{tzinfo} is not a fixed offset timezone"
-                )));
-            }
-            return Ok(TimeZone::UTC);
-        };
-        parse_time_zone(&name)
     }
 
     /// The polars time zone of a (`zoneinfo` or `pytz`) time zone name.
@@ -594,12 +594,8 @@ pub(crate) fn py_object_to_any_value(
         if tzinfo.is_none() {
             return Ok(AnyValue::Datetime(ticks, time_unit, None));
         }
-        let tz = get_time_zone(&tzinfo)?;
-        Ok(AnyValue::DatetimeOwned(
-            ticks,
-            time_unit,
-            Some(Arc::new(tz)),
-        ))
+        let tz = Some(Arc::new(get_time_zone(&tzinfo)?));
+        Ok(AnyValue::DatetimeOwned(ticks, time_unit, tz))
     }
 
     fn get_time(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {

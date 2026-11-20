@@ -184,13 +184,9 @@ fn accumulate(
 /// The exact (i128) sum of the rescaled integer inputs.
 #[cfg(feature = "dtype-i128")]
 fn wide_integer_sum(terms: &[(&Column, TimeUnitRescale)]) -> PolarsResult<Column> {
-    let mut sum: Option<Column> = None;
-    for (c, rescale) in terms {
-        let term = rescaled(&c.cast(&DataType::Int128)?, *rescale);
-        sum = Some(match sum {
-            Some(s) => (s + term)?,
-            None => term,
-        });
-    }
-    Ok(sum.expect("non-empty terms"))
+    let mut terms = terms
+        .iter()
+        .map(|(c, rescale)| PolarsResult::Ok(rescaled(&c.cast(&DataType::Int128)?, *rescale)));
+    let first = terms.next().expect("non-empty terms")?;
+    terms.try_fold(first, |sum, term| sum + term?)
 }

@@ -4,6 +4,7 @@ import io
 import zoneinfo
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from importlib import resources
+from itertools import permutations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -323,9 +324,10 @@ def test_series_init_mixed_units_28869(
         return ns // divisor if dtype == pl.Datetime or ns >= 0 else -(-ns // divisor)
 
     # the finest (or explicitly given) unit is used, independent of value order
+    # (strict inference restarts on finding a finer unit: once, twice, midway or last)
     expected_dtype = dtype(time_unit or "ns")
     for strict in (True, False):
-        for vals in (values, values[::-1]):
+        for vals in map(list, permutations(values)):
             dtype_arg = None if time_unit is None else expected_dtype
             result = pl.Series(vals, dtype=dtype_arg, strict=strict)
             assert result.dtype == expected_dtype
@@ -362,11 +364,15 @@ def test_series_init_mixed_units_out_of_range_28869(
     # the second value cannot be represented with "ns" precision
     name = dtype.__name__.lower()
     msg = rf"conversion from `{name}\[μs\]` to `{name}\[ns\]` failed"
-    for vals in (values, [values], [[v] for v in values]):
+
+    # (reversed, it only overflows once the finer unit restarts strict inference)
+    for ordered in (values, values[::-1]):
+        for vals in (ordered, [ordered], [[v] for v in ordered]):
+            with pytest.raises(InvalidOperationError, match=msg):
+                pl.Series(vals)
+
         with pytest.raises(InvalidOperationError, match=msg):
-            pl.Series(vals)
-    with pytest.raises(InvalidOperationError, match=msg):
-        pl.Series(values, dtype=dtype("ns"))
+            pl.Series(ordered, dtype=dtype("ns"))
 
     # (non-strict construction makes it null)
     for result in (
