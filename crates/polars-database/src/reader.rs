@@ -29,7 +29,7 @@ use crate::database::config::CompiledPartition;
 use crate::database::dialect::DialectName;
 use crate::database::planner::{
     check_mysql_session_zone, check_time_with_zone, check_unplanned_volatility,
-    time_text_risk_columns,
+    time_text_risk_columns, truncating_columns,
 };
 use crate::database::schema::cast_columns;
 use crate::database::{DatabaseScanConfig, catalog};
@@ -219,6 +219,8 @@ pub struct Shared {
     mysql_timestamp_text: Vec<PlSmallStr>,
     /// [`time_text_risk_columns`]
     time_text_risk: PlHashMap<PlSmallStr, String>,
+    /// [`truncating_columns`]
+    truncating: PlHashSet<PlSmallStr>,
     /// The SQLite Binary columns whose batches are checked for blobs only.
     sqlite_blob_columns: Vec<(PlSmallStr, bool)>,
     /// [`numeric_temporal_conversions`](crate::database::planner::numeric_temporal_conversions)
@@ -247,6 +249,7 @@ impl Shared {
             sqlite_blob_columns: crate::database::planner::sqlite_blob_columns(&config),
             mysql_timestamp_text: crate::database::planner::mysql_timestamp_text_columns(&config),
             time_text_risk: time_text_risk_columns(&config),
+            truncating: truncating_columns(&config),
             own_numbers: crate::database::planner::numeric_temporal_conversions(&config),
             converted: crate::database::planner::converted_columns(&config),
             config,
@@ -556,6 +559,7 @@ impl PartitionReader {
                 &self.shared.own_numbers,
                 &self.shared.converted,
                 &self.shared.time_text_risk,
+                &self.shared.truncating,
             )?;
             rows += batch.height() as u64;
             if dropped {
@@ -752,6 +756,7 @@ impl PartitionStream {
             &self.shared.own_numbers,
             &self.shared.converted,
             &self.shared.time_text_risk,
+            &self.shared.truncating,
         )
     }
 
@@ -780,6 +785,7 @@ impl PartitionStream {
                 own_numbers,
                 converted,
                 &self.shared.time_text_risk,
+                &self.shared.truncating,
             )
             .map(Some);
         }

@@ -9329,7 +9329,7 @@ def test_mssql_datetime2_outside_the_nanosecond_range_fails_and_reads_with_an_ov
             f"DROP TABLE IF EXISTS {table}",
             f"CREATE TABLE {table} (id int PRIMARY KEY, d2 datetime2)",
             f"INSERT INTO {table} VALUES (1, '0001-01-01'), "
-            "(2, '9999-12-31 23:59:59.999999'), (3, '2020-01-02 03:04:05.5')",
+            "(2, '9999-12-31 23:59:59.9999999'), (3, '2020-01-02 03:04:05.5')",
         ],
     )
     for driver in ["connectorx", "pymssql", "adbc", "sqlalchemy"]:
@@ -9340,11 +9340,143 @@ def test_mssql_datetime2_outside_the_nanosecond_range_fails_and_reads_with_an_ov
         df = _scan(
             "mssql", driver, table, schema_overrides={"d2": pl.Datetime("us")}
         ).collect()
+        # (the 7th digit is cut, not rounded up past 9999-12-31)
         assert df.sort("id")["d2"].to_list() == [
             datetime(1, 1, 1),
             datetime(9999, 12, 31, 23, 59, 59, 999999),
             datetime(2020, 1, 2, 3, 4, 5, 500000),
         ], driver
+
+
+_MSSQL_DRIVERS = ["connectorx", "pymssql", "adbc", "sqlalchemy", "pyodbc", "arrow_odbc"]
+
+
+def _mssql_seven_digit_table(table: str) -> None:
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, d2 datetime2(7), "
+            "tm time(7), dto datetimeoffset(7))",
+            f"INSERT INTO {table} VALUES "
+            "(1, '2020-01-02 03:04:05.1234567', '03:04:05.1234567', "
+            "'2020-01-02 03:04:05.1234567 +05:30'), "
+            "(2, '9999-12-31 23:59:59.9999999', '23:59:59.9999999', "
+            "'9999-12-31 23:59:59.9999999 +00:00'), "
+            "(3, NULL, NULL, NULL)",
+        ],
+    )
+
+
+@needs_mssql
+def test_mssql_seven_digit_columns_typed_as_microseconds_are_cut_not_refused() -> None:
+    # F2: the type's maximum (every current row of a system-versioned table) is
+    # outside the nanosecond range; typed `Datetime("us")` / `("ms")` the column is
+    # read with the digits beyond the unit cut toward the earlier instant (not
+    # rounded: that would overflow 9999-12-31), and a filter on it is not pushed
+    table = "review_f2_cut"
+    _mssql_seven_digit_table(table)
+    for driver in _runnable_drivers("mssql", _MSSQL_DRIVERS):
+        for unit, d2_first, d2_max, dto_first in [
+            (
+                "us",
+                datetime(2020, 1, 2, 3, 4, 5, 123456),
+                datetime(9999, 12, 31, 23, 59, 59, 999999),
+                datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC),
+            ),
+            (
+                "ms",
+                datetime(2020, 1, 2, 3, 4, 5, 123000),
+                datetime(9999, 12, 31, 23, 59, 59, 999000),
+                datetime(2020, 1, 1, 21, 34, 5, 123000, tzinfo=UTC),
+            ),
+        ]:
+            lf = _scan(
+                "mssql",
+                driver,
+                table,
+                schema_overrides={
+                    "d2": pl.Datetime(unit),  # type: ignore[arg-type]
+                    "dto": pl.Datetime(unit, "UTC"),  # type: ignore[arg-type]
+                },
+            )
+            df = lf.collect().sort("id")
+            assert df["d2"].to_list() == [d2_first, d2_max, None], (driver, unit)
+            assert df["dto"][0] == dto_first, (driver, unit)
+            assert df["dto"][1].year == 9999, (driver, unit)
+            # not pushed: a comparison in the database would see the 7th digit
+            pushed = lf.filter(pl.col("d2") == d2_first)
+            where = planned_sql(pushed).lower().partition(" where ")[2]
+            assert "[d2]" not in where, driver
+            assert pushed.collect()["id"].to_list() == [1], (driver, unit)
+        # the default stays nanoseconds, and fails outside their range with a hint
+        with pytest.raises(
+            Exception, match=r"outside the range[\s\S]*schema_overrides"
+        ):
+            _scan("mssql", driver, table).collect()
+        one = _scan(
+            "mssql", driver, table, schema_overrides={"d2": pl.Datetime("ns")}
+        ).filter(pl.col("id") == 1)
+        assert one.collect()["d2"].dt.nanosecond().to_list() == [123456700], driver
+        # a `time(7)` typed `Time` is the same nanosecond type
+        t = (
+            _scan("mssql", driver, table, schema_overrides={"tm": pl.Time})
+            .select("id", "tm")
+            .collect()
+        )
+        assert t.sort("id")["tm"].dt.nanosecond().to_list() == [
+            123456700,
+            999999900,
+            None,
+        ], driver
+
+
+@needs_mssql
+def test_mssql_schema_declared_datetimes_read_the_same_instants_on_every_driver() -> (
+    None
+):
+    # F7: under `schema=` no database type is looked up, and ConnectorX read a
+    # `datetimeoffset` of another offset as another instant (16:04:05 for 21:34:05 UTC)
+    # and every driver cut the 7th digit of a declared nanosecond column
+    table = "review_f7_schema"
+    _mssql_seven_digit_table(table)
+    for driver in _runnable_drivers("mssql", _MSSQL_DRIVERS):
+        ns = _scan(
+            "mssql",
+            driver,
+            table,
+            schema={
+                "id": pl.Int32,
+                "d2": pl.Datetime("ns"),
+                "tm": pl.Time,
+                "dto": pl.Datetime("ns", "UTC"),
+            },
+        ).filter(pl.col("id") == 1)
+        df = ns.collect()
+        assert df["d2"].dt.nanosecond().to_list() == [123456700], driver
+        assert df["dto"].to_list() == [
+            datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC)
+        ], driver
+        assert df["dto"].dt.nanosecond().to_list() == [123456700], driver
+        # (a naive column declared in microseconds is read natively: arrow_odbc fails
+        # loudly on the maximum, as it reads nanoseconds)
+        naive = {} if driver == "arrow_odbc" else {"d2": pl.Datetime("us")}
+        us = _scan(
+            "mssql",
+            driver,
+            table,
+            schema={"id": pl.Int32, **naive, "dto": pl.Datetime("us", "UTC")},
+        ).collect()
+        us = us.sort("id")
+        if naive:
+            assert us["d2"].to_list() == [
+                datetime(2020, 1, 2, 3, 4, 5, 123456),
+                datetime(9999, 12, 31, 23, 59, 59, 999999),
+                None,
+            ], driver
+        assert us["dto"][0] == datetime(2020, 1, 1, 21, 34, 5, 123456, tzinfo=UTC), (
+            driver
+        )
 
 
 def _mssql_masked_connection(create: bool = True) -> Any:
@@ -9397,6 +9529,16 @@ def test_mssql_masked_columns_are_not_compared_in_the_database() -> None:
             ]:
                 got = sorted(lf.filter(p).collect()["id"].to_list())
                 assert got == sorted(df.filter(p)["id"].to_list()), (source, str(p))
+        # a column computed from masked ones has no source column: read masked, so not
+        # compared in the database either (F6)
+        lf = pl.scan_database(
+            "SELECT id, n + 0 AS n2, email + '' AS e2 FROM review_masked", conn
+        )
+        df = lf.collect()
+        assert df["n2"].to_list() == [0, 0, 0]
+        for p in [pl.col("n2") == 0, pl.col("n2") > 0, pl.col("e2") == "aXXX@XXXX.com"]:
+            got = sorted(lf.filter(p).collect()["id"].to_list())
+            assert got == sorted(df.filter(p)["id"].to_list()), str(p)
     finally:
         conn.close()
     # `UNMASK` granted for the table but denied on one column: that column still reads
@@ -9529,16 +9671,6 @@ def test_mssql_query_sources_keep_the_types_of_their_columns() -> None:
                 lf.filter(pl.col("d") > date(2020, 6, 1)).collect()["id"]
             ) == [2]
 
-        # a column computed from masked ones has no source column: read masked, so not
-        # compared in the database either (F6)
-        lf = pl.scan_database(
-            "SELECT id, n + 0 AS n2, email + '' AS e2 FROM review_masked", conn
-        )
-        df = lf.collect()
-        assert df["n2"].to_list() == [0, 0, 0]
-        for p in [pl.col("n2") == 0, pl.col("n2") > 0, pl.col("e2") == "aXXX@XXXX.com"]:
-            got = sorted(lf.filter(p).collect()["id"].to_list())
-            assert got == sorted(df.filter(p)["id"].to_list()), str(p)
 
 def drivers_with_types() -> list[str]:
     # (arrow-odbc reads `real` as Float32, which `_assert_drivers_agree` compares: it is

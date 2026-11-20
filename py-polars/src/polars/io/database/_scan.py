@@ -610,7 +610,12 @@ def scan_database(
         read a column as another type, use `schema_overrides`.
     schema_overrides
         Dtypes that override the discovered schema for some columns. The values are
-        cast after reading; filters on these columns stay in Polars.
+        cast after reading; filters on these columns stay in Polars. A SQL Server
+        `datetime2` / `datetimeoffset` of more than 6 fractional digits is read as
+        nanoseconds, which fails for dates outside 1677 to 2262 (every current row of a
+        system-versioned table ends at `9999-12-31 23:59:59.9999999`): typed as
+        `pl.Datetime("us")` (or `"ms"`), it is read with the digits beyond the unit
+        cut (toward the earlier instant, never rounded).
     partition_on
         `"auto"` partitions large tables on their integer or date primary key; a
         column name partitions on that column (`pl.col("auto")` for a column named
