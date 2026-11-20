@@ -294,8 +294,8 @@ impl FileReader for ParquetFileReader {
         {
             let mut h: usize = n_rows_in_file as _;
 
-            if let Some(pre_slice) = pre_slice.clone() {
-                h = usize::min(h, pre_slice.restrict_to_bounds(h).len());
+            if let Some(pre_slice) = pre_slice {
+                h = usize::min(h, pre_slice.resolve(h).len());
             }
 
             Some(h)
@@ -325,9 +325,8 @@ impl FileReader for ParquetFileReader {
 
         let file_schema = self._file_schema().clone();
 
-        let normalized_pre_slice = pre_slice_arg
-            .clone()
-            .map(|x| x.restrict_to_bounds(usize::try_from(n_rows_in_file).unwrap()));
+        let normalized_pre_slice =
+            pre_slice_arg.map(|x| x.restrict_to_bounds(usize::try_from(n_rows_in_file).unwrap()));
 
         // Send all callbacks to unblock the next reader. We can do this immediately as we know
         // the total row count upfront.
@@ -339,8 +338,7 @@ impl FileReader for ParquetFileReader {
         // We are allowed to send this value immediately, even though we haven't "ended" yet
         // (see its definition under FileReaderCallbacks).
         if let Some(row_position_on_end_tx) = row_position_on_end_tx {
-            _ = row_position_on_end_tx
-                .send(self._row_position_after_slice(normalized_pre_slice.clone())?);
+            _ = row_position_on_end_tx.send(self._row_position_after_slice(normalized_pre_slice)?);
         }
 
         if let Some(file_schema_tx) = file_schema_tx {
@@ -349,7 +347,7 @@ impl FileReader for ParquetFileReader {
 
         let task_metrics = self.task_metrics.as_deref();
 
-        if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
+        if normalized_pre_slice.as_ref().is_some_and(|x| x.is_empty()) {
             let (_, rx) = FileReaderOutputSend::new_serial();
 
             if verbose {
@@ -453,7 +451,7 @@ impl FileReader for ParquetFileReader {
             byte_source,
             normalized_pre_slice: normalized_pre_slice.map(|x| match x {
                 Slice::Positive { offset, len } => (offset, len),
-                Slice::Negative { .. } => unreachable!(),
+                Slice::Negative { .. } | Slice::PositiveUnbounded { .. } => unreachable!(),
             }),
             metadata: file_metadata,
             config: io_sources::parquet::Config {

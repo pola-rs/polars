@@ -1283,6 +1283,32 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Roll> {
     }
 }
 
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DateDiffUnit> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "year" => DateDiffUnit::Year,
+            "quarter" => DateDiffUnit::Quarter,
+            "month" => DateDiffUnit::Month,
+            "week" => DateDiffUnit::Week,
+            "day" => DateDiffUnit::Day,
+            "hour" => DateDiffUnit::Hour,
+            "minute" => DateDiffUnit::Minute,
+            "second" => DateDiffUnit::Second,
+            "millisecond" => DateDiffUnit::Millisecond,
+            "microsecond" => DateDiffUnit::Microsecond,
+            "nanosecond" => DateDiffUnit::Nanosecond,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`unit` must be one of {{'year', 'quarter', 'month', 'week', 'day', 'hour', 'minute', 'second', 'millisecond', 'microsecond', 'nanosecond'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<TimeUnit> {
     type Error = PyErr;
 

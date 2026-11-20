@@ -642,10 +642,15 @@ pub struct ScanIOPredicate {
     /// Columns whose batches are skipped by a range published at run time.
     pub runtime_ranges: Vec<RuntimeRangeHint>,
 
-    /// Predicate parts only referring to hive columns.
+    /// Predicate parts only referring to file-constant columns (hive columns and the file path
+    /// column). It settles whole files.
     pub hive_predicate: Option<Arc<dyn PhysicalIoExpr>>,
 
+    /// Every part of the predicate is in `hive_predicate`.
     pub hive_predicate_is_full_predicate: bool,
+
+    /// `hive_predicate` reads the file path column.
+    pub hive_predicate_reads_file_path: bool,
 }
 
 impl ScanIOPredicate {

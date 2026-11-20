@@ -91,7 +91,7 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
             } else {
                 Ok(Column::full_null(
                     ca.name().clone(),
-                    ca.len(),
+                    index.len(),
                     ca.inner_dtype(),
                 ))
             }

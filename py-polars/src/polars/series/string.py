@@ -1713,6 +1713,32 @@ class StringNameSpace(_NamespaceSuggestMixin):
         ]
         """
 
+    def from_code_point(self) -> Series:
+        """
+        Convert integer Unicode code points to strings of one character.
+
+        The input must be an integer Series; the output is a string Series.
+
+        Raises
+        ------
+        ComputeError
+            If a value is negative, above 1114111 (``0x10FFFF``), or a UTF-16
+            surrogate (55296 to 57343).
+
+        Examples
+        --------
+        >>> s = pl.Series("code", [65, 233, 8364, None])
+        >>> s.str.from_code_point()
+        shape: (4,)
+        Series: 'code' [str]
+        [
+            "A"
+            "é"
+            "€"
+            null
+        ]
+        """
+
     def slice(
         self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
     ) -> Series:

@@ -93,6 +93,11 @@ pub enum AnyValue<'a> {
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     /// One row of a map, as its `Struct {key, value}` entries series.
+    ///
+    /// As with [`MapChunked::from_storage_unchecked`], the caller must supply unique keys, or the
+    /// value keeps its duplicates.
+    ///
+    /// [`MapChunked::from_storage_unchecked`]: crate::prelude::MapChunked::from_storage_unchecked
     #[cfg(feature = "dtype-map")]
     Map(Series),
     #[cfg(feature = "dtype-array")]

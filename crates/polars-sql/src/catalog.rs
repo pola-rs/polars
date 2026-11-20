@@ -5,17 +5,21 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    BinaryOperator, ColumnDef, ColumnOption, CreateTableOptions, DataType as SQLDataType, Expr,
-    Function, FunctionArg, FunctionArgExpr, FunctionArguments, HiveDistributionStyle, Ident,
-    ObjectName, ObjectNamePart, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator,
-    Value, ValueWithSpan, Visitor, VisitorMut, With,
+    AccessExpr, BinaryOperator, ColumnDef, ColumnOption, CreateTableOptions,
+    DataType as SQLDataType, Expr, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
+    FunctionArguments, HiveDistributionStyle, Ident, ObjectName, ObjectNamePart, OrderByExpr,
+    OrderBySort, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value,
+    ValueWithSpan, Visitor, VisitorMut, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use sqlparser::tokenizer::{Location, Span};
+use sqlparser::tokenizer::{Location, Span, Token};
 
 use crate::dyn_visit;
+use crate::sql_expr::order_by_sort_options;
 use crate::sql_visitors::expr_references_any_column;
+use crate::subquery::strip_nested;
+use crate::time_travel::{VersionSpec, is_version_part, split_version, with_version};
 use crate::types::map_sql_dtype_to_polars;
 
 /// A table of an attached catalog that a statement reads.
@@ -25,6 +29,18 @@ pub struct CatalogTable {
     pub catalog: String,
     /// The table's identifier in the catalog: namespace parts, then the table name.
     pub identifier: Vec<String>,
+}
+
+/// A catalog table that a query reads, at a version or as it is now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogRead {
+    /// The table read.
+    pub table: CatalogTable,
+    /// The version read; `None` for the current snapshot.
+    pub version: Option<VersionSpec>,
+    /// The name to pass the scan of this read back under (see
+    /// `SQLContext::execute_with_catalog_tables`): the full name, then the version if any.
+    pub key: Vec<String>,
 }
 
 /// A namespace of an attached catalog.
@@ -160,6 +176,226 @@ pub enum CatalogStatement {
         /// The change, one per statement.
         operation: CatalogAlter,
     },
+    /// `CALL [<catalog>.]system.<procedure>(<arg>, ...)`: a table maintenance procedure.
+    Call {
+        /// The `table` argument as the statement wrote it.
+        name: String,
+        /// The procedure, e.g. `rewrite_manifests`.
+        procedure: String,
+        /// The catalog table of the `table` argument.
+        table: CatalogTable,
+        /// The other arguments given, by name, in signature order; `NULL` ones are left out.
+        args: Vec<(String, CallArg)>,
+    },
+}
+
+/// A literal argument of a `CALL`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CallArg {
+    /// A string literal.
+    String(String),
+    /// An integer literal.
+    Int(i64),
+    /// `TRUE` or `FALSE`.
+    Bool(bool),
+    /// `map('k', 'v', ...)`.
+    Map(Vec<(String, String)>),
+    /// `array('a', ...)`.
+    Array(Vec<String>),
+}
+
+/// The procedures `CALL` runs, with their arguments in positional order (`table` first).
+pub(crate) const CALL_PROCEDURES: &[(&str, &[&str])] = &[
+    (
+        "rewrite_data_files",
+        &["table", "strategy", "sort_order", "options", "where"],
+    ),
+    (
+        "rewrite_manifests",
+        &["table", "use_caching", "spec_id", "sort_by"],
+    ),
+];
+
+/// A `CALL` as written: its procedure and arguments.
+pub(crate) struct CallParts {
+    /// The parts of the procedure name, e.g. `lake`, `system`, `rewrite_manifests`.
+    pub name: Vec<String>,
+    /// The procedure, as listed in [`CALL_PROCEDURES`].
+    pub procedure: &'static str,
+    /// The arguments by name, in signature order, without `NULL` ones.
+    pub args: Vec<(String, CallArg)>,
+}
+
+/// The procedure and arguments of a `CALL`. Checks the procedure and argument names, not the
+/// values.
+pub(crate) fn call_parts(function: &Function) -> PolarsResult<CallParts> {
+    let Some(parts) = name_parts(&function.name) else {
+        polars_bail!(SQLInterface: "CALL takes a procedure name, found '{}'", function.name);
+    };
+    let procedure = parts.last().map(String::as_str).unwrap_or_default();
+    let Some(&(procedure, signature)) = CALL_PROCEDURES
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(procedure))
+    else {
+        let supported: Vec<&str> = CALL_PROCEDURES.iter().map(|(name, _)| *name).collect();
+        polars_bail!(
+            SQLInterface: "unknown procedure '{}' in CALL; supported: {}",
+            function.name, supported.join(", ")
+        );
+    };
+    polars_ensure!(
+        function.filter.is_none()
+            && function.over.is_none()
+            && function.null_treatment.is_none()
+            && function.within_group.is_empty()
+            && matches!(function.parameters, FunctionArguments::None),
+        SQLInterface: "CALL takes a procedure and its arguments only: `{}`", function
+    );
+    let list = match &function.args {
+        FunctionArguments::List(list)
+            if list.duplicate_treatment.is_none() && list.clauses.is_empty() =>
+        {
+            list
+        },
+        FunctionArguments::None => polars_bail!(
+            SQLInterface: "CALL {} needs an argument list, e.g. `{}(table => 'ns.t')`",
+            function.name, function.name
+        ),
+        _ => polars_bail!(SQLInterface: "CALL takes literal arguments only: `{}`", function),
+    };
+    let mut args: Vec<(String, Option<CallArg>)> = Vec::new();
+    let mut named = false;
+    for (position, arg) in list.args.iter().enumerate() {
+        let (name, value) = match arg {
+            FunctionArg::Named {
+                name,
+                arg: FunctionArgExpr::Expr(value),
+                operator: FunctionArgOperator::RightArrow,
+            } => {
+                named = true;
+                (name.value.clone(), value)
+            },
+            FunctionArg::ExprNamed {
+                name: Expr::Identifier(name),
+                arg: FunctionArgExpr::Expr(value),
+                operator: FunctionArgOperator::RightArrow,
+            } => {
+                named = true;
+                (name.value.clone(), value)
+            },
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(value)) => {
+                polars_ensure!(
+                    !named,
+                    SQLInterface: "CALL {}: a positional argument cannot follow a named one",
+                    function.name
+                );
+                let Some(name) = signature.get(position) else {
+                    polars_bail!(
+                        SQLInterface: "CALL {} takes at most {} arguments",
+                        function.name, signature.len()
+                    );
+                };
+                (name.to_string(), value)
+            },
+            _ => polars_bail!(
+                SQLInterface: "CALL arguments are `value` or `name => value`, found `{}`", arg
+            ),
+        };
+        let Some(name) = signature
+            .iter()
+            .find(|known| known.eq_ignore_ascii_case(&name))
+        else {
+            polars_bail!(
+                SQLInterface: "unknown argument '{}' of procedure '{}'; supported: {}",
+                name, procedure, signature.join(", ")
+            );
+        };
+        polars_ensure!(
+            args.iter().all(|(given, _)| given.as_str() != *name),
+            SQLInterface: "argument '{}' of procedure '{}' is given twice", name, procedure
+        );
+        args.push((name.to_string(), call_arg(value)?));
+    }
+    args.sort_by_key(|(name, _)| signature.iter().position(|known| known == name));
+    let args = args
+        .into_iter()
+        .filter_map(|(name, value)| value.map(|value| (name, value)))
+        .collect();
+    Ok(CallParts {
+        name: parts,
+        procedure,
+        args,
+    })
+}
+
+/// The parts of a table name given as a string, e.g. the `table` argument of a `CALL`.
+pub(crate) fn table_name_parts(name: &str) -> Option<Vec<String>> {
+    let mut parser = Parser::new(&GenericDialect).try_with_sql(name).ok()?;
+    let name = parser.parse_object_name(false).ok()?;
+    parser.expect_token(&Token::EOF).ok()?;
+    name_parts(&name)
+}
+
+/// A `CALL` argument value; `None` for `NULL`.
+fn call_arg(value: &Expr) -> PolarsResult<Option<CallArg>> {
+    let literal = |value: &Expr| match value {
+        Expr::Value(v) => match &v.value {
+            Value::SingleQuotedString(s) => Some(s.clone()),
+            _ => None,
+        },
+        _ => None,
+    };
+    let arg = match value {
+        Expr::Value(v) => match &v.value {
+            Value::SingleQuotedString(s) => Some(CallArg::String(s.clone())),
+            Value::Boolean(b) => Some(CallArg::Bool(*b)),
+            Value::Null => return Ok(None),
+            _ => option_value(value)
+                .and_then(|n| n.parse().ok())
+                .map(CallArg::Int),
+        },
+        Expr::UnaryOp { .. } => option_value(value)
+            .and_then(|n| n.parse().ok())
+            .map(CallArg::Int),
+        Expr::Function(function) => {
+            let name = function.name.to_string();
+            let values = match &function.args {
+                FunctionArguments::List(list)
+                    if list.duplicate_treatment.is_none() && list.clauses.is_empty() =>
+                {
+                    list.args
+                        .iter()
+                        .map(|arg| match arg {
+                            FunctionArg::Unnamed(FunctionArgExpr::Expr(value)) => literal(value),
+                            _ => None,
+                        })
+                        .collect::<Option<Vec<String>>>()
+                },
+                _ => None,
+            };
+            match values {
+                Some(values) if name.eq_ignore_ascii_case("array") => Some(CallArg::Array(values)),
+                Some(values) if name.eq_ignore_ascii_case("map") && values.len() % 2 == 0 => {
+                    Some(CallArg::Map(
+                        values
+                            .chunks(2)
+                            .map(|kv| (kv[0].clone(), kv[1].clone()))
+                            .collect(),
+                    ))
+                },
+                _ => None,
+            }
+        },
+        _ => None,
+    };
+    match arg {
+        Some(arg) => Ok(Some(arg)),
+        None => polars_bail!(
+            SQLInterface: "CALL arguments must be literals: strings, integers, booleans, NULL, \
+            map('k', 'v', ...) or array('a', ...); found `{}`",
+            value
+        ),
+    }
 }
 
 /// The source of a catalog `MERGE`, planned by [`crate::SQLContext::catalog_merge_source`].
@@ -194,7 +430,8 @@ pub struct MergePlan {
     pub not_matched: Vec<MergeClausePlan>,
 }
 
-/// A change to a catalog table's top-level columns or properties, by an `ALTER TABLE`.
+/// A change to a catalog table's top-level columns, properties, layout, tags or branches, by an
+/// `ALTER TABLE`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CatalogAlter {
     /// `ADD [COLUMN] [IF NOT EXISTS] <name> <type>`: a nullable column.
@@ -237,16 +474,91 @@ pub enum CatalogAlter {
         /// The properties, in the order written.
         properties: Vec<(String, String)>,
     },
+    /// `SET PARTITIONED BY (...)`, or `RESET PARTITIONED BY` (no fields): the table's partition
+    /// spec from now on.
+    SetPartitioning {
+        /// The partition fields, in the order written.
+        fields: Vec<CatalogPartitionField>,
+    },
+    /// `SET SORTED BY (...)`, or `RESET SORTED BY` (no fields): the table's sort order from now on.
+    SetSortOrder {
+        /// The sort fields, in the order written.
+        fields: Vec<CatalogSortField>,
+    },
+    /// `CREATE [OR REPLACE] TAG | BRANCH`, `CREATE TAG | BRANCH IF NOT EXISTS` or
+    /// `REPLACE TAG | BRANCH`: point a tag or branch at a snapshot.
+    SetRef {
+        /// A tag or a branch.
+        kind: CatalogRefKind,
+        /// The name, as written (case kept).
+        name: String,
+        /// What to do when a ref of the name exists, or doesn't.
+        mode: CatalogRefMode,
+        /// `AS OF VERSION <snapshot id>`; none for the current snapshot.
+        snapshot_id: Option<i64>,
+        /// `RETAIN <n> <unit>`: how long the ref is kept, in milliseconds.
+        max_ref_age_ms: Option<i64>,
+        /// `WITH SNAPSHOT RETENTION <n> SNAPSHOTS`: the snapshots a branch keeps, at least.
+        min_snapshots_to_keep: Option<i32>,
+        /// `WITH SNAPSHOT RETENTION <n> <unit>`: how long a branch keeps its snapshots, in
+        /// milliseconds.
+        max_snapshot_age_ms: Option<i64>,
+    },
+    /// `DROP TAG | BRANCH [IF EXISTS] <name>`.
+    DropRef {
+        /// A tag or a branch.
+        kind: CatalogRefKind,
+        /// The name, as written (case kept).
+        name: String,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
 }
 
-/// A partition field of a catalog table: an Iceberg transform of a top-level column.
+/// The kind of a named Iceberg snapshot reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogRefKind {
+    /// A tag: a name for one snapshot.
+    Tag,
+    /// A branch: a line of snapshots that writes can extend.
+    Branch,
+}
+
+/// What a statement that sets a tag or branch does with an existing ref of its name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogRefMode {
+    /// `CREATE`: the name must be free.
+    Create,
+    /// `CREATE ... IF NOT EXISTS`: nothing happens when the name is taken.
+    CreateIfNotExists,
+    /// `REPLACE`: the ref must exist.
+    Replace,
+    /// `CREATE OR REPLACE`: either.
+    CreateOrReplace,
+}
+
+/// A partition field of a catalog table: an Iceberg transform of a column or a struct field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CatalogPartitionField {
-    /// The source column, as written.
-    pub column: String,
+    /// The source as written: a column, then the struct fields down to the source (`s.f`).
+    pub path: Vec<String>,
     /// The transform in Iceberg's notation: `identity`, `year`, `month`, `day`, `hour`,
     /// `bucket[N]` or `truncate[W]`.
     pub transform: String,
+}
+
+/// A sort field of a catalog table: an Iceberg transform of a column or a struct field, and its
+/// direction and null order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogSortField {
+    /// The source as written: a column, then the struct fields down to the source (`s.f`).
+    pub path: Vec<String>,
+    /// The transform, as [`CatalogPartitionField::transform`].
+    pub transform: String,
+    /// `DESC` rather than `ASC`.
+    pub descending: bool,
+    /// `NULLS FIRST` rather than `NULLS LAST`.
+    pub nulls_first: bool,
 }
 
 impl CatalogTable {
@@ -494,7 +806,9 @@ impl Visitor for RegisteredAliases {
                 ..
             }
             | TableFactor::Derived { alias, .. }
-            | TableFactor::UNNEST { alias, .. } => alias.as_ref(),
+            | TableFactor::UNNEST { alias, .. }
+            | TableFactor::Pivot { alias, .. }
+            | TableFactor::Unpivot { alias, .. } => alias.as_ref(),
             _ => None,
         };
         self.0.extend(alias.map(|alias| alias.name.value.clone()));
@@ -637,10 +951,28 @@ where
         ControlFlow::Continue(())
     }
 
+    fn pre_visit_statement(&mut self, stmt: &mut Statement) -> ControlFlow<PolarsError> {
+        // `DESCRIBE <table>` names its table as `FROM` does.
+        if let Statement::ExplainTable { table_name, .. } = stmt
+            && let SetExpr::Select(mut select) = select_star_from(&[], Span::empty())
+            && let TableFactor::Table { name, .. } = &mut select.from[0].relation
+        {
+            *name = table_name.clone();
+            self.pre_visit_table_factor(&mut select.from[0].relation)?;
+            if let TableFactor::Table { name, .. } = &select.from[0].relation {
+                *table_name = name.clone();
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
     fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
         // A name with arguments is a table function.
         let TableFactor::Table {
-            name, args: None, ..
+            name,
+            args: None,
+            version,
+            ..
         } = factor
         else {
             return ControlFlow::Continue(());
@@ -648,8 +980,28 @@ where
         let Some(parts) = name_parts(name) else {
             return ControlFlow::Continue(());
         };
-        if let Some(full) = self.resolve_name(&parts) {
-            if let Err(err) = self.record(&parts, &full) {
+        if parts.iter().any(|part| is_version_part(part)) {
+            return ControlFlow::Break(polars_err!(
+                SQLInterface: "invalid table name {}", name
+            ));
+        }
+        let written = parts.join(".");
+        if self.is_cte(&written) || (self.is_local)(&written) {
+            // a time travel clause is refused where the table is read
+            return ControlFlow::Continue(());
+        }
+        let spec = match version
+            .as_ref()
+            .map(VersionSpec::from_table_version)
+            .transpose()
+        {
+            Ok(spec) => spec,
+            Err(err) => return ControlFlow::Break(err),
+        };
+        // A versioned read is its own relation, known by the name and the version.
+        let key = with_version(parts.clone(), spec.as_ref());
+        if let Some(full) = (self.resolve)(&key) {
+            if let Err(err) = self.record(&key, &full) {
                 return ControlFlow::Break(err);
             }
             let span = name.0[0]
@@ -659,6 +1011,7 @@ where
                 self.spellings.insert(position, parts);
             }
             *name = object_name(&full, span);
+            *version = None;
         }
         ControlFlow::Continue(())
     }
@@ -753,7 +1106,7 @@ pub(crate) fn alter_table_column(col: &ColumnDef) -> PolarsResult<(String, DataT
 /// Whether `expr` is the literal `NULL`.
 fn is_null(expr: &Expr) -> bool {
     matches!(
-        expr,
+        strip_nested(expr),
         Expr::Value(ValueWithSpan {
             value: Value::Null,
             ..
@@ -856,14 +1209,11 @@ pub(crate) fn create_table_partitioning(
             polars_bail!(SQLInterface: "`PARTITION BY` and `PARTITIONED BY` cannot be combined")
         },
         (Some(expr), _) => {
-            let exprs = match unparenthesized(expr) {
+            let exprs = match strip_nested(expr) {
                 Expr::Tuple(exprs) => exprs.as_slice(),
                 expr => std::slice::from_ref(expr),
             };
-            exprs
-                .iter()
-                .map(|expr| Ok((partition_field(expr)?, expr.to_string())))
-                .collect::<PolarsResult<_>>()?
+            partition_fields(exprs)?
         },
         (None, HiveDistributionStyle::PARTITIONED { columns }) => columns
             .iter()
@@ -875,7 +1225,7 @@ pub(crate) fn create_table_partitioning(
                     col
                 );
                 let field = CatalogPartitionField {
-                    column: col.name.value.clone(),
+                    path: vec![col.name.value.clone()],
                     transform: "identity".to_string(),
                 };
                 Ok((field, col.name.value.clone()))
@@ -883,52 +1233,108 @@ pub(crate) fn create_table_partitioning(
             .collect::<PolarsResult<_>>()?,
         (None, _) => Vec::new(),
     };
-    // Iceberg allows one time transform per column.
+    ensure_unique_fields(&fields)?;
+    // A new spec takes one time transform per column, as Iceberg's spec builders do.
     let is_time = |f: &CatalogPartitionField| {
         matches!(f.transform.as_str(), "year" | "month" | "day" | "hour")
     };
     for (i, (field, sql)) in fields.iter().enumerate() {
         for (earlier, earlier_sql) in &fields[..i] {
-            polars_ensure!(earlier != field, SQLInterface: "duplicate partition field `{}`", sql);
             polars_ensure!(
-                earlier.column != field.column || !is_time(earlier) || !is_time(field),
+                earlier.path != field.path || !is_time(earlier) || !is_time(field),
                 SQLInterface: "partition fields `{}` and `{}` both partition column '{}' by time; use one of them",
-                earlier_sql, sql, field.column
+                earlier_sql, sql, field.path.join(".")
             );
         }
     }
     Ok(fields.into_iter().map(|(field, _)| field).collect())
 }
 
-/// A partition field: a column, `year|month|day|hour(column)` (with Iceberg's aliases), or
-/// `bucket|truncate(N, column)`.
-fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
+/// The partition fields of `SET PARTITIONED BY (...)`. Which time transforms may share a column
+/// depends on the table's current spec, so that is checked with the table.
+pub(crate) fn set_partitioning(exprs: &[Expr]) -> PolarsResult<Vec<CatalogPartitionField>> {
+    let fields = partition_fields(exprs)?;
+    ensure_unique_fields(&fields)?;
+    Ok(fields.into_iter().map(|(field, _)| field).collect())
+}
+
+/// The partition fields of `exprs`, each with its SQL, for messages.
+fn partition_fields(exprs: &[Expr]) -> PolarsResult<Vec<(CatalogPartitionField, String)>> {
+    exprs
+        .iter()
+        .map(|expr| {
+            let (path, transform) = layout_field(expr, "partition")?;
+            Ok((CatalogPartitionField { path, transform }, expr.to_string()))
+        })
+        .collect()
+}
+
+fn ensure_unique_fields(fields: &[(CatalogPartitionField, String)]) -> PolarsResult<()> {
+    for (i, (field, sql)) in fields.iter().enumerate() {
+        polars_ensure!(
+            fields[..i].iter().all(|(earlier, _)| earlier != field),
+            SQLInterface: "duplicate partition field `{}`", sql
+        );
+    }
+    Ok(())
+}
+
+/// The sort fields of `SET SORTED BY (...)`. A field without `NULLS FIRST | LAST` takes the null
+/// order of `ORDER BY`. A repeated field is kept, as `ORDER BY` keeps it.
+pub(crate) fn set_sort_order(items: &[OrderByExpr]) -> PolarsResult<Vec<CatalogSortField>> {
+    items
+        .iter()
+        .map(|item| {
+            polars_ensure!(
+                item.with_fill.is_none()
+                    && !matches!(item.options.sort, Some(OrderBySort::Using(_))),
+                SQLInterface: "unsupported sort field `{}`; expected a source with ASC or DESC and NULLS FIRST or LAST",
+                item
+            );
+            let (path, transform) = layout_field(&item.expr, "sort")?;
+            let options = order_by_sort_options(&item.options);
+            Ok(CatalogSortField {
+                path,
+                transform,
+                descending: options.descending,
+                nulls_first: !options.nulls_last,
+            })
+        })
+        .collect()
+}
+
+/// The path of a layout source: a column or a struct field (`s.f` or `(s).f`). Checked against
+/// the schema later: a struct field, never a table-qualified column.
+fn layout_source(expr: &Expr) -> Option<Vec<String>> {
+    match strip_nested(expr) {
+        Expr::Identifier(ident) => Some(vec![ident.value.clone()]),
+        Expr::CompoundIdentifier(idents) => Some(idents.iter().map(|i| i.value.clone()).collect()),
+        Expr::CompoundFieldAccess { root, access_chain } => {
+            let mut path = layout_source(root)?;
+            for access in access_chain {
+                let AccessExpr::Dot(Expr::Identifier(field)) = access else {
+                    return None;
+                };
+                path.push(field.value.clone());
+            }
+            Some(path)
+        },
+        _ => None,
+    }
+}
+
+/// The source path and transform of a partition or sort field (`kind`): a source,
+/// `year|month|day|hour(source)` (with Iceberg's aliases), or `bucket|truncate(N, source)`. A
+/// source is a column or a struct field (`s.f`).
+fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> {
     let unsupported = || {
         polars_err!(
-            SQLInterface: "unsupported partition field `{}`; expected a column, or year, month, day, hour, bucket(N, column) or truncate(W, column) of a column",
-            expr
+            SQLInterface: "unsupported {} field `{}`; expected a column or struct field (`s.f`), or year, month, day, hour, bucket(N, ...) or truncate(W, ...) of one",
+            kind, expr
         )
     };
-    let column = |expr: &Expr| match unparenthesized(expr) {
-        Expr::Identifier(ident) => Some(ident.value.clone()),
-        _ => None,
-    };
-    // A qualified column or a struct field: without the schema, these look the same.
-    let is_compound = |expr: &Expr| matches!(unparenthesized(expr), Expr::CompoundIdentifier(_));
-    let compound = |expr: &Expr| {
-        polars_err!(
-            SQLInterface: "`PARTITION BY` takes unqualified column names; found `{}`; partitioning by a nested field is not yet supported",
-            unparenthesized(expr)
-        )
-    };
-    if let Some(column) = column(expr) {
-        return Ok(CatalogPartitionField {
-            column,
-            transform: "identity".to_string(),
-        });
-    }
-    if is_compound(expr) {
-        return Err(compound(expr));
+    if let Some(path) = layout_source(expr) {
+        return Ok((path, "identity".to_string()));
     }
     let Expr::Function(Function {
         name,
@@ -939,7 +1345,7 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
         null_treatment: None,
         over: None,
         within_group,
-    }) = unparenthesized(expr)
+    }) = strip_nested(expr)
     else {
         return Err(unsupported());
     };
@@ -962,7 +1368,7 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(unsupported)?;
-    let positive_int = |expr: &Expr| match unparenthesized(expr) {
+    let positive_int = |expr: &Expr| match strip_nested(expr) {
         Expr::Value(ValueWithSpan {
             value: Value::Number(n, false),
             ..
@@ -976,7 +1382,7 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
         ("hour" | "hours", [source]) => ("hour".to_string(), source),
         ("bucket" | "truncate", [n, source]) => {
             let Some(n) = positive_int(n) else {
-                if (column(n).is_some() || is_compound(n)) && positive_int(source).is_some() {
+                if layout_source(n).is_some() && positive_int(source).is_some() {
                     polars_bail!(SQLInterface: "`{}` takes the number first, as in `{}({}, {})`", expr, fname, source, n)
                 }
                 polars_bail!(SQLInterface: "the first argument of `{}` must be an integer from 1 to {}", expr, i32::MAX)
@@ -985,20 +1391,8 @@ fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
         },
         _ => return Err(unsupported()),
     };
-    let column = match column(source) {
-        Some(column) => column,
-        None if is_compound(source) => return Err(compound(source)),
-        None => return Err(unsupported()),
-    };
-    Ok(CatalogPartitionField { column, transform })
-}
-
-/// `expr` without enclosing parentheses.
-fn unparenthesized(mut expr: &Expr) -> &Expr {
-    while let Expr::Nested(inner) = expr {
-        expr = inner;
-    }
-    expr
+    let path = layout_source(source).ok_or_else(unsupported)?;
+    Ok((path, transform))
 }
 
 /// The properties of a catalog namespace, from `WITH (...)`.
@@ -1048,7 +1442,7 @@ fn option_key_value<'a>(
 
 /// A table option value as a property string, if it is a string, number or boolean literal.
 fn option_value(value: &Expr) -> Option<String> {
-    match value {
+    match strip_nested(value) {
         Expr::Value(v) => match &v.value {
             Value::SingleQuotedString(s) => Some(s.clone()),
             Value::Number(n, _) => Some(n.clone()),
@@ -1058,7 +1452,7 @@ fn option_value(value: &Expr) -> Option<String> {
         Expr::UnaryOp {
             op: UnaryOperator::Minus,
             expr,
-        } => match expr.as_ref() {
+        } => match strip_nested(expr) {
             Expr::Value(ValueWithSpan {
                 value: Value::Number(n, _),
                 ..
@@ -1087,6 +1481,7 @@ fn is_absolute_location(location: &str) -> bool {
 
 /// A table name for messages, with parts containing dots quoted.
 pub(crate) fn display_name(parts: &[String]) -> String {
+    let (parts, version) = split_version(parts);
     let parts: Vec<String> = parts
         .iter()
         .map(|part| match part.contains('.') {
@@ -1094,7 +1489,10 @@ pub(crate) fn display_name(parts: &[String]) -> String {
             false => part.clone(),
         })
         .collect();
-    parts.join(".")
+    match version {
+        Some(version) => format!("{} {}", parts.join("."), version),
+        None => parts.join("."),
+    }
 }
 
 /// The first part of a `DELETE` condition that a catalog filter can't express, described for a

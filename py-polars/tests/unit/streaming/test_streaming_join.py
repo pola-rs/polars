@@ -676,6 +676,66 @@ def test_merge_join_many_partitions(
         assert_frame_equal(actual_head, expected.head(3))
 
 
+@pytest.mark.parametrize("key_type", ["list", "array", "struct"])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("maintain_order", ["left_right", "right_left"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_merge_join_nested_key_30871(
+    key_type: str,
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    descending: bool,
+    nulls_last: bool,
+    nulls_equal: bool,
+) -> None:
+    # "inner" marks a key with a null inside it.
+    left_keys: list[int | str | None] = [*[None] * 20, *[0] * 25, 1, 2, 2, "inner", 5]
+    right_keys: list[int | str | None] = [*[None] * 18, *[0] * 20, 2, "inner", 4, 5, 5]
+
+    def key(k: int | str | None) -> Any:
+        if k is None:
+            return None
+        v = None if k == "inner" else k
+        return {"a": v} if key_type == "struct" else [v]
+
+    dtype = {
+        "list": pl.List(pl.Int64),
+        "array": pl.Array(pl.Int64, 1),
+        "struct": pl.Struct({"a": pl.Int64}),
+    }[key_type]
+
+    def sorted_lf(keys: list[int | str | None], name: str) -> pl.LazyFrame:
+        return (
+            pl.LazyFrame(
+                {
+                    "key": pl.Series([key(k) for k in keys], dtype=dtype),
+                    name: range(len(keys)),
+                }
+            )
+            .sort(
+                "key", descending=descending, nulls_last=nulls_last, maintain_order=True
+            )
+            .set_sorted("key", descending=descending, nulls_last=nulls_last)
+        )
+
+    q = sorted_lf(left_keys, "a").join(
+        sorted_lf(right_keys, "b"),
+        on="key",
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in dot, "merge-join not used in plan"
+
+    expected = q.collect(engine="in-memory")
+    with pl.Config(streaming_chunk_size=4):
+        actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected)
+
+
 @pytest.mark.slow
 @pytest.mark.may_fail_cloud  # reason: timing
 @pytest.mark.parametrize("null_run_side", ["left", "right"])
@@ -1172,6 +1232,84 @@ def test_streaming_join_unmatched_repeated_key_morsels(
     assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
     # At most a morsel per pipeline, there is one pipeline per thread.
     assert out.n_chunks() <= pl.thread_pool_size()
+
+
+@pytest.mark.parametrize("prefix", ["", "a-long-string-key-"])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_streaming_join_string_key_runs(
+    prefix: str, how: JoinStrategy, nulls_equal: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "4")
+    # Gathering keeps equal keys as equal views, also for long strings.
+    uniq = pl.Series("k", [f"{prefix}{c}" for c in "abcde"] + [""])
+    idx: list[int | None] = [0, 0, 0, 1, 1, None, None, 2, 2, 0, 3, 3, 3, 5, 5, 4]
+    idx = idx * 3 + [5, 5, None, 0, 5, 0]
+    left = pl.LazyFrame({"k": uniq.gather(pl.Series(idx, dtype=pl.UInt32))})
+    right = pl.LazyFrame({"k": ["", f"{prefix}a", f"{prefix}a", f"{prefix}c", None]})
+    q = left.with_row_index("v").join(
+        right.with_row_index("w"),
+        on="k",
+        how=how,
+        build_side="force_right",
+        nulls_equal=nulls_equal,
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("build", ["unique", "unique_with_null", "repeated"])
+@pytest.mark.parametrize("probe_nulls", [False, True])
+@pytest.mark.parametrize("all_match", [False, True])
+def test_streaming_join_unique_build_keys(
+    key_type: str,
+    how: JoinStrategy,
+    build: str,
+    probe_nulls: bool,
+    all_match: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
+    plmonkeypatch.setenv("POLARS_JOIN_NUM_PARTITIONS", "4")
+    i = pl.int_range(200)
+    k = (i * 7) % (20 if all_match else 30)
+    if probe_nulls:
+        k = pl.when(i % 13 != 5).then(k)
+    keys = _join_keys(k, key_type)
+    key_exprs = [e.alias(n) for n, e in keys.items()]
+    probe = pl.select(*key_exprs, a=i, b=i.cast(pl.String), c=i * 0.5).lazy()
+    dim_keys: list[int | None] = list(range(20))
+    if build == "unique_with_null":
+        dim_keys.append(None)
+    elif build == "repeated":
+        dim_keys.append(3)
+    dim = (
+        pl.DataFrame({"k": dim_keys}, schema={"k": pl.Int64})
+        .select(
+            **_join_keys(pl.col("k"), key_type),
+            d=pl.format("d{}", pl.int_range(pl.len())),
+        )
+        .lazy()
+    )
+    for nulls_equal, coalesce in [(False, True), (True, False), (True, True)]:
+        q = probe.join(
+            dim,
+            on=list(keys),
+            how=how,
+            build_side="force_right",
+            nulls_equal=nulls_equal,
+            coalesce=coalesce,
+        )
+        assert_frame_equal(
+            q.collect(engine="streaming"),
+            q.collect(engine="in-memory"),
+            check_row_order=False,
+        )
 
 
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])

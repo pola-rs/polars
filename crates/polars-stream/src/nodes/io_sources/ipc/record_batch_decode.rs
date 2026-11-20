@@ -114,7 +114,7 @@ impl RecordBatchDecoder {
                     })
                 }
             }
-            df.slice(i64::try_from(slice_offset).unwrap(), slice_len)
+            df.slice((slice_offset, slice_len))
         };
 
         if let Some(narrowed_dtypes) = &self.narrowed_dtypes {

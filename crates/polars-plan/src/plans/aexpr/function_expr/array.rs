@@ -1,7 +1,7 @@
 #[cfg(feature = "array_to_struct")]
 use polars_buffer::Buffer;
 use polars_core::utils::try_get_supertype;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 
 use super::*;
 
@@ -202,8 +202,8 @@ fn map_to_array_fixed_length(
             }.try_into().map_err(|_| {
                 polars_err!(OutOfBounds: "length must be a non-negative integer, got: {}", length)
             })?;
-            let (_, slice_offset) = slice_offsets(*offset, length, *array_len);
-            Ok(DataType::Array(inner.clone(), slice_offset))
+            let width = Slice::from((*offset, length)).resolve(*array_len).len();
+            Ok(DataType::Array(inner.clone(), width))
         } else {
             polars_bail!(ComputeError: "expected array dtype, got {}", datatype);
         }

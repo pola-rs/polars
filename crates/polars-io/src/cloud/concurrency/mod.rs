@@ -47,10 +47,42 @@ use crate::cloud::http_rate_limit::PacingBudget;
 #[derive(Clone, Copy, Debug)]
 pub struct IoSample {
     pub n_bytes: u64,
-    // Time-to-first-byte.
+    // Time-to-first-byte, of the attempt that succeeded.
     pub ttfb: Duration,
+    // Time-to-last-byte, from the moment the read holds its permits. Spans rebuild retries.
+    pub ttlb: Duration,
     // TODO: Factor out as we only care about per-tick_window stats.
     pub completion_time: Instant,
+}
+
+/// Reads completed since the previous controller tick (logged).
+#[derive(Default)]
+struct TickReads {
+    n: usize,
+    n_bytes: u64,
+    // Sum of `n_bytes x ttlb`, in byte-seconds.
+    ttlb_byte_secs: f64,
+    // The read with the longest TTLB.
+    slowest: Option<IoSample>,
+}
+
+impl TickReads {
+    fn add(&mut self, s: &IoSample) {
+        self.n += 1;
+        self.n_bytes += s.n_bytes;
+        self.ttlb_byte_secs += s.n_bytes as f64 * s.ttlb.as_secs_f64();
+        if self.slowest.is_none_or(|m| s.ttlb > m.ttlb) {
+            self.slowest = Some(*s);
+        }
+    }
+
+    /// Byte-weighted mean TTLB, in ms.
+    fn ttlb_byte_avg_ms(&self) -> f64 {
+        if self.n_bytes == 0 {
+            return 0.0;
+        }
+        self.ttlb_byte_secs / self.n_bytes as f64 * 1e3
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -429,9 +461,14 @@ impl ConcurrencyController {
                 }
 
                 // Update model statistics and step regime.
-                let (state, signal, dropped, bw_hwm_held) = {
+                let log = polars_config::config().log_concurrency();
+                let (state, signal, dropped, bw_hwm_held, reads) = {
+                    let mut reads = TickReads::default();
                     for _ in 0..SAMPLE_QUEUE_CAPACITY {
                         let Some(s) = sample_queue.pop() else { break };
+                        if log {
+                            reads.add(&s);
+                        }
                         model.record(s);
                     }
                     let dropped = samples_dropped.swap(0);
@@ -439,7 +476,7 @@ impl ConcurrencyController {
                     let signal = model.signal();
                     let state = regime.step(signal, now);
                     let bw_hwm_held = model.bw_hwm_bps();
-                    (state, signal, dropped, bw_hwm_held)
+                    (state, signal, dropped, bw_hwm_held, reads)
                 };
 
                 let bytes_arrived = arrived_bytes.as_ref().map_or(0, |c| c.swap(0));
@@ -513,8 +550,9 @@ impl ConcurrencyController {
                 // Drained every tick. Diagnostic only.
                 let head_rtt_window = head_rtt.take();
 
-                // Log snapshot.
-                if polars_config::config().log_concurrency() {
+                // Log snapshot. `reads_done` to `slowest_bytes`: the reads completed since the
+                // previous tick; `slowest_*` is the one with the longest TTLB.
+                if log {
                     // The tick the knee saw, before this tick's resize.
                     let bound = [
                         ("bytes", knee_tick.bytes_bound()),
@@ -557,7 +595,13 @@ impl ConcurrencyController {
                         rtt_avg={:.1} ms, \
                         head_rtt_min={:.1} ms, \
                         head_rtt_avg={:.1} ms, \
-                        head_n={}",
+                        head_n={}, \
+                        reads_done={}, \
+                        bytes_done={:.1} MB, \
+                        ttlb_byte_avg={:.1} ms, \
+                        slowest_ttlb={:.1} ms, \
+                        slowest_ttfb={:.1} ms, \
+                        slowest_bytes={:.1} MB",
                         chrono::Utc::now(),
                         stats.bytes_budget as f64 / 1e6,
                         stats.bytes_in_use as f64 / 1e6,
@@ -570,6 +614,12 @@ impl ConcurrencyController {
                         head_rtt_window.min.map_or(0.0, |d| d.as_secs_f64() * 1e3),
                         head_rtt_window.avg.map_or(0.0, |d| d.as_secs_f64() * 1e3),
                         head_rtt_window.count,
+                        reads.n,
+                        reads.n_bytes as f64 / 1e6,
+                        reads.ttlb_byte_avg_ms(),
+                        reads.slowest.map_or(0.0, |s| s.ttlb.as_secs_f64() * 1e3),
+                        reads.slowest.map_or(0.0, |s| s.ttfb.as_secs_f64() * 1e3),
+                        reads.slowest.map_or(0.0, |s| s.n_bytes as f64 / 1e6),
                     );
                     if dropped > 0 {
                         eprintln!(

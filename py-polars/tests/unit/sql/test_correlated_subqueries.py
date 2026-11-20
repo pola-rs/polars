@@ -2660,6 +2660,7 @@ def test_correlated_in_subquery_on_its_correlation_key(op: str) -> None:
             SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY j DESC LIMIT 5
         )
         """,
+        "SELECT n.k, (SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.ck LIMIT (1)) AS top FROM n",
     ],
 )
 def test_correlated_subquery_limit(query: str) -> None:

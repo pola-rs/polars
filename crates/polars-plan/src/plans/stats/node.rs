@@ -12,7 +12,9 @@ use polars_core::prelude::{Column, DataType, Series, SeriesTrait};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 #[expect(clippy::disallowed_types)] // We don't iterate over it.
-use polars_utils::aliases::{PlHashMap, PlHashSet};
+use polars_utils::aliases::PlHashMap;
+#[expect(clippy::disallowed_types)] // We don't iterate over it.
+use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -199,9 +201,9 @@ pub(crate) fn node_stats_with_cache(
             };
             // The slice is applied before the predicate, so it narrows first.
             let mut filtered = unfiltered;
-            if let Some(slice) = &unified_scan_args.pre_slice {
-                filtered = sliced(filtered, slice.clone());
-                max_rows = max_rows.map(|m| sliced(m, slice.clone()));
+            if let Some(slice) = unified_scan_args.pre_slice {
+                filtered = sliced(filtered, slice);
+                max_rows = max_rows.map(|m| sliced(m, slice));
             }
             let columns = scan_columns(ir);
             if let Some(p) = predicate {
@@ -314,12 +316,12 @@ pub(crate) fn node_stats_with_cache(
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(match slice {
                 None => inner,
-                Some((offset, len, _)) => inner.slice((*offset, *len)),
+                Some((slice, _)) => inner.slice(*slice),
             })
         },
-        IR::Slice { input, offset, len } => {
+        IR::Slice { input, slice } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            Some(inner.slice((*offset, *len as usize)))
+            Some(inner.slice(*slice))
         },
         IR::Union { inputs, options } => {
             let mut acc = NodeStats::of_rows(0.0);
@@ -498,8 +500,8 @@ impl NodeStats {
     }
 
     /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
-    fn slice(mut self, slice: impl Into<Slice> + Clone) -> Self {
-        self.max_rows = self.max_rows.map(|m| sliced(m, slice.clone()));
+    fn slice(mut self, slice: Slice) -> Self {
+        self.max_rows = self.max_rows.map(|m| sliced(m, slice));
         let filtered = sliced(self.filtered, slice);
         self.filter(filtered)
     }
@@ -717,7 +719,7 @@ fn one_row_per_group(
     keys: &[&PlSmallStr],
     sources: &[Option<&PlSmallStr>],
     ndv: Option<f64>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> NodeStats {
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
@@ -906,7 +908,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
 
 /// Rows left after applying `slice` to a relation of `rows` rows.
 fn sliced(rows: f64, slice: impl Into<Slice>) -> f64 {
-    let bounded = slice.into().restrict_to_bounds(rows as usize);
+    let bounded = slice.into().resolve(rows as usize);
     (bounded.len() as f64).max(MIN_CARDINALITY)
 }
 

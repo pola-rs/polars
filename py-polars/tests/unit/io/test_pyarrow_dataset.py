@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from polars._typing import ClosedInterval
     from tests.conftest import PlMonkeyPatch
 
 
@@ -119,14 +120,17 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
         check_predicate_pushdown=True,
     )
 
-    for closed, n_expected in zip(
-        ["both", "left", "right", "none"], [3, 2, 2, 1], strict=True
-    ):
+    closed_intervals: list[ClosedInterval] = ["both", "left", "right", "none"]
+    for closed, n_expected in zip(closed_intervals, [3, 2, 2, 1], strict=True):
+
+        def query(lf: pl.LazyFrame, closed: ClosedInterval = closed) -> pl.LazyFrame:
+            return lf.filter(pl.col("int").is_between(1, 3, closed=closed)).select(
+                "bools", "floats", "date"
+            )
+
         helper_dataset_test(
             file_path,
-            lambda lf, closed=closed: lf.filter(  # type: ignore[misc]
-                pl.col("int").is_between(1, 3, closed=closed)
-            ).select("bools", "floats", "date"),
+            query,
             n_expected=n_expected,
             check_predicate_pushdown=True,
         )

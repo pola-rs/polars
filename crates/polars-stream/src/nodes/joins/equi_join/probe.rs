@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_arrow::array::builder::ShareStrategy;
@@ -168,6 +170,18 @@ fn rechunk_once(payload: &mut DataFrame, rechunked: &mut bool) {
     }
 }
 
+/// The columns `idx` of `payload`, or all of them: the columns only the fused predicate reads are
+/// left out, as they are not gathered.
+pub fn output_columns<'a>(payload: &'a DataFrame, idx: Option<&[usize]>) -> Cow<'a, DataFrame> {
+    match idx {
+        None => Cow::Borrowed(payload),
+        Some(idx) => {
+            let columns = idx.iter().map(|i| payload.columns()[*i].clone()).collect();
+            Cow::Owned(unsafe { DataFrame::new_unchecked(payload.height(), columns) })
+        },
+    }
+}
+
 /// Fixes names and does coalescing of columns post-join.
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
@@ -203,7 +217,21 @@ pub fn with_nulls_for_other_side(
     df_is_left: bool,
     params: &EquiJoinParams,
 ) -> DataFrame {
-    let nulls = DataFrame::full_null(params.payload_schema(!df_is_left), df.height());
+    // `df` has all payload columns of its side, including those only a fused predicate reads.
+    let df = match params.output_idx(df_is_left).as_deref() {
+        Some(idx) => output_columns(&df, Some(idx)).into_owned(),
+        None => df,
+    };
+    with_nulls_for_other_side_projected(df, df_is_left, params)
+}
+
+/// Like `with_nulls_for_other_side`, but `df` has only the output columns of its side.
+pub fn with_nulls_for_other_side_projected(
+    df: DataFrame,
+    df_is_left: bool,
+    params: &EquiJoinParams,
+) -> DataFrame {
+    let nulls = DataFrame::full_null(params.output_side_schema(!df_is_left), df.height());
     let (mut left, right) = if df_is_left { (df, nulls) } else { (nulls, df) };
     unsafe { left.hstack_mut_unchecked(right.columns()) };
     postprocess_join(left, params)
@@ -226,6 +254,9 @@ pub struct ProbeOutput {
     probe_match: Vec<IdxSize>,
     unmatched_probe: Vec<IdxSize>,
     left_is_build: bool,
+    /// The columns of the build and probe payloads that are output, if only some are.
+    build_idx: Option<Arc<[usize]>>,
+    probe_idx: Option<Arc<[usize]>>,
     mark_matches: bool,
     emit_unmatched: bool,
     /// The number of rows of a full output.
@@ -233,14 +264,16 @@ pub struct ProbeOutput {
     /// The build columns without rows, to gather nulls from.
     no_build_rows: DataFrame,
     null_idxs: Vec<IdxSize>,
+    order: Vec<IdxSize>,
 }
 
 impl ProbeOutput {
     pub fn new(params: &EquiJoinParams, left_is_build: bool) -> Self {
-        let build_schema = params.payload_schema(left_is_build);
         Self {
-            build: DataFrameBuilder::new(build_schema.clone()),
-            probe: DataFrameBuilder::new(params.payload_schema(!left_is_build).clone()),
+            build: DataFrameBuilder::new(params.output_side_schema(left_is_build).clone()),
+            probe: DataFrameBuilder::new(params.output_side_schema(!left_is_build).clone()),
+            build_idx: params.output_idx(left_is_build).clone(),
+            probe_idx: params.output_idx(!left_is_build).clone(),
             table_match: Vec::new(),
             probe_match: Vec::new(),
             unmatched_probe: Vec::new(),
@@ -248,8 +281,9 @@ impl ProbeOutput {
             mark_matches: params.emit_unmatched(left_is_build),
             emit_unmatched: params.emit_unmatched(!left_is_build),
             limit: get_ideal_morsel_size(),
-            no_build_rows: DataFrame::empty_with_schema(build_schema),
+            no_build_rows: DataFrame::empty_with_schema(params.output_side_schema(left_is_build)),
             null_idxs: Vec::new(),
+            order: Vec::new(),
         }
     }
 
@@ -333,13 +367,14 @@ impl ProbeOutput {
             }
         }
 
+        let build_payload = output_columns(&table.payload, self.build_idx.as_deref());
         if self.emit_unmatched {
             self.build
-                .opt_gather_extend(&table.payload, &self.table_match, ShareStrategy::Always);
+                .opt_gather_extend(&build_payload, &self.table_match, ShareStrategy::Always);
         } else {
             unsafe {
                 self.build
-                    .gather_extend(&table.payload, &self.table_match, ShareStrategy::Always)
+                    .gather_extend(&build_payload, &self.table_match, ShareStrategy::Always)
             };
         }
         Ok(())
@@ -361,9 +396,10 @@ impl ProbeOutput {
     /// Gathers the probe rows of the matches from `payload`, the current probe frame, whose
     /// columns must be single chunks.
     pub fn gather_probe(&mut self, payload: &DataFrame) {
+        let payload = output_columns(payload, self.probe_idx.as_deref());
         unsafe {
             self.probe
-                .gather_extend(payload, &self.probe_match, ShareStrategy::Always)
+                .gather_extend(&payload, &self.probe_match, ShareStrategy::Always)
         };
         self.probe_match.clear();
     }
@@ -373,6 +409,29 @@ impl ProbeOutput {
         debug_assert!(self.probe_match.is_empty());
         let build = self.build.freeze_reset();
         let probe = self.probe.freeze_reset();
+        self.combine(build, probe, params)
+    }
+
+    /// Takes the output with the rows in the order of `payload`, the current probe frame, of
+    /// which every row is matched once.
+    pub fn take_in_probe_order(
+        &mut self,
+        payload: &DataFrame,
+        params: &EquiJoinParams,
+    ) -> DataFrame {
+        debug_assert!(self.probe.is_empty() && self.probe_match.len() == payload.height());
+        self.order.clear();
+        self.order.resize(self.probe_match.len(), 0);
+        // SAFETY: `probe_match` is a permutation of the rows of `payload`.
+        for (i, r) in self.probe_match.iter().enumerate() {
+            unsafe { *self.order.get_unchecked_mut(*r as usize) = i as IdxSize };
+        }
+        self.probe_match.clear();
+        let build = unsafe { self.build.freeze_reset().take_slice_unchecked(&self.order) };
+        self.combine(build, payload.clone(), params)
+    }
+
+    fn combine(&self, build: DataFrame, probe: DataFrame, params: &EquiJoinParams) -> DataFrame {
         let (mut left, right) = if self.left_is_build {
             (build, probe)
         } else {
@@ -435,6 +494,18 @@ impl ProbePartitions {
             (&params.left_key_selectors, &params.left_payload_select)
         };
 
+        // With unique build keys a probe row has at most one output row. If all have one, we
+        // reorder the build rows to the probe rows instead of gathering the probe rows, if there
+        // are not more build columns.
+        let unique_build = params.fused_predicate.is_none()
+            && params.payload_schema(left_is_build).len()
+                <= params.payload_schema(!left_is_build).len()
+            && partitions.iter().all(|p| {
+                p.table
+                    .as_ref()
+                    .is_none_or(|t| t.hash_table.num_keys() as usize == t.payload.height())
+            });
+
         // A simple estimate used to size reserves.
         let mut selectivity_estimate = 1.0;
         let mut selectivity_estimate_confidence = 0.0;
@@ -465,8 +536,7 @@ impl ProbePartitions {
                 ((selectivity_estimate * 1.2 * df_height as f64) as usize).min(probe_limit);
             out.build.reserve(out_est_size + max_match_per_key_est);
 
-            let mut new_morsel = |out: &mut ProbeOutput| {
-                let out_df = out.take(params);
+            let mut new_morsel = |out_df: DataFrame| {
                 let out_seq = if params.preserve_order_probe {
                     in_seq
                 } else {
@@ -519,7 +589,7 @@ impl ProbePartitions {
                             rechunk_once(&mut frame.frame, &mut payload_rechunked);
                             out.gather_probe(&frame.frame);
                             let out_len = out.len();
-                            let out_morsel = new_morsel(&mut out);
+                            let out_morsel = new_morsel(out.take(params));
                             if send.send(out_morsel).await.is_err() {
                                 return Ok(max_seq);
                             }
@@ -536,7 +606,7 @@ impl ProbePartitions {
                 if !out.probe_match.is_empty() {
                     rechunk_once(&mut frame.frame, &mut payload_rechunked);
                     out.gather_probe(&frame.frame);
-                    if send.send(new_morsel(&mut out)).await.is_err() {
+                    if send.send(new_morsel(out.take(params))).await.is_err() {
                         return Ok(max_seq);
                     }
                 }
@@ -560,7 +630,7 @@ impl ProbePartitions {
                         if out.is_full() {
                             out.gather_probe(&frame.frame);
                             let out_len = out.len();
-                            if send.send(new_morsel(&mut out)).await.is_err() {
+                            if send.send(new_morsel(out.take(params))).await.is_err() {
                                 return Ok(max_seq);
                             }
                             // We had enough matches to need a mid-partition flush, let's assume there are a lot of
@@ -582,9 +652,14 @@ impl ProbePartitions {
                     }
                 }
 
-                if !out.is_empty() {
+                if unique_build && out.len() == df_height {
+                    let out_df = out.take_in_probe_order(&frame.frame, params);
+                    if send.send(new_morsel(out_df)).await.is_err() {
+                        return Ok(max_seq);
+                    }
+                } else if !out.is_empty() {
                     out.gather_probe(&frame.frame);
-                    if send.send(new_morsel(&mut out)).await.is_err() {
+                    if send.send(new_morsel(out.take(params))).await.is_err() {
                         return Ok(max_seq);
                     }
                 }
