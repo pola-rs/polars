@@ -9529,6 +9529,16 @@ def test_mssql_query_sources_keep_the_types_of_their_columns() -> None:
                 lf.filter(pl.col("d") > date(2020, 6, 1)).collect()["id"]
             ) == [2]
 
+        # a column computed from masked ones has no source column: read masked, so not
+        # compared in the database either (F6)
+        lf = pl.scan_database(
+            "SELECT id, n + 0 AS n2, email + '' AS e2 FROM review_masked", conn
+        )
+        df = lf.collect()
+        assert df["n2"].to_list() == [0, 0, 0]
+        for p in [pl.col("n2") == 0, pl.col("n2") > 0, pl.col("e2") == "aXXX@XXXX.com"]:
+            got = sorted(lf.filter(p).collect()["id"].to_list())
+            assert got == sorted(df.filter(p)["id"].to_list()), str(p)
 
 def drivers_with_types() -> list[str]:
     # (arrow-odbc reads `real` as Float32, which `_assert_drivers_agree` compares: it is

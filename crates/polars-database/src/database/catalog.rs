@@ -836,6 +836,9 @@ fn mssql_object_id(qualified: &str) -> String {
 /// Where the database has masked columns and the login lacks `UNMASK`, the browse
 /// information of the query's description names the table column each result column is read
 /// from; where it can't be described that way (a `UNION`, say), every column may be masked.
+/// A result column with no source column (`n + 0`, `email + ''`) is computed from masked
+/// values where any may be read (the database has a masked column the login can't unmask:
+/// the tables the query reads aren't known here), and so is read masked too.
 fn mssql_query_masked_columns(
     session: &mut dyn DatabaseSession,
     info: &mut CatalogInfo,
@@ -855,7 +858,7 @@ fn mssql_query_masked_columns(
         return;
     }
     let sql = format!(
-        "SELECT d.name, CASE WHEN d.source_database IS NOT NULL \
+        "SELECT d.name, CASE WHEN d.source_column IS NULL OR d.source_database IS NOT NULL \
         AND d.source_database <> DB_NAME() OR EXISTS (SELECT 1 FROM sys.masked_columns mc \
         WHERE mc.is_masked = 1 AND mc.name = d.source_column AND mc.object_id = \
         OBJECT_ID(QUOTENAME(d.source_schema) + '.' + QUOTENAME(d.source_table)) \
