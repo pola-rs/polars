@@ -8168,7 +8168,7 @@ def _mssql_engine_with(statement: str) -> Any:
     assert uri is not None
     engine = sa.create_engine(uri.replace("mssql://", "mssql+pymssql://", 1))
 
-    @sa.event.listens_for(engine, "connect")
+    @sa.event.listens_for(engine, "connect")  # type: ignore[untyped-decorator]
     def _setting(dbapi_connection: Any, _: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute(statement)
@@ -8243,8 +8243,9 @@ def test_mssql_rowcount_on_the_session_is_refused() -> None:
             "FROM sys.all_objects a, sys.all_objects b",
         ],
     )
+    all_kwargs: list[dict[str, Any]] = [{}, {"partition_on": "id", "partition_num": 4}]
     for _what, connection in _mssql_user_connections("SET ROWCOUNT 50"):
-        for kwargs in [{}, {"partition_on": "id", "partition_num": 4}]:
+        for kwargs in all_kwargs:
             with pytest.raises(
                 pl.exceptions.InvalidOperationError, match="SET ROWCOUNT"
             ):
