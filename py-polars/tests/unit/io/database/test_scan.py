@@ -1787,6 +1787,16 @@ def test_scan_duckdb_lossy_values_are_errors() -> None:
     ]:
         with pytest.raises(pl.exceptions.SchemaError, match="raw ticks"):
             scan(sql, schema={"x": dtype}).collect()
+    with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+        scan(
+            "SELECT 1.5::DOUBLE AS x", schema={"x": pl.Struct({"v": pl.Int64})}
+        ).collect()
+    # a list of entries with a repeated key is a map of one entry for it
+    out = scan(
+        "SELECT [{'key': 'a', 'value': 1.0}, {'key': 'a', 'value': 1.0}] AS x",
+        schema={"x": pl.Map(pl.String, pl.Int64)},
+    ).collect()
+    assert out.height == 1
     # a finite DOUBLE isn't an infinite Float16
     with pytest.raises(pl.exceptions.SchemaError, match="Float16"):
         scan("SELECT 1e5::DOUBLE AS x", schema={"x": pl.Float16}).collect()
@@ -5230,13 +5240,14 @@ def test_a_source_that_may_write_is_counted_once_over_the_count_buffer(
     assert conn.execute("SELECT currval('s')").fetchone() == (3,)
     # also through a view
     conn.execute("CREATE VIEW v AS SELECT nextval('s') AS n FROM range(3)")
-    for source in ["v", "SELECT n FROM v"]:
+    for source, last in [("v", 6), ("SELECT n FROM v", 9)]:
         out = (
             pl.scan_database(source, conn, partition_on=None, schema={"n": pl.Int64})
             .tail(1)
             .collect()
         )
-        assert out["n"].to_list() == [conn.execute("SELECT currval('s')").fetchone()[0]]
+        assert out["n"].to_list() == [last]
+        assert conn.execute("SELECT currval('s')").fetchone() == (last,)
 
 
 def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:

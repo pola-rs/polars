@@ -561,8 +561,7 @@ fn check_numeric_exact(src: &Column, cast: &Column) -> PolarsResult<()> {
 fn check_exact_at(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResult<()> {
     let path = |suffix: &str| -> PlSmallStr { format!("{}{suffix}", src.name()).into() };
     match (src.dtype(), cast.dtype()) {
-        (DataType::Map(_, _), DataType::Map(_, _) | DataType::List(_))
-        | (DataType::List(_), DataType::Map(_, _)) => {
+        (DataType::Map(_, _), DataType::Map(_, _) | DataType::List(_)) => {
             // a map is a list of `key` / `value` structs: its values are checked as such
             let storage = |c: &Column| -> PolarsResult<Column> {
                 if !matches!(c.dtype(), DataType::Map(_, _)) {
@@ -589,6 +588,17 @@ fn check_exact_at(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResul
                 Ok(inner.with_name(path("[]")).into_column())
             };
             return check_exact_at(&values(src)?, &values(cast)?, root);
+        },
+        (from, DataType::Struct(fields)) if fields.len() == 1 && !from.is_struct() => {
+            // a value cast to a struct of one field is cast to the field
+            let field = cast.struct_()?.fields_as_series().swap_remove(0);
+            let name = path(&format!(".{}", field.name()));
+            let src = src.as_materialized_series().clone().with_name(name.clone());
+            return check_exact_at(
+                &src.into_column(),
+                &field.with_name(name).into_column(),
+                root,
+            );
         },
         (DataType::Struct(_), DataType::Struct(_)) => {
             let (src_s, cast_s) = (src.struct_()?, cast.struct_()?);
