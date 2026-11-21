@@ -109,6 +109,12 @@ pub trait ListNameSpaceImpl: AsList {
         ignore_nulls: bool,
     ) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
+        polars_ensure!(
+            ca.len() == separator.len(),
+            ShapeMismatch: "length of `separator` ({}) does not match length of `list` ({})",
+            separator.len(),
+            ca.len()
+        );
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
@@ -697,4 +703,27 @@ fn sample_frac_broadcast_list(
 
     out.rename(name);
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lst_join_mismatched_separator_length_errors() {
+        let s0 = Series::new("".into(), &["x", "y"]);
+        let s1 = Series::new("".into(), &["z", "w"]);
+        let s2 = Series::new("".into(), &["p", "q"]);
+        let ca = ListChunked::from_iter([Some(s0), Some(s1), Some(s2)]);
+
+        let sep_short = StringChunked::from_slice("sep".into(), &["-", "+"]);
+        let err = ca.lst_join(&sep_short, false).unwrap_err();
+        assert!(matches!(err, PolarsError::ShapeMismatch(_)));
+
+        let sep_exact = StringChunked::from_slice("sep".into(), &["-", "+", "*"]);
+        let out = ca.lst_join(&sep_exact, false).unwrap();
+        assert_eq!(out.get(0), Some("x-y"));
+        assert_eq!(out.get(1), Some("z+w"));
+        assert_eq!(out.get(2), Some("p*q"));
+    }
 }
