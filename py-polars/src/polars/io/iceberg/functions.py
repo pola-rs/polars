@@ -80,7 +80,7 @@ def scan_iceberg(
         credentials per table, also if the catalog vends separate ones for its
         metadata and data files.
     catalog
-        PyIceberg catalog to load the table from if the provided `target`
+        PyIceberg catalog to load the table from if the provided `source`
         was a table name.
 
         This can also be a catalog name, which is kept in the query plan and
