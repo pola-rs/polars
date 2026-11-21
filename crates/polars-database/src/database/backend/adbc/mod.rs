@@ -316,7 +316,16 @@ fn mssql_database_uri(uri: &str) -> String {
     if database.is_empty() || database.contains('/') || has_database {
         return uri.to_string();
     }
-    let mut out = format!("{scheme}://{authority}?database={database}");
+    let mut out = format!("{scheme}://{authority}?database=");
+    // (a query value: `&`, `=` and `+` would be read as separators or a blank)
+    for c in database.chars() {
+        match c {
+            '&' => out.push_str("%26"),
+            '=' => out.push_str("%3D"),
+            '+' => out.push_str("%2B"),
+            c => out.push(c),
+        }
+    }
     if !query.is_empty() {
         out.push('&');
         out.push_str(query);
@@ -905,6 +914,10 @@ mod tests {
         assert_eq!(f("mssql://h/a?database=b"), "mssql://h/a?database=b");
         assert_eq!(f("mssql://h:1433"), "mssql://h:1433");
         assert_eq!(f("mssql://h:1433/"), "mssql://h:1433/");
+        assert_eq!(
+            f("mssql://h/sales&a=b+c"),
+            "mssql://h?database=sales%26a%3Db%2Bc"
+        );
     }
 
     #[test]

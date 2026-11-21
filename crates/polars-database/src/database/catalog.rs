@@ -480,21 +480,19 @@ pub fn table_info(
             },
         };
     }
-    let qualified = parts
-        .iter()
-        .map(|p| dialect.quote_ident(p))
-        .collect::<Vec<_>>()
-        .join(".");
-    if dialect == DialectName::Mssql
-        && let Some(df) = run("masked columns", &mssql_masked_columns_sql(&qualified))
-    {
-        for row in 0..df.height() {
-            if let Some(name) = cell_str(&df, 0, row) {
-                info.masked.insert(name.into());
+    if dialect == DialectName::Mssql {
+        let qualified = parts
+            .iter()
+            .map(|p| dialect.quote_ident(p))
+            .collect::<Vec<_>>()
+            .join(".");
+        if let Some(df) = run("masked columns", &mssql_masked_columns_sql(&qualified)) {
+            for row in 0..df.height() {
+                if let Some(name) = cell_str(&df, 0, row) {
+                    info.masked.insert(name.into());
+                }
             }
         }
-    }
-    if dialect == DialectName::Mssql {
         // a view's columns are read masked where their base columns are
         mssql_query_masked_columns(session, &mut info, &qualified);
     }
@@ -631,6 +629,9 @@ pub fn query_info(
                     }
                 }
             }
+        } else if dialect == DialectName::Mssql {
+            // the masked columns can't be looked up either: any may be read masked
+            info.incomplete = true;
         }
     } else if dialect == DialectName::Mysql && temp_tables {
         // A temporary table of the query's columns: `LIMIT 0` plans the query without
@@ -1590,10 +1591,12 @@ pub fn view_definition(
             s(name)
         ),
         // through a synonym (the user's, or public); `TEXT_VC` holds the first 4000
-        // characters, the `LONG` `TEXT` all of them
+        // characters, the `LONG` `TEXT` all of them. A view's own unqualified names resolve
+        // in its owner's schema.
         DialectName::Oracle => {
-            let owner =
-                schema.map_or_else(|| "SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')".to_string(), s);
+            let owner = schema
+                .or_else(|| context.last().map(|c| c.as_str()))
+                .map_or_else(|| "SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')".to_string(), s);
             let n = s(name);
             let named = format!(
                 "(SELECT {owner}, {n} FROM dual \
@@ -1632,7 +1635,9 @@ pub fn view_definition(
             });
             return ViewLookup::View {
                 sql: sql.unwrap_or_default(),
-                qualifier: vec![],
+                qualifier: cell_str(&df, 2, 0)
+                    .map(|o| vec![o.into()])
+                    .unwrap_or_default(),
                 redacted,
             };
         },

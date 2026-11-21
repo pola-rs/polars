@@ -610,9 +610,9 @@ impl Translator<'_> {
         // A Trino `char(n)` is read padded with blanks, and compared without them (`'a  '`
         // read, `c = 'a  '` false): a literal ending in a blank may match what the
         // database doesn't.
-        if self.dialect() == DialectName::Trino
-            && let Some(s) = av.get_str()
+        if let Some(s) = av.get_str()
             && s.ends_with(' ')
+            && self.maybe_trino_char(name)
         {
             return false;
         }
@@ -877,7 +877,7 @@ impl Translator<'_> {
             return None;
         }
         // (a Trino `char(n)`: see `literal_fits`)
-        if self.dialect() == DialectName::Trino && pat.ends_with(' ') {
+        if pat.ends_with(' ') && self.maybe_trino_char(name) {
             return None;
         }
         // ClickHouse's `LIKE` misreads a pattern that holds a NUL: `s LIKE '%\0'` matches
@@ -1125,6 +1125,16 @@ impl Translator<'_> {
                 let t = t.trim().to_ascii_lowercase();
                 t.starts_with("date") || t.starts_with("time")
             })
+    }
+
+    /// Whether a column may be a Trino `char(n)`: its type is that, or isn't known.
+    fn maybe_trino_char(&self, name: &str) -> bool {
+        self.dialect() == DialectName::Trino
+            && self
+                .config
+                .column(name)
+                .and_then(|c| c.db_type.as_deref())
+                .is_none_or(|t| t.trim().to_ascii_lowercase().starts_with("char"))
     }
 
     /// Whether a SQL Server date-time column's values are ones a microsecond literal
@@ -1735,6 +1745,12 @@ pub(crate) mod tests {
         );
         assert!(class_of(&c, &cmp("eq", "s", "str", "a")).is_some());
         assert_eq!(class_of(&c, &cmp("eq", "s", "str", "a  ")), None);
+        let varchar = config(
+            DialectName::Trino,
+            adbc("trino"),
+            &[("s", DataType::String, Some("varchar(10)"))],
+        );
+        assert!(class_of(&varchar, &cmp("eq", "s", "str", "a  ")).is_some());
     }
 
     #[test]

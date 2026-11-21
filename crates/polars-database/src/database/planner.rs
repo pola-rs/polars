@@ -1250,40 +1250,6 @@ pub fn resolve_scan(
         pushdown_disabled = Some(reason.into());
     }
 
-    // SQL Server under `schema=`: no I/O says a column's type, so one declared a `Datetime`
-    // (any unit, with or without a zone) is read as text through one expression that is exact
-    // for every source type (see `column_conversion`), where the drivers read another instant
-    // (ConnectorX shifts a `datetimeoffset` twice, pyodbc not at all) or cut the 7th
-    // fractional digit.
-    if dialect == DialectName::Mssql && user_typed {
-        let connectorx = matches!(backend.kind, BackendKind::ConnectorX);
-        let wrapped = read_wrapped(&options, &pushdown_disabled, &query, dialect);
-        for c in columns.iter_mut().filter(|c| c.db_type.is_none()) {
-            let DataType::Datetime(_, tz) = &c.dtype else {
-                continue;
-            };
-            if !wrapped {
-                // (an aware column is read as text on every driver: pyodbc can't read a
-                // `datetimeoffset` at all)
-                if connectorx && tz.is_some() {
-                    refused.push((
-                        c.name.clone(),
-                        format!(
-                            "ConnectorX reads a SQL Server datetimeoffset in another zone as \
-                            another instant, and this query can't be wrapped to convert column \
-                            '{}', declared {}: pin another driver, or CAST the column in the \
-                            query to a datetime2 (UTC) and declare it without a time zone",
-                            c.name, c.dtype
-                        )
-                        .into(),
-                    ));
-                }
-                continue;
-            }
-            c.db_type = Some(MSSQL_DATETIME.into());
-        }
-    }
-
     Ok(DatabaseScanConfig {
         fingerprint: options.fingerprint(),
         options,
@@ -1794,10 +1760,6 @@ const DUCKDB_TEXT: &str = "<duckdb text>";
 /// driver without the type lookup, or under `schema=`): it may be a `DATE` / `DATETIME` /
 /// `TIMESTAMP` holding zero dates (`mysql_zero_date_type`).
 pub(crate) const MYSQL_DATE: &str = "<mysql date>";
-/// The `db_type` of a SQL Server column declared a `Datetime` under `schema=` (any unit, with
-/// or without a zone; no database type to go by): its UTC wall-clock time as text with all its
-/// fractional digits, which the read parses to the declared unit (`column_conversion`).
-const MSSQL_DATETIME: &str = "<mssql datetime>";
 /// The `db_type` of a SQLite Binary column: its blobs as they are, and no other value (a number or
 /// text, which drivers read as text, or as NULL, or lossily: an `%e` real) reads: the read fails on
 /// it (`explain_sqlite_error`). As an expression, it also has no declared type for ConnectorX to
@@ -2236,17 +2198,6 @@ fn column_conversion(
             column.to_string()
         };
         return Some(format!("CONVERT(VARCHAR(40), {x}, 121)"));
-    }
-    // A `Datetime` declared under `schema=` (no database type to go by): the type is looked up
-    // in the query itself. A `datetimeoffset` is its UTC wall-clock time; any other type its own
-    // text, which keeps its exact digits (a conversion of a `datetime` to `datetime2` would
-    // read `.997` as `.9966667`). Every branch is compiled for every type.
-    if dialect == DialectName::Mssql && db_type == MSSQL_DATETIME {
-        return Some(format!(
-            "CASE WHEN SQL_VARIANT_PROPERTY(CAST({column} AS sql_variant), 'BaseType') = \
-            'datetimeoffset' THEN CONVERT(VARCHAR(40), CAST(SWITCHOFFSET({column}, '+00:00') \
-            AS DATETIME2(7)), 121) ELSE CONVERT(VARCHAR(40), {column}, 121) END"
-        ));
     }
     // ConnectorX shifts a `datetimeoffset` of another offset than UTC twice (`01:30 +05:30`
     // reads as 14:30 UTC, not 20:00): at offset 0 its read is right.
@@ -3692,7 +3643,7 @@ pub(crate) fn time_text_risk_columns(config: &DatabaseScanConfig) -> PlHashMap<P
 
 /// The SQL Server columns read as text whose digits below the planned unit are cut (toward
 /// the earlier instant): a `datetime2` / `datetimeoffset` of 7 fractional digits the user
-/// typed `Datetime("us")` or `("ms")` (`schema_overrides`, `schema=`): the digits are the
+/// typed `Datetime("us")` or `("ms")` (`schema_overrides`): the digits are the
 /// ones the type has beyond the unit asked for, which isn't an error (and is not rounded: the
 /// maximum, `9999-12-31 23:59:59.9999999`, would overflow). Filters on such a column aren't
 /// pushed (it is retyped: not comparable).
@@ -3708,11 +3659,10 @@ pub(crate) fn truncating_columns(config: &DatabaseScanConfig) -> PlHashSet<PlSma
                 c.dtype,
                 DataType::Datetime(TimeUnit::Microseconds | TimeUnit::Milliseconds, _)
             ) && c.db_type.as_deref().is_some_and(|t| {
-                t == MSSQL_DATETIME
-                    || matches!(
-                        super::schema::mssql_nanosecond_type(t),
-                        Some("datetime2" | "datetimeoffset")
-                    )
+                matches!(
+                    super::schema::mssql_nanosecond_type(t),
+                    Some("datetime2" | "datetimeoffset")
+                )
             })
         })
         .map(|c| c.name.clone())
@@ -4955,11 +4905,6 @@ mod tests {
             mssql("datetimeoffset(3)").as_deref(),
             Some("SWITCHOFFSET(\"c\", '+00:00')")
         );
-        assert!(
-            mssql(MSSQL_DATETIME)
-                .unwrap()
-                .starts_with("CASE WHEN SQL_VARIANT_PROPERTY")
-        );
         assert!(mssql("decimal(38, 2)").is_some());
         assert_eq!(mssql("decimal(18, 2)"), None);
         assert_eq!(mssql("datetime2(6)"), None);
@@ -4984,7 +4929,7 @@ mod tests {
             adbc("mssql"),
             &[
                 ("a", us.clone(), Some("datetime2(7)")),
-                ("b", us.clone(), Some(MSSQL_DATETIME)),
+                ("b", us.clone(), Some("datetimeoffset")),
                 ("c", ns, Some("datetime2(7)")),
                 ("d", us.clone(), Some("datetime2(6)")),
             ],

@@ -6900,6 +6900,7 @@ def test_clickhouse_settings_that_change_the_rows_disable_pushdown() -> None:
         _execute(name, [f"DROP TABLE IF EXISTS {table}"])
 
 
+@ORACLE_GROUP
 def test_oracle_redacted_columns_are_not_compared_in_the_database() -> None:
     # Data Redaction returns redacted values while a pushed filter compares the
     # stored ones
@@ -6907,7 +6908,7 @@ def test_oracle_redacted_columns_are_not_compared_in_the_database() -> None:
     uri = SERVERS["oracle"].uri
     if uri is None:
         pytest.skip("no Oracle URI")
-    password = uri.split("//", 1)[1].split("@")[0].split(":", 1)[1]
+    user, password = uri.split("//", 1)[1].split("@")[0].split(":", 1)
     host_port = uri.split("@", 1)[1].split("/", 1)[0]
     try:
         admin = oracledb.connect(
@@ -6917,6 +6918,7 @@ def test_oracle_redacted_columns_are_not_compared_in_the_database() -> None:
         pytest.skip("no SYSTEM access to create a redaction policy")
     admin.autocommit = True
     cur = admin.cursor()
+    owner = user.upper()
     _execute(
         "oracle",
         [
@@ -6925,19 +6927,28 @@ def test_oracle_redacted_columns_are_not_compared_in_the_database() -> None:
             "CREATE TABLE VOL_RED (id NUMBER(10) PRIMARY KEY, k NUMBER(10))",
             "INSERT INTO VOL_RED SELECT level, MOD(level, 10) + 1 FROM dual "
             "CONNECT BY level <= 300",
+            "CREATE OR REPLACE VIEW VOL_RED_V AS SELECT id, k FROM VOL_RED",
         ],
     )
+    # a user sees the policies through `REDACTION_POLICIES`, once granted the role
+    cur.execute(
+        "SELECT COUNT(*) FROM dba_role_privs "
+        "WHERE grantee = :u AND granted_role = 'SELECT_CATALOG_ROLE'",
+        u=owner,
+    )
+    must_grant = cur.fetchone()[0] == 0
+    if must_grant:
+        cur.execute(f'GRANT SELECT_CATALOG_ROLE TO "{owner}"')
     try:
-        # a user sees the policies through `REDACTION_POLICIES`, once granted the role
-        cur.execute("GRANT SELECT_CATALOG_ROLE TO polars")
         cur.execute(
-            "BEGIN DBMS_REDACT.ADD_POLICY(object_schema => 'POLARS', "
+            "BEGIN DBMS_REDACT.ADD_POLICY(object_schema => :o, "
             "object_name => 'VOL_RED', policy_name => 'VOL_RED_P', "
             "column_name => 'K', function_type => DBMS_REDACT.FULL, "
-            "expression => '1=1'); END;"
+            "expression => '1=1'); END;",
+            o=owner,
         )
         try:
-            for source in ["VOL_RED", "SELECT * FROM VOL_RED"]:
+            for source in ["VOL_RED", "SELECT * FROM VOL_RED", "VOL_RED_V"]:
                 lf = _scan("oracle", _default_driver("oracle"), source)
                 read = lf.collect()
                 # (redacted values: none is 3, every one is 0)
@@ -6949,9 +6960,11 @@ def test_oracle_redacted_columns_are_not_compared_in_the_database() -> None:
                     )
         finally:
             cur.execute(
-                "BEGIN DBMS_REDACT.DROP_POLICY(object_schema => 'POLARS', "
-                "object_name => 'VOL_RED', policy_name => 'VOL_RED_P'); END;"
+                "BEGIN DBMS_REDACT.DROP_POLICY(object_schema => :o, "
+                "object_name => 'VOL_RED', policy_name => 'VOL_RED_P'); END;",
+                o=owner,
             )
-            cur.execute("REVOKE SELECT_CATALOG_ROLE FROM polars")
     finally:
-        _execute("oracle", ["DROP TABLE VOL_RED PURGE"])
+        if must_grant:
+            cur.execute(f'REVOKE SELECT_CATALOG_ROLE FROM "{owner}"')
+        _execute("oracle", ["DROP VIEW VOL_RED_V", "DROP TABLE VOL_RED PURGE"])

@@ -232,11 +232,6 @@ def test_temporary_views_shadow_tables() -> None:
     ensure_seeded(URI)
     conn = connect(URI)
     try:
-        execute(
-            conn,
-            "CREATE OR REPLACE TEMP VIEW tmp_rand AS "
-            "SELECT id, rand() AS r FROM range(1, 101) AS t(id)",
-        )
         # a temporary view hides the table `orders` of its name on this connection
         execute(
             conn,
@@ -705,7 +700,7 @@ def test_a_view_with_columns_named_like_the_describe_headings() -> None:
     # column stays in Polars
     setup = [
         "CREATE OR REPLACE VIEW {schema}.vol_headings AS SELECT id, "
-        "'x' AS `Type`, rand() AS `# Detailed Table Information` "
+        "rand() AS `# Detailed Table Information`, 'x' AS `Type` "
         "FROM range(1, 201) AS t(id)"
     ]
     with _scratch(setup) as schema:
