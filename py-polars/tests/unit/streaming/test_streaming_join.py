@@ -129,6 +129,23 @@ def test_streaming_cross_join_empty() -> None:
     assert out.columns == ["col1", "col1_right"]
 
 
+@pytest.mark.parametrize("how", ["inner", "semi", "anti"])
+def test_streaming_join_empty_side_stops_sampling_empty_morsels(
+    how: JoinStrategy, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    seen = []
+
+    def empty(df: pl.DataFrame) -> pl.DataFrame:
+        seen.append(df.height)
+        return df.clear()
+
+    left = pl.LazyFrame(schema={"a": pl.Int64})
+    right = pl.LazyFrame({"a": range(2000)}).map_batches(empty, streamable=True)
+    left.join(right, on="a", how=how).collect(engine="streaming")
+    assert sum(seen) < 2000
+
+
 def test_streaming_cross_join_nullable_struct_probe() -> None:
     # Each probe row is repeated once per build row, its validity included.
     build = pl.LazyFrame({"a": [1, 2, 3]})

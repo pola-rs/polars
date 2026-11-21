@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use polars_async::executor::TaskMetricAggregator;
 use polars_core::prelude::PlHashMap;
@@ -13,6 +14,11 @@ use super::compute_node_prelude::*;
 use super::in_memory_sink::InMemorySinkNode;
 use super::spill_frame_source::SpillFrameSourceNode;
 use crate::morsel::get_ideal_morsel_size;
+
+/// How long rounds run before their rows are sent. It doubles after each send, as every send has
+/// a cost.
+const FIRST_SEND_INTERVAL: Duration = Duration::from_millis(1);
+const MAX_SEND_INTERVAL: Duration = Duration::from_millis(100);
 
 /// The values of the working tables and caches that recursive queries hold, by id.
 pub type RecursiveInputs = PlHashMap<UniqueId, Arc<[SpillFrame]>>;
@@ -85,35 +91,57 @@ impl RecursiveStep {
         Some(rows)
     }
 
-    /// Runs rounds until a round has no rows. Returns the rows of the anchor and of every round.
-    fn run(
-        &self,
-        anchor: Arc<[SpillFrame]>,
-        externals: Vec<Arc<[SpillFrame]>>,
-        spill_ctx: &LeastRecentSpillContext,
-    ) -> PolarsResult<Vec<Arc<[SpillFrame]>>> {
-        // Starting the pipelines of a round has a cost per pipeline, so small rounds use fewer.
-        let max_pipelines = polars_config::config().max_threads();
-        let rows_per_pipeline = get_ideal_morsel_size().min(1000);
+    /// The inputs of every round, without the working table.
+    fn round_inputs(&self, externals: Vec<Arc<[SpillFrame]>>) -> RecursiveInputs {
         let mut inputs = self.outer_inputs.clone();
         inputs.extend(self.external_caches.iter().copied().zip(externals));
-        let mut out = vec![anchor];
-        loop {
-            let frontier = out.last().unwrap().clone();
-            if frontier.iter().all(|sf| sf.height() == 0) {
-                break;
-            }
+        inputs
+    }
+
+    /// Runs rounds on `previous` until they hold a morsel of rows or ran for `send_interval`.
+    /// `previous` becomes the last round, or `None` once a round has no rows.
+    fn next_rounds(
+        &self,
+        inputs: &mut RecursiveInputs,
+        previous: &mut Option<Arc<[SpillFrame]>>,
+        send_interval: Duration,
+        spill_ctx: &LeastRecentSpillContext,
+    ) -> PolarsResult<Vec<Arc<[SpillFrame]>>> {
+        let start = Instant::now();
+        let morsel_size = get_ideal_morsel_size();
+        // Starting the pipelines of a round has a cost per pipeline, so small rounds use fewer.
+        let max_pipelines = polars_config::config().max_threads();
+        let rows_per_pipeline = morsel_size.min(1000);
+        let mut rounds = Vec::new();
+        let mut rows = 0;
+        while let Some(frames) = previous.take() {
             // The loop has no bound, so let a keyboard interrupt stop it.
             polars_error::abort::try_raise_polars_abort();
-            inputs.insert(self.id, frontier);
-            let num_pipelines = match self.in_memory_rows(&inputs) {
-                Some(rows) => rows.div_ceil(rows_per_pipeline).clamp(1, max_pipelines),
+            let input_rows: usize = frames.iter().map(|sf| sf.height()).sum();
+            let round_start = Instant::now();
+            inputs.insert(self.id, frames);
+            let num_pipelines = match self.in_memory_rows(inputs) {
+                Some(n) => n.div_ceil(rows_per_pipeline).clamp(1, max_pipelines),
                 None => max_pipelines,
             };
-            let df = self.run_round(&inputs, num_pipelines)?;
-            out.push(Arc::from([SpillFrame::new_blocking(df, spill_ctx)]));
+            let df = self.run_round(inputs, num_pipelines)?;
+            let df_height = df.height();
+            if df_height == 0 {
+                break;
+            }
+            rows += df_height;
+            let round: Arc<[SpillFrame]> = Arc::from([SpillFrame::new_blocking(df, spill_ctx)]);
+            *previous = Some(round.clone());
+            rounds.push(round);
+            // A round that grows makes the next one slower, so the rounds are sent before it
+            // would pass the interval.
+            let growth = df_height as f64 / input_rows as f64;
+            let next_round_time = round_start.elapsed().mul_f64(growth.max(1.0));
+            if rows >= morsel_size || start.elapsed() + next_round_time >= send_interval {
+                break;
+            }
         }
-        Ok(out)
+        Ok(rounds)
     }
 }
 
@@ -122,15 +150,21 @@ enum RecursiveState {
         anchor: InMemorySinkNode,
         externals: Vec<InMemorySinkNode>,
     },
+    /// Sends the rows of the anchor or of the latest rounds, then runs the next rounds.
     Source {
         source: SpillFrameSourceNode,
-        /// Keeps the frames of the source spillable.
-        _spill_ctx: LeastRecentSpillContext,
+        /// The last round, which the next round reads. `None` once there are no more rounds.
+        last: Option<Arc<[SpillFrame]>>,
+        inputs: RecursiveInputs,
+        send_interval: Duration,
+        results_ctx: LeastRecentSpillContext,
+        _inputs_ctx: LeastRecentSpillContext,
     },
     Done,
 }
 
-/// Collects the anchor and the external caches, then runs the step once per round.
+/// Collects the anchor and the external caches, then runs the step once per round. The rounds are
+/// sent in phases as they run, so the loop stops when the output is no longer read.
 pub struct RecursiveNode {
     state: RecursiveState,
     step: Arc<RecursiveStep>,
@@ -189,10 +223,18 @@ impl ComputeNode for RecursiveNode {
                 .iter_mut()
                 .map(|sink| sink.take_spill_frames(&inputs_ctx))
                 .collect();
-            let groups = self.step.run(anchor, externals, &results_ctx)?;
             self.state = RecursiveState::Source {
-                source: SpillFrameSourceNode::new(groups, self.schema.clone()),
-                _spill_ctx: results_ctx,
+                source: SpillFrameSourceNode::new(
+                    vec![anchor.clone()],
+                    self.schema.clone(),
+                    MorselSeq::default(),
+                ),
+                // An empty anchor has no rounds.
+                last: anchor.iter().any(|sf| sf.height() > 0).then_some(anchor),
+                inputs: self.step.round_inputs(externals),
+                send_interval: FIRST_SEND_INTERVAL,
+                results_ctx,
+                _inputs_ctx: inputs_ctx,
             };
         }
 
@@ -204,9 +246,34 @@ impl ComputeNode for RecursiveNode {
                 }
                 send[0] = PortState::Blocked;
             },
-            RecursiveState::Source { source, .. } => {
+            RecursiveState::Source {
+                source,
+                last,
+                inputs,
+                send_interval,
+                results_ctx,
+                ..
+            } => {
                 recv.fill(PortState::Done);
                 source.update_state(&mut [], send, state)?;
+                if send[0] == PortState::Done {
+                    let rounds =
+                        self.step
+                            .next_rounds(inputs, last, *send_interval, results_ctx)?;
+                    *send_interval = (*send_interval * 2).min(MAX_SEND_INTERVAL);
+                    if rounds.is_empty() {
+                        self.state = RecursiveState::Done;
+                    } else {
+                        // The rounds follow the rows sent before them.
+                        *source = SpillFrameSourceNode::new(
+                            rounds,
+                            self.schema.clone(),
+                            source.next_seq(),
+                        );
+                        send[0] = PortState::Ready;
+                        source.update_state(&mut [], send, state)?;
+                    }
+                }
             },
             RecursiveState::Done => {
                 recv.fill(PortState::Done);
