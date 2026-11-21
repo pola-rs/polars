@@ -163,6 +163,23 @@ pub fn optimize(
         opt_flags |= OptFlags::STREAMING;
         opt_flags &= !OptFlags::GPU;
     }
+    // A file sink also runs on the streaming engine.
+    let is_file_sink = |node: Node| {
+        matches!(
+            ir_arena.get(node),
+            IR::Sink {
+                payload: SinkTypeIR::File(_) | SinkTypeIR::Partitioned(_),
+                ..
+            }
+        )
+    };
+    let only_file_sinks = match ir_arena.get(root) {
+        IR::SinkMultiple { inputs } => inputs.iter().all(|&input| is_file_sink(input)),
+        _ => is_file_sink(root),
+    };
+    if only_file_sinks && !opt_flags.gpu() {
+        opt_flags |= OptFlags::STREAMING;
+    }
 
     // Run before slice pushdown
     if opt_flags.simplify_expr() {
@@ -350,7 +367,9 @@ pub fn optimize(
     #[cfg(feature = "cse")]
     if comm_subexpr_elim {
         let mut optimizer = CommonSubExprOptimizer::new(
-            opt_flags.contains(OptFlags::STREAMING) | opt_flags.contains(OptFlags::GPU),
+            opt_flags.contains(OptFlags::STREAMING)
+                | opt_flags.contains(OptFlags::GPU)
+                | get_or_init_members!().has_file_sink,
         );
         let ir_node = IRNode::new_mutate(root);
 
