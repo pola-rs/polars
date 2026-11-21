@@ -16,6 +16,14 @@ pub fn thread_pool_size() -> usize {
     RAYON.current_num_threads()
 }
 
+/// Marks the calling thread as one of Polars' own: a thread of a Python thread pool that only runs
+/// work for Polars' queries (`polars._utils.threading.PyThreadPool`). A background query's
+/// `cancel()` called on such a thread doesn't wait for the query, which may wait for the thread.
+#[pyfunction(name = "_mark_as_polars_thread")]
+pub fn mark_as_polars_thread() {
+    polars_core::runtime::mark_as_polars_thread()
+}
+
 #[pyfunction]
 pub fn set_float_fmt(fmt: &str) -> PyResult<()> {
     let fmt = match fmt {

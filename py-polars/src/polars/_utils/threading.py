@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Generic, ParamSpec, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars._plr as plr
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -35,5 +39,8 @@ class FnPoolWrap(Generic[P, T]):
 
 class PyThreadPool:
     def __init__(self, num_threads: int) -> None:
-        self.pool = ThreadPoolExecutor(num_threads)
+        # Its threads only run work for Polars' queries: mark them as Polars' own.
+        self.pool = ThreadPoolExecutor(
+            num_threads, initializer=plr._mark_as_polars_thread
+        )
         self.last_exception: BaseException | None = None

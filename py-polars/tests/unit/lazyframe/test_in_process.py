@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+import textwrap
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -120,3 +123,143 @@ def test_cancel_from_inside_the_query_does_not_deadlock() -> None:
     ready.set()
     assert cancelled.wait(30)
     q.cancel()
+
+
+def test_cancel_from_a_polars_python_thread_pool_does_not_wait() -> None:
+    # Polars' Python thread pools (Python readers, scan resolvers) run work the query
+    # may wait for: a cancel there only requests the cancellation.
+    from polars._utils.threading import PyThreadPool
+
+    started = threading.Event()
+    closed = threading.Event()
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        try:
+            for i in range(10):
+                started.set()
+                yield pl.DataFrame({"a": [i]})
+                time.sleep(2)
+        finally:
+            closed.set()
+
+    q = register_io_source(source, schema={"a": pl.Int64}).collect(background=True)
+    assert started.wait(30)
+    pool = PyThreadPool(1)
+    start = time.perf_counter()
+    pool.pool.submit(q.cancel).result(timeout=30)
+    elapsed = time.perf_counter() - start
+    pool.pool.shutdown()
+    # It returned without waiting for the batch being read.
+    assert elapsed < 1
+    q.cancel()
+    assert closed.is_set()
+
+
+def test_cancel_stops_between_callbacks_of_a_callback_sink() -> None:
+    calls: list[float] = []
+    started = threading.Event()
+
+    def callback(df: pl.DataFrame) -> None:
+        calls.append(time.perf_counter())
+        started.set()
+        time.sleep(0.5)
+
+    q = (
+        pl.LazyFrame({"a": range(20)})
+        .sink_batches(callback, chunk_size=1, lazy=True)
+        .collect(background=True)
+    )
+    assert started.wait(30)
+    q.cancel()
+    returned = time.perf_counter()
+    n = len(calls)
+    time.sleep(1)
+    # The callback running when cancel was called ended, and no other one started.
+    assert len(calls) == n
+    assert all(t < returned for t in calls)
+    assert n < 20
+
+
+def _run_with_slow_source(
+    batch_sleep: float, script: str
+) -> subprocess.CompletedProcess[str]:
+    """Run `script` in a new Python process, with `lf` scanning a slow source."""
+    script = SLOW_SOURCE_SCRIPT % {"batch_sleep": batch_sleep} + script
+    return subprocess.run(
+        [sys.executable, "-c", textwrap.dedent(script)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+SLOW_SOURCE_SCRIPT = """
+    import os, signal, threading, time
+    import polars as pl
+    from polars.io.plugins import register_io_source
+
+    started = threading.Event()
+
+    def source(with_columns, predicate, n_rows, batch_size):
+        for i in range(50):
+            started.set()
+            yield pl.DataFrame({"a": [i]})
+            time.sleep(%(batch_sleep)s)
+
+    lf = register_io_source(source, schema={"a": pl.Int64})
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="sends SIGINT")
+def test_ctrl_c_while_cancel_waits() -> None:
+    # Ctrl-C interrupts the wait (the query still stops), and doesn't abort the process.
+    script = """
+    q = lf.collect(background=True)
+    started.wait(30)
+    time.sleep(0.2)
+
+    def interrupt():
+        time.sleep(0.5)
+        os.kill(os.getpid(), signal.SIGINT)
+
+    threading.Thread(target=interrupt, daemon=True).start()
+    start = time.perf_counter()
+    try:
+        q.cancel()
+        print("cancel returned")
+    except KeyboardInterrupt:
+        print("cancel raised KeyboardInterrupt", time.perf_counter() - start < 2.5)
+    q.cancel()
+    try:
+        q.fetch_blocking()
+    except pl.exceptions.ComputeError as e:
+        print("fetch:", e)
+    print("done")
+"""
+    out = _run_with_slow_source(3.0, script)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.splitlines() == [
+        "cancel raised KeyboardInterrupt True",
+        "fetch: query interrupted",
+        "done",
+    ]
+
+
+def test_dropping_a_running_query() -> None:
+    script = """
+    import gc
+    q = lf.collect(background=True)
+    started.wait(30)
+    del q
+    gc.collect()
+    time.sleep(1)
+    print("done")
+"""
+    out = _run_with_slow_source(0.1, script)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.splitlines() == ["done"]

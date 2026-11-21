@@ -359,6 +359,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::mark_as_polars_thread))
+        .unwrap();
 
     // Numeric formatting
     m.add_wrapped(wrap_pyfunction!(functions::get_thousands_separator))
