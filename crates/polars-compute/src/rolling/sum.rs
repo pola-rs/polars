@@ -7,7 +7,7 @@ use super::*;
 pub struct SumWindow<'a, T, S> {
     slice: &'a [T],
     validity: Option<&'a Bitmap>,
-    sum: S,
+    pub(super) sum: S,
     err_add: S,
     err_sub: S,
     non_finite_count: usize, // NaN or infinity.
