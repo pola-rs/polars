@@ -431,9 +431,9 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     #[cfg(feature = "dtype-datetime")]
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let quantile = self.0.physical().quantile_reduce(quantile, method)?;
-        let v = quantile.value().extract::<f64>().unwrap();
-        let datetime_us_value = (v * (US_IN_DAY as f64)) as i64;
-        let av = AnyValue::Datetime(datetime_us_value, TimeUnit::Microseconds, None);
+        let v = quantile.value().extract::<f64>();
+        let av = AnyValue::from(v.map(|v| (v * (US_IN_DAY as f64)) as i64))
+            .as_datetime(TimeUnit::Microseconds, None);
         Ok(Scalar::new(
             DataType::Datetime(TimeUnit::Microseconds, None),
             av,

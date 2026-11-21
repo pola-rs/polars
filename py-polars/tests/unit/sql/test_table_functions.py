@@ -95,6 +95,12 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
         ("a,b\nNA,1\n", "null_values => 'NA'", {"null_values": "NA"}),
         ("a,b\nNA,-\n", "null_values => ['NA', '-']", {"null_values": ["NA", "-"]}),
         ("a,b\nNA,NA\n", "null_values => {'a': 'NA'}", {"null_values": {"a": "NA"}}),
+        # an empty field is an empty string, and only the marker is NULL
+        (
+            "a,b\n,\\N\n",
+            "null_values => '\\N', empty_string_is_null => false",
+            {"null_values": "\\N", "empty_string_is_null": False},
+        ),
         (
             "a\n1\nx\n",
             "schema_overrides => {'a': 'INT'}, ignore_errors => true",
