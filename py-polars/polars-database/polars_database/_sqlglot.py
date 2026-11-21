@@ -921,9 +921,37 @@ def _describe(node: Any, dialect: str | None) -> str:
         return type(node).__name__
 
 
+def _oracle_clock_date(node: Any) -> bool:
+    """
+    Whether an Oracle `TO_DATE` / `TO_TIMESTAMP` may take its year or month from the
+    clock: a format of no year or no month fills them in from `SYSDATE` (a Julian day
+    has both; no format is the session's, which has both by default).
+    """
+    fmt = node.args.get("format")
+    if fmt is None:
+        return False
+    if not isinstance(fmt, exp.Literal) or not fmt.is_string:
+        return True
+    text = fmt.name
+    upper = text.upper()
+    if upper.strip() == "J":
+        return False
+    year = any(t in text for t in ("%Y", "%y")) or "Y" in upper or "RR" in upper
+    month = any(t in text for t in ("%m", "%b", "%B", "%j")) or any(
+        t in upper for t in ("MM", "MON", "RM", "DDD")
+    )
+    return not (year and month)
+
+
 def _unproven(node: Any, dialect: str | None, relations: set[str]) -> bool:
     """Whether `node` is something the allowlist doesn't prove to repeat."""
     kind = type(node).__name__
+    if (
+        dialect == "oracle"
+        and isinstance(node, (exp.StrToDate, exp.StrToTime))
+        and _oracle_clock_date(node)
+    ):
+        return True
     if (
         dialect in _SPARK_DIALECTS
         and isinstance(node.parent, exp.Table)
@@ -1457,30 +1485,38 @@ _EXACT_TYPES = frozenset(
     )
     if hasattr(exp.DataType.Type, name)
 )
+_DECIMAL_TYPES = frozenset({exp.DataType.Type.DECIMAL, exp.DataType.Type.BIGDECIMAL})
 
 
-def _exact_operand(node: Any) -> bool:
+def _exact_operand(node: Any, dialect: str | None) -> bool:
     """
     Whether an aggregate's argument is exact (an integer or decimal, whose sum doesn't
     depend on the order of rows) by what the SQL shows: an integer literal, a cast to an
-    integer or decimal type, a count, and sums and products of those. A column's type
-    isn't shown, so a column is not.
+    integer or decimal type (an integer one on SQLite, whose `DECIMAL` may stay a real),
+    a count, and sums and products of those. A column's type isn't shown, so a column is
+    not.
     """
     if node is None:
         return True
     if isinstance(node, exp.Distinct):
-        return all(_exact_operand(e) for e in node.expressions)
+        return all(_exact_operand(e, dialect) for e in node.expressions)
     if isinstance(node, exp.Literal):
         return not node.is_string and node.name.isdigit()
     if isinstance(node, (exp.Cast, exp.TryCast)):
         to = node.args.get("to")
-        return isinstance(to, exp.DataType) and to.this in _EXACT_TYPES
+        return (
+            isinstance(to, exp.DataType)
+            and to.this in _EXACT_TYPES
+            and not (dialect == "sqlite" and to.this in _DECIMAL_TYPES)
+        )
     if isinstance(node, (exp.Count, exp.CountIf, exp.Length)):
         return True
     if isinstance(node, (exp.Paren, exp.Neg, exp.Abs)):
-        return _exact_operand(node.this)
+        return _exact_operand(node.this, dialect)
     if isinstance(node, (exp.Add, exp.Sub, exp.Mul)):
-        return _exact_operand(node.this) and _exact_operand(node.expression)
+        return _exact_operand(node.this, dialect) and _exact_operand(
+            node.expression, dialect
+        )
     return False
 
 
@@ -1500,13 +1536,18 @@ def _row_picking_join(node: Any, dialect: str | None) -> bool:
     )
 
 
-def _inexact_aggregate(node: Any) -> bool:
-    """Whether `node` is a float-sensitive aggregate of an argument not shown exact."""
+def _inexact_aggregate(node: Any, dialect: str | None) -> bool:
+    """
+    Whether `node` is a float-sensitive aggregate of an argument not shown exact (or
+    SQLite's `total`, a float sum).
+    """
+    if isinstance(node, exp.Anonymous):
+        return dialect == "sqlite" and _function_name(node) == "total"
     name = type(node).__name__
     return name in _FLOAT_SENSITIVE_AGGREGATES and not (
         name in _EXACT_ARGUMENT_AGGREGATES
         and all(
-            _exact_operand(a)
+            _exact_operand(a, dialect)
             for a in (node.args.get("this"), node.args.get("expression"))
         )
     )
@@ -1761,16 +1802,18 @@ def _multi_row_scalar_subquery(node: Any) -> bool:
     `FROM` is one row.
     """
     if isinstance(
-        node.parent, (exp.From, exp.Join, exp.SetOperation, exp.In, exp.Subquery)
-    ):
+        node.parent, (exp.From, exp.Join, exp.SetOperation, exp.Subquery)
+    ) or (isinstance(node.parent, exp.In) and node.arg_key == "query"):
         return False
     query = node.this
     if not isinstance(query, exp.Select):
         return True
     if query.args.get("from_", query.args.get("from")) is None:
         return False
-    return query.args.get("group") is not None or not all(
-        s.find(exp.AggFunc) is not None for s in query.selects
+    return (
+        query.args.get("group") is not None
+        or any(s.find(exp.Window) is not None for s in query.selects)
+        or not all(s.find(exp.AggFunc) is not None for s in query.selects)
     )
 
 
@@ -1781,7 +1824,7 @@ def _collapses_rows(stmt: Any) -> bool:
     `COUNT`): under a collation that equates different texts, the database returns
     any one of them.
     """
-    if stmt.find(exp.Group) is not None:
+    if stmt.find(exp.Group, exp.Min, exp.Max) is not None:
         return True
     for d in stmt.find_all(exp.Distinct):
         if not isinstance(d.parent, exp.Count):
@@ -2619,15 +2662,26 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     projections = (
         {id(p) for p in stmt.selects} if isinstance(stmt, exp.Select) else set()
     )
+    # (the names a `HAVING` or `QUALIFY` uses: an output alias there is its aggregate)
+    filtered = {
+        c.name.lower()
+        for clause in (stmt.args.get("having"), stmt.args.get("qualify"))
+        if clause is not None
+        for c in clause.find_all(exp.Column)
+        if not c.table
+    }
     inexact: list[Any] = []
     for node in stmt.find_all(exp.Func):
-        if not _inexact_aggregate(node):
+        if not _inexact_aggregate(node, dialect):
             continue
         top = node
         while top is not None and id(top) not in projections and top is not stmt:
             top = top.parent
         if top is not None and id(top) in projections:
-            if node.find_ancestor(exp.Select) is stmt:
+            if (
+                node.find_ancestor(exp.Select) is stmt
+                and top.alias_or_name.lower() not in filtered
+            ):
                 inexact.append(node)
                 continue
         if not any(node is u for u in unproven):
@@ -2741,6 +2795,12 @@ def inspect_view(sql: str, dialect: str | None) -> dict[str, Any]:
     except sqlglot.errors.SqlglotError:
         return _no_facts()
     facts = inspect_query(query, dialect)
+    with contextlib.suppress(sqlglot.errors.SqlglotError):
+        tokens = sqlglot.Dialect.get_or_raise(dialect).tokenize(sql)
+        written = _known_functions(None, tokens, dialect)
+        facts["known_functions"] += [
+            n for n in written if n not in facts["known_functions"]
+        ]
     if not named:
         # its names aren't the query's: a volatile column may be any of them
         facts["output_columns"] = names

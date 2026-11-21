@@ -1303,7 +1303,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("sqlite", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
         ("mysql", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
         ("sqlite", "SELECT t.g AS k, count(*) FROM t GROUP BY k", True),
-        ("sqlite", "SELECT t.g, sum(x) AS s FROM t GROUP BY g HAVING s > 1", True),
+        ("sqlite", "SELECT t.g, count(x) AS s FROM t GROUP BY g HAVING s > 1", True),
         ("sqlite", "SELECT lower(g) AS l, count(*) FROM t GROUP BY lower(g)", True),
         (
             "sqlite",
@@ -2757,6 +2757,14 @@ def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> Non
         ("sqlite", "SELECT id, (SELECT max(id) FROM t) AS k FROM t", True),
         ("sqlite", "SELECT id, (SELECT 1) AS k FROM t", True),
         ("sqlite", "SELECT id FROM t WHERE id IN (SELECT id FROM u)", True),
+        ("sqlite", "SELECT id FROM t WHERE (SELECT id FROM u) IN (1, 2)", False),
+        ("sqlite", "SELECT (SELECT id + count(*) OVER () FROM t) AS k FROM t", False),
+        # an output aggregate a HAVING names by its alias decides which groups there are
+        ("duckdb", "SELECT g, sum(x) AS s FROM t GROUP BY g HAVING s > 0", False),
+        # Oracle fills a year or month the format doesn't have from the clock
+        ("oracle", "SELECT EXTRACT(MONTH FROM TO_DATE('2024', 'YYYY')) FROM t", False),
+        ("oracle", "SELECT TO_DATE(s, 'HH24:MI') FROM t", False),
+        ("oracle", "SELECT TO_DATE(s, 'YYYY-MM-DD') FROM t", True),
         ("postgres", "SELECT id, (SELECT id FROM t) AS k FROM t", True),
         # the server runs an executable comment's text
         ("mysql", "SELECT 0 /*! + RAND() */ AS k, id FROM t", False),
@@ -2796,6 +2804,36 @@ def test_a_float_aggregate_output_column_is_volatile_not_the_whole_query(
         "SELECT g, stddev(CAST(x AS BIGINT)) AS k FROM t GROUP BY g", dialect
     )
     assert set(facts["volatile_columns"]) == {"k"}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # SQLite's DECIMAL keeps a real; `total` sums in floats
+        "SELECT g, sum(CAST(x AS DECIMAL)) AS k FROM t GROUP BY g",
+        "SELECT g, total(x) AS k FROM t GROUP BY g",
+    ],
+)
+def test_sqlite_float_sums_are_volatile_columns(query: str) -> None:
+    from polars_database._sqlglot import inspect_query
+
+    assert inspect_query(query, "sqlite")["volatile_columns"] == ["k"]
+
+
+def test_min_and_max_collapse_rows_that_compare_equal() -> None:
+    # under a case-insensitive collation they pick any spelling of the equal ones
+    from polars_database._sqlglot import inspect_query
+
+    facts = inspect_query("SELECT unicode(min(s)) AS k FROM t", "sqlite")
+    assert facts["collapses_rows"] is True
+
+
+def test_view_functions_are_looked_up_as_written() -> None:
+    # rendering renames `strpos` to `instr`: a user's `strpos` is looked up too
+    from polars_database._sqlglot import inspect_view
+
+    facts = inspect_view("CREATE VIEW v AS SELECT strpos(s, s) AS k FROM t", "sqlite")
+    assert "strpos" in facts["known_functions"]
 
 
 def test_positional_joins_are_a_fact_for_pushdown() -> None:
