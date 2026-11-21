@@ -99,7 +99,7 @@ The supported options are:
   `skip_rows_after_header`, `skip_lines`, `encoding`.
 - Names and types: `new_columns`, `schema`, `schema_overrides`, `infer_schema`,
   `infer_schema_length`, `infer_schema_files`, `try_parse_dates`, `decimal_comma`.
-- Values and errors: `null_values`, `ignore_errors`.
+- Values and errors: `null_values`, `empty_string_is_null`, `ignore_errors`.
 - Ragged rows and multiple files: `truncate_ragged_lines`, `missing_columns`, `extra_columns`,
   `include_file_paths`.
 

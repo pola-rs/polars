@@ -45,7 +45,7 @@ use object_store::client::{
 use polars_core::runtime::ASYNC;
 use tokio::sync::oneshot;
 
-use super::stall_timer::{StallStats, StallTimer, TtfbMin};
+use super::stall_timer::{StallState, StallTimer};
 use super::token_bucket::TokenBucket;
 use crate::cloud::{CloudDirectionalRateLimitConfig, CloudRateLimitConfig};
 
@@ -313,7 +313,7 @@ pub(crate) struct RateState {
     pub admitted: Arc<AtomicU64>,
     // A throttle response was seen.
     pub throttled: Arc<AtomicBool>,
-    pub stall: Arc<StallStats>,
+    pub stall: Arc<StallState>,
 }
 
 impl RateState {
@@ -520,7 +520,7 @@ pub(crate) struct PacerSignal {
     // Cumulative HTTP response counters, since epoch.
     resp_succeeded: AtomicU64,
     resp_throttled: AtomicU64,
-    stall: Arc<StallStats>,
+    stall: Arc<StallState>,
 }
 
 #[derive(Debug)]
@@ -1145,7 +1145,6 @@ impl HttpConnector for PacedHttpConnector {
         Ok(HttpClient::new(PacedHttpService {
             inner: client,
             controller: Arc::clone(&self.controller),
-            ttfb_min: TtfbMin::default(),
         }))
     }
 }
@@ -1154,7 +1153,6 @@ impl HttpConnector for PacedHttpConnector {
 pub(crate) struct PacedHttpService {
     inner: HttpClient,
     controller: Arc<RateController>,
-    ttfb_min: TtfbMin,
 }
 
 #[async_trait]
@@ -1167,7 +1165,7 @@ impl HttpService for PacedHttpService {
         // The object_store is responsible for retry.
         verb_pacer.pacer.admit().await?;
 
-        let stall_timer = StallTimer::start(&req, &self.ttfb_min, &verb_pacer.signal.stall);
+        let stall_timer = StallTimer::start(&req, &verb_pacer.signal.stall);
         let response = match &stall_timer {
             Some(timer) => Box::pin(timer.headers(self.inner.execute(req))).await,
             None => self.inner.execute(req).await,
