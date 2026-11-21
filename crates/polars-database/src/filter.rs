@@ -1260,11 +1260,13 @@ impl Translator<'_> {
             dt if dt.is_float() && self.dialect() == DialectName::Databricks => {
                 matches!(self.spark_float(name), Some("double" | "float")).then_some(Class::Exact)
             },
-            // ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond
+            // ConnectorX's bundled SQLite, and a SQLite built by MSVC (no `long double`: the
+            // one of Python on Windows), parse a float literal inexactly (exponents beyond
             // about +-85 miss the stored value): no float comparison is pushed.
             dt if dt.is_float()
                 && self.dialect() == DialectName::Sqlite
-                && matches!(self.config.backend.kind, BackendKind::ConnectorX) =>
+                && (cfg!(windows)
+                    || matches!(self.config.backend.kind, BackendKind::ConnectorX)) =>
             {
                 None
             },
