@@ -620,8 +620,12 @@ impl RuntimeRangeHint {
         let column = Column::new_scalar(self.column.clone(), value.clone(), 1);
         let df = DataFrame::new(1, vec![column]).ok()?;
         let out = expr.evaluate_io(&df).ok()?;
-        let value = out.get(0).ok()?.into_static();
-        Some(Scalar::new(out.dtype().clone(), value))
+        let out_value = out.get(0).ok()?.into_static();
+        // `expr` gives null for a non-null value only where it overflows.
+        if out_value.is_null() && !value.is_null() {
+            return None;
+        }
+        Some(Scalar::new(out.dtype().clone(), out_value))
     }
 }
 

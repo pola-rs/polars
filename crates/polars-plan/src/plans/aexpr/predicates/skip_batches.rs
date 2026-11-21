@@ -21,8 +21,8 @@ use crate::plans::expr_ir::ExprIR;
 #[cfg(feature = "is_in")]
 use crate::plans::predicates::try_extract_is_in_haystack;
 use crate::plans::{
-    AExprBuilder, OrderKeeping, aexpr_to_leaf_names_iter, is_scalar_ae, is_single_literal_ae,
-    order_keeping_column, rename_columns,
+    AExprBuilder, OrderKeeping, ToFieldContext, aexpr_to_leaf_names_iter, is_scalar_ae,
+    is_single_literal_ae, null_unless, order_keeping_column, rename_columns,
 };
 
 /// A resolved reference to a (possibly nested) statistics target: a top-level column,
@@ -39,9 +39,8 @@ struct StatTarget {
     /// Field path into a struct column, outermost first. Empty for a whole column.
     #[cfg_attr(not(feature = "dtype-struct"), allow(dead_code))]
     path: Vec<PlSmallStr>,
-    /// An order-keeping expression of `col` to take the statistics of instead, and whether it is
-    /// increasing.
-    order_keeping: Option<(Node, bool)>,
+    /// An order-keeping expression of `col` to take the statistics of instead, and its dtype.
+    order_keeping: Option<(Node, OrderKeeping, DataType)>,
 }
 
 impl StatTarget {
@@ -67,15 +66,27 @@ impl StatTarget {
         self.min_or_max(false, arena)
     }
     fn min_or_max(&self, min: bool, arena: &mut Arena<AExpr>) -> AExprBuilder {
-        let Some((expr, increasing)) = self.order_keeping else {
+        let Some((expr, order_keeping, dtype)) = &self.order_keeping else {
             return self.stat(if min { "min" } else { "max" }, arena);
         };
-        let suffix = if min == increasing { "min" } else { "max" };
+        let suffix = if min == order_keeping.increasing {
+            "min"
+        } else {
+            "max"
+        };
         let stat_names = PlIndexMap::from_iter([(
             self.col.clone(),
             format_pl_smallstr!("{}_{suffix}", self.col),
         )]);
-        AExprBuilder::new_from_node(rename_columns(expr, arena, &stat_names))
+        let bound = rename_columns(*expr, arena, &stat_names);
+        // The expression keeps the order of the values between `min` and `max` only if it overflows
+        // for neither. Otherwise the bound is null, which leaves it unknown.
+        let [col_min, col_max] = ["min", "max"]
+            .map(|suffix| arena.add(AExpr::Column(format_pl_smallstr!("{}_{suffix}", self.col))));
+        let Some(in_range) = order_keeping.in_safe_range(col_min, col_max, arena) else {
+            return AExprBuilder::new_from_node(bound);
+        };
+        AExprBuilder::new_from_node(null_unless(in_range, bound, dtype, arena))
     }
     fn null_count(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
         self.stat("nc", arena)
@@ -111,11 +122,15 @@ fn resolve_stat_target(e: Node, arena: &Arena<AExpr>, schema: &Schema) -> Option
             Some(inner)
         },
         _ => {
-            let OrderKeeping { column, increasing } = order_keeping_column(e, arena, schema)?;
+            let order_keeping = order_keeping_column(e, arena, schema)?;
+            let dtype = arena
+                .get(e)
+                .to_dtype(&ToFieldContext::new(arena, schema))
+                .ok()?;
             Some(StatTarget {
-                col: column,
+                col: order_keeping.column.clone(),
                 path: Vec::new(),
-                order_keeping: Some((e, increasing)),
+                order_keeping: Some((e, order_keeping, dtype)),
             })
         },
     }
