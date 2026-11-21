@@ -185,11 +185,29 @@ def test_series_init_pandas_timestamp_time_zone() -> None:
 
 def test_series_init_datetime_subclass_from_pandas_named_module() -> None:
     class Datetime(datetime):
-        pass
+        @property
+        def asm8(self) -> np.datetime64:
+            return np.datetime64("2001-05-04", "s")
 
     Datetime.__module__ = "pandas_helpers"
-    result = pl.Series([Datetime(2000, 1, 1)])
-    assert result.item() == datetime(2000, 1, 1)
+    assert pl.Series([Datetime(2025, 1, 2)]).item() == datetime(2025, 1, 2)
+
+
+def test_series_init_pandas_timedelta_non_nanosecond_unit() -> None:
+    result = pl.Series([pd.Timedelta(np.timedelta64(1, "s"))])
+    assert result.dtype == pl.Duration("us")
+    assert result.item() == timedelta(seconds=1)
+
+
+def test_series_init_pandas_timedelta_out_of_microsecond_range() -> None:
+    result = pl.Series([pd.Timedelta(np.timedelta64(10**9, "D"))])
+    assert result.dtype == pl.Duration("ms")
+    assert result.cast(pl.Int64).item() == 86_400_000_000_000_000
+
+
+def test_series_init_pandas_timedelta_nanoseconds() -> None:
+    result = pl.Series([pd.Timedelta(-1, "ns"), pd.Timedelta(1_999, "ns")])
+    assert result.to_list() == [timedelta(microseconds=-1), timedelta(microseconds=1)]
 
 
 def test_series_init_datetime_subclass_with_asm8() -> None:

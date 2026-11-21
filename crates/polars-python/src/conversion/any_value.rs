@@ -395,22 +395,19 @@ pub(crate) fn py_object_to_any_value(
         ))
     }
 
-    /// The datetime fields of a pandas Timestamp hold a placeholder year when the year is out of
-    /// range for a Python datetime, so convert from its `asm8` value instead.
     fn has_pandas_base(ty: &Bound<'_, PyType>) -> PyResult<bool> {
         for base in ty.mro().iter() {
-            if base
-                .cast::<PyType>()?
-                .module()?
-                .to_str()?
-                .starts_with("pandas")
-            {
+            let module = base.cast::<PyType>()?.module()?;
+            let module = module.to_str()?;
+            if module == "pandas" || module.starts_with("pandas.") {
                 return Ok(true);
             }
         }
         Ok(false)
     }
 
+    /// The datetime fields of a pandas Timestamp hold a placeholder year when the year is out of
+    /// range for a Python datetime, so convert from its `asm8` value instead.
     fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
         let asm8 = ob.getattr(intern!(py, "asm8"))?;
@@ -478,6 +475,34 @@ pub(crate) fn py_object_to_any_value(
                 TimeUnit::Milliseconds,
             ))
         }
+    }
+
+    /// The timedelta fields of a pandas Timedelta can be zero for non-nanosecond units, so convert
+    /// from its `asm8` value instead.
+    fn get_pandas_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
+        let py = ob.py();
+        let asm8 = ob.getattr(intern!(py, "asm8"))?;
+        static TIMEDELTA64_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+        if !asm8.is_instance(TIMEDELTA64_TYPE.import(py, "numpy", "timedelta64")?)? {
+            return Err(PyTypeError::new_err(format!(
+                "cannot convert pandas Timedelta {ob}"
+            )));
+        }
+        Ok(match get_numpy_temporal(&asm8, false)? {
+            AnyValue::Duration(value, TimeUnit::Nanoseconds) => {
+                AnyValue::Duration(value.div_euclid(1000), TimeUnit::Microseconds)
+            },
+            AnyValue::Duration(value, TimeUnit::Milliseconds) => match value.checked_mul(1000) {
+                Some(micros) => AnyValue::Duration(micros, TimeUnit::Microseconds),
+                None => AnyValue::Duration(value, TimeUnit::Milliseconds),
+            },
+            duration @ AnyValue::Duration(_, TimeUnit::Microseconds) => duration,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "cannot convert pandas Timedelta {ob}"
+                )));
+            },
+        })
     }
 
     fn get_numpy_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -766,6 +791,13 @@ pub(crate) fn py_object_to_any_value(
         } else if PyTime::type_check(ob) {
             Ok(get_time as InitFn)
         } else if PyDelta::type_check(ob) {
+            let ty = ob.get_type();
+            if !ob.is_exact_instance_of::<PyDelta>()
+                && ty.hasattr(intern!(py, "asm8"))?
+                && has_pandas_base(&ty)?
+            {
+                return Ok(get_pandas_timedelta as InitFn);
+            }
             Ok(get_timedelta as InitFn)
         } else if ob.is_instance_of::<PyRange>() {
             Ok(get_list as InitFn)
