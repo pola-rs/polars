@@ -79,8 +79,7 @@ As ADBC is not the default engine, you must specify the engine as an argument to
     considered a breaking change.
 
 `pl.scan_database` reads a table or a query lazily, on the streaming engine. Projections, filters
-and limits in the query plan are pushed into the SQL sent to the database, and a large table can be
-read as several partitions over concurrent connections.
+and limits in the query plan are pushed into the SQL sent to the database.
 
 It is implemented by the `polars-database` plugin, which is installed with the `database` extra:
 
@@ -95,7 +94,7 @@ The examples on this page use a small SQLite database, built in this setup:
 {{code_block('user-guide/io/database_scan','scan',['scan_database'])}}
 
 The source is a table name (`"orders"`, `"public.orders"`, `'"My Schema"."Orders"'`) or a SQL query.
-`explain()` shows the database, the driver, the partitions and the SQL of the first partition. A
+`explain()` shows the database, the driver and the SQL sent to the database. A
 filter the SQL applies exactly is not applied again by Polars:
 
 {{code_block('user-guide/io/database_scan','scan_explain',['scan_database'])}}
@@ -162,27 +161,20 @@ includes drivers installed with [`dbc`](https://docs.columnar.tech/dbc/). Pin a 
 The column types come from the database, not the driver: the same table has the same schema
 whichever driver reads it.
 
-### Partitions
-
-By default (`partition_on="auto"`), a large table is split into ranges of its integer or date
-primary key. `partition_on=<column>` partitions on another column, `partition_predicates=` gives one
-partition per `WHERE` fragment, and `partition_on=None` reads with a single query. `max_connections`
-limits the number of concurrent connections.
-
-{{code_block('user-guide/io/database_scan','scan_partitions',['scan_database'])}}
-
 Rows come back in no particular order unless `order_by=` is given. A `NUMERIC` column without a
 precision is read as `Decimal(38, 9)`; a value with digits beyond the ninth decimal place is an
-error, so pass `schema_overrides=` for such columns if you need more. Each partition is a separate
-query, so concurrent writes to the table can make partitions see different states.
+error, so pass `schema_overrides=` for such columns if you need more.
+
+Each scan reads its source with a single query. Reading in parallel partitions is not supported
+yet: `partition_on=<column>`, `partition_num`, `partition_range` and `partition_predicates` are
+reserved and raise an error.
 
 ### Queries and connections
 
 A query source is wrapped as a derived table (`SELECT … FROM (<query>) AS _pl WHERE …`), so filters
 and projections are still pushed. A query that can't be wrapped runs as given, and Polars does the
 rest. On MariaDB, which ignores an `ORDER BY` inside a derived table, a query ordered at its top
-level (without `LIMIT`) isn't wrapped. A query whose rows depend on the time it runs (`now()`,
-`CURRENT_TIMESTAMP`, `random()`, …) is read with a single query, never partitioned.
+level (without `LIMIT`) isn't wrapped.
 
 {{code_block('user-guide/io/database_scan','scan_query',['scan_database'])}}
 
@@ -194,8 +186,8 @@ binds them itself (not ADBC or ConnectorX):
 Besides a URI, the connection can be an ODBC connection string, a SQLAlchemy `URL` or `Engine`, a
 zero-argument function that returns a DB-API connection, or a live connection object. An `Engine`
 opens the connections itself, with its pool, `creator` and `connect_args`. A function reaches any
-database with a Python driver. A live connection is used for one partition at a time, and a plan
-holding one can't be serialized. Connections are used from Polars' threads, so a `sqlite3`
+database with a Python driver. A plan holding a live connection can't be
+serialized. Connections are used from Polars' threads, so a `sqlite3`
 connection needs `check_same_thread=False`. With a function or a live connection, `driver`,
 `connect_options` and `credential_provider` don't apply: the connection object is already set up.
 
