@@ -316,6 +316,12 @@ pub(super) trait Decoder: Sized {
 
     const CHUNKED: bool = false;
 
+    /// Whether a predicate read sizes each new target by doubling the previous one (up to the
+    /// rows left in the column chunk) instead of for the page's matches alone. Only for decoders
+    /// whose `finalize` is cheap and whose targets would otherwise be a chunk per page (codes);
+    /// capacity that is not filled is not given back.
+    const PREDICATE_TARGET_GROWS: bool = false;
+
     /// Evaluates the predicate on each dictionary value. An error means the rows have to be
     /// evaluated instead.
     fn evaluate_dict_predicate(
@@ -628,8 +634,13 @@ impl<D: Decoder> PageDecoder<D> {
 
         const MINIMUM_CHUNK_SIZE: usize = 256;
         let mut chunks = Vec::new();
+        let total_num_values = self.iter.total_num_values();
+        let mut num_values_seen = 0;
         while let Some(page) = self.iter.next() {
             let page = page?;
+
+            let num_values_remaining = total_num_values.saturating_sub(num_values_seen);
+            num_values_seen += page.num_values();
 
             let mut can_skip_page = false;
 
@@ -718,11 +729,20 @@ impl<D: Decoder> PageDecoder<D> {
 
                     // If we would need to move data, just create a new chunk.
                     if p.include_values && num_filtered_values > target.remaining_capacity() {
-                        let previous_target = std::mem::replace(
-                            &mut target,
-                            self.decoder
-                                .with_capacity(usize::max(num_filtered_values, MINIMUM_CHUNK_SIZE)),
-                        );
+                        let capacity = if D::PREDICATE_TARGET_GROWS {
+                            // Doubling the previous target, at most to the rest of the column
+                            // chunk: chunks are cheap to finalize, and a selective predicate must
+                            // not reserve the whole chunk.
+                            usize::max(
+                                num_filtered_values,
+                                usize::max(MINIMUM_CHUNK_SIZE, target.len().saturating_mul(2)),
+                            )
+                            .min(usize::max(num_filtered_values, num_values_remaining))
+                        } else {
+                            usize::max(num_filtered_values, MINIMUM_CHUNK_SIZE)
+                        };
+                        let previous_target =
+                            std::mem::replace(&mut target, self.decoder.with_capacity(capacity));
                         if previous_target.len() > 0 {
                             let chunk = self.decoder.finalize(
                                 self.dtype.clone(),

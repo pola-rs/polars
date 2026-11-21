@@ -36,7 +36,7 @@ Table Operations
    * - :ref:`EXPLAIN <explain>`
      - Returns the Polars execution plan for a given SQL query.
    * - :ref:`INSERT <insert>`
-     - Append rows to a table in an attached catalog, or replace its rows.
+     - Append rows to a table, or replace its rows.
    * - :ref:`MERGE <merge>`
      - Update, delete and insert rows of a table in an attached catalog from a source.
    * - :ref:`SHOW TABLES <show_tables>`
@@ -52,7 +52,7 @@ Table Operations
    * - :ref:`TRUNCATE <truncate>`
      - Remove all data from a table without actually deleting it.
    * - :ref:`UPDATE <update>`
-     - Change rows of a table in an attached catalog.
+     - Change rows of a table.
 
 
 .. _alter_table:
@@ -595,26 +595,34 @@ Returns the Polars execution plan for a given SQL query.
 
 INSERT
 ------
-Write rows to a table of a catalog attached with :meth:`SQLContext.register_catalog`, in
-one commit. ``INSERT INTO`` appends the rows of a ``VALUES`` list or a query.
+Write rows to a table. ``INSERT INTO`` appends the rows of a ``VALUES`` list or a query.
 ``INSERT OVERWRITE`` replaces all rows of the table, in every partition. A ``WHERE`` in its
 query selects the new rows, not the rows replaced.
 
 Values fill the columns in order, or the listed columns. Other columns get NULL. A
-``NOT NULL`` column needs a value. Numbers convert to any numeric type. A fraction going
-into an integer column rounds: a decimal half away from zero, a float half to even.
-``CAST`` truncates instead. Dates and timestamps convert among themselves. Other
+``NOT NULL`` column of a catalog table needs a value. Numbers convert to any numeric type.
+A fraction going into an integer column rounds: a decimal half away from zero, a float half
+to even. ``CAST`` truncates instead. Dates and timestamps convert among themselves. Other
 conversions need a ``CAST``. A value that does not fit raises an error.
 
-If another writer commits first, ``INSERT INTO`` retries. ``INSERT OVERWRITE`` fails if
-that writer added rows, unless the table's ``write.delete.isolation-level`` is
-``snapshot``.
+On a registered table, it returns the table with the new rows, and later statements in the
+same context see them, as after :ref:`DELETE <delete_from_table>`. Source files and the
+original frame are not changed. The rows of a ``VALUES`` list without subqueries are computed
+at the ``INSERT``. The rows of a query are not: the table keeps the query, and each read of
+the table runs it again, on the tables as they were at the time of the ``INSERT``. A value of
+the query that does not fit shows when the table is read, on each read until the table is
+registered again.
+
+On a table of a catalog attached with :meth:`SQLContext.register_catalog`, it writes the
+rows in one commit. If another writer commits first, ``INSERT INTO`` retries.
+``INSERT OVERWRITE`` fails if that writer added rows, unless the table's
+``write.delete.isolation-level`` is ``snapshot``.
 
 **Example:**
 
 .. code-block:: sql
 
-    INSERT INTO lake.sales.orders VALUES (1, 10), (2, 20)
+    INSERT INTO orders VALUES (1, 10), (2, 20)
     INSERT INTO lake.sales.orders (quantity, id) SELECT qty, order_id FROM staged
     INSERT OVERWRITE lake.sales.orders SELECT * FROM staged
 
@@ -766,22 +774,27 @@ it fails if another writer added rows.
 
 UPDATE
 ------
-Change rows of a table of a catalog attached with :meth:`SQLContext.register_catalog`, in
-one commit. ``SET`` gives each column a new value, computed from the row as it was before
-the update. ``SET (a, b) = (x, y)`` sets several columns at once. Without ``WHERE``, every
-row is updated. Rows where the condition is NULL are not updated. The condition has the
-same limits as in :ref:`DELETE <delete_from_table>`. It returns the statement.
+Change rows of a table. ``SET`` gives each column a new value, computed from the row as it
+was before the update. ``SET (a, b) = (x, y)`` sets several columns at once. Without
+``WHERE``, every row is updated. Rows where the condition is NULL are not updated.
 
 Values convert to the column types as in :ref:`INSERT <insert>`, and only the values of
 updated rows must fit. A value comes from its own row, so aggregate, window and
 set-returning functions are not supported. Subqueries, ``FROM``, ``RETURNING`` and
-``DEFAULT`` are not supported either. Column names are case-sensitive. Registered tables
-cannot be updated.
+``DEFAULT`` are not supported either. Column names are case-sensitive.
 
-The data files holding a matching row are read in full and replaced in one snapshot
-(copy-on-write). An update that matches no row commits nothing. Iceberg v3 tables, and
-files whose delete files cannot be read with them (such as equality deletes), are not
-supported yet.
+On a registered table, it returns the table with the new values, and later statements in
+the same context see them, as after :ref:`DELETE <delete_from_table>`. Source files and the
+original frame are not changed. As with ``DELETE``, the table keeps the change, not its
+result: a value that does not fit shows when the table is read, on each read until the table
+is registered again.
+
+On a table of a catalog attached with :meth:`SQLContext.register_catalog`, it updates the
+rows in one commit, and returns the statement. The condition has the same limits as in
+:ref:`DELETE <delete_from_table>`. The data files holding a matching row are read in full
+and replaced in one snapshot (copy-on-write). An update that matches no row commits
+nothing. Iceberg v3 tables, and files whose delete files cannot be read with them (such as
+equality deletes), are not supported yet.
 
 If another writer commits first, ``UPDATE`` retries when that writer's rows cannot match the
 condition. Otherwise it fails, unless the table's ``write.update.isolation-level`` is
@@ -793,5 +806,5 @@ or partition spec.
 
 .. code-block:: sql
 
-    UPDATE lake.sales.orders SET status = 'shipped' WHERE id = 42
+    UPDATE orders SET status = 'shipped' WHERE id = 42
     UPDATE lake.sales.orders SET (qty, amount) = (qty + 1, amount * 2) WHERE region = 'EU'

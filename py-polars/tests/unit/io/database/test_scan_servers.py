@@ -2212,6 +2212,8 @@ def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> N
     uri = SERVERS["mysql"].uri
     assert uri is not None
     engine = None
+    cur: Any = None
+    result: Any = None
     if how == "pymysql":
         conn = pymysql.connect(**_parts(uri))
         cur = conn.cursor(pymysql.cursors.SSCursor)

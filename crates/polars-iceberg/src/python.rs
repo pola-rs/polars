@@ -48,6 +48,12 @@ fn _capsule_for_testing<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py,
 #[pymodule]
 fn polars_iceberg(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    // The commit the release workflow built from, to compare with the sources Polars is
+    // released from. Empty outside of a release build.
+    m.add(
+        "__build_commit__",
+        option_env!("POLARS_ICEBERG_BUILD_COMMIT").unwrap_or(""),
+    )?;
     m.add(
         "_polars_io_plugin_ids",
         PyTuple::new(m.py(), PLUGIN_IDS.iter().map(|id| id.as_str()))?,

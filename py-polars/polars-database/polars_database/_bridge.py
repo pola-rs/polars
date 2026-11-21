@@ -8,6 +8,7 @@ for Python drivers and streams results back as DataFrames. Query execution reuse
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import functools
 import importlib.util
@@ -1750,6 +1751,16 @@ def _refuse_pending_results(conn: Any) -> None:
         raise RuntimeError(msg)
 
 
+def _sqlalchemy_dialect(conn: Any) -> str:
+    """The SQLAlchemy dialect name of a connection, engine or ORM Session; else ""."""
+    # an ORM Session's dialect is its bind's
+    bind = conn
+    if callable(get_bind := getattr(conn, "get_bind", None)):
+        with contextlib.suppress(Exception):
+            bind = get_bind()
+    return getattr(getattr(bind, "dialect", None), "name", "") or ""
+
+
 def _cancel_target(conn: Any) -> Any:
     """What cancels a connection's statement: an Engine connection's driver connection
     (a SQLAlchemy Connection has no cancel).
@@ -1957,14 +1968,7 @@ def _session_settings(conn: Any) -> list[str] | None:
     def row(sql: str) -> Any:
         return rows(sql)[0]
 
-    # an ORM Session's dialect is its bind's
-    bind = conn
-    if callable(get_bind := getattr(conn, "get_bind", None)):
-        with contextlib.suppress(Exception):
-            bind = get_bind()
-    dialect = getattr(getattr(bind, "dialect", None), "name", "") or (
-        _DRIVER_DIALECTS.get(_module_of(conn), "")
-    )
+    dialect = _sqlalchemy_dialect(conn) or _DRIVER_DIALECTS.get(_module_of(conn), "")
     try:
         if dialect == "postgresql":
             names = (
@@ -2573,6 +2577,33 @@ def _cancel_expired() -> bool:
     return deadline is not None and time.monotonic() >= deadline
 
 
+_at_exit_before_duckdb = False
+_at_exit_before_duckdb_lock = threading.Lock()
+
+
+def _register_at_exit_before_duckdb(conn: Any) -> None:
+    """
+    Registers `_at_exit` once more for the first DuckDB connection, so it runs before
+    DuckDB's own exit hooks, which its import registered (the last registered runs
+    first).
+
+    DuckDB 2 closes its databases at exit, which waits for their running statements:
+    `_at_exit` must have interrupted them by then. The registration from this
+    package's import stays, as a registration made during exit never runs.
+    """
+    global _at_exit_before_duckdb
+    if _at_exit_before_duckdb or (
+        _module_of(conn) != "duckdb" and _sqlalchemy_dialect(conn) != "duckdb"
+    ):
+        return
+    from polars_database import _run_at_exit
+
+    with _at_exit_before_duckdb_lock:
+        if not _at_exit_before_duckdb:
+            _at_exit_before_duckdb = True
+            atexit.register(_run_at_exit)
+
+
 class _Session:
     """A connection used by one partition reader at a time."""
 
@@ -2589,6 +2620,7 @@ class _Session:
         factory: bool = False,
         invalidate: Callable[[], None] | None = None,
     ) -> None:
+        _register_at_exit_before_duckdb(conn)
         self.conn = conn
         self.owned = owned
         # from the user's function, whose `close` may return it to a pool of theirs
