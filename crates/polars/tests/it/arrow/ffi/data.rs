@@ -3,6 +3,7 @@ use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType, Field, IntegerType, UnionMode, UnionType};
 use polars_arrow::ffi;
 use polars_arrow::offset::OffsetsBuffer;
+use polars_arrow::types::i256;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
@@ -263,5 +264,19 @@ fn dictionary_nullable() -> PolarsResult<()> {
         PrimitiveArray::<i32>::from([Some(0), None, Some(1), Some(0)]),
         Box::new(Utf8Array::<i64>::from_slice(["x", "yy"])),
     )?;
+    test_round_trip(data)
+}
+
+#[test]
+fn decimal256_nullable() -> PolarsResult<()> {
+    let large = 10_i128.pow(38) - 1;
+    let data = PrimitiveArray::<i256>::from([
+        Some(i256::from_words(0, large)),
+        None,
+        Some(i256::from_words(-1, -large)),
+        Some(i256::from_words(0, 42)),
+        None,
+    ])
+    .to(ArrowDataType::Decimal256(38, 0));
     test_round_trip(data)
 }

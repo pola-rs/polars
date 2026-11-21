@@ -7,7 +7,7 @@ use half;
 use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
-use polars_utils::total_ord::{TotalEq, TotalOrd};
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalOrd};
 
 use super::PrimitiveType;
 use super::aligned_bytes::*;
@@ -503,6 +503,21 @@ impl TotalOrd for i256 {
     #[inline]
     fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.cmp(other)
+    }
+}
+
+impl ToTotalOrd for i256 {
+    type TotalOrdItem = i256;
+    type SourceItem = i256;
+
+    #[inline]
+    fn to_total_ord(&self) -> Self::TotalOrdItem {
+        *self
+    }
+
+    #[inline]
+    fn peel_total_ord(ord_item: Self::TotalOrdItem) -> Self::SourceItem {
+        ord_item
     }
 }
 
