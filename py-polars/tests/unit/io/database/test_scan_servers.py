@@ -7258,7 +7258,9 @@ def test_trino_query_with_duplicate_names_over_wide_timestamps_is_refused() -> N
 
 
 @needs_trino
-@pytest.mark.parametrize("parameter", ["", "SSL=0", "SSL=FALSE", "SSL=no"])
+@pytest.mark.parametrize(
+    "parameter", ["", "SSL=0", "SSL=FALSE", "SSL=no", "SSL=disabled"]
+)
 def test_trino_uri_without_tls_reads_over_http_on_every_driver(
     parameter: str,
 ) -> None:
@@ -7267,10 +7269,15 @@ def test_trino_uri_without_tls_reads_over_http_on_every_driver(
     uri = SERVERS["trino"].uri
     assert uri is not None
     uri = uri + ("?" + parameter if parameter else "")
-    for driver in _runnable_drivers("trino", ["trino", "adbc", "sqlalchemy"]):
+    # (`disabled`, which the ADBC driver once took, is read by ADBC alone)
+    drivers = (
+        ["adbc"] if parameter == "SSL=disabled" else ["trino", "adbc", "sqlalchemy"]
+    )
+    for driver in _runnable_drivers("trino", drivers):
         got = pl.scan_database("SELECT 1 AS x", uri, driver=driver).collect()
         assert got["x"].to_list() == [1], driver
-    assert pl.scan_database("SELECT 1 AS x", uri).collect()["x"].to_list() == [1]
+    if parameter != "SSL=disabled":
+        assert pl.scan_database("SELECT 1 AS x", uri).collect()["x"].to_list() == [1]
 
 
 @needs_trino
@@ -7278,7 +7285,7 @@ def test_trino_uri_with_an_unknown_ssl_value_is_refused() -> None:
     uri = SERVERS["trino"].uri
     assert uri is not None
     for driver in _runnable_drivers("trino", ["adbc"]):
-        for parameter in ("SSL=disabled", "ssl=false"):
+        for parameter in ("SSL=maybe", "ssl=false"):
             with pytest.raises(pl.exceptions.PolarsError, match="SSL"):
                 pl.scan_database(
                     "SELECT 1 AS x", f"{uri}?{parameter}", driver=driver
@@ -7856,3 +7863,72 @@ def test_trino_query_naming_columns_in_another_case_reads_under_a_schema() -> No
                 .collect()
             )
             assert got.rows() == [(2, "b")], (driver, source)
+
+
+def _trino_adbc_first_request(uri_tail: str, **kwargs: Any) -> bytes:
+    """
+    The first bytes the ADBC Trino driver sends to a server answering an HTTP error.
+
+    A TLS ClientHello (byte 0x16), or an HTTP request in plain text.
+    """
+    import socket
+    import threading
+
+    received: list[bytes] = []
+    stop = threading.Event()
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(8)
+    # (closing the socket doesn't wake a blocked `accept`)
+    server.settimeout(0.2)
+    port = server.getsockname()[1]
+
+    def serve() -> None:
+        while not stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            with conn:
+                conn.settimeout(5)
+                with contextlib.suppress(OSError):
+                    received.append(conn.recv(65536))
+                with contextlib.suppress(OSError):
+                    conn.sendall(
+                        b"HTTP/1.1 500 x\r\nContent-Length: 0\r\n"
+                        b"Connection: close\r\n\r\n"
+                    )
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(pl.exceptions.PolarsError):
+            pl.scan_database(
+                "SELECT 1 AS x",
+                f"trino://u@127.0.0.1:{port}/memory/default{uri_tail}",
+                driver="adbc",
+                **kwargs,
+            ).collect()
+    finally:
+        stop.set()
+        thread.join(10)
+        server.close()
+    assert received
+    return received[0]
+
+
+@pytest.mark.skipif(
+    _no_adbc_driver("trino")() is not None, reason="no ADBC driver for trino"
+)
+def test_trino_adbc_sends_a_password_only_over_tls() -> None:
+    # a password in `connect_options` went unseen: `SSL=false` was added, and the driver
+    # refused to authenticate over HTTP
+    tls = b"\x16"
+    assert _trino_adbc_first_request("")[:1] != tls
+    assert _trino_adbc_first_request("?SSL=disabled")[:1] != tls
+    assert _trino_adbc_first_request("?SSL=true")[:1] == tls
+    secret = {"connect_options": {"password": "s3cr3t"}}
+    assert _trino_adbc_first_request("", **secret)[:1] == tls
+    assert _trino_adbc_first_request("?SSL=false", **secret)[:1] == tls
