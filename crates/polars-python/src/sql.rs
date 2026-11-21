@@ -63,7 +63,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QueryParams> {
     }
 }
 
-#[pyclass(frozen, skip_from_py_object)]
+#[pyclass(frozen)]
 #[repr(transparent)]
 pub struct PySQLContext {
     pub context: RwLock<SQLContext>,
