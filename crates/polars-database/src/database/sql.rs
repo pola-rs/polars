@@ -418,6 +418,17 @@ pub trait SqlRenderer: Send + Sync {
             .collect()
     }
     fn inspect_query(&self, sql: &str, dialect: DialectName) -> PolarsResult<QueryFacts>;
+    /// The query's top-level `ORDER BY` on its output columns, for a wrapper that repeats it
+    /// outside, where a `SELECT *` is the planned `columns`. `None` where it can't be kept.
+    /// `star_ordinals`: whether `columns` are the database's own, in its order (an ordinal of a
+    /// `SELECT *` is resolved only then).
+    fn outer_order_by(
+        &self,
+        sql: &str,
+        dialect: DialectName,
+        columns: &[PlSmallStr],
+        star_ordinals: bool,
+    ) -> PolarsResult<Option<PlSmallStr>>;
     /// The facts of a view's query, from its definition (its `CREATE VIEW` statement, or
     /// only its query): the output columns are the view's.
     fn inspect_view(&self, sql: &str, dialect: DialectName) -> PolarsResult<QueryFacts>;

@@ -1442,6 +1442,70 @@ def _psycopg2_bytes(target: Any) -> None:
     )
 
 
+_SCAN_OPTION = "polars_database_scan"
+
+
+@functools.cache
+def _sqlalchemy_psycopg2_guard() -> None:
+    """
+    Makes the statements of a scan behind SQLAlchemy read bytea and infinity as a scan
+    of psycopg2 does (`_psycopg2_bytes`, `_psycopg2_no_infinity`), on the driver's
+    cursor that SQLAlchemy opens: a listener on every Engine, which acts on the
+    statements run with the scan's execution option only.
+    """
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, "before_cursor_execute")
+    def _on_cursor(
+        conn: Any,
+        cursor: Any,
+        statement: Any,
+        parameters: Any,
+        context: Any,
+        executemany: Any,
+    ) -> None:
+        if (
+            context is not None
+            and context.execution_options.get(_SCAN_OPTION)
+            and type(cursor).__module__.split(".", 1)[0] == "psycopg2"
+        ):
+            _psycopg2_bytes(cursor)
+            _psycopg2_no_infinity(cursor)
+
+
+def _psycopg2_no_infinity(cursor: Any) -> None:
+    """
+    Makes the cursor fail on a date or timestamp of `infinity` / `-infinity`, which
+    psycopg2 reads as `date.max` / `date.min` (and Polars can't represent), whether or
+    not the column's type was looked up: `date`, `timestamp`, `timestamptz` and their
+    arrays.
+    """
+    ext = importlib.import_module("psycopg2.extensions")
+
+    def guard(base: Any, name: str, oid: int, array_oid: int) -> None:
+        def cast(value: Any, cur: Any) -> Any:
+            if value is not None and value.strip().lower().endswith("infinity"):
+                msg = (
+                    f"the database holds '{value}' in a {name} column, which Polars can't "
+                    "represent (the driver would read it as the largest or smallest "
+                    "date): filter it out or cast it in a query"
+                )
+                raise ValueError(msg)
+            return None if value is None else base(value, cur)
+
+        scalar = ext.new_type((oid,), f"POLARS_{name.upper()}", cast)
+        ext.register_type(scalar, cursor)
+        ext.register_type(
+            ext.new_array_type((array_oid,), f"POLARS_{name.upper()}_ARRAY", scalar),
+            cursor,
+        )
+
+    guard(ext.DATE, "date", 1082, 1182)
+    guard(ext.PYDATETIME, "timestamp", 1114, 1115)
+    guard(ext.PYDATETIMETZ, "timestamptz", 1184, 1185)
+
+
 def _object_columns_as_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
     """
     Batches without `Object` columns: a row driver's `uuid.UUID`, `ipaddress` or other
@@ -1479,6 +1543,42 @@ def _object_columns_as_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
                     name, [None if v is None else str(v) for v in values], pl.String
                 )
             )
+        yield df
+
+
+def _valid_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
+    """
+    Batches whose text is valid UTF-8, also nested in lists and structs.
+
+    The Databricks connector hands the bytes of a `STRING` over as they are (a value
+    made of `unhex('FF')` is one), and Polars' String assumes UTF-8: an invalid byte
+    would reach the caller as a String that breaks its contract (memory unsafety in
+    string operations).
+    """
+    import polars as pl
+    from polars.exceptions import ComputeError
+
+    def has_text(dtype: Any) -> bool:
+        if dtype == pl.String:
+            return True
+        if isinstance(dtype, (pl.List, pl.Array)):
+            return has_text(dtype.inner)
+        if isinstance(dtype, pl.Struct):
+            return any(has_text(f.dtype) for f in dtype.fields)
+        return False
+
+    for df in frames:
+        names = [c for c, dt in df.schema.items() if has_text(dt)]
+        if names:
+            try:
+                df.select(names).to_arrow().validate(full=True)
+            except Exception as e:
+                msg = (
+                    "the database returned text that isn't valid UTF-8 (a STRING made "
+                    "of other bytes); read the column as BINARY with "
+                    f"CAST(<column> AS BINARY) and decode it in Polars ({e})"
+                )
+                raise ComputeError(msg) from e
         yield df
 
 
@@ -2061,6 +2161,127 @@ def _databricks_arrow_frame(cursor: Any, frame: DataFrame) -> DataFrame:
     return frame
 
 
+def _mysql_session_zone(conn: Any) -> str | None:
+    """
+    The time zone a live MySQL-family connection reads a `TIMESTAMP` in, as a name
+    Polars takes (an IANA name or a fixed offset, `UTC` for UTC's spellings); `None`
+    where it isn't known exactly (the server's own zone `SYSTEM` that isn't UTC, an
+    abbreviation such as `CEST` or `EST`, which don't tell the zone's rules), or the
+    lookup fails.
+    """
+    try:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT @@session.time_zone, @@system_time_zone")
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+        session, system = (str(v).strip() for v in row)
+    except Exception:
+        return None
+    utc_names = {
+        "UTC", "+00:00", "-00:00", "0:00", "Z", "ETC/UTC", "UCT", "ETC/UCT", "ZULU",
+        "ETC/ZULU", "UNIVERSAL", "ETC/UNIVERSAL", "COORDINATED UNIVERSAL TIME",
+    }  # fmt: skip
+    zone = system if session.upper() == "SYSTEM" else session
+    if zone.upper() in utc_names:
+        return "UTC"
+    if session.upper() == "SYSTEM":
+        return None  # the OS's zone, by an abbreviation
+    if re.fullmatch(r"[+-]\d\d:\d\d", zone):
+        return zone
+    try:
+        import zoneinfo
+
+        zoneinfo.ZoneInfo(zone)
+    except Exception:
+        return None
+    # (a bare abbreviation that is also a fixed zone, `EST`, may be a daylight zone's)
+    return zone if "/" in zone else None
+
+
+def _description(result: Any) -> Any:
+    """A result's DB-API description (a SQLAlchemy result: its cursor's)."""
+    description = getattr(result, "description", None)
+    if description is None:
+        description = getattr(getattr(result, "cursor", None), "description", None)
+    return description
+
+
+def _time_with_zone_columns(result: Any) -> list[str]:
+    """
+    The names of a result's `TIMETZ` columns where the description tells (DuckDB's type
+    name, Postgres drivers' OID 1266): the drivers return such a value as the local time
+    of day, its offset dropped.
+    """
+    module = _module_of(
+        result if hasattr(result, "description") else getattr(result, "cursor", result)
+    )
+    with contextlib.suppress(Exception):
+        return [
+            d[0]
+            for d in _description(result)
+            if (module == "duckdb" and str(d[1]).upper() == "TIME WITH TIME ZONE")
+            or (
+                module in ("psycopg", "psycopg2", "pg8000")
+                and type(d[1]) is int
+                and d[1] == 1266
+            )
+        ]
+    return []
+
+
+def _mysql_timestamp_columns(result: Any) -> list[str]:
+    """The names of a MySQL-family result's `TIMESTAMP` columns (field type 7)."""
+    description = _description(result)
+    with contextlib.suppress(Exception):
+        return [d[0] for d in description if type(d[1]) is int and d[1] == 7]
+    return []
+
+
+def _mysql_timestamps_to_utc(
+    frames: Iterator[DataFrame], columns: list[str], zone: str
+) -> Iterator[DataFrame]:
+    """
+    Each batch's `TIMESTAMP` columns (the session's wall-clock time, naive) as the
+    instants they are, in UTC. A wall-clock time the zone has twice (the hour its
+    clocks go back) can't tell which instant it is: an error, never a guess.
+    """
+    import datetime as dt
+
+    import polars as pl
+
+    offset = None
+    if zone == "UTC":
+        offset = dt.timedelta(0)
+    elif re.fullmatch(r"[+-]\d\d:\d\d", zone):
+        hours, minutes = int(zone[1:3]), int(zone[4:6])
+        offset = dt.timedelta(hours=hours, minutes=minutes) * (
+            -1 if zone[0] == "-" else 1
+        )
+
+    def instant(c: str) -> Any:
+        naive = pl.col(c).cast(pl.Datetime("us"))
+        if offset is not None:
+            return (naive - offset).dt.replace_time_zone("UTC")
+        return naive.dt.replace_time_zone(
+            zone, ambiguous="raise", non_existent="raise"
+        ).dt.convert_time_zone("UTC")
+
+    for df in frames:
+        present = [c for c in columns if c in df.columns]
+        try:
+            yield df.with_columns(instant(c) for c in present)
+        except pl.exceptions.PolarsError as e:
+            msg = (
+                f"the TIMESTAMP column(s) {present} are read in this connection's time "
+                f"zone ({zone}), and a value in it can't be made an instant (a "
+                f"wall-clock time the zone has twice?): {e}. Run SET time_zone = "
+                "'+00:00' on the connection first"
+            )
+            raise RuntimeError(msg) from e
+
+
 def _mysql_unsigned(cursor: Any, description: Any, i: int) -> bool | None:
     """Whether a MySQL result column is `UNSIGNED`; `None` if unknown."""
     unsigned_flag = 32
@@ -2399,6 +2620,15 @@ class _Session:
                 for m in ("cancel", "interrupt")
             )
         )
+        # a live MySQL driver's session reads a TIMESTAMP in its own time zone, which
+        # `execute` converts to UTC (a SQLAlchemy Connection is its driver's connection)
+        # the last statement's result columns that are a `TIMETZ` (offset dropped)
+        self.timetz_columns: list[str] = []
+        self.mysql_converts = not owned and _module_of(_cancel_target(conn)) in (
+            "pymysql",
+            "MySQLdb",
+            "mysql",
+        )
         # SQLAlchemy's `text()` reads `:name` and `\:` inside the string literals
         # written into the SQL; without parameters, the SQL goes to the driver as is
         self._raw_sqlalchemy = (
@@ -2424,6 +2654,7 @@ class _Session:
             not bind and _module_of(self.conn) == "sqlalchemy"
         )
         state = self._state
+        self.timetz_columns = []
         entered = False
         cursor = None
         cx_cursor: Any = None
@@ -2455,6 +2686,14 @@ class _Session:
                     savepoint = name
                 cursor = self._server_cursor(batch_size)
                 cx = ConnectionExecutor(cursor if cursor is not None else self.conn)
+                # before the statement: a connection reads one result at a time
+                mysql_live = self.mysql_converts
+                live_zone = (
+                    _mysql_session_zone(_cancel_target(self.conn))
+                    if mysql_live
+                    else None
+                )
+                timestamps: list[str] = []
                 # A DuckDB cursor is a connection of its own: it sees neither the
                 # user's connection's temporary tables, views and macros nor its
                 # uncommitted writes (a factory's connection has the same). Where it
@@ -2512,6 +2751,18 @@ class _Session:
                 if params is not None:
                     # each driver names the parameters argument of `execute()` itself
                     options[_params_keyword(cx)] = params
+                if (
+                    _module_of(self.conn) == "sqlalchemy"
+                    and not oracle_arrow
+                    and cx.driver_name == "sqlalchemy"
+                    and cx._is_alchemy_object(cx.cursor)
+                ):
+                    # (psycopg2's cursor behind SQLAlchemy, see the guard)
+                    _sqlalchemy_psycopg2_guard()
+                    options["execution_options"] = {
+                        **(options.get("execution_options") or {}),
+                        _SCAN_OPTION: True,
+                    }
                 runner = (
                     cx.cursor
                     if cx.driver_name == "duckdb" and cx.cursor is not self.conn
@@ -2559,9 +2810,28 @@ class _Session:
                         )
                     )
                 )
+                # A live MySQL session reads a TIMESTAMP in its own time zone, as naive
+                # wall-clock time: the instants (UTC), as the table source reads them
+                self.timetz_columns = _time_with_zone_columns(cx.result)
+                timestamps = _mysql_timestamp_columns(cx.result) if mysql_live else []
+                if timestamps:
+                    if live_zone is None:
+                        msg = (
+                            f"the TIMESTAMP column(s) {timestamps} are read in this "
+                            "connection's time zone, which can't be told exactly (the "
+                            "server's own zone, or an abbreviation): run SET time_zone "
+                            "= '+00:00' on the connection first, or give an IANA name "
+                            "or an offset"
+                        )
+                        raise RuntimeError(msg)
+                    frames = _mysql_timestamps_to_utc(frames, timestamps, live_zone)
+                if _module_of(cx.result) == "databricks":
+                    frames = _valid_text(frames)
                 # some drivers yield no batch for an empty result, and close the
                 # cursor when done: take the column names first
-                empty_frame = _empty_frame(cx.result, utc=self.owned)
+                empty_frame = _empty_frame(
+                    cx.result, utc=self.owned or bool(timestamps)
+                )
                 if on_connection:
                     frames = iter(list(frames))
                 if idle and _transaction_idle(self.conn) is False:
@@ -2687,6 +2957,13 @@ class _Session:
                 # MySQL can't keep two results open on one connection: another scan's
                 # statement would end this one's result early, silently with PyMySQL
                 return _buffered_cursor(self.conn, module)
+            if module == "psycopg2":
+                # a client-side cursor of the scan's own: its readings of bytea and
+                # infinity are the cursor's, and the user's statements keep theirs
+                cursor = self.conn.cursor()
+                _psycopg2_bytes(cursor)
+                _psycopg2_no_infinity(cursor)
+                return cursor
             return None
         if module in ("psycopg", "psycopg2"):
             name = f"polars_scan_{next(_CURSOR_IDS)}"
@@ -2700,6 +2977,7 @@ class _Session:
             if module == "psycopg2":
                 # also for a connection the plugin didn't open (factory, live)
                 _psycopg2_bytes(cursor)
+                _psycopg2_no_infinity(cursor)
             return cursor
         if module == "pymysql":
             import pymysql.cursors  # type: ignore[import-untyped]
