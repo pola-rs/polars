@@ -202,6 +202,10 @@ impl FileReader for NDJsonFileReader {
         // Rows before the offset of a positive slice are skipped by the line batch distributor.
         let limit = pre_slice.and_then(|x| x.len());
         let needs_ordered_output = is_negative_slice || limit.is_some() || row_index.is_some();
+        let row_limit = match pre_slice {
+            Some(Slice::Positive { len, .. }) if !needs_total_row_count => Some(len),
+            _ => None,
+        };
 
         // Note: This counts from the end of file for negative slice.
         let n_rows_to_skip = match (pre_slice, offset_len_rtl) {
@@ -439,6 +443,7 @@ impl FileReader for NDJsonFileReader {
                 reader: reader_source,
                 reverse: is_negative_slice,
                 row_skipper,
+                row_limit,
                 line_batch_distribute_tx,
                 compression,
                 uncompressed_file_size_hint,
@@ -531,5 +536,63 @@ impl FileReader for NDJsonFileReader {
         });
 
         Ok((output_port.unwrap(), finishing_handle))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_buffer::Buffer;
+    use polars_core::datatypes::DataType;
+    use polars_core::schema::Schema;
+    use polars_utils::pl_str::PlSmallStr;
+
+    use super::*;
+
+    #[test]
+    fn bounded_read_does_not_parse_trailing_ndjson() -> PolarsResult<()> {
+        ASYNC.block_on(async {
+            let mut reader = NDJsonFileReader {
+                scan_source: ScanSource::Buffer(Buffer::from_vec(
+                    b"{\"value\":45}\nnot-json\n".to_vec(),
+                )),
+                cloud_options: None,
+                chunk_reader_builder: ChunkReaderBuilder::NDJson {
+                    ignore_errors: false,
+                },
+                count_rows_fn: polars_io::ndjson::count_rows,
+                verbose: false,
+                byte_source_builder: DynByteSourceBuilder::Mmap,
+                chunk_prefetch_sync: ChunkPrefetchSync {
+                    prefetch_limit: 1,
+                    prefetch_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+                    shared_prefetch_wait_group_slot: Default::default(),
+                    prev_all_spawned: None,
+                    current_all_spawned: None,
+                },
+                init_data: None,
+                io_metrics: OptIOMetrics(None),
+                task_metrics: None,
+            };
+            reader.initialize().await?;
+            reader.prepare_read()?;
+
+            let schema = Arc::new(Schema::from_iter([(
+                PlSmallStr::from_static("value"),
+                DataType::Int64,
+            )]));
+            let (mut output, handle) = reader.begin_read(BeginReadArgs {
+                projection: Projection::Plain(schema),
+                pre_slice: Some(Slice::Positive { offset: 0, len: 1 }),
+                num_pipelines: 4,
+                ..Default::default()
+            })?;
+            let first = output.recv().await;
+            handle.await?;
+            let frame = first.ok().expect("the requested row").into_df_blocking();
+            assert_eq!(frame.height(), 1);
+            assert_eq!(frame.column("value")?.i64()?.get(0), Some(45));
+            assert!(output.recv().await.is_err());
+            Ok(())
+        })
     }
 }
