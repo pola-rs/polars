@@ -119,6 +119,16 @@ fn try_raise_polars_abort_slow() {
     }
 }
 
+/// Raises a Polars abort caught on another thread (by a background query) again, on this one.
+pub fn raise_polars_abort(reason: QueryAborted) -> ! {
+    match reason {
+        QueryAborted::KeyboardInterrupt => {
+            std::panic::panic_any(POLARS_ABORT_KEYBOARD_INTERRUPT_STR)
+        },
+        QueryAborted::OocOutOfDisk => std::panic::panic_any(POLARS_ABORT_OOC_OUT_OF_DISK_STR),
+    }
+}
+
 /// Runs the passed function, catching any query abortions if they occur
 /// while running the function.
 pub fn catch_polars_abort<R, F: FnOnce() -> R + UnwindSafe>(try_fn: F) -> Result<R, QueryAborted> {
