@@ -223,11 +223,97 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     }
     if let Some(cols) = &facts.output_columns {
         let mut seen = PlHashSet::with_capacity(cols.len());
-        if !cols.iter().all(|c| seen.insert(c)) {
+        // (Trino names each column of no name apart: `_col0`, `_col1`)
+        if !cols
+            .iter()
+            .filter(|c| dialect != DialectName::Trino || !c.is_empty())
+            .all(|c| seen.insert(c))
+        {
             return Some("the query has duplicate output column names");
         }
     }
     None
+}
+
+/// Trino names an output column of no name `_col<position>` (`SELECT count(*)`), and a query
+/// wrapping it can't refer to that name: such a query is refused.
+fn refuse_trino_unnamed<'a>(
+    dialect: DialectName,
+    mut names: impl Iterator<Item = &'a PlSmallStr>,
+) -> PolarsResult<()> {
+    let unnamed = dialect == DialectName::Trino
+        && names.any(|n| {
+            n.strip_prefix("_col")
+                .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+        });
+    polars_ensure!(
+        !unnamed,
+        InvalidOperation:
+        "the query has a column of no name, which Trino doesn't let a wrapping query refer to; \
+        alias each of its expressions (`SELECT count(*) AS n`)"
+    );
+    Ok(())
+}
+
+/// A Trino query that names two output columns alike can't be wrapped, so its columns can't be
+/// read through a conversion: a `timestamp(7..12)` the drivers round (ADBC aborts the whole
+/// process on one outside 1677-2262), a `timestamp with time zone` read an hour off in a zone's
+/// repeated hour. Refused before the query runs.
+fn refuse_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    options: &DatabaseScanOptions,
+    columns: &[PlSmallStr],
+    backend: &BackendKind,
+    setup_runs: bool,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &options.relation else {
+        return Ok(());
+    };
+    let dialect = DialectName::Trino;
+    let mut seen = PlHashSet::with_capacity(columns.len());
+    let mut duplicated: Vec<&PlSmallStr> = vec![];
+    for c in columns.iter().filter(|c| !c.is_empty()) {
+        if !seen.insert(c) && !duplicated.contains(&c) {
+            duplicated.push(c);
+        }
+    }
+    if duplicated.is_empty() {
+        return Ok(());
+    }
+    let Some(types) = catalog::trino_positional_types(session, sql, columns.len()) else {
+        return Ok(());
+    };
+    let converted = columns
+        .iter()
+        .zip(&types)
+        .enumerate()
+        .filter(|(_, (c, t))| {
+            column_conversion(
+                dialect,
+                backend,
+                setup_runs,
+                options.connection.opened_by_plugin(),
+                t,
+                &dialect.quote_ident(c),
+            )
+            .is_some()
+        })
+        .map(|(i, (c, t))| match c.is_empty() {
+            true => format!("column {} ({t})", i + 1),
+            false => format!("{c} ({t})"),
+        })
+        .collect::<Vec<_>>();
+    if converted.is_empty() {
+        return Ok(());
+    }
+    polars_bail!(
+        InvalidOperation:
+        "the query names its columns {} more than once, so it can't be wrapped to read {} \
+        right (the drivers read such a column wrong or abort); alias the duplicated columns \
+        (`SELECT a.ts AS a_ts, b.ts AS b_ts`)",
+        duplicated.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(", "),
+        converted.join(", ")
+    );
 }
 
 /// What schema discovery may do with a query source.
@@ -636,6 +722,18 @@ pub fn resolve_scan(
         {
             query.probe = Some(mysql_query_probe(session.as_mut(), sql, &query)?);
         }
+        if is_query
+            && dialect == DialectName::Trino
+            && let Some(columns) = query_facts.as_ref().and_then(|f| f.output_columns.as_ref())
+        {
+            refuse_unwrappable_conversions(
+                session.as_mut(),
+                &options,
+                columns,
+                &backend.kind,
+                setup_runs,
+            )?;
+        }
         // The catalog first: some declared types are read as text (`text_conversion`), and
         // discovery must select them the same way the scan will.
         let discover = |session: &mut dyn DatabaseSession, options: &DatabaseScanOptions| {
@@ -690,6 +788,9 @@ pub fn resolve_scan(
                     None => return Err(e),
                 },
             };
+        if is_query {
+            refuse_trino_unnamed(dialect, discovered.iter_names())?;
+        }
         stats = info.stats;
         mixed_found = mixed_blobs;
         if !options.connection.opened_by_plugin() && !options.connection.is_live() {
@@ -2140,6 +2241,12 @@ fn column_conversion(
         return Some(sql);
     }
     if let Some(sql) = dialect.text_conversion(db_type, column) {
+        return Some(sql);
+    }
+    // Trino arrays, maps and rows holding such a value: each as an instant in UTC too
+    if dialect == DialectName::Trino
+        && let Some(sql) = super::dialect::trino_nested_utc(db_type, column)
+    {
         return Some(sql);
     }
     // Trino `timestamp(p) with time zone`: the instant in UTC (a named zone's repeated hour

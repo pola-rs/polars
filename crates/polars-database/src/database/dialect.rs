@@ -65,6 +65,141 @@ pub(crate) fn trino_wide_temporal(t: &str) -> Option<TrinoWide> {
     )
 }
 
+/// Splits the inside of `array(..)`, `map(..)` or `row(..)` at its top-level commas.
+fn split_type_list(inner: &str) -> Vec<&str> {
+    let (mut parts, mut depth, mut quoted, mut start) = (vec![], 0usize, false, 0usize);
+    for (i, c) in inner.char_indices() {
+        match c {
+            '"' => quoted = !quoted,
+            '(' if !quoted => depth += 1,
+            ')' if !quoted => depth = depth.saturating_sub(1),
+            ',' if !quoted && depth == 0 => {
+                parts.push(inner[start..i].trim());
+                start = i + 1;
+            },
+            _ => {},
+        }
+    }
+    parts.push(inner[start..].trim());
+    parts
+}
+
+/// The `name` and the type of a `row(..)` field (`x timestamp(3)`, `"a b" integer`, `"a""b"
+/// integer`, or an unnamed `timestamp(3)`).
+fn split_row_field(field: &str) -> (&str, &str) {
+    let end = if field.starts_with('"') {
+        // past the closing quote, a doubled one being part of the name
+        let mut i = 1;
+        loop {
+            match field[i..].find('"') {
+                Some(j) if field[i + j + 1..].starts_with('"') => i += j + 2,
+                Some(j) => break i + j + 1,
+                None => break field.len(),
+            }
+        }
+    } else {
+        field.find([' ', '(']).unwrap_or(field.len())
+    };
+    // an unnamed field is a type (`timestamp(3) ..`, `integer`) on its own
+    if field[end..].starts_with('(') || end == field.len() {
+        ("", field)
+    } else {
+        (&field[..end], field[end..].trim_start())
+    }
+}
+
+/// `expr` of Trino type `ty` with every `timestamp(p) with time zone` it holds as the same
+/// instant in UTC, and the resulting type. `None` if it holds none. A value of that type holds
+/// its zone's name: a named zone's repeated hour reads an hour off in the drivers, and the same
+/// instant in UTC doesn't.
+fn trino_utc_inside(ty: &str, expr: &str, depth: usize) -> Option<(String, String)> {
+    let ty = ty.trim();
+    let lower = ty.to_ascii_lowercase();
+    let inner = |prefix: &str| {
+        lower
+            .starts_with(prefix)
+            .then(|| ty.strip_suffix(')'))
+            .flatten()
+            .map(|t| &t[prefix.len()..])
+    };
+    if lower.starts_with("timestamp(") && lower.ends_with("with time zone") {
+        return Some((format!("{expr} AT TIME ZONE 'UTC'"), ty.to_string()));
+    }
+    if let Some(element) = inner("array(") {
+        let var = format!("pl_x{depth}");
+        let (sql, t) = trino_utc_inside(element, &var, depth + 1)?;
+        return Some((
+            format!("transform({expr}, {var} -> {sql})"),
+            format!("array({t})"),
+        ));
+    }
+    if let Some(kv) = inner("map(") {
+        let [key, value] = split_type_list(kv)[..] else {
+            return None;
+        };
+        let (k, v) = (format!("pl_k{depth}"), format!("pl_v{depth}"));
+        let new_value = trino_utc_inside(value, &v, depth + 1);
+        let new_key = trino_utc_inside(key, &k, depth + 1);
+        if new_value.is_none() && new_key.is_none() {
+            return None;
+        }
+        let (mut sql, mut key_type, mut value_type) =
+            (expr.to_string(), key.to_string(), value.to_string());
+        if let Some((e, t)) = new_value {
+            sql = format!("transform_values({sql}, ({k}, {v}) -> {e})");
+            value_type = t;
+        }
+        if let Some((e, t)) = new_key {
+            sql = format!("transform_keys({sql}, ({k}, {v}) -> {e})");
+            key_type = t;
+        }
+        return Some((sql, format!("map({key_type}, {value_type})")));
+    }
+    if let Some(fields) = inner("row(") {
+        let mut found = false;
+        let (mut values, mut types) = (vec![], vec![]);
+        for (i, field) in split_type_list(fields).into_iter().enumerate() {
+            let (name, field_type) = split_row_field(field);
+            let item = format!("({expr})[{}]", i + 1);
+            let (sql, t) = match trino_utc_inside(field_type, &item, depth + 1) {
+                Some(done) => {
+                    found = true;
+                    done
+                },
+                None => (item, field_type.to_string()),
+            };
+            values.push(sql);
+            types.push(if name.is_empty() {
+                t
+            } else {
+                format!("{name} {t}")
+            });
+        }
+        if !found {
+            return None;
+        }
+        let new_type = format!("row({})", types.join(", "));
+        return Some((
+            format!(
+                "CASE WHEN {expr} IS NULL THEN NULL ELSE CAST(ROW({}) AS {new_type}) END",
+                values.join(", ")
+            ),
+            new_type,
+        ));
+    }
+    None
+}
+
+/// A Trino array, map or row (`db_type`) of `column` with the `timestamp(p) with time zone`
+/// values in it as UTC instants, or `None` if it holds none (see [`trino_utc_inside`]).
+pub(crate) fn trino_nested_utc(db_type: &str, column: &str) -> Option<String> {
+    let lower = db_type.trim().to_ascii_lowercase();
+    if !(lower.starts_with("array(") || lower.starts_with("map(") || lower.starts_with("row(")) {
+        return None;
+    }
+    trino_utc_inside(db_type, column, 0).map(|(sql, _)| sql)
+}
+
 /// How string comparisons behave in the database, relative to Polars' byte-wise comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StringSemantics {
@@ -876,5 +1011,27 @@ mod tests {
             .sql;
         assert!(sql.contains("'NO_BACKSLASH_ESCAPES'"));
         assert!(sql.contains("'PAD_CHAR_TO_FULL_LENGTH'"));
+    }
+
+    #[test]
+    fn trino_nested_time_zones_are_read_as_utc_instants() {
+        use super::trino_nested_utc as f;
+        assert_eq!(f("array(integer)", "\"c\""), None);
+        assert_eq!(f("timestamp(3) with time zone", "\"c\""), None);
+        assert_eq!(
+            f("array(timestamp(3) with time zone)", "\"c\"").unwrap(),
+            "transform(\"c\", pl_x0 -> pl_x0 AT TIME ZONE 'UTC')"
+        );
+        assert_eq!(
+            f("map(varchar, timestamp(6) with time zone)", "c").unwrap(),
+            "transform_values(c, (pl_k0, pl_v0) -> pl_v0 AT TIME ZONE 'UTC')"
+        );
+        let row = f("row(a integer, \"B b\" timestamp(3) with time zone)", "c").unwrap();
+        assert!(row.contains("CAST(ROW((c)[1], (c)[2] AT TIME ZONE 'UTC') AS row(a integer, \"B b\" timestamp(3) with time zone))"), "{row}");
+        let row = f("row(\"a\"\"b\" timestamp(3) with time zone)", "c").unwrap();
+        assert!(
+            row.contains("AS row(\"a\"\"b\" timestamp(3) with time zone)"),
+            "{row}"
+        );
     }
 }

@@ -128,6 +128,23 @@ pub fn declared_dtype(dialect: DialectName, db_type: &str) -> Option<DataType> {
             Some(TimeZone::UTC),
         ));
     }
+    // An array of them, also nested: read as UTC instants too (the values are converted,
+    // see `column_conversion`; the driver would plan the zone of the first value it reads).
+    // Wider ones keep the unit the driver reads.
+    if dialect == DialectName::Trino
+        && t.starts_with("array(")
+        && t.ends_with(')')
+        && t.contains("timestamp(")
+        && t.match_indices("timestamp(")
+            .all(|(i, _)| crate::database::dialect::trino_wide_temporal(&t[i..]).is_none())
+    {
+        let inner = &t["array(".len()..t.len() - 1];
+        if let Some(element @ (DataType::Datetime(_, Some(_)) | DataType::List(_))) =
+            declared_dtype(dialect, inner)
+        {
+            return Some(DataType::List(Box::new(element)));
+        }
+    }
     // Postgres `timestamptz` is an instant, read as UTC (a live connection's session zone
     // may be another: see `column_conversion`).
     if matches!(dialect, DialectName::Postgresql | DialectName::Redshift)
@@ -1405,6 +1422,18 @@ mod tests {
                 TimeUnit::Microseconds,
                 Some(TimeZone::UTC)
             ))
+        );
+        let utc = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
+        assert_eq!(
+            declared_dtype(
+                DialectName::Trino,
+                "array(array(timestamp(6) with time zone))"
+            ),
+            Some(DataType::List(Box::new(DataType::List(Box::new(utc)))))
+        );
+        assert_eq!(
+            declared_dtype(DialectName::Trino, "array(timestamp(9) with time zone)"),
+            None
         );
     }
 

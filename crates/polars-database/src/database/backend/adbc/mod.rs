@@ -224,6 +224,17 @@ pub fn connect_options(
             },
         }
     }
+    if dialect == DialectName::Trino
+        && let Some(u) = &mut uri
+    {
+        let password = options
+            .iter()
+            .any(|(k, _)| k.as_c_str() == ADBC_OPTION_PASSWORD)
+            || u.split_once("://")
+                .and_then(|(_, rest)| secret_userinfo_end(rest).map(|at| rest[..at].contains(':')))
+                .unwrap_or(false);
+        *u = trino_ssl_uri(u, password)?;
+    }
     if let Some(uri) = uri {
         options.insert(0, (ADBC_OPTION_URI.to_owned(), cstring(&uri, "uri")?));
     }
@@ -260,6 +271,47 @@ impl DatabaseBackend for AdbcBackend {
 
 fn cstring(s: &str, what: &str) -> PolarsResult<CString> {
     CString::new(s).map_err(|_| polars_err!(ComputeError: "ADBC {what} contains a NUL byte"))
+}
+
+/// The URI for the ADBC Trino driver, which connects over HTTPS unless the URI says `SSL=false`
+/// (exactly that, or `False`), where the `trino` Python driver connects over HTTP unless `SSL`
+/// is true: made to behave alike. A password is only sent over HTTPS (as the Python driver
+/// does), whatever `SSL` says. `SSL` takes the booleans the Python driver takes; another value,
+/// or the key in another case, is refused rather than read as HTTPS.
+fn trino_ssl_uri(uri: &str, password: bool) -> PolarsResult<String> {
+    let (base, query) = uri.split_once('?').unwrap_or((uri, ""));
+    let mut ssl = None;
+    let mut kept = vec![];
+    for kv in query.split('&').filter(|kv| !kv.is_empty()) {
+        let (key, value) = kv.split_once('=').unwrap_or((kv, ""));
+        if !key.eq_ignore_ascii_case("ssl") {
+            kept.push(kv.to_string());
+            continue;
+        }
+        polars_ensure!(
+            key == "SSL",
+            InvalidOperation:
+            "URI parameter {key}={value} for trino: the parameter is named `SSL`"
+        );
+        let decoded = percent_decode(value);
+        ssl = Some(match decoded.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => true,
+            "0" | "false" | "no" | "off" => false,
+            _ => polars_bail!(
+                InvalidOperation:
+                "URI parameter SSL={decoded:?} for trino: expected a boolean (true or false)"
+            ),
+        });
+    }
+    // (HTTPS is the driver's default)
+    if !(password || ssl == Some(true)) {
+        kept.push("SSL=false".to_string());
+    }
+    Ok(if kept.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}?{}", kept.join("&"))
+    })
 }
 
 /// The `uri` database option for a connection target.
@@ -899,6 +951,32 @@ fn batch_to_df(array: Box<dyn Array>) -> PolarsResult<DataFrame> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trino_uri_connects_over_http_unless_tls_is_asked_for() {
+        use super::trino_ssl_uri as f;
+        let base = "trino://u@h:8080/c/s";
+        assert_eq!(f(base, false).unwrap(), format!("{base}?SSL=false"));
+        assert_eq!(
+            f(&format!("{base}?SSL=0"), false).unwrap(),
+            format!("{base}?SSL=false")
+        );
+        assert_eq!(
+            f(&format!("{base}?SSL=False"), false).unwrap(),
+            format!("{base}?SSL=false")
+        );
+        assert_eq!(f(&format!("{base}?SSL=1"), false).unwrap(), base);
+        assert_eq!(f(&format!("{base}?SSL=TRUE"), false).unwrap(), base);
+        assert_eq!(
+            f(&format!("{base}?a=b&SSL=off&c=d"), false).unwrap(),
+            format!("{base}?a=b&c=d&SSL=false")
+        );
+        // a password never goes over HTTP
+        assert_eq!(f(base, true).unwrap(), base);
+        assert_eq!(f(&format!("{base}?SSL=false"), true).unwrap(), base);
+        assert!(f(&format!("{base}?SSL=disabled"), false).is_err());
+        assert!(f(&format!("{base}?ssl=false"), false).is_err());
+    }
 
     #[test]
     fn mssql_uri_path_becomes_the_database_parameter() {
