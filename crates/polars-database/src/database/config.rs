@@ -107,6 +107,11 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
+    /// How the relations the source names resolved on the planning session
+    /// ([`catalog::resolution_fingerprint`](super::catalog::resolution_fingerprint)); every session
+    /// of a read over connections the user made (a pool's) must resolve them the same.
+    #[serde(default)]
+    pub resolution: Option<Vec<String>>,
     /// Partition bounds already queried, by the bounds SQL: optimizing the plan again
     /// (another `collect`, `explain`) doesn't query them again. The outer partitions are
     /// open-ended, so stale bounds only skew partition sizes, never lose rows.

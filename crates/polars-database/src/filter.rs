@@ -1542,6 +1542,7 @@ mod tests {
             volatility_unchecked: false,
             user_schema: false,
             derived_order_dropped: false,
+            resolution: None,
             bounds_cache: Default::default(),
         }
     }

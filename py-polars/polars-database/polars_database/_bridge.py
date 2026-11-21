@@ -182,6 +182,147 @@ def _pool_checkout(
     return conn, None, None
 
 
+# SQLAlchemy pools that hand out one DB-API connection (per thread) to every checkout.
+SHARED_CONNECTION_POOLS = ("StaticPool", "SingletonThreadPool", "AssertionPool")
+
+
+def _no_reset(*_args: Any, **_kwargs: Any) -> None:
+    return None
+
+
+def _release_without_reset(fairy: Any) -> None:
+    """
+    Check a pool checkout in without the pool's reset on return.
+
+    `transaction_reset` only spares the default rollback: a `reset_on_return="commit"`
+    pool would commit, and `reset` listeners would run, on a connection whose
+    transaction is the user's.
+    """
+    if fairy._counter > 1:
+        # a pool that hands the thread's checkout out again (SingletonThreadPool): this
+        # only gives back our share of the user's own checkout, which stays theirs
+        fairy._close_special(transaction_reset=True)
+        return
+    try:
+        fairy._reset = _no_reset
+    except AttributeError:
+        pool = fairy._pool
+        if pool._reset_on_return.name == "reset_commit" or pool.dispatch.reset:
+            msg = (
+                "scan_database can't share the pooled connection of this engine "
+                "without its pool's reset on return (`pool_reset_on_return` other "
+                "than 'rollback', or a `reset` event listener), which would end the "
+                "user's transaction: pass `engine.raw_connection().driver_connection`"
+            )
+            raise TypeError(msg) from None
+    try:
+        fairy._close_special(transaction_reset=True)
+    finally:
+        # (never left on a fairy that is checked out again)
+        fairy.__dict__.pop("_reset", None)
+
+
+def _is_orm_session(obj: Any) -> bool:
+    return any(
+        c.__name__ == "Session" and c.__module__.startswith("sqlalchemy.orm")
+        for c in type(obj).__mro__
+    )
+
+
+def _has_pool(obj: Any, name: str) -> bool:
+    pool = getattr(obj, "pool", None)
+    return pool is not None and any(c.__name__ == name for c in type(pool).__mro__)
+
+
+def _singleton_pool_error() -> TypeError:
+    return TypeError(
+        "a connection function over a SingletonThreadPool can't be scanned: the pool "
+        "opens a connection for each thread that asks, and closes other threads' "
+        "(the caller's too) beyond its `pool_size`, while the scan connects from its "
+        "own threads. Pass the Engine itself (read through its one connection), or "
+        "use another pool"
+    )
+
+
+def shared_pool_connection(obj: Any) -> Any:
+    """
+    The DB-API connection of a checkout (`engine.raw_connection()`, `engine.connect()`,
+    an ORM Session of the engine) from a pool that shares one connection, released
+    without the pool's reset on return (which would end the transaction of whoever else
+    uses the connection); None for any other object. The connection is then read as a
+    live one. Raises for a SingletonThreadPool (see `_singleton_pool_error`).
+    """
+    fairy = obj
+    if _module_of(obj) == "sqlalchemy" and type(obj).__name__ == "Connection":
+        fairy = getattr(obj, "connection", None)
+    elif _is_orm_session(obj):
+        # a Session checks its connection out on first use, and gives it back on
+        # `rollback()`/`close()`: read the Engine's one connection instead
+        engine = None
+        with contextlib.suppress(Exception):
+            engine = obj.get_bind()
+        pool = getattr(engine, "pool", None)
+        if not any(c.__name__ in SHARED_CONNECTION_POOLS for c in type(pool).__mro__):
+            return None
+        if _has_pool(engine, "SingletonThreadPool"):
+            raise _singleton_pool_error()
+        return _engine_shared_connection(engine)
+    if type(fairy).__name__ != "_ConnectionFairy":
+        return None
+    pool = getattr(fairy, "_pool", None)
+    if not any(c.__name__ in SHARED_CONNECTION_POOLS for c in type(pool).__mro__):
+        return None
+    release = getattr(fairy, "_close_special", None)
+    if not callable(release) or (driver := fairy.driver_connection) is None:
+        return None
+    if any(c.__name__ == "SingletonThreadPool" for c in type(pool).__mro__):
+        _release_without_reset(fairy)
+        raise _singleton_pool_error()
+    _release_without_reset(fairy)
+    return driver
+
+
+def _engine_shared_connection(engine: Any) -> Any:
+    """The one DB-API connection of an Engine whose pool shares it, left as it is."""
+    pool = engine.pool
+    if any(c.__name__ == "AssertionPool" for c in type(pool).__mro__) and getattr(
+        pool, "_checked_out", False
+    ):
+        # checked out by a user's `engine.connect()` (a second checkout raises)
+        record = getattr(pool, "_conn", None)
+        if (driver := getattr(record, "driver_connection", None)) is not None:
+            return driver
+    fairy = engine.raw_connection()
+    driver = fairy.driver_connection
+    _release_without_reset(fairy)
+    return driver
+
+
+def _duckdb_engine_connection(obj: Any, session: dict[str, Any]) -> Any:
+    """
+    The DuckDB connection under a SQLAlchemy `Connection` of duckdb_engine, or None.
+
+    duckdb_engine's cursors run on the one DuckDB connection, where a statement
+    replaces a result the user has not read to the end: read as the DuckDB connection
+    it is, the scan leaves that result alone (as for a DuckDB connection passed
+    directly). Not with the user's own parameters or execute options, which are
+    SQLAlchemy's.
+    """
+    if (
+        _module_of(obj) != "sqlalchemy"
+        or type(obj).__name__ != "Connection"
+        or session.get("params") is not None
+        or session.get("execute_options")
+    ):
+        return None
+    with contextlib.suppress(Exception):
+        wrapper = obj.connection.driver_connection
+        raw = getattr(wrapper, "_ConnectionWrapper__c", None)
+        if _module_of(raw) == "duckdb":
+            return raw
+    return None
+
+
 # ADBC's vendor names, as dialect names
 _ADBC_VENDORS = {
     "postgresql": "postgresql",
@@ -199,6 +340,8 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
     """`(dialect, module)` of a connection factory or live connection object."""
     if kind == "factory":
         conn = obj()
+        if (shared := shared_pool_connection(conn)) is not None:
+            return _connection_info(shared)
         driver, give_back, _ = _pool_checkout(conn)
         try:
             return _connection_info(driver)
@@ -1095,7 +1238,13 @@ def _duckdb_shared_cursor(
     if path in ("", ":memory:") or path.startswith(":memory:"):
         conn = _duckdb_connect(mod, path, kwargs)
         return conn, conn.close
-    key = (path, repr(sorted(kwargs.items(), key=lambda kv: kv[0])))
+    # (a relative file is the working directory's, which may change between scans)
+    # (resolved through symlinks, and opened as resolved: DuckDB's own instance cache
+    # joins `link/../x.db` with `x.db`, where the file system doesn't)
+    where = path
+    if ":" not in path:
+        where = path = os.path.realpath(path)
+    key = (where, repr(sorted(kwargs.items(), key=lambda kv: kv[0])))
     with _DUCKDB_ROOTS_LOCK:
         entry = _DUCKDB_ROOTS.get(key)
         if entry is None:
@@ -1168,7 +1317,7 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
             # Trino takes a password only over HTTPS
             base["auth"] = BasicAuthentication(p["user"] or "", p["password"])
             base["http_scheme"] = "https"
-        return connect(**{**base, **kw, **options})
+        return connect(**{**base, **kw, **options})  # type: ignore[no-untyped-call]
     elif module == "databricks.sql":
         # `databricks://token:<access token>@<host>/<HTTP path>[?catalog=&schema=]`, the
         # ADBC driver's form
@@ -1196,7 +1345,7 @@ def _connect_uri(module: str, uri: str, options: dict[str, Any]) -> Any:
         from clickhouse_connect.dbapi import connect  # type: ignore[import-not-found]
 
         base = _uri_part_kwargs(p, {"user": "username"})
-        return connect(**{**base, **kw, **options})
+        return connect(**{**base, **kw, **options})  # type: ignore[no-untyped-call]
     else:
         msg = (
             f"scan_database can't open a {module!r} connection from a URI; "
@@ -1447,12 +1596,53 @@ def _transaction_idle(conn: Any) -> bool | None:
             if (callable(autocommit) and autocommit()) or (
                 callable(options) and options().get("isolation_level") == "AUTOCOMMIT"
             ):
+                # no transaction of SQLAlchemy's, but the user's own `BEGIN` may be open
+                # on the driver's connection: that one says
+                fairy = getattr(conn, "connection", None)
+                driver = getattr(fairy, "driver_connection", None)
+                if driver is not None and driver is not conn:
+                    status = _transaction_idle(driver)
+                    if status is not None:
+                        return status
                 return True
-            return not in_transaction()
+            if in_transaction():
+                return False
+            # none of SQLAlchemy's, but the driver's connection may have one open (a
+            # `checkout` listener's `SET`, the user's own statements): that one stays
+            fairy = getattr(conn, "connection", None)
+            driver = getattr(fairy, "driver_connection", None)
+            if driver is not None and driver is not conn:
+                if _transaction_idle(driver) is False:
+                    return False
+            return True
         if isinstance(in_transaction, bool) and module in ("sqlite3", "mysql"):
             # sqlite3, and mysql.connector (the status of its last result)
             return not in_transaction
     return None
+
+
+def _refuse_pending_results(conn: Any) -> None:
+    """
+    Refuse a scan on a connection with an unread unbuffered result.
+
+    A statement of the scan on such a connection drops the unread rows (PyMySQL, with a
+    warning). (The pending result sets of a multi-statement query aren't told from the
+    trailing OK packet of a `CALL` without reading it, so they stay a limit.)
+    """
+    if _module_of(conn) == "sqlalchemy":
+        # a SQLAlchemy Connection: the driver's is what holds the result
+        with contextlib.suppress(Exception):
+            conn = conn.connection.driver_connection
+    if _module_of(conn) != "pymysql":
+        return
+    result = getattr(conn, "_result", None)
+    if result is not None and getattr(result, "unbuffered_active", False):
+        msg = (
+            "the connection has an unbuffered result that has not been read to the "
+            "end, and a scan would discard its rows: read it first (`fetchall()`), "
+            "or pass a connection of its own"
+        )
+        raise RuntimeError(msg)
 
 
 def _sqlalchemy_dialect(conn: Any) -> str:
@@ -1491,13 +1681,15 @@ def _duckdb_needs_connection(conn: Any) -> bool:
         "AND function_type IN ('macro', 'table_macro'))"
     )
     try:
-        # whole: DuckDB 2 refuses other work on a connection with a result left unread
-        rows = conn.execute(sql).fetchall()
+        # A relation, not `execute`: `conn.execute` replaces a result of the user's left
+        # unread (DuckDB 1 and 2, silently), a relation's query leaves it (DuckDB 1) or
+        # is refused (DuckDB 2, `ResourceInUseException`)
+        rows = conn.sql(sql).fetchall()
         if rows and rows[0][0]:
             return True
         # outside a transaction each statement is one of its own
-        first = conn.execute("SELECT txid_current()").fetchall()
-        second = conn.execute("SELECT txid_current()").fetchall()
+        first = conn.sql("SELECT txid_current()").fetchall()
+        second = conn.sql("SELECT txid_current()").fetchall()
     except Exception:
         return False
     return bool(first == second)
@@ -1530,28 +1722,31 @@ def _duckdb_copy_session(conn: Any, cursor: Any) -> bool:
     settings = "SELECT name, value FROM system.main.duckdb_settings()"
     variables = "SELECT name, value::VARCHAR, type FROM system.main.duckdb_variables()"
     try:
-        wanted = dict(conn.execute(settings).fetchall())
+        wanted = dict(conn.sql(settings).fetchall())
         current = dict(cursor.execute(settings).fetchall())
         for name, value in wanted.items():
             # (`schema` can't be set: `search_path` has it; the profiling and log files
             # are the user's, and none of it changes rows)
             if name not in skipped and value != current.get(name):
                 cursor.execute(f"SET {ident(name)} = {quote(value)}")
-        for name, value, type_ in conn.execute(variables).fetchall():
+        for name, value, type_ in conn.sql(variables).fetchall():
             # DuckDB 2's catalog wraps typed NULLs in a VARIANT: its value is not
             # SQL NULL and casts to the text 'NULL', also a valid non-null VARCHAR.
             # getvariable requires a constant name, so inspect each variable itself.
-            is_null = conn.execute(
+            is_null = conn.sql(
                 f"SELECT system.main.getvariable({quote(name)}) IS NULL"
-            ).fetchone()[0]
+            ).fetchall()[0][0]
             if type_.strip('"').upper() == "NULL":
                 # an untyped NULL has no valid cast target
                 cursor.execute(f"SET VARIABLE {ident(name)} = NULL")
             else:
                 literal = "NULL" if is_null else quote(value)
                 cursor.execute(f"SET VARIABLE {ident(name)} = {literal}::{type_}")
-    except Exception:
-        return False
+    except Exception as e:
+        # DuckDB 2 refuses a relation's query while the user's result is unfinished
+        # (even a `fetchone()` of a count): nothing of the session can be read, and the
+        # cursor, which leaves that result alone, runs with the defaults
+        return type(e).__name__ == "ResourceInUseException"
     return True
 
 
@@ -1563,8 +1758,11 @@ def _postgres_family(conn: Any) -> bool:
     if module in ("psycopg", "psycopg2", "pg8000"):
         return True
     if module == "sqlalchemy":
-        dialect = getattr(getattr(conn, "dialect", None), "name", "")
-        return dialect in ("postgresql", "redshift")
+        dialect = getattr(conn, "dialect", None)
+        # (also the forks: TimescaleDB, CockroachDB, ... subclass PGDialect)
+        return getattr(dialect, "name", "") in ("postgresql", "redshift") or any(
+            c.__name__ == "PGDialect" for c in type(dialect).__mro__
+        )
     return False
 
 
@@ -2239,6 +2437,8 @@ class _Session:
             with state.lock:
                 state.active += 1
                 entered = True
+                if not self.owned:
+                    _refuse_pending_results(self.conn)
                 # A live connection outside a transaction is left without one. Polars
                 # may release a read after `collect()` returned (an early stop), while
                 # the user runs statements on the connection again: a ROLLBACK then
@@ -2278,6 +2478,9 @@ class _Session:
                         cx.cursor.close()
                     cx.cursor = self.conn
                     cx.can_close_cursor = False
+                    # `execute` would replace a result of the user's left unread (DuckDB
+                    # 1): a relation leaves it, and DuckDB 2 refuses
+                    cx._duckdb_has_lazy_relations = lambda: True  # type: ignore[method-assign]
                 cx_cursor = cx.cursor if cx.cursor is not cursor else None
                 options = dict(self.execute_options)
                 if not bind:
@@ -2486,7 +2689,13 @@ class _Session:
                 return _buffered_cursor(self.conn, module)
             return None
         if module in ("psycopg", "psycopg2"):
-            cursor = self.conn.cursor(name=f"polars_scan_{next(_CURSOR_IDS)}")
+            name = f"polars_scan_{next(_CURSOR_IDS)}"
+            if getattr(self.conn, "autocommit", False) is True:
+                # a named cursor needs a transaction, and there is none in autocommit:
+                # one that outlives each statement
+                cursor = self.conn.cursor(name=name, withhold=True)
+            else:
+                cursor = self.conn.cursor(name=name)
             cursor.itersize = batch_size
             if module == "psycopg2":
                 # also for a connection the plugin didn't open (factory, live)
@@ -2499,8 +2708,13 @@ class _Session:
         if module == "sqlalchemy" and callable(
             opts := getattr(self.conn, "execution_options", None)
         ):
-            # the dialect's own streaming cursor (named, SSCursor, ...)
-            opts(stream_results=True, max_row_buffer=batch_size)
+            # the dialect's own streaming cursor (named, SSCursor, ...), but not in
+            # AUTOCOMMIT: a Postgres named cursor needs a transaction there is none of
+            autocommit = getattr(self.conn, "_is_autocommit_isolation", None)
+            if not (
+                callable(autocommit) and autocommit() and _postgres_family(self.conn)
+            ):
+                opts(stream_results=True, max_row_buffer=batch_size)
         return None
 
     def execute_update(self, sql: str) -> None:
@@ -3034,6 +3248,9 @@ def adbc_connect(
     return _AdbcSession(driver, entrypoint, options, execute_options)
 
 
+_ASSERTION_POOL_LOCK = threading.Lock()
+
+
 def connect(
     kind: str,
     target_kind: str,
@@ -3057,9 +3274,29 @@ def connect(
     session = {"execute_options": execute_opts, "params": params}
 
     if target_kind == "live":
+        if (raw := _duckdb_engine_connection(target, session)) is not None:
+            target = raw
         return _Session(target, owned=False, **session)
     if target_kind == "factory":
-        conn, close, invalidate = _pool_checkout(target())
+        try:
+            checkout = target()
+        except AssertionError:
+            # an AssertionPool refuses a second checkout while another is out: ours are
+            # given back at once (below), and wait for each other
+            with _ASSERTION_POOL_LOCK:
+                for attempt in range(100):
+                    try:
+                        checkout = target()
+                        break
+                    except AssertionError:
+                        if attempt == 99:
+                            raise
+                        time.sleep(0.002)
+        if (shared := shared_pool_connection(checkout)) is not None:
+            # one connection that the user's own statements use too (an open
+            # transaction): a live connection, never rolled back or closed
+            return _Session(shared, owned=False, **session)
+        conn, close, invalidate = _pool_checkout(checkout)
         return _Session(
             conn,
             owned=True,
