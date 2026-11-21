@@ -20,8 +20,8 @@ print(df)
 # --8<-- [end:df]
 
 # --8<-- [start:csv]
-df.write_csv("docs/assets/data/output.csv")
-df_csv = pl.read_csv("docs/assets/data/output.csv", try_parse_dates=True)
+df.write_csv("output.csv")
+df_csv = pl.read_csv("output.csv", try_parse_dates=True)
 print(df_csv)
 # --8<-- [end:csv]
 
