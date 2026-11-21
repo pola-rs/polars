@@ -589,6 +589,17 @@ fn check_exact_at(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResul
             };
             return check_exact_at(&values(src)?, &values(cast)?, root);
         },
+        (DataType::List(_), DataType::Map(key, value)) => {
+            // checked as the list of entries, before a repeated key collapses them
+            let entries = DataType::List(Box::new(DataType::Struct(vec![
+                Field::new("key".into(), key.as_ref().clone()),
+                Field::new("value".into(), value.as_ref().clone()),
+            ])));
+            return match src.cast(&entries) {
+                Ok(entries) => check_exact_at(src, &entries, root),
+                Err(_) => Ok(()),
+            };
+        },
         (from, DataType::Struct(fields)) if fields.len() == 1 && !from.is_struct() => {
             // a value cast to a struct of one field is cast to the field
             let field = cast.struct_()?.fields_as_series().swap_remove(0);

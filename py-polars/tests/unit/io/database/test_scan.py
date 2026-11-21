@@ -1791,6 +1791,12 @@ def test_scan_duckdb_lossy_values_are_errors() -> None:
         scan(
             "SELECT 1.5::DOUBLE AS x", schema={"x": pl.Struct({"v": pl.Int64})}
         ).collect()
+    # a list of entries cast to a map is checked as one
+    with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+        scan(
+            "SELECT [{'key': 'a', 'value': 1.5::DOUBLE}] AS x",
+            schema={"x": pl.Map(pl.String, pl.Int64)},
+        ).collect()
     # a list of entries with a repeated key is a map of one entry for it
     out = scan(
         "SELECT [{'key': 'a', 'value': 1.0}, {'key': 'a', 'value': 1.0}] AS x",
