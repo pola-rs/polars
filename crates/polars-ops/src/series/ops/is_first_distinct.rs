@@ -107,6 +107,14 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
 
     use DataType::*;
     let out = match s.dtype() {
+        Null => {
+            let mut out = MutableBitmap::with_capacity(s.len());
+            out.extend_constant(s.len(), false);
+            out.set(0, true);
+
+            let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
+            BooleanChunked::with_chunk(s.name().clone(), arr)
+        },
         Boolean => {
             let ca = s.bool().unwrap();
             is_first_distinct_boolean(ca)
