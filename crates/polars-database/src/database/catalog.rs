@@ -1640,6 +1640,11 @@ pub fn view_definition(
                     ViewLookup::NotAView
                 };
             }
+            // (a view of the name and one a synonym of it names: which one is read isn't
+            // looked up)
+            if df.height() > 1 {
+                return ViewLookup::Failed;
+            }
             let sql = cell_str(&df, 1, 0).or_else(|| {
                 let (owner, view) = (cell_str(&df, 2, 0)?, cell_str(&df, 3, 0)?);
                 let long = run(&format!(
