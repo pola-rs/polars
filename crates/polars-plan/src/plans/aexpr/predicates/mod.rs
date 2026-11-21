@@ -4,8 +4,6 @@ mod skip_batches;
 use std::borrow::Cow;
 
 pub use column_expr::*;
-#[cfg(feature = "dtype-struct")]
-use polars_core::prelude::Field;
 #[cfg(feature = "is_in")]
 use polars_core::prelude::{AnyValue, Series};
 use polars_core::prelude::{DataType, IDX_DTYPE};
@@ -27,12 +25,9 @@ use super::{AExpr, LiteralValue};
 pub fn null_count_dtype(dtype: &DataType) -> DataType {
     match dtype {
         #[cfg(feature = "dtype-struct")]
-        DataType::Struct(fields) => DataType::Struct(
-            fields
-                .iter()
-                .map(|f| Field::new(f.name().clone(), null_count_dtype(f.dtype())))
-                .collect(),
-        ),
+        DataType::Struct(fields) => {
+            DataType::Struct(fields.map_fields(|f| null_count_dtype(f.dtype())))
+        },
         _ => IDX_DTYPE,
     }
 }

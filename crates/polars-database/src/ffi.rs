@@ -139,12 +139,12 @@ pub fn struct_field_to_schema(field: &ArrowField) -> PolarsResult<Schema> {
     fields
         .iter()
         .map(|f| {
-            std::panic::catch_unwind(|| Field::from(f)).map_err(|payload| {
+            std::panic::catch_unwind(|| Field::try_from(f)).map_err(|payload| {
                 polars_err!(
                     ComputeError: "column '{}' has a type Polars can't read: {}",
                     f.name, panic_message(&*payload)
                 )
-            })
+            })?
         })
         .collect()
 }

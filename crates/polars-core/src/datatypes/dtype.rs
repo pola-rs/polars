@@ -7,7 +7,6 @@ use polars_arrow::datatypes::{
 };
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
-use polars_utils::itertools::Itertools;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
 pub use temporal::time_zone::TimeZone;
@@ -137,7 +136,7 @@ pub enum DataType {
     #[cfg(feature = "dtype-categorical")]
     Enum(Arc<FrozenCategories>, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-struct")]
-    Struct(Vec<Field>),
+    Struct(StructFields),
     /// A map from keys to values, keys are unique and non-null.
     #[cfg(feature = "dtype-map")]
     Map(Box<DataType>, Box<DataType>),
@@ -318,14 +317,15 @@ impl DataType {
     /// Struct representation of the arrow `month_day_nano_interval` type.
     #[cfg(feature = "dtype-struct")]
     pub fn _month_days_ns_struct_type() -> Self {
-        DataType::Struct(vec![
+        let fields = vec![
             Field::new(PlSmallStr::from_static("months"), DataType::Int32),
             Field::new(PlSmallStr::from_static("days"), DataType::Int32),
             Field::new(
                 PlSmallStr::from_static("nanoseconds"),
                 DataType::Duration(TimeUnit::Nanoseconds),
             ),
-        ])
+        ];
+        DataType::Struct(StructFields::try_new(fields).unwrap())
     }
 
     /// Check if the whole dtype is known.
@@ -366,17 +366,13 @@ impl DataType {
                 size,
             )),
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => Ok(DataType::Struct(
-                fields
-                    .into_iter()
-                    .map(|f| {
-                        PolarsResult::Ok(Field::new(
-                            f.name,
-                            f.dtype.materialize_unknown(allow_unknown)?,
-                        ))
-                    })
-                    .try_collect_vec()?,
-            )),
+            DataType::Struct(mut fields) => {
+                for dtype in fields.dtypes_mut() {
+                    *dtype = std::mem::replace(dtype, DataType::Null)
+                        .materialize_unknown(allow_unknown)?;
+                }
+                Ok(DataType::Struct(fields))
+            },
             #[cfg(feature = "dtype-map")]
             DataType::Map(key, value) => Ok(DataType::Map(
                 Box::new(key.materialize_unknown(allow_unknown)?),
@@ -480,12 +476,11 @@ impl DataType {
             #[cfg(feature = "dtype-array")]
             Array(inner, size) => Array(Box::new(inner.map_leaves(f)), size),
             #[cfg(feature = "dtype-struct")]
-            Struct(fields) => {
-                let new_fields = fields
-                    .into_iter()
-                    .map(|fld| Field::new(fld.name, fld.dtype.map_leaves(f)))
-                    .collect();
-                Struct(new_fields)
+            Struct(mut fields) => {
+                for dtype in fields.dtypes_mut() {
+                    *dtype = std::mem::replace(dtype, Null).map_leaves(f);
+                }
+                Struct(fields)
             },
             #[cfg(feature = "dtype-map")]
             Map(key, value) => Map(Box::new(key.map_leaves(f)), Box::new(value.map_leaves(f))),
@@ -598,13 +593,7 @@ impl DataType {
             Array(dt, width) => Array(Box::new(dt.to_physical()), *width),
             List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-struct")]
-            Struct(fields) => {
-                let new_fields = fields
-                    .iter()
-                    .map(|s| Field::new(s.name().clone(), s.dtype().to_physical()))
-                    .collect();
-                Struct(new_fields)
-            },
+            Struct(fields) => Struct(fields.map_fields(|f| f.dtype().to_physical())),
             #[cfg(feature = "dtype-map")]
             Map(_, _) => self.map_storage_dtype().unwrap().to_physical(),
             #[cfg(feature = "dtype-extension")]
@@ -1050,10 +1039,13 @@ impl DataType {
     /// The canonical struct dtype of a `Map` entry.
     #[cfg(feature = "dtype-map")]
     fn map_entries(key: DataType, value: DataType) -> DataType {
-        DataType::Struct(vec![
-            Field::new(MAP_KEY_NAME, key),
-            Field::new(MAP_VALUE_NAME, value),
-        ])
+        DataType::Struct(
+            StructFields::try_new(vec![
+                Field::new(MAP_KEY_NAME, key),
+                Field::new(MAP_VALUE_NAME, value),
+            ])
+            .unwrap(),
+        )
     }
 
     /// The `Struct {key, value}` entries dtype of this `Map`. Returns `None` for any
@@ -1749,7 +1741,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
                 let merged = merge_dtypes(l.dtype(), r.dtype())?;
                 Ok(Field::new(l.name().clone(), merged))
             }).collect::<PolarsResult<Vec<_>>>()?;
-            Struct(fields)
+            Struct(StructFields::try_new(fields)?)
         },
         #[cfg(feature = "dtype-map")]
         (Map(key_l, value_l), Map(key_r, value_r)) => {
@@ -1924,35 +1916,41 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => match dtype {
                 Cow::Owned(DataType::Struct(mut fields)) => {
-                    for f in &mut fields {
-                        self.visit_ref_mut(&mut f.dtype)?;
+                    for dtype in fields.dtypes_mut() {
+                        self.visit_ref_mut(dtype)?;
                     }
 
                     Cow::Owned(DataType::Struct(fields))
                 },
                 Cow::Borrowed(DataType::Struct(fields)) => {
-                    let mut new_fields = vec![];
+                    let mut first_changed = None;
 
                     for (i, f) in fields.iter().enumerate() {
                         let ret = self.visit_rec(Cow::Borrowed(f.dtype()))?;
 
-                        if std::ptr::eq(ret.as_ref(), f.dtype()) && new_fields.is_empty() {
-                            continue;
+                        if !std::ptr::eq(ret.as_ref(), f.dtype()) {
+                            first_changed = Some((i, ret.into_owned()));
+                            break;
                         }
-
-                        if new_fields.is_empty() {
-                            new_fields.reserve_exact(fields.len());
-                            new_fields.extend(fields.iter().take(i).cloned());
-                        }
-
-                        new_fields.push(Field::new(f.name().clone(), ret.into_owned()));
                     }
 
-                    if new_fields.is_empty() {
-                        dtype
-                    } else {
-                        assert_eq!(new_fields.len(), fields.len());
-                        Cow::Owned(DataType::Struct(new_fields))
+                    match first_changed {
+                        None => dtype,
+                        Some((i, first)) => {
+                            let mut new_fields = fields.clone();
+                            let mut dtypes = new_fields.dtypes_mut().skip(i);
+                            *dtypes.next().unwrap() = first;
+
+                            for (new_dtype, f) in dtypes.zip(&fields[i + 1..]) {
+                                let ret = self.visit_rec(Cow::Borrowed(f.dtype()))?;
+
+                                if !std::ptr::eq(ret.as_ref(), f.dtype()) {
+                                    *new_dtype = ret.into_owned();
+                                }
+                            }
+
+                            Cow::Owned(DataType::Struct(new_fields))
+                        },
                     }
                 },
                 _ => unreachable!(),

@@ -14,13 +14,13 @@ pub fn materialize_empty_df(
     reader_schema: &ArrowSchema,
     hive_partition_columns: Option<&[Series]>,
     row_index: Option<&RowIndex>,
-) -> DataFrame {
+) -> PolarsResult<DataFrame> {
     let schema = if let Some(projection) = projection {
         Cow::Owned(apply_projection(reader_schema, projection))
     } else {
         Cow::Borrowed(reader_schema)
     };
-    let mut df = DataFrame::empty_with_schema(&Schema::from_arrow_schema(&schema));
+    let mut df = DataFrame::empty_with_schema(&Schema::from_arrow_schema(&schema)?);
 
     if let Some(row_index) = row_index {
         df.insert_column(0, Column::new_empty(row_index.name.clone(), &IDX_DTYPE))
@@ -29,7 +29,7 @@ pub fn materialize_empty_df(
 
     materialize_hive_partitions(&mut df, reader_schema, hive_partition_columns);
 
-    df
+    Ok(df)
 }
 
 pub(super) fn projected_arrow_schema_to_projection_indices(
@@ -48,9 +48,9 @@ pub(super) fn projected_arrow_schema_to_projection_indices(
             projection_indices.push(idx);
             is_full_ordered_projection &= idx == i;
 
-            DataType::from_arrow_field(field)
+            DataType::from_arrow_field(field)?
         };
-        let expected_dtype = DataType::from_arrow_field(field);
+        let expected_dtype = DataType::from_arrow_field(field)?;
 
         if dtype.clone() != expected_dtype {
             polars_bail!(
@@ -78,8 +78,8 @@ pub fn ensure_matching_dtypes_if_found(
                 if dtype != &field.dtype {
                     // Check again with timezone normalization
                     // TODO: Add an ArrowDtype eq wrapper?
-                    let lhs = DataType::from_arrow_dtype(dtype);
-                    let rhs = DataType::from_arrow_field(field);
+                    let lhs = DataType::from_arrow_dtype(dtype)?;
+                    let rhs = DataType::from_arrow_field(field)?;
 
                     if lhs != rhs {
                         polars_bail!(

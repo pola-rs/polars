@@ -5,7 +5,6 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
-use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
@@ -31,7 +30,7 @@ use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 /// Whether the decoder may evaluate a predicate on this column as it decodes the values.
 fn filter_while_decoding(projection: &ArrowFieldProjection) -> bool {
     use ArrowDataType as A;
-    let ArrowFieldProjection::Plain(arrow_field, None) = projection else {
+    let ArrowFieldProjection::Plain(arrow_field, _, None) = projection else {
         return false;
     };
     match arrow_field.dtype() {
@@ -537,7 +536,7 @@ impl ParquetReadImpl {
                         .map(|predicate| PredicateFilter {
                             predicate: Arc::new(ColumnPredicateExpr::new(
                                 name.clone(),
-                                DataType::from_arrow_field(arrow_field),
+                                projection.output_dtype().clone(),
                                 arrow_field.dtype.clone(),
                                 predicate.clone(),
                                 p.specialized.clone(),

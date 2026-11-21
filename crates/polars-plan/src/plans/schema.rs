@@ -288,7 +288,7 @@ pub(crate) fn validate_arrow_schema_conversion(
         let pl_struct_series = Series::full_null(
             PlSmallStr::EMPTY,
             0,
-            &DataType::Struct(input_schema.iter_fields().collect()),
+            &DataType::Struct(StructFields::from(input_schema)),
         );
 
         let arrow_array = pl_struct_series.to_arrow_with_field(

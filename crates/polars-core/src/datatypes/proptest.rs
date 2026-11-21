@@ -8,6 +8,8 @@ use polars_utils::pl_str::PlSmallStr;
 use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 
+#[cfg(feature = "dtype-struct")]
+use super::StructFields;
 use crate::datatypes::{PolarsObjectSafe, pf16};
 use crate::prelude::{
     AnyValue, ArrowDataType, ArrowField, DataType, Field, OwnedObject, PolarsObject, StructArray,
@@ -275,7 +277,7 @@ fn dtype_struct_strategy(
             .map(|(i, datatype)| Field::new(format!("field{i}").into(), datatype))
             .collect();
 
-        DataType::Struct(fields)
+        DataType::Struct(StructFields::try_new(fields).unwrap())
     })
 }
 
@@ -694,7 +696,8 @@ fn av_struct_strategy(
 
             let struct_array = StructArray::new_empty(ArrowDataType::Struct(arrow_fields));
             let leaked_struct: &'static StructArray = Box::leak(Box::new(struct_array));
-            let leaked_fields: &'static [Field] = Box::leak(fields.into_boxed_slice());
+            let fields = StructFields::try_new(fields).unwrap();
+            let leaked_fields: &'static StructFields = Box::leak(Box::new(fields));
 
             AnyValue::Struct(0, leaked_struct, leaked_fields)
         })
@@ -713,6 +716,7 @@ fn av_struct_owned_strategy(
                 .enumerate()
                 .map(|(i, value)| Field::new(format!("field{i}").into(), value.dtype()))
                 .collect();
+            let fields = StructFields::try_new(fields).unwrap();
 
             AnyValue::StructOwned(Box::new((field_values, fields)))
         })

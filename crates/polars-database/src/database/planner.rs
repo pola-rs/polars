@@ -1216,12 +1216,7 @@ fn in_utc(dtype: &DataType) -> DataType {
         DataType::List(inner) => DataType::List(Box::new(in_utc(inner))),
         DataType::Array(inner, width) => DataType::Array(Box::new(in_utc(inner)), *width),
         DataType::Map(key, value) => DataType::Map(Box::new(in_utc(key)), Box::new(in_utc(value))),
-        DataType::Struct(fields) => DataType::Struct(
-            fields
-                .iter()
-                .map(|f| Field::new(f.name().clone(), in_utc(f.dtype())))
-                .collect(),
-        ),
+        DataType::Struct(fields) => DataType::Struct(fields.map_fields(|f| in_utc(f.dtype()))),
         dt => dt.clone(),
     }
 }

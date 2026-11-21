@@ -90,28 +90,33 @@ mod test {
                 AnyValue::Null,
                 AnyValue::String("1:3"),
             ],
-            vec![
+            StructFields::try_new(vec![
                 Field::new("fld_1".into(), DataType::String),
                 Field::new("fld_2".into(), DataType::String),
                 Field::new("fld_3".into(), DataType::String),
-            ],
+            ])
+            .unwrap(),
         )));
-        let dtype = DataType::Struct(vec![
-            Field::new("fld_1".into(), DataType::String),
-            Field::new("fld_2".into(), DataType::String),
-            Field::new("fld_3".into(), DataType::String),
-        ]);
+        let dtype = DataType::Struct(
+            StructFields::try_new(vec![
+                Field::new("fld_1".into(), DataType::String),
+                Field::new("fld_2".into(), DataType::String),
+                Field::new("fld_3".into(), DataType::String),
+            ])
+            .unwrap(),
+        );
         let row_2 = AnyValue::StructOwned(Box::new((
             vec![
                 AnyValue::String("2:1"),
                 AnyValue::String("2:2"),
                 AnyValue::String("2:3"),
             ],
-            vec![
+            StructFields::try_new(vec![
                 Field::new("fld_1".into(), DataType::String),
                 Field::new("fld_2".into(), DataType::String),
                 Field::new("fld_3".into(), DataType::String),
-            ],
+            ])
+            .unwrap(),
         )));
         let row_3 = AnyValue::Null;
 

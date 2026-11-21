@@ -150,12 +150,11 @@ impl IRListFunction {
                 };
                 let inner_dtype = inner_dtype.as_ref();
 
-                Ok(DataType::Struct(
+                Ok(DataType::Struct(StructFields::try_from_iter(
                     names
                         .iter()
-                        .map(|x| Field::new(x.clone(), inner_dtype.clone()))
-                        .collect::<Vec<_>>(),
-                ))
+                        .map(|x| Field::new(x.clone(), inner_dtype.clone())),
+                )?))
             }),
             #[cfg(feature = "dtype-map")]
             ToMap => mapper.try_map_dtype(|dtype| {

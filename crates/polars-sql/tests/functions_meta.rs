@@ -76,15 +76,16 @@ fn describe_types(dtypes: &[DataType]) -> Vec<String> {
 #[test]
 fn test_describe_type_names_cast_back() {
     let time_zone = |name: &'static str| TimeZone::opt_try_new(Some(name)).unwrap();
-    let geo = DataType::Struct(vec![
+    let struct_of = |fields: Vec<Field>| DataType::Struct(StructFields::try_new(fields).unwrap());
+    let geo = struct_of(vec![
         Field::new("lat".into(), DataType::Float64),
         Field::new("lon".into(), DataType::Float64),
     ]);
-    let nested = DataType::Struct(vec![Field::new(
+    let nested = struct_of(vec![Field::new(
         "a".into(),
-        DataType::Struct(vec![Field::new("b".into(), DataType::Int32)]),
+        struct_of(vec![Field::new("b".into(), DataType::Int32)]),
     )]);
-    let odd_names = DataType::Struct(vec![
+    let odd_names = struct_of(vec![
         Field::new("my \"col\"".into(), DataType::Int32),
         Field::new("select".into(), DataType::String),
         Field::new("tags".into(), DataType::List(Box::new(DataType::String))),
@@ -198,11 +199,14 @@ fn test_describe_type_names_cast_back() {
 fn test_describe_type_without_sql_name() {
     // A type that has no SQL name is given by its Polars name, also inside a nested type.
     let array = DataType::Array(Box::new(DataType::Int32), 3);
-    let nested = DataType::Struct(vec![
-        Field::new("xyz".into(), array.clone()),
-        Field::new("label".into(), DataType::String),
-    ]);
-    let empty = DataType::Struct(vec![]);
+    let nested = DataType::Struct(
+        StructFields::try_new(vec![
+            Field::new("xyz".into(), array.clone()),
+            Field::new("label".into(), DataType::String),
+        ])
+        .unwrap(),
+    );
+    let empty = DataType::Struct(StructFields::default());
     assert_eq!(
         describe_types(&[array, nested, empty, DataType::Null]),
         [

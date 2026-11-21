@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema};
@@ -87,7 +86,7 @@ pub fn resolve_pruned_fields(
         };
 
         // The dtype the plan expects of the column in this file.
-        let full_dtype = DataType::from_arrow_field(arrow_field);
+        let full_dtype = DataType::from_arrow_field(arrow_field)?;
         let expected_dtype = selection.prune_dtype(&full_dtype);
 
         let first_sizes = metadata
@@ -97,10 +96,10 @@ pub fn resolve_pruned_fields(
             .unwrap_or_default();
         let mut pruner = Pruner::new(&first_sizes);
         let decoded = pruner.prune(arrow_field, selection, 0);
-        let dtype = DataType::from_arrow_field(&selection.prune_arrow_field(arrow_field));
+        let dtype = DataType::from_arrow_field(&selection.prune_arrow_field(arrow_field))?;
 
         let narrow_to = |decoded: &ArrowField, dtype: &DataType| -> PolarsResult<_> {
-            let decoded_dtype = DataType::from_arrow_field(decoded);
+            let decoded_dtype = DataType::from_arrow_field(decoded)?;
             (&decoded_dtype != dtype)
                 .then(|| {
                     ColumnSelectorBuilder {
@@ -217,7 +216,7 @@ pub fn narrow_to_scan_schema(
         let Some(arrow_field) = file_arrow_schema.get(name.as_str()) else {
             continue;
         };
-        let file_dtype = DataType::from_arrow_field(arrow_field);
+        let file_dtype = DataType::from_arrow_field(arrow_field).ok()?;
         let target =
             FieldSelection::of_target_dtype(&file_dtype, scan_dtype).normalize(&file_dtype);
         if target.is_all() {
@@ -512,7 +511,11 @@ pub fn resolve_arrow_field_projections(
                 let Some(resolved_transform) = resolved_transform else {
                     assert_eq!(source_name, output_name);
 
-                    return Ok(ArrowFieldProjection::Plain(arrow_field, pruned));
+                    let dtype = match &pruned {
+                        Some(pruned) => pruned.dtype.clone(),
+                        None => file_schema.get(source_name.as_str()).unwrap().clone(),
+                    };
+                    return Ok(ArrowFieldProjection::Plain(arrow_field, dtype, pruned));
                 };
 
                 // The transform reads the dtype it was resolved with: the file's, or a pruned one
@@ -559,7 +562,8 @@ pub fn resolve_arrow_field_projections(
 /// `arrow_field` is the field decoded in the first row group.
 #[derive(Debug)]
 pub enum ArrowFieldProjection {
-    Plain(ArrowField, Option<Arc<PrunedField>>),
+    /// The field, the dtype it is read as, and its pruning.
+    Plain(ArrowField, DataType, Option<Arc<PrunedField>>),
     Mapped {
         arrow_field: ArrowField,
         output_name: PlSmallStr,
@@ -573,14 +577,14 @@ impl ArrowFieldProjection {
     #[inline]
     pub fn arrow_field(&self) -> &ArrowField {
         match self {
-            Self::Plain(field, _) => field,
+            Self::Plain(field, ..) => field,
             Self::Mapped { arrow_field, .. } => arrow_field,
         }
     }
 
     pub fn pruned(&self) -> Option<&PrunedField> {
         match self {
-            Self::Plain(_, pruned) | Self::Mapped { pruned, .. } => pruned.as_deref(),
+            Self::Plain(_, _, pruned) | Self::Mapped { pruned, .. } => pruned.as_deref(),
         }
     }
 
@@ -606,16 +610,15 @@ impl ArrowFieldProjection {
 
     pub fn output_name(&self) -> &PlSmallStr {
         match self {
-            Self::Plain(field, _) => &field.name,
+            Self::Plain(field, ..) => &field.name,
             Self::Mapped { output_name, .. } => output_name,
         }
     }
 
-    pub fn output_dtype(&self) -> Cow<'_, DataType> {
+    pub fn output_dtype(&self) -> &DataType {
         match self {
-            Self::Plain(_, Some(pruned)) => Cow::Borrowed(&pruned.dtype),
-            Self::Plain(field, None) => Cow::Owned(DataType::from_arrow_field(field)),
-            Self::Mapped { output_dtype, .. } => Cow::Borrowed(output_dtype),
+            Self::Plain(_, dtype, _) => dtype,
+            Self::Mapped { output_dtype, .. } => output_dtype,
         }
     }
 

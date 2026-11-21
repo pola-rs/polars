@@ -41,12 +41,9 @@ pub fn normalize_dtype(dtype: &DataType) -> DataType {
             Box::new(normalize_dtype(key)),
             Box::new(normalize_dtype(value)),
         ),
-        DataType::Struct(fields) => DataType::Struct(
-            fields
-                .iter()
-                .map(|f| Field::new(f.name().clone(), normalize_dtype(f.dtype())))
-                .collect(),
-        ),
+        DataType::Struct(fields) => {
+            DataType::Struct(fields.map_fields(|f| normalize_dtype(f.dtype())))
+        },
         dt => dt.clone(),
     }
 }
@@ -842,10 +839,10 @@ mod tests {
             TimeZone::opt_try_new(Some("Etc/UTC")).unwrap(),
         );
         let utc = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
-        let nested = DataType::Struct(vec![Field::new("b".into(), est.clone())]);
+        let nested = DataType::Struct(Field::new("b".into(), est.clone()).into());
         assert_eq!(
             normalize_dtype(&nested),
-            DataType::Struct(vec![Field::new("b".into(), utc.clone())])
+            DataType::Struct(Field::new("b".into(), utc.clone()).into())
         );
         assert_eq!(
             normalize_dtype(&DataType::Array(Box::new(est), 2)),
@@ -915,7 +912,7 @@ mod tests {
         let st = StructChunked::from_series("x".into(), 1, [field].iter())
             .unwrap()
             .into_column();
-        let target = DataType::Struct(vec![Field::new("a".into(), DataType::Int64)]);
+        let target = DataType::Struct(Field::new("a".into(), DataType::Int64).into());
         let e = cast(st.clone(), target.clone()).unwrap_err();
         assert!(e.to_string().contains("x.a"), "{e}");
         let in_list = Series::new("x".into(), &[st.as_materialized_series().clone()]);
@@ -942,14 +939,17 @@ mod tests {
             Series::new("b".into(), &[1.0]),
         );
         // by name, not position: `a` (1.5) is the one that would be cut
-        let reordered = DataType::Struct(vec![
-            Field::new("b".into(), DataType::Float64),
-            Field::new("a".into(), DataType::Int64),
-        ]);
+        let reordered = DataType::Struct(
+            StructFields::try_new(vec![
+                Field::new("b".into(), DataType::Float64),
+                Field::new("a".into(), DataType::Int64),
+            ])
+            .unwrap(),
+        );
         // (the strict cast refuses these itself; the check pairs by name regardless)
         assert!(cast(st(&[a.clone(), b.clone()]), reordered).is_err());
         // a planned field the column lacks
-        let missing = DataType::Struct(vec![Field::new("c".into(), DataType::Int64)]);
+        let missing = DataType::Struct(Field::new("c".into(), DataType::Int64).into());
         assert!(cast(st(&[a.clone(), b.clone()]), missing).is_err());
         // decimals in a struct and in a list of structs
         let dec = |v: &str, scale: usize| {
@@ -957,7 +957,7 @@ mod tests {
                 .cast(&DataType::Decimal(20, scale))
                 .unwrap()
         };
-        let target = DataType::Struct(vec![Field::new("d".into(), DataType::Decimal(20, 1))]);
+        let target = DataType::Struct(Field::new("d".into(), DataType::Decimal(20, 1)).into());
         let e = cast(st(&[dec("1.25", 2)]), target.clone()).unwrap_err();
         assert!(e.to_string().contains("round"), "{e}");
         assert!(cast(st(&[dec("1.20", 2)]), target.clone()).is_ok());

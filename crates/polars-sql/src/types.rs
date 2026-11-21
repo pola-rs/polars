@@ -3,7 +3,7 @@
 //! It also provides utility functions for working with SQL datatypes.
 #[cfg(feature = "dtype-categorical")]
 use polars_core::datatypes::{CategoricalPhysical, Categories, FrozenCategories};
-use polars_core::datatypes::{DataType, Field, TimeUnit, TimeZone};
+use polars_core::datatypes::{DataType, Field, StructFields, TimeUnit, TimeZone};
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_plan::dsl::Expr;
 use polars_plan::dsl::functions::lit;
@@ -108,7 +108,7 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
             polars_ensure!(!fields.is_empty(), SQLSyntax: "STRUCT type requires at least one field");
-            DataType::Struct(fields)
+            DataType::Struct(StructFields::try_new(fields)?)
         },
         #[cfg(feature = "dtype-map")]
         SQLDataType::Map(key, value, _) => {

@@ -171,7 +171,7 @@ impl IpcReaderAsync {
                 };
 
                 let schema = prepare_schema(
-                    Schema::from_arrow_schema(metadata.schema.as_ref()),
+                    Schema::from_arrow_schema(metadata.schema.as_ref())?,
                     options.row_index.as_ref(),
                 );
 

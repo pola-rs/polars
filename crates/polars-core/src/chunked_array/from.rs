@@ -4,7 +4,7 @@ use super::*;
 fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
     // ensure we don't get List<null>
     if let Some(arr) = chunks.get(0) {
-        DataType::from_arrow_dtype(arr.dtype())
+        DataType::from_arrow_dtype(arr.dtype()).expect("invalid arrow dtype for ChunkedArray")
     } else {
         dtype
     }

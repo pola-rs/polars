@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn as _, PlHashMap, PlHashSet};
+use polars_core::prelude::{Column, DataType, IntoColumn as _, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, LIST_ELEMENT_DEFAULT_ID};
@@ -91,34 +91,16 @@ impl ColumnSelectorBuilder {
 
             // Construct index lookups. We don't construct a full schema here to avoid recursive
             // cloning of nested DataTypes.
-            let mut target_fields_lookup: PlHashMap<&str, usize> =
-                PlHashMap::with_capacity(target_fields.len());
-            let mut incoming_fields_lookup: PlHashMap<&str, usize> =
-                PlHashMap::with_capacity(target_fields.len());
-
-            for (i, field) in target_fields.iter().enumerate() {
-                if target_fields_lookup.contains_key(field.name.as_str()) {
-                    polars_bail!(
-                        ComputeError:
-                        "duplicate struct field '{}'",
-                        &field.name,
-                    )
-                }
-
-                target_fields_lookup.insert(field.name.as_str(), i);
-            }
-
-            for (i, field) in incoming_fields.iter().enumerate() {
-                if incoming_fields_lookup.contains_key(field.name.as_str()) {
-                    polars_bail!(
-                        ComputeError:
-                        "duplicate struct field '{}'",
-                        &field.name,
-                    )
-                }
-
-                incoming_fields_lookup.insert(field.name.as_str(), i);
-            }
+            let target_fields_lookup: PlHashMap<&str, usize> = target_fields
+                .iter()
+                .enumerate()
+                .map(|(i, field)| (field.name.as_str(), i))
+                .collect();
+            let incoming_fields_lookup: PlHashMap<&str, usize> = incoming_fields
+                .iter()
+                .enumerate()
+                .map(|(i, field)| (field.name.as_str(), i))
+                .collect();
 
             if matches!(
                 &self.cast_columns_policy.extra_struct_fields,
@@ -554,13 +536,16 @@ impl ColumnSelectorBuilder {
                                 MissingColumnsPolicy::Insert => {
                                     ColumnSelector::Constant(Box::new((
                                         output_column.name.clone(),
-                                        iceberg_default_value_provider
+                                        match iceberg_default_value_provider
                                             .map(|x| build_iceberg_default_value(x, output_column))
                                             .transpose()?
                                             .flatten()
-                                            .unwrap_or_else(|| {
-                                                Scalar::null(output_column.type_.to_polars_dtype())
-                                            }),
+                                        {
+                                            Some(default) => default,
+                                            None => {
+                                                Scalar::null(output_column.type_.to_polars_dtype()?)
+                                            },
+                                        },
                                     )))
                                 },
                                 MissingColumnsPolicy::Raise => {
@@ -664,8 +649,8 @@ impl ColumnSelectorBuilder {
                             return mismatch_err("physical ID mismatch for map values column");
                         }
 
-                        let incoming_key_dtype = incoming_key.type_.to_polars_dtype();
-                        let target_key_dtype = target_key.type_.to_polars_dtype();
+                        let incoming_key_dtype = incoming_key.type_.to_polars_dtype()?;
+                        let target_key_dtype = target_key.type_.to_polars_dtype()?;
 
                         let Ok(cast_key) =
                             incoming_key_dtype.matches_schema_type(&target_key_dtype)
@@ -686,7 +671,7 @@ impl ColumnSelectorBuilder {
 
                         if cast_key {
                             selector = ColumnTransform::Cast {
-                                dtype: target_column.type_.to_polars_dtype(),
+                                dtype: target_column.type_.to_polars_dtype()?,
                                 options: CastOptions::NonStrict,
                             }
                             .into_selector(selector);
@@ -831,7 +816,7 @@ pub fn build_iceberg_default_value_impl(
                     assert_eq!(default.len(), 1);
                     default.with_name(field.name.clone())
                 } else {
-                    Column::full_null(field.name.clone(), 1, &field.type_.to_polars_dtype())
+                    Column::full_null(field.name.clone(), 1, &field.type_.to_polars_dtype()?)
                 });
             }
 

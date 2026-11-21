@@ -563,7 +563,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyDataType {
                     #[cfg(feature = "dtype-array")]
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     #[cfg(feature = "dtype-struct")]
-                    "Struct" => DataType::Struct(vec![]),
+                    "Struct" => DataType::Struct(StructFields::default()),
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
                     "Object" => todo!(),
@@ -662,7 +662,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyDataType {
                     .into_iter()
                     .map(|f| f.0)
                     .collect::<Vec<Field>>();
-                DataType::Struct(fields)
+                DataType::Struct(StructFields::try_new(fields).map_err(PyPolarsErr::from)?)
             },
             "Null" => DataType::Null,
             #[cfg(feature = "object")]

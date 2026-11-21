@@ -56,7 +56,8 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
         let list_dtype_logical = match inner_dtype {
-            None => DataType::from_arrow_dtype(arr.dtype()),
+            // The chunks come from Series, so their struct field names are unique.
+            None => DataType::from_arrow_dtype(arr.dtype()).unwrap(),
             Some(dt) => DataType::List(Box::new(dt)),
         };
 

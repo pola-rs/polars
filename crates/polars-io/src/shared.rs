@@ -93,7 +93,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 
     let mut df = {
         if parsed_dfs.is_empty() {
-            DataFrame::empty_with_schema(&Schema::from_arrow_schema(arrow_schema))
+            DataFrame::empty_with_schema(&Schema::from_arrow_schema(arrow_schema)?)
         } else {
             // If there are any rows, accumulate them into a df
             accumulate_dataframes_vertical_unchecked(parsed_dfs)

@@ -6,7 +6,7 @@ use std::fmt::Write;
 use polars_arrow::array::StructArray;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
 
@@ -20,13 +20,14 @@ use crate::utils::Container;
 
 pub type StructChunked = ChunkedArray<StructType>;
 
+/// `dtype` must be the `Struct` of the `fields`' names and dtypes.
 fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
     name: PlSmallStr,
     length: usize,
     fields: I,
+    dtype: DataType,
 ) -> StructChunked {
     if fields.len() == 0 {
-        let dtype = DataType::Struct(Vec::new());
         let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         let chunks = vec![StructArray::new(arrow_dtype, length, Vec::new(), None).boxed()];
 
@@ -37,11 +38,10 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
     // Different chunk lengths: rechunk and recurse.
     if !fields.clone().map(|s| s.n_chunks()).all_equal() {
         let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
-        return constructor(name, length, fields.iter());
+        return constructor(name, length, fields.iter(), dtype);
     }
 
     let n_chunks = fields.clone().next().unwrap().n_chunks();
-    let dtype = DataType::Struct(fields.clone().map(|s| s.field().into_owned()).collect());
     let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
     let chunks = (0..n_chunks)
@@ -68,7 +68,7 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
         // Different chunks: rechunk and recurse.
         None => {
             let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
-            constructor(name, length, fields.iter())
+            constructor(name, length, fields.iter(), dtype)
         },
     }
 }
@@ -87,7 +87,9 @@ impl StructChunked {
         length: usize,
         fields: I,
     ) -> PolarsResult<Self> {
-        let mut names = PlHashSet::with_capacity(fields.len());
+        let dtype = DataType::Struct(StructFields::try_from_iter(
+            fields.clone().map(|s| s.field().into_owned()),
+        )?);
 
         let mut needs_to_broadcast = false;
         for s in fields.clone() {
@@ -101,8 +103,6 @@ impl StructChunked {
 
             needs_to_broadcast |= length != 1 && s_len == 1;
 
-            polars_ensure!(names.insert(s.name()), duplicate_field = s.name());
-
             match s.dtype() {
                 #[cfg(feature = "object")]
                 DataType::Object(_) => {
@@ -113,14 +113,14 @@ impl StructChunked {
         }
 
         if !needs_to_broadcast {
-            return Ok(constructor(name, length, fields));
+            return Ok(constructor(name, length, fields, dtype));
         }
 
         if length == 0 {
             // @NOTE: There are columns that are being broadcasted so we need to clear those.
             let new_fields = fields.map(|s| s.clear()).collect::<Vec<_>>();
 
-            return Ok(constructor(name, length, new_fields.iter()));
+            return Ok(constructor(name, length, new_fields.iter(), dtype));
         }
 
         let new_fields = fields
@@ -132,7 +132,7 @@ impl StructChunked {
                 }
             })
             .collect::<Vec<_>>();
-        Ok(constructor(name, length, new_fields.iter()))
+        Ok(constructor(name, length, new_fields.iter(), dtype))
     }
 
     /// Convert a struct to the underlying physical datatype.
@@ -160,7 +160,12 @@ impl StructChunked {
                 .map(|s| s.to_physical_repr().into_owned()),
         );
 
-        let mut ca = constructor(self.name().clone(), self.length, physicals.iter());
+        let mut ca = constructor(
+            self.name().clone(),
+            self.length,
+            physicals.iter(),
+            self.dtype().to_physical(),
+        );
         if self.null_count() > 0 {
             ca.zip_outer_validity(self);
         }

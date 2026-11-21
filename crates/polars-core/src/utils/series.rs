@@ -85,16 +85,12 @@ pub fn match_struct_fields(input_dtype: &DataType, output_dtype: &DataType) -> D
             {
                 return input_dtype.clone();
             }
-            let fields =
-                r_fields
-                    .iter()
-                    .map(|r| match l_fields.iter().find(|l| l.name() == r.name()) {
-                        Some(l) => {
-                            Field::new(r.name().clone(), match_struct_fields(l.dtype(), r.dtype()))
-                        },
-                        None => r.clone(),
-                    });
-            D::Struct(fields.collect())
+            D::Struct(r_fields.map_fields(
+                |r| match l_fields.iter().find(|l| l.name() == r.name()) {
+                    Some(l) => match_struct_fields(l.dtype(), r.dtype()),
+                    None => r.dtype().clone(),
+                },
+            ))
         },
         (D::List(l), D::List(r)) => D::List(Box::new(match_struct_fields(l, r))),
         #[cfg(feature = "dtype-array")]
@@ -183,8 +179,8 @@ pub fn handle_array_casting_failures(input: &dyn Array, output: &dyn Array) -> P
     polars_bail!(
         InvalidOperation:
         "conversion from `{}` to `{}` failed for {} out of {} values: {}",
-        DataType::from_arrow(input.dtype(), None),
-        DataType::from_arrow(output.dtype(), None),
+        DataType::from_arrow(input.dtype(), None)?,
+        DataType::from_arrow(output.dtype(), None)?,
         num_failures,
         input.len(),
         Series::try_from((PlSmallStr::EMPTY, failures))?,

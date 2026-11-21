@@ -2041,11 +2041,12 @@ impl SQLExprVisitor<'_> {
         // built from literals: one literal, which VALUES takes
         if let Some(values) = values.iter().map(literal_value).collect::<Option<Vec<_>>>() {
             let (dtypes, values): (Vec<_>, Vec<_>) = values.into_iter().unzip();
-            let fields: Vec<Field> = fields
-                .iter()
-                .zip(dtypes)
-                .map(|(field, dtype)| Field::new(field.key.value.as_str().into(), dtype))
-                .collect();
+            let fields = StructFields::try_from_iter(
+                fields
+                    .iter()
+                    .zip(dtypes)
+                    .map(|(field, dtype)| Field::new(field.key.value.as_str().into(), dtype)),
+            )?;
             let dtype = DataType::Struct(fields.clone());
             return Ok(lit(Scalar::new(
                 dtype,

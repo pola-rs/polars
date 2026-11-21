@@ -32,11 +32,10 @@ pub fn infer_schema<R: std::io::BufRead>(
         polars_bail!(ComputeError: "NDJSON line expected to contain JSON object: {dtype}");
     }
 
-    let schema = StructArray::get_fields(&dtype.to_arrow(CompatLevel::newest()))
+    StructArray::get_fields(&dtype.to_arrow(CompatLevel::newest()))
         .iter()
-        .map(Into::<Field>::into)
-        .collect();
-    Ok(schema)
+        .map(|f| Ok((f.name.clone(), DataType::from_arrow_field(f)?)))
+        .collect()
 }
 
 /// Count the number of rows. The slice passed must represent the entire file.

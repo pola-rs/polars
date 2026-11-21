@@ -264,7 +264,7 @@ pub fn parse_ndjson(
     // Map columns are parsed in source order and decoded after deserialization.
     let has_map = schema.iter_values().any(|dt| dt.contains_map());
     let guide_dtype = has_map
-        .then(|| DataType::Struct(schema.iter_fields().collect()).to_arrow(CompatLevel::newest()));
+        .then(|| DataType::Struct(StructFields::from(schema)).to_arrow(CompatLevel::newest()));
     let guide = guide_dtype.as_ref().map(TapeGuide::new);
     let decode_schema: Option<Schema> = has_map.then(|| {
         schema
