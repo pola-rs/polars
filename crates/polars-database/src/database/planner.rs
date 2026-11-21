@@ -707,9 +707,6 @@ pub fn resolve_scan(
         if volatility.positional && pushdown_disabled.is_none() {
             pushdown_disabled = Some(POSITIONAL_VIEW_REASON.into());
         }
-        if dialect == DialectName::Sqlite && !matches!(backend.kind, BackendKind::ConnectorX) {
-            sqlite_floats_exact_found = sqlite_floats_exact(session.as_mut());
-        }
         // a view's columns hold what its query gives, whatever `pragma_table_info` says
         // (the first branch's type, of a `UNION`)
         if dialect == DialectName::Sqlite && volatility.plain_table {
@@ -953,6 +950,13 @@ pub fn resolve_scan(
                     money_columns.insert(name.clone(), t.clone());
                 }
             }
+        }
+        if dialect == DialectName::Sqlite
+            && !matches!(backend.kind, BackendKind::ConnectorX)
+            && pushdown_disabled.is_none()
+            && columns.iter().any(|c| c.dtype.is_float())
+        {
+            sqlite_floats_exact_found = sqlite_floats_exact(session.as_mut());
         }
         schema = Arc::new(discovered);
     }
@@ -1309,7 +1313,8 @@ pub fn resolve_scan(
 /// relies on it not being so: several partitions (each reads it again), or a filter
 /// pushed into the database on a column of a volatile function, where the database merges
 /// a view or query into the filter's and calls `random()` again for it (SQLite, MySQL;
-/// others don't push a filter into a query that calls a volatile function).
+/// others don't push a filter into a query that calls a volatile function). Any pushed filter
+/// fails the read of a source that pairs rows by their place or reads a redacted table.
 pub fn check_unplanned_volatility(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -1321,6 +1326,23 @@ pub fn check_unplanned_volatility(
         return Ok(false);
     }
     let volatility = unplanned_volatility(session, config);
+    if let Some(column) = compiled.filter_columns.first() {
+        let why = if volatility.redacted {
+            Some("a table it reads has redacted columns, which the database compares as stored")
+        } else if volatility.positional {
+            Some(POSITIONAL_VIEW_REASON)
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            polars_bail!(
+                InvalidOperation:
+                "a filter on '{column}' was planned to run in the database, but {why} \
+                (found when reading: schema= skips the check when planning); filter after \
+                collecting, or leave out schema="
+            );
+        }
+    }
     let Some(reason) = volatility.volatile else {
         return Ok(false);
     };
@@ -1670,7 +1692,7 @@ fn in_utc(dtype: &DataType) -> DataType {
 const POSITIONAL_REASON: &str = "a positional join (PASTE, POSITIONAL) pairs rows by their place, \
     which a pushed filter changes";
 const POSITIONAL_VIEW_REASON: &str = "a view it reads pairs rows by their place (PASTE, \
-    POSITIONAL), which a pushed filter changes";
+    POSITIONAL) or has a SETTINGS clause that may cut its rows, which a pushed filter changes";
 const SETTINGS_REASON: &str = "a SETTINGS clause (an overflow mode, a row limit) may cut or \
     change the rows, which a pushed filter changes";
 
@@ -4071,7 +4093,14 @@ fn source_volatility(
             }
             let (sql, qualifier) =
                 match catalog::view_definition(session, dialect, &parts, &context) {
-                    catalog::ViewLookup::View { sql, qualifier } => (sql, qualifier),
+                    catalog::ViewLookup::View {
+                        sql,
+                        qualifier,
+                        redacted,
+                    } => {
+                        out.redacted |= redacted;
+                        (sql, qualifier)
+                    },
                     catalog::ViewLookup::NotAView => {
                         out.plain_table |= own_columns;
                         continue;
@@ -4938,6 +4967,11 @@ mod tests {
             conversion(DialectName::Trino, "timestamp(3) with time zone").as_deref(),
             Some("\"c\" AT TIME ZONE 'UTC'")
         );
+        assert_eq!(
+            conversion(DialectName::Trino, "timestamp(9)").as_deref(),
+            Some("CAST(\"c\" AS VARCHAR)")
+        );
+        assert_eq!(conversion(DialectName::Trino, "array(timestamp(9))"), None);
     }
 
     #[test]

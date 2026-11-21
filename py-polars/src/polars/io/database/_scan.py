@@ -606,8 +606,8 @@ def scan_database(
     order_by
         Order rows by these columns. Without it, row order is unspecified.
     consistency : {'none', 'snapshot'}
-        `'snapshot'` requires the whole read to see one database state. The source
-        is read with one query, which does.
+        `'snapshot'` requires every partition of a read to see the same database
+        state. Every scan is read with one query for now, so it adds no check.
     max_connections
         The maximum number of concurrent connections. Defaults: 1 for SQLite and
         DuckDB and for a live connection, 8 for Snowflake, BigQuery, Databricks,

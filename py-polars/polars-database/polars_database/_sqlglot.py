@@ -1463,13 +1463,12 @@ def _volatile_columns(stmt: Any, calls: list[Any]) -> list[str] | None:
 
 
 # ClickHouse settings that change how a query runs, not what it returns (those with an
-# `*_overflow_mode` of `any` or `break`, `max_rows_to_*` limits and the like cut or
-# change the result)
+# `*_overflow_mode` of `any` or `break`, `max_rows_to_*` limits, `max_execution_time`
+# under `timeout_overflow_mode = 'break'` and the like cut or change the result)
 _HARMLESS_SETTINGS = frozenset(
     {
         "max_threads",
         "max_block_size",
-        "max_execution_time",
         "max_memory_usage",
         "max_bytes_before_external_group_by",
         "max_bytes_before_external_sort",

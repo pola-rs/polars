@@ -5043,3 +5043,9 @@ def test_duckdb_positional_join_filters_after_the_read(tmp_path: Any) -> None:
     df = lf.collect()
     assert df.height == 99
     assert (df["id"] == df["k"]).all()
+    # `schema=` finds it only when reading, after the filter was pushed
+    schema = {"id": pl.Int64, "k": pl.Int64}
+    lf = pl.scan_database("p", f"duckdb:///{path}", schema=schema)
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="by their place"):
+        lf.filter(pl.col("k") < 100).collect()
+    assert lf.collect().height == 400

@@ -44,32 +44,20 @@ pub(crate) enum TrinoWide {
     Instant,
     /// `timestamp(p)`, `time(p)`, `time(p) with time zone`
     Plain,
-    /// an array, map or row holding one
-    Nested,
 }
 
-/// Whether a (lower-case) Trino type is or holds a `timestamp(p)` / `time(p)` with `p > 6`.
+/// Whether a (lower-case) Trino type is a `timestamp(p)` / `time(p)` with `p > 6`.
 pub(crate) fn trino_wide_temporal(t: &str) -> Option<TrinoWide> {
-    let mut wide = false;
-    for key in ["timestamp(", "time("] {
-        let mut rest = t;
-        while let Some(i) = rest.find(key) {
-            // (`timestamp(` holds no `time(`; a column named `x_time(` isn't a type)
-            let after = &rest[i + key.len()..];
-            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
-            if digits.parse::<u32>().is_ok_and(|p| p > 6) {
-                wide = true;
-            }
-            rest = after;
-        }
-    }
-    if !wide {
+    let digits = t
+        .strip_prefix("timestamp(")
+        .or_else(|| t.strip_prefix("time("))?
+        .split_once(')')?
+        .0;
+    if !digits.trim().parse::<u32>().is_ok_and(|p| p > 6) {
         return None;
     }
     Some(
-        if t.starts_with("array(") || t.starts_with("map(") || t.starts_with("row(") {
-            TrinoWide::Nested
-        } else if t.starts_with("timestamp(") && t.ends_with("with time zone") {
+        if t.starts_with("timestamp(") && t.ends_with("with time zone") {
             TrinoWide::Instant
         } else {
             TrinoWide::Plain
@@ -352,9 +340,8 @@ impl DialectName {
             Self::Clickhouse if !clickhouse_native_type(t) => Some(format!("toString({column})")),
             // `timestamp(7..12)` and `time(7..12)`: the `trino` driver rounds them to
             // microseconds and ADBC panics outside 1677-2262 (as nanoseconds): their exact
-            // text, which a nested type holds as JSON.
+            // text.
             Self::Trino => trino_wide_temporal(t).map(|wide| match wide {
-                TrinoWide::Nested => format!("json_format(CAST({column} AS JSON))"),
                 TrinoWide::Instant => format!("CAST({column} AT TIME ZONE 'UTC' AS VARCHAR)"),
                 TrinoWide::Plain => format!("CAST({column} AS VARCHAR)"),
             }),
