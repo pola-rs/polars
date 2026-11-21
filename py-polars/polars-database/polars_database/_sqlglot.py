@@ -1418,7 +1418,9 @@ _KNOWN_AGGREGATES = frozenset(
 
 
 # Aggregates whose float result depends on the order the rows are added in (a parallel
-# aggregate adds in another order each run). Exact over integers and decimals only.
+# aggregate adds in another order each run). `Sum` and `Avg` are exact over integers and
+# decimals; the others are computed in floats over any argument.
+_EXACT_ARGUMENT_AGGREGATES = frozenset({"Sum", "Avg"})
 _FLOAT_SENSITIVE_AGGREGATES = frozenset(
     {
         "Sum",
@@ -1500,8 +1502,13 @@ def _row_picking_join(node: Any, dialect: str | None) -> bool:
 
 def _inexact_aggregate(node: Any) -> bool:
     """Whether `node` is a float-sensitive aggregate of an argument not shown exact."""
-    return type(node).__name__ in _FLOAT_SENSITIVE_AGGREGATES and not all(
-        _exact_operand(a) for a in (node.args.get("this"), node.args.get("expression"))
+    name = type(node).__name__
+    return name in _FLOAT_SENSITIVE_AGGREGATES and not (
+        name in _EXACT_ARGUMENT_AGGREGATES
+        and all(
+            _exact_operand(a)
+            for a in (node.args.get("this"), node.args.get("expression"))
+        )
     )
 
 
@@ -1740,7 +1747,31 @@ def _picks_arbitrary_rows(stmt: Any, dialect: str | None) -> bool:
         c.name.lower() == "rownum" and not c.table for c in stmt.find_all(exp.Column)
     ):
         return True
+    if dialect == "sqlite" and any(
+        _multi_row_scalar_subquery(q) for q in stmt.find_all(exp.Subquery)
+    ):
+        return True
     return any(d.args.get("on") is not None for d in stmt.find_all(exp.Distinct))
+
+
+def _multi_row_scalar_subquery(node: Any) -> bool:
+    """
+    Whether a subquery is a scalar one that may return several rows, of which SQLite
+    takes the first it scans. One aggregate row (no `GROUP BY`) or a `SELECT` without
+    `FROM` is one row.
+    """
+    if isinstance(
+        node.parent, (exp.From, exp.Join, exp.SetOperation, exp.In, exp.Subquery)
+    ):
+        return False
+    query = node.this
+    if not isinstance(query, exp.Select):
+        return True
+    if query.args.get("from_", query.args.get("from")) is None:
+        return False
+    return query.args.get("group") is not None or not all(
+        s.find(exp.AggFunc) is not None for s in query.selects
+    )
 
 
 def _collapses_rows(stmt: Any) -> bool:
@@ -2494,6 +2525,16 @@ def _hides_statement(
     return False
 
 
+def _executable_comment(tokens: list[Any], dialect: str | None) -> bool:
+    """
+    Whether a MySQL executable comment (`/*! … */`, MariaDB's `/*M! … */`) is in the
+    query: the server runs its text as SQL, which the parser took as a comment.
+    """
+    return dialect in ("mysql", "mariadb", "singlestore") and any(
+        c.startswith(("!", "M!")) for t in tokens for c in t.comments
+    )
+
+
 def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     """Facts about a user query that decide whether it can be wrapped."""
     facts = _no_facts()
@@ -2513,6 +2554,7 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
             return _unparsed_facts(facts, sql, dialect)
         sql = plain
     facts["parses"] = True
+    executable = _executable_comment(tokens, dialect)
     # the query without the semicolons and comments after its last token, which can't
     # go inside `(...)` (MySQL's `#` comment would comment out the parenthesis)
     while tokens and tokens[-1].token_type == sqlglot.TokenType.SEMICOLON:
@@ -2607,6 +2649,7 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     facts["unproven"] = sorted(
         {_describe(n, dialect) for n in unproven if not any(n is f for f in flagged)}
         | {f"{n}()" for n in written}
+        | ({"an executable comment (/*! */)"} if executable else set())
     )[:5]
     # A view among them may call a volatile function (`catalog::view_definition`).
     facts["tables"], facts["final_tables"] = _tables(stmt, dialect)
@@ -2620,6 +2663,7 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
         and not unproven
         and not written
         and not _picks_arbitrary_rows(stmt, dialect)
+        and not executable
     )
     # Running it may change something: a function sqlglot doesn't know (`nextval`, or a
     # user's, which may write), a sequence's pseudo-column, a variable assignment.

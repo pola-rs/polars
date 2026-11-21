@@ -2745,6 +2745,23 @@ def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> Non
         ("clickhouse", "SELECT g FROM t GROUP BY g HAVING stddevPop(x) > 1", False),
         ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(CAST(x AS INT)) > 5", True),
         ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(1) > 5", True),
+        # computed in floats over integers too
+        (
+            "duckdb",
+            "SELECT g FROM t GROUP BY g HAVING stddev(CAST(x AS BIGINT)) > 5",
+            False,
+        ),
+        # SQLite takes the first row a scalar subquery scans
+        ("sqlite", "SELECT id, (SELECT id FROM t) AS k FROM t", False),
+        ("sqlite", "SELECT id FROM t WHERE id = (SELECT id FROM u)", False),
+        ("sqlite", "SELECT id, (SELECT max(id) FROM t) AS k FROM t", True),
+        ("sqlite", "SELECT id, (SELECT 1) AS k FROM t", True),
+        ("sqlite", "SELECT id FROM t WHERE id IN (SELECT id FROM u)", True),
+        ("postgres", "SELECT id, (SELECT id FROM t) AS k FROM t", True),
+        # the server runs an executable comment's text
+        ("mysql", "SELECT 0 /*! + RAND() */ AS k, id FROM t", False),
+        ("mysql", "SELECT id /*M! , RAND() AS r */ FROM t", False),
+        ("mysql", "SELECT id FROM t /* RAND() */", True),
     ],
 )
 def test_row_picking_joins_and_float_aggregates_are_not_repeatable(
@@ -2775,6 +2792,10 @@ def test_a_float_aggregate_output_column_is_volatile_not_the_whole_query(
     )
     assert facts["repeatable"] is True
     assert facts["volatile_columns"] == []
+    facts = inspect_query(
+        "SELECT g, stddev(CAST(x AS BIGINT)) AS k FROM t GROUP BY g", dialect
+    )
+    assert set(facts["volatile_columns"]) == {"k"}
 
 
 def test_positional_joins_are_a_fact_for_pushdown() -> None:
