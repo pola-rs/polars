@@ -205,3 +205,29 @@ fn prim_checked_mul_scalar<I: NativeType + CheckedMul + WrappingMul>(
 
     PrimitiveArray::<I>::new(I::PRIMITIVE.into(), out.into(), Some(validity))
 }
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::PrimitiveArray;
+
+    use super::ArithmeticKernel;
+
+    #[test]
+    fn test_true_div_scalar() {
+        let out = PrimitiveArray::from_vec(vec![35i64, 41, 100, -35]).true_div_scalar(100);
+        assert_eq!(out.values().as_slice(), [0.35, 0.41, 1.0, -0.35]);
+        let out = PrimitiveArray::from_vec(vec![35u32, 41]).true_div_scalar(100);
+        assert_eq!(out.values().as_slice(), [0.35, 0.41]);
+        let out = PrimitiveArray::from_vec(vec![150.0f64]).true_div_scalar(1500.0);
+        assert_eq!(out.values().as_slice(), [0.1]);
+    }
+
+    #[test]
+    fn test_float_floor_div_and_mod_scalar() {
+        let arr = PrimitiveArray::from_vec(vec![49.0f64, -150.0]);
+        let out = arr.clone().wrapping_floor_div_scalar(49.0);
+        assert_eq!(out.values().as_slice(), [1.0, -4.0]);
+        let out = arr.wrapping_mod_scalar(49.0);
+        assert_eq!(out.values().as_slice(), [0.0, 46.0]);
+    }
+}
