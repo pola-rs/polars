@@ -7569,3 +7569,58 @@ def test_mssql_rowcount_on_the_session_is_refused() -> None:
         assert pl.scan_database(table, conn).collect().height == 400
     finally:
         conn.close()
+
+
+@needs_postgres
+@pytest.mark.parametrize(
+    "driver",
+    [
+        "psycopg",
+        "psycopg2",
+        "sqlalchemy",
+        "sqlalchemy+psycopg2",
+        "factory",
+        "live",
+        "adbc",
+    ],
+)
+@pytest.mark.parametrize("batch_size", [2**31 - 1, 2**31, 2**32, 2**33, sys.maxsize])
+def test_postgres_huge_batch_size_reads_every_row(driver: str, batch_size: int) -> None:
+    # the batch size is a hint: psycopg2 keeps it in a C int, where 2**32 reads no rows
+    # a table per parametrization: they may run at once on other workers
+    table = f"review_huge_batch_{driver.replace('+', '_')}_{batch_size}"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} AS SELECT g AS id FROM generate_series(1, 20) g",
+        ],
+    )
+    if driver == "sqlalchemy+psycopg2":
+        pytest.importorskip("sqlalchemy")
+        assert POSTGRES is not None
+        lf = pl.scan_database(
+            table,
+            _sqlalchemy_url(POSTGRES, "psycopg2"),
+            driver="sqlalchemy",
+            batch_size=batch_size,
+        )
+    else:
+        lf = _scan("postgres17", driver, table, batch_size=batch_size)
+    assert sorted(lf.collect()["id"].to_list()) == list(range(1, 21))
+    assert lf.select(pl.len()).collect().item() == 20
+
+
+@pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
+@ORACLE_GROUP
+@pytest.mark.parametrize("driver", ["oracledb", "sqlalchemy"])
+@pytest.mark.parametrize("batch_size", [2**31 - 1, 2**33, sys.maxsize])
+def test_oracle_huge_batch_size_reads_every_row(driver: str, batch_size: int) -> None:
+    # the driver allocates a whole fetch up front: the batch size is capped
+    lf = _scan(
+        "oracle",
+        driver,
+        "SELECT level AS id FROM dual CONNECT BY level <= 50",
+        batch_size=batch_size,
+    )
+    assert sorted(lf.collect()["ID"].to_list()) == list(range(1, 51))
