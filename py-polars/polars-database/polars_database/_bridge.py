@@ -2505,13 +2505,24 @@ class _Session:
                 status = None if self.owned else _transaction_idle(self.conn)
                 idle = status is True
                 in_database = status is False
-                if in_database and _is_orm_session(self.conn):
-                    # an ORM transaction in AUTOCOMMIT has none in the database
-                    run_on = _session_connection(self.conn)
+                if in_database and _module_of(self.conn) == "sqlalchemy":
+                    # a SQLAlchemy transaction in AUTOCOMMIT (SQLAlchemy's, or the
+                    # driver's own) has none in the database
+                    run_on = (
+                        _session_connection(self.conn)
+                        if _is_orm_session(self.conn)
+                        else self.conn
+                    )
+                    driver = getattr(
+                        getattr(run_on, "connection", None), "driver_connection", None
+                    )
                     in_database = not (
-                        run_on is not None
-                        and _sqlalchemy_autocommit(run_on)
-                        and _transaction_idle(run_on) is True
+                        driver is not None
+                        and (
+                            _sqlalchemy_autocommit(run_on)
+                            or getattr(driver, "autocommit", False) is True
+                        )
+                        and _transaction_idle(driver) is True
                     )
                 if in_database and _postgres_family(self.conn):
                     # In the user's transaction, a failed statement (a catalog lookup

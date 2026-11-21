@@ -2139,7 +2139,7 @@ def test_postgres_autocommit_connections_are_read(module: str) -> None:
 
 
 @needs_postgres
-def test_postgres_failed_scan_keeps_a_begun_orm_session_usable() -> None:
+def test_postgres_scan_in_a_begun_sqlalchemy_transaction() -> None:
     # the Session's transaction has no database transaction yet: the scan's failing
     # statement begins one, which must not be left aborted
     sqlalchemy = pytest.importorskip("sqlalchemy")
@@ -2153,6 +2153,19 @@ def test_postgres_failed_scan_keeps_a_begun_orm_session_usable() -> None:
             with pytest.raises(pl.exceptions.ComputeError, match="does not exist"):
                 pl.scan_database("SELECT * FROM bos_no_such_table", session).collect()
             assert session.execute(sqlalchemy.text("SELECT 1")).scalar() == 1
+    finally:
+        engine.dispose()
+    # the driver's own autocommit: no database transaction for a savepoint
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(POSTGRES, "psycopg"), connect_args={"autocommit": True}
+    )
+    try:
+        with engine.connect() as conn:
+            conn.begin()
+            assert pl.scan_database("SELECT 1 AS x", conn).collect().item() == 1
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                assert pl.scan_database("SELECT 1 AS x", session).collect().item() == 1
     finally:
         engine.dispose()
 
