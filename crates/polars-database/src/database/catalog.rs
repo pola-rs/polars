@@ -1133,7 +1133,7 @@ impl CatalogQueries {
                         "SELECT c.name, CASE WHEN b.name IN ('decimal', 'numeric') \
                         THEN CONCAT(b.name, '(', c.precision, ',', c.scale, ')') \
                         WHEN b.name IN ('datetime2', 'time', 'datetimeoffset') \
-                        THEN CONCAT(b.name, '(', c.scale, ')') ELSE b.name END \
+                        THEN CONCAT(b.name, '(', c.scale, ')') ELSE b.name END AS type_name \
                         FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id \
                         CROSS APPLY (SELECT CASE WHEN t.is_user_defined = 1 \
                         AND t.is_assembly_type = 0 AND t.is_table_type = 0 \
@@ -1143,7 +1143,8 @@ impl CatalogQueries {
                     compare_types: None,
                     declared_sql: None,
                     stats: Some(format!(
-                        "SELECT SUM(row_count), SUM(used_page_count) * 8192 \
+                        "SELECT SUM(row_count) AS row_count, \
+                        SUM(used_page_count) * 8192 AS size_bytes \
                         FROM sys.dm_db_partition_stats WHERE object_id = {object} AND index_id IN (0, 1)"
                     )),
                 }
@@ -1744,11 +1745,12 @@ pub fn view_definition(
             };
         },
         DialectName::Mssql => format!(
-            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
-            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
+            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
+            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END, \
+            WHERE s.object_id = o.object_id) END AS base_object, \
             CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
+            AS definition_bytes \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({})",
             dialect.quote_nstr(&qualified)
         ),
@@ -1778,11 +1780,12 @@ pub fn view_definition(
             )
         });
         let Some(found) = run(&format!(
-            "SELECT TOP 2 CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
-            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
+            "SELECT TOP 2 CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
+            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END, \
+            WHERE s.object_id = o.object_id) END AS base_object, \
             CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
+            AS definition_bytes \
             FROM sys.objects o WHERE LOWER(o.name) = LOWER({}){in_schema}",
             dialect.quote_nstr(name)
         )) else {
@@ -1804,10 +1807,11 @@ pub fn view_definition(
             return ViewLookup::Failed;
         }
         let Some(target) = run(&format!(
-            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
-            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
-            CASE WHEN o.type = 'SN' THEN o.name END, \
+            "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
+            CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
+            CASE WHEN o.type = 'SN' THEN o.name END AS base_object, \
             CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
+            AS definition_bytes \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({})",
             dialect.quote_nstr(&base)
         )) else {
