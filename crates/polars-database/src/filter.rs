@@ -1667,6 +1667,7 @@ pub(crate) mod tests {
             derived_order_dropped: false,
             sqlite_floats_exact: true,
             refused_columns: vec![],
+            unnamed_columns: false,
             resolution: None,
             bounds_cache: Default::default(),
         }

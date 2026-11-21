@@ -565,6 +565,47 @@ pub fn trino_positional_types(
     (0..columns).map(|i| cell_str(&df, i, 0)).collect()
 }
 
+/// The output columns of a SQL Server query, if one has no name (`SELECT count(*)`: a derived
+/// table over it is an error, and drivers name it `''`, `column_1` or nothing): every column
+/// as the server describes it, an unnamed one `column_<position from 0>` (the name
+/// ConnectorX gives it), made unique. `None` if all are named, or the query can't be described
+/// (its columns are then read as the server names them).
+pub fn mssql_unnamed_columns(
+    session: &mut dyn DatabaseSession,
+    sql: &str,
+) -> Option<Vec<PlSmallStr>> {
+    let df = session
+        .catalog_query(&format!(
+            "SELECT name FROM sys.dm_exec_describe_first_result_set(N{}, NULL, 0) \
+            WHERE is_hidden = 0 ORDER BY column_ordinal",
+            DialectName::Mssql.quote_str(sql)
+        ))
+        .ok()?;
+    let names: Vec<Option<String>> = (0..df.height())
+        .map(|i| cell_str(&df, 0, i).filter(|n| !n.is_empty()))
+        .collect();
+    if names.iter().all(Option::is_some) {
+        return None;
+    }
+    let mut out: Vec<String> = vec![];
+    for (i, name) in names.iter().enumerate() {
+        out.push(name.clone().unwrap_or_else(|| format!("column_{i}")));
+    }
+    // a generated name that is a real one too gets a `_`
+    for i in 0..out.len() {
+        if names[i].is_none() {
+            while out
+                .iter()
+                .enumerate()
+                .any(|(j, o)| j != i && o.eq_ignore_ascii_case(&out[i]))
+            {
+                out[i].push('_');
+            }
+        }
+    }
+    Some(out.into_iter().map(Into::into).collect())
+}
+
 /// Looks up the result types of a query source, which decide how the database compares its
 /// columns (they don't change how the columns are read). `from` is the wrapped query
 /// (`(...) pl_q`), `columns` its output columns. Dialects without a lookup, or a failing one,
