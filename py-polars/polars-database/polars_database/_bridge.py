@@ -229,6 +229,22 @@ def _is_orm_session(obj: Any) -> bool:
     )
 
 
+def _session_connection(session: Any) -> Any:
+    """
+    The SQLAlchemy Connection an ORM Session runs on, or None if it has none yet.
+
+    A Session bound to a Connection runs on it, whose transaction and results may be
+    the user's while the Session has none of its own.
+    """
+    with contextlib.suppress(Exception):
+        bind = session.get_bind()
+        if _module_of(bind) == "sqlalchemy" and type(bind).__name__ == "Connection":
+            return bind
+        if session.in_transaction():
+            return session.connection()
+    return None
+
+
 def _has_pool(obj: Any, name: str) -> bool:
     pool = getattr(obj, "pool", None)
     return pool is not None and any(c.__name__ == name for c in type(pool).__mro__)
@@ -1551,6 +1567,8 @@ def _params_keyword(cx: Any) -> str:
 
 def _transaction_idle(conn: Any) -> bool | None:
     """Whether a connection is outside a transaction; `None` if unknown."""
+    if _is_orm_session(conn) and (bound := _session_connection(conn)) is not None:
+        return _transaction_idle(bound)
     with contextlib.suppress(Exception):
         if (info := getattr(conn, "info", None)) is not None and hasattr(
             info, "transaction_status"
@@ -1633,10 +1651,8 @@ def _refuse_pending_results(conn: Any) -> None:
         # a SQLAlchemy Connection, or an ORM Session's (only one in a transaction has
         # one): the driver's is what holds the result
         with contextlib.suppress(Exception):
-            if _is_orm_session(conn):
-                if not conn.in_transaction():
-                    return
-                conn = conn.connection()
+            if _is_orm_session(conn) and (conn := _session_connection(conn)) is None:
+                return
             conn = conn.connection.driver_connection
     if _module_of(conn) != "pymysql":
         return
@@ -2357,13 +2373,10 @@ class _Session:
         params: Any = None,
         factory: bool = False,
         invalidate: Callable[[], None] | None = None,
-        pool_shared: bool = False,
     ) -> None:
         _register_at_exit_before_duckdb(conn)
         self.conn = conn
         self.owned = owned
-        # a factory's checkout of a pool that shares one connection with the user
-        self.pool_shared = pool_shared
         # from the user's function, whose `close` may return it to a pool of theirs
         self.factory = factory
         self.execute_options = execute_options
@@ -2728,14 +2741,6 @@ class _Session:
     def execute_update(self, sql: str) -> None:
         """Run a session setup statement (read-only transactions, time zone, ...)."""
         conn = self.conn
-        if self.pool_shared:
-            msg = (
-                "the connection function returns the connection that its pool shares "
-                "with the user's own (StaticPool, AssertionPool), whose session the "
-                "scan must not change: pass the Engine itself, which is read as a live "
-                "connection"
-            )
-            raise TypeError(msg)
         if not self.owned:
             # a live connection is the user's: its session settings are left alone
             return
@@ -3266,6 +3271,9 @@ def adbc_connect(
 
 _ASSERTION_POOL_LOCK = threading.Lock()
 
+# the dialects with a session setup (`DialectName::session_setup`)
+_SESSION_SETUP_DIALECTS = ("postgresql", "mysql", "oracle")
+
 
 def _assertion_pool_busy(e: AssertionError) -> bool:
     return str(e).startswith("connection is already checked out")
@@ -3315,9 +3323,19 @@ def connect(
                             raise
                         time.sleep(0.002)
         if (shared := shared_pool_connection(checkout)) is not None:
+            if dialect in _SESSION_SETUP_DIALECTS:
+                # the plan relies on the session setup, which the user's connection
+                # must not get
+                msg = (
+                    "the connection function returns the connection that its pool "
+                    "shares with the user's own (StaticPool, AssertionPool), whose "
+                    "session the scan must not set up: pass the Engine itself, which "
+                    "is read as a live connection"
+                )
+                raise TypeError(msg)
             # one connection that the user's own statements use too (an open
             # transaction): a live connection, never rolled back or closed
-            return _Session(shared, owned=False, pool_shared=True, **session)
+            return _Session(shared, owned=False, **session)
         conn, close, invalidate = _pool_checkout(checkout)
         return _Session(
             conn,

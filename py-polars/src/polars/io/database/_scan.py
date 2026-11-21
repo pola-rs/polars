@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import dis
 import functools
 import operator
 import re
@@ -183,10 +184,17 @@ def _factory_singleton_engine(factory: Any) -> Any:
         for cell in getattr(obj, "__closure__", None) or ():
             with contextlib.suppress(ValueError):
                 related.append(cell.cell_contents)
+        related += getattr(obj, "__defaults__", None) or ()
+        related += (getattr(obj, "__kwdefaults__", None) or {}).values()
         code = getattr(obj, "__code__", None)
         globs = getattr(obj, "__globals__", None)
         if code is not None and globs is not None:
-            related += [globs.get(name) for name in code.co_names]
+            # the globals it reads (`co_names` also holds attribute names)
+            related += [
+                globs.get(i.argval)
+                for i in dis.get_instructions(code)
+                if i.opname in ("LOAD_GLOBAL", "LOAD_NAME")
+            ]
         for item in related:
             visit(item, depth + 1)
 

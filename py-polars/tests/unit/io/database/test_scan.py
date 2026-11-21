@@ -4849,18 +4849,56 @@ def test_scan_function_over_several_shared_pool_engines_is_refused() -> None:
         b.dispose()
 
 
-def test_scan_shared_pool_connection_of_a_factory_refuses_the_session_setup() -> None:
-    # the scan doesn't change the session of a connection the user shares
-    from polars_database._bridge import _Session
+@pytest.mark.parametrize("dialect", ["sqlite", "postgresql"])
+def test_scan_shared_pool_factory_of_a_dialect_with_a_session_setup_is_refused(
+    dialect: str,
+) -> None:
+    # the plan relies on the session setup, which the user's connection must not get
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars_database._bridge import connect
 
-    session = _Session(
-        sqlite3.connect(":memory:"), owned=False, execute_options={}, pool_shared=True
+    engine = sqlalchemy.create_engine(
+        "sqlite://",
+        poolclass=sqlalchemy.pool.StaticPool,
+        connect_args={"check_same_thread": False},
     )
-    with pytest.raises(TypeError, match="pass the Engine itself"):
-        session.execute_update("SET TIME ZONE 'UTC'")
-    _Session(
-        sqlite3.connect(":memory:"), owned=False, execute_options={}
-    ).execute_update("SET TIME ZONE 'UTC'")
+    try:
+        user = engine.raw_connection()
+        user.driver_connection.execute("CREATE TABLE t (v INTEGER)")
+        user.driver_connection.execute("INSERT INTO t VALUES (1)")
+        args: tuple[Any, ...] = (
+            "python",
+            "factory",
+            engine.connect,
+            [],
+            [],
+            dialect,
+            None,
+        )
+        if dialect == "sqlite":
+            connect(*args).close()
+        else:
+            with pytest.raises(TypeError, match="pass the Engine itself"):
+                connect(*args)
+        assert user.driver_connection.in_transaction
+        user.close()
+    finally:
+        engine.dispose()
+
+
+def test_scan_function_engine_lookup_reads_only_its_globals_and_defaults() -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars.io.database._scan import _factory_singleton_engine
+
+    engine = sqlalchemy.create_engine("sqlite://")
+    try:
+        ns: dict[str, Any] = {"engine": engine}
+        exec("def attribute():\n    return tenant.engine.connect()", ns)
+        exec("def default(e=None, *, k=engine):\n    return k.connect()", ns)
+        assert _factory_singleton_engine(ns["attribute"]) is None
+        assert _factory_singleton_engine(ns["default"]) is engine
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.skipif(

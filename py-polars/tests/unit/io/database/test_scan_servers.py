@@ -2056,19 +2056,21 @@ def test_pymysql_scan_after_a_stored_procedure_call(how: str) -> None:
     pymysql = pytest.importorskip("pymysql")
     uri = SERVERS["mysql"].uri
     assert uri is not None
+    proc = f"polars_scan_call_p_{how}"
     conn = pymysql.connect(**_parts(uri), autocommit=True)
     try:
         cur = conn.cursor()
-        cur.execute("DROP PROCEDURE IF EXISTS polars_scan_call_p")
-        cur.execute("CREATE PROCEDURE polars_scan_call_p() BEGIN SELECT 1 AS a; END")
+        cur.execute(f"DROP PROCEDURE IF EXISTS {proc}")
+        cur.execute(f"CREATE PROCEDURE {proc}() BEGIN SELECT 1 AS a; END")
         if how == "execute":
-            cur.execute("CALL polars_scan_call_p()")
+            cur.execute(f"CALL {proc}()")
         else:
-            cur.callproc("polars_scan_call_p")
+            cur.callproc(proc)
         assert cur.fetchall() == ((1,),)
         assert pl.scan_database("SELECT 7 AS x", conn).collect().item() == 7
-        cur.execute("DROP PROCEDURE polars_scan_call_p")
     finally:
+        with contextlib.suppress(Exception):
+            conn.cursor().execute(f"DROP PROCEDURE IF EXISTS {proc}")
         conn.close()
 
 
