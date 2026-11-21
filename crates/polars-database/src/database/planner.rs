@@ -38,15 +38,40 @@ fn verbose() -> bool {
 }
 
 /// The `FROM` target of a relation, for the fixed discovery and catalog SQL.
-fn quoted_relation(dialect: DialectName, relation: &DatabaseRelation) -> String {
+fn quoted_relation(
+    dialect: DialectName,
+    relation: &DatabaseRelation,
+    columns: &[PlSmallStr],
+) -> String {
     match relation {
         DatabaseRelation::Table { parts, .. } => parts
             .iter()
             .map(|p| dialect.quote_ident(p))
             .collect::<Vec<_>>()
             .join("."),
-        DatabaseRelation::Query { sql } => format!("({}) pl_q", wrappable(sql)),
+        DatabaseRelation::Query { sql } => {
+            format!(
+                "({}) pl_q{}",
+                wrappable(sql),
+                derived_column_list(dialect, columns)
+            )
+        },
     }
+}
+
+/// The alias's column list (`("a", "b")`) of a derived table over a query, for the dialects
+/// where the outer query can't refer to a column the server named itself (see
+/// [`DialectName::names_derived_columns`]); empty otherwise, or without the columns.
+fn derived_column_list(dialect: DialectName, columns: &[PlSmallStr]) -> String {
+    if !dialect.names_derived_columns() || columns.is_empty() {
+        return String::new();
+    }
+    let names = columns
+        .iter()
+        .map(|c| dialect.quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("({names})")
 }
 
 fn strip_statement_end(sql: &str) -> &str {
@@ -229,6 +254,65 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
         }
     }
     None
+}
+
+/// A Trino query that names two output columns alike can't be wrapped, so its columns can't
+/// be read through a conversion: a `timestamp(7..12)` the drivers round (ADBC aborts the whole
+/// process on one outside 1677-2262), a `timestamp with time zone` in an array or map read an
+/// hour off in a zone's repeated hour. Refused before the query runs.
+fn refuse_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    options: &DatabaseScanOptions,
+    facts: Option<&QueryFacts>,
+    backend: &BackendKind,
+    setup_runs: bool,
+) -> PolarsResult<()> {
+    let (DatabaseRelation::Query { sql }, Some(columns)) = (
+        &options.relation,
+        facts.and_then(|f| f.output_columns.as_ref()),
+    ) else {
+        return Ok(());
+    };
+    let dialect = DialectName::Trino;
+    let mut seen = PlHashSet::with_capacity(columns.len());
+    let mut duplicated: Vec<&PlSmallStr> = vec![];
+    for c in columns {
+        if !seen.insert(c) && !duplicated.contains(&c) {
+            duplicated.push(c);
+        }
+    }
+    if duplicated.is_empty() {
+        return Ok(());
+    }
+    let Some(types) = catalog::trino_positional_types(session, sql, columns.len()) else {
+        return Ok(());
+    };
+    let converted = columns
+        .iter()
+        .zip(&types)
+        .filter(|(c, t)| {
+            column_conversion(
+                dialect,
+                backend,
+                setup_runs,
+                options.connection.opened_by_plugin(),
+                t,
+                &dialect.quote_ident(c),
+            )
+            .is_some()
+        })
+        .map(|(c, t)| format!("{c} ({t})"))
+        .collect::<Vec<_>>();
+    polars_ensure!(
+        converted.is_empty(),
+        InvalidOperation:
+        "the query names its columns {} more than once, so it can't be wrapped to read {} \
+        right (the drivers read such a column wrong or abort); alias the duplicated columns \
+        (`SELECT a.ts AS a_ts, b.ts AS b_ts`)",
+        duplicated.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(", "),
+        converted.join(", ")
+    );
+    Ok(())
 }
 
 /// What schema discovery may do with a query source.
@@ -649,6 +733,15 @@ pub fn resolve_scan(
         {
             query.probe = Some(mysql_query_probe(session.as_mut(), sql, &query)?);
         }
+        if is_query && dialect == DialectName::Trino {
+            refuse_unwrappable_conversions(
+                session.as_mut(),
+                &options,
+                query_facts.as_ref(),
+                &backend.kind,
+                setup_runs,
+            )?;
+        }
         // The catalog first: some declared types are read as text (`text_conversion`), and
         // discovery must select them the same way the scan will.
         let discover = |session: &mut dyn DatabaseSession, options: &DatabaseScanOptions| {
@@ -743,7 +836,7 @@ pub fn resolve_scan(
         // `ORDER BY` of a wrapped query.)
         if is_query && read_wrapped(&options, &pushdown_disabled, &query, dialect) {
             let names = discovered.iter_names().cloned().collect::<Vec<_>>();
-            let from = quoted_relation(dialect, &options.relation);
+            let from = quoted_relation(dialect, &options.relation, &names);
             // Python drivers refuse DDL, ConnectorX runs each statement on its own connection.
             let temp_tables = matches!(backend.kind, BackendKind::Adbc { .. });
             info = catalog::query_info(
@@ -2253,6 +2346,12 @@ fn column_conversion(
     if let Some(sql) = dialect.text_conversion(db_type, column) {
         return Some(sql);
     }
+    // Trino arrays, maps and rows holding such a value: each as an instant in UTC too
+    if dialect == DialectName::Trino
+        && let Some(sql) = super::dialect::trino_nested_utc(db_type, column)
+    {
+        return Some(sql);
+    }
     // Trino `timestamp(p) with time zone`: the instant in UTC (a named zone's repeated hour
     // reads an hour off otherwise: the value holds the zone's name, not its offset)
     if dialect == DialectName::Trino
@@ -3069,7 +3168,7 @@ fn discover_schema(
         None => format!(
             "SELECT {} FROM {} WHERE 1 = 0",
             select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s)),
-            quoted_relation(dialect, &options.relation)
+            quoted_relation(dialect, &options.relation, &[])
         ),
     };
     let first_batch = |session: &mut dyn DatabaseSession, sql: &str| {
@@ -3148,6 +3247,7 @@ fn discover_schema(
         .map(|(name, _)| name.clone())
         .collect::<PlHashSet<_>>();
     let untyped = !sampled.is_empty();
+    let schema_names = schema.iter_names().cloned().collect::<Vec<_>>();
     let mut mixed = Vec::new();
     let may_sample = !is_query
         || sample_types
@@ -3200,7 +3300,8 @@ fn discover_schema(
             }
         };
         let render = |items: Vec<SqlSelectItem>| -> PolarsResult<String> {
-            let mut sample_query = SqlQuery::select(items, from_clause(options));
+            let mut sample_query =
+                SqlQuery::select(items, from_clause(options, dialect, &schema_names));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
                 crate::filter::percent_formatted(&options.connection, backend);
@@ -3263,7 +3364,8 @@ fn discover_schema(
             })
             .collect::<Vec<_>>();
         if !items.is_empty() {
-            let mut sample_query = SqlQuery::select(items, from_clause(options));
+            let mut sample_query =
+                SqlQuery::select(items, from_clause(options, dialect, &schema_names));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
                 crate::filter::percent_formatted(&options.connection, backend);
@@ -3345,10 +3447,21 @@ fn sqlite_text_affinity(t: &str) -> bool {
     !t.contains("INT") && (t.contains("CHAR") || t.contains("CLOB") || t.contains("TEXT"))
 }
 
-fn from_clause(options: &DatabaseScanOptions) -> SqlFrom {
+fn from_clause(
+    options: &DatabaseScanOptions,
+    dialect: DialectName,
+    columns: &[PlSmallStr],
+) -> SqlFrom {
     match &options.relation {
         DatabaseRelation::Table { parts, .. } => SqlFrom::Table(parts.clone()),
-        DatabaseRelation::Query { sql } => SqlFrom::Subquery(strip_statement_end(sql).into()),
+        DatabaseRelation::Query { sql } => SqlFrom::Subquery {
+            sql: strip_statement_end(sql).into(),
+            columns: if dialect.names_derived_columns() {
+                columns.to_vec()
+            } else {
+                vec![]
+            },
+        },
     }
 }
 
@@ -3392,7 +3505,12 @@ pub fn compile_scan(
     }
 
     let renderer = sql_renderer()?;
-    let from = from_clause(options);
+    let derived_columns = if config.user_schema {
+        vec![]
+    } else {
+        config.schema.iter_names().cloned().collect::<Vec<_>>()
+    };
+    let from = from_clause(options, dialect, &derived_columns);
 
     let mut columns = pushdown
         .columns
@@ -3743,7 +3861,7 @@ pub(crate) fn as_utc_instants(mut df: DataFrame, names: &[PlSmallStr]) -> Polars
 /// The quoted relation a scan's columns can be qualified by.
 fn relation_qualifier(config: &DatabaseScanConfig) -> String {
     match &config.options.relation {
-        relation @ DatabaseRelation::Table { .. } => quoted_relation(config.dialect, relation),
+        relation @ DatabaseRelation::Table { .. } => quoted_relation(config.dialect, relation, &[]),
         DatabaseRelation::Query { .. } => config.dialect.quote_ident("_pl"),
     }
 }
@@ -3873,8 +3991,16 @@ fn compile_unwrapped(
             };
             let read = if needs_wrapper {
                 // the alias the select items are qualified by (SQLite)
+                let derived = if config.user_schema {
+                    String::new()
+                } else {
+                    derived_column_list(
+                        dialect,
+                        &config.schema.iter_names().cloned().collect::<Vec<_>>(),
+                    )
+                };
                 let mut read = format!(
-                    "SELECT {} FROM ({}) {}",
+                    "SELECT {} FROM ({}) {}{derived}",
                     escape_percent(config, fixed_select_list(dialect, &items)),
                     wrappable(sql),
                     relation_qualifier(config)
@@ -3895,7 +4021,7 @@ fn compile_unwrapped(
             )
         },
         relation => {
-            let from = quoted_relation(dialect, relation);
+            let from = quoted_relation(dialect, relation, &[]);
             // the select list applies the column conversions, as a pushed-down scan does
             let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
             let mut items = names
