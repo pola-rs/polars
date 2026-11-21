@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -185,17 +186,24 @@ def test_cancel_stops_between_callbacks_of_a_callback_sink() -> None:
     assert n < 20
 
 
-def _run_with_slow_source(
-    batch_sleep: float, script: str
+def _run_script(
+    script: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """Run `script` in a new Python process, with `lf` scanning a slow source."""
-    script = SLOW_SOURCE_SCRIPT % {"batch_sleep": batch_sleep} + script
+    """Run `script` in a new Python process."""
     return subprocess.run(
         [sys.executable, "-c", textwrap.dedent(script)],
         capture_output=True,
         text=True,
         timeout=120,
+        env=None if env is None else {**os.environ, **env},
     )
+
+
+def _run_with_slow_source(
+    batch_sleep: float, script: str
+) -> subprocess.CompletedProcess[str]:
+    """Run `script` in a new Python process, with `lf` scanning a slow source."""
+    return _run_script(SLOW_SOURCE_SCRIPT % {"batch_sleep": batch_sleep} + script)
 
 
 SLOW_SOURCE_SCRIPT = """
@@ -263,3 +271,117 @@ def test_dropping_a_running_query() -> None:
     out = _run_with_slow_source(0.1, script)
     assert out.returncode == 0, out.stderr
     assert out.stdout.splitlines() == ["done"]
+
+
+def test_cancel_of_a_query_queued_behind_busy_threads() -> None:
+    # Each background query runs on a thread of its own: with every thread of Polars'
+    # pool busy with other queries, a new one still starts, and its cancel returns.
+    script = """
+    import time
+    import polars as pl
+
+    def slow(s):
+        time.sleep(3)
+        return s
+
+    busy = [
+        pl.LazyFrame({"a": [i]})
+        .select(pl.col("a").map_batches(slow, return_dtype=pl.Int64))
+        .collect(background=True)
+        for i in range(pl.thread_pool_size())
+    ]
+    time.sleep(0.5)
+    q = pl.LazyFrame({"a": [1]}).select(pl.col("a") + 1).collect(background=True)
+    start = time.perf_counter()
+    q.cancel()
+    print("cancel fast:", time.perf_counter() - start < 1.5)
+    for b in busy:
+        b.fetch_blocking()
+"""
+    out = _run_script(script, env={"POLARS_MAX_THREADS": "2"})
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.splitlines() == ["cancel fast: True"]
+
+
+def test_cancel_does_not_wait_for_another_background_query() -> None:
+    # A thread of Polars' pool waiting inside a streaming query must not run another
+    # background query within it: cancelling the first would wait for the second. Best
+    # effort: it only happened in some runs.
+    script = """
+    import threading, time
+    import polars as pl
+    from polars.io.plugins import register_io_source
+
+    def source(with_columns, predicate, n_rows, batch_size):
+        for i in range(100):
+            started.set()
+            yield pl.DataFrame({"a": [i]})
+            time.sleep(0.05)
+
+    def slow(s):
+        time.sleep(2)
+        return s
+
+    for _ in range(3):
+        started = threading.Event()
+        a = register_io_source(source, schema={"a": pl.Int64}).collect(
+            background=True, engine="streaming"
+        )
+        started.wait(30)
+        time.sleep(0.2)
+        b = (
+            pl.LazyFrame({"a": [1]})
+            .select(pl.col("a").map_batches(slow, return_dtype=pl.Int64))
+            .collect(background=True, engine="in-memory")
+        )
+        time.sleep(0.3)
+        start = time.perf_counter()
+        a.cancel()
+        print("cancel fast:", time.perf_counter() - start < 1)
+        b.fetch_blocking()
+"""
+    out = _run_script(script, env={"POLARS_MAX_THREADS": "4"})
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.splitlines() == ["cancel fast: True"] * 3
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="sends SIGINT")
+def test_ctrl_c_while_fetching_raises_keyboard_interrupt() -> None:
+    # As a foreground collect: a Ctrl-C while waiting for the result raises
+    # KeyboardInterrupt, not the query's error.
+    script = """
+    import signal
+    seen = []
+    # Installed before Polars chains its handler to it: records, doesn't raise.
+    signal.signal(signal.SIGINT, lambda *a: seen.append("handler"))
+
+    import os, threading, time
+    import polars as pl
+    from polars.io.plugins import register_io_source
+
+    started = threading.Event()
+
+    def source(with_columns, predicate, n_rows, batch_size):
+        for i in range(50):
+            started.set()
+            yield pl.DataFrame({"a": [i]})
+            time.sleep(3)
+
+    q = register_io_source(source, schema={"a": pl.Int64}).collect(background=True)
+    started.wait(30)
+
+    def interrupt():
+        time.sleep(0.5)
+        os.kill(os.getpid(), signal.SIGINT)
+
+    threading.Thread(target=interrupt, daemon=True).start()
+    try:
+        q.fetch_blocking()
+    except BaseException as e:
+        print("fetch raised", type(e).__name__)
+    q.cancel()
+    print("done")
+"""
+    out = _run_script(script)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.splitlines() == ["fetch raised KeyboardInterrupt", "done"]

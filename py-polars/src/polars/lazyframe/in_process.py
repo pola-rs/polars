@@ -32,9 +32,14 @@ class InProcessQuery:
         batch a source is reading.
 
         Calling it again, or after the query has finished or its result was
-        fetched, returns at once. Called from one of Polars' own threads (inside a
-        Python function a query runs, say), it only requests the cancellation and
-        returns without waiting, as the query may be waiting for that thread.
+        fetched, returns at once. Called from one of Polars' own threads, it only
+        requests the cancellation and returns without waiting, as the query may be
+        waiting for that thread: this includes Python code Polars runs on its
+        threads, such as a Python function of a query, a scan resolver or the
+        generator of a Python IO source.
+
+        Dropping the query's handle (this object) also requests the query to stop,
+        but doesn't wait for it: call `cancel()` to know it has stopped.
 
         As it waits for the query, it must not be called from another thread the
         query itself waits on: for example an asyncio event loop that a Python

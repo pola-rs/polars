@@ -4,8 +4,9 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
-use polars_core::error::abort::{QueryAborted, decode_polars_abort};
-use polars_core::runtime::{RAYON, is_polars_thread};
+use polars_core::error::ErrString;
+use polars_core::error::abort::{QueryAborted, decode_polars_abort, raise_polars_abort};
+use polars_core::runtime::is_polars_thread;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::*;
@@ -33,7 +34,17 @@ impl LazyFrame {
                 std::thread::spawn(run);
             }
         } else {
-            RAYON.spawn_fifo(run);
+            // A thread of its own rather than a Rayon job, as a foreground query runs on the
+            // caller's thread: queued behind busy workers, the query wouldn't start (and a
+            // cancel would wait for a worker), and a worker waiting inside another query could
+            // run it within that query's frame (a cancel of that one would wait for this one).
+            // Its parallel work still runs on Rayon.
+            std::thread::Builder::new()
+                .name("polars-background-query".into())
+                .spawn(run)
+                .map_err(
+                    |e| polars_err!(ComputeError: "could not start the query's thread: {e}"),
+                )?;
         }
 
         Ok(InProcessQuery {
@@ -45,13 +56,14 @@ impl LazyFrame {
 }
 
 /// Executes the query, drops what is left of it (the physical plan, with its sources, and the
-/// state), then sends its result and marks it finished. It never panics: it runs as a job of a
-/// thread pool, where a panic aborts the process.
+/// state), then sends its result and marks it finished. It never panics, which would end its
+/// thread without a result: a panic becomes the query's error, and a Polars abort (a keyboard
+/// interrupt) is raised again where the result is fetched.
 fn run_query(
     finished: Arc<Finished>,
     physical_plan: Box<dyn Executor>,
     state: ExecutionState,
-    tx: Sender<PolarsResult<DataFrame>>,
+    tx: Sender<QueryOutcome>,
 ) {
     QUERY_THREAD.set(true);
     // Declared first, dropped last: the query is marked finished whatever happens.
@@ -64,30 +76,37 @@ fn run_query(
         drop(state);
         result
     }))
-    .unwrap_or_else(|payload| Err(panic_to_error(payload)));
+    .map_or_else(panic_outcome, Ok);
     // The handle may have been dropped: nobody wants the result then.
     let _ = tx.send(result);
 }
 
-/// The error a background query fails with when it panics (a Polars abort, such as a keyboard
-/// interrupt raised in another thread's Polars call, is one).
-fn panic_to_error(payload: Box<dyn Any + Send>) -> PolarsError {
+/// A background query's result, or the Polars abort that stopped it (raised again by `fetch`).
+type QueryOutcome = Result<PolarsResult<DataFrame>, QueryAborted>;
+
+/// The outcome of a background query that panicked: a Polars abort (such as a keyboard interrupt
+/// raised in another thread's Polars call) stays one; another panic becomes an error. The error
+/// is built without `POLARS_PANIC_ON_ERR`'s panic, which would escape the query's thread.
+fn panic_outcome(payload: Box<dyn Any + Send>) -> QueryOutcome {
     match decode_polars_abort(&*payload) {
-        Some(QueryAborted::KeyboardInterrupt) => {
-            polars_err!(ComputeError: "query interrupted (keyboard interrupt)")
-        },
-        Some(QueryAborted::OocOutOfDisk) => polars_err!(
-            ComputeError: "query aborted: spilled data exceeded the out-of-core disk budget"
-        ),
+        Some(reason) => Err(reason),
         None => {
             let msg = payload
                 .downcast_ref::<&str>()
                 .copied()
                 .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
                 .unwrap_or("unknown panic");
-            polars_err!(ComputeError: "query panicked: {msg}")
+            Ok(Err(PolarsError::ComputeError(ErrString::new_owned(
+                format!("query panicked: {msg}"),
+            ))))
         },
     }
+}
+
+/// The query's result; a Polars abort that stopped it is raised again here, on the fetching
+/// thread, to be caught as the caller's own (`catch_polars_abort`).
+fn into_result(outcome: QueryOutcome) -> PolarsResult<DataFrame> {
+    outcome.unwrap_or_else(|reason| raise_polars_abort(reason))
 }
 
 thread_local! {
@@ -133,7 +152,7 @@ impl Drop for SetFinishedOnDrop {
 
 #[derive(Clone)]
 pub struct InProcessQuery {
-    rx: Arc<Mutex<Receiver<PolarsResult<DataFrame>>>>,
+    rx: Arc<Mutex<Receiver<QueryOutcome>>>,
     token: Arc<RelaxedCell<bool>>,
     finished: Arc<Finished>,
 }
@@ -177,16 +196,21 @@ impl InProcessQuery {
     /// Fetch the result.
     ///
     /// If it is ready, a materialized DataFrame is returned: by then nothing of the query runs
-    /// any more. If it is not ready it will return `None`.
+    /// any more. If it is not ready it will return `None`. A Polars abort (a keyboard interrupt)
+    /// that stopped the query is raised again here.
     pub fn fetch(&self) -> Option<PolarsResult<DataFrame>> {
-        let rx = self.rx.lock().unwrap();
-        rx.try_recv().ok()
+        // Received before raising an abort, so as not to poison the lock.
+        let outcome = self.rx.lock().unwrap().try_recv().ok();
+        outcome.map(into_result)
     }
 
     /// Await the result synchronously.
+    ///
+    /// Like `fetch`, this raises a Polars abort (`catch_polars_abort`) that stopped the query
+    /// again: a keyboard interrupt while it ran.
     pub fn fetch_blocking(&self) -> PolarsResult<DataFrame> {
-        let rx = self.rx.lock().unwrap();
-        rx.recv().unwrap()
+        let outcome = self.rx.lock().unwrap().recv().unwrap();
+        into_result(outcome)
     }
 }
 
@@ -292,6 +316,25 @@ mod test {
         let err = q.fetch_blocking().unwrap_err();
         assert!(err.to_string().contains("query panicked: boom"), "{err}");
         assert!(q.wait_finished(Some(Duration::from_secs(10))));
+        Ok(())
+    }
+
+    #[test]
+    fn an_abort_is_raised_again_where_the_result_is_fetched() -> PolarsResult<()> {
+        use polars_core::error::abort::catch_polars_abort;
+
+        let q = df![ "a" => [1, 2, 3] ]?
+            .lazy()
+            .map(
+                |_| raise_polars_abort(QueryAborted::KeyboardInterrupt),
+                AllowedOptimizations::default(),
+                None,
+                None,
+            )
+            .collect_concurrently()?;
+        assert!(q.wait_finished(Some(Duration::from_secs(10))));
+        let fetched = catch_polars_abort(AssertUnwindSafe(|| q.fetch_blocking()));
+        assert!(matches!(fetched, Err(QueryAborted::KeyboardInterrupt)));
         Ok(())
     }
 
