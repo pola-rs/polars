@@ -933,7 +933,11 @@ impl Translator<'_> {
 
     /// Whether a date or timestamp literal is within what the dialect's types hold.
     fn temporal_in_range(&self, av: &AnyValue<'_>) -> bool {
-        let (lo, hi) = self.dialect().temporal_literal_days();
+        let (lo, hi) = if matches!(av, AnyValue::Date(_)) {
+            self.dialect().date_literal_days()
+        } else {
+            self.dialect().temporal_literal_days()
+        };
         let days = match av {
             AnyValue::Date(d) => *d as i64,
             AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _) => {
@@ -1265,9 +1269,10 @@ impl Translator<'_> {
             {
                 None
             },
-            // An indexed MariaDB `DOUBLE(M, D)` rounds an equality literal to `D` digits.
+            // An indexed MariaDB `FLOAT(M, D)` / `DOUBLE(M, D)` compares a literal as rounded to
+            // `D` digits where a scan reads the value unrounded: `=` misses the stored value,
+            // and `>=` an indexed `DOUBLE(M, D)` row equal to the literal.
             dt if dt.is_float()
-                && !op.is_ordering()
                 && matches!(
                     self.dialect(),
                     DialectName::Mysql | DialectName::Singlestore
@@ -2187,6 +2192,28 @@ pub(crate) mod tests {
             class_of(&pg, &cmp("eq", "d", "date", "-141427")),
             Some(Class::Exact)
         );
+    }
+
+    #[test]
+    fn clickhouse_date_literals_stay_in_the_date_range() {
+        // ClickHouse prunes parts by converting the constant to `Date` (1970-01-01 ..
+        // 2149-06-06, less a margin for functions of it), which wraps: a literal outside
+        // loses rows
+        let cfg = config(
+            DialectName::Clickhouse,
+            adbc("clickhouse"),
+            &[("d", DataType::Date, Some("Date32"))],
+        );
+        let t = Translator { config: &cfg };
+        for days in [-1, 0, 6, 65_501, 65_536, 120_529] {
+            assert!(!t.temporal_in_range(&AnyValue::Date(days)), "{days}");
+        }
+        for days in [7, 8, 65_500] {
+            assert!(t.temporal_in_range(&AnyValue::Date(days)), "{days}");
+        }
+        // a `DateTime` has no such wrap: timestamps keep the wider range
+        let us = AnyValue::Datetime(-86_400_000_000, TimeUnit::Microseconds, None);
+        assert!(t.temporal_in_range(&us));
     }
 
     #[test]
