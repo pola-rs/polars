@@ -7315,3 +7315,79 @@ def test_trino_query_with_duplicate_names_under_a_schema_is_refused() -> None:
         assert "ERROR InvalidOperationError" in out.stdout, (driver, out.stdout)
         assert "'ts9'" in out.stdout, (driver, out.stdout)
         assert "alias" in out.stdout, (driver, out.stdout)
+
+
+_CH_DATE_TABLES = [
+    ("Date", "PARTITION BY toYYYYMM(k) ORDER BY id"),
+    ("Nullable(Date)", "PARTITION BY toStartOfMonth(k) ORDER BY id"),
+    ("Date32", "PARTITION BY toMonday(k) ORDER BY id"),
+    ("Date", "ORDER BY (toYYYYMM(k), id)"),
+    ("Nullable(Date32)", "ORDER BY (toStartOfMonth(k), id)"),
+]
+
+
+@needs_clickhouse
+@pytest.mark.parametrize("driver", ["adbc", "clickhouse_connect"])
+def test_clickhouse_dates_outside_the_date_range_lose_no_rows(driver: str) -> None:
+    # ClickHouse prunes parts and key ranges by converting the constant to `Date`
+    # (1970-01-01..2149-06-06), which wraps: no filter literal outside it may be sent
+    days = [date(1971, 1, 2), date(1985, 6, 1), date(2000, 1, 1)]
+    days += [date(2100, 1, 1), date(2105, 1, 1)]
+    far = date(1960, 1, 1), date(1930, 1, 1), date(2200, 1, 1), date(2110, 1, 1)
+    for n, (typ, layout) in enumerate(_CH_DATE_TABLES):
+        table = f"fix_ch_dates_{driver}_{n}"
+        nullable = typ.startswith("Nullable")
+        values = ", ".join(f"({i}, '{d}')" for i, d in enumerate(days))
+        values += f", ({len(days)}, NULL)" if nullable else ""
+        _execute(
+            "clickhouse",
+            [
+                f"DROP TABLE IF EXISTS {table}",
+                f"CREATE TABLE {table} (id Int32, k {typ}) ENGINE = MergeTree "
+                f"{layout} SETTINGS allow_nullable_key = 1, index_granularity = 2",
+                f"INSERT INTO {table} VALUES {values}",
+            ],
+        )
+        try:
+            lf = _scan("clickhouse", driver, table)
+            k = pl.col("k")
+            predicates = [
+                k >= far[0],
+                k > far[1],
+                k < far[2],
+                k <= far[3],
+                k.is_between(far[0], far[2]),
+                k.is_in([far[0], date(2000, 1, 1)]),
+                k != far[0],
+            ]
+            check_filter_ids(lf, predicates)
+            assert lf.collect().height == len(days) + nullable
+        finally:
+            _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_float_columns_with_digits(name: str) -> None:
+    # an indexed DOUBLE(M, D) on MariaDB loses the row equal to a `>=` literal: a pushed
+    # comparison keeps what Polars keeps, on the indexed columns too
+    table = "fix_float_digits"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, f float(7,3), d double(7,3), KEY (f), "
+            "KEY (d))",
+            f"INSERT INTO {table} VALUES "
+            + ", ".join(f"({i}, {i / 1000}, {i / 1000})" for i in range(4001)),
+        ],
+    )
+    try:
+        lf = _scan(name, "pymysql", table)
+        predicates = []
+        for v in [0.01, 0.02, 0.123, 1.0, 1.61, 1.824, 3.728, 3.853, 3.986]:
+            for col in ["f", "d"]:
+                c = pl.col(col)
+                predicates += [c == v, c >= v, c > v, c < v, c <= v, c.is_in([v, 0.3])]
+        check_filter_ids(lf, predicates)
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
