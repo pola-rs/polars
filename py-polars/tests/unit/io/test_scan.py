@@ -1322,6 +1322,38 @@ def test_scan_ndjson_streaming_decompression(
     assert_frame_equal(df, pl.DataFrame(expected))
 
 
+@pytest.mark.parametrize("ignore_errors", [True, False])
+def test_scan_ndjson_streaming_slice_excludes_malformed_trailing_line(
+    ignore_errors: bool,
+) -> None:
+    data = zlib.compress(b'{"line_val": 45}\nnot-json\n')
+    query = pl.scan_ndjson(
+        io.BytesIO(data), schema={"line_val": pl.Int64}, ignore_errors=ignore_errors
+    )
+    assert_frame_equal(
+        query.slice(0, 1).collect(engine="streaming"), pl.DataFrame({"line_val": [45]})
+    )
+    with pytest.raises(ComputeError, match="error parsing line"):
+        query.slice(1, 1).collect(engine="streaming")
+    with pytest.raises(ComputeError, match="error parsing line"):
+        query.tail(1).collect(engine="streaming")
+
+
+def test_scan_ndjson_streaming_slice_counts_rows_not_blank_lines() -> None:
+    data = zlib.compress(b'\r\n{"line_val": 45}\r\n \t\r\n{"line_val": 46}')
+    query = pl.scan_ndjson(
+        io.BytesIO(data),
+        schema={"line_val": pl.Int64},
+        row_index_name="idx",
+        row_index_offset=10,
+    )
+    expected = pl.DataFrame(
+        {"idx": [11], "line_val": [46]}, schema=query.collect_schema()
+    )
+    assert_frame_equal(query.slice(1, 1).collect(engine="streaming"), expected)
+    assert_frame_equal(query.slice(1, 0).collect(engine="streaming"), expected.clear())
+
+
 def test_scan_file_uri_hostname_component() -> None:
     q = pl.scan_parquet("file://hostname:80/data.parquet")
 
