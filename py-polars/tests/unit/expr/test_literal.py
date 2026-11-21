@@ -8,6 +8,11 @@ import pytest
 from dateutil.tz import tzoffset
 
 import polars as pl
+from polars.exceptions import (
+    PolarsError,
+    PolarsTypeError,
+    UnsupportedLiteralError,
+)
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -186,3 +191,31 @@ def test_floordiv_mod(
             schema={"literal": numerator_dtype or divisor_dtype or pl.Int32},
         ),
     )
+
+
+def test_lit_unsupported_type_raises_unsupported_literal_error() -> None:
+    class Unsupported:
+        pass
+
+    with pytest.raises(
+        UnsupportedLiteralError,
+        match=r"cannot create expression literal for value of type .*Unsupported\.",
+    ) as exc:
+        pl.lit(Unsupported())
+    assert isinstance(exc.value, PolarsTypeError)
+    assert isinstance(exc.value, PolarsError)
+    assert isinstance(exc.value, TypeError)
+
+    # The conversion of the type is cached as `Object` once it has been allowed.
+    pl.lit(Unsupported(), allow_object=True)
+    with pytest.raises(UnsupportedLiteralError):
+        pl.lit(Unsupported())
+
+
+@pytest.mark.parametrize("value", [{1: 2}, [1, "x"]])
+def test_lit_supported_type_conversion_error_is_not_unsupported_literal_error(
+    value: Any,
+) -> None:
+    with pytest.raises(TypeError) as exc:
+        pl.lit(value)
+    assert not isinstance(exc.value, UnsupportedLiteralError)

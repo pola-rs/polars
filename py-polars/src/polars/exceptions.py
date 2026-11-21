@@ -13,6 +13,7 @@ if TYPE_CHECKING:
         PanicException,
         PerformanceWarning,
         PolarsError,
+        PolarsTypeError,
         PolarsWarning,
         SchemaError,
         SchemaFieldNotFoundError,
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
         SQLSyntaxError,
         StringCacheMismatchError,
         StructFieldNotFoundError,
+        UnsupportedLiteralError,
     )
 else:
     try:
@@ -36,6 +38,7 @@ else:
             PanicException,
             PerformanceWarning,
             PolarsError,
+            PolarsTypeError,
             PolarsWarning,
             SchemaError,
             SchemaFieldNotFoundError,
@@ -44,6 +47,7 @@ else:
             SQLSyntaxError,
             StringCacheMismatchError,
             StructFieldNotFoundError,
+            UnsupportedLiteralError,
         )
     except ImportError:
         # redefined for documentation purposes when there is no binary
@@ -116,6 +120,23 @@ else:
 
         class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef]
             """Exception raised when a specified Struct field is not found."""
+
+        class PolarsTypeError(PolarsError, TypeError):  # type: ignore[no-redef]
+            """Base class for Polars errors that are also a `TypeError`."""
+
+        class UnsupportedLiteralError(PolarsTypeError):  # type: ignore[no-redef]
+            """
+            Exception raised when a value of an unsupported type is used as a literal.
+
+            Raised when an unsupported type is found
+            when converting a Python value into an expression literal
+            (e.g. with `pl.lit`).
+
+            Examples
+            --------
+            >>> pl.lit(object())
+            polars.exceptions.UnsupportedLiteralError: cannot create expression literal for value of type object.
+            """  # noqa: W505
 
         class PolarsWarning(Exception):  # type: ignore[no-redef]
             """Base class for all Polars warnings."""
@@ -229,6 +250,7 @@ class AttributeRemovedError(AttributeError):
 __all__ = [
     # Errors
     "PolarsError",
+    "PolarsTypeError",
     "ArgumentRemovedError",
     "AttributeRemovedError",
     "ColumnNotFoundError",
@@ -250,6 +272,7 @@ __all__ = [
     "StructFieldNotFoundError",
     "TooManyRowsReturnedError",
     "UnsuitableSQLError",
+    "UnsupportedLiteralError",
     # Warnings
     "PolarsWarning",
     "CategoricalRemappingWarning",
