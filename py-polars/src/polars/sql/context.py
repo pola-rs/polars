@@ -230,11 +230,11 @@ class SQLContext(Generic[FrameType]):
             impacts whether :meth:`execute` returns an eager or lazy result frame).
         allow_file_reads
             Whether SQL may read files and URLs, through table functions such as
-            `read_parquet` or a quoted path in `FROM`. With False, SQL can only read
-            the registered frames and catalogs.
+            `read_parquet`, a quoted path in `FROM`, or `COPY ... FROM`. With False, SQL
+            can only read the registered frames and catalogs.
         allow_file_writes
             Whether SQL may write files and URLs, through `COPY ... TO`. With False,
-            `COPY` is an error.
+            `COPY ... TO` is an error.
 
             Set both to False to run untrusted SQL. This is not a full sandbox:
             statements on a registered catalog are not limited, so with a writable

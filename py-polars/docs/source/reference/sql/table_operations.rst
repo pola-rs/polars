@@ -12,7 +12,7 @@ Table Operations
    * - :ref:`CALL <call>`
      - Run a maintenance procedure on a table in an attached catalog.
    * - :ref:`COPY <copy>`
-     - Write the result of a query, or a table, to a file.
+     - Write the result of a query, or a table, to a file, or add the rows of a file to a table.
    * - :ref:`CREATE MACRO <create_macro>`
      - Create a named expression or query with parameters.
    * - :ref:`CREATE SCHEMA <create_schema>`
@@ -338,6 +338,7 @@ COPY
 ----
 Write the result of a query, or a table, to a file. :meth:`SQLContext.execute` returns a
 ``LazyFrame`` that writes the file once it is collected; collecting it gives an empty frame.
+``COPY <table> FROM '<file>'`` adds the rows of a file to a table instead, see below.
 
 The format is the one that ``FORMAT`` names, or else the one of the file extension: ``csv``;
 ``parquet``; ``ipc``, ``arrow`` or ``feather``; ``ndjson`` or ``jsonl``. A CSV file takes the
@@ -347,9 +348,28 @@ The path can be a cloud URL, and a leading ``~`` is the home directory.
 The directory of the file must exist, and an existing file is replaced. If the query fails
 while it runs, a partial file can be left behind, also in the place of a file that existed.
 
-Only ``COPY ... TO '<file>'`` is supported. To load a file, read it in a query, as in
-``CREATE TABLE t AS SELECT * FROM 'data.csv'``. Writing files can be turned off with
-``SQLContext(allow_file_writes=False)``.
+Writing files can be turned off with ``SQLContext(allow_file_writes=False)``.
+
+``COPY <table> [(<column>, ...)] FROM '<file>'`` adds the rows of the file to a registered
+table, as :ref:`INSERT <insert>` does: the file's columns go by position into the listed
+columns, or into all of them, and the other columns get NULL. As in Postgres, the file is read
+at the ``COPY``, so a missing file or a value that does not fit fails there and leaves the
+table as it was. The format is chosen as for ``COPY ... TO``. The path names one file: a
+directory is refused, and a CSV path is not a glob.
+
+- A CSV file is read into the types of the columns, by position. ``HEADER`` is ``false``
+  unless given, as in Postgres; ``HEADER true`` skips the first line, whatever its names.
+  ``DELIMITER`` and ``QUOTE`` set the separator and the quote character.
+- In a CSV file, an unquoted empty field is NULL and a quoted ``""`` is an empty string. With
+  ``NULL '<marker>'``, the marker is NULL, and an empty field of a text column is an empty
+  string.
+- The CSV file is parsed as ``read_csv`` parses it, which accepts more than Postgres does: a
+  quoted marker is NULL too, an empty field of a column of another type is NULL, a row with
+  too few fields is filled with NULLs, a number too large for a ``REAL`` or ``DOUBLE`` column
+  is infinite, and booleans are ``true`` and ``false`` only.
+- A file of another format keeps its own column types, which convert as in ``INSERT``.
+- ``COPY ... FROM STDIN`` is not supported. Reading files can be turned off with
+  ``SQLContext(allow_file_reads=False)``.
 
 **Example:**
 
@@ -358,6 +378,8 @@ Only ``COPY ... TO '<file>'`` is supported. To load a file, read it in a query, 
     COPY (SELECT region, SUM(amount) AS total FROM sales GROUP BY region) TO 'totals.parquet'
     COPY sales (region, amount) TO 'sales.csv'
     COPY sales TO 'sales.txt' (FORMAT csv, DELIMITER '|', HEADER false)
+    COPY sales FROM 'sales.csv' (HEADER true)
+    COPY contacts (id, name, phone) FROM 'contacts.csv' (FORMAT csv, HEADER true, NULL '\N')
 
 .. _create_macro:
 
