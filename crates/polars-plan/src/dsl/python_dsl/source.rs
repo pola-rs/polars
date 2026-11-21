@@ -37,7 +37,8 @@ impl PythonOptionsDsl {
                     .0
                     .call0(py)
                     .map_err(|e| polars_err!(ComputeError: "schema callable failed: {}", e))?;
-                crate::plans::python::python_schema_to_rust(py, schema.into_bound(py))
+                // SAFETY: The schema callback contract requires a genuine Polars Schema.
+                unsafe { crate::plans::python::python_schema_to_rust(py, schema.into_bound(py)) }
             }),
             Either::Right(schema) => Ok(schema.clone()),
         }
