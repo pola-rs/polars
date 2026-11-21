@@ -1824,7 +1824,8 @@ def test_read_database_databricks_invalid_utf8_is_an_error(
         repeat_batch_calls=True,
         exact_batch_size=True,
     )
-    with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+
+    def read() -> None:
         res = pl.read_database(
             "SELECT 1",
             mc,
@@ -1833,6 +1834,9 @@ def test_read_database_databricks_invalid_utf8_is_an_error(
         )
         if iter_batches:
             list(res)  # type: ignore[arg-type]
+
+    with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+        read()
 
 
 def test_read_database_databricks_valid_text_is_read() -> None:
@@ -1863,7 +1867,8 @@ def test_read_database_adbc_invalid_utf8_is_an_error(
 ) -> None:
     sql = "SELECT 1 AS id, CAST(X'FF' AS TEXT) AS s"
     with closing(adbc_sqlite_connect(tmp_path / "x.db")) as conn:
-        with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+
+        def read() -> None:
             res = pl.read_database(
                 sql,
                 conn,
@@ -1872,5 +1877,8 @@ def test_read_database_adbc_invalid_utf8_is_an_error(
             )
             if iter_batches:
                 list(res)  # type: ignore[arg-type]
+
+        with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+            read()
         ok = pl.read_database("SELECT 1 AS id, CAST(X'FF' AS BLOB) AS b", conn)
         assert ok["b"].to_list() == [b"\xff"]

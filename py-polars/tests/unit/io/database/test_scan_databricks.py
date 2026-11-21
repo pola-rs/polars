@@ -58,6 +58,8 @@ def _connection(**kwargs: Any) -> Callable[[], Any]:
 
 def _scan(source: str, how: str = "adbc", **kwargs: Any) -> pl.LazyFrame:
     """
+    Scan `source` on the test workspace.
+
     `how`: `adbc`, `databricks.sql` (from the URI), `factory` (a connection) or `engine`
     (a SQLAlchemy Engine).
     """

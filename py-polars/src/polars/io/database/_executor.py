@@ -57,7 +57,7 @@ _DATABRICKS_ALCHEMY_DRIVERS: Final = frozenset({"databricks", "databricks-sql-py
 
 
 def _has_text(dtype: Any) -> bool:
-    """Whether a dtype holds a String, also nested in lists, arrays, maps and structs."""
+    """Whether a dtype holds a String, also in lists, arrays, maps and structs."""
     from polars.datatypes import Array, List, Map, String, Struct
 
     if dtype == String:
