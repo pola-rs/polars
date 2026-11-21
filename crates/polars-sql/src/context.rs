@@ -71,6 +71,7 @@ use crate::location::{
 use crate::macros::{MacroStatement, Macros, check_macro, is_callable_name};
 use crate::params::{QueryParams, bind_params, check_no_params};
 use crate::positional_join::{has_positional_join, is_positional_join};
+use crate::sample::{sample_fraction, sample_rows};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
@@ -987,6 +988,7 @@ impl SQLContext {
                 name,
                 alias: None,
                 args: None,
+                sample: None,
                 ..
             } if !object_name_to_string(name).eq_ignore_ascii_case(&target_name) => {
                 self.cte_map.insert(object_name_to_string(name), source);
@@ -6978,6 +6980,29 @@ impl SQLContext {
         {
             return Ok(self.planned_from_item.take().unwrap().1);
         }
+        if let TableFactor::Table {
+            sample: Some(sample),
+            ..
+        }
+        | TableFactor::Derived {
+            sample: Some(sample),
+            ..
+        } = relation
+        {
+            let (fraction, seed) = sample_fraction(sample)?;
+            let mut unsampled = relation.clone();
+            if let TableFactor::Table { sample, .. } | TableFactor::Derived { sample, .. } =
+                &mut unsampled
+            {
+                *sample = None;
+            }
+            let (name, lf) = self.get_table(&unsampled)?;
+            let lf = sample_rows(lf, fraction, seed);
+            if let Some(frame) = self.from_item_frames.get_mut(&name) {
+                *frame = lf.clone();
+            }
+            return Ok((name, lf));
+        }
         if let Some(name) = get_table_name(relation) {
             self.from_item_frames.remove(&name);
         }
@@ -10407,16 +10432,22 @@ fn is_row_wise(expr: &Expr, schema: &Schema) -> PolarsResult<bool> {
 }
 
 /// Reject the target forms of a `DELETE` or `UPDATE` that sqlparser accepts but that are not
-/// a plain table: table-function arguments, alias column lists, and `ONLY` / `LOW_PRIORITY` /
-/// `IGNORE`, which the generic dialect reads as a table of that name with an alias.
+/// a plain table: table-function arguments, samples, alias column lists, and `ONLY` /
+/// `LOW_PRIORITY` / `IGNORE`, which the generic dialect reads as a table of that name with an
+/// alias.
 fn check_dml_target(relation: &TableFactor, statement: &str) -> PolarsResult<()> {
     let TableFactor::Table {
-        name, alias, args, ..
+        name,
+        alias,
+        args,
+        sample,
+        ..
     } = relation
     else {
         return Ok(());
     };
     polars_ensure!(args.is_none(), SQLInterface: "{} of a table function is not supported", statement);
+    polars_ensure!(sample.is_none(), SQLInterface: "{} of a table sample is not supported", statement);
     if let Some(alias) = alias {
         polars_ensure!(
             alias.columns.is_empty(),

@@ -158,7 +158,7 @@ enum Kind {
     Timestamp,
 }
 
-fn is_keyword(token: &Token, keyword: Keyword) -> bool {
+pub(crate) fn is_keyword(token: &Token, keyword: Keyword) -> bool {
     matches!(token, Token::Word(w) if w.keyword == keyword && w.quote_style.is_none())
 }
 

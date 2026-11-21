@@ -55,6 +55,7 @@ use crate::literal_folding::{
 };
 use crate::location::{at_statement, complete_location, locate};
 use crate::positional_join::{attach_positional_aliases, extract_positional_joins};
+use crate::sample::{QuerySamples, rewrite_sample_tokens};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::{is_correlated_subquery, strip_nested};
 use crate::time_travel::{TableVersions, extract_table_versions};
@@ -72,11 +73,12 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
     PolarsError::SQLInterface(err.to_string().into())
 }
 
-/// The time travel clauses taken out of a query before it is parsed, which sqlparser does not
-/// parse.
+/// The time travel and `USING SAMPLE` clauses taken out of a query before it is parsed, which
+/// sqlparser does not parse.
 #[must_use]
 pub(crate) struct TakenClauses {
     versions: TableVersions,
+    samples: QuerySamples,
     /// Whether the query has lambdas (see [`rewrite_lambda_tokens`]).
     pub(crate) has_lambdas: bool,
 }
@@ -103,33 +105,33 @@ impl TakenClauses {
         parsed: PolarsResult<Vec<T>>,
         parse: impl FnOnce(&mut Parser<'static>) -> PolarsResult<Vec<T>>,
     ) -> PolarsResult<Vec<T>> {
-        let has_lambdas = self.has_lambdas;
-        let (mut nodes, versions) = match parsed {
+        let (mut nodes, taken) = match parsed {
             Ok(mut nodes) => {
                 attach_positional_aliases(&mut nodes)?;
-                (nodes, self.versions)
+                (nodes, self)
             },
             Err(err) => {
                 let (mut tokens, taken) = tokenize(sql)?;
-                let versions = taken.versions;
                 let positional_joins = extract_positional_joins(&mut tokens);
                 if positional_joins.is_empty() {
                     return Err(err);
                 }
                 let mut nodes = parse(&mut parser_of(tokens)).map_err(|_| err)?;
                 positional_joins.attach(&mut nodes)?;
-                (nodes, versions)
+                (nodes, taken)
             },
         };
-        versions.attach(&mut nodes)?;
-        if has_lambdas {
+        taken.versions.attach(&mut nodes)?;
+        taken.samples.attach(&mut nodes)?;
+        if taken.has_lambdas {
             resolve_lambda_params(&mut nodes);
         }
         Ok(nodes)
     }
 
     pub(crate) fn refuse(self) -> PolarsResult<()> {
-        self.versions.refuse()
+        self.versions.refuse()?;
+        self.samples.refuse()
     }
 }
 
@@ -147,12 +149,14 @@ fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
     normalize_tokens(&mut tokens);
+    let samples = rewrite_sample_tokens(&mut tokens)?;
     let has_lambdas = rewrite_lambda_tokens(&mut tokens);
     let versions = extract_table_versions(&mut tokens)?;
     Ok((
         tokens,
         TakenClauses {
             versions,
+            samples,
             has_lambdas,
         },
     ))
