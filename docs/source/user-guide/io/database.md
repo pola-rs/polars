@@ -94,8 +94,8 @@ The examples on this page use a small SQLite database, built in this setup:
 {{code_block('user-guide/io/database_scan','scan',['scan_database'])}}
 
 The source is a table name (`"orders"`, `"public.orders"`, `'"My Schema"."Orders"'`) or a SQL query.
-`explain()` shows the database, the driver and the SQL sent to the database. A
-filter the SQL applies exactly is not applied again by Polars:
+`explain()` shows the database, the driver and the SQL sent to the database. A filter the SQL
+applies exactly is not applied again by Polars:
 
 {{code_block('user-guide/io/database_scan','scan_explain',['scan_database'])}}
 
@@ -165,9 +165,9 @@ Rows come back in no particular order unless `order_by=` is given. A `NUMERIC` c
 precision is read as `Decimal(38, 9)`; a value with digits beyond the ninth decimal place is an
 error, so pass `schema_overrides=` for such columns if you need more.
 
-Each scan reads its source with a single query. Reading in parallel partitions is not supported
-yet: `partition_on=<column>`, `partition_num`, `partition_range` and `partition_predicates` are
-reserved and raise an error.
+Each scan reads its source with a single query. Reading in parallel partitions is not supported yet:
+`partition_on=<column>`, `partition_num`, `partition_range` and `partition_predicates` are reserved
+and raise an error.
 
 ### Queries and connections
 
@@ -186,10 +186,10 @@ binds them itself (not ADBC or ConnectorX):
 Besides a URI, the connection can be an ODBC connection string, a SQLAlchemy `URL` or `Engine`, a
 zero-argument function that returns a DB-API connection, or a live connection object. An `Engine`
 opens the connections itself, with its pool, `creator` and `connect_args`. A function reaches any
-database with a Python driver. A plan holding a live connection can't be
-serialized. Connections are used from Polars' threads, so a `sqlite3`
-connection needs `check_same_thread=False`. With a function or a live connection, `driver`,
-`connect_options` and `credential_provider` don't apply: the connection object is already set up.
+database with a Python driver. A plan holding a live connection can't be serialized. Connections are
+used from Polars' threads, so a `sqlite3` connection needs `check_same_thread=False`. With a
+function or a live connection, `driver`, `connect_options` and `credential_provider` don't apply:
+the connection object is already set up.
 
 A serialized or pickled plan carries its URI as given, password included (`explain()` redacts it).
 To keep the password out of a plan you ship elsewhere, leave it out of the URI and pass a
