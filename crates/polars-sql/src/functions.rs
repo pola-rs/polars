@@ -2337,8 +2337,9 @@ impl SQLFunctionVisitor<'_> {
             ListFilter => self.visit_list_lambda(true),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
+                    // As in Postgres: an empty or NULL list gives no row.
+                    empty_as_null: false,
+                    keep_nulls: false,
                 })
             }),
             GenerateSeries => self.visit_series(true),

@@ -548,7 +548,9 @@ as a table function, see :ref:`RANGE <range_table_func>`.
 
 UNNEST
 ------
-Unnest/explode an array column into multiple rows.
+Unnest/explode an array column into multiple rows. As in Postgres, an empty or NULL
+array gives no row, and a NULL element gives a row. In the `SELECT` list, `UNNEST` is
+applied before the other expressions, so window functions see the unnested rows.
 
 **Example:**
 

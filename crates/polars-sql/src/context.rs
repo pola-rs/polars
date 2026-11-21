@@ -2757,8 +2757,9 @@ impl SQLContext {
                 strict: true,
             },
             ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
+                // As in Postgres: an empty or NULL list gives no row.
+                empty_as_null: false,
+                keep_nulls: false,
             },
         );
         if !rename_from.is_empty() {
@@ -4950,8 +4951,9 @@ impl SQLContext {
                     strict: true,
                 },
                 ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
+                    // As in Postgres: an empty or NULL list gives no row.
+                    empty_as_null: false,
+                    keep_nulls: false,
                 },
             );
             projections = projections
