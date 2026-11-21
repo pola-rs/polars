@@ -3279,12 +3279,12 @@ def test_mysql_query_with_side_effects_runs_once(name: str) -> None:
 
 
 @needs_postgres
-@pytest.mark.parametrize("module", ["psycopg", "pg8000", "sqlalchemy"])
+@pytest.mark.parametrize("module", ["psycopg", "pg8000", "sqlalchemy", "orm_session"])
 def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None:
     # A failed statement in the user's transaction (the lookup of a name that isn't
     # there, a query that fails) aborted it: their writes were lost, and the next
     # lookup failed with InFailedSqlTransaction, hiding the error
-    pytest.importorskip(module)
+    pytest.importorskip("sqlalchemy" if module == "orm_session" else module)
     assert POSTGRES is not None
     table = f"rvf_tx_{module}"
     _execute(
@@ -3297,7 +3297,7 @@ def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None
             f'INSERT INTO "Rvf{module}" VALUES (1)',
         ],
     )
-    if module == "sqlalchemy":
+    if module in ("sqlalchemy", "orm_session"):
         import sqlalchemy
 
         engine = sqlalchemy.create_engine(_sqlalchemy_url(POSTGRES, "psycopg"))
@@ -3326,14 +3326,19 @@ def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None
             finally:
                 cur.close()
 
+    source = conn
+    if module == "orm_session":
+        from sqlalchemy.orm import Session
+
+        source = Session(bind=conn)
     try:
         run(f"INSERT INTO {table} VALUES (1)")
         # found by the name as written, after the folded name's lookup failed
-        assert pl.scan_database(f"Rvf{module}", conn).collect().height == 1
+        assert pl.scan_database(f"Rvf{module}", source).collect().height == 1
         with pytest.raises(pl.exceptions.ComputeError, match="does not exist"):
-            pl.scan_database("rvf_no_such_table", conn).collect()
+            pl.scan_database("rvf_no_such_table", source).collect()
         with pytest.raises(pl.exceptions.ComputeError, match="division by zero"):
-            pl.scan_database("SELECT 1 / 0 AS x", conn).collect()
+            pl.scan_database("SELECT 1 / 0 AS x", source).collect()
         # the transaction goes on, with the user's write
         run(f"INSERT INTO {table} VALUES (2)")
         assert run(f"SELECT count(*) FROM {table}") == [(2,)]

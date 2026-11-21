@@ -229,19 +229,16 @@ def _is_orm_session(obj: Any) -> bool:
     )
 
 
-def _session_connection(session: Any) -> Any:
+def _bound_connection(session: Any) -> Any:
     """
-    The SQLAlchemy Connection an ORM Session runs on, or None if it has none yet.
+    The SQLAlchemy Connection an ORM Session is bound to, or None.
 
-    A Session bound to a Connection runs on it, whose transaction and results may be
-    the user's while the Session has none of its own.
+    Its transaction and results may be the user's while the Session has none.
     """
     with contextlib.suppress(Exception):
         bind = session.get_bind()
         if _module_of(bind) == "sqlalchemy" and type(bind).__name__ == "Connection":
             return bind
-        if session.in_transaction():
-            return session.connection()
     return None
 
 
@@ -1567,8 +1564,12 @@ def _params_keyword(cx: Any) -> str:
 
 def _transaction_idle(conn: Any) -> bool | None:
     """Whether a connection is outside a transaction; `None` if unknown."""
-    if _is_orm_session(conn) and (bound := _session_connection(conn)) is not None:
-        return _transaction_idle(bound)
+    if _is_orm_session(conn):
+        with contextlib.suppress(Exception):
+            if conn.in_transaction():
+                return False
+            if (bound := _bound_connection(conn)) is not None:
+                return _transaction_idle(bound)
     with contextlib.suppress(Exception):
         if (info := getattr(conn, "info", None)) is not None and hasattr(
             info, "transaction_status"
@@ -1651,8 +1652,13 @@ def _refuse_pending_results(conn: Any) -> None:
         # a SQLAlchemy Connection, or an ORM Session's (only one in a transaction has
         # one): the driver's is what holds the result
         with contextlib.suppress(Exception):
-            if _is_orm_session(conn) and (conn := _session_connection(conn)) is None:
-                return
+            if _is_orm_session(conn):
+                bound = _bound_connection(conn)
+                if bound is None:
+                    if not conn.in_transaction():
+                        return
+                    bound = conn.connection()
+                conn = bound
             conn = conn.connection.driver_connection
     if _module_of(conn) != "pymysql":
         return
@@ -1779,7 +1785,12 @@ def _postgres_family(conn: Any) -> bool:
     if module in ("psycopg", "psycopg2", "pg8000"):
         return True
     if module == "sqlalchemy":
-        dialect = getattr(conn, "dialect", None)
+        bind = conn
+        if callable(get_bind := getattr(conn, "get_bind", None)):
+            # an ORM Session's dialect is its bind's
+            with contextlib.suppress(Exception):
+                bind = get_bind()
+        dialect = getattr(bind, "dialect", None)
         # (also the forks: TimescaleDB, CockroachDB, ... subclass PGDialect)
         return getattr(dialect, "name", "") in ("postgresql", "redshift") or any(
             c.__name__ == "PGDialect" for c in type(dialect).__mro__
@@ -3322,6 +3333,13 @@ def connect(
                         if attempt == 99 or not _assertion_pool_busy(e):
                             raise
                         time.sleep(0.002)
+        if _is_orm_session(checkout) and _bound_connection(checkout) is not None:
+            msg = (
+                "a connection function that returns Sessions bound to one Connection "
+                "can't be scanned: that connection is the caller's. Pass the Session "
+                "or the Connection itself"
+            )
+            raise TypeError(msg)
         if (shared := shared_pool_connection(checkout)) is not None:
             if dialect in _SESSION_SETUP_DIALECTS:
                 # the plan relies on the session setup, which the user's connection

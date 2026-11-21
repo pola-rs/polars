@@ -4886,6 +4886,44 @@ def test_scan_shared_pool_factory_of_a_dialect_with_a_session_setup_is_refused(
         engine.dispose()
 
 
+def test_scan_orm_sessions_keep_their_transaction_and_give_back_their_checkout(
+    tmp_path: Path,
+) -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    engine = sqlalchemy.create_engine(
+        f"sqlite:///{tmp_path / 's.db'}",
+        poolclass=sqlalchemy.pool.QueuePool,
+        pool_size=1,
+        max_overflow=0,
+        isolation_level="AUTOCOMMIT",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("CREATE TABLE t (v INTEGER)")
+            conn.exec_driver_sql("INSERT INTO t VALUES (1)")
+        # a scan of an idle Session gives its checkout back
+        with orm.Session(engine) as session:
+            assert pl.scan_database("SELECT * FROM t", session).collect().height == 1
+            assert engine.pool.checkedout() == 0
+        with engine.connect() as conn:
+            # a Session bound to a Connection keeps the transaction it began
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                assert (
+                    pl.scan_database("SELECT * FROM t", session).collect().height == 1
+                )
+                assert session.in_transaction()
+            # a function that returns such Sessions shares the caller's connection
+            with pytest.raises(Exception, match="Sessions bound to one Connection"):
+                pl.scan_database(
+                    "SELECT * FROM t", orm.sessionmaker(bind=conn)
+                ).collect()
+    finally:
+        engine.dispose()
+
+
 def test_scan_function_engine_lookup_reads_only_its_globals_and_defaults() -> None:
     sqlalchemy = pytest.importorskip("sqlalchemy")
     from polars.io.database._scan import _factory_singleton_engine
