@@ -13,25 +13,25 @@ pub fn when(condition: PyExpr) -> PyWhen {
     }
 }
 
-#[pyclass(frozen, skip_from_py_object)]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyWhen {
     inner: dsl::When,
 }
 
-#[pyclass(skip_from_py_object)] // Not marked as frozen for pickling, but that's the only &mut self method.
+#[pyclass] // Not marked as frozen for pickling, but that's the only &mut self method.
 #[derive(Clone)]
 pub struct PyThen {
     inner: dsl::Then,
 }
 
-#[pyclass(frozen, skip_from_py_object)]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyChainedWhen {
     inner: dsl::ChainedWhen,
 }
 
-#[pyclass(skip_from_py_object)] // Not marked as frozen for pickling, but that's the only &mut self method.
+#[pyclass] // Not marked as frozen for pickling, but that's the only &mut self method.
 #[derive(Clone)]
 pub struct PyChainedThen {
     inner: dsl::ChainedThen,
