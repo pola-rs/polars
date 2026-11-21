@@ -2847,6 +2847,11 @@ def test_having_names_an_output_alias_of_a_view_column_list() -> None:
         "SELECT g, sum(x) AS s FROM t GROUP BY g HAVING s > 0"
     )
     assert inspect_view(view, "duckdb")["repeatable"] is False
+    query = (
+        "SELECT g, sum(x) AS s FROM t GROUP BY g "
+        "HAVING EXISTS (SELECT 1 FROM u WHERE s >= u.low)"
+    )
+    assert inspect_query(query, "sqlite")["repeatable"] is False
     # an input column inside an aggregate is no alias
     query = "SELECT g, sum(x) AS x, count(x) AS n FROM t GROUP BY g HAVING n > 1"
     assert inspect_query(query, "duckdb")["repeatable"] is True

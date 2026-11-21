@@ -2580,11 +2580,16 @@ def _filtered_aliases(stmt: Any) -> set[str]:
     """
 
     def aliases(node: Any) -> list[str]:
-        # (a name inside an aggregate is an input column's)
+        # (a name inside an aggregate of this query is an input column's; one in a
+        # subquery may be an outer alias)
         return [
             c.name.lower()
             for c in node.find_all(exp.Column)
-            if not c.table and c.find_ancestor(exp.AggFunc, exp.Select) is stmt
+            if not c.table
+            and not (
+                (agg := c.find_ancestor(exp.AggFunc)) is not None
+                and agg.find_ancestor(exp.Select) is stmt
+            )
         ]
 
     names = {
