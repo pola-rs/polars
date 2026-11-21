@@ -5,6 +5,7 @@ These run only when server URIs are given:
 
     POLARS_TEST_POSTGRES_URI, POLARS_TEST_POSTGRES14_URI, POLARS_TEST_MYSQL_URI,
     POLARS_TEST_MARIADB_URI, POLARS_TEST_ORACLE_URI, POLARS_TEST_CLICKHOUSE_URI,
+    POLARS_TEST_MSSQL_URI, POLARS_TEST_TRINO_URI,
     POLARS_TEST_DATABRICKS_URI (a workspace's warehouse, see `_databricks.py`: it seeds
     its own schema, and each query takes seconds)
 
@@ -134,6 +135,49 @@ def _clickhouse_factory(uri: str) -> Callable[[], Any]:
     return connect
 
 
+def _mssql_factory(uri: str) -> Callable[[], Any]:
+    def connect() -> Any:
+        import pymssql  # type: ignore[import-not-found]
+
+        p = _parts(uri)
+        return pymssql.connect(
+            server=p["host"],
+            port=p["port"],
+            user=p["user"],
+            password=p["password"],
+            database=p["database"],
+        )
+
+    return connect
+
+
+def _trino_factory(uri: str) -> Callable[[], Any]:
+    def connect() -> Any:
+        import trino  # type: ignore[import-not-found]
+
+        p = _parts(uri)
+        catalog, _, schema = p["database"].partition("/")
+        return trino.dbapi.connect(  # type: ignore[no-untyped-call]
+            host=p["host"],
+            port=p["port"],
+            user=p["user"],
+            catalog=catalog,
+            schema=schema or "default",
+            http_scheme="http",
+        )
+
+    return connect
+
+
+def _mssql_odbc_string(uri: str) -> str:
+    p = _parts(uri)
+    return (
+        "Driver={ODBC Driver 18 for SQL Server};"
+        f"Server={p['host']},{p['port']};Database={p['database']};"
+        f"UID={p['user']};PWD={p['password']};TrustServerCertificate=yes"
+    )
+
+
 def _databricks_factory(uri: str) -> Callable[[], Any]:
     def connect() -> Any:
         from tests.unit.io.database._databricks import connect
@@ -173,6 +217,8 @@ _DEFAULT_PORTS = {
     "mariadb": 3306,
     "oracle": 1521,
     "clickhouse": 8123,
+    "mssql": 1433,
+    "trino": 8080,
     "databricks": 443,
 }
 
@@ -191,6 +237,8 @@ class Server:
     live_blocking: bool = False
     # a driver pin that needs a different URI form (SQLAlchemy dialect+driver)
     uri_for: dict[str, Callable[[str], str]] = field(default_factory=dict)
+    # extra `scan_database` arguments of a driver pin
+    kwargs_for: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def uri(self) -> str | None:
@@ -266,6 +314,44 @@ SERVERS = {
         {"adbc": False, "clickhouse_connect": False, "connectorx": False},
         factory=_clickhouse_factory,
     ),
+    # `connectorx` first: the reference the other cells are compared with
+    "mssql": Server(
+        "POLARS_TEST_MSSQL_URI",
+        "SELECT * FROM edge",
+        {
+            "connectorx": False,
+            "pymssql": False,
+            "adbc": False,
+            "pyodbc": False,
+            "arrow_odbc": False,
+            "turbodbc": False,
+            "sqlalchemy": False,
+        },
+        factory=_mssql_factory,
+        uri_for={
+            "pyodbc": _mssql_odbc_string,
+            "arrow_odbc": _mssql_odbc_string,
+            "turbodbc": _mssql_odbc_string,
+            "sqlalchemy": lambda u: u.replace("mssql://", "mssql+pymssql://", 1),
+        },
+        # arrow-odbc needs an upper bound for `nvarchar(max)` and `varbinary(max)`
+        kwargs_for={
+            "arrow_odbc": {
+                "connect_options": {"max_text_size": 65536, "max_binary_size": 65536}
+            }
+        },
+    ),
+    # URI `trino://user@host:port/catalog/schema`
+    "trino": Server(
+        "POLARS_TEST_TRINO_URI",
+        "SELECT * FROM edge",
+        {"trino": False, "adbc": False, "sqlalchemy": False, "connectorx": False},
+        factory=_trino_factory,
+        uri_for={
+            # the ADBC driver speaks HTTPS unless told not to
+            "adbc": lambda u: u + ("&" if "?" in u else "?") + "SSL=false",
+        },
+    ),
     "databricks": Server(
         "POLARS_TEST_DATABRICKS_URI",
         "SELECT * FROM edge",
@@ -292,6 +378,34 @@ def _server_marks(name: str) -> list[Any]:
     return [ORACLE_GROUP] if name == "oracle" else []
 
 
+def _no_odbc_driver() -> str | None:
+    try:
+        with open("/etc/odbcinst.ini") as f:  # noqa: PTH123
+            if "[ODBC Driver 18 for SQL Server]" in f.read():
+                return None
+    except OSError:
+        pass
+    return "the ODBC driver `msodbcsql18` is not installed"
+
+
+def _no_adbc_driver(dialect: str) -> Callable[[], str | None]:
+    def check() -> str | None:
+        import polars_database
+
+        if polars_database.find_adbc_driver(dialect) is None:
+            return f"no ADBC driver for {dialect} (`dbc install {dialect}`)"
+        return None
+
+    return check
+
+
+def _no_connectorx_trino() -> str | None:
+    return (
+        "ConnectorX's Trino source takes no schema from the URI (unqualified table "
+        "names fail with MISSING_SCHEMA_NAME) and can't parse a bigint beyond 2**53"
+    )
+
+
 def _no_oracle_client() -> str | None:
     import ctypes.util
 
@@ -303,6 +417,12 @@ def _no_oracle_client() -> str | None:
 # Cells that may not run here: (server, driver) -> the reason, or None if it can.
 KNOWN_UNRUNNABLE: dict[tuple[str, str], Callable[[], str | None]] = {
     ("oracle", "connectorx"): _no_oracle_client,
+    ("mssql", "adbc"): _no_adbc_driver("mssql"),
+    ("mssql", "pyodbc"): _no_odbc_driver,
+    ("mssql", "arrow_odbc"): _no_odbc_driver,
+    ("mssql", "turbodbc"): _no_odbc_driver,
+    ("trino", "adbc"): _no_adbc_driver("trino"),
+    ("trino", "connectorx"): _no_connectorx_trino,
 }
 
 
@@ -388,6 +508,7 @@ def _scan(name: str, driver: str, source: str = "edge", **kwargs: Any) -> pl.Laz
     convert = server.uri_for.get(driver)
     if convert is not None:
         uri = convert(uri)
+    kwargs = {**server.kwargs_for.get(driver, {}), **kwargs}
     return pl.scan_database(source, uri, driver=driver, **kwargs)
 
 
@@ -6978,3 +7099,25 @@ def test_oracle_redacted_columns_are_not_compared_in_the_database() -> None:
         if must_grant:
             cur.execute(f'REVOKE SELECT_CATALOG_ROLE FROM "{owner}"')
         _execute("oracle", ["DROP VIEW VOL_RED_V", "DROP TABLE VOL_RED PURGE"])
+
+
+# ---- SQL Server and Trino ----
+
+needs_mssql = pytest.mark.skipif(
+    SERVERS["mssql"].uri is None, reason="no SQL Server URI"
+)
+needs_trino = pytest.mark.skipif(SERVERS["trino"].uri is None, reason="no Trino URI")
+
+
+def _read_by_every_driver(
+    name: str, source: str, drivers: list[str] | None = None, **kwargs: Any
+) -> tuple[dict[str, pl.DataFrame], dict[str, str]]:
+    """The source read with each runnable driver: the frames, and the errors."""
+    frames: dict[str, pl.DataFrame] = {}
+    errors: dict[str, str] = {}
+    for driver in _runnable_drivers(name, drivers):
+        try:
+            frames[driver] = _scan(name, driver, source, **kwargs).collect()
+        except pl.exceptions.PolarsError as e:
+            errors[driver] = f"{type(e).__name__}: {str(e)[:300]}"
+    return frames, errors
