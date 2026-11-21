@@ -41,6 +41,12 @@ impl ErrString {
     pub const fn new_static(s: &'static str) -> Self {
         Self(Cow::Borrowed(s))
     }
+
+    /// A message used as is, regardless of `POLARS_PANIC_ON_ERR` (for an error reporting a
+    /// panic that was already raised and caught).
+    pub fn new_owned(s: String) -> Self {
+        Self(Cow::Owned(s))
+    }
 }
 
 impl<T> From<T> for ErrString

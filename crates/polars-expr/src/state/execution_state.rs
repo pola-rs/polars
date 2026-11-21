@@ -137,6 +137,9 @@ pub struct ExecutionState {
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     pub eval_columns: Arc<Option<EvalColumns>>,
     stop: Arc<RelaxedCell<bool>>,
+    /// Whether `stop` can be set while the query runs (a background query): only then do the
+    /// streaming parts of the plan watch it.
+    cancellable: bool,
 }
 
 impl ExecutionState {
@@ -158,6 +161,7 @@ impl ExecutionState {
             element: Default::default(),
             eval_columns: Default::default(),
             stop: Arc::new(RelaxedCell::from(false)),
+            cancellable: false,
         }
     }
 
@@ -170,6 +174,17 @@ impl ExecutionState {
 
     pub fn cancel_token(&self) -> Arc<RelaxedCell<bool>> {
         self.stop.clone()
+    }
+
+    /// Returns the cancel token, marking the query as one that can be cancelled while it runs.
+    pub fn cancellable_token(&mut self) -> Arc<RelaxedCell<bool>> {
+        self.cancellable = true;
+        self.stop.clone()
+    }
+
+    /// The cancel token, if the query can be cancelled while it runs.
+    pub fn cancel_token_if_cancellable(&self) -> Option<Arc<RelaxedCell<bool>>> {
+        self.cancellable.then(|| self.stop.clone())
     }
 
     /// Partially clones and partially clears state
@@ -189,6 +204,7 @@ impl ExecutionState {
             #[cfg(feature = "dtype-struct")]
             with_fields_ac: self.with_fields_ac.clone(),
             stop: self.stop.clone(),
+            cancellable: self.cancellable,
         }
     }
 

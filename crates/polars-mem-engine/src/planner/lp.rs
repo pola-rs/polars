@@ -413,8 +413,10 @@ fn create_physical_plan_impl(
                 Ok(Box::new(SinkExecutor {
                     input: recurse!(input, state)?,
                     name: PlSmallStr::from_static("batches"),
-                    f: Box::new(move |mut buffer, _state| {
+                    f: Box::new(move |mut buffer, state| {
                         while buffer.height() > 0 {
+                            // A cancelled query stops between callbacks.
+                            state.should_stop()?;
                             let df;
                             (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
                             let should_stop = function.call(df)?;

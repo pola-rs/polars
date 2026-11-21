@@ -48,10 +48,12 @@ struct StreamingQueryExecutor {
 }
 
 impl Executor for StreamingQueryExecutor {
-    fn execute(&mut self, _cache: &mut ExecutionState) -> PolarsResult<DataFrame> {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        // A background query's cancel token (`InProcessQuery::cancel`) stops this part too.
+        let cancel = state.cancel_token_if_cancellable();
         let mut df = { self.executor.try_lock().unwrap().take() }
             .expect("unhandled: execute() more than once")
-            .execute()
+            .execute_with_cancel(cancel.as_deref())
             .map(|x| x.unwrap_single())?;
 
         if self.rechunk {
