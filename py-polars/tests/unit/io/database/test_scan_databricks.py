@@ -659,9 +659,10 @@ def test_read_database_adbc_connection_invalid_utf8_is_an_error() -> None:
     adbc = pytest.importorskip("adbc_driver_manager.dbapi")
     import polars_database
 
-    if polars_database.find_adbc_driver("databricks") is None:
+    found = polars_database.find_adbc_driver("databricks")
+    if found is None:
         pytest.skip("no ADBC Databricks driver")
-    driver, entrypoint = polars_database.find_adbc_driver("databricks")
+    driver, entrypoint = found
     kwargs: dict[str, Any] = {
         "driver": driver,
         "db_kwargs": {"uri": _uri()},
