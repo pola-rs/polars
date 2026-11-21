@@ -1194,9 +1194,7 @@ pub fn check_resolution(
         .is_some_and(|c| c.partitions.len() > 1);
     if partitioned
         && config.max_connections() > 1
-        && let Some(i) = found
-            .iter()
-            .position(|f| f.starts_with("temp:") || f.contains("+temp-children:"))
+        && let Some(i) = found.iter().position(|f| f.starts_with("temp"))
     {
         polars_bail!(
             InvalidOperation:

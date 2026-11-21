@@ -1492,15 +1492,16 @@ pub fn has_resolution_fingerprint(dialect: DialectName) -> bool {
 }
 
 /// How each of `names` resolves on this session, as text that is equal for two sessions that
-/// resolve a name to the same relation, or to a temporary table of their own: for Postgres the
-/// relation the name resolves to as `perm:schema.name:relkind` or `temp:relkind`, and
-/// `+temp-children:a,b` when the session has temporary tables of its own (`a`, `b`) inheriting
-/// from it (permanent children are global DDL, not session state: a partition added later must
-/// not change the fingerprint); for MySQL / MariaDB / SingleStore `temp:` or `perm:` and the
-/// database. Session-specific ids (a temporary table's `pg_temp_N` schema, OIDs) are left out
-/// (and the temporary tables of other sessions, which `pg_class` lists too). One catalog
-/// statement on Postgres; MySQL has none that lists temporary tables, so one per name. `None`:
-/// the dialect has none, or the lookup failed.
+/// resolve a name to the same relation, or to a temporary table of their own. For Postgres:
+/// `temp-children:a,b ` first when the session has temporary tables of its own (`a`, `b`, quoted
+/// where needed) inheriting from the relation (permanent children are global DDL, not session
+/// state: a partition added later must not change the fingerprint), then the relation as
+/// `perm:schema.name:relkind` or `temp:relkind`, and `@database`. For MySQL / MariaDB /
+/// SingleStore: `temp:` or `perm:` and the database. A fingerprint of a temporary relation, or of
+/// one with temporary children, starts with `temp`. Session-specific ids (a temporary table's
+/// `pg_temp_N` schema, OIDs) are left out (and the temporary tables of other sessions, which
+/// `pg_class` lists too). One catalog statement on Postgres; MySQL has none that lists temporary
+/// tables, so one per name. `None`: the dialect has none, or the lookup failed.
 pub fn resolution_fingerprint(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
@@ -1522,21 +1523,22 @@ pub fn resolution_fingerprint(
                 .iter()
                 .enumerate()
                 .map(|(i, parts)| {
-                    // the root relation the name resolves to (the session-dependent part), and
-                    // the temporary children of its own this session has under it (permanent
-                    // children are DDL, the same for every session)
+                    // the temporary children of its own this session has under the relation
+                    // (permanent children are DDL, the same for every session), and the root
+                    // relation the name resolves to (the session-dependent part)
                     format!(
                         "(WITH RECURSIVE d(oid, depth) AS (SELECT to_regclass({})::oid, 0 UNION ALL \
                         SELECT i.inhrelid, d.depth + 1 FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
-                        SELECT COALESCE((SELECT CASE WHEN c.relpersistence = 't' THEN 'temp:' || \
+                        SELECT COALESCE((SELECT 'temp-children:' || string_agg(quote_ident(c.relname), \
+                        ',' ORDER BY c.relname::text) || ' ' FROM d JOIN pg_class c ON c.oid = d.oid \
+                        WHERE d.depth > 0 AND c.relpersistence = 't' \
+                        AND c.relnamespace = pg_my_temp_schema()), '') || \
+                        COALESCE((SELECT CASE WHEN c.relpersistence = 't' THEN 'temp:' || \
                         c.relkind::text ELSE 'perm:' || n.nspname || '.' || c.relname || ':' || \
                         c.relkind::text END FROM d JOIN pg_class c ON c.oid = d.oid \
                         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE d.depth = 0 \
                         AND (c.relpersistence <> 't' OR c.relnamespace = pg_my_temp_schema())), \
-                        'none') || COALESCE((SELECT '+temp-children:' || string_agg(c.relname::text, ',' \
-                        ORDER BY c.relname::text) FROM d JOIN pg_class c ON c.oid = d.oid \
-                        WHERE d.depth > 0 AND c.relpersistence = 't' \
-                        AND c.relnamespace = pg_my_temp_schema()), ''))::text AS r{i}",
+                        'none') || '@' || current_database())::text AS r{i}",
                         dialect.quote_str(&qualified(parts))
                     )
                 })
