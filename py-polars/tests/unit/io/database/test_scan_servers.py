@@ -42,6 +42,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal
 from tests.unit.io.database._scan_corpus import (
     CORPUS_MODES,
@@ -7687,3 +7688,31 @@ def test_clickhouse_map_of_arbitrary_bytes_is_an_error_not_a_string(
                 lf.collect()
     finally:
         _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_mssql
+def test_mssql_query_with_unnamed_columns() -> None:
+    # SQL Server refuses a derived table over a query with a column of no name
+    # (`SELECT count(*)`): such a column is named by its position, as ConnectorX names
+    # it, with every driver and with or without pushdown
+    source = "SELECT count(*), max(id) AS m, 1 + 1, sum(id) FROM edge"
+    names = ["column_0", "m", "column_2", "column_3"]
+    first: pl.DataFrame | None = None
+    for driver in _runnable_drivers("mssql"):
+        for pushdown in [True, False]:
+            df = _scan("mssql", driver, source, pushdown=pushdown).collect()
+            assert df.columns == names, (driver, pushdown)
+            assert df.height == 1
+            assert df["column_0"][0] == N_EDGE_ROWS
+            assert df["column_2"][0] == 2
+            if first is None:
+                first = df.with_columns(cs.numeric().cast(pl.Int64))
+            assert_frame_equal(df.with_columns(cs.numeric().cast(pl.Int64)), first)
+        kept = (
+            _scan("mssql", driver, source)
+            .filter(pl.col("column_0") > 0)
+            .select("column_0", "m")
+            .collect()
+        )
+        assert kept.height == 1, driver
+        assert kept.columns == ["column_0", "m"]
