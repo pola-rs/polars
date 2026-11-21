@@ -10442,3 +10442,171 @@ def test_mssql_float_literals_are_not_pushed() -> None:
         c = pl.col("f")
         predicates += [c < v, c <= v, c == v, c != v, c > v, c >= v, c.is_in([v, 1.0])]
     _check_filters_by_driver("mssql", table, predicates)
+
+
+_CH_DATE_TABLES = [
+    ("Date", "PARTITION BY toYYYYMM(k) ORDER BY id"),
+    ("Nullable(Date)", "PARTITION BY toStartOfMonth(k) ORDER BY id"),
+    ("Date32", "PARTITION BY toMonday(k) ORDER BY id"),
+    ("Date", "ORDER BY (toYYYYMM(k), id)"),
+    ("Nullable(Date32)", "ORDER BY (toStartOfMonth(k), id)"),
+]
+
+
+@needs_clickhouse
+@pytest.mark.parametrize("driver", ["adbc", "clickhouse_connect"])
+def test_clickhouse_dates_outside_the_date_range_lose_no_rows(driver: str) -> None:
+    # ClickHouse prunes parts and key ranges by converting the constant to `Date`
+    # (1970-01-01..2149-06-06), which wraps: neither a filter literal nor a partition
+    # cut outside it may be sent
+    days = [date(1971, 1, 2), date(1985, 6, 1), date(2000, 1, 1)]
+    days += [date(2100, 1, 1), date(2105, 1, 1)]
+    far = date(1960, 1, 1), date(1930, 1, 1), date(2200, 1, 1), date(2110, 1, 1)
+    for n, (typ, layout) in enumerate(_CH_DATE_TABLES):
+        table = f"fix_ch_dates_{driver}_{n}"
+        nullable = typ.startswith("Nullable")
+        values = ", ".join(f"({i}, '{d}')" for i, d in enumerate(days))
+        values += f", ({len(days)}, NULL)" if nullable else ""
+        _execute(
+            "clickhouse",
+            [
+                f"DROP TABLE IF EXISTS {table}",
+                f"CREATE TABLE {table} (id Int32, k {typ}) ENGINE = MergeTree "
+                f"{layout} SETTINGS allow_nullable_key = 1, index_granularity = 2",
+                f"INSERT INTO {table} VALUES {values}",
+            ],
+        )
+        try:
+            lf = _scan("clickhouse", driver, table)
+            k = pl.col("k")
+            predicates = [
+                k >= far[0],
+                k > far[1],
+                k < far[2],
+                k <= far[3],
+                k.is_between(far[0], far[2]),
+                k.is_in([far[0], date(2000, 1, 1)]),
+                k != far[0],
+            ]
+            check_filter_ids(lf, predicates)
+            expect = sorted(lf.collect()["id"].to_list())
+            assert len(expect) == len(days) + nullable
+            ranges = [
+                (None, 5),
+                ((date(1960, 1, 1), date(2030, 1, 1)), 13),
+                ((date(1, 1, 1), date(9999, 12, 31)), 9),
+                ((date(1900, 1, 1), date(2299, 12, 31)), 7),
+            ]
+            for rng, parts in ranges:
+                kw = {} if rng is None else {"partition_range": rng}
+                got = _scan(
+                    "clickhouse",
+                    driver,
+                    table,
+                    partition_on="k",
+                    partition_num=parts,
+                    **kw,
+                )
+                assert sorted(got.collect()["id"].to_list()) == expect, (typ, layout)
+        finally:
+            _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_year_cuts_and_literals_stay_valid_year_values(name: str) -> None:
+    # a cut in 100-1900 loses the 0000 row (MySQL 8.4), a cut above 2155 matches nothing
+    # (MariaDB): every row is read once whatever the range
+    table = "fix_year_cuts"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, y year, KEY (y))",
+            f"INSERT INTO {table} VALUES (1, 0), (2, 1901), (3, 1950), (4, 2000), "
+            "(5, 2155), (6, NULL), (7, 2100)",
+        ],
+    )
+    try:
+        for kw, num in [
+            ({}, 3),
+            ({}, 7),
+            ({"partition_range": (0, 2155)}, 3),
+            ({"partition_range": (0, 2155)}, 40),
+            ({"partition_range": (50, 3000)}, 7),
+            ({"partition_range": (1000, 5000)}, 4),
+            ({"partition_range": (0, 0)}, 3),
+        ]:
+            lf = _scan(
+                name, "pymysql", table, partition_on="y", partition_num=num, **kw
+            )
+            assert sorted(lf.collect()["id"].to_list()) == [1, 2, 3, 4, 5, 6, 7], (
+                kw,
+                num,
+            )
+        y = pl.col("y")
+        lf = _scan(name, "pymysql", table)
+        check_filter_ids(
+            lf,
+            [
+                y.is_between(1900, 2200),
+                y.is_between(0, 3000),
+                y.is_between(50, 2000),
+                y.is_in([0, 2200, 50]),
+                y.is_in([1950, 2155]),
+                y >= 2156,
+                y < 1901,
+            ],
+        )
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_float_columns_with_digits(name: str) -> None:
+    # MariaDB reads an indexed FLOAT(M, D) key against a cut other than a scan does: the
+    # rows equal to a cut are lost, so such a column isn't partitioned by ranges there,
+    # and an indexed DOUBLE(M, D) loses the row equal to a `>=` literal (checked below)
+    table = "fix_float_digits"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int, f float(7,3), d double(7,3), KEY (f), "
+            "KEY (d))",
+            f"INSERT INTO {table} VALUES "
+            + ", ".join(f"({i}, {i / 1000}, {i / 1000})" for i in range(4001)),
+        ],
+    )
+    try:
+        for col in ["f", "d"]:
+            kw: dict[str, Any] = {
+                "partition_on": col,
+                "partition_range": (0, 1),
+                "partition_num": 100,
+            }
+            if name == "mariadb":
+                with pytest.raises(pl.exceptions.PolarsError, match=r"FLOAT\(M, D\)"):
+                    _scan(name, "pymysql", table, **kw).collect()
+            else:
+                got = _scan(name, "pymysql", table, **kw).collect()
+                assert sorted(got["id"].to_list()) == list(range(4001))
+            # the automatic choice reads the table, in one partition on MariaDB
+            auto = _scan(
+                name,
+                "pymysql",
+                table,
+                partition_on="auto",
+                partition_num=100,
+                order_by=col,
+            ).collect()
+            assert sorted(auto["id"].to_list()) == list(range(4001))
+        # a pushed comparison keeps what Polars keeps, on the indexed column too
+        lf = _scan(name, "pymysql", table)
+        predicates = []
+        for v in [0.01, 0.02, 0.123, 1.0, 1.61, 1.824, 3.728, 3.853, 3.986]:
+            for col in ["f", "d"]:
+                c = pl.col(col)
+                predicates += [c == v, c >= v, c > v, c < v, c <= v, c.is_in([v, 0.3])]
+        check_filter_ids(lf, predicates)
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])

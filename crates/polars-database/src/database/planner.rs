@@ -422,6 +422,16 @@ fn derived_order_by_reason(dialect: DialectName) -> PlSmallStr {
 
 /// The schema probe of a MySQL query: the query with a `LIMIT 0` of its own.
 ///
+/// Whether a MySQL / MariaDB column type is a `FLOAT(M, D)` or `DOUBLE(M, D)`: a float with
+/// digits declared (not the `FLOAT(p)` precision form, which has no comma).
+fn declared_float_digits(db_type: &str) -> bool {
+    let t = db_type.trim().to_ascii_lowercase();
+    ["float", "double", "real"].iter().any(|f| {
+        t.strip_prefix(f)
+            .is_some_and(|r| r.trim_start().starts_with('('))
+    }) && t.split(')').next().is_some_and(|args| args.contains(','))
+}
+
 /// MySQL and MariaDB evaluate a derived table of one row (`SELECT NEXTVAL(s)`, an
 /// aggregate) when they plan a query, before a `WHERE 1 = 0` (or a `LIMIT 0`) around it
 /// applies: the usual probe would run the query, and the read then runs it again. The
@@ -5051,6 +5061,35 @@ fn resolve_partitions(
     if n <= 1 {
         return one();
     }
+    // MariaDB compares an indexed `FLOAT(M, D)` / `DOUBLE(M, D)` column against a cut as the
+    // value rounded to D digits where a scan reads it unrounded: a row equal to a cut (stored
+    // as 0.00999999977, cut 0.01) is lost to the index range and kept by a table scan, so
+    // no ranges can be told to partition one without losing or repeating rows.
+    if matches!(kind, partition::RangeKind::Float)
+        && config.dialect == DialectName::Mysql
+        && config
+            .column(&column)
+            .and_then(|m| m.db_type.as_deref())
+            .is_some_and(declared_float_digits)
+    {
+        let backend = open_backend(&config.backend, None)?;
+        let mut session = open_session_with_retries(
+            backend.as_ref(),
+            &config.options.connection,
+            config.dialect,
+        )?;
+        if is_mariadb(session.as_mut()) {
+            if why == "auto" {
+                return one();
+            }
+            polars_bail!(
+                InvalidOperation:
+                "can't partition '{column}' by ranges: MariaDB compares a float column \
+                declared with digits (FLOAT(M, D)) other than it reads it, so a range there \
+                loses rows. Partition on another column, or use partition_predicates"
+            );
+        }
+    }
     // Under `schema=` the planning looked nothing up: automatic partitions of a volatile
     // source (a view of `random()`) are one, as they would be otherwise, not a read that
     // fails (`check_unplanned_volatility`). The bounds query opens a session anyway.
@@ -5220,6 +5259,28 @@ fn run_bounds(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn declared_float_digits_are_told_from_plain_floats() {
+        for t in [
+            "float(7,3)",
+            "FLOAT(7, 3)",
+            "double(20,10)",
+            "float(7,3) unsigned",
+        ] {
+            assert!(super::declared_float_digits(t), "{t}");
+        }
+        for t in [
+            "float",
+            "double",
+            "float(24)",
+            "float unsigned",
+            "decimal(7,3)",
+            "int(11)",
+        ] {
+            assert!(!super::declared_float_digits(t), "{t}");
+        }
+    }
+
     #[test]
     fn utc_zone_is_decided_by_name() {
         for z in [

@@ -430,6 +430,21 @@ impl DialectName {
         }
     }
 
+    /// Days since the epoch that a `Date` literal or range cut may fall in. ClickHouse prunes
+    /// parts and key ranges of a `Date` column (and of a `Date32` one under `toMonday`,
+    /// `toStartOfMonth`, ...) by converting the constant to `Date`, which starts in 1970 and
+    /// ends in 2149-06-06 and wraps silently outside: a row is lost to the pruning. The
+    /// partition function is applied to the constant too: `toMonday` of 1970-01-01 is
+    /// before the epoch and `toLastDayOfMonth` of 2149-06-06 after the end, so the range
+    /// keeps a week at its start (1970-01-08) and over a month at its end (2149-05-02). A `DateTime`
+    /// column has no such wrap. Elsewhere as [`Self::temporal_literal_days`].
+    pub fn date_literal_days(self) -> (i64, i64) {
+        match self {
+            Self::Clickhouse => (7, 65_500),
+            _ => self.temporal_literal_days(),
+        }
+    }
+
     /// The dtype of a column read through [`Self::text_conversion`].
     pub fn text_conversion_dtype(self, db_type: &str) -> DataType {
         if self == Self::Postgresql && db_type.trim().ends_with("[]") {
