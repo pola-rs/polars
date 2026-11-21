@@ -711,8 +711,7 @@ def test_scan_order_by_needs_one_ordered_read(shop_uri: str) -> None:
 
 
 def test_scan_query_that_isnt_repeatable_counts_its_own_rows(shop_uri: str) -> None:
-    # each run picks other rows: the count that a negative slice needs is taken from
-    # the rows read, not from a second run (which "changed the table")
+    # each run picks other rows: a negative slice is taken from the rows read
     lf = pl.scan_database("SELECT * FROM orders WHERE abs(random()) % 2 = 0", shop_uri)
     tail = lf.tail(5).collect()
     assert tail.height == 5
@@ -4919,6 +4918,132 @@ def test_scan_assertion_pool_function_with_concurrent_connects(
         engine.dispose()
 
 
+def test_scan_factory_assertion_error_is_not_retried(shop_db: Path) -> None:
+    # only an AssertionPool's refusal of a second checkout is retried
+    calls = 0
+
+    def factory() -> sqlite3.Connection:
+        nonlocal calls
+        calls += 1
+        if calls > 2:
+            msg = "not configured"
+            raise AssertionError(msg)
+        return sqlite3.connect(shop_db, check_same_thread=False)
+
+    with pytest.raises(Exception, match="not configured"):
+        pl.scan_database("orders", factory, partition_on=None).collect()
+    assert calls == 3
+
+
+def test_scan_function_over_several_shared_pool_engines_is_refused() -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    a, b = (
+        sqlalchemy.create_engine("sqlite://", connect_args={"check_same_thread": False})
+        for _ in range(2)
+    )
+    try:
+        with pytest.raises(TypeError, match="several Engines"):
+            pl.scan_database("t", lambda: (a or b).connect())
+    finally:
+        a.dispose()
+        b.dispose()
+
+
+@pytest.mark.parametrize("dialect", ["sqlite", "postgresql"])
+def test_scan_shared_pool_factory_of_a_dialect_with_a_session_setup_is_refused(
+    dialect: str,
+) -> None:
+    # the plan relies on the session setup, which the user's connection must not get
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars_database._bridge import connect
+
+    engine = sqlalchemy.create_engine(
+        "sqlite://",
+        poolclass=sqlalchemy.pool.StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        user = engine.raw_connection()
+        user.driver_connection.execute("CREATE TABLE t (v INTEGER)")
+        user.driver_connection.execute("INSERT INTO t VALUES (1)")
+        args: tuple[Any, ...] = (
+            "python",
+            "factory",
+            engine.connect,
+            [],
+            [],
+            dialect,
+            None,
+        )
+        if dialect == "sqlite":
+            connect(*args).close()
+        else:
+            with pytest.raises(TypeError, match="pass the Engine itself"):
+                connect(*args)
+        assert user.driver_connection.in_transaction
+        user.close()
+    finally:
+        engine.dispose()
+
+
+def test_scan_orm_sessions_keep_their_transaction_and_give_back_their_checkout(
+    tmp_path: Path,
+) -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    engine = sqlalchemy.create_engine(
+        f"sqlite:///{tmp_path / 's.db'}",
+        poolclass=sqlalchemy.pool.QueuePool,
+        pool_size=1,
+        max_overflow=0,
+        isolation_level="AUTOCOMMIT",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("CREATE TABLE t (v INTEGER)")
+            conn.exec_driver_sql("INSERT INTO t VALUES (1)")
+        # a scan of an idle Session gives its checkout back
+        with orm.Session(engine) as session:
+            assert pl.scan_database("SELECT * FROM t", session).collect().height == 1
+            assert engine.pool.checkedout() == 0
+        with engine.connect() as conn:
+            # a Session bound to a Connection keeps the transaction it began
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                assert (
+                    pl.scan_database("SELECT * FROM t", session).collect().height == 1
+                )
+                assert session.in_transaction()
+            # a function that returns such Sessions shares the caller's connection;
+            # its Session is left as it is
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                for factory in (orm.sessionmaker(bind=conn), lambda: session):
+                    with pytest.raises(
+                        Exception, match="Sessions bound to one Connection"
+                    ):
+                        pl.scan_database("SELECT * FROM t", factory).collect()
+                assert session.in_transaction()
+    finally:
+        engine.dispose()
+
+
+def test_scan_function_engine_lookup_reads_only_its_globals_and_defaults() -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars.io.database._scan import _factory_singleton_engine
+
+    engine = sqlalchemy.create_engine("sqlite://")
+    try:
+        ns: dict[str, Any] = {"engine": engine}
+        exec("def attribute():\n    return tenant.engine.connect()", ns)
+        exec("def default(e=None, *, k=engine):\n    return k.connect()", ns)
+        assert _factory_singleton_engine(ns["attribute"]) is None
+        assert _factory_singleton_engine(ns["default"]) is engine
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="Windows resolves `..` textually, before following a symlink",
@@ -5665,33 +5790,61 @@ def test_scan_sqlite_union_of_scans_differing_in_dtype_parameters(
             assert [df.schema["x"] for df in out] == [a, b], how
 
 
-def test_negative_slice_over_a_table_changed_after_the_count_fails_loudly(
-    tmp_path: Path,
-) -> None:
-    # a tail is planned from COUNT(*) and read by a second statement. The host
-    # stopped pulling at the end of the slice, so the rows past it (a writer's inserts
-    # between the two) were never counted against the count: it returned the wrong rows
-    db = tmp_path / "t.db"
+def _sqlite_ids(db: Path, n: int) -> None:
     with closing(sqlite3.connect(db)) as setup:
         setup.execute("PRAGMA journal_mode=WAL")
-        setup.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
-        setup.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(1, 101)])
+        setup.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, version INTEGER)")
+        setup.executemany(
+            "INSERT INTO t VALUES (?, 0)", [(i,) for i in range(1, n + 1)]
+        )
         setup.commit()
-    inserted = iter(range(-1, -100, -1))
+
+
+@pytest.mark.parametrize("partition_num", [1, 4])
+def test_negative_slice_over_a_table_changed_before_the_read(
+    tmp_path: Path, partition_num: int
+) -> None:
+    # A negative slice is taken from the rows that are read, not from a separate
+    # count: a writer that commits right before the read can't shift it.
+    db = tmp_path / "t.db"
+    _sqlite_ids(db, 100)
     writer = sqlite3.connect(db, check_same_thread=False)
+    write = None
 
     def write_before_the_read(sql: str) -> None:
-        # a writer commits right after the count, as the read statement starts
-        if sql.startswith('SELECT "t"."id"'):
-            writer.execute("INSERT INTO t VALUES (?)", (next(inserted),))
-            writer.commit()
+        nonlocal write
+        if write is not None and sql.startswith('SELECT "t"."id"'):
+            write()
+            write = None
+
+    def insert_before() -> None:
+        writer.execute("INSERT INTO t VALUES (0, 0)")
+        writer.commit()
+
+    def append_and_bump_version() -> None:
+        writer.execute("INSERT INTO t VALUES (101, 0)")
+        writer.execute("UPDATE t SET version = 1")
+        writer.commit()
 
     with closing(writer), closing(sqlite3.connect(db, check_same_thread=False)) as conn:
         conn.set_trace_callback(write_before_the_read)
-        lf = pl.scan_database("t", conn, order_by="id", partition_on=None)
-        for q in [lf.tail(3), lf.slice(-10, 3)]:
-            with pytest.raises(pl.exceptions.ComputeError, match="changed"):
-                q.collect()
-        # (the same, without the writer)
-        conn.set_trace_callback(None)
-        assert lf.tail(3).collect()["id"].to_list() == [98, 99, 100]
+        lf = pl.scan_database(
+            "t",
+            conn,
+            order_by="id",
+            partition_on="id" if partition_num > 1 else None,
+            partition_num=partition_num if partition_num > 1 else None,
+        )
+
+        # A downstream limit stops the query after the first rows of the slice.
+        write = insert_before
+        q = lf.slice(-90, 10).filter(pl.col("id") > 0).head(1)
+        assert q.collect()["id"].to_list() == [11]
+
+        # The slice depends on the rows of every partition after it.
+        write = append_and_bump_version
+        out = lf.slice(-90, 3).collect()
+        assert out["id"].to_list() == [12, 13, 14]
+        assert out["version"].to_list() == [1, 1, 1]
+
+        assert lf.tail(3).collect()["id"].to_list() == [99, 100, 101]

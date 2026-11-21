@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import dis
 import functools
 import operator
 import re
@@ -152,24 +153,27 @@ def _factory_singleton_engine(factory: Any) -> Any:
     others' beyond `pool_size`, and an AssertionPool refuses a second checkout: the
     Engine is found where the factory is its `connect`/`raw_connection`, a
     `sessionmaker`, a `functools.partial` or wrapper of one, or a function that refers
-    to one (closure or global); None if there is none.
+    to one (closure or global); None if there is none. Raises if it refers to several.
     """
     seen: set[int] = set()
+    engines: list[Any] = []
 
-    def engine_of(obj: Any, depth: int = 0) -> Any:
+    def visit(obj: Any, depth: int = 0) -> None:
         if (
             obj is None
             or id(obj) in seen
             or depth > 3
             or isinstance(obj, (type, types.ModuleType, str, bytes, int, float))
         ):
-            return None
+            return
         seen.add(id(obj))
         if _has_shared_pool(obj, ("SingletonThreadPool", "AssertionPool")):
-            return obj
+            engines.append(obj)
+            return
         kw = getattr(obj, "kw", None)  # a sessionmaker's
         if isinstance(kw, dict) and kw.get("bind") is not None:
-            return engine_of(kw["bind"], depth + 1)
+            visit(kw["bind"], depth + 1)
+            return
         related = [
             getattr(obj, "__self__", None),
             getattr(obj, "func", None),
@@ -180,16 +184,30 @@ def _factory_singleton_engine(factory: Any) -> Any:
         for cell in getattr(obj, "__closure__", None) or ():
             with contextlib.suppress(ValueError):
                 related.append(cell.cell_contents)
+        related += getattr(obj, "__defaults__", None) or ()
+        related += (getattr(obj, "__kwdefaults__", None) or {}).values()
         code = getattr(obj, "__code__", None)
         globs = getattr(obj, "__globals__", None)
         if code is not None and globs is not None:
-            related += [globs.get(name) for name in code.co_names]
+            # the globals it reads (`co_names` also holds attribute names)
+            related += [
+                globs.get(i.argval)
+                for i in dis.get_instructions(code)
+                if i.opname in ("LOAD_GLOBAL", "LOAD_NAME")
+            ]
         for item in related:
-            if (found := engine_of(item, depth + 1)) is not None:
-                return found
-        return None
+            visit(item, depth + 1)
 
-    return engine_of(factory)
+    visit(factory)
+    if len(engines) > 1:
+        msg = (
+            "a connection function that refers to several Engines over a "
+            "SingletonThreadPool or AssertionPool can't be scanned: the scan reads "
+            "through the Engine's one connection without calling the function, and "
+            "can't tell which one it returns. Pass the Engine itself"
+        )
+        raise TypeError(msg)
+    return engines[0] if engines else None
 
 
 def _in_caller_context(factory: Callable[[], Any]) -> Callable[[], Any]:
@@ -513,11 +531,14 @@ def scan_database(
           connection (see below), so the scan sees uncommitted changes made on it
           (so does an ORM `Session` of it). A function over a `SingletonThreadPool`
           or `AssertionPool` Engine (its `connect`, a `sessionmaker`, a lambda or
-          `partial` of one) reads through that one connection too; a function that
-          opens its connections otherwise from a SingletonThreadPool is refused (the
-          pool opens one per thread and closes others' beyond `pool_size`). The
-          pool's reset on return (rollback, commit, `reset` listeners) never runs
-          on it;
+          `partial` of one) reads through that one connection too, without the
+          function being called (one that refers to several such Engines is
+          refused); a function that opens its connections otherwise from a
+          SingletonThreadPool is refused (the pool opens one per thread and closes
+          others' beyond `pool_size`), and so is one that returns the shared
+          connection of a database whose session the scan sets up (MySQL, Oracle).
+          The pool's reset on return (rollback, commit, `reset` listeners) never
+          runs on it;
         * a zero-argument callable that returns a DB-API connection (a factory),
           called on the scan's own threads, in a copy of the `contextvars` of the
           caller of `scan_database` (thread-locals are not carried over);

@@ -3938,6 +3938,17 @@ pub(crate) fn is_random(expr: &Expr) -> bool {
     }
 }
 
+/// Make each [`random`] in `expr` one value, the one it gives the first row, with the same seed.
+pub(crate) fn random_once(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::Function {
+            function: FunctionExpr::Hash(seed),
+            ..
+        } if is_random(&e) => lit(Scalar::new_idxsize(0)).hash(seed),
+        e => e,
+    })
+}
+
 /// Whether a window key is a scalar that doesn't depend on the input, as `1` or `LOWER('A')`.
 pub(crate) fn is_constant_key(key: &Expr) -> bool {
     matches!(key.clone().meta().is_input_independent_scalar(), Ok(true))

@@ -229,6 +229,43 @@ def _is_orm_session(obj: Any) -> bool:
     )
 
 
+def _bound_connection(session: Any) -> Any:
+    """
+    The SQLAlchemy Connection an ORM Session is bound to, or None.
+
+    Its transaction and results may be the user's while the Session has none.
+    """
+    with contextlib.suppress(Exception):
+        bind = session.get_bind()
+        if _module_of(bind) == "sqlalchemy" and type(bind).__name__ == "Connection":
+            return bind
+    return None
+
+
+def _session_connection(session: Any) -> Any:
+    """
+    The SQLAlchemy Connection an ORM Session's statements run on, without beginning a
+    transaction: its bound Connection, or its own in a transaction; else None.
+    """
+    if (bound := _bound_connection(session)) is not None:
+        return bound
+    with contextlib.suppress(Exception):
+        if session.in_transaction():
+            return session.connection()
+    return None
+
+
+def _refuse_bound_session(checkout: Any) -> None:
+    """Refuse a factory's ORM Session bound to a Connection, which is the caller's."""
+    if _is_orm_session(checkout) and _bound_connection(checkout) is not None:
+        msg = (
+            "a connection function that returns Sessions bound to one Connection "
+            "can't be scanned: that connection is the caller's. Pass the Session "
+            "or the Connection itself"
+        )
+        raise TypeError(msg)
+
+
 def _has_pool(obj: Any, name: str) -> bool:
     pool = getattr(obj, "pool", None)
     return pool is not None and any(c.__name__ == name for c in type(pool).__mro__)
@@ -340,6 +377,7 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
     """`(dialect, module)` of a connection factory or live connection object."""
     if kind == "factory":
         conn = obj()
+        _refuse_bound_session(conn)
         if (shared := shared_pool_connection(conn)) is not None:
             return _connection_info(shared)
         driver, give_back, _ = _pool_checkout(conn)
@@ -1653,6 +1691,12 @@ def _params_keyword(cx: Any) -> str:
 
 def _transaction_idle(conn: Any) -> bool | None:
     """Whether a connection is outside a transaction; `None` if unknown."""
+    if _is_orm_session(conn):
+        with contextlib.suppress(Exception):
+            if conn.in_transaction():
+                return False
+            if (bound := _bound_connection(conn)) is not None:
+                return _transaction_idle(bound)
     with contextlib.suppress(Exception):
         if (info := getattr(conn, "info", None)) is not None and hasattr(
             info, "transaction_status"
@@ -1693,11 +1737,7 @@ def _transaction_idle(conn: Any) -> bool | None:
             # A SQLAlchemy Connection, which begins one on its first statement, and
             # says so in AUTOCOMMIT too, where there is none
             # (an ORM Session has neither)
-            autocommit = getattr(conn, "_is_autocommit_isolation", None)
-            options = getattr(conn, "get_execution_options", None)
-            if (callable(autocommit) and autocommit()) or (
-                callable(options) and options().get("isolation_level") == "AUTOCOMMIT"
-            ):
+            if _sqlalchemy_autocommit(conn):
                 # no transaction of SQLAlchemy's, but the user's own `BEGIN` may be open
                 # on the driver's connection: that one says
                 fairy = getattr(conn, "connection", None)
@@ -1723,6 +1763,16 @@ def _transaction_idle(conn: Any) -> bool | None:
     return None
 
 
+def _sqlalchemy_autocommit(conn: Any) -> bool:
+    """Whether a SQLAlchemy Connection runs in AUTOCOMMIT."""
+    autocommit = getattr(conn, "_is_autocommit_isolation", None)
+    options = getattr(conn, "get_execution_options", None)
+    return bool(
+        (callable(autocommit) and autocommit())
+        or (callable(options) and options().get("isolation_level") == "AUTOCOMMIT")
+    )
+
+
 def _refuse_pending_results(conn: Any) -> None:
     """
     Refuse a scan on a connection with an unread unbuffered result.
@@ -1732,8 +1782,11 @@ def _refuse_pending_results(conn: Any) -> None:
     trailing OK packet of a `CALL` without reading it, so they stay a limit.)
     """
     if _module_of(conn) == "sqlalchemy":
-        # a SQLAlchemy Connection: the driver's is what holds the result
+        # a SQLAlchemy Connection, or an ORM Session's (only one in a transaction has
+        # one): the driver's is what holds the result
         with contextlib.suppress(Exception):
+            if _is_orm_session(conn) and (conn := _session_connection(conn)) is None:
+                return
             conn = conn.connection.driver_connection
     if _module_of(conn) != "pymysql":
         return
@@ -1860,7 +1913,12 @@ def _postgres_family(conn: Any) -> bool:
     if module in ("psycopg", "psycopg2", "pg8000"):
         return True
     if module == "sqlalchemy":
-        dialect = getattr(conn, "dialect", None)
+        bind = conn
+        if callable(get_bind := getattr(conn, "get_bind", None)):
+            # an ORM Session's dialect is its bind's
+            with contextlib.suppress(Exception):
+                bind = get_bind()
+        dialect = getattr(bind, "dialect", None)
         # (also the forks: TimescaleDB, CockroachDB, ... subclass PGDialect)
         return getattr(dialect, "name", "") in ("postgresql", "redshift") or any(
             c.__name__ == "PGDialect" for c in type(dialect).__mro__
@@ -2692,7 +2750,27 @@ class _Session:
                 # opened rolled back here, before any batch is handed over.
                 status = None if self.owned else _transaction_idle(self.conn)
                 idle = status is True
-                if status is False and _postgres_family(self.conn):
+                in_database = status is False
+                if in_database and _module_of(self.conn) == "sqlalchemy":
+                    # a SQLAlchemy transaction in AUTOCOMMIT (SQLAlchemy's, or the
+                    # driver's own) has none in the database
+                    run_on = (
+                        _session_connection(self.conn)
+                        if _is_orm_session(self.conn)
+                        else self.conn
+                    )
+                    driver = getattr(
+                        getattr(run_on, "connection", None), "driver_connection", None
+                    )
+                    in_database = not (
+                        driver is not None
+                        and (
+                            _sqlalchemy_autocommit(run_on)
+                            or getattr(driver, "autocommit", False) is True
+                        )
+                        and _transaction_idle(driver) is True
+                    )
+                if in_database and _postgres_family(self.conn):
                     # In the user's transaction, a failed statement (a catalog lookup
                     # of a name that isn't there, a bad query) would abort it, their
                     # writes lost: it runs in a savepoint, rolled back to on an error.
@@ -3543,6 +3621,13 @@ def adbc_connect(
 
 _ASSERTION_POOL_LOCK = threading.Lock()
 
+# the dialects with a session setup (`DialectName::session_setup`)
+_SESSION_SETUP_DIALECTS = ("postgresql", "mysql", "oracle")
+
+
+def _assertion_pool_busy(e: AssertionError) -> bool:
+    return str(e).startswith("connection is already checked out")
+
 
 def connect(
     kind: str,
@@ -3573,19 +3658,32 @@ def connect(
     if target_kind == "factory":
         try:
             checkout = target()
-        except AssertionError:
+        except AssertionError as e:
             # an AssertionPool refuses a second checkout while another is out: ours are
             # given back at once (below), and wait for each other
+            if not _assertion_pool_busy(e):
+                raise
             with _ASSERTION_POOL_LOCK:
                 for attempt in range(100):
                     try:
                         checkout = target()
                         break
-                    except AssertionError:
-                        if attempt == 99:
+                    except AssertionError as e:
+                        if attempt == 99 or not _assertion_pool_busy(e):
                             raise
                         time.sleep(0.002)
+        _refuse_bound_session(checkout)
         if (shared := shared_pool_connection(checkout)) is not None:
+            if dialect in _SESSION_SETUP_DIALECTS:
+                # the plan relies on the session setup, which the user's connection
+                # must not get
+                msg = (
+                    "the connection function returns the connection that its pool "
+                    "shares with the user's own (StaticPool, AssertionPool), whose "
+                    "session the scan must not set up: pass the Engine itself, which "
+                    "is read as a live connection"
+                )
+                raise TypeError(msg)
             # one connection that the user's own statements use too (an open
             # transaction): a live connection, never rolled back or closed
             return _Session(shared, owned=False, **session)
