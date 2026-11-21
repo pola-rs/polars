@@ -499,16 +499,15 @@ def scan_database(
           (temporary tables, `search_path`, session variables), so each collect
           checks out ONE connection (on the scan's own thread, in a copy of the
           `contextvars` of the caller of `scan_database`, so checkout listeners run
-          for every collect) and reads every partition on it, one after another: a
-          read through an Engine is not parallel. The scan sets the session up as
+          for every collect) and reads on it. The scan sets the session up as
           for a URI (read-only, UTC) and restores that before it gives the
           connection back to the pool, at the end of the collect: nothing is held
           between collects. Each Engine scan in a query (a `concat` or self-join of
           scans) holds one pooled connection until the query ends, so the pool
           (`pool_size` + `max_overflow`) must allow as many as the query has scans
           of it. A transaction a checkout listener left open is
-          committed by that setup. For parallel reads pass a URI or a connection
-          factory. An Engine without pooling (`NullPool`) is read as a factory. An
+          committed by that setup. An Engine without pooling (`NullPool`) is read
+          as a factory. An
           Engine with a
           `StaticPool`, `SingletonThreadPool` or
           `AssertionPool` shares one DB-API connection: it is used as a live
@@ -526,8 +525,8 @@ def scan_database(
         * a zero-argument callable that returns a DB-API connection (a factory),
           called on the scan's own threads, in a copy of the `contextvars` of the
           caller of `scan_database` (thread-locals are not carried over);
-        * a live connection object. It is used for one partition at a time, from
-          another thread: open a sqlite3 connection with `check_same_thread=False`.
+        * a live connection object. It is used from another thread: open a
+          sqlite3 connection with `check_same_thread=False`.
           Its results are read whole, with client-side cursors: Polars may still
           read, or release, a scan after `collect()` returned, while the connection
           is the user's again. A transaction the scan opens on it is rolled back as
