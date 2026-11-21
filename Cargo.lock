@@ -2740,9 +2740,9 @@ dependencies = [
 
 [[package]]
 name = "numpy"
-version = "0.29.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a5b15d63a5ff39e378daed0e1340d3a5964703ea9712eb09a0dc66fade996f4"
+checksum = "aa0b9111761885449e894981fa8051dcf69e0bd114aecbd4bcdd830b6be4ed92"
 dependencies = [
  "half",
  "libc",
@@ -3156,8 +3156,10 @@ dependencies = [
  "polars",
  "polars-arrow",
  "polars-ooc",
+ "recursive",
  "signal-hook",
  "sqlparser",
+ "unicode-width",
 ]
 
 [[package]]
@@ -3242,6 +3244,35 @@ dependencies = [
  "uuid",
  "version_check",
  "xxhash-rust",
+]
+
+[[package]]
+name = "polars-database"
+version = "0.1.1"
+dependencies = [
+ "bitflags",
+ "chrono",
+ "percent-encoding",
+ "polars-arrow",
+ "polars-config",
+ "polars-core",
+ "polars-error",
+ "polars-io-ext-ffi",
+ "polars-utils",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+ "strum",
+ "strum_macros",
+]
+
+[[package]]
+name = "polars-database-python"
+version = "0.1.1"
+dependencies = [
+ "polars-database",
+ "pyo3",
 ]
 
 [[package]]
@@ -3362,6 +3393,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-iceberg"
+version = "0.1.1"
+dependencies = [
+ "chrono",
+ "flate2",
+ "futures",
+ "hex",
+ "polars-arrow",
+ "polars-error",
+ "polars-io-ext-ffi",
+ "polars-utils",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "snap",
+ "tokio",
+ "zstd",
+]
+
+[[package]]
+name = "polars-iceberg-python"
+version = "0.1.1"
+dependencies = [
+ "polars-iceberg",
+ "pyo3",
+]
+
+[[package]]
 name = "polars-io"
 version = "0.55.1"
 dependencies = [
@@ -3379,6 +3438,7 @@ dependencies = [
  "futures",
  "glob",
  "hashbrown 0.17.1",
+ "http-body 1.1.0",
  "itoa",
  "libc",
  "memchr",
@@ -3386,6 +3446,7 @@ dependencies = [
  "num-traits",
  "object_store",
  "parking_lot",
+ "parquet-key-management",
  "percent-encoding",
  "polars-arrow",
  "polars-buffer",
@@ -3393,6 +3454,7 @@ dependencies = [
  "polars-config",
  "polars-core",
  "polars-error",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-parquet",
  "polars-schema",
@@ -3651,6 +3713,7 @@ dependencies = [
  "polars-error",
  "polars-ffi",
  "polars-io",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-parquet",
  "polars-row",
@@ -3842,6 +3905,7 @@ dependencies = [
  "polars-error",
  "polars-expr",
  "polars-io",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-mem-engine",
  "polars-observer",
@@ -4049,9 +4113,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4688ddedf473e32662b9b067670129a8afb8c18e351482c70d62ba4a88171e8b"
+checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -4067,18 +4131,18 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f41027e41b4bd03f6e60f9f417fe24a6341a6bb744edd62b6f709f2a52ea30e9"
+checksum = "70130e2b6dd1ee589a8788026a429561ca5c40fa7a2fa7914c2282eddae24700"
 dependencies = [
  "target-lexicon",
 ]
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e591a95526fead067432c3b3a33fc74770b87b1e04e73671090d9c2055a2b327"
+checksum = "5e7ff73c555c286d212d4ce7e5fbda845a973c4f61bd5f160f5f2c3c2a04d1c4"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -4086,26 +4150,26 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73225868fc1cd84eef2c3c230ddb91273bf1de46aeb8a4248da76d32a0924a1c"
+checksum = "c46d2e5862c7bb8207e3b639f713dda3c499933444784154c11d013c5a691b60"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "571575aa3749fa6216757dd47d2a3e7ef360f329a40f0666a9fbd14889024952"
+checksum = "38b89f066f2ae72a2aef52d1537ca2fcd104440ebfadee06e97aa90738a25b9b"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -5302,8 +5366,8 @@ dependencies = [
 
 [[package]]
 name = "tikv-jemalloc-sys"
-version = "0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8"
-source = "git+https://github.com/pola-rs/jemallocator?rev=0d683dfb157097e2075d5e0eaf25f71f514a7552#0d683dfb157097e2075d5e0eaf25f71f514a7552"
+version = "0.7.1+5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc"
+source = "git+https://github.com/pola-rs/jemallocator?rev=e947a0d1a786e221ac1c14ba1566b55151e61ec9#e947a0d1a786e221ac1c14ba1566b55151e61ec9"
 dependencies = [
  "cc",
  "libc",

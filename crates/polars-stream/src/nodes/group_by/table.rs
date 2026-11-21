@@ -125,9 +125,12 @@ impl PartitionTable {
 
     /// The keys in group order followed by the finalized reductions. Leaves the table empty.
     pub fn finish(&mut self) -> PolarsResult<DataFrame> {
-        let grouper = std::mem::replace(&mut self.grouper, self.params.grouper.new_empty());
+        let mut grouper = std::mem::replace(&mut self.grouper, self.params.grouper.new_empty());
         let num_groups = grouper.num_groups();
-        let mut out = self.params.key_encoder.get_keys_in_group_order(&*grouper);
+        let mut out = self
+            .params
+            .key_encoder
+            .take_keys_in_group_order(&mut *grouper);
         drop(grouper);
         let out_names = self.params.output_schema.iter_names().skip(out.width());
         for (r, name) in self.reductions.iter_mut().zip(out_names) {

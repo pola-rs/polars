@@ -163,7 +163,7 @@ impl SpillFrameSearchBuffer {
         for (_, frame) in self.sfs_at_offsets.range(first_offset..live_end) {
             acc.vstack_mut(&*frame.get().await).unwrap();
         }
-        acc.slice((live_start - first_offset) as i64, self.total_rows)
+        acc.slice((live_start - first_offset, self.total_rows))
     }
 
     fn gc(&mut self) {

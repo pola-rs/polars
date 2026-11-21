@@ -318,6 +318,11 @@ pub fn cum_reduce(
 }
 
 #[pyfunction]
+pub fn date_diff(start: PyExpr, end: PyExpr, unit: Wrap<DateDiffUnit>) -> PyExpr {
+    dsl::date_diff(start.inner, end.inner, unit.0).into()
+}
+
+#[pyfunction]
 #[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=Wrap(None), ambiguous=PyExpr::from(dsl::lit(String::from("raise")))))]
 pub fn datetime(
     year: PyExpr,

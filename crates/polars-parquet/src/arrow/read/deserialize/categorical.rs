@@ -101,6 +101,8 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
     type DecodedState = (Vec<T>, BitmapBuilder);
     type Output = DictionaryArray<T>;
 
+    const PREDICATE_TARGET_GROWS: bool = true;
+
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<T>::with_capacity(capacity),
@@ -286,6 +288,17 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         let validity = freeze_validity(validity);
         let keys = PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), validity);
 
+        // Nothing was added by PLAIN pages: share the dictionary page's buffers and views (O(1))
+        // instead of copying every view for each chunk.
+        if self.plain_page_dict.len() == 0
+            && let Some(dict) = dict.as_ref()
+        {
+            // SAFETY: The dictionary was checked to be UTF-8 when it was deserialized.
+            let dict = unsafe { dict.to_utf8view_unchecked() }.boxed();
+            // SAFETY: This was checked during decoding
+            return Ok(unsafe { DictionaryArray::try_new_unchecked(dtype, keys, dict) }.unwrap());
+        }
+
         let mut view_dict = MutableBinaryViewArray::with_capacity(
             dict.as_ref().map_or(0, |dict| dict.len()) + self.plain_page_dict.len(),
         );
@@ -436,4 +449,57 @@ pub fn decode_dictionary_codes(
     )?
     .collect(filter)?;
     Ok((arrays, pred_true_mask))
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::BinaryViewArray;
+
+    use super::*;
+
+    fn finalize_chunk(
+        decoder: &CategoricalDecoder<u32>,
+        dict: &BinaryViewArray,
+        keys: Vec<u32>,
+    ) -> DictionaryArray<u32> {
+        let dtype = ArrowDataType::Dictionary(
+            polars_arrow::datatypes::IntegerType::UInt32,
+            Box::new(ArrowDataType::Utf8View),
+            false,
+        );
+        let state = (keys, BitmapBuilder::new());
+        decoder.finalize(dtype, Some(dict.clone()), state).unwrap()
+    }
+
+    /// Only the codes decoder grows its predicate targets (its finalize is O(1)); others size them
+    /// for the matches, as unused capacity is not given back.
+    #[test]
+    fn only_the_codes_decoder_grows_predicate_targets() {
+        const { assert!(<CategoricalDecoder<u32> as utils::Decoder>::PREDICATE_TARGET_GROWS) };
+        const { assert!(!<BinViewDecoder as utils::Decoder>::PREDICATE_TARGET_GROWS) };
+    }
+
+    /// Chunks of one column chunk must share the dictionary page's views and buffers, not copy
+    /// them per chunk.
+    #[test]
+    fn finalize_shares_dictionary_page() {
+        let dict = BinaryViewArray::from_slice_values(
+            (0..1000)
+                .map(|i| format!("a-long-dictionary-value-number-{i}").into_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let decoder = CategoricalDecoder::<u32>::new();
+        let a = finalize_chunk(&decoder, &dict, vec![0, 1, 2]);
+        let b = finalize_chunk(&decoder, &dict, vec![3, 4]);
+        for chunk in [&a, &b] {
+            let values = chunk
+                .values()
+                .as_any()
+                .downcast_ref::<polars_arrow::array::Utf8ViewArray>()
+                .unwrap();
+            assert_eq!(values.len(), dict.len());
+            assert_eq!(values.views().as_ptr(), dict.views().as_ptr());
+            assert_eq!(values.data_buffers().as_ptr(), dict.data_buffers().as_ptr());
+        }
+    }
 }

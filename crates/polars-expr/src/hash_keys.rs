@@ -186,14 +186,23 @@ impl KeyEncoder {
     /// The keys of each group of `grouper`, which holds keys of this encoder, in group
     /// order.
     pub fn get_keys_in_group_order(&self, grouper: &dyn Grouper) -> DataFrame {
+        self.keys_in_group_order(|schema| grouper.get_keys_in_group_order(schema))
+    }
+
+    /// As `get_keys_in_group_order`, but `grouper` may hold no groups afterwards.
+    pub fn take_keys_in_group_order(&self, grouper: &mut dyn Grouper) -> DataFrame {
+        self.keys_in_group_order(|schema| grouper.take_keys_in_group_order(schema))
+    }
+
+    fn keys_in_group_order(&self, grouper_keys: impl FnOnce(&Schema) -> DataFrame) -> DataFrame {
         match &self.kind {
             KeyKind::Packed(packed) => {
                 let word_schema =
                     Schema::from_iter([(PlSmallStr::EMPTY, packed.layout().word_dtype())]);
-                let words = grouper.get_keys_in_group_order(&word_schema);
+                let words = grouper_keys(&word_schema);
                 packed.decode_words(&self.schema, words[0].as_materialized_series())
             },
-            _ => grouper.get_keys_in_group_order(&self.schema),
+            _ => grouper_keys(&self.schema),
         }
     }
 
@@ -222,6 +231,27 @@ impl KeyEncoder {
         random_state: PlRandomState,
         null_is_valid: bool,
     ) -> PolarsResult<HashKeys> {
+        self.try_hash_keys_impl(df, random_state, null_is_valid, false)
+    }
+
+    /// As [`Self::try_hash_keys`], for keys inserted into a hot grouper, the only reader of the
+    /// combined codes of dictionary-coded key columns.
+    pub fn try_hash_keys_for_hot_grouper(
+        &self,
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+    ) -> PolarsResult<HashKeys> {
+        self.try_hash_keys_impl(df, random_state, null_is_valid, true)
+    }
+
+    fn try_hash_keys_impl(
+        &self,
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+        combined_codes: bool,
+    ) -> PolarsResult<HashKeys> {
         debug_assert!(
             df.columns()
                 .iter()
@@ -239,6 +269,7 @@ impl KeyEncoder {
                 layout.clone(),
                 &random_state,
                 null_is_valid,
+                combined_codes,
             )),
             KeyKind::RowEncoded => {
                 let keys = df.columns();
@@ -362,6 +393,9 @@ impl HashKeys {
                 size_of_val(s.hashes.values().as_slice())
                     + size_of_val(s.keys.views().as_slice())
                     + s.keys.total_bytes_len()
+                    + s.dict_codes
+                        .as_ref()
+                        .map_or(0, |dc| size_of_val(dc.codes.as_slice()))
             },
         }
     }
@@ -794,8 +828,8 @@ impl HashKeysBuilder {
 
 #[derive(Clone, Debug)]
 pub struct RowEncodedKeys {
-    pub hashes: UInt64Array, // Always non-null, we use the validity of keys.
-    pub keys: BinaryArray<i64>,
+    pub(crate) hashes: UInt64Array, // Always non-null, we use the validity of keys.
+    pub(crate) keys: BinaryArray<i64>,
 }
 
 impl RowEncodedKeys {
@@ -873,39 +907,27 @@ impl SingleKeys {
 /// The codes of keys that come from a [`DictionaryColumn`], with the hash of each dictionary value.
 #[derive(Clone, Debug)]
 pub struct DictCodes {
-    pub dict: Arc<SharedDictionary>,
-    /// The code of each key; arbitrary for a null key.
-    pub codes: Buffer<u32>,
+    pub(crate) dict: Arc<SharedDictionary>,
+    /// The code of each key. Invariant: the code of a null key is arbitrary, possibly out of
+    /// bounds, and must never be used to index `hashes` or any cache; readers check the keys'
+    /// validity first.
+    pub(crate) codes: Buffer<u32>,
     /// The hash of each dictionary value under the keys' hasher.
-    pub hashes: Buffer<u64>,
+    pub(crate) hashes: Buffer<u64>,
 }
 
 impl DictCodes {
     /// `None` when the dictionary has more values than the column has rows and their hashes
     /// aren't cached yet: hashing the rows is then cheaper, e.g. after a selective filter.
     pub fn try_new(column: &DictionaryColumn, random_state: &PlRandomState) -> Option<Self> {
-        let mut hashes = match column.dict().cached_hashes(random_state) {
+        let hashes = match column.dict().cached_hashes(random_state) {
             Some(hashes) => hashes,
             None if column.dict().len() <= column.len() => column.dict().hashes(random_state),
             None => return None,
         };
+        // The buffer is shared, so a null key's code is arbitrary and may be out of bounds.
         let codes = column.codes().rechunk();
-        let codes = codes.downcast_as_array();
-        let codes = if codes.has_nulls() {
-            // Null slots may hold any value; make them a valid index.
-            let validity = codes.validity().unwrap();
-            codes
-                .values_iter()
-                .zip(validity.iter())
-                .map(|(c, v)| if v { *c } else { 0 })
-                .collect()
-        } else {
-            codes.values().clone()
-        };
-        if hashes.is_empty() {
-            // Every key is null; give the null codes a hash to point at.
-            hashes = Buffer::from(vec![0]);
-        }
+        let codes = codes.downcast_as_array().values().clone();
         Some(Self {
             dict: column.dict().clone(),
             codes,
@@ -917,11 +939,11 @@ impl DictCodes {
 /// Pre-hashed binary view keys with prehashing.
 #[derive(Clone, Debug)]
 pub struct BinviewKeys {
-    pub hashes: UInt64Array,
-    pub keys: BinaryViewArray,
-    pub null_is_valid: bool,
+    pub(crate) hashes: UInt64Array,
+    pub(crate) keys: BinaryViewArray,
+    pub(crate) null_is_valid: bool,
     /// Set when the keys come from a dictionary-coded column.
-    pub dict_codes: Option<DictCodes>,
+    pub(crate) dict_codes: Option<DictCodes>,
 }
 
 impl BinviewKeys {

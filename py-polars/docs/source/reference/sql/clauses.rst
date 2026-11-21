@@ -75,6 +75,26 @@ Select the columns to be returned by the query.
     # │ 3   ┆ xx  │
     # └─────┴─────┘
 
+A SELECT item can read the alias of an item before it. An input column of the same name
+comes before the alias. A window function cannot read an alias that holds a window
+function or ``RANDOM()``.
+
+.. code-block:: python
+
+    df.sql("""
+      SELECT a * 2 AS x, x + 1 AS y FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────┬─────┐
+    # │ x   ┆ y   │
+    # │ --- ┆ --- │
+    # │ i64 ┆ i64 │
+    # ╞═════╪═════╡
+    # │ 2   ┆ 3   │
+    # │ 4   ┆ 5   │
+    # │ 6   ┆ 7   │
+    # └─────┴─────┘
+
 .. note::
 
    Use of bare ``FROM tbl`` is also supported, as shorthand for ``SELECT * FROM tbl``;
@@ -207,9 +227,26 @@ Using ``FROM`` as the leading clause, with ``SELECT``:
     # │ xx  ┆ 3   │
     # └─────┴─────┘
 
+**Files:** a path in single quotes is read as a file when it ends in the extension of a file
+format: ``.csv``, ``.parquet``, ``.ipc`` / ``.arrow`` / ``.feather``, or ``.ndjson`` /
+``.jsonl``. The path can be a glob or a cloud URL, and a leading ``~`` is the home directory.
+The file is read with the defaults of the ``read_csv``, ``read_parquet``, ``read_ipc`` or
+``read_ndjson`` table function; call that function to pass options, or to read a path that
+does not end in such an extension. A table of the same name comes first, and any other name
+in quotes is looked up as a table. To run untrusted SQL, turn off reading and writing files
+and URLs with ``SQLContext(allow_file_reads=False, allow_file_writes=False)``.
+
+.. code-block:: sql
+
+    SELECT * FROM 'data/events.parquet'
+    SELECT region, COUNT(*) FROM 'data/sales_*.csv' GROUP BY region
+
+.. _time_travel:
+
 **Time travel:** a table of an attached catalog (see
 :meth:`SQLContext.register_catalog`) can be read as of a snapshot, a branch or tag, or
-a time. The clause follows the table name or its alias, and takes a literal.
+a time. The clause follows the table name or its alias, and takes a literal. Tags and
+branches are made with :ref:`ALTER TABLE <alter_table>`.
 
 * ``[FOR] VERSION AS OF <version>`` or ``AT (VERSION => <version>)``: an integer is a
   snapshot id, a string a branch or tag.
