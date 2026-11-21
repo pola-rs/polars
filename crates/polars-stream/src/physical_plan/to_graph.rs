@@ -1904,24 +1904,6 @@ fn to_graph_rec<'a>(
             use pyo3::types::{PyBytes, PyNone};
             use pyo3::{IntoPyObjectExt, PyTypeInfo, intern};
 
-            /// Releases the generator holding the GIL: it is closed (its `finally` runs) when the
-            /// node is dropped, not when Python next runs Polars code.
-            struct DropWithGil(Option<Py<PyAny>>);
-
-            impl DropWithGil {
-                fn get(&self) -> &Py<PyAny> {
-                    self.0.as_ref().unwrap()
-                }
-            }
-
-            impl Drop for DropWithGil {
-                fn drop(&mut self) {
-                    if let Some(generator) = self.0.take() {
-                        Python::attach(|_py| drop(generator));
-                    }
-                }
-            }
-
             let mut options = options.clone();
 
             let (pl_predicate, predicate_serialized) = polars_mem_engine::python_scan_predicate(
@@ -2003,7 +1985,6 @@ fn to_graph_rec<'a>(
                             let generator = generator.into_py_any(py).map_err(
                                 |_| polars_err!(ComputeError: "unable to grab reference to IO plugin generator"),
                             )?;
-                            let generator = DropWithGil(Some(generator));
 
                             PolarsResult::Ok((generator, can_parse_predicate))
                         })
@@ -2011,11 +1992,7 @@ fn to_graph_rec<'a>(
 
                     let get_batch_fn = Box::new(move |state: &StreamingExecutionState| {
                         let df = Python::attach(|py| {
-                            match generator
-                                .get()
-                                .bind(py)
-                                .call_method0(intern!(py, "__next__"))
-                            {
+                            match generator.bind(py).call_method0(intern!(py, "__next__")) {
                                 Ok(out) => polars_plan::plans::python_df_to_rust(py, out).map(Some),
                                 Err(err)
                                     if err.matches(py, PyStopIteration::type_object(py))? =>

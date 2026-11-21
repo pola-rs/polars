@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use polars::prelude::*;
 use pyo3::prelude::*;
 
@@ -30,22 +28,8 @@ pub struct PyInProcessQuery {
 #[pymethods]
 #[cfg(not(target_arch = "wasm32"))]
 impl PyInProcessQuery {
-    /// Cancels the query and waits until it has stopped (see `InProcessQuery::wait_finished`),
-    /// unless called on one of Polars' own threads.
-    ///
-    /// The wait is in slices, checking Python's signals in between: a Ctrl-C raises
-    /// `KeyboardInterrupt` from here (the query still stops, without waiting for it). It isn't
-    /// run as a Polars call (`enter_polars`), whose abort on Ctrl-C would reach the query.
     pub fn cancel(&self, py: Python) -> PyResult<()> {
-        self.ipq.cancel();
-        if !InProcessQuery::can_wait_on_this_thread() {
-            return Ok(());
-        }
-        const WAIT_SLICE: Duration = Duration::from_millis(50);
-        while !py.detach(|| self.ipq.wait_finished(Some(WAIT_SLICE))) {
-            py.check_signals()?;
-        }
-        Ok(())
+        py.enter_polars_ok(|| self.ipq.cancel())
     }
 
     pub fn fetch(&self, py: Python) -> PyResult<Option<PyDataFrame>> {

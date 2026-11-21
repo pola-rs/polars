@@ -208,28 +208,6 @@ impl RAYON {
     }
 }
 
-thread_local! {
-    /// Set by `mark_as_polars_thread`.
-    static MARKED_POLARS_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Marks this thread as one of Polars' own, for `is_polars_thread`: a thread of a pool that only
-/// runs work for Polars' queries (such as the Python thread pools of Python sources).
-pub fn mark_as_polars_thread() {
-    MARKED_POLARS_THREAD.set(true);
-}
-
-/// Whether this thread is one of Polars' own (a thread of its Rayon pool, async executor or async
-/// runtime, or one marked by `mark_as_polars_thread`), on which the work of a running query may
-/// run.
-pub fn is_polars_thread() -> bool {
-    #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
-    let in_rayon_pool = THREAD_POOL.current_thread_index().is_some();
-    #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]
-    let in_rayon_pool = rayon::current_thread_index().is_some();
-    in_rayon_pool || polars_async::is_polars_async_thread() || MARKED_POLARS_THREAD.get()
-}
-
 // this is re-exported in utils for polars child crates
 #[cfg(not(target_family = "wasm"))] // only use this on non wasm targets
 pub static THREAD_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {

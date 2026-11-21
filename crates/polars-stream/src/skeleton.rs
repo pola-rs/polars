@@ -212,15 +212,6 @@ impl StreamingQuery {
     }
 
     pub fn execute(self) -> PolarsResult<QueryResult> {
-        self.execute_with_cancel(None)
-    }
-
-    /// Executes the query, which stops with "query interrupted" once `cancel` is set: by then
-    /// its tasks have ended and its sources have been torn down.
-    pub fn execute_with_cancel(
-        self,
-        cancel: Option<&RelaxedCell<bool>>,
-    ) -> PolarsResult<QueryResult> {
         let StreamingQuery {
             top_ir,
             mut graph,
@@ -235,7 +226,7 @@ impl StreamingQuery {
         let query_start = Instant::now();
         // Callbacks in the query may need Rayon, so don't block a Rayon worker while it runs.
         let mut results = RAYON.block_on(|| {
-            crate::execute::execute_graph(&mut graph, metrics.clone(), num_pipelines, cancel)
+            crate::execute::execute_graph(&mut graph, metrics.clone(), num_pipelines)
         })?;
         let query_elapsed = query_start.elapsed();
 

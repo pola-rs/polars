@@ -10,16 +10,6 @@ pub mod executor;
 pub mod parallel;
 pub mod primitives;
 
-thread_local! {
-    /// Set on the threads of the async runtime (its workers and blocking threads).
-    static ASYNC_RUNTIME_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Whether this thread is one of the async runtime's or the async executor's.
-pub fn is_polars_async_thread() -> bool {
-    ASYNC_RUNTIME_THREAD.get() || THREAD_SPAWNED_BY_POLARS_EXECUTOR.get()
-}
-
 pub struct RuntimeManager {
     rt: Runtime,
 }
@@ -48,7 +38,6 @@ impl RuntimeManager {
             .worker_threads(n_threads)
             .max_blocking_threads(max_blocking)
             .on_thread_start(move || {
-                ASYNC_RUNTIME_THREAD.set(true);
                 if tokio_thread_count_start.fetch_add(1) + 1 >= (max_total_threads as i64) && !warned.load() {
                     warned.store(true);
                     polars_warn!("POLARS_MAX_BLOCKING_THREAD_COUNT reached ({max_blocking}), this may indicate a deadlock");

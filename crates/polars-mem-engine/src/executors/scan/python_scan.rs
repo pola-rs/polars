@@ -122,9 +122,6 @@ impl Executor for PythonScanExec {
 
                         let mut chunks = vec![];
                         loop {
-                            // A cancelled query stops between batches (dropping the generator
-                            // closes it).
-                            state.should_stop()?;
                             match generator.call_method0(intern!(py, "__next__")) {
                                 Ok(out) => {
                                     let mut df = python_df_to_rust(py, out)?;

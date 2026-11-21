@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use crossbeam_channel::Sender;
 use futures::StreamExt;
@@ -8,7 +7,7 @@ use parking_lot::Mutex;
 use polars_async::executor::{self, TaskMetricAggregator};
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
-use polars_error::{PolarsError, PolarsResult, polars_err};
+use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -140,7 +139,6 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
 }
 
 /// Runs the given subgraph. Assumes the set of pipes is correct for the subgraph.
-#[allow(clippy::too_many_arguments)]
 fn run_subgraph(
     graph: &mut Graph,
     nodes: &PlHashSet<GraphNodeKey>,
@@ -149,7 +147,6 @@ fn run_subgraph(
     state: &StreamingExecutionState,
     node_states: &SecondaryMap<GraphNodeKey, StreamingExecutionState>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
-    cancel: Option<&RelaxedCell<bool>>,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
     let mut physical_pipes = SecondaryMap::new();
@@ -275,22 +272,12 @@ fn run_subgraph(
             pipe.spawn(scope, &mut join_handles);
         }
 
-        // Wait until all tasks are done. The first error, or a cancellation, returns at once:
-        // leaving the scope cancels the remaining tasks, which may wait for a slow source.
+        // Wait until all tasks are done. The first error returns at once: leaving the scope
+        // cancels the remaining tasks, which may wait for a slow source.
         ASYNC.block_in_place_on(async move {
             let mut join_handles: FuturesUnordered<_> = join_handles.into_iter().collect();
-            loop {
-                let next = match cancel {
-                    None => join_handles.next().await,
-                    Some(token) => tokio::select! {
-                        next = join_handles.next() => next,
-                        _ = wait_cancelled(token) => return Err(query_interrupted()),
-                    },
-                };
-                match next {
-                    Some(result) => result?,
-                    None => break,
-                }
+            while let Some(result) = join_handles.next().await {
+                result?;
             }
             PolarsResult::Ok(())
         })
@@ -299,35 +286,10 @@ fn run_subgraph(
     Ok(())
 }
 
-/// How often a running phase checks its cancel token.
-const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(10);
-
-fn query_interrupted() -> PolarsError {
-    polars_err!(ComputeError: "query interrupted")
-}
-
-fn check_cancelled(cancel: Option<&RelaxedCell<bool>>) -> PolarsResult<()> {
-    match cancel {
-        Some(token) if token.load() => Err(query_interrupted()),
-        _ => Ok(()),
-    }
-}
-
-/// Returns once the token is set.
-async fn wait_cancelled(token: &RelaxedCell<bool>) {
-    while !token.load() {
-        tokio::time::sleep(CANCEL_POLL_INTERVAL).await;
-    }
-}
-
-/// Runs the graph to completion. Once `cancel` is set, the query stops as if it failed with
-/// "query interrupted": its running tasks are cancelled and its sources torn down (and awaited)
-/// before this returns.
 pub fn execute_graph(
     graph: &mut Graph,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
     num_pipelines: usize,
-    cancel: Option<&RelaxedCell<bool>>,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
     let (query_tasks_send, query_tasks_recv) = crossbeam_channel::unbounded();
     let (subphase_tasks_send, subphase_tasks_recv) = crossbeam_channel::unbounded();
@@ -361,14 +323,7 @@ pub fn execute_graph(
         }
     }
 
-    let result = run_graph(
-        graph,
-        &state,
-        &node_states,
-        metrics,
-        &subphase_tasks_recv,
-        cancel,
-    );
+    let result = run_graph(graph, &state, &node_states, metrics, &subphase_tasks_recv);
     if let Err(e) = result {
         // The failed query's nodes, and the background tasks they hold, are dropped first: work
         // they hand to the query on drop (a source's cleanup) can then end, and ends before the
@@ -409,12 +364,9 @@ fn run_graph(
     node_states: &SecondaryMap<GraphNodeKey, StreamingExecutionState>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
     subphase_tasks_recv: &crossbeam_channel::Receiver<JoinHandle<PolarsResult<()>>>,
-    cancel: Option<&RelaxedCell<bool>>,
 ) -> PolarsResult<()> {
     let mut pipe_seq_offsets = SecondaryMap::new();
     loop {
-        check_cancelled(cancel)?;
-
         // Update the states.
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
@@ -457,7 +409,6 @@ fn run_graph(
             state,
             node_states,
             metrics.clone(),
-            cancel,
         )?;
         ASYNC.block_in_place_on(async {
             // TODO: track this in metrics.
