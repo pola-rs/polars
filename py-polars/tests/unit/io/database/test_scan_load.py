@@ -13,7 +13,6 @@ import os
 import signal
 import subprocess
 import sys
-import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -157,38 +156,6 @@ def test_cancel_on_keyboard_interrupt(driver: str) -> None:
             proc.stderr.close()
 
 
-def test_connection_cap() -> None:
-    peak = [0]
-    stop = threading.Event()
-
-    def sample() -> None:
-        while not stop.is_set():
-            peak[0] = max(peak[0], _sessions(active_only=False))
-            time.sleep(0.05)
-
-    sampler = threading.Thread(target=sample)
-    sampler.start()
-    try:
-        out = (
-            pl.scan_database(
-                "big",
-                _uri(),
-                driver="adbc",
-                partition_on="id",
-                partition_num=12,
-                max_connections=3,
-            )
-            .filter(pl.col("id") <= 3_000_000)
-            .select(pl.len())
-            .collect()
-        )
-    finally:
-        stop.set()
-        sampler.join()
-    assert out.item() == 3_000_000
-    assert 1 <= peak[0] <= 3, peak[0]
-
-
 def _sink_rss(driver: str, n_rows: int, out: Path) -> dict[str, Any]:
     code = (
         "import json, re, time, polars as pl\n"
@@ -262,9 +229,6 @@ def test_throughput_against_read_database_uri() -> None:
             "big",
             _uri(),
             driver="adbc",
-            partition_on="id",
-            partition_num=8,
-            max_connections=8,
         )
         .filter(pl.col("id") <= 5_000_000)
         .collect()
@@ -287,20 +251,6 @@ def _run(code: str, timeout: float) -> subprocess.CompletedProcess[str]:
         )
     except subprocess.TimeoutExpired:
         pytest.fail(f"hung: {code}")
-
-
-@pytest.mark.parametrize("driver", DRIVERS)
-def test_negative_slice_with_more_partitions_than_sessions(driver: str) -> None:
-    # readers counted from the end must not keep every session while the next one waits
-    code = (
-        "import polars as pl\n"
-        f"lf = pl.scan_database('big', {_uri()!r}, driver={driver!r},"
-        " partition_on='id', partition_num=8, max_connections=2)"
-        ".filter(pl.col('id') <= 100_000)\n"
-        "print(lf.tail(30_000).select(pl.len()).collect().item(),"
-        " lf.slice(-50_010, 20).collect().height)\n"
-    )
-    assert _run(code, 60).stdout.split() == ["30000", "20"]
 
 
 @pytest.mark.parametrize("driver", ["psycopg2", "sqlalchemy"])

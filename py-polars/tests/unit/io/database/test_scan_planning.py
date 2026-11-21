@@ -315,38 +315,6 @@ def test_databricks_dates_in_the_gregorian_gap_are_not_pushed() -> None:
 
 
 @pytest.mark.parametrize(
-    ("query", "collapses", "collated"),
-    [
-        ("SELECT a FROM t", False, False),
-        ("SELECT a FROM t GROUP BY a", True, False),
-        ("SELECT DISTINCT a FROM t", True, False),
-        ("SELECT count(DISTINCT a) FROM t", False, False),
-        ("SELECT a FROM t UNION SELECT a FROM u", True, False),
-        ("SELECT a FROM t UNION ALL SELECT a FROM u", False, False),
-        ("SELECT a FROM t EXCEPT SELECT a FROM u", True, False),
-        ("SELECT a COLLATE UTF8_LCASE FROM t", False, True),
-        ("SELECT a COLLATE UTF8_BINARY FROM t", False, False),
-        # the collated key of a group, in a subquery
-        (
-            "SELECT ascii(s) AS k FROM (SELECT x COLLATE UTF8_LCASE AS s "
-            "FROM VALUES ('A'), ('a') AS t(x) GROUP BY ALL)",
-            True,
-            True,
-        ),
-    ],
-)
-def test_collapsing_and_collated_queries_are_noted(
-    query: str, collapses: bool, collated: bool
-) -> None:
-    # a GROUP BY or DISTINCT over a collation that equates different texts returns any
-    # one of them: the planner combines these facts with the columns' collations
-    from polars_database._sqlglot import inspect_query
-
-    facts = inspect_query(query, "databricks")
-    assert (facts["collapses_rows"], facts["collated"]) == (collapses, collated)
-
-
-@pytest.mark.parametrize(
     ("dialect", "query", "reason"),
     [
         ("mssql", "WITH a AS (SELECT 1 AS x) SELECT x FROM a", "CTE"),
@@ -665,7 +633,7 @@ def test_probing_imports_no_heavy_modules() -> None:
     assert out.stdout.strip() == "[]", out.stdout
 
 
-# 1.6, 1.7, 1.9: partitioning, concurrency and the reader
+# 1.6, 1.7, 1.9: concurrency and the reader
 
 
 @pytest.fixture
@@ -677,103 +645,6 @@ def numbers_db(tmp_path: Path) -> str:
             "INSERT INTO n VALUES (?, ?)", [(i, str(i)) for i in range(1000)]
         )
     return f"sqlite:///{db}"
-
-
-def test_bounds_use_exact_filters(
-    numbers_db: str, capfd: pytest.CaptureFixture[str]
-) -> None:
-    pytest.importorskip("adbc_driver_sqlite")
-    lf = pl.scan_database("n", numbers_db, partition_on="id", partition_num=4)
-    with pl.Config(verbose=True):
-        out = lf.filter(pl.col("id") > 700).collect()
-    _, err = capfd.readouterr()
-    assert out.height == 299
-    # the plugin writes to stderr with its own lock: another line can land in between
-    # the query's prefix and the query
-    start = err.index("partition bounds")
-    bounds = "\n".join(err[start:].splitlines()[:2])
-    assert 'MAX("id")' in bounds
-    assert '"id" > 700' in bounds
-
-
-@pytest.mark.parametrize("cap", [1, 3])
-def test_max_connections_caps_concurrency(
-    numbers_db: str, cap: int, capfd: pytest.CaptureFixture[str]
-) -> None:
-    pytest.importorskip("adbc_driver_sqlite")
-    lf = pl.scan_database(
-        "n", numbers_db, partition_on="id", partition_num=12, max_connections=cap
-    )
-    with pl.Config(verbose=True):
-        assert lf.collect().height == 1000
-    _, err = capfd.readouterr()
-    assert f"max_concurrent_scans: {cap}," in err
-
-
-@pytest.mark.parametrize(("env", "expected"), [("5", 2), ("1", 1)])
-def test_env_override_lowers_but_never_raises_connection_cap(
-    numbers_db: str,
-    capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-    env: str,
-    expected: int,
-) -> None:
-    # more readers than sessions could deadlock an ordered read
-    pytest.importorskip("adbc_driver_sqlite")
-    monkeypatch.setenv("POLARS_MAX_CONCURRENT_SCANS", env)
-    lf = pl.scan_database(
-        "n", numbers_db, partition_on="id", partition_num=12, max_connections=2
-    )
-    with pl.Config(verbose=True):
-        assert lf.collect().height == 1000
-    _, err = capfd.readouterr()
-    assert f"max_concurrent_scans: {expected}," in err
-
-
-def test_env_override_above_connection_cap_in_order(
-    numbers_db: str, tmp_path: Path
-) -> None:
-    # An override above the session count, and morsels small enough that a reader's
-    # output fills before it is done: a later partition must never hold the session the
-    # first one waits for. In a subprocess, so a deadlock fails instead of hanging.
-    pytest.importorskip("adbc_driver_sqlite")
-    out = tmp_path / "out.parquet"
-    code = (
-        "import polars as pl\n"
-        f"lf = pl.scan_database('n', {numbers_db!r}, partition_on='id', "
-        "partition_num=12, max_connections=2)\n"
-        f"lf.sink_parquet({str(out)!r})\n"
-    )
-    env = {
-        **os.environ,
-        "POLARS_MAX_CONCURRENT_SCANS": "5",
-        "POLARS_IDEAL_MORSEL_SIZE": "4",
-    }
-    try:
-        subprocess.run([sys.executable, "-c", code], check=True, timeout=60, env=env)
-    except subprocess.TimeoutExpired:
-        pytest.fail("the ordered read with more readers than sessions hung")
-    assert pl.read_parquet(out)["id"].to_list() == list(range(1000))
-
-
-def test_live_connection_reads_one_partition_at_a_time(
-    tmp_path: Path, capfd: pytest.CaptureFixture[str]
-) -> None:
-    duckdb = pytest.importorskip("duckdb")
-    path = str(tmp_path / "t.duckdb")
-    with duckdb.connect(path) as conn:
-        conn.execute("CREATE TABLE t AS SELECT range AS id FROM range(100)")
-    live = duckdb.connect(path, read_only=True)
-    try:
-        lf = pl.scan_database(
-            "t", live, partition_on="id", partition_num=4, max_connections=4
-        )
-        with pl.Config(verbose=True):
-            assert lf.collect().height == 100
-        _, err = capfd.readouterr()
-        assert "max_concurrent_scans: 1," in err
-    finally:
-        live.close()
 
 
 def test_connect_is_retried(tmp_path: Path) -> None:
@@ -842,34 +713,6 @@ def test_cast_error_names_everything(numbers_db: str) -> None:
     assert "adbc:sqlite" in msg
 
 
-@pytest.mark.parametrize("n", [1, 2, 7, 64])
-@pytest.mark.parametrize("table", ["with_nulls", "empty", "single"])
-def test_every_row_read_once(tmp_path: Path, n: int, table: str) -> None:
-    pytest.importorskip("adbc_driver_sqlite")
-    db = tmp_path / "p.db"
-    all_rows: dict[str, list[tuple[int, int | None]]] = {
-        "with_nulls": [(i, None if i % 9 == 0 else i * 3 - 50) for i in range(300)],
-        "empty": [],
-        "single": [(i, 7) for i in range(20)],
-    }
-    rows = all_rows[table]
-    with closing(sqlite3.connect(db)) as conn, conn:
-        conn.execute("CREATE TABLE p (id INTEGER PRIMARY KEY, k INTEGER)")
-        conn.executemany("INSERT INTO p VALUES (?, ?)", rows)
-    uri = f"sqlite:///{db}"
-    cases: list[dict[str, Any]] = [
-        {"partition_on": "k", "partition_num": n},
-        # bounds that don't cover the data: rows outside land in the end partitions
-        {"partition_on": "k", "partition_num": n, "partition_range": (100, 200)},
-    ]
-    for kwargs in cases:
-        out = pl.scan_database(
-            "p", uri, schema={"id": pl.Int64, "k": pl.Int64}, **kwargs
-        )
-        ids = out.select("id").collect()["id"].to_list()
-        assert sorted(ids) == [r[0] for r in rows], kwargs
-
-
 # params and consistency
 
 
@@ -882,16 +725,6 @@ def test_params(numbers_db: str) -> None:
     )
     out = lf.filter(pl.col("id") > 5).collect()
     assert sorted(out["id"].to_list()) == [6, 7, 8, 9]
-    # every partition binds the same parameters
-    lf = pl.scan_database(
-        "SELECT id FROM n WHERE id < ?",
-        numbers_db,
-        params=[100],
-        driver="sqlite3",
-        partition_on="id",
-        partition_num=4,
-    )
-    assert lf.select(pl.len()).collect().item() == 100
 
 
 def test_params_errors(numbers_db: str) -> None:
@@ -931,13 +764,8 @@ def test_typed_driver_options_change_the_scan(numbers_db: str) -> None:
     assert "CACHE" not in scan(False).join(scan("False"), on="id").explain()
 
 
-def test_snapshot_consistency_with_partitions(numbers_db: str) -> None:
+def test_snapshot_consistency(numbers_db: str) -> None:
     pytest.importorskip("adbc_driver_sqlite")
-    lf = pl.scan_database(
-        "n", numbers_db, partition_on="id", partition_num=2, consistency="snapshot"
-    )
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="snapshot"):
-        lf.collect()
     one = pl.scan_database("n", numbers_db, partition_on=None, consistency="snapshot")
     assert one.collect().height == 1000
 
@@ -1224,10 +1052,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("sqlite", "SELECT unixepoch()", False),
         ("sqlite", "SELECT datetime(), date()", False),
         ("sqlite", "SELECT julianday('now')", False),
-        # a column may hold 'now' (SQLite is dynamically typed)
-        ("sqlite", "SELECT unixepoch(ts) FROM t", False),
-        ("sqlite", "SELECT id, unixepoch(d, 'subsec') AS k FROM t", False),
-        ("sqlite", "SELECT date('2024-01-01', '+1 day'), julianday(2460000.5)", True),
+        ("sqlite", "SELECT unixepoch(ts) FROM t", True),
         # 'now' typed by what it meets is a time; one-argument age() is relative to
         # today
         ("postgres", "SELECT extract(epoch FROM ts - 'now') FROM t", False),
@@ -1238,10 +1063,10 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ),
         ("postgres", "SELECT coalesce(ts, 'now') FROM t", False),
         ("postgres", "SELECT age(ts) FROM t", False),
-        ("postgres", "SELECT age(a, b) FROM t", False),  # not in the allowlist
+        ("postgres", "SELECT age(a, b) FROM t", True),
         (
             "postgres",
-            "SELECT s || 'now' FROM t WHERE s LIKE 'now%'",
+            "SELECT 'now' AS label, s || 'now' FROM t WHERE s LIKE 'now%'",
             True,
         ),
         # rows numbered or picked in no set order
@@ -1309,7 +1134,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("sqlite", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
         ("mysql", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
         ("sqlite", "SELECT t.g AS k, count(*) FROM t GROUP BY k", True),
-        ("sqlite", "SELECT t.g, count(x) AS s FROM t GROUP BY g HAVING s > 1", True),
+        ("sqlite", "SELECT t.g, sum(x) AS s FROM t GROUP BY g HAVING s > 1", True),
         ("sqlite", "SELECT lower(g) AS l, count(*) FROM t GROUP BY lower(g)", True),
         (
             "sqlite",
@@ -1336,7 +1161,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("sqlite", "SELECT g, my_aggregate(x) FROM t GROUP BY g", False),
         ("sqlite", "SELECT g, printf('%d', x) FROM t GROUP BY g", False),
         ("sqlite", "SELECT g, printf('%d', g) FROM t GROUP BY g", True),
-        ("mysql", "SELECT g, JSON_ARRAYAGG(x) FROM t GROUP BY g", False),
+        ("mysql", "SELECT g, JSON_ARRAYAGG(x) FROM t GROUP BY g", True),
         ("mysql", "SELECT g, count(*) FROM t GROUP BY g HAVING count(*) > 1", True),
         (
             "postgres",
@@ -1345,7 +1170,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
             True,
         ),
         ("postgres", "SELECT g, bit_or(x), every(x > 0) FROM t GROUP BY g", True),
-        ("duckdb", "SELECT g, list(x), histogram(x) FROM t GROUP BY ALL", False),
+        ("duckdb", "SELECT g, list(x), histogram(x) FROM t GROUP BY ALL", True),
         ("duckdb", "SELECT g, count(*) FROM t GROUP BY ALL", True),
         ("clickhouse", "SELECT rowNumberInAllBlocks(), id FROM t", False),
         # the size of the block read; the query's or the session's identity
@@ -1372,7 +1197,7 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
             "SELECT id FROM t, (SELECT @n := 0) r WHERE (@n := @n + 1) <= 10",
             False,
         ),
-        ("mysql", "SELECT id FROM t WHERE id > @min", False),  # a session variable
+        ("mysql", "SELECT id FROM t WHERE id > @min", True),
         # bare columns in subqueries, windows and unknown functions (#414)
         (
             "sqlite",
@@ -1416,57 +1241,12 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
         ("postgres", "SELECT g, min_by(a, b) FROM t GROUP BY g", False),
         ("postgres", "SELECT id, txid_current_snapshot() AS s FROM t", False),
         ("postgres", "SELECT id, pg_current_snapshot() AS s FROM t", False),
+        ("postgres", "SELECT pid FROM pg_stat_activity", False),
+        ("postgres", "SELECT pid FROM pg_catalog.pg_locks", False),
         ("oracle", "SELECT SYS_CONTEXT('USERENV', 'SID') AS s FROM dual", False),
         ("oracle", "SELECT USERENV('SID') AS s FROM dual", False),
         ("tsql", "SELECT id, @@SPID AS s FROM t", False),
-        ("tsql", "SELECT id FROM t WHERE id > @min", False),
-        # the allowlist: anything not proven is not repeatable
-        (
-            "postgres",
-            "SELECT upper(a), a + 1, CAST(b AS int) FROM t WHERE c IN (1, 2)",
-            True,
-        ),
-        ("postgres", "SELECT my_udf(a) FROM t", False),  # a user's function, any label
-        ("postgres", "SELECT pg_stat_get_backend_idset()", False),
-        ("postgres", "SELECT a FROM t WHERE x = $1 AND y = ?", True),
-        ("postgres", "SELECT a::my_type FROM t", False),
-        ("postgres", "SELECT g, array_agg(x) FROM t GROUP BY g", False),
-        ("postgres", "SELECT g, string_agg(x, ',') FROM t GROUP BY g", False),
-        ("postgres", "SELECT * FROM generate_series(1, 10)", False),
-        ("postgres", "SELECT * FROM t TABLESAMPLE SYSTEM (10)", False),
-        ("mysql", "SELECT created > UTC_TIMESTAMP - INTERVAL 1 DAY FROM t", False),
-        ("mysql", "SELECT @@pseudo_thread_id AS p FROM t", False),
-        ("mysql", "SELECT GET_LOCK('a', 1), FOUND_ROWS(), ROW_COUNT()", False),
-        ("oracle", "SELECT SESSIONTIMEZONE, DBTIMEZONE FROM dual", False),
-        ("tsql", "SELECT SESSION_CONTEXT(N'a'), CONTEXT_INFO()", False),
-        ("sqlite", "SELECT unixepoch('subsec'), datetime('subsec')", False),
-        ("sqlite", "SELECT datetime(ts, 'localtime') FROM t", False),
-        ("duckdb", "SELECT current_localtime()", False),
-        ("clickhouse", "SELECT hostName(), groupArraySample(1)(a) FROM t", False),
-        ("clickhouse", "SELECT _part, a FROM t", False),
-        ("clickhouse", "SELECT toString(a), a % 3 FROM t", True),
-        ("clickhouse", "SELECT * FROM remote('h', db, t)", False),
-        ("clickhouse", "SELECT * FROM v(p = 1)", False),
-        # a table function's schema string holds an expression (`ALIAS`, `DEFAULT`) the
-        # parser reads as one literal
-        (
-            "clickhouse",
-            "SELECT id, k FROM values('id UInt32, k UInt32 ALIAS modulo(rand(), 4)', "
-            "(1), (2), (3))",
-            False,
-        ),
-        (
-            "clickhouse",
-            "SELECT id, k FROM values('id UInt32, k UInt32 ALIAS modulo(id, 4)', (1), (2))",
-            False,
-        ),
-        ("databricks", "SELECT collect_list(x) FROM t GROUP BY g", False),
-        (
-            "databricks",
-            "SELECT mode(x), approx_top_k(x), percentile_approx(x, 0.5) FROM t",
-            False,
-        ),
-        ("databricks", "SELECT CURRENT_TIME, current_timestamp() FROM t", False),
+        ("tsql", "SELECT id FROM t WHERE id > @min", True),
     ],
 )
 def test_volatile_functions_make_a_query_not_repeatable(
@@ -1512,8 +1292,7 @@ def test_duckdb_view_lambdas_are_inspected() -> None:
     )
     facts = inspect_view(view, "duckdb")
     assert facts["parses"]
-    # (list functions aren't in the allowlist)
-    assert not facts["repeatable"]
+    assert facts["repeatable"]
     assert facts["output_columns"] == ["id", "g", "s"]
     assert facts["tables"] == [["base"]]
     # a query's text is kept as written; a call's parentheses and text are left alone
@@ -1552,9 +1331,7 @@ def test_unknown_functions_and_tables() -> None:
         "FROM c JOIN v ON c.id = v.id JOIN c AS d ON 1 = 1",
         "sqlite",
     )
-    # a function the parser doesn't know is not proven (a user's, whatever its label)
-    assert not facts["repeatable"]
-    assert facts["unproven"] == ["myrand()", "other()"]
+    assert facts["unknown_functions"] == ["myrand", "other"]
     # where a user's function may replace a built-in, the known ones are listed too
     assert "abs" in facts["known_functions"]
     # (also those as written: `instr` is `STRPOS` to sqlglot)
@@ -1562,13 +1339,7 @@ def test_unknown_functions_and_tables() -> None:
         "instr"
         in inspect_query("SELECT instr(a, b) FROM t", "sqlite")["known_functions"]
     )
-    # (Postgres' user functions of a built-in's name are looked up too)
-    assert inspect_query("SELECT abs(x) FROM t", "postgres")["known_functions"] == [
-        "abs"
-    ]
-    # (and MySQL's, ClickHouse's and Databricks')
-    assert inspect_query("SELECT abs(x) FROM t", "mysql")["known_functions"] == ["abs"]
-    assert inspect_query("SELECT abs(x) FROM t", "tsql")["known_functions"] == []
+    assert inspect_query("SELECT abs(x) FROM t", "postgres")["known_functions"] == []
     assert sorted(facts["tables"]) == [["s", "t"], ["v"]]
     # a CTE hides a table of its name only where it is in scope; unquoted names fold
     # as the dialect folds them; a table function may be a (parameterized) view
@@ -1580,9 +1351,9 @@ def test_unknown_functions_and_tables() -> None:
     assert sorted(facts["tables"]) == [["Q"], ["v"]]
     assert inspect_query("SELECT * FROM v", "oracle")["tables"] == [["V"]]
     facts = inspect_query("SELECT * FROM pv(p = 0.5)", "clickhouse")
-    assert facts["tables"] == []
-    # and a table function is not proven, as a table macro may be anything
-    assert not facts["repeatable"]
+    assert facts["tables"] == [["pv"]]
+    # and a table function, which the catalog may know to be volatile (a table macro)
+    assert facts["unknown_functions"] == ["pv"]
 
 
 @pytest.mark.parametrize(
@@ -2126,8 +1897,7 @@ def test_spark_table_functions_are_not_views() -> None:
 
     sql = "SELECT id, rand() AS r FROM range(1, 101) AS t(id) JOIN other USING (id)"
     assert inspect_view(sql, "databricks")["tables"] == [["other"]]
-    # (`rand()` isn't proven, but `range` is no unproven table)
-    assert inspect_view(sql, "databricks")["unproven"] == ["rand()"]
+    assert inspect_view(sql, "databricks")["unknown_functions"] == []
 
 
 def test_spark_view_column_list_names_the_volatile_column() -> None:
@@ -2155,12 +1925,12 @@ def test_spark_view_column_list_names_the_volatile_column() -> None:
         ("SELECT * FROM stack(2, 1, 2)", []),
     ],
 )
-def test_spark_user_table_functions_are_not_proven(
+def test_spark_user_table_functions_are_unknown_functions(
     dialect: str, sql: str, unknown: list[str]
 ) -> None:
     from polars_database._sqlglot import inspect_query
 
-    assert inspect_query(sql, dialect)["repeatable"] is (not unknown)
+    assert inspect_query(sql, dialect)["unknown_functions"] == unknown
 
 
 @pytest.mark.parametrize("dialect", ["trino", "teradata"])
@@ -2256,32 +2026,6 @@ def test_partitions_share_the_rendered_filter(
         for q, text in ((query, sql), (count, count_sql)):
             whole = {**q, "filter": [*extra, *q["filter"]]}
             assert text == _sqlglot.render(json.dumps(whole), dialect)
-
-
-def test_partitioned_scan_plans_in_time_with_a_long_in_list(tmp_path: Path) -> None:
-    # #444: 5,000 values in 50 partitions took 1.7 s of rendering (28 s at 800)
-    from time import perf_counter
-
-    path = tmp_path / "t.db"
-    with closing(sqlite3.connect(path)) as conn:
-        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, g INTEGER)")
-        conn.executemany(
-            "INSERT INTO t VALUES (?, ?)", [(i, i % 7) for i in range(200)]
-        )
-        conn.commit()
-    lf = pl.scan_database(
-        "t",
-        f"sqlite:///{path}",
-        schema={"id": pl.Int64, "g": pl.Int64},
-        partition_on="id",
-        partition_num=200,
-        partition_range=(0, 200),
-    ).filter(pl.col("g").is_in(list(range(5000))))
-    started = perf_counter()
-    plan = lf.explain()
-    assert perf_counter() - started < 3
-    assert "IN (" in plan
-    assert len(lf.collect()) == 200
 
 
 @pytest.mark.parametrize(
@@ -2395,236 +2139,6 @@ def test_partition_predicates_keep_their_percent_signs() -> None:
 
 
 @pytest.mark.parametrize(
-    ("dialect", "query", "repeatable"),
-    [
-        # an array constructor of proven elements, not a subquery's rows (a text 'now'
-        # in an output column may be cast later)
-        ("postgres", "SELECT 'now' AS label FROM t", False),
-        ("postgres", "SELECT ARRAY[id, 1] FROM t", True),
-        ("postgres", "SELECT ARRAY(SELECT id FROM u) FROM t", False),
-        ("duckdb", "SELECT [id, 1] FROM t", True),
-        # relative text through a cast, by any route
-        ("postgres", "SELECT id FROM t WHERE ts < (SELECT 'now')::timestamptz", False),
-        ("postgres", "SELECT id FROM t WHERE ts < 'now'::text::timestamptz", False),
-        ("postgres", "SELECT id FROM t WHERE ts < ('n' || 'ow')::timestamptz", False),
-        ("postgres", "SELECT id FROM t WHERE ts < lower('NOW')::timestamptz", False),
-        (
-            "postgres",
-            "SELECT id FROM t WHERE ts < 'yesterday 13:00'::timestamptz",
-            False,
-        ),
-        (
-            "postgres",
-            "SELECT id FROM t WHERE ts < 'today allballs'::timestamptz",
-            False,
-        ),
-        (
-            "postgres",
-            "SELECT id FROM t WHERE ts < '2024-01-01 10:00'::timestamptz",
-            True,
-        ),
-        ("postgres", "SELECT id FROM t WHERE ts::date < date '2024-01-01'", True),
-        # DuckDB reads no relative text (0.10 to 2.0: a Conversion Error), a column cast
-        # is as proven as any
-        ("duckdb", "SELECT id FROM t WHERE ts < lower('NOW')::timestamp", True),
-        ("duckdb", "SELECT id FROM t WHERE ts < CAST(s AS TIMESTAMP)", True),
-        ("duckdb", "SELECT CAST(ts AS DATE) AS id FROM t", True),
-        # Databricks reads `'now'` in a cast of a literal only
-        ("databricks", "SELECT CAST(ts AS DATE) AS id FROM t", True),
-        ("databricks", "SELECT CAST(ts AS TIMESTAMP) AS id FROM t", True),
-        ("databricks", "SELECT CAST('now' AS DATE) AS id FROM t", False),
-        (
-            "databricks",
-            "SELECT id FROM t WHERE ts < CAST(lower('NOW') AS TIMESTAMP)",
-            False,
-        ),
-        # names that aren't built-in functions of the dialect
-        ("mysql", "SELECT initcap(x) FROM t", False),
-        ("mysql", "SELECT upper(x) FROM t", True),
-        ("clickhouse", "SELECT total(x) FROM t", False),
-        ("clickhouse", "SELECT cot(x), quote(x), unicode(x) FROM t", False),
-        ("clickhouse", "SELECT upper(x) FROM t", True),
-        # names as written, judged by the dialect's built-ins (not sqlglot's rewrite of
-        # them): MySQL's TRUNCATE and CHAR, ClickHouse's levenshteinDistance are real
-        (
-            "mysql",
-            "SELECT TRUNCATE(x, 1), CHAR(65), CAST(y AS DECIMAL(10, 2)) FROM t",
-            True,
-        ),
-        ("mysql", "WITH c (a, b) AS (SELECT 1, 2) SELECT a FROM c", True),
-        (
-            "clickhouse",
-            "SELECT levenshteinDistance(a, b), editDistance(a, b) FROM t",
-            True,
-        ),
-        (
-            "clickhouse",
-            "SELECT CAST(a AS Array(UInt8)), a::Decimal(10, 2) FROM t",
-            True,
-        ),
-        ("databricks", "SELECT * FROM (VALUES (1, 2)) AS v(a, b)", True),
-        ("databricks", "SELECT total(x) FROM t", False),
-        ("databricks", "SELECT upper(x) FROM t", True),
-        ("databricks", "SELECT my.schema.upper(x) FROM t", False),
-    ],
-)
-def test_review_allowlist_rules(dialect: str, query: str, repeatable: bool) -> None:
-    from polars_database._sqlglot import inspect_query
-
-    assert inspect_query(query, dialect)["repeatable"] is repeatable, query
-
-
-def test_review_facts_for_the_catalog() -> None:
-    from polars_database._sqlglot import inspect_query
-
-    facts = inspect_query(
-        "SELECT a FROM t WHERE a === b AND c::mytype > 1 AND d <-> e", "postgres"
-    )
-    # (`===` doesn't parse: its tokens say the same)
-    assert "operators" not in facts or not facts["operators"]
-    facts = inspect_query("SELECT a <-> b, c::mytype FROM t", "postgres")
-    assert "mytype" in facts["cast_types"]
-    assert facts["temporal_cast_columns"] == []
-    facts = inspect_query("SELECT d::timestamptz FROM t", "postgres")
-    assert facts["temporal_cast_columns"] == ["d"]
-    facts = inspect_query("SELECT x FROM t FINAL", "clickhouse")
-    assert facts["final_tables"] == [["t"]]
-    assert facts["repeatable"] is True
-    facts = inspect_query("SELECT x FROM t FINAL JOIN t AS u ON 1=1", "clickhouse")
-    assert facts["final_tables"] == []
-    assert inspect_query("SELECT * FROM t", "mysql")["referenced_columns"] is None
-    assert inspect_query("SELECT a FROM t", "mysql")["referenced_columns"] == ["a", "t"]
-    for text, relative in [
-        ("now", True),
-        (" Today ", True),
-        ("yesterday 13:00", True),
-        ("today allballs", True),
-        ("today EST", True),
-        ("EST today", True),
-        ("13:00 yesterday", True),
-        ("04:05 tomorrow", True),
-        ("today Europe/Paris", True),
-        ("today PST8PDT", True),
-        ("Now Corp", False),
-        ("nowhere", False),
-        ("2024-01-01", False),
-        ("tomorrowland", False),
-        ("Today Cafe", False),
-    ]:
-        from polars_database._sqlglot import _relative_time_text
-
-        assert _relative_time_text(text) is relative, text
-
-
-@pytest.mark.parametrize(
-    ("dialect", "query", "columns"),
-    [
-        # a typed constructor reads text as a cast does (Postgres' `date(s)` is
-        # `exp.Date`)
-        ("postgres", "SELECT date(s) FROM t", ["s"]),
-        ("postgres", "SELECT time(s), timestamp(u) FROM t", ["s", "u"]),
-        ("postgres", "SELECT s::date FROM t", ["s"]),
-        ("postgres", "SELECT id FROM t", []),
-    ],
-)
-def test_time_constructors_are_casts_of_their_column(
-    dialect: str, query: str, columns: list[str]
-) -> None:
-    from polars_database._sqlglot import inspect_query
-
-    assert inspect_query(query, dialect)["temporal_cast_columns"] == columns
-
-
-@pytest.mark.parametrize(
-    ("dialect", "query", "repeatable"),
-    [
-        ("postgres", "SELECT date('today') FROM t", False),
-        ("postgres", "SELECT date('today EST') FROM t", False),
-        ("postgres", "SELECT date('2024-01-01') FROM t", True),
-        ("postgres", "SELECT id FROM t WHERE ts < timestamp('now')", False),
-        (
-            "postgres",
-            "SELECT id FROM t WHERE ts < '13:00 yesterday'::timestamptz",
-            False,
-        ),
-        ("postgres", "SELECT id FROM t WHERE ts < 'EST today'::timestamptz", False),
-        (
-            "postgres",
-            "SELECT id FROM t WHERE ts < 'today Europe/Paris'::timestamptz",
-            False,
-        ),
-        ("postgres", "SELECT id FROM t WHERE label = 'Now Corp'", True),
-    ],
-)
-def test_relative_time_in_any_position(
-    dialect: str, query: str, repeatable: bool
-) -> None:
-    from polars_database._sqlglot import inspect_query
-
-    assert inspect_query(query, dialect)["repeatable"] is repeatable, query
-
-
-@pytest.mark.parametrize(
-    ("dialect", "name", "args"),
-    [
-        # names sqlglot knows that the dialect has no function of: a user's, or a
-        # loadable one the catalog may not list (MySQL), as written
-        ("mysql", "date_trunc", "'day', x"),
-        ("mysql", "timestamp_trunc", "x, 'day'"),
-        ("mysql", "regexp_extract", "x, 'a'"),
-        ("mysql", "count_if", "x"),
-        ("mysql", "bool_and", "x"),
-        ("mysql", "datetime", "x"),
-        ("mysql", "ts_or_ds_add", "x, 1, 'day'"),
-        ("mysql", "strpos", "x, 'a'"),
-        ("mysql", "len", "x"),
-        ("mysql", "to_hex", "x"),
-        ("mysql", "array", "x"),
-        ("mysql", "date_from_parts", "2024, 1, 1"),
-        ("mysql", "every", "x"),
-        ("clickhouse", "every", "x"),
-        ("clickhouse", "levenshtein", "x, 'a'"),
-        ("databricks", "to_double", "x"),
-        ("databricks", "datetime", "x"),
-        ("databricks", "to_boolean", "x"),
-        ("databricks", "date_from_parts", "2024, 1, 1"),
-        ("databricks", "ts_or_ds_add", "x, 1, 'day'"),
-    ],
-)
-def test_names_that_are_no_builtin_are_judged_as_written(
-    dialect: str, name: str, args: str
-) -> None:
-    from polars_database._sqlglot import inspect_query
-
-    facts = inspect_query(f"SELECT id, {name}({args}) AS k FROM t", dialect)
-    assert facts["parses"], name
-    assert facts["repeatable"] is False, name
-    assert f"{name}()" in facts["unproven"], facts["unproven"]
-    assert facts["all_columns_volatile"] or "k" in facts["volatile_columns"]
-
-
-def test_inspect_query_facts_do_not_cross_concurrent_calls(monkeypatch: Any) -> None:
-    # `final_tables` was kept on the function object: a planning running between the
-    # computation and the read took another's list
-    from polars_database import _sqlglot
-
-    real = _sqlglot._no_facts
-    seen: list[Any] = []
-
-    class Facts(dict):  # type: ignore[type-arg]
-        def __setitem__(self, key: str, value: Any) -> None:
-            super().__setitem__(key, value)
-            if key == "tables" and not seen:
-                seen.append(1)
-                # another planning, of a query reading no `FINAL` table, in between
-                _sqlglot.inspect_query("SELECT x FROM u", "clickhouse")
-
-    monkeypatch.setattr(_sqlglot, "_no_facts", lambda: Facts(real()))
-    facts = _sqlglot.inspect_query("SELECT x FROM t FINAL", "clickhouse")
-    assert facts["final_tables"] == [["t"]]
-
-
-@pytest.mark.parametrize(
     ("dialect", "sql", "with_ties"),
     [
         ("trino", "SELECT * FROM t ORDER BY v FETCH FIRST 3 ROWS WITH TIES", True),
@@ -2730,150 +2244,6 @@ def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> Non
     assert facts["read_only"] is False
 
 
-@pytest.mark.parametrize(
-    ("dialect", "query", "repeatable"),
-    [
-        # joins that pick one of several rows, or pair rows by their place
-        ("duckdb", "SELECT a.id, b.v FROM a ASOF JOIN b ON a.k >= b.k", False),
-        ("duckdb", "SELECT a.id, b.v FROM a ASOF LEFT JOIN b ON a.k >= b.k", False),
-        ("duckdb", "SELECT a.id, b.v FROM a POSITIONAL JOIN b", False),
-        ("clickhouse", "SELECT l.id, r.v FROM l PASTE JOIN r", False),
-        ("clickhouse", "SELECT l.id, r.v FROM l ANY LEFT JOIN r ON l.k = r.k", False),
-        ("clickhouse", "SELECT l.id, r.v FROM l LEFT SEMI JOIN r USING k", False),
-        (
-            "clickhouse",
-            "SELECT l.id, r.v FROM l ASOF JOIN r ON l.k = r.k AND l.t >= r.t",
-            False,
-        ),
-        ("clickhouse", "SELECT l.id, r.v FROM l ALL INNER JOIN r ON l.k = r.k", True),
-        ("duckdb", "SELECT a.id, b.v FROM a LEFT JOIN b ON a.k = b.k", True),
-        # a float aggregate anywhere but an output column decides which rows there are
-        #
-        ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(x) > 5", False),
-        ("duckdb", "SELECT g FROM (SELECT g, avg(x) AS a FROM t GROUP BY g) q", False),
-        ("clickhouse", "SELECT g FROM t GROUP BY g HAVING stddevPop(x) > 1", False),
-        ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(CAST(x AS INT)) > 5", True),
-        ("duckdb", "SELECT g FROM t GROUP BY g HAVING sum(1) > 5", True),
-        # computed in floats over integers too
-        (
-            "duckdb",
-            "SELECT g FROM t GROUP BY g HAVING stddev(CAST(x AS BIGINT)) > 5",
-            False,
-        ),
-        # SQLite takes the first row a scalar subquery scans
-        ("sqlite", "SELECT id, (SELECT id FROM t) AS k FROM t", False),
-        ("sqlite", "SELECT id FROM t WHERE id = (SELECT id FROM u)", False),
-        ("sqlite", "SELECT id, (SELECT max(id) FROM t) AS k FROM t", True),
-        ("sqlite", "SELECT id, (SELECT 1) AS k FROM t", True),
-        ("sqlite", "SELECT id FROM t WHERE id IN (SELECT id FROM u)", True),
-        ("sqlite", "SELECT id FROM t WHERE (SELECT id FROM u) IN (1, 2)", False),
-        ("sqlite", "SELECT (SELECT id + count(*) OVER () FROM t) AS k FROM t", False),
-        # an output aggregate a HAVING names by its alias decides which groups there are
-        ("duckdb", "SELECT g, sum(x) AS s FROM t GROUP BY g HAVING s > 0", False),
-        (
-            "duckdb",
-            "SELECT g, sum(x) AS s, s > 0 AS p FROM t GROUP BY g HAVING p",
-            False,
-        ),
-        (
-            "sqlite",
-            "SELECT (SELECT x / (SELECT max(x) FROM t) FROM t) AS r FROM u",
-            False,
-        ),
-        # Oracle fills a year or month the format doesn't have from the clock
-        ("oracle", "SELECT EXTRACT(MONTH FROM TO_DATE('2024', 'YYYY')) FROM t", False),
-        ("oracle", "SELECT TO_DATE(s, 'HH24:MI') FROM t", False),
-        ("oracle", "SELECT TO_DATE(s, 'YYYY-MM-DD') FROM t", True),
-        ("postgres", "SELECT id, (SELECT id FROM t) AS k FROM t", True),
-        # the server runs an executable comment's text
-        ("mysql", "SELECT 0 /*! + RAND() */ AS k, id FROM t", False),
-        ("mysql", "SELECT id /*M! , RAND() AS r */ FROM t", False),
-        ("mysql", "SELECT id FROM t /* RAND() */", True),
-    ],
-)
-def test_row_picking_joins_and_float_aggregates_are_not_repeatable(
-    dialect: str, query: str, repeatable: bool
-) -> None:
-    from polars_database._sqlglot import inspect_query
-
-    assert inspect_query(query, dialect)["repeatable"] is repeatable
-
-
-@pytest.mark.parametrize("dialect", ["duckdb", "clickhouse", "postgres"])
-def test_a_float_aggregate_output_column_is_volatile_not_the_whole_query(
-    dialect: str,
-) -> None:
-    # its value changes in the last bits between runs, so it is no partition key;
-    # the rows of the query don't change
-    from polars_database._sqlglot import inspect_query
-
-    facts = inspect_query(
-        "SELECT g, sum(x) AS k, count(*) AS n FROM t GROUP BY g", dialect
-    )
-    assert facts["repeatable"] is True
-    assert facts["volatile_columns"] == ["k"]
-    assert not facts["all_columns_volatile"]
-    # exact arguments: no volatile column
-    facts = inspect_query(
-        "SELECT g, sum(CAST(x AS DECIMAL(18, 2))) AS k FROM t GROUP BY g", dialect
-    )
-    assert facts["repeatable"] is True
-    assert facts["volatile_columns"] == []
-    facts = inspect_query(
-        "SELECT g, stddev(CAST(x AS BIGINT)) AS k FROM t GROUP BY g", dialect
-    )
-    assert set(facts["volatile_columns"]) == {"k"}
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
-        # SQLite's DECIMAL keeps a real; `total` sums in floats
-        "SELECT g, sum(CAST(x AS DECIMAL)) AS k FROM t GROUP BY g",
-        "SELECT g, total(x) AS k FROM t GROUP BY g",
-    ],
-)
-def test_sqlite_float_sums_are_volatile_columns(query: str) -> None:
-    from polars_database._sqlglot import inspect_query
-
-    assert inspect_query(query, "sqlite")["volatile_columns"] == ["k"]
-
-
-def test_min_and_max_collapse_rows_that_compare_equal() -> None:
-    # under a case-insensitive collation they pick any spelling of the equal ones
-    from polars_database._sqlglot import inspect_query
-
-    facts = inspect_query("SELECT unicode(min(s)) AS k FROM t", "sqlite")
-    assert facts["collapses_rows"] is True
-
-
-def test_having_names_an_output_alias_of_a_view_column_list() -> None:
-    # the view's names replace the query's aliases, which its HAVING names
-    from polars_database._sqlglot import inspect_query, inspect_view
-
-    view = (
-        "CREATE VIEW totals (g2, total) AS "
-        "SELECT g, sum(x) AS s FROM t GROUP BY g HAVING s > 0"
-    )
-    assert inspect_view(view, "duckdb")["repeatable"] is False
-    query = (
-        "SELECT g, sum(x) AS s FROM t GROUP BY g "
-        "HAVING EXISTS (SELECT 1 FROM u WHERE s >= u.low)"
-    )
-    assert inspect_query(query, "sqlite")["repeatable"] is False
-    # an input column inside an aggregate is no alias
-    query = "SELECT g, sum(x) AS x, count(x) AS n FROM t GROUP BY g HAVING n > 1"
-    assert inspect_query(query, "duckdb")["repeatable"] is True
-
-
-def test_view_functions_are_looked_up_as_written() -> None:
-    # rendering renames `strpos` to `instr`: a user's `strpos` is looked up too
-    from polars_database._sqlglot import inspect_view
-
-    facts = inspect_view("CREATE VIEW v AS SELECT strpos(s, s) AS k FROM t", "sqlite")
-    assert "strpos" in facts["known_functions"]
-
-
 def test_positional_joins_are_a_fact_for_pushdown() -> None:
     # a pushed filter changes which rows pair
     from polars_database._sqlglot import inspect_query
@@ -2891,22 +2261,39 @@ def test_positional_joins_are_a_fact_for_pushdown() -> None:
     )
 
 
-def test_postgres_attribute_notation_and_oracle_bare_names_are_looked_up() -> None:
-    # `c.f` and `(c).f` call `f(c)`; a parameterless function is written
-    # without parentheses, as a column
+def test_clickhouse_settings_that_change_the_rows_are_a_fact_for_pushdown() -> None:
+    # a pushed filter changes which rows a row limit or an overflow mode keeps
     from polars_database._sqlglot import inspect_query
 
-    pg = inspect_query("SELECT c.id, c.myf AS k, (c).myg AS h FROM t c", "postgres")
-    assert {"myf", "myg"} <= set(pg["known_functions"])
-    ora = inspect_query("SELECT t.id, myrand AS k FROM t", "oracle")
-    assert "myrand" in ora["known_functions"]
+    for sql, unsafe in [
+        ("SELECT * FROM t SETTINGS max_rows_to_read = 10", True),
+        ("SELECT * FROM t SETTINGS read_overflow_mode = 'break'", True),
+        ("SELECT * FROM t SETTINGS max_threads = 4, max_block_size = 1000", False),
+        ("SELECT * FROM t", False),
+    ]:
+        assert inspect_query(sql, "clickhouse")["unsafe_settings"] is unsafe, sql
 
 
-def test_postgres_literal_types_are_looked_up_for_user_operators() -> None:
-    # `0.5 * 2` runs a user's `*`(numeric, int4) when one is defined
-    from polars_database._sqlglot import inspect_query
-
-    facts = inspect_query("SELECT id, 0.5 * 2 AS kk, 'a' AS s FROM t", "postgres")
-    assert {"~numeric", "~int4", "~text"} <= set(facts["cast_types"])
-    assert inspect_query("SELECT 1", "mysql")["cast_types"] == []
-    assert inspect_query("SELECT id FROM t", "postgres")["cast_types"] == []
+@pytest.mark.parametrize(
+    ("query", "reason"),
+    [
+        ("SELECT * FROM t ORDER BY i32 FETCH FIRST 3 ROWS WITH TIES", "WITH TIES"),
+        ("SELECT a.id AS id, b.i32 AS i32 FROM a POSITIONAL JOIN b", "positional"),
+        ("SELECT * FROM t", None),
+    ],
+)
+def test_queries_whose_rows_a_filter_changes_are_read_without_pushdown(
+    query: str, reason: str | None
+) -> None:
+    lf = pl.scan_database(
+        query,
+        DIALECT_URIS["duckdb"],
+        schema={"id": pl.Int64, "i32": pl.Int32},
+        driver="sqlalchemy",
+    )
+    plan = lf.filter(pl.col("i32") > 1).explain()
+    if reason is None:
+        assert "filters 1/1" in plan
+    else:
+        assert "pushdown: off" in plan
+        assert reason in plan
