@@ -530,6 +530,41 @@ fn databricks_collations(info: &mut CatalogInfo) {
         .collect();
 }
 
+/// The static types (`typeof`) of a Trino query's output columns by position, for one that
+/// can't be wrapped (it names two columns alike): an alias list renames them, and the query
+/// itself never runs. `None` if the lookup fails.
+pub fn trino_positional_types(
+    session: &mut dyn DatabaseSession,
+    query: &str,
+    columns: usize,
+) -> Option<Vec<String>> {
+    if columns == 0 {
+        return None;
+    }
+    let sql = format!(
+        "SELECT {} FROM (SELECT 1) pl_d LEFT JOIN ({}) pl_q({}) ON false",
+        (0..columns)
+            .map(|i| format!("typeof(pl_q.\"c{i}\") AS t{i}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        super::planner::wrappable(query),
+        (0..columns)
+            .map(|i| format!("\"c{i}\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let df = match session.query(&sql) {
+        Ok(df) => df,
+        Err(e) => {
+            if polars_core::config::verbose() {
+                eprintln!("[scan_database]: lookup of the query's types failed: {e}");
+            }
+            return None;
+        },
+    };
+    (0..columns).map(|i| cell_str(&df, i, 0)).collect()
+}
+
 /// Looks up the result types of a query source, which decide how the database compares its
 /// columns (they don't change how the columns are read). `from` is the wrapped query
 /// (`(...) pl_q`), `columns` its output columns. Dialects without a lookup, or a failing one,

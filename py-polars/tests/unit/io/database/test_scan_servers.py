@@ -347,10 +347,6 @@ SERVERS = {
         "SELECT * FROM edge",
         {"trino": False, "adbc": False, "sqlalchemy": False, "connectorx": False},
         factory=_trino_factory,
-        uri_for={
-            # the ADBC driver speaks HTTPS unless told not to
-            "adbc": lambda u: u + ("&" if "?" in u else "?") + "SSL=false",
-        },
     ),
     "databricks": Server(
         "POLARS_TEST_DATABRICKS_URI",
@@ -7121,3 +7117,168 @@ def _read_by_every_driver(
         except pl.exceptions.PolarsError as e:
             errors[driver] = f"{type(e).__name__}: {str(e)[:300]}"
     return frames, errors
+
+
+@needs_trino
+def test_trino_query_with_unnamed_columns_is_refused() -> None:
+    # Trino names such a column `_col0` but doesn't let a wrapping query refer to it
+    table = "review_trino_unnamed"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, s varchar)",
+            f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b'), (3, 'c')",
+        ],
+    )
+    cases: list[tuple[str, dict[str, Any]]] = [
+        (f"SELECT count(*), max(id) AS m FROM {table}", {}),
+        (f"WITH q AS (SELECT id, upper(s) FROM {table}) SELECT q.* FROM q", {}),
+        (f"SELECT count(*) FROM {table}", {"schema": {"_col0": pl.Int64}}),
+    ]
+    for driver in _runnable_drivers("trino"):
+        for source, kwargs in cases:
+            with pytest.raises(pl.exceptions.InvalidOperationError, match="alias"):
+                _scan("trino", driver, source, **kwargs).collect()
+        lf = _scan("trino", driver, f"SELECT count(*) AS n, max(id) AS m FROM {table}")
+        assert lf.filter(pl.col("m") > 2).collect().rows() == [(3, 3)], driver
+
+
+@needs_trino
+@pytest.mark.parametrize("precision", [3, 6, 9])
+def test_trino_time_zone_values_in_arrays_and_maps_read_the_instants(
+    precision: int,
+) -> None:
+    # a nested `timestamp with time zone` holds a zone's name too: the repeated hour of
+    # a named zone (00:30Z and 01:30Z are both 02:30 in Paris) read as one instant
+    table = f"review_trino_nested_tz{precision}"
+    tz = f"timestamp({precision}) with time zone"
+    first = "TIMESTAMP '2026-10-25 00:30:00 UTC' AT TIME ZONE 'Europe/Paris'"
+    second = "TIMESTAMP '2026-10-25 01:30:00 UTC' AT TIME ZONE 'Europe/Paris'"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, a array({tz}), m map(varchar, {tz}))",
+            f"INSERT INTO {table} VALUES "
+            f"(1, ARRAY[{first}, {second}], MAP(ARRAY['k'], ARRAY[{first}])), "
+            f"(2, ARRAY[{second}], MAP(ARRAY['k'], ARRAY[{second}])), "
+            "(3, NULL, NULL)",
+        ],
+    )
+    instants = {
+        1: ["00:30", "01:30"],
+        2: ["01:30"],
+    }
+    for source in [table, f"SELECT id, a, m FROM {table}"]:
+        frames, errors = _read_by_every_driver("trino", source)
+        for driver, df in frames.items():
+            df = df.sort("id")
+            for row in df.iter_rows(named=True):
+                for column in ("a", "m"):
+                    value = row[column]
+                    if row["id"] == 3:
+                        assert value is None, (driver, source, column, value)
+                        continue
+                    # whichever form the driver gives (datetimes, text, a struct): the
+                    # wall-clock times it shows are those of UTC
+                    shown = str(value)
+                    want = (
+                        instants[row["id"]]
+                        if column == "a"
+                        else instants[row["id"]][:1]
+                    )
+                    for hhmm in want:
+                        # (`00:30` as text, `0, 30` in a datetime's repr)
+                        as_repr = f"{int(hhmm[:2])}, {int(hhmm[3:])}"
+                        found = hhmm in shown or as_repr in shown
+                        assert found, (driver, source, column, shown)
+                    assert "02:30" not in shown, (driver, source, column, shown)
+                    assert "+0100" not in shown, (driver, source, column, shown)
+        # (wider ones keep the unit each driver reads)
+        if precision <= 6:
+            arrays = {d: str(df.schema["a"]) for d, df in frames.items()}
+            assert len(set(arrays.values())) == 1, arrays
+            assert all("UTC" in a for a in arrays.values()), arrays
+        # (a driver that can't read a map at all fails the table, not the zone)
+        assert all(
+            "Europe/Paris" not in e and "CET" not in e for e in errors.values()
+        ), errors
+
+
+_DUPLICATE_COLUMNS_CHILD = """
+import sys
+import polars as pl
+try:
+    pl.scan_database(sys.argv[1], sys.argv[2], driver=sys.argv[3]).collect()
+except Exception as e:
+    print("ERROR", type(e).__name__, e)
+"""
+
+
+@needs_trino
+def test_trino_query_with_duplicate_names_over_wide_timestamps_is_refused() -> None:
+    # it can't be wrapped, so `timestamp(9)` is read as the driver does: ADBC aborts
+    # the process (a Go panic) outside 1677-2262. Each read runs in a child process.
+    table = "review_trino_duplicate_names"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, ts9 timestamp(9), ts3 timestamp(3))",
+            f"INSERT INTO {table} VALUES "
+            "(1, TIMESTAMP '2300-01-01 00:00:00.000000001', TIMESTAMP '2020-01-01 00:00:00')",
+        ],
+    )
+    uri = SERVERS["trino"].uri
+    assert uri is not None
+    for driver in _runnable_drivers("trino", ["trino", "adbc", "sqlalchemy"]):
+        for columns in ("a.ts9, b.ts9", "a.ts9, b.ts3 AS ts9"):
+            source = (
+                f"SELECT a.id, {columns} FROM {table} a JOIN {table} b ON a.id = b.id"
+            )
+            out = subprocess.run(
+                [sys.executable, "-c", _DUPLICATE_COLUMNS_CHILD, source, uri, driver],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+            assert out.returncode == 0, (
+                driver,
+                columns,
+                out.returncode,
+                out.stderr[-500:],
+            )
+            message = out.stdout
+            assert "ERROR InvalidOperationError" in message, (driver, message)
+            assert "'ts9'" in message, (driver, message)
+            assert "alias" in message, (driver, message)
+
+
+@needs_trino
+@pytest.mark.parametrize("parameter", ["", "SSL=0", "SSL=FALSE", "SSL=no"])
+def test_trino_uri_without_tls_reads_over_http_on_every_driver(
+    parameter: str,
+) -> None:
+    # the ADBC driver connects over HTTPS unless `SSL=false`: the URI reads as the
+    # `trino` driver reads it, whichever driver is picked
+    uri = SERVERS["trino"].uri
+    assert uri is not None
+    uri = uri + ("?" + parameter if parameter else "")
+    for driver in _runnable_drivers("trino", ["trino", "adbc", "sqlalchemy"]):
+        got = pl.scan_database("SELECT 1 AS x", uri, driver=driver).collect()
+        assert got["x"].to_list() == [1], driver
+    assert pl.scan_database("SELECT 1 AS x", uri).collect()["x"].to_list() == [1]
+
+
+@needs_trino
+def test_trino_uri_with_an_unknown_ssl_value_is_refused() -> None:
+    uri = SERVERS["trino"].uri
+    assert uri is not None
+    for driver in _runnable_drivers("trino", ["adbc"]):
+        for parameter in ("SSL=disabled", "ssl=false"):
+            with pytest.raises(pl.exceptions.PolarsError, match="SSL"):
+                pl.scan_database(
+                    "SELECT 1 AS x", f"{uri}?{parameter}", driver=driver
+                ).collect()
