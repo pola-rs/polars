@@ -1625,12 +1625,17 @@ pub fn view_definition(
             )) else {
                 return ViewLookup::Failed;
             };
-            // Data Redaction (of a table or a view): the values are read redacted and
-            // compared as stored. Only a login granted `REDACTION_POLICIES` can see the
-            // policies; for any other the lookup fails and none is found.
+            // Data Redaction: the values are read redacted and compared as stored. Only a
+            // login granted `REDACTION_POLICIES` can see the policies; for any other the
+            // lookup fails and none is found. A view may read tables the login can't see
+            // (through a view it can't list): any policy may apply to it.
+            let named_only = if df.height() == 0 {
+                format!("AND (p.object_owner, p.object_name) IN {named}")
+            } else {
+                String::new()
+            };
             let redacted = run(&format!(
-                "SELECT COUNT(*) FROM redaction_policies p WHERE p.enable = 'YES' \
-                AND (p.object_owner, p.object_name) IN {named}"
+                "SELECT COUNT(*) FROM redaction_policies p WHERE p.enable = 'YES' {named_only}"
             ))
             .is_some_and(|df| cell_u64(&df, 0, 0).is_some_and(|n| n > 0));
             if df.height() == 0 {
