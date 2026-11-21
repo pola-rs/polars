@@ -86,6 +86,27 @@ impl SqlRenderer for SqlglotRenderer {
             .map_err(|e| polars_err!(ComputeError: "sqlglot could not inspect the query: {e}"))
     }
 
+    fn outer_order_by(
+        &self,
+        sql: &str,
+        dialect: DialectName,
+        columns: &[PlSmallStr],
+        star_ordinals: bool,
+    ) -> PolarsResult<Option<PlSmallStr>> {
+        let columns: Vec<&str> = columns.iter().map(|c| c.as_str()).collect();
+        Python::attach(|py| {
+            self.module
+                .call_method1(
+                    py,
+                    "outer_order_by",
+                    (sql, dialect_name(dialect), columns, star_ordinals),
+                )?
+                .extract::<Option<String>>(py)
+        })
+        .map(|o| o.map(Into::into))
+        .map_err(|e| polars_err!(ComputeError: "sqlglot could not read the query's ORDER BY: {e}"))
+    }
+
     fn inspect_view(&self, sql: &str, dialect: DialectName) -> PolarsResult<QueryFacts> {
         self.facts("inspect_view", sql, dialect)
             .map_err(|e| polars_err!(ComputeError: "sqlglot could not inspect the view: {e}"))

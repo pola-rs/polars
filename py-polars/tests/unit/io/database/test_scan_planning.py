@@ -404,6 +404,61 @@ def test_cse_of_identical_scans(tmp_path: Path) -> None:
     assert joined.collect().height == 10
 
 
+def test_cse_keys_params_by_utc_offset(tmp_path: Path) -> None:
+    # a `tzinfo` whose repr hides its offset must not merge scans differing in it
+    from datetime import timedelta, tzinfo
+
+    class FixedTz(tzinfo):
+        def __init__(self, hours: int) -> None:
+            self.hours = hours
+
+        def __getinitargs__(self) -> tuple[int]:  # for `copy.deepcopy`
+            return (self.hours,)
+
+        def utcoffset(self, dt: datetime | None) -> timedelta:
+            return timedelta(hours=self.hours)
+
+        def tzname(self, dt: datetime | None) -> str:
+            return f"FixedTz{self.hours}"
+
+        def dst(self, dt: datetime | None) -> None:
+            return None
+
+        def __repr__(self) -> str:
+            return "FixedTz()"
+
+    db = tmp_path / "t.db"
+    sqlite3.connect(db).close()
+
+    def scan(hours: int) -> pl.LazyFrame:
+        return pl.scan_database(
+            "SELECT 1 AS x WHERE ? IS NOT NULL",
+            f"sqlite:///{db}",
+            source_type="query",
+            driver="sqlalchemy",
+            schema={"x": pl.Int64},
+            params=[datetime(2020, 1, 1, tzinfo=FixedTz(hours))],
+            partition_on=None,
+        )
+
+    # a `timezone` has `utcoffset(dt)` too, and takes an argument
+
+    lf = pl.scan_database(
+        "SELECT 1 AS x WHERE ? IS NOT NULL",
+        f"sqlite:///{db}",
+        source_type="query",
+        driver="sqlalchemy",
+        schema={"x": pl.Int64},
+        params=[[UTC]],
+        partition_on=None,
+    )
+    lf.explain()
+    same = scan(1).join(scan(1), on="x")
+    assert "CACHE" in same.explain()
+    differ = scan(1).join(scan(2), on="x")
+    assert "CACHE" not in differ.explain()
+
+
 # secrets never appear in plans, errors or verbose logs
 
 SECRET = "s3cr3t-Pa55word"
@@ -1198,6 +1253,23 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
             "SELECT id, count(*) FROM a JOIN b ON a.k = b.k GROUP BY a.id",
             True,
         ),
+        # the schema counts: `s2.t.id` isn't grouped by `GROUP BY s1.t.id`
+        (
+            "sqlite",
+            "SELECT s1.t.id, s2.t.id AS b FROM s1.t JOIN s2.t ON true GROUP BY s1.t.id",
+            False,
+        ),
+        (
+            "sqlite",
+            "SELECT s1.t.id, count(*) FROM s1.t JOIN s2.t ON true GROUP BY s1.t.id",
+            True,
+        ),
+        # a quoted dot is part of the name: `"a.b".x` isn't `a.b.x`
+        (
+            "sqlite",
+            'SELECT "a.b".x, count(*) FROM "a.b" CROSS JOIN a.b GROUP BY a.b.x',
+            False,
+        ),
         # `GROUP BY k` for `g AS k` groups `g`
         ("sqlite", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
         ("mysql", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
@@ -1705,8 +1777,7 @@ def test_sqlite_string_filters_with_nul(tmp_path: Path, driver: str) -> None:
 
 
 def test_duckdb_time_with_time_zone_filters(tmp_path: Path) -> None:
-    # TIMETZ reads as its local time; DuckDB compares it with a TIME literal in UTC (and
-    # can't order it against one): such filters stay in Polars
+    # TIMETZ reads as text with its offset; a TIME literal isn't compared with it
     duckdb = pytest.importorskip("duckdb")
     path = tmp_path / "tz.duckdb"
     with duckdb.connect(str(path)) as conn:
@@ -1716,14 +1787,14 @@ def test_duckdb_time_with_time_zone_filters(tmp_path: Path) -> None:
         )
     lf = pl.scan_database("t", f"duckdb:///{path}")
     df = lf.collect()
+    assert df.schema["t"] == pl.String
     for predicate in (
-        pl.col("t") == time(12),
-        pl.col("t") < time(11),
-        pl.col("t") >= time(10),
+        pl.col("t") == "12:00:00+02",
+        pl.col("t") < "10:00:00+00",
+        pl.col("t") >= "10",
     ):
         got = lf.filter(predicate).collect().sort("id")
         assert got["id"].to_list() == df.filter(predicate).sort("id")["id"].to_list()
-        assert "filters 0/1" in lf.filter(predicate).explain()
 
 
 def test_clickhouse_negated_in_is_not_pushed() -> None:
@@ -1870,7 +1941,7 @@ def test_scrub_message_with_lone_surrogate() -> None:
 
 
 def _pushed(dialect: str, predicate: pl.Expr, schema: Any = None) -> str:
-    uri, driver = DIALECT_URIS.get(dialect, "sqlite:///x.db"), "sqlalchemy"
+    uri, driver = DIALECT_URIS.get(dialect, f"{dialect}://u@h/db"), "sqlalchemy"
     kwargs: dict[str, Any] = {} if dialect in DIALECT_URIS else {"dialect": dialect}
     if dialect == "flightsql":
         uri, driver = "grpc://h:31337", "adbc"
@@ -2148,6 +2219,63 @@ def test_outer_order_by_of_a_query(query: str, expected: str | None) -> None:
     from polars_database._sqlglot import inspect_query
 
     assert inspect_query(query, "mysql")["outer_order_by"] == expected
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT * FROM t ORDER BY id DESC", "`_pl`.`id` DESC"),
+        ("SELECT * FROM t ORDER BY t.d, 1", "`_pl`.`d`, `_pl`.`id`"),
+        ("SELECT t.* FROM t ORDER BY ID", "`_pl`.`id`"),
+        ("SELECT * FROM t ORDER BY id + 1", None),
+        ("SELECT * FROM t JOIN u ON 1 = 1 ORDER BY t.id", None),
+        ("SELECT * FROM t AS x ORDER BY x.id", "`_pl`.`id`"),
+        ("SELECT * FROM t ORDER BY u.id", None),
+        ("SELECT t.* FROM (t JOIN u ON t.id + u.id = 3) ORDER BY u.id", None),
+        ("SELECT *, 1 AS n FROM t ORDER BY id", None),
+        ("SELECT * FROM t UNION SELECT * FROM u ORDER BY id", None),
+    ],
+)
+def test_outer_order_by_of_a_star_query(query: str, expected: str | None) -> None:
+    # a `SELECT *` has the planned columns
+    from polars_database._sqlglot import outer_order_by
+
+    assert outer_order_by(query, "mysql", ["id", "d"]) == expected
+
+
+def test_star_order_by_ordinal_needs_the_databases_column_order() -> None:
+    from polars_database._sqlglot import outer_order_by
+
+    q = "SELECT * FROM t ORDER BY 1 DESC, d"
+    assert outer_order_by(q, "mysql", ["id", "d"]) == "`_pl`.`id` DESC, `_pl`.`d`"
+    assert outer_order_by(q, "mysql", ["id", "d"], star_ordinals=False) is None
+    assert (
+        outer_order_by(
+            "SELECT id, d FROM t ORDER BY 1", "mysql", [], star_ordinals=False
+        )
+        == "`_pl`.`id`"
+    )
+
+
+def test_star_order_by_ordinal_is_not_resolved_under_a_user_schema() -> None:
+    # `schema=` lists the user's columns, in the user's order: `ORDER BY 1` of a `SELECT
+    # *` is the database's first column, which isn't known (no I/O)
+    lf = pl.scan_database(
+        "SELECT * FROM t ORDER BY 1 DESC",
+        DIALECT_URIS["mysql"],
+        schema={"d": pl.Date, "id": pl.Int32},
+        driver="sqlalchemy",
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="can't be kept"):
+        lf.explain()
+    # a name is the same column in any order
+    lf = pl.scan_database(
+        "SELECT * FROM t ORDER BY id DESC",
+        DIALECT_URIS["mysql"],
+        schema={"d": pl.Date, "id": pl.Int32},
+        driver="sqlalchemy",
+    )
+    assert "ORDER BY `_pl`.`id` DESC" in lf.explain()
 
 
 def test_partition_predicates_keep_their_percent_signs() -> None:

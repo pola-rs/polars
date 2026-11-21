@@ -753,6 +753,21 @@ impl Translator<'_> {
 
     /// A boolean expression as SQL, with its class. `None` when it can't be pushed.
     pub fn translate(&self, node: &Node) -> Option<(SqlExpr, Class)> {
+        let (expr, class) = self.translate_node(node)?;
+        // A test for NULL on a MySQL column of unknown type is widened to keep zero dates
+        // (`zero_dates_as_null`): a superset.
+        if class == Class::Exact
+            && self.config.columns.iter().any(|c| {
+                crate::database::planner::zero_date_candidate(self.config, c)
+                    && crate::database::planner::tests_null(&expr, &c.name)
+            })
+        {
+            return Some((expr, Class::Superset));
+        }
+        Some((expr, class))
+    }
+
+    fn translate_node(&self, node: &Node) -> Option<(SqlExpr, Class)> {
         match node {
             Node::And(..) | Node::Or(..) => {
                 let or = matches!(node, Node::Or(..));
@@ -874,7 +889,8 @@ impl Translator<'_> {
                 self.dialect().quote_ident(name)
             ))
         } else {
-            SqlExpr::col(name.clone())
+            // (a DuckDB TIMETZ read as text: `LIKE` on the column itself is a binder error)
+            self.compared(name)
         };
         let pattern = format!("{prefix}{}{suffix}", self.escape_like(pat));
         let class = if strings.equality_exact && !self.dialect().like_case_insensitive() {
@@ -925,6 +941,14 @@ impl Translator<'_> {
         if self.dialect() == DialectName::Databricks
             && matches!(av, AnyValue::Date(_))
             && days <= DATABRICKS_GAP_END_DAYS
+        {
+            return false;
+        }
+        // Oracle normalises a DATE or TIMESTAMP literal in the gap (1582-10-05..14) to 1582-10-15,
+        // so the comparison runs against a day Polars never wrote: every operator then admits or
+        // drops the 1582-10-15 row. Stored values read back right.
+        if self.dialect() == DialectName::Oracle
+            && (ORACLE_GAP_START_DAYS..DATABRICKS_GAP_END_DAYS).contains(&days)
         {
             return false;
         }
@@ -1120,6 +1144,22 @@ impl Translator<'_> {
             // A MySQL `TIMESTAMP` literal is read in the session time zone, UTC only after
             // the session setup.
             DataType::Datetime(_, Some(_)) if self.mysql_without_setup() => None,
+            // A Python driver's `TIMESTAMP` is read as its UTC instant (the bridge converts a live
+            // session's), while a naive literal is compared in the session time zone: a column of
+            // unknown type may be one.
+            DataType::Datetime(_, None)
+                if self.mysql_without_setup()
+                    && matches!(
+                        self.config.backend.kind,
+                        BackendKind::Python { .. } | BackendKind::Sqlalchemy
+                    )
+                    && self
+                        .config
+                        .column(name)
+                        .is_some_and(crate::database::planner::type_unknown) =>
+            {
+                None
+            },
             // A naive literal is a `TIMESTAMP_NTZ`, which Databricks compares with a
             // `TIMESTAMP` (LTZ) column in the session's time zone: only a column known to
             // be an NTZ one is compared.
@@ -1355,6 +1395,8 @@ fn literal_comparable(col: &DataType, lit: &DataType) -> bool {
 
 /// 1582-10-15, the first day of the Gregorian calendar, in days since the epoch.
 const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
+/// 1582-10-05, the first day of the Julian-Gregorian gap; the gap ends before `DATABRICKS_GAP_END_DAYS`.
+const ORACLE_GAP_START_DAYS: i64 = -141_437;
 
 /// The deepest an expression may nest in a statement: the renderer recurses through it (in
 /// Python, whose stack is short), and so does the database.
@@ -1542,6 +1584,7 @@ mod tests {
             volatility_unchecked: false,
             user_schema: false,
             derived_order_dropped: false,
+            refused_columns: vec![],
             resolution: None,
             bounds_cache: Default::default(),
         }
@@ -1617,6 +1660,33 @@ mod tests {
         assert_eq!(class_of(&ltz, &aware), Some(Class::Exact));
         let ltz_naive = c(naive, Some("timestamp"));
         assert_eq!(class_of(&ltz_naive, &plain), None);
+    }
+
+    #[test]
+    fn mysql_naive_comparison_on_a_column_of_unknown_type() {
+        // a Python driver's `TIMESTAMP` is read as UTC, but compared in the session time zone
+        let naive = DataType::Datetime(TimeUnit::Microseconds, None);
+        let plain = cmp("eq", "ts", "datetime[us]", "1719835200000000");
+        let pymysql = BackendKind::Python {
+            module: "pymysql".into(),
+        };
+        let c = |kind, t| config(DialectName::Singlestore, kind, &[("ts", naive.clone(), t)]);
+        assert_eq!(class_of(&c(pymysql.clone(), None), &plain), None);
+        assert_eq!(
+            class_of(
+                &c(pymysql.clone(), Some(crate::database::planner::MYSQL_DATE)),
+                &plain
+            ),
+            None
+        );
+        assert_eq!(
+            class_of(&c(pymysql, Some("datetime")), &plain),
+            Some(Class::Exact)
+        );
+        assert_eq!(
+            class_of(&c(adbc("mysql"), None), &plain),
+            Some(Class::Exact)
+        );
     }
 
     #[test]
@@ -2005,6 +2075,27 @@ mod tests {
             class_of(&pg, &cmp("eq", "d", "date", "-141427")),
             Some(Class::Exact)
         );
+    }
+
+    #[test]
+    fn oracle_dates_in_the_gregorian_gap() {
+        // Oracle normalises a DATE/TIMESTAMP literal in 1582-10-05..14 to 1582-10-15
+        let cfg = config(
+            DialectName::Oracle,
+            adbc("oracle"),
+            &[("d", DataType::Date, Some("DATE"))],
+        );
+        let t = Translator { config: &cfg };
+        let us =
+            |days: i64| AnyValue::Datetime(days * 86_400_000_000, TimeUnit::Microseconds, None);
+        for days in [-141_437, -141_433, -141_428] {
+            assert!(!t.temporal_in_range(&AnyValue::Date(days as i32)), "{days}");
+            assert!(!t.temporal_in_range(&us(days)), "{days}");
+        }
+        for days in [-141_438, -141_427, -141_426, 0] {
+            assert!(t.temporal_in_range(&AnyValue::Date(days as i32)), "{days}");
+            assert!(t.temporal_in_range(&us(days)), "{days}");
+        }
     }
 
     #[test]

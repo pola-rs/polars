@@ -884,6 +884,22 @@ def _is_aggregate_query(select: Any) -> bool:
     return False
 
 
+def _qualified_key(column: Any) -> tuple[str, ...]:
+    """
+    A qualified column's parts (catalog, schema, table, name), each folded to lower case
+    unless quoted (`s1.t.id` is not `s2.t.id`, nor `"T".id` `"t".id`, nor `"a.b".x`
+    `a.b.x`).
+    """
+    parts = []
+    for key in ("catalog", "db", "table", "this"):
+        part = column.args.get(key)
+        if part is not None:
+            parts.append(
+                part.name if getattr(part, "quoted", False) else part.name.lower()
+            )
+    return tuple(parts)
+
+
 def _bare_column_in_group_by(select: Any) -> bool:
     """
     Whether a `GROUP BY` query (or an aggregate query without one) selects (or filters
@@ -894,7 +910,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
     if group is None and not _is_aggregate_query(select):
         return False
     projections = select.expressions
-    grouped: set[str] = set()
+    grouped: set[str | tuple[str, ...]] = set()
     # grouped columns by name, qualified ones (`a.id`) also by table: `b.id` isn't
     # grouped by `GROUP BY a.id`
     grouped_names: set[str] = set()
@@ -913,7 +929,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
                     # `GROUP BY k` for `g AS k` (or `t.g AS k`) groups `g`
                     grouped_names.add(named.name.lower())
                     if named.table:
-                        grouped.add(f"{named.table}.{named.name}".lower())
+                        grouped.add(_qualified_key(named))
                     else:
                         grouped_unqualified.add(named.name.lower())
         if isinstance(node, exp.Literal) and node.is_int:
@@ -925,7 +941,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
         if isinstance(node, exp.Column):
             grouped_names.add(node.name.lower())
             if node.table:
-                grouped.add(f"{node.table}.{node.name}".lower())
+                grouped.add(_qualified_key(node))
             else:
                 grouped_unqualified.add(node.name.lower())
         elif isinstance(node, exp.Var) and node.name.upper() == "ALL":
@@ -937,10 +953,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
     def column_is_bare(node: Any, is_having: bool) -> bool:
         name = node.name.lower()
         if node.table:
-            is_grouped = (
-                f"{node.table}.{node.name}".lower() in grouped
-                or name in grouped_unqualified
-            )
+            is_grouped = _qualified_key(node) in grouped or name in grouped_unqualified
         else:
             is_grouped = name in grouped_names
         return not is_grouped and not (is_having and name in aliases)
@@ -1070,20 +1083,41 @@ def _top_level_order_by_without_limit(stmt: Any) -> bool:
         stmt = stmt.this
 
 
-def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
+def _outer_order_by(
+    stmt: Any,
+    dialect: str | None,
+    star_columns: list[str] | None = None,
+    star_ordinals: bool = True,
+) -> str | None:
     """
     The query's top-level `ORDER BY` (without the keyword) on its output columns,
     for a wrapper that repeats it outside; `None` if there is none, or a key is not an
     output column (a selected column, its alias, an expression selected as it is, or its
-    position) of an unambiguous, star-free select list.
+    position) of an unambiguous select list. A select list of a lone `*` (or `t.*`) is
+    the planned columns `star_columns`, where given; any other star is not expanded. A
+    position in it needs `star_ordinals`: the columns are the database's own, in its
+    order
+    (not a user's `schema=`).
     """
     while not stmt.args.get("order"):
         if not isinstance(stmt, (exp.Subquery, exp.Paren)):
             return None
         stmt = stmt.this
     selects = stmt.selects
-    if not selects or any(isinstance(s, exp.Star) or s.is_star for s in selects):
+    if not selects:
         return None
+    expanded = False
+    if any(isinstance(s, exp.Star) or s.is_star for s in selects):
+        if (
+            star_columns is None
+            or len(selects) != 1
+            or isinstance(stmt, exp.SetOperation)
+        ):
+            return None
+        selects = [exp.column(c, quoted=True) for c in star_columns]
+        expanded = True
+        if not selects:
+            return None
     names = [s.alias_or_name for s in selects]
     # (the servers that need this compare column names without regard to case)
     lowered = [n.lower() for n in names]
@@ -1103,11 +1137,14 @@ def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
                 ordinal = int(key.name)
             except ValueError:
                 return None
-            if 1 <= ordinal <= len(names):
+            if (star_ordinals or not expanded) and 1 <= ordinal <= len(names):
                 name = names[ordinal - 1]
         elif (
             isinstance(key, exp.Column)
-            and not key.table
+            # (`t.id` of `SELECT * FROM t`: the one table's column)
+            and (
+                not key.table or (expanded and key.table.lower() == _single_table(stmt))
+            )
             and key.name.lower() in lowered
         ):
             # an alias, or the selected column of that name
@@ -1132,6 +1169,17 @@ def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
         )
         keys.append(_escaped_identifiers(ordered, dialect).sql(dialect=dialect))
     return ", ".join(keys)
+
+
+def _single_table(stmt: Any) -> str | None:
+    """
+    The lower-cased name (or alias) of the one table a query reads from; `None` for a
+    join or another source (a subquery, a parenthesised join).
+    """
+    from_ = stmt.args.get("from_", stmt.args.get("from"))
+    if from_ is None or stmt.args.get("joins") or not isinstance(from_.this, exp.Table):
+        return None
+    return str(from_.this.alias_or_name).lower()
 
 
 def _nested_queries(stmt: Any) -> bool:
@@ -1528,6 +1576,25 @@ def _unparsed_facts(
         return facts
     facts["known_functions"] = _known_functions(None, tokens, dialect)
     return facts
+
+
+def outer_order_by(
+    sql: str,
+    dialect: str | None,
+    columns: list[str],
+    star_ordinals: bool = True,
+) -> str | None:
+    """
+    The query's `ORDER BY` on its output columns (see `_outer_order_by`), where a
+    `SELECT *` has the planned `columns`; `None` if it can't be kept that way.
+    """
+    try:
+        statements, _ = _parse_query(_without_lambda_parentheses(sql, dialect), dialect)
+    except sqlglot.errors.SqlglotError:
+        return None
+    if len(statements) != 1 or not isinstance(statements[0], exp.Query):
+        return None
+    return _outer_order_by(statements[0], dialect, columns, star_ordinals)
 
 
 def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:

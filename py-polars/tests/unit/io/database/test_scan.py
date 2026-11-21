@@ -720,6 +720,18 @@ def test_scan_query_that_isnt_repeatable_counts_its_own_rows(shop_uri: str) -> N
     assert 0 < n < N_ROWS
 
 
+def test_scan_query_that_isnt_repeatable_does_not_hold_a_big_count(
+    shop_uri: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a result over the buffer limit is counted and dropped, and read again
+    monkeypatch.setenv("POLARS_DATABASE_COUNT_BUFFER_BYTES", "1")
+    lf = pl.scan_database("SELECT * FROM orders LIMIT 1000", shop_uri)
+    expected = lf.collect()
+    tail = lf.tail(5).collect()
+    assert tail.equals(expected.tail(5))
+    assert lf.select(pl.len()).collect().item() == expected.height
+
+
 @pytest.mark.parametrize("driver", ["adbc", "sqlite3"])
 def test_scan_sampled_integer_column_with_a_later_float(
     tmp_path: Path, driver: str
@@ -1730,6 +1742,97 @@ def test_scan_duckdb_values_arrow_cant_carry(tmp_path: Path, driver: str) -> Non
         assert lf.select("id").collect().height == 7
 
 
+def test_scan_duckdb_timetz_keeps_its_offset() -> None:
+    # TIMETZ '10:00+02' read as 10:00, the offset dropped: it is text now
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    conn.execute("CREATE TABLE t (id INTEGER, t TIMETZ)")
+    conn.execute(
+        "INSERT INTO t VALUES (1, '10:00:00+02'), (2, '10:00:00+00'), (3, '24:00:00+00'), "
+        "(4, NULL)"
+    )
+    for source in ["t", "SELECT * FROM t"]:
+        lf = pl.scan_database(source, conn, partition_on=None)
+        out = lf.collect().sort("id")
+        assert out.schema["t"] == pl.String
+        assert out["t"].to_list() == ["10:00:00+02", "10:00:00+00", "24:00:00+00", None]
+        got = lf.filter(pl.col("t") == "10:00:00+02").collect()
+        assert got["id"].to_list() == [1]
+
+
+def test_scan_duckdb_lossy_values_are_errors() -> None:
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+
+    def scan(sql: str, **kwargs: Any) -> pl.LazyFrame:
+        return pl.scan_database(sql, conn, partition_on=None, pushdown=False, **kwargs)
+
+    # a Map's values are checked as a List's are, also cast to its entries
+    entries = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+    for dtype in [pl.Map(pl.String, pl.Int64), entries]:
+        with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+            scan("SELECT map(['a'], [1.5]) AS x", schema={"x": dtype}).collect()
+    for sql, dtype in [
+        ("SELECT map(['a'], [1::BIGINT]) AS x", pl.Map(pl.String, pl.Datetime("us"))),
+        (
+            "SELECT map(['a'], [1::BIGINT]) AS x",
+            pl.List(pl.Struct({"key": pl.String, "value": pl.Datetime("us")})),
+        ),
+        (
+            "SELECT [{'key': 'a', 'value': 1::BIGINT}] AS x",
+            pl.Map(pl.String, pl.Datetime("us")),
+        ),
+        ("SELECT 1::BIGINT AS x", pl.Struct({"t": pl.Datetime("us")})),
+    ]:
+        with pytest.raises(pl.exceptions.SchemaError, match="raw ticks"):
+            scan(sql, schema={"x": dtype}).collect()
+    with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+        scan(
+            "SELECT 1.5::DOUBLE AS x", schema={"x": pl.Struct({"v": pl.Int64})}
+        ).collect()
+    # a list of entries cast to a map is checked as one
+    with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+        scan(
+            "SELECT [{'key': 'a', 'value': 1.5::DOUBLE}] AS x",
+            schema={"x": pl.Map(pl.String, pl.Int64)},
+        ).collect()
+    # a list of entries with a repeated key is a map of one entry for it
+    out = scan(
+        "SELECT [{'key': 'a', 'value': 1.0}, {'key': 'a', 'value': 1.0}] AS x",
+        schema={"x": pl.Map(pl.String, pl.Int64)},
+    ).collect()
+    assert out.height == 1
+    # a finite DOUBLE isn't an infinite Float16
+    with pytest.raises(pl.exceptions.SchemaError, match="Float16"):
+        scan("SELECT 1e5::DOUBLE AS x", schema={"x": pl.Float16}).collect()
+    # TIME_NS 24:00:00 isn't NULL
+    with pytest.raises(pl.exceptions.ComputeError, match="can't represent"):
+        scan("SELECT TIME_NS '24:00:00' AS t").collect()
+    # an enum label with a bracket doesn't hide the neighbouring field
+    with pytest.raises(pl.exceptions.ComputeError, match="can't represent"):
+        scan(
+            "SELECT struct_pack(e := '('::ENUM('('), t := TIME '24:00:00') AS s"
+        ).collect()
+    # a VARIANT is not a struct of its raw bytes
+    with pytest.raises(pl.exceptions.ComputeError, match="VARIANT"):
+        scan("SELECT 1::VARIANT AS v").collect()
+    # numbers in nested columns, or as a duration, aren't raw ticks
+    for dtype in [
+        pl.List(pl.Datetime("us")),
+        pl.List(pl.Date),
+        pl.Array(pl.Date, 1),
+    ]:
+        sql = "SELECT [1700000000::BIGINT] AS x"
+        if isinstance(dtype, pl.Array):
+            sql = "SELECT [1700000000::BIGINT]::BIGINT[1] AS x"
+        with pytest.raises(pl.exceptions.SchemaError, match="raw ticks"):
+            scan(sql, schema={"x": dtype}).collect()
+    with pytest.raises(pl.exceptions.SchemaError, match="raw ticks"):
+        scan(
+            "SELECT 1700000000::BIGINT AS x", schema={"x": pl.Duration("ms")}
+        ).collect()
+
+
 @pytest.mark.parametrize("driver", ["duckdb", "adbc"])
 def test_scan_duckdb_types_read_as_text(tmp_path: Path, driver: str) -> None:
     # BIT and VARINT read as their internal bytes; an INTERVAL or UNION column failed
@@ -2224,7 +2327,7 @@ def test_scan_sqlite_declared_types_through_connectorx(tmp_path: Path) -> None:
 
 def test_scan_duckdb_nested_values_arrow_cant_carry(tmp_path: Path) -> None:
     # lists, structs and maps of infinities, 24:00:00 and UHUGEINT values
-    # beyond i128 read i64::MAX, NULL or -1; a TIMETZ of 24:00:00 read NULL; (U)HUGEINT
+    # beyond i128 read i64::MAX, NULL or -1; (U)HUGEINT
     # values of 39 digits broke their Decimal(38, 0)
     duckdb = pytest.importorskip("duckdb")
     path = str(tmp_path / "t.duckdb")
@@ -2246,7 +2349,6 @@ def test_scan_duckdb_nested_values_arrow_cant_carry(tmp_path: Path) -> None:
         # more than Decimal(38, 0)'s digits, within i128
         "uh": ("UHUGEINT", "1", str(10**38 + 1)),
         "hi": ("HUGEINT", str(-(10**38) + 1), str(-(10**38))),
-        "ttz": ("TIMETZ", "'12:00:00+00'", "'24:00:00+00'"),
     }
     with duckdb.connect(path) as conn:
         columns = ", ".join(f'"{c}" {t}' for c, (t, _, _) in values.items())
@@ -2257,7 +2359,6 @@ def test_scan_duckdb_nested_values_arrow_cant_carry(tmp_path: Path) -> None:
         df = pl.scan_database(source, f"duckdb:///{path}").collect()
         assert df["lts"].to_list() == [[datetime(2024, 1, 1)]]
         assert df["ls"].to_list() == [[{"t": time(12)}]]
-        assert df["ttz"].to_list() == [time(12)]
     with duckdb.connect(path) as conn:
         for i, (column, (_, _, bad)) in enumerate(values.items(), start=2):
             conn.execute(f'INSERT INTO t (id, "{column}") VALUES ({i}, {bad})')
@@ -4974,6 +5075,719 @@ def test_scan_duckdb_shared_cursor_key_resolves_symlinks(tmp_path: Path) -> None
             close_second()
     finally:
         close_first()
+
+
+def test_sqlite_generated_column_compares_by_its_declared_affinity() -> None:
+    # `pragma_table_info` omits generated columns: a NUMERIC one had no affinity and an
+    # exact string equality compared SQLite's rounded text of the REAL
+    with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
+        try:
+            conn.execute(
+                "CREATE TABLE g (id INTEGER, g NUMERIC GENERATED ALWAYS AS "
+                "(CASE id WHEN 1 THEN 1.0/3 ELSE 'abc' END))"
+            )
+        except sqlite3.OperationalError:
+            pytest.skip("SQLite without generated columns")
+        conn.executemany("INSERT INTO g (id) VALUES (?)", [(1,), (2,)])
+        lf = pl.scan_database("g", conn, partition_on=None)
+        check_filter_ids(
+            lf,
+            [
+                pl.col("g") == "0.3333333333333333",
+                pl.col("g") == "0.333333333333333",
+                pl.col("g") != "0.333333333333333",
+                pl.col("g") == "abc",
+            ],
+        )
+
+
+def test_sqlite_replaced_binary_collation_is_not_exact() -> None:
+    # a connection's own BINARY collation changes what `=` matches
+    with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
+        conn.create_collation(
+            "BINARY", lambda a, b: (a.lower() > b.lower()) - (a.lower() < b.lower())
+        )
+        conn.execute("CREATE TABLE t (id INTEGER, s TEXT)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", [(1, "a"), (2, "A")])
+        conn.commit()
+        lf = pl.scan_database("t", conn, partition_on=None)
+        check_filter_ids(
+            lf, [pl.col("s") == "a", pl.col("s") != "a", pl.col("s") > "A"]
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "n_args", "func"),
+    [
+        ("char", 1, lambda x: "X"),
+        ("typeof", 1, lambda x: "text"),
+        ("substr", 3, lambda a, b, c: ""),
+        ("abs", 1, lambda x: 0),
+        ("length", 1, lambda x: 0),
+        ("instr", 2, lambda a, b: 1),
+    ],
+)
+def test_sqlite_redefined_functions_do_not_change_a_read(
+    name: str, n_args: int, func: Any
+) -> None:
+    # the conversions of mixed columns called the session's `char`, `typeof`, ...
+    def read(redefine: bool) -> list[Any]:
+        with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
+            conn.execute("CREATE TABLE m (id INTEGER, v, w, z)")
+            conn.executemany(
+                "INSERT INTO m VALUES (?, ?, ?, ?)",
+                [
+                    (1, 1.0 / 3, 5, "1"),
+                    (2, "abc", 6.0, "\x01x"),
+                    (3, 2.5, "7", 2.0),
+                    (4, None, None, None),
+                ],
+            )
+            conn.commit()
+            if redefine:
+                conn.create_function(name, n_args, func)
+            out: list[Any] = []
+            for overrides in [None, {"w": pl.Int64}, {"z": pl.Float64}]:
+                lf = pl.scan_database(
+                    "m", conn, partition_on=None, schema_overrides=overrides
+                ).sort("id")
+                try:
+                    out.append(lf.collect().to_dicts())
+                except pl.exceptions.PolarsError as e:
+                    out.append(type(e).__name__)  # (an unreadable value fails too)
+                    continue
+                out.append(lf.filter(pl.col("id") > 1).collect().to_dicts())
+            return out
+
+    assert read(True) == read(False)
+
+
+@pytest.mark.parametrize("order", ["natural", "shortlex"])
+def test_sqlite_replaced_binary_collation_that_passes_a_byte_order_probe(
+    order: str,
+) -> None:
+    # a replaced BINARY that is byte order on a few strings still orders others
+    # differently; only a connection the plugin opened has the real BINARY
+    import re
+
+    def natural_key(s: str) -> list[tuple[int, int, str]]:
+        return [
+            (0, int(t), "") if t.isdigit() else (1, 0, t)
+            for t in re.findall(r"\d+|\D+", s)
+        ]
+
+    def compare(a: str, b: str) -> int:
+        keys: Any = (
+            (natural_key(a), natural_key(b))
+            if order == "natural"
+            else ((len(a), a), (len(b), b))
+        )
+        ka, kb = keys
+        return int(ka > kb) - int(ka < kb)
+
+    with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
+        conn.create_collation("BINARY", compare)
+        conn.execute("CREATE TABLE t (id INTEGER, s TEXT)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)",
+            [(1, "a2"), (2, "a10"), (3, "b"), (4, "ab")],
+        )
+        conn.commit()
+        lf = pl.scan_database("t", conn, partition_on=None)
+        check_filter_ids(
+            lf,
+            [
+                pl.col("s") > "a10",
+                pl.col("s") < "a10",
+                pl.col("s") > "ab",
+                pl.col("s") < "ab",
+            ],
+        )
+
+
+def test_sqlite_pushed_conversions_call_no_function() -> None:
+    # the SQL the plugin writes for a mixed column uses no function that a connection
+    # can redefine
+    with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
+        conn.execute("CREATE TABLE m (id INTEGER, v, w)")
+        conn.execute("INSERT INTO m VALUES (1, 0.5, 1)")
+        conn.commit()
+        sql = planned_sql(
+            pl.scan_database(
+                "m", conn, partition_on=None, schema_overrides={"w": pl.Int64}
+            ).filter(pl.col("v") > 0)
+        )
+    for f in ["typeof(", "char(", "substr(", "abs("]:
+        assert f not in sql
+
+
+def test_a_flight_sql_transport_takes_any_dialect() -> None:
+    # `grpc://` is a transport, not a database: `dialect=` names the database
+    kwargs_list: list[Any] = [{"dialect": "duckdb"}, {"dialect": "trino"}]
+    for kwargs in kwargs_list:
+        with pytest.raises(pl.exceptions.PolarsError) as e:
+            pl.scan_database(
+                "t", "grpc://127.0.0.1:1", driver="adbc:flightsql", **kwargs
+            ).collect_schema()
+        assert "contradicts" not in str(e.value)
+
+
+def test_a_flight_sql_transport_without_a_driver_pin_keeps_flight_sql_drivers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `dialect=` on `grpc://` is the SQL's dialect only; the driver was picked from it
+    # (DuckDB's ADBC driver created a file named like the address)
+    monkeypatch.chdir(tmp_path)
+    for dialect in ["duckdb", "postgresql", "mysql", "sqlite"]:
+        with pytest.raises(pl.exceptions.PolarsError) as e:
+            pl.scan_database(
+                "t", "grpc://127.0.0.1:1", dialect=dialect, partition_on=None
+            ).collect_schema()
+        message = str(e.value).lower()
+        assert "flightsql" in message, (dialect, message)
+        assert "contradicts" not in message
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("encoding", ["UTF-8", "UTF-16le", "UTF-16be"])
+def test_sqlite_marker_test_follows_the_database_encoding(
+    tmp_path: Path, encoding: str
+) -> None:
+    # a text starting with U+0001 is escaped, as a real's exact value starts with it;
+    # the test read the first byte, which in UTF-16 is another character's (or the
+    # marker's second byte): "\u4e01x" failed the read, "\x013:1" read as a real
+    db = tmp_path / "enc.db"
+    texts = ["\x013:1", "\u4e01x", "\u0401", "\u0101y", "abc", "\x01", "\x01\x01"]
+    with closing(sqlite3.connect(db)) as conn:
+        conn.execute(f"PRAGMA encoding = '{encoding}'")
+        conn.execute("CREATE TABLE m (id INTEGER, v)")
+        conn.executemany(
+            "INSERT INTO m VALUES (?, ?)",
+            [(0, 1.0 / 3), (1, 6.0), *enumerate(texts, 2)],
+        )
+        conn.commit()
+        assert conn.execute("PRAGMA encoding").fetchone()[0] == encoding
+    expected = ["0.3333333333333333", "6.0", *texts]
+
+    def read(conn: Any) -> list[str]:
+        return (
+            pl.scan_database("m", conn, partition_on=None)
+            .sort("id")
+            .collect()["v"]
+            .to_list()
+        )
+
+    assert read(f"sqlite:///{db}") == expected
+    with closing(sqlite3.connect(db, check_same_thread=False)) as conn:
+        assert read(conn) == expected
+
+
+def test_sqlite_redefined_count_fails_loudly() -> None:
+    # a `count(*)` redefined on the user's connection counts other rows than the read
+    # returns: the partitions' slices would take the wrong rows
+    class Count:
+        def __init__(self) -> None:
+            self.n = 0
+
+        def step(self) -> None:
+            self.n += 1
+
+        def finalize(self) -> int:
+            return self.n - 3
+
+    with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
+        conn.create_aggregate("count", 0, Count)  # type: ignore[arg-type]
+        conn.execute("CREATE TABLE t (id INTEGER)")
+        conn.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(10)])
+        conn.commit()
+        lf = pl.scan_database("t", conn, partition_on=None)
+        for q in [lf.tail(2), lf.slice(1, 3), lf.select(pl.len())]:
+            try:
+                out = q.collect()
+            except pl.exceptions.PolarsError:
+                continue
+            # (or the right answer)
+            assert out.height in (2, 3, 1)
+            assert out.to_series().to_list() in ([8, 9], [1, 2, 3], [10]), out
+
+
+def test_a_non_repeatable_source_over_the_count_buffer_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # a source that returns other rows each time can't be counted, dropped and read
+    # again; it fails, saying why (not "the table changed"), on every collect
+    calls = iter(range(1, 1000))
+    with closing(sqlite3.connect(":memory:", check_same_thread=False)) as conn:
+        # `random()` is volatile to the planner; here it counts down, so each run of the
+        # query returns fewer rows than the one before
+        conn.create_function("random", 0, lambda: 1000 - next(calls) * 10)
+        conn.execute("CREATE TABLE t (id INTEGER)")
+        conn.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(1000)])
+        conn.commit()
+        lf = pl.scan_database(
+            "SELECT id FROM t WHERE id < (SELECT random())",
+            conn,
+            partition_on=None,
+            schema={"id": pl.Int64},
+        )
+        monkeypatch.setenv("POLARS_DATABASE_COUNT_BUFFER_BYTES", "1")
+        for _ in range(2):
+            with pytest.raises(
+                pl.exceptions.ComputeError, match=r"isn't repeatable.*COUNT_BUFFER"
+            ) as e:
+                lf.tail(3).collect()
+            # the advice follows the cause: an ORDER BY can't fix a volatile function
+            assert "volatile function" in str(e.value)
+            assert "give the query an order by" not in str(e.value).lower()
+        monkeypatch.setenv("POLARS_DATABASE_COUNT_BUFFER_BYTES", "lots")
+        with pytest.raises(
+            pl.exceptions.ComputeError, match="COUNT_BUFFER_BYTES must be a number"
+        ):
+            lf.tail(3).collect()
+        # under the limit, the rows counted are the rows read
+        monkeypatch.delenv("POLARS_DATABASE_COUNT_BUFFER_BYTES")
+        assert lf.tail(3).collect().height == 3
+
+
+def test_a_source_that_may_write_is_counted_once_over_the_count_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `nextval()` advances the sequence: the rows counted are kept, not read again
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    conn.execute("CREATE SEQUENCE s START 1")
+    monkeypatch.setenv("POLARS_DATABASE_COUNT_BUFFER_BYTES", "1")
+    out = (
+        pl.scan_database(
+            "SELECT nextval('s') AS n FROM range(3)",
+            conn,
+            partition_on=None,
+            schema={"n": pl.Int64},
+        )
+        .tail(1)
+        .collect()
+    )
+    assert out["n"].to_list() == [3]
+    assert conn.execute("SELECT currval('s')").fetchone() == (3,)
+    # also through a view
+    conn.execute("CREATE VIEW v AS SELECT nextval('s') AS n FROM range(3)")
+    for source, last in [("v", 6), ("SELECT n FROM v", 9)]:
+        out = (
+            pl.scan_database(source, conn, partition_on=None, schema={"n": pl.Int64})
+            .tail(1)
+            .collect()
+        )
+        assert out["n"].to_list() == [last]
+        assert conn.execute("SELECT currval('s')").fetchone() == (last,)
+
+
+def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:
+    # DuckDB folds ASCII case only: `"Ä"` and `"ä"` are different tables
+    duckdb = pytest.importorskip("duckdb")
+    with duckdb.connect(":memory:") as conn:
+        conn.execute('CREATE TABLE "Ä" (id INTEGER, s VARCHAR)')
+        conn.execute('CREATE TABLE "ä" (id INTEGER, s VARCHAR COLLATE nocase)')
+        for t in ['"Ä"', '"ä"']:
+            conn.execute(f"INSERT INTO {t} VALUES (1, 'a'), (2, 'A')")
+        for name in ["Ä", "ä"]:
+            lf = pl.scan_database(name, conn, partition_on=None)
+            check_filter_ids(lf, [pl.col("s") == "a", pl.col("s") != "a"])
+    # nor are `cafe` and `café`, also under a default collation that ignores accents
+    with duckdb.connect(":memory:") as conn:
+        conn.execute("CREATE TABLE ids AS SELECT range AS id FROM range(30)")
+        conn.execute("CREATE VIEW cafe AS SELECT id FROM ids")
+        conn.execute('CREATE VIEW "café" AS SELECT id, random() AS r FROM ids')
+        conn.execute("SET GLOBAL default_collation = 'noaccent'")
+        lf = pl.scan_database("café", conn, partition_on="id", partition_num=4)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
+
+
+def test_a_dialect_that_contradicts_the_connection_is_refused(tmp_path: Path) -> None:
+    # `dialect="snowflake"` on SQLite wrote Snowflake's string escapes
+    db = tmp_path / "t.db"
+    with closing(sqlite3.connect(db)) as conn, conn:
+        conn.execute("CREATE TABLE t (id INTEGER, s TEXT)")
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="contradicts"):
+        pl.scan_database("t", f"sqlite:///{db}", dialect="snowflake").collect_schema()
+    with (
+        closing(sqlite3.connect(db, check_same_thread=False)) as conn,
+        pytest.raises(pl.exceptions.InvalidOperationError, match="contradicts"),
+    ):
+        pl.scan_database("t", conn, dialect="postgresql").collect_schema()
+    # a refinement, or the connection's own dialect
+    lf = pl.scan_database("t", f"sqlite:///{db}", dialect="sqlite")
+    assert lf.collect_schema().names() == ["id", "s"]
+
+
+def test_scan_duckdb_variant_is_refused_only_when_read() -> None:
+    # a VARIANT column projected away doesn't stop the read of the query
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    try:
+        conn.execute("SELECT 1::VARIANT")
+    except duckdb.Error:
+        pytest.skip("this DuckDB has no VARIANT")
+    lf = pl.scan_database("SELECT 1 AS id, 5::VARIANT AS v", conn, partition_on=None)
+    assert lf.select("id").collect().rows() == [(1,)]
+    with pytest.raises(pl.exceptions.ComputeError, match="VARIANT"):
+        lf.select("v").collect()
+    # a table's VARIANT too
+    conn.execute("CREATE TABLE t AS SELECT 1 AS id, 5::VARIANT AS v")
+    lf = pl.scan_database("t", conn, partition_on=None)
+    with pytest.raises(pl.exceptions.ComputeError, match="VARIANT"):
+        lf.select("v").collect()
+    out = pl.scan_database(
+        "t", conn, partition_on=None, schema_overrides={"v": pl.String}
+    ).collect()
+    assert out["v"].to_list() == ["5"]
+    # a field named like the type is no VARIANT
+    out = pl.scan_database(
+        "SELECT struct_pack(invariant := 1) AS s", conn, partition_on=None
+    ).collect()
+    assert out["s"].to_list() == [{"invariant": 1}]
+
+
+def test_scan_duckdb_nested_timetz_is_an_error() -> None:
+    # a TIMETZ in a list or struct read as a Time without its offset
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    conn.execute(
+        "CREATE TABLE t (id INTEGER, l TIMETZ[], s STRUCT(a TIMETZ, b INTEGER), "
+        "x INTEGER)"
+    )
+    conn.execute(
+        "INSERT INTO t VALUES (1, [TIMETZ '10:00:00+02'], "
+        "{'a': TIMETZ '10:00:00+02', 'b': 1}, 5)"
+    )
+    for source in ["t", "SELECT * FROM t"]:
+        lf = pl.scan_database(source, conn, partition_on=None)
+        for column in ["l", "s"]:
+            with pytest.raises(pl.exceptions.ComputeError, match="TIMETZ"):
+                lf.select(column).collect()
+        # (regression) projected away, the column doesn't stop the read of the others
+        assert lf.select("id", "x").collect().rows() == [(1, 5)]
+        assert lf.select("x").collect().rows() == [(5,)]
+        with pytest.raises(pl.exceptions.ComputeError, match="TIMETZ"):
+            lf.collect()
+    # leaving it out of the query reads the others
+    lf = pl.scan_database("SELECT id, x FROM t", conn, partition_on=None)
+    assert lf.collect().rows() == [(1, 5)]
+    # a cast in the query reads the offset
+    out = pl.scan_database(
+        "SELECT CAST(l AS VARCHAR[]) AS l FROM t", conn, partition_on=None
+    ).collect()
+    assert out["l"].to_list() == [["10:00:00+02"]]
+
+
+def test_scan_duckdb_timetz_typed_by_the_user_never_drops_its_offset() -> None:
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    conn.execute("CREATE TABLE t (id INTEGER, t TIMETZ, l TIMETZ[])")
+    conn.execute(
+        "INSERT INTO t VALUES (1, '10:00:00+02', ['10:00:00+02']), "
+        "(2, '09:30:00-05', []), (3, NULL, NULL)"
+    )
+
+    def scan(**kwargs: Any) -> pl.LazyFrame:
+        return pl.scan_database("t", conn, partition_on=None, **kwargs)
+
+    # a nested TIMETZ is refused whatever it is typed as (the drivers drop its offset)
+    for dtype in [pl.List(pl.String), pl.List(pl.Time), pl.String]:
+        with pytest.raises(pl.exceptions.ComputeError, match="TIMETZ"):
+            scan(schema_overrides={"l": dtype}).select("l").collect()
+    assert (
+        scan(schema_overrides={"l": pl.List(pl.String)}).select("id").collect().height
+        == 3
+    )
+    # typed as a Time, the offset would go: refused clearly (no parse failure)
+    with pytest.raises(pl.exceptions.ComputeError, match=r"TIMETZ.*keeps its offset"):
+        scan(schema_overrides={"t": pl.Time}).select("t").collect()
+    out = scan(schema_overrides={"t": pl.String}).select("id", "t").collect()
+    assert out.sort("id")["t"].to_list() == ["10:00:00+02", "09:30:00-05", None]
+    # `schema=` has no type to look up: the result's own description says TIMETZ, and
+    # the offset is never dropped, declared as text or as a time
+    for dtype in [pl.String, pl.Time]:
+        lf = scan(schema={"id": pl.Int32, "t": dtype})
+        with pytest.raises(pl.exceptions.InvalidOperationError, match=r"TIMETZ.*CAST"):
+            lf.collect()
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
+            lf.filter(pl.col("t").is_not_null()).collect()
+    # also nested, or as a number
+    for schema in [{"id": pl.Int32, "l": pl.List(pl.Time)}, {"t": pl.Int64}]:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
+            scan(schema=schema).collect()
+    # a field named like the type is no TIMETZ
+    out = pl.scan_database(
+        "SELECT {'TIME WITH TIME ZONE': 7} AS s",
+        conn,
+        partition_on=None,
+        schema={"s": pl.Struct({"TIME WITH TIME ZONE": pl.Int32})},
+    ).collect()
+    assert out["s"].to_list() == [{"TIME WITH TIME ZONE": 7}]
+    # the advice works: the offset is in the text
+    out = pl.scan_database(
+        "SELECT id, CAST(t AS VARCHAR) AS t FROM t",
+        conn,
+        partition_on=None,
+        schema={"id": pl.Int32, "t": pl.String},
+    ).collect()
+    assert out.sort("id")["t"].to_list() == ["10:00:00+02", "09:30:00-05", None]
+    # a plain TIME declared as text reads its text
+    conn.execute("CREATE TABLE plain (id INTEGER, t TIME)")
+    conn.execute("INSERT INTO plain VALUES (1, '10:00:00'), (2, NULL)")
+    out = pl.scan_database(
+        "plain", conn, partition_on=None, schema={"id": pl.Int32, "t": pl.String}
+    ).collect()
+    assert out.sort("id")["t"].to_list() == ["10:00:00", None]
+    out = pl.scan_database(
+        "plain", conn, partition_on=None, schema={"id": pl.Int32, "t": pl.Time}
+    ).collect()
+    assert out.sort("id")["t"].to_list() == [time(10), None]
+    # LIKE on the column read as text goes through the text
+    lf = scan()
+    for expr in [
+        pl.col("t").str.contains("+02", literal=True),
+        pl.col("t").str.starts_with("10:00"),
+        pl.col("t").str.ends_with("+02"),
+    ]:
+        assert lf.filter(expr).select("id").collect()["id"].to_list() == [1]
+
+
+@pytest.mark.parametrize("how", ["bool", "text", "tstz_to_naive"])
+def test_scan_duckdb_column_retyped_after_planning_is_an_error(
+    tmp_path: Path, how: str
+) -> None:
+    # a planned number read as a boolean (1) or text ('42' as 42), and a planned
+    # timestamp with a time zone read as a naive one (its wall clock as UTC)
+    duckdb = pytest.importorskip("duckdb")
+    path = tmp_path / "k.duckdb"
+    old, new, value = {
+        "bool": ("INTEGER", "BOOLEAN", "true"),
+        "text": ("INTEGER", "VARCHAR", "'42'"),
+        "tstz_to_naive": ("TIMESTAMPTZ", "TIMESTAMP", "'2024-05-06 10:00'"),
+    }[how]
+    first = "5" if how != "tstz_to_naive" else "'2024-05-06 10:00+00'"
+
+    def recreate(column_type: str, v: str) -> None:
+        with closing(duckdb.connect(str(path))) as c:
+            c.execute("DROP TABLE IF EXISTS k")
+            c.execute(f"CREATE TABLE k (id INTEGER, x {column_type})")
+            c.execute(f"INSERT INTO k VALUES (1, {v})")
+
+    recreate(old, first)
+    lf = pl.scan_database("k", f"duckdb:///{path}", partition_on=None)
+    assert lf.collect_schema()["x"] != pl.String
+    assert lf.collect().height == 1
+    recreate(new, value)
+    with pytest.raises(pl.exceptions.SchemaError, match="changed since the scan"):
+        lf.collect()
+    assert lf.select("id").collect().rows() == [(1,)]
+
+
+@pytest.mark.parametrize("batch_size", [None, 1])
+@pytest.mark.parametrize(
+    "table", ["blob_first", "numbers_first", "typed", "late_number"]
+)
+def test_scan_sqlite_live_blobs_next_to_numbers_say_so(
+    tmp_path: Path, table: str, batch_size: int | None
+) -> None:
+    # whichever batch the blob and the number meet in (the driver's own frame of one
+    # fails before the batch is checked), the error is the blob one; and no SQL function
+    # of the user's connection is called to type a table's column
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE blob_first (id INTEGER PRIMARY KEY, x)")
+        conn.executemany(
+            "INSERT INTO blob_first VALUES (?, ?)",
+            [(1, b"\x00\xff"), (2, b"ab"), (3, 7), (4, 1.5)],
+        )
+        conn.execute("CREATE TABLE numbers_first (id INTEGER PRIMARY KEY, x)")
+        conn.executemany(
+            "INSERT INTO numbers_first VALUES (?, ?)", [(1, 7), (2, 1.5), (3, b"ab")]
+        )
+        conn.execute("CREATE TABLE typed (id INTEGER PRIMARY KEY, x BLOB)")
+        conn.executemany("INSERT INTO typed VALUES (?, ?)", [(1, b"\x00"), (2, 1.5)])
+        # (past the 1000 rows that type the column: the read meets the number)
+        conn.execute("CREATE TABLE late_number (id INTEGER PRIMARY KEY, x)")
+        conn.executemany(
+            "INSERT INTO late_number VALUES (?, ?)",
+            [(i, b"\x00") for i in range(1, 1501)] + [(1501, 7)],
+        )
+        conn.commit()
+    calls: list[str] = []
+
+    def spy(x: Any) -> Any:
+        calls.append("typeof")
+        return "blob"
+
+    live = sqlite3.connect(path, check_same_thread=False)
+    live.create_function("typeof", 1, spy)
+    try:
+        options: dict[str, Any] = {} if batch_size is None else {"batch_size": 1}
+        for source in [table, f"SELECT * FROM {table}"]:
+            lf = pl.scan_database(source, live, partition_on=None, **options)
+            # (the sample that mixes them is typed by the classes of its values, by
+            # operators alone: the blob's error, not a refusal to plan)
+            with pytest.raises(pl.exceptions.PolarsError, match=r"isn't a blob"):
+                lf.collect()
+            if source == table:
+                # (a query's own columns are read by their class: that is the filter
+                # branch's business, `SqliteOps`)
+                assert calls == []
+    finally:
+        live.close()
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [7, "abc", 1.5, None, b"\x00"],
+        [b"\x00", "a"],
+        [b"\x00", 7],
+        [7, b"\x00"],
+        ["a", b"\x00"],
+        [1.5, b"\x00"],
+    ],
+    ids=["all", "blob_text", "blob_int", "int_blob", "text_blob", "real_blob"],
+)
+def test_scan_sqlite_live_blob_mixed_with_other_values_is_not_lost(
+    tmp_path: Path, values: list[Any]
+) -> None:
+    # a row driver read such a column as the type of its first value (Binary), and the
+    # other values as NULL (or bytes), without the blob error: a lossy read is an error
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, x)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", list(enumerate(values)))
+        conn.commit()
+    live = sqlite3.connect(path, check_same_thread=False)
+    try:
+        lf = pl.scan_database("t", live, partition_on=None)
+        with pytest.raises(pl.exceptions.PolarsError, match="isn't a blob"):
+            lf.collect()
+        # not read: the other columns are
+        assert lf.select("id").collect().height == len(values)
+    finally:
+        live.close()
+
+
+@pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
+def test_scan_sqlite_blob_column_with_other_values_is_an_error(
+    tmp_path: Path, driver: str
+) -> None:
+    # a BLOB column next to numbers or text read the numbers as NULL, as 6-digit `%e`
+    # text, or failed with a type error; a blob-only column reads as it is
+    _importorskip_sqlite_driver(driver)
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, b BLOB)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(1, b"\x00\x01"), (2, None), (3, b"ab")]
+        )
+        conn.execute("CREATE TABLE m (id INTEGER, b BLOB)")
+        conn.executemany(
+            "INSERT INTO m VALUES (?, ?)", [(1, b"\x00\x01"), (2, 1.2345678), (3, 7)]
+        )
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    ok = pl.scan_database("t", uri, driver=driver, partition_on=None).collect()
+    assert ok.sort("id")["b"].to_list() == [b"\x00\x01", None, b"ab"]
+    if driver == "connectorx":
+        # (it plans a column of several storage classes as text)
+        return
+    for source in ["m", "SELECT * FROM m"]:
+        lf = pl.scan_database(source, uri, driver=driver, partition_on=None)
+        with pytest.raises(pl.exceptions.PolarsError, match="isn't a blob"):
+            lf.collect()
+        # not read: the other columns are
+        assert lf.select("id").collect().height == 3
+
+
+@pytest.mark.parametrize("how", ["live", "factory"])
+def test_scan_sqlite_blob_guard_survives_redefined_functions(
+    tmp_path: Path, how: str
+) -> None:
+    # the guard is no SQL function a live connection or a factory's connection may have
+    # replaced (`abs`, `typeof`): the batches are checked as they come
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, b BLOB)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(1, b"\x00\x01"), (2, None), (3, b"ab")]
+        )
+        for name in ["m", "txt", "ints"]:
+            conn.execute(f"CREATE TABLE {name} (id INTEGER, b BLOB)")
+        conn.executemany(
+            "INSERT INTO m VALUES (?, ?)", [(1, b"\x00\x01"), (2, 1.2345678), (3, 7)]
+        )
+        conn.executemany("INSERT INTO txt VALUES (?, ?)", [(1, "abc"), (2, "de")])
+        conn.executemany("INSERT INTO ints VALUES (?, ?)", [(1, 5), (2, 7)])
+        conn.commit()
+
+    def connect() -> sqlite3.Connection:
+        conn = sqlite3.connect(path, check_same_thread=False)
+        # a function that hides the values' class, and one that never overflows
+        conn.create_function("typeof", 1, lambda _: "blob")
+        conn.create_function("abs", 1, lambda x: x)
+        return conn
+
+    live = connect() if how == "live" else None
+    source: Any = live if live is not None else connect
+    try:
+        # (`schema=`: the sample that types a column also asks `typeof`)
+        schema = {"id": pl.Int64, "b": pl.Binary}
+        ok = pl.scan_database("t", source, partition_on=None, schema=schema).collect()
+        assert ok.sort("id")["b"].to_list() == [b"\x00\x01", None, b"ab"]
+        for table in ["m", "txt", "ints"]:
+            for query in [table, f"SELECT * FROM {table}"]:
+                lf = pl.scan_database(query, source, partition_on=None, schema=schema)
+                with pytest.raises(pl.exceptions.PolarsError):
+                    lf.collect()
+                assert lf.select("id").collect().height == (3 if table == "m" else 2)
+        lf = pl.scan_database("txt", source, partition_on=None, schema=schema)
+        with pytest.raises(pl.exceptions.PolarsError, match="isn't a blob"):
+            lf.collect()
+    finally:
+        if live is not None:
+            live.close()
+
+
+def test_scan_sqlite_union_of_scans_differing_in_dtype_parameters(
+    tmp_path: Path,
+) -> None:
+    # common subplan elimination merged scans that differ only in the decimal scale
+    # (also the time zone, Enum categories, duration unit) of their dtypes
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, x TEXT)")
+        conn.execute("INSERT INTO t VALUES (1, '1.5')")
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    pairs = [
+        (pl.Decimal(10, 2), pl.Decimal(10, 4)),
+        (pl.Enum(["1.5", "b"]), pl.Enum(["b", "1.5"])),
+    ]
+    for a, b in pairs:
+        lfs = [
+            pl.scan_database("t", uri, partition_on=None, schema_overrides={"x": d})
+            for d in (a, b)
+        ]
+        for how in ("override", "schema"):
+            if how == "schema":
+                lfs = [
+                    pl.scan_database(
+                        "t",
+                        uri,
+                        partition_on=None,
+                        schema={"id": pl.Int64, "x": d},
+                    )
+                    for d in (a, b)
+                ]
+            out = pl.collect_all(
+                lfs, optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+            )
+            assert [df.schema["x"] for df in out] == [a, b], how
 
 
 def _sqlite_ids(db: Path, n: int) -> None:

@@ -295,6 +295,36 @@ def test_temporary_views_are_not_inspectable_and_shadow_tables() -> None:
     assert _scan("orders").collect_schema().names()[:2] == ["id", "customer"]
 
 
+def test_view_with_schema_evolution_has_the_current_collation() -> None:
+    # the stored schema of a `WITH SCHEMA EVOLUTION` view is stale until something reads
+    # it; the server compares by the base column's current collation
+    from tests.unit.io.database._databricks import connect, execute
+
+    assert URI is not None
+    ensure_seeded(URI)
+    conn = connect(URI)
+    try:
+        for stmt in [
+            "DROP VIEW IF EXISTS collation_v",
+            "DROP TABLE IF EXISTS collation_t",
+            "CREATE TABLE collation_t (id INT, s STRING)",
+            "INSERT INTO collation_t VALUES (1,'abc'),(2,'ABC'),(3,'Abc'),(4,'abd'),(5,NULL)",
+            "CREATE VIEW collation_v WITH SCHEMA EVOLUTION AS SELECT * FROM collation_t",
+            "ALTER TABLE collation_t ALTER COLUMN s TYPE STRING COLLATE UTF8_LCASE",
+        ]:
+            execute(conn, stmt)
+        # the first scan, before anything reads the view
+        lf = pl.scan_database("collation_v", conn)
+        assert _ids(lf.filter(pl.col("s") == "abc").collect()) == [1]
+    finally:
+        for stmt in [
+            "DROP VIEW IF EXISTS collation_v",
+            "DROP TABLE IF EXISTS collation_t",
+        ]:
+            execute(conn, stmt)
+        conn.close()
+
+
 # --- strings -------------------------------------------------------------------------
 
 
@@ -491,6 +521,26 @@ def test_wide_decimals_are_exact(how: str) -> None:
     assert lf.filter(pl.col("x") > Decimal(WIDE)).collect().height == 0
 
 
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql", "factory"])
+def test_invalid_utf8_text_is_an_error_not_a_string(how: str) -> None:
+    """A STRING of other bytes would be a String that fails Arrow validation."""
+    sql = "SELECT CAST(unhex('FF') AS STRING) AS s"
+    if how == "adbc":
+        with pytest.raises(Exception, match=r"(?i)utf-?8"):
+            _scan(sql, how).collect().to_arrow().validate(full=True)
+    else:
+        # the connector's text is checked as it is read, also inside a map
+        for source in [sql, "SELECT map(1, CAST(unhex('FF') AS STRING)) AS m"]:
+            with pytest.raises(Exception, match="isn't valid UTF-8"):
+                _scan(source, how).collect()
+    # a BINARY of the same byte, and valid text, read
+    ok = _scan(
+        "SELECT unhex('FF') AS b, CAST(unhex('EFBFBD') AS STRING) AS s", how
+    ).collect()
+    assert ok["b"].to_list() == [b"\xff"]
+    assert ok["s"].to_list() == ["\ufffd"]
+
+
 def test_decimal_predicates_on_a_table() -> None:
     lf = _scan("edge_types")
     reference = _scan("edge_types", pushdown=False).collect()
@@ -620,3 +670,68 @@ def test_the_token_is_not_in_the_plan() -> None:
     token = re.search(r"token:([^@]+)@", URI)
     assert token is not None
     assert token[1] not in _scan("edge").explain()
+
+
+# --- a SQLAlchemy Engine ------------------------------------------------------------
+
+
+def _engine(zone: str | None = None) -> Any:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("databricks.sqlalchemy")
+    from tests.unit.io.database._databricks import parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    p = parts(URI)
+    connect_args: dict[str, Any] = {}
+    if zone is not None:
+        connect_args["session_configuration"] = {"timezone": zone}
+    return sqlalchemy.create_engine(
+        f"databricks://token:{p['token']}@{p['host']}?http_path={p['http_path']}"
+        f"&catalog={p['catalog']}&schema={p['schema']}",
+        connect_args=connect_args,
+    )
+
+
+def test_sqlalchemy_connection_reads_on_its_own_session() -> None:
+    # the Engine's pooled connection was dropped when the cursor was made (and went back
+    # into the pool while in use), and a Connection read on another pooled connection:
+    # its temporary view wasn't there
+    engine = _engine()
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                "CREATE OR REPLACE TEMPORARY VIEW r42_tmp AS SELECT 7 AS x"
+            )
+            lf = pl.scan_database("SELECT x FROM r42_tmp", conn, partition_on=None)
+            assert lf.collect()["x"].to_list() == [7]
+            # the Connection is still the user's, and open
+            assert conn.exec_driver_sql("SELECT x FROM r42_tmp").fetchall() == [(7,)]
+        pl.scan_database("SELECT 1 AS x", engine, partition_on=None).collect()
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+def test_engine_read_database_early_stop_gives_back_the_pooled_connection() -> None:
+    # a batch iterator dropped after one batch, or failing part-way, left the pooled
+    # connection checked out for good (a cycle through the driver's connection)
+    engine = _engine()
+    try:
+        for _ in range(2):
+            it = pl.read_database(
+                "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
+            )
+            next(iter(it))
+            del it
+            assert engine.pool.checkedout() == 0
+        it = pl.read_database(
+            "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
+        )
+        gen: Any = iter(it)
+        next(gen)
+        with pytest.raises(RuntimeError, match="boom"):
+            gen.throw(RuntimeError("boom"))
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()

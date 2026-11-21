@@ -372,6 +372,24 @@ impl DatabaseSession for PySession {
         Ok(())
     }
 
+    fn converts_mysql_timestamps(&self) -> bool {
+        Python::attach(|py| {
+            self.session
+                .getattr(py, "mysql_converts")
+                .and_then(|v| v.extract::<bool>(py))
+                .unwrap_or(false)
+        })
+    }
+
+    fn time_with_zone_columns(&self) -> Vec<String> {
+        Python::attach(|py| {
+            self.session
+                .getattr(py, "timetz_columns")
+                .and_then(|v| v.extract::<Vec<String>>(py))
+                .unwrap_or_default()
+        })
+    }
+
     fn cancel_handle(&self) -> Option<CancelHandle> {
         if !self.can_cancel {
             return None;
