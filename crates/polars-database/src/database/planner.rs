@@ -248,6 +248,16 @@ fn first_keyword(sql: &str) -> &str {
     &s[..end]
 }
 
+/// A query's output column name as the database tells names apart: Trino folds every
+/// identifier, quoted or not, to lower case (`SELECT 1 AS T, 2 AS t` names two columns `t`).
+fn output_name_key(dialect: DialectName, name: &str) -> PlSmallStr {
+    if dialect == DialectName::Trino {
+        name.to_lowercase().into()
+    } else {
+        name.into()
+    }
+}
+
 /// Why a user query can't be wrapped as a derived table, if it can't.
 fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str> {
     if !facts.parses {
@@ -264,7 +274,10 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     }
     if let Some(cols) = &facts.output_columns {
         let mut seen = PlHashSet::with_capacity(cols.len());
-        if !cols.iter().all(|c| seen.insert(c)) {
+        if !cols
+            .iter()
+            .all(|c| seen.insert(output_name_key(dialect, c)))
+        {
             return Some("the query has duplicate output column names");
         }
     }
@@ -273,8 +286,9 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
 
 /// The names a Trino query's output columns have, for the alias of its derived table. The
 /// discovered schema has them; under `schema=` (no I/O) the query's own: a column it names
-/// stays, one it doesn't is `_col<position>` as Trino names it (a user's name for it, or a
-/// literal's `1` that sqlglot reports, isn't it). Empty if they aren't known, or aren't unique.
+/// stays (as the schema spells it: Trino tells names apart without case), one it doesn't is
+/// `_col<position>` as Trino names it (a user's name for it, or a literal's `1` that sqlglot
+/// reports, isn't it). Empty if they aren't known, or aren't unique.
 fn derived_column_names(
     schema: &Schema,
     user_schema: bool,
@@ -287,17 +301,27 @@ fn derived_column_names(
             .iter()
             .enumerate()
             .map(|(i, n)| {
-                if !n.is_empty() && schema.contains(n) {
-                    n.clone()
-                } else {
-                    format!("_col{i}").into()
+                let key = output_name_key(DialectName::Trino, n);
+                let named = schema.get(n).map(|_| n.clone()).or_else(|| {
+                    schema
+                        .iter_names()
+                        .find(|s| output_name_key(DialectName::Trino, s) == key)
+                        .cloned()
+                });
+                match named {
+                    Some(name) if !n.is_empty() => name,
+                    _ => format!("_col{i}").into(),
                 }
             })
             .collect()
     } else {
         return vec![];
     };
-    let unique = names.iter().collect::<PlHashSet<_>>().len();
+    let unique = names
+        .iter()
+        .map(|n| output_name_key(DialectName::Trino, n))
+        .collect::<PlHashSet<_>>()
+        .len();
     if unique == names.len() { names } else { vec![] }
 }
 
@@ -344,10 +368,11 @@ pub(crate) fn refuse_unwrappable_conversions(
     };
     let dialect = DialectName::Trino;
     let mut seen = PlHashSet::with_capacity(columns.len());
-    let mut duplicated: Vec<&PlSmallStr> = vec![];
+    let mut duplicated: Vec<PlSmallStr> = vec![];
     for c in columns {
-        if !seen.insert(c) && !duplicated.contains(&c) {
-            duplicated.push(c);
+        let key = output_name_key(dialect, c);
+        if !seen.insert(key.clone()) && !duplicated.contains(&key) {
+            duplicated.push(key);
         }
     }
     if duplicated.is_empty() {
@@ -5465,6 +5490,42 @@ mod tests {
         assert!(mssql_text_size_cuts(&[&money], &plain).is_empty());
         let converted = ["SELECT CAST(CAST([m] AS DECIMAL(19, 4)) AS NVARCHAR(MAX)) FROM [t]"];
         assert_eq!(mssql_text_size_cuts(&[&money], &converted).len(), 1);
+    }
+
+    #[test]
+    fn trino_output_names_are_told_apart_without_case() {
+        let facts = |cols: &[&str]| QueryFacts {
+            parses: true,
+            single_select: true,
+            output_columns: Some(cols.iter().map(|c| (*c).into()).collect()),
+            ..Default::default()
+        };
+        // Trino folds every identifier: `T` and `t` name the same column
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Trino).is_some());
+        assert!(wrap_blocker(&facts(&["T", "u"]), DialectName::Trino).is_none());
+        // a database that tells them apart is left as it was
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Clickhouse).is_none());
+        // under `schema=`, a column the query names in another case is still named
+        let schema = Schema::from_iter([
+            Field::new("id".into(), DataType::Int32),
+            Field::new("s".into(), DataType::String),
+        ]);
+        let output: Vec<PlSmallStr> = vec!["ID".into(), "S".into()];
+        assert_eq!(
+            derived_column_names(&schema, true, Some(&output)),
+            vec![PlSmallStr::from("id"), PlSmallStr::from("s")]
+        );
+        let output: Vec<PlSmallStr> = vec!["id".into(), "x".into()];
+        assert_eq!(
+            derived_column_names(&schema, true, Some(&output)),
+            vec![PlSmallStr::from("id"), PlSmallStr::from("_col1")]
+        );
+        // names alike but for case aren't unique
+        let schema = Schema::from_iter([
+            Field::new("T".into(), DataType::Int32),
+            Field::new("t".into(), DataType::Int32),
+        ]);
+        assert!(derived_column_names(&schema, false, None).is_empty());
     }
 
     #[test]
