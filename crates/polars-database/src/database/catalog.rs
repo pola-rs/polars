@@ -1466,6 +1466,105 @@ pub fn view_definition(
     }
 }
 
+/// Whether MySQL / MariaDB / SingleStore resolve `qualified` to a temporary table: `SHOW
+/// CREATE TABLE` of one starts with `CREATE TEMPORARY TABLE` (an error: no such table, or a
+/// view).
+fn mysql_temporary_table(session: &mut dyn DatabaseSession, qualified: &str) -> bool {
+    session
+        .catalog_query(&format!("SHOW CREATE TABLE {qualified}"))
+        .ok()
+        .and_then(|df| cell_str(&df, 1, 0))
+        .is_some_and(|t| {
+            t.trim_start()
+                .to_ascii_uppercase()
+                .starts_with("CREATE TEMPORARY")
+        })
+}
+
+/// Whether `dialect` has a [`resolution_fingerprint`]: the dialects where a session's own state
+/// (Postgres' `search_path` and temporary tables, MySQL's default database and temporary tables)
+/// changes which relation a name resolves to.
+pub fn has_resolution_fingerprint(dialect: DialectName) -> bool {
+    matches!(
+        dialect,
+        DialectName::Postgresql | DialectName::Mysql | DialectName::Singlestore
+    )
+}
+
+/// How each of `names` resolves on this session, as text that is equal for two sessions that
+/// resolve a name to the same relation, or to a temporary table of their own. For Postgres:
+/// `temp-children:a,b ` first when the session has temporary tables of its own (`a`, `b`, quoted
+/// where needed) inheriting from the relation (permanent children are global DDL, not session
+/// state: a partition added later must not change the fingerprint), then the relation as
+/// `perm:schema.name:relkind` or `temp:relkind`, and `@database`. For MySQL / MariaDB /
+/// SingleStore: `temp:` or `perm:` and the database. A fingerprint of a temporary relation, or of
+/// one with temporary children, starts with `temp`. Session-specific ids (a temporary table's
+/// `pg_temp_N` schema, OIDs) are left out (and the temporary tables of other sessions, which
+/// `pg_class` lists too). One catalog statement on Postgres; MySQL has none that lists temporary
+/// tables, so one per name. `None`: the dialect has none, or the lookup failed.
+pub fn resolution_fingerprint(
+    session: &mut dyn DatabaseSession,
+    dialect: DialectName,
+    names: &[Vec<PlSmallStr>],
+) -> Option<Vec<String>> {
+    if names.is_empty() {
+        return None;
+    }
+    let qualified = |parts: &[PlSmallStr]| {
+        parts
+            .iter()
+            .map(|p| dialect.quote_ident(p))
+            .collect::<Vec<_>>()
+            .join(".")
+    };
+    match dialect {
+        DialectName::Postgresql => {
+            let cols = names
+                .iter()
+                .enumerate()
+                .map(|(i, parts)| {
+                    // the temporary children of its own this session has under the relation
+                    // (permanent children are DDL, the same for every session), and the root
+                    // relation the name resolves to (the session-dependent part)
+                    format!(
+                        "(WITH RECURSIVE d(oid, depth) AS (SELECT to_regclass({})::oid, 0 UNION ALL \
+                        SELECT i.inhrelid, d.depth + 1 FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
+                        SELECT COALESCE((SELECT 'temp-children:' || string_agg(quote_ident(c.relname), \
+                        ',' ORDER BY c.relname::text) || ' ' FROM d JOIN pg_class c ON c.oid = d.oid \
+                        WHERE d.depth > 0 AND c.relpersistence = 't' \
+                        AND c.relnamespace = pg_my_temp_schema()), '') || \
+                        COALESCE((SELECT CASE WHEN c.relpersistence = 't' THEN 'temp:' || \
+                        c.relkind::text ELSE 'perm:' || n.nspname || '.' || c.relname || ':' || \
+                        c.relkind::text END FROM d JOIN pg_class c ON c.oid = d.oid \
+                        JOIN pg_namespace n ON n.oid = c.relnamespace WHERE d.depth = 0 \
+                        AND (c.relpersistence <> 't' OR c.relnamespace = pg_my_temp_schema())), \
+                        'none') || '@' || current_database())::text AS r{i}",
+                        dialect.quote_str(&qualified(parts))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let df = session.catalog_query(&format!("SELECT {cols}")).ok()?;
+            (0..names.len()).map(|i| cell_str(&df, i, 0)).collect()
+        },
+        DialectName::Mysql | DialectName::Singlestore => {
+            let df = session.catalog_query("SELECT DATABASE()").ok()?;
+            let default_db = cell_str(&df, 0, 0).unwrap_or_default();
+            let mut out = Vec::with_capacity(names.len());
+            for parts in names {
+                let db = match parts.as_slice() {
+                    [db, _] => db.to_string(),
+                    _ => default_db.clone(),
+                };
+                let temporary = mysql_temporary_table(session, &qualified(parts));
+                out.push(format!("{}:{db}", if temporary { "temp" } else { "perm" }));
+            }
+            Some(out)
+        },
+        _ => None,
+    }
+}
+
 /// The Databricks (and Spark) lookup of [`view_definition`]: `DESCRIBE TABLE EXTENDED`
 /// resolves the name as the query does (temporary views, the session's catalog and schema, the
 /// Hive metastore), and lists the type, the text and the catalog and namespace of a view. A

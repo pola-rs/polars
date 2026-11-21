@@ -220,6 +220,8 @@ pub struct Shared {
     volatility: OnceLock<Result<bool, String>>,
     /// The outcome of [`check_mysql_session_zone`], run on the first session opened.
     session_zone: OnceLock<Result<(), String>>,
+    /// The first session's resolution of the names, for a source planned without one.
+    resolution_baseline: Mutex<Option<Vec<String>>>,
     pool: Mutex<Pool>,
     pool_changed: std::sync::Condvar,
     /// Set when the scan is torn down: threads still waiting for a session give up instead
@@ -237,6 +239,7 @@ impl Shared {
             backend: OnceLock::new(),
             volatility: OnceLock::new(),
             session_zone: OnceLock::new(),
+            resolution_baseline: Mutex::new(None),
             pool: Mutex::new(Pool::default()),
             pool_changed: std::sync::Condvar::new(),
             aborted: AtomicBool::new(false),
@@ -259,6 +262,11 @@ impl Shared {
         if let Err(e) = checked {
             polars_bail!(InvalidOperation: "{e}");
         }
+        crate::database::planner::check_resolution(
+            session.as_mut(),
+            &self.config,
+            &self.resolution_baseline,
+        )?;
         let zone = self.session_zone.get_or_init(|| {
             check_mysql_session_zone(session.as_mut(), &self.config).map_err(|e| match e {
                 PolarsError::InvalidOperation(msg) => msg.to_string(),

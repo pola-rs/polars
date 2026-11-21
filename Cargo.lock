@@ -3248,7 +3248,7 @@ dependencies = [
 
 [[package]]
 name = "polars-database"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags",
  "chrono",
@@ -3269,7 +3269,7 @@ dependencies = [
 
 [[package]]
 name = "polars-database-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "polars-database",
  "pyo3",

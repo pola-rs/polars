@@ -34,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
@@ -609,6 +609,44 @@ def test_postgres_credential_provider(driver: str) -> None:
     assert str(password) not in lf.explain()
 
 
+@needs_postgres
+def test_postgres_partition_added_after_planning_does_not_fail_the_resolution_check() -> (
+    None
+):
+    # the resolution fingerprint listed every permanent child of a partitioned
+    # table, so a partition added (or detached) between two collects of a cached
+    # LazyFrame failed as if the pooled session's state had changed
+    server = SERVERS["postgres17"]
+    assert server.factory is not None
+    assert server.uri is not None
+    table = "review_g1_parted"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table} CASCADE",
+            f"CREATE TABLE {table} (id int, v int) PARTITION BY RANGE (id)",
+            f"CREATE TABLE {table}_1 PARTITION OF {table} FOR VALUES FROM (0) TO (100)",
+            f"INSERT INTO {table} SELECT g, g FROM generate_series(0, 99) g",
+        ],
+    )
+    lf = pl.scan_database(table, server.factory(server.uri))
+    assert lf.select(pl.len()).collect().item() == 100
+    _execute(
+        "postgres17",
+        [
+            f"CREATE TABLE {table}_2 PARTITION OF {table} FOR VALUES FROM (100) TO (200)",
+            f"INSERT INTO {table} VALUES (150, 150)",
+        ],
+    )
+    assert lf.select(pl.len()).collect().item() == 101
+    _execute(
+        "postgres17",
+        [f"ALTER TABLE {table} DETACH PARTITION {table}_2", f"DROP TABLE {table}_2"],
+    )
+    assert lf.select(pl.len()).collect().item() == 100
+    _execute("postgres17", [f"DROP TABLE {table} CASCADE"])
+
+
 # Declared types and their dtypes, per dialect, whichever driver reads them
 EDGE_TYPES: dict[str, dict[str, PolarsDataType]] = {
     "postgres17": {
@@ -689,16 +727,23 @@ def _edge_types(name: str) -> pl.DataFrame:
     return _scan_edge_types(name, _default_driver(name)).collect().sort("id")
 
 
+def _partitions(name: str, source: str, key: str = "id") -> list[int]:
+    lf = _scan(name, _default_driver(name), source, partition_on=key, partition_num=4)
+    return sorted(lf.collect()["id"].to_list())
+
+
 # Pushdown regressions: each check compares a pushed-down
 # filter with the same filter applied by Polars to the whole table.
 
 
-def _execute(name: str, statements: list[str]) -> None:
+def _execute(name: str, statements: list[str], *, root: bool = False) -> None:
+    # (`root`: MySQL's `polars` can't create functions (binlog))
     server = SERVERS[name]
     if server.uri is None:
         pytest.skip(f"no {name} URI")
     assert server.factory is not None
-    conn = server.factory(server.uri)()
+    uri = server.uri.replace("polars:polars_Test1", "root:polars_Test1")
+    conn = server.factory(uri if root else server.uri)()
     try:
         cur = conn.cursor()
         for sql in statements:
@@ -1763,6 +1808,8 @@ def test_postgres_live_connection_keeps_the_users_writes(
 def test_postgres_engine_params_and_literals_with_colons() -> None:
     # `text()` binds `:lo`, also inside a pushed literal: those stay in Polars
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy.orm")
+
     assert POSTGRES is not None
     _execute(
         "postgres17",
@@ -1949,6 +1996,178 @@ def test_mysql_user_statements_during_an_unbuffered_live_scan(driver: str) -> No
         user_statement()
     finally:
         conn.close()
+
+
+@pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
+@pytest.mark.parametrize("how", ["pymysql", "sqlalchemy", "orm_session"])
+def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> None:
+    # PyMySQL drops unread rows of an unbuffered cursor (with a warning) when another
+    # statement runs: also through a SQLAlchemy Connection. (The later results of a
+    # multi-statement query are dropped silently, and not detected.)
+    pymysql = pytest.importorskip("pymysql")
+    uri = SERVERS["mysql"].uri
+    assert uri is not None
+    engine = None
+    cur: Any = None
+    result: Any = None
+    if how == "pymysql":
+        conn = pymysql.connect(**_parts(uri))
+        cur = conn.cursor(pymysql.cursors.SSCursor)
+        cur.execute("SELECT id FROM edge")
+        cur.fetchone()
+        source: Any = conn
+    else:
+        sqlalchemy = pytest.importorskip("sqlalchemy")
+        engine = sqlalchemy.create_engine(_sqlalchemy_url(uri, "pymysql"))
+        if how == "sqlalchemy":
+            conn = engine.connect()
+            result = conn.execution_options(stream_results=True).exec_driver_sql(
+                "SELECT id FROM edge"
+            )
+        else:
+            orm = pytest.importorskip("sqlalchemy.orm")
+            conn = orm.Session(engine)
+            result = conn.execute(
+                sqlalchemy.text("SELECT id FROM edge"),
+                execution_options={"stream_results": True},
+            )
+        result.fetchmany(1)
+        source = conn
+    try:
+        with pytest.raises(Exception, match="not been read to the end"):
+            pl.scan_database("edge", source).collect()
+        # the user's result is intact; read to the end, the scan works again
+        if how == "pymysql":
+            assert len(cur.fetchall()) > 0
+            cur.close()
+        else:
+            assert len(result.fetchall()) > 0
+        assert pl.scan_database("edge", source).collect().height > 0
+    finally:
+        conn.close()
+        if engine is not None:
+            engine.dispose()
+
+
+@pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
+@pytest.mark.parametrize("how", ["execute", "callproc"])
+def test_pymysql_scan_after_a_stored_procedure_call(how: str) -> None:
+    # the trailing OK packet of a CALL is not a pending result
+    pymysql = pytest.importorskip("pymysql")
+    uri = SERVERS["mysql"].uri
+    assert uri is not None
+    proc = f"polars_scan_call_p_{how}"
+    conn = pymysql.connect(**_parts(uri), autocommit=True)
+    try:
+        cur = conn.cursor()
+        cur.execute(f"DROP PROCEDURE IF EXISTS {proc}")
+        cur.execute(f"CREATE PROCEDURE {proc}() BEGIN SELECT 1 AS a; END")
+        if how == "execute":
+            cur.execute(f"CALL {proc}()")
+        else:
+            cur.callproc(proc)
+        assert cur.fetchall() == ((1,),)
+        assert pl.scan_database("SELECT 7 AS x", conn).collect().item() == 7
+    finally:
+        with contextlib.suppress(Exception):
+            conn.cursor().execute(f"DROP PROCEDURE IF EXISTS {proc}")
+        conn.close()
+
+
+@pytest.mark.parametrize("server", ["mysql", "mariadb"])
+def test_autocommit_engine_is_read_outside_postgres(server: str) -> None:
+    # only a Postgres named cursor needs a transaction: other dialects stream in
+    # AUTOCOMMIT too (the whole result in memory otherwise)
+    uri = SERVERS[server].uri
+    if uri is None:
+        pytest.skip(f"no {server} URI")
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("pymysql")
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(uri, "pymysql"), isolation_level="AUTOCOMMIT"
+    )
+    seen: list[str] = []
+
+    @sqlalchemy.event.listens_for(engine, "before_cursor_execute")  # type: ignore[untyped-decorator]
+    def hook(conn: Any, cursor: Any, stmt: str, *args: Any) -> None:
+        if "polars_stream_probe" in stmt:
+            seen.append(type(cursor).__name__)
+
+    try:
+        df = pl.scan_database("SELECT 1 AS polars_stream_probe", engine).collect()
+    finally:
+        engine.dispose()
+    # an Engine is read through one pinned connection, as a live one: its results are
+    # read whole, with client-side cursors
+    assert df.item() == 1
+    assert seen
+
+
+@needs_postgres
+@pytest.mark.parametrize("module", ["psycopg", "psycopg2"])
+def test_postgres_autocommit_connections_are_read(module: str) -> None:
+    # a named cursor needs a transaction: an autocommit connection (a factory's, an
+    # Engine's with isolation_level="AUTOCOMMIT") is read with one that outlives the
+    # statement
+    import importlib
+
+    driver = importlib.import_module(module)
+    assert POSTGRES is not None
+    q = "SELECT g AS id FROM generate_series(1, 5000) g"
+
+    def connect() -> Any:
+        conn = driver.connect(POSTGRES)
+        conn.autocommit = True
+        return conn
+
+    assert pl.scan_database(q, connect, batch_size=1000).collect().height == 5000
+    lf = pl.scan_database(q, connect, partition_on="id", partition_num=3)
+    assert lf.collect().height == 5000
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy.orm")
+    url = POSTGRES.replace("postgresql://", f"postgresql+{module}://", 1)
+    engine = sqlalchemy.create_engine(url, isolation_level="AUTOCOMMIT")
+    try:
+        assert pl.scan_database(q, engine, batch_size=1000).collect().height == 5000
+        # an ORM transaction in AUTOCOMMIT has no database transaction to save
+        with sqlalchemy.orm.Session(engine) as session:
+            session.begin()
+            assert pl.scan_database(q, session).collect().height == 5000
+            assert session.in_transaction()
+    finally:
+        engine.dispose()
+
+
+@needs_postgres
+def test_postgres_scan_in_a_begun_sqlalchemy_transaction() -> None:
+    # the Session's transaction has no database transaction yet: the scan's failing
+    # statement begins one, which must not be left aborted
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    pytest.importorskip("psycopg")
+    assert POSTGRES is not None
+    engine = sqlalchemy.create_engine(_sqlalchemy_url(POSTGRES, "psycopg"))
+    try:
+        with engine.connect() as conn, orm.Session(bind=conn) as session:
+            session.begin()
+            with pytest.raises(pl.exceptions.ComputeError, match="does not exist"):
+                pl.scan_database("SELECT * FROM bos_no_such_table", session).collect()
+            assert session.execute(sqlalchemy.text("SELECT 1")).scalar() == 1
+    finally:
+        engine.dispose()
+    # the driver's own autocommit: no database transaction for a savepoint
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(POSTGRES, "psycopg"), connect_args={"autocommit": True}
+    )
+    try:
+        with engine.connect() as conn:
+            conn.begin()
+            assert pl.scan_database("SELECT 1 AS x", conn).collect().item() == 1
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                assert pl.scan_database("SELECT 1 AS x", session).collect().item() == 1
+    finally:
+        engine.dispose()
 
 
 @needs_postgres
@@ -3098,12 +3317,12 @@ def test_mysql_query_with_side_effects_runs_once(name: str) -> None:
 
 
 @needs_postgres
-@pytest.mark.parametrize("module", ["psycopg", "pg8000", "sqlalchemy"])
+@pytest.mark.parametrize("module", ["psycopg", "pg8000", "sqlalchemy", "orm_session"])
 def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None:
     # A failed statement in the user's transaction (the lookup of a name that isn't
     # there, a query that fails) aborted it: their writes were lost, and the next
     # lookup failed with InFailedSqlTransaction, hiding the error
-    pytest.importorskip(module)
+    pytest.importorskip("sqlalchemy" if module == "orm_session" else module)
     assert POSTGRES is not None
     table = f"rvf_tx_{module}"
     _execute(
@@ -3116,7 +3335,7 @@ def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None
             f'INSERT INTO "Rvf{module}" VALUES (1)',
         ],
     )
-    if module == "sqlalchemy":
+    if module in ("sqlalchemy", "orm_session"):
         import sqlalchemy
 
         engine = sqlalchemy.create_engine(_sqlalchemy_url(POSTGRES, "psycopg"))
@@ -3145,14 +3364,19 @@ def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None
             finally:
                 cur.close()
 
+    source = conn
+    if module == "orm_session":
+        from sqlalchemy.orm import Session
+
+        source = Session(bind=conn)
     try:
         run(f"INSERT INTO {table} VALUES (1)")
         # found by the name as written, after the folded name's lookup failed
-        assert pl.scan_database(f"Rvf{module}", conn).collect().height == 1
+        assert pl.scan_database(f"Rvf{module}", source).collect().height == 1
         with pytest.raises(pl.exceptions.ComputeError, match="does not exist"):
-            pl.scan_database("rvf_no_such_table", conn).collect()
+            pl.scan_database("rvf_no_such_table", source).collect()
         with pytest.raises(pl.exceptions.ComputeError, match="division by zero"):
-            pl.scan_database("SELECT 1 / 0 AS x", conn).collect()
+            pl.scan_database("SELECT 1 / 0 AS x", source).collect()
         # the transaction goes on, with the user's write
         run(f"INSERT INTO {table} VALUES (2)")
         assert run(f"SELECT count(*) FROM {table}") == [(2,)]
@@ -5036,14 +5260,7 @@ def test_volatile_views(name: str) -> None:
             df = lf.filter(pl.col("b") > threshold).collect()
             assert (df["b"] > threshold).all(), driver
     # a table and a view without volatile functions still partition
-    lf = _scan(
-        name,
-        _default_driver(name),
-        "review_volatile_ids",
-        partition_on="id",
-        partition_num=4,
-    )
-    assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+    assert _partitions(name, "review_volatile_ids") == list(range(300))
 
 
 @pytest.mark.parametrize("name", ["postgres17", "mariadb"])
@@ -5759,3 +5976,607 @@ def test_mysql_params_with_percent_in_names(module: str, name: str) -> None:
                 assert lf.select("id", "rate%").collect()["rate%"].to_list() == [7]
     finally:
         conn.close()
+
+
+# Silent value and type conversions.
+
+
+# ---- pooled connections ----
+
+
+@pytest.mark.parametrize("name", ["postgres17", "postgres14", "mysql", "mariadb"])
+def test_temporary_table_in_a_pool_is_not_read_by_partitions(name: str) -> None:
+    # a temporary table hides the permanent one of its name only on the session
+    # that made it; partitions read on the pool's other sessions
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    driver = "psycopg" if name.startswith("postgres") else "pymysql"
+    if not _installed(driver):
+        pytest.skip(f"{driver} is not installed")
+    t = "vol_tmp_shadow"
+    engine = sqlalchemy.create_engine(_sqlalchemy_url(server.uri, driver), pool_size=4)
+    try:
+        with engine.connect() as c:
+            c.exec_driver_sql(f"DROP TABLE IF EXISTS {t}")
+            c.exec_driver_sql(f"CREATE TABLE {t} (id int, v int)")
+            c.exec_driver_sql(f"INSERT INTO {t} VALUES (100001, -1), (100002, -1)")
+            c.commit()
+        # every session of the pool has its own temporary table of the name
+        conns = [engine.connect() for _ in range(4)]
+        try:
+            for c in conns:
+                c.exec_driver_sql(f"CREATE TEMPORARY TABLE {t} (id int, v int)")
+                c.exec_driver_sql(
+                    f"INSERT INTO {t} VALUES "
+                    + ", ".join(f"({i}, {i})" for i in range(1, 201))
+                )
+                c.commit()
+        finally:
+            for c in conns:
+                c.close()
+        # an Engine is read through one pinned connection: its temporary table, all of
+        # it
+        lf = pl.scan_database(t, engine, partition_on="id", partition_num=4)
+        for _ in range(3):
+            assert sorted(lf.collect()["id"].to_list()) == list(range(1, 201))
+        # a factory over the pool would read each partition on another session
+        lf = pl.scan_database(
+            t, lambda: engine.raw_connection(), partition_on="id", partition_num=4
+        )
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="temporary table"
+        ):
+            lf.collect()
+    finally:
+        engine.dispose()
+        eng = sqlalchemy.create_engine(_sqlalchemy_url(server.uri, driver))
+        with eng.connect() as c:
+            c.exec_driver_sql(f"DROP TABLE IF EXISTS {t}")
+            c.commit()
+        eng.dispose()
+
+
+def _prime_pool(engine: Any, statements: list[str], idle: int = 3) -> None:
+    """Idle connections in the pool; the session statements run on the first."""
+    conns = [engine.connect() for _ in range(idle)]
+    for statement in statements:
+        conns[0].exec_driver_sql(statement)
+    conns[0].commit()
+    for c in conns:
+        c.close()
+
+
+def test_postgres_engine_reads_one_session_for_every_partition() -> None:
+    # `search_path` set on one pooled connection decided which table a partition
+    # read
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    schema, table = "vol_sp_schema", "vol_sp_t"
+    _execute(
+        "postgres17",
+        [
+            f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+            f"DROP TABLE IF EXISTS public.{table}",
+            f"CREATE SCHEMA {schema}",
+            f"CREATE TABLE public.{table} (id int, v int)",
+            f"INSERT INTO public.{table} SELECT g, g FROM generate_series(1, 400) g",
+            f"CREATE TABLE {schema}.{table} (id int, v int)",
+            f"INSERT INTO {schema}.{table} SELECT g + 100000, -1 FROM generate_series(1, 400) g",
+        ],
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "psycopg"), pool_size=5
+    )
+    try:
+        _prime_pool(engine, [f"SET search_path TO {schema}, public"])
+        variants: list[dict[str, Any]] = [
+            {},
+            {"partition_on": "id", "partition_num": 4},
+            {"partition_on": "id", "partition_num": 8, "max_connections": 4},
+        ]
+        refusals: list[str] = []
+        for kwargs in variants:
+            for _ in range(3):
+                try:
+                    ids = pl.scan_database(table, engine, **kwargs).collect()["id"]
+                except pl.exceptions.InvalidOperationError as e:
+                    # planned on a session that resolves the name to the other table
+                    refusals.append(str(e))
+                    continue
+                # whichever session was pinned, all rows come from its one table
+                assert ids.len() == 400
+                assert ids.min() in (1, 100001)
+                assert (cast("int", ids.max()) < 1000) == (ids.min() == 1)
+        assert all("pooled connection" in m for m in refusals), refusals
+    finally:
+        engine.dispose()
+        _execute(
+            "postgres17",
+            [
+                f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+                f"DROP TABLE IF EXISTS public.{table}",
+            ],
+        )
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
+    # `div_precision_increment` of one pooled session changes the value of a `/`
+    # key
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("pymysql"):
+        pytest.skip("pymysql is not installed")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    table = "vol_div_t"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, v int)",
+            f"INSERT INTO {table} VALUES "
+            + ", ".join(f"({i}, {i})" for i in range(1, 2001)),
+        ],
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "pymysql"), pool_size=5
+    )
+    try:
+        _prime_pool(engine, ["SET SESSION div_precision_increment = 0"])
+        source = f"SELECT id, (id / 1000) * 1000 AS k FROM {table}"
+        variants: list[dict[str, Any]] = [
+            {},
+            {"partition_on": "k", "partition_num": 4},
+            {"partition_on": "id", "partition_num": 8, "max_connections": 4},
+        ]
+        for kwargs in variants:
+            for _ in range(3):
+                df = pl.scan_database(source, engine, **kwargs).collect()
+                # one session for the whole read: `(id / 1000) * 1000` is `id` at the
+                # default precision, and one of 0, 1000, 2000 at the primed one
+                same = (df["k"].cast(pl.Float64).round(3) == df["id"]).sum()
+                assert df.height == 2000
+                assert same in (2000, 2), same
+    finally:
+        engine.dispose()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def _pool_sources(engine: Any, table: str) -> dict[str, Any]:
+    """The two ways a user's pool reaches a scan: an Engine, a factory over it."""
+    return {
+        "engine": lambda **kw: pl.scan_database(table, engine, **kw),
+        "factory": lambda **kw: pl.scan_database(
+            table, lambda: engine.raw_connection(), **kw
+        ),
+    }
+
+
+def _collect_pooled(make: Any, rounds: int = 6) -> tuple[int, list[pl.DataFrame]]:
+    # Collects a scan several times (the pool hands out its connections in turn): how
+    # many raised the resolution error, and the frames of those that read.
+    messages: list[str] = []
+    frames = []
+    for _ in range(rounds):
+        try:
+            frames.append(make().collect())
+        except pl.exceptions.InvalidOperationError as e:
+            messages.append(str(e))
+    assert all("pooled connection" in m for m in messages), messages
+    return len(messages), frames
+
+
+@pytest.mark.parametrize("kind", ["engine", "factory"])
+def test_postgres_pool_session_resolving_another_relation_is_refused(
+    kind: str,
+) -> None:
+    # planning on one pooled session and reading on
+    # another that resolves the name to another relation (a `search_path`, a temporary
+    # table, a temporary child) read the other relation, silently
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    schema, table = f"vol_pg_rs_schema_{kind}", f"vol_pg_rs_t_{kind}"
+    setup = [
+        f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+        f"DROP TABLE IF EXISTS public.{table} CASCADE",
+        f"CREATE SCHEMA {schema}",
+        f"CREATE TABLE public.{table} (id int, v int)",
+        f"INSERT INTO public.{table} SELECT g, g FROM generate_series(1, 100) g",
+        f"CREATE TABLE {schema}.{table} (id int, v int)",
+        f"INSERT INTO {schema}.{table} SELECT g + 1000, -1 FROM generate_series(1, 100) g",
+    ]
+    _execute("postgres17", setup)
+    try:
+        for variant, statements in {
+            "search_path": [f"SET search_path TO {schema}, public"],
+            "temporary table": [
+                f"CREATE TEMPORARY TABLE {table} (id int, v int)",
+                f"INSERT INTO {table} SELECT g + 1000, -1 FROM generate_series(1, 100) g",
+            ],
+            "temporary child": [
+                f"CREATE TEMPORARY TABLE {table}_child () INHERITS (public.{table})",
+                f"INSERT INTO {table}_child SELECT g + 1000, -1 "
+                "FROM generate_series(1, 100) g",
+            ],
+        }.items():
+            engine = sqlalchemy.create_engine(
+                _sqlalchemy_url(server.uri, "psycopg"), pool_size=4
+            )
+            try:
+                _prime_pool(engine, statements, idle=4)
+                make = _pool_sources(engine, table)[kind]
+                refused, frames = _collect_pooled(make)
+                assert refused > 0, variant
+                # what is read is the relation planned on: never the other's rows
+                for df in frames:
+                    assert df.height in (100, 200), variant
+            finally:
+                engine.dispose()
+    finally:
+        _execute(
+            "postgres17",
+            [
+                f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+                f"DROP TABLE IF EXISTS public.{table} CASCADE",
+            ],
+        )
+
+
+def test_postgres_temporary_child_of_another_session_doesnt_refuse_partitions() -> None:
+    # `pg_class` lists the temporary tables of every session
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    import psycopg
+
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    uri = server.uri
+    t = "vol_pg_other_temp_child"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS public.{t} CASCADE",
+            f"CREATE TABLE public.{t} (id int, v int)",
+            f"INSERT INTO public.{t} SELECT g, g FROM generate_series(1, 20) g",
+        ],
+    )
+    other = psycopg.connect(uri)
+    try:
+        other.execute(f"CREATE TEMPORARY TABLE {t}_child () INHERITS (public.{t})")
+        other.commit()
+        lf = pl.scan_database(
+            t, lambda: psycopg.connect(uri), partition_on="id", partition_num=4
+        )
+        assert lf.collect().height == 20
+    finally:
+        other.close()
+        _execute("postgres17", [f"DROP TABLE IF EXISTS public.{t} CASCADE"])
+
+
+def test_postgres_query_over_several_tables_resolving_another_relation_is_refused() -> (
+    None
+):
+    # one name of a join that a later session resolves to another relation
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    import psycopg
+
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    uri = server.uri
+    schema, table = "vol_pg_rs_join_schema", "vol_pg_rs_join_t"
+    _execute(
+        "postgres17",
+        [
+            f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+            f"DROP TABLE IF EXISTS public.{table}",
+            f"CREATE SCHEMA {schema}",
+            f"CREATE TABLE public.{table} (id int, v int)",
+            f"INSERT INTO public.{table} VALUES (1, 1), (2, 2)",
+            f"CREATE TABLE {schema}.{table} (id int, v int)",
+            f"INSERT INTO {schema}.{table} VALUES (1, -1), (2, -1)",
+        ],
+    )
+    search_path: list[str] = []
+
+    def factory() -> Any:
+        conn = psycopg.connect(uri)
+        for path in search_path:
+            conn.execute(f"SET search_path TO {path}")
+        conn.commit()
+        return conn
+
+    try:
+        lf = pl.scan_database(
+            f"SELECT a.id, a.v FROM {table} a JOIN public.{table} b ON a.id = b.id",
+            factory,
+            partition_on=None,
+        )
+        lf.collect_schema()
+        search_path.append(f"{schema}, public")
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="resolves"):
+            lf.collect()
+    finally:
+        _execute(
+            "postgres17",
+            [
+                f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+                f"DROP TABLE IF EXISTS public.{table}",
+            ],
+        )
+
+
+@pytest.mark.parametrize("kind", ["engine", "factory"])
+@pytest.mark.parametrize("name", ["postgres17", "mysql", "mariadb"])
+def test_pool_temp_table_on_one_session_is_refused_unless_all_have_one(
+    name: str, kind: str
+) -> None:
+    # lead 1: an unpartitioned read, a temporary table on one pooled connection that
+    # shadows a permanent one. Where every connection has its own temporary table of the
+    # name (a factory that makes one per connection) the read is fine.
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    driver = "psycopg" if name.startswith("postgres") else "pymysql"
+    if not _installed(driver):
+        pytest.skip(f"{driver} is not installed")
+    t = f"vol_rs_shadow_{name}_{kind}"
+    rows = ", ".join(f"({i}, {i})" for i in range(1, 101))
+    temp_rows = ", ".join(f"({i}, -1)" for i in range(1001, 1101))
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {t}",
+            f"CREATE TABLE {t} (id int, v int)",
+            f"INSERT INTO {t} VALUES {rows}",
+        ],
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, driver), pool_size=4, max_overflow=0
+    )
+    try:
+        _prime_pool(
+            engine,
+            [
+                f"CREATE TEMPORARY TABLE {t} (id int, v int)",
+                f"INSERT INTO {t} VALUES {temp_rows}",
+            ],
+            idle=4,
+        )
+        make = _pool_sources(engine, t)[kind]
+        refused, frames = _collect_pooled(make, rounds=8)
+        assert refused > 0
+        for df in frames:
+            assert df.height == 100
+        engine.dispose()
+        engine = sqlalchemy.create_engine(
+            _sqlalchemy_url(server.uri, driver), pool_size=4, max_overflow=0
+        )
+        # control: every pooled connection has its own temporary table of the name
+        conns = [engine.connect() for _ in range(4)]
+        for c in conns:
+            c.exec_driver_sql(f"CREATE TEMPORARY TABLE {t} (id int, v int)")
+            c.exec_driver_sql(f"INSERT INTO {t} VALUES {temp_rows}")
+            c.commit()
+        for c in conns:
+            c.close()
+        make = _pool_sources(engine, t)[kind]
+        refused, frames = _collect_pooled(make, rounds=8)
+        assert refused == 0
+        assert [df["id"].min() for df in frames] == [1001] * 8
+    finally:
+        engine.dispose()
+        _execute(name, [f"DROP TABLE IF EXISTS {t}"])
+
+
+def test_postgres_checkout_listener_sees_the_callers_context() -> None:
+    # a `checkout` listener that reads a contextvar ran on a Polars thread
+    import contextvars
+
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    statements = []
+    for tenant in ("a", "b"):
+        statements += [
+            f"DROP SCHEMA IF EXISTS vol_tenant_{tenant} CASCADE",
+            f"CREATE SCHEMA vol_tenant_{tenant}",
+            f"CREATE TABLE vol_tenant_{tenant}.orders (id int, tenant text)",
+            f"INSERT INTO vol_tenant_{tenant}.orders "
+            f"SELECT g, '{tenant}' FROM generate_series(1, 300) g",
+        ]
+    _execute("postgres17", statements)
+    tenant_var = contextvars.ContextVar("vol_tenant", default="vol_tenant_b")
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "psycopg"), pool_size=5
+    )
+
+    @event.listens_for(engine, "checkout")  # type: ignore[untyped-decorator]
+    def _set_tenant(dbapi_connection: Any, *_: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute(f"SET search_path TO {tenant_var.get()}")
+        cursor.close()
+
+    try:
+        tenant_var.set("vol_tenant_a")
+        variants: list[dict[str, Any]] = [
+            {},
+            {"partition_on": "id", "partition_num": 4},
+        ]
+        for kwargs in variants:
+            df = pl.scan_database("orders", engine, **kwargs).collect()
+            assert df["tenant"].unique().to_list() == ["a"]
+            df = pl.scan_database(
+                "orders", lambda: engine.raw_connection(), **kwargs
+            ).collect()
+            assert df["tenant"].unique().to_list() == ["a"]
+    finally:
+        engine.dispose()
+        _execute(
+            "postgres17",
+            [f"DROP SCHEMA IF EXISTS vol_tenant_{t} CASCADE" for t in ("a", "b")],
+        )
+
+
+@pytest.mark.parametrize("isolation_level", [None, "REPEATABLE READ"])
+def test_postgres_engine_holds_nothing_between_collects(
+    isolation_level: str | None,
+) -> None:
+    # a `checkout` listener that opens a transaction (psycopg2 does, on its first
+    # statement) left the scan's pinned session `idle in transaction` for the
+    # LazyFrame's whole life: it held a lock on the table, and under REPEATABLE READ a
+    # later collect read the old snapshot
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
+    if not _installed("psycopg2"):
+        pytest.skip("psycopg2 is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    # (a table per variant: the variants run in parallel)
+    table = "fe_hold_" + (isolation_level or "default").replace(" ", "_").lower()
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} AS SELECT g AS id FROM generate_series(1, 10) g",
+        ],
+    )
+    kwargs: dict[str, Any] = (
+        {"isolation_level": isolation_level} if isolation_level else {}
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "psycopg2"), pool_size=2, **kwargs
+    )
+
+    @event.listens_for(engine, "checkout")  # type: ignore[untyped-decorator]
+    def _set_search_path(dbapi_connection: Any, *_: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("SET search_path TO public")
+        cursor.close()
+
+    try:
+        lf = pl.scan_database(f"SELECT id FROM {table}", engine)
+        assert lf.collect().height == 10
+        # nothing is checked out between collects, and no lock is held
+        assert engine.pool.checkedout() == 0
+        _execute(
+            "postgres17",
+            [
+                "SET lock_timeout = '3s'",
+                f"ALTER TABLE {table} ADD COLUMN z int",
+                f"INSERT INTO {table} (id) VALUES (11)",
+            ],
+        )
+        assert lf.collect().height == 11
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_postgres_engine_scans_dont_hold_pool_connections() -> None:
+    # the connection was checked out when `scan_database` was called and held while
+    # the LazyFrame lived: the 16th scan of a default pool, a second scan of a pool of
+    # one, or one made while the caller held the connection, waited `pool_timeout`
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    url = _sqlalchemy_url(server.uri, "psycopg")
+    engine = sqlalchemy.create_engine(url, pool_size=1, max_overflow=0, pool_timeout=3)
+    try:
+        with engine.connect():
+            # made while the caller holds the one connection: nothing is checked out
+            held = pl.scan_database("SELECT 1 AS a", engine)
+        scans = [
+            held,
+            *(pl.scan_database(f"SELECT {i} AS a", engine) for i in range(20)),
+        ]
+        assert engine.pool.checkedout() == 0
+        start = time.monotonic()
+        for i, lf in enumerate(scans[1:4], start=0):
+            assert lf.collect().item() == i
+        assert time.monotonic() - start < 3
+        assert engine.pool.checkedout() == 0
+        # a collect that fails gives the connection back too
+        with pytest.raises(pl.exceptions.ComputeError):
+            pl.scan_database("SELECT * FROM fe_no_such_table", engine).collect()
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
+    # an Engine was read as a live connection: a `connect` listener's session zone
+    # (here one that has the fall-back hour twice) made a TIMESTAMP unreadable. The scan
+    # sets UTC on its checkout and restores the listener's zone before giving it back.
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
+    if not _installed("pymysql"):
+        pytest.skip("pymysql is not installed")
+    server = SERVERS[name]
+    if server.uri is None:
+        pytest.skip(f"no {name} URI")
+    table = "fe_zone_t"
+    _execute(
+        name,
+        [
+            "SET time_zone = '+00:00'",
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, t timestamp(6) NULL)",
+            f"INSERT INTO {table} VALUES (1, '2021-11-07 05:30:00'), "
+            "(2, '2021-11-07 06:30:00'), (3, '2021-06-01 12:00:00')",
+        ],
+    )
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(server.uri, "pymysql"), pool_size=2
+    )
+
+    @event.listens_for(engine, "connect")  # type: ignore[untyped-decorator]
+    def _zone(dbapi_connection: Any, *_: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SET time_zone = 'America/New_York'")
+        except Exception:
+            # no time zone tables on this server: an offset still must read right
+            cursor.execute("SET time_zone = '-05:00'")
+        cursor.close()
+
+    try:
+        df = pl.scan_database(f"SELECT * FROM {table}", engine).collect().sort("id")
+        assert df.schema["t"] == pl.Datetime("us", "UTC")
+        assert df["t"].to_list() == [
+            datetime(2021, 11, 7, 5, 30, tzinfo=UTC),
+            datetime(2021, 11, 7, 6, 30, tzinfo=UTC),
+            datetime(2021, 6, 1, 12, 0, tzinfo=UTC),
+        ]
+        # the listener's zone is back on the pooled connection
+        assert engine.pool.checkedout() == 0
+        with engine.connect() as c:
+            zone = c.exec_driver_sql("SELECT @@SESSION.time_zone").scalar()
+        assert zone in ("America/New_York", "-05:00")
+    finally:
+        engine.dispose()
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])

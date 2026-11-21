@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
+import dis
+import functools
 import operator
 import re
 import sys
+import types
 from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -30,7 +34,7 @@ _FILE_URI = re.compile(r"^(sqlite|duckdb)(\+\w+)?:", re.IGNORECASE)
 
 
 def _connection_kind(connection: Any) -> tuple[str, Any]:
-    """Classify a connection as `uri`, `odbc`, `factory` or `live`."""
+    """Classify a connection as `uri`, `odbc`, `factory`, `engine` or `live`."""
     if isinstance(connection, str):
         # a URI first: a SQLAlchemy URI can carry an ODBC string (`?odbc_connect=…`)
         if _URI.match(connection) or _FILE_URI.match(connection):
@@ -71,20 +75,40 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
         if hasattr(connection, "url") and callable(
             getattr(connection, "connect", None)
         ):
-            pool = type(getattr(connection, "pool", None)).__name__
-            if pool in _SHARED_CONNECTION_POOLS:
+            # (a subclass of one shares the connection just the same)
+            pool = getattr(connection, "pool", None)
+            if any(c.__name__ in _SHARED_CONNECTION_POOLS for c in type(pool).__mro__):
                 # one connection (per thread) that the user's own statements use too
                 # (temporary tables, session settings, an open transaction): read as
                 # a live connection
                 return "live", _shared_dbapi_connection(connection)
-            return "factory", connection.connect
+            if type(pool).__name__ == "NullPool":
+                # every checkout is a new connection: nothing of a session survives
+                return "factory", _in_caller_context(connection.connect)
+            # A pooled connection carries the state of its session (temporary tables,
+            # `search_path`, session variables, a listener's settings): partitions read
+            # through several would each see their own. Each execution of the scan
+            # (a collect) checks out ONE connection when it first needs one, reads every
+            # partition on it, one after another, and gives it back to the pool (its
+            # own reset, after the plugin restored what its session setup changed)
+            # when the execution ends: nothing is held between collects.
+            return "engine", _in_caller_context(connection.connect)
 
+    if (engine := _session_shared_engine(connection)) is not None:
+        # an ORM Session over such an Engine: the one connection is the user's too, and
+        # the Session's own rollback or release would end the transaction on it
+        return "live", _shared_dbapi_connection(engine)
     if (
         callable(connection)
         and not hasattr(connection, "cursor")
         and not hasattr(connection, "execute")
     ):
-        return "factory", connection
+        if (engine := _factory_singleton_engine(connection)) is not None:
+            # a SingletonThreadPool opens a connection for each thread that asks and
+            # closes others' beyond its `pool_size`: read through the calling thread's
+            # one connection, as for the Engine itself
+            return "live", _shared_dbapi_connection(engine)
+        return "factory", _in_caller_context(connection)
     if hasattr(connection, "cursor") or hasattr(connection, "execute"):
         return "live", connection
 
@@ -96,18 +120,130 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
 _SHARED_CONNECTION_POOLS = ("StaticPool", "SingletonThreadPool", "AssertionPool")
 
 
+def _has_shared_pool(engine: Any, names: tuple[str, ...] | None = None) -> bool:
+    pool = getattr(engine, "pool", None)
+    return pool is not None and any(
+        c.__name__ in (names or _SHARED_CONNECTION_POOLS) for c in type(pool).__mro__
+    )
+
+
+def _session_shared_engine(obj: Any) -> Any:
+    """The Engine of a live ORM Session if its pool shares one connection, else None."""
+    if type(obj).__name__ == "scoped_session":
+        # (its registry's Session of this thread; making it connects to nothing)
+        with contextlib.suppress(Exception):
+            obj = obj()
+    if not any(
+        c.__name__ == "Session" and c.__module__.startswith("sqlalchemy.orm")
+        for c in type(obj).__mro__
+    ):
+        return None
+    with contextlib.suppress(Exception):
+        engine = obj.get_bind()
+        if _has_shared_pool(engine):
+            return engine
+    return None
+
+
+def _factory_singleton_engine(factory: Any) -> Any:
+    """
+    The Engine behind a factory over a pool that must not be asked from other threads.
+
+    A SingletonThreadPool opens a connection for each thread that asks and closes
+    others' beyond `pool_size`, and an AssertionPool refuses a second checkout: the
+    Engine is found where the factory is its `connect`/`raw_connection`, a
+    `sessionmaker`, a `functools.partial` or wrapper of one, or a function that refers
+    to one (closure or global); None if there is none. Raises if it refers to several.
+    """
+    seen: set[int] = set()
+    engines: list[Any] = []
+
+    def visit(obj: Any, depth: int = 0) -> None:
+        if (
+            obj is None
+            or id(obj) in seen
+            or depth > 3
+            or isinstance(obj, (type, types.ModuleType, str, bytes, int, float))
+        ):
+            return
+        seen.add(id(obj))
+        if _has_shared_pool(obj, ("SingletonThreadPool", "AssertionPool")):
+            engines.append(obj)
+            return
+        kw = getattr(obj, "kw", None)  # a sessionmaker's
+        if isinstance(kw, dict) and kw.get("bind") is not None:
+            visit(kw["bind"], depth + 1)
+            return
+        related = [
+            getattr(obj, "__self__", None),
+            getattr(obj, "func", None),
+            getattr(obj, "__wrapped__", None),
+        ]
+        if isinstance(obj, functools.partial):
+            related += [*obj.args, *obj.keywords.values()]
+        for cell in getattr(obj, "__closure__", None) or ():
+            with contextlib.suppress(ValueError):
+                related.append(cell.cell_contents)
+        related += getattr(obj, "__defaults__", None) or ()
+        related += (getattr(obj, "__kwdefaults__", None) or {}).values()
+        code = getattr(obj, "__code__", None)
+        globs = getattr(obj, "__globals__", None)
+        if code is not None and globs is not None:
+            # the globals it reads (`co_names` also holds attribute names)
+            related += [
+                globs.get(i.argval)
+                for i in dis.get_instructions(code)
+                if i.opname in ("LOAD_GLOBAL", "LOAD_NAME")
+            ]
+        for item in related:
+            visit(item, depth + 1)
+
+    visit(factory)
+    if len(engines) > 1:
+        msg = (
+            "a connection function that refers to several Engines over a "
+            "SingletonThreadPool or AssertionPool can't be scanned: the scan reads "
+            "through the Engine's one connection without calling the function, and "
+            "can't tell which one it returns. Pass the Engine itself"
+        )
+        raise TypeError(msg)
+    return engines[0] if engines else None
+
+
+def _in_caller_context(factory: Callable[[], Any]) -> Callable[[], Any]:
+    """
+    The factory, run in the context variables of the caller of `scan_database`.
+
+    The scan opens its connections on threads of its own, which don't see the caller's
+    `contextvars` (a tenant that a checkout listener reads, say). Thread-locals are not
+    carried over.
+    """
+    context = contextvars.copy_context()
+
+    def in_context() -> Any:
+        # (a context can be entered by one thread at a time)
+        return context.copy().run(factory)
+
+    return in_context
+
+
 def _shared_dbapi_connection(engine: Any) -> Any:
     """
     The DB-API connection that an Engine's shared-connection pool hands out.
 
-    Each check-in of it would roll it back (the pool's reset on return), also the
-    transaction of a user's own `engine.connect()`: it is checked in once, here, without
-    that reset, and the scan uses the DB-API connection directly.
+    Each check-in of it would reset it (the pool's reset on return: a rollback, or a
+    commit), also the transaction of a user's own `engine.connect()`: it is checked in
+    once, here, without that reset, and the scan uses the DB-API connection directly.
     """
     from sqlalchemy.pool.base import _ConnectionFairy
 
+    _plugin()
+    from polars_database._bridge import _release_without_reset
+
     pool = engine.pool
-    if type(pool).__name__ == "AssertionPool" and getattr(pool, "_checked_out", False):
+    if any(c.__name__ == "AssertionPool" for c in type(pool).__mro__) and getattr(
+        pool, "_checked_out", False
+    ):
         # its one connection is checked out (a user's `engine.connect()`), and a second
         # checkout raises: use the checked-out connection itself
         record = getattr(pool, "_conn", None)
@@ -126,7 +262,7 @@ def _shared_dbapi_connection(engine: Any) -> Any:
         raise TypeError(msg)
     fairy = engine.raw_connection()
     dbapi_connection = fairy.driver_connection
-    fairy._close_special(transaction_reset=True)
+    _release_without_reset(fairy)
     return dbapi_connection
 
 
@@ -374,13 +510,38 @@ def scan_database(
           to the driver (an unknown one raises);
         * an ODBC connection string (`"Driver={…};Server=…"`);
         * a SQLAlchemy `URL` (as its URI), or `Engine`: the engine opens the
-          connections, with its pool, `creator` and `connect_args`. The session
-          settings the scan changes (Postgres, MySQL and Oracle: read-only
-          transactions, UTC, ...) are restored before a connection goes back to
-          the pool. An Engine with a `StaticPool`, `SingletonThreadPool` or
+          connection, with its pool, `creator`, `connect_args` and checkout
+          listeners. A pooled connection carries the state of its session
+          (temporary tables, `search_path`, session variables), so each collect
+          checks out ONE connection (on the scan's own thread, in a copy of the
+          `contextvars` of the caller of `scan_database`, so checkout listeners run
+          for every collect) and reads every partition on it, one after another: a
+          read through an Engine is not parallel. The scan sets the session up as
+          for a URI (read-only, UTC) and restores that before it gives the
+          connection back to the pool, at the end of the collect: nothing is held
+          between collects. Each Engine scan in a query (a `concat` or self-join of
+          scans) holds one pooled connection until the query ends, so the pool
+          (`pool_size` + `max_overflow`) must allow as many as the query has scans
+          of it. A transaction a checkout listener left open is
+          committed by that setup. For parallel reads pass a URI or a connection
+          factory. An Engine without pooling (`NullPool`) is read as a factory. An
+          Engine with a
+          `StaticPool`, `SingletonThreadPool` or
           `AssertionPool` shares one DB-API connection: it is used as a live
-          connection (see below), so the scan sees uncommitted changes made on it;
-        * a zero-argument callable that returns a DB-API connection (a factory);
+          connection (see below), so the scan sees uncommitted changes made on it
+          (so does an ORM `Session` of it). A function over a `SingletonThreadPool`
+          or `AssertionPool` Engine (its `connect`, a `sessionmaker`, a lambda or
+          `partial` of one) reads through that one connection too, without the
+          function being called (one that refers to several such Engines is
+          refused); a function that opens its connections otherwise from a
+          SingletonThreadPool is refused (the pool opens one per thread and closes
+          others' beyond `pool_size`), and so is one that returns the shared
+          connection of a database whose session the scan sets up (MySQL, Oracle).
+          The pool's reset on return (rollback, commit, `reset` listeners) never
+          runs on it;
+        * a zero-argument callable that returns a DB-API connection (a factory),
+          called on the scan's own threads, in a copy of the `contextvars` of the
+          caller of `scan_database` (thread-locals are not carried over);
         * a live connection object. It is used for one partition at a time, from
           another thread: open a sqlite3 connection with `check_same_thread=False`.
           Its results are read whole, with client-side cursors: Polars may still
@@ -389,7 +550,17 @@ def scan_database(
           soon as the query ran; one already open stays.
           On a MySQL connection whose cursors are unbuffered (e.g. PyMySQL's
           `SSCursor`), results are read with buffered cursors, as two scans can't
-          stream from one connection at once.
+          stream from one connection at once. A PyMySQL connection with an unread
+          unbuffered result is refused; its pending results of a multi-statement
+          query are not detected, and a scan discards them: read them first.
+          Other code must not use the connection while a scan reads from it (for
+          example inside a `collect_batches()` loop): with autocommit off, the
+          scan's rollback can discard writes made concurrently. A MySQLdb
+          connection to a MySQL server with autocommit off may keep the scan's
+          snapshot and locks open after the read: use a URI, a factory or
+          autocommit. A DuckDB connection with an unfinished result is read
+          through a separate cursor, which does not see that connection's
+          uncommitted writes or session settings.
     params
         Parameters of a query source, bound by the driver (its own placeholder style,
         e.g. `%s` for psycopg, `?` for sqlite3). They are never interpolated into the
@@ -598,7 +769,12 @@ def scan_database(
 
     engine = connection
     connection_kind, connection = _connection_kind(connection)
-    if (
+    if connection_kind == "engine":
+        # a pooled Engine: one checkout per execution, partitions read one at a time
+        # (see `_connection_kind`)
+        connection_kind = "factory"
+        max_connections = 1
+    elif (
         connection_kind == "factory"
         and connection is not engine
         and (capacity := _engine_pool_capacity(engine)) is not None

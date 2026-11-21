@@ -3479,18 +3479,13 @@ def test_scan_sqlalchemy_older_than_2_is_refused(
 ) -> None:
     # On SQLAlchemy 1.4 the session setup failed (`Connection` has no `commit`), and so
     # did bound parameters and SQLite connections used across threads
+    # (an Engine is read through one pinned DB-API connection: no Connection API)
     sa = pytest.importorskip("sqlalchemy")
-    engine = sa.create_engine(f"sqlite:///{shop_db}")
     monkeypatch.setattr(sa, "__version__", "1.4.54")
-    try:
-        for connection, driver in (
-            (f"sqlite:///{shop_db}", "sqlalchemy"),
-            (engine, None),
-        ):
-            with pytest.raises(Exception, match=r"sqlalchemy.* 2\.0"):
-                pl.scan_database("orders", connection, driver=driver).collect()
-    finally:
-        engine.dispose()
+    with pytest.raises(Exception, match=r"sqlalchemy.* 2\.0"):
+        pl.scan_database(
+            "orders", f"sqlite:///{shop_db}", driver="sqlalchemy"
+        ).collect()
 
 
 def test_scan_connectorx_older_than_the_minimum_is_refused(
@@ -4456,6 +4451,529 @@ def test_duckdb_type_names_as_dtypes() -> None:
         "STRUCT()",
     ]:
         assert nested(unread) == pl.Null, unread
+
+
+def test_scan_duckdb_live_connection_keeps_the_users_unread_result() -> None:
+    # `execute` on the connection replaces a result the user has not read to the end
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    try:
+        conn.execute("CREATE TABLE t AS SELECT range AS id FROM range(1000)")
+        for run in (
+            lambda: pl.scan_database("t", conn).collect_schema(),
+            lambda: pl.scan_database("t", conn).collect(),
+            lambda: pl.scan_database(
+                "t", conn, partition_on="id", partition_num=3
+            ).collect(),
+        ):
+            conn.execute("SELECT id FROM t ORDER BY id")
+            conn.fetchmany(10)
+            run()
+            assert len(conn.fetchall()) == 990
+    finally:
+        conn.close()
+
+
+def test_scan_duckdb_sqlalchemy_connection_keeps_the_users_unread_result() -> None:
+    pytest.importorskip("duckdb_engine")
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    engine = sqlalchemy.create_engine("duckdb:///:memory:")
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                "CREATE TABLE t AS SELECT range AS id FROM range(1000)"
+            )
+            conn.commit()
+            result = conn.execute(sqlalchemy.text("SELECT id FROM t ORDER BY id"))
+            result.fetchmany(10)
+            assert pl.scan_database("t", conn).collect().height == 1000
+            assert len(result.fetchall()) == 990
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("subclass", [False, True])
+@pytest.mark.parametrize("how", ["engine", "raw_connection", "connect"])
+def test_scan_shared_sqlalchemy_checkout_keeps_the_users_transaction(
+    subclass: bool, how: str
+) -> None:
+    # a pool that hands one connection to every checkout: the scan's release of its
+    # checkout rolled back the transaction of whoever else uses the connection
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pool_class: Any = sqlalchemy.pool.StaticPool
+    if subclass:
+        pool_class = type("MyStaticPool", (pool_class,), {})
+    engine = sqlalchemy.create_engine(
+        "sqlite://", poolclass=pool_class, connect_args={"check_same_thread": False}
+    )
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("CREATE TABLE t (id INTEGER)")
+            conn.exec_driver_sql("INSERT INTO t VALUES (1), (2)")
+        user = engine.raw_connection()
+        user.driver_connection.execute("INSERT INTO t VALUES (3)")  # open transaction
+        if how == "engine":
+            lf = pl.scan_database("t", engine)
+        elif how == "raw_connection":
+            lf = pl.scan_database("t", engine.raw_connection)
+        else:
+            lf = pl.scan_database("t", engine.connect)
+        assert sorted(lf.collect()["id"].to_list()) == [1, 2, 3]
+        assert user.driver_connection.in_transaction
+        user.driver_connection.commit()
+        assert sorted(pl.scan_database("t", engine).collect()["id"].to_list()) == [
+            1,
+            2,
+            3,
+        ]
+    finally:
+        engine.dispose()
+
+
+def test_scan_sqlalchemy_autocommit_connection_keeps_an_explicit_transaction(
+    tmp_path: Path,
+) -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    engine = sqlalchemy.create_engine(
+        f"sqlite:///{tmp_path / 'w.db'}",
+        isolation_level="AUTOCOMMIT",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("CREATE TABLE witness (v INTEGER)")
+            conn.exec_driver_sql("BEGIN")
+            conn.exec_driver_sql("INSERT INTO witness VALUES (19)")
+            with pytest.raises(Exception, match="missing_table"):
+                pl.scan_database(
+                    "SELECT * FROM missing_table", conn, partition_on=None
+                ).collect()
+            assert conn.connection.driver_connection.in_transaction
+            assert conn.exec_driver_sql("SELECT v FROM witness").all() == [(19,)]
+    finally:
+        engine.dispose()
+
+
+def test_scan_duckdb_shared_cursor_is_keyed_by_the_absolute_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a relative file is the working directory's: two scans after a `chdir` must not
+    # share one connection
+    duckdb = pytest.importorskip("duckdb")
+    from polars_database import _bridge
+
+    for name, n in (("a", 10), ("b", 20)):
+        (tmp_path / name).mkdir()
+        with duckdb.connect(str(tmp_path / name / "rel.db")) as c:
+            c.execute(f"CREATE TABLE t AS SELECT range AS id FROM range({n})")
+    monkeypatch.chdir(tmp_path / "a")
+    first, close_first = _bridge._duckdb_shared_cursor(duckdb, "rel.db", {})
+    try:
+        monkeypatch.chdir(tmp_path / "b")
+        second, close_second = _bridge._duckdb_shared_cursor(duckdb, "rel.db", {})
+        try:
+            assert first.execute("SELECT count(*) FROM t").fetchone() == (10,)
+            assert second.execute("SELECT count(*) FROM t").fetchone() == (20,)
+        finally:
+            close_second()
+    finally:
+        close_first()
+
+
+def _shared_sqlite_engine(tmp_path: Path, pool: str, **kwargs: Any) -> tuple[Any, Any]:
+    """
+    An engine over a shared-connection pool, with the user's open transaction.
+
+    The user's connection holds an uncommitted row 99.
+    """
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    engine = sqlalchemy.create_engine(
+        f"sqlite:///{tmp_path / 'shared.db'}",
+        poolclass=getattr(sqlalchemy.pool, pool),
+        connect_args={"check_same_thread": False},
+        **kwargs,
+    )
+    with engine.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE t (v INTEGER)")
+        conn.exec_driver_sql("INSERT INTO t VALUES (1), (2)")
+    user = engine.connect()
+    user.exec_driver_sql("INSERT INTO t VALUES (99)")
+    return engine, user
+
+
+def _user_rolls_back_to_two_rows(user: Any) -> None:
+    assert user.connection.driver_connection.in_transaction
+    assert user.exec_driver_sql("SELECT count(*) FROM t").scalar() == 3
+    user.rollback()
+    assert user.exec_driver_sql("SELECT count(*) FROM t").scalar() == 2
+
+
+@pytest.mark.parametrize("how", ["live_session", "sessionmaker", "session_factory"])
+def test_scan_orm_session_over_a_shared_pool_keeps_the_users_transaction(
+    tmp_path: Path, how: str
+) -> None:
+    # a Session's own rollback gave the one shared connection back to the pool (a
+    # rollback on the user's open transaction)
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    orm = sqlalchemy.orm
+    engine, user = _shared_sqlite_engine(tmp_path, "StaticPool")
+    try:
+        if how == "live_session":
+            source: Any = orm.Session(engine)
+        elif how == "sessionmaker":
+            source = orm.sessionmaker(engine)
+        else:
+
+            def source() -> Any:
+                return orm.Session(engine)
+
+        assert pl.scan_database("SELECT * FROM t", source).collect().height == 3
+        _user_rolls_back_to_two_rows(user)
+        user.close()
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("how", ["engine", "raw_connection", "connect", "session"])
+@pytest.mark.parametrize("listener", [False, True])
+def test_scan_shared_pool_never_resets_the_users_connection(
+    tmp_path: Path, how: str, listener: bool
+) -> None:
+    # `pool_reset_on_return="commit"` committed, and `reset` listeners ran, when the
+    # scan gave its checkout back
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    kwargs: dict[str, Any] = {} if listener else {"pool_reset_on_return": "commit"}
+    engine, user = _shared_sqlite_engine(tmp_path, "StaticPool", **kwargs)
+    resets: list[Any] = []
+    if listener:
+        sqlalchemy.event.listen(
+            engine, "reset", lambda dbapi, record, state: resets.append(state)
+        )
+    try:
+        source: Any = {
+            "engine": engine,
+            "raw_connection": engine.raw_connection,
+            "connect": engine.connect,
+            "session": sqlalchemy.orm.sessionmaker(engine),
+        }[how]
+        assert pl.scan_database("SELECT * FROM t", source).collect().height == 3
+        assert not resets
+        _user_rolls_back_to_two_rows(user)
+        user.close()
+    finally:
+        engine.dispose()
+
+
+class _OpaqueFactory:
+    """A connection function that shows nothing of the Engine it uses."""
+
+    def __init__(self, make: Callable[[], Any]) -> None:
+        self._make = make
+
+    def __call__(self) -> Any:
+        return self._make()
+
+
+def test_scan_function_over_a_singleton_thread_pool(tmp_path: Path) -> None:
+    # the pool closes other threads' connections beyond `pool_size` (a crash with the
+    # scan's concurrent connects, or the user's own connection closed)
+    import functools
+
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    engine, user = _shared_sqlite_engine(tmp_path, "SingletonThreadPool", pool_size=2)
+    user.rollback()
+    user.exec_driver_sql("CREATE TEMP TABLE mine (x INTEGER)")
+    orm = sqlalchemy.orm
+    try:
+        # the engine's own, a sessionmaker's, and wrappers of them: the one connection
+        # (the same scan, repeated past what `pool_size` holds)
+        for source in (
+            engine,
+            engine.connect,
+            engine.raw_connection,
+            orm.sessionmaker(engine),
+            lambda: engine.connect(),
+            lambda: engine.raw_connection(),
+            functools.partial(engine.connect),
+            functools.partial(orm.Session, engine),
+            orm.scoped_session(orm.sessionmaker(engine)),
+        ):
+            for _ in range(8):
+                lf = pl.scan_database(
+                    "SELECT * FROM t",
+                    source,
+                    partition_on="v",
+                    partition_num=8,
+                    max_connections=8,
+                )
+                assert sorted(lf.collect()["v"].to_list()) == [1, 2]
+        assert user.exec_driver_sql("SELECT count(*) FROM mine").scalar() == 0
+        # one that shows nothing of its Engine can't be told: refused
+        with pytest.raises(pl.exceptions.ComputeError, match="SingletonThreadPool"):
+            pl.scan_database(
+                "SELECT * FROM t", _OpaqueFactory(engine.connect), max_connections=1
+            ).collect()
+        user.close()
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("commit", [False, True])
+@pytest.mark.parametrize("how", ["engine", "raw_connection", "session"])
+def test_scan_singleton_pool_leaves_the_users_checkout_alone(
+    how: str, commit: bool
+) -> None:
+    # the pool hands the thread's own checkout out again: the scan's no-reset release
+    # must not stay on it (the user's `close()` then skipped the reset)
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    kwargs: dict[str, Any] = {"pool_reset_on_return": "commit"} if commit else {}
+    engine = sqlalchemy.create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, **kwargs
+    )
+    assert type(engine.pool).__name__ == "SingletonThreadPool"
+    resets: list[Any] = []
+    sqlalchemy.event.listen(engine.pool, "reset", lambda *a: resets.append(a))
+    try:
+        user = engine.raw_connection()
+        user.driver_connection.execute("CREATE TABLE t (v INTEGER)")
+        user.commit()
+        user.driver_connection.execute("INSERT INTO t VALUES (1)")  # uncommitted
+        source: Any = {
+            "engine": engine,
+            "raw_connection": engine.raw_connection,
+            "session": sqlalchemy.orm.Session(engine),
+        }[how]
+        assert pl.scan_database("SELECT * FROM t", source).collect().height == 1
+        assert not resets
+        user.close()
+        assert len(resets) == 1
+        nxt = engine.raw_connection()
+        if commit:
+            # the pool's own reset committed, as it does for any user
+            assert not nxt.driver_connection.in_transaction
+            assert nxt.driver_connection.execute(
+                "SELECT count(*) FROM t"
+            ).fetchone() == (1,)
+        else:
+            assert not nxt.driver_connection.in_transaction
+            assert nxt.driver_connection.execute(
+                "SELECT count(*) FROM t"
+            ).fetchone() == (0,)
+        nxt.close()
+    finally:
+        engine.dispose()
+
+
+def test_postgres_family_includes_dialect_forks() -> None:
+    # TimescaleDB, CockroachDB, ... subclass PGDialect under names of their own
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars_database._bridge import _postgres_family
+    from sqlalchemy.dialects.postgresql.base import PGDialect
+
+    class Fork(PGDialect):
+        name = "timescaledb"
+
+    class Conn(sqlalchemy.engine.Connection):  # type: ignore[misc,name-defined]
+        def __init__(self, dialect: Any) -> None:
+            self.dialect = dialect
+
+    assert _postgres_family(Conn(Fork()))  # type: ignore[no-untyped-call]
+    assert not _postgres_family(Conn(sqlalchemy.dialects.sqlite.dialect()))
+
+
+def test_scan_assertion_pool_function_with_concurrent_connects(
+    tmp_path: Path,
+) -> None:
+    # a second checkout of an AssertionPool raises: the scan's connects, each returned
+    # at once, take turns
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    with closing(sqlite3.connect(tmp_path / "shared.db")) as conn:
+        conn.execute("CREATE TABLE t (v INTEGER)")
+        conn.execute("INSERT INTO t VALUES (1), (2)")
+        conn.commit()
+    engine = sqlalchemy.create_engine(
+        f"sqlite:///{tmp_path / 'shared.db'}",
+        poolclass=sqlalchemy.pool.AssertionPool,
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        for _ in range(5):
+            lf = pl.scan_database(
+                "SELECT * FROM t",
+                _OpaqueFactory(engine.connect),
+                partition_on="v",
+                partition_num=8,
+                max_connections=8,
+            )
+            assert sorted(lf.collect()["v"].to_list()) == [1, 2]
+        # a function of the Engine that shows it reads the user's checkout
+        user = engine.connect()
+        user.exec_driver_sql("INSERT INTO t VALUES (3)")
+        lf = pl.scan_database("SELECT * FROM t", lambda: engine.connect())
+        assert sorted(lf.collect()["v"].to_list()) == [1, 2, 3]
+        user.rollback()
+        user.close()
+    finally:
+        engine.dispose()
+
+
+def test_scan_factory_assertion_error_is_not_retried(shop_db: Path) -> None:
+    # only an AssertionPool's refusal of a second checkout is retried
+    calls = 0
+
+    def factory() -> sqlite3.Connection:
+        nonlocal calls
+        calls += 1
+        if calls > 2:
+            msg = "not configured"
+            raise AssertionError(msg)
+        return sqlite3.connect(shop_db, check_same_thread=False)
+
+    with pytest.raises(Exception, match="not configured"):
+        pl.scan_database("orders", factory, partition_on=None).collect()
+    assert calls == 3
+
+
+def test_scan_function_over_several_shared_pool_engines_is_refused() -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    a, b = (
+        sqlalchemy.create_engine("sqlite://", connect_args={"check_same_thread": False})
+        for _ in range(2)
+    )
+    try:
+        with pytest.raises(TypeError, match="several Engines"):
+            pl.scan_database("t", lambda: (a or b).connect())
+    finally:
+        a.dispose()
+        b.dispose()
+
+
+@pytest.mark.parametrize("dialect", ["sqlite", "postgresql"])
+def test_scan_shared_pool_factory_of_a_dialect_with_a_session_setup_is_refused(
+    dialect: str,
+) -> None:
+    # the plan relies on the session setup, which the user's connection must not get
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars_database._bridge import connect
+
+    engine = sqlalchemy.create_engine(
+        "sqlite://",
+        poolclass=sqlalchemy.pool.StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        user = engine.raw_connection()
+        user.driver_connection.execute("CREATE TABLE t (v INTEGER)")
+        user.driver_connection.execute("INSERT INTO t VALUES (1)")
+        args: tuple[Any, ...] = (
+            "python",
+            "factory",
+            engine.connect,
+            [],
+            [],
+            dialect,
+            None,
+        )
+        if dialect == "sqlite":
+            connect(*args).close()
+        else:
+            with pytest.raises(TypeError, match="pass the Engine itself"):
+                connect(*args)
+        assert user.driver_connection.in_transaction
+        user.close()
+    finally:
+        engine.dispose()
+
+
+def test_scan_orm_sessions_keep_their_transaction_and_give_back_their_checkout(
+    tmp_path: Path,
+) -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    engine = sqlalchemy.create_engine(
+        f"sqlite:///{tmp_path / 's.db'}",
+        poolclass=sqlalchemy.pool.QueuePool,
+        pool_size=1,
+        max_overflow=0,
+        isolation_level="AUTOCOMMIT",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("CREATE TABLE t (v INTEGER)")
+            conn.exec_driver_sql("INSERT INTO t VALUES (1)")
+        # a scan of an idle Session gives its checkout back
+        with orm.Session(engine) as session:
+            assert pl.scan_database("SELECT * FROM t", session).collect().height == 1
+            assert engine.pool.checkedout() == 0
+        with engine.connect() as conn:
+            # a Session bound to a Connection keeps the transaction it began
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                assert (
+                    pl.scan_database("SELECT * FROM t", session).collect().height == 1
+                )
+                assert session.in_transaction()
+            # a function that returns such Sessions shares the caller's connection;
+            # its Session is left as it is
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                for factory in (orm.sessionmaker(bind=conn), lambda: session):
+                    with pytest.raises(
+                        Exception, match="Sessions bound to one Connection"
+                    ):
+                        pl.scan_database("SELECT * FROM t", factory).collect()
+                assert session.in_transaction()
+    finally:
+        engine.dispose()
+
+
+def test_scan_function_engine_lookup_reads_only_its_globals_and_defaults() -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars.io.database._scan import _factory_singleton_engine
+
+    engine = sqlalchemy.create_engine("sqlite://")
+    try:
+        ns: dict[str, Any] = {"engine": engine}
+        exec("def attribute():\n    return tenant.engine.connect()", ns)
+        exec("def default(e=None, *, k=engine):\n    return k.connect()", ns)
+        assert _factory_singleton_engine(ns["attribute"]) is None
+        assert _factory_singleton_engine(ns["default"]) is engine
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows resolves `..` textually, before following a symlink",
+)
+def test_scan_duckdb_shared_cursor_key_resolves_symlinks(tmp_path: Path) -> None:
+    # `..` after a symlink is not the textual parent: abspath would key the two files as
+    # one
+    duckdb = pytest.importorskip("duckdb")
+    from polars_database import _bridge
+
+    (tmp_path / "real" / "sub").mkdir(parents=True)
+    (tmp_path / "other").mkdir()
+    (tmp_path / "link").symlink_to(tmp_path / "real" / "sub")
+    for path, n in ((tmp_path / "x.db", 10), (tmp_path / "real" / "x.db", 20)):
+        with duckdb.connect(str(path)) as c:
+            c.execute(f"CREATE TABLE t AS SELECT range AS id FROM range({n})")
+    first, close_first = _bridge._duckdb_shared_cursor(
+        duckdb, str(tmp_path / "x.db"), {}
+    )
+    try:
+        # link/../x.db is real/x.db, not tmp_path/x.db
+        second, close_second = _bridge._duckdb_shared_cursor(
+            duckdb, str(tmp_path / "link" / ".." / "x.db"), {}
+        )
+        try:
+            assert first.execute("SELECT count(*) FROM t").fetchone() == (10,)
+            assert second.execute("SELECT count(*) FROM t").fetchone() == (20,)
+        finally:
+            close_second()
+    finally:
+        close_first()
 
 
 def _sqlite_ids(db: Path, n: int) -> None:
