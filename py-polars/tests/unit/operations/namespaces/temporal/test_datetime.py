@@ -240,13 +240,34 @@ def test_offset_by_sortedness(
     assert not result.flags["SORTED_DESC"]
 
 
-@pytest.mark.parametrize("offset", ["?", "xx", "P1D", "~10d"])
+@pytest.mark.parametrize("offset", ["?", "xx", "~10d"])
 def test_offset_by_invalid_duration(offset: str) -> None:
     with pytest.raises(
         InvalidOperationError,
         match="expected leading integer in the duration string",
     ):
         pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by(offset)
+
+
+@pytest.mark.parametrize("offset", ["P1.5D", "P-1D", "P1D2H", "PT1H30", "PT"])
+def test_offset_by_invalid_iso8601_duration(offset: str) -> None:
+    with pytest.raises(InvalidOperationError, match="ISO 8601 duration"):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by(offset)
+
+
+@pytest.mark.parametrize(
+    ("offset", "expected"),
+    [
+        ("PT15M", datetime(2022, 3, 20, 5, 22)),
+        ("P1D", datetime(2022, 3, 21, 5, 7)),
+        ("P1DT12H", datetime(2022, 3, 21, 17, 7)),
+        ("-P1D", datetime(2022, 3, 19, 5, 7)),
+        ("p1dt12h", datetime(2022, 3, 21, 17, 7)),
+    ],
+)
+def test_offset_by_iso8601_duration(offset: str, expected: datetime) -> None:
+    result = pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by(offset)
+    assert result.to_list() == [expected]
 
 
 @pytest.mark.parametrize("offset", ["++1d", "+1d+1m+1s", "--1d", "-1d-1m-1s"])

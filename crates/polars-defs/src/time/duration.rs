@@ -193,6 +193,14 @@ impl Duration {
 
     fn _parse(s: &str, as_interval: bool) -> PolarsResult<Self> {
         let s = if as_interval { s.trim_start() } else { s };
+
+        // ISO 8601 durations (`P1DT12H`) use positional designators instead of
+        // the Polars number-unit grammar. Rewrite them so both spellings share
+        // one parser.
+        if let Some(normalised) = Self::normalise_iso_duration(s)? {
+            return Self::_parse(&normalised, false);
+        }
+
         let parse_type = if as_interval { "interval" } else { "duration" };
 
         // can work on raw bytes (much faster), as valid interval/duration strings are all ASCII
@@ -351,6 +359,102 @@ impl Duration {
             negative: leading_minus,
             parsed_int,
         })
+    }
+
+    /// Rewrite an ISO 8601 duration (e.g. `"PT15M"`) into the Polars duration
+    /// grammar (e.g. `"15m"`).
+    ///
+    /// Returns `Ok(None)` when the string does not start with the `P`
+    /// designator, so the regular parser handles it unchanged.
+    ///
+    /// Fractional components are rejected: ISO 8601 allows `P1.5D`, but the
+    /// number of hours in 1.5 calendar days depends on DST transitions, so it
+    /// has no unambiguous mapping onto a Polars duration.
+    fn normalise_iso_duration(s: &str) -> PolarsResult<Option<String>> {
+        let (sign, body) = match s.as_bytes().first() {
+            Some(b'+') => ("+", &s[1..]),
+            Some(b'-') => ("-", &s[1..]),
+            _ => ("", s),
+        };
+        match body.as_bytes().first() {
+            Some(first) if first.eq_ignore_ascii_case(&b'P') => {},
+            _ => return Ok(None),
+        }
+
+        let bytes = body.as_bytes();
+        let mut out = String::with_capacity(body.len());
+        let mut pos = 1;
+        let mut in_time = false;
+        // Y M W D H M S
+        let mut seen = [false; 7];
+
+        while pos < bytes.len() {
+            let ch = bytes[pos];
+            if ch.eq_ignore_ascii_case(&b'T') {
+                polars_ensure!(!in_time,
+                    InvalidOperation: "invalid ISO 8601 duration string '{}': found a second 'T' separator", s);
+                in_time = true;
+                pos += 1;
+                continue;
+            }
+
+            polars_ensure!(ch.is_ascii_digit(),
+                InvalidOperation: "invalid ISO 8601 duration string '{}': expected an integer component, found '{}'", s, ch as char);
+
+            let start = pos;
+            while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+            let number = &body[start..pos];
+
+            polars_ensure!(pos < bytes.len(),
+                InvalidOperation: "invalid ISO 8601 duration string '{}': expected a designator after '{}'", s, number);
+            polars_ensure!(bytes[pos] != b'.' && bytes[pos] != b',',
+                InvalidOperation: "invalid ISO 8601 duration string '{}': fractional components are not supported", s);
+
+            let designator = bytes[pos].to_ascii_uppercase();
+            pos += 1;
+
+            let idx = match (designator, in_time) {
+                (b'Y', false) => 0,
+                (b'M', false) => 1,
+                (b'W', false) => 2,
+                (b'D', false) => 3,
+                (b'H', true) => 4,
+                (b'M', true) => 5,
+                (b'S', true) => 6,
+                _ => {
+                    polars_bail!(InvalidOperation: "invalid ISO 8601 duration string '{}': '{}' is not a valid {} designator", s, designator as char, if in_time { "time" } else { "date" })
+                },
+            };
+            polars_ensure!(!seen[idx],
+                InvalidOperation: "invalid ISO 8601 duration string '{}': duplicate '{}' designator", s, designator as char);
+            seen[idx] = true;
+
+            out.push_str(number);
+            out.push_str(match idx {
+                0 => "y",
+                1 => "mo",
+                2 => "w",
+                3 => "d",
+                4 => "h",
+                5 => "m",
+                _ => "s",
+            });
+        }
+
+        if !seen.iter().any(|&seen| seen) {
+            if in_time {
+                polars_bail!(InvalidOperation: "invalid ISO 8601 duration string '{}': expected at least one time component after 'T'", s);
+            }
+            // A bare "P" is left to the regular parser, which reports it as a
+            // malformed duration string.
+            return Ok(None);
+        }
+        polars_ensure!(!in_time || seen[4..].iter().any(|&seen| seen),
+            InvalidOperation: "invalid ISO 8601 duration string '{}': expected at least one time component after 'T'", s);
+
+        Ok(Some(format!("{sign}{out}")))
     }
 
     fn to_positive(v: i64) -> (bool, i64) {
@@ -1018,6 +1122,36 @@ mod test {
         assert!(out.negative);
         let out = Duration::parse("5w");
         assert_eq!(out.weeks(), 5);
+    }
+
+    #[test]
+    fn test_parse_iso8601() {
+        assert_eq!(Duration::parse("PT15M"), Duration::parse("15m"));
+        assert_eq!(Duration::parse("P1D"), Duration::parse("1d"));
+        assert_eq!(Duration::parse("P1DT12H"), Duration::parse("1d12h"));
+        assert_eq!(Duration::parse("PT36H"), Duration::parse("36h"));
+        assert_eq!(Duration::parse("P1W"), Duration::parse("1w"));
+        assert_eq!(Duration::parse("P1M"), Duration::parse("1mo"));
+        assert_eq!(
+            Duration::parse("P1Y2M3W4DT5H6M7S"),
+            Duration::parse("1y2mo3w4d5h6m7s")
+        );
+        assert_eq!(Duration::parse("-P1D"), Duration::parse("-1d"));
+        assert_eq!(Duration::parse("+PT30M"), Duration::parse("30m"));
+        // Designators are case-insensitive, so the same parser serves
+        // `parse_interval`, which lowercases its input.
+        assert_eq!(Duration::parse("p1dt12h"), Duration::parse("1d12h"));
+
+        for invalid in [
+            "P", "PT", "P1DT", "P1.5D", "PT1.5H", "P1D2H", "PT1H30", "P-1D", "P1Y1Y", "PT1H1H",
+        ] {
+            assert!(
+                Duration::try_parse(invalid).is_err(),
+                "'{invalid}' should not parse as a duration"
+            );
+        }
+        // A leading `P` is the only trigger; ordinary strings are untouched.
+        assert!(Duration::try_parse("1p").is_err());
     }
 
     #[test]
