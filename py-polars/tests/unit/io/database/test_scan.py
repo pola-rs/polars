@@ -4818,6 +4818,51 @@ def test_scan_assertion_pool_function_with_concurrent_connects(
         engine.dispose()
 
 
+def test_scan_factory_assertion_error_is_not_retried(shop_db: Path) -> None:
+    # only an AssertionPool's refusal of a second checkout is retried
+    calls = 0
+
+    def factory() -> sqlite3.Connection:
+        nonlocal calls
+        calls += 1
+        if calls > 2:
+            msg = "not configured"
+            raise AssertionError(msg)
+        return sqlite3.connect(shop_db, check_same_thread=False)
+
+    with pytest.raises(Exception, match="not configured"):
+        pl.scan_database("orders", factory, partition_on=None).collect()
+    assert calls == 3
+
+
+def test_scan_function_over_several_shared_pool_engines_is_refused() -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    a, b = (
+        sqlalchemy.create_engine("sqlite://", connect_args={"check_same_thread": False})
+        for _ in range(2)
+    )
+    try:
+        with pytest.raises(TypeError, match="several Engines"):
+            pl.scan_database("t", lambda: (a or b).connect())
+    finally:
+        a.dispose()
+        b.dispose()
+
+
+def test_scan_shared_pool_connection_of_a_factory_refuses_the_session_setup() -> None:
+    # the scan doesn't change the session of a connection the user shares
+    from polars_database._bridge import _Session
+
+    session = _Session(
+        sqlite3.connect(":memory:"), owned=False, execute_options={}, pool_shared=True
+    )
+    with pytest.raises(TypeError, match="pass the Engine itself"):
+        session.execute_update("SET TIME ZONE 'UTC'")
+    _Session(
+        sqlite3.connect(":memory:"), owned=False, execute_options={}
+    ).execute_update("SET TIME ZONE 'UTC'")
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="Windows resolves `..` textually, before following a symlink",

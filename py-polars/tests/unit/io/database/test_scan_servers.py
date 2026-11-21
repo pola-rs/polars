@@ -1999,7 +1999,7 @@ def test_mysql_user_statements_during_an_unbuffered_live_scan(driver: str) -> No
 
 
 @pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
-@pytest.mark.parametrize("how", ["pymysql", "sqlalchemy"])
+@pytest.mark.parametrize("how", ["pymysql", "sqlalchemy", "orm_session"])
 def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> None:
     # PyMySQL drops unread rows of an unbuffered cursor (with a warning) when another
     # statement runs: also through a SQLAlchemy Connection. (The later results of a
@@ -2019,10 +2019,18 @@ def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> N
     else:
         sqlalchemy = pytest.importorskip("sqlalchemy")
         engine = sqlalchemy.create_engine(_sqlalchemy_url(uri, "pymysql"))
-        conn = engine.connect()
-        result = conn.execution_options(stream_results=True).exec_driver_sql(
-            "SELECT id FROM edge"
-        )
+        if how == "sqlalchemy":
+            conn = engine.connect()
+            result = conn.execution_options(stream_results=True).exec_driver_sql(
+                "SELECT id FROM edge"
+            )
+        else:
+            orm = pytest.importorskip("sqlalchemy.orm")
+            conn = orm.Session(engine)
+            result = conn.execute(
+                sqlalchemy.text("SELECT id FROM edge"),
+                execution_options={"stream_results": True},
+            )
         result.fetchmany(1)
         source = conn
     try:
@@ -6334,9 +6342,8 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
     # a `checkout` listener that reads a contextvar ran on a Polars thread
     import contextvars
 
-    from sqlalchemy import event
-
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
     if not _installed("psycopg"):
         pytest.skip("psycopg is not installed")
     server = SERVERS["postgres17"]
@@ -6357,7 +6364,7 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
         _sqlalchemy_url(server.uri, "psycopg"), pool_size=5
     )
 
-    @event.listens_for(engine, "checkout")
+    @event.listens_for(engine, "checkout")  # type: ignore[untyped-decorator]
     def _set_tenant(dbapi_connection: Any, *_: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute(f"SET search_path TO {tenant_var.get()}")
@@ -6392,9 +6399,8 @@ def test_postgres_engine_holds_nothing_between_collects(
     # statement) left the scan's pinned session `idle in transaction` for the
     # LazyFrame's whole life: it held a lock on the table, and under REPEATABLE READ a
     # later collect read the old snapshot
-    from sqlalchemy import event
-
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
     if not _installed("psycopg2"):
         pytest.skip("psycopg2 is not installed")
     server = SERVERS["postgres17"]
@@ -6416,7 +6422,7 @@ def test_postgres_engine_holds_nothing_between_collects(
         _sqlalchemy_url(server.uri, "psycopg2"), pool_size=2, **kwargs
     )
 
-    @event.listens_for(engine, "checkout")
+    @event.listens_for(engine, "checkout")  # type: ignore[untyped-decorator]
     def _set_search_path(dbapi_connection: Any, *_: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("SET search_path TO public")
@@ -6481,9 +6487,8 @@ def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
     # an Engine was read as a live connection: a `connect` listener's session zone
     # (here one that has the fall-back hour twice) made a TIMESTAMP unreadable. The scan
     # sets UTC on its checkout and restores the listener's zone before giving it back.
-    from sqlalchemy import event
-
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
     if not _installed("pymysql"):
         pytest.skip("pymysql is not installed")
     server = SERVERS[name]
@@ -6504,7 +6509,7 @@ def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
         _sqlalchemy_url(server.uri, "pymysql"), pool_size=2
     )
 
-    @event.listens_for(engine, "connect")
+    @event.listens_for(engine, "connect")  # type: ignore[untyped-decorator]
     def _zone(dbapi_connection: Any, *_: Any) -> None:
         cursor = dbapi_connection.cursor()
         try:

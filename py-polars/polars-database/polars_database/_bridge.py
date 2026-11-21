@@ -1630,8 +1630,13 @@ def _refuse_pending_results(conn: Any) -> None:
     trailing OK packet of a `CALL` without reading it, so they stay a limit.)
     """
     if _module_of(conn) == "sqlalchemy":
-        # a SQLAlchemy Connection: the driver's is what holds the result
+        # a SQLAlchemy Connection, or an ORM Session's (only one in a transaction has
+        # one): the driver's is what holds the result
         with contextlib.suppress(Exception):
+            if _is_orm_session(conn):
+                if not conn.in_transaction():
+                    return
+                conn = conn.connection()
             conn = conn.connection.driver_connection
     if _module_of(conn) != "pymysql":
         return
@@ -2352,10 +2357,13 @@ class _Session:
         params: Any = None,
         factory: bool = False,
         invalidate: Callable[[], None] | None = None,
+        pool_shared: bool = False,
     ) -> None:
         _register_at_exit_before_duckdb(conn)
         self.conn = conn
         self.owned = owned
+        # a factory's checkout of a pool that shares one connection with the user
+        self.pool_shared = pool_shared
         # from the user's function, whose `close` may return it to a pool of theirs
         self.factory = factory
         self.execute_options = execute_options
@@ -2720,6 +2728,14 @@ class _Session:
     def execute_update(self, sql: str) -> None:
         """Run a session setup statement (read-only transactions, time zone, ...)."""
         conn = self.conn
+        if self.pool_shared:
+            msg = (
+                "the connection function returns the connection that its pool shares "
+                "with the user's own (StaticPool, AssertionPool), whose session the "
+                "scan must not change: pass the Engine itself, which is read as a live "
+                "connection"
+            )
+            raise TypeError(msg)
         if not self.owned:
             # a live connection is the user's: its session settings are left alone
             return
@@ -3251,6 +3267,10 @@ def adbc_connect(
 _ASSERTION_POOL_LOCK = threading.Lock()
 
 
+def _assertion_pool_busy(e: AssertionError) -> bool:
+    return str(e).startswith("connection is already checked out")
+
+
 def connect(
     kind: str,
     target_kind: str,
@@ -3280,22 +3300,24 @@ def connect(
     if target_kind == "factory":
         try:
             checkout = target()
-        except AssertionError:
+        except AssertionError as e:
             # an AssertionPool refuses a second checkout while another is out: ours are
             # given back at once (below), and wait for each other
+            if not _assertion_pool_busy(e):
+                raise
             with _ASSERTION_POOL_LOCK:
                 for attempt in range(100):
                     try:
                         checkout = target()
                         break
-                    except AssertionError:
-                        if attempt == 99:
+                    except AssertionError as e:
+                        if attempt == 99 or not _assertion_pool_busy(e):
                             raise
                         time.sleep(0.002)
         if (shared := shared_pool_connection(checkout)) is not None:
             # one connection that the user's own statements use too (an open
             # transaction): a live connection, never rolled back or closed
-            return _Session(shared, owned=False, **session)
+            return _Session(shared, owned=False, pool_shared=True, **session)
         conn, close, invalidate = _pool_checkout(checkout)
         return _Session(
             conn,
