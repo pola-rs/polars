@@ -1258,7 +1258,7 @@ def test_scan_sqlite_connectorx_quotes_and_backslashes(tmp_path: Path) -> None:
 def test_scan_sqlite_float_filters_find_every_real(tmp_path: Path, driver: str) -> None:
     # ConnectorX's bundled SQLite, and the one of Python on Windows (built without
     # `long double`), parse a float literal inexactly (exponents beyond +-85): no float
-    # comparison is pushed there, and no range cuts on a real key (ConnectorX)
+    # comparison is pushed there, and no range cuts on a real key
     _importorskip_sqlite_driver(driver)
     values = [1.989032661366619e244, -3.4e-130, 2.5e120, 1e-200, 0.1, 1.5, 7.0e300]
     path = tmp_path / "t.db"
@@ -1276,7 +1276,7 @@ def test_scan_sqlite_float_filters_find_every_real(tmp_path: Path, driver: str) 
         pl.scan_database(
             "t", f"sqlite:///{path}", driver=driver, partition_on="x", partition_num=3
         )
-        if driver != "connectorx"
+        if driver != "connectorx" and sys.platform != "win32"
         else None
     )
     if parts is not None:
