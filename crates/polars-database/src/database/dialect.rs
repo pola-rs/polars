@@ -37,6 +37,34 @@ impl fmt::Display for DialectName {
     }
 }
 
+/// How a Trino type holds a time or timestamp of more than 6 fractional digits.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrinoWide {
+    /// `timestamp(p) with time zone`
+    Instant,
+    /// `timestamp(p)`, `time(p)`, `time(p) with time zone`
+    Plain,
+}
+
+/// Whether a (lower-case) Trino type is a `timestamp(p)` / `time(p)` with `p > 6`.
+pub(crate) fn trino_wide_temporal(t: &str) -> Option<TrinoWide> {
+    let digits = t
+        .strip_prefix("timestamp(")
+        .or_else(|| t.strip_prefix("time("))?
+        .split_once(')')?
+        .0;
+    if !digits.trim().parse::<u32>().is_ok_and(|p| p > 6) {
+        return None;
+    }
+    Some(
+        if t.starts_with("timestamp(") && t.ends_with("with time zone") {
+            TrinoWide::Instant
+        } else {
+            TrinoWide::Plain
+        },
+    )
+}
+
 /// How string comparisons behave in the database, relative to Polars' byte-wise comparison.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StringSemantics {
@@ -217,8 +245,9 @@ impl DialectName {
     }
 
     /// Whether float comparisons agree with Polars. Polars uses a total order (NaN equals NaN
-    /// and sorts above all numbers). Postgres and DuckDB do the same; MySQL, SQL Server, Oracle
-    /// `NUMBER` and SQLite can't store NaN. Other dialects are not verified, so float
+    /// and sorts above all numbers). Postgres and DuckDB do the same; MySQL, Oracle
+    /// `NUMBER` and SQLite can't store NaN. SQL Server isn't: it parses float literals inexactly
+    /// (`x = 1.877474430782875e+16` misses the stored value). Other dialects are not verified, so float
     /// predicates are not pushed there.
     pub fn float_comparisons_exact(self) -> bool {
         matches!(
@@ -227,7 +256,6 @@ impl DialectName {
                 | Self::Redshift
                 | Self::Duckdb
                 | Self::Mysql
-                | Self::Mssql
                 | Self::Oracle
                 | Self::Sqlite
         )
@@ -310,6 +338,15 @@ impl DialectName {
             // (Map, Tuple, IPv4, FixedString, 128/256-bit integers, …): ConnectorX returns
             // wrong values and even wrong row counts for some of them.
             Self::Clickhouse if !clickhouse_native_type(t) => Some(format!("toString({column})")),
+            // `timestamp(7..12)` and `time(7..12)`: the `trino` driver rounds them to
+            // microseconds and ADBC panics outside 1677-2262 (as nanoseconds): their exact
+            // text.
+            Self::Trino => trino_wide_temporal(t).map(|wide| match wide {
+                TrinoWide::Instant => format!("CAST({column} AT TIME ZONE 'UTC' AS VARCHAR)"),
+                TrinoWide::Plain => format!("CAST({column} AS VARCHAR)"),
+            }),
+            // ConnectorX panics on it, pyodbc can't read it: its text, as the base type writes it
+            Self::Mssql if t == "sql_variant" => Some(self.cast_to_text(column)),
             Self::Oracle if t == "json" => Some(format!("JSON_SERIALIZE({column} RETURNING CLOB)")),
             Self::Oracle if t == "rowid" || t == "urowid" => Some(format!("ROWIDTOCHAR({column})")),
             // `INTERVAL … TO …`: Arrow's month-day-nano intervals have no Polars dtype

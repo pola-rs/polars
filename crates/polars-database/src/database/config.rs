@@ -107,6 +107,18 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
+    /// SQLite: the database was found to parse float literals exactly (`sqlite_floats_exact`):
+    /// float comparisons are pushed only then.
+    #[serde(default)]
+    pub sqlite_floats_exact: bool,
+    /// Columns the planner found unreadable right, with why: raised when one is read.
+    #[serde(default)]
+    pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,
+    /// How the relations the source names resolved on the planning session
+    /// ([`catalog::resolution_fingerprint`](super::catalog::resolution_fingerprint)); every session
+    /// of a read over connections the user made (a pool's) must resolve them the same.
+    #[serde(default)]
+    pub resolution: Option<Vec<String>>,
     /// Partition bounds already queried, by the bounds SQL: optimizing the plan again
     /// (another `collect`, `explain`) doesn't query them again. The outer partitions are
     /// open-ended, so stale bounds only skew partition sizes, never lose rows.
