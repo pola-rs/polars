@@ -13,6 +13,8 @@ from polars.testing import assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import EngineType
+
 # A single row, so that every non-scalar argument has the length of a scalar at runtime.
 FRAME = pl.DataFrame(
     {
@@ -186,6 +188,36 @@ def test_replace_with_lookup_lists_is_scalar() -> None:
         assert lf.select(x.head(n)).collect().to_series().to_list() == [1, 2]
 
 
+def test_replace_strict_with_column_default_is_not_scalar() -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3, 4]})
+    key = pl.lit(1).replace_strict([5], [6], default=pl.col("x"))
+    out = lf.sort(key, descending=True).collect(engine="streaming")
+    assert out["x"].to_list() == [4, 3, 2, 1]
+
+
+def test_scalar_argument_after_type_coercion() -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
+    x = pl.col("x")
+    # Type coercion turns the flat right-hand side into one list of values.
+    n = x.first().is_in(x).cast(pl.Int64)
+    with pytest.warns(DeprecationWarning, match="is_in"):
+        assert lf.select(x.head(n)).collect().to_series().to_list() == [1]
+
+    n = x.is_in(x).cast(pl.Int64)
+    with (
+        pytest.warns(DeprecationWarning, match="is_in"),
+        pytest.raises(ShapeError, match="'length' must be a scalar value"),
+    ):
+        lf.select(x.head(n)).collect_schema()
+
+
+def test_row_index_in_nested_list_eval() -> None:
+    df = pl.DataFrame({"x": [[[1, 2], [3]], [[4], [5, 6]]], "i": [0, 1]})
+    inner = pl.element().get(pl.col("i")).list.eval(pl.element() + 1)
+    out = df.select(pl.col("x").list.eval(inner))
+    assert out.to_series().to_list() == [[[2, 3]], [[6, 7]]]
+
+
 def test_scalar_argument_from_field_of_scalar_struct() -> None:
     lf = pl.LazyFrame({"idx": [1, 0], "v": [10, 20]})
 
@@ -205,6 +237,15 @@ def test_search_sorted_with_one_key_is_scalar() -> None:
     assert out.collect().to_dict(as_series=False) == {"x": [2], "h": [1]}
     with pytest.raises(ShapeError, match="'index' must be a scalar value"):
         lf.select(x.get(x.search_sorted(x))).collect_schema()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_search_sorted_per_group_schema(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+    q = lf.group_by("g", maintain_order=True).agg(pl.col("x").search_sorted(2))
+    out = q.collect(engine=engine)
+    assert q.collect_schema() == out.schema
+    assert out["x"].to_list() == [[1], [0]]
 
 
 def test_series_method_with_series_argument() -> None:

@@ -1578,6 +1578,11 @@ impl IRFunctionExpr {
             #[cfg(feature = "pct_change")]
             F::PctChange => &[(1, "n")],
             F::Quantile { .. } => &[(1, "quantile")],
+            #[cfg(feature = "approx_quantile")]
+            F::ApproxQuantileEstimate { .. } => &[(1, "quantile")],
+            // Flat `old` and `new` are imploded by type coercion, as the kernel takes one list.
+            #[cfg(feature = "replace")]
+            F::Replace | F::ReplaceStrict { .. } => &[(1, "old"), (2, "new")],
             #[cfg(feature = "top_k")]
             F::TopK { .. } | F::TopKBy { .. } => &[(1, "k")],
             #[cfg(feature = "random")]

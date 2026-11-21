@@ -1006,17 +1006,8 @@ impl OptimizationRule for TypeCoercionRule {
                 let function = function.clone();
                 let mut input = input.clone();
                 let mut changed = false;
-                for (i, arg, is_list) in [(1, "old", old_is_list), (2, "new", new_is_list)] {
-                    if is_list {
-                        // The kernel takes one list of values, not a list per row.
-                        ensure_scalar_ae(
-                            input[i].node(),
-                            expr_arena,
-                            crate::plans::projection_height::ExprProjectionHeight::Unknown,
-                            arg,
-                            &function,
-                        )?;
-                    } else {
+                for (i, is_list) in [(1, old_is_list), (2, new_is_list)] {
+                    if !is_list {
                         let imploded = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
                             input: input[i].node(),
                             maintain_order: true,

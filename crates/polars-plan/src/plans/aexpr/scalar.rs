@@ -1,3 +1,6 @@
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
+
 use super::*;
 use crate::plans::projection_height::{
     ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
@@ -18,9 +21,90 @@ pub fn is_scalar_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     }
 }
 
+/// Raises if an argument that must be a scalar is not, in the expression at `node`.
+///
+/// This runs after type coercion, which can turn a flat column into one list of values.
+pub fn ensure_scalar_arguments(node: Node, arena: &Arena<AExpr>) -> PolarsResult<()> {
+    // The second value is the height of a `StructField` in the expression.
+    let mut stack: UnitVec<(Node, ExprProjectionHeight)> =
+        unitvec![(node, ExprProjectionHeight::Unknown)];
+    let mut inputs: UnitVec<Node> = unitvec![];
+    while let Some((node, struct_field)) = stack.pop() {
+        let aexpr = arena.get(node);
+        ensure_node_scalar_arguments(aexpr, arena, struct_field).map_err(|e| {
+            e.with_expr_context(ExprIRDisplay::display_node(node, arena).to_string().into())
+        })?;
+
+        match aexpr {
+            AExpr::Eval { evaluation, .. } => {
+                stack.push((*evaluation, ExprProjectionHeight::Unknown));
+            },
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructEval {
+                expr, evaluation, ..
+            } => {
+                let options = ExprHeightOptions {
+                    struct_field,
+                    ..Default::default()
+                };
+                let struct_height = aexpr_projection_height_rec_with(
+                    *expr,
+                    arena,
+                    &mut Default::default(),
+                    &mut Default::default(),
+                    options,
+                );
+                stack.push((*expr, struct_field));
+                stack.extend(evaluation.iter().map(|e| (e.node(), struct_height)));
+                continue;
+            },
+            _ => {},
+        }
+        inputs.clear();
+        aexpr.inputs(&mut inputs);
+        stack.extend(inputs.iter().map(|&input| (input, struct_field)));
+    }
+    Ok(())
+}
+
+fn ensure_node_scalar_arguments(
+    aexpr: &AExpr,
+    arena: &Arena<AExpr>,
+    struct_field: ExprProjectionHeight,
+) -> PolarsResult<()> {
+    match aexpr {
+        AExpr::Gather {
+            idx,
+            returns_scalar: true,
+            ..
+        } => ensure_scalar_ae(*idx, arena, struct_field, "index", "get"),
+        AExpr::Slice { offset, length, .. } => {
+            ensure_scalar_ae(*offset, arena, struct_field, "offset", "slice")?;
+            ensure_scalar_ae(*length, arena, struct_field, "length", "slice")
+        },
+        AExpr::Function {
+            function, input, ..
+        } => {
+            let name: &dyn std::fmt::Display = match function {
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileEstimate { .. } => &"approx_quantile",
+                function => function,
+            };
+            for &(idx, arg) in function.scalar_inputs() {
+                let input = input.get(idx).ok_or_else(
+                    || polars_err!(InvalidOperation: "missing argument '{arg}' in `{name}`"),
+                )?;
+                ensure_scalar_ae(input.node(), arena, struct_field, arg, name)?;
+            }
+            Ok(())
+        },
+        _ => Ok(()),
+    }
+}
+
 /// Raises unless the argument `arg` of `function` at `node` is a scalar, where a `StructField`
 /// has the height `struct_field`.
-pub fn ensure_scalar_ae(
+fn ensure_scalar_ae(
     node: Node,
     arena: &Arena<AExpr>,
     struct_field: ExprProjectionHeight,
@@ -29,6 +113,7 @@ pub fn ensure_scalar_ae(
 ) -> PolarsResult<()> {
     let options = ExprHeightOptions {
         struct_field,
+        scalar_argument: true,
         ..Default::default()
     };
     let height = aexpr_projection_height_rec_with(

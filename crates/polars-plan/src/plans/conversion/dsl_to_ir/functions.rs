@@ -925,13 +925,6 @@ pub(super) fn convert_functions(
             let quantile_input = e.get(1).ok_or_else(
                 || polars_err!(InvalidOperation: "missing argument 'quantile' in `approx_quantile`"),
             )?;
-            ensure_scalar_ae(
-                quantile_input.node(),
-                ctx.arena,
-                ctx.struct_field_height,
-                "quantile",
-                "approx_quantile",
-            )?;
             let quantile = match ctx.arena.get(quantile_input.node()) {
                 AExpr::Literal(
                     lv @ (LiteralValue::Scalar(_)
@@ -1407,19 +1400,6 @@ pub(super) fn convert_functions(
             encode_nulls,
         },
     };
-
-    for &(idx, arg) in ir_function.scalar_inputs() {
-        let input = e.get(idx).ok_or_else(
-            || polars_err!(InvalidOperation: "missing argument '{arg}' in `{ir_function}`"),
-        )?;
-        ensure_scalar_ae(
-            input.node(),
-            ctx.arena,
-            ctx.struct_field_height,
-            arg,
-            &ir_function,
-        )?;
-    }
 
     let mut options = ir_function.function_options();
     if set_elementwise {
