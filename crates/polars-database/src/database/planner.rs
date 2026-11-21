@@ -2787,7 +2787,7 @@ fn duckdb_bad_value(t: &str, x: &str, depth: usize) -> Option<String> {
 const MAX_DECIMAL_38: &str = "99999999999999999999999999999999999999";
 
 /// The parts of a type's argument list, split at its top-level commas.
-fn split_top_level(s: &str) -> Vec<&str> {
+pub(crate) fn split_top_level(s: &str) -> Vec<&str> {
     // inside `"identifiers"` and `'enum labels'` (where `(`, `"` or `,` are text; a doubled quote
     // closes and reopens)
     let (mut parts, mut depth, mut quote, mut start) = (vec![], 0usize, None::<char>, 0);
