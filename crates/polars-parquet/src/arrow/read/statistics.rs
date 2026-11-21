@@ -61,6 +61,7 @@ pub struct ArrowColumnStatistics {
 /// Arrow-deserialized parquet statistics of a leaf-column
 pub struct ArrowColumnStatisticsArrays {
     pub null_count: PrimitiveArray<IdxSize>,
+    pub nan_count: PrimitiveArray<IdxSize>,
     pub distinct_count: PrimitiveArray<IdxSize>,
     pub min_value: Box<dyn Array>,
     pub max_value: Box<dyn Array>,
@@ -132,15 +133,18 @@ fn unavailable_bounds(
     field_idx: usize,
 ) -> ArrowColumnStatisticsArrays {
     let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+    let mut nan_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
     let mut distinct_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
     for rg in row_groups {
         let column = &rg.parquet_columns()[field_idx];
         null_count.push(column.null_count().map(|v| v as IdxSize));
+        nan_count.push(column.nan_count().map(|v| v as IdxSize));
         distinct_count.push(column.distinct_count().map(|v| v as IdxSize));
     }
     let nulls = || new_null_array(field.dtype().clone(), row_groups.len());
     ArrowColumnStatisticsArrays {
         null_count: null_count.freeze(),
+        nan_count: nan_count.freeze(),
         distinct_count: distinct_count.freeze(),
         min_value: nulls(),
         max_value: nulls(),
@@ -170,14 +174,17 @@ pub fn deserialize_all(
 
         D::Null => {
             let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+            let mut nan_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
             let mut distinct_count =
                 MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
             for rg in row_groups {
                 null_count.push(Some(rg.num_rows() as IdxSize));
+                nan_count.push(None);
                 distinct_count.push(Some(0));
             }
             Ok(Some(ArrowColumnStatisticsArrays {
                 null_count: null_count.freeze(),
+                nan_count: nan_count.freeze(),
                 distinct_count: distinct_count.freeze(),
                 min_value: NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
                 max_value: NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
@@ -198,6 +205,7 @@ pub fn deserialize_all(
             };
 
             let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
+            let mut nan_count = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
             let mut distinct_count =
                 MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
 
@@ -225,6 +233,7 @@ pub fn deserialize_all(
                         min_arr.push(value!(min));
                         max_arr.push(value!(max));
                         null_count.push(column.null_count().map(|v| v as IdxSize));
+                        nan_count.push(column.nan_count().map(|v| v as IdxSize));
                         distinct_count.push(column.distinct_count().map(|v| v as IdxSize));
                     }
                     (min_arr.freeze().to_boxed(), max_arr.freeze().to_boxed())
@@ -261,6 +270,7 @@ pub fn deserialize_all(
 
             Ok(Some(ArrowColumnStatisticsArrays {
                 null_count: null_count.freeze(),
+                nan_count: nan_count.freeze(),
                 distinct_count: distinct_count.freeze(),
                 min_value,
                 max_value,

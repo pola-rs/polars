@@ -289,6 +289,7 @@ fn chunk_from_wire(c: ChunkWire, footer: &mut Vec<u8>) -> CompactColumnChunk {
         let max_value = s.max_value.map(|bytes| append_to_footer(footer, &bytes));
         CompactStatistics {
             null_count: s.null_count,
+            nan_count: None,
             distinct_count: None,
             max_value,
             min_value,
