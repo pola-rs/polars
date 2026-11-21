@@ -6891,13 +6891,23 @@ def test_clickhouse_settings_that_change_the_rows_disable_pushdown() -> None:
             f"SELECT id, v FROM {table} SETTINGS max_rows_to_read = 300, "
             "read_overflow_mode = 'break'"
         )
-        lf = _scan(name, _default_driver(name), cut).filter(pl.col("id") > 100)
-        assert "pushdown: off" in lf.explain()
-        ids = lf.collect()["id"]
-        assert ids.is_unique().all()
-        assert (ids > 100).all()
+        _execute(name, [f"CREATE OR REPLACE VIEW {table}_v AS {cut}"])
+        driver = _default_driver(name)
+        for source in (cut, f"{table}_v"):
+            lf = _scan(name, driver, source).filter(pl.col("id") > 100)
+            assert "pushdown: off" in lf.explain(), source
+            ids = lf.collect()["id"]
+            assert ids.is_unique().all()
+            assert (ids > 100).all()
+        # `schema=` finds the view's settings only when reading
+        schema = {"id": pl.UInt32, "v": pl.UInt32}
+        lf = _scan(name, driver, f"{table}_v", schema=schema)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="SETTINGS"):
+            lf.select("id").collect()
     finally:
-        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+        _execute(
+            name, [f"DROP VIEW IF EXISTS {table}_v", f"DROP TABLE IF EXISTS {table}"]
+        )
 
 
 @ORACLE_GROUP

@@ -704,8 +704,12 @@ pub fn resolve_scan(
             &names,
             true,
         );
-        if volatility.positional && pushdown_disabled.is_none() {
-            pushdown_disabled = Some(POSITIONAL_VIEW_REASON.into());
+        if pushdown_disabled.is_none() {
+            if volatility.positional {
+                pushdown_disabled = Some(POSITIONAL_VIEW_REASON.into());
+            } else if volatility.settings {
+                pushdown_disabled = Some(SETTINGS_VIEW_REASON.into());
+            }
         }
         // a view's columns hold what its query gives, whatever `pragma_table_info` says
         // (the first branch's type, of a `UNION`)
@@ -1280,7 +1284,8 @@ pub fn resolve_scan(
 /// pushed into the database on a column of a volatile function, where the database merges
 /// a view or query into the filter's and calls `random()` again for it (SQLite, MySQL;
 /// others don't push a filter into a query that calls a volatile function). Any pushed filter
-/// fails the read of a source that pairs rows by their place or reads a redacted table.
+/// fails the read of a source that pairs rows by their place or reads a redacted table, and
+/// any pushdown the read of a view whose `SETTINGS` may cut its rows.
 pub fn check_unplanned_volatility(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -1292,6 +1297,12 @@ pub fn check_unplanned_volatility(
         return Ok(false);
     }
     let volatility = unplanned_volatility(session, config);
+    polars_ensure!(
+        !volatility.settings || config.pushdown_disabled.is_some(),
+        InvalidOperation:
+        "{SETTINGS_VIEW_REASON} (found when reading: schema= skips the check when planning); \
+        pass pushdown=False, or leave out schema="
+    );
     if let Some(column) = compiled.filter_columns.first() {
         let why = if volatility.redacted {
             Some("a table it reads has redacted columns, which the database compares as stored")
@@ -1658,7 +1669,10 @@ fn in_utc(dtype: &DataType) -> DataType {
 const POSITIONAL_REASON: &str = "a positional join (PASTE, POSITIONAL) pairs rows by their place, \
     which a pushed filter changes";
 const POSITIONAL_VIEW_REASON: &str = "a view it reads pairs rows by their place (PASTE, \
-    POSITIONAL) or has a SETTINGS clause that may cut its rows, which a pushed filter changes";
+    POSITIONAL), which a pushed filter changes";
+const SETTINGS_VIEW_REASON: &str = "a view it reads has a SETTINGS clause (an overflow mode, a \
+    row limit) that may cut or change its rows, which a pushed filter, projection or limit \
+    changes";
 const SETTINGS_REASON: &str = "a SETTINGS clause (an overflow mode, a row limit) may cut or \
     change the rows, which a pushed filter changes";
 
@@ -1681,6 +1695,7 @@ fn read_wrapped(
             || r == POSITIONAL_REASON
             || r == SETTINGS_REASON
             || r == POSITIONAL_VIEW_REASON
+            || r == SETTINGS_VIEW_REASON
     });
 
     match options.relation {
@@ -3945,11 +3960,23 @@ struct SourceVolatility {
     all_columns: bool,
     /// The source is a table the catalog says is no view: its declared types hold.
     plain_table: bool,
-    /// A view it reads has a positional join (`PASTE`, `POSITIONAL`): no filter is pushed.
+    /// A view it reads has a positional join (`PASTE`, `POSITIONAL`), or may (one that
+    /// couldn't be inspected, on a dialect that has them): no filter is pushed.
     positional: bool,
+    /// A view it reads has a `SETTINGS` clause that may cut its rows (ClickHouse): nothing
+    /// is pushed.
+    settings: bool,
     /// A table it reads is read redacted (Oracle Data Redaction), and compared as stored: no
     /// filter is pushed.
     redacted: bool,
+}
+
+impl SourceVolatility {
+    /// A view it reads couldn't be inspected: it may join by place, or cut its rows.
+    fn unknown_view(&mut self, dialect: DialectName) {
+        self.positional |= matches!(dialect, DialectName::Duckdb | DialectName::Clickhouse);
+        self.settings |= dialect == DialectName::Clickhouse;
+    }
 }
 
 const UNKNOWN_FUNCTIONS: &str = "a function sqlglot doesn't know (it may be a user's \
@@ -4039,6 +4066,7 @@ fn source_volatility(
             if seen.len() > MAX_VIEW_LOOKUPS {
                 out.volatile = Some("one of the many views it reads".into());
                 out.all_columns = true;
+                out.unknown_view(dialect);
                 break 'inspect;
             }
             let (sql, qualifier) =
@@ -4072,6 +4100,7 @@ fn source_volatility(
                             .into(),
                         );
                         out.all_columns = true;
+                        out.unknown_view(dialect);
                         continue;
                     },
                 };
@@ -4083,13 +4112,15 @@ fn source_volatility(
             let Some(view) = view else {
                 out.volatile = Some(format!("the view '{name}', which can't be inspected,").into());
                 out.all_columns = true;
+                out.unknown_view(dialect);
                 continue;
             };
             if !view.repeatable {
                 // a volatile function, a `LIMIT`, rows picked in no set order
                 out.volatile = Some(format!("the view '{name}'").into());
             }
-            out.positional |= view.positional_join || view.unsafe_settings;
+            out.positional |= view.positional_join;
+            out.settings |= view.unsafe_settings;
             let any_volatile = view.all_columns_volatile || !view.volatile_columns.is_empty();
             match &view.output_columns {
                 Some(outputs)

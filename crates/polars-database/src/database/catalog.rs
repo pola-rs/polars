@@ -586,7 +586,10 @@ pub fn query_info(
         _ => None,
     };
     if let Some(sql) = by_rows {
-        if let Some(df) = run(session, "types", &sql) {
+        // (SQL Server's describe reports an error as a row, which `is_hidden = 0` leaves out)
+        let described = run(session, "types", &sql)
+            .filter(|df| dialect != DialectName::Mssql || df.height() > 0);
+        if let Some(df) = described {
             for row in 0..df.height() {
                 if let (Some(name), Some(t)) = (cell_str(&df, 0, row), cell_str(&df, 1, row)) {
                     info.compare_types.insert(name.into(), t);
@@ -871,7 +874,11 @@ fn mssql_query_masked_columns(
         source_masked = unmask("d.source_schema", "d.source_table", "mc.name"),
         query = DialectName::Mssql.quote_str(&format!("SELECT * FROM {from}"))
     );
-    match session.query(&sql) {
+    // (an error is reported as a row, which `is_hidden = 0` leaves out: no row)
+    match session.query(&sql).and_then(|df| {
+        polars_ensure!(df.height() > 0, ComputeError: "the query couldn't be described");
+        Ok(df)
+    }) {
         Ok(df) => {
             for row in 0..df.height() {
                 if let Some(name) = cell_str(&df, 0, row)
@@ -1598,10 +1605,19 @@ pub fn view_definition(
                 .or_else(|| context.last().map(|c| c.as_str()))
                 .map_or_else(|| "SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')".to_string(), s);
             let n = s(name);
+            // the name, and every object a chain of synonyms from it names (a public synonym
+            // only for an unqualified name)
+            let owners = if schema.is_some() {
+                owner.clone()
+            } else {
+                format!("{owner}, 'PUBLIC'")
+            };
             let named = format!(
                 "(SELECT {owner}, {n} FROM dual \
                 UNION ALL SELECT table_owner, table_name FROM all_synonyms \
-                WHERE owner IN ({owner}, 'PUBLIC') AND synonym_name = {n})"
+                START WITH owner IN ({owners}) AND synonym_name = {n} \
+                CONNECT BY NOCYCLE owner = PRIOR table_owner \
+                AND synonym_name = PRIOR table_name)"
             );
             let Some(df) = run(&format!(
                 "SELECT 1, CASE WHEN v.text_length <= 4000 THEN v.text_vc END, \

@@ -5032,6 +5032,11 @@ def test_duckdb_positional_join_filters_after_the_read(tmp_path: Any) -> None:
         conn.execute("CREATE TABLE r AS SELECT i AS v FROM range(1, 401) r(i)")
         # a view pairing by place is found when it is read
         conn.execute("CREATE VIEW p AS SELECT l.id, r.v AS k FROM l POSITIONAL JOIN r")
+        # past the views the planner looks through, one may pair by place
+        for i in range(40):
+            conn.execute(
+                f"CREATE VIEW p{i + 1} AS SELECT * FROM {f'p{i}' if i else 'p'}"
+            )
     source = "SELECT l.id, r.v AS k FROM l POSITIONAL JOIN r"
     lf = pl.scan_database(source, f"duckdb:///{path}").filter(pl.col("k") < 100)
     assert "filters 1/1" not in lf.explain()
@@ -5043,6 +5048,9 @@ def test_duckdb_positional_join_filters_after_the_read(tmp_path: Any) -> None:
     df = lf.collect()
     assert df.height == 99
     assert (df["id"] == df["k"]).all()
+    lf = pl.scan_database("p40", f"duckdb:///{path}").filter(pl.col("k") < 100)
+    assert "filters 1/1" not in lf.explain()
+    assert lf.collect().height == 99
     # `schema=` finds it only when reading, after the filter was pushed
     schema = {"id": pl.Int64, "k": pl.Int64}
     lf = pl.scan_database("p", f"duckdb:///{path}", schema=schema)

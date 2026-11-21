@@ -317,10 +317,11 @@ fn mssql_database_uri(uri: &str) -> String {
         return uri.to_string();
     }
     let mut out = format!("{scheme}://{authority}?database=");
-    // (a query value: `&`, `=` and `+` would be read as separators or a blank)
+    // (a query value: `&`, `;`, `=` and `+` would be read as separators or a blank)
     for c in database.chars() {
         match c {
             '&' => out.push_str("%26"),
+            ';' => out.push_str("%3B"),
             '=' => out.push_str("%3D"),
             '+' => out.push_str("%2B"),
             c => out.push(c),
@@ -915,8 +916,8 @@ mod tests {
         assert_eq!(f("mssql://h:1433"), "mssql://h:1433");
         assert_eq!(f("mssql://h:1433/"), "mssql://h:1433/");
         assert_eq!(
-            f("mssql://h/sales&a=b+c"),
-            "mssql://h?database=sales%26a%3Db%2Bc"
+            f("mssql://h/sales&a=b+c;d"),
+            "mssql://h?database=sales%26a%3Db%2Bc%3Bd"
         );
     }
 
