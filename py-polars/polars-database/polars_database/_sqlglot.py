@@ -2578,12 +2578,20 @@ def _filtered_aliases(stmt: Any) -> set[str]:
     The lower-cased names a query's `HAVING` or `QUALIFY` uses, and those of the output
     aliases they name in turn (`net > 0 AS profitable … HAVING profitable`).
     """
+
+    def aliases(node: Any) -> list[str]:
+        # (a name inside an aggregate is an input column's)
+        return [
+            c.name.lower()
+            for c in node.find_all(exp.Column)
+            if not c.table and c.find_ancestor(exp.AggFunc, exp.Select) is stmt
+        ]
+
     names = {
-        c.name.lower()
+        n
         for clause in (stmt.args.get("having"), stmt.args.get("qualify"))
         if clause is not None
-        for c in clause.find_all(exp.Column)
-        if not c.table
+        for n in aliases(clause)
     }
     selects = {s.alias_or_name.lower(): s for s in stmt.selects}
     pending = list(names)
@@ -2591,9 +2599,8 @@ def _filtered_aliases(stmt: Any) -> set[str]:
         select = selects.get(pending.pop())
         if select is None:
             continue
-        for c in select.find_all(exp.Column):
-            name = c.name.lower()
-            if not c.table and name not in names:
+        for name in aliases(select):
+            if name not in names:
                 names.add(name)
                 pending.append(name)
     return names
@@ -2801,12 +2808,16 @@ def inspect_view(sql: str, dialect: str | None) -> dict[str, Any]:
             names = [c.name for c in stmt.this.expressions]
         stmt = stmt.expression
     named = names is None
+    # (its own aliases, which a `HAVING` may name)
+    renamed: str | None = None
     if (
         names is not None
         and isinstance(stmt, exp.Select)
         and len(stmt.selects) == len(names)
         and not any(s.is_star for s in stmt.selects)
     ):
+        with contextlib.suppress(sqlglot.errors.SqlglotError):
+            renamed = stmt.sql(dialect=dialect)
         # `CREATE VIEW v (a, b) AS SELECT x, random() …`: the view's names, by position
         stmt.set(
             "expressions",
@@ -2821,6 +2832,8 @@ def inspect_view(sql: str, dialect: str | None) -> dict[str, Any]:
     except sqlglot.errors.SqlglotError:
         return _no_facts()
     facts = inspect_query(query, dialect)
+    if renamed is not None and not inspect_query(renamed, dialect)["repeatable"]:
+        facts["repeatable"] = False
     with contextlib.suppress(sqlglot.errors.SqlglotError):
         tokens = sqlglot.Dialect.get_or_raise(dialect).tokenize(sql)
         written = _known_functions(None, tokens, dialect)

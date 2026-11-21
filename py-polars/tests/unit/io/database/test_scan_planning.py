@@ -2838,6 +2838,20 @@ def test_min_and_max_collapse_rows_that_compare_equal() -> None:
     assert facts["collapses_rows"] is True
 
 
+def test_having_names_an_output_alias_of_a_view_column_list() -> None:
+    # the view's names replace the query's aliases, which its HAVING names
+    from polars_database._sqlglot import inspect_query, inspect_view
+
+    view = (
+        "CREATE VIEW totals (g2, total) AS "
+        "SELECT g, sum(x) AS s FROM t GROUP BY g HAVING s > 0"
+    )
+    assert inspect_view(view, "duckdb")["repeatable"] is False
+    # an input column inside an aggregate is no alias
+    query = "SELECT g, sum(x) AS x, count(x) AS n FROM t GROUP BY g HAVING n > 1"
+    assert inspect_query(query, "duckdb")["repeatable"] is True
+
+
 def test_view_functions_are_looked_up_as_written() -> None:
     # rendering renames `strpos` to `instr`: a user's `strpos` is looked up too
     from polars_database._sqlglot import inspect_view

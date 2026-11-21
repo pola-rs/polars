@@ -1958,9 +1958,10 @@ fn sqlite_generated_expressions(sql: &str) -> Vec<String> {
                         match chars[k] {
                             '(' => depth += 1,
                             ')' => depth -= 1,
-                            q @ ('\'' | '"' | '`') => {
+                            q @ ('\'' | '"' | '`' | '[') => {
+                                let close = if q == '[' { ']' } else { q };
                                 k += 1;
-                                while k < chars.len() && chars[k] != q {
+                                while k < chars.len() && chars[k] != close {
                                     k += 1;
                                 }
                             },
@@ -3988,10 +3989,14 @@ mod tests {
             sqlite_generated_expressions(sql),
             vec!["id -- )\n+ f(id)".to_string()]
         );
-        let sql = "CREATE TABLE t (n TEXT AS (replace(s, '--)', '-')) VIRTUAL, k INT)";
+        let sql = "CREATE TABLE t (m TEXT AS (lower([a's)])), \
+            n TEXT AS (replace(s, '--)', '-')) VIRTUAL, k INT)";
         assert_eq!(
             sqlite_generated_expressions(sql),
-            vec!["replace(s, '--)', '-')".to_string()]
+            vec![
+                "lower([a's)])".to_string(),
+                "replace(s, '--)', '-')".to_string()
+            ]
         );
     }
 
