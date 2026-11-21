@@ -1,5 +1,6 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
+use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_utils::aliases::ScratchIndexSet;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
@@ -257,6 +258,7 @@ pub(crate) fn push_past(
                 ir_arena,
             )?;
             if !eligibility.allows(&key)
+                || projection_map.cast_filters.contains_key(&predicate.node())
                 || aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
                     .any(|name| projection_map.order_keeping_exprs.contains_key(name))
             {
@@ -276,11 +278,23 @@ pub struct ProjectionMap {
     pub renames: PlIndexMap<PlSmallStr, PlSmallStr>,
     /// Output name to its order-keeping expression of one input column.
     pub order_keeping_exprs: PlIndexMap<PlSmallStr, Node>,
+    /// Complete filters on a cast output, rewritten in terms of its input.
+    cast_filters: PlIndexMap<Node, Node>,
 }
 
 impl ProjectionMap {
+    pub fn is_empty(&self) -> bool {
+        self.renames.is_empty()
+            && self.order_keeping_exprs.is_empty()
+            && self.cast_filters.is_empty()
+    }
+
     /// Rewrite `expr` on the output columns to the same expression on the input columns.
     pub fn map_to_input(&self, expr: &mut ExprIR, expr_arena: &mut Arena<AExpr>) {
+        if let Some(&node) = self.cast_filters.get(&expr.node()) {
+            *expr = ExprIR::from_node(node, expr_arena);
+            return;
+        }
         if self.order_keeping_exprs.is_empty() {
             map_column_references(expr, expr_arena, &self.renames);
             return;
@@ -313,6 +327,66 @@ impl ProjectionMap {
         let ae = expr_arena.get(node).clone().replace_inputs(&new_inputs);
         expr_arena.add(ae)
     }
+}
+
+/// Translate a filter on a non-strict integer cast to a comparison on the source column.
+/// Outside the target range the cast produces null, which a filter discards. This
+/// preserves the rows selected; it must not replace a nullable Boolean subexpression.
+fn narrowing_cast_filter(
+    filter: Node,
+    casts: &PlIndexMap<PlSmallStr, (Node, DataType)>,
+    schema: &Schema,
+    arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    use Operator as O;
+    let AExpr::BinaryExpr { left, op, right } = arena.get(filter) else {
+        return None;
+    };
+    let (name, op, literal) = match (arena.get(*left), arena.get(*right)) {
+        (AExpr::Column(name), AExpr::Literal(LiteralValue::Scalar(s))) => (name, *op, s),
+        (AExpr::Literal(LiteralValue::Scalar(s)), AExpr::Column(name)) => {
+            (name, op.swap_operands()?, s)
+        },
+        _ => return None,
+    };
+    let (column, dtype) = casts.get(name)?;
+    let column = *column;
+    let AExpr::Column(input_name) = arena.get(column) else {
+        return None;
+    };
+    let source = schema.get(input_name)?;
+    if literal.is_null()
+        || literal.dtype() != dtype
+        || !source.is_integer()
+        || get_numeric_upcast_supertype_lossless(source, dtype).as_ref() != Some(source)
+    {
+        return None;
+    }
+
+    // The literal is in the target range. One comparison already enforces one
+    // end of the range (both ends for equality).
+    let bound = match op {
+        O::Lt | O::LtEq => Some((O::GtEq, dtype.min().ok()?)),
+        O::Gt | O::GtEq => Some((O::LtEq, dtype.max().ok()?)),
+        O::Eq => None,
+        _ => return None,
+    };
+    let literal = literal.value().strict_cast(source)?.into_static();
+    let mut comparison = |op, value: AnyValue<'_>| {
+        let right = arena.add(AExpr::Literal(value.into()));
+        arena.add(AExpr::BinaryExpr {
+            left: column,
+            op,
+            right,
+        })
+    };
+    let filter = comparison(op, literal);
+    Some(if let Some((op, bound)) = bound {
+        let guard = comparison(op, bound.value().strict_cast(source)?.into_static());
+        combine_by_and(guard, filter, arena)
+    } else {
+        filter
+    })
 }
 
 /// Copies an order-keeping expression. Its casts can't fail, so they are made non-strict to not
@@ -377,6 +451,8 @@ pub fn pushdown_eligibility(
         optimizer::init_hashmap::<PlSmallStr, PlSmallStr>(Some(projection_nodes.len()));
     let mut col_to_alias_map = alias_to_col_map.clone();
     let mut order_keeping_exprs = PlIndexMap::new();
+    let mut casts = PlIndexMap::new();
+    let mut has_fallible_projection = false;
     let mut input_schema = None;
 
     let mut modified_projection_columns =
@@ -477,18 +553,28 @@ pub fn pushdown_eligibility(
             order_keeping_exprs.insert(e.output_name().clone(), e.node());
         } else if !does_not_modify_rec(e.node(), expr_arena) {
             modified_projection_columns.insert(e.output_name().clone());
+            if is_projection
+                && let AExpr::Cast {
+                    expr,
+                    dtype,
+                    options: CastOptions::NonStrict,
+                } = expr_arena.get(e.node())
+                && dtype.is_integer()
+            {
+                casts.insert(e.output_name().clone(), (*expr, dtype.clone()));
+            }
         }
 
         debug_assert!(ae_nodes_stack.is_empty());
         ae_nodes_stack.push(e.node());
 
-        if process_projection_or_predicate(
+        let group = process_projection_or_predicate(
             ae_nodes_stack,
             &mut has_window,
             &mut common_window_inputs,
-        )
-        .blocks_pushdown(maintain_errors)
-        {
+        );
+        has_fallible_projection |= matches!(group, ExprPushdownGroup::Fallible);
+        if group.blocks_pushdown(maintain_errors) {
             return Ok((PushdownEligibility::NoPushdown, ProjectionMap::default()));
         }
     }
@@ -574,8 +660,17 @@ pub fn pushdown_eligibility(
     let mut allow_single_fallible = !ir_removes_rows(input_ir);
     ae_nodes_stack.clear();
 
+    let mut cast_filters = PlIndexMap::new();
+    let cast_schema =
+        input_schema.filter(|_| !has_window && !has_fallible_projection && !casts.is_empty());
     let to_local = to_check_iter
         .filter_map(|(key, e)| {
+            if let Some(schema) = &cast_schema
+                && let Some(node) = narrowing_cast_filter(e.node(), &casts, schema, expr_arena)
+            {
+                cast_filters.insert(e.node(), node);
+                return None;
+            }
             debug_assert!(ae_nodes_stack.is_empty());
 
             ae_nodes_stack.push(e.node());
@@ -621,6 +716,7 @@ pub fn pushdown_eligibility(
     let projection_map = ProjectionMap {
         renames: alias_to_col_map,
         order_keeping_exprs,
+        cast_filters,
     };
     Ok(match to_local.len() {
         0 => (PushdownEligibility::Full, projection_map),

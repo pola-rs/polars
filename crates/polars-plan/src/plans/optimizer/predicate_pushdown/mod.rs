@@ -140,8 +140,7 @@ impl PredicatePushDown {
                 },
             };
 
-            if !projection_map.renames.is_empty() || !projection_map.order_keeping_exprs.is_empty()
-            {
+            if !projection_map.is_empty() {
                 for (_, expr_ir) in acc_predicates.iter_mut() {
                     projection_map.map_to_input(expr_ir, expr_arena);
                 }

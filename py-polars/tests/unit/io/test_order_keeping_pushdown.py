@@ -264,3 +264,65 @@ def test_expression_that_raises_is_evaluated(
     q = pl.scan_parquet(path).with_columns(k=expr).filter(pl.col("k").is_null())
     with pytest.raises(pl.exceptions.PolarsError):
         q.collect()
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        (pl.col("k") < pl.lit(100, pl.Int8), [-128, 99]),
+        (pl.col("k") <= pl.lit(100, pl.Int8), [-128, 99, 100]),
+        (pl.lit(100, pl.Int8) < pl.col("k"), [127]),
+        (pl.lit(100, pl.Int8) <= pl.col("k"), [100, 127]),
+        (pl.col("k") == pl.lit(100, pl.Int8), [100]),
+    ],
+)
+def test_filter_through_narrowing_cast(
+    tmp_path: Path, predicate: pl.Expr, expected: list[int]
+) -> None:
+    path = tmp_path / "integers.parquet"
+    values = [None, -129, -128, 99, 100, 127, 128]
+    pl.DataFrame({"a": values}, schema={"a": pl.Int64}).write_parquet(path)
+    lf = pl.scan_parquet(path).with_columns(k=pl.col("a").cast(pl.Int8, strict=False))
+    q = lf.filter(predicate)
+    selection = scan_selection(q)
+    assert 'col("a")' in selection
+    assert "cast" not in selection
+    assert q.collect()["a"].to_list() == expected
+
+
+def test_narrowing_cast_filter_preserves_nulls_and_errors(tmp_path: Path) -> None:
+    path = tmp_path / "integers.parquet"
+    pl.DataFrame({"a": [-129, 0, None]}).write_parquet(path)
+    lf = pl.scan_parquet(path)
+    cast = pl.col("a").cast(pl.Int8, strict=False)
+    predicate = pl.col("k") < pl.lit(100, pl.Int8)
+    projected = lf.with_columns(k=cast)
+
+    # A failed cast is null in a Boolean expression, even though a filter discards it.
+    assert projected.select(predicate).collect().to_series().to_list() == [
+        None,
+        True,
+        None,
+    ]
+    assert projected.filter(predicate.is_null()).collect()["a"].to_list() == [
+        -129,
+        None,
+    ]
+
+    # A wrapping cast gives 127 for -129, so the range guard does not apply.
+    wrapping = lf.with_columns(k=pl.col("a").cast(pl.Int8, wrap_numerical=True))
+    assert wrapping.filter(pl.col("k") >= 100).collect()["a"].to_list() == [-129]
+
+    # Filtering first would hide the error from casting -129 in the sibling column.
+    q = lf.with_columns(k=cast, strict=pl.col("a").cast(pl.Int8)).filter(predicate)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        q.collect()
+
+
+def test_narrowing_cast_filter_with_window_on_shadowed_column() -> None:
+    lf = pl.LazyFrame({"a": [1, 128], "k": [7, 7]})
+    q = lf.with_columns(
+        k=pl.col("a").cast(pl.Int8, strict=False),
+        n=pl.len().over("k"),
+    ).filter(pl.col("k") < pl.lit(100, pl.Int8))
+    assert q.collect()["n"].to_list() == [2]
