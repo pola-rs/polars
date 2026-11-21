@@ -3971,16 +3971,22 @@ def test_duckdb_error_cancels_the_other_partitions(
 
 def test_duckdb_dropped_batches_dont_abort_the_exit(tmp_path: Path) -> None:
     # the exit cancel interrupted the wrong connection: DuckDB aborted the process
+    import time
+
     duckdb = pytest.importorskip("duckdb")
     path = str(tmp_path / "t.duckdb")
     with duckdb.connect(path) as conn:
         conn.execute("CREATE TABLE t AS SELECT range::INTEGER AS id FROM range(100)")
-    slow = _DUCK_SLOW.replace("40000", "60000")
+    # Far longer than any bound (hours uncancelled, against ~10 s for 60000): a
+    # statement that is not cancelled at the exit is unambiguous, however slow the
+    # machine is.
+    slow = _DUCK_SLOW.replace("40000", "1000000")
     preds = ["id < 10"] + [
         f"id >= {10 * i} AND id < {10 * (i + 1)} AND {slow}" for i in range(1, 4)
     ]
     code = textwrap.dedent(
         f"""
+        import time
         import polars as pl
         lf = pl.scan_database(
             "t",
@@ -3991,14 +3997,64 @@ def test_duckdb_dropped_batches_dont_abort_the_exit(tmp_path: Path) -> None:
         it = lf.collect_batches(engine="streaming")
         next(it)
         del it
+        print(time.time(), flush=True)
         """
     )
-    start = monotonic()
+    # Only the exit is timed: the import and the first batch compete for the CPU with
+    # the slow statements (and, on a busy CI machine, with other tests), the exit
+    # waits a few seconds for the cancels by design.
     proc = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=120
     )
+    end = time.time()
     assert proc.returncode == 0, proc.stderr
-    assert monotonic() - start < 20
+    assert end - float(proc.stdout.split()[-1]) < 60
+
+
+def test_exit_hook_registered_again_after_duckdb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # DuckDB 2 registers exit hooks on import that wait for running statements: they
+    # ran before ours, which then interrupted the statements only once they had ended
+    duckdb = pytest.importorskip("duckdb")
+    import atexit
+
+    import polars_database
+    from polars_database import _bridge
+
+    registered: list[Any] = []
+    monkeypatch.setattr(atexit, "register", registered.append)
+    monkeypatch.setattr(_bridge, "_at_exit_before_duckdb", False)
+    with closing(sqlite3.connect(":memory:")) as conn:
+        _bridge._Session(conn, owned=False, execute_options={})
+    assert registered == []
+    for _ in range(2):
+        with duckdb.connect() as conn:
+            _bridge._Session(conn, owned=False, execute_options={})
+    assert registered == [polars_database._run_at_exit]
+
+
+def test_exit_hook_registered_again_after_duckdb_orm_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import atexit
+
+    pytest.importorskip("duckdb_engine")
+    sa = pytest.importorskip("sqlalchemy")
+    import polars_database
+    from polars_database import _bridge
+    from sqlalchemy.orm import Session
+
+    registered: list[Any] = []
+    monkeypatch.setattr(atexit, "register", registered.append)
+    monkeypatch.setattr(_bridge, "_at_exit_before_duckdb", False)
+    engine = sa.create_engine("duckdb:///:memory:")
+    try:
+        with Session(engine) as session:
+            _bridge._Session(session, owned=False, execute_options={})
+    finally:
+        engine.dispose()
+    assert registered == [polars_database._run_at_exit]
 
 
 def test_cancel_before_the_statement_starts(

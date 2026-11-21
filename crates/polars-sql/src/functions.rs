@@ -20,7 +20,7 @@ use polars_plan::dsl::functions::{
 };
 use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
-    DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant, typed_lit,
+    DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant,
 };
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
@@ -39,9 +39,10 @@ use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::lambda::{is_lambda_arg, lambda_arg, lambda_element_name};
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
-    decimal_literal_to_f64, interval_to_duration, null_as_string, order_by_sort_options,
-    parse_extract_date_part, parse_sql_array, parse_sql_expr, resolve_expr_dtype, sql_binary,
-    sql_position, substring_offset, temporal_string_as,
+    decimal_literal_to_f64, interval_to_duration, null_as_string, null_on_null_length,
+    null_reading, numeric_length, order_by_sort_options, parse_extract_date_part, parse_sql_array,
+    parse_sql_expr, resolve_expr_dtype, sql_binary, sql_position, substring_offset,
+    temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::types::sql_type_name;
@@ -1915,8 +1916,12 @@ impl SQLFunctionVisitor<'_> {
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
                 Ok(match length {
-                    Expr::Literal(lv) if lv.is_null() => lit(lv),
-                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => lit(""),
+                    Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => {
+                        when(e.is_not_null())
+                            .then(lit(""))
+                            .otherwise(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                    },
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                         let len = if n > 0 {
                             lit(n)
@@ -1928,12 +1933,17 @@ impl SQLFunctionVisitor<'_> {
                     Expr::Literal(v) => {
                         polars_bail!(SQLSyntax: "invalid 'n_chars' for LEFT ({:?})", v)
                     },
-                    _ => when(length.clone().gt_eq(lit(0)))
-                        .then(e.clone().str().slice(lit(0), length.clone().abs()))
-                        .otherwise(e.clone().str().slice(
-                            lit(0),
-                            (e.str().len_chars() + length.clone()).clip_min(lit(0)),
-                        )),
+                    _ => {
+                        let raw_length = length;
+                        let length = numeric_length(raw_length.clone());
+                        let left = when(length.clone().gt_eq(lit(0)))
+                            .then(e.clone().str().slice(lit(0), length.clone().abs()))
+                            .otherwise(e.clone().str().slice(
+                                lit(0),
+                                (e.str().len_chars() + length.clone()).clip_min(lit(0)),
+                            ));
+                        null_on_null_length(left, &raw_length)
+                    },
                 })
             }),
             LeftPad | RightPad => {
@@ -2063,8 +2073,27 @@ impl SQLFunctionVisitor<'_> {
                                 .when(lit(false))
                                 .then(read(new))
                                 .otherwise(lit(LiteralValue::untyped_null()).cast(DataType::String))
-                        } else {
+                        } else if matches!((&old, &new), (Expr::Literal(_), Expr::Literal(_))) {
                             e.str().replace_all(old, new, true)
+                        } else {
+                            // A NULL pattern or replacement gives NULL. The string is made NULL
+                            // first, and the filled-in pattern is not empty, so that it never
+                            // matches the empty values under those NULLs.
+                            let has_args = [&old, &new]
+                                .into_iter()
+                                .filter(|e| !matches!(e, Expr::Literal(_)))
+                                .map(|e| e.clone().is_not_null())
+                                .reduce(Expr::and)
+                                .unwrap();
+                            when(has_args)
+                                .then(e)
+                                .otherwise(lit(LiteralValue::untyped_null()))
+                                .str()
+                                .replace_all(
+                                    old.cast(DataType::String).fill_null(lit("_")),
+                                    new.cast(DataType::String).fill_null(lit("")),
+                                    true,
+                                )
                         })
                     }),
                     _ => {
@@ -2087,47 +2116,43 @@ impl SQLFunctionVisitor<'_> {
             Reverse => self.visit_unary(|e| e.str().reverse()),
             Right => self.try_visit_binary(|e, length| {
                 Ok(match length {
-                    Expr::Literal(lv) if lv.is_null() => lit(lv),
-                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => typed_lit(""),
-                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
-                        let n: i64 = n.try_into().unwrap();
-                        let offset = if n < 0 {
-                            lit(n.abs())
-                        } else {
-                            e.clone().str().len_chars().cast(DataType::Int32) - lit(n)
-                        };
-                        e.str().slice(offset, lit(LiteralValue::untyped_null()))
+                    Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => {
+                        when(e.is_null())
+                            .then(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                            .otherwise(lit(""))
+                    },
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
+                        e.str().tail(length)
                     },
                     Expr::Literal(v) => {
                         polars_bail!(SQLSyntax: "invalid 'n_chars' for RIGHT ({:?})", v)
                     },
-                    _ => when(length.clone().lt(lit(0)))
-                        .then(
-                            e.clone()
-                                .str()
-                                .slice(length.clone().abs(), lit(LiteralValue::untyped_null())),
-                        )
-                        .otherwise(e.clone().str().slice(
-                            e.str().len_chars().cast(DataType::Int32) - length.clone(),
-                            lit(LiteralValue::untyped_null()),
-                        )),
+                    // A negative length takes all but the first characters.
+                    _ => e.str().tail(length),
                 })
             }),
             SplitPart => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    3 => self.try_visit_ternary(|e, sep, idx| {
+                    3 => self.try_visit_ternary(|e, sep: Expr, idx: Expr| {
+                        // A NULL argument gives NULL; an index past the parts gives ''.
+                        let has_args = e
+                            .clone()
+                            .is_not_null()
+                            .and(sep.clone().is_not_null())
+                            .and(idx.clone().is_not_null());
                         let idx = adjust_one_indexed_param(idx, true);
-                        Ok(when(e.clone().is_not_null())
+                        Ok(when(has_args)
                             .then(
-                                e.clone()
+                                e.cast(DataType::String)
                                     .str()
-                                    .split(sep)
+                                    .split(sep.cast(DataType::String))
                                     .list()
                                     .get(idx, true)
                                     .fill_null(lit("")),
                             )
-                            .otherwise(e))
+                            .otherwise(lit(LiteralValue::untyped_null())))
                     }),
                     _ => {
                         polars_bail!(SQLSyntax: "SPLIT_PART expects 3 arguments (found {})", args.len())
@@ -2176,7 +2201,7 @@ impl SQLFunctionVisitor<'_> {
                     // note: SQL is 1-indexed, hence the need for adjustments
                     2 => self.try_visit_binary(|e, start| {
                         Ok(match start {
-                            Expr::Literal(lv) if lv.is_null() => lit(lv),
+                            Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null())),
                             Expr::Literal(_) => polars_bail!(SQLSyntax: "invalid 'start' for SUBSTR ({})", args[1]),
@@ -2184,9 +2209,12 @@ impl SQLFunctionVisitor<'_> {
                         })
                     }),
                     3 => self.try_visit_ternary(|e: Expr, start: Expr, length: Expr| {
-                        let length = clip_substring_length(approximate_literal(length));
-                        Ok(match (start.clone(), length.clone()) {
-                            (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
+                        let raw_length = approximate_literal(length);
+                        let length = clip_substring_length(raw_length.clone());
+                        let result = match (start.clone(), length.clone()) {
+                            (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => {
+                                null_reading(Some(DataType::String), &[e, start, length])
+                            },
                             (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                                 polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", args[2])
                             },
@@ -2204,7 +2232,8 @@ impl SQLFunctionVisitor<'_> {
                                     .then(e.clone().str().slice(lit(0), (length.clone() + adjusted_start.clone()).clip_min(lit(0))))
                                     .otherwise(e.str().slice(adjusted_start, length))
                             }
-                        })
+                        };
+                        Ok(null_on_null_length(result, &raw_length))
                     }),
                     _ => polars_bail!(SQLSyntax: "SUBSTR expects 2-3 arguments (found {})", args.len()),
                 }
@@ -2672,18 +2701,19 @@ impl SQLFunctionVisitor<'_> {
             return self.not_supported_error();
         };
         let unit = match self.parse_sql_arg(part)? {
-            Expr::Literal(p) if p.is_null() => {
-                return self
-                    .apply_window_spec(lit(LiteralValue::untyped_null()).cast(DataType::Int64));
+            Expr::Literal(p) if p.is_null() => None,
+            Expr::Literal(ref p) if let Some(p) = p.extract_str() => {
+                Some(date_diff_unit(&p.to_ascii_lowercase()).ok_or_else(
+                    || polars_err!(SQLSyntax: "DATE_DIFF does not support '{}' part", p),
+                )?)
             },
-            Expr::Literal(ref p) if let Some(p) = p.extract_str() => date_diff_unit(
-                &p.to_ascii_lowercase(),
-            )
-            .ok_or_else(|| polars_err!(SQLSyntax: "DATE_DIFF does not support '{}' part", p))?,
             part => polars_bail!(SQLSyntax: "invalid 'part' for DATE_DIFF ({})", part),
         };
         let start = self.parse_sql_arg(start)?;
         let end = self.parse_sql_arg(end)?;
+        let Some(unit) = unit else {
+            return self.apply_window_spec(null_reading(Some(DataType::Int64), &[start, end]));
+        };
         // A string literal is read as a value of the type of the other argument.
         let is_string_literal =
             |e: &Expr| matches!(e, Expr::Literal(lv) if lv.extract_str().is_some());
@@ -2747,12 +2777,10 @@ impl SQLFunctionVisitor<'_> {
         let part = self.parse_sql_arg(part)?;
         let e = self.parse_sql_arg(e)?;
         let every = match &part {
-            Expr::Literal(p) if p.is_null() => {
-                return self.apply_window_spec(lit(LiteralValue::untyped_null()));
-            },
+            Expr::Literal(p) if p.is_null() => None,
             Expr::Literal(p) if p.extract_str().is_some() => {
                 let p = p.extract_str().unwrap();
-                match p.to_ascii_lowercase().as_str() {
+                Some(match p.to_ascii_lowercase().as_str() {
                     "microsecond" | "microseconds" => "1us",
                     "millisecond" | "milliseconds" => "1ms",
                     "second" | "seconds" => "1s",
@@ -2764,7 +2792,7 @@ impl SQLFunctionVisitor<'_> {
                     "quarter" | "quarters" => "1q",
                     "year" | "years" => "1y",
                     _ => polars_bail!(SQLSyntax: "DATE_TRUNC does not support '{}' part", p),
-                }
+                })
             },
             _ => polars_bail!(SQLSyntax: "invalid 'part' for DATE_TRUNC ({})", part),
         };
@@ -2773,7 +2801,11 @@ impl SQLFunctionVisitor<'_> {
         let e = match dtype {
             Some(DataType::Date) => e.cast(DataType::Datetime(TimeUnit::Microseconds, None)),
             Some(_) => e,
+            None if every.is_none() => e,
             None => polars_bail!(SQLInterface: "DATE_TRUNC cannot determine the type of {}", e),
+        };
+        let Some(every) = every else {
+            return self.apply_window_spec(null_reading(None, &[e]));
         };
         self.apply_window_spec(e.dt().truncate(lit(every)))
     }

@@ -613,7 +613,7 @@ impl SinkState {
                             evictions_before = slice_evictions_before;
                         }
                         let slice_keys = keys.slice((offset, slice_size));
-                        let hash_keys = params.key_encoder.try_hash_keys(
+                        let hash_keys = params.key_encoder.try_hash_keys_for_hot_grouper(
                             &slice_keys,
                             random_state.clone(),
                             true,

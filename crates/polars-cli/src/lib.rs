@@ -9,15 +9,12 @@
 use std::any::Any;
 use std::io::Write;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
 
-use polars::error::abort::{QueryAborted, catch_polars_abort};
-use polars::prelude::sink::{SinkedPathsCallback, SinkedPathsCallbackArgs};
+use polars::error::abort::{QueryAborted, catch_polars_abort, try_raise_polars_abort};
 use polars::prelude::{
-    DataFrame, DslPlan, Engine, FileWriteFormat, IntoLazy, LazyFrame, PlanCallback, PolarsError,
-    PolarsResult, SinkDestination, SinkTarget, SinkType, SpecialEq, UnifiedSinkArgs, df,
+    DataFrame, DslPlan, Engine, FileWriteFormat, LazyFrame, PlanCallback, PolarsError,
+    PolarsResult, SinkDestination, SinkTarget, SinkType, UnifiedSinkArgs,
 };
 use polars::sql::{CopyToStdout, SQLContext};
 
@@ -29,7 +26,7 @@ mod script;
 pub use args::{Args, Input};
 pub use error::{ErrorRecord, Location};
 pub use printer::{Event, Format, Printer};
-pub use script::Script;
+pub use script::{Script, StatementKind};
 
 /// The exit codes of the `polars` command.
 pub mod exit_code {
@@ -126,9 +123,18 @@ where
     if printer
         .event(Event::Start {
             statements: script.len(),
+            ends_in_its_only_result: script.ends_in_its_only_result(),
         })
         .is_err()
     {
+        return exit_code::FAILURE;
+    }
+    // Text that cannot be split fails after the statements before it, unless they would write
+    // the one file: no result then precedes the error.
+    if printer.writes_one_file()
+        && let Some(error) = script.split_error()
+    {
+        let _ = printer.event(Event::Error(error));
         return exit_code::FAILURE;
     }
 
@@ -139,7 +145,7 @@ where
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             catch_polars_abort(AssertUnwindSafe(|| -> Result<(), Stop> {
                 printer.event(Event::Statement {
-                    describes: statement.describes,
+                    kind: statement.kind,
                 })?;
                 match plan(statement.sql)? {
                     Planned::Result(plan) => stream(plan, printer),
@@ -187,23 +193,31 @@ where
 /// Runs `plan` on the streaming engine. A format that the engine has a sink for goes from the
 /// engine straight to the output. Any other result is handed to `printer` batch by batch, in
 /// order, so that the whole result is never held here.
-fn stream<O, E>(mut plan: LazyFrame, printer: &mut Printer<O, E>) -> Result<(), Stop>
+fn stream<O, E>(plan: LazyFrame, printer: &mut Printer<O, E>) -> Result<(), Stop>
 where
     O: Write + Send + 'static,
     E: Write,
 {
-    // `COPY` plans the sink that writes its file, so its plan runs as it is. The statement
-    // then answers with the number of rows it wrote.
-    if let DslPlan::Sink {
-        payload: SinkType::File(file),
-        ..
-    } = &mut plan.logical_plan
-    {
-        let rows = Arc::new(AtomicU64::new(0));
-        file.unified_sink_args.sinked_paths_callback = Some(count_rows(Arc::clone(&rows)));
-        plan.collect_with_engine(Engine::Streaming)?;
-        let response = format!("COPY {}", rows.load(Ordering::Relaxed));
-        return stream(df!("Response" => [response])?.lazy(), printer);
+    // An effect statement prints nothing. `COPY` plans the sink that writes its file, so its
+    // plan runs as it is. Any other effect took place when the statement was planned: what the
+    // engine answers it with, such as the rows that `DELETE` leaves, is not a result, and it is
+    // not computed.
+    let writes_file = matches!(
+        plan.logical_plan,
+        DslPlan::Sink {
+            payload: SinkType::File(_),
+            ..
+        }
+    );
+    if writes_file || printer.runs_effect() {
+        if writes_file {
+            plan.collect_with_engine(Engine::Streaming)?;
+        } else {
+            // The engine notices an interrupt, and this statement did not run on it.
+            try_raise_polars_abort();
+        }
+        printer.event(Event::StatementEnd)?;
+        return Ok(());
     }
 
     if let Some((target, format)) = printer.engine_sink() {
@@ -285,18 +299,6 @@ where
         .map_err(without_sink_context)?;
     printer.event(Event::StatementEnd)?;
     Ok(())
-}
-
-/// What a file sink calls once it has written its files: stores their number of rows in `rows`.
-fn count_rows(rows: Arc<AtomicU64>) -> SinkedPathsCallback {
-    let count = move |args: SinkedPathsCallbackArgs| {
-        let written = args.path_info_list.iter().map(|file| file.num_rows).sum();
-        rows.store(written, Ordering::Relaxed);
-        Ok(())
-    };
-    // Not `PlanCallback::new`: in a build with Python, that takes arguments that convert to
-    // Python objects only.
-    SinkedPathsCallback::Callback(PlanCallback::Rust(SpecialEq::new(Arc::new(count) as _)))
 }
 
 /// Errors name the plan nodes they passed through. The outermost one is the batch sink that

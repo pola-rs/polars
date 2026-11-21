@@ -6,13 +6,34 @@ use clap::builder::FalseyValueParser;
 use crate::printer::Format;
 
 const AFTER_HELP: &str = "\
+A file is a table: name it by its path in single quotes. Its format comes from
+the extension: .parquet, .csv, .ndjson, .jsonl, .ipc, .arrow or .feather. A
+path can be a glob or a cloud URL.
+  polars -c \"SELECT * FROM 'sales.parquet' LIMIT 5\"
+  polars -c \"DESCRIBE 'events.ndjson'\"
+
+To set options, read the file with read_csv, read_parquet, read_ndjson or
+read_ipc. An unknown option is an error that lists the valid ones.
+  polars -c \"SELECT * FROM read_csv('sales.csv', separator => ';')\"
+
+COPY writes a result to a file, in the format of the file's extension.
+  polars -c \"COPY (SELECT * FROM 'sales.parquet') TO 'sales.csv'\"
+
+Quote a name that is a SQL keyword, such as \"user\". A dot reads a field of a
+struct, as in \"user\".country.
+
 A script can hold several statements, separated by ';'. They run in order and
 share one session. The run stops at the first statement that fails.
 
 Without -c or -f, the script is read from standard input.
 
 COPY ... TO STDOUT (FORMAT <name>) writes its rows to standard output in the
-format it names, not in that of --format.
+format it names, not in that of --format. With a binary format, such as
+parquet, it must be the last statement and the only one that returns rows.
+
+Standard output holds only the rows of queries, in every format. Statements
+that change the session or write a file, such as CREATE TABLE and COPY ... TO a
+file, print nothing when they succeed.
 
 Exit codes:
   0    every statement succeeded

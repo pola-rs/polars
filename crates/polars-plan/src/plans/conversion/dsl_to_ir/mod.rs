@@ -133,7 +133,6 @@ async fn fetch_metadata(
     encryption_sharing: &mut polars_io::parquet::encryption::EncryptionSharing,
     verbose: bool,
 ) -> PolarsResult<()> {
-    use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
         (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
@@ -200,7 +199,10 @@ async fn fetch_metadata(
         .map(|_| ());
     if out.is_err() {
         drop(futures);
-        while resolver_futures.next().await.is_some() {}
+        // bounded: a plugin call that never returns must not hang the error
+        if crate::utils::drain_bounded(&mut resolver_futures).await && verbose {
+            eprintln!("fetch_metadata: gave up waiting for resolvers still running after an error");
+        }
     }
     out
 }

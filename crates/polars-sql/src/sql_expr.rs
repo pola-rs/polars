@@ -2598,11 +2598,14 @@ impl SQLExprVisitor<'_> {
             // SUBSTRING(expr FROM start FOR length)
             (Some(from_expr), Some(for_expr)) => {
                 let start = self.visit_expr(from_expr)?;
-                let length = clip_substring_length(approximate_literal(self.visit_expr(for_expr)?));
+                let raw_length = approximate_literal(self.visit_expr(for_expr)?);
+                let length = clip_substring_length(raw_length.clone());
 
                 // note: SQL is 1-indexed, so we need to adjust the offsets accordingly
-                Ok(match (start.clone(), length.clone()) {
-                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
+                let result = match (start.clone(), length.clone()) {
+                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => {
+                        null_reading(Some(DataType::String), &[e, start, length])
+                    },
                     (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                         polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", n)
                     },
@@ -2627,14 +2630,15 @@ impl SQLExprVisitor<'_> {
                             ))
                             .otherwise(e.str().slice(adjusted_start, length))
                     },
-                })
+                };
+                Ok(null_on_null_length(result, &raw_length))
             },
             // SUBSTRING(expr FROM start)
             (Some(from_expr), None) => {
                 let start = self.visit_expr(from_expr)?;
 
                 Ok(match start {
-                    Expr::Literal(lv) if lv.is_null() => lit(lv),
+                    Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                         e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null()))
@@ -3054,6 +3058,26 @@ pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
         .otherwise(found.fill_null(typed_lit(0i64)))
 }
 
+/// A NULL of `dtype`, for a call with a NULL argument. An aggregate in `inputs` is still read,
+/// so that the call stays an aggregate; the first one names the result.
+pub(crate) fn null_reading(dtype: Option<DataType>, inputs: &[Expr]) -> Expr {
+    let null = match &dtype {
+        Some(dtype) => Scalar::null(dtype.clone()).lit(),
+        None => lit(LiteralValue::untyped_null()),
+    };
+    let read = |e: Expr| match &dtype {
+        Some(dtype) => e.cast(dtype.clone()),
+        None => e,
+    };
+    inputs
+        .iter()
+        .rev()
+        .filter(|e| has_marked_aggregate(e))
+        .fold(null, |acc, e| {
+            when(lit(false)).then(read(e.clone())).otherwise(acc)
+        })
+}
+
 /// The 0-indexed offset of a 1-indexed SUBSTRING start.
 pub(crate) fn substring_offset(start: Expr) -> Expr {
     start.strict_cast(DataType::Int64) - lit(1)
@@ -3063,7 +3087,25 @@ pub(crate) fn substring_offset(start: Expr) -> Expr {
 pub(crate) fn clip_substring_length(length: Expr) -> Expr {
     match length {
         Expr::Literal(_) => length,
-        _ => length.clip_min(lit(0)),
+        _ => numeric_length(length).clip_min(lit(0)),
+    }
+}
+
+/// A length column as a number. Adding 0 keeps the dtype of a number, and gives a length of the
+/// Null dtype an integer dtype.
+pub(crate) fn numeric_length(length: Expr) -> Expr {
+    length + Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0)))
+}
+
+/// `result`, or NULL where the SUBSTRING `length` is NULL, which `str.slice` reads as the rest
+/// of the string.
+pub(crate) fn null_on_null_length(result: Expr, length: &Expr) -> Expr {
+    match (&result, length) {
+        (Expr::Literal(lv), _) if lv.is_null() => result,
+        (_, Expr::Literal(_)) => result,
+        _ => when(length.clone().is_not_null())
+            .then(result)
+            .otherwise(lit(LiteralValue::untyped_null())),
     }
 }
 
