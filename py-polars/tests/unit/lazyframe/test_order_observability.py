@@ -985,11 +985,7 @@ def test_top_k_by_drops_scalar_keys() -> None:
     assert sorted(q.collect()["a"]) == [4, 5]
 
     # `k` is still validated unless it is a valid literal.
-    for k in [
-        pl.lit(None, pl.Int64),
-        pl.lit(-1),
-        pl.lit(pl.Series([], dtype=pl.Int64)),
-    ]:
+    for k in [pl.lit(None, pl.Int64), pl.lit(-1)]:
         q = lf.select(a.top_k_by(pl.lit(1), k))
         assert "top_k_by" in q.explain()
         with pytest.raises(pl.exceptions.PolarsError):

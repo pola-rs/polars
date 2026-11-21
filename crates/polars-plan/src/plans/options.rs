@@ -12,6 +12,7 @@ use polars_defs::join::{
 use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 use polars_utils::bool::UnsafeBool;
 use polars_utils::itertools::Itertools;
+use polars_utils::slice_enum::Slice;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -35,7 +36,7 @@ pub struct DistinctOptionsIR {
     /// Which rows to keep.
     pub keep_strategy: UniqueKeepStrategy,
     /// Take only a slice of the result
-    pub slice: Option<(i64, usize)>,
+    pub slice: Option<Slice>,
 }
 
 #[cfg(feature = "dsl-schema")]
@@ -348,7 +349,7 @@ pub struct GroupbyOptionsIR {
     #[cfg(feature = "dynamic_group_by")]
     pub rolling: Option<RollingGroupOptionsIR>,
     /// Take only a slice of the result
-    pub slice: Option<(i64, usize)>,
+    pub slice: Option<Slice>,
 }
 
 impl GroupbyOptionsIR {

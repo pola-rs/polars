@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::dynamic_boundary_dtype;
+use polars_utils::slice_enum::Slice;
 
 use super::*;
 
@@ -181,13 +182,13 @@ impl<'a> IRBuilder<'a> {
     pub fn sort(
         self,
         by_column: Vec<ExprIR>,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         sort_options: SortMultipleOptions,
     ) -> Self {
         let ir = IR::Sort {
             input: self.root,
             by_column,
-            slice: slice.map(|t| (t.0, t.1, None)),
+            slice: slice.map(|slice| (slice, None)),
             sort_options,
         };
         let node = self.lp_arena.add(ir);

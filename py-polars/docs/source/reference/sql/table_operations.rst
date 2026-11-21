@@ -11,6 +11,10 @@ Table Operations
      - Change the columns, properties or partitioning of a table in an attached catalog.
    * - :ref:`CALL <call>`
      - Run a maintenance procedure on a table in an attached catalog.
+   * - :ref:`COPY <copy>`
+     - Write the result of a query, or a table, to a file, or add the rows of a file to a table.
+   * - :ref:`CREATE MACRO <create_macro>`
+     - Create a named expression or query with parameters.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -21,6 +25,8 @@ Table Operations
      - Remove specific rows of data from a table using an (optional) constraint.
    * - :ref:`DESCRIBE <describe>`
      - Returns the column names and types of a table, view, file or query.
+   * - :ref:`DROP MACRO <drop_macro>`
+     - Deletes the specified macro.
    * - :ref:`DROP SCHEMA <drop_schema>`
      - Drop an empty namespace of an attached catalog.
    * - :ref:`DROP TABLES <drop_tables>`
@@ -30,7 +36,7 @@ Table Operations
    * - :ref:`EXPLAIN <explain>`
      - Returns the Polars execution plan for a given SQL query.
    * - :ref:`INSERT <insert>`
-     - Append rows to a table in an attached catalog, or replace its rows.
+     - Append rows to a table, or replace its rows.
    * - :ref:`MERGE <merge>`
      - Update, delete and insert rows of a table in an attached catalog from a source.
    * - :ref:`SHOW TABLES <show_tables>`
@@ -46,7 +52,7 @@ Table Operations
    * - :ref:`TRUNCATE <truncate>`
      - Remove all data from a table without actually deleting it.
    * - :ref:`UPDATE <update>`
-     - Change rows of a table in an attached catalog.
+     - Change rows of a table.
 
 
 .. _alter_table:
@@ -71,7 +77,16 @@ name resolved as in a query. Each statement makes one change, in one commit:
 * ``SET SORTED BY (<field> [ASC | DESC] [NULLS FIRST | LAST], ...)`` sets how new data is
   sorted, with fields as in ``PARTITION BY``, in the order written (``truncate`` also takes
   decimals);
-* ``RESET SORTED BY`` stops sorting new data.
+* ``RESET SORTED BY`` stops sorting new data;
+* ``CREATE TAG [IF NOT EXISTS] <name> [AS OF VERSION <snapshot_id>] [RETAIN <n> <unit>]``
+  names a snapshot, by default the current one;
+* ``CREATE BRANCH [IF NOT EXISTS] <name> [AS OF VERSION <snapshot_id>] [RETAIN <n> <unit>]
+  [WITH SNAPSHOT RETENTION <retention>]`` starts a branch at a snapshot, by default the
+  current one;
+* ``[CREATE OR] REPLACE TAG | BRANCH <name> ...``, with the options of ``CREATE``, points a
+  tag or branch at a snapshot, by default also the current one, and can change its
+  retention;
+* ``DROP TAG | BRANCH [IF EXISTS] <name>`` drops a tag or branch.
 
 Changing the partitioning only changes the table's metadata. Existing data files keep the
 partitioning they were written with, and later writes use the new one. A field that the
@@ -86,6 +101,21 @@ their data by the new order. A field without ``NULLS FIRST`` or ``NULLS LAST`` t
 ``ORDER BY``: nulls last for ``ASC``, first for ``DESC``. Engines differ in this default, so
 state the null order in statements that other engines also run. An older sort order with the
 same fields is used again.
+
+A tag or branch is read with ``FOR VERSION AS OF '<name>'`` (see :ref:`time travel
+<time_travel>`), and the ``$refs`` table lists them with their snapshots. Writes go to the
+``main`` branch: writing to another branch is not supported yet. Names are identifiers and
+keep their case. A name that starts with a digit or has characters other than letters,
+digits and ``_`` needs double quotes. ``CREATE`` fails if the name is taken by a tag or
+branch, unless with ``IF NOT EXISTS``. ``REPLACE`` and ``DROP`` fail if the name is a ref of
+the other kind. ``REPLACE`` keeps the retention the statement does not set. To change only
+the retention, give the ref's own snapshot with ``AS OF VERSION``. The ``main`` branch
+cannot be replaced or dropped, and no tag can take its name.
+``RETAIN`` sets how long the ref is kept, in ``DAYS``, ``HOURS`` or ``MINUTES``.
+``WITH SNAPSHOT RETENTION`` sets how many snapshots a branch keeps (``<n> SNAPSHOTS``), how
+long it keeps them (``<n> <unit>``), or both, in that order. Both only store the setting:
+snapshots are expired by the engine that does it. A table without snapshots has none to
+tag or branch.
 
 Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY`` and
 ``SET SORTED BY`` also take fields of struct columns (``s.f``), as
@@ -104,12 +134,15 @@ Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY
     ALTER TABLE lake.sales.orders RESET PARTITIONED BY
     ALTER TABLE lake.sales.orders SET SORTED BY (customer_id, ordered_at DESC NULLS LAST)
     ALTER TABLE lake.sales.orders RESET SORTED BY
+    ALTER TABLE lake.sales.orders CREATE TAG "end-of-quarter" RETAIN 365 DAYS
+    ALTER TABLE lake.sales.orders CREATE BRANCH audit WITH SNAPSHOT RETENTION 3 SNAPSHOTS
+    ALTER TABLE lake.sales.orders DROP TAG IF EXISTS "end-of-quarter"
 
 .. _call:
 
 CALL
 ----
-Run a maintenance procedure on a table of a catalog attached with
+Run a procedure on a table of a catalog attached with
 :meth:`SQLContext.register_catalog`. A ``CALL`` returns a result row.
 
 .. code-block:: sql
@@ -122,6 +155,142 @@ Run a maintenance procedure on a table of a catalog attached with
   or ``array('a', 'b')``.
 * The ``table`` argument is a string with the table's name in that catalog: ``'ns.t'``, or
   ``'t'`` in the catalog's default namespace. It may start with the catalog's name.
+
+**add_files**
+
+Adds existing Parquet files to a table in one commit, as an ``append`` snapshot. The files
+are not copied: the table refers to them where they are, and from then on owns them.
+Snapshot expiry, ``DROP TABLE ... PURGE`` and rewrites that replace them can delete them.
+Only the files' footers are read. To copy the rows instead, use
+``INSERT INTO <table> SELECT * FROM read_parquet('<files>')``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Argument
+     - Description
+   * - ``table``
+     - The table. Required.
+   * - ``source_table``
+     - ``'parquet.`<path>`'``: a folder, or one file. Required. Files and folders whose
+       names start with ``_`` or ``.`` are skipped, except ``_col=value`` folders. A path
+       without a scheme is a local path, made absolute. ``?`` and ``#`` are not supported
+       in the path.
+   * - ``partition_filter``
+     - Not supported yet.
+   * - ``check_duplicate_files``
+     - ``TRUE`` refuses files the table already refers to. Default: ``TRUE``.
+   * - ``parallelism``
+     - Accepted. Has no effect.
+
+A file's partition value is never guessed:
+
+* Files directly in the folder: the file's column statistics must prove one value per
+  partition field, or that the column is NULL in every row. A file whose statistics are
+  missing, that mixes NULL with values, or whose partition column is a floating-point
+  column, is refused.
+* Files in ``col=value`` folders, as written for Hive tables: the folders give the value,
+  for a table partitioned by those columns as they are (identity). Values are strings,
+  integers, booleans, dates (``2024-06-01``), timestamps (``2024-06-01 10:00:00``, with
+  an offset such as ``+01:00`` for a timestamp with time zone) or decimals, written
+  exactly. ``__HIVE_DEFAULT_PARTITION__`` is NULL. If a file also holds
+  the column, its statistics must agree with the folder. A file may leave the column out
+  only if it is an optional top-level column.
+
+Files must not have Iceberg field ids, and their columns must fit the table's schema. The
+table's name mapping is set if it has none, as the files are read by column name. A name
+mapping the table has must map the files' columns as its schema does. Catalogs that do not
+allow that table property refuse the ``CALL``. It
+returns ``added_files_count`` and ``changed_partition_count``, the latter from the snapshot
+summary, NULL when the summary has none. A folder without files is refused, as a mistyped
+path on object storage lists as empty. Files are listed and read with the catalog's
+storage configuration for the table. They may be outside the table's location, but the
+catalog's credentials then may not reach them. Iceberg v3 tables are not supported yet.
+
+**Example:**
+
+.. code-block:: sql
+
+    -- Add the Parquet files in a landing folder to table `orders` in namespace `sales`
+    -- of catalog `lake`, without copying them.
+    CALL lake.system.add_files('sales.orders', 'parquet.`s3://bucket/landing/2024-06`')
+
+    -- A Hive-style folder: `.../region=eu/part-0.parquet`, for a table partitioned by
+    -- `region`.
+    CALL lake.system.add_files(
+        table => 'sales.orders',
+        source_table => 'parquet.`s3://bucket/hive/orders`'
+    )
+
+**rewrite_data_files**
+
+Compacts the data files of a table in one commit, as a ``replace`` snapshot. Small files
+are combined, and large ones split, into files of about the target size. Sizes are
+estimated from the files read: files that another writer compressed differently can take
+a second ``CALL`` to reach the target size. The rows stay the
+same: rows that delete files removed are not written again. The new files are written
+under the table's current partition spec and sorted by its sort order. Delete files stay.
+Files are selected as Iceberg's ``binpack`` strategy does: per partition, a group of files is
+rewritten when it has enough small or large files, or files with many deleted rows.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Argument
+     - Description
+   * - ``table``
+     - The table. Required.
+   * - ``strategy``
+     - ``'binpack'``. Default: ``'binpack'``. ``'sort'`` is not supported yet.
+   * - ``sort_order``
+     - Not supported yet.
+   * - ``options``
+     - A ``map('key', 'value', ...)`` of these options:
+
+       * ``rewrite-all``: ``'true'`` rewrites every selected file. Default: ``'false'``.
+       * ``target-file-size-bytes``: the size of the new files. Default: the table's
+         ``write.target-file-size-bytes``, else 512 MB.
+       * ``min-file-size-bytes``, ``max-file-size-bytes``: files outside this range are
+         rewritten. Default: 75% and 180% of the target size.
+       * ``min-input-files``: the number of such files in a group that is enough for a
+         rewrite. Default: 5.
+       * ``max-file-group-size-bytes``, ``max-file-group-input-files``: the largest group
+         rewritten together. Default: 100 GB, no limit.
+       * ``delete-file-threshold``: files with at least this many delete files are
+         rewritten. Default: no limit.
+       * ``delete-ratio-threshold``: files with at least this share of deleted rows are
+         rewritten. Default: 0.3.
+   * - ``where``
+     - A condition as a string. Only the files that may hold a matching row are
+       considered, and they are rewritten whole. ``where`` is a reserved word: give it in
+       position, or as ``"where" => '...'``.
+
+It returns ``rewritten_data_files_count``, ``added_data_files_count``,
+``rewritten_bytes_count``, ``failed_data_files_count`` and ``removed_delete_files_count``.
+The last two are always 0. If no group needs a rewrite, nothing is committed and the counts
+are 0. Concurrent appends do not conflict with a compaction. A concurrent change to a
+rewritten file, such as a delete, makes it fail. Iceberg v3 tables, tables with equality
+delete files, and position delete files that are not of one data file are not supported
+yet.
+
+**Example:**
+
+.. code-block:: sql
+
+    -- Compact every data file of table `orders` in namespace `sales` of catalog `lake`,
+    -- partition by partition, into files of about 128 MB.
+    CALL lake.system.rewrite_data_files(
+        table => 'sales.orders',
+        options => map('rewrite-all', 'true', 'target-file-size-bytes', '134217728')
+    )
+
+    -- Only the files that may hold rows of 2024, by position: the strategy, no sort
+    -- order, no options, then the condition.
+    CALL lake.system.rewrite_data_files(
+        'sales.orders', 'binpack', NULL, NULL, 'ordered_at >= ''2024-01-01'''
+    )
 
 **rewrite_manifests**
 
@@ -162,6 +331,83 @@ are 0. Iceberg v3 tables are not supported yet.
     -- rewritten, e.g. those written before the table's partitioning changed. Other specs'
     -- manifests stay as they are.
     CALL lake.system.rewrite_manifests('sales.orders', spec_id => 0)
+
+.. _copy:
+
+COPY
+----
+Write the result of a query, or a table, to a file. :meth:`SQLContext.execute` returns a
+``LazyFrame`` that writes the file once it is collected; collecting it gives an empty frame.
+``COPY <table> FROM '<file>'`` adds the rows of a file to a table instead, see below.
+
+The format is the one that ``FORMAT`` names, or else the one of the file extension: ``csv``;
+``parquet``; ``ipc``, ``arrow`` or ``feather``; ``ndjson`` or ``jsonl``. A CSV file takes the
+options ``HEADER`` (written unless set to ``false``), ``DELIMITER``, ``NULL`` and ``QUOTE``.
+The path can be a cloud URL, and a leading ``~`` is the home directory.
+
+The directory of the file must exist, and an existing file is replaced. If the query fails
+while it runs, a partial file can be left behind, also in the place of a file that existed.
+
+Writing files can be turned off with ``SQLContext(allow_file_writes=False)``.
+
+``COPY <table> [(<column>, ...)] FROM '<file>'`` adds the rows of the file to a registered
+table, as :ref:`INSERT <insert>` does: the file's columns go by position into the listed
+columns, or into all of them, and the other columns get NULL. As in Postgres, the file is read
+at the ``COPY``, so a missing file or a value that does not fit fails there and leaves the
+table as it was. The format is chosen as for ``COPY ... TO``. The path names one file: a
+directory is refused, and a CSV path is not a glob.
+
+- A CSV file is read into the types of the columns, by position. ``HEADER`` is ``false``
+  unless given, as in Postgres; ``HEADER true`` skips the first line, whatever its names.
+  ``DELIMITER`` and ``QUOTE`` set the separator and the quote character.
+- In a CSV file, an unquoted empty field is NULL and a quoted ``""`` is an empty string. With
+  ``NULL '<marker>'``, the marker is NULL, and an empty field of a text column is an empty
+  string.
+- The CSV file is parsed as ``read_csv`` parses it, which accepts more than Postgres does: a
+  quoted marker is NULL too, an empty field of a column of another type is NULL, a row with
+  too few fields is filled with NULLs, a number too large for a ``REAL`` or ``DOUBLE`` column
+  is infinite, and booleans are ``true`` and ``false`` only.
+- A file of another format keeps its own column types, which convert as in ``INSERT``.
+- ``COPY ... FROM STDIN`` is not supported. Reading files can be turned off with
+  ``SQLContext(allow_file_reads=False)``.
+
+**Example:**
+
+.. code-block:: sql
+
+    COPY (SELECT region, SUM(amount) AS total FROM sales GROUP BY region) TO 'totals.parquet'
+    COPY sales (region, amount) TO 'sales.csv'
+    COPY sales TO 'sales.txt' (FORMAT csv, DELIMITER '|', HEADER false)
+    COPY sales FROM 'sales.csv' (HEADER true)
+    COPY contacts (id, name, phone) FROM 'contacts.csv' (FORMAT csv, HEADER true, NULL '\N')
+
+.. _create_macro:
+
+CREATE MACRO
+------------
+Create a macro: a named expression with parameters (a scalar macro), or a named query with
+parameters (a table macro, with ``AS TABLE``). A call is replaced by the body of the macro,
+with the parameters replaced by the arguments. ``CREATE FUNCTION`` is the same statement.
+
+- A parameter can have a default (``b := 5``); a call can give arguments by name (``b := 1``).
+- A macro can have several definitions, for different numbers of arguments.
+- A scalar macro is called like a function; a table macro is called in ``FROM``.
+- Outside subqueries, the body of a scalar macro can only use its parameters.
+- An argument that reads columns cannot be used in a subquery of the macro body.
+- ``OR REPLACE`` replaces an existing macro. ``TEMP``/``TEMPORARY`` is accepted; every
+  macro lives in its context. A view uses the macros as they are when it is read.
+
+**Example:**
+
+.. code-block:: sql
+
+    CREATE MACRO add_tax(amount, rate := 0.21) AS amount * (1 + rate)
+    CREATE MACRO clamp(a) AS greatest(a, 0),
+        (a, hi) AS least(greatest(a, 0), hi)
+    CREATE MACRO orders_since(d) AS TABLE SELECT * FROM orders WHERE order_date >= d
+
+    SELECT add_tax(amount), add_tax(amount, rate := 0.09) FROM orders
+    SELECT * FROM orders_since('2024-01-01')
 
 .. _create_schema:
 
@@ -280,6 +526,23 @@ DELETE
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 
+On a registered table, it returns the remaining rows, and later statements in the same
+context see the table without the deleted rows. Source files and the original frame are
+not changed.
+
+The table keeps the condition, not its result. Each read of the table runs the condition
+again on the table's source. A subquery of the condition keeps its tables as registered at
+the time of the ``DELETE``.
+
+- A condition that names a missing column fails at the ``DELETE`` and leaves the table
+  unchanged. Other errors in the condition, such as a string compared with an integer or a
+  cast of a string that is not a number, show when the table is read, on each read until
+  the table is registered again.
+- Collecting the result of a ``DELETE`` computes the remaining rows. Leave the result lazy
+  when only the change is needed.
+- Each ``DELETE`` adds its condition to the table. After many, register the collected rows
+  again: ``ctx.register("t", ctx.execute("SELECT * FROM t", eager=True))``.
+
 On a table of an attached catalog, it deletes the matching rows in one commit, as one
 snapshot. It returns the statement, not the remaining rows. Rows where the condition is NULL
 are kept.
@@ -335,6 +598,21 @@ a nested type; such a name cannot be used in ``CAST``.
     DESCRIBE some_table
     DESCRIBE 'data/events.parquet'
     DESCRIBE SELECT a, b * 2 AS c FROM some_table
+
+.. _drop_macro:
+
+DROP MACRO
+----------
+Deletes the specified scalar macro, or table macro with ``DROP MACRO TABLE``. ``DROP FUNCTION``
+deletes a scalar macro. Dropping a macro that does not exist raises an error unless the
+optional ``IF EXISTS`` clause is given.
+
+**Example:**
+
+.. code-block:: sql
+
+    DROP MACRO add_tax
+    DROP MACRO TABLE IF EXISTS orders_since
 
 .. _drop_schema:
 
@@ -406,26 +684,34 @@ Returns the Polars execution plan for a given SQL query.
 
 INSERT
 ------
-Write rows to a table of a catalog attached with :meth:`SQLContext.register_catalog`, in
-one commit. ``INSERT INTO`` appends the rows of a ``VALUES`` list or a query.
+Write rows to a table. ``INSERT INTO`` appends the rows of a ``VALUES`` list or a query.
 ``INSERT OVERWRITE`` replaces all rows of the table, in every partition. A ``WHERE`` in its
 query selects the new rows, not the rows replaced.
 
 Values fill the columns in order, or the listed columns. Other columns get NULL. A
-``NOT NULL`` column needs a value. Numbers convert to any numeric type. A fraction going
-into an integer column rounds: a decimal half away from zero, a float half to even.
-``CAST`` truncates instead. Dates and timestamps convert among themselves. Other
+``NOT NULL`` column of a catalog table needs a value. Numbers convert to any numeric type.
+A fraction going into an integer column rounds: a decimal half away from zero, a float half
+to even. ``CAST`` truncates instead. Dates and timestamps convert among themselves. Other
 conversions need a ``CAST``. A value that does not fit raises an error.
 
-If another writer commits first, ``INSERT INTO`` retries. ``INSERT OVERWRITE`` fails if
-that writer added rows, unless the table's ``write.delete.isolation-level`` is
-``snapshot``.
+On a registered table, it returns the table with the new rows, and later statements in the
+same context see them, as after :ref:`DELETE <delete_from_table>`. Source files and the
+original frame are not changed. The rows of a ``VALUES`` list without subqueries are computed
+at the ``INSERT``. The rows of a query are not: the table keeps the query, and each read of
+the table runs it again, on the tables as they were at the time of the ``INSERT``. A value of
+the query that does not fit shows when the table is read, on each read until the table is
+registered again.
+
+On a table of a catalog attached with :meth:`SQLContext.register_catalog`, it writes the
+rows in one commit. If another writer commits first, ``INSERT INTO`` retries.
+``INSERT OVERWRITE`` fails if that writer added rows, unless the table's
+``write.delete.isolation-level`` is ``snapshot``.
 
 **Example:**
 
 .. code-block:: sql
 
-    INSERT INTO lake.sales.orders VALUES (1, 10), (2, 20)
+    INSERT INTO orders VALUES (1, 10), (2, 20)
     INSERT INTO lake.sales.orders (quantity, id) SELECT qty, order_id FROM staged
     INSERT OVERWRITE lake.sales.orders SELECT * FROM staged
 
@@ -577,22 +863,27 @@ it fails if another writer added rows.
 
 UPDATE
 ------
-Change rows of a table of a catalog attached with :meth:`SQLContext.register_catalog`, in
-one commit. ``SET`` gives each column a new value, computed from the row as it was before
-the update. ``SET (a, b) = (x, y)`` sets several columns at once. Without ``WHERE``, every
-row is updated. Rows where the condition is NULL are not updated. The condition has the
-same limits as in :ref:`DELETE <delete_from_table>`. It returns the statement.
+Change rows of a table. ``SET`` gives each column a new value, computed from the row as it
+was before the update. ``SET (a, b) = (x, y)`` sets several columns at once. Without
+``WHERE``, every row is updated. Rows where the condition is NULL are not updated.
 
 Values convert to the column types as in :ref:`INSERT <insert>`, and only the values of
 updated rows must fit. A value comes from its own row, so aggregate, window and
 set-returning functions are not supported. Subqueries, ``FROM``, ``RETURNING`` and
-``DEFAULT`` are not supported either. Column names are case-sensitive. Registered tables
-cannot be updated.
+``DEFAULT`` are not supported either. Column names are case-sensitive.
 
-The data files holding a matching row are read in full and replaced in one snapshot
-(copy-on-write). An update that matches no row commits nothing. Iceberg v3 tables, and
-files whose delete files cannot be read with them (such as equality deletes), are not
-supported yet.
+On a registered table, it returns the table with the new values, and later statements in
+the same context see them, as after :ref:`DELETE <delete_from_table>`. Source files and the
+original frame are not changed. As with ``DELETE``, the table keeps the change, not its
+result: a value that does not fit shows when the table is read, on each read until the table
+is registered again.
+
+On a table of a catalog attached with :meth:`SQLContext.register_catalog`, it updates the
+rows in one commit, and returns the statement. The condition has the same limits as in
+:ref:`DELETE <delete_from_table>`. The data files holding a matching row are read in full
+and replaced in one snapshot (copy-on-write). An update that matches no row commits
+nothing. Iceberg v3 tables, and files whose delete files cannot be read with them (such as
+equality deletes), are not supported yet.
 
 If another writer commits first, ``UPDATE`` retries when that writer's rows cannot match the
 condition. Otherwise it fails, unless the table's ``write.update.isolation-level`` is
@@ -604,5 +895,5 @@ or partition spec.
 
 .. code-block:: sql
 
-    UPDATE lake.sales.orders SET status = 'shipped' WHERE id = 42
+    UPDATE orders SET status = 'shipped' WHERE id = 42
     UPDATE lake.sales.orders SET (qty, amount) = (qty + 1, amount * 2) WHERE region = 'EU'

@@ -505,6 +505,7 @@ def test_qualified_table_name_ddl() -> None:
     [
         ("My Table", 'DROP TABLE "My Table"'),
         ("My Table", 'TRUNCATE TABLE "My Table"'),
+        ("My Table", 'DELETE FROM "My Table"'),
         ("frame", "DROP TABLE FRAME"),
     ],
 )
@@ -845,3 +846,213 @@ def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
         lf = ctx.execute("SELECT column_name FROM information_schema.columns")
         ctx.unregister("df")
         assert lf.collect()["column_name"].to_list() == ["a", "x", "y", "z", "x2", "y"]
+
+
+def test_delete_from_registered_table_30714() -> None:
+    # later statements see the deletion, as after TRUNCATE; DELETE returns the rest
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2, 3, 4, 5]})}) as ctx:
+        res = ctx.execute("DELETE FROM t WHERE a = 1", eager=True)
+        assert res["a"].to_list() == [2, 3, 4, 5]
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3, 4, 5]
+
+        # a lazy execute changes the table too
+        ctx.execute("DELETE FROM t WHERE a = 5")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3, 4]
+
+        # an alias names the same table
+        ctx.execute("DELETE FROM t AS x WHERE x.a = 4")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3]
+
+        # a subquery on the table sees it as before the DELETE
+        ctx.execute("DELETE FROM t WHERE a IN (SELECT min(a) FROM t)")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [3]
+        assert ctx.tables() == ["t"]
+
+        # without WHERE, as TRUNCATE
+        ctx.execute("DELETE FROM T")
+        out = ctx.execute("SELECT * FROM t", eager=True)
+        assert out.height == 0
+        assert out.columns == ["a"]
+
+
+@pytest.mark.write_disk
+def test_delete_leaves_sources_unchanged(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    path = tmp_path / "t.parquet"
+    df.write_parquet(path)
+    with pl.SQLContext({"scan": pl.scan_parquet(path), "frame": df}) as ctx:
+        ctx.execute("DELETE FROM scan WHERE a = 1")
+        ctx.execute("DELETE FROM frame WHERE a = 2")
+        assert ctx.execute("SELECT a FROM scan", eager=True)["a"].to_list() == [2, 3]
+        # the condition is pushed into the scan
+        assert "SELECTION" in ctx.execute("SELECT a FROM scan").explain()
+        assert ctx.execute("SELECT a FROM frame", eager=True)["a"].to_list() == [1, 3]
+    assert_frame_equal(pl.read_parquet(path), df)
+    assert df["a"].to_list() == [1, 2, 3]
+
+    # `df.sql` runs in its own context
+    assert df.sql("DELETE FROM self WHERE a = 1")["a"].to_list() == [2, 3]
+    assert df["a"].to_list() == [1, 2, 3]
+
+
+def test_delete_in_scope_persists() -> None:
+    # a table registered before the scope keeps the deletion, as after TRUNCATE
+    ctx = pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2]})})
+    with ctx:
+        ctx.execute("DELETE FROM t WHERE a = 1")
+    assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2]
+
+    # registering it again restores it
+    ctx.register("t", pl.LazyFrame({"a": [1, 2]}))
+    assert ctx.execute("SELECT count(*) FROM t", eager=True).item() == 2
+
+
+def test_delete_table_name_case() -> None:
+    frames = {
+        "Foo": pl.LazyFrame({"x": ["Foo", "Foo"]}),
+        "FOO": pl.LazyFrame({"x": ["FOO"]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        # the exact name wins
+        ctx.execute("DELETE FROM FOO")
+        assert ctx.execute("SELECT count(*) FROM FOO", eager=True).item() == 0
+        assert ctx.execute("SELECT count(*) FROM Foo", eager=True).item() == 2
+        with pytest.raises(SQLInterfaceError, match=r"foo.*matches more than one"):
+            ctx.execute("DELETE FROM foo")
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        (
+            "DELETE FROM (SELECT * FROM t) AS s WHERE a = 1",
+            "DELETE requires a registered table",
+        ),
+        ("DELETE FROM missing", "relation 'missing' was not found"),
+        # refused before its condition is checked
+        ("DELETE FROM v WHERE a = 'x'", "DELETE requires a registered table; 'v'"),
+    ],
+)
+def test_delete_requires_registered_table(query: str, error: str) -> None:
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1]})}) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(SQLInterfaceError, match=error):
+            ctx.execute(query)
+        assert ctx.execute("SELECT count(*) FROM t", eager=True).item() == 1
+
+
+@pytest.mark.parametrize(
+    ("condition", "error"),
+    [
+        ("missing = 1", pl.exceptions.ColumnNotFoundError),
+        ("a IN (SELECT s FROM u)", pl.exceptions.InvalidOperationError),
+    ],
+)
+def test_delete_failure_leaves_table_unchanged(
+    condition: str, error: type[Exception]
+) -> None:
+    frames = {"t": pl.LazyFrame({"a": [1, 2]}), "u": pl.LazyFrame({"s": ["x"]})}
+    with pl.SQLContext(frames) as ctx:
+        with pytest.raises(error):
+            ctx.execute(f"DELETE FROM t WHERE {condition}")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [1, 2]
+        ctx.execute("DELETE FROM t WHERE a = 1")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2]
+
+
+@pytest.mark.parametrize(
+    ("condition", "error"),
+    [
+        ("a = 'x'", pl.exceptions.ComputeError),
+        ("CAST(s AS INT) = 1", pl.exceptions.InvalidOperationError),
+    ],
+)
+def test_delete_condition_failing_on_read(
+    condition: str, error: type[Exception]
+) -> None:
+    # other errors show when the rows are read, on every read of the table
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2], "s": ["1", "x"]})}) as ctx:
+        ctx.execute(f"DELETE FROM t WHERE {condition}")
+        with pytest.raises(error):
+            ctx.execute("SELECT * FROM t", eager=True)
+
+
+def test_delete_reads_no_data() -> None:
+    # a lazy DELETE reads no source, also not the tables of its subqueries
+    def fail(df: pl.DataFrame) -> pl.DataFrame:
+        msg = "source was read"
+        raise RuntimeError(msg)
+
+    source = pl.LazyFrame({"a": [1, 2]}).map_batches(fail, schema={"a": pl.Int64})
+    with pl.SQLContext({"t": source, "u": source}) as ctx:
+        ctx.execute("DELETE FROM t WHERE a IN (SELECT a FROM u)")
+
+
+def test_insert_into_registered_table() -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute("CREATE TABLE t (id INT, name VARCHAR, sold DATE)")
+        ctx.execute("CREATE VIEW v AS SELECT count(*) AS n FROM t")
+        res = ctx.execute(
+            "INSERT INTO t VALUES (1, 'a', DATE '2026-01-02')", eager=True
+        )
+        assert res.height == 1
+
+        # the listed columns, others NULL; a fraction going into an integer rounds
+        ctx.execute("INSERT INTO t (name, id) VALUES ('b', 2.5), ('c', 3.4)")
+        # a query on the table reads it as before the INSERT
+        ctx.execute("INSERT INTO t SELECT id + 10, name, sold FROM t WHERE id = 1")
+        expected = pl.DataFrame(
+            {
+                "id": [1, 3, 3, 11],
+                "name": ["a", "b", "c", "a"],
+                "sold": [date(2026, 1, 2), None, None, date(2026, 1, 2)],
+            },
+            schema={"id": pl.Int32, "name": pl.String, "sold": pl.Date},
+        )
+        assert_frame_equal(ctx.execute("SELECT * FROM t", eager=True), expected)
+        assert ctx.execute("SELECT n FROM v", eager=True).item() == 4
+
+        ctx.execute("INSERT OVERWRITE t (id) VALUES (9)")
+        assert ctx.execute("SELECT id FROM t", eager=True)["id"].to_list() == [9]
+
+
+def test_update_registered_table() -> None:
+    with pl.SQLContext(
+        {"t": pl.LazyFrame({"a": [1, 2, 3], "b": [10, 20, None]})}
+    ) as ctx:
+        res = ctx.execute("UPDATE t SET b = b + 1 WHERE a > 1", eager=True)
+        assert res["b"].to_list() == [10, 21, None]
+
+        # values come from the row before the update; a NULL condition updates nothing
+        ctx.execute("UPDATE t SET a = b, b = a WHERE b > 15")
+        # a fraction going into an integer rounds
+        ctx.execute("UPDATE t AS x SET b = 7.5 WHERE x.b IS NULL")
+        expected = pl.DataFrame({"a": [1, 21, 3], "b": [10, 2, 8]})
+        assert_frame_equal(ctx.execute("SELECT * FROM t", eager=True), expected)
+
+
+@pytest.mark.parametrize(
+    ("statement", "error", "match"),
+    [
+        ("INSERT INTO t VALUES (1, 2)", SQLInterfaceError, "the query gives 2"),
+        ("INSERT INTO t (x) VALUES (1)", pl.exceptions.ColumnNotFoundError, "'x'"),
+        ("INSERT INTO t VALUES ('1')", pl.exceptions.SchemaError, "with CAST"),
+        ("UPDATE t SET a = 'x'", pl.exceptions.SchemaError, "with CAST"),
+        # a VALUES list is computed at the INSERT
+        (
+            "INSERT INTO t VALUES (2147483648)",
+            pl.exceptions.InvalidOperationError,
+            "'a'",
+        ),
+        ("INSERT INTO v VALUES (1)", SQLInterfaceError, "requires a registered"),
+        ("UPDATE v SET a = 1", SQLInterfaceError, "requires a registered"),
+    ],
+)
+def test_insert_update_failure_leaves_table_unchanged(
+    statement: str, error: type[Exception], match: str
+) -> None:
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})}) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(error, match=match):
+            ctx.execute(statement)
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [1]

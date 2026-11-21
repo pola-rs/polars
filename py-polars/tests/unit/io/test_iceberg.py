@@ -5608,6 +5608,120 @@ def test_scan_iceberg_renews_only_provider_credentials(tmp_path: Path) -> None:
     assert provider() == ({"sas_token": "sas"}, now + 3600 - 60)
 
 
+@pytest.mark.parametrize(
+    ("properties", "location", "expected"),
+    [
+        # The token of the URL's account, whatever its endpoint.
+        (
+            {
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        (
+            {"adls.sas-token.acct.dfs.core.windows.net": "sas"},
+            "wasbs://c@ACCT.blob.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        # Without an account in the URL, that of `adls.account-name`.
+        (
+            {
+                "adls.account-name": "acct",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "az://c/t",
+            {"azure_storage_account_name": "acct", "azure_storage_sas_key": "sas"},
+        ),
+        # The URL's account is the one accessed, as by object store.
+        (
+            {
+                "adls.account-name": "other",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_account_name": "other", "azure_storage_sas_key": "sas"},
+        ),
+        # It replaces `adls.sas-token`, which PyIceberg sets to any account's.
+        (
+            {
+                "adls.sas-token": "other",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+                "adls.sas-token.acct.dfs.core.windows.net": "sas",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "sas"},
+        ),
+        # Without one for the account, `adls.sas-token` is used.
+        (
+            {
+                "adls.sas-token": "plain",
+                "adls.sas-token.other.dfs.core.windows.net": "other",
+            },
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {"azure_storage_sas_key": "plain"},
+        ),
+        # Other accounts' tokens, empty ones, and tokens for an unknown account are
+        # not used.
+        (
+            {"adls.sas-token.other.dfs.core.windows.net": "other"},
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {},
+        ),
+        (
+            {"adls.sas-token.acct.dfs.core.windows.net": ""},
+            "abfss://c@acct.dfs.core.windows.net/t",
+            {},
+        ),
+        ({"adls.sas-token.acct.dfs.core.windows.net": "sas"}, "az://c/t", {}),
+        ({"adls.sas-token.acct.dfs.core.windows.net": "sas"}, "s3://b/t", {}),
+    ],
+)
+def test_iceberg_per_account_sas_token(
+    properties: dict[str, str], location: str, expected: dict[str, str]
+) -> None:
+    from polars.io.iceberg._plugin import _catalog_storage_options, _storage_options
+
+    assert _catalog_storage_options(properties, location) == expected
+    # The user's credentials replace it.
+    assert _storage_options(properties, location, {"account_key": "k"}) == {
+        **{k: v for k, v in expected.items() if k != "azure_storage_sas_key"},
+        "account_key": "k",
+    }
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_renews_per_account_sas_token(tmp_path: Path) -> None:
+    now = int(datetime.now().timestamp())
+
+    def vended(token: str, expires_at: int) -> dict[str, str]:
+        properties = {}
+        for account in ("other", "acct"):
+            host = f"{account}.dfs.core.windows.net"
+            properties[f"adls.sas-token.{host}"] = f"{token}-{account}"
+            # The other account's token expires sooner.
+            properties[f"adls.sas-token-expires-at-ms.{host}"] = str(
+                (expires_at if account == "acct" else now + 120) * 1000
+            )
+        return properties
+
+    tbl, catalog = _vended_table(tmp_path, vended("sas", now + 3600), "abfss")
+    tbl.metadata = tbl.metadata.model_copy(
+        update={"location": "abfss://c@acct.dfs.core.windows.net/t"}
+    )
+    # As PyIceberg leaves it after a read: the first token, without its expiry.
+    tbl.io.properties["adls.sas-token"] = "sas-other"
+
+    provider = _native_credential_provider(tbl)
+    assert provider() == ({"sas_token": "sas-acct"}, now + 3600 - 60)
+
+    catalog.properties.update(vended("new", now + 7200))
+    provider.clear_cached_credentials()
+    assert provider() == ({"sas_token": "new-acct"}, now + 7200 - 60)
+
+
 class _SinkArgs(Exception):
     pass
 
@@ -10955,12 +11069,15 @@ def _add_position_deletes(
     stale_deletion_vectors: dict[str, list[int]] | None = None,
     row_bounds: dict[int, tuple[bytes, bytes]] | None = None,
     summary: dict[str, str] | None = None,
+    equality_ids: list[int] | None = None,
 ) -> Any:
     """
     Commit a snapshot adding one position delete file per data file.
 
     `row_bounds` adds (lower, upper) bounds of the deleted rows' columns, by field ID.
     `summary` holds properties of the snapshot summary, written as given.
+    With `equality_ids`, the delete files are listed as equality deletes of those field
+    IDs instead (for checks that refuse them from the manifests: the files are not).
 
     With `single_delete_file`, one delete file holds the deletes of all data files (it
     is then scoped to the partition rather than to a data file). `partition` is the
@@ -11125,7 +11242,12 @@ def _add_position_deletes(
             local_path,
         )
         data_file = DataFile.from_args(
-            content=DataFileContent.POSITION_DELETES,
+            content=(
+                DataFileContent.POSITION_DELETES
+                if equality_ids is None
+                else DataFileContent.EQUALITY_DELETES
+            ),
+            equality_ids=equality_ids,
             file_path=path,
             file_format=FileFormat.PARQUET,
             partition=Record() if partition is None else partition,

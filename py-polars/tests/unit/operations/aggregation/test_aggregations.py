@@ -12,7 +12,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
@@ -142,6 +142,38 @@ def test_median() -> None:
     assert s.median() == 2
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series(["a", "b"]),
+        pl.Series(["a", "b"], dtype=pl.Categorical),
+        pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"])),
+        pl.Series([b"a", b"b"]),
+        pl.Series([[1], [2]]),
+        pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1)),
+        pl.Series([{"a": 1}, {"a": 2}]),
+    ],
+)
+def test_series_mean_median_unsupported_dtype_raises(s: pl.Series) -> None:
+    with pytest.raises(InvalidOperationError, match="`mean` operation not supported"):
+        s.mean()
+    with pytest.raises(InvalidOperationError, match="`median` operation not supported"):
+        s.median()
+
+
+def test_series_mean_median_match_expr() -> None:
+    for s in [
+        pl.Series([0, 0, 1], dtype=pl.Float32),
+        pl.Series([True, False, True]),
+        pl.Series([None, None], dtype=pl.Null),
+    ]:
+        for agg in ["mean", "median"]:
+            expected = pl.select(getattr(pl.lit(s), agg)()).item()
+            assert getattr(s, agg)() == expected
+    # Float32 is averaged in f64 and rounded to f32, as in the expression.
+    assert pl.Series([0, 0, 1], dtype=pl.Float32).mean() == 0.3333333432674408
+
+
 def test_single_element_std() -> None:
     s = pl.Series([1])
     assert s.std(ddof=1) is None
@@ -225,6 +257,154 @@ def test_multi_quantile_group_by_unsupported_26956() -> None:
         pl.exceptions.SchemaError, match="expected expression of dtype 'numeric'"
     ):
         df.group_by("g").agg(pl.col("v").quantile([0.25, 0.75]))
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("layout", ["idx", "slice", "sorted_slice"])
+def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 0, 0, 1, 1, 1, 1, 2, 2, 3],
+            "v": [None, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "q": [0.1, 0.1, 0.1, 0.8, 0.8, 0.8, 0.8, 0.5, 0.5, None],
+        }
+    )
+    if layout == "idx":
+        df = df.sample(fraction=1.0, shuffle=True, seed=0)
+    elif layout == "slice":
+        df = df.with_columns(pl.col("g").set_sorted())
+    elif layout == "sorted_slice":
+        df = df.with_columns(pl.col("g", "v").set_sorted())
+
+    expected = {
+        g: None if part["q"][0] is None else part["v"].quantile(part["q"][0], method)
+        for (g,), part in df.group_by("g")
+    }
+    quantile = pl.col("v").quantile(pl.col("q").first(), method)
+
+    out = df.lazy().group_by("g").agg(quantile).collect()
+    assert dict(out.iter_rows()) == expected
+    out = df.lazy().select("g", quantile.over("g")).collect()
+    assert out["v"].to_list() == [expected[g] for g in out["g"]]
+
+
+def _assert_rolling_quantile_matches_series(
+    v: pl.Series, q: list[float | None], period: int, method: QuantileMethod
+) -> None:
+    df = pl.DataFrame({"t": range(len(v)), "v": v, "q": q})
+    windows = [v[max(0, i - period + 1) : i + 1] for i in range(len(v))]
+
+    def oracle(w: pl.Series, p: float | None) -> float | None:
+        if p is None or not 0.0 <= p <= 1.0:
+            return None
+        return w.quantile(p, method)
+
+    rolling = df.rolling("t", period=f"{period}i")
+    per_window = rolling.agg(pl.col("v").quantile(pl.col("q").last(), method))
+    assert per_window["v"].to_list() == [
+        oracle(w, p) for w, p in zip(windows, q, strict=True)
+    ]
+    literal = rolling.agg(pl.col("v").quantile(0.3, method))
+    assert literal["v"].to_list() == [oracle(w, 0.3) for w in windows]
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_quantile_varying_per_rolling_window_20951(
+    method: QuantileMethod, with_nulls: bool
+) -> None:
+    rng = np.random.default_rng(0)
+    n = 60
+    v = pl.Series("v", rng.integers(0, 10, n), dtype=pl.Float64)
+    if with_nulls:
+        v = v.scatter(rng.choice(n, n // 3, replace=False), None)
+    q: list[float | None] = list(rng.random(n))
+    q[5], q[17], q[40] = None, 1.5, -0.5
+    _assert_rolling_quantile_matches_series(v, q, 5, method)
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "method"),
+    [
+        ([1e308, 1e308, 1e308], pl.Float64, "midpoint"),
+        ([-3e38, 3e38, -3e38], pl.Float32, "linear"),
+    ],
+)
+def test_quantile_rolling_interpolation_does_not_overflow(
+    values: list[float], dtype: PolarsDataType, method: QuantileMethod
+) -> None:
+    v = pl.Series("v", values, dtype=dtype)
+    _assert_rolling_quantile_matches_series(v, [0.0, 0.5, 0.0], 2, method)
+
+
+@pytest.mark.parametrize(
+    "quantile_arg",
+    [pl.col("q"), pl.col("q").head(1)],
+    ids=["column", "head"],
+)
+def test_quantile_non_scalar_in_group_by_raises(quantile_arg: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3], "q": [0.5, 0.5, 0.5]})
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
+        df.group_by("g").agg(pl.col("v").quantile(quantile_arg))
+
+
+def test_quantile_series_literal_of_two_values_in_group_by_raises() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3]})
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
+        df.group_by("g").agg(pl.col("v").quantile(pl.lit(pl.Series([0.5, 0.5]))))
+
+
+def test_quantile_literal_values_per_group_quantile() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, None, None, 1.5]})
+    lf = df.lazy().group_by("g", maintain_order=True)
+    out = lf.agg(pl.lit(3).quantile(pl.col("q").first()))
+    assert out.collect_schema()["literal"] == pl.Float64
+    assert out.collect()["literal"].to_list() == [3.0, None, None]
+    with pytest.raises(InvalidOperationError, match="not supported for dtype `bool`"):
+        lf.agg(pl.lit(True).quantile(pl.col("q").first())).collect()
+
+
+def test_quantile_series_literal_in_group_by_empty_frame() -> None:
+    df = pl.DataFrame(schema={"g": pl.Int64, "v": pl.Float64})
+    q = pl.lit(pl.Series([0.5])).item()
+    out = df.lazy().group_by("g").agg(pl.col("v").quantile(q)).collect()
+    assert out.schema == {"g": pl.Int64, "v": pl.Float64}
+    assert out.is_empty()
+
+
+@pytest.mark.parametrize("n_groups", [1, 2])
+@pytest.mark.parametrize(
+    "quantile_arg", [pl.col("q").mode(), pl.col("q").head(1)], ids=["mode", "head"]
+)
+def test_quantile_non_scalar_raises_for_any_group_count(
+    n_groups: int, quantile_arg: pl.Expr
+) -> None:
+    df = pl.DataFrame({"g": [0, 0, n_groups - 1], "v": [1, 2, 3], "q": [0.5] * 3})
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
+        df.group_by("g").agg(pl.col("v").quantile(quantile_arg))
+
+
+def test_quantile_series_literal_in_group_by() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3]})
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("v").quantile(pl.lit(pl.Series([0.5])).item())
+    )
+    assert out["v"].to_list() == [2.0, 3.0]
+
+
+@pytest.mark.parametrize(
+    "s", [pl.Series([], dtype=pl.Date), pl.Series([None, None], dtype=pl.Date)]
+)
+def test_quantile_date_without_values(s: pl.Series) -> None:
+    assert s.quantile(0.5) is None
+    result = pl.LazyFrame({"a": s}).select(pl.col("a").quantile(0.5)).collect()
+    assert_frame_equal(
+        result, pl.DataFrame({"a": [None]}, schema={"a": pl.Datetime("us")})
+    )
 
 
 def test_quantile_date() -> None:
@@ -557,21 +737,20 @@ def test_approx_quantile_null_quantile() -> None:
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
 def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(pl.col("a").approx_quantile(pl.col("q")))
 
 
 @pytest.mark.parametrize(
     ("quantile", "expected"),
     [
-        (pl.lit(pl.Series([0.5])), 3.0),
-        (pl.lit(pl.Series([[0.1, 0.9]])), [1.0, 5.0]),
+        (pl.Series([0.5]).item(), 3.0),
+        ([0.1, 0.9], [1.0, 5.0]),
     ],
 )
-def test_approx_quantile_series_literal_quantile(
-    quantile: pl.Expr, expected: float | list[float]
+def test_approx_quantile_python_quantile(
+    quantile: float | list[float], expected: float | list[float]
 ) -> None:
-    # A one-row Series literal is broadcast like a scalar.
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0]})
     out = df.select(pl.col("a").approx_quantile(quantile))
     assert out.to_series().to_list() == [expected]
@@ -586,13 +765,13 @@ def test_quantile_null_quantile() -> None:
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
 def test_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(pl.col("a").quantile(pl.col("q")))
 
 
 def test_quantile_empty_quantile_group_by() -> None:
     df = pl.DataFrame(schema={"g": pl.Int64, "a": pl.Float64, "q": pl.Float64})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
 
 
@@ -826,10 +1005,7 @@ def test_quantile_varying_quantiles_unsupported(
 ) -> None:
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "q": [0.1, 0.5, 0.9]})
 
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=r"does not support varying (approximate )?quantiles",
-    ):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(fn(pl.col("a"), pl.col("q")))
 
 
@@ -1650,6 +1826,21 @@ def test_invalid_agg_dtypes_should_raise(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
         df.lazy().select(expr).collect(engine="streaming")
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime, pl.Time, pl.Categorical, pl.Enum(["a", "b"])],
+)
+def test_sum_unsupported_dtype_raises_in_all_contexts(dtype: pl.DataType) -> None:
+    values = ["a", "b"] if dtype in (pl.Categorical, pl.Enum) else [0, 1]
+    lf = pl.LazyFrame({"g": [1, 1], "v": pl.Series(values).cast(dtype)})
+    expr = pl.col("v").sum()
+    for q in [lf.select(expr), lf.group_by("g").agg(expr), lf.select(expr.over("g"))]:
+        with pytest.raises(
+            InvalidOperationError, match="`sum` operation not supported for dtype"
+        ):
+            q.collect_schema()
 
 
 @given(

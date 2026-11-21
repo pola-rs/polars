@@ -2,7 +2,8 @@
 
 ## Read from a database
 
-Polars can read from a database using the `pl.read_database_uri` and `pl.read_database` functions.
+Polars can read from a database using the `pl.read_database_uri` and `pl.read_database` functions,
+or lazily with `pl.scan_database` (see [Scan a database lazily](#scan-a-database-lazily)).
 
 ### Difference between `read_database_uri` and `read_database`
 
@@ -69,6 +70,140 @@ As ADBC is not the default engine, you must specify the engine as an argument to
 `pl.read_database_uri`.
 
 {{code_block('user-guide/io/database','adbc',['read_database_uri'])}}
+
+## Scan a database lazily
+
+!!! warning "Unstable"
+
+    `pl.scan_database` is considered unstable. It may be changed at any point without it being
+    considered a breaking change.
+
+`pl.scan_database` reads a table or a query lazily, on the streaming engine. Projections, filters
+and limits in the query plan are pushed into the SQL sent to the database, and a large table can be
+read as several partitions over concurrent connections.
+
+It is implemented by the `polars-database` plugin, which is installed with the `database` extra:
+
+```shell
+$ pip install 'polars[database]'
+```
+
+The examples on this page use a small SQLite database, built in this setup:
+
+{{code_block('user-guide/io/database_scan','setup',[])}}
+
+{{code_block('user-guide/io/database_scan','scan',['scan_database'])}}
+
+The source is a table name (`"orders"`, `"public.orders"`, `'"My Schema"."Orders"'`) or a SQL query.
+`explain()` shows the database, the driver, the partitions and the SQL of the first partition. A
+filter the SQL applies exactly is not applied again by Polars:
+
+{{code_block('user-guide/io/database_scan','scan_explain',['scan_database'])}}
+
+```text
+RESOLVER[name: polars_database: scan_database, cached_resolves: 1]
+  ExternalReaderBuilder SCAN [0]
+    database: sqlite via adbc:sqlite 1.12.0
+    relation: "orders"
+    partitions: 1
+    pushed: projection 3/5, filters 1/1 (1 exact), limit: no
+    renderer: sqlglot 30.24.0
+    sql[0]: SELECT "id", "amount", "status" FROM "orders" WHERE "status" = 'paid'
+  PROJECT 2/3 COLUMNS
+```
+
+The SQL is generated with [sqlglot](https://github.com/tobymao/sqlglot), a dependency of the plugin,
+on the machine that plans the query.
+
+### Filter pushdown
+
+A filter is only pushed when the database cannot drop a row that Polars would keep. Each pushed
+filter is either _exact_ (the database returns exactly the rows Polars keeps), or a _superset_ that
+Polars applies again after the read. For example, under MySQL's default case-insensitive collation,
+`pl.col("name") == "abc"` is pushed as a superset (the database also returns `'ABC'`, which Polars
+then removes), while `pl.col("name") != "abc"` is not pushed at all.
+
+Pushed today: comparisons of columns with literals (numbers, strings, booleans, dates, datetimes),
+`is_null`, `is_in`, `is_between`, `eq_missing` / `ne_missing`, `str.starts_with` / `str.ends_with` /
+`str.contains(literal=True)`, and `&`, `|`, `~` of those. Arithmetic, casts and other functions are
+evaluated by Polars.
+
+### Drivers
+
+`scan_database` picks the best driver installed on the machine, per database: for example ADBC, then
+ConnectorX, then psycopg, then SQLAlchemy for Postgres. `show_drivers` lists the candidates, which
+of them are installed, and how to install the others:
+
+{{code_block('user-guide/io/database_scan','show_drivers',[])}}
+
+ADBC drivers are found as pip packages (`adbc-driver-postgresql`) and through
+[ADBC driver manifests](https://arrow.apache.org/adbc/current/format/driver_manifests.html), which
+includes drivers installed with [`dbc`](https://docs.columnar.tech/dbc/). Pin a driver with
+`driver=` or with a SQLAlchemy-style URI scheme:
+
+{{code_block('user-guide/io/database_scan','scan_driver',['scan_database'])}}
+
+| Database           | Drivers, best first                                                               |
+| ------------------ | --------------------------------------------------------------------------------- |
+| PostgreSQL         | ADBC, ConnectorX, psycopg, psycopg2, pg8000, SQLAlchemy                           |
+| MySQL / MariaDB    | ADBC, ConnectorX, MySQLdb, mysql-connector, PyMySQL, mariadb, SQLAlchemy          |
+| SQL Server         | ADBC, mssql-python, ConnectorX, arrow-odbc, turbodbc, pyodbc, pymssql, SQLAlchemy |
+| Oracle             | ADBC, oracledb, ConnectorX, SQLAlchemy                                            |
+| SQLite             | ADBC, ConnectorX, sqlite3, SQLAlchemy                                             |
+| DuckDB             | duckdb, ADBC, SQLAlchemy                                                          |
+| Snowflake          | ADBC, snowflake-connector-python, SQLAlchemy                                      |
+| BigQuery           | ADBC, google-cloud-bigquery, ConnectorX, SQLAlchemy                               |
+| Databricks         | ADBC, databricks-sql-connector, SQLAlchemy                                        |
+| ClickHouse         | ADBC, clickhouse-connect, ConnectorX, clickhouse-driver, SQLAlchemy               |
+| Trino              | ADBC, ConnectorX, trino, SQLAlchemy                                               |
+| Redshift           | ADBC, ConnectorX, redshift_connector, psycopg2, SQLAlchemy                        |
+| Other (any DB-API) | a connection factory, or SQLAlchemy                                               |
+
+The column types come from the database, not the driver: the same table has the same schema
+whichever driver reads it.
+
+### Partitions
+
+By default (`partition_on="auto"`), a large table is split into ranges of its integer or date
+primary key. `partition_on=<column>` partitions on another column, `partition_predicates=` gives one
+partition per `WHERE` fragment, and `partition_on=None` reads with a single query. `max_connections`
+limits the number of concurrent connections.
+
+{{code_block('user-guide/io/database_scan','scan_partitions',['scan_database'])}}
+
+Rows come back in no particular order unless `order_by=` is given. A `NUMERIC` column without a
+precision is read as `Decimal(38, 9)`; a value with digits beyond the ninth decimal place is an
+error, so pass `schema_overrides=` for such columns if you need more. Each partition is a separate
+query, so concurrent writes to the table can make partitions see different states.
+
+### Queries and connections
+
+A query source is wrapped as a derived table (`SELECT … FROM (<query>) AS _pl WHERE …`), so filters
+and projections are still pushed. A query that can't be wrapped runs as given, and Polars does the
+rest. On MariaDB, which ignores an `ORDER BY` inside a derived table, a query ordered at its top
+level (without `LIMIT`) isn't wrapped. A query whose rows depend on the time it runs (`now()`,
+`CURRENT_TIMESTAMP`, `random()`, …) is read with a single query, never partitioned.
+
+{{code_block('user-guide/io/database_scan','scan_query',['scan_database'])}}
+
+Parameters of a query are bound by the driver, never written into the SQL. This needs a driver that
+binds them itself (not ADBC or ConnectorX):
+
+{{code_block('user-guide/io/database_scan','scan_params',['scan_database'])}}
+
+Besides a URI, the connection can be an ODBC connection string, a SQLAlchemy `URL` or `Engine`, a
+zero-argument function that returns a DB-API connection, or a live connection object. An `Engine`
+opens the connections itself, with its pool, `creator` and `connect_args`. A function reaches any
+database with a Python driver. A live connection is used for one partition at a time, and a plan
+holding one can't be serialized. Connections are used from Polars' threads, so a `sqlite3`
+connection needs `check_same_thread=False`. With a function or a live connection, `driver`,
+`connect_options` and `credential_provider` don't apply: the connection object is already set up.
+
+A serialized or pickled plan carries its URI as given, password included (`explain()` redacts it).
+To keep the password out of a plan you ship elsewhere, leave it out of the URI and pass a
+`credential_provider` that returns it when the scan connects.
+
+{{code_block('user-guide/io/database_scan','scan_factory',['scan_database'])}}
 
 ## Write to a database
 

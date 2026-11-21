@@ -470,6 +470,39 @@ def test_values_clause_derived_table() -> None:
             ctx.execute("SELECT x, y FROM tbl")
 
 
+def test_values_clause_expressions() -> None:
+    ctx = pl.SQLContext(t=pl.DataFrame({"x": [1, 2]}), eager=True)
+    res = ctx.execute(
+        """
+        SELECT * FROM (
+          VALUES (1 + 1, UPPER('a'), (SELECT MAX(x) FROM t)), (3, 'b', NULL)
+        ) AS v(a, b, m)
+        ORDER BY a DESC
+        """
+    )
+    assert res.rows() == [(3, "b", None), (2, "A", 2)]
+
+    res = ctx.execute(
+        "VALUES (CAST(1 AS DOUBLE), DATE '2020-01-01' + INTERVAL '1 day'), (2, NULL)"
+    )
+    assert res.rows() == [(1.0, date(2020, 1, 2)), (2.0, None)]
+    assert res.schema == {"column_0": pl.Float64, "column_1": pl.Date}
+
+    # a column of literals is typed as when all cells are literals
+    res = ctx.execute(
+        """
+        SELECT COUNT(DISTINCT x) AS n FROM (
+          VALUES (TIME '12:34:56.789123', 0 + 0), ('12:34:56.789123', 0)
+        ) AS v(x, y)
+        """
+    )
+    assert res.item() == 1
+
+    for query in ["VALUES (x + 1)", "VALUES (1 + 1, column_0)"]:
+        with pytest.raises(ColumnNotFoundError):
+            ctx.execute(query)
+
+
 def test_read_csv(tmp_path: Path) -> None:
     # check empty string vs null, parsing of dates, etc
     df = pl.DataFrame(

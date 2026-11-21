@@ -66,7 +66,7 @@ fn get_binary_expr_col_and_lv<'a>(
 ///
 /// Returns `None` (signals the caller to use its fallback path) when any of:
 /// - `lv_node` is not an `AExpr::Literal` whose value is `AnyValue::List(_)`
-///   (or `AnyValue::Array(_, _)` under `dtype-array`).
+///   (or `AnyValue::Array(_, _)` under `dtype-array`), or a one-row `Series` of those.
 /// - The list's element dtype is not equal to `column_dtype`.
 /// - The list has more than `max_len` elements after null filtering.
 ///
@@ -81,7 +81,10 @@ pub(super) fn try_extract_is_in_haystack(
     max_len: usize,
 ) -> Option<(Series, bool)> {
     let lv = constant_evaluate(lv_node, expr_arena, schema, 0)??;
-    let av = lv.to_any_value()?;
+    let av = match lv.as_ref() {
+        LiteralValue::Series(s) if s.len() == 1 => s.get(0).ok()?,
+        lv => lv.to_any_value()?,
+    };
     let s = match av {
         AnyValue::List(s) => s,
         #[cfg(feature = "dtype-array")]

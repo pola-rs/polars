@@ -676,6 +676,66 @@ def test_merge_join_many_partitions(
         assert_frame_equal(actual_head, expected.head(3))
 
 
+@pytest.mark.parametrize("key_type", ["list", "array", "struct"])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("maintain_order", ["left_right", "right_left"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_merge_join_nested_key_30871(
+    key_type: str,
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    descending: bool,
+    nulls_last: bool,
+    nulls_equal: bool,
+) -> None:
+    # "inner" marks a key with a null inside it.
+    left_keys: list[int | str | None] = [*[None] * 20, *[0] * 25, 1, 2, 2, "inner", 5]
+    right_keys: list[int | str | None] = [*[None] * 18, *[0] * 20, 2, "inner", 4, 5, 5]
+
+    def key(k: int | str | None) -> Any:
+        if k is None:
+            return None
+        v = None if k == "inner" else k
+        return {"a": v} if key_type == "struct" else [v]
+
+    dtype = {
+        "list": pl.List(pl.Int64),
+        "array": pl.Array(pl.Int64, 1),
+        "struct": pl.Struct({"a": pl.Int64}),
+    }[key_type]
+
+    def sorted_lf(keys: list[int | str | None], name: str) -> pl.LazyFrame:
+        return (
+            pl.LazyFrame(
+                {
+                    "key": pl.Series([key(k) for k in keys], dtype=dtype),
+                    name: range(len(keys)),
+                }
+            )
+            .sort(
+                "key", descending=descending, nulls_last=nulls_last, maintain_order=True
+            )
+            .set_sorted("key", descending=descending, nulls_last=nulls_last)
+        )
+
+    q = sorted_lf(left_keys, "a").join(
+        sorted_lf(right_keys, "b"),
+        on="key",
+        how=how,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in dot, "merge-join not used in plan"
+
+    expected = q.collect(engine="in-memory")
+    with pl.Config(streaming_chunk_size=4):
+        actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected)
+
+
 @pytest.mark.slow
 @pytest.mark.may_fail_cloud  # reason: timing
 @pytest.mark.parametrize("null_run_side", ["left", "right"])

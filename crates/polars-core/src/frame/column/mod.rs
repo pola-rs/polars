@@ -10,7 +10,7 @@ use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::broadcast::{BroadcastLength, broadcast_len};
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 pub use scalar::ScalarColumn;
 
 use self::compare_inner::TotalOrdInner;
@@ -515,11 +515,36 @@ impl Column {
         self.as_materialized_series().duration()
     }
 
+    /// Strict cast of a dictionary column: casts the used values without failing, and only when
+    /// that nulls a value (or errors) casts the rows strictly, so that the error counts failing
+    /// rows, not distinct values.
+    fn strict_cast_dictionary(&self, d: &DictionaryColumn, dtype: &DataType) -> PolarsResult<Self> {
+        // Nested targets null fields inside a valid outer value, which the outer null count
+        // cannot see: always cast the rows strictly.
+        if dtype.is_nested() {
+            return self
+                .as_materialized_series()
+                .strict_cast(dtype)
+                .map(Column::from);
+        }
+        let out = d.apply_elementwise(|s| s.cast_with_options(dtype, CastOptions::NonStrict));
+        match out {
+            Ok(out) if out.null_count() == d.null_count() => Ok(out),
+            _ => self
+                .as_materialized_series()
+                .strict_cast(dtype)
+                .map(Column::from),
+        }
+    }
+
     // # Casting
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
         match self {
             Column::Dictionary(_) if dtype == &DataType::String => Ok(self.clone()),
             // Casts each used dictionary value once, e.g. into a Categorical.
+            Column::Dictionary(d) if matches!(options, CastOptions::Strict) => {
+                self.strict_cast_dictionary(d, dtype)
+            },
             Column::Dictionary(d) => d.apply_elementwise(|s| s.cast_with_options(dtype, options)),
             Column::Series(s) => s.cast_with_options(dtype, options).map(Column::from),
             Column::Scalar(s) => s.cast_with_options(dtype, options).map(Column::from),
@@ -529,7 +554,7 @@ impl Column {
         match self {
             Column::Dictionary(_) if dtype == &DataType::String => Ok(self.clone()),
             // Casts each used dictionary value once, e.g. into a Categorical.
-            Column::Dictionary(d) => d.apply_elementwise(|s| s.strict_cast(dtype)),
+            Column::Dictionary(d) => self.strict_cast_dictionary(d, dtype),
             Column::Series(s) => s.strict_cast(dtype).map(Column::from),
             Column::Scalar(s) => s.strict_cast(dtype).map(Column::from),
         }
@@ -561,7 +586,7 @@ impl Column {
         match self {
             Column::Series(s) => s.clear().into(),
             Column::Scalar(s) => s.resize(0).into(),
-            Column::Dictionary(s) => s.clear().into(),
+            Column::Dictionary(s) => DictionaryColumn::new_empty(s.name().clone()).into_column(),
         }
     }
 
@@ -670,24 +695,17 @@ impl Column {
     }
 
     pub fn head(&self, length: Option<usize>) -> Column {
-        let len = length.unwrap_or(HEAD_DEFAULT_LENGTH);
-        let len = usize::min(len, self.len());
-        self.slice(0, len)
+        self.slice(Slice::head(length.unwrap_or(HEAD_DEFAULT_LENGTH)))
     }
     pub fn tail(&self, length: Option<usize>) -> Column {
-        let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
-        let len = usize::min(len, self.len());
-        debug_assert!(len <= i64::MAX as usize);
-        self.slice(-(len as i64), len)
+        self.slice(Slice::tail(length.unwrap_or(TAIL_DEFAULT_LENGTH)))
     }
-    pub fn slice(&self, offset: i64, length: usize) -> Column {
+    pub fn slice(&self, slice: impl Into<Slice>) -> Column {
+        let slice = slice.into();
         match self {
-            Column::Series(s) => s.slice(offset, length).into(),
-            Column::Scalar(s) => {
-                let (_, length) = slice_offsets(offset, length, s.len());
-                s.resize(length).into()
-            },
-            Column::Dictionary(s) => s.slice(offset, length).into(),
+            Column::Series(s) => s.slice(slice).into(),
+            Column::Scalar(s) => s.resize(slice.resolve(s.len()).len()).into(),
+            Column::Dictionary(s) => s.slice(slice).into(),
         }
     }
 
@@ -711,10 +729,10 @@ impl Column {
                 )
             },
             Column::Dictionary(_) => {
-                let (split, _) = slice_offsets(offset, self.len(), self.len());
+                let split = Slice::resolve_offset(offset, self.len());
                 (
-                    self.slice(0, split),
-                    self.slice(split as i64, self.len() - split),
+                    self.slice(Slice::head(split)),
+                    self.slice((split, self.len() - split)),
                 )
             },
             Column::Series(_) => {
@@ -1014,7 +1032,7 @@ impl Column {
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Self {
         // @scalar-opt
@@ -1271,7 +1289,7 @@ impl Column {
             // @NOTE: Since the column is sorted, arg_unique can also take a fast path and
             // just do a single traversal.
             let arg_unique = slf
-                .slice(start as i64, (end - start) as usize)
+                .slice((start as usize, (end - start) as usize))
                 .arg_unique()
                 .unwrap();
 

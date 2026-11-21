@@ -45,7 +45,7 @@ pub(crate) mod validation;
 
 use polars_arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -87,7 +87,28 @@ pub enum PivotColumnNaming {
     Auto,
 }
 
+/// The chunk lengths of a column that has chunks of its own: a series, or the codes of a
+/// dictionary column (which materializes with the same chunks). Scalar columns have none.
+fn column_chunk_lengths(c: &Column) -> Option<Box<dyn Iterator<Item = usize> + '_>> {
+    match c {
+        Column::Series(_) => c.as_series().map(|s| Box::new(s.chunk_lengths()) as _),
+        Column::Dictionary(d) => Some(Box::new(d.codes().chunk_lengths())),
+        Column::Scalar(_) => None,
+    }
+}
+
 impl DataFrame {
+    /// The chunk lengths the frame is laid out along: those of the first series column, as the
+    /// chunks of series columns are selected by index; only without one, those of the first
+    /// dictionary column's codes (which are sliced by offset).
+    fn chunk_lengths_of_leading_column(&self) -> Option<Box<dyn Iterator<Item = usize> + '_>> {
+        self.columns()
+            .iter()
+            .find(|c| matches!(c, Column::Series(_)))
+            .and_then(column_chunk_lengths)
+            .or_else(|| self.columns().iter().find_map(column_chunk_lengths))
+    }
+
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns().iter().map(Column::as_materialized_series)
     }
@@ -348,18 +369,14 @@ impl DataFrame {
         if !self
             .columns()
             .iter()
-            .filter_map(Column::as_series)
-            .map(|s| s.n_chunks())
+            .filter_map(column_chunk_lengths)
+            .map(|cl| cl.size_hint().0)
             .all_equal()
         {
             return true;
         }
 
-        let mut chunk_lengths = self
-            .columns()
-            .iter()
-            .filter_map(Column::as_series)
-            .map(|s| s.chunk_lengths());
+        let mut chunk_lengths = self.columns().iter().filter_map(column_chunk_lengths);
         match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {
@@ -473,18 +490,18 @@ impl DataFrame {
 
     /// The number of chunks for the first column.
     pub fn first_col_n_chunks(&self) -> usize {
-        match self.columns().iter().find_map(|col| col.as_series()) {
+        match self.chunk_lengths_of_leading_column() {
             None if self.width() == 0 => 0,
             None => 1,
-            Some(s) => s.n_chunks(),
+            Some(cl) => cl.size_hint().0,
         }
     }
 
     /// The chunk lengths of the first column that has chunks, see [`Self::first_col_n_chunks`].
     pub(crate) fn first_col_chunk_lengths(&self) -> impl Iterator<Item = usize> + '_ {
-        match self.columns().iter().find_map(|col| col.as_series()) {
+        match self.chunk_lengths_of_leading_column() {
             None => Either::Right((self.width() > 0).then_some(self.height()).into_iter()),
-            Some(s) => Either::Left(s.chunk_lengths()),
+            Some(cl) => Either::Left(cl),
         }
     }
 
@@ -492,7 +509,7 @@ impl DataFrame {
     pub fn max_n_chunks(&self) -> usize {
         self.columns()
             .iter()
-            .map(|s| s.as_series().map(|s| s.n_chunks()).unwrap_or(1))
+            .map(|c| column_chunk_lengths(c).map_or(1, |cl| cl.size_hint().0))
             .max()
             .unwrap_or(0)
     }
@@ -1269,7 +1286,7 @@ impl DataFrame {
             GroupsIndicator::Idx((_, indices)) => unsafe {
                 self.take_slice_unchecked_impl(indices.as_slice(), false)
             },
-            GroupsIndicator::Slice([offset, len]) => self.slice(*offset as i64, *len as usize),
+            GroupsIndicator::Slice([offset, len]) => self.slice((*offset as usize, *len as usize)),
         }
     }
 
@@ -1292,7 +1309,7 @@ impl DataFrame {
 
                             (0..idx.len().div_ceil(stride))
                                 .into_par_iter()
-                                .map(|i| c.take_unchecked(&idx.slice((i * stride) as i64, stride)))
+                                .map(|i| c.take_unchecked(&idx.slice((i * stride, stride))))
                                 .reduce(
                                     || Column::new_empty(c.name().clone(), c.dtype()),
                                     |mut a, b| {
@@ -1461,15 +1478,14 @@ impl DataFrame {
         self,
         mut by_column: Vec<Column>,
         sort_options: SortMultipleOptions,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
     ) -> PolarsResult<Self> {
         if by_column.is_empty() {
             // If no columns selected, any order (including original order) is correct.
-            return if let Some((offset, len)) = slice {
-                Ok(self.slice(offset, len))
-            } else {
-                Ok(self)
-            };
+            return Ok(match slice {
+                Some(slice) => self.slice(slice),
+                None => self,
+            });
         }
 
         for column in &by_column {
@@ -1507,7 +1523,7 @@ impl DataFrame {
             return Ok(out);
         }
 
-        if let Some((0, k)) = slice {
+        if let Some(Slice::Positive { offset: 0, len: k }) = slice {
             if k < self.height() {
                 return self.bottom_k_impl(k, by_column, sort_options);
             }
@@ -1538,11 +1554,10 @@ impl DataFrame {
                         == sort_options.nulls_last[0]);
 
             if no_sorting_required {
-                return if let Some((offset, len)) = slice {
-                    Ok(self.slice(offset, len))
-                } else {
-                    Ok(self)
-                };
+                return Ok(match slice {
+                    Some(slice) => self.slice(slice),
+                    None => self,
+                });
             }
         }
 
@@ -1587,8 +1602,8 @@ impl DataFrame {
                 // simply sort and return as frame
                 if df.width() == 1 && df.try_get_column_index(s.name().as_str()).is_ok() {
                     let mut out = s.sort_with(options)?;
-                    if let Some((offset, len)) = slice {
-                        out = out.slice(offset, len);
+                    if let Some(slice) = slice {
+                        out = out.slice(slice);
                     }
                     return Ok(out.into_frame());
                 }
@@ -1597,8 +1612,8 @@ impl DataFrame {
             _ => arg_sort(&by_column, sort_options)?,
         };
 
-        if let Some((offset, len)) = slice {
-            take = take.slice(offset, len);
+        if let Some(slice) = slice {
+            take = take.slice(slice);
         }
 
         // SAFETY:
@@ -2006,7 +2021,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let df: DataFrame = df!("Fruit" => ["Apple", "Grape", "Grape", "Fig", "Fig"],
     ///                         "Color" => ["Green", "Red", "White", "White", "Red"])?;
-    /// let sl: DataFrame = df.slice(2, 3);
+    /// let sl: DataFrame = df.slice((2i64, 3));
     ///
     /// assert_eq!(sl.shape(), (3, 2));
     /// println!("{}", sl);
@@ -2028,32 +2043,27 @@ impl DataFrame {
     /// +-------+-------+
     /// ```
     #[must_use]
-    pub fn slice(&self, offset: i64, length: usize) -> Self {
-        if offset == 0 && length == self.height() {
+    pub fn slice(&self, slice: impl Into<Slice>) -> Self {
+        let range = slice.into().resolve(self.height());
+
+        if range.len() == self.height() {
             return self.clone();
         }
 
-        if length == 0 {
+        if range.is_empty() {
             return self.clear();
         }
 
-        let cols = self.apply_columns(|s| s.slice(offset, length));
+        let cols = self.apply_columns(|s| s.slice(range.clone()));
 
-        let height = if let Some(fst) = cols.first() {
-            fst.len()
-        } else {
-            let (_, length) = slice_offsets(offset, length, self.height());
-            length
-        };
-
-        unsafe { DataFrame::_new_unchecked_impl(height, cols).with_schema_from(self) }
+        unsafe { DataFrame::_new_unchecked_impl(range.len(), cols).with_schema_from(self) }
     }
 
     /// Split [`DataFrame`] at the given `offset`.
     pub fn split_at(&self, offset: i64) -> (Self, Self) {
         let (a, b) = self.columns().iter().map(|s| s.split_at(offset)).unzip();
 
-        let (idx, _) = slice_offsets(offset, 0, self.height());
+        let idx = Slice::resolve_offset(offset, self.height());
 
         let a = unsafe { DataFrame::new_unchecked(idx, a).with_schema_from(self) };
         let b = unsafe { DataFrame::new_unchecked(self.height() - idx, b).with_schema_from(self) };
@@ -2289,7 +2299,7 @@ impl DataFrame {
         &self,
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
     ) -> PolarsResult<DataFrame> {
         self.unique_impl(
             true,
@@ -2305,7 +2315,7 @@ impl DataFrame {
         &self,
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
     ) -> PolarsResult<DataFrame> {
         self.unique_impl(
             false,
@@ -2321,7 +2331,7 @@ impl DataFrame {
         maintain_order: bool,
         subset: Option<Vec<PlSmallStr>>,
         keep: UniqueKeepStrategy,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
     ) -> PolarsResult<Self> {
         if self.width() == 0 {
             let height = usize::min(self.height(), 1);
@@ -2333,12 +2343,21 @@ impl DataFrame {
         // take on multiple chunks is terrible
         df.rechunk_mut_par();
 
+        fn optionally_slice(
+            groups: &'_ GroupPositions,
+            slice: Option<Slice>,
+        ) -> Cow<'_, GroupPositions> {
+            match slice {
+                Some(s) => Cow::Owned(groups.slice(s)),
+                None => Cow::Borrowed(groups),
+            }
+        }
+
         let columns = match (keep, maintain_order) {
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, true) => {
                 let gb = df.group_by_stable(names)?;
                 let groups = gb.get_groups();
-                let (offset, len) = slice.unwrap_or((0, groups.len()));
-                let groups = groups.slice(offset, len);
+                let groups = optionally_slice(groups, slice);
                 df.apply_columns_par(|s| unsafe { s.agg_first(&groups) })
             },
             (UniqueKeepStrategy::Last, true) => {
@@ -2357,8 +2376,8 @@ impl DataFrame {
 
                 let mut last_idx = last_idx.into_inner().sort(false);
 
-                if let Some((offset, len)) = slice {
-                    last_idx = last_idx.slice(offset, len);
+                if let Some(slice) = slice {
+                    last_idx = last_idx.slice(slice);
                 }
 
                 let last_idx = NoNull::new(last_idx);
@@ -2368,15 +2387,13 @@ impl DataFrame {
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
                 let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
-                let (offset, len) = slice.unwrap_or((0, groups.len()));
-                let groups = groups.slice(offset, len);
+                let groups = optionally_slice(groups, slice);
                 df.apply_columns_par(|s| unsafe { s.agg_first(&groups) })
             },
             (UniqueKeepStrategy::Last, false) => {
                 let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
-                let (offset, len) = slice.unwrap_or((0, groups.len()));
-                let groups = groups.slice(offset, len);
+                let groups = optionally_slice(groups, slice);
                 df.apply_columns_par(|s| unsafe { s.agg_last(&groups) })
             },
             (UniqueKeepStrategy::None, _) => {
@@ -2384,8 +2401,8 @@ impl DataFrame {
                 let mask = df_part.is_unique()?;
                 let mut filtered = df.filter(&mask)?;
 
-                if let Some((offset, len)) = slice {
-                    filtered = filtered.slice(offset, len);
+                if let Some(slice) = slice {
+                    filtered = filtered.slice(slice);
                 }
                 return Ok(filtered);
             },
@@ -2563,7 +2580,7 @@ impl DataFrame {
                     },
                     GroupsType::Slice { groups, .. } => Ok(groups
                         .into_par_iter()
-                        .map(|[first, len]| df.slice(*first as i64, *len as usize))
+                        .map(|[first, len]| df.slice((*first as usize, *len as usize)))
                         .collect()),
                 }
             })
@@ -2585,7 +2602,7 @@ impl DataFrame {
                 },
                 GroupsType::Slice { groups, .. } => Ok(groups
                     .iter()
-                    .map(|[first, len]| df.slice(*first as i64, *len as usize))
+                    .map(|[first, len]| df.slice((*first as usize, *len as usize)))
                     .collect()),
             }
         }
@@ -2686,23 +2703,21 @@ impl DataFrame {
 
 /// Cursor over the chunks a [`DataFrame`] is laid out along.
 struct ChunkCursor<'a> {
-    /// The chunks of the first column that has any; empty when no column does.
-    chunks: &'a [ArrayRef],
+    /// The chunk lengths of the first column that has chunks (a series, or a dictionary
+    /// column's codes), as `first_col_chunk_lengths`; empty when no column has.
+    chunks: Vec<usize>,
     height: usize,
     idx: usize,
+    _df: std::marker::PhantomData<&'a DataFrame>,
 }
 
 impl<'a> ChunkCursor<'a> {
     fn new(df: &'a DataFrame) -> Self {
-        let chunks = match df.columns().iter().find_map(Column::as_series) {
-            Some(s) => s.chunks().as_slice(),
-            None => &[],
-        };
-
         Self {
-            chunks,
+            chunks: df.first_col_chunk_lengths().collect(),
             height: df.height(),
             idx: 0,
+            _df: std::marker::PhantomData,
         }
     }
 
@@ -2718,7 +2733,7 @@ impl<'a> ChunkCursor<'a> {
         }
 
         self.idx += 1;
-        Some((idx, self.chunks.get(idx).map_or(self.height, |c| c.len())))
+        Some((idx, self.chunks.get(idx).copied().unwrap_or(self.height)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -2745,11 +2760,12 @@ impl Iterator for RecordBatchIter<'_> {
         let offset = self.offset;
         self.offset += length;
 
-        // A dictionary column's codes need not have the chunks of the other columns.
+        // Dictionary columns are sliced by offset: their codes need not have the chunks of the
+        // series columns, which are selected by index.
         let to_arrow = |c: &Column| match c.as_series() {
             Some(s) => s.to_arrow(idx, self.compat_level),
             None => c
-                .slice(offset as i64, length)
+                .slice((offset, length))
                 .rechunk_to_arrow(self.compat_level),
         };
 
@@ -2791,7 +2807,7 @@ impl Iterator for PhysRecordBatchIter<'_> {
             .map(|c| match c.as_series() {
                 Some(s) => s.chunks()[idx].clone(),
                 None => c
-                    .slice(offset as i64, length)
+                    .slice((offset, length))
                     .take_materialized_series()
                     .rechunk()
                     .chunks()[0]
@@ -2976,7 +2992,7 @@ mod test {
     #[test]
     fn slice() {
         let df = create_frame();
-        let sliced_df = df.slice(0, 2);
+        let sliced_df = df.slice(Slice::head(2));
         assert_eq!(sliced_df.shape(), (2, 2));
     }
 
@@ -3057,7 +3073,7 @@ mod test {
         }
         .unwrap();
 
-        df.vstack_mut(&df.slice(0, 3)).unwrap();
+        df.vstack_mut(&df.slice(Slice::head(3))).unwrap();
         assert_eq!(df.first_col_n_chunks(), 2)
     }
 
@@ -3140,7 +3156,7 @@ mod test {
             .unique_stable(
                 Some(&["x".to_string()][..]),
                 UniqueKeepStrategy::None,
-                Some((0, 2)),
+                Some(Slice::head(2)),
             )
             .unwrap();
         let expected = df! {

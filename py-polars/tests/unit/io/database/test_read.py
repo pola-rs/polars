@@ -1249,7 +1249,12 @@ def test_read_database_exceptions(
     execute_options: dict[str, Any] | None,
     pre_execution_query: str | list[str] | None,
     kwargs: dict[str, Any] | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # ignore ADBC drivers installed on this machine (e.g. with `dbc`)
+    monkeypatch.setattr(
+        "polars.io.database._utils._find_installed_adbc_driver", lambda _: None
+    )
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
         params = {
@@ -1459,6 +1464,95 @@ def test_read_database_duckdb_uses_arrow(monkeypatch: pytest.MonkeyPatch) -> Non
             )
 
 
+@pytest.mark.parametrize(
+    ("driver_name", "uri", "expected"),
+    [
+        ("duckdb", "/data/my%20db.duckdb", {"path": "/data/my db.duckdb"}),
+        ("duckdb", "", {"path": ":memory:"}),
+        (
+            "clickhouse",
+            "clickhouse://us%40er:p%3Aw@h:8123/db?secure=1&x=2",
+            {
+                "uri": "https://h:8123/?database=db&x=2",
+                "username": "us@er",
+                "password": "p:w",
+            },
+        ),
+        ("postgresql", "postgresql://h/db", {"uri": "postgresql://h/db"}),
+    ],
+)
+def test_adbc_manifest_driver_options(
+    driver_name: str, uri: str, expected: dict[str, str]
+) -> None:
+    from polars.io.database._utils import _adbc_db_kwargs
+
+    assert _adbc_db_kwargs(driver_name, uri) == expected
+
+
+def test_adbc_manifest_driver_bare_names_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # the URI's scheme is looked up as a driver name, never as a path, manifest or
+    # library: `find_adbc_driver` would load those
+    from polars.io.database._utils import _find_installed_adbc_driver
+
+    calls: list[str] = []
+
+    def find_adbc_driver(name: str) -> tuple[str, str | None] | None:
+        calls.append(name)
+        return None
+
+    fake = type(sys)("polars_database")
+    fake.find_adbc_driver = find_adbc_driver  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "polars_database", fake)
+
+    manifest = tmp_path / "driver.toml"
+    manifest.write_text('[Driver]\nshared = "/nonexistent/libdriver.so"\n')
+    for name in [str(manifest), "./libdriver.so", "x.toml", "Sqlite", "my-driver"]:
+        assert _find_installed_adbc_driver(name) is None
+    assert calls == []
+
+    # relative: an absolute Windows path starts with a drive letter, a bare scheme
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ModuleNotFoundError):
+        pl.read_database_uri("SELECT 1", f"{manifest.name}:x", engine="adbc")
+    assert calls == []
+
+    assert _find_installed_adbc_driver("some_driver2") is None
+    assert calls == ["some_driver2"]
+
+
+@pytest.mark.parametrize("failure", ["import", "search"])
+def test_adbc_manifest_driver_plugin_failure_keeps_advice(
+    failure: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a polars-database that fails to load (or to search) does not replace the
+    # "driver not detected ... pip install" advice of read_database_uri
+    if failure == "import":
+        pkg = tmp_path / "polars_database"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text(
+            "raise ImportError('libplugin.so: cannot open shared object file',"
+            " name='polars_database._native')\n"
+        )
+        monkeypatch.delitem(sys.modules, "polars_database", raising=False)
+        monkeypatch.syspath_prepend(str(tmp_path))
+    else:
+
+        def find_adbc_driver(name: str) -> tuple[str, str | None] | None:
+            msg = "libplugin.so: cannot open shared object file"
+            raise RuntimeError(msg)
+
+        fake = type(sys)("polars_database")
+        fake.find_adbc_driver = find_adbc_driver  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "polars_database", fake)
+
+    with pytest.raises(ModuleNotFoundError, match="driver not detected") as exc:
+        pl.read_database_uri("SELECT 1", "nosuchdb://h/db", engine="adbc")
+    notes = getattr(exc.value, "__notes__", [])
+    assert any("libplugin.so" in note for note in notes), notes
+
+
 def test_read_database_struct_schema_overrides_30471() -> None:
     duckdb = pytest.importorskip("duckdb")
     query = "SELECT {'a': 1, 'b': 2} AS s"
@@ -1480,3 +1574,208 @@ def test_read_database_struct_schema_overrides_30471() -> None:
                     conn,
                     schema_overrides={"s": dtype},
                 )
+
+
+def _databricks_standin_engine(tmp_path: Any, closed: list[bool] | None = None) -> Any:
+    # a SQLite engine standing in for databricks-sqlalchemy
+    import sqlite3
+
+    sa = pytest.importorskip("sqlalchemy")
+
+    pa = pytest.importorskip("pyarrow")
+
+    class Cursor(sqlite3.Cursor):
+        # (the driver's Arrow methods; Int32, where rows read as Int64)
+        def _arrow(self, rows: list[Any]) -> Any:
+            names = [d[0] for d in self.description]
+            return pa.table(
+                {
+                    n: pa.array([r[i] for r in rows], pa.int32())
+                    for i, n in enumerate(names)
+                }
+            )
+
+        def close(self) -> None:
+            if closed is not None:
+                closed.append(True)
+            super().close()
+
+        def fetchmany_arrow(self, size: int) -> Any:
+            return self._arrow(self.fetchmany(size))
+
+        def fetchall_arrow(self) -> Any:
+            return self._arrow(self.fetchall())
+
+    class Connection(sqlite3.Connection):
+        def cursor(self, factory: Any = Cursor) -> Any:  # type: ignore[override]
+            return super().cursor(factory)
+
+    path = str(tmp_path / "x.db")
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE t (a INTEGER)")
+    c.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(5)])
+    c.commit()
+    c.close()
+    engine = sa.create_engine(
+        f"sqlite:///{path}",
+        creator=lambda: sqlite3.connect(path, factory=Connection),
+        poolclass=sa.pool.QueuePool,
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=0.5,
+        future=True,
+    )
+    engine.dialect.driver = "databricks"
+    return engine
+
+
+def test_databricks_sqlalchemy_executes_with_sqlalchemy(tmp_path: Any) -> None:
+    engine = _databricks_standin_engine(tmp_path)
+    seen = []
+
+    @sqlalchemy.event.listens_for(engine, "before_cursor_execute")
+    def _record(
+        conn: Any, cursor: Any, statement: str, params: Any, context: Any, many: bool
+    ) -> None:
+        seen.append(context.execution_options.get("tag"))
+
+    @sqlalchemy.event.listens_for(engine, "before_execute", retval=True)
+    def _rewrite(
+        conn: Any, clause: Any, multiparams: Any, params: Any, options: Any
+    ) -> Any:
+        if options.get("tag") == "rewrite":
+            clause = text("SELECT 7 AS a")
+        return clause, multiparams, params
+
+    tagged = engine.execution_options(tag="x")
+    for query, params in [
+        ("SELECT a FROM t WHERE a = ?", [1]),
+        ("SELECT a FROM t WHERE a = :a", {"a": 1}),
+    ]:
+        df = pl.read_database(query, tagged, execute_options={"parameters": params})
+        assert df.schema == {"a": pl.Int32}
+        assert df.item() == 1
+        assert seen[-1] == "x"
+        assert engine.pool.checkedout() == 0
+
+    df = pl.read_database(
+        "SELECT 1 AS a",
+        tagged,
+        execute_options={"execution_options": {"tag": "rewrite"}},
+    )
+    assert df.item() == 7
+    assert df.schema == {"a": pl.Int32}
+    assert seen[-1] == "rewrite"
+
+    with tagged.connect() as conn:
+        # (on the caller's Connection: its session, left open)
+        conn.exec_driver_sql("CREATE TEMP TABLE tmp (x INTEGER)")
+        conn.exec_driver_sql("INSERT INTO tmp VALUES (7)")
+        df = pl.read_database("SELECT x FROM tmp", conn)
+        assert df.schema == {"x": pl.Int32}
+        assert df["x"].to_list() == [7]
+        assert seen[-1] == "x"
+        assert conn.exec_driver_sql("SELECT x FROM tmp").fetchall() == [(7,)]
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_closed_connection_is_a_clear_error(
+    tmp_path: Any,
+) -> None:
+    engine = _databricks_standin_engine(tmp_path)
+    conn = engine.connect()
+    conn.close()
+    with pytest.raises(Exception, match=r"(?i)closed|invalidated"):
+        pl.read_database("SELECT 1", conn)
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_engine_gives_back_the_connection_on_early_stop(
+    tmp_path: Any,
+) -> None:
+    # dropping a batch iterator early (or an error while iterating) must return the
+    # pooled connection: it was held by a reference cycle that was never collected
+    engine = _databricks_standin_engine(tmp_path)
+    for _ in range(2):  # (a pool of one: the second read fails if the first leaked)
+        it = pl.read_database(
+            "SELECT a FROM t", engine, iter_batches=True, batch_size=2
+        )
+        next(iter(it))
+        del it
+        assert engine.pool.checkedout() == 0
+
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    gen: Any = iter(it)
+    next(gen)
+    gen.close()
+    assert engine.pool.checkedout() == 0
+
+    # an error part-way through the batches
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    next(it)
+    with pytest.raises(RuntimeError, match="boom"):
+        it.throw(RuntimeError("boom"))  # type: ignore[attr-defined]
+    assert engine.pool.checkedout() == 0
+
+    # an error from the query
+    with pytest.raises(Exception, match="no such column"):
+        pl.read_database("SELECT nope FROM t", engine)
+    assert engine.pool.checkedout() == 0
+    assert pl.read_database("SELECT a FROM t", engine).height == 5
+    assert engine.pool.checkedout() == 0
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_statement_objects_use_sqlalchemy(
+    tmp_path: Any,
+) -> None:
+    # SQLAlchemy statements (not str) are compiled by SQLAlchemy, as before
+    sa = pytest.importorskip("sqlalchemy")
+
+    engine = _databricks_standin_engine(tmp_path)
+    queries = [
+        sa.select(sa.literal(1)),
+        sa.text("SELECT 1"),
+        sa.text("SELECT a FROM t WHERE a = :a").bindparams(a=1),
+    ]
+    assert pl.read_database(sa.select(sa.literal(True)), engine).schema.dtypes() == [
+        pl.Boolean
+    ]
+    for q in queries:
+        df = pl.read_database(q, engine)
+        assert df.height == 1
+        assert engine.pool.checkedout() == 0
+        with engine.connect() as conn:
+            assert pl.read_database(q, conn).height == 1
+            assert conn.exec_driver_sql("SELECT 1").fetchall() == [(1,)]  # (still open)
+        assert engine.pool.checkedout() == 0
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_close_batches_before_first_next(
+    tmp_path: Any,
+) -> None:
+    closed: list[bool] = []
+    engine = _databricks_standin_engine(tmp_path, closed)
+    engine.connect().close()  # (SQLAlchemy's own first-connect cursors)
+    closed.clear()
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    assert engine.pool.checkedout() == 1
+    assert closed == []
+    it.close()  # type: ignore[attr-defined]
+    assert closed == [True]  # (the cursor itself)
+    assert engine.pool.checkedout() == 0
+    it.close()  # type: ignore[attr-defined]  # (idempotent)
+    assert closed == [True]
+
+    with engine.connect() as conn:
+        # the result is closed, the caller's Connection left open
+        closed.clear()
+        assert pl.read_database("SELECT a FROM t", conn).height == 5
+        assert closed == [True]
+        closed.clear()
+        it = pl.read_database("SELECT a FROM t", conn, iter_batches=True, batch_size=2)
+        it.close()  # type: ignore[attr-defined]
+        assert closed == [True]
+        assert conn.exec_driver_sql("SELECT 1").fetchall() == [(1,)]
+    engine.dispose()

@@ -69,7 +69,9 @@ impl ReaderOperationPushdown<'_> {
         };
 
         let pre_slice = match &extra_ops_post.pre_slice {
-            Some(Slice::Positive { .. }) if reader_capabilities.contains(RC::PRE_SLICE) => {
+            Some(Slice::Positive { .. } | Slice::PositiveUnbounded { .. })
+                if reader_capabilities.contains(RC::PRE_SLICE) =>
+            {
                 extra_ops_post.pre_slice.take()
             },
 

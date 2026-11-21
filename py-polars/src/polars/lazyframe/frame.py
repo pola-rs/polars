@@ -1681,7 +1681,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def sql(self, query: str, *, table_name: str = "self") -> LazyFrame:
+    def sql(
+        self,
+        query: str,
+        *,
+        table_name: str = "self",
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
+    ) -> LazyFrame:
         """
         Execute a SQL query against the LazyFrame.
 
@@ -1701,6 +1707,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         table_name
             Optionally provide an explicit name for the table that represents the
             calling frame (defaults to "self").
+        params
+            The values of the query parameters. A sequence gives the values of the
+            positional parameters `?` (in order) or `$1`, `$2`, ...; a mapping gives
+            the values of the named parameters `$name` or `:name`. A parameter acts as
+            a literal of its value, so it can never inject SQL.
 
         Notes
         -----
@@ -1765,7 +1776,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         with SQLContext(register_globals=False, eager=False) as ctx:
             name = table_name if table_name else "self"
             ctx.register(name=name, frame=self)
-            return ctx.execute(query)
+            return ctx.execute(query, params=params)
 
     @removed_parameters(
         RenamedParameter(
@@ -3181,8 +3192,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             authentication must outlive the sink (e.g. PyIceberg's ``auth.type``
             rather than a static ``token``). Credentials given here replace them.
 
-            Not renewed: credentials vended without an expiry, per-account ADLS
-            credentials, and those of a table created by SQL ``CREATE TABLE AS``.
+            Not renewed: credentials vended without an expiry, and those of a
+            table created by SQL ``CREATE TABLE AS``.
         compression
             Parquet compression codec.
         compression_level
