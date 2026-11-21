@@ -3966,16 +3966,18 @@ struct SourceVolatility {
     /// A view it reads has a `SETTINGS` clause that may cut its rows (ClickHouse): nothing
     /// is pushed.
     settings: bool,
-    /// A table it reads is read redacted (Oracle Data Redaction), and compared as stored: no
-    /// filter is pushed.
+    /// A table it reads is read redacted (Oracle Data Redaction), and compared as stored, or
+    /// may be (a view that couldn't be inspected): no filter is pushed.
     redacted: bool,
 }
 
 impl SourceVolatility {
-    /// A view it reads couldn't be inspected: it may join by place, or cut its rows.
+    /// A view it reads couldn't be inspected: it may join by place, cut its rows, or read
+    /// a redacted table.
     fn unknown_view(&mut self, dialect: DialectName) {
         self.positional |= matches!(dialect, DialectName::Duckdb | DialectName::Clickhouse);
         self.settings |= dialect == DialectName::Clickhouse;
+        self.redacted |= dialect == DialectName::Oracle;
     }
 }
 
@@ -4226,6 +4228,7 @@ fn source_volatility(
             {
                 Some(f) => {
                     volatile |= !f.repeatable;
+                    out.positional |= f.positional_join;
                     if let (Some(n), false) = (macro_name, f.repeatable) {
                         shadowing.push(n.clone());
                     }
@@ -4236,6 +4239,7 @@ fn source_volatility(
                 },
                 None => {
                     volatile = true;
+                    out.unknown_view(dialect);
                     shadowing.extend(macro_name.clone());
                 },
             }
