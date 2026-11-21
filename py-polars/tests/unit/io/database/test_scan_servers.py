@@ -677,6 +677,67 @@ def test_partitions(name: str, driver: str) -> None:
     assert_frame_equal(lf.collect().sort("id"), reference, check_dtypes=False)
 
 
+_PARTITIONED_OVERRIDE_TABLE = {
+    "postgres17": (
+        "review_part_override",
+        "CREATE TABLE review_part_override AS "
+        "SELECT g AS id, g * 3 AS n FROM generate_series(1, 400) g",
+    ),
+    "mysql": (
+        "review_part_override",
+        "CREATE TABLE review_part_override AS "
+        "WITH RECURSIVE s(g) AS (SELECT 1 UNION ALL SELECT g + 1 FROM s WHERE g < 400) "
+        "SELECT g AS id, g * 3 AS n FROM s",
+    ),
+    "oracle": (
+        "REVIEW_PART_OVERRIDE",
+        "CREATE TABLE review_part_override AS "
+        "SELECT level AS id, level * 3 AS n FROM dual CONNECT BY level <= 400",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", list(_PARTITIONED_OVERRIDE_TABLE))
+@pytest.mark.parametrize("partition_on", ["id", "auto"])
+def test_partitions_cut_a_column_read_as_text_on_its_database_type(
+    name: str, partition_on: str
+) -> None:
+    table, create = _PARTITIONED_OVERRIDE_TABLE[name]
+    drop = f"DROP TABLE {table}"
+    _execute(
+        name,
+        [
+            (
+                f"BEGIN EXECUTE IMMEDIATE '{drop}'; EXCEPTION WHEN OTHERS THEN NULL; END;"
+                if name == "oracle"
+                else f"{drop.replace('TABLE', 'TABLE IF EXISTS')}"
+            ),
+            create,
+            f"ALTER TABLE {table} ADD PRIMARY KEY (id)",
+        ],
+    )
+    key = "ID" if name == "oracle" else "id"
+    overrides = {key: pl.String}
+    driver = _default_driver(name)
+    lf = _scan(
+        name,
+        driver,
+        table,
+        partition_on=key if partition_on == "id" else "auto",
+        partition_num=4,
+        schema_overrides=overrides,
+    )
+    assert "partitions: 4" in lf.explain()
+    reference = _scan(
+        name, driver, table, partition_on=None, schema_overrides=overrides
+    ).collect()
+    assert reference.height == 400
+    assert reference.schema[key] == pl.String
+    out = lf.collect()
+    # the same rows: each in exactly one partition
+    assert_frame_equal(out.sort(out.columns), reference.sort(reference.columns))
+
+
 @functools.cache
 def _orders(name: str) -> pl.DataFrame:
     lf = _scan(name, _default_driver(name), "orders", partition_on=None)

@@ -4805,8 +4805,13 @@ fn resolve_partitions(
         .column(&column)
         .and_then(|m| m.db_type.as_deref())
         .and_then(|t| declared_dtype(config.dialect, t));
+    // Likewise a column read as another type (`schema_overrides` as a String) is cut on its
+    // database type, where that is one to cut on: the predicates compare the column itself.
     let kind_dtype = match &declared {
         Some(d @ DataType::Decimal(..)) if dtype.is_float() => d,
+        Some(d) if partition::range_kind(dtype).is_none() && partition::range_kind(d).is_some() => {
+            d
+        },
         _ => dtype,
     };
     if sqlite_text_read_as_number(config, &column) {
