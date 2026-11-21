@@ -448,6 +448,7 @@ mod tests {
             },
             runtime_filters: Vec::new(),
             estimated_rows: None,
+            pass_through_above: None,
         })
     }
 

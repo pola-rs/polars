@@ -12,6 +12,7 @@ pub struct JoinExec {
     parallel: bool,
     args: JoinArgs,
     options: Option<JoinTypeOptions>,
+    pass_through_above: Option<usize>,
 }
 
 impl JoinExec {
@@ -24,6 +25,7 @@ impl JoinExec {
         parallel: bool,
         args: JoinArgs,
         options: Option<JoinTypeOptions>,
+        pass_through_above: Option<usize>,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
@@ -33,6 +35,7 @@ impl JoinExec {
             parallel,
             args,
             options,
+            pass_through_above,
         }
     }
 }
@@ -68,6 +71,15 @@ impl Executor for JoinExec {
 
         let df_left = df_left?;
         let df_right = df_right?;
+        if self
+            .pass_through_above
+            .is_some_and(|limit| df_right.height() > limit)
+        {
+            if state.verbose() {
+                eprintln!("semi join passed through: {} build rows", df_right.height());
+            }
+            return Ok(df_left);
+        }
 
         let evaluate_keys = |df: &DataFrame, keys: &[Arc<dyn PhysicalExpr>]| {
             keys.iter()

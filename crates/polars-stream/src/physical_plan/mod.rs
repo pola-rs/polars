@@ -559,6 +559,7 @@ pub enum PhysNodeKind {
         /// The output schema before a following drop of columns was fused into this join, if
         /// one was.
         pre_drop_schema: Option<SchemaRef>,
+        pass_through_above: Option<usize>,
     },
 
     CrossJoin {

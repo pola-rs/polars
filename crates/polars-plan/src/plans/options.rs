@@ -402,6 +402,10 @@ pub struct JoinOptionsIR {
     /// `args.build_side`.
     #[cfg_attr(feature = "ir_serde", serde(default))]
     pub estimated_rows: Option<[u64; 2]>,
+    /// Build rows above which a semi join sends its left side on unfiltered. Only set
+    /// on a semi join whose output is joined on the same keys again, with a forced
+    /// right build.
+    pub pass_through_above: Option<usize>,
 }
 
 /// Largest ratio of distinct build keys to distinct probe keys for which a
@@ -489,6 +493,7 @@ impl JoinOptionsIR {
             options,
             runtime_filters,
             estimated_rows,
+            pass_through_above,
         } = self;
 
         *allow_parallel == other.allow_parallel
@@ -497,6 +502,7 @@ impl JoinOptionsIR {
             && options.shallow_eq(&other.options, expr_cmp)
             && *runtime_filters == other.runtime_filters
             && *estimated_rows == other.estimated_rows
+            && *pass_through_above == other.pass_through_above
     }
 
     #[cfg(feature = "cse")]
@@ -512,9 +518,11 @@ impl JoinOptionsIR {
             options,
             runtime_filters,
             estimated_rows,
+            pass_through_above,
         } = self;
 
         allow_parallel.hash(state);
+        pass_through_above.hash(state);
         force_parallel.hash(state);
         args.hash(state);
         options.shallow_hash(state, expr_hash);
@@ -906,6 +914,7 @@ impl From<JoinOptions> for JoinOptionsIR {
             options: Default::default(),
             runtime_filters: Vec::new(),
             estimated_rows: None,
+            pass_through_above: None,
         }
     }
 }

@@ -1495,6 +1495,7 @@ fn to_graph_rec<'a>(
                     options: options.clone(),
                     runtime_filters: Vec::new(),
                     estimated_rows: None,
+                    pass_through_above: None,
                 }),
             });
 
@@ -1549,6 +1550,7 @@ fn to_graph_rec<'a>(
             estimated_rows: _,
             key_ranges,
             pre_drop_schema: _,
+            ..
         } => {
             let args = args.clone();
             let output_schema = node.output_schema(0).clone();
@@ -1614,6 +1616,7 @@ fn to_graph_rec<'a>(
                     output_bool,
                     ref runtime_filters,
                     estimated_rows,
+                    pass_through_above,
                     ..
                 } => ctx.try_add_node_with_metrics(
                     |registry| {
@@ -1626,6 +1629,7 @@ fn to_graph_rec<'a>(
                             estimated_rows,
                             args,
                             output_bool,
+                            pass_through_above,
                             num_pipelines,
                             registry.task_metrics(),
                         )
