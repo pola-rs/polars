@@ -544,12 +544,6 @@ impl FileReader for FfiFileReader {
             let mut seq: u64 = 0;
             let mut stopped = false;
             let mut error = None;
-            // The slice was placed from a count, taken by a statement of its own: the rows
-            // are read to their end, so that a reader which checks them against that count
-            // (a table that changed in between) can fail instead of returning the wrong rows.
-            // Rows past the slice are all that this costs (a pushed limit leaves none).
-            let verify_count = pre_slice.is_some() && slf.n_rows.is_some();
-            let mut draining = false;
 
             'outer: while let Some(batch) = batch_rx.recv().await {
                 let df = match batch {
@@ -564,13 +558,6 @@ impl FileReader for FfiFileReader {
                     break;
                 }
                 rows_read += df.height() as u64;
-                if draining {
-                    if source_token.stop_requested() {
-                        stopped = true;
-                        break;
-                    }
-                    continue;
-                }
                 let df = slice.apply(df);
                 let mut offset = 0;
                 while offset < df.height() {
@@ -585,10 +572,6 @@ impl FileReader for FfiFileReader {
                     }
                 }
                 if slice.done() {
-                    if verify_count {
-                        draining = true;
-                        continue;
-                    }
                     stopped = true;
                     break;
                 }
