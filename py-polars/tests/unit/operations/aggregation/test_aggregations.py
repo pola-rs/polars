@@ -12,7 +12,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
@@ -297,7 +297,7 @@ def _assert_rolling_quantile_matches_series(
     windows = [v[max(0, i - period + 1) : i + 1] for i in range(len(v))]
 
     def oracle(w: pl.Series, p: float | None) -> float | None:
-        if p is None or not 0.0 <= p <= 1.0:
+        if p is None:
             return None
         return w.quantile(p, method)
 
@@ -323,7 +323,7 @@ def test_quantile_varying_per_rolling_window_20951(
     if with_nulls:
         v = v.scatter(rng.choice(n, n // 3, replace=False), None)
     q: list[float | None] = list(rng.random(n))
-    q[5], q[17], q[40] = None, 1.5, -0.5
+    q[5] = None
     _assert_rolling_quantile_matches_series(v, q, 5, method)
 
 
@@ -359,13 +359,13 @@ def test_quantile_series_literal_of_two_values_in_group_by_raises() -> None:
 
 
 def test_quantile_literal_values_per_group_quantile() -> None:
-    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, None, None, 1.5]})
+    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, None, None, 1.0]})
     lf = df.lazy().group_by("g", maintain_order=True)
     out = lf.agg(pl.lit(3).quantile(pl.col("q").first()))
     assert out.collect_schema()["literal"] == pl.Float64
-    assert out.collect()["literal"].to_list() == [3.0, None, None]
-    with pytest.raises(InvalidOperationError, match="not supported for dtype `bool`"):
-        lf.agg(pl.lit(True).quantile(pl.col("q").first())).collect()
+    assert out.collect()["literal"].to_list() == [3.0, None, 3.0]
+    out = lf.agg(pl.lit(True).quantile(pl.col("q").first()))
+    assert out.collect()["literal"].to_list() == [1.0, None, 1.0]
 
 
 def test_quantile_series_literal_in_group_by_empty_frame() -> None:
@@ -774,6 +774,63 @@ def test_quantile_empty_quantile_group_by() -> None:
     df = pl.DataFrame(schema={"g": pl.Int64, "a": pl.Float64, "q": pl.Float64})
     with pytest.raises(ComputeError, match="single quantile per group"):
         df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
+
+
+@pytest.mark.parametrize("per_group", [False, True])
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1])
+def test_quantile_out_of_range_grouped(quantile: float, per_group: bool) -> None:
+    # Read per group, only the last group or window gets the bad fraction.
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3], "q": [0.5, 0.5, quantile]})
+    fraction = pl.col("q").last() if per_group else pl.lit(quantile)
+    expr = pl.col("a").quantile(fraction, "nearest")
+    for q in [
+        lf.select(expr.over("g")),
+        lf.group_by("g").agg(expr),
+        lf.group_by("g").agg(pl.lit(3).quantile(fraction)),
+        lf.with_row_index("t").rolling("t", period="2i").agg(expr),
+    ]:
+        with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+            q.collect()
+
+
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+@pytest.mark.parametrize(
+    "quantile", [float("nan"), -0.1, 1.1, [0.5, 1.1], pl.lit([None, 1.1])]
+)
+def test_quantile_out_of_range_literal_empty(
+    op: str, quantile: float | list[float] | pl.Expr
+) -> None:
+    # Planning checks a literal fraction, so every engine raises without any rows.
+    lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64})
+    expr = getattr(pl.col("a"), op)(quantile)
+    for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+            q.collect_schema()
+
+
+@pytest.mark.parametrize("quantile", [pl.lit(True), pl.lit("0.5")])
+def test_quantile_non_numeric_fraction_grouped(quantile: pl.Expr) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    expr = pl.col("a").quantile(quantile)
+    for q in [lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
+            q.collect()
+
+
+@pytest.mark.parametrize(
+    "values", [pl.Series([True, False, True, None]), pl.Series([None] * 4)]
+)
+def test_quantile_bool_null_like_median(values: pl.Series) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2], "b": values})
+    contexts: list[Callable[[pl.Expr], pl.LazyFrame]] = [
+        lambda e: lf.select(e),
+        lambda e: lf.select(e.over("g")),
+        lambda e: lf.group_by("g", maintain_order=True).agg(e),
+    ]
+    for f in contexts:
+        q = f(pl.col("b").quantile(0.5, "linear"))
+        assert_frame_equal(q.collect(), f(pl.col("b").median()).collect())
+        assert q.collect_schema() == q.collect().schema
 
 
 @pytest.mark.parametrize("quantile", [-0.1, 1.1])
