@@ -951,7 +951,7 @@ fn mssql_sql_variant_text(column: &str) -> String {
         WHEN 'binary' THEN {binary} WHEN 'varbinary' THEN {binary} \
         ELSE CAST({column} AS NVARCHAR(MAX)) END",
         float = conv("FLOAT", 3),
-        real = format!("CONVERT(NVARCHAR(MAX), CAST({column} AS REAL), 3)"),
+        real = conv("REAL", 3),
         money = conv("MONEY", 2),
         datetime = conv("DATETIME", 121),
         datetime2 = conv("DATETIME2(7)", 121),
