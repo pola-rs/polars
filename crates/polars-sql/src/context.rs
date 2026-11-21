@@ -8152,6 +8152,16 @@ impl SQLContext {
             Some(limit) => row_count(limit, "LIMIT")?,
             None => lit(NULL).cast(DataType::Int64),
         };
+        if columns.is_empty() {
+            // Slice a placeholder so the row counts are still evaluated and can raise.
+            let name = format_pl_smallstr!("__POLARS_SLICE_{}", unique_column_name());
+            return Ok(frame
+                .select([lit(0).slice(offset, length).alias(name.clone())])
+                .drop(Selector::ByName {
+                    names: Arc::from([name]),
+                    strict: true,
+                }));
+        }
         Ok(frame.select(
             columns
                 .into_iter()

@@ -5,6 +5,7 @@ from typing import Literal
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -133,7 +134,7 @@ def test_limit_offset_literals_keep_slice(frames: dict[str, pl.DataFrame]) -> No
         ),
         (
             "SELECT x FROM t ORDER BY x "
-            "OFFSET FLOOR(RANDOM()) + 3 ROWS FETCH NEXT 2 ROWS ONLY"
+            "OFFSET (FLOOR(RANDOM()) + 3) ROWS FETCH NEXT 2 ROWS ONLY"
         ),
     ],
 )
@@ -179,3 +180,20 @@ def test_limit_offset_random_small_input(
 ) -> None:
     ctx = pl.SQLContext(frames, one=pl.DataFrame({"y": [1]}))
     assert ctx.execute(query).collect().height <= max_height
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * EXCLUDE x FROM t LIMIT FLOOR(RANDOM()) - 1",
+        "SELECT * EXCLUDE x FROM t OFFSET FLOOR(RANDOM()) - 1",
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_limit_offset_no_columns_raises(
+    query: str,
+    engine: Literal["in-memory", "streaming"],
+    frames: dict[str, pl.DataFrame],
+) -> None:
+    with pytest.raises(InvalidOperationError, match="conversion from"):
+        pl.SQLContext(frames).execute(query).collect(engine=engine)
