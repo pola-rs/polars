@@ -1276,13 +1276,11 @@ impl Translator<'_> {
             dt if dt.is_float() && self.dialect() == DialectName::Databricks => {
                 matches!(self.spark_float(name), Some("double" | "float")).then_some(Class::Exact)
             },
-            // ConnectorX's bundled SQLite, and a SQLite built by MSVC (no `long double`: the
-            // one of Python on Windows), parse a float literal inexactly (exponents beyond
-            // about +-85 miss the stored value): no float comparison is pushed.
+            // A SQLite that parses float literals inexactly misses the stored value
+            // (`sqlite_floats_exact`): no float comparison is pushed.
             dt if dt.is_float()
                 && self.dialect() == DialectName::Sqlite
-                && (cfg!(windows)
-                    || matches!(self.config.backend.kind, BackendKind::ConnectorX)) =>
+                && !self.config.sqlite_floats_exact =>
             {
                 None
             },
@@ -1430,7 +1428,7 @@ fn literal_comparable(col: &DataType, lit: &DataType) -> bool {
 }
 
 /// 1582-10-15, the first day of the Gregorian calendar, in days since the epoch.
-pub(crate) const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
+const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
 /// 1582-10-05, the first day of the Julian-Gregorian gap; the gap ends before `DATABRICKS_GAP_END_DAYS`.
 const ORACLE_GAP_START_DAYS: i64 = -141_437;
 
@@ -1499,7 +1497,7 @@ fn widens(from: &DataType, to: &DataType) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -1564,7 +1562,7 @@ mod tests {
     }
 
     /// A table scan of `columns` (`(name, dtype, db_type)`).
-    fn config(
+    pub(crate) fn config(
         dialect: DialectName,
         kind: BackendKind,
         columns: &[(&str, DataType, Option<&str>)],
@@ -1593,7 +1591,6 @@ mod tests {
                 strings: StringSemantics::UNKNOWN,
                 is_key: false,
                 comparable: true,
-                unstable: false,
             })
             .collect();
         DatabaseScanConfig {
@@ -1621,14 +1618,14 @@ mod tests {
             volatility_unchecked: false,
             user_schema: false,
             derived_order_dropped: false,
+            sqlite_floats_exact: true,
             refused_columns: vec![],
             resolution: None,
-            sqlite_text_numbers: vec![],
             bounds_cache: Default::default(),
         }
     }
 
-    fn adbc(driver: &str) -> BackendKind {
+    pub(crate) fn adbc(driver: &str) -> BackendKind {
         BackendKind::Adbc {
             driver: driver.into(),
         }
@@ -1677,6 +1674,67 @@ mod tests {
             class_of(&c(Some("decimal(10,2)"), DataType::Float64), &eq("0.5")),
             None
         );
+    }
+
+    #[test]
+    fn mssql_temporal_comparisons_follow_the_declared_type() {
+        let naive = DataType::Datetime(TimeUnit::Microseconds, None);
+        let ts = cmp("eq", "ts", "datetime[us]", "1719835200000000");
+        let c = |t| {
+            config(
+                DialectName::Mssql,
+                adbc("mssql"),
+                &[("ts", naive.clone(), t)],
+            )
+        };
+        assert_eq!(class_of(&c(Some("datetime2(6)")), &ts), Some(Class::Exact));
+        assert_eq!(class_of(&c(Some("date")), &ts), Some(Class::Exact));
+        for t in ["datetime2(7)", "datetime2", "datetime", "smalldatetime"] {
+            assert_eq!(class_of(&c(Some(t)), &ts), None, "{t}");
+        }
+        assert_eq!(class_of(&c(None), &ts), None);
+        let time = |t| {
+            config(
+                DialectName::Mssql,
+                adbc("mssql"),
+                &[("t", DataType::Time, t)],
+            )
+        };
+        let t = cmp("eq", "t", "time", "3600000000000");
+        assert_eq!(class_of(&time(Some("time(3)")), &t), Some(Class::Exact));
+        assert_eq!(class_of(&time(Some("time")), &t), None);
+        // `float` and `real` aren't compared exactly
+        let f = config(
+            DialectName::Mssql,
+            adbc("mssql"),
+            &[("f", DataType::Float64, Some("float"))],
+        );
+        assert_eq!(class_of(&f, &cmp("eq", "f", "f64", "0.5")), None);
+    }
+
+    #[test]
+    fn sqlite_float_comparisons_need_exact_parsing() {
+        let mut c = config(
+            DialectName::Sqlite,
+            adbc("sqlite"),
+            &[("f", DataType::Float64, Some("REAL"))],
+        );
+        let eq = cmp("eq", "f", "f64", "0.1");
+        assert_eq!(class_of(&c, &eq), Some(Class::Exact));
+        c.sqlite_floats_exact = false;
+        assert_eq!(class_of(&c, &eq), None);
+    }
+
+    #[test]
+    fn trino_literals_with_trailing_blanks_are_not_pushed() {
+        // a `char(n)` is read padded, but compared without the blanks
+        let c = config(
+            DialectName::Trino,
+            adbc("trino"),
+            &[("s", DataType::String, Some("char(3)"))],
+        );
+        assert!(class_of(&c, &cmp("eq", "s", "str", "a")).is_some());
+        assert_eq!(class_of(&c, &cmp("eq", "s", "str", "a  ")), None);
     }
 
     #[test]

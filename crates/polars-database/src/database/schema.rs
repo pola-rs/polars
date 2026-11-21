@@ -1381,6 +1381,55 @@ mod tests {
     }
 
     #[test]
+    fn mssql_and_trino_declared_types() {
+        let ms = DialectName::Mssql;
+        let ns = DataType::Datetime(TimeUnit::Nanoseconds, None);
+        let us = DataType::Datetime(TimeUnit::Microseconds, None);
+        assert_eq!(declared_dtype(ms, "datetime2"), Some(ns.clone()));
+        assert_eq!(declared_dtype(ms, "datetime2(7)"), Some(ns));
+        assert_eq!(declared_dtype(ms, "datetime2(6)"), Some(us.clone()));
+        assert_eq!(declared_dtype(ms, "datetime"), Some(us));
+        assert_eq!(
+            declared_dtype(ms, "datetimeoffset"),
+            Some(DataType::Datetime(
+                TimeUnit::Nanoseconds,
+                Some(TimeZone::UTC)
+            ))
+        );
+        assert_eq!(declared_dtype(ms, "time(7)"), Some(DataType::Time));
+        assert_eq!(declared_dtype(ms, "money"), Some(DataType::Decimal(19, 4)));
+        assert_eq!(declared_dtype(ms, "real"), Some(DataType::Float64));
+        assert_eq!(
+            declared_dtype(DialectName::Trino, "timestamp(3) with time zone"),
+            Some(DataType::Datetime(
+                TimeUnit::Microseconds,
+                Some(TimeZone::UTC)
+            ))
+        );
+    }
+
+    #[test]
+    fn truncated_text_timestamps_are_cut_toward_the_earlier_instant() {
+        let us = DataType::Datetime(TimeUnit::Microseconds, None);
+        let col = Column::new("t".into(), &["9999-12-31 23:59:59.9999999"]);
+        assert!(parse_temporal(&col, &us, false).is_err());
+        let cut = parse_temporal(&col, &us, true).unwrap().unwrap();
+        let expected = Column::new("t".into(), &["9999-12-31 23:59:59.999999"]);
+        let expected = parse_temporal(&expected, &us, false).unwrap().unwrap();
+        assert_eq!(cut.get(0).unwrap(), expected.get(0).unwrap());
+        // before 1970: toward the earlier instant, not toward zero
+        let col = Column::new("t".into(), &["1969-12-31 23:59:59.9999995"]);
+        let cut = parse_temporal(&col, &us, true).unwrap().unwrap();
+        let v = cut
+            .as_materialized_series()
+            .to_physical_repr()
+            .i64()
+            .unwrap()
+            .get(0);
+        assert_eq!(v, Some(-1));
+    }
+
+    #[test]
     fn decimal_text_in_scientific_notation() {
         assert_eq!(decimal_text_scale("1.25"), 2);
         assert_eq!(decimal_text_scale("100"), 0);

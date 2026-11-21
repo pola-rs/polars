@@ -29,10 +29,6 @@ flate = "flate"
 authenticat = "authenticat"
 # ISO year pattern in SQL date templates.
 iy = "iy"
-# SQL `IIF` and ClickHouse `normL1`/`normL2` function names in `scan_database` function lists.
-iif = "iif"
-ist = "ist"
-norml = "norml"
 
 [default.extend-identifiers]
 AKS = "AKS"

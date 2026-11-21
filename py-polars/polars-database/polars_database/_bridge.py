@@ -30,7 +30,7 @@ from polars_database import _lib
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from polars import DataFrame
+    from polars import DataFrame, Schema
 
 # Rows per batch when the user gives no `batch_size`.
 DEFAULT_BATCH_SIZE = 50_000
@@ -2099,6 +2099,21 @@ def _shutdown_socket(conn: Any) -> None:
             return
 
 
+def _cast_null_columns(
+    frames: Iterator[DataFrame], schema: Schema
+) -> Iterator[DataFrame]:
+    """`frames` with each column of dtype `Null` cast to its dtype in `schema`."""
+    import polars as pl
+
+    for df in frames:
+        casts = [
+            pl.col(name).cast(schema[name])
+            for name, dtype in df.schema.items()
+            if dtype == pl.Null and schema.get(name, pl.Null) != pl.Null
+        ]
+        yield df.with_columns(casts) if casts else df
+
+
 def _empty_frame(result: Any, *, utc: bool) -> DataFrame:
     import polars as pl
 
@@ -2971,19 +2986,9 @@ class _Session:
                 empty_frame = _empty_frame(
                     cx.result, utc=self.owned or bool(timestamps)
                 )
-                # A column of NULLs only (a Trino batch) has no dtype from its
-                # values: the description's
-                import polars as pl
-
-                null_typed = (
-                    {
-                        name: dtype
-                        for name, dtype in empty_frame.schema.items()
-                        if dtype != pl.Null
-                    }
-                    if _module_of(cx.result) == "trino"
-                    else {}
-                )
+                if _module_of(cx.result) == "trino":
+                    # a Trino batch types a column of NULLs only as `Null`
+                    frames = _cast_null_columns(frames, empty_frame.schema)
                 if on_connection:
                     frames = iter(list(frames))
                 if (
@@ -3024,15 +3029,6 @@ class _Session:
                 if df is None:
                     break
                 empty = False
-                if null_typed:
-                    schema = df.schema
-                    df = df.with_columns(
-                        [
-                            pl.col(c).cast(dtype)
-                            for c, dtype in null_typed.items()
-                            if schema.get(c) == pl.Null
-                        ]
-                    )
                 yield df
             if empty:
                 yield empty_frame

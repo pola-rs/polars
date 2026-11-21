@@ -888,9 +888,11 @@ fn batch_to_df(array: Box<dyn Array>) -> PolarsResult<DataFrame> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn mssql_uri_path_becomes_the_database_parameter() {
-        use super::mssql_database_uri as f;
+        let f = mssql_database_uri;
         assert_eq!(
             f("mssql://u:p@h:1433/polars"),
             "mssql://u:p@h:1433?database=polars"
@@ -904,8 +906,6 @@ mod tests {
         assert_eq!(f("mssql://h:1433"), "mssql://h:1433");
         assert_eq!(f("mssql://h:1433/"), "mssql://h:1433/");
     }
-
-    use super::*;
 
     #[test]
     fn invalid_utf8_is_found_nested() {

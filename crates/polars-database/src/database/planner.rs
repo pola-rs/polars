@@ -16,7 +16,6 @@ use super::catalog::{self, CatalogInfo};
 use super::config::{
     ColumnMeta, CompiledPartition, CompiledScan, DatabaseScanConfig, TableStats, session_setup_runs,
 };
-use super::connection::ConnectionSpec;
 use super::dialect::DialectName;
 use super::options::{Consistency, DatabaseRelation, DatabaseScanOptions, PartitionSpec};
 use super::partition::{self, Partition};
@@ -426,6 +425,7 @@ pub fn resolve_scan(
     // The server drops the query's top-level `ORDER BY` inside a derived table (MariaDB, or
     // a MySQL dialect server not known to keep it without I/O): a read must not wrap it.
     let mut derived_order_dropped = false;
+    let mut sqlite_floats_exact_found = false;
     // columns the read refuses, with why (`DatabaseScanConfig::refused_columns`)
     let mut refused: Vec<(PlSmallStr, PlSmallStr)> = Vec::new();
     if let DatabaseRelation::Query { sql } = &options.relation {
@@ -460,8 +460,7 @@ pub fn resolve_scan(
         // Each partition runs the query again: it must pick the same rows every time.
         if let Ok(facts) = &facts
             && facts.parses
-            && (!repeatable(facts, dialect, read_only_session)
-                || params_time_relative(&options.connection))
+            && !repeatable(facts, dialect, read_only_session)
             && matches!(
                 options.partitioning,
                 PartitionSpec::Column { .. } | PartitionSpec::Predicates(_)
@@ -469,20 +468,12 @@ pub fn resolve_scan(
         {
             polars_bail!(
                 InvalidOperation:
-                "this query can't be partitioned: each partition runs it again, and it isn't \
-                proven to return the same rows each time: only built-in, deterministic \
-                functions and operators are (not a user's function, whatever its label, a \
-                clock, a session variable, a random function, a table function, an \
-                aggregate that depends on the order of rows), and no LIMIT, OFFSET, \
-                TABLESAMPLE, or rows numbered or picked in no set order (a window function, \
-                DISTINCT ON, any_value); a function that may change something would run \
-                again too, unless the driver's sessions are read-only; not proven here: {}; \
-                pass partition_on=None, or partition a table",
-                if facts.unproven.is_empty() {
-                    "the query's other constructs (LIMIT, a window, a bare column ...)".to_string()
-                } else {
-                    facts.unproven.iter().map(|u| u.as_str()).collect::<Vec<_>>().join(", ")
-                }
+                "this query can't be partitioned: each partition runs it again, and with \
+                LIMIT, OFFSET, TABLESAMPLE, a random function, the current time, or rows \
+                numbered or picked in no set order (a window function, DISTINCT ON, \
+                any_value) it may return other rows each time; a function that may change \
+                something (one sqlglot doesn't know) would run again too, unless the \
+                driver's sessions are read-only; pass partition_on=None, or partition a table"
             );
         }
         // Partitions are read side by side: the query's own order would hold only within each.
@@ -582,9 +573,6 @@ pub fn resolve_scan(
     // The type affinity of a SQLite table's columns (`sqlite_affinity_dtype`): a REAL
     // column holds no integers, an INTEGER column no integral reals.
     let mut affinity: PlHashMap<PlSmallStr, DataType> = PlHashMap::new();
-    // The columns of TEXT affinity (declared CHAR, CLOB, TEXT): SQLite compares and sorts
-    // their values as text, whatever they are read as.
-    let mut text_affinity: PlHashSet<PlSmallStr> = PlHashSet::new();
     let mut stats = TableStats::default();
     let mut resolution: Option<Vec<String>> = None;
     let mut mixed_found: Vec<PlSmallStr> = Vec::new();
@@ -618,7 +606,6 @@ pub fn resolve_scan(
                     dt if dt.is_float() || dt.is_decimal() => false,
                     _ => true,
                 },
-                unstable: false,
             })
             .collect();
         // No I/O to ask the database about views and the functions sqlglot doesn't know.
@@ -720,15 +707,12 @@ pub fn resolve_scan(
         if volatility.positional && pushdown_disabled.is_none() {
             pushdown_disabled = Some(POSITIONAL_VIEW_REASON.into());
         }
+        if dialect == DialectName::Sqlite && !matches!(backend.kind, BackendKind::ConnectorX) {
+            sqlite_floats_exact_found = sqlite_floats_exact(session.as_mut());
+        }
         // a view's columns hold what its query gives, whatever `pragma_table_info` says
         // (the first branch's type, of a `UNION`)
         if dialect == DialectName::Sqlite && volatility.plain_table {
-            text_affinity.extend(
-                info.compare_types
-                    .iter()
-                    .filter(|(_, t)| sqlite_text_affinity(t))
-                    .map(|(n, _)| n.clone()),
-            );
             affinity.extend(
                 info.compare_types
                     .iter()
@@ -942,7 +926,6 @@ pub fn resolve_scan(
                                 )
                                 .is_some())
                     }),
-                unstable: false,
             })
             .collect();
         if is_query && dialect == DialectName::Oracle {
@@ -1034,28 +1017,20 @@ pub fn resolve_scan(
         .volatile_columns
         .extend(volatility.columns.iter().cloned());
 
-    // The columns of volatile functions or float aggregates give other values on another run:
-    // not partition keys.
-    for c in columns.iter_mut() {
-        c.unstable |= query.all_columns_volatile
-            || query
-                .volatile_columns
-                .iter()
-                .any(|v| v.eq_ignore_ascii_case(&c.name));
-    }
-
     // A filter on a volatile function's column (`random() AS r`) isn't pushed: SQLite merges
     // the wrapped query into the filter's and calls the function again for it, returning
     // rows whose value fails the filter. Postgres and DuckDB push no filter below a
-    // volatile function: it sees the values the query returns.
+    // volatile function: it sees the values the query returns. Nor is one on a redacted
+    // table's columns.
     let refilters = !matches!(dialect, DialectName::Postgresql | DialectName::Duckdb);
     for c in columns.iter_mut().filter(|c| {
-        refilters
-            && (query.all_columns_volatile
-                || query
-                    .volatile_columns
-                    .iter()
-                    .any(|v| v.eq_ignore_ascii_case(&c.name)))
+        volatility.redacted
+            || refilters
+                && (query.all_columns_volatile
+                    || query
+                        .volatile_columns
+                        .iter()
+                        .any(|v| v.eq_ignore_ascii_case(&c.name)))
     }) {
         c.comparable = false;
     }
@@ -1067,11 +1042,6 @@ pub fn resolve_scan(
                 // Overrides may only retype columns; they don't add any.
                 if let Some(existing) = schema.get_mut(name) {
                     let retyped = existing != dtype;
-                    // SQLite: a column found to hold text may have TEXT affinity (a query's
-                    // column of a TEXT column has it too)
-                    if dialect == DialectName::Sqlite && *existing == DataType::String {
-                        text_affinity.insert(name.clone());
-                    }
                     *existing = dtype.clone();
                     if let Some(c) = columns.iter_mut().find(|c| c.name == name) {
                         c.dtype = dtype.clone();
@@ -1276,17 +1246,6 @@ pub fn resolve_scan(
         pushdown_disabled = Some(reason.into());
     }
 
-    // A TEXT column read as a number (`schema_overrides=`): a range or an order on it follows
-    // the text.
-    let sqlite_text_numbers = schema
-        .iter()
-        .filter(|(name, dtype)| {
-            (dtype.is_integer() || dtype.is_float() || dtype.is_decimal())
-                && text_affinity.contains(*name)
-        })
-        .map(|(name, _)| name.clone())
-        .collect();
-
     // SQL Server under `schema=`: no I/O says a column's type, so one declared a `Datetime`
     // (any unit, with or without a zone) is read as text through one expression that is exact
     // for every source type (see `column_conversion`), where the drivers read another instant
@@ -1322,7 +1281,6 @@ pub fn resolve_scan(
     }
 
     Ok(DatabaseScanConfig {
-        sqlite_text_numbers,
         fingerprint: options.fingerprint(),
         options,
         dialect,
@@ -1337,6 +1295,7 @@ pub fn resolve_scan(
         volatility_unchecked,
         user_schema: user_typed,
         derived_order_dropped,
+        sqlite_floats_exact: sqlite_floats_exact_found,
         refused_columns: refused,
         resolution,
         bounds_cache: Default::default(),
@@ -1362,39 +1321,6 @@ pub fn check_unplanned_volatility(
         return Ok(false);
     }
     let volatility = unplanned_volatility(session, config);
-    if compiled.partitions.len() > 1 {
-        let options = &config.options;
-        let key = match &options.partitioning {
-            PartitionSpec::Column { column, .. } => Some(column.as_str()),
-            PartitionSpec::Auto { .. } => {
-                options.order_by.first().map(|c| c.as_str()).or_else(|| {
-                    config
-                        .columns
-                        .iter()
-                        .find(|c| c.is_key)
-                        .map(|c| c.name.as_str())
-                })
-            },
-            _ => None,
-        };
-        let unstable = volatility
-            .columns
-            .iter()
-            .find(|v| match &options.partitioning {
-                PartitionSpec::Predicates(preds) => preds.iter().any(|p| names_column(p, v)),
-                _ => key.is_some_and(|k| v.eq_ignore_ascii_case(k)),
-            });
-        if volatility.all_columns || unstable.is_some() {
-            polars_bail!(
-                InvalidOperation:
-                "this source can't be partitioned on {}: it may be computed by an aggregate \
-                over floats or a volatile function, whose values differ between runs (found \
-                when reading: schema= skips the check when planning); partition on another \
-                column, or pass partition_on=None",
-                unstable.map_or("its columns".to_string(), |c| format!("'{c}'"))
-            );
-        }
-    }
     let Some(reason) = volatility.volatile else {
         return Ok(false);
     };
@@ -1521,7 +1447,6 @@ pub fn session_resolution(
 /// A partitioned read over several connections must not read a temporary table of a session
 /// either: it shadows a permanent one of its name only for the session that made it, so the
 /// partitions that land on other sessions of the pool would read the permanent table, or none.
-/// (Oracle's global temporary tables are in the catalog: `catalog::oracle_session_bound`.)
 pub fn check_resolution(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -1769,6 +1694,7 @@ fn read_wrapped(
             || r == SETTINGS_REASON
             || r == POSITIONAL_VIEW_REASON
     });
+
     match options.relation {
         DatabaseRelation::Table { .. } => true,
         DatabaseRelation::Query { .. } => {
@@ -3409,19 +3335,6 @@ fn sqlite_affinity_dtype(t: &str) -> DataType {
     }
 }
 
-/// A SQLite column of TEXT affinity that is read as a number (`schema_overrides=`/`schema=`):
-/// SQLite compares and sorts its values as text (`'50' > '100'`), so integer cuts or an
-/// `ORDER BY` on it don't follow the numbers read.
-fn sqlite_text_read_as_number(config: &DatabaseScanConfig, column: &str) -> bool {
-    config.sqlite_text_numbers.iter().any(|c| c == column)
-}
-
-/// Whether a SQLite declared type has TEXT affinity (`CHAR`, `CLOB`, `TEXT`, and no `INT`).
-fn sqlite_text_affinity(t: &str) -> bool {
-    let t = t.to_ascii_uppercase();
-    !t.contains("INT") && (t.contains("CHAR") || t.contains("CLOB") || t.contains("TEXT"))
-}
-
 fn from_clause(options: &DatabaseScanOptions) -> SqlFrom {
     match &options.relation {
         DatabaseRelation::Table { parts, .. } => SqlFrom::Table(parts.clone()),
@@ -3479,12 +3392,6 @@ pub fn compile_scan(
         polars_ensure!(
             config.schema.contains(c),
             ColumnNotFound: "order_by column '{c}' is not in the database source"
-        );
-        polars_ensure!(
-            !sqlite_text_read_as_number(config, c),
-            InvalidOperation:
-            "order_by column '{c}' is a SQLite TEXT column read as a number: SQLite sorts its \
-            values as text ('100' before '50'). Read it as a string, or declare it INTEGER"
         );
     }
     columns.dedup();
@@ -4011,13 +3918,6 @@ fn compile_unwrapped(
                         config.schema.contains(c),
                         ColumnNotFound: "order_by column '{c}' is not in the database source"
                     );
-                    polars_ensure!(
-                        !sqlite_text_read_as_number(config, c),
-                        InvalidOperation:
-                        "order_by column '{c}' is a SQLite TEXT column read as a number: \
-                        SQLite sorts its values as text ('100' before '50'). Read it as a \
-                        string, or declare it INTEGER"
-                    );
                 }
                 // the table's columns, not the select items that convert them
                 let cols = order_by
@@ -4075,10 +3975,13 @@ struct SourceVolatility {
     plain_table: bool,
     /// A view it reads has a positional join (`PASTE`, `POSITIONAL`): no filter is pushed.
     positional: bool,
+    /// A table it reads is read redacted (Oracle Data Redaction), and compared as stored: no
+    /// filter is pushed.
+    redacted: bool,
 }
 
-const UNKNOWN_FUNCTIONS: &str = "the functions or operators it calls, which the database \
-    couldn't be asked about (a user's may stand in for a built-in)";
+const UNKNOWN_FUNCTIONS: &str = "a function sqlglot doesn't know (it may be a user's \
+    volatile function, which the catalog can't tell)";
 
 /// The views a scan reads (the table, or those its query reads, and theirs in turn), and
 /// the rounds of SQL-defined functions it looks through, at most: one past this is taken to
@@ -4109,78 +4012,29 @@ fn source_volatility(
     names_in_order: bool,
 ) -> SourceVolatility {
     let mut out = SourceVolatility::default();
+    let mut unknown: Vec<PlSmallStr> = facts
+        .map(|f| f.unknown_functions.clone())
+        .unwrap_or_default();
     // the functions the parser knows, which a user's may have replaced
     let mut known: Vec<PlSmallStr> = facts.map(|f| f.known_functions.clone()).unwrap_or_default();
-    // Postgres: the types the SQL names, which a user's cast to or from them runs for (and a user's
-    // operator on them, with those of the columns of the relations it reads)
-    let mut casts: Vec<PlSmallStr> = facts.map(|f| f.cast_types.clone()).unwrap_or_default();
     // (the relation, the qualifier of the view naming it, whether its columns are the
-    // source's, whether it is read with `FINAL`)
-    let mut pending: Vec<(Vec<PlSmallStr>, Vec<PlSmallStr>, bool, bool)> = match relation {
-        DatabaseRelation::Table { parts, .. } => vec![(parts.to_vec(), vec![], true, false)],
+    // source's)
+    let mut pending: Vec<(Vec<PlSmallStr>, Vec<PlSmallStr>, bool)> = match relation {
+        DatabaseRelation::Table { parts, .. } => vec![(parts.to_vec(), vec![], true)],
         DatabaseRelation::Query { .. } => facts
             .map(|f| {
                 f.tables
                     .iter()
-                    .map(|t| (t.clone(), vec![], false, f.final_tables.contains(t)))
+                    .map(|t| (t.clone(), vec![], false))
                     .collect()
             })
             .unwrap_or_default(),
     };
-    // every relation looked up, and the names the SQL writes (`None`: every column)
-    let mut looked_up: Vec<(Vec<PlSmallStr>, Vec<PlSmallStr>)> = vec![];
-    let mut refs: Option<PlHashSet<PlSmallStr>> = Some(PlHashSet::new());
-    let union_refs = |refs: &mut Option<PlHashSet<PlSmallStr>>, f: &QueryFacts| match (
-        refs.as_mut(),
-        &f.referenced_columns,
-    ) {
-        (Some(set), Some(names)) => set.extend(names.iter().cloned()),
-        _ => *refs = None,
-    };
-    if let Some(f) = facts {
-        union_refs(&mut refs, f);
-    }
-    // Postgres: columns cast to a date or time, whose text may name `now`
-    let mut cast_columns: PlHashSet<PlSmallStr> = PlHashSet::new();
-    if let Some(f) = facts {
-        cast_columns.extend(f.temporal_cast_columns.iter().cloned());
-    }
-    let mut seen: PlHashSet<(Vec<PlSmallStr>, Vec<PlSmallStr>, bool)> = PlHashSet::new();
+    let mut seen: PlHashSet<(Vec<PlSmallStr>, Vec<PlSmallStr>)> = PlHashSet::new();
     let renderer = sql_renderer().ok();
-    // Databricks: the session's SQL path, read once (for the built-ins' place in it and for where a
-    // user's function is looked up)
-    let mut dbx_path: Option<Option<String>> = None;
-    // where rows are merged (`GROUP BY`, `DISTINCT`) and a collation equates different texts, the
-    // database returns any one of them
-    let mut collapses = facts.is_some_and(|f| f.collapses_rows);
-    let mut collated = facts.is_some_and(|f| f.collated);
-    // the functions of a query resolve along the session's SQL path, where a user's function may
-    // stand ahead of the built-ins (a view's own path is read with its text)
-    if dialect == DialectName::Databricks
-        && matches!(relation, DatabaseRelation::Query { .. })
-        && !known.is_empty()
-        && !dbx_path
-            .get_or_insert_with(|| catalog::databricks_path(session))
-            .as_deref()
-            .is_some_and(catalog::databricks_builtins_first)
-    {
-        out.volatile = Some(
-            "the session's SQL path (`SET PATH`), which puts a schema ahead of the \
-            built-in functions, so a user's function may stand where the query calls a \
-            built-in,"
-                .into(),
-        );
-        out.all_columns = true;
-    }
     // Functions defined in SQL (DuckDB macros, ClickHouse functions) are as volatile as
     // their bodies, which may call others, and read views.
     let mut checked: PlHashSet<PlSmallStr> = PlHashSet::new();
-    let mut checked_casts: PlHashSet<PlSmallStr> = PlHashSet::new();
-    // (the relations a Postgres lookup of operators and casts has seen)
-    let mut checked_relations = 0;
-    // (an unparsed Postgres query: any user's operator may run, its types unknown)
-    let mut any_operator = facts.is_some_and(|f| f.any_operator);
-    let mut objects: Vec<String> = vec![];
     // DuckDB macros of operators and built-ins' names run where the query doesn't name
     // them (`a + 1`, `trim(LEADING ..)`): a volatile one makes every source on the
     // connection volatile, however the query is written (see
@@ -4203,10 +4057,10 @@ fn source_volatility(
     };
     let mut round = 0;
     'inspect: loop {
-        while let Some((parts, context, own_columns, final_read)) = pending.pop() {
+        while let Some((parts, context, own_columns)) = pending.pop() {
             // Names are already dialect-normalized or catalog-resolved. Keep their
             // case and resolution context: Postgres v and "V" can be different views.
-            let key = (context.clone(), parts.clone(), final_read);
+            let key = (context.clone(), parts.clone());
             if !seen.insert(key) {
                 continue;
             }
@@ -4215,93 +4069,33 @@ fn source_volatility(
                 out.all_columns = true;
                 break 'inspect;
             }
-            looked_up.push((parts.clone(), context.clone()));
-            let (sql, qualifier) = match catalog::view_definition(
-                session, dialect, &parts, &context,
-            ) {
-                catalog::ViewLookup::View { sql, qualifier } => (sql, qualifier),
-                lookup @ (catalog::ViewLookup::Table { .. }
-                | catalog::ViewLookup::MergeOnRead { .. }) => {
-                    let (generated, merging) = match lookup {
-                        catalog::ViewLookup::Table { generated } => (generated, false),
-                        catalog::ViewLookup::MergeOnRead { generated } => (generated, true),
-                        _ => unreachable!(),
-                    };
-                    out.plain_table |= own_columns;
-                    let name = parts.join(".");
-                    if merging && !final_read {
+            let (sql, qualifier) =
+                match catalog::view_definition(session, dialect, &parts, &context) {
+                    catalog::ViewLookup::View { sql, qualifier } => (sql, qualifier),
+                    catalog::ViewLookup::NotAView => {
+                        out.plain_table |= own_columns;
+                        continue;
+                    },
+                    catalog::ViewLookup::Redacted => {
+                        out.plain_table |= own_columns;
+                        out.redacted = true;
+                        continue;
+                    },
+                    catalog::ViewLookup::Unknown => continue,
+                    catalog::ViewLookup::Failed => {
+                        let name = parts.join(".");
+                        // (a Databricks temporary view lists no definition)
                         out.volatile = Some(
-                                format!(
-                                    "'{name}', a ClickHouse table whose engine folds rows at \
-                                    background merges (ReplacingMergeTree, CollapsingMergeTree, \
-                                    SummingMergeTree, AggregatingMergeTree ...), so its rows differ \
-                                    before and after a merge unless the query reads it `FINAL`,"
-                                )
-                                .into(),
-                            );
+                            format!(
+                                "'{name}', whose definition isn't available (a temporary \
+                                view, say), so it can't be shown to repeat its rows,"
+                            )
+                            .into(),
+                        );
                         out.all_columns = true;
-                    }
-                    // columns the database computes on each read: proven like a query
-                    for (column, expr) in generated {
-                        let proven = renderer
-                            .as_ref()
-                            .filter(|_| !expr.trim().is_empty())
-                            .and_then(|r| r.inspect_query(&format!("SELECT {expr}"), dialect).ok())
-                            .filter(|f| f.parses && f.repeatable);
-                        match proven {
-                            Some(f) => {
-                                known.extend(f.known_functions);
-                                casts.extend(f.cast_types);
-                                cast_columns.extend(f.temporal_cast_columns);
-                                pending.extend(
-                                    f.tables.into_iter().map(|t| (t, vec![], false, false)),
-                                );
-                            },
-                            None => {
-                                out.volatile = Some(
-                                    format!(
-                                        "the generated column '{column}' of '{name}', whose \
-                                            expression isn't proven to give the same values each \
-                                            time,"
-                                    )
-                                    .into(),
-                                );
-                                out.columns.push(column.as_str().into());
-                            },
-                        }
-                    }
-                    continue;
-                },
-                catalog::ViewLookup::Ttl => {
-                    out.volatile = Some(
-                        format!(
-                            "'{}', a ClickHouse table with a TTL, which drops rows or \
-                            changes values in the background, so its rows differ before and \
-                            after, even with `FINAL`,",
-                            parts.join(".")
-                        )
-                        .into(),
-                    );
-                    out.all_columns = true;
-                    continue;
-                },
-                catalog::ViewLookup::Unknown | catalog::ViewLookup::Failed => {
-                    let name = parts.join(".");
-                    // (a Databricks temporary view lists no definition; a foreign, external or
-                    // system table, an unresolved synonym, a name the catalog doesn't show)
-                    out.volatile = Some(
-                        format!(
-                            "'{name}', which the catalog doesn't show to be an ordinary \
-                                table or a view that can be read (a temporary view, a \
-                                foreign or external table, a system view, an unresolved name), \
-                                so it can't be shown to repeat its rows,"
-                        )
-                        .into(),
-                    );
-                    out.all_columns = true;
-                    continue;
-                },
-            };
+                        continue;
+                    },
+                };
             let name = parts.join(".");
             let view = renderer
                 .as_ref()
@@ -4316,12 +4110,7 @@ fn source_volatility(
                 // a volatile function, a `LIMIT`, rows picked in no set order
                 out.volatile = Some(format!("the view '{name}'").into());
             }
-            collapses |= view.collapses_rows;
-            collated |= view.collated;
             out.positional |= view.positional_join || view.unsafe_settings;
-            union_refs(&mut refs, &view);
-            cast_columns.extend(view.temporal_cast_columns.iter().cloned());
-            casts.extend(view.cast_types.iter().cloned());
             let any_volatile = view.all_columns_volatile || !view.volatile_columns.is_empty();
             match &view.output_columns {
                 Some(outputs)
@@ -4342,7 +4131,7 @@ fn source_volatility(
                     if own_columns
                         && !view.all_columns_volatile
                         && !names_in_order
-                        && dialect != DialectName::Mysql =>
+                        && !matches!(dialect, DialectName::Mysql | DialectName::Singlestore) =>
                 {
                     for n in names {
                         let volatile = match outputs.iter().find(|o| o.eq_ignore_ascii_case(n)) {
@@ -4350,7 +4139,7 @@ fn source_volatility(
                                 .volatile_columns
                                 .iter()
                                 .any(|v| v.eq_ignore_ascii_case(o)),
-                            // not among the query's names (a MySQL view's column list)
+                            // not among the query's names
                             None => any_volatile,
                         };
                         if volatile {
@@ -4362,31 +4151,26 @@ fn source_volatility(
                 _ if any_volatile => out.all_columns = true,
                 _ => {},
             }
+            unknown.extend(view.unknown_functions);
             known.extend(view.known_functions);
             // its own unqualified names resolve where it was found
-            let finals = view.final_tables;
-            pending.extend(view.tables.into_iter().map(|t| {
-                let f = finals.contains(&t);
-                (t, qualifier.clone(), false, f)
-            }));
+            pending.extend(
+                view.tables
+                    .into_iter()
+                    .map(|t| (t, qualifier.clone(), false)),
+            );
         }
-        // built-ins the parser knows, which a user's function may stand in for
         let mut functions: Vec<PlSmallStr> =
-            known.drain(..).filter(|n| !checked.contains(n)).collect();
+            unknown.drain(..).filter(|n| !checked.contains(n)).collect();
         functions.sort();
         functions.dedup();
-        // (Postgres: the operators and casts a user defined, which run for syntax and for the types
-        // of the columns, are looked up once at least)
-        let postgres = matches!(dialect, DialectName::Postgresql | DialectName::Redshift);
-        let cast_types: Vec<PlSmallStr> = casts
+        let mut replaceable: Vec<PlSmallStr> = known
             .drain(..)
-            .filter(|c| !checked_casts.contains(c))
+            .filter(|n| !checked.contains(n) && functions.binary_search(n).is_err())
             .collect();
-        if functions.is_empty()
-            && shadow.is_empty()
-            && cast_types.is_empty()
-            && !(postgres && (looked_up.len() > checked_relations || any_operator))
-        {
+        replaceable.sort();
+        replaceable.dedup();
+        if functions.is_empty() && replaceable.is_empty() && shadow.is_empty() {
             break;
         }
         if round == MAX_FUNCTION_ROUNDS {
@@ -4394,35 +4178,25 @@ fn source_volatility(
             break;
         }
         round += 1;
-        checked.extend(functions.iter().cloned());
-        checked_relations = looked_up.len();
-        let all_operators = std::mem::take(&mut any_operator);
-        checked_casts.extend(cast_types.iter().cloned());
-        let path = (dialect == DialectName::Databricks)
-            .then(|| {
-                dbx_path
-                    .get_or_insert_with(|| catalog::databricks_path(session))
-                    .clone()
-            })
-            .flatten();
-        let Some(found) = catalog::user_functions(
-            session,
-            dialect,
-            &functions,
-            &cast_types,
-            &looked_up.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>(),
-            all_operators,
-            path.as_deref(),
-        ) else {
-            // the database can't say whether a user's function stands in for a built-in
-            out.volatile = Some(UNKNOWN_FUNCTIONS.into());
-            break;
+        checked.extend(functions.iter().chain(&replaceable).cloned());
+        let only_replaceable = functions.is_empty();
+        functions.extend(replaceable.iter().cloned());
+        let found = match catalog::volatile_functions(session, dialect, &functions, &replaceable) {
+            Some(found) => found,
+            // built-ins as far as is known: a database that can't list its functions
+            // (an old SQLite) is no reason to refuse every query that calls one
+            None if only_replaceable => catalog::FunctionLookup::default(),
+            None => {
+                // the values of such a column aren't compared in the database on SQLite
+                // only, as without the lookup (`_volatile_columns`)
+                out.volatile = Some(UNKNOWN_FUNCTIONS.into());
+                break;
+            },
         };
         let mut bodies: Vec<(Option<String>, String)> =
             found.bodies.into_iter().map(|b| (None, b)).collect();
         bodies.extend(shadow.drain(..).map(|(n, body)| (Some(n), body)));
-        let mut volatile = found.found;
-        objects.extend(found.objects.iter().cloned());
+        let mut volatile = found.volatile;
         // the shadowing macros whose bodies are volatile
         let mut shadowing: Vec<String> = vec![];
         for (macro_name, body) in &bodies {
@@ -4445,10 +4219,10 @@ fn source_volatility(
                     if let (Some(n), false) = (macro_name, f.repeatable) {
                         shadowing.push(n.clone());
                     }
+                    unknown.extend(f.unknown_functions);
                     known.extend(f.known_functions);
-                    casts.extend(f.cast_types);
                     // the views it reads (a view's columns aren't the source's then)
-                    pending.extend(f.tables.into_iter().map(|t| (t, vec![], false, false)));
+                    pending.extend(f.tables.into_iter().map(|t| (t, vec![], false)));
                 },
                 None => {
                     volatile = true;
@@ -4459,21 +4233,13 @@ fn source_volatility(
         if volatile {
             out.volatile = Some(
                 format!(
-                    "{} (a user's function, operator or cast that may \
-                    stand where the query calls a built-in, or a macro whose body isn't proven{}{})",
-                    if objects.is_empty() {
-                        format!(
-                            "one of the functions {}",
-                            functions
-                                .iter()
-                                .map(|f| f.to_string())
-                                .chain(shadowing.iter().map(|m| format!("\"{m}\"")))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    } else {
-                        format!("the user's {}", objects.join(", "))
-                    },
+                    "one of the functions {} (volatile, by the catalog or its body{}{})",
+                    functions
+                        .iter()
+                        .map(|f| f.to_string())
+                        .chain(shadowing.iter().map(|m| format!("\"{m}\"")))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     if dialect == DialectName::Sqlite {
                         "; register a deterministic user function with `deterministic=True`"
                     } else {
@@ -4492,78 +4258,16 @@ fn source_volatility(
             out.all_columns = true;
             break;
         }
-    }
-    // a `GROUP BY`, `DISTINCT` or set operation over a text whose collation equates different
-    // spellings returns any one of them: proven only where the columns it names have a binary (or
-    // deterministic) collation, which the catalog says
-    if collapses && out.volatile.is_none() {
-        let mut why: Option<String> = collated.then(|| "a COLLATE clause".to_string());
-        if why.is_none() {
-            for (parts, context) in &looked_up {
-                match catalog::nonbinary_collated_columns(session, dialect, parts, context) {
-                    Some(cols) => {
-                        if let Some(c) = cols.iter().find(|c| {
-                            refs.as_ref().is_none_or(|r| r.contains(c.as_str()))
-                                || c.as_str() == "*"
-                        }) {
-                            why = Some(format!("column '{c}' of '{}'", parts.join(".")));
-                        }
-                    },
-                    None => {
-                        why = Some(format!(
-                            "the collations of '{}', which couldn't be read",
-                            parts.join(".")
-                        ));
-                    },
-                }
-                if why.is_some() {
-                    break;
-                }
-            }
-        }
-        if let Some(why) = why {
+        // the same values within a statement (a filter sees them), not across partitions
+        if found.stable && out.volatile.is_none() {
             out.volatile = Some(
                 format!(
-                    "a GROUP BY, DISTINCT or set operation over text of a collation that \
-                    may equate different texts (case- or accent-insensitive, nondeterministic: \
-                    {why}), which returns any one of the spellings that compare equal,"
+                    "one of the functions {} (STABLE, by the catalog: the same within one \
+                    statement only)",
+                    functions.join(", ")
                 )
                 .into(),
             );
-            out.all_columns = true;
-        }
-    }
-    // a text column cast to a date or time may hold `'now'` (Postgres)
-    if !cast_columns.is_empty() && out.volatile.is_none() {
-        for (parts, context) in &looked_up {
-            match catalog::text_columns(session, dialect, parts, context) {
-                Some(cols) => {
-                    if let Some(c) = cols.iter().find(|c| cast_columns.contains(c.as_str())) {
-                        out.volatile = Some(
-                            format!(
-                                "the text column '{c}' of '{}' cast to a date or time, whose \
-                                values may read as a time relative to now ('now', 'today', ...),",
-                                parts.join(".")
-                            )
-                            .into(),
-                        );
-                    }
-                },
-                None => {
-                    out.volatile = Some(
-                        format!(
-                            "the column types of '{}', which couldn't be read (a cast to a \
-                            date or time may read a text 'now'),",
-                            parts.join(".")
-                        )
-                        .into(),
-                    );
-                },
-            }
-            if out.volatile.is_some() {
-                out.all_columns = true;
-                break;
-            }
         }
     }
     if verbose()
@@ -4574,195 +4278,8 @@ fn source_volatility(
     out
 }
 
-/// Words of a time of day or a zone (Postgres' zone abbreviations, and its zone names that are one
-/// word) that may stand around `now`, `today` ...: `'today EST'`, `'13:00 yesterday'`. The same
-/// list as `_sqlglot.py`'s `_TIME_WORDS`.
-const TIME_WORDS: &[&str] = &[
-    "am",
-    "pm",
-    "at",
-    "allballs",
-    "z",
-    "zulu",
-    "ut",
-    "utc",
-    "uct",
-    "gmt",
-    "est",
-    "edt",
-    "cst",
-    "cdt",
-    "mst",
-    "mdt",
-    "pst",
-    "pdt",
-    "akst",
-    "akdt",
-    "hst",
-    "ast",
-    "adt",
-    "nst",
-    "ndt",
-    "bst",
-    "cet",
-    "cest",
-    "eet",
-    "eest",
-    "wet",
-    "west",
-    "msk",
-    "ist",
-    "jst",
-    "kst",
-    "hkt",
-    "pkt",
-    "wib",
-    "wit",
-    "wita",
-    "aest",
-    "aedt",
-    "acst",
-    "acdt",
-    "awst",
-    "nzst",
-    "nzdt",
-    "sast",
-    "cat",
-    "eat",
-    "wat",
-    "sst",
-    "chst",
-    "universal",
-    "japan",
-    "singapore",
-    "hongkong",
-    "israel",
-    "cuba",
-    "egypt",
-    "eire",
-    "iceland",
-    "iran",
-    "jamaica",
-    "libya",
-    "navajo",
-    "poland",
-    "portugal",
-    "turkey",
-    "gb",
-    "nz",
-    "prc",
-    "roc",
-    "rok",
-];
-
-/// Whether a token (lower case) is a time or a zone: digits with `:`, `.`, `/`, `+`, `-` (and `am`
-/// / `pm` after them), a POSIX zone (`pst8pdt`, `utc+5`), a zone path (`europe/paris`), or a word
-/// of [`TIME_WORDS`].
-fn time_like(token: &str) -> bool {
-    if TIME_WORDS.contains(&token) {
-        return true;
-    }
-    let is_time_char = |c: char| c.is_ascii_digit() || matches!(c, ':' | '.' | '/' | '+' | '-');
-    // digits and separators, then maybe `am`, `pm`, `a.m.`
-    let digits_end = token
-        .find(|c: char| !is_time_char(c))
-        .unwrap_or(token.len());
-    if digits_end > 0 {
-        let rest = &token[digits_end..];
-        if matches!(rest, "" | "am" | "pm" | "a.m." | "p.m." | "a.m" | "p.m") {
-            return true;
-        }
-    }
-    // letters, an optional sign, digits (`pst8pdt`, `utc+5`, `gmt0`)
-    let letters = token
-        .find(|c: char| !c.is_ascii_lowercase())
-        .unwrap_or(token.len());
-    if letters > 0 && letters < token.len() {
-        let rest = token[letters..].trim_start_matches(['+', '-']);
-        if rest.starts_with(|c: char| c.is_ascii_digit())
-            && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == ':')
-        {
-            return true;
-        }
-    }
-    // a zone path: words joined by `/`
-    let mut parts = token.split('/');
-    parts
-        .next()
-        .is_some_and(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase() || c == '_'))
-        && token.contains('/')
-        && parts.all(|p| {
-            !p.is_empty()
-                && p.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '-'))
-        })
-}
-
-/// Whether a text is one a database may read as a time relative to the statement: a word of `now`,
-/// `today`, `tomorrow`, `yesterday` (any case) with nothing else but time-like tokens around it, in
-/// any order (`'yesterday 13:00'`, `'today EST'`, `'EST today'`, `'13:00 yesterday'`, `'today
-/// Europe/Paris'`, `'today allballs'`); not `'Now Corp'`. The same rule as `_sqlglot.py`'s
-/// `_relative_time_text`.
-fn relative_time_text(text: &str) -> bool {
-    let lower = text.trim().to_ascii_lowercase();
-    let mut seen = false;
-    for token in lower
-        .split(|c: char| c.is_whitespace() || c == ',')
-        .filter(|t| !t.is_empty())
-    {
-        if matches!(token, "now" | "today" | "tomorrow" | "yesterday") {
-            seen = true;
-            continue;
-        }
-        // `now+1`: a word with an offset
-        let word_end = token
-            .find(|c: char| !c.is_ascii_lowercase())
-            .unwrap_or(token.len());
-        let (word, offset) = token.split_at(word_end);
-        if matches!(word, "now" | "today" | "tomorrow" | "yesterday")
-            && !offset.is_empty()
-            && offset
-                .chars()
-                .all(|c| c.is_ascii_digit() || matches!(c, ':' | '.' | '/' | '+' | '-'))
-        {
-            seen = true;
-        } else if !time_like(token) {
-            return false;
-        }
-    }
-    seen
-}
-
-/// Whether a query's bound parameters hold a text naming a time relative to the statement (the
-/// databases read it, cast to a timestamp or a date, as the current time, whose value the SQL
-/// doesn't show). Judged on the quoted strings of the parameters' `repr`.
-fn params_time_relative(connection: &ConnectionSpec) -> bool {
-    let Some(key) = connection.query_params_key.as_ref() else {
-        return false;
-    };
-    let mut chars = key.chars();
-    while let Some(c) = chars.next() {
-        if c == '\'' || c == '"' {
-            let mut text = String::new();
-            while let Some(d) = chars.next() {
-                if d == '\\' {
-                    chars.next();
-                } else if d == c {
-                    break;
-                } else {
-                    text.push(d);
-                }
-            }
-            if relative_time_text(&text) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// Whether the source is proven to return the same rows each time it runs. A query that can't be
-/// inspected is not.
+/// Whether the source returns the same rows each time it runs. A query that can't be
+/// inspected is taken to be repeatable, as when it is partitioned.
 fn query_repeatable(config: &DatabaseScanConfig) -> bool {
     if config.volatile_source {
         return false;
@@ -4771,10 +4288,9 @@ fn query_repeatable(config: &DatabaseScanConfig) -> bool {
         DatabaseRelation::Table { .. } => true,
         DatabaseRelation::Query { sql } => sql_renderer()
             .and_then(|r| r.inspect_query(sql, config.dialect))
-            .is_ok_and(|f| {
-                f.parses
-                    && !params_time_relative(&config.options.connection)
-                    && repeatable(
+            .map_or(true, |f| {
+                !f.parses
+                    || repeatable(
                         &f,
                         config.dialect,
                         read_only_session(
@@ -4815,24 +4331,42 @@ pub(crate) fn source_may_write(config: &DatabaseScanConfig, found_volatile: bool
     }
 }
 
-/// Turns the scan's `PartitionSpec` into partitions, querying bounds where needed.
-/// Whether SQL text (a partition predicate) may name `column`: as a word of it, ignoring case
-/// (a name of other characters anywhere in it, its quotes and doubled quotes left out).
-fn names_column(sql: &str, column: &str) -> bool {
-    if column.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        sql.split(|c: char| !c.is_alphanumeric() && c != '_')
-            .any(|w| w.eq_ignore_ascii_case(column))
-    } else {
-        let unquoted = |s: &str| {
-            s.chars()
-                .filter(|c| !matches!(c, '"' | '`' | '[' | ']'))
-                .flat_map(char::to_lowercase)
-                .collect::<String>()
-        };
-        unquoted(sql).contains(&unquoted(column))
-    }
+/// Whether this SQLite parses float literals exactly, as filters write them (17 significant
+/// digits, `_sqlglot.py`'s `_literal`). One built without `long double` (Python's on Windows,
+/// ConnectorX's, some Linux builds) misses the stored value of many large or small ones. Under
+/// `schema=` (no I/O while planning) it isn't known: no float comparison is pushed then.
+pub(crate) fn sqlite_floats_exact(session: &mut dyn DatabaseSession) -> bool {
+    let values: Vec<f64> = (-15..=15)
+        .flat_map(|e| {
+            ["1.2345678901234567", "9.876543210987654"].map(|m| format!("{m}e{}", e * 20))
+        })
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    let sql = format!(
+        "SELECT {}",
+        values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| format!("{v:.16e} AS v{i}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let Ok(df) = session.catalog_query(&sql) else {
+        return false;
+    };
+    df.height() == 1
+        && df.width() == values.len()
+        && df.columns().iter().zip(&values).all(
+            |(c, v)| matches!(c.get(0), Ok(AnyValue::Float64(x)) if x.to_bits() == v.to_bits()),
+        )
 }
 
+/// Whether a scan may be read in several partitions. Each partition reads the source again,
+/// which is right only where the source returns the same rows each time; until that is
+/// checked, every scan is read with one query.
+const PARTITIONING_SUPPORTED: bool = false;
+
+/// Turns the scan's `PartitionSpec` into partitions, querying bounds where needed.
 fn resolve_partitions(
     config: &DatabaseScanConfig,
     renderer: &dyn SqlRenderer,
@@ -4842,6 +4376,16 @@ fn resolve_partitions(
 ) -> PolarsResult<(Vec<Partition>, PlSmallStr)> {
     let options = &config.options;
     let one = || Ok((vec![Partition { predicate: None }], PlSmallStr::from("1")));
+    if !PARTITIONING_SUPPORTED {
+        return match options.partitioning {
+            PartitionSpec::None | PartitionSpec::Auto { .. } => one(),
+            PartitionSpec::Column { .. } | PartitionSpec::Predicates(_) => polars_bail!(
+                InvalidOperation:
+                "scan_database doesn't support partitioning yet: pass partition_on=None or \
+                'auto' (both read with one query)"
+            ),
+        };
+    }
     let max_connections = config.max_connections();
 
     // A live connection reads partitions one after another on one connection; splitting
@@ -4856,21 +4400,6 @@ fn resolve_partitions(
         PartitionSpec::None => return one(),
         PartitionSpec::Predicates(preds) => {
             let parts = partition::predicate_partitions(preds)?;
-            if parts.len() > 1
-                && let Some(c) = config
-                    .columns
-                    .iter()
-                    .find(|c| c.unstable && preds.iter().any(|p| names_column(p, &c.name)))
-            {
-                polars_bail!(
-                    InvalidOperation:
-                    "partition_predicates can't name '{}': it is computed by an aggregate over \
-                    floats or a volatile function, whose values differ in their last bits (or \
-                    more) between runs, so a row near a cut would be read by two partitions or \
-                    none; use predicates on other columns",
-                    c.name
-                );
-            }
             polars_ensure!(
                 options.order_by.is_empty() || parts.len() <= 1,
                 InvalidOperation:
@@ -4945,14 +4474,6 @@ fn resolve_partitions(
     let Some(dtype) = config.schema.get(&column) else {
         polars_bail!(ColumnNotFound: "partition column '{column}' is not in the database source");
     };
-    polars_ensure!(
-        !config.column(&column).is_some_and(|m| m.unstable),
-        InvalidOperation:
-        "this source can't be partitioned on '{column}': it is computed by an aggregate over \
-        floats or a volatile function, whose values differ in their last bits (or more) \
-        between runs, so a row near a cut would be read by two partitions or none; partition \
-        on another column, or CAST the aggregate's argument to an integer or decimal type"
-    );
     // The cuts compare against the column: a decimal read as a float (`schema_overrides`)
     // keeps decimal cuts, which MySQL orders right (#201).
     let declared = config
@@ -4963,17 +4484,6 @@ fn resolve_partitions(
         Some(d @ DataType::Decimal(..)) if dtype.is_float() => d,
         _ => dtype,
     };
-    if sqlite_text_read_as_number(config, &column) {
-        if why == "auto" {
-            return one();
-        }
-        polars_bail!(
-            InvalidOperation:
-            "partition column '{column}' is a SQLite TEXT column read as {dtype}: SQLite \
-            compares its values as text ('50' > '100'), so range cuts would overlap. Read it \
-            as a string, partition on an INTEGER column, or use partition_predicates"
-        );
-    }
     let Some(mut kind) = partition::range_kind(kind_dtype) else {
         if why == "auto" {
             return one();
@@ -4984,24 +4494,6 @@ fn resolve_partitions(
             float or date column (use partition_predicates for other types)"
         );
     };
-
-    // ConnectorX's bundled SQLite, and a SQLite built by MSVC (Python on Windows), parse a
-    // float literal inexactly (exponents beyond about +-85 miss the stored value): cuts closer
-    // than that error can be read out of order, so a row is lost or read twice.
-    if matches!(kind, partition::RangeKind::Float)
-        && config.dialect == DialectName::Sqlite
-        && (cfg!(windows) || matches!(config.backend.kind, BackendKind::ConnectorX))
-    {
-        if why == "auto" {
-            return one();
-        }
-        polars_bail!(
-            InvalidOperation:
-            "can't partition '{column}' by ranges: this SQLite reads float literals \
-            inexactly, so a range on a float column could lose rows. Use another driver, \
-            partition on an integer column, or use partition_predicates"
-        );
-    }
 
     if matches!(kind, partition::RangeKind::Int) && config.maybe_mysql_year(&column) {
         kind = partition::RangeKind::Year;
@@ -5058,23 +4550,6 @@ fn resolve_partitions(
         },
     };
 
-    // Databricks reads a date in the Julian-Gregorian gap (1582-10-05..14) back as 1582-10-15 but
-    // compares it as written, so a cut at or before that day loses rows: no ranges there (the one
-    // query reads them all).
-    if config.dialect == DialectName::Databricks
-        && matches!(kind, partition::RangeKind::Date)
-        && lo <= crate::filter::DATABRICKS_GAP_END_DAYS as f64
-    {
-        if why == "auto" {
-            return one();
-        }
-        polars_bail!(
-            InvalidOperation:
-            "can't partition '{column}' by ranges: Databricks compares the dates up to \
-            1582-10-15 other than it reads them, so a range there loses rows; \
-            pass partition_on=None"
-        );
-    }
     // A float column whose database type is unknown (`schema=`) may be a MySQL DECIMAL,
     // which MySQL 8 misorders against a float cut (#201): decimal cuts, which a DOUBLE
     // compares as the same doubles, where they fit `DECIMAL(65, 30)`.
@@ -5229,7 +4704,6 @@ mod tests {
         );
         assert!(check_read_only("SELECT * FROM t", None, false, DialectName::Generic).is_ok());
         let facts = QueryFacts {
-            unproven: vec![],
             parses: true,
             read_only: false,
             ..Default::default()
@@ -5430,6 +4904,126 @@ mod tests {
         );
     }
 
+    #[test]
+    fn mssql_and_trino_types_drivers_misread_are_converted() {
+        let mssql = |t| conversion(DialectName::Mssql, t);
+        let money = mssql("money").unwrap();
+        assert!(money.contains("CAST(\"c\" AS DECIMAL(19, 4))"), "{money}");
+        let money = mssql("smallmoney").unwrap();
+        assert!(money.contains("CAST(\"c\" AS DECIMAL(10, 4))"), "{money}");
+        assert_eq!(
+            mssql("datetime2(7)").as_deref(),
+            Some("CONVERT(VARCHAR(40), \"c\", 121)")
+        );
+        assert_eq!(
+            mssql("datetimeoffset(7)").as_deref(),
+            Some(
+                "CONVERT(VARCHAR(40), CAST(SWITCHOFFSET(\"c\", '+00:00') AS DATETIME2(7)), \
+                121)"
+            )
+        );
+        assert_eq!(
+            mssql("datetimeoffset(3)").as_deref(),
+            Some("SWITCHOFFSET(\"c\", '+00:00')")
+        );
+        assert!(
+            mssql(MSSQL_DATETIME)
+                .unwrap()
+                .starts_with("CASE WHEN SQL_VARIANT_PROPERTY")
+        );
+        assert!(mssql("decimal(38, 2)").is_some());
+        assert_eq!(mssql("decimal(18, 2)"), None);
+        assert_eq!(mssql("datetime2(6)"), None);
+        assert_eq!(
+            conversion(DialectName::Trino, "timestamp(3) with time zone").as_deref(),
+            Some("\"c\" AT TIME ZONE 'UTC'")
+        );
+    }
+
+    #[test]
+    fn mssql_columns_typed_below_their_digits_are_truncated() {
+        use crate::filter::tests::{adbc, config};
+        let us = DataType::Datetime(TimeUnit::Microseconds, None);
+        let ns = DataType::Datetime(TimeUnit::Nanoseconds, None);
+        let c = config(
+            DialectName::Mssql,
+            adbc("mssql"),
+            &[
+                ("a", us.clone(), Some("datetime2(7)")),
+                ("b", us.clone(), Some(MSSQL_DATETIME)),
+                ("c", ns, Some("datetime2(7)")),
+                ("d", us.clone(), Some("datetime2(6)")),
+            ],
+        );
+        let mut found: Vec<_> = truncating_columns(&c).into_iter().collect();
+        found.sort();
+        assert_eq!(found, ["a", "b"]);
+        let pg = config(
+            DialectName::Postgresql,
+            adbc("postgresql"),
+            &[("a", us, Some("datetime2(7)"))],
+        );
+        assert!(truncating_columns(&pg).is_empty());
+    }
+
+    struct NoRenderer;
+
+    impl SqlRenderer for NoRenderer {
+        fn id(&self) -> PlSmallStr {
+            "none".into()
+        }
+        fn render(&self, _: &SqlQuery, _: DialectName) -> PolarsResult<String> {
+            unreachable!()
+        }
+        fn inspect_query(&self, _: &str, _: DialectName) -> PolarsResult<QueryFacts> {
+            unreachable!()
+        }
+        fn outer_order_by(
+            &self,
+            _: &str,
+            _: DialectName,
+            _: &[PlSmallStr],
+            _: bool,
+        ) -> PolarsResult<Option<PlSmallStr>> {
+            unreachable!()
+        }
+        fn inspect_view(&self, _: &str, _: DialectName) -> PolarsResult<QueryFacts> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn scans_are_read_in_one_partition() {
+        use crate::database::options::PartitionStrategy;
+        use crate::filter::tests::{adbc, config};
+        let partitions = |spec: PartitionSpec, target: Option<usize>| {
+            let mut c = config(
+                DialectName::Postgresql,
+                adbc("postgresql"),
+                &[("id", DataType::Int64, Some("bigint"))],
+            );
+            Arc::make_mut(&mut c.options).partitioning = spec;
+            let from = SqlFrom::Table(vec!["t".into()]);
+            resolve_partitions(&c, &NoRenderer, &from, &[], target).map(|(p, _)| p.len())
+        };
+        for target in [None, Some(8)] {
+            assert_eq!(partitions(PartitionSpec::None, target).unwrap(), 1);
+            let auto = PartitionSpec::Auto {
+                num_partitions: Some(4),
+            };
+            assert_eq!(partitions(auto, target).unwrap(), 1);
+            let column = PartitionSpec::Column {
+                column: "id".into(),
+                num_partitions: Some(4),
+                range: None,
+                strategy: PartitionStrategy::MinMax,
+            };
+            assert!(partitions(column, target).is_err());
+            let predicates = PartitionSpec::Predicates(vec!["id < 5".into(), "id >= 5".into()]);
+            assert!(partitions(predicates, target).is_err());
+        }
+    }
+
     /// Fails every statement, as a catalog lookup given the user's `params=` did.
     struct Failing;
 
@@ -5456,7 +5050,7 @@ mod tests {
             true,
         );
         assert!(found.volatile.is_some() && found.all_columns);
-        // a dialect without a view lookup is not proven either
+        // a dialect without a view lookup still counts as no view
         let found = source_volatility(
             &mut Failing,
             DialectName::Trino,
@@ -5465,74 +5059,6 @@ mod tests {
             &names,
             true,
         );
-        assert!(found.volatile.is_some());
-    }
-
-    /// Records every statement and answers with no rows.
-    struct Recorder(Vec<String>);
-
-    impl DatabaseSession for Recorder {
-        fn execute(&mut self, sql: &str, _: Option<usize>) -> PolarsResult<BatchIter> {
-            self.0.push(sql.to_string());
-            let df = DataFrame::new(0, vec![Column::new_empty("a".into(), &DataType::String)])?;
-            Ok(Box::new(std::iter::once(Ok(df))))
-        }
-    }
-
-    #[test]
-    fn databricks_sql_path_is_read_once_per_planning() {
-        // the built-ins' place on the path and the lookup of a user's function both need it
-        let relation = DatabaseRelation::Query {
-            sql: "SELECT upper(x) FROM t".into(),
-        };
-        let facts = QueryFacts {
-            parses: true,
-            known_functions: vec!["upper".into()],
-            ..Default::default()
-        };
-        let mut rec = Recorder(vec![]);
-        source_volatility(
-            &mut rec,
-            DialectName::Databricks,
-            &relation,
-            Some(&facts),
-            &[],
-            true,
-        );
-        let reads = rec.0.iter().filter(|s| s.contains("current_path")).count();
-        assert_eq!(reads, 1, "{:?}", rec.0);
-    }
-
-    #[test]
-    fn relative_time_text_is_a_keyword_alone_or_with_a_time() {
-        for t in [
-            "now",
-            " Today ",
-            "yesterday 13:00",
-            "today allballs",
-            "TOMORROW 04:05 pm",
-            "now+1",
-            "today EST",
-            "EST today",
-            "13:00 yesterday",
-            "04:05 tomorrow",
-            "today Europe/Paris",
-            "today PST8PDT",
-            "Today at 13:00 UTC+5",
-        ] {
-            assert!(relative_time_text(t), "{t}");
-        }
-        for t in [
-            "Now Corp",
-            "nowhere",
-            "2024-01-01",
-            "tomorrowland",
-            "today's special",
-            "Now Corp",
-            "Today Cafe",
-            "",
-        ] {
-            assert!(!relative_time_text(t), "{t}");
-        }
+        assert!(found.volatile.is_none());
     }
 }

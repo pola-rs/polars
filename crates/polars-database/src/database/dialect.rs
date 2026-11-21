@@ -353,12 +353,10 @@ impl DialectName {
             // `timestamp(7..12)` and `time(7..12)`: the `trino` driver rounds them to
             // microseconds and ADBC panics outside 1677-2262 (as nanoseconds): their exact
             // text, which a nested type holds as JSON.
-            Self::Trino if trino_wide_temporal(t).is_some() => Some(match trino_wide_temporal(t) {
-                Some(TrinoWide::Nested) => format!("json_format(CAST({column} AS JSON))"),
-                Some(TrinoWide::Instant) => {
-                    format!("CAST({column} AT TIME ZONE 'UTC' AS VARCHAR)")
-                },
-                _ => format!("CAST({column} AS VARCHAR)"),
+            Self::Trino => trino_wide_temporal(t).map(|wide| match wide {
+                TrinoWide::Nested => format!("json_format(CAST({column} AS JSON))"),
+                TrinoWide::Instant => format!("CAST({column} AT TIME ZONE 'UTC' AS VARCHAR)"),
+                TrinoWide::Plain => format!("CAST({column} AS VARCHAR)"),
             }),
             // ConnectorX panics on it, pyodbc can't read it: its text, as the base type writes it
             Self::Mssql if t == "sql_variant" => Some(self.cast_to_text(column)),

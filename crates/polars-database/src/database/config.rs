@@ -26,11 +26,6 @@ pub struct ColumnMeta {
     /// columns read through a conversion (`CAST(uuid AS TEXT)`) or retyped by
     /// `schema_overrides`: predicates on them aren't pushed.
     pub comparable: bool,
-    /// The column's values may differ from run to run (a volatile function, or a float
-    /// aggregate, whose last bits depend on the order its rows were added in): it can't be
-    /// a partition key, whose cuts each partition reads again.
-    #[serde(default)]
-    pub unstable: bool,
 }
 
 /// Cheap catalog statistics.
@@ -112,10 +107,10 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
-    /// SQLite columns of TEXT affinity that are read as numbers (`schema_overrides=`): the
-    /// database compares and sorts their values as text, so they are no range or order key.
+    /// SQLite: the database was found to parse float literals exactly (`sqlite_floats_exact`):
+    /// float comparisons are pushed only then.
     #[serde(default)]
-    pub sqlite_text_numbers: Vec<PlSmallStr>,
+    pub sqlite_floats_exact: bool,
     /// Columns the planner found unreadable right, with why: raised when one is read.
     #[serde(default)]
     pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,
