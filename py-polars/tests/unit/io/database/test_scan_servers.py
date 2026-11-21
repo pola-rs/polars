@@ -1866,6 +1866,14 @@ def test_oracle_integer_is_a_38_digit_integer() -> None:
             "INSERT INTO review_ora_int VALUES (2, 7, NULL)",
         ],
     )
+    lf = _scan("oracle", "oracledb", "REVIEW_ORA_INT")
+    assert lf.collect_schema()["I"] == pl.Decimal(38, 0)
+    assert lf.collect_schema()["S"] == pl.Decimal(38, 2)
+    df = lf.collect().sort("id")
+    assert df["I"].to_list() == [Decimal(12345678901234567890123456789012345), 7]
+    check_filter_ids(lf, [pl.col("I") > 7, pl.col("S") == Decimal("1.25")])
+
+
 @needs_postgres
 @pytest.mark.parametrize(
     "driver",
@@ -1903,14 +1911,6 @@ def test_postgres_huge_batch_size_reads_every_row(driver: str, batch_size: int) 
         lf = _scan("postgres17", driver, table, batch_size=batch_size)
     assert sorted(lf.collect()["id"].to_list()) == list(range(1, 21))
     assert lf.select(pl.len()).collect().item() == 20
-
-
-    lf = _scan("oracle", "oracledb", "REVIEW_ORA_INT")
-    assert lf.collect_schema()["I"] == pl.Decimal(38, 0)
-    assert lf.collect_schema()["S"] == pl.Decimal(38, 2)
-    df = lf.collect().sort("id")
-    assert df["I"].to_list() == [Decimal(12345678901234567890123456789012345), 7]
-    check_filter_ids(lf, [pl.col("I") > 7, pl.col("S") == Decimal("1.25")])
 
 
 @pytest.mark.skipif(SERVERS["clickhouse"].uri is None, reason="no ClickHouse URI")
@@ -1952,19 +1952,23 @@ def test_postgres_engine_connections_dont_keep_the_session_setup(driver: str) ->
         cur.execute("SET TIME ZONE 'Asia/Tokyo'")
         cur.execute("SET application_name = 'it''s 100%'")
         cur.close()
-@pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
-@ORACLE_GROUP
-@pytest.mark.parametrize("driver", ["oracledb", "sqlalchemy"])
-@pytest.mark.parametrize("batch_size", [2**31 - 1, 2**33, sys.maxsize])
-def test_oracle_huge_batch_size_reads_every_row(driver: str, batch_size: int) -> None:
-    # the driver allocates a whole fetch up front: the batch size is capped
-    lf = _scan(
-        "oracle",
-        driver,
-        "SELECT level AS id FROM dual CONNECT BY level <= 50",
-        batch_size=batch_size,
-    )
-    assert sorted(lf.collect()["ID"].to_list()) == list(range(1, 51))
+        dbapi_conn.commit()
+
+    try:
+        with engine.connect() as conn:
+            pid = conn.exec_driver_sql("SELECT pg_backend_pid()").scalar()
+        assert pl.scan_database("edge", engine).select(pl.len()).collect().item() > 0
+        with engine.connect() as conn:
+            show = conn.exec_driver_sql
+            assert show("SELECT pg_backend_pid()").scalar() == pid
+            assert show("SHOW default_transaction_read_only").scalar() == "off"
+            assert show("SHOW TimeZone").scalar() == "Asia/Tokyo"
+            assert show("SHOW application_name").scalar() == "it's 100%"
+            conn.exec_driver_sql("CREATE TEMPORARY TABLE review_engine_rw (i int)")
+            conn.exec_driver_sql("INSERT INTO review_engine_rw VALUES (1)")
+            conn.rollback()
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
@@ -2001,23 +2005,19 @@ def test_oracle_string_literals_past_the_literal_limit(driver: str) -> None:
     check_filter_ids(lf, filters)
 
 
-        dbapi_conn.commit()
-
-    try:
-        with engine.connect() as conn:
-            pid = conn.exec_driver_sql("SELECT pg_backend_pid()").scalar()
-        assert pl.scan_database("edge", engine).select(pl.len()).collect().item() > 0
-        with engine.connect() as conn:
-            show = conn.exec_driver_sql
-            assert show("SELECT pg_backend_pid()").scalar() == pid
-            assert show("SHOW default_transaction_read_only").scalar() == "off"
-            assert show("SHOW TimeZone").scalar() == "Asia/Tokyo"
-            assert show("SHOW application_name").scalar() == "it's 100%"
-            conn.exec_driver_sql("CREATE TEMPORARY TABLE review_engine_rw (i int)")
-            conn.exec_driver_sql("INSERT INTO review_engine_rw VALUES (1)")
-            conn.rollback()
-    finally:
-        engine.dispose()
+@pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
+@ORACLE_GROUP
+@pytest.mark.parametrize("driver", ["oracledb", "sqlalchemy"])
+@pytest.mark.parametrize("batch_size", [2**31 - 1, 2**33, sys.maxsize])
+def test_oracle_huge_batch_size_reads_every_row(driver: str, batch_size: int) -> None:
+    # the driver allocates a whole fetch up front: the batch size is capped
+    lf = _scan(
+        "oracle",
+        driver,
+        "SELECT level AS id FROM dual CONNECT BY level <= 50",
+        batch_size=batch_size,
+    )
+    assert sorted(lf.collect()["ID"].to_list()) == list(range(1, 51))
 
 
 @pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
