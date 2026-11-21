@@ -40,7 +40,7 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::{self, Keyword};
 use sqlparser::parser::{Parser, ParserError, ParserOptions};
-use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
+use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer, Whitespace};
 
 use crate::context::join_idents;
 use crate::dyn_visit::visit_expressions;
@@ -147,6 +147,7 @@ fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
         .tokenize_with_location()
         .map_err(to_sql_interface_err)?;
     normalize_tokens(&mut tokens);
+    drop_describe_table_keyword(&mut tokens);
     let has_lambdas = rewrite_lambda_tokens(&mut tokens);
     let versions = extract_table_versions(&mut tokens)?;
     Ok((
@@ -168,10 +169,33 @@ pub(crate) fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
         .with_tokens_with_locations(tokens)
 }
 
+/// `DESCRIBE TABLE t` describes `t`; sqlparser would read `TABLE` as the name.
+fn drop_describe_table_keyword(tokens: &mut [TokenWithSpan]) {
+    let mut words = tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| !matches!(t.token, Token::Whitespace(_) | Token::SemiColon));
+    let (Some((_, describe)), Some((table, keyword)), Some((_, name))) =
+        (words.next(), words.next(), words.next())
+    else {
+        return;
+    };
+    if is_keyword(&describe.token, &[Keyword::DESCRIBE, Keyword::DESC])
+        && is_keyword(&keyword.token, &[Keyword::TABLE])
+        && matches!(name.token, Token::Word(_) | Token::SingleQuotedString(_))
+    {
+        tokens[table].token = Token::Whitespace(Whitespace::Space);
+    }
+}
+
+/// Whether `token` is one of `keywords`, unquoted.
+fn is_keyword(token: &Token, keywords: &[Keyword]) -> bool {
+    matches!(token, Token::Word(w) if w.quote_style.is_none() && keywords.contains(&w.keyword))
+}
+
 /// Reads an escape string (`E'..'`) as a plain string, as the tokenizer resolved its escapes,
 /// and `TOP` as a keyword only where it starts `SELECT TOP n`.
 fn normalize_tokens(tokens: &mut [TokenWithSpan]) {
-    let is_keyword = |token: &Token, keywords: &[Keyword]| matches!(token, Token::Word(word) if keywords.contains(&word.keyword));
     let mut previous: Option<usize> = None;
     for i in 0..tokens.len() {
         match &mut tokens[i].token {

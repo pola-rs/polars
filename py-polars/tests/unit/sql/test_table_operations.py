@@ -764,6 +764,10 @@ def test_describe(describe: str, test_frame: pl.LazyFrame) -> None:
             ("x2", "UTINYINT"),
             ("y", "VARCHAR"),
         ]
+        assert ctx.execute(f"{describe} TABLE v;", eager=True).rows() == [
+            ("x2", "UTINYINT"),
+            ("y", "VARCHAR"),
+        ]
         # a query is described by the columns of its result
         res = ctx.execute(
             f"{describe} SELECT y, z, x::double precision AS f FROM frame WHERE x > 1",
@@ -779,6 +783,8 @@ def test_describe(describe: str, test_frame: pl.LazyFrame) -> None:
         assert ctx.tables() == ["frame", "v"]
         with pytest.raises(SQLInterfaceError, match="relation 'nosuch' was not found"):
             ctx.execute(f"{describe} nosuch")
+        with pytest.raises(SQLInterfaceError, match="relation 'TABLE' was not found"):
+            ctx.execute(f"{describe} TABLE")
 
 
 def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
