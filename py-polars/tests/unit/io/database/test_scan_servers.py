@@ -7391,3 +7391,181 @@ def test_mysql_float_columns_with_digits(name: str) -> None:
         check_filter_ids(lf, predicates)
     finally:
         _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+# `sql_variant` base types: the value to store, and its exact text
+SQL_VARIANT_VALUES = {
+    "float": ("CAST(3.141592653589793 AS float)", "3.1415926535897931e+000"),
+    "float_tiny": ("CAST(1e-300 AS float)", "1.0000000000000000e-300"),
+    "real": ("CAST(0.1 AS real)", "1.0000000149011612e-001"),
+    "money": ("CAST(12.3456 AS money)", "12.3456"),
+    "smallmoney": ("CAST(-214748.3648 AS smallmoney)", "-214748.3648"),
+    "datetime": (
+        "CAST('2020-01-02T03:04:05.997' AS datetime)",
+        "2020-01-02 03:04:05.997",
+    ),
+    "smalldatetime": (
+        "CAST('2020-01-02T03:04:00' AS smalldatetime)",
+        "2020-01-02 03:04:00.000",
+    ),
+    "datetime2": (
+        "CAST('2020-01-02T03:04:05.1234567' AS datetime2(7))",
+        "2020-01-02 03:04:05.1234567",
+    ),
+    "datetimeoffset": (
+        "CAST('2020-01-02T03:04:05.123+05:30' AS datetimeoffset(3))",
+        "2020-01-02 03:04:05.1230000 +05:30",
+    ),
+    "date": ("CAST('2020-01-02' AS date)", "2020-01-02"),
+    "time": ("CAST('12:34:56.1234567' AS time(7))", "12:34:56.1234567"),
+    "binary": ("CAST(0x0102 AS binary(4))", "0x01020000"),
+    "varbinary": ("CAST(0x0102FF AS varbinary(10))", "0x0102FF"),
+    "decimal": ("CAST(123456789.123456789 AS decimal(18, 9))", "123456789.123456789"),
+    "numeric": ("CAST(-1.5 AS numeric(5, 2))", "-1.50"),
+    "bigint": ("CAST(12345678901234567 AS bigint)", "12345678901234567"),
+    "int": ("CAST(-5 AS int)", "-5"),
+    "bit": ("CAST(1 AS bit)", "1"),
+    "nvarchar": ("CAST(N'\u03a9\u20ac' AS nvarchar(10))", "\u03a9\u20ac"),
+    "varchar": ("CAST('plain' AS varchar(10))", "plain"),
+    "char": ("CAST('ab' AS char(4))", "ab  "),
+    "uniqueidentifier": (
+        "CAST('6F9619FF-8B86-D011-B42D-00C04FC964FF' AS uniqueidentifier)",
+        "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+    ),
+}
+
+
+@needs_mssql
+def test_mssql_sql_variant_is_read_as_exact_text() -> None:
+    # the plain text of a `sql_variant` rounds a float to 6 digits and money to 2
+    # decimals, writes dates and times in forms that drop digits, and follows the
+    # session's language
+    table = "review_variant_exact"
+    names = list(SQL_VARIANT_VALUES)
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, sv sql_variant)",
+            *(
+                f"INSERT INTO {table} VALUES ({i}, {SQL_VARIANT_VALUES[n][0]})"
+                for i, n in enumerate(names)
+            ),
+            f"INSERT INTO {table} VALUES ({len(names)}, NULL)",
+        ],
+    )
+    want = [SQL_VARIANT_VALUES[n][1] for n in names] + [None]
+
+    def check(lf: pl.LazyFrame, what: str) -> None:
+        got = lf.collect().sort("id")["sv"].to_list()
+        wrong = {
+            n: (g, w)
+            for n, g, w in zip(names + ["null"], got, want, strict=True)
+            if g != w
+        }
+        assert not wrong, f"{what}: (read, exact) {wrong}"
+
+    for driver in _runnable_drivers("mssql"):
+        check(_scan("mssql", driver, table), driver)
+    # a live connection in another language writes dates as it does
+    conn = _connect("mssql")
+    try:
+        cur = conn.cursor()
+        cur.execute("SET LANGUAGE French")
+        check(pl.scan_database(table, conn), "live connection, French")
+        cur.execute("SET LANGUAGE Japanese")
+        check(pl.scan_database(table, conn), "live connection, Japanese")
+    finally:
+        conn.close()
+
+
+def _mssql_engine_with(statement: str) -> Any:
+    """A SQLAlchemy engine whose pooled connections each run `statement` on opening."""
+    sa = pytest.importorskip("sqlalchemy")
+    uri = SERVERS["mssql"].uri
+    assert uri is not None
+    engine = sa.create_engine(uri.replace("mssql://", "mssql+pymssql://", 1))
+
+    @sa.event.listens_for(engine, "connect")  # type: ignore[untyped-decorator]
+    def _setting(dbapi_connection: Any, _: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute(statement)
+        dbapi_connection.commit()
+
+    return engine
+
+
+def _mssql_user_connections(statement: str) -> Iterator[tuple[str, Any]]:
+    """The user's connections: a live one and an engine's, each under `statement`."""
+    conn = _connect("mssql")
+    try:
+        cursor = conn.cursor()
+        cursor.execute(statement)
+        yield "live connection", conn
+    finally:
+        conn.close()
+    engine = _mssql_engine_with(statement)
+    try:
+        yield "engine", engine
+    finally:
+        engine.dispose()
+
+
+@needs_mssql
+def test_mssql_textsize_doesnt_hide_the_volatile_part_of_a_view() -> None:
+    # a session's `SET TEXTSIZE` cuts the text of a view's definition as it is read:
+    # the volatile column at its end was cut off, and a filter on it was pushed
+    _execute(
+        "mssql",
+        [
+            "DROP VIEW IF EXISTS review_textsize_v",
+            "DROP TABLE IF EXISTS review_textsize_ids",
+            "CREATE TABLE review_textsize_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_textsize_ids "
+            "SELECT TOP 400 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 "
+            "FROM sys.all_objects a, sys.all_objects b",
+            "CREATE VIEW review_textsize_v AS SELECT id, id AS same_a, id AS same_b, "
+            "id AS same_c, id AS same_d, id AS same_e, id AS same_f, "
+            "CAST(RAND(CHECKSUM(NEWID())) * 400 AS int) AS r FROM review_textsize_ids",
+        ],
+    )
+    for what, connection in _mssql_user_connections("SET TEXTSIZE 214"):
+        lf = pl.scan_database("review_textsize_v", connection).filter(pl.col("r") < 200)
+        assert "filters 0/1" in lf.explain(), what
+        assert (lf.collect()["r"] < 200).all(), what
+
+
+@needs_mssql
+def test_mssql_rowcount_on_the_session_is_refused() -> None:
+    # `SET ROWCOUNT n` on a session stops every query after n rows: the read returned
+    # up to n rows, and the catalog lookups were cut too
+    table = "review_rowcount"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, v int)",
+            f"INSERT INTO {table} "
+            "SELECT TOP 400 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1, 1 "
+            "FROM sys.all_objects a, sys.all_objects b",
+        ],
+    )
+    for _what, connection in _mssql_user_connections("SET ROWCOUNT 50"):
+        for source in [table, f"SELECT * FROM {table}"]:
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="SET ROWCOUNT"
+            ):
+                pl.scan_database(source, connection).collect()
+    # and the session left as the user had it
+    conn = _connect("mssql")
+    try:
+        cur = conn.cursor()
+        cur.execute("SET ROWCOUNT 50")
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            pl.scan_database(table, conn).collect()
+        cur.execute(f"SELECT id FROM {table}")
+        assert len(cur.fetchall()) == 50
+        cur.execute("SET ROWCOUNT 0")
+        assert pl.scan_database(table, conn).collect().height == 400
+    finally:
+        conn.close()

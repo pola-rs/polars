@@ -1706,7 +1706,8 @@ pub fn view_definition(
             "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
             CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END \
+            WHERE s.object_id = o.object_id) END, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({})",
             dialect.quote_nstr(&qualified)
         ),
@@ -1739,7 +1740,8 @@ pub fn view_definition(
             "SELECT TOP 2 CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
             CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END \
+            WHERE s.object_id = o.object_id) END, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
             FROM sys.objects o WHERE LOWER(o.name) = LOWER({}){in_schema}",
             dialect.quote_nstr(name)
         )) else {
@@ -1763,7 +1765,8 @@ pub fn view_definition(
         let Some(target) = run(&format!(
             "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
             CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
-            CASE WHEN o.type = 'SN' THEN o.name END \
+            CASE WHEN o.type = 'SN' THEN o.name END, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({})",
             dialect.quote_nstr(&base)
         )) else {
@@ -1781,13 +1784,35 @@ pub fn view_definition(
     if !is_view {
         return ViewLookup::NotAView;
     }
-    let qualifier = (2..df.width())
+    // A session's `SET TEXTSIZE` cuts the definition as it is read: a view whose volatile
+    // part was cut off would be taken for a harmless one.
+    if dialect == DialectName::Mssql && !mssql_text_intact(&df, 1, 3, 0) {
+        return ViewLookup::Failed;
+    }
+    // (SQL Server's extra columns, a synonym's base and the definition's length, are no
+    // qualifier)
+    let qualifier_end = if dialect == DialectName::Mssql {
+        2
+    } else {
+        df.width()
+    };
+    let qualifier = (2..qualifier_end)
         .filter_map(|c| cell_str(&df, c, 0).map(PlSmallStr::from))
         .collect();
     ViewLookup::View {
         sql: cell_str(&df, 1, 0).unwrap_or_default(),
         qualifier,
         redacted: false,
+    }
+}
+
+/// Whether a SQL Server `nvarchar(max)` cell was read whole: its UTF-16 length is the bytes the
+/// server says it holds (`DATALENGTH`, in column `bytes`). A session's `SET TEXTSIZE` cuts such
+/// text as it is sent, silently, and a NULL cell has nothing to cut.
+fn mssql_text_intact(df: &DataFrame, text: usize, bytes: usize, row: usize) -> bool {
+    match cell_str(df, text, row) {
+        None => cell_u64(df, bytes, row).is_none(),
+        Some(t) => cell_u64(df, bytes, row) == Some(2 * t.encode_utf16().count() as u64),
     }
 }
 
@@ -2292,12 +2317,17 @@ mod tests {
         let flags = views.iter().map(|&v| i32::from(v)).collect::<Vec<_>>();
         DataFrame::new(
             views.len(),
-            vec![Column::new("a".into(), flags), Column::new("b".into(), def)],
+            vec![
+                Column::new("a".into(), flags),
+                Column::new("b".into(), def),
+                Column::new("c".into(), vec![None::<&str>; views.len()]),
+                Column::new("d".into(), definition_bytes(views.iter().copied())),
+            ],
         )
         .unwrap()
     }
 
-    /// `(is_view, definition, synonym base)` rows.
+    /// `(is_view, definition, synonym base, definition bytes)` rows.
     fn syn_rows(rows: &[(bool, Option<&str>)]) -> DataFrame {
         let flags = rows.iter().map(|r| i32::from(r.0)).collect::<Vec<_>>();
         let def = rows
@@ -2311,9 +2341,34 @@ mod tests {
                 Column::new("a".into(), flags),
                 Column::new("b".into(), def),
                 Column::new("c".into(), base),
+                Column::new("d".into(), definition_bytes(rows.iter().map(|r| r.0))),
             ],
         )
         .unwrap()
+    }
+
+    /// The `DATALENGTH` of the fake definition `SELECT 1` (UTF-16: two bytes a character).
+    fn definition_bytes(views: impl Iterator<Item = bool>) -> Vec<Option<i64>> {
+        views.map(|v| v.then_some(16)).collect()
+    }
+
+    #[test]
+    fn mssql_view_definition_cut_by_textsize_is_not_proven() {
+        let ms = DialectName::Mssql;
+        let parts = ["dbo".into(), "v".into()];
+        let cut = |bytes: i64| {
+            let mut df = rows(&[true]);
+            df.replace("d", Column::new("d".into(), vec![bytes]))
+                .unwrap();
+            let mut s = Recorder {
+                log: vec![],
+                answer: move |_: &str| df.clone(),
+            };
+            view_definition(&mut s, ms, &parts, &[])
+        };
+        assert!(matches!(cut(16), ViewLookup::View { .. }));
+        // the server holds more than was read
+        assert_eq!(cut(40), ViewLookup::Failed);
     }
 
     #[test]
