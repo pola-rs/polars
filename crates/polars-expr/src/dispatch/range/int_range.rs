@@ -72,7 +72,7 @@ pub(super) fn int_ranges(s: &[Column], dtype: DataType) -> PolarsResult<Column> 
     let column = numeric_ranges_impl_broadcast(start, end, step, range_impl, &mut builder)?;
 
     if dtype != DataType::Int64 {
-        column.cast(&DataType::List(Box::new(dtype)))
+        column.strict_cast(&DataType::List(Box::new(dtype)))
     } else {
         Ok(column)
     }
