@@ -1603,6 +1603,7 @@ mod tests {
             pushdown_disabled: None,
             volatile_source: false,
             volatility_unchecked: false,
+            derived_columns: false,
             user_schema: false,
             derived_order_dropped: false,
             refused_columns: vec![],

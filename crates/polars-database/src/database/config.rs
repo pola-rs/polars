@@ -105,6 +105,10 @@ pub struct DatabaseScanConfig {
     /// ([`check_unplanned_volatility`](super::planner::check_unplanned_volatility)).
     #[serde(default)]
     pub volatility_unchecked: bool,
+    /// A derived table over the query lists its columns in its alias (a SQL Server query with a
+    /// column of no name): the schema's names are the query's columns, by position.
+    #[serde(default)]
+    pub derived_columns: bool,
     /// The planned schema is the user's `schema=` (not discovered).
     #[serde(default)]
     pub user_schema: bool,

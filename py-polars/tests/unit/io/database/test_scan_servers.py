@@ -8295,6 +8295,34 @@ def test_mssql_partition_on_a_wide_decimal_key(key: str) -> None:
 
 
 @needs_mssql
+def test_mssql_query_with_unnamed_columns() -> None:
+    # SQL Server refuses a derived table over a query with a column of no name
+    # (`SELECT count(*)`): such a column is named by its position, as ConnectorX names
+    # it, with every driver and with or without pushdown
+    source = "SELECT count(*), max(id) AS m, 1 + 1, sum(id) FROM edge"
+    names = ["column_0", "m", "column_2", "column_3"]
+    first: pl.DataFrame | None = None
+    for driver in _runnable_drivers("mssql"):
+        for pushdown in [True, False]:
+            df = _scan("mssql", driver, source, pushdown=pushdown).collect()
+            assert df.columns == names, (driver, pushdown)
+            assert df.height == 1
+            assert df["column_0"][0] == N_EDGE_ROWS
+            assert df["column_2"][0] == 2
+            if first is None:
+                first = df.with_columns(cs.numeric().cast(pl.Int64))
+            assert_frame_equal(df.with_columns(cs.numeric().cast(pl.Int64)), first)
+        kept = (
+            _scan("mssql", driver, source)
+            .filter(pl.col("column_0") > 0)
+            .select("column_0", "m")
+            .collect()
+        )
+        assert kept.height == 1, driver
+        assert kept.columns == ["column_0", "m"]
+
+
+@needs_mssql
 def test_mssql_python_factory() -> None:
     # `mssql_python` (Microsoft's driver) can only be given as a connection or a factory
     mssql_python = pytest.importorskip("mssql_python")
@@ -8815,12 +8843,22 @@ def test_trino_time_zone_values_in_arrays_and_maps_read_the_instants(
                     # whichever form the driver gives (datetimes, text, a struct): the
                     # wall-clock times it shows are those of UTC
                     shown = str(value)
-                    want = instants[row["id"]] if column == "a" else instants[row["id"]][:1]
+                    want = (
+                        instants[row["id"]]
+                        if column == "a"
+                        else instants[row["id"]][:1]
+                    )
                     for hhmm in want:
-                        assert f"{hhmm}" in shown or f"{int(hhmm[:2])}, {int(hhmm[3:])}" in shown, (
-                            driver, source, column, shown)
+                        assert (
+                            f"{hhmm}" in shown
+                            or f"{int(hhmm[:2])}, {int(hhmm[3:])}" in shown
+                        ), (driver, source, column, shown)
                     assert "02:30" not in shown and "+0100" not in shown, (
-                        driver, source, column, shown)
+                        driver,
+                        source,
+                        column,
+                        shown,
+                    )
         arrays = {d: str(df.schema["a"]) for d, df in frames.items()}
         assert len(set(arrays.values())) == 1, arrays
         if precision <= 6:
@@ -8869,7 +8907,12 @@ def test_trino_query_with_duplicate_names_over_wide_timestamps_is_refused() -> N
                 timeout=300,
                 check=False,
             )
-            assert out.returncode == 0, (driver, columns, out.returncode, out.stderr[-500:])
+            assert out.returncode == 0, (
+                driver,
+                columns,
+                out.returncode,
+                out.stderr[-500:],
+            )
             message = out.stdout
             assert "ERROR InvalidOperationError" in message, (driver, message)
             assert "'ts9'" in message and "alias" in message, (driver, message)

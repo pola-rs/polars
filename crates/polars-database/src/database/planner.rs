@@ -59,11 +59,11 @@ fn quoted_relation(
     }
 }
 
-/// The alias's column list (`("a", "b")`) of a derived table over a query, for the dialects
-/// where the outer query can't refer to a column the server named itself (see
-/// [`DialectName::names_derived_columns`]); empty otherwise, or without the columns.
+/// The alias's column list (`("a", "b")`) of a derived table over a query, for a query where
+/// the outer query can't refer to a column the server named itself (see
+/// [`derived_columns_for`]); empty without the columns.
 fn derived_column_list(dialect: DialectName, columns: &[PlSmallStr]) -> String {
-    if !dialect.names_derived_columns() || columns.is_empty() {
+    if columns.is_empty() {
         return String::new();
     }
     let names = columns
@@ -72,6 +72,21 @@ fn derived_column_list(dialect: DialectName, columns: &[PlSmallStr]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!("({names})")
+}
+
+/// The columns a derived table over the query lists in its alias: `names` where the outer
+/// query can't refer to a column the server named itself (Trino's `_col0`; a SQL Server column
+/// of no name, `unnamed`: see [`catalog::mssql_unnamed_columns`]); none otherwise.
+fn derived_columns_for(
+    dialect: DialectName,
+    unnamed: bool,
+    names: &[PlSmallStr],
+) -> Vec<PlSmallStr> {
+    if dialect.names_derived_columns() || unnamed {
+        names.to_vec()
+    } else {
+        vec![]
+    }
 }
 
 fn strip_statement_end(sql: &str) -> &str {
@@ -346,6 +361,9 @@ struct QueryDiscovery {
     all_columns_volatile: bool,
     /// Every session is read-only ([`read_only_session`]): the database refuses a write.
     read_only_session: bool,
+    /// A SQL Server query with a column of no name: all its output columns, as a derived table
+    /// over it names them (`column_1` for the second; see [`catalog::mssql_unnamed_columns`]).
+    derived: Vec<PlSmallStr>,
     /// The SQL that finds its schema without running it, where the usual probe would
     /// (MySQL: [`mysql_query_probe`]).
     probe: Option<String>,
@@ -620,6 +638,7 @@ pub fn resolve_scan(
             all_columns_volatile: facts.as_ref().is_ok_and(|f| f.all_columns_volatile),
             read_only_session,
             probe: None,
+            derived: vec![],
         };
         if let Some(reason) = blocker
             && pushdown_disabled.is_none()
@@ -744,6 +763,14 @@ pub fn resolve_scan(
         }
         // The catalog first: some declared types are read as text (`text_conversion`), and
         // discovery must select them the same way the scan will.
+        // SQL Server refuses a derived table with an unnamed column: they are named by position.
+        if let DatabaseRelation::Query { sql } = &options.relation
+            && dialect == DialectName::Mssql
+            && query.wrappable
+        {
+            query.derived = catalog::mssql_unnamed_columns(session.as_mut(), &wrappable(sql))
+                .unwrap_or_default();
+        }
         let discover = |session: &mut dyn DatabaseSession, options: &DatabaseScanOptions| {
             let info = match &options.relation {
                 DatabaseRelation::Table { parts, .. } => catalog::table_info(
@@ -836,7 +863,11 @@ pub fn resolve_scan(
         // `ORDER BY` of a wrapped query.)
         if is_query && read_wrapped(&options, &pushdown_disabled, &query, dialect) {
             let names = discovered.iter_names().cloned().collect::<Vec<_>>();
-            let from = quoted_relation(dialect, &options.relation, &names);
+            let from = quoted_relation(
+                dialect,
+                &options.relation,
+                &derived_columns_for(dialect, !query.derived.is_empty(), &names),
+            );
             // Python drivers refuse DDL, ConnectorX runs each statement on its own connection.
             let temp_tables = matches!(backend.kind, BackendKind::Adbc { .. });
             info = catalog::query_info(
@@ -1422,6 +1453,7 @@ pub fn resolve_scan(
         pushdown_disabled,
         volatile_source: volatility.volatile.is_some(),
         volatility_unchecked,
+        derived_columns: !query.derived.is_empty(),
         user_schema: user_typed,
         derived_order_dropped,
         refused_columns: refused,
@@ -3168,7 +3200,7 @@ fn discover_schema(
         None => format!(
             "SELECT {} FROM {} WHERE 1 = 0",
             select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s)),
-            quoted_relation(dialect, &options.relation, &[])
+            quoted_relation(dialect, &options.relation, &query.derived)
         ),
     };
     let first_batch = |session: &mut dyn DatabaseSession, sql: &str| {
@@ -3248,6 +3280,7 @@ fn discover_schema(
         .collect::<PlHashSet<_>>();
     let untyped = !sampled.is_empty();
     let schema_names = schema.iter_names().cloned().collect::<Vec<_>>();
+    let derived_names = derived_columns_for(dialect, !query.derived.is_empty(), &schema_names);
     let mut mixed = Vec::new();
     let may_sample = !is_query
         || sample_types
@@ -3300,8 +3333,7 @@ fn discover_schema(
             }
         };
         let render = |items: Vec<SqlSelectItem>| -> PolarsResult<String> {
-            let mut sample_query =
-                SqlQuery::select(items, from_clause(options, dialect, &schema_names));
+            let mut sample_query = SqlQuery::select(items, from_clause(options, &derived_names));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
                 crate::filter::percent_formatted(&options.connection, backend);
@@ -3364,8 +3396,7 @@ fn discover_schema(
             })
             .collect::<Vec<_>>();
         if !items.is_empty() {
-            let mut sample_query =
-                SqlQuery::select(items, from_clause(options, dialect, &schema_names));
+            let mut sample_query = SqlQuery::select(items, from_clause(options, &derived_names));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
                 crate::filter::percent_formatted(&options.connection, backend);
@@ -3447,20 +3478,12 @@ fn sqlite_text_affinity(t: &str) -> bool {
     !t.contains("INT") && (t.contains("CHAR") || t.contains("CLOB") || t.contains("TEXT"))
 }
 
-fn from_clause(
-    options: &DatabaseScanOptions,
-    dialect: DialectName,
-    columns: &[PlSmallStr],
-) -> SqlFrom {
+fn from_clause(options: &DatabaseScanOptions, columns: &[PlSmallStr]) -> SqlFrom {
     match &options.relation {
         DatabaseRelation::Table { parts, .. } => SqlFrom::Table(parts.clone()),
         DatabaseRelation::Query { sql } => SqlFrom::Subquery {
             sql: strip_statement_end(sql).into(),
-            columns: if dialect.names_derived_columns() {
-                columns.to_vec()
-            } else {
-                vec![]
-            },
+            columns: columns.to_vec(),
         },
     }
 }
@@ -3508,9 +3531,13 @@ pub fn compile_scan(
     let derived_columns = if config.user_schema {
         vec![]
     } else {
-        config.schema.iter_names().cloned().collect::<Vec<_>>()
+        derived_columns_for(
+            dialect,
+            config.derived_columns,
+            &config.schema.iter_names().cloned().collect::<Vec<_>>(),
+        )
     };
-    let from = from_clause(options, dialect, &derived_columns);
+    let from = from_clause(options, &derived_columns);
 
     let mut columns = pushdown
         .columns
@@ -3958,9 +3985,12 @@ fn compile_unwrapped(
                 let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
                 items.extend(utf8_checks(config, &names));
             }
-            let needs_wrapper = items
-                .iter()
-                .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
+            // (a SQL Server query with unnamed columns is read named: the driver's names for
+            // them differ)
+            let needs_wrapper = config.derived_columns
+                || items
+                    .iter()
+                    .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
             // A server that drops a derived table's ORDER BY would return the rows in another
             // order: the wrapper repeats the query's ORDER BY outside, on its output columns
             // (the conversions stay: a TIMESTAMP's instant, a FLOAT's digits). Where a key is
@@ -3996,7 +4026,11 @@ fn compile_unwrapped(
                 } else {
                     derived_column_list(
                         dialect,
-                        &config.schema.iter_names().cloned().collect::<Vec<_>>(),
+                        &derived_columns_for(
+                            dialect,
+                            config.derived_columns,
+                            &config.schema.iter_names().cloned().collect::<Vec<_>>(),
+                        ),
                     )
                 };
                 let mut read = format!(
@@ -4015,9 +4049,24 @@ fn compile_unwrapped(
             } else {
                 sql.to_string()
             };
+            let count_derived = if config.user_schema {
+                String::new()
+            } else {
+                derived_column_list(
+                    dialect,
+                    &derived_columns_for(
+                        dialect,
+                        config.derived_columns,
+                        &config.schema.iter_names().cloned().collect::<Vec<_>>(),
+                    ),
+                )
+            };
             (
                 read,
-                format!("SELECT COUNT(*) FROM ({}) pl_q", wrappable(sql)),
+                format!(
+                    "SELECT COUNT(*) FROM ({}) pl_q{count_derived}",
+                    wrappable(sql)
+                ),
             )
         },
         relation => {
@@ -5193,6 +5242,25 @@ fn run_bounds(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn derived_table_lists_columns_where_the_server_names_them() {
+        let names = ["_col0".into(), "b".into()];
+        let q = DatabaseRelation::Query {
+            sql: "SELECT 1, 2".into(),
+        };
+        for (dialect, unnamed, listed) in [
+            (DialectName::Trino, false, true),
+            (DialectName::Mssql, false, false),
+            (DialectName::Mssql, true, true),
+            (DialectName::Postgresql, false, false),
+        ] {
+            let cols = derived_columns_for(dialect, unnamed, &names);
+            assert_eq!(!cols.is_empty(), listed, "{dialect} {unnamed}");
+            let from = quoted_relation(dialect, &q, &cols);
+            assert_eq!(from.contains("pl_q("), listed, "{from}");
+        }
+    }
+
     #[test]
     fn utc_zone_is_decided_by_name() {
         for z in [
