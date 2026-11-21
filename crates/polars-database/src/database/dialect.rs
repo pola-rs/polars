@@ -360,8 +360,9 @@ impl DialectName {
                 },
                 _ => format!("CAST({column} AS VARCHAR)"),
             }),
-            // ConnectorX panics on it, pyodbc can't read it: its text, as the base type writes it
-            Self::Mssql if t == "sql_variant" => Some(self.cast_to_text(column)),
+            // ConnectorX panics on it, pyodbc can't read it: its value as exact text, whatever
+            // the base type and the session's language (see `mssql_sql_variant_text`)
+            Self::Mssql if t == "sql_variant" => Some(mssql_sql_variant_text(column)),
             Self::Oracle if t == "json" => Some(format!("JSON_SERIALIZE({column} RETURNING CLOB)")),
             Self::Oracle if t == "rowid" || t == "urowid" => Some(format!("ROWIDTOCHAR({column})")),
             // `INTERVAL … TO …`: Arrow's month-day-nano intervals have no Polars dtype
@@ -785,6 +786,36 @@ fn postgres_native_type(t: &str) -> bool {
     )
 }
 
+/// A SQL Server `sql_variant` as exact text, by its base type: the plain `CAST` to text rounds
+/// floats to 6 digits and money to 2 decimals, and writes dates, times and binary in forms that
+/// lose digits (`Jan  2 2020  3:04AM`) or follow `SET LANGUAGE`. Floats are written with 17
+/// significant digits (style 3), money with 4 decimals (style 2), temporal values in ISO form
+/// with every fractional digit (style 121; a `date` style 23), binary as `0x…` hex (style 1);
+/// the rest as the base type writes them, which depends on no setting.
+fn mssql_sql_variant_text(column: &str) -> String {
+    let conv =
+        |ty: &str, style: u8| format!("CONVERT(NVARCHAR(MAX), CAST({column} AS {ty}), {style})");
+    format!(
+        "CASE CAST(SQL_VARIANT_PROPERTY({column}, 'BaseType') AS NVARCHAR(128)) \
+        WHEN 'float' THEN {float} WHEN 'real' THEN {real} \
+        WHEN 'money' THEN {money} WHEN 'smallmoney' THEN {money} \
+        WHEN 'datetime' THEN {datetime} WHEN 'smalldatetime' THEN {datetime} \
+        WHEN 'datetime2' THEN {datetime2} WHEN 'datetimeoffset' THEN {datetimeoffset} \
+        WHEN 'date' THEN {date} WHEN 'time' THEN {time} \
+        WHEN 'binary' THEN {binary} WHEN 'varbinary' THEN {binary} \
+        ELSE CAST({column} AS NVARCHAR(MAX)) END",
+        float = conv("FLOAT", 3),
+        real = format!("CONVERT(NVARCHAR(MAX), CAST({column} AS REAL), 3)"),
+        money = conv("MONEY", 2),
+        datetime = conv("DATETIME", 121),
+        datetime2 = conv("DATETIME2(7)", 121),
+        datetimeoffset = conv("DATETIMEOFFSET(7)", 121),
+        date = conv("DATE", 23),
+        time = conv("TIME(7)", 121),
+        binary = conv("VARBINARY(MAX)", 1),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -862,6 +893,26 @@ mod tests {
         ] {
             assert!(!dbx.string_semantics_for_collation(Some(c)).equality_exact);
         }
+    }
+
+    #[test]
+    fn mssql_sql_variant_is_written_by_base_type_in_exact_styles() {
+        let sql = DialectName::Mssql
+            .text_conversion("sql_variant", "[v]")
+            .unwrap();
+        // floats at 17 digits, money at 4 decimals, ISO dates and times, hex binary: none
+        // of which follows the session's language
+        for want in [
+            "CAST([v] AS FLOAT), 3)",
+            "CAST([v] AS MONEY), 2)",
+            "CAST([v] AS DATETIME2(7)), 121)",
+            "CAST([v] AS DATETIMEOFFSET(7)), 121)",
+            "CAST([v] AS TIME(7)), 121)",
+            "CAST([v] AS VARBINARY(MAX)), 1)",
+        ] {
+            assert!(sql.contains(want), "{want} in {sql}");
+        }
+        assert!(sql.contains("SQL_VARIANT_PROPERTY([v], 'BaseType')"));
     }
 
     #[test]

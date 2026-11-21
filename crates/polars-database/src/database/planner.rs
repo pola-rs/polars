@@ -4990,11 +4990,38 @@ fn run_bounds(
     filters: &[PushedFilter],
     without_nan: bool,
 ) -> PolarsResult<(Option<f64>, Option<f64>)> {
+    // A decimal the data read takes as text (ConnectorX panics on a SQL Server `decimal` of
+    // more than 28 digits, and cuts one beyond 10 decimal places): the bounds are read as
+    // the text of the native `MIN` and `MAX`, which is parsed as a number.
+    let quoted = config.dialect.quote_ident(column);
+    let as_text = config.dialect == DialectName::Mssql
+        && config.column(column).is_some_and(|c| {
+            c.dtype.is_decimal()
+                && c.db_type.as_deref().is_some_and(|t| {
+                    column_conversion(
+                        config.dialect,
+                        &config.backend.kind,
+                        config.session_setup_runs(),
+                        config.options.connection.opened_by_plugin(),
+                        t,
+                        &quoted,
+                    )
+                    .is_some_and(|sql| sql == config.dialect.cast_to_text(&quoted))
+                })
+        });
+    let bound = |f: &str, alias: &str| SqlSelectItem::Expr {
+        sql: config.dialect.cast_to_text(&format!("{f}({quoted})")),
+        alias: alias.into(),
+    };
     let mut query = SqlQuery::select(
-        vec![
-            SqlSelectItem::Min(column.clone()),
-            SqlSelectItem::Max(column.clone()),
-        ],
+        if as_text {
+            vec![bound("MIN", "pl_min"), bound("MAX", "pl_max")]
+        } else {
+            vec![
+                SqlSelectItem::Min(column.clone()),
+                SqlSelectItem::Max(column.clone()),
+            ]
+        },
         from.clone(),
     );
     query.escape_percent = percent_formatted(config);

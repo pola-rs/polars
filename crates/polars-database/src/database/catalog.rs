@@ -1603,7 +1603,9 @@ pub fn view_definition(
             "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
             CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END AS base_object, o.object_id \
+            WHERE s.object_id = o.object_id) END AS base_object, o.object_id, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
+            AS definition_bytes \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({}) AND o.type IN ('V', 'U', 'SN')",
             dialect.quote_nstr(&qualified)
         ),
@@ -1640,7 +1642,9 @@ pub fn view_definition(
             "SELECT TOP 2 CASE WHEN o.type = 'V' THEN 1 ELSE 0 END AS is_view, \
             CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END AS definition, \
             CASE WHEN o.type = 'SN' THEN (SELECT s.base_object_name FROM sys.synonyms s \
-            WHERE s.object_id = o.object_id) END AS base_object, o.object_id \
+            WHERE s.object_id = o.object_id) END AS base_object, o.object_id, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
+            AS definition_bytes \
             FROM sys.objects o WHERE LOWER(o.name) = LOWER({}){in_schema} \
             AND o.type IN ('V', 'U', 'SN')",
             dialect.quote_nstr(name)
@@ -1665,7 +1669,8 @@ pub fn view_definition(
         let Some(target) = run(&format!(
             "SELECT CASE WHEN o.type = 'V' THEN 1 ELSE 0 END, \
             CASE WHEN o.type = 'V' THEN OBJECT_DEFINITION(o.object_id) END, \
-            CASE WHEN o.type = 'SN' THEN o.name END, o.object_id \
+            CASE WHEN o.type = 'SN' THEN o.name END, o.object_id, \
+            CASE WHEN o.type = 'V' THEN DATALENGTH(OBJECT_DEFINITION(o.object_id)) END \
             FROM sys.objects o WHERE o.object_id = OBJECT_ID({}) AND o.type IN ('V', 'U', 'SN')",
             dialect.quote_nstr(&base)
         )) else {
@@ -1714,8 +1719,13 @@ pub fn view_definition(
             None => ViewLookup::Failed,
         };
     }
-    // (SQL Server's and ClickHouse's extra columns, a synonym's base, the object id and the merge
-    // flag, are no qualifier)
+    // A session's `SET TEXTSIZE` cuts the definition as it is read: a view whose volatile
+    // part was cut off would be taken for a repeatable one.
+    if dialect == DialectName::Mssql && !mssql_text_intact(&df, 1, 4, 0) {
+        return ViewLookup::Failed;
+    }
+    // (SQL Server's and ClickHouse's extra columns, a synonym's base, the object id, the
+    // definition's length and the merge flag, are no qualifier)
     let qualifier_end = if matches!(dialect, DialectName::Mssql | DialectName::Clickhouse) {
         2
     } else {
@@ -1811,8 +1821,8 @@ fn generated_columns(
         // computed columns that aren't persisted are evaluated on each read; persisted ones are
         // stored (and must be deterministic)
         DialectName::Mssql => format!(
-            "SELECT c.name, c.definition FROM sys.computed_columns c WHERE c.object_id = {} \
-            AND c.is_persisted = 0",
+            "SELECT c.name, c.definition, DATALENGTH(c.definition) FROM sys.computed_columns c \
+            WHERE c.object_id = {} AND c.is_persisted = 0",
             cell_u64(row, 3, 0)?
         ),
         DialectName::Sqlite => return sqlite_generated_columns(session, parts, row),
@@ -1828,8 +1838,24 @@ fn generated_columns(
         },
     };
     (0..df.height())
-        .map(|i| Some((cell_str(&df, 0, i)?, cell_str(&df, 1, i)?)))
+        .map(|i| {
+            // (a session's `SET TEXTSIZE` cuts an expression as it is read)
+            if dialect == DialectName::Mssql && !mssql_text_intact(&df, 1, 2, i) {
+                return None;
+            }
+            Some((cell_str(&df, 0, i)?, cell_str(&df, 1, i)?))
+        })
         .collect()
+}
+
+/// Whether a SQL Server `nvarchar(max)` cell was read whole: its UTF-16 length is the bytes the
+/// server says it holds (`DATALENGTH`, in column `bytes`). A session's `SET TEXTSIZE` cuts such
+/// text as it is sent, silently, and a NULL cell has nothing to cut.
+fn mssql_text_intact(df: &DataFrame, text: usize, bytes: usize, row: usize) -> bool {
+    match cell_str(df, text, row) {
+        None => cell_u64(df, bytes, row).is_none(),
+        Some(t) => cell_u64(df, bytes, row) == Some(2 * t.encode_utf16().count() as u64),
+    }
 }
 
 /// SQLite's VIRTUAL generated columns (`pragma_table_xinfo` hidden = 2), computed on each read,
@@ -3130,6 +3156,7 @@ mod tests {
                 Column::new("b".into(), def),
                 Column::new("c".into(), vec![None::<&str>; views.len()]),
                 Column::new("d".into(), vec![1i64; views.len()]),
+                Column::new("e".into(), definition_bytes(views.iter().copied())),
             ],
         )
         .unwrap()
@@ -3150,9 +3177,34 @@ mod tests {
                 Column::new("b".into(), def),
                 Column::new("c".into(), base),
                 Column::new("d".into(), vec![1i64; rows.len()]),
+                Column::new("e".into(), definition_bytes(rows.iter().map(|r| r.0))),
             ],
         )
         .unwrap()
+    }
+
+    /// The `DATALENGTH` of the fake definition `SELECT 1` (UTF-16: two bytes a character).
+    fn definition_bytes(views: impl Iterator<Item = bool>) -> Vec<Option<i64>> {
+        views.map(|v| v.then_some(16)).collect()
+    }
+
+    #[test]
+    fn mssql_view_definition_cut_by_textsize_is_not_proven() {
+        let ms = DialectName::Mssql;
+        let parts = ["dbo".into(), "v".into()];
+        let cut = |bytes: i64| {
+            let mut df = rows(&[true]);
+            df.replace("e", Column::new("e".into(), vec![bytes]))
+                .unwrap();
+            let mut s = Recorder {
+                log: vec![],
+                answer: move |_: &str| df.clone(),
+            };
+            view_definition(&mut s, ms, &parts, &[])
+        };
+        assert!(matches!(cut(16), ViewLookup::View { .. }));
+        // the server holds more than was read
+        assert_eq!(cut(40), ViewLookup::Failed);
     }
 
     #[test]
