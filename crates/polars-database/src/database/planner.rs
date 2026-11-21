@@ -80,6 +80,7 @@ fn check_read_only(
     sql: &str,
     facts: Option<&QueryFacts>,
     read_only_session: bool,
+    dialect: DialectName,
 ) -> PolarsResult<()> {
     if let Some(facts) = facts.filter(|f| f.parses) {
         polars_ensure!(
@@ -96,7 +97,7 @@ fn check_read_only(
         InvalidOperation: "{first} statements are not valid read queries for scan_database"
     );
     polars_ensure!(
-        read_only_session || plain_select(sql),
+        read_only_session || plain_select(sql, dialect),
         InvalidOperation:
         "scan_database only runs read queries, and this query can't be parsed to check that \
         it is one (a WITH may hold a write); write it as one plain SELECT (no INTO, no `;` \
@@ -106,14 +107,21 @@ fn check_read_only(
 }
 
 /// A query that is one `SELECT` without `INTO` (`SELECT … INTO t` creates a table), as far as
-/// its words show: a statement that can't be parsed is taken as a write otherwise.
-fn plain_select(sql: &str) -> bool {
+/// its words show: a statement that can't be parsed is taken as a write otherwise. SQL Server
+/// runs statements with no `;` between them (`SELECT … FROM c EXEC('…')`): no word of the query
+/// may start a statement there ([`TSQL_STATEMENT_WORDS`]).
+fn plain_select(sql: &str, dialect: DialectName) -> bool {
     let sql = strip_statement_end(sql);
+    let mut words = sql.split(|c: char| !c.is_alphanumeric() && c != '_');
     first_keyword(sql).eq_ignore_ascii_case("SELECT")
         && !sql.contains(';')
-        && !sql
-            .split(|c: char| !c.is_alphanumeric() && c != '_')
-            .any(|w| w.eq_ignore_ascii_case("INTO"))
+        && !words.clone().any(|w| w.eq_ignore_ascii_case("INTO"))
+        && !(dialect == DialectName::Mssql
+            && words.any(|w| {
+                TSQL_STATEMENT_WORDS
+                    .iter()
+                    .any(|k| k.eq_ignore_ascii_case(w))
+            }))
 }
 
 /// Whether every session of a scan is read-only, so that the database refuses a write: the
@@ -127,6 +135,57 @@ fn read_only_session(dialect: DialectName, backend: &BackendKind, live: bool) ->
             .iter()
             .any(|s| s.sql.contains("READ ONLY"))
 }
+
+/// Words that start a Transact-SQL statement, from SQL Server's reserved keywords (it rejects
+/// one as an alias, so one after a table is a statement). Not `FETCH` (`OFFSET … FETCH NEXT`).
+const TSQL_STATEMENT_WORDS: &[&str] = &[
+    "ALTER",
+    "BACKUP",
+    "BREAK",
+    "BULK",
+    "CHECKPOINT",
+    "CLOSE",
+    "COMMIT",
+    "CONTINUE",
+    "CREATE",
+    "DBCC",
+    "DEALLOCATE",
+    "DECLARE",
+    "DELETE",
+    "DENY",
+    "DROP",
+    "DUMP",
+    "EXEC",
+    "EXECUTE",
+    "GOTO",
+    "GRANT",
+    "IF",
+    "INSERT",
+    "KILL",
+    "LOAD",
+    "MERGE",
+    "OPEN",
+    "PRINT",
+    "RAISERROR",
+    "READTEXT",
+    "RECONFIGURE",
+    "RESTORE",
+    "RETURN",
+    "REVERT",
+    "REVOKE",
+    "ROLLBACK",
+    "SAVE",
+    "SET",
+    "SETUSER",
+    "SHUTDOWN",
+    "TRUNCATE",
+    "UPDATE",
+    "UPDATETEXT",
+    "USE",
+    "WAITFOR",
+    "WHILE",
+    "WRITETEXT",
+];
 
 /// The first word of a statement, after comments.
 fn first_keyword(sql: &str) -> &str {
@@ -206,6 +265,10 @@ struct QueryDiscovery {
     /// (MySQL: [`mysql_query_probe`]).
     probe: Option<String>,
 }
+
+/// Why a query with a `WITH TIES` is read without pushdown: a `LIMIT` around it is applied
+/// inside it by Trino, past the ties (it is still wrapped, to find its schema and convert).
+const WITH_TIES: &str = "the query has a WITH TIES, which a LIMIT around it may not respect";
 
 const MARIADB_ORDER_BY: &str = "MariaDB ignores the ORDER BY of a query inside a derived table";
 
@@ -362,6 +425,7 @@ pub fn resolve_scan(
     // The server drops the query's top-level `ORDER BY` inside a derived table (MariaDB, or
     // a MySQL dialect server not known to keep it without I/O): a read must not wrap it.
     let mut derived_order_dropped = false;
+    let mut sqlite_floats_exact_found = false;
     // columns the read refuses, with why (`DatabaseScanConfig::refused_columns`)
     let mut refused: Vec<(PlSmallStr, PlSmallStr)> = Vec::new();
     if let DatabaseRelation::Query { sql } = &options.relation {
@@ -371,7 +435,7 @@ pub fn resolve_scan(
         query_facts = facts.as_ref().ok().cloned();
         let read_only_session =
             read_only_session(dialect, &backend.kind, options.connection.is_live());
-        check_read_only(&sql, facts.as_ref().ok(), read_only_session)?;
+        check_read_only(&sql, facts.as_ref().ok(), read_only_session, dialect)?;
         // SQLite and DuckDB rename one of two names that differ only in case inside a derived
         // table (`x:1`, `x_1`), and a qualified name picks the first of them.
         if matches!(dialect, DialectName::Sqlite | DialectName::Duckdb)
@@ -469,6 +533,15 @@ pub fn resolve_scan(
         {
             pushdown_disabled = Some(reason);
         }
+        if facts.as_ref().is_ok_and(|f| f.parses && f.with_ties) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(WITH_TIES.into());
+        }
+        if facts.as_ref().is_ok_and(|f| f.positional_join) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(POSITIONAL_REASON.into());
+        }
+        if facts.as_ref().is_ok_and(|f| f.unsafe_settings) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(SETTINGS_REASON.into());
+        }
         if query.derived_order_by {
             if dialect.keeps_derived_table_order().is_none() {
                 // Without I/O, the server may be a MariaDB (see below).
@@ -504,6 +577,8 @@ pub fn resolve_scan(
     let mut resolution: Option<Vec<String>> = None;
     let mut mixed_found: Vec<PlSmallStr> = Vec::new();
     let schema: SchemaRef;
+    // the query columns SQL Server declares `money` or `smallmoney`
+    let mut money_columns: PlHashMap<PlSmallStr, String> = PlHashMap::default();
     let volatility_unchecked = user_schema.is_some();
     let user_typed = user_schema.is_some();
 
@@ -629,6 +704,13 @@ pub fn resolve_scan(
             &names,
             true,
         );
+        if pushdown_disabled.is_none() {
+            if volatility.positional {
+                pushdown_disabled = Some(POSITIONAL_VIEW_REASON.into());
+            } else if volatility.settings {
+                pushdown_disabled = Some(SETTINGS_VIEW_REASON.into());
+            }
+        }
         // a view's columns hold what its query gives, whatever `pragma_table_info` says
         // (the first branch's type, of a `UNION`)
         if dialect == DialectName::Sqlite && volatility.plain_table {
@@ -666,6 +748,7 @@ pub fn resolve_scan(
                     | DialectName::Mssql
                     | DialectName::Oracle
                     | DialectName::Clickhouse
+                    | DialectName::Trino
             ) {
                 info.types = names
                     .iter()
@@ -862,6 +945,23 @@ pub fn resolve_scan(
                 c.db_type = Some("float".into());
             }
         }
+        if dialect == DialectName::Mssql {
+            for (name, t) in info.compare_types.iter() {
+                if matches!(
+                    t.trim().to_ascii_lowercase().as_str(),
+                    "money" | "smallmoney"
+                ) {
+                    money_columns.insert(name.clone(), t.clone());
+                }
+            }
+        }
+        if dialect == DialectName::Sqlite
+            && !matches!(backend.kind, BackendKind::ConnectorX)
+            && pushdown_disabled.is_none()
+            && columns.iter().any(|c| c.dtype.is_float())
+        {
+            sqlite_floats_exact_found = sqlite_floats_exact(session.as_mut());
+        }
         schema = Arc::new(discovered);
     }
 
@@ -882,7 +982,9 @@ pub fn resolve_scan(
                 column to text in the query",
                 c.name, pushdown_disabled.as_deref().unwrap_or("")
             );
-            c.db_type = Some(CONNECTORX_DECIMAL.into());
+            // SQL Server's `money` as text has 2 places: its own conversion (`column_conversion`)
+            let money = money_columns.get(c.name.as_str());
+            c.db_type = Some(money.map_or(CONNECTORX_DECIMAL, |t| t.as_str()).into());
             c.comparable &= !alias_shadows_column(dialect);
         }
     }
@@ -926,15 +1028,17 @@ pub fn resolve_scan(
     // A filter on a volatile function's column (`random() AS r`) isn't pushed: SQLite merges
     // the wrapped query into the filter's and calls the function again for it, returning
     // rows whose value fails the filter. Postgres and DuckDB push no filter below a
-    // volatile function: it sees the values the query returns.
+    // volatile function: it sees the values the query returns. Nor is one on a redacted
+    // table's columns.
     let refilters = !matches!(dialect, DialectName::Postgresql | DialectName::Duckdb);
     for c in columns.iter_mut().filter(|c| {
-        refilters
-            && (query.all_columns_volatile
-                || query
-                    .volatile_columns
-                    .iter()
-                    .any(|v| v.eq_ignore_ascii_case(&c.name)))
+        volatility.redacted
+            || refilters
+                && (query.all_columns_volatile
+                    || query
+                        .volatile_columns
+                        .iter()
+                        .any(|v| v.eq_ignore_ascii_case(&c.name)))
     }) {
         c.comparable = false;
     }
@@ -1165,6 +1269,7 @@ pub fn resolve_scan(
         volatility_unchecked,
         user_schema: user_typed,
         derived_order_dropped,
+        sqlite_floats_exact: sqlite_floats_exact_found,
         refused_columns: refused,
         resolution,
         bounds_cache: Default::default(),
@@ -1178,7 +1283,9 @@ pub fn resolve_scan(
 /// relies on it not being so: several partitions (each reads it again), or a filter
 /// pushed into the database on a column of a volatile function, where the database merges
 /// a view or query into the filter's and calls `random()` again for it (SQLite, MySQL;
-/// others don't push a filter into a query that calls a volatile function).
+/// others don't push a filter into a query that calls a volatile function). Any pushed filter
+/// fails the read of a source that pairs rows by their place or reads a redacted table, and
+/// any pushdown the read of a view whose `SETTINGS` may cut its rows.
 pub fn check_unplanned_volatility(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -1190,6 +1297,29 @@ pub fn check_unplanned_volatility(
         return Ok(false);
     }
     let volatility = unplanned_volatility(session, config);
+    polars_ensure!(
+        !volatility.settings || config.pushdown_disabled.is_some(),
+        InvalidOperation:
+        "{SETTINGS_VIEW_REASON} (found when reading: schema= skips the check when planning); \
+        pass pushdown=False, or leave out schema="
+    );
+    if let Some(column) = compiled.filter_columns.first() {
+        let why = if volatility.redacted {
+            Some("a table it reads has redacted columns, which the database compares as stored")
+        } else if volatility.positional {
+            Some(POSITIONAL_VIEW_REASON)
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            polars_bail!(
+                InvalidOperation:
+                "a filter on '{column}' was planned to run in the database, but {why} \
+                (found when reading: schema= skips the check when planning); filter after \
+                collecting, or leave out schema="
+            );
+        }
+    }
     let Some(reason) = volatility.volatile else {
         return Ok(false);
     };
@@ -1534,6 +1664,18 @@ fn in_utc(dtype: &DataType) -> DataType {
     }
 }
 
+/// Pushdown is off (a filter changes the rows), but the query is still wrapped for its
+/// conversions, as with `pushdown=False`.
+const POSITIONAL_REASON: &str = "a positional join (PASTE, POSITIONAL) pairs rows by their place, \
+    which a pushed filter changes";
+const POSITIONAL_VIEW_REASON: &str = "a view it reads pairs rows by their place (PASTE, \
+    POSITIONAL), which a pushed filter changes";
+const SETTINGS_VIEW_REASON: &str = "a view it reads has a SETTINGS clause (an overflow mode, a \
+    row limit) that may cut or change its rows, which a pushed filter, projection or limit \
+    changes";
+const SETTINGS_REASON: &str = "a SETTINGS clause (an overflow mode, a row limit) may cut or \
+    change the rows, which a pushed filter changes";
+
 /// Whether the source is read with conversions in its select list: a table, or a query that
 /// is wrapped for them (with pushdown, or without it where it can be: see
 /// `compile_unwrapped`).
@@ -1545,9 +1687,17 @@ fn read_wrapped(
 ) -> bool {
     // only a derived `ORDER BY` (repeated outside the wrapper, `compile_unwrapped`) keeps the
     // pushdown off
-    let only_derived_order = pushdown_disabled
-        .as_deref()
-        .is_some_and(|r| r == MARIADB_ORDER_BY || r == derived_order_by_reason(dialect).as_str());
+    // (and a filter that changes the rows it pairs or keeps, as `pushdown=False` does)
+    let only_derived_order = pushdown_disabled.as_deref().is_some_and(|r| {
+        r == MARIADB_ORDER_BY
+            || r == WITH_TIES
+            || r == derived_order_by_reason(dialect).as_str()
+            || r == POSITIONAL_REASON
+            || r == SETTINGS_REASON
+            || r == POSITIONAL_VIEW_REASON
+            || r == SETTINGS_VIEW_REASON
+    });
+
     match options.relation {
         DatabaseRelation::Table { .. } => true,
         DatabaseRelation::Query { .. } => {
@@ -1871,6 +2021,24 @@ pub(crate) fn decode_sqlite_reals(
         let Ok(col) = df.column(name) else {
             continue;
         };
+        // A connection with `text_factory=bytes` hands text over as bytes, the marker too.
+        let as_text;
+        let col = if let Ok(bytes) = col.binary() {
+            if let Ok(text) = col.cast(&DataType::String) {
+                as_text = text;
+                &as_text
+            } else {
+                polars_ensure!(
+                    !bytes.iter().flatten().any(|v| v.first() == Some(&1)),
+                    ComputeError:
+                    "database column '{name}' holds text that isn't valid UTF-8 next to a real \
+                    (a connection with `text_factory=bytes`): read it with a str text factory"
+                );
+                continue;
+            }
+        } else {
+            col
+        };
         let Ok(ca) = col.str() else {
             // all NULL
             continue;
@@ -1974,6 +2142,14 @@ fn column_conversion(
     if let Some(sql) = dialect.text_conversion(db_type, column) {
         return Some(sql);
     }
+    // Trino `timestamp(p) with time zone`: the instant in UTC (a named zone's repeated hour
+    // reads an hour off otherwise: the value holds the zone's name, not its offset)
+    if dialect == DialectName::Trino
+        && declared_dtype(dialect, db_type)
+            .is_some_and(|d| matches!(d, DataType::Datetime(_, Some(_))))
+    {
+        return Some(format!("{column} AT TIME ZONE 'UTC'"));
+    }
     // ClickHouse `DateTime` (seconds) reaches Arrow as a plain UInt32; `DateTime64` is a
     // timestamp, and compares like the column. clickhouse_connect and ConnectorX cut a
     // `DateTime64(7..9)` to microseconds: its nanoseconds since the epoch keep them (its
@@ -2011,12 +2187,52 @@ fn column_conversion(
             return clickhouse_array_nanoseconds(db_type, column, 0);
         }
     }
+    // ConnectorX reads `money` as a double (`922337203685477.5807` as `…477.6`)
+    if dialect == DialectName::Mssql && matches!(backend, BackendKind::ConnectorX) {
+        match db_type.trim().to_ascii_lowercase().as_str() {
+            // as exact text (a decimal reaches ConnectorX as a double too), parsed as the
+            // planned decimal
+            "money" => {
+                return Some(dialect.cast_to_text(&format!("CAST({column} AS DECIMAL(19, 4))")));
+            },
+            "smallmoney" => {
+                return Some(dialect.cast_to_text(&format!("CAST({column} AS DECIMAL(10, 4))")));
+            },
+            _ => {},
+        }
+    }
+    // `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, which drivers cut to
+    // microseconds (and read differently): read as text, parsed as the planned nanosecond
+    // type (a `datetimeoffset` as its UTC wall-clock time: its own text has the offset)
+    if dialect == DialectName::Mssql
+        && let Some(base) = super::schema::mssql_nanosecond_type(db_type)
+    {
+        let x = if base == "datetimeoffset" {
+            format!("CAST(SWITCHOFFSET({column}, '+00:00') AS DATETIME2(7))")
+        } else {
+            column.to_string()
+        };
+        return Some(format!("CONVERT(VARCHAR(40), {x}, 121)"));
+    }
+    // ConnectorX shifts a `datetimeoffset` of another offset than UTC twice (`01:30 +05:30`
+    // reads as 14:30 UTC, not 20:00): at offset 0 its read is right.
+    if dialect == DialectName::Mssql
+        && matches!(backend, BackendKind::ConnectorX)
+        && db_type
+            .trim()
+            .to_ascii_lowercase()
+            .starts_with("datetimeoffset")
+    {
+        return Some(format!("SWITCHOFFSET({column}, '+00:00')"));
+    }
     // Read as text and parse the exact value; the planned dtype stays the declared decimal.
-    // ConnectorX reads decimals with at most 10 decimal places, dropping digits; an
+    // ConnectorX reads decimals with at most 10 decimal places, dropping digits (and panics on
+    // SQL Server decimals of more than 28 digits); an
     // unconstrained `numeric` / `NUMBER` reaches some drivers as a float (oracledb), and
     // its values may have more digits than the planned scale (an error then, not rounding).
     if let Some(DataType::Decimal(p, scale)) = declared_dtype(dialect, db_type)
-        && ((matches!(backend, BackendKind::ConnectorX) && scale > 10)
+        && ((matches!(backend, BackendKind::ConnectorX)
+            && (scale > 10 || (dialect == DialectName::Mssql && p > 28)))
             || DataType::Decimal(p, scale) == super::schema::UNCONSTRAINED_DECIMAL)
     {
         if dialect == DialectName::Oracle {
@@ -3440,6 +3656,34 @@ pub(crate) fn time_text_risk_columns(config: &DatabaseScanConfig) -> PlHashMap<P
         .collect()
 }
 
+/// The SQL Server columns read as text whose digits below the planned unit are cut (toward
+/// the earlier instant): a `datetime2` / `datetimeoffset` of 7 fractional digits the user
+/// typed `Datetime("us")` or `("ms")` (`schema_overrides`): the digits are the
+/// ones the type has beyond the unit asked for, which isn't an error (and is not rounded: the
+/// maximum, `9999-12-31 23:59:59.9999999`, would overflow). Filters on such a column aren't
+/// pushed (it is retyped: not comparable).
+pub(crate) fn truncating_columns(config: &DatabaseScanConfig) -> PlHashSet<PlSmallStr> {
+    if config.dialect != DialectName::Mssql {
+        return PlHashSet::new();
+    }
+    config
+        .columns
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.dtype,
+                DataType::Datetime(TimeUnit::Microseconds | TimeUnit::Milliseconds, _)
+            ) && c.db_type.as_deref().is_some_and(|t| {
+                matches!(
+                    super::schema::mssql_nanosecond_type(t),
+                    Some("datetime2" | "datetimeoffset")
+                )
+            })
+        })
+        .map(|c| c.name.clone())
+        .collect()
+}
+
 /// Refuses a `TIMETZ` column the driver's result description shows under `schema=`, whatever it is
 /// declared as: it is read as the local time of day, its offset dropped.
 pub(crate) fn check_time_with_zone(
@@ -3716,6 +3960,25 @@ struct SourceVolatility {
     all_columns: bool,
     /// The source is a table the catalog says is no view: its declared types hold.
     plain_table: bool,
+    /// A view it reads has a positional join (`PASTE`, `POSITIONAL`), or may (one that
+    /// couldn't be inspected, on a dialect that has them): no filter is pushed.
+    positional: bool,
+    /// A view it reads has a `SETTINGS` clause that may cut its rows (ClickHouse): nothing
+    /// is pushed.
+    settings: bool,
+    /// A table it reads is read redacted (Oracle Data Redaction), and compared as stored, or
+    /// may be (a view that couldn't be inspected): no filter is pushed.
+    redacted: bool,
+}
+
+impl SourceVolatility {
+    /// A view it reads couldn't be inspected: it may join by place, cut its rows, or read
+    /// a redacted table.
+    fn unknown_view(&mut self, dialect: DialectName) {
+        self.positional |= matches!(dialect, DialectName::Duckdb | DialectName::Clickhouse);
+        self.settings |= dialect == DialectName::Clickhouse;
+        self.redacted |= dialect == DialectName::Oracle;
+    }
 }
 
 const UNKNOWN_FUNCTIONS: &str = "a function sqlglot doesn't know (it may be a user's \
@@ -3805,13 +4068,26 @@ fn source_volatility(
             if seen.len() > MAX_VIEW_LOOKUPS {
                 out.volatile = Some("one of the many views it reads".into());
                 out.all_columns = true;
+                out.unknown_view(dialect);
                 break 'inspect;
             }
             let (sql, qualifier) =
                 match catalog::view_definition(session, dialect, &parts, &context) {
-                    catalog::ViewLookup::View { sql, qualifier } => (sql, qualifier),
+                    catalog::ViewLookup::View {
+                        sql,
+                        qualifier,
+                        redacted,
+                    } => {
+                        out.redacted |= redacted;
+                        (sql, qualifier)
+                    },
                     catalog::ViewLookup::NotAView => {
                         out.plain_table |= own_columns;
+                        continue;
+                    },
+                    catalog::ViewLookup::Redacted => {
+                        out.plain_table |= own_columns;
+                        out.redacted = true;
                         continue;
                     },
                     catalog::ViewLookup::Unknown => continue,
@@ -3826,6 +4102,7 @@ fn source_volatility(
                             .into(),
                         );
                         out.all_columns = true;
+                        out.unknown_view(dialect);
                         continue;
                     },
                 };
@@ -3837,12 +4114,15 @@ fn source_volatility(
             let Some(view) = view else {
                 out.volatile = Some(format!("the view '{name}', which can't be inspected,").into());
                 out.all_columns = true;
+                out.unknown_view(dialect);
                 continue;
             };
             if !view.repeatable {
                 // a volatile function, a `LIMIT`, rows picked in no set order
                 out.volatile = Some(format!("the view '{name}'").into());
             }
+            out.positional |= view.positional_join;
+            out.settings |= view.unsafe_settings;
             let any_volatile = view.all_columns_volatile || !view.volatile_columns.is_empty();
             match &view.output_columns {
                 Some(outputs)
@@ -3857,14 +4137,21 @@ fn source_volatility(
                         }
                     }
                 },
-                Some(outputs) if own_columns && !view.all_columns_volatile && !names_in_order => {
+                // (not MySQL's: its definition leaves out a column list that may permute the
+                // query's own aliases)
+                Some(outputs)
+                    if own_columns
+                        && !view.all_columns_volatile
+                        && !names_in_order
+                        && !matches!(dialect, DialectName::Mysql | DialectName::Singlestore) =>
+                {
                     for n in names {
                         let volatile = match outputs.iter().find(|o| o.eq_ignore_ascii_case(n)) {
                             Some(o) => view
                                 .volatile_columns
                                 .iter()
                                 .any(|v| v.eq_ignore_ascii_case(o)),
-                            // not among the query's names (a MySQL view's column list)
+                            // not among the query's names
                             None => any_volatile,
                         };
                         if volatile {
@@ -3941,6 +4228,7 @@ fn source_volatility(
             {
                 Some(f) => {
                     volatile |= !f.repeatable;
+                    out.positional |= f.positional_join;
                     if let (Some(n), false) = (macro_name, f.repeatable) {
                         shadowing.push(n.clone());
                     }
@@ -3951,6 +4239,7 @@ fn source_volatility(
                 },
                 None => {
                     volatile = true;
+                    out.unknown_view(dialect);
                     shadowing.extend(macro_name.clone());
                 },
             }
@@ -4056,6 +4345,41 @@ pub(crate) fn source_may_write(config: &DatabaseScanConfig, found_volatile: bool
     }
 }
 
+/// Whether this SQLite parses float literals exactly, as filters write them (17 significant
+/// digits, `_sqlglot.py`'s `_literal`). One built without `long double` (Python's on Windows,
+/// ConnectorX's, some Linux builds) misses the stored value of many large or small ones. Under
+/// `schema=` (no I/O while planning) it isn't known: no float comparison is pushed then.
+pub(crate) fn sqlite_floats_exact(session: &mut dyn DatabaseSession) -> bool {
+    let values: Vec<f64> = (-15..=15)
+        .flat_map(|e| {
+            ["1.2345678901234567", "9.876543210987654"].map(|m| format!("{m}e{}", e * 20))
+        })
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    let sql = format!(
+        "SELECT {}",
+        values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| format!("{v:.16e} AS v{i}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let Ok(df) = session.catalog_query(&sql) else {
+        return false;
+    };
+    df.height() == 1
+        && df.width() == values.len()
+        && df.columns().iter().zip(&values).all(
+            |(c, v)| matches!(c.get(0), Ok(AnyValue::Float64(x)) if x.to_bits() == v.to_bits()),
+        )
+}
+
+/// Whether a scan may be read in several partitions. Each partition reads the source again,
+/// which is right only where the source returns the same rows each time; until that is
+/// checked, every scan is read with one query.
+const PARTITIONING_SUPPORTED: bool = false;
+
 /// Turns the scan's `PartitionSpec` into partitions, querying bounds where needed.
 fn resolve_partitions(
     config: &DatabaseScanConfig,
@@ -4066,6 +4390,16 @@ fn resolve_partitions(
 ) -> PolarsResult<(Vec<Partition>, PlSmallStr)> {
     let options = &config.options;
     let one = || Ok((vec![Partition { predicate: None }], PlSmallStr::from("1")));
+    if !PARTITIONING_SUPPORTED {
+        return match options.partitioning {
+            PartitionSpec::None | PartitionSpec::Auto { .. } => one(),
+            PartitionSpec::Column { .. } | PartitionSpec::Predicates(_) => polars_bail!(
+                InvalidOperation:
+                "scan_database doesn't support partitioning yet: pass partition_on=None or \
+                'auto' (both read with one query)"
+            ),
+        };
+    }
     let max_connections = config.max_connections();
 
     // A live connection reads partitions one after another on one connection; splitting
@@ -4372,16 +4706,24 @@ mod tests {
     #[test]
     fn keyword_guard() {
         assert_eq!(first_keyword("  -- x\n /* y */ (SELECT 1)"), "SELECT");
-        assert!(check_read_only("DELETE FROM t", None, true).is_err());
-        assert!(check_read_only("/* c */ insert into t values (1)", None, true).is_err());
-        assert!(check_read_only("SELECT * FROM t", None, false).is_ok());
+        assert!(check_read_only("DELETE FROM t", None, true, DialectName::Generic).is_err());
+        assert!(
+            check_read_only(
+                "/* c */ insert into t values (1)",
+                None,
+                true,
+                DialectName::Generic
+            )
+            .is_err()
+        );
+        assert!(check_read_only("SELECT * FROM t", None, false, DialectName::Generic).is_ok());
         let facts = QueryFacts {
             parses: true,
             read_only: false,
             ..Default::default()
         };
         let cte = "WITH d AS (DELETE FROM t) SELECT 1";
-        assert!(check_read_only(cte, Some(&facts), true).is_err());
+        assert!(check_read_only(cte, Some(&facts), true, DialectName::Generic).is_err());
         // a query that doesn't parse: only plainly a SELECT, unless the session refuses
         // writes itself
         for sql in [
@@ -4390,10 +4732,28 @@ mod tests {
             "SELECT 1; DELETE FROM t",
             "WITH d AS (SELECT 1) SELECT * FROM d",
         ] {
-            assert!(check_read_only(sql, None, false).is_err(), "{sql}");
-            assert!(check_read_only(sql, None, true).is_ok(), "{sql}");
+            assert!(
+                check_read_only(sql, None, false, DialectName::Generic).is_err(),
+                "{sql}"
+            );
+            assert!(
+                check_read_only(sql, None, true, DialectName::Generic).is_ok(),
+                "{sql}"
+            );
         }
-        assert!(check_read_only("(SELECT a FROM t USING <);", None, false).is_ok());
+        assert!(
+            check_read_only(
+                "(SELECT a FROM t USING <);",
+                None,
+                false,
+                DialectName::Generic
+            )
+            .is_ok()
+        );
+        // SQL Server runs a statement after a query with no `;`
+        let exec = "SELECT a FROM c EXEC('DELETE FROM v') USING <";
+        assert!(check_read_only(exec, None, false, DialectName::Mssql).is_err());
+        assert!(check_read_only(exec, None, false, DialectName::Generic).is_ok());
         assert!(read_only_session(
             DialectName::Postgresql,
             &BackendKind::Python {
@@ -4556,6 +4916,126 @@ mod tests {
             conversion(DialectName::Duckdb, DUCKDB_TEXT).as_deref(),
             Some("CAST(\"c\" AS VARCHAR)")
         );
+    }
+
+    #[test]
+    fn mssql_and_trino_types_drivers_misread_are_converted() {
+        let mssql = |t| conversion(DialectName::Mssql, t);
+        let money = mssql("money").unwrap();
+        assert!(money.contains("CAST(\"c\" AS DECIMAL(19, 4))"), "{money}");
+        let money = mssql("smallmoney").unwrap();
+        assert!(money.contains("CAST(\"c\" AS DECIMAL(10, 4))"), "{money}");
+        assert_eq!(
+            mssql("datetime2(7)").as_deref(),
+            Some("CONVERT(VARCHAR(40), \"c\", 121)")
+        );
+        assert_eq!(
+            mssql("datetimeoffset(7)").as_deref(),
+            Some(
+                "CONVERT(VARCHAR(40), CAST(SWITCHOFFSET(\"c\", '+00:00') AS DATETIME2(7)), \
+                121)"
+            )
+        );
+        assert_eq!(
+            mssql("datetimeoffset(3)").as_deref(),
+            Some("SWITCHOFFSET(\"c\", '+00:00')")
+        );
+        assert!(mssql("decimal(38, 2)").is_some());
+        assert_eq!(mssql("decimal(18, 2)"), None);
+        assert_eq!(mssql("datetime2(6)"), None);
+        assert_eq!(
+            conversion(DialectName::Trino, "timestamp(3) with time zone").as_deref(),
+            Some("\"c\" AT TIME ZONE 'UTC'")
+        );
+        assert_eq!(
+            conversion(DialectName::Trino, "timestamp(9)").as_deref(),
+            Some("CAST(\"c\" AS VARCHAR)")
+        );
+        assert_eq!(conversion(DialectName::Trino, "array(timestamp(9))"), None);
+    }
+
+    #[test]
+    fn mssql_columns_typed_below_their_digits_are_truncated() {
+        use crate::filter::tests::{adbc, config};
+        let us = DataType::Datetime(TimeUnit::Microseconds, None);
+        let ns = DataType::Datetime(TimeUnit::Nanoseconds, None);
+        let c = config(
+            DialectName::Mssql,
+            adbc("mssql"),
+            &[
+                ("a", us.clone(), Some("datetime2(7)")),
+                ("b", us.clone(), Some("datetimeoffset")),
+                ("c", ns, Some("datetime2(7)")),
+                ("d", us.clone(), Some("datetime2(6)")),
+            ],
+        );
+        let mut found: Vec<_> = truncating_columns(&c).into_iter().collect();
+        found.sort();
+        assert_eq!(found, ["a", "b"]);
+        let pg = config(
+            DialectName::Postgresql,
+            adbc("postgresql"),
+            &[("a", us, Some("datetime2(7)"))],
+        );
+        assert!(truncating_columns(&pg).is_empty());
+    }
+
+    struct NoRenderer;
+
+    impl SqlRenderer for NoRenderer {
+        fn id(&self) -> PlSmallStr {
+            "none".into()
+        }
+        fn render(&self, _: &SqlQuery, _: DialectName) -> PolarsResult<String> {
+            unreachable!()
+        }
+        fn inspect_query(&self, _: &str, _: DialectName) -> PolarsResult<QueryFacts> {
+            unreachable!()
+        }
+        fn outer_order_by(
+            &self,
+            _: &str,
+            _: DialectName,
+            _: &[PlSmallStr],
+            _: bool,
+        ) -> PolarsResult<Option<PlSmallStr>> {
+            unreachable!()
+        }
+        fn inspect_view(&self, _: &str, _: DialectName) -> PolarsResult<QueryFacts> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn scans_are_read_in_one_partition() {
+        use crate::database::options::PartitionStrategy;
+        use crate::filter::tests::{adbc, config};
+        let partitions = |spec: PartitionSpec, target: Option<usize>| {
+            let mut c = config(
+                DialectName::Postgresql,
+                adbc("postgresql"),
+                &[("id", DataType::Int64, Some("bigint"))],
+            );
+            Arc::make_mut(&mut c.options).partitioning = spec;
+            let from = SqlFrom::Table(vec!["t".into()]);
+            resolve_partitions(&c, &NoRenderer, &from, &[], target).map(|(p, _)| p.len())
+        };
+        for target in [None, Some(8)] {
+            assert_eq!(partitions(PartitionSpec::None, target).unwrap(), 1);
+            let auto = PartitionSpec::Auto {
+                num_partitions: Some(4),
+            };
+            assert_eq!(partitions(auto, target).unwrap(), 1);
+            let column = PartitionSpec::Column {
+                column: "id".into(),
+                num_partitions: Some(4),
+                range: None,
+                strategy: PartitionStrategy::MinMax,
+            };
+            assert!(partitions(column, target).is_err());
+            let predicates = PartitionSpec::Predicates(vec!["id < 5".into(), "id >= 5".into()]);
+            assert!(partitions(predicates, target).is_err());
+        }
     }
 
     /// Fails every statement, as a catalog lookup given the user's `params=` did.

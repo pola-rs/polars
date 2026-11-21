@@ -282,6 +282,9 @@ fn adbc_uri(spec: &ConnectionSpec, dialect: DialectName) -> PolarsResult<Option<
             {
                 return Ok(Some(format!("{first}:{rest}")));
             }
+            if dialect == DialectName::Mssql {
+                return Ok(Some(mssql_database_uri(&uri)));
+            }
             Ok(Some(uri))
         },
         ConnectionTarget::Odbc(_) => polars_bail!(
@@ -292,6 +295,43 @@ fn adbc_uri(spec: &ConnectionSpec, dialect: DialectName) -> PolarsResult<Option<
             InvalidOperation: "a Python connection object can't be used with an ADBC driver"
         ),
     }
+}
+
+/// `mssql://user:pw@host:1433/db` → `mssql://user:pw@host:1433?database=db`: the ADBC SQL
+/// Server driver reads a URI path as an instance name (and runs the query in the login's
+/// default database), where every other driver reads it as the database. An explicit
+/// `database=` parameter stays.
+fn mssql_database_uri(uri: &str) -> String {
+    let Some((scheme, rest)) = uri.split_once("://") else {
+        return uri.to_string();
+    };
+    let (rest, query) = rest.split_once('?').unwrap_or((rest, ""));
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let database = path.trim_matches('/');
+    let has_database = query.split('&').any(|kv| {
+        kv.split_once('=')
+            .map_or(kv, |(k, _)| k)
+            .eq_ignore_ascii_case("database")
+    });
+    if database.is_empty() || database.contains('/') || has_database {
+        return uri.to_string();
+    }
+    let mut out = format!("{scheme}://{authority}?database=");
+    // (a query value: `&`, `;`, `=` and `+` would be read as separators or a blank)
+    for c in database.chars() {
+        match c {
+            '&' => out.push_str("%26"),
+            ';' => out.push_str("%3B"),
+            '=' => out.push_str("%3D"),
+            '+' => out.push_str("%2B"),
+            c => out.push(c),
+        }
+    }
+    if !query.is_empty() {
+        out.push('&');
+        out.push_str(query);
+    }
+    out
 }
 
 struct ClickhouseHttp {
@@ -859,6 +899,27 @@ fn batch_to_df(array: Box<dyn Array>) -> PolarsResult<DataFrame> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mssql_uri_path_becomes_the_database_parameter() {
+        let f = mssql_database_uri;
+        assert_eq!(
+            f("mssql://u:p@h:1433/polars"),
+            "mssql://u:p@h:1433?database=polars"
+        );
+        assert_eq!(
+            f("mssql://u:p@h/polars?encrypt=false"),
+            "mssql://u:p@h?database=polars&encrypt=false"
+        );
+        // already explicit, or no database
+        assert_eq!(f("mssql://h/a?database=b"), "mssql://h/a?database=b");
+        assert_eq!(f("mssql://h:1433"), "mssql://h:1433");
+        assert_eq!(f("mssql://h:1433/"), "mssql://h:1433/");
+        assert_eq!(
+            f("mssql://h/sales&a=b+c;d"),
+            "mssql://h?database=sales%26a%3Db%2Bc%3Bd"
+        );
+    }
 
     #[test]
     fn invalid_utf8_is_found_nested() {

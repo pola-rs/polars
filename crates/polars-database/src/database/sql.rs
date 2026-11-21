@@ -361,6 +361,9 @@ pub struct QueryFacts {
     /// A `LIMIT` / `OFFSET` / `FETCH` (or a lock clause) ends the query: it can't take
     /// another `LIMIT`.
     pub top_level_limit: bool,
+    /// A `WITH TIES` (`FETCH FIRST n ROWS WITH TIES`, `TOP n WITH TIES`) is in the query: a
+    /// `LIMIT` around it may be applied inside it by the server.
+    pub with_ties: bool,
     /// A CTE, a query inside the query (not just parenthesised or in a `UNION`), or a
     /// parenthesised one with a `LIMIT` of its own.
     pub nested_queries: bool,
@@ -381,6 +384,12 @@ pub struct QueryFacts {
     /// Lower-cased names of the functions it knows, on a database where a user's function
     /// may replace one (SQLite, DuckDB): the database says whether one did.
     pub known_functions: Vec<PlSmallStr>,
+    /// A join pairs rows by their place (`PASTE`, `POSITIONAL`): a filter pushed into the
+    /// database changes which rows pair.
+    pub positional_join: bool,
+    /// ClickHouse: a `SETTINGS` clause with a setting that may change the rows (an
+    /// `*_overflow_mode`, a `max_rows_to_*` limit): a filter pushed in changes the result.
+    pub unsafe_settings: bool,
     /// The tables (or views) it reads, `[catalog.][schema.]name` as written; not its CTEs.
     pub tables: Vec<Vec<PlSmallStr>>,
     /// The query without the semicolons and comments after its last token, if it parses.

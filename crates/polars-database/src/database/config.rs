@@ -107,6 +107,10 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
+    /// SQLite: the database was found to parse float literals exactly (`sqlite_floats_exact`):
+    /// float comparisons are pushed only then.
+    #[serde(default)]
+    pub sqlite_floats_exact: bool,
     /// Columns the planner found unreadable right, with why: raised when one is read.
     #[serde(default)]
     pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,

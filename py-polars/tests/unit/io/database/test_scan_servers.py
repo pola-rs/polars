@@ -46,12 +46,12 @@ from tests.unit.io.database._scan_corpus import (
     CORPUS_MODES,
     FULL,
     N_EDGE_ROWS,
+    PREDICATES,
     SAMPLE,
     CorpusPlans,
     cell_predicates,
     check_corpus,
     check_filter_ids,
-    corpus_for_mode,
     expected_ids,
     ids,
     predicate_strategy,
@@ -59,7 +59,6 @@ from tests.unit.io.database._scan_corpus import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
-    from pathlib import Path
 
     from polars._typing import PolarsDataType
 
@@ -418,18 +417,15 @@ def _corpus_cells() -> list[Any]:
     """
     (server, driver, mode) of the corpus test.
 
-    Outside the full run, partitioned modes run on the base cell only: the other cells
-    plan the same SQL plus a range, and `test_partitions` reads partitions with each
-    driver. `factory` cells don't run: they read through the driver module of a pinned
-    cell, and the schema and round-trip tests cover the connection form.
+    Outside the full run, `factory` cells run on the base cell only: they read through
+    the driver module of a pinned cell, and the schema and round-trip tests cover the
+    connection form.
     """
     return [
         pytest.param(*cell.values, mode, id=f"{cell.id}-{mode}", marks=cell.marks)
         for cell in _cells(group=True)
         for mode in CORPUS_MODES
-        if FULL
-        or cell.values[1] == BASE_CELL
-        or (cell.values[1] != "factory" and not mode.endswith("p4"))
+        if FULL or cell.values[1] == BASE_CELL or cell.values[1] != "factory"
     ]
 
 
@@ -438,19 +434,13 @@ def test_differential_corpus(name: str, driver: str, mode: str) -> None:
     """Pushed predicates may only ever widen what the database returns."""
     server = SERVERS[name]
     source = server.query if mode.startswith("query") else "edge"
-    kwargs: dict[str, Any] = (
-        {"partition_on": "id", "partition_num": 4}
-        if mode.endswith("p4")
-        else {"partition_on": None}
-    )
     reference = _reference(name, driver)
-    lf = _scan(name, driver, source, **kwargs)
-    predicates = corpus_for_mode(mode)
+    lf = _scan(name, driver, source, partition_on=None)
+    predicates = list(PREDICATES)
     # the base cell's table runs the whole corpus; its query is compared with it
     if not FULL and (driver != BASE_CELL or source != "edge"):
         base = (BASE_CELL, source) if driver != BASE_CELL else (BASE_CELL, "edge")
         predicates = cell_predicates(
-            mode,
             _plans(name, driver, source),
             _plans(name, *base),
             sample=SAMPLE[mode],
@@ -517,17 +507,15 @@ def _baseline_schema(name: str, table: str) -> pl.Schema:
     return _scan(name, _default_driver(name), table).collect_schema()
 
 
-# The rows `test_partitions` reads: all of `orders` (100k) in the full run, else a
-# pushed range of them, still split over every partition
+# The rows `test_orders_read_by_every_driver` reads: all of `orders` (100k) in the full
+# run, else a pushed range of them
 ORDERS = pl.lit(value=True) if FULL else pl.col("id") < 5_000
 
 
 @pytest.mark.parametrize(("name", "driver"), _cells(connections=False))
-def test_partitions(name: str, driver: str) -> None:
-    lf = _scan(
-        name, driver, "orders", partition_on="id", partition_num=8, max_connections=4
-    ).filter(ORDERS)
-    assert "partitions: 8" in lf.explain()
+def test_orders_read_by_every_driver(name: str, driver: str) -> None:
+    lf = _scan(name, driver, "orders").filter(ORDERS)
+    assert "partitions: 1" in lf.explain()
     reference = _orders(name)
     assert lf.select(pl.len()).collect().item() == reference.height
     assert_frame_equal(lf.collect().sort("id"), reference, check_dtypes=False)
@@ -727,11 +715,6 @@ def _edge_types(name: str) -> pl.DataFrame:
     return _scan_edge_types(name, _default_driver(name)).collect().sort("id")
 
 
-def _partitions(name: str, source: str, key: str = "id") -> list[int]:
-    lf = _scan(name, _default_driver(name), source, partition_on=key, partition_num=4)
-    return sorted(lf.collect()["id"].to_list())
-
-
 # Pushdown regressions: each check compares a pushed-down
 # filter with the same filter applied by Polars to the whole table.
 
@@ -893,7 +876,7 @@ def test_oracle_bare_table_names_fold_to_upper_case() -> None:
 
 
 @needs_postgres
-def test_postgres_date_partitions_past_year_9999() -> None:
+def test_postgres_dates_past_year_9999() -> None:
     _execute(
         "postgres17",
         [
@@ -903,7 +886,7 @@ def test_postgres_date_partitions_past_year_9999() -> None:
             "(3, '20000-01-01'), (4, '900000-01-01'), (5, NULL)",
         ],
     )
-    lf = _scan("postgres17", "adbc", "e_far_dates", partition_on="d", partition_num=4)
+    lf = _scan("postgres17", "adbc", "e_far_dates")
     assert sorted(lf.collect()["id"].to_list()) == [1, 2, 3, 4, 5]
 
 
@@ -1208,7 +1191,7 @@ def test_oracle_local_time_zone_and_numbers_on_a_live_session() -> None:
 
 
 @pytest.mark.skipif(SERVERS["clickhouse"].uri is None, reason="no ClickHouse URI")
-def test_clickhouse_nan_in_a_float_partition_column_and_naive_timestamps() -> None:
+def test_clickhouse_nan_in_a_float_column_and_naive_timestamps() -> None:
     from datetime import datetime
 
     _execute(
@@ -1221,7 +1204,7 @@ def test_clickhouse_nan_in_a_float_partition_column_and_naive_timestamps() -> No
             "(2, nan, '2020-01-02 00:00:00'), (3, 10, '2020-01-03 00:00:00')",
         ],
     )
-    lf = _scan("clickhouse", "adbc", "review_nan", partition_on="f", partition_num=3)
+    lf = _scan("clickhouse", "adbc", "review_nan")
     assert sorted(lf.collect()["id"].to_list()) == [1, 2, 3]
     # a literal without a zone would be read in the server's time zone: not pushed
     naive = _scan("clickhouse", "adbc", "review_nan").filter(
@@ -1229,33 +1212,6 @@ def test_clickhouse_nan_in_a_float_partition_column_and_naive_timestamps() -> No
     )
     assert "filters 0/1" in naive.explain()
     assert sorted(naive.collect()["id"].to_list()) == [2, 3]
-
-
-@needs_postgres
-@pytest.mark.parametrize("driver", ["adbc", "psycopg"])
-def test_ordered_read_with_more_partitions_than_sessions(
-    driver: str, tmp_path: Path
-) -> None:
-    # An ordered sink consumes partition 0 first: a later partition must never hold a
-    # session it waits for. Run in a subprocess, so a deadlock fails instead of hanging.
-    import subprocess
-    import sys
-
-    assert POSTGRES is not None
-    out = tmp_path / "out.parquet"
-    code = (
-        "import polars as pl\n"
-        f"lf = pl.scan_database('SELECT i AS id, md5(i::text) AS s "
-        f"FROM generate_series(1, 1000000) AS i', {POSTGRES!r}, driver={driver!r}, "
-        "partition_on='id', partition_num=16, max_connections=4, batch_size=10000)\n"
-        f"for _ in range({3 if FULL else 1}):\n"
-        f"    lf.sink_parquet({str(out)!r})\n"
-    )
-    try:
-        subprocess.run([sys.executable, "-c", code], check=True, timeout=120)
-    except subprocess.TimeoutExpired:
-        pytest.fail("the ordered partitioned read hung")
-    assert pl.scan_parquet(out).select(pl.len()).collect().item() == 1_000_000
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -1478,22 +1434,17 @@ def test_mysql_unsigned_decimals_and_zero_dates(driver: str) -> None:
     # zero dates (and a zero day or month) are no date, also to pushed filters
     assert rows[0][3:] == (None, None, None)
     assert rows[1][3:5] == (None, datetime(2020, 1, 2, 3, 4, 5))
-    # bounds and partitions take zero dates (and a zero day or month) as NULL, and so
-    # does the order, also when the column isn't read
-    cases3: list[dict[str, Any]] = [
-        {"partition_on": None},
-        {"partition_on": "d", "partition_num": 3},
+    # the order takes zero dates (and a zero day or month) as NULL, also when the column
+    # isn't read
+    ordered = _scan("mysql", driver, table, order_by="d")
+    assert ordered.collect()["d"].to_list() == [
+        None,
+        None,
+        date(2019, 1, 1),
+        date(2021, 1, 1),
     ]
-    for kwargs in cases3:
-        ordered = _scan("mysql", driver, table, order_by="d", **kwargs)
-        assert ordered.collect()["d"].to_list() == [
-            None,
-            None,
-            date(2019, 1, 1),
-            date(2021, 1, 1),
-        ], kwargs
-        ids = ordered.select("id").collect()["id"].to_list()
-        assert ids[2:] == [3, 4], kwargs
+    ids = ordered.select("id").collect()["id"].to_list()
+    assert ids[2:] == [3, 4]
     check_filter_ids(
         lf,
         [
@@ -2121,8 +2072,6 @@ def test_postgres_autocommit_connections_are_read(module: str) -> None:
         return conn
 
     assert pl.scan_database(q, connect, batch_size=1000).collect().height == 5000
-    lf = pl.scan_database(q, connect, partition_on="id", partition_num=3)
-    assert lf.collect().height == 5000
     sqlalchemy = pytest.importorskip("sqlalchemy")
     pytest.importorskip("sqlalchemy.orm")
     url = POSTGRES.replace("postgresql://", f"postgresql+{module}://", 1)
@@ -2649,33 +2598,6 @@ def test_mysql_query_order_by_is_kept(name: str) -> None:
             assert pushed is (name == "mysql")
     finally:
         _execute(name, ["DROP TABLE IF EXISTS fix_order"])
-
-
-@pytest.mark.parametrize("name", ["mysql", "mariadb"])
-def test_mysql_year_partitions(name: str) -> None:
-    # a cut of 1-99 would be read as a year 1970-2069
-    _execute(
-        name,
-        [
-            "DROP TABLE IF EXISTS fix_year_parts",
-            "CREATE TABLE fix_year_parts (id int, y year)",
-            "INSERT INTO fix_year_parts VALUES "
-            "(1, 0), (2, 2000), (3, 2155), (4, 1901), (5, NULL)",
-        ],
-    )
-    try:
-        for kw in [{}, {"partition_range": (0, 2155)}]:
-            lf = _scan(
-                name,
-                "pymysql",
-                "fix_year_parts",
-                partition_on="y",
-                partition_num=40,
-                **kw,
-            )
-            assert sorted(lf.collect()["id"].to_list()) == [1, 2, 3, 4, 5]
-    finally:
-        _execute(name, ["DROP TABLE IF EXISTS fix_year_parts"])
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -3478,8 +3400,6 @@ def test_converted_columns_order_by_their_values() -> None:
                 "ENGINE = MergeTree ORDER BY id",
             )
         )
-    # (ConnectorX reads no bounds of a ClickHouse decimal)
-    partitioned = {"partition_on": "n", "partition_num": 3}
     if not cases:
         pytest.skip("no Postgres, MySQL or ClickHouse URI")
     for name, table, driver, create in cases:
@@ -3496,10 +3416,9 @@ def test_converted_columns_order_by_their_values() -> None:
         )
         try:
             for source in [table, f"SELECT id, n FROM {table}"]:
-                for kw in [{}, {} if name == "clickhouse" else partitioned]:
-                    lf = _scan(name, driver, source, order_by="n", **kw)
-                    got = [Decimal(str(v)) for v in lf.collect()["n"].to_list()]
-                    assert got == [Decimal(v) for v in expected], (name, driver, source)
+                lf = _scan(name, driver, source, order_by="n")
+                got = [Decimal(str(v)) for v in lf.collect()["n"].to_list()]
+                assert got == [Decimal(v) for v in expected], (name, driver, source)
         finally:
             _execute(name, [f"DROP TABLE IF EXISTS {table}"])
 
@@ -3537,28 +3456,23 @@ def test_oracle_numbers_order_and_timestamps_in_another_calendar() -> None:
         cur.execute("ALTER SESSION SET TIME_ZONE = '+05:00'")
         for source in [table.upper(), f'SELECT "id", n, ts, ltz FROM {table}']:
             for conn in [live, server.factory(server.uri)]:
-                kws: list[dict[str, Any]] = [
-                    {},
-                    {"partition_on": "N", "partition_num": 3},
+                lf = pl.scan_database(source, conn, order_by="N")
+                df = lf.collect()
+                assert df["N"].cast(pl.Float64).to_list() == [
+                    -20.0,
+                    -5.0,
+                    2.5,
+                    9.0,
+                    10.0,
+                    100.0,
                 ]
-                for kw in kws:
-                    lf = pl.scan_database(source, conn, order_by="N", **kw)
-                    df = lf.collect()
-                    assert df["N"].cast(pl.Float64).to_list() == [
-                        -20.0,
-                        -5.0,
-                        2.5,
-                        9.0,
-                        10.0,
-                        100.0,
-                    ]
-                    assert df["TS"][0] == datetime(2024, 1, 2, 3, 4, 5, 123456)
-                    assert df["TS"].dt.nanosecond()[0] == 123456789
-                    assert df.schema["LTZ"] == pl.Datetime("ns", "UTC")
-                    assert df["LTZ"].dt.nanosecond()[0] == 123456789
-                    assert df["LTZ"].dt.replace_time_zone(None)[0] == datetime(
-                        2024, 1, 2, 3, 4, 5, 123456
-                    )
+                assert df["TS"][0] == datetime(2024, 1, 2, 3, 4, 5, 123456)
+                assert df["TS"].dt.nanosecond()[0] == 123456789
+                assert df.schema["LTZ"] == pl.Datetime("ns", "UTC")
+                assert df["LTZ"].dt.nanosecond()[0] == 123456789
+                assert df["LTZ"].dt.replace_time_zone(None)[0] == datetime(
+                    2024, 1, 2, 3, 4, 5, 123456
+                )
     finally:
         live.close()
         _execute(
@@ -3887,7 +3801,7 @@ def test_oracle_float_and_negative_scale_numbers() -> None:
 
 @needs_postgres
 def test_postgres_query_with_a_writing_function_runs_once() -> None:
-    # a count (tail) and partition bounds ran it twice where sessions aren't read-only
+    # a count (tail) ran it twice where sessions aren't read-only
     pytest.importorskip("connectorx")
     _execute(
         "postgres17",
@@ -3916,17 +3830,6 @@ def test_postgres_query_with_a_writing_function_runs_once() -> None:
                 _scan("postgres17", "connectorx", query).tail(2).collect().height == 2
             )
             assert logged() == 5
-            with pytest.raises(
-                pl.exceptions.InvalidOperationError, match="partitioned"
-            ):
-                _scan(
-                    "postgres17",
-                    "connectorx",
-                    query,
-                    partition_on="id",
-                    partition_num=2,
-                ).collect()
-            assert logged() == 0
     finally:
         _execute(
             "postgres17",
@@ -4111,57 +4014,6 @@ def test_stopped_early_exits_cleanly(server: str, driver: str, stop: str) -> Non
             [sys.executable, "-c", code], capture_output=True, text=True, timeout=120
         )
         assert out.returncode == 0, out.stderr
-
-
-@needs_postgres
-def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
-    # an Engine's connections had no cancel: head() waited for the slowest partition
-    sa = pytest.importorskip("sqlalchemy")
-    pytest.importorskip("psycopg")
-    _execute(
-        "postgres17",
-        [
-            "DROP VIEW IF EXISTS rvc_pg_slow_v",
-            "DROP TABLE IF EXISTS rvc_pg_slow",
-            "CREATE OR REPLACE FUNCTION rvc_pg_slow_fn(i int) RETURNS int LANGUAGE plpgsql "
-            "IMMUTABLE AS $$ BEGIN IF i > 300 THEN PERFORM pg_sleep(0.05); END IF; "
-            "RETURN i; END $$",
-            "CREATE TABLE rvc_pg_slow (id int PRIMARY KEY)",
-            "INSERT INTO rvc_pg_slow SELECT generate_series(1, 400)",
-            "CREATE VIEW rvc_pg_slow_v AS SELECT id, rvc_pg_slow_fn(id) AS v "
-            "FROM rvc_pg_slow",
-        ],
-    )
-    assert POSTGRES is not None
-    engine = sa.create_engine(
-        POSTGRES.replace("postgresql://", "postgresql+psycopg://"), pool_size=4
-    )
-    try:
-        lf = pl.scan_database(
-            "rvc_pg_slow_v",
-            engine,
-            partition_on="id",
-            partition_range=(1, 400),
-            partition_num=4,
-        )
-        start = time.perf_counter()
-        assert lf.filter(pl.col("id") <= 100).head(1).collect().height == 1
-        # the last partition alone takes 5 s
-        assert time.perf_counter() - start < 3
-        # The cancelled partitions gave their connections back after `collect()`
-        # returned, from threads of their own: an Engine disposed then let them go
-        # unclosed. They are back before it returns.
-        assert engine.pool.checkedout() == 0
-    finally:
-        engine.dispose()
-        _execute(
-            "postgres17",
-            [
-                "DROP VIEW IF EXISTS rvc_pg_slow_v",
-                "DROP TABLE IF EXISTS rvc_pg_slow",
-                "DROP FUNCTION IF EXISTS rvc_pg_slow_fn(int)",
-            ],
-        )
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -4760,29 +4612,6 @@ def test_oracle_number_with_scale_above_precision(connection: str) -> None:
     assert df.drop("NS")["id"].to_list() == [1, 2]
 
 
-@pytest.mark.parametrize("server", ["mysql", "mariadb"])
-def test_mysql_decimal_partition_cuts_near_zero(server: str) -> None:
-    # MySQL 8 misorders a float cut in (-0.01, 0) on DECIMAL(10,2): `0.00` was read
-    # twice
-    _execute(
-        server,
-        [
-            "DROP TABLE IF EXISTS review_dec_cuts",
-            "CREATE TABLE review_dec_cuts (x DECIMAL(10,2))",
-            "INSERT INTO review_dec_cuts "
-            "WITH RECURSIVE r(i) AS (SELECT -300 UNION ALL SELECT i + 1 FROM r "
-            "WHERE i < 300) SELECT i / 100 FROM r",
-        ],
-    )
-    for n in [600, 7]:
-        lf = _scan(
-            server, "pymysql", "review_dec_cuts", partition_on="x", partition_num=n
-        )
-        out = lf.collect()["x"]
-        assert out.len() == 601, n
-        assert out.n_unique() == 601, n
-
-
 @needs_postgres
 @pytest.mark.parametrize(
     "driver", ["adbc", "connectorx", "psycopg", "psycopg2", "pg8000"]
@@ -4866,34 +4695,6 @@ def test_clickhouse_connectorx_low_cardinality_array_is_refused() -> None:
 
 
 # Round 11 review findings.
-
-
-@pytest.mark.parametrize("server", ["mysql", "mariadb"])
-def test_mysql_decimal_read_as_float_partition_cuts(server: str) -> None:
-    # a DECIMAL read as Float64 had float cuts again, which MySQL 8 misorders (#201)
-    _execute(
-        server,
-        [
-            "DROP TABLE IF EXISTS r11_dec_float_cuts",
-            "CREATE TABLE r11_dec_float_cuts (x DECIMAL(5,2))",
-            "INSERT INTO r11_dec_float_cuts "
-            "WITH RECURSIVE r(i) AS (SELECT -300 UNION ALL SELECT i + 1 FROM r "
-            "WHERE i < 300) SELECT i / 100 FROM r",
-        ],
-    )
-    for dtype in [pl.Float64, pl.Float32]:
-        for kwargs in [{"schema_overrides": {"x": dtype}}, {"schema": {"x": dtype}}]:
-            lf = _scan(
-                server,
-                "pymysql",
-                "r11_dec_float_cuts",
-                partition_on="x",
-                partition_num=600,
-                **kwargs,
-            )
-            out = lf.collect()["x"]
-            assert out.len() == 601, kwargs
-            assert out.n_unique() == 601, kwargs
 
 
 @pytest.mark.parametrize("server", ["mysql", "mariadb"])
@@ -5277,7 +5078,7 @@ def test_oracledb_pool_session_after_a_failed_read() -> None:
 
 
 # A view's query runs each time the view is read: MySQL merges it into the reading
-# query, calling rand() again for a filter, and each partition reads other values
+# query, calling rand() again for a filter
 VOLATILE_VIEWS: dict[str, tuple[list[str], float]] = {
     "postgres17": (
         [
@@ -5314,9 +5115,6 @@ VOLATILE_VIEWS: dict[str, tuple[list[str], float]] = {
             "INSERT INTO review_volatile_ids SELECT number FROM numbers(300)",
             "CREATE VIEW review_volatile_v AS "
             "SELECT id, rand() AS r FROM review_volatile_ids",
-            "DROP VIEW IF EXISTS review_volatile_pv",
-            "CREATE VIEW review_volatile_pv AS SELECT id FROM review_volatile_ids "
-            "WHERE randCanonical() < {p:Float64}",
         ],
         2.0**31,
     ),
@@ -5330,7 +5128,6 @@ VOLATILE_VIEWS: dict[str, tuple[list[str], float]] = {
             'CREATE VIEW "review_volatile_v" AS '
             'SELECT "id", CAST(DBMS_RANDOM.VALUE AS BINARY_DOUBLE) AS "r" '
             'FROM "review_volatile_ids"',
-            'CREATE OR REPLACE SYNONYM "review_volatile_s" FOR "review_volatile_v"',
         ],
         0.5,
     ),
@@ -5365,82 +5162,11 @@ def test_volatile_views(name: str) -> None:
             .collect()
         )
         assert (df["r"] > threshold).all(), driver
-        quote = '"' if name == "oracle" else ""
-        for source in [
-            "review_volatile_v",
-            f"SELECT * FROM {quote}review_volatile_v{quote}",
-        ]:
-            lf = _scan(name, driver, source, partition_on="id", partition_num=4)
-            with pytest.raises(
-                pl.exceptions.InvalidOperationError, match="partitioned"
-            ):
-                lf.collect()
-    # through a synonym; a parameterized view; unquoted names in another case
-    more = {
-        "oracle": ['"review_volatile_s"', 'SELECT * FROM "review_volatile_s"'],
-        "clickhouse": ["SELECT * FROM review_volatile_pv(p = 0.5)"],
-        "postgres17": ["SELECT * FROM REVIEW_Volatile_V"],
-    }.get(name, [])
-    for source in more:
-        lf = _scan(
-            name, _default_driver(name), source, partition_on="id", partition_num=4
-        )
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
-            lf.collect()
     if name in ("mysql", "mariadb"):
         for driver in _runnable_drivers(name):
             lf = _scan(name, driver, "review_volatile_cl")
             df = lf.filter(pl.col("b") > threshold).collect()
             assert (df["b"] > threshold).all(), driver
-    # a table and a view without volatile functions still partition
-    assert _partitions(name, "review_volatile_ids") == list(range(300))
-
-
-@pytest.mark.parametrize("name", ["postgres17", "mariadb"])
-def test_partition_over_a_volatile_user_function(name: str) -> None:
-    # a read-only session can't write, but each partition calls the function again
-    if name == "postgres17":
-        functions = [
-            "CREATE OR REPLACE FUNCTION review_myrand() RETURNS float8 "
-            "LANGUAGE sql VOLATILE AS 'SELECT random()'",
-            "CREATE OR REPLACE FUNCTION review_twice(x int) RETURNS int "
-            "LANGUAGE sql IMMUTABLE AS 'SELECT 2 * x'",
-        ]
-        drivers = ["psycopg", "adbc"]
-    else:
-        functions = [
-            "DROP FUNCTION IF EXISTS review_myrand",
-            "DROP FUNCTION IF EXISTS review_twice",
-            "CREATE FUNCTION review_myrand() RETURNS double NOT DETERMINISTIC NO SQL "
-            "RETURN rand()",
-            "CREATE FUNCTION review_twice(x int) RETURNS int DETERMINISTIC NO SQL "
-            "RETURN 2 * x",
-        ]
-        drivers = ["pymysql", "adbc"]
-    # a table of its own: `test_volatile_views` may drop the other meanwhile
-    tables = [
-        t.replace("review_volatile_", "review_volatile_fn_")
-        for t in VOLATILE_VIEWS[name][0][1:4]
-    ]
-    _execute(name, tables + functions)
-    for driver in _runnable_drivers(name, drivers):
-        lf = _scan(
-            name,
-            driver,
-            "SELECT id, review_myrand() AS r FROM review_volatile_fn_ids",
-            partition_on="r",
-            partition_num=4,
-        )
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="review_myrand"):
-            lf.collect()
-        lf = _scan(
-            name,
-            driver,
-            "SELECT id, review_twice(id) AS d FROM review_volatile_fn_ids",
-            partition_on="d",
-            partition_num=4,
-        )
-        assert sorted(lf.collect()["d"].to_list()) == [2 * i for i in range(300)]
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -5575,11 +5301,6 @@ def test_mysql_zero_dates_in_queries_and_under_schema(name: str) -> None:
             for what, predicate in predicates.items():
                 ids = lf.filter(predicate).collect()["id"].sort().to_list()
                 assert ids == expected[what], (driver, source, kwargs, what)
-        # bounds leave zero dates out
-        lf = _scan(
-            name, driver, table, schema=schema, partition_on="d", partition_num=3
-        )
-        assert lf.collect()["id"].sort().to_list() == [1, 2, 3, 4], driver
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -5635,7 +5356,7 @@ def test_mysql_zero_dates_are_never_silently_dropped_by_a_null_test(
 def test_params_dont_hide_volatile_views(name: str, driver: str) -> None:
     # With params=, every catalog lookup was given the parameters too, and failed; on
     # MySQL sqlglot didn't parse the `%s` placeholder either: the volatile view a query
-    # reads went unchecked, and partitions were accepted, each reading other values
+    # reads went unchecked
     if driver not in _runnable_drivers(name, [driver]):
         pytest.skip(f"{driver} isn't installed")
     # per driver: the cells run in parallel (`-n`) against one server
@@ -5659,84 +5380,44 @@ def test_params_dont_hide_volatile_views(name: str, driver: str) -> None:
         ]
     _execute(name, statements)
     query = f"SELECT * FROM {view} WHERE id > %s"
-    lf = _scan(name, driver, query, params=[0], partition_on="id", partition_num=4)
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
-        lf.collect()
     df = _scan(name, driver, query, params=[0]).filter(pl.col("r") < 0.5).collect()
     assert df.height > 0
     assert (df["r"] < 0.5).all()
 
 
 @needs_postgres
-def test_postgres_partitions_over_stable_functions() -> None:
-    # A STABLE function returns the same values within a statement only, but each
-    # partition is a statement (and a session) of its own: a user's over `now()`, and
-    # `pg_backend_pid()`, were taken as repeatable (8 partitions read 8 values)
+def test_postgres_stable_functions_read_one_value() -> None:
+    # a STABLE function returns the same values within a statement
     ids = "review_r15_stable_ids"
     _execute(
         "postgres17",
         [
             "DROP VIEW IF EXISTS review_r15_stable_now",
-            "DROP VIEW IF EXISTS review_r15_stable_pid",
             f"DROP TABLE IF EXISTS {ids}",
             f"CREATE TABLE {ids} AS SELECT g AS id FROM generate_series(1, 300) g",
             "CREATE OR REPLACE FUNCTION review_r15_now() RETURNS timestamptz "
             "LANGUAGE sql STABLE AS 'SELECT now()'",
             "CREATE VIEW review_r15_stable_now AS "
             f"SELECT id, review_r15_now() AS t FROM {ids}",
-            "CREATE VIEW review_r15_stable_pid AS "
-            f"SELECT id, pg_backend_pid() AS p FROM {ids}",
         ],
     )
-    for source in [
-        "review_r15_stable_now",
-        f"SELECT id, review_r15_now() AS t FROM {ids}",
-        "review_r15_stable_pid",
-    ]:
-        lf = _scan("postgres17", "psycopg", source, partition_on="id", partition_num=4)
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
-            lf.collect()
     # one statement reads one value, and a filter is still run in the database
     lf = _scan("postgres17", "psycopg", "review_r15_stable_now")
     assert lf.collect()["t"].n_unique() == 1
     assert lf.filter(pl.col("id") <= 10).collect().height == 10
 
 
-@pytest.mark.parametrize("name", ["mysql", "mariadb"])
-def test_mysql_partitions_over_the_connection_id(name: str) -> None:
-    # `CONNECTION_ID()` is the session's: each partition read another
-    view = "review_r15_connection_v"
-    _execute(
-        name,
-        [
-            f"DROP VIEW IF EXISTS {view}",
-            f"CREATE VIEW {view} AS SELECT 1 AS id, CONNECTION_ID() AS c",
-        ],
-    )
-    for source in [view, "SELECT 1 AS id, CONNECTION_ID() AS c"]:
-        lf = _scan(
-            name, _default_driver(name), source, partition_on="id", partition_num=4
-        )
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
-            lf.collect()
-
-
 @needs_clickhouse
-def test_clickhouse_block_and_query_functions() -> None:
+def test_clickhouse_block_functions() -> None:
     # `blockSize()` and `blockSerializedSize()` are the block read's: a filter pushed
-    # into the query (or a partition) read smaller blocks (5 for 300). `queryID()` and
-    # `nowInBlock()` weren't volatile: each partition read another query's ID.
+    # into the query read smaller blocks (5 for 300)
     table = "review_r15_ch_blocks"
     _execute(
         "clickhouse",
         [
-            f"DROP VIEW IF EXISTS {table}_qid",
-            f"DROP VIEW IF EXISTS {table}_nib",
             f"DROP TABLE IF EXISTS {table}",
             f"CREATE TABLE {table} (id Int64) ENGINE = MergeTree ORDER BY id",
             f"INSERT INTO {table} SELECT number FROM numbers(300)",
-            f"CREATE VIEW {table}_qid AS SELECT id, queryID() AS q FROM {table}",
-            f"CREATE VIEW {table}_nib AS SELECT id, nowInBlock() AS n FROM {table}",
         ],
     )
     query = f"SELECT id, blockSize() AS bs, blockSerializedSize(id) AS bss FROM {table}"
@@ -5747,16 +5428,6 @@ def test_clickhouse_block_and_query_functions() -> None:
         full = lf.collect().sort("id")
         got = lf.filter(pl.col("id") >= 295).collect().sort("id")
         assert got.equals(full.filter(pl.col("id") >= 295)), driver
-    for source in [query, f"{table}_qid", f"{table}_nib"]:
-        lf = _scan(
-            "clickhouse",
-            _default_driver("clickhouse"),
-            source,
-            partition_on="id",
-            partition_num=4,
-        )
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
-            lf.collect()
 
 
 @needs_postgres
@@ -5816,44 +5487,6 @@ def test_psycopg_cancel_stops_later_server_fetch(
             assert not thread.is_alive()
         frames.close()  # type: ignore[attr-defined]
         session.close()
-
-
-@needs_postgres
-@pytest.mark.parametrize("kind", ["cte", "join"])
-def test_postgres_distinct_quoted_view_names_are_inspected(kind: str) -> None:
-    # Lowercasing the CTE names hid the real view; lowercasing the seen-view key
-    # skipped it after the stable uppercase view. Both allowed wrong-row partitions.
-    view = f"review_r20_{kind}_case_v"
-    _execute(
-        "postgres17",
-        [
-            (
-                f"CREATE OR REPLACE VIEW {view} AS "
-                "SELECT id, random() AS r FROM generate_series(1, 1000) AS id"
-            ),
-            f'CREATE OR REPLACE VIEW "{view.upper()}" AS SELECT 1 AS dummy',
-        ],
-    )
-    if kind == "cte":
-        query = f'WITH "{view.upper()}" AS (SELECT 1) SELECT * FROM {view}'
-    else:
-        query = f'SELECT v.* FROM {view} v CROSS JOIN "{view.upper()}" s'
-    for driver in ["live", *_runnable_drivers("postgres17", ["psycopg", "adbc"])]:
-        assert _scan("postgres17", driver, query).collect().height == 1000
-        for schema in [None, {"id": pl.Int32, "r": pl.Float64}]:
-            lf = _scan(
-                "postgres17",
-                driver,
-                query,
-                schema=schema,
-                partition_on="r",
-                partition_num=2,
-                partition_range=(0, 1),
-            )
-            with pytest.raises(
-                pl.exceptions.InvalidOperationError, match="partitioned"
-            ):
-                lf.collect()
 
 
 @needs_postgres
@@ -6638,13 +6271,44 @@ def test_postgres_psycopg2_infinity_is_an_error_without_a_type_lookup() -> None:
         _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
 
 
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_view_column_list_permuting_the_query_aliases(name: str) -> None:
+    # under `schema=` a view's columns were matched to its query's by name, but MySQL's
+    # definition leaves out the view's column list: `b` here is the random one
+    _execute(
+        name,
+        [
+            "DROP VIEW IF EXISTS review_volatile_perm",
+            "DROP TABLE IF EXISTS review_volatile_perm_ids",
+            "CREATE TABLE review_volatile_perm_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_volatile_perm_ids VALUES "
+            + ", ".join(f"({i})" for i in range(300)),
+            "CREATE VIEW review_volatile_perm (a, b) AS "
+            "SELECT id AS b, CAST(FLOOR(RAND() * 1000) AS SIGNED) AS a "
+            "FROM review_volatile_perm_ids",
+        ],
+    )
+    pred = pl.col("b") < 500
+    for schema in ({"a": pl.Int64, "b": pl.Int64}, {"b": pl.Int64, "a": pl.Int64}):
+        for driver in _runnable_drivers(name):
+            lf = _scan(name, driver, "review_volatile_perm", schema=schema).filter(pred)
+            if "filters 0/1" in lf.explain():
+                assert (lf.collect()["b"] < 500).all(), (driver, schema)
+            else:
+                with pytest.raises(
+                    pl.exceptions.InvalidOperationError,
+                    match="filter after collecting, or leave out schema=",
+                ):
+                    lf.collect()
+
+
 # ---- pooled connections ----
 
 
 @pytest.mark.parametrize("name", ["postgres17", "postgres14", "mysql", "mariadb"])
-def test_temporary_table_in_a_pool_is_not_read_by_partitions(name: str) -> None:
+def test_engine_reads_the_temporary_table_of_its_session(name: str) -> None:
     # a temporary table hides the permanent one of its name only on the session
-    # that made it; partitions read on the pool's other sessions
+    # that made it
     sqlalchemy = pytest.importorskip("sqlalchemy")
     server = SERVERS[name]
     if server.uri is None:
@@ -6675,17 +6339,9 @@ def test_temporary_table_in_a_pool_is_not_read_by_partitions(name: str) -> None:
                 c.close()
         # an Engine is read through one pinned connection: its temporary table, all of
         # it
-        lf = pl.scan_database(t, engine, partition_on="id", partition_num=4)
+        lf = pl.scan_database(t, engine)
         for _ in range(3):
             assert sorted(lf.collect()["id"].to_list()) == list(range(1, 201))
-        # a factory over the pool would read each partition on another session
-        lf = pl.scan_database(
-            t, lambda: engine.raw_connection(), partition_on="id", partition_num=4
-        )
-        with pytest.raises(
-            pl.exceptions.InvalidOperationError, match="temporary table"
-        ):
-            lf.collect()
     finally:
         engine.dispose()
         eng = sqlalchemy.create_engine(_sqlalchemy_url(server.uri, driver))
@@ -6705,9 +6361,8 @@ def _prime_pool(engine: Any, statements: list[str], idle: int = 3) -> None:
         c.close()
 
 
-def test_postgres_engine_reads_one_session_for_every_partition() -> None:
-    # `search_path` set on one pooled connection decided which table a partition
-    # read
+def test_postgres_engine_reads_one_session() -> None:
+    # `search_path` set on one pooled connection decides which table a read sees
     sqlalchemy = pytest.importorskip("sqlalchemy")
     if not _installed("psycopg"):
         pytest.skip("psycopg is not installed")
@@ -6732,24 +6387,18 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
     )
     try:
         _prime_pool(engine, [f"SET search_path TO {schema}, public"])
-        variants: list[dict[str, Any]] = [
-            {},
-            {"partition_on": "id", "partition_num": 4},
-            {"partition_on": "id", "partition_num": 8, "max_connections": 4},
-        ]
         refusals: list[str] = []
-        for kwargs in variants:
-            for _ in range(3):
-                try:
-                    ids = pl.scan_database(table, engine, **kwargs).collect()["id"]
-                except pl.exceptions.InvalidOperationError as e:
-                    # planned on a session that resolves the name to the other table
-                    refusals.append(str(e))
-                    continue
-                # whichever session was pinned, all rows come from its one table
-                assert ids.len() == 400
-                assert ids.min() in (1, 100001)
-                assert (cast("int", ids.max()) < 1000) == (ids.min() == 1)
+        for _ in range(3):
+            try:
+                ids = pl.scan_database(table, engine).collect()["id"]
+            except pl.exceptions.InvalidOperationError as e:
+                # planned on a session that resolves the name to the other table
+                refusals.append(str(e))
+                continue
+            # whichever session was pinned, all rows come from its one table
+            assert ids.len() == 400
+            assert ids.min() in (1, 100001)
+            assert (cast("int", ids.max()) < 1000) == (ids.min() == 1)
         assert all("pooled connection" in m for m in refusals), refusals
     finally:
         engine.dispose()
@@ -6763,7 +6412,7 @@ def test_postgres_engine_reads_one_session_for_every_partition() -> None:
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
-def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
+def test_mysql_engine_reads_one_session(name: str) -> None:
     # `div_precision_increment` of one pooled session changes the value of a `/`
     # key
     sqlalchemy = pytest.importorskip("sqlalchemy")
@@ -6788,19 +6437,13 @@ def test_mysql_engine_reads_one_session_for_every_partition(name: str) -> None:
     try:
         _prime_pool(engine, ["SET SESSION div_precision_increment = 0"])
         source = f"SELECT id, (id / 1000) * 1000 AS k FROM {table}"
-        variants: list[dict[str, Any]] = [
-            {},
-            {"partition_on": "k", "partition_num": 4},
-            {"partition_on": "id", "partition_num": 8, "max_connections": 4},
-        ]
-        for kwargs in variants:
-            for _ in range(3):
-                df = pl.scan_database(source, engine, **kwargs).collect()
-                # one session for the whole read: `(id / 1000) * 1000` is `id` at the
-                # default precision, and one of 0, 1000, 2000 at the primed one
-                same = (df["k"].cast(pl.Float64).round(3) == df["id"]).sum()
-                assert df.height == 2000
-                assert same in (2000, 2), same
+        for _ in range(3):
+            df = pl.scan_database(source, engine).collect()
+            # one session for the whole read: `(id / 1000) * 1000` is `id` at the
+            # default precision, and one of 0, 1000, 2000 at the primed one
+            same = (df["k"].cast(pl.Float64).round(3) == df["id"]).sum()
+            assert df.height == 2000
+            assert same in (2000, 2), same
     finally:
         engine.dispose()
         _execute(name, [f"DROP TABLE IF EXISTS {table}"])
@@ -6890,7 +6533,7 @@ def test_postgres_pool_session_resolving_another_relation_is_refused(
         )
 
 
-def test_postgres_temporary_child_of_another_session_doesnt_refuse_partitions() -> None:
+def test_postgres_temporary_child_of_another_session_doesnt_refuse_a_read() -> None:
     # `pg_class` lists the temporary tables of every session
     if not _installed("psycopg"):
         pytest.skip("psycopg is not installed")
@@ -6913,9 +6556,7 @@ def test_postgres_temporary_child_of_another_session_doesnt_refuse_partitions() 
     try:
         other.execute(f"CREATE TEMPORARY TABLE {t}_child () INHERITS (public.{t})")
         other.commit()
-        lf = pl.scan_database(
-            t, lambda: psycopg.connect(uri), partition_on="id", partition_num=4
-        )
+        lf = pl.scan_database(t, lambda: psycopg.connect(uri))
         assert lf.collect().height == 20
     finally:
         other.close()
@@ -7074,17 +6715,10 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
 
     try:
         tenant_var.set("vol_tenant_a")
-        variants: list[dict[str, Any]] = [
-            {},
-            {"partition_on": "id", "partition_num": 4},
-        ]
-        for kwargs in variants:
-            df = pl.scan_database("orders", engine, **kwargs).collect()
-            assert df["tenant"].unique().to_list() == ["a"]
-            df = pl.scan_database(
-                "orders", lambda: engine.raw_connection(), **kwargs
-            ).collect()
-            assert df["tenant"].unique().to_list() == ["a"]
+        df = pl.scan_database("orders", engine).collect()
+        assert df["tenant"].unique().to_list() == ["a"]
+        df = pl.scan_database("orders", lambda: engine.raw_connection()).collect()
+        assert df["tenant"].unique().to_list() == ["a"]
     finally:
         engine.dispose()
         _execute(
@@ -7237,3 +6871,110 @@ def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
     finally:
         engine.dispose()
         _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_clickhouse_settings_that_change_the_rows_disable_pushdown() -> None:
+    # `max_rows_to_read` with `read_overflow_mode = 'break'` returns a partial,
+    # read-order-dependent result: a filter in the query changes which rows it keeps
+    name = "clickhouse"
+    table = "vol_settings"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id UInt32, v UInt32) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} SELECT number + 1, number % 13 FROM numbers(1000)",
+        ],
+    )
+    try:
+        cut = (
+            f"SELECT id, v FROM {table} SETTINGS max_rows_to_read = 300, "
+            "read_overflow_mode = 'break'"
+        )
+        _execute(name, [f"CREATE OR REPLACE VIEW {table}_v AS {cut}"])
+        driver = _default_driver(name)
+        for source in (cut, f"{table}_v"):
+            lf = _scan(name, driver, source).filter(pl.col("id") > 100)
+            assert "pushdown: off" in lf.explain(), source
+            ids = lf.collect()["id"]
+            assert ids.is_unique().all()
+            assert (ids > 100).all()
+        # `schema=` finds the view's settings only when reading
+        schema = {"id": pl.UInt32, "v": pl.UInt32}
+        lf = _scan(name, driver, f"{table}_v", schema=schema)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="SETTINGS"):
+            lf.select("id").collect()
+    finally:
+        _execute(
+            name, [f"DROP VIEW IF EXISTS {table}_v", f"DROP TABLE IF EXISTS {table}"]
+        )
+
+
+@ORACLE_GROUP
+def test_oracle_redacted_columns_are_not_compared_in_the_database() -> None:
+    # Data Redaction returns redacted values while a pushed filter compares the
+    # stored ones
+    oracledb = pytest.importorskip("oracledb")
+    uri = SERVERS["oracle"].uri
+    if uri is None:
+        pytest.skip("no Oracle URI")
+    user, password = uri.split("//", 1)[1].split("@")[0].split(":", 1)
+    host_port = uri.split("@", 1)[1].split("/", 1)[0]
+    try:
+        admin = oracledb.connect(
+            user="system", password=password, dsn=f"{host_port}/FREEPDB1"
+        )
+    except oracledb.Error:
+        pytest.skip("no SYSTEM access to create a redaction policy")
+    admin.autocommit = True
+    cur = admin.cursor()
+    owner = user.upper()
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_RED PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE TABLE VOL_RED (id NUMBER(10) PRIMARY KEY, k NUMBER(10))",
+            "INSERT INTO VOL_RED SELECT level, MOD(level, 10) + 1 FROM dual "
+            "CONNECT BY level <= 300",
+            "CREATE OR REPLACE VIEW VOL_RED_V AS SELECT id, k FROM VOL_RED",
+        ],
+    )
+    # a user sees the policies through `REDACTION_POLICIES`, once granted the role
+    cur.execute(
+        "SELECT COUNT(*) FROM dba_role_privs "
+        "WHERE grantee = :u AND granted_role = 'SELECT_CATALOG_ROLE'",
+        u=owner,
+    )
+    must_grant = cur.fetchone()[0] == 0
+    if must_grant:
+        cur.execute(f'GRANT SELECT_CATALOG_ROLE TO "{owner}"')
+    try:
+        cur.execute(
+            "BEGIN DBMS_REDACT.ADD_POLICY(object_schema => :o, "
+            "object_name => 'VOL_RED', policy_name => 'VOL_RED_P', "
+            "column_name => 'K', function_type => DBMS_REDACT.FULL, "
+            "expression => '1=1'); END;",
+            o=owner,
+        )
+        try:
+            for source in ["VOL_RED", "SELECT * FROM VOL_RED", "VOL_RED_V"]:
+                lf = _scan("oracle", _default_driver("oracle"), source)
+                read = lf.collect()
+                # (redacted values: none is 3, every one is 0)
+                for pred in [pl.col("K") == 3, pl.col("K") == 0]:
+                    assert "filters 0/1" in lf.filter(pred).explain(), source
+                    assert_frame_equal(
+                        lf.filter(pred).collect().sort("ID"),
+                        read.filter(pred).sort("ID"),
+                    )
+        finally:
+            cur.execute(
+                "BEGIN DBMS_REDACT.DROP_POLICY(object_schema => :o, "
+                "object_name => 'VOL_RED', policy_name => 'VOL_RED_P'); END;",
+                o=owner,
+            )
+    finally:
+        if must_grant:
+            cur.execute(f'REVOKE SELECT_CATALOG_ROLE FROM "{owner}"')
+        _execute("oracle", ["DROP VIEW VOL_RED_V", "DROP TABLE VOL_RED PURGE"])

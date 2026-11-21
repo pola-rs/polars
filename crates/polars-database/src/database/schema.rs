@@ -56,6 +56,22 @@ pub fn normalize_dtype(dtype: &DataType) -> DataType {
 /// `schema_overrides` for another precision.
 pub const UNCONSTRAINED_DECIMAL: DataType = DataType::Decimal(38, 9);
 
+/// The base type (`datetime2`, `datetimeoffset` or `time`) of a SQL Server column of 7
+/// fractional digits, which a bare name has (the scale defaults to 7): the ones drivers cut
+/// to microseconds.
+pub fn mssql_nanosecond_type(db_type: &str) -> Option<&'static str> {
+    let t = db_type.trim().to_ascii_lowercase();
+    let (base, args) = t.split_once('(').unwrap_or((&t, ""));
+    let base = match base.trim() {
+        "datetime2" => "datetime2",
+        "datetimeoffset" => "datetimeoffset",
+        "time" => "time",
+        _ => return None,
+    };
+    let args = args.trim_end_matches(')').trim();
+    (args.is_empty() || args.parse::<u32>().is_ok_and(|scale| scale > 6)).then_some(base)
+}
+
 /// The dtype of a declared database type, where the declaration fixes it whatever the driver
 /// returns. Drivers differ here: ADBC Postgres returns `NUMERIC` as text and ConnectorX as a
 /// wider decimal; row-wise drivers return every integer as `Int64`.
@@ -100,6 +116,18 @@ pub fn declared_dtype(dialect: DialectName, db_type: &str) -> Option<DataType> {
         };
         return Some(DataType::Datetime(unit, tz));
     }
+    // Trino `timestamp(p) with time zone` (p <= 6; wider ones are read as text): an instant,
+    // read as UTC (see `column_conversion`): a value carries a zone of its own, and the
+    // drivers take the first of two instants of a named zone's repeated hour.
+    if dialect == DialectName::Trino
+        && t.starts_with("timestamp(")
+        && t.ends_with(" with time zone")
+    {
+        return Some(DataType::Datetime(
+            TimeUnit::Microseconds,
+            Some(TimeZone::UTC),
+        ));
+    }
     // Postgres `timestamptz` is an instant, read as UTC (a live connection's session zone
     // may be another: see `column_conversion`).
     if matches!(dialect, DialectName::Postgresql | DialectName::Redshift)
@@ -117,6 +145,37 @@ pub fn declared_dtype(dialect: DialectName, db_type: &str) -> Option<DataType> {
             || (t.starts_with("time(") && t.ends_with(") without time zone")))
     {
         return Some(DataType::Time);
+    }
+    // SQL Server's `datetime2`, `datetime` and `smalldatetime` have no time zone: ADBC reads
+    // them as UTC timestamps, the others as naive ones. A `real` is read as a `float`, as
+    // the row drivers do (the stored value, which a pushed `float` literal compares with
+    // exactly). A query the drivers can't type from rows (a table-valued function) reads
+    // float and date columns as text otherwise.
+    if dialect == DialectName::Mssql {
+        // 7 fractional digits (100 ns): read as text, as nanoseconds (see `column_conversion`)
+        match mssql_nanosecond_type(&t) {
+            Some("time") => return Some(DataType::Time),
+            Some("datetimeoffset") => {
+                return Some(DataType::Datetime(
+                    TimeUnit::Nanoseconds,
+                    Some(TimeZone::UTC),
+                ));
+            },
+            Some(_) => return Some(DataType::Datetime(TimeUnit::Nanoseconds, None)),
+            None => {},
+        }
+        match t.split('(').next().unwrap_or("").trim() {
+            "datetime" | "smalldatetime" | "datetime2" => {
+                return Some(DataType::Datetime(TimeUnit::Microseconds, None));
+            },
+            "float" | "real" => return Some(DataType::Float64),
+            // ConnectorX reads them as doubles, the other drivers as decimals of other
+            // precisions
+            "money" => return Some(DataType::Decimal(19, 4)),
+            "smallmoney" => return Some(DataType::Decimal(10, 4)),
+            "date" => return Some(DataType::Date),
+            _ => {},
+        }
     }
     // Drivers disagree on the width of MySQL `YEAR` and `FLOAT` (4 bytes).
     if matches!(dialect, DialectName::Mysql | DialectName::Singlestore) {
@@ -243,12 +302,16 @@ pub fn cast_to_user_schema(
         own_numbers,
         &PlHashSet::new(),
         &PlHashMap::new(),
+        &PlHashSet::new(),
     )
 }
 
 /// [`cast_to_user_schema`], where `plugin_converted` are the columns the plugin reads through a
 /// conversion of its own (a number as text, a decimal as text): their dtype is not the database's,
-/// so a text read for a number is no change of the column's kind.
+/// so a text read for a number is no change of the column's kind. `truncating`: the temporal
+/// columns read as text whose digits below the planned unit are cut (toward the earlier
+/// instant), as the user asked (see `truncating_columns`).
+#[allow(clippy::too_many_arguments)]
 pub fn cast_columns(
     df: &DataFrame,
     schema: &Schema,
@@ -257,6 +320,7 @@ pub fn cast_columns(
     own_numbers: &PlHashMap<PlSmallStr, DataType>,
     plugin_converted: &PlHashSet<PlSmallStr>,
     time_text_risk: &PlHashMap<PlSmallStr, String>,
+    truncating: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
     let height = df.height();
     let mut columns = Vec::with_capacity(schema.len());
@@ -283,7 +347,7 @@ pub fn cast_columns(
             None => col,
         };
         let parsed;
-        let col = match parse_temporal(col, dtype)? {
+        let col = match parse_temporal(col, dtype, truncating.contains(name))? {
             Some(p) => {
                 parsed = p;
                 &parsed
@@ -754,7 +818,10 @@ fn duration_to_time(col: &Column, dtype: &DataType) -> PolarsResult<Option<Colum
 /// Text of a temporal column (SQLite stores dates as text, some conversions write text)
 /// parsed to the planned dtype.
 /// Polars 2.0 has no string-to-temporal cast. A value that doesn't parse is an error.
-fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>> {
+/// `truncate`: fractional digits below the planned unit are cut toward the earlier instant
+/// (never rounded: `.9999999` of `9999-12-31` would overflow), where the user asked for the
+/// unit; otherwise a value the unit can't hold is an error.
+fn parse_temporal(col: &Column, dtype: &DataType, truncate: bool) -> PolarsResult<Option<Column>> {
     use polars_core::chunked_array::temporal::string::StringMethods;
 
     if !col.dtype().is_string() {
@@ -799,7 +866,7 @@ fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>
                     }
                     // (in i128: the last microsecond before the minimum starts below it)
                     let ns_value = v as i128 * 1000 + sub_ns as i128;
-                    if ns_value % unit != 0 {
+                    if !truncate && ns_value % unit != 0 {
                         let finer = if ns_value % 1000 == 0 { "us" } else { "ns" };
                         polars_bail!(
                             SchemaMismatch:
@@ -808,7 +875,7 @@ fn parse_temporal(col: &Column, dtype: &DataType) -> PolarsResult<Option<Column>
                             col.name(), ca.get(i).unwrap_or_default()
                         );
                     }
-                    let Ok(v) = i64::try_from(ns_value / unit) else {
+                    let Ok(v) = i64::try_from(ns_value.div_euclid(unit)) else {
                         polars_bail!(
                             SchemaMismatch:
                             "database column '{}' has the value {}, outside the range of \
@@ -1305,6 +1372,55 @@ mod tests {
         assert!(cast("2026-01-01 10:00:00.0000000005", ns).is_err());
         let df = cast("1969-12-31 23:59:59.999", ms).unwrap();
         let v = df[0]
+            .as_materialized_series()
+            .to_physical_repr()
+            .i64()
+            .unwrap()
+            .get(0);
+        assert_eq!(v, Some(-1));
+    }
+
+    #[test]
+    fn mssql_and_trino_declared_types() {
+        let ms = DialectName::Mssql;
+        let ns = DataType::Datetime(TimeUnit::Nanoseconds, None);
+        let us = DataType::Datetime(TimeUnit::Microseconds, None);
+        assert_eq!(declared_dtype(ms, "datetime2"), Some(ns.clone()));
+        assert_eq!(declared_dtype(ms, "datetime2(7)"), Some(ns));
+        assert_eq!(declared_dtype(ms, "datetime2(6)"), Some(us.clone()));
+        assert_eq!(declared_dtype(ms, "datetime"), Some(us));
+        assert_eq!(
+            declared_dtype(ms, "datetimeoffset"),
+            Some(DataType::Datetime(
+                TimeUnit::Nanoseconds,
+                Some(TimeZone::UTC)
+            ))
+        );
+        assert_eq!(declared_dtype(ms, "time(7)"), Some(DataType::Time));
+        assert_eq!(declared_dtype(ms, "money"), Some(DataType::Decimal(19, 4)));
+        assert_eq!(declared_dtype(ms, "real"), Some(DataType::Float64));
+        assert_eq!(
+            declared_dtype(DialectName::Trino, "timestamp(3) with time zone"),
+            Some(DataType::Datetime(
+                TimeUnit::Microseconds,
+                Some(TimeZone::UTC)
+            ))
+        );
+    }
+
+    #[test]
+    fn truncated_text_timestamps_are_cut_toward_the_earlier_instant() {
+        let us = DataType::Datetime(TimeUnit::Microseconds, None);
+        let col = Column::new("t".into(), &["9999-12-31 23:59:59.9999999"]);
+        assert!(parse_temporal(&col, &us, false).is_err());
+        let cut = parse_temporal(&col, &us, true).unwrap().unwrap();
+        let expected = Column::new("t".into(), &["9999-12-31 23:59:59.999999"]);
+        let expected = parse_temporal(&expected, &us, false).unwrap().unwrap();
+        assert_eq!(cut.get(0).unwrap(), expected.get(0).unwrap());
+        // before 1970: toward the earlier instant, not toward zero
+        let col = Column::new("t".into(), &["1969-12-31 23:59:59.9999995"]);
+        let cut = parse_temporal(&col, &us, true).unwrap().unwrap();
+        let v = cut
             .as_materialized_series()
             .to_physical_repr()
             .i64()

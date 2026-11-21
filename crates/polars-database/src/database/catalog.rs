@@ -6,7 +6,7 @@
 
 use polars_core::prelude::*;
 use polars_error::PolarsResult;
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{PlHashMap, PlHashSet};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::backend::DatabaseSession;
@@ -46,6 +46,10 @@ pub struct CatalogInfo {
     /// (Databricks: `DESCRIBE QUERY` reports `char(5)` as `string`, while Spark pads the
     /// literal compared with the column): string semantics are unknown.
     pub padding_unknown: bool,
+    /// Columns the login reads masked (SQL Server dynamic data masking, no `UNMASK` on them): the
+    /// database compares their real values and returns masked ones, so no filter on them is
+    /// pushed, and none is a key.
+    pub masked: PlHashSet<PlSmallStr>,
     pub stats: TableStats,
 }
 
@@ -137,6 +141,9 @@ impl CatalogInfo {
         column: &str,
         dtype: &DataType,
     ) -> bool {
+        if self.masked.contains(column) {
+            return false;
+        }
         let t = self.comparison_type(column);
         match dtype {
             // A non-text type read as text (`uuid`, enums, SQLite NUMERIC affinity): the
@@ -473,14 +480,30 @@ pub fn table_info(
             },
         };
     }
+    if dialect == DialectName::Mssql {
+        let qualified = parts
+            .iter()
+            .map(|p| dialect.quote_ident(p))
+            .collect::<Vec<_>>()
+            .join(".");
+        if let Some(df) = run("masked columns", &mssql_masked_columns_sql(&qualified)) {
+            for row in 0..df.height() {
+                if let Some(name) = cell_str(&df, 0, row) {
+                    info.masked.insert(name.into());
+                }
+            }
+        }
+        // a view's columns are read masked where their base columns are
+        mssql_query_masked_columns(session, &mut info, &qualified);
+    }
     // Without these, a column's comparison semantics would be assumed, not known: a
     // case-insensitive or blank-padded column could be compared as exact.
-    info.incomplete = not_found
+    info.incomplete |= not_found
         || evolving_types_failed
         || failed.iter().any(|w| {
             matches!(
                 *w,
-                "column types" | "comparison types" | "the table definition"
+                "column types" | "comparison types" | "the table definition" | "masked columns"
             )
         });
     // Collations only decide string semantics (e.g. Oracle before 12.2 has none to show).
@@ -563,11 +586,17 @@ pub fn query_info(
         _ => None,
     };
     if let Some(sql) = by_rows {
-        if let Some(df) = run(session, "types", &sql) {
+        // (SQL Server's describe reports an error as a row, which `is_hidden = 0` leaves out)
+        let described = run(session, "types", &sql)
+            .filter(|df| dialect != DialectName::Mssql || df.height() > 0);
+        if let Some(df) = described {
             for row in 0..df.height() {
                 if let (Some(name), Some(t)) = (cell_str(&df, 0, row), cell_str(&df, 1, row)) {
                     info.compare_types.insert(name.into(), t);
                 }
+            }
+            if dialect == DialectName::Mssql {
+                mssql_query_masked_columns(session, &mut info, from);
             }
             if dialect == DialectName::Databricks {
                 // `DESCRIBE QUERY` shows a `char(n)` column as `string`; which relations the
@@ -603,6 +632,9 @@ pub fn query_info(
                     }
                 }
             }
+        } else if dialect == DialectName::Mssql {
+            // the masked columns can't be looked up either: any may be read masked
+            info.incomplete = true;
         }
     } else if dialect == DialectName::Mysql && temp_tables {
         // A temporary table of the query's columns: `LIMIT 0` plans the query without
@@ -661,6 +693,18 @@ pub fn query_info(
                     && let Some(t) = oracle_type_name(code, p, s)
                 {
                     info.compare_types.insert(name.into(), t);
+                }
+            }
+        }
+    } else if dialect == DialectName::Trino && !columns.is_empty() {
+        // `typeof` is the static type, so one row of NULLs joined to the query tells it
+        // without running the query.
+        let all = columns.iter().collect::<Vec<_>>();
+        let sql = pg_select(&|c| format!("typeof({c})"), &all);
+        if let Some(df) = run(session, "types", &sql) {
+            for (i, c) in columns.iter().enumerate() {
+                if let Some(t) = cell_str(&df, i, 0) {
+                    info.compare_types.insert(c.clone(), t);
                 }
             }
         }
@@ -776,6 +820,106 @@ fn oracle_type_name(code: &str, precision: &str, scale: &str) -> Option<String> 
             c => return Some(format!("type {c}")),
         }
         .to_string(),
+    )
+}
+
+/// SQL Server: the object id a table name reads. A synonym has no columns of its own, so its
+/// base object's are the ones read (`sys.synonyms`). A base in another database or server
+/// isn't looked up (object ids are per database): the synonym's own id finds no columns,
+/// and they stay unknown. `qualified`: the quoted name.
+fn mssql_object_id(qualified: &str) -> String {
+    let named = format!("OBJECT_ID(N{})", DialectName::Mssql.quote_str(qualified));
+    format!(
+        "COALESCE((SELECT OBJECT_ID(sy.base_object_name) FROM sys.synonyms sy \
+        WHERE sy.object_id = {named} AND PARSENAME(sy.base_object_name, 4) IS NULL \
+        AND COALESCE(PARSENAME(sy.base_object_name, 3), DB_NAME()) = DB_NAME()), {named})"
+    )
+}
+
+/// SQL Server: the columns of a query (`from`, the wrapped query) that the login reads masked.
+/// The browse information of the query's description names the table column each result
+/// column is read from; where it can't be described that way (a `UNION`, say), every column
+/// may be masked. A column read from another database may be masked there (its masks aren't
+/// looked up). Where the database has masked columns the login can't unmask, a result column
+/// with no source column (`n + 0`, `email + ''`) may be computed from masked values (the
+/// tables the query reads aren't known here), and so is read masked too.
+fn mssql_query_masked_columns(
+    session: &mut dyn DatabaseSession,
+    info: &mut CatalogInfo,
+    from: &str,
+) {
+    let verbose = polars_core::config::verbose();
+    let unmask = |schema: &str, table: &str, column: &str| {
+        format!(
+            "COALESCE(HAS_PERMS_BY_NAME(QUOTENAME({schema}) + '.' + QUOTENAME({table}), \
+            'OBJECT', 'UNMASK', {column}, 'COLUMN'), 0) = 0"
+        )
+    };
+    let any_masked = unmask(
+        "OBJECT_SCHEMA_NAME(mc.object_id)",
+        "OBJECT_NAME(mc.object_id)",
+        "mc.name",
+    );
+    let sql = format!(
+        "SELECT d.name, CASE WHEN d.source_database IS NOT NULL \
+        AND d.source_database <> DB_NAME() \
+        OR d.source_column IS NULL AND EXISTS (SELECT 1 FROM sys.masked_columns mc \
+        WHERE mc.is_masked = 1 AND {any_masked}) \
+        OR EXISTS (SELECT 1 FROM sys.masked_columns mc \
+        WHERE mc.is_masked = 1 AND mc.name = d.source_column AND mc.object_id = \
+        OBJECT_ID(QUOTENAME(d.source_schema) + '.' + QUOTENAME(d.source_table)) \
+        AND {source_masked}) \
+        THEN 1 ELSE 0 END AS is_masked \
+        FROM sys.dm_exec_describe_first_result_set(N{query}, NULL, 1) d WHERE d.is_hidden = 0",
+        source_masked = unmask("d.source_schema", "d.source_table", "mc.name"),
+        query = DialectName::Mssql.quote_str(&format!("SELECT * FROM {from}"))
+    );
+    // (an error is reported as a row, which `is_hidden = 0` leaves out: no row)
+    match session.query(&sql).and_then(|df| {
+        polars_ensure!(df.height() > 0, ComputeError: "the query couldn't be described");
+        Ok(df)
+    }) {
+        Ok(df) => {
+            for row in 0..df.height() {
+                if let Some(name) = cell_str(&df, 0, row)
+                    && cell_u64(&df, 1, row).is_some_and(|m| m != 0)
+                {
+                    info.masked.insert(name.into());
+                }
+            }
+        },
+        Err(e) => {
+            if verbose {
+                eprintln!("[scan_database]: lookup of the query's masked columns failed: {e}");
+            }
+            let any = session.query(&format!(
+                "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.masked_columns mc \
+                WHERE mc.is_masked = 1 AND {any_masked}) THEN 1 ELSE 0 END AS m"
+            ));
+            match any.as_ref().map(|df| cell_u64(df, 0, 0)) {
+                Ok(Some(0)) => return,
+                Ok(_) => {},
+                Err(_) => {
+                    info.incomplete = true;
+                    return;
+                },
+            }
+            info.masked.extend(info.compare_types.keys().cloned());
+            info.masked
+                .extend(info.types.iter().map(|(name, _)| name.clone()));
+        },
+    }
+}
+
+/// SQL Server: the columns of a table that the login reads masked: the permission is looked
+/// at per column, as `UNMASK` can be granted or denied at the database, schema, table and
+/// column (a database-wide grant with a column `DENY` still reads that column masked).
+fn mssql_masked_columns_sql(qualified: &str) -> String {
+    format!(
+        "SELECT c.name FROM sys.masked_columns c WHERE c.object_id = {} AND c.is_masked = 1 \
+        AND COALESCE(HAS_PERMS_BY_NAME(QUOTENAME(OBJECT_SCHEMA_NAME(c.object_id)) + '.' + \
+        QUOTENAME(OBJECT_NAME(c.object_id)), 'OBJECT', 'UNMASK', c.name, 'COLUMN'), 0) = 0",
+        mssql_object_id(qualified)
     )
 }
 
@@ -896,7 +1040,7 @@ impl CatalogQueries {
                 }
             },
             DialectName::Mssql => {
-                let object = format!("OBJECT_ID(N{})", s(&qualified));
+                let object = mssql_object_id(&qualified);
                 Self {
                     key: Some(format!(
                         "SELECT c.name FROM sys.indexes i \
@@ -907,10 +1051,13 @@ impl CatalogQueries {
                     collations: Some(format!(
                         "SELECT name, collation_name FROM sys.columns WHERE object_id = {object}"
                     )),
-                    // An alias type is named by its base type.
+                    // An alias type is named by its base type. The fractional second digits
+                    // of `datetime2`, `time` and `datetimeoffset` decide how a literal compares.
                     types: Some(format!(
                         "SELECT c.name, CASE WHEN b.name IN ('decimal', 'numeric') \
-                        THEN CONCAT(b.name, '(', c.precision, ',', c.scale, ')') ELSE b.name END \
+                        THEN CONCAT(b.name, '(', c.precision, ',', c.scale, ')') \
+                        WHEN b.name IN ('datetime2', 'time', 'datetimeoffset') \
+                        THEN CONCAT(b.name, '(', c.scale, ')') ELSE b.name END \
                         FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id \
                         CROSS APPLY (SELECT CASE WHEN t.is_user_defined = 1 \
                         AND t.is_assembly_type = 0 AND t.is_table_type = 0 \
@@ -1099,6 +1246,16 @@ impl CatalogQueries {
                 key: None,
                 collations: None,
                 types: Some(format!("DESCRIBE TABLE EXTENDED {qualified}")),
+                compare_types: None,
+                declared_sql: None,
+                stats: None,
+            },
+            // Trino has no `information_schema` we can rely on across connectors; `SHOW COLUMNS`
+            // lists a table's or view's columns with their types (`timestamp(9)`, `char(3)`).
+            DialectName::Trino => Self {
+                key: None,
+                collations: None,
+                types: Some(format!("SHOW COLUMNS FROM {qualified}")),
                 compare_types: None,
                 declared_sql: None,
                 stats: None,
@@ -1306,10 +1463,15 @@ pub enum ViewLookup {
     /// hides it: MySQL without `SHOW VIEW`), and where it was found: the qualifier its
     /// own unqualified names are resolved in (SQLite's schema; DuckDB's database and
     /// schema), or empty.
+    /// `redacted`: it has an enabled Oracle Data Redaction policy (see `Redacted`).
     View {
         sql: String,
         qualifier: Vec<PlSmallStr>,
+        redacted: bool,
     },
+    /// A table with an enabled Oracle Data Redaction policy: its values are read redacted but
+    /// compared as stored, so no filter on it is pushed.
+    Redacted,
     /// The dialect has no lookup.
     Unknown,
     /// The lookup failed: it may be a view.
@@ -1436,24 +1598,57 @@ pub fn view_definition(
             s(name)
         ),
         // through a synonym (the user's, or public); `TEXT_VC` holds the first 4000
-        // characters, the `LONG` `TEXT` all of them
+        // characters, the `LONG` `TEXT` all of them. A view's own unqualified names resolve
+        // in its owner's schema.
         DialectName::Oracle => {
-            let owner =
-                schema.map_or_else(|| "SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')".to_string(), s);
+            let owner = schema
+                .or_else(|| context.last().map(|c| c.as_str()))
+                .map_or_else(|| "SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')".to_string(), s);
             let n = s(name);
-            let found = format!(
-                "(v.owner, v.view_name) IN (SELECT {owner}, {n} FROM dual \
+            // the name, and every object a chain of synonyms from it names (a public synonym
+            // only for an unqualified name)
+            let owners = if schema.is_some() {
+                owner.clone()
+            } else {
+                format!("{owner}, 'PUBLIC'")
+            };
+            let named = format!(
+                "(SELECT {owner}, {n} FROM dual \
                 UNION ALL SELECT table_owner, table_name FROM all_synonyms \
-                WHERE owner IN ({owner}, 'PUBLIC') AND synonym_name = {n})"
+                START WITH owner IN ({owners}) AND synonym_name = {n} \
+                CONNECT BY NOCYCLE owner = PRIOR table_owner \
+                AND synonym_name = PRIOR table_name)"
             );
             let Some(df) = run(&format!(
                 "SELECT 1, CASE WHEN v.text_length <= 4000 THEN v.text_vc END, \
-                v.owner, v.view_name FROM all_views v WHERE {found}"
+                v.owner, v.view_name FROM all_views v WHERE (v.owner, v.view_name) IN {named}"
             )) else {
                 return ViewLookup::Failed;
             };
+            // Data Redaction: the values are read redacted and compared as stored. Only a
+            // login granted `REDACTION_POLICIES` can see the policies; for any other the
+            // lookup fails and none is found. A view may read tables the login can't see
+            // (through a view it can't list): any policy may apply to it.
+            let named_only = if df.height() == 0 {
+                format!("AND (p.object_owner, p.object_name) IN {named}")
+            } else {
+                String::new()
+            };
+            let redacted = run(&format!(
+                "SELECT COUNT(*) FROM redaction_policies p WHERE p.enable = 'YES' {named_only}"
+            ))
+            .is_some_and(|df| cell_u64(&df, 0, 0).is_some_and(|n| n > 0));
             if df.height() == 0 {
-                return ViewLookup::NotAView;
+                return if redacted {
+                    ViewLookup::Redacted
+                } else {
+                    ViewLookup::NotAView
+                };
+            }
+            // (a view of the name and one a synonym of it names: which one is read isn't
+            // looked up)
+            if df.height() > 1 {
+                return ViewLookup::Failed;
             }
             let sql = cell_str(&df, 1, 0).or_else(|| {
                 let (owner, view) = (cell_str(&df, 2, 0)?, cell_str(&df, 3, 0)?);
@@ -1466,7 +1661,10 @@ pub fn view_definition(
             });
             return ViewLookup::View {
                 sql: sql.unwrap_or_default(),
-                qualifier: vec![],
+                qualifier: cell_str(&df, 2, 0)
+                    .map(|o| vec![o.into()])
+                    .unwrap_or_default(),
+                redacted,
             };
         },
         DialectName::Mssql => format!(
@@ -1554,6 +1752,7 @@ pub fn view_definition(
     ViewLookup::View {
         sql: cell_str(&df, 1, 0).unwrap_or_default(),
         qualifier,
+        redacted: false,
     }
 }
 
@@ -1711,7 +1910,9 @@ fn databricks_view(
             continue;
         };
         if !in_details {
-            in_details = k == "# Detailed Table Information";
+            // (the heading row has no type: a column of the name has one)
+            in_details = k == "# Detailed Table Information"
+                && v.as_deref().is_none_or(|t| t.trim().is_empty());
             // the columns end at a blank line or a heading (a column may be named `#x`)
             in_columns &=
                 !(k.is_empty() || (k.starts_with('#') && v.as_deref().is_none_or(str::is_empty)));
@@ -1757,7 +1958,11 @@ fn databricks_view(
             .join(", ");
         sql = format!("CREATE VIEW v ({list}) AS {sql}");
     }
-    ViewLookup::View { sql, qualifier }
+    ViewLookup::View {
+        sql,
+        qualifier,
+        redacted: false,
+    }
 }
 
 /// The parts of a Databricks `catalog.namespace` (`test.polars_scan_database`), where a part
@@ -2099,6 +2304,7 @@ mod tests {
         let view = ViewLookup::View {
             sql: "SELECT 1".into(),
             qualifier: vec![],
+            redacted: false,
         };
         let (out, log) = lookup("[dbo].[v]", syn_rows(&[(true, None)]));
         assert_eq!(out, view);
@@ -2197,7 +2403,8 @@ mod tests {
             lookup,
             ViewLookup::View {
                 sql: "SELECT 1".into(),
-                qualifier: vec![]
+                qualifier: vec![],
+                redacted: false,
             }
         );
         // a table of the name in another case is a table
@@ -2541,6 +2748,7 @@ mod tests {
         let view = ViewLookup::View {
             sql: "CREATE VIEW v (`id`) AS SELECT id FROM t".into(),
             qualifier: vec!["test".into(), "sc".into()],
+            redacted: false,
         };
         assert_eq!(found, view);
         // a name inside a view's text resolves where the view was created
