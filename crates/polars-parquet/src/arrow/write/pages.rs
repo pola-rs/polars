@@ -592,6 +592,46 @@ mod tests {
     };
 
     #[test]
+    fn string_views_and_offsets_produce_the_same_plain_pages() {
+        let values = [
+            Some("abc"),
+            None,
+            Some(""),
+            Some("long enough to be external"),
+            Some("tail"),
+        ];
+        let pages = |array: Box<dyn Array>| {
+            let field = Field::new("s".into(), array.dtype().clone(), true);
+            let options = WriteOptions {
+                statistics: StatisticsOptions::default(),
+                version: Version::V1,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: Some(32),
+            };
+            let mut columns = array_to_columns(
+                array,
+                to_parquet_type(&field).unwrap(),
+                options,
+                &[Encoding::Plain],
+            )
+            .unwrap();
+            columns
+                .pop()
+                .unwrap()
+                .map(|page| {
+                    let crate::parquet::page::Page::Data(page) = page.unwrap() else {
+                        panic!("expected a plain data page");
+                    };
+                    (page.num_values(), page.buffer().to_vec())
+                })
+                .collect::<Vec<_>>()
+        };
+        let offsets = pages(Utf8Array::<i64>::from_iter(values).boxed());
+        assert!(offsets.len() > 1);
+        assert_eq!(pages(Utf8ViewArray::from_slice(values).boxed()), offsets);
+    }
+
+    #[test]
     fn dictionary_statistics_only_include_referenced_values() {
         use crate::parquet::page::Page;
         use crate::parquet::statistics::Statistics;

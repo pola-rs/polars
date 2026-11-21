@@ -325,7 +325,17 @@ pub fn array_to_pages(
     let number_of_rows = nested[0].len();
     // note: this is not correct if the array is sliced - the estimation should happen on the
     // primitive after sliced for parquet
-    let byte_size = estimated_bytes_size(primitive_array);
+    let mut byte_size = estimated_bytes_size(primitive_array);
+    if matches!(
+        primitive_array.dtype().to_storage(),
+        ArrowDataType::Utf8View | ArrowDataType::BinaryView
+    ) {
+        // Use the same page boundaries as LargeUtf8 and LargeBinary for view-backed data.
+        byte_size += (primitive_array.len() + 1) * size_of::<i64>()
+            + primitive_array
+                .validity()
+                .map_or(0, |v| v.as_slice().0.len());
+    }
     let primitive_array = primitive_array.to_boxed();
 
     let pages =
