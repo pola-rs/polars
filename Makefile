@@ -14,6 +14,8 @@ ifeq ($(OS),Windows_NT)
 else
 	VENV_BIN=$(VENV)/bin
 endif
+# `uv pip` and `maturin develop` pick the venv from VIRTUAL_ENV, not from the binary's location.
+export VIRTUAL_ENV := $(abspath $(VENV))
 
 # Detect CPU architecture.
 ifeq ($(OS),Windows_NT)
