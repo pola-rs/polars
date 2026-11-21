@@ -1151,19 +1151,13 @@ fn decode_column_prefiltered(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let prefilter = !arrow_field.dtype.is_nested()
-        || matches!(arrow_field.dtype, ArrowDataType::Dictionary(..));
+    let deserialize_filter = Some(Filter::Mask(mask_bitmap.clone()));
 
-    let deserialize_filter =
-        prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));
-
-    if prefilter
-        && let Some((column, _)) = try_decode_dictionary_column(
-            arrow_field,
-            &columns_to_deserialize,
-            deserialize_filter.clone(),
-        )?
-    {
+    if let Some((column, _)) = try_decode_dictionary_column(
+        arrow_field,
+        &columns_to_deserialize,
+        deserialize_filter.clone(),
+    )? {
         assert_eq!(column.len(), expected_num_rows);
         return Ok(column);
     }
@@ -1185,14 +1179,6 @@ fn decode_column_prefiltered(
         }
     }
 
-    let mut series = if !prefilter {
-        let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask_bitmap.clone());
-        series.filter(&mask)?
-    } else {
-        series
-    };
-
-    // Done after the filter so that discarded rows cost nothing.
     canonicalize_parquet_maps(&mut series)?;
 
     assert_eq!(series.len(), expected_num_rows);

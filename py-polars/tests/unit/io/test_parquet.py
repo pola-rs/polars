@@ -2127,11 +2127,20 @@ def _assert_nested_reads(
         pl.scan_parquet(path).slice(offset, length).collect(),
         expected.slice(offset, length),
     )
-    predicate = pl.col("idx") % 3 != 1
-    assert_frame_equal(
-        pl.scan_parquet(path, parallel="prefiltered").filter(predicate).collect(),
-        expected.filter(predicate),
-    )
+    idx = pl.col("idx")
+    for predicate in (
+        idx % 3 != 1,
+        idx % 2 == 0,
+        (idx * 7919) % 1000 < 20,
+        idx.is_between(offset, offset + length),
+        idx < 0,
+    ):
+        assert_frame_equal(
+            pl.scan_parquet(path, parallel="prefiltered", use_statistics=False)
+            .filter(predicate)
+            .collect(),
+            expected.filter(predicate),
+        )
 
 
 def _write_small_pages(path: Path, columns: dict[str, Any], schema: pa.Schema) -> None:
@@ -2192,6 +2201,37 @@ def test_read_parquet_struct_without_list(
     _write_small_pages(path, {"idx": range(n), "s": rows}, schema)
     expected = pl.DataFrame(
         {"idx": range(n), "s": rows}, schema={"idx": pl.Int32, "s": _NESTED_STRUCT}
+    )
+    _assert_nested_reads(path, expected)
+
+
+@pytest.mark.parametrize("use_dictionary", [False, True])
+def test_read_parquet_struct_leaf_types(use_dictionary: bool, tmp_path: Path) -> None:
+    # Each leaf type of a struct, read in full, sliced and masked.
+    n = 3000
+    rows = [
+        None
+        if i % 7 == 3
+        else {
+            "b": None if i % 5 == 1 else i % 3 == 0,
+            "f": None if i % 4 == 2 else i / 4,
+            "i": i % 50,
+            "s": None if i % 6 == 5 else str(i) * (i % 4),
+        }
+        for i in range(n)
+    ]
+    dtype = pl.Struct({"b": pl.Boolean, "f": pl.Float64, "i": pl.Int8, "s": pl.String})
+    expected = pl.DataFrame(
+        {"idx": range(n), "s": rows}, schema={"idx": pl.Int32, "s": dtype}
+    )
+    path = tmp_path / "leaves.parquet"
+    pq.write_table(
+        expected.to_arrow(),
+        path,
+        data_page_size=512,
+        write_batch_size=64,
+        row_group_size=1000,
+        use_dictionary=use_dictionary,
     )
     _assert_nested_reads(path, expected)
 
@@ -6876,10 +6916,9 @@ def test_delta_strings_invalid_utf8_in_prefix() -> None:
 def test_delta_strings_keep_only_selected_values(
     tmp_path: Path, values_per_page: int
 ) -> None:
-    # A value that repeats its predecessor is stored as just its prefix length, so a
-    # page of under 100 KB holds up to 256 MiB of values. Reading one row must not keep
-    # the others in memory, also from a list, of which a limit selects only the first
-    # values of the first page, and none of the later pages.
+    # A repeated value is stored as just its prefix length, so a page under 100 KB holds
+    # up to 256 MiB of values. Reading one row, by a limit or a filter and also from a
+    # list, must not keep the others in memory.
     tmp_path.mkdir(exist_ok=True)
     paths = {}
     for name, value in [("small", "x"), ("large", "x" * 65536)]:
@@ -6904,17 +6943,17 @@ def test_delta_strings_keep_only_selected_values(
     code = """\
 import resource
 import sys
-
 import polars as pl
 
 lf = pl.scan_parquet(sys.argv[1], parallel="prefiltered")
 expected = [int(sys.argv[2])]
-out = lf.head(1).collect()
-assert out["s"].str.len_bytes().to_list() == expected
-assert out["l"].explode().str.len_bytes().to_list() == expected
-# Nested columns are filtered after they are decoded, so only `s` is read here.
-out = lf.filter(pl.col("i") == 7).select("s").collect()
-assert out["s"].str.len_bytes().to_list() == expected
+for out in (
+    lf.head(1).collect(),
+    lf.filter(pl.col("i") == 7).collect(),
+):
+    assert out["s"].str.len_bytes().to_list() == expected
+    assert out["l"].explode().str.len_bytes().to_list() == expected
+
 print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 """
 
