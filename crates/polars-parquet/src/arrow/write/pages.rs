@@ -592,6 +592,43 @@ mod tests {
     };
 
     #[test]
+    fn dictionary_statistics_only_include_referenced_values() {
+        use crate::parquet::page::Page;
+        use crate::parquet::statistics::Statistics;
+
+        let plain = Int32Array::from([Some(1), None, Some(3), None]);
+        let dict = DictionaryArray::try_from_keys(
+            UInt32Array::from([Some(1), None, Some(3), None]),
+            Int32Array::from([Some(-99), Some(1), None, Some(3), Some(99)]).boxed(),
+            false,
+        )
+        .unwrap();
+        for array in [plain.boxed(), dict.boxed()] {
+            let type_ =
+                to_parquet_type(&Field::new("a".into(), array.dtype().clone(), true)).unwrap();
+            let options = WriteOptions {
+                statistics: StatisticsOptions::full(),
+                version: Version::V1,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: None,
+            };
+            let mut columns =
+                array_to_columns(array, type_, options, &[Encoding::RleDictionary]).unwrap();
+            assert!(matches!(columns[0].next(), Some(Ok(Page::Dict(_)))));
+            let Some(Ok(Page::Data(page))) = columns[0].next() else {
+                panic!("expected a dictionary-encoded data page");
+            };
+            let Statistics::Int32(stats) = page.statistics().unwrap().unwrap() else {
+                panic!("expected Int32 statistics");
+            };
+            assert_eq!(
+                (stats.min_value, stats.max_value, stats.null_count),
+                (Some(1), Some(3), Some(2))
+            );
+        }
+    }
+
+    #[test]
     fn test_struct() {
         let boolean = BooleanArray::from_slice([false, false, true, true]).boxed();
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
