@@ -624,7 +624,7 @@ fn key_non_null_predicates(
         |on: &[ExprIR], input: Node| -> PolarsResult<PlIndexMap<PlSmallStr, ExprIR>> {
             let mut out = init_indexmap(None);
             for key in on {
-                let Some(name) = into_column(key.node(), expr_arena) else {
+                let Some(name) = key.as_column(expr_arena) else {
                     continue;
                 };
                 let column = ExprIR::new(key.node(), OutputName::ColumnLhs(name.clone()));

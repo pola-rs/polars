@@ -53,7 +53,7 @@ use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator,
     is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
@@ -135,7 +135,7 @@ fn process_join(
     let how = &options.args.how;
     if how.is_semi() || how.is_anti() {
         let right_distinct = on.iter().try_fold(1.0, |acc, (_, right_key)| {
-            let name = into_column(right_key.node(), expr_arena)?;
+            let name = right_key.as_column(expr_arena)?;
             Some(acc * right_stats.key_distinct_estimate(name)?)
         });
         sides.retain(|s| {
@@ -158,7 +158,7 @@ fn process_join(
                 .iter()
                 .map(|(left_key, right_key)| {
                     let key = if side.left { right_key } else { left_key };
-                    into_column(key.node(), expr_arena).cloned()
+                    key.as_column(expr_arena).cloned()
                 })
                 .collect();
             let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
@@ -189,7 +189,8 @@ fn process_join(
         let build_key = &on[key_idx];
         let build_key = if left { &build_key.0 } else { &build_key.1 };
         let kept = (build_stats.filtered / build_stats.unfiltered).min(1.0);
-        let build_distinct = into_column(build_key.node(), expr_arena)
+        let build_distinct = build_key
+            .as_column(expr_arena)
             .and_then(|name| build_stats.key_distinct_estimate(name))
             .map_or(rows, |ndv| (ndv * kept).min(rows));
         let mut bloom_probes = BloomProbes::None;
@@ -482,7 +483,7 @@ fn column_name<'a>(predicate: &ExprIR, expr_arena: &'a Arena<AExpr>) -> &'a PlSm
     let AExpr::Function { input, .. } = expr_arena.get(predicate.node()) else {
         unreachable!()
     };
-    into_column(input[0].node(), expr_arena).unwrap()
+    input[0].as_column(expr_arena).unwrap()
 }
 
 fn attach_to_scan(

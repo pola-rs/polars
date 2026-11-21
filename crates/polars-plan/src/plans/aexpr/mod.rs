@@ -42,7 +42,7 @@ pub mod projection_height;
 mod properties;
 pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
-pub use evaluate::{constant_evaluate, into_column};
+pub use evaluate::constant_evaluate;
 pub use properties::*;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use schema::get_struct_numeric_dtype;
@@ -299,6 +299,14 @@ impl AExpr {
     #[cfg(feature = "cse")]
     pub(crate) fn col(name: PlSmallStr) -> Self {
         AExpr::Column(name)
+    }
+
+    /// The column this reads, if it is a bare column reference.
+    pub fn as_column(&self) -> Option<&PlSmallStr> {
+        match self {
+            AExpr::Column(name) => Some(name),
+            _ => None,
+        }
     }
 
     /// Is the top-level expression fallible based on the data values.

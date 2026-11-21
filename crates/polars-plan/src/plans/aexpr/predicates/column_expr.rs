@@ -12,7 +12,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
-use crate::plans::aexpr::evaluate::{constant_evaluate, into_column};
+use crate::plans::aexpr::evaluate::constant_evaluate;
 use crate::plans::{
     AExpr, IRBooleanFunction, IRFunctionExpr, MintermIter, aexpr_to_leaf_names_iter,
 };
@@ -124,7 +124,7 @@ fn specialize(
             use crate::plans::IRStringFunction;
 
             assert_eq!(input.len(), 2);
-            into_column(input[0].node(), expr_arena)?;
+            input[0].as_column(expr_arena)?;
             let lv = constant_evaluate(input[1].node(), expr_arena, schema, 0)??;
 
             if !lv.is_scalar() {
@@ -161,7 +161,7 @@ fn specialize(
             options: _,
         } => {
             assert_eq!(input.len(), 1);
-            if into_column(input[0].node(), expr_arena).is_some() {
+            if input[0].as_column(expr_arena).is_some() {
                 Some(SpecializedColumnPredicate::Equal(Scalar::null(dtype)))
             } else {
                 None
@@ -173,7 +173,7 @@ fn specialize(
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
             options: _,
         } => {
-            into_column(input[0].node(), expr_arena)?;
+            input[0].as_column(expr_arena)?;
 
             let (Some(l), Some(r)) = (
                 constant_evaluate(input[1].node(), expr_arena, schema, 0)?,
@@ -208,7 +208,7 @@ fn specialize(
                 function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             options: _,
         } => {
-            into_column(input[0].node(), expr_arena)?;
+            input[0].as_column(expr_arena)?;
             if dtype.is_categorical() || dtype.is_enum() {
                 if let Some((values, _)) = super::try_extract_is_in_haystack(
                     input[1].node(),
@@ -258,7 +258,7 @@ fn specialize(
             }
 
             assert_eq!(input.len(), 1);
-            if into_column(input[0].node(), expr_arena).is_some() {
+            if input[0].as_column(expr_arena).is_some() {
                 Some(SpecializedColumnPredicate::Equal(false.into()))
             } else {
                 None
