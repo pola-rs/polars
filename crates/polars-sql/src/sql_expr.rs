@@ -2603,7 +2603,9 @@ impl SQLExprVisitor<'_> {
 
                 // note: SQL is 1-indexed, so we need to adjust the offsets accordingly
                 let result = match (start.clone(), length.clone()) {
-                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
+                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => {
+                        null_reading(Some(DataType::String), &[e, start, length])
+                    },
                     (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                         polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", n)
                     },
@@ -2636,7 +2638,7 @@ impl SQLExprVisitor<'_> {
                 let start = self.visit_expr(from_expr)?;
 
                 Ok(match start {
-                    Expr::Literal(lv) if lv.is_null() => lit(lv),
+                    Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                         e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null()))
@@ -3054,6 +3056,26 @@ pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
     when(e.is_null().or(substring.is_null()))
         .then(lit(LiteralValue::untyped_null()))
         .otherwise(found.fill_null(typed_lit(0i64)))
+}
+
+/// A NULL of `dtype`, for a call with a NULL argument. An aggregate in `inputs` is still read,
+/// so that the call stays an aggregate; the first one names the result.
+pub(crate) fn null_reading(dtype: Option<DataType>, inputs: &[Expr]) -> Expr {
+    let null = match &dtype {
+        Some(dtype) => Scalar::null(dtype.clone()).lit(),
+        None => lit(LiteralValue::untyped_null()),
+    };
+    let read = |e: Expr| match &dtype {
+        Some(dtype) => e.cast(dtype.clone()),
+        None => e,
+    };
+    inputs
+        .iter()
+        .rev()
+        .filter(|e| has_marked_aggregate(e))
+        .fold(null, |acc, e| {
+            when(lit(false)).then(read(e.clone())).otherwise(acc)
+        })
 }
 
 /// The 0-indexed offset of a 1-indexed SUBSTRING start.

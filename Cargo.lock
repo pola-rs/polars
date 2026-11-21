@@ -3268,7 +3268,7 @@ dependencies = [
 
 [[package]]
 name = "polars-database-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "polars-database",
  "pyo3",
@@ -3393,7 +3393,7 @@ dependencies = [
 
 [[package]]
 name = "polars-iceberg"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "flate2",
@@ -3413,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "polars-iceberg-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "polars-iceberg",
  "pyo3",
@@ -3437,6 +3437,7 @@ dependencies = [
  "futures",
  "glob",
  "hashbrown 0.17.1",
+ "http-body 1.1.0",
  "itoa",
  "libc",
  "memchr",

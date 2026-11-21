@@ -4078,6 +4078,52 @@ def test_duckdb_dropped_batches_dont_abort_the_exit(tmp_path: Path) -> None:
     assert end - float(proc.stdout.split()[-1]) < 60
 
 
+def test_exit_hook_registered_again_after_duckdb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # DuckDB 2 registers exit hooks on import that wait for running statements: they
+    # ran before ours, which then interrupted the statements only once they had ended
+    duckdb = pytest.importorskip("duckdb")
+    import atexit
+
+    import polars_database
+    from polars_database import _bridge
+
+    registered: list[Any] = []
+    monkeypatch.setattr(atexit, "register", registered.append)
+    monkeypatch.setattr(_bridge, "_at_exit_before_duckdb", False)
+    with closing(sqlite3.connect(":memory:")) as conn:
+        _bridge._Session(conn, owned=False, execute_options={})
+    assert registered == []
+    for _ in range(2):
+        with duckdb.connect() as conn:
+            _bridge._Session(conn, owned=False, execute_options={})
+    assert registered == [polars_database._run_at_exit]
+
+
+def test_exit_hook_registered_again_after_duckdb_orm_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import atexit
+
+    pytest.importorskip("duckdb_engine")
+    sa = pytest.importorskip("sqlalchemy")
+    import polars_database
+    from polars_database import _bridge
+    from sqlalchemy.orm import Session
+
+    registered: list[Any] = []
+    monkeypatch.setattr(atexit, "register", registered.append)
+    monkeypatch.setattr(_bridge, "_at_exit_before_duckdb", False)
+    engine = sa.create_engine("duckdb:///:memory:")
+    try:
+        with Session(engine) as session:
+            _bridge._Session(session, owned=False, execute_options={})
+    finally:
+        engine.dispose()
+    assert registered == [polars_database._run_at_exit]
+
+
 def test_cancel_before_the_statement_starts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

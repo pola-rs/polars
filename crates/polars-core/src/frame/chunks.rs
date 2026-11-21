@@ -38,18 +38,12 @@ impl DataFrame {
     pub fn split_chunks(&mut self) -> impl Iterator<Item = DataFrame> + '_ {
         self.align_chunks_par();
 
-        let first_series_col_idx = self
-            .columns()
-            .iter()
-            .position(|col| col.as_series().is_some());
-        let df_height = self.height();
+        // Follows the first column that has chunks (a series, or a dictionary column's codes);
+        // scalar columns have none and are sliced.
+        let chunk_lengths: Vec<usize> = self.first_col_chunk_lengths().collect();
         let mut prev_height = 0;
-        (0..self.first_col_n_chunks()).map(move |i| unsafe {
-            // There might still be scalar/partitioned columns after aligning,
-            // so we follow the size of the chunked column, if any.
-            let chunk_size = first_series_col_idx
-                .map(|c| self.columns()[c].as_series().unwrap().chunks()[i].len())
-                .unwrap_or(df_height);
+        (0..chunk_lengths.len()).map(move |i| unsafe {
+            let chunk_size = chunk_lengths[i];
             let columns = self
                 .columns()
                 .iter()

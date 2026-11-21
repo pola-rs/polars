@@ -34,6 +34,7 @@ flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
 hashbrown = { workspace = true }
+http-body = { version = "1", optional = true }
 itoa = { workspace = true, optional = true }
 libc = { workspace = true }
 memchr = { workspace = true }
@@ -144,6 +145,7 @@ async = [
 ]
 cloud = [
   "object_store",
+  "dep:http-body",
   "async",
   "serde_json",
   "serde",
