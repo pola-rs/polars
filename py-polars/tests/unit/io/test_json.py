@@ -20,7 +20,7 @@ from polars.datatypes.group import FLOAT_DTYPES
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import TimeUnit
+    from polars._typing import EngineType, TimeUnit
     from tests.conftest import PlMonkeyPatch
 
 import orjson
@@ -200,6 +200,104 @@ def test_write_json_decimal() -> None:
     # we don't guarantee a format, just round-circling
     value = df.write_json()
     assert value == """[{"a":"1.00"},{"a":"2.00"},{"a":null}]"""
+
+
+@pytest.mark.parametrize("ignore_errors", [False, True])
+def test_ndjson_decimal_roundtrip(ignore_errors: bool) -> None:
+    df = pl.DataFrame(
+        {
+            "amount": [
+                D("1.50"),
+                D("-0.01"),
+                D("123456789012345678901234567890123456.78"),
+                None,
+            ]
+        },
+        schema={"amount": pl.Decimal(38, 2)},
+    ).with_columns(
+        pl.concat_list("amount").alias("amounts"),
+        pl.struct("amount").alias("nested"),
+    )
+    data = df.write_ndjson().encode()
+    assert_frame_equal(
+        pl.read_ndjson(io.BytesIO(data), schema=df.schema, ignore_errors=ignore_errors),
+        df,
+    )
+    engines: tuple[EngineType, ...] = ("streaming", "in-memory")
+    for engine in engines:
+        assert_frame_equal(
+            pl.scan_ndjson(
+                io.BytesIO(data), schema=df.schema, ignore_errors=ignore_errors
+            ).collect(engine=engine),
+            df,
+        )
+
+
+def test_read_ndjson_decimal_numbers() -> None:
+    values = [1.5, -2, 2**64, -(2**64) - 1, 0.01, None]
+    data = "\n".join(json.dumps({"amount": value}) for value in values).encode()
+    schema = {"amount": pl.Decimal(38, 2)}
+    expected = pl.DataFrame(
+        {"amount": [D(str(value)) if value is not None else None for value in values]},
+        schema=schema,
+    )
+    assert_frame_equal(pl.read_ndjson(io.BytesIO(data), schema=schema), expected)
+    assert_frame_equal(
+        pl.scan_ndjson(io.BytesIO(data), schema=schema).collect(), expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "values"),
+    [
+        (pl.Decimal(3, 0), [D("-999"), D("0"), D("999"), None]),
+        (pl.Decimal(38, 38), [D("1e-38"), D("-1e-38"), D("0"), None]),
+    ],
+)
+def test_ndjson_decimal_scale(dtype: pl.Decimal, values: list[D | None]) -> None:
+    expected = pl.DataFrame({"amount": values}, schema={"amount": dtype})
+    data = expected.write_ndjson().encode()
+    assert_frame_equal(
+        pl.read_ndjson(io.BytesIO(data), schema_overrides=expected.schema), expected
+    )
+    assert_frame_equal(
+        pl.scan_ndjson(io.BytesIO(data), schema_overrides=expected.schema).collect(),
+        expected,
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '"invalid"',
+        '"1000.00"',
+        "1000",
+        "1000.0",
+        "999.995",
+        "1e30",
+        "-1e30",
+        str(2**127),
+        "true",
+        "[]",
+        "{}",
+    ],
+)
+def test_ndjson_decimal_invalid_values(value: str) -> None:
+    data = f'{{"amount":{value}}}\n{{"amount":"1.50"}}'.encode()
+    schema = {"amount": pl.Decimal(5, 2)}
+    with pytest.raises(ComputeError, match=r"as decimal\[5,2\]"):
+        pl.read_ndjson(io.BytesIO(data), schema=schema)
+    with pytest.raises(ComputeError, match=r"as decimal\[5,2\]"):
+        pl.scan_ndjson(io.BytesIO(data), schema=schema).collect()
+
+    expected = pl.DataFrame({"amount": [None, D("1.50")]}, schema=schema)
+    assert_frame_equal(
+        pl.read_ndjson(io.BytesIO(data), schema=schema, ignore_errors=True), expected
+    )
+    assert_frame_equal(
+        pl.scan_ndjson(io.BytesIO(data), schema=schema, ignore_errors=True).collect(),
+        expected,
+    )
 
 
 def test_json_infer_schema_length_11148() -> None:
