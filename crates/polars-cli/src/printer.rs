@@ -13,6 +13,7 @@ use polars_arrow::io::ipc::write::{StreamWriter as ArrowStream, WriteOptions};
 use unicode_width::UnicodeWidthChar;
 
 use crate::error::{ErrorRecord, LocationKind, SourceLocation};
+use crate::script::StatementKind;
 
 /// How results are written to the output.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -25,9 +26,10 @@ pub enum Format {
     Csv,
     /// Every row, one JSON object per line
     Ndjson,
-    /// Every row, as one Parquet file; for a script of one statement
+    /// Every row, as one Parquet file; the last statement must be the only one that returns rows
     Parquet,
-    /// Every row, in the Arrow IPC stream format; for a script of one statement
+    /// Every row, in the Arrow IPC stream format; the last statement must be the only one that
+    /// returns rows
     ArrowStream,
 }
 
@@ -53,15 +55,19 @@ impl fmt::Display for Format {
 /// What happens while a script runs.
 ///
 /// A run begins with `Start`. A statement begins with `Statement`. One that returns rows
-/// sends `Schema`, then any number of `Rows`. Every statement ends with `StatementEnd`,
-/// `Error` or `Interrupted`. Nothing follows `Error` or `Interrupted`.
+/// sends `Schema`, then any number of `Rows`. An effect statement sends neither. Every
+/// statement ends with `StatementEnd`, `Error` or `Interrupted`. Nothing follows `Error` or
+/// `Interrupted`.
 #[derive(Debug)]
 pub enum Event {
-    /// The run begins. `statements` is how many statements the script holds.
-    Start { statements: usize },
-    /// A statement begins. `describes` tells that its result describes a table, a query or a
-    /// plan: the table format prints such a result in full.
-    Statement { describes: bool },
+    /// The run begins. `statements` is how many statements the script holds;
+    /// `ends_in_its_only_result` whether the last one is the only one that returns rows.
+    Start {
+        statements: usize,
+        ends_in_its_only_result: bool,
+    },
+    /// A statement begins.
+    Statement { kind: StatementKind },
     /// The columns of the result.
     Schema(SchemaRef),
     /// A batch of result rows.
@@ -87,10 +93,13 @@ pub struct Printer<O: Write, E> {
     result: Option<ResultWriter<O>>,
     /// Whether the script has several statements. Errors then name their statement.
     several_statements: bool,
+    /// Whether the last statement is the only one that returns rows. A binary `COPY ... TO
+    /// STDOUT` needs that.
+    ends_in_its_only_result: bool,
     /// Whether the output is a terminal.
     on_terminal: bool,
-    /// Whether the table format prints the result of the current statement in full.
-    in_full: bool,
+    /// The kind of the current statement.
+    kind: StatementKind,
     /// The name errors give the script.
     source: String,
     /// Whether errors show the plan and the context they have.
@@ -116,8 +125,9 @@ impl<O: Write, E: Write> Printer<O, E> {
             format,
             result: None,
             several_statements: false,
+            ends_in_its_only_result: false,
             on_terminal: false,
-            in_full: false,
+            kind: StatementKind::default(),
             source: "<command>".to_string(),
             verbose: false,
         }
@@ -137,6 +147,16 @@ impl<O: Write, E: Write> Printer<O, E> {
     pub fn on_terminal(mut self, on_terminal: bool) -> Self {
         self.on_terminal = on_terminal;
         self
+    }
+
+    /// Whether the output is one file, which holds one result.
+    pub(crate) fn writes_one_file(&self) -> bool {
+        self.format.is_one_file()
+    }
+
+    /// Whether the current statement is an effect statement, which sends no rows.
+    pub(crate) fn runs_effect(&self) -> bool {
+        self.kind == StatementKind::Effect
     }
 
     /// Whether the reader of the output has gone away, as when it is piped into `head`.
@@ -175,9 +195,10 @@ impl<O: Write, E: Write> Printer<O, E> {
                 "COPY TO STDOUT format '{name}' is binary; send the output to a file or a pipe"
             );
             polars_ensure!(
-                !self.several_statements,
+                self.ends_in_its_only_result,
                 InvalidOperation:
-                "COPY TO STDOUT format '{name}' writes one file, so it takes a script of one statement"
+                "COPY TO STDOUT format '{name}' writes one file, so it must be the last statement \
+                 and the only one that returns rows"
             );
         }
         Ok(self.sink_target())
@@ -193,8 +214,14 @@ impl<O: Write, E: Write> Printer<O, E> {
 
     pub fn event(&mut self, event: Event) -> PolarsResult<()> {
         match event {
-            Event::Start { statements } => self.several_statements = statements > 1,
-            Event::Statement { describes } => self.in_full = describes,
+            Event::Start {
+                statements,
+                ends_in_its_only_result,
+            } => {
+                self.several_statements = statements > 1;
+                self.ends_in_its_only_result = ends_in_its_only_result;
+            },
+            Event::Statement { kind } => self.kind = kind,
             Event::Schema(schema) => self.result = Some(self.start_result(&schema)?),
             Event::Rows(mut rows) => {
                 if self.result.is_none() {
@@ -215,7 +242,7 @@ impl<O: Write, E: Write> Printer<O, E> {
             },
             Event::StatementEnd => {
                 match self.result.take() {
-                    Some(ResultWriter::Table(table)) if self.in_full => {
+                    Some(ResultWriter::Table(table)) if self.kind == StatementKind::Description => {
                         write_in_full(&mut self.out, &table)?
                     },
                     Some(ResultWriter::Table(table)) => writeln!(self.out, "{table}")?,

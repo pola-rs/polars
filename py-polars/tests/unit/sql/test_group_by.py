@@ -1756,3 +1756,19 @@ def test_group_by_constant_projection_with_literal_key() -> None:
     assert res.rows() == [(1, "bc"), (None, "bc")]
     res = df.sql("SELECT 42 AS k, 42 + 1 FROM self GROUP BY GROUPING SETS ((k))")
     assert res.rows() == [(42, 43)]
+
+
+def test_group_by_window_named_like_key() -> None:
+    df = pl.DataFrame({"s": [1, None, 1]})
+    res = df.sql(
+        """
+        SELECT
+          CASE WHEN s IS NULL THEN 'x' ELSE 'y' END AS c,
+          s + 1 AS t,
+          ROW_NUMBER() OVER (ORDER BY s NULLS LAST) AS s
+        FROM self
+        GROUP BY self.s
+        ORDER BY s
+        """
+    )
+    assert res.rows() == [("y", 2, 1), ("x", None, 2)]

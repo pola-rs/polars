@@ -4092,19 +4092,13 @@ def test_insert_catalog_table_sql_errors(
 def test_insert_without_catalog(lake: CountingCatalog) -> None:
     from pyiceberg.exceptions import NoSuchTableError
 
+    # a registered frame hides the catalog table of its name, and takes the rows
     ctx = lake_ctx(lake)
-    ctx.register("frame", pl.LazyFrame({"a": [1]}))
-    with pytest.raises(
-        SQLInterfaceError, match="`INSERT` is supported only for catalog"
-    ):
-        ctx.execute("INSERT INTO frame VALUES (2)")
     ctx.register("lineitem", pl.LazyFrame({"a": [1]}))
-    with pytest.raises(
-        SQLInterfaceError,
-        match=r"`INSERT OVERWRITE` is supported only .* write 'lake\.tpch\.lineitem'",
-    ):
-        ctx.execute("INSERT OVERWRITE lineitem VALUES (2)")
-    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+    ctx.execute("INSERT OVERWRITE lineitem VALUES (2)")
+    assert ctx.execute("SELECT a FROM lineitem", eager=True)["a"].to_list() == [2]
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "a"), (2, "b")]
+    with pytest.raises(SQLInterfaceError, match="relation 't' was not found"):
         pl.SQLContext().execute("INSERT INTO t VALUES (1)")
     with pytest.raises(NoSuchTableError, match="identifiers are case-sensitive"):
         lake_ctx(lake).execute("INSERT INTO LINEITEM VALUES (1, 'a')")
@@ -5192,10 +5186,10 @@ def test_update_catalog_table_resolution(lake: CountingCatalog) -> None:
         ctx.execute("UPDATE lake.tpch.missing SET k = 1")
     with pytest.raises(pl.exceptions.ColumnNotFoundError, match="case-sensitive"):
         ctx.execute("UPDATE orders SET K = 1")
-    # a registered frame can't be updated, and hides the catalog table of its name
+    # a registered frame hides the catalog table of its name, and is updated
     ctx.register("orders", pl.LazyFrame({"k": [1]}))
-    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
-        ctx.execute("UPDATE orders SET k = 2")
+    ctx.execute("UPDATE orders SET k = 2")
+    assert ctx.execute("SELECT k FROM orders", eager=True)["k"].to_list() == [2]
     ctx.unregister("orders")
     # the statement goes to the catalog, not to the frame-level execute
     with pytest.raises(SQLInterfaceError, match="must be performed on the catalog"):
