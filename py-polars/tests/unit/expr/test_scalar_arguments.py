@@ -257,3 +257,23 @@ def test_series_method_with_series_argument() -> None:
     assert_series_equal(
         s.pct_change(pl.Series([1]).item()), pl.Series("a", [None, 1.0, 1.0])
     )
+
+
+def test_scalar_argument_in_unique_subset() -> None:
+    lf = pl.LazyFrame({"x": [1]})
+    x = pl.col("x")
+    with pytest.raises(ShapeError, match="'n' must be a scalar value"):
+        lf.unique(subset=x.shift(x)).collect_schema()
+    with pytest.raises(ShapeError, match="'n' must be a scalar value"):
+        lf.unique(subset=x.shift(x)).select(x).collect_schema()
+    out = lf.unique(subset=x.shift(x.first())).collect()
+    assert out["x"].to_list() == [1]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_search_sorted_field_of_struct(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3], "v": [10, 20, 30]})
+    x = pl.col("x")
+    s = pl.struct(i=x.search_sorted(2))
+    q = lf.select(s.struct.with_fields(val=pl.col("v").get(pl.field("i"))))
+    assert q.collect(engine=engine).to_series()[0] == {"i": 1, "val": 20}

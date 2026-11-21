@@ -45,6 +45,7 @@ pub fn ensure_scalar_arguments(node: Node, arena: &Arena<AExpr>) -> PolarsResult
             } => {
                 let options = ExprHeightOptions {
                     struct_field,
+                    scalar_argument: true,
                     ..Default::default()
                 };
                 let struct_height = aexpr_projection_height_rec_with(
