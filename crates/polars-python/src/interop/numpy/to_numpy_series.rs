@@ -372,7 +372,7 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyRe
             let values = std::iter::repeat_n(f32::NAN, n);
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
-        Map(_, _) => {
+        Map(_) => {
             // No numpy dtype for a map, so fall back to an object array of dicts.
             let ca = s.map().unwrap();
             let values = ca

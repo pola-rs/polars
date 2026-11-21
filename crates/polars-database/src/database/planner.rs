@@ -1215,7 +1215,9 @@ fn in_utc(dtype: &DataType) -> DataType {
         DataType::Datetime(tu, Some(_)) => DataType::Datetime(*tu, Some(TimeZone::UTC)),
         DataType::List(inner) => DataType::List(Box::new(in_utc(inner))),
         DataType::Array(inner, width) => DataType::Array(Box::new(in_utc(inner)), *width),
-        DataType::Map(key, value) => DataType::Map(Box::new(in_utc(key)), Box::new(in_utc(value))),
+        DataType::Map(map) => {
+            DataType::Map(MapDtype::try_new(in_utc(map.key()), in_utc(map.value())).unwrap())
+        },
         DataType::Struct(fields) => DataType::Struct(fields.map_fields(|f| in_utc(f.dtype()))),
         dt => dt.clone(),
     }

@@ -37,9 +37,8 @@ pub fn normalize_dtype(dtype: &DataType) -> DataType {
         // `numeric(p, s)[]`: the element too
         DataType::List(inner) => DataType::List(Box::new(normalize_dtype(inner))),
         DataType::Array(inner, width) => DataType::Array(Box::new(normalize_dtype(inner)), *width),
-        DataType::Map(key, value) => DataType::Map(
-            Box::new(normalize_dtype(key)),
-            Box::new(normalize_dtype(value)),
+        DataType::Map(map) => DataType::Map(
+            MapDtype::try_new(normalize_dtype(map.key()), normalize_dtype(map.value())).unwrap(),
         ),
         DataType::Struct(fields) => {
             DataType::Struct(fields.map_fields(|f| normalize_dtype(f.dtype())))

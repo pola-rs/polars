@@ -24,7 +24,7 @@ fn canonicalize_maps_rec(series: &Series) -> PolarsResult<Option<Series>> {
     }
 
     match series.dtype() {
-        DataType::Map(_, _) => {
+        DataType::Map(_) => {
             let map = series.map().unwrap();
 
             // Visit children first so canonicalization row-encodes normalized keys.
@@ -35,7 +35,7 @@ fn canonicalize_maps_rec(series: &Series) -> PolarsResult<Option<Series>> {
             match changed.or(nested) {
                 None => Ok(None),
                 Some(storage) => Ok(Some(
-                    unsafe { MapChunked::from_storage_unchecked(map.dtype().clone(), storage) }
+                    unsafe { MapChunked::from_storage_unchecked(map.map_dtype().clone(), storage) }
                         .into_series(),
                 )),
             }

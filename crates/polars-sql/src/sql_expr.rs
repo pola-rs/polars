@@ -2078,7 +2078,8 @@ impl SQLExprVisitor<'_> {
                     SQLInterface: "an empty map literal has no type; give it one with CAST(MAP {{}} AS MAP(<key type>, <value type>))"
                 )
             };
-            let entries = Series::new_empty(PlSmallStr::EMPTY, &dtype.map_entries_dtype().unwrap());
+            let entries =
+                Series::new_empty(PlSmallStr::EMPTY, &dtype.as_map().unwrap().entries_dtype());
             return Ok(lit(Scalar::new(dtype.clone(), AnyValue::Map(entries))));
         }
         let target = target.map(|(dtype, cast_kind)| (dtype.as_map().unwrap(), cast_kind));
@@ -2092,19 +2093,17 @@ impl SQLExprVisitor<'_> {
             );
             let value = match (target, strip_parentheses(&entry.value)) {
                 // a nested map literal takes its type from the target as well
-                (Some(((_, value_dtype), cast_kind)), SQLExpr::Map(inner))
-                    if value_dtype.is_map() =>
-                {
-                    self.visit_map_literal(&inner.entries, Some((value_dtype, cast_kind)))?
+                (Some((map, cast_kind)), SQLExpr::Map(inner)) if map.value().is_map() => {
+                    self.visit_map_literal(&inner.entries, Some((map.value(), cast_kind)))?
                 },
-                (Some(((_, value_dtype), cast_kind)), _) => {
+                (Some((map, cast_kind)), _) => {
                     let value = self.visit_literal_entry(&entry.value)?;
-                    self.cast_entry(value, value_dtype, cast_kind)?
+                    self.cast_entry(value, map.value(), cast_kind)?
                 },
                 (None, _) => self.visit_literal_entry(&entry.value)?,
             };
             keys.push(match target {
-                Some(((key_dtype, _), _)) => self.cast_entry(key, key_dtype, &CastKind::Cast)?,
+                Some((map, _)) => self.cast_entry(key, map.key(), &CastKind::Cast)?,
                 None => self.materialized_key(key),
             });
             values.push(value);
@@ -2117,10 +2116,10 @@ impl SQLExprVisitor<'_> {
             let keys = series_of_literals("key", keys)?;
             let values = series_of_literals("value", values)?;
             ensure_unique_keys(&keys)?;
-            let dtype = DataType::Map(
-                Box::new(keys.dtype().clone()),
-                Box::new(values.dtype().clone()),
-            );
+            let dtype = DataType::Map(MapDtype::try_new(
+                keys.dtype().clone(),
+                values.dtype().clone(),
+            )?);
             let entries =
                 StructChunked::from_series(PlSmallStr::EMPTY, keys.len(), [keys, values].iter())?;
             return Ok(lit(Scalar::new(
@@ -3570,19 +3569,21 @@ fn nested_cast_mismatch(target: &DataType, source: &DataType) -> Option<NestedCa
             })
         },
         #[cfg(feature = "dtype-map")]
-        (DataType::Map(key, value), DataType::Map(source_key, source_value)) => {
-            within("map key".into(), nested_cast_mismatch(key, source_key)).or_else(|| {
-                within(
-                    "map value".into(),
-                    nested_cast_mismatch(value, source_value),
-                )
-            })
-        },
+        (DataType::Map(target), DataType::Map(source)) => within(
+            "map key".into(),
+            nested_cast_mismatch(target.key(), source.key()),
+        )
+        .or_else(|| {
+            within(
+                "map value".into(),
+                nested_cast_mismatch(target.value(), source.value()),
+            )
+        }),
         // A map is stored as a list of `{key, value}` structs, which a list target can take.
         #[cfg(feature = "dtype-map")]
-        (DataType::List(target) | DataType::Array(target, _), DataType::Map(..)) => within(
+        (DataType::List(target) | DataType::Array(target, _), DataType::Map(source)) => within(
             "map entry".into(),
-            nested_cast_mismatch(target, &source.map_entries_dtype()?),
+            nested_cast_mismatch(target, &source.entries_dtype()),
         ),
         _ => nested_target_name(target).map(|target| NestedCastMismatch {
             source: source.clone(),

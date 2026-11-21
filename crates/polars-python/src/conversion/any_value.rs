@@ -741,10 +741,8 @@ pub(crate) fn py_object_to_any_value(
             return Ok(AnyValue::Null);
         }
         match dtype {
-            DataType::Map(key_dtype, value_dtype)
-                if ob.is_instance_of::<PyDict>() || PyMapping::type_check(ob) =>
-            {
-                return get_map(ob, strict, key_dtype, value_dtype);
+            DataType::Map(map) if ob.is_instance_of::<PyDict>() || PyMapping::type_check(ob) => {
+                return get_map(ob, strict, map.key(), map.value());
             },
             DataType::List(_) | DataType::Struct(_) | DataType::Extension(_, _) => {
                 return get_container_of_map(ob, dtype, strict);
@@ -752,8 +750,8 @@ pub(crate) fn py_object_to_any_value(
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => return get_container_of_map(ob, dtype, strict),
             // The only way to construct a Map whose key dtype contains a type that is not hashable in Python
-            DataType::Map(_, _) if is_map_entries(ob)? => {
-                return get_container_of_map(ob, &dtype.map_storage_dtype().unwrap(), strict);
+            DataType::Map(map) if is_map_entries(ob)? => {
+                return get_container_of_map(ob, &map.storage_dtype(), strict);
             },
             // A Map target that is neither a mapping nor well-formed entries. Fall through
             // to the untargeted conversion, which reports the mismatch.

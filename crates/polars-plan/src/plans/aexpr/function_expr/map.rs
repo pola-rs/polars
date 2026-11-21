@@ -27,10 +27,10 @@ impl<'a> FieldsMapper<'a> {
         func: impl FnOnce(&DataType, &DataType) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
         self.try_map_dtype(|dtype| {
-            let Some((key, value)) = dtype.as_map() else {
+            let Some(map) = dtype.as_map() else {
                 polars_bail!(InvalidOperation: "`{op}` requires a Map dtype, got `{dtype}`");
             };
-            func(key, value)
+            func(map.key(), map.value())
         })
     }
 }
@@ -40,7 +40,7 @@ impl IRMapFunction {
         use IRMapFunction::*;
         match self {
             Entries => mapper.try_map_dtype(|dtype| {
-                let Some(entries) = dtype.map_storage_dtype() else {
+                let Some(entries) = dtype.as_map().map(MapDtype::storage_dtype) else {
                     polars_bail!(
                         InvalidOperation:
                         "`map.entries` requires a Map dtype, got `{dtype}`",

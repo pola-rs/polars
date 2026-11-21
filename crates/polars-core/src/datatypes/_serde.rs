@@ -14,7 +14,8 @@ impl<'a> Deserialize<'a> for DataType {
     where
         D: Deserializer<'a>,
     {
-        Ok(SerializableDataType::deserialize(deserializer)?.into())
+        DataType::try_from(SerializableDataType::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -142,10 +143,7 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-map")]
-            Map(key, value) => Self::Map(
-                Box::new(key.as_ref().into()),
-                Box::new(value.as_ref().into()),
-            ),
+            Map(map) => Self::Map(Box::new(map.key().into()), Box::new(map.value().into())),
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => Self::Categorical {
                 name: cats.name().to_string(),
@@ -173,10 +171,12 @@ impl From<&DataType> for SerializableDataType {
         }
     }
 }
-impl From<SerializableDataType> for DataType {
-    fn from(dt: SerializableDataType) -> Self {
+impl TryFrom<SerializableDataType> for DataType {
+    type Error = PolarsError;
+
+    fn try_from(dt: SerializableDataType) -> PolarsResult<Self> {
         use SerializableDataType::*;
-        match dt {
+        Ok(match dt {
             Boolean => Self::Boolean,
             UInt8 => Self::UInt8,
             UInt16 => Self::UInt16,
@@ -198,15 +198,17 @@ impl From<SerializableDataType> for DataType {
             Datetime(tu, tz) => Self::Datetime(tu, tz),
             Duration(tu) => Self::Duration(tu),
             Time => Self::Time,
-            List(dt) => Self::List(Box::new((*dt).into())),
+            List(dt) => Self::List(Box::new((*dt).try_into()?)),
             #[cfg(feature = "dtype-array")]
-            Array(dt, width) => Self::Array(Box::new((*dt).into()), width),
+            Array(dt, width) => Self::Array(Box::new((*dt).try_into()?), width),
             Null => Self::Null,
             Unknown(kind) => Self::Unknown(kind),
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-map")]
-            Map(key, value) => Self::Map(Box::new((*key).into()), Box::new((*value).into())),
+            Map(key, value) => {
+                Self::Map(MapDtype::try_new((*key).try_into()?, (*value).try_into()?)?)
+            },
             #[cfg(feature = "dtype-categorical")]
             Categorical {
                 name,
@@ -238,7 +240,7 @@ impl From<SerializableDataType> for DataType {
                 metadata,
                 storage,
             } => {
-                let storage = DataType::from(*storage);
+                let storage = DataType::try_from(*storage)?;
                 let ext_type = crate::datatypes::extension::get_extension_type_or_generic(
                     &name,
                     &storage,
@@ -246,6 +248,6 @@ impl From<SerializableDataType> for DataType {
                 );
                 Self::Extension(ext_type, Box::new(storage))
             },
-        }
+        })
     }
 }

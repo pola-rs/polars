@@ -112,12 +112,10 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         },
         #[cfg(feature = "dtype-map")]
         SQLDataType::Map(key, value, _) => {
-            let dtype = DataType::Map(
-                Box::new(map_sql_dtype_to_polars(key)?),
-                Box::new(map_sql_dtype_to_polars(value)?),
-            );
-            dtype.ensure_valid_map_dtype()?;
-            dtype
+            DataType::Map(polars_core::datatypes::MapDtype::try_new(
+                map_sql_dtype_to_polars(key)?,
+                map_sql_dtype_to_polars(value)?,
+            )?)
         },
         #[cfg(not(feature = "dtype-map"))]
         SQLDataType::Map(..) => {
@@ -401,8 +399,12 @@ pub(crate) fn sql_type_name(dtype: &DataType) -> String {
             }
         },
         #[cfg(feature = "dtype-map")]
-        DataType::Map(key, value) => {
-            format!("MAP({}, {})", sql_type_name(key), sql_type_name(value))
+        DataType::Map(map) => {
+            format!(
+                "MAP({}, {})",
+                sql_type_name(map.key()),
+                sql_type_name(map.value())
+            )
         },
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(categories, _) if categories.is_global() => "CATEGORICAL".to_string(),

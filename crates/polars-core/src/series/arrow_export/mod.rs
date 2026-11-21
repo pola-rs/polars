@@ -240,16 +240,16 @@ impl ToArrowConverter {
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-map")]
-            (DataType::Map(_, _), ArrowDataType::Map(_, _)) => {
-                let entries_dtype = polars_dtype.map_entries_dtype().unwrap();
+            (DataType::Map(map), ArrowDataType::Map(_, _)) => {
+                let entries_dtype = map.entries_dtype();
                 self.map_array_to_arrow(array, &entries_dtype, arrow_field)?
             },
             (DataType::List(entries_dtype), ArrowDataType::Map(_, _)) => {
                 self.map_array_to_arrow(array, entries_dtype, arrow_field)?
             },
             #[cfg(feature = "dtype-map")]
-            (DataType::Map(_, _), ArrowDataType::LargeList(_)) => {
-                let storage_dtype = polars_dtype.map_storage_dtype().unwrap();
+            (DataType::Map(map), ArrowDataType::LargeList(_)) => {
+                let storage_dtype = map.storage_dtype();
                 self.array_to_arrow_impl(array, &storage_dtype, arrow_field)?
             },
             #[cfg(feature = "dtype-array")]

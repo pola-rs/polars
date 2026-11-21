@@ -100,10 +100,10 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         },
 
         #[cfg(feature = "dtype-map")]
-        DataType::Map(key, value) => {
+        DataType::Map(map) => {
             let ctxts = vec![
-                get_row_encoding_context(key),
-                get_row_encoding_context(value),
+                get_row_encoding_context(map.key()),
+                get_row_encoding_context(map.value()),
             ];
 
             if ctxts.iter().all(Option::is_none) {

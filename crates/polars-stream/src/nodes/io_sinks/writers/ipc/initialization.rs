@@ -126,9 +126,9 @@ where
                 dictionary_id: None,
             },
             #[cfg(feature = "dtype-map")]
-            Map(_, _) => IpcField {
+            Map(map) => IpcField {
                 // The entries struct is a Map's single Arrow child.
-                fields: vec![self.dtype_to_ipc_field(&dtype.map_entries_dtype().unwrap())],
+                fields: vec![self.dtype_to_ipc_field(&map.entries_dtype())],
                 dictionary_id: None,
             },
             #[cfg(feature = "dtype-extension")]

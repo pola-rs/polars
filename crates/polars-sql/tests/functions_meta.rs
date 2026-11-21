@@ -156,7 +156,7 @@ fn test_describe_type_names_cast_back() {
     cases.push((DataType::Decimal(12, 2), "DECIMAL(12,2)"));
     #[cfg(feature = "dtype-map")]
     cases.push((
-        DataType::Map(Box::new(DataType::String), Box::new(DataType::Int32)),
+        DataType::Map(MapDtype::try_new(DataType::String, DataType::Int32).unwrap()),
         "MAP(VARCHAR, INTEGER)",
     ));
     #[cfg(feature = "dtype-categorical")]

@@ -405,5 +405,7 @@ fn to_map(c: &Column) -> PolarsResult<Column> {
     let DataType::List(entries) = c.dtype() else {
         polars_bail!(InvalidOperation: "`list.to_map` requires a List dtype, got `{}`", c.dtype())
     };
-    c.cast(&entries.map_from_named_entries_dtype()?)
+    c.cast(&DataType::Map(
+        polars_core::datatypes::MapDtype::try_from_named_entries(entries)?,
+    ))
 }

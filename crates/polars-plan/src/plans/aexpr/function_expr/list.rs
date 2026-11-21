@@ -164,7 +164,7 @@ impl IRListFunction {
                         "`list.to_map` requires a List dtype, got `{dtype}`",
                     );
                 };
-                entries.map_from_named_entries_dtype()
+                MapDtype::try_from_named_entries(entries).map(DataType::Map)
             }),
         }
     }
