@@ -95,29 +95,61 @@ mod get_batch_state {
         peek: Option<DataFrame>,
     }
 
+    /// A call on a blocking thread. Dropped before it is joined (its task cancelled), it hands
+    /// the call to the query to wait for: the query ends only once the call has returned and
+    /// the batch function (a Python generator, say) has been dropped.
+    struct JoinOnDrop<T: Send + 'static> {
+        handle: Option<tokio::task::JoinHandle<T>>,
+        execution_state: StreamingExecutionState,
+    }
+
+    impl<T: Send + 'static> JoinOnDrop<T> {
+        async fn run(
+            execution_state: &StreamingExecutionState,
+            f: impl FnOnce() -> T + Send + 'static,
+        ) -> T {
+            let mut slf = Self {
+                handle: Some(ASYNC.spawn_blocking(f)),
+                execution_state: execution_state.clone(),
+            };
+            let out = slf.handle.as_mut().unwrap().await;
+            slf.handle = None;
+            out.unwrap()
+        }
+    }
+
+    impl<T: Send + 'static> Drop for JoinOnDrop<T> {
+        fn drop(&mut self) {
+            if let Some(handle) = self.handle.take() {
+                self.execution_state.spawn_query_task(async move {
+                    let _ = handle.await;
+                    Ok(())
+                });
+            }
+        }
+    }
+
     impl GetBatchState {
         pub async fn next(
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            ASYNC
-                .spawn_blocking({
-                    move || unsafe { slf.next_impl(&execution_state).map(|x| (slf, x)) }
-                })
-                .await
-                .unwrap()
+            let state = execution_state.clone();
+            JoinOnDrop::run(&state, move || unsafe {
+                slf.next_impl(&execution_state).map(|x| (slf, x))
+            })
+            .await
         }
 
         pub async fn peek(
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            ASYNC
-                .spawn_blocking({
-                    move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
-                })
-                .await
-                .unwrap()
+            let state = execution_state.clone();
+            JoinOnDrop::run(&state, move || unsafe {
+                slf.peek_impl(&execution_state).map(|x| (slf, x))
+            })
+            .await
         }
 
         /// # Safety
