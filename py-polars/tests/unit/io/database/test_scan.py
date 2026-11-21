@@ -4915,11 +4915,16 @@ def test_scan_orm_sessions_keep_their_transaction_and_give_back_their_checkout(
                     pl.scan_database("SELECT * FROM t", session).collect().height == 1
                 )
                 assert session.in_transaction()
-            # a function that returns such Sessions shares the caller's connection
-            with pytest.raises(Exception, match="Sessions bound to one Connection"):
-                pl.scan_database(
-                    "SELECT * FROM t", orm.sessionmaker(bind=conn)
-                ).collect()
+            # a function that returns such Sessions shares the caller's connection;
+            # its Session is left as it is
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                for factory in (orm.sessionmaker(bind=conn), lambda: session):
+                    with pytest.raises(
+                        Exception, match="Sessions bound to one Connection"
+                    ):
+                        pl.scan_database("SELECT * FROM t", factory).collect()
+                assert session.in_transaction()
     finally:
         engine.dispose()
 

@@ -2124,10 +2124,16 @@ def test_postgres_autocommit_connections_are_read(module: str) -> None:
     lf = pl.scan_database(q, connect, partition_on="id", partition_num=3)
     assert lf.collect().height == 5000
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy.orm")
     url = POSTGRES.replace("postgresql://", f"postgresql+{module}://", 1)
     engine = sqlalchemy.create_engine(url, isolation_level="AUTOCOMMIT")
     try:
         assert pl.scan_database(q, engine, batch_size=1000).collect().height == 5000
+        # an ORM transaction in AUTOCOMMIT has no database transaction to save
+        with sqlalchemy.orm.Session(engine) as session:
+            session.begin()
+            assert pl.scan_database(q, session).collect().height == 5000
+            assert session.in_transaction()
     finally:
         engine.dispose()
 

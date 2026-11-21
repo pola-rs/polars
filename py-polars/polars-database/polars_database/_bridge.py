@@ -242,6 +242,30 @@ def _bound_connection(session: Any) -> Any:
     return None
 
 
+def _session_connection(session: Any) -> Any:
+    """
+    The SQLAlchemy Connection an ORM Session's statements run on, without beginning a
+    transaction: its bound Connection, or its own in a transaction; else None.
+    """
+    if (bound := _bound_connection(session)) is not None:
+        return bound
+    with contextlib.suppress(Exception):
+        if session.in_transaction():
+            return session.connection()
+    return None
+
+
+def _refuse_bound_session(checkout: Any) -> None:
+    """Refuse a factory's ORM Session bound to a Connection, which is the caller's."""
+    if _is_orm_session(checkout) and _bound_connection(checkout) is not None:
+        msg = (
+            "a connection function that returns Sessions bound to one Connection "
+            "can't be scanned: that connection is the caller's. Pass the Session "
+            "or the Connection itself"
+        )
+        raise TypeError(msg)
+
+
 def _has_pool(obj: Any, name: str) -> bool:
     pool = getattr(obj, "pool", None)
     return pool is not None and any(c.__name__ == name for c in type(pool).__mro__)
@@ -353,6 +377,7 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
     """`(dialect, module)` of a connection factory or live connection object."""
     if kind == "factory":
         conn = obj()
+        _refuse_bound_session(conn)
         if (shared := shared_pool_connection(conn)) is not None:
             return _connection_info(shared)
         driver, give_back, _ = _pool_checkout(conn)
@@ -1652,13 +1677,8 @@ def _refuse_pending_results(conn: Any) -> None:
         # a SQLAlchemy Connection, or an ORM Session's (only one in a transaction has
         # one): the driver's is what holds the result
         with contextlib.suppress(Exception):
-            if _is_orm_session(conn):
-                bound = _bound_connection(conn)
-                if bound is None:
-                    if not conn.in_transaction():
-                        return
-                    bound = conn.connection()
-                conn = bound
+            if _is_orm_session(conn) and (conn := _session_connection(conn)) is None:
+                return
             conn = conn.connection.driver_connection
     if _module_of(conn) != "pymysql":
         return
@@ -2478,7 +2498,14 @@ class _Session:
                 # opened rolled back here, before any batch is handed over.
                 status = None if self.owned else _transaction_idle(self.conn)
                 idle = status is True
-                if status is False and _postgres_family(self.conn):
+                in_database = status is False
+                if in_database and _is_orm_session(self.conn):
+                    # an ORM transaction in AUTOCOMMIT has none in the database
+                    run_on = _session_connection(self.conn)
+                    in_database = (
+                        run_on is None or _transaction_idle(run_on) is not True
+                    )
+                if in_database and _postgres_family(self.conn):
                     # In the user's transaction, a failed statement (a catalog lookup
                     # of a name that isn't there, a bad query) would abort it, their
                     # writes lost: it runs in a savepoint, rolled back to on an error.
@@ -3333,13 +3360,7 @@ def connect(
                         if attempt == 99 or not _assertion_pool_busy(e):
                             raise
                         time.sleep(0.002)
-        if _is_orm_session(checkout) and _bound_connection(checkout) is not None:
-            msg = (
-                "a connection function that returns Sessions bound to one Connection "
-                "can't be scanned: that connection is the caller's. Pass the Session "
-                "or the Connection itself"
-            )
-            raise TypeError(msg)
+        _refuse_bound_session(checkout)
         if (shared := shared_pool_connection(checkout)) is not None:
             if dialect in _SESSION_SETUP_DIALECTS:
                 # the plan relies on the session setup, which the user's connection
