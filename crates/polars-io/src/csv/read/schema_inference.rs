@@ -18,7 +18,8 @@ use super::splitfields::SplitFields;
 use super::{CsvParseOptions, NullValues};
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, FLOAT_RE_DECIMAL, INTEGER_RE};
 
-/// Low-level CSV schema inference function.
+/// Low-level CSV schema inference function. Also returns the named null values
+/// re-keyed to the `column_names_overwrite` names, if that changed any key.
 ///
 /// Use `read_until_start_and_infer_schema` instead.
 #[allow(clippy::too_many_arguments)]
@@ -31,7 +32,7 @@ pub(super) fn infer_file_schema_impl(
     schema_overwrite: Option<&Schema>,
     ignore_extra_columns: bool,
     insert_missing_columns: bool,
-) -> PolarsResult<Schema> {
+) -> PolarsResult<(Schema, Option<NullValues>)> {
     let mut headers = if let Some(header_line) = header_line {
         infer_headers(header_line, parse_options)?
     } else {
@@ -41,7 +42,29 @@ pub(super) fn infer_file_schema_impl(
     let extend_header_with_unknown_column = header_line.is_none();
 
     let mut column_types = vec![PlIndexSet::<DataType>::with_capacity(4); headers.len()];
-    let mut nulls = vec![false; headers.len()];
+
+    // A named null value may refer to a column by either its file or its new name
+    // (the new one wins); the reader only sees the new names, so keys are re-keyed to those
+    let rekeyed_null_values = match (&parse_options.null_values, column_names_overwrite) {
+        (Some(null_values @ NullValues::Named(_)), Some(new_names)) => {
+            let file_names: Vec<_> = if header_line.is_some() {
+                headers.clone()
+            } else {
+                (0..new_names.len()).map(column_name).collect()
+            };
+            null_values.rekeyed(&file_names, new_names)
+        },
+        _ => None,
+    };
+
+    // Matches `NullValues::compile`: the last entry for a repeated name wins
+    let named_null_values: PlHashMap<PlSmallStr, PlSmallStr> = match rekeyed_null_values
+        .as_ref()
+        .or(parse_options.null_values.as_ref())
+    {
+        Some(NullValues::Named(names)) => names.iter().cloned().collect(),
+        _ => PlHashMap::default(),
+    };
 
     for content_line in content_lines {
         infer_types_from_line(
@@ -49,9 +72,10 @@ pub(super) fn infer_file_schema_impl(
             infer_all_as_str,
             &mut headers,
             extend_header_with_unknown_column,
+            column_names_overwrite,
             parse_options,
+            &named_null_values,
             &mut column_types,
-            &mut nulls,
         );
     }
 
@@ -96,7 +120,10 @@ pub(super) fn infer_file_schema_impl(
         }
     }
 
-    Ok(build_schema(&headers, &column_types, schema_overwrite))
+    Ok((
+        build_schema(&headers, &column_types, schema_overwrite),
+        rekeyed_null_values,
+    ))
 }
 
 fn infer_headers(
@@ -163,14 +190,16 @@ fn infer_headers(
     Ok(Vec::from_iter(deduplicated_headers))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn infer_types_from_line(
     mut line: &[u8],
     infer_all_as_str: bool,
     headers: &mut Vec<PlSmallStr>,
     extend_header_with_unknown_column: bool,
+    column_names_overwrite: Option<&[PlSmallStr]>,
     parse_options: &CsvParseOptions,
+    named_null_values: &PlHashMap<PlSmallStr, PlSmallStr>,
     column_types: &mut Vec<PlIndexSet<DataType>>,
-    nulls: &mut Vec<bool>,
 ) {
     let line_len = line.len();
     if line.last().copied() == Some(b'\r') {
@@ -189,7 +218,6 @@ fn infer_types_from_line(
             if extend_header_with_unknown_column {
                 headers.push(column_name(i));
                 column_types.push(Default::default());
-                nulls.push(false);
             } else {
                 break;
             }
@@ -201,68 +229,34 @@ fn infer_types_from_line(
         }
 
         if slice.is_empty() {
-            nulls[i] = true;
+            continue;
+        }
+        let slice_escaped = if needs_escaping && (slice.len() >= 2) {
+            &slice[1..(slice.len() - 1)]
         } else {
-            let slice_escaped = if needs_escaping && (slice.len() >= 2) {
-                &slice[1..(slice.len() - 1)]
-            } else {
-                slice
-            };
-            let s = String::from_utf8_lossy(slice_escaped);
-            let dtype = match &parse_options.null_values {
-                None => Some(infer_field_schema(
-                    &s,
-                    parse_options.try_parse_dates,
-                    parse_options.decimal_comma,
-                )),
-                Some(NullValues::AllColumns(names)) => {
-                    if !names.iter().any(|nv| nv == s.as_ref()) {
-                        Some(infer_field_schema(
-                            &s,
-                            parse_options.try_parse_dates,
-                            parse_options.decimal_comma,
-                        ))
-                    } else {
-                        None
-                    }
-                },
-                Some(NullValues::AllColumnsSingle(name)) => {
-                    if s.as_ref() != name.as_str() {
-                        Some(infer_field_schema(
-                            &s,
-                            parse_options.try_parse_dates,
-                            parse_options.decimal_comma,
-                        ))
-                    } else {
-                        None
-                    }
-                },
-                Some(NullValues::Named(names)) => {
-                    let current_name = &headers[i];
-                    let null_name = &names.iter().find(|name| name.0 == current_name);
-
-                    if let Some(null_name) = null_name {
-                        if null_name.1.as_str() != s.as_ref() {
-                            Some(infer_field_schema(
-                                &s,
-                                parse_options.try_parse_dates,
-                                parse_options.decimal_comma,
-                            ))
-                        } else {
-                            None
-                        }
-                    } else {
-                        Some(infer_field_schema(
-                            &s,
-                            parse_options.try_parse_dates,
-                            parse_options.decimal_comma,
-                        ))
-                    }
-                },
-            };
-            if let Some(dtype) = dtype {
-                column_types[i].insert(dtype);
-            }
+            slice
+        };
+        let s = String::from_utf8_lossy(slice_escaped);
+        let is_null = match &parse_options.null_values {
+            None => false,
+            Some(NullValues::AllColumns(names)) => names.iter().any(|nv| nv == s.as_ref()),
+            Some(NullValues::AllColumnsSingle(name)) => name == s.as_ref(),
+            Some(NullValues::Named(_)) => {
+                // Keyed by the final column names, see `infer_file_schema_impl`.
+                let name = column_names_overwrite
+                    .and_then(|names| names.get(i))
+                    .unwrap_or(&headers[i]);
+                named_null_values
+                    .get(name)
+                    .is_some_and(|nv| nv.as_str() == s)
+            },
+        };
+        if !is_null {
+            column_types[i].insert(infer_field_schema(
+                &s,
+                parse_options.try_parse_dates,
+                parse_options.decimal_comma,
+            ));
         }
     }
 }
