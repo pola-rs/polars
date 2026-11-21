@@ -142,6 +142,38 @@ def test_median() -> None:
     assert s.median() == 2
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series(["a", "b"]),
+        pl.Series(["a", "b"], dtype=pl.Categorical),
+        pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"])),
+        pl.Series([b"a", b"b"]),
+        pl.Series([[1], [2]]),
+        pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1)),
+        pl.Series([{"a": 1}, {"a": 2}]),
+    ],
+)
+def test_series_mean_median_unsupported_dtype_raises(s: pl.Series) -> None:
+    with pytest.raises(InvalidOperationError, match="`mean` operation not supported"):
+        s.mean()
+    with pytest.raises(InvalidOperationError, match="`median` operation not supported"):
+        s.median()
+
+
+def test_series_mean_median_match_expr() -> None:
+    for s in [
+        pl.Series([0, 0, 1], dtype=pl.Float32),
+        pl.Series([True, False, True]),
+        pl.Series([None, None], dtype=pl.Null),
+    ]:
+        for agg in ["mean", "median"]:
+            expected = pl.select(getattr(pl.lit(s), agg)()).item()
+            assert getattr(s, agg)() == expected
+    # Float32 is averaged in f64 and rounded to f32, as in the expression.
+    assert pl.Series([0, 0, 1], dtype=pl.Float32).mean() == 0.3333333432674408
+
+
 def test_single_element_std() -> None:
     s = pl.Series([1])
     assert s.std(ddof=1) is None
@@ -362,6 +394,17 @@ def test_quantile_series_literal_in_group_by() -> None:
         pl.col("v").quantile(pl.lit(pl.Series([0.5])))
     )
     assert out["v"].to_list() == [2.0, 3.0]
+
+
+@pytest.mark.parametrize(
+    "s", [pl.Series([], dtype=pl.Date), pl.Series([None, None], dtype=pl.Date)]
+)
+def test_quantile_date_without_values(s: pl.Series) -> None:
+    assert s.quantile(0.5) is None
+    result = pl.LazyFrame({"a": s}).select(pl.col("a").quantile(0.5)).collect()
+    assert_frame_equal(
+        result, pl.DataFrame({"a": [None]}, schema={"a": pl.Datetime("us")})
+    )
 
 
 def test_quantile_date() -> None:
@@ -1787,6 +1830,21 @@ def test_invalid_agg_dtypes_should_raise(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
         df.lazy().select(expr).collect(engine="streaming")
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime, pl.Time, pl.Categorical, pl.Enum(["a", "b"])],
+)
+def test_sum_unsupported_dtype_raises_in_all_contexts(dtype: pl.DataType) -> None:
+    values = ["a", "b"] if dtype in (pl.Categorical, pl.Enum) else [0, 1]
+    lf = pl.LazyFrame({"g": [1, 1], "v": pl.Series(values).cast(dtype)})
+    expr = pl.col("v").sum()
+    for q in [lf.select(expr), lf.group_by("g").agg(expr), lf.select(expr.over("g"))]:
+        with pytest.raises(
+            InvalidOperationError, match="`sum` operation not supported for dtype"
+        ):
+            q.collect_schema()
 
 
 @given(
