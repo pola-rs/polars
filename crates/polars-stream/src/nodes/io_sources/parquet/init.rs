@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::Either;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
+use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::prelude::DataType;
@@ -12,10 +13,13 @@ use polars_io::predicates::{ColumnPredicateExpr, SpecializedColumnPredicate};
 use polars_io::prelude::ParallelStrategy;
 use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher, row_groups_to_read};
-use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
+use super::row_group_decode::{
+    DynamicConjunct, PredicateColumn, RowGroupDecoder, Source, projected_field_at_output_index,
+};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -592,6 +596,48 @@ impl ParquetReadImpl {
             )
         }
 
+        // Only if the decoder evaluates the predicate, so that nothing needs these columns after.
+        let dropped_fields: Arc<[bool]> = projected_arrow_fields
+            .iter()
+            .map(|f| {
+                predicate.as_ref().is_some_and(|p| p.filters_rows)
+                    && self.drop_columns_after_predicate.contains(f.output_name())
+            })
+            .collect();
+
+        let output_keep_mask = if dropped_fields.iter().any(|&dropped| dropped) {
+            let keep: MutableBitmap = row_index
+                .iter()
+                .map(|_| true)
+                .chain((0..projected_arrow_fields.len()).map(|i| {
+                    let field = projected_field_at_output_index(
+                        i,
+                        &predicate_field_indices,
+                        &non_predicate_field_indices,
+                    );
+                    !dropped_fields[field]
+                }))
+                .collect();
+            // Converting into Option<Bitmap> caches the number of kept columns.
+            keep.into()
+        } else {
+            None
+        };
+
+        // The columns the rest predicate reads, `None` if unknown.
+        let rest_columns: Option<&[PlSmallStr]> = match staged {
+            _ if rest_predicate.is_none() => Some(&[]),
+            Some(staged) if use_prefiltered => Some(staged.rest_columns.as_slice()),
+            _ => None,
+        };
+        let early_dropped_fields: Arc<[bool]> = projected_arrow_fields
+            .iter()
+            .zip(dropped_fields.iter())
+            .map(|(f, dropped)| {
+                *dropped && rest_columns.is_some_and(|c| !c.contains(f.output_name()))
+            })
+            .collect();
+
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
             task_metrics: self.task_metrics.clone(),
@@ -605,6 +651,9 @@ impl ParquetReadImpl {
             rest_field_indices,
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
+            dropped_fields,
+            output_keep_mask,
+            early_dropped_fields,
             target_values_per_thread,
             runtime_range_skipper,
         }

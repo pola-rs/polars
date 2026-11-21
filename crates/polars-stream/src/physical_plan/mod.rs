@@ -436,8 +436,12 @@ pub enum PhysNodeKind {
 
         /// Columns to project from the file.
         file_projection_builder: ProjectionBuilder,
-        /// Final output schema of morsels being sent out of MultiScan.
+        /// Final output schema of morsels being sent out of MultiScan, as seen by the predicate.
         output_schema: SchemaRef,
+        /// If set, the schema of the morsels actually sent out of MultiScan: `output_schema`
+        /// without the columns that are only read to evaluate `predicate`. Set by
+        /// `fuse_drops`.
+        output_schema_after_predicate: Option<SchemaRef>,
 
         row_index: Option<RowIndex>,
         pre_slice: Option<Slice>,
@@ -1067,6 +1071,7 @@ fn fuse_drops(
             continue;
         }
 
+        let proj_has_one_output = simple_proj_node.output_schemas.len() == 1;
         let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind_mut()
         else {
             unreachable!()
@@ -1089,6 +1094,25 @@ fn fuse_drops(
 
             let input_schema = input_node.output_schema_mut(0);
             *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
+        } else if let PhysNodeKind::MultiScan {
+            predicate: Some(_),
+            output_schema_after_predicate,
+            ..
+        } = &mut input_node.kind
+            && output_schema_after_predicate.is_none()
+            && proj_has_one_output
+            && !columns.is_empty()
+            && columns.len() < input_node.output_schemas[0].len()
+        {
+            // The scan evaluates the predicate on the columns it reads, but does not emit the
+            // columns that were only read for the predicate.
+            let input_schema = &mut input_node.output_schemas[0];
+            let Ok(narrowed) = input_schema.try_project(columns.keys()) else {
+                continue;
+            };
+            let narrowed = Arc::new(narrowed);
+            *output_schema_after_predicate = Some(narrowed.clone());
+            *input_schema = narrowed;
         } else {
             continue;
         }

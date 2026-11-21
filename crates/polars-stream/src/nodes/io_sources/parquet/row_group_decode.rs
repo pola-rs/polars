@@ -127,6 +127,15 @@ pub(super) struct RowGroupDecoder {
     pub(super) passes: Mutex<Arc<Vec<Vec<usize>>>>,
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
+    /// Per projected field: whether it is only read to evaluate the predicate, so that it is not
+    /// part of the output. All false if the predicate is not (fully) evaluated by the decoder.
+    pub(super) dropped_fields: Arc<[bool]>,
+    /// Columns to keep in ordinary decode order, including the row index if present.
+    /// `None` if all columns are kept.
+    pub(super) output_keep_mask: Option<Bitmap>,
+    /// Per projected field: whether it is dropped (see `dropped_fields`) and not read by
+    /// `rest_predicate`, so that it can be dropped right after its own evaluation.
+    pub(super) early_dropped_fields: Arc<[bool]>,
     pub(super) target_values_per_thread: usize,
     pub(super) runtime_range_skipper: Option<Arc<RuntimeRangeSkipper>>,
 }
@@ -140,6 +149,20 @@ impl RowGroupDecoder {
             n_cols.min(self.num_pipelines)
         } else {
             n_cols.div_ceil(calc_cols_per_thread(n_rows, self.target_values_per_thread))
+        }
+    }
+
+    fn is_dropped_early(&self, source: Source) -> bool {
+        match source {
+            Source::Field(i) => self.early_dropped_fields[i],
+            Source::RowIndex => false,
+        }
+    }
+
+    fn is_dropped(&self, source: Source) -> bool {
+        match source {
+            Source::Field(i) => self.dropped_fields[i],
+            Source::RowIndex => false,
         }
     }
 
@@ -189,7 +212,9 @@ impl RowGroupDecoder {
             .chain(
                 self.projected_arrow_fields
                     .iter()
-                    .map(|p| Column::new_empty(p.output_name().clone(), &p.output_dtype())),
+                    .zip(self.dropped_fields.iter())
+                    .filter(|(_, dropped)| !**dropped)
+                    .map(|(p, _)| Column::new_empty(p.output_name().clone(), &p.output_dtype())),
             )
             .collect();
         unsafe { DataFrame::new_unchecked(0, columns) }
@@ -244,36 +269,41 @@ impl RowGroupDecoder {
 
         let df = unsafe { DataFrame::new_unchecked(projection_height, out_columns) };
 
-        let df = if let Some(predicate) = self
+        let mask = self
             .predicate
             .as_ref()
             .filter(|p| p.filters_rows && !nothing_to_evaluate)
-        {
-            let mask = predicate.predicate.evaluate_io(&df)?;
-            let mask = mask.bool().unwrap();
+            .map(|p| p.predicate.evaluate_io(&df))
+            .transpose()?;
 
-            let filtered = filter_cols(
-                df.into_columns(),
+        let mut columns = df.into_columns();
+        // Drop columns only needed for the predicate before gathering rows.
+        let expected_width = if let Some(keep) = &self.output_keep_mask {
+            let mut keep_iter = keep.iter();
+            columns.retain(|_| keep_iter.next().unwrap());
+            keep.set_bits()
+        } else {
+            out_width
+        };
+        assert_eq!(columns.len(), expected_width);
+
+        let height = if let Some(mask) = &mask {
+            let mask = mask.bool().unwrap();
+            columns = filter_cols(
+                columns,
                 mask,
                 self.target_values_per_thread,
                 self.task_metrics.as_deref(),
             )
             .await?;
-
-            let height = if let Some(fst) = filtered.first() {
-                fst.len()
-            } else {
-                mask.num_trues()
-            };
-
-            unsafe { DataFrame::new_unchecked(height, filtered) }
+            columns
+                .first()
+                .map_or_else(|| mask.num_trues(), Column::len)
         } else {
-            df
+            projection_height
         };
 
-        assert_eq!(df.width(), out_width); // `out_width` should have been calculated correctly
-
-        Ok(df)
+        Ok(unsafe { DataFrame::new_unchecked(height, columns) })
     }
 
     fn materialize_row_index(
@@ -307,14 +337,12 @@ impl RowGroupDecoder {
             let predicate_field_indices = self.predicate_field_indices.clone();
             let non_predicate_field_indices = self.non_predicate_field_indices.clone();
 
-            move |i: usize| {
-                if predicate_field_indices.is_empty() {
-                    i
-                } else if i < predicate_field_indices.len() {
-                    predicate_field_indices[i]
-                } else {
-                    non_predicate_field_indices[i - predicate_field_indices.len()]
-                }
+            move |i| {
+                projected_field_at_output_index(
+                    i,
+                    &predicate_field_indices,
+                    &non_predicate_field_indices,
+                )
             }
         };
 
@@ -375,6 +403,21 @@ impl RowGroupDecoder {
         }
 
         Ok(())
+    }
+}
+
+/// Fields are decoded in predicate-first order when there are any predicate fields.
+pub(super) fn projected_field_at_output_index(
+    i: usize,
+    predicate_field_indices: &[usize],
+    non_predicate_field_indices: &[usize],
+) -> usize {
+    if predicate_field_indices.is_empty() {
+        i
+    } else if i < predicate_field_indices.len() {
+        predicate_field_indices[i]
+    } else {
+        non_predicate_field_indices[i - predicate_field_indices.len()]
     }
 }
 
@@ -890,9 +933,13 @@ impl RowGroupDecoder {
 
             let mut pass_mask: Option<Bitmap> = None;
             let mut filtered = Vec::new();
+            // A dropped column the rest predicate does not read is not needed after its own
+            // evaluation.
             for d in decoded {
                 let Some((c, kept_rows)) = d.predicate else {
-                    live_columns.push((d.source, d.column));
+                    if !self.is_dropped_early(d.source) {
+                        live_columns.push((d.source, d.column));
+                    }
                     continue;
                 };
                 let m = match &kept_rows {
@@ -905,6 +952,9 @@ impl RowGroupDecoder {
                 };
                 if let Some(m) = m {
                     pass_mask = Some(and_masks(pass_mask, m.clone()));
+                }
+                if self.is_dropped_early(d.source) {
+                    continue;
                 }
                 match kept_rows {
                     Kept::All | Kept::Masked(_) => live_columns.push((d.source, d.column)),
@@ -947,6 +997,9 @@ impl RowGroupDecoder {
             let columns = live_columns.iter().map(|(_, c)| c.clone()).collect();
             let df = unsafe { DataFrame::new_unchecked(kept, columns) };
             let rest_mask = evaluate_mask(rest.as_ref(), &df)?;
+            drop(df);
+            // Columns only needed for the predicate are not gathered.
+            live_columns.retain(|(source, _)| !self.is_dropped(*source));
             if rest_mask.unset_bits() > 0 {
                 let rest_mask_ck =
                     BooleanChunked::from_bitmap(PlSmallStr::EMPTY, rest_mask.clone());
@@ -974,6 +1027,7 @@ impl RowGroupDecoder {
             .decode_items(
                 self.non_predicate_field_indices
                     .iter()
+                    .filter(|&&f| !self.dropped_fields[f])
                     .map(|&f| Item::Source(Source::Field(f)))
                     .collect(),
                 &row_group_data,

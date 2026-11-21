@@ -78,6 +78,8 @@ pub struct ResolvedSliceInfo {
 pub(super) struct StartReaderArgsConstant {
     pub(super) hive_parts: Option<Arc<HivePartitionsDf>>,
     pub(super) final_output_schema: SchemaRef,
+    /// See `MultiScanConfig::output_schema_after_predicate`.
+    pub(super) output_schema_after_predicate: Option<SchemaRef>,
     pub(super) reader_capabilities: ReaderCapabilities,
     pub(super) file_projection_builder: ProjectionBuilder,
     pub(super) cast_columns_policy: CastColumnsPolicy,
