@@ -534,8 +534,8 @@ def test_arrow_type_polars_cannot_read_is_an_error(tmp_path: Path) -> None:
     duckdb = pytest.importorskip("duckdb")
     path = str(tmp_path / "t.duckdb")
     with duckdb.connect(path) as conn:
-        conn.execute("CREATE TABLE t AS SELECT INTERVAL 1 DAY AS iv")
-    lf = pl.scan_database("SELECT iv FROM t", f"duckdb:///{path}")
+        conn.execute("CREATE TABLE t AS SELECT union_value(a := 1) AS u")
+    lf = pl.scan_database("SELECT u FROM t", f"duckdb:///{path}")
     with pytest.raises(pl.exceptions.ComputeError, match="can't read"):
         lf.collect()
 
