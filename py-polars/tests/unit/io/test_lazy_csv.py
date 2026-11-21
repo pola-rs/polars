@@ -1090,3 +1090,22 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+@pytest.mark.write_disk
+def test_scan_csv_local_chunks_read_in_parts(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    # Chunks of local files are read in concurrent parts of 4 MiB, so that chunks of this size
+    # end with a shorter part.
+    chunk_size = 9 * 1024 * 1024 + 1
+    plmonkeypatch.setenv("POLARS_CSV_CHUNK_SIZE", str(chunk_size))
+
+    n_rows = 1_000_000
+    df = pl.select(a=pl.int_range(n_rows), b=pl.format("x{}", pl.int_range(n_rows)))
+    path = tmp_path / "data.csv"
+    df.write_csv(path)
+    assert path.stat().st_size > chunk_size
+
+    assert_frame_equal(pl.scan_csv(path).collect(), df)
+    assert_frame_equal(pl.scan_csv(path).select("b").collect(), df.select("b"))
