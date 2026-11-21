@@ -1095,6 +1095,14 @@ def test_scan_sqlite_filter_on_large_integers_read_as_floats(
     ]:
         with pytest.raises(errors):
             lf.filter(predicate).collect()
+    if driver == "connectorx" or sys.platform == "win32":
+        # no float comparison is pushed there (ConnectorX; SQLite on Windows): the read
+        # meets the integer
+        for predicate in [pl.col("x") == big, pl.col("x") < 2]:
+            with pytest.raises(errors):
+                lf.filter(predicate).collect()
+        assert "WHERE" not in planned_sql(lf.filter(pl.col("x") == big))
+        return
     # the rows it doesn't satisfy are read: its true value isn't `2.0**53`
     for predicate, expected in [
         (pl.col("x") == big, []),
@@ -1245,6 +1253,44 @@ def test_scan_sqlite_connectorx_quotes_and_backslashes(tmp_path: Path) -> None:
         assert lf.filter(pl.col("s") == v).collect()["id"].to_list() == [i], v
         got = lf.filter(pl.col("s").str.contains(v, literal=True)).collect()
         assert i in got["id"].to_list(), v
+
+
+@pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
+def test_scan_sqlite_float_filters_find_every_real(tmp_path: Path, driver: str) -> None:
+    # ConnectorX's bundled SQLite, and the one of Python on Windows (built without
+    # `long double`), parse a float literal inexactly (exponents beyond +-85): no float
+    # comparison is pushed there, and no range cuts on a real key
+    _importorskip_sqlite_driver(driver)
+    values = [1.989032661366619e244, -3.4e-130, 2.5e120, 1e-200, 0.1, 1.5, 7.0e300]
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, x REAL)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", list(enumerate(values)))
+        conn.commit()
+    lf = pl.scan_database("t", f"sqlite:///{path}", driver=driver)
+    for i, v in enumerate(values):
+        assert lf.filter(pl.col("x") == v).collect()["id"].to_list() == [i], v
+        assert i in lf.filter(pl.col("x") >= v).collect()["id"].to_list(), v
+    got = lf.filter(pl.col("x").is_in(values)).collect()
+    assert sorted(got["id"].to_list()) == list(range(len(values)))
+    parts = (
+        pl.scan_database(
+            "t", f"sqlite:///{path}", driver=driver, partition_on="x", partition_num=3
+        )
+        if driver != "connectorx" and sys.platform != "win32"
+        else None
+    )
+    if parts is not None:
+        assert sorted(parts.collect()["id"].to_list()) == list(range(len(values)))
+    else:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="float literals"):
+            pl.scan_database(
+                "t",
+                f"sqlite:///{path}",
+                driver=driver,
+                partition_on="x",
+                partition_num=3,
+            ).collect()
 
 
 @pytest.mark.parametrize("driver", _SQLITE_DRIVERS)
@@ -1400,10 +1446,12 @@ def test_scan_sqlite_partition_over_a_user_function(tmp_path: Path) -> None:
             lf = pl.scan_database(query, live, partition_on="id", partition_num=4)
             with pytest.raises(pl.exceptions.InvalidOperationError, match="myrand"):
                 lf.collect()
+        # a user's function is refused whatever its label (`deterministic=True` too)
         lf = pl.scan_database(
             "SELECT id, twice(id) AS d FROM t", live, partition_on="d", partition_num=4
         )
-        assert sorted(lf.collect()["d"].to_list()) == [2 * i for i in range(200)]
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="twice"):
+            lf.collect()
         # a temporary view over it, scanned as a table
         live.execute("CREATE TEMP VIEW uv AS SELECT id, myrand() AS r FROM t")
         with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
@@ -1472,16 +1520,132 @@ def test_scan_duckdb_volatile_views(tmp_path: Path) -> None:
         lf = pl.scan_database(source, uri, partition_on="id", partition_num=4)
         with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
             lf.collect()
+    # (a user's macro is refused whatever its body: a function is not in the allowlist)
     lf = pl.scan_database(
         "SELECT id, twice(id) AS d FROM ids", uri, partition_on="d", partition_num=4
     )
-    assert sorted(lf.collect()["d"].to_list()) == [2 * i for i in range(300)]
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="twice"):
+        lf.collect()
     df = pl.scan_database("v", uri).filter(pl.col("r") > 0.5).collect()
     assert (df["r"] > 0.5).all()
     with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
         pl.scan_database("v", uri, partition_on="id", partition_num=4).collect()
     lf = pl.scan_database("c", uri, partition_on="id", partition_num=4)
     assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+
+
+def test_scan_duckdb_collapsing_over_views_and_same_named_tables(
+    tmp_path: Path,
+) -> None:
+    # the collation lookup read `duckdb_tables()` only (no views: every GROUP BY over a
+    # view was refused) and matched by name across schemas and databases, taking the
+    # first row
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    conn.execute("CREATE TABLE t AS SELECT range AS id, 'a' AS s FROM range(300)")
+    conn.execute("CREATE VIEW v AS SELECT id, s FROM t")
+    conn.execute("CREATE SCHEMA sc")
+    conn.execute("CREATE TABLE sc.t (id INTEGER, s VARCHAR COLLATE NOCASE)")
+    conn.execute("CREATE VIEW sc.nv AS SELECT id, s FROM sc.t")
+    conn.execute(f"ATTACH '{tmp_path / 'o.duckdb'}' AS o")
+    conn.execute("CREATE TABLE o.t (id INTEGER, s VARCHAR COLLATE NOCASE)")
+
+    def scan(source: str) -> pl.LazyFrame:
+        return pl.scan_database(source, conn, partition_on="id", partition_num=4)
+
+    for source in [
+        "SELECT id, count(*) AS n FROM v GROUP BY id",
+        "SELECT DISTINCT id, s FROM v",
+        # the table of the schema and database named, not another of its name
+        "SELECT id, count(*) AS n FROM main.t GROUP BY id",
+        "SELECT id, count(*) AS n FROM t GROUP BY id",
+    ]:
+        assert sorted(scan(source).collect()["id"].to_list()) == list(range(300)), (
+            source
+        )
+    # a collating table (through a view too) still refuses
+    for source in [
+        "SELECT id, s FROM sc.t GROUP BY id, s",
+        "SELECT id, s FROM sc.nv GROUP BY id, s",
+        "SELECT id, s FROM o.main.t GROUP BY id, s",
+    ]:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="collation"):
+            scan(source).collect()
+
+
+def test_scan_sqlite_collation_of_a_table_in_an_attached_database(
+    tmp_path: Path,
+) -> None:
+    # the collation lookup read `temp` and `main` only
+    with closing(sqlite3.connect(tmp_path / "o.db")) as other:
+        other.execute("CREATE TABLE ci (id INTEGER, s TEXT COLLATE NOCASE)")
+        other.execute("CREATE TABLE pl (id INTEGER, s TEXT)")
+        other.executemany(
+            "INSERT INTO pl VALUES (?, ?)", [(i, "a") for i in range(300)]
+        )
+        other.executemany("INSERT INTO ci VALUES (?, ?)", [(1, "a"), (2, "A")])
+        other.commit()
+    conn = sqlite3.connect(tmp_path / "m.db", check_same_thread=False)
+    try:
+        conn.execute("CREATE TABLE plain (id INTEGER, s TEXT)")
+        conn.executemany(
+            "INSERT INTO plain VALUES (?, ?)", [(i, "a") for i in range(300)]
+        )
+        conn.execute(f"ATTACH '{tmp_path / 'o.db'}' AS o")
+        lf = pl.scan_database(
+            "SELECT s, count(*) AS id FROM o.ci GROUP BY s",
+            conn,
+            partition_on="id",
+            partition_num=2,
+        )
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="collation"):
+            lf.collect()
+        lf = pl.scan_database(
+            "SELECT s, count(*) AS id FROM plain GROUP BY s, id",
+            conn,
+            partition_on="id",
+            partition_num=2,
+        )
+        assert lf.collect().height == 300
+        # a table of the attached database that collates nothing is read as one
+        lf = pl.scan_database(
+            "SELECT s, count(*) AS id FROM o.pl GROUP BY s, id",
+            conn,
+            partition_on="id",
+            partition_num=2,
+        )
+        assert lf.collect().height == 300
+    finally:
+        conn.close()
+
+
+def test_scan_duckdb_generated_columns_and_ambiguous_names(tmp_path: Path) -> None:
+    # a relation counts only on proof; a virtual column that calls random() makes the
+    # table not repeatable; names `lower()` folds together are not told apart
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "t.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE gen (id INTEGER, "
+            "k INTEGER GENERATED ALWAYS AS ((random() * 1000)::INTEGER) VIRTUAL)"
+        )
+        conn.execute("INSERT INTO gen SELECT range FROM range(300)")
+        conn.execute(
+            "CREATE TABLE okgen (id INTEGER, "
+            "k INTEGER GENERATED ALWAYS AS (id % 7) VIRTUAL)"
+        )
+        conn.execute("INSERT INTO okgen SELECT range FROM range(300)")
+        conn.execute("CREATE TABLE ids AS SELECT range AS id FROM range(300)")
+        conn.execute('CREATE VIEW "V\u00e9" AS SELECT id, random() AS r FROM ids')
+        conn.execute('CREATE VIEW "v\u00c9" AS SELECT id FROM ids')
+    uri = f"duckdb:///{path}"
+    for source, key in [("gen", "k"), ("gen", "id"), ('"V\u00e9"', "id")]:
+        lf = pl.scan_database(source, uri, partition_on=key, partition_num=4)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
+    for key in ["k", "id"]:
+        lf = pl.scan_database("okgen", uri, partition_on=key, partition_num=4)
+        assert sorted(lf.collect()["id"].to_list()) == list(range(300))
 
 
 def test_scan_query_with_order_by_is_not_partitioned(tmp_path: Path) -> None:
@@ -2200,8 +2364,57 @@ def test_scan_now_dependent_query_isnt_partitioned(shop_uri: str) -> None:
         partition_on="id",
         partition_num=4,
     )
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="current time"):
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
         lf.collect()
+
+
+@pytest.mark.parametrize("text", ["now", "Today", "yesterday", "tomorrow"])
+def test_scan_params_naming_a_time_make_the_query_volatile(
+    shop_uri: str, text: str
+) -> None:
+    # a bound `'now'` cast to a timestamp is the statement's clock, which the SQL
+    # doesn't show: each partition would bind another
+    for kwargs in (
+        {"partition_on": "id", "partition_num": 4},
+        {"partition_predicates": ["id < 2", "id >= 2"]},
+    ):
+        lf = pl.scan_database(
+            "SELECT id, datetime(?) AS t FROM orders",
+            shop_uri,
+            params=[text],
+            driver="sqlite3",
+            **kwargs,  # type: ignore[arg-type]
+        )
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
+    # without partitioning, or with a text that names no time, nothing changes
+    one = pl.scan_database(
+        "SELECT id, datetime(?) AS t FROM orders",
+        shop_uri,
+        params=[text],
+        driver="sqlite3",
+    )
+    assert one.collect().height > 0
+    fixed = pl.scan_database(
+        "SELECT id, ? AS t FROM orders",
+        shop_uri,
+        params=["nowhere"],
+        driver="sqlite3",
+        partition_on="id",
+        partition_num=4,
+    )
+    assert "partitions: 4" in fixed.explain()
+    # a text that merely contains the word is no time
+    for harmless in ["Now Corp", "today's special", "Tomorrowland"]:
+        corp = pl.scan_database(
+            "SELECT id, ? AS t FROM orders",
+            shop_uri,
+            params=[harmless],
+            driver="sqlite3",
+            partition_on="id",
+            partition_num=4,
+        )
+        assert "partitions: 4" in corp.explain(), harmless
 
 
 def test_scan_duckdb_session_null_order(tmp_path: Path) -> None:
@@ -2621,20 +2834,12 @@ def test_scan_duckdb_volatility_through_ctes_and_macros(tmp_path: Path) -> None:
         lf = pl.scan_database(query, uri, partition_on="r", partition_num=4)
         with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
             lf.collect()
-    lf = pl.scan_database("SELECT * FROM dm()", uri, partition_on="r", partition_num=4)
-    assert sorted(lf.collect()["id"].to_list()) == list(range(1000))
-    # a scalar macro whose body starts like a query's keyword is still an expression
-    with duckdb.connect(path) as conn:
-        conn.execute("CREATE MACRO h(x) AS from_base64(x)")
-    lf = pl.scan_database(
-        "SELECT id, h('AA==') AS p FROM ids", uri, partition_on="id", partition_num=4
-    )
-    assert lf.collect().height == 1000
-    # a built-in table function is stable
-    lf = pl.scan_database(
-        "SELECT * FROM range(100) t(id)", uri, partition_on="id", partition_num=2
-    )
-    assert sorted(lf.collect()["id"].to_list()) == list(range(100))
+    # a stable table macro and a built-in table function are not proven either: any
+    # table function is refused
+    for query in ["SELECT * FROM dm()", "SELECT * FROM range(100) t(id)"]:
+        lf = pl.scan_database(query, uri, partition_on="id", partition_num=2)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
 
 
 def test_scan_sqlite_cte_naming_itself_is_recursive(tmp_path: Path) -> None:
@@ -3212,9 +3417,16 @@ def test_scan_duckdb_macros_of_operators_and_built_ins_the_query_doesnt_name(
         lf = pl.scan_database(query, uri, partition_on="id", partition_num=4)
         return sorted(lf.collect()["id"].to_list())
 
-    # no such macro: the sources are as repeatable as before (`SELECT *` too)
-    for query in [*queries.values(), "SELECT * FROM ids"]:
-        assert partitioned(query) == list(range(300))
+    # no such macro: the sources are as repeatable as before (`SELECT *` too); a list
+    # comprehension isn't in the allowlist
+    for key, query in [*queries.items(), ("", "SELECT * FROM ids")]:
+        if key == "list_apply":
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="partitioned"
+            ):
+                partitioned(query)
+        else:
+            assert partitioned(query) == list(range(300))
     # a macro that is stable doesn't matter
     with duckdb.connect(path) as conn:
         conn.execute('CREATE MACRO "+"(a, b) AS a - (0 - b)')
@@ -3465,8 +3677,10 @@ def test_scan_duckdb_views_with_lambdas(tmp_path: Path) -> None:
     lf = pl.scan_database("v", uri).filter(pl.col("id") < 10)
     assert "WHERE" in _sql_of(lf)
     assert lf.collect().height == 10
+    # (list functions and lambdas aren't in the allowlist: the view isn't proven)
     lf = pl.scan_database("v", uri, partition_on="id", partition_num=4)
-    assert sorted(lf.collect()["id"].to_list()) == list(range(1000))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+        lf.collect()
     # a filter on a column of `random()` is run in the database too: DuckDB filters the
     # values the view returns, as Postgres does (SQLite and MySQL call it again)
     lf = pl.scan_database("vr", uri).filter(pl.col("r") < 0.5)
@@ -5567,6 +5781,119 @@ def test_scan_sqlite_union_of_scans_differing_in_dtype_parameters(
                 lfs, optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
             )
             assert [df.schema["x"] for df in out] == [a, b], how
+
+
+def test_scan_sqlite_text_key_read_as_int_is_not_range_partitioned(
+    tmp_path: Path,
+) -> None:
+    # SQLite compares a TEXT column as text ('50' > '100'): integer cuts would
+    # overlap
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (k TEXT, v INTEGER)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(str(i), i) for i in range(300)]
+        )
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
+        pl.scan_database(
+            "t",
+            uri,
+            schema_overrides={"k": pl.Int64},
+            partition_on="k",
+            partition_num=6,
+            partition_range=(0, 300),
+        ).collect()
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
+        pl.scan_database(
+            "t", uri, schema_overrides={"k": pl.Int64}, order_by="k"
+        ).collect()
+    # as strings, and with an automatic partitioning, it reads whole
+    df = pl.scan_database("t", uri, schema_overrides={"k": pl.Int64}).collect()
+    assert df.height == 300
+
+
+def test_scan_sqlite_live_text_factory_bytes_reads_reals_exactly(
+    tmp_path: Path,
+) -> None:
+    # the exact-real marker reached the user on a connection returning text as
+    # bytes
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (id INTEGER, x)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(1, 0.1), (2, "abc"), (3, 2.5)]
+        )
+        conn.commit()
+    with closing(sqlite3.connect(path, check_same_thread=False)) as conn:
+        conn.text_factory = bytes
+        lf = pl.scan_database("t", conn)
+        assert lf.collect()["x"].to_list() == ["0.1", "abc", "2.5"]
+        assert lf.filter(pl.col("x") == "0.1").collect()["id"].to_list() == [1]
+
+
+def _duckdb_file(tmp_path: Any) -> str:
+    duckdb = pytest.importorskip("duckdb")
+    path = str(tmp_path / "volatile.duckdb")
+    with duckdb.connect(path) as conn:
+        conn.execute("CREATE TABLE l AS SELECT i AS id, i AS t FROM range(1, 401) r(i)")
+        # tied right rows: the ASOF match is any of them
+        conn.execute(
+            "CREATE TABLE r AS SELECT i AS rid, (i // 2) * 2 AS t, i AS v "
+            "FROM range(1, 401) r(i)"
+        )
+        conn.execute(
+            "CREATE TABLE f AS SELECT i % 100 AS g, i * 0.1 AS x FROM range(1, 401) r(i)"
+        )
+    return path
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "SELECT l.id, r.v AS k FROM l ASOF JOIN r ON l.t >= r.t",
+        "SELECT l.id, r.v AS k FROM l POSITIONAL JOIN r",
+    ],
+)
+def test_duckdb_row_picking_joins_are_not_partitioned(
+    tmp_path: Any, source: str
+) -> None:
+    # which right row an ASOF join takes among ties, and which rows a
+    # POSITIONAL join pairs, change from run to run and with a pushed filter
+    path = _duckdb_file(tmp_path)
+    uri = f"duckdb:///{path}"
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="can't be partitioned"
+    ):
+        pl.scan_database(source, uri, partition_on="id", partition_num=4).collect()
+
+
+def test_duckdb_positional_join_filters_after_the_read(tmp_path: Any) -> None:
+    # a filter pushed into the database changes which rows a positional join pairs
+    path = _duckdb_file(tmp_path)
+    source = "SELECT l.id, r.v AS k FROM l POSITIONAL JOIN r"
+    lf = pl.scan_database(source, f"duckdb:///{path}").filter(pl.col("k") < 100)
+    assert "filters 1/1" not in lf.explain()
+    df = lf.collect()
+    assert df.height == 99
+    assert (df["id"] == df["k"]).all()
+
+
+def test_duckdb_float_sum_is_not_a_partition_key(tmp_path: Any) -> None:
+    # a float sum differs in its last bits between runs; an exact one doesn't
+    path = _duckdb_file(tmp_path)
+    uri = f"duckdb:///{path}"
+    source = "SELECT g, sum(x) AS k, count(*) AS n FROM f GROUP BY g"
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="can't be partitioned"
+    ):
+        pl.scan_database(source, uri, partition_on="k", partition_num=4).collect()
+    df = pl.scan_database(source, uri, partition_on="g", partition_num=4).collect()
+    assert df.height == 100
+    exact = "SELECT g, sum(CAST(x AS DECIMAL(18, 1))) AS k FROM f GROUP BY g"
+    df = pl.scan_database(exact, uri, partition_on="g", partition_num=4).collect()
+    assert df.height == 100
 
 
 def test_negative_slice_over_a_table_changed_after_the_count_fails_loudly(

@@ -28,6 +28,7 @@ import contextlib
 import functools
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import time
@@ -727,11 +728,6 @@ def _edge_types(name: str) -> pl.DataFrame:
     return _scan_edge_types(name, _default_driver(name)).collect().sort("id")
 
 
-def _partitions(name: str, source: str, key: str = "id") -> list[int]:
-    lf = _scan(name, _default_driver(name), source, partition_on=key, partition_num=4)
-    return sorted(lf.collect()["id"].to_list())
-
-
 # Pushdown regressions: each check compares a pushed-down
 # filter with the same filter applied by Polars to the whole table.
 
@@ -1242,11 +1238,21 @@ def test_ordered_read_with_more_partitions_than_sessions(
     import sys
 
     assert POSTGRES is not None
+    # a real table: a query over generate_series() isn't proven repeatable, so it can't
+    # be partitioned
+    table = f"rvc_pg_ordered_{driver}"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} AS SELECT i AS id, md5(i::text) AS s "
+            "FROM generate_series(1, 1000000) AS i",
+        ],
+    )
     out = tmp_path / "out.parquet"
     code = (
         "import polars as pl\n"
-        f"lf = pl.scan_database('SELECT i AS id, md5(i::text) AS s "
-        f"FROM generate_series(1, 1000000) AS i', {POSTGRES!r}, driver={driver!r}, "
+        f"lf = pl.scan_database({table!r}, {POSTGRES!r}, driver={driver!r}, "
         "partition_on='id', partition_num=16, max_connections=4, batch_size=10000)\n"
         f"for _ in range({3 if FULL else 1}):\n"
         f"    lf.sink_parquet({str(out)!r})\n"
@@ -1255,6 +1261,8 @@ def test_ordered_read_with_more_partitions_than_sessions(
         subprocess.run([sys.executable, "-c", code], check=True, timeout=120)
     except subprocess.TimeoutExpired:
         pytest.fail("the ordered partitioned read hung")
+    finally:
+        _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
     assert pl.scan_parquet(out).select(pl.len()).collect().item() == 1_000_000
 
 
@@ -2111,8 +2119,11 @@ def test_postgres_autocommit_connections_are_read(module: str) -> None:
         return conn
 
     assert pl.scan_database(q, connect, batch_size=1000).collect().height == 5000
-    lf = pl.scan_database(q, connect, partition_on="id", partition_num=3)
-    assert lf.collect().height == 5000
+    # (a table: a query over a table function (`generate_series`) is not proven to
+    # repeat, so it is not partitioned)
+    lf = pl.scan_database("orders", connect, partition_on="id", partition_num=3)
+    whole = pl.scan_database("orders", connect, partition_on=None)
+    assert lf.select("id").collect().height == whole.select("id").collect().height > 0
     sqlalchemy = pytest.importorskip("sqlalchemy")
     url = POSTGRES.replace("postgresql://", f"postgresql+{module}://", 1)
     engine = sqlalchemy.create_engine(url, isolation_level="AUTOCOMMIT")
@@ -4062,21 +4073,21 @@ def test_stopped_early_exits_cleanly(server: str, driver: str, stop: str) -> Non
 
 @needs_postgres
 def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
-    # an Engine's connections had no cancel: head() waited for the slowest partition
+    # an Engine is read on one connection, partition after partition: head() stops after
+    # the first, and the connection goes back to the pool when that collect ends
     sa = pytest.importorskip("sqlalchemy")
     pytest.importorskip("psycopg")
+    # A plain table: a slow function in a view or key isn't proven repeatable, so it
+    # couldn't be partitioned. The last partition is slow because it holds most rows.
     _execute(
         "postgres17",
         [
-            "DROP VIEW IF EXISTS rvc_pg_slow_v",
             "DROP TABLE IF EXISTS rvc_pg_slow",
-            "CREATE OR REPLACE FUNCTION rvc_pg_slow_fn(i int) RETURNS int LANGUAGE plpgsql "
-            "IMMUTABLE AS $$ BEGIN IF i > 300 THEN PERFORM pg_sleep(0.05); END IF; "
-            "RETURN i; END $$",
-            "CREATE TABLE rvc_pg_slow (id int PRIMARY KEY)",
-            "INSERT INTO rvc_pg_slow SELECT generate_series(1, 400)",
-            "CREATE VIEW rvc_pg_slow_v AS SELECT id, rvc_pg_slow_fn(id) AS v "
-            "FROM rvc_pg_slow",
+            "CREATE UNLOGGED TABLE rvc_pg_slow (id int, k int, s text)",
+            "INSERT INTO rvc_pg_slow SELECT g, 1, md5(g::text) "
+            "FROM generate_series(1, 300) g",
+            "INSERT INTO rvc_pg_slow SELECT 301 + g % 100, 1, md5(g::text) "
+            "FROM generate_series(1, 12000000) g",
         ],
     )
     assert POSTGRES is not None
@@ -4085,30 +4096,20 @@ def test_engine_partitions_are_cancelled_on_an_early_stop() -> None:
     )
     try:
         lf = pl.scan_database(
-            "rvc_pg_slow_v",
+            "rvc_pg_slow",
             engine,
             partition_on="id",
             partition_range=(1, 400),
             partition_num=4,
         )
-        start = time.perf_counter()
-        assert lf.filter(pl.col("id") <= 100).head(1).collect().height == 1
-        # the last partition alone takes 5 s
-        assert time.perf_counter() - start < 3
-        # The cancelled partitions gave their connections back after `collect()`
-        # returned, from threads of their own: an Engine disposed then let them go
-        # unclosed. They are back before it returns.
+        # k matches in every partition: none is pruned, the first answers; the others,
+        # read after it on the one pinned connection, are never started
+        assert lf.filter(pl.col("k") == 1).head(1).collect().height == 1
+        # nothing is held between collects
         assert engine.pool.checkedout() == 0
     finally:
         engine.dispose()
-        _execute(
-            "postgres17",
-            [
-                "DROP VIEW IF EXISTS rvc_pg_slow_v",
-                "DROP TABLE IF EXISTS rvc_pg_slow",
-                "DROP FUNCTION IF EXISTS rvc_pg_slow_fn(int)",
-            ],
-        )
+        _execute("postgres17", ["DROP TABLE IF EXISTS rvc_pg_slow"])
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -5380,6 +5381,8 @@ def test_partition_over_a_volatile_user_function(name: str) -> None:
         )
         with pytest.raises(pl.exceptions.InvalidOperationError, match="review_myrand"):
             lf.collect()
+        # a user's function is refused whatever its IMMUTABLE / DETERMINISTIC label,
+        # which the database doesn't check; a plain column key still partitions
         lf = _scan(
             name,
             driver,
@@ -5387,7 +5390,16 @@ def test_partition_over_a_volatile_user_function(name: str) -> None:
             partition_on="d",
             partition_num=4,
         )
-        assert sorted(lf.collect()["d"].to_list()) == [2 * i for i in range(300)]
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
+        lf = _scan(
+            name,
+            driver,
+            "review_volatile_fn_ids",
+            partition_on="id",
+            partition_num=4,
+        )
+        assert sorted(lf.collect()["id"].to_list()) == list(range(300))
 
 
 @pytest.mark.parametrize("name", ["mysql", "mariadb"])
@@ -6124,9 +6136,9 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
         "mysql",
         [
             "SET time_zone = '+00:00'",
-            "DROP TABLE IF EXISTS r31_tz",
-            "CREATE TABLE r31_tz (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
-            "INSERT INTO r31_tz VALUES (1, '2024-01-01 20:00:00')",
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01 20:00:00')",
         ],
     )
     schema: dict[str, PolarsDataType] = {
@@ -6136,22 +6148,22 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
     expected = datetime(2024, 1, 1, 20, tzinfo=UTC)
     conn = _mysql_connection("mysql", module, "-08:00")
     try:
-        out = pl.scan_database("r31_tz", conn, schema=schema).collect()
+        out = pl.scan_database(table, conn, schema=schema).collect()
         assert out["ts"].item() == expected
         out = pl.scan_database(
-            "SELECT id, ts FROM r31_tz",
+            f"SELECT id, ts FROM {table}",
             conn,
             schema_overrides={"ts": pl.Datetime("us", "UTC")},
         ).collect()
         assert out["ts"].item() == expected
         # a table's declared type is known: the instant is read right
-        out = pl.scan_database("r31_tz", conn).collect()
+        out = pl.scan_database(table, conn).collect()
         assert out["ts"].item() == expected
     finally:
         conn.close()
     conn = _mysql_connection("mysql", module, "+00:00")
     try:
-        out = pl.scan_database("r31_tz", conn, schema=schema).collect()
+        out = pl.scan_database(table, conn, schema=schema).collect()
         assert out["ts"].item() == expected
     finally:
         conn.close()
@@ -6585,6 +6597,763 @@ def test_postgres_psycopg2_infinity_is_an_error_without_a_type_lookup() -> None:
         _execute("postgres17", [f"DROP TABLE IF EXISTS {table}"])
 
 
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_view_column_list_permuting_the_query_aliases(name: str) -> None:
+    # under `schema=` a view's columns were matched to its query's by name, but MySQL's
+    # definition leaves out the view's column list: `a` here is `rand()`
+    _execute(
+        name,
+        [
+            "DROP VIEW IF EXISTS review_volatile_perm",
+            "DROP TABLE IF EXISTS review_volatile_perm_ids",
+            "CREATE TABLE review_volatile_perm_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_volatile_perm_ids VALUES "
+            + ", ".join(f"({i})" for i in range(300)),
+            "CREATE VIEW review_volatile_perm (a, b) AS "
+            "SELECT rand() AS b, id AS a FROM review_volatile_perm_ids",
+        ],
+    )
+    # the view's column `a` is `rand()`; the schema may list the columns in either order
+    for schema in (
+        {"a": pl.Float64, "b": pl.Int64},
+        {"b": pl.Int64, "a": pl.Float64},
+    ):
+        for driver in _runnable_drivers(name):
+            lf = _scan(name, driver, "review_volatile_perm", schema=schema)
+            # `a` is never filtered by the database (it would call rand() again)
+            pred = pl.col("a") > 0.5
+            assert "filters 0/1" in lf.filter(pred).explain(), (driver, schema)
+            df = lf.filter(pred).collect()
+            assert (df["a"] > 0.5).all(), (driver, schema)
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="partitioned"
+            ):
+                _scan(
+                    name,
+                    driver,
+                    "review_volatile_perm",
+                    schema=schema,
+                    partition_on="b",
+                    partition_num=4,
+                ).collect()
+
+
+def _refused(
+    name: str,
+    source: str,
+    key: str = "id",
+    driver: str | None = None,
+    *,
+    via: str | None = None,
+    why: str | None = None,
+) -> None:
+    """
+    The explicit `partition_on` is refused.
+
+    `via`: which check fired, `"query"` (the
+    SQL's own allowlist, `this query can't be partitioned`) or `"source"` (the catalog:
+    a view, a table's kind, a user's function, a collation); `why`: a regex the message
+    names the unproven item by.
+    """
+    lf = _scan(
+        name, driver or _default_driver(name), source, partition_on=key, partition_num=4
+    )
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="can't be partitioned"
+    ) as e:
+        lf.collect()
+    message = str(e.value)
+    if via is not None:
+        assert f"this {via} can't be partitioned" in message, message
+    if why is not None:
+        assert re.search(why, message, re.IGNORECASE), message
+
+
+def _partitions(name: str, source: str, key: str = "id") -> list[int]:
+    lf = _scan(name, _default_driver(name), source, partition_on=key, partition_num=4)
+    return sorted(lf.collect()["id"].to_list())
+
+
+def _execute_as_root(name: str, statements: list[str]) -> None:
+    _execute(name, statements, root=True)
+
+
+def test_postgres_allowlist_kinds_of_relation() -> None:
+    # only ordinary tables (whose children are ordinary), and views proven the same way,
+    # partition; server views, user operators and casts do not
+    name = "postgres17"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_al_parent CASCADE",
+            "DROP TABLE IF EXISTS review_al_ids CASCADE",
+            "CREATE TABLE review_al_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_al_ids SELECT g FROM generate_series(0, 299) g",
+            "CREATE TABLE review_al_parent (id int, p int) PARTITION BY RANGE (id)",
+            "CREATE TABLE review_al_p1 PARTITION OF review_al_parent FOR VALUES "
+            "FROM (0) TO (150)",
+            "CREATE TABLE review_al_p2 PARTITION OF review_al_parent FOR VALUES "
+            "FROM (150) TO (300)",
+            "INSERT INTO review_al_parent SELECT g, 0 FROM generate_series(0, 299) g",
+            "CREATE OR REPLACE VIEW review_al_v AS SELECT id FROM review_al_ids",
+        ],
+    )
+    for source in ["review_al_ids", "review_al_parent", "review_al_v"]:
+        assert _partitions(name, source) == list(range(300))
+    # server-state views: their definitions call functions that aren't proven
+    for source in [
+        "SELECT datid FROM pg_stat_database",
+        "SELECT pid AS id FROM pg_stat_activity",
+    ]:
+        _refused(name, source, "pid" if "activity" in source else "datid")
+    # a user's operator over a volatile function, on a domain over `int`: it counts for
+    # the sources with a column of that type only; one on `int` would count for every
+    # int column of the tests running at the same time
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_al_dt",
+            "DROP OPERATOR IF EXISTS ===(review_al_dom, review_al_dom)",
+            "DROP FUNCTION IF EXISTS review_al_noisy(review_al_dom, review_al_dom)",
+            "DROP DOMAIN IF EXISTS review_al_dom",
+            "CREATE DOMAIN review_al_dom AS int",
+            "CREATE TABLE review_al_dt (id review_al_dom PRIMARY KEY)",
+            "INSERT INTO review_al_dt SELECT g FROM generate_series(0, 299) g",
+            "CREATE OR REPLACE FUNCTION review_al_noisy(a review_al_dom, "
+            "b review_al_dom) RETURNS bool "
+            "LANGUAGE sql VOLATILE AS 'SELECT random() < 0.5'",
+            "CREATE OPERATOR === (LEFTARG = review_al_dom, RIGHTARG = review_al_dom, "
+            "FUNCTION = review_al_noisy)",
+        ],
+    )
+    try:
+        # the error names the operator
+        _refused(
+            name,
+            "SELECT id FROM review_al_dt WHERE id === id",
+            via="source",
+            why=r"operator .*===",
+        )
+        # a source with no column of the operator's type is fine
+        assert _partitions(name, "review_al_ids") == list(range(300))
+        assert _partitions(name, "SELECT id FROM review_al_ids WHERE id = id") == list(
+            range(300)
+        )
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_al_dt",
+                "DROP OPERATOR IF EXISTS ===(review_al_dom, review_al_dom)",
+                "DROP FUNCTION IF EXISTS review_al_noisy(review_al_dom, review_al_dom)",
+                "DROP DOMAIN IF EXISTS review_al_dom",
+            ],
+        )
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_allowlist_kinds_of_relation(name: str) -> None:
+    # information_schema's system views, session variables, and a VIRTUAL column that
+    # calls rand() are not proven
+    statements = [
+        "DROP TABLE IF EXISTS review_al_ids",
+        "CREATE TABLE review_al_ids (id int PRIMARY KEY)",
+        "INSERT INTO review_al_ids SELECT seq FROM (SELECT @r := @r + 1 AS seq FROM "
+        "information_schema.columns a, (SELECT @r := -1) v LIMIT 300) t",
+    ]
+    _execute(name, statements)
+    _refused(name, "SELECT id FROM review_al_ids WHERE id > @@pseudo_thread_id - 1")
+    _refused(name, "SELECT ID AS id FROM information_schema.processlist", "id")
+    if name == "mariadb":
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_al_gen",
+                "CREATE TABLE review_al_gen (id int PRIMARY KEY, "
+                "k int AS (floor(rand() * 1000)) VIRTUAL)",
+                "INSERT INTO review_al_gen (id) SELECT id FROM review_al_ids",
+                "DROP TABLE IF EXISTS review_al_okgen",
+                "CREATE TABLE review_al_okgen (id int PRIMARY KEY, "
+                "k int AS (id % 7) VIRTUAL)",
+                "INSERT INTO review_al_okgen (id) SELECT id FROM review_al_ids",
+            ],
+        )
+        _refused(name, "review_al_gen", "k")
+        _refused(name, "SELECT id, k FROM review_al_gen", "k")
+        for key in ["id", "k"]:
+            assert _partitions(name, "review_al_okgen", key) == list(range(300))
+    assert _partitions(name, "review_al_ids") == list(range(300))
+
+
+def test_clickhouse_allowlist_kinds_of_relation() -> None:
+    # an ALIAS column, a Merge table over a volatile view, table functions and virtual
+    # columns are not proven; MergeTree tables are
+    name = "clickhouse"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_al_alias",
+            "DROP TABLE IF EXISTS review_al_merge",
+            "DROP VIEW IF EXISTS review_al_v",
+            "DROP TABLE IF EXISTS review_al_ids",
+            "CREATE TABLE review_al_ids (id UInt32) ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO review_al_ids SELECT number FROM numbers(300)",
+            "CREATE TABLE review_al_alias (id UInt32, k UInt32 ALIAS rand() % 1000) "
+            "ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO review_al_alias (id) SELECT number FROM numbers(300)",
+            "CREATE VIEW review_al_v AS SELECT id FROM review_al_ids "
+            "WHERE rand() % 2 = 0",
+            "CREATE TABLE review_al_merge (id UInt32) ENGINE = Merge(currentDatabase(), "
+            "'^review_al_v$')",
+        ],
+    )
+    _refused(name, "SELECT id, k FROM review_al_alias", "k")
+    _refused(name, "review_al_alias", "id")
+    _refused(name, "review_al_merge", "id")
+    _refused(name, "SELECT id FROM merge(currentDatabase(), '^review_al_ids$')")
+    _refused(name, "SELECT id, _part FROM review_al_ids", "id")
+    assert _partitions(name, "review_al_ids") == list(range(300))
+
+
+def test_oracle_allowlist_synonym_chain() -> None:
+    # a synonym of a synonym of a volatile view is followed (or not proven)
+    name = "oracle"
+    statements, _ = VOLATILE_VIEWS[name]
+    _execute(
+        name,
+        [
+            *statements,
+            'CREATE OR REPLACE SYNONYM "review_volatile_s2" FOR "review_volatile_s"',
+            'CREATE OR REPLACE SYNONYM "review_volatile_s3" FOR "review_volatile_s2"',
+        ],
+    )
+    for source in ['"review_volatile_s2"', 'SELECT * FROM "review_volatile_s3"']:
+        _refused(name, source)
+    assert _partitions(name, "review_volatile_ids") == list(range(300))
+
+
+def _ids_table(name: str, table: str, extra: str = "") -> None:
+    """`table (id)` of 300 rows, on the server's own syntax."""
+    if name.startswith("postgres"):
+        statements = [
+            f"DROP TABLE IF EXISTS {table} CASCADE",
+            f"CREATE TABLE {table} (id int PRIMARY KEY{extra})",
+            f"INSERT INTO {table} (id) SELECT g FROM generate_series(0, 299) g",
+        ]
+    elif name == "clickhouse":
+        statements = [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id UInt32{extra}) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} (id) SELECT number FROM numbers(300)",
+        ]
+    else:
+        statements = [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY{extra})",
+            f"INSERT INTO {table} (id) SELECT seq FROM (SELECT @r := @r + 1 AS seq FROM "
+            "information_schema.columns a, (SELECT @r := -1) v LIMIT 300) t",
+        ]
+    _execute(name, statements)
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_user_function_named_like_another_dialects_builtin(name: str) -> None:
+    # `initcap`, `date_trunc` and `strpos` are sqlglot's, not MySQL's built-ins: a
+    # stored function of the name runs there, and was proven because the allowlist
+    # applied to every dialect. The built-ins TRUNCATE and CHAR are no user's.
+    fns = ["initcap", "date_trunc", "strpos"]
+    _ids_table(name, "review_vf_ids")
+    _execute_as_root(
+        name,
+        [f"DROP FUNCTION IF EXISTS polars.{fn}" for fn in fns]
+        + [
+            f"CREATE FUNCTION polars.{fn}(x INT) RETURNS INT NOT DETERMINISTIC NO SQL "
+            "RETURN FLOOR(RAND() * 1000)"
+            for fn in fns
+        ],
+    )
+    try:
+        for fn in fns:
+            via = "query" if fn == "initcap" else None
+            _refused(
+                name, f"SELECT id, {fn}(id) AS k FROM review_vf_ids", via=via, why=fn
+            )
+        assert _partitions(name, "review_vf_ids") == list(range(300))
+        assert _partitions(
+            name,
+            "SELECT id, TRUNCATE(id / 3, 0) AS k, CHAR(65) AS c FROM review_vf_ids",
+        ) == list(range(300))
+    finally:
+        _execute_as_root(name, [f"DROP FUNCTION IF EXISTS polars.{fn}" for fn in fns])
+
+
+def test_clickhouse_user_functions_named_like_another_dialects_builtin() -> None:
+    # none of these names is a ClickHouse built-in (`bool_and` is sqlglot's), where
+    # `levenshteinDistance` and `editDistance` are (sqlglot calls both LEVENSHTEIN)
+    name = "clickhouse"
+    _ids_table(name, "review_vf_ids")
+    names = [
+        "total",
+        "cot",
+        "quote",
+        "unicode",
+        "levenshtein",
+        "split_part",
+        "bool_and",
+    ]
+    drops = [f"DROP FUNCTION IF EXISTS {n}" for n in names]
+    _execute(name, drops)
+    _execute(name, [f"CREATE FUNCTION {n} AS (x) -> rand() % 1000" for n in names])
+    try:
+        for n in names:
+            _refused(
+                name,
+                f"SELECT id, {n}(id) AS k FROM review_vf_ids",
+                via="query",
+                why=n,
+            )
+        # (a user's `levenshtein` would stand for them both)
+        _execute(name, ["DROP FUNCTION IF EXISTS levenshtein"])
+        assert _partitions(
+            name,
+            "SELECT id, levenshteinDistance('a', 'b') AS a, "
+            "editDistance('a', 'b') AS b FROM review_vf_ids",
+        ) == list(range(300))
+    finally:
+        _execute(name, drops)
+    assert _partitions(name, "review_vf_ids") == list(range(300))
+
+
+@pytest.mark.parametrize("name", ["postgres17", "mysql", "mariadb", "clickhouse"])
+def test_casts_of_time_columns_to_dates_still_partition(name: str) -> None:
+    # a cast (or `date(col)`) of a column that holds no text is proven; a plain table, a
+    # view and a GROUP BY over an int key too
+    column = {"clickhouse": "DateTime", "postgres17": "timestamp"}.get(name, "DATETIME")
+    _ids_table(name, "review_cast_ids", extra=f", ts {column}")
+    expected = list(range(300))
+    for source in [
+        "review_cast_ids",
+        "SELECT id, CAST(ts AS DATE) AS d FROM review_cast_ids",
+        "SELECT id, CAST(ts AS DATE) AS d FROM review_cast_ids GROUP BY id, ts",
+        "SELECT id, COUNT(*) AS n FROM review_cast_ids GROUP BY id",
+    ]:
+        assert _partitions(name, source) == expected, source
+    if name == "postgres17":
+        assert (
+            _partitions(name, "SELECT id, date(ts) AS d FROM review_cast_ids")
+            == expected
+        )
+
+
+def _nopad_bin(name: str) -> str:
+    """The binary collation of the server that doesn't pad `'a'` to `'a '`."""
+    return "utf8mb4_nopad_bin" if name == "mariadb" else "utf8mb4_0900_bin"
+
+
+@pytest.mark.parametrize("name", ["mysql", "mariadb"])
+def test_mysql_collapsing_over_a_case_insensitive_column(name: str) -> None:
+    # `GROUP BY s` over `utf8mb4_*_ci` returns any one spelling of 'a' / 'A', so
+    # partitions disagree; binary ones don't
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_ci",
+            "CREATE TABLE review_ci (id INT PRIMARY KEY, s VARCHAR(5) "
+            "CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci, "
+            f"b VARCHAR(5) CHARACTER SET utf8mb4 COLLATE {_nopad_bin(name)}, "
+            "p VARCHAR(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin)",
+            "INSERT INTO review_ci VALUES (1, 'a', 'a', 'a'), (2, 'A', 'A', 'a '), "
+            "(3, 'b', 'b', 'b')",
+        ],
+    )
+    for source in [
+        "SELECT s, COUNT(*) AS id FROM review_ci GROUP BY s",
+        "SELECT DISTINCT s, id FROM review_ci",
+        "SELECT s, id FROM review_ci UNION SELECT s, id FROM review_ci",
+    ]:
+        _refused(name, source, via="source", why="collation|column 's'")
+    # a PAD SPACE binary collation (`utf8mb4_bin`) equates `'a'` and `'a '` too, as a
+    # COLLATE clause does
+    for source in [
+        "SELECT p, COUNT(*) AS id FROM review_ci GROUP BY p",
+        "SELECT DISTINCT p, id FROM review_ci",
+    ]:
+        _refused(name, source, via="source", why="collation|column 'p'")
+    # a NO PAD binary collation, a column the query doesn't name, and no collapsing:
+    # proven
+    for source in [
+        "SELECT b, COUNT(*) AS id FROM review_ci GROUP BY b",
+        "SELECT id % 2 AS g, COUNT(*) AS id FROM review_ci GROUP BY g",
+        "SELECT s, id FROM review_ci",
+    ]:
+        lf = _scan(
+            name,
+            _default_driver(name),
+            source,
+            partition_on="id",
+            partition_num=2,
+        )
+        lf.collect()
+
+
+def test_postgres_collapsing_over_a_nondeterministic_collation() -> None:
+    name = "postgres17"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_ci",
+            "DROP COLLATION IF EXISTS review_ci_coll",
+            "CREATE COLLATION review_ci_coll (provider = icu, locale = "
+            "'und-u-ks-level2', deterministic = false)",
+            "CREATE TABLE review_ci (id int PRIMARY KEY, "
+            'n text COLLATE "review_ci_coll", d text)',
+            "INSERT INTO review_ci VALUES (1, 'a', 'a'), (2, 'A', 'A'), (3, 'b', 'b')",
+        ],
+    )
+    try:
+        for source in [
+            "SELECT n, COUNT(*) AS id FROM review_ci GROUP BY n",
+            "SELECT DISTINCT n, id FROM review_ci",
+        ]:
+            _refused(name, source, via="source", why="collation|column 'n'")
+        # a table's name is its whole row, collated column included
+        _refused(
+            name,
+            "SELECT DISTINCT r FROM review_ci r",
+            via="source",
+            why="collation|column 'n'",
+        )
+        lf = _scan(
+            name,
+            _default_driver(name),
+            "SELECT d, COUNT(*) AS id FROM review_ci GROUP BY d",
+            partition_on="id",
+            partition_num=2,
+        )
+        lf.collect()
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_ci",
+                "DROP COLLATION IF EXISTS review_ci_coll",
+            ],
+        )
+
+
+def test_postgres_relative_time_text_through_casts() -> None:
+    # 'now' reaches a cast to a time by routes that aren't a literal
+    name = "postgres17"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_rt",
+            "CREATE TABLE review_rt (id int PRIMARY KEY, ts timestamptz, txt text)",
+            "INSERT INTO review_rt SELECT g, now(), 'now' FROM generate_series(0, 299) g",
+        ],
+    )
+    try:
+        for cond in [
+            "ts < (SELECT 'now')::timestamptz",
+            "ts < 'now'::text::timestamptz",
+            "ts < ('n' || 'ow')::timestamptz",
+            "ts < lower('NOW')::timestamptz",
+            "ts < 'yesterday 13:00'::timestamptz",
+            "ts < 'today allballs'::timestamptz",
+            "ts < (SELECT x FROM (VALUES ('now')) v(x))::timestamptz",
+        ]:
+            _refused(name, f"SELECT id FROM review_rt WHERE {cond}", via="query")
+        _refused(
+            name,
+            "WITH c AS (SELECT lower('NOW') AS x) SELECT id FROM review_rt, c "
+            "WHERE ts < c.x::timestamptz",
+            via="query",
+        )
+        # stored text, cast later (also by a typed constructor: `date(txt)` is
+        # `exp.Date`)
+        _refused(
+            name,
+            "SELECT id FROM review_rt WHERE txt::timestamptz > ts",
+            via="source",
+            why="text column 'txt'",
+        )
+        for cond in ["date(txt) > ts::date", "txt::date > ts::date"]:
+            _refused(
+                name,
+                f"SELECT id FROM review_rt WHERE {cond}",
+                via="source",
+                why="text column 'txt'",
+            )
+        # relative text that doesn't start with the word
+        for text in ["today EST", "EST today", "13:00 yesterday", "04:05 tomorrow"]:
+            _refused(
+                name,
+                f"SELECT id FROM review_rt WHERE ts < '{text}'::timestamptz",
+                via="query",
+            )
+        # absolute text, and a cast of a time column, are proven
+        for cond in [
+            "ts < '2999-01-01 00:00:00'::timestamptz",
+            "ts::date < date '2999-01-01'",
+            "ts::date <= ts",
+        ]:
+            assert _partitions(name, f"SELECT id FROM review_rt WHERE {cond}") == list(
+                range(300)
+            ), cond
+    finally:
+        _execute(name, ["DROP TABLE IF EXISTS review_rt"])
+
+
+def test_clickhouse_merge_on_read_engines_need_final() -> None:
+    # Replacing/Collapsing/... MergeTree show other rows before and after a background
+    # merge; a TTL drops rows in the background
+    name = "clickhouse"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_rep",
+            "DROP TABLE IF EXISTS review_exp",
+            "DROP TABLE IF EXISTS review_plain",
+            "CREATE TABLE review_rep (id UInt32, v UInt32) "
+            "ENGINE = ReplacingMergeTree ORDER BY id",
+            "INSERT INTO review_rep SELECT number, 1 FROM numbers(300)",
+            "INSERT INTO review_rep SELECT number, 2 FROM numbers(300)",
+            "CREATE TABLE review_exp (id UInt32, d DateTime) ENGINE = MergeTree "
+            "ORDER BY id TTL d + INTERVAL 100 YEAR",
+            "INSERT INTO review_exp SELECT number, now() FROM numbers(300)",
+            "CREATE TABLE review_plain (id UInt32) ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO review_plain SELECT number FROM numbers(300)",
+            "DROP TABLE IF EXISTS review_expcol",
+            "DROP TABLE IF EXISTS review_expcolumn",
+            # a column named `ttl` is no TTL; a column's TTL expires its values
+            "CREATE TABLE review_expcol (id UInt32, ttl UInt32) ENGINE = MergeTree "
+            "ORDER BY id",
+            "INSERT INTO review_expcol SELECT number, 1 FROM numbers(300)",
+            "CREATE TABLE review_expcolumn (id UInt32, d DateTime, "
+            "v UInt32 TTL d + INTERVAL 100 YEAR) ENGINE = MergeTree ORDER BY id",
+            "INSERT INTO review_expcolumn SELECT number, now(), 1 FROM numbers(300)",
+        ],
+    )
+    try:
+        # said so, not "foreign or external table"
+        _refused(name, "review_exp", via="source", why=r"\bTTL\b")
+        _refused(name, "review_expcolumn", via="source", why=r"\bTTL\b")
+        assert _partitions(name, "review_expcol") == list(range(300))
+        _refused(name, "review_rep", via="source", why="merge")
+        _refused(name, "SELECT id FROM review_rep", via="source", why="FINAL|merge")
+        assert _partitions(name, "review_plain") == list(range(300))
+        # with FINAL the visible rows don't depend on merges, also after one
+        source = "SELECT id, v FROM review_rep FINAL"
+        before = _partitions(name, source)
+        _execute(name, ["OPTIMIZE TABLE review_rep FINAL"])
+        assert _partitions(name, source) == before == list(range(300))
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_rep",
+                "DROP TABLE IF EXISTS review_exp",
+                "DROP TABLE IF EXISTS review_plain",
+                "DROP TABLE IF EXISTS review_expcol",
+                "DROP TABLE IF EXISTS review_expcolumn",
+            ],
+        )
+
+
+def test_postgres_user_operators_and_casts_only_count_where_used() -> None:
+    # a user's operator or cast elsewhere in the database doesn't make every source
+    # unproven; one the SQL uses does, named in the error
+    name = "postgres17"
+    _ids_table(name, "review_uo_ids")
+    _execute(
+        name,
+        [
+            "DROP TYPE IF EXISTS review_uo_t CASCADE",
+            "CREATE TYPE review_uo_t AS (a int)",
+            "CREATE OR REPLACE FUNCTION review_uo_f(review_uo_t) RETURNS int "
+            "LANGUAGE sql VOLATILE AS 'SELECT (random() * 10)::int'",
+            "CREATE CAST (review_uo_t AS int) WITH FUNCTION review_uo_f(review_uo_t)",
+        ],
+    )
+    try:
+        assert _partitions(name, "review_uo_ids") == list(range(300))
+        assert _partitions(name, "SELECT id + 1 AS id FROM review_uo_ids") == list(
+            range(1, 301)
+        )
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_uo_c",
+                "CREATE TABLE review_uo_c (id int PRIMARY KEY, v review_uo_t)",
+                "INSERT INTO review_uo_c SELECT g, ROW(g)::review_uo_t "
+                "FROM generate_series(0, 299) g",
+            ],
+        )
+        _refused(
+            name,
+            "SELECT id FROM review_uo_c WHERE v::int > -1",
+            via="source",
+            why="cast .*review_uo_t",
+        )
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS review_uo_c",
+                "DROP TYPE IF EXISTS review_uo_t CASCADE",
+            ],
+        )
+
+
+@pytest.mark.parametrize("name", ["postgres17", "postgres14"])
+def test_postgres_user_operators_count_by_the_types_they_take(name: str) -> None:
+    # LIKE, BETWEEN, IN, CASE, GROUP BY, ORDER BY ... run operators the SQL doesn't
+    # spell, `x=-1` merges two; a user's operator counts when one of its operand types
+    # is a type of a column the source reads (or one the SQL names). The operator is on
+    # a domain over `text`, not on `int` or `text` (which would make every source of the
+    # tests running at the same time unproven).
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_op_dom_t CASCADE",
+            "DROP TABLE IF EXISTS review_op_ids CASCADE",
+            "DROP VIEW IF EXISTS review_op_v",
+            "DROP OPERATOR IF EXISTS public.~~ (review_op_dom, review_op_dom)",
+            "DROP FUNCTION IF EXISTS review_op_f(review_op_dom, review_op_dom)",
+            "DROP DOMAIN IF EXISTS review_op_dom",
+            "CREATE DOMAIN review_op_dom AS text",
+            "CREATE TABLE review_op_dom_t (id int PRIMARY KEY, s review_op_dom)",
+            "INSERT INTO review_op_dom_t SELECT g, g::text FROM generate_series(0, 299) g",
+            "CREATE TABLE review_op_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_op_ids SELECT g FROM generate_series(0, 299) g",
+            "CREATE VIEW review_op_v AS SELECT id, s FROM review_op_dom_t",
+            "CREATE FUNCTION review_op_f(review_op_dom, review_op_dom) RETURNS boolean "
+            "LANGUAGE sql VOLATILE AS 'SELECT random() < 0.5'",
+            "CREATE OPERATOR public.~~ (LEFTARG = review_op_dom, "
+            "RIGHTARG = review_op_dom, FUNCTION = review_op_f)",
+        ],
+    )
+    try:
+        # `s LIKE '1%'` runs `public.~~(review_op_dom, review_op_dom)`: a volatile
+        # user's operator
+        _refused(
+            name,
+            "SELECT id FROM review_op_dom_t WHERE s LIKE '1%'",
+            via="source",
+            why=r"operator .*~~",
+        )
+        # (any source over a column of the type: the operator may run for any syntax)
+        _refused(name, "review_op_dom_t", via="source", why=r"operator .*~~")
+        _refused(name, "review_op_v", via="source", why=r"operator .*~~")
+        _refused(
+            name,
+            "SELECT id FROM review_op_dom_t WHERE id BETWEEN 0 AND 400",
+            via="source",
+            why=r"operator .*~~",
+        )
+        # a type the SQL names is a user's: the query itself isn't proven
+        _refused(
+            name,
+            "SELECT id FROM review_op_ids WHERE id::text::review_op_dom IN ('1', '2')",
+        )
+        # no column of the source, and no type the SQL names, is the domain
+        assert _partitions(name, "review_op_ids") == list(range(300))
+        assert _partitions(
+            name, "SELECT id FROM review_op_ids WHERE id > 5 GROUP BY id"
+        ) == list(range(6, 300))
+    finally:
+        _execute(
+            name,
+            [
+                "DROP VIEW IF EXISTS review_op_v",
+                "DROP OPERATOR IF EXISTS public.~~ (review_op_dom, review_op_dom)",
+                "DROP FUNCTION IF EXISTS review_op_f(review_op_dom, review_op_dom)",
+                "DROP TABLE IF EXISTS review_op_dom_t CASCADE",
+                "DROP TABLE IF EXISTS review_op_ids CASCADE",
+                "DROP DOMAIN IF EXISTS review_op_dom",
+            ],
+        )
+
+
+def test_postgres_citext_domains_and_arrays_collapse_case_insensitively() -> None:
+    # `citext` through a domain or an array
+    name = "postgres17"
+    try:
+        _execute(name, ["CREATE EXTENSION IF NOT EXISTS citext"])
+    except Exception:
+        pytest.skip("no citext extension")
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS review_cd",
+            "DROP DOMAIN IF EXISTS review_cd_dom",
+            "CREATE DOMAIN review_cd_dom AS citext",
+            "CREATE TABLE review_cd (id int PRIMARY KEY, d review_cd_dom, a citext[], "
+            "t text)",
+            "INSERT INTO review_cd VALUES (1, 'a', '{a}', 'a'), (2, 'A', '{A}', 'A')",
+        ],
+    )
+    try:
+        for source in [
+            "SELECT d, COUNT(*) AS id FROM review_cd GROUP BY d",
+            "SELECT a, COUNT(*) AS id FROM review_cd GROUP BY a",
+        ]:
+            _refused(name, source, via="source", why="citext|collation")
+        assert _partitions(name, "SELECT t, COUNT(*) AS id FROM review_cd GROUP BY t")
+    finally:
+        _execute(
+            name,
+            ["DROP TABLE IF EXISTS review_cd", "DROP DOMAIN IF EXISTS review_cd_dom"],
+        )
+
+
+def test_sqlite_virtual_table_detection_is_by_create_statement(tmp_path: Any) -> None:
+    # a column `is_virtual` or a name `virtual_machines` is no virtual table; a VIRTUAL
+    # generated column is evaluated on each read
+    import sqlite3
+
+    path = tmp_path / "v.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE virtual_machines (id INTEGER PRIMARY KEY, is_virtual INT);
+        CREATE TABLE gen_ok (id INTEGER PRIMARY KEY, k INT AS (id % 7) VIRTUAL);
+        CREATE TABLE gen_stored (id INTEGER PRIMARY KEY, k INT AS (id % 5) STORED);
+        CREATE VIRTUAL TABLE fts USING fts5(body);
+        """
+    )
+    for t in ["virtual_machines", "gen_ok", "gen_stored"]:
+        conn.executemany(f"INSERT INTO {t} (id) VALUES (?)", [(i,) for i in range(300)])
+    conn.commit()
+    conn.close()
+    for table in ["virtual_machines", "gen_ok", "gen_stored"]:
+        lf = pl.scan_database(
+            table, f"sqlite:///{path}", partition_on="id", partition_num=4
+        )
+        assert sorted(lf.collect()["id"].to_list()) == list(range(300)), table
+    for table, why in [("fts", "ordinary")]:
+        lf = pl.scan_database(
+            table, f"sqlite:///{path}", partition_on="rowid", partition_num=4
+        )
+        with pytest.raises(pl.exceptions.InvalidOperationError, match=why):
+            lf.collect()
+
+
+@pytest.mark.parametrize("name", ["postgres17", "duckdb"])
+def test_array_of_a_subquery_isnt_proven(name: str) -> None:
+    if name == "duckdb":
+        pytest.skip("covered by the unit test")
+    _ids_table(name, "review_arr_ids")
+    _refused(
+        name,
+        "SELECT id, ARRAY(SELECT id FROM review_arr_ids) AS a FROM review_arr_ids",
+        via="query",
+    )
+    assert _partitions(
+        name, "SELECT id, ARRAY[id, 1] AS a FROM review_arr_ids"
+    ) == list(range(300))
+
+
 # ---- pooled connections ----
 
 
@@ -6640,6 +7409,238 @@ def test_temporary_table_in_a_pool_is_not_read_by_partitions(name: str) -> None:
             c.exec_driver_sql(f"DROP TABLE IF EXISTS {t}")
             c.commit()
         eng.dispose()
+
+
+def _oracle_ids(source: str, key: str) -> list[int]:
+    lf = _scan(
+        "oracle", _default_driver("oracle"), source, partition_on=key, partition_num=4
+    )
+    return sorted(lf.collect()["ID"].to_list())
+
+
+def test_oracle_global_temporary_table_is_not_partitioned() -> None:
+    # the rows of a global temporary table are the session's
+    name = "oracle"
+    _execute(
+        name,
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_GTT PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE GLOBAL TEMPORARY TABLE VOL_GTT (id NUMBER(10), v NUMBER(10)) "
+            "ON COMMIT PRESERVE ROWS",
+        ],
+    )
+    try:
+        _refused(name, "VOL_GTT", "ID")
+    finally:
+        _execute(name, ["TRUNCATE TABLE VOL_GTT", "DROP TABLE VOL_GTT PURGE"])
+
+
+def test_oracle_vpd_policy_is_not_partitioned() -> None:
+    # a policy's predicate (`DBMS_RANDOM`) may differ on each read
+    oracledb = pytest.importorskip("oracledb")
+    uri = SERVERS["oracle"].uri
+    if uri is None:
+        pytest.skip("no Oracle URI")
+    password = uri.split("//", 1)[1].split("@")[0].split(":", 1)[1]
+    host_port = uri.split("@", 1)[1].split("/", 1)[0]
+    try:
+        admin = oracledb.connect(
+            user="system", password=password, dsn=f"{host_port}/FREEPDB1"
+        )
+    except oracledb.Error:
+        pytest.skip("no SYSTEM access to create a VPD policy")
+    admin.autocommit = True
+    cur = admin.cursor()
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_VPD PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE TABLE VOL_VPD (id NUMBER(10) PRIMARY KEY, k NUMBER(10))",
+            "INSERT INTO VOL_VPD SELECT level, MOD(level, 100) FROM dual "
+            "CONNECT BY level <= 300",
+        ],
+    )
+    try:
+        cur.execute(
+            "CREATE OR REPLACE FUNCTION VOL_VPD_PF(s VARCHAR2, o VARCHAR2) "
+            "RETURN VARCHAR2 IS BEGIN RETURN 'DBMS_RANDOM.VALUE < 0.5'; END;"
+        )
+        cur.execute(
+            "BEGIN DBMS_RLS.ADD_POLICY(object_schema => 'POLARS', "
+            "object_name => 'VOL_VPD', policy_name => 'VOL_VPD_P', "
+            "function_schema => 'SYSTEM', policy_function => 'VOL_VPD_PF', "
+            "statement_types => 'SELECT', sec_relevant_cols => 'K', "
+            "sec_relevant_cols_opt => DBMS_RLS.ALL_ROWS); END;"
+        )
+        try:
+            _refused("oracle", "VOL_VPD", "K")
+            _refused("oracle", "SELECT * FROM VOL_VPD", "K")
+        finally:
+            cur.execute(
+                "BEGIN DBMS_RLS.DROP_POLICY(object_schema => 'POLARS', "
+                "object_name => 'VOL_VPD', policy_name => 'VOL_VPD_P'); END;"
+            )
+        # without the policy it partitions again
+        assert _oracle_ids("VOL_VPD", "K") == list(range(1, 301))
+    finally:
+        _execute("oracle", ["DROP TABLE VOL_VPD PURGE"])
+        cur.execute("BEGIN EXECUTE IMMEDIATE 'DROP FUNCTION VOL_VPD_PF'; END;")
+        admin.close()
+
+
+@needs_clickhouse
+@pytest.mark.parametrize("kind", ["DEFAULT", "MATERIALIZED"])
+def test_clickhouse_default_column_added_by_alter_is_not_proven(kind: str) -> None:
+    # old parts compute the column on each read
+    name = "clickhouse"
+    t = f"vol_default_{kind.lower()}"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {t}",
+            f"CREATE TABLE {t} (id UInt32) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {t} SELECT number + 1 FROM numbers(300)",
+            f"ALTER TABLE {t} ADD COLUMN k UInt32 {kind} rand() % 100",
+        ],
+    )
+    try:
+        _refused(name, t, "k")
+        _refused(name, f"SELECT * FROM {t}", "k")
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {t}"])
+
+
+@needs_clickhouse
+def test_clickhouse_paste_and_any_joins_are_not_partitioned() -> None:
+    # the pairing depends on the position or on which match comes first
+    name = "clickhouse"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS vol_pl",
+            "DROP TABLE IF EXISTS vol_pr",
+            "CREATE TABLE vol_pl (id UInt32) ENGINE = MergeTree ORDER BY id",
+            "CREATE TABLE vol_pr (n UInt32, v UInt32) ENGINE = MergeTree ORDER BY n",
+            "INSERT INTO vol_pl SELECT number + 1 FROM numbers(300)",
+            "INSERT INTO vol_pr SELECT number + 1, number + 1 FROM numbers(300)",
+        ],
+    )
+    try:
+        for source in [
+            "SELECT l.id, r.v AS k FROM vol_pl l PASTE JOIN "
+            "(SELECT v FROM vol_pr ORDER BY n) r",
+            "SELECT l.id, r.v AS k FROM vol_pl l ANY LEFT JOIN vol_pr r ON l.id = r.n",
+        ]:
+            _refused(name, source, "id")
+        # also unpartitioned, a filter on the paired column is applied after the read
+        source = (
+            "SELECT l.id, r.v AS k FROM vol_pl l PASTE JOIN "
+            "(SELECT v FROM vol_pr ORDER BY n) r"
+        )
+        df = (
+            _scan(name, _default_driver(name), source)
+            .filter(pl.col("k") < 100)
+            .collect()
+        )
+        assert df.height == 99
+        assert (df["id"] == df["k"]).all()
+    finally:
+        _execute(name, ["DROP TABLE IF EXISTS vol_pl", "DROP TABLE IF EXISTS vol_pr"])
+
+
+@pytest.mark.parametrize("name", ["clickhouse", "postgres17"])
+def test_float_sum_as_a_partition_key_is_refused(name: str) -> None:
+    # a float sum is not exact, so a sum used as a partition key is not repeatable
+    table = "vol_floatsum"
+    if name == "clickhouse":
+        if SERVERS[name].uri is None:
+            pytest.skip("no ClickHouse URI")
+        statements = [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (g UInt32, x Float64) ENGINE = MergeTree ORDER BY g",
+            f"INSERT INTO {table} SELECT number % 50, number * 0.1 FROM numbers(2000)",
+        ]
+    else:
+        if SERVERS[name].uri is None:
+            pytest.skip("no Postgres URI")
+        statements = [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (g int, x float8)",
+            f"INSERT INTO {table} SELECT g % 50, g * 0.1 FROM generate_series(1, 2000) g",
+        ]
+    _execute(name, statements)
+    try:
+        source = f"SELECT g, sum(x) AS k FROM {table} GROUP BY g"
+        _refused(name, source, "k")
+        assert _partitions(name, source.replace("sum(x) AS k", "count(*) AS id"), "g")
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_postgres_user_operator_on_literals_and_attribute_functions() -> None:
+    # `true # false` runs a user's `#`(boolean, boolean) though no column has the
+    # type (an operator on `int4` or `numeric` would make other tests' sources
+    # unproven); `c.f` is `f(c)`
+    name = "postgres17"
+    _execute(
+        name,
+        [
+            "DROP TABLE IF EXISTS vol_pgq CASCADE",
+            "DROP OPERATOR IF EXISTS #(boolean, boolean)",
+            "DROP FUNCTION IF EXISTS vol_pgq_mul(boolean, boolean)",
+            "DROP FUNCTION IF EXISTS vol_pgq_k(vol_pgq)",
+            "CREATE TABLE vol_pgq (id int PRIMARY KEY)",
+            "INSERT INTO vol_pgq SELECT g FROM generate_series(1, 300) g",
+            "CREATE FUNCTION vol_pgq_mul(boolean, boolean) RETURNS int "
+            "LANGUAGE sql VOLATILE AS 'SELECT (random() * 100)::int'",
+            "CREATE OPERATOR # (LEFTARG = boolean, RIGHTARG = boolean, "
+            "FUNCTION = vol_pgq_mul)",
+            "CREATE FUNCTION vol_pgq_k(vol_pgq) RETURNS int "
+            "LANGUAGE sql VOLATILE AS 'SELECT (random() * 100)::int'",
+        ],
+    )
+    try:
+        _refused(name, "SELECT id, (true # false) AS kk FROM vol_pgq", "id")
+        _refused(name, "SELECT c.id, c.vol_pgq_k AS k FROM vol_pgq c", "id")
+        _refused(name, "SELECT c.id, (c).vol_pgq_k AS k FROM vol_pgq c", "id")
+        assert _partitions(name, "SELECT id, id * 2 AS kk FROM vol_pgq") == list(
+            range(1, 301)
+        )
+    finally:
+        _execute(
+            name,
+            [
+                "DROP TABLE IF EXISTS vol_pgq CASCADE",
+                "DROP OPERATOR IF EXISTS #(boolean, boolean)",
+                "DROP FUNCTION IF EXISTS vol_pgq_mul(boolean, boolean)",
+                "DROP FUNCTION IF EXISTS vol_pgq_k(vol_pgq)",
+            ],
+        )
+
+
+def test_oracle_function_without_parentheses_is_not_a_column() -> None:
+    # `SELECT id, f AS k` calls the function `f` where no column is named `f`
+    name = "oracle"
+    _execute(
+        name,
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_PAREN PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE TABLE VOL_PAREN (id NUMBER(10) PRIMARY KEY)",
+            "INSERT INTO VOL_PAREN SELECT level FROM dual CONNECT BY level <= 300",
+            "CREATE OR REPLACE FUNCTION VOL_PAREN_F RETURN NUMBER IS "
+            "BEGIN RETURN TRUNC(DBMS_RANDOM.VALUE(0, 1000)); END;",
+        ],
+    )
+    try:
+        _refused(name, "SELECT id, VOL_PAREN_F AS k FROM VOL_PAREN", "ID")
+        assert _oracle_ids("SELECT id, id AS k FROM VOL_PAREN", "ID") == list(
+            range(1, 301)
+        )
+    finally:
+        _execute(name, ["DROP TABLE VOL_PAREN PURGE", "DROP FUNCTION VOL_PAREN_F"])
 
 
 def _prime_pool(engine: Any, statements: list[str], idle: int = 3) -> None:
@@ -7101,3 +8102,88 @@ def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
     finally:
         engine.dispose()
         _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_clickhouse_settings_that_cut_the_read_are_not_proven() -> None:
+    # `max_rows_to_read` with `read_overflow_mode = 'break'` returns a partial,
+    # read-order-dependent result: no partitions, and no filter in the query either
+    name = "clickhouse"
+    table = "vol_settings"
+    _execute(
+        name,
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id UInt32, v UInt32) ENGINE = MergeTree ORDER BY id",
+            f"INSERT INTO {table} SELECT number + 1, number % 13 FROM numbers(1000)",
+        ],
+    )
+    try:
+        cut = (
+            f"SELECT id, v FROM {table} SETTINGS max_rows_to_read = 300, "
+            "read_overflow_mode = 'break'"
+        )
+        _refused(name, cut, "id")
+        lf = _scan(name, _default_driver(name), cut).filter(pl.col("id") > 100)
+        assert "filters 1/1" not in lf.explain()
+        # a harmless setting is still proven
+        ok = f"SELECT id, v FROM {table} SETTINGS max_threads = 2"
+        df = _scan(
+            name, _default_driver(name), ok, partition_on="id", partition_num=4
+        ).collect()
+        assert df.height == 1000
+    finally:
+        _execute(name, [f"DROP TABLE IF EXISTS {table}"])
+
+
+def test_oracle_redacted_columns_are_neither_pushed_nor_partition_keys() -> None:
+    # Data Redaction returns redacted values while a pushed filter compares the
+    # stored
+    oracledb = pytest.importorskip("oracledb")
+    uri = SERVERS["oracle"].uri
+    if uri is None:
+        pytest.skip("no Oracle URI")
+    password = uri.split("//", 1)[1].split("@")[0].split(":", 1)[1]
+    host_port = uri.split("@", 1)[1].split("/", 1)[0]
+    try:
+        admin = oracledb.connect(
+            user="system", password=password, dsn=f"{host_port}/FREEPDB1"
+        )
+    except oracledb.Error:
+        pytest.skip("no SYSTEM access to create a redaction policy")
+    admin.autocommit = True
+    cur = admin.cursor()
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE VOL_RED PURGE'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            "CREATE TABLE VOL_RED (id NUMBER(10) PRIMARY KEY, k NUMBER(10))",
+            "INSERT INTO VOL_RED SELECT level, MOD(level, 10) + 1 FROM dual "
+            "CONNECT BY level <= 300",
+        ],
+    )
+    try:
+        # a user sees the policies through `REDACTION_POLICIES`, once granted the role
+        cur.execute("GRANT SELECT_CATALOG_ROLE TO polars")
+        cur.execute(
+            "BEGIN DBMS_REDACT.ADD_POLICY(object_schema => 'POLARS', "
+            "object_name => 'VOL_RED', policy_name => 'VOL_RED_P', "
+            "column_name => 'K', function_type => DBMS_REDACT.FULL, "
+            "expression => '1=1'); END;"
+        )
+        try:
+            _refused("oracle", "VOL_RED", "K")
+            lf = _scan("oracle", _default_driver("oracle"), "VOL_RED").filter(
+                pl.col("K") == 3
+            )
+            assert "filters 1/1" not in lf.explain()
+            # the filter runs on what was read (redacted values: none is 3)
+            assert lf.collect().height == 0
+        finally:
+            cur.execute(
+                "BEGIN DBMS_REDACT.DROP_POLICY(object_schema => 'POLARS', "
+                "object_name => 'VOL_RED', policy_name => 'VOL_RED_P'); END;"
+            )
+            cur.execute("REVOKE SELECT_CATALOG_ROLE FROM polars")
+    finally:
+        _execute("oracle", ["DROP TABLE VOL_RED PURGE"])

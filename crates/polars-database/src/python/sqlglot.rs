@@ -140,11 +140,11 @@ impl SqlglotRenderer {
                 Some(v) if !v.is_none() => Some(v.extract()?),
                 _ => None,
             };
-            let unknown_functions: Vec<String> = match d.get_item("unknown_functions")? {
+            let known_functions: Vec<String> = match d.get_item("known_functions")? {
                 Some(v) if !v.is_none() => v.extract()?,
                 _ => vec![],
             };
-            let known_functions: Vec<String> = match d.get_item("known_functions")? {
+            let unproven: Vec<String> = match d.get_item("unproven")? {
                 Some(v) if !v.is_none() => v.extract()?,
                 _ => vec![],
             };
@@ -152,7 +152,35 @@ impl SqlglotRenderer {
                 Some(v) if !v.is_none() => v.extract()?,
                 _ => vec![],
             };
+            let strings = |k: &str| -> PyResult<Vec<PlSmallStr>> {
+                Ok(match d.get_item(k)? {
+                    Some(v) if !v.is_none() => v
+                        .extract::<Vec<String>>()?
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                    _ => vec![],
+                })
+            };
+            let referenced_columns = match d.get_item("referenced_columns")? {
+                Some(v) if !v.is_none() => Some(strings("referenced_columns")?),
+                _ => None,
+            };
+            let final_tables: Vec<Vec<String>> = match d.get_item("final_tables")? {
+                Some(v) if !v.is_none() => v.extract()?,
+                _ => vec![],
+            };
             PyResult::Ok(QueryFacts {
+                cast_types: strings("cast_types")?,
+                any_operator: get("any_operator")?,
+                positional_join: get("positional_join")?,
+                unsafe_settings: get("unsafe_settings")?,
+                temporal_cast_columns: strings("temporal_cast_columns")?,
+                referenced_columns,
+                final_tables: final_tables
+                    .into_iter()
+                    .map(|t| t.into_iter().map(Into::into).collect())
+                    .collect(),
                 parses: get("parses")?,
                 single_select: get("single_select")?,
                 has_cte: get("has_cte")?,
@@ -162,13 +190,16 @@ impl SqlglotRenderer {
                 read_only: get("read_only")?,
                 repeatable: get("repeatable")?,
                 top_level_limit: get("top_level_limit")?,
+                with_ties: get("with_ties")?,
                 nested_queries: get("nested_queries")?,
                 side_effects: get("side_effects")?,
                 side_effects_outside_rows: get("side_effects_outside_rows")?,
                 volatile_columns: volatile_columns.into_iter().map(Into::into).collect(),
                 all_columns_volatile: get("all_columns_volatile")?,
-                unknown_functions: unknown_functions.into_iter().map(Into::into).collect(),
+                unproven: unproven.into_iter().map(Into::into).collect(),
                 known_functions: known_functions.into_iter().map(Into::into).collect(),
+                collapses_rows: get("collapses_rows")?,
+                collated: get("collated")?,
                 tables: tables
                     .into_iter()
                     .map(|t| t.into_iter().map(Into::into).collect())

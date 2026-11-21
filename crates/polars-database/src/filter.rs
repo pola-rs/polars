@@ -607,6 +607,15 @@ impl Translator<'_> {
     /// decimal literal wider than its precision (DuckDB `HUGEINT` is read as
     /// `Decimal(38, 0)` but holds 39 digits) isn't a valid value.
     fn literal_fits(&self, name: &str, av: &AnyValue<'_>) -> bool {
+        // A Trino `char(n)` is read padded with blanks, and compared without them (`'a  '`
+        // read, `c = 'a  '` false): a literal ending in a blank may match what the
+        // database doesn't.
+        if self.dialect() == DialectName::Trino
+            && let Some(s) = av.get_str()
+            && s.ends_with(' ')
+        {
+            return false;
+        }
         // Spark widens a FLOAT column to DOUBLE for the comparison: only a literal that is
         // exactly an f32 (as a double) meets the stored value (`float(1.1) = 1.1` is false).
         if self.dialect() == DialectName::Databricks
@@ -867,6 +876,10 @@ impl Translator<'_> {
         if !self.writable(&SqlLiteral::String(pat.into())) {
             return None;
         }
+        // (a Trino `char(n)`: see `literal_fits`)
+        if self.dialect() == DialectName::Trino && pat.ends_with(' ') {
+            return None;
+        }
         // ClickHouse's `LIKE` misreads a pattern that holds a NUL: `s LIKE '%\0'` matches
         // every row.
         if self.dialect() == DialectName::Clickhouse && pat.contains('\0') {
@@ -1114,6 +1127,27 @@ impl Translator<'_> {
             })
     }
 
+    /// Whether a SQL Server date-time column's values are ones a microsecond literal
+    /// compares exactly, as far as its declared type tells: not the legacy `datetime` and
+    /// `smalldatetime`, nor fractional seconds beyond 6 digits (`datetime2`, `time` and
+    /// `datetimeoffset` without digits have 7), nor a type that isn't known.
+    fn mssql_temporal_matches(&self, name: &str) -> bool {
+        let Some(t) = self.config.column(name).and_then(|c| c.db_type.as_deref()) else {
+            return false;
+        };
+        let t = t.trim().to_ascii_lowercase();
+        let (base, args) = t.split_once('(').unwrap_or((&t, ""));
+        match base.trim() {
+            "datetime" | "smalldatetime" => false,
+            "datetime2" | "datetimeoffset" | "time" => args
+                .trim_end_matches(')')
+                .trim()
+                .parse::<u32>()
+                .is_ok_and(|scale| scale <= 6),
+            _ => true,
+        }
+    }
+
     /// The class of `column <op> literal`, from the column's type and semantics.
     fn leaf_class(&self, name: &str, dtype: &DataType, op: CmpOp) -> Option<Class> {
         match dtype {
@@ -1121,20 +1155,12 @@ impl Translator<'_> {
             // is its epoch count, which the database compares as a number (MySQL: 20231231).
             dt if dt.is_integer() => (!self.temporal_db_type(name)).then_some(Class::Exact),
             DataType::Boolean => self.dialect().supports_boolean().then_some(Class::Exact),
-            // SQL Server's legacy `datetime` holds 1/300 s ticks, which the microsecond
-            // literal doesn't match exactly.
-            DataType::Datetime(_, _)
-                if self.dialect() == DialectName::Mssql
-                    && self
-                        .config
-                        .column(name)
-                        .and_then(|c| c.db_type.as_deref())
-                        .is_some_and(|t| {
-                            matches!(
-                                t.trim().to_ascii_lowercase().as_str(),
-                                "datetime" | "smalldatetime"
-                            )
-                        }) =>
+            // SQL Server's legacy `datetime` holds 1/300 s ticks, and `datetime2(7)`,
+            // `time(7)` and `datetimeoffset(7)` 100 ns, which every driver cuts to
+            // microseconds: the microsecond literal doesn't match them exactly. Without
+            // the column's type (a synonym, a failed lookup) it may be any of them.
+            DataType::Datetime(_, _) | DataType::Time
+                if self.dialect() == DialectName::Mssql && !self.mssql_temporal_matches(name) =>
             {
                 None
             },
@@ -1233,6 +1259,16 @@ impl Translator<'_> {
             // as a float is compared as it is stored.
             dt if dt.is_float() && self.dialect() == DialectName::Databricks => {
                 matches!(self.spark_float(name), Some("double" | "float")).then_some(Class::Exact)
+            },
+            // ConnectorX's bundled SQLite, and a SQLite built by MSVC (no `long double`: the
+            // one of Python on Windows), parse a float literal inexactly (exponents beyond
+            // about +-85 miss the stored value): no float comparison is pushed.
+            dt if dt.is_float()
+                && self.dialect() == DialectName::Sqlite
+                && (cfg!(windows)
+                    || matches!(self.config.backend.kind, BackendKind::ConnectorX)) =>
+            {
+                None
             },
             dt if dt.is_float() => self
                 .dialect()
@@ -1378,7 +1414,7 @@ fn literal_comparable(col: &DataType, lit: &DataType) -> bool {
 }
 
 /// 1582-10-15, the first day of the Gregorian calendar, in days since the epoch.
-const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
+pub(crate) const DATABRICKS_GAP_END_DAYS: i64 = -141_427;
 /// 1582-10-05, the first day of the Julian-Gregorian gap; the gap ends before `DATABRICKS_GAP_END_DAYS`.
 const ORACLE_GAP_START_DAYS: i64 = -141_437;
 
@@ -1541,6 +1577,7 @@ mod tests {
                 strings: StringSemantics::UNKNOWN,
                 is_key: false,
                 comparable: true,
+                unstable: false,
             })
             .collect();
         DatabaseScanConfig {
@@ -1570,6 +1607,7 @@ mod tests {
             derived_order_dropped: false,
             refused_columns: vec![],
             resolution: None,
+            sqlite_text_numbers: vec![],
             bounds_cache: Default::default(),
         }
     }
