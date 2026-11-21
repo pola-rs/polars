@@ -3811,6 +3811,79 @@ pub(crate) fn numeric_temporal_conversions(config: &DatabaseScanConfig) -> PlHas
     out
 }
 
+/// Refuses a read on a SQL Server session under `SET TEXTSIZE limit` (a user's: see
+/// `mssql_session_limits`) that may return a value it cuts: a column of a type it cuts
+/// (`(n)varchar(max)`, `varbinary(max)`, `text`, `ntext`, `image`, `xml`, and `sql_variant` or
+/// CLR types, read as text or bytes), any text or binary column (the catalog doesn't tell
+/// `nvarchar(max)` from `nvarchar(n)`, and a query's types may be unknown), or one the SQL
+/// converts to `NVARCHAR(MAX)` / `VARBINARY(MAX)`.
+pub(crate) fn check_mssql_text_size(limit: i64, config: &DatabaseScanConfig) -> PolarsResult<()> {
+    let read: Vec<&ColumnMeta> = match &config.compiled {
+        Some(c) => c.columns.iter().filter_map(|n| config.column(n)).collect(),
+        None => config.columns.iter().collect(),
+    };
+    let sqls: Vec<&str> = config
+        .compiled
+        .iter()
+        .flat_map(|c| c.partitions.iter().map(|p| p.sql.as_str()))
+        .collect();
+    let cut = mssql_text_size_cuts(&read, &sqls);
+    polars_ensure!(
+        cut.is_empty(),
+        InvalidOperation:
+        "this SQL Server session has SET TEXTSIZE {limit} in effect: it cuts each value of \
+        {} longer than {limit} bytes without a sign. Run SET TEXTSIZE -1 on the connection, or \
+        remove it from the connection's setup",
+        cut.join(", ")
+    );
+    Ok(())
+}
+
+/// What [`check_mssql_text_size`] refuses: the columns read, and the SQL that reads them.
+fn mssql_text_size_cuts(read: &[&ColumnMeta], sqls: &[&str]) -> Vec<String> {
+    fn text_or_bytes(d: &DataType) -> bool {
+        match d {
+            DataType::List(inner) | DataType::Array(inner, _) => text_or_bytes(inner),
+            DataType::Struct(fields) => fields.iter().any(|f| text_or_bytes(f.dtype())),
+            DataType::String | DataType::Binary | DataType::BinaryOffset | DataType::Unknown(_) => {
+                true
+            },
+            d => d.is_categorical() || d.is_enum() || d.is_object(),
+        }
+    }
+    let long_type = |t: &str| {
+        let t = t.trim().to_ascii_lowercase();
+        let base = t.split('(').next().unwrap_or("").trim();
+        matches!(
+            base,
+            "varchar"
+                | "nvarchar"
+                | "varbinary"
+                | "text"
+                | "ntext"
+                | "image"
+                | "xml"
+                | "sql_variant"
+                | "geography"
+                | "geometry"
+                | "hierarchyid"
+        )
+    };
+    let mut cut: Vec<String> = read
+        .iter()
+        .filter(|c| text_or_bytes(&c.dtype) || c.db_type.as_deref().is_some_and(long_type))
+        .map(|c| format!("'{}'", c.name))
+        .collect();
+    if cut.is_empty()
+        && sqls
+            .iter()
+            .any(|s| s.to_ascii_uppercase().contains("(MAX)"))
+    {
+        cut.push("a column read as text".into());
+    }
+    cut
+}
+
 /// The columns whose read may legitimately be another kind of value than the planned dtype
 /// (`cast_columns` doesn't refuse a retyped column there): every column but DuckDB's, whose drivers
 /// return what the type says (as text only where the plugin converts it, a marker `db_type`). Other
@@ -5363,6 +5436,35 @@ mod tests {
             let from = quoted_relation(dialect, &q, &cols);
             assert_eq!(from.contains("pl_q("), listed, "{from}");
         }
+    }
+
+    #[test]
+    fn mssql_text_size_refuses_reads_of_long_values() {
+        let col = |name: &str, dtype: DataType, db_type: Option<&str>| ColumnMeta {
+            name: name.into(),
+            dtype,
+            db_type: db_type.map(Into::into),
+            strings: crate::database::dialect::StringSemantics::UNKNOWN,
+            is_key: false,
+            comparable: true,
+            unstable: false,
+        };
+        let id = col("id", DataType::Int32, Some("int"));
+        let nv = col("nv", DataType::String, Some("nvarchar"));
+        let sv = col("sv", DataType::String, Some("sql_variant"));
+        let img = col("img", DataType::Null, Some("image"));
+        let untyped = col("u", DataType::Binary, None);
+        let money = col("m", DataType::Decimal(19, 4), Some("money"));
+        let plain = ["SELECT [id] FROM [t]"];
+        assert!(mssql_text_size_cuts(&[&id], &plain).is_empty());
+        assert_eq!(mssql_text_size_cuts(&[&id, &nv], &plain), ["'nv'"]);
+        for c in [&sv, &img, &untyped] {
+            assert_eq!(mssql_text_size_cuts(&[c], &plain).len(), 1, "{}", c.name);
+        }
+        // read through a conversion to NVARCHAR(MAX)
+        assert!(mssql_text_size_cuts(&[&money], &plain).is_empty());
+        let converted = ["SELECT CAST(CAST([m] AS DECIMAL(19, 4)) AS NVARCHAR(MAX)) FROM [t]"];
+        assert_eq!(mssql_text_size_cuts(&[&money], &converted).len(), 1);
     }
 
     #[test]

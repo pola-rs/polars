@@ -8450,6 +8450,100 @@ def test_mssql_rowcount_on_the_session_is_refused() -> None:
 
 
 @needs_mssql
+@pytest.mark.parametrize("rowcount", [1, 20000])
+def test_mssql_any_rowcount_on_the_session_is_refused(rowcount: int) -> None:
+    # a row count of 10,000 or more went unseen: 20,000 of 30,000 rows were read
+    table = "review_rowcount_large"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY)",
+            f"INSERT INTO {table} SELECT TOP 30000 ROW_NUMBER() OVER (ORDER BY "
+            "(SELECT NULL)) FROM sys.all_objects a, sys.all_objects b",
+        ],
+    )
+    for _what, connection in _mssql_user_connections(f"SET ROWCOUNT {rowcount}"):
+        for kwargs in [{}, {"partition_on": "id", "partition_num": 2}]:
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match=f"SET ROWCOUNT {rowcount}"
+            ):
+                pl.scan_database(table, connection, **kwargs).collect()
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="SET ROWCOUNT"
+            ):
+                pl.scan_database(f"SELECT id FROM {table}", connection).select(
+                    pl.len()
+                ).collect()
+
+
+_MSSQL_LONG_VALUES = "review_textsize_long"
+
+
+def _mssql_long_values() -> None:
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {_MSSQL_LONG_VALUES}",
+            f"CREATE TABLE {_MSSQL_LONG_VALUES} (id int PRIMARY KEY, "
+            "nv nvarchar(max), sv sql_variant, n int)",
+            f"INSERT INTO {_MSSQL_LONG_VALUES} VALUES "
+            "(1, REPLICATE(N'x', 300), "
+            "CAST(CAST(REPLICATE(N'y', 3000) AS nvarchar(4000)) AS sql_variant), 1), "
+            "(2, N'short', CAST(CAST(1.5 AS float) AS sql_variant), 2)",
+        ],
+    )
+
+
+@needs_mssql
+def test_mssql_textsize_on_the_session_is_refused_where_it_cuts_values() -> None:
+    # `SET TEXTSIZE 100` cut an nvarchar(max) of 300 characters, and a sql_variant
+    # read as text (`CONVERT(NVARCHAR(MAX), …)`), to 50 characters without a sign
+    _mssql_long_values()
+    t = _MSSQL_LONG_VALUES
+    for what, connection in _mssql_user_connections("SET TEXTSIZE 100"):
+        for source in [t, f"SELECT id, nv FROM {t}", f"SELECT id, sv FROM {t}"]:
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="SET TEXTSIZE 100"
+            ):
+                pl.scan_database(source, connection).collect()
+        lf = pl.scan_database(t, connection)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="'sv'"):
+            lf.select("id", "sv").collect()
+        # columns it can't cut are read
+        assert lf.select("id", "n").collect().sort("id")["n"].to_list() == [1, 2], what
+    # and the session left as the user had it
+    conn = _connect("mssql")
+    try:
+        cur = conn.cursor()
+        cur.execute("SET TEXTSIZE 100")
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            pl.scan_database(_MSSQL_LONG_VALUES, conn).collect()
+        cur.execute("SELECT @@TEXTSIZE")
+        assert cur.fetchall()[0][0] == 100
+    finally:
+        conn.close()
+
+
+@needs_mssql
+def test_mssql_long_values_are_read_whole_by_every_driver() -> None:
+    # the drivers' own text sizes (FreeTDS: 2147483647, ODBC and ADBC: -1) cut nothing,
+    # and the sessions the plugin opens set it to read everything
+    _mssql_long_values()
+    for driver in _runnable_drivers("mssql"):
+        df = _scan("mssql", driver, _MSSQL_LONG_VALUES).collect().sort("id")
+        assert df["nv"].str.len_chars().to_list() == [300, 5], driver
+        assert df["sv"].str.len_chars().to_list() == [3000, 3], driver
+        size = _scan("mssql", driver, "SELECT @@TEXTSIZE AS ts").collect().item()
+        # (ConnectorX and arrow-odbc have no sessions to set up: each query connects)
+        ours = driver not in ("connectorx", "arrow_odbc")
+        assert size == 2147483647 if ours else size in (-1, 2147483647), (driver, size)
+    for connection in [_mssql_factory(SERVERS["mssql"].uri or "")]:
+        df = pl.scan_database(_MSSQL_LONG_VALUES, connection).collect().sort("id")
+        assert df["sv"].str.len_chars().to_list() == [3000, 3]
+
+
+@needs_mssql
 @pytest.mark.parametrize("key", ["k0", "k10", "k37"])
 def test_mssql_partition_on_a_wide_decimal_key(key: str) -> None:
     # ConnectorX panicked on the bounds of a `decimal(38, s)` key (read natively, where
