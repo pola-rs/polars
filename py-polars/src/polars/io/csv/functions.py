@@ -234,8 +234,8 @@ def read_csv(
         extra ``\r`` will be removed when processed.
     new_columns
         Provide an explicit list of string column names to use (for example, when
-        scanning a headerless CSV file). If the given list is shorter than the width of
-        the DataFrame the remaining columns will have their original name.
+        scanning a headerless CSV file). Errors if the given list is shorter than the
+        width of the DataFrame.
     raise_if_empty
         Control behavior when scanning empty files:
 
@@ -712,8 +712,8 @@ def scan_csv(
         extra ``\r`` will be removed when processed.
     new_columns
         Provide an explicit list of string column names to use (for example, when
-        scanning a headerless CSV file). If the given list is shorter than the width of
-        the DataFrame the remaining columns will have their original name.
+        scanning a headerless CSV file). Errors if the given list is shorter than the
+        width of the DataFrame.
     raise_if_empty
         Control behavior when scanning empty files:
 
