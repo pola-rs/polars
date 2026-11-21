@@ -8464,7 +8464,11 @@ def test_mssql_any_rowcount_on_the_session_is_refused(rowcount: int) -> None:
         ],
     )
     for _what, connection in _mssql_user_connections(f"SET ROWCOUNT {rowcount}"):
-        for kwargs in [{}, {"partition_on": "id", "partition_num": 2}]:
+        all_kwargs: list[dict[str, Any]] = [
+            {},
+            {"partition_on": "id", "partition_num": 2},
+        ]
+        for kwargs in all_kwargs:
             with pytest.raises(
                 pl.exceptions.InvalidOperationError, match=f"SET ROWCOUNT {rowcount}"
             ):
