@@ -28,6 +28,9 @@ pub use error::{ErrorRecord, Location};
 pub use printer::{Event, Format, Printer};
 pub use script::{Script, StatementKind};
 
+/// The stack of the threads that plan and run statements, as a main thread on Linux has.
+pub const STACK_SIZE: usize = 8 * 1024 * 1024;
+
 /// The exit codes of the `polars` command.
 pub mod exit_code {
     pub const OK: u8 = 0;
@@ -237,6 +240,7 @@ where
     std::thread::scope(|scope| {
         let engine = std::thread::Builder::new()
             .name("polars-cli-query".to_string())
+            .stack_size(STACK_SIZE)
             .spawn_scoped(scope, move || {
                 catch_polars_abort(AssertUnwindSafe(|| {
                     plan.collect_with_engine(Engine::Streaming)

@@ -5,17 +5,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
-use polars_cli::{Args, Input, Printer, Script, exit_code, run};
+use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
 
 // The allocator of the Python runtime, so that both perform alike.
 #[global_allocator]
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
-/// The stack of the thread that runs the command: the usual size of a main thread on Linux.
-/// The main thread on Windows has 1 MiB, which a debug build of the engine overflows.
-const STACK_SIZE: usize = 8 * 1024 * 1024;
-
 fn main() -> ExitCode {
+    // Debug frames are large, as in the Python package.
+    #[cfg(debug_assertions)]
+    {
+        recursive::set_minimum_stack_size(1024 * 1024);
+        recursive::set_stack_allocation_size(1024 * 1024 * 16);
+    }
     let command = std::thread::Builder::new()
         .name("polars-cli".to_string())
         .stack_size(STACK_SIZE)
