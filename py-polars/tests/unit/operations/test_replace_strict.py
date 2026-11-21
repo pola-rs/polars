@@ -16,6 +16,54 @@ def test_replace_strict_incomplete_mapping() -> None:
         lf.select(pl.col("a").replace_strict({2: 200, 3: 300})).collect()
 
 
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").head(1),
+        pl.col("x").slice(0, 1),
+        pl.col("x").filter(pl.col("x") != "discard"),
+        pl.col("x").filter(pl.lit(False)),
+    ],
+)
+def test_replace_strict_grouped_masked_values(expr: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 0, 1, 1, 2, 2],
+            "x": ["a", "discard", "b", "discard", None, "discard"],
+        }
+    )
+    mapping = {"a": "A", "b": "B"}
+    expected = (
+        df.group_by("g", maintain_order=True)
+        .agg(expr)
+        .with_columns(pl.col("x").list.eval(pl.element().replace_strict(mapping)))
+    )
+
+    result = df.group_by("g", maintain_order=True).agg(expr.replace_strict(mapping))
+    assert_frame_equal(result, expected)
+
+
+def test_replace_strict_grouped_incomplete_mapping() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1, 1], "x": ["a", "discard", "b", "discard"]})
+
+    with pytest.raises(InvalidOperationError, match="incomplete mapping"):
+        df.group_by("g").agg(pl.col("x").head(1).replace_strict({"a": "A"}))
+
+
+def test_replace_strict_grouped_unique() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
+            "x": ["a", "a", None, "b", "b", None, None, None, None],
+        }
+    )
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("x").drop_nulls().unique().sort().replace_strict({"a": "A", "b": "B"})
+    )
+    expected = pl.DataFrame({"g": [0, 1, 2], "x": [["A"], ["B"], []]})
+    assert_frame_equal(result, expected)
+
+
 def test_replace_strict_incomplete_mapping_null_raises() -> None:
     s = pl.Series("a", [1, 2, 2, None, None])
     with pytest.raises(InvalidOperationError):
