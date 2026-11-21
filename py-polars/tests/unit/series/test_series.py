@@ -6,6 +6,7 @@ import re
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from fractions import Fraction
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
@@ -2366,6 +2367,34 @@ def test_numpy_series_arithmetic() -> None:
     result_pow2 = sx**y
     expected = pl.Series([1.0, 16.0], dtype=pl.Float64)
     assert_series_equal(result_pow2, expected)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("scalar", "expected"),
+    [
+        (Decimal("2.50"), [Decimal("2.50"), Decimal("5.00"), Decimal("7.50")]),
+        (np.float32(2.5), [2.5, 5.0, 7.5]),
+        (Fraction(5, 2), [2.5, 5.0, 7.5]),
+    ],
+)
+def test_integer_series_arithmetic_preserves_fractional_scalars(
+    scalar: Any, expected: list[Any]
+) -> None:
+    result = pl.Series([1, 2, 3]) * scalar
+    assert result.to_list() == expected
+
+
+@pytest.mark.parametrize("scalar", [Decimal("1.5"), np.float32(1.5), Fraction(3, 2)])
+def test_integer_series_comparison_preserves_fractional_scalars(scalar: Any) -> None:
+    assert (pl.Series([1, 2, 3]) >= scalar).to_list() == [False, True, True]
+
+
+def test_series_ops_with_numpy_longdouble_scalar() -> None:
+    # np.longdouble cannot be built into a Series, so it must keep the old path
+    scalar = np.longdouble("2.5")
+    assert (pl.Series([1.0, 2.0]) + scalar).to_list() == [3.5, 4.5]
+    assert (pl.Series([1, 2]) >= scalar).dtype == pl.Boolean
+    assert (pl.Series([1, 2]) * scalar).len() == 2
 
 
 def test_from_epoch_seq_input() -> None:
