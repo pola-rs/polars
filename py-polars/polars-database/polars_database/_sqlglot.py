@@ -250,9 +250,11 @@ def _select_item(item: Any) -> Any:
     if kind == "Column":
         return _column(x)
     if kind == "Min":
-        return exp.Min(this=_column(x))
+        # named: SQL Server's unnamed result columns share the name '', which readers
+        # (and Polars) refuse as duplicates
+        return exp.Alias(this=exp.Min(this=_column(x)), alias=_ident("pl_min"))
     if kind == "Max":
-        return exp.Max(this=_column(x))
+        return exp.Alias(this=exp.Max(this=_column(x)), alias=_ident("pl_max"))
     if kind == "Expr":
         # dialect conversion SQL from Polars' rules, e.g. CAST("u" AS TEXT)
         return exp.Alias(this=_raw(x["sql"]), alias=_ident(x["alias"]))
@@ -272,10 +274,22 @@ def _from(f: Any) -> Any:
         # a placeholder, replaced by the verbatim user query after generation
         return exp.Table(
             this=exp.to_identifier(_SUBQUERY_PLACEHOLDER),
-            alias=exp.TableAlias(this=_ident("_pl")),
+            alias=exp.TableAlias(
+                this=_ident("_pl"),
+                # the output columns, where the server doesn't let the outer query
+                # refer to a name it chose itself (Trino's `_col0`)
+                columns=[_ident(c) for c in _subquery_parts(x)[1]] or None,
+            ),
         )
     msg = f"unknown SQL FROM kind: {kind!r}"
     raise ValueError(msg)
+
+
+def _subquery_parts(sub: Any) -> tuple[str, list[str]]:
+    """The SQL and output columns of a `Subquery` (a plain string has none)."""
+    if isinstance(sub, str):
+        return sub, []
+    return sub["sql"], sub.get("columns") or []
 
 
 _SUBQUERY_PLACEHOLDER = f"__polars_subquery_{secrets.token_hex(8)}__"
@@ -384,7 +398,7 @@ def _finish(sql: str, query: dict[str, Any]) -> str:
         sql = sql.replace("%", "%%")
     from_ = query["from"]
     if "Subquery" in from_:
-        sub = from_["Subquery"]
+        sub = _subquery_parts(from_["Subquery"])[0]
         # a newline ends a trailing `--` (or MySQL `#`) comment of the user's query
         end = "\n" if "--" in sub or "#" in sub else ""
         sql = sql.replace(_SUBQUERY_PLACEHOLDER, f"({sub}{end})", 1)

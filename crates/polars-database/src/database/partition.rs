@@ -24,7 +24,7 @@ pub enum RangeKind {
     Decimal(usize),
     Date,
     /// A MySQL `YEAR`: an integer that holds 0 or 1901-2155, compared with an integer 1-99
-    /// as a year (1970-2069).
+    /// as a year (1970-2069). Cuts are kept within 1901-2155.
     Year,
 }
 
@@ -92,16 +92,16 @@ pub fn range_partitions(
         }
         let v = match kind {
             RangeKind::Int => v.ceil(),
-            // No value lies in 1-1900: 100 cuts where 1-99 would, read as itself.
-            RangeKind::Year => match v.ceil() {
-                v if (1.0..100.0).contains(&v) => 100.0,
-                v => v,
-            },
+            // A cut outside 1901-2155 is no `YEAR` value: 1-99 is read as a year (1970-2069),
+            // MySQL 8.4 loses the 0000 row to a cut in 100-1900, and MariaDB matches
+            // nothing above 2155. The outer partitions are open-ended and equal cuts
+            // are dropped, so clamped cuts lose no rows (0 falls into the first partition).
+            RangeKind::Year => v.ceil().clamp(1901.0, 2155.0),
             // Dates outside the dialect's range render as text it can't parse, or are read
             // as NULL or wrapped (MySQL: before year 1000). The outer partitions are
             // open-ended and equal cuts are dropped, so clamped cuts lose no rows.
             RangeKind::Date => {
-                let (min, max) = dialect.temporal_literal_days();
+                let (min, max) = dialect.date_literal_days();
                 v.ceil().clamp(min as f64, max as f64)
             },
             RangeKind::Float => v,
@@ -418,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn year_cuts_are_never_1_to_99() {
+    fn year_cuts_stay_in_1901_to_2155() {
         fn ints_in(e: &SqlExpr, out: &mut Vec<i128>) {
             match e {
                 SqlExpr::Literal(SqlLiteral::Int(v)) => out.push(*v),
@@ -443,8 +443,51 @@ mod tests {
         for p in &parts {
             ints_in(p.predicate.as_ref().unwrap(), &mut cuts);
         }
-        assert!(cuts.contains(&100), "{cuts:?}");
-        assert!(!cuts.iter().any(|c| (1..100).contains(c)), "{cuts:?}");
+        assert!(cuts.contains(&1901), "{cuts:?}");
+        assert!(cuts.iter().all(|c| (1901..=2155).contains(c)), "{cuts:?}");
+    }
+
+    #[test]
+    fn clickhouse_date_cuts_stay_in_the_date_range() {
+        // ClickHouse converts a cut to `Date` (1970-2149) to prune parts: it wraps outside
+        for (lo, hi) in [
+            (-20_000.0, 100_000.0),
+            (-25_567.0, 120_529.0),
+            (-5.0, 1.0e5),
+        ] {
+            let p = range_partitions(
+                &"d".into(),
+                lo,
+                hi,
+                7,
+                RangeKind::Date,
+                false,
+                false,
+                DialectName::Clickhouse,
+            );
+            let mut lits = vec![];
+            for part in &p {
+                collect_dates(part.predicate.as_ref().unwrap(), &mut lits);
+            }
+            assert!(!lits.is_empty());
+            for d in lits {
+                assert!(
+                    ("1970-01-08"..="2149-06-06").contains(&d.as_str()),
+                    "{lo} {hi}: {d}"
+                );
+            }
+        }
+    }
+
+    fn collect_dates(e: &SqlExpr, out: &mut Vec<String>) {
+        match e {
+            SqlExpr::Literal(SqlLiteral::Date(d)) => out.push(d.clone()),
+            SqlExpr::Binary(l, _, r) => {
+                collect_dates(l, out);
+                collect_dates(r, out);
+            },
+            _ => {},
+        }
     }
 
     #[test]

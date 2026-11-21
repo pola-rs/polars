@@ -224,6 +224,22 @@ pub fn connect_options(
             },
         }
     }
+    if dialect == DialectName::Trino
+        && let Some(u) = &mut uri
+    {
+        // (the user's `connect_options` are added after the URI, below)
+        let password = options
+            .iter()
+            .any(|(k, _)| k.as_c_str() == ADBC_OPTION_PASSWORD)
+            || spec
+                .connect_options
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("password"))
+            || u.split_once("://")
+                .and_then(|(_, rest)| secret_userinfo_end(rest).map(|at| rest[..at].contains(':')))
+                .unwrap_or(false);
+        *u = trino_ssl_uri(u, password)?;
+    }
     if let Some(uri) = uri {
         options.insert(0, (ADBC_OPTION_URI.to_owned(), cstring(&uri, "uri")?));
     }
@@ -260,6 +276,67 @@ impl DatabaseBackend for AdbcBackend {
 
 fn cstring(s: &str, what: &str) -> PolarsResult<CString> {
     CString::new(s).map_err(|_| polars_err!(ComputeError: "ADBC {what} contains a NUL byte"))
+}
+
+/// The URI for the ADBC Trino driver, which connects over HTTPS unless the URI says `SSL=false`
+/// (exactly that, or `False`), where the `trino` Python driver connects over HTTP unless `SSL`
+/// is true or the port is 443: made to behave alike. A password (`password`: one in the
+/// URI's userinfo, its parameters or the connect options) is only sent over HTTPS (as the
+/// Python driver does), whatever `SSL` says. `SSL` takes the booleans the Python driver takes
+/// (and `disabled`, which the ADBC driver once took for `false`); another value, or the key in
+/// another case, is refused rather than read as HTTPS.
+fn trino_ssl_uri(uri: &str, password: bool) -> PolarsResult<String> {
+    let (base, query) = uri.split_once('?').unwrap_or((uri, ""));
+    let mut ssl = None;
+    let mut kept = vec![];
+    let mut password = password;
+    for kv in query.split('&').filter(|kv| !kv.is_empty()) {
+        let (key, value) = kv.split_once('=').unwrap_or((kv, ""));
+        if !key.eq_ignore_ascii_case("ssl") {
+            password |= key.eq_ignore_ascii_case("password");
+            kept.push(kv.to_string());
+            continue;
+        }
+        polars_ensure!(
+            key == "SSL",
+            InvalidOperation:
+            "URI parameter {key}={value} for trino: the parameter is named `SSL`"
+        );
+        let decoded = percent_decode(value);
+        ssl = Some(match decoded.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => true,
+            "0" | "false" | "no" | "off" | "disabled" => false,
+            _ => polars_bail!(
+                InvalidOperation:
+                "URI parameter SSL={decoded:?} for trino: expected a boolean (true or false)"
+            ),
+        });
+    }
+    // (HTTPS is the driver's default)
+    let https = match ssl {
+        Some(ssl) => ssl,
+        None => trino_uri_port(base) == Some(443),
+    };
+    if !(password || https) {
+        kept.push("SSL=false".to_string());
+    }
+    Ok(if kept.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}?{}", kept.join("&"))
+    })
+}
+
+/// The port of a `scheme://[userinfo@]host[:port]/…` URI, if it has one.
+fn trino_uri_port(uri: &str) -> Option<u16> {
+    let rest = uri.split_once("://")?.1;
+    let rest = &rest[secret_userinfo_end(rest).map_or(0, |at| at + 1)..];
+    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    // (after an IPv6 literal's `]`)
+    let host_end = authority.rfind(']').unwrap_or(0);
+    authority[host_end..]
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse().ok())
 }
 
 /// The `uri` database option for a connection target.
@@ -742,8 +819,8 @@ fn check_utf8(df: &DataFrame) -> PolarsResult<()> {
     Ok(())
 }
 
-/// Whether a column holds a string that isn't valid UTF-8, also nested in lists, arrays and
-/// structs (a Postgres `text[]` or composite on a `SQL_ASCII` database).
+/// Whether a column holds a string that isn't valid UTF-8, also nested in lists, arrays,
+/// maps and structs (a Postgres `text[]` or composite on a `SQL_ASCII` database).
 fn holds_invalid_utf8(s: &polars_core::series::Series) -> PolarsResult<bool> {
     use polars_core::prelude::DataType;
 
@@ -755,6 +832,10 @@ fn holds_invalid_utf8(s: &polars_core::series::Series) -> PolarsResult<bool> {
         DataType::List(inner) if has_string(inner) => holds_invalid_utf8(&s.list()?.get_inner())?,
         DataType::Array(inner, _) if has_string(inner) => {
             holds_invalid_utf8(&s.array()?.get_inner())?
+        },
+        DataType::Map(key, value) if has_string(key) || has_string(value) => {
+            let map = s.map()?;
+            holds_invalid_utf8(&map.keys())? || holds_invalid_utf8(&map.values())?
         },
         DataType::Struct(_) => {
             for f in s.struct_()?.fields_as_series() {
@@ -773,6 +854,7 @@ fn has_string(dtype: &polars_core::prelude::DataType) -> bool {
     match dtype {
         DataType::String | DataType::Struct(_) => true,
         DataType::List(inner) | DataType::Array(inner, _) => has_string(inner),
+        DataType::Map(key, value) => has_string(key) || has_string(value),
         _ => false,
     }
 }
@@ -889,6 +971,57 @@ fn batch_to_df(array: Box<dyn Array>) -> PolarsResult<DataFrame> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn trino_uri_connects_over_http_unless_tls_is_asked_for() {
+        use super::trino_ssl_uri as f;
+        let base = "trino://u@h:8080/c/s";
+        assert_eq!(f(base, false).unwrap(), format!("{base}?SSL=false"));
+        assert_eq!(
+            f(&format!("{base}?SSL=0"), false).unwrap(),
+            format!("{base}?SSL=false")
+        );
+        assert_eq!(
+            f(&format!("{base}?SSL=False"), false).unwrap(),
+            format!("{base}?SSL=false")
+        );
+        assert_eq!(f(&format!("{base}?SSL=1"), false).unwrap(), base);
+        assert_eq!(f(&format!("{base}?SSL=TRUE"), false).unwrap(), base);
+        assert_eq!(
+            f(&format!("{base}?a=b&SSL=off&c=d"), false).unwrap(),
+            format!("{base}?a=b&c=d&SSL=false")
+        );
+        // a password never goes over HTTP
+        assert_eq!(f(base, true).unwrap(), base);
+        assert_eq!(f(&format!("{base}?SSL=false"), true).unwrap(), base);
+        // a password in the URI's parameters too
+        assert_eq!(
+            f(&format!("{base}?password=p"), false).unwrap(),
+            format!("{base}?password=p")
+        );
+        // `disabled`, which the ADBC driver once took, still means HTTP
+        assert_eq!(
+            f(&format!("{base}?SSL=disabled"), false).unwrap(),
+            format!("{base}?SSL=false")
+        );
+        assert!(f(&format!("{base}?SSL=maybe"), false).is_err());
+        assert!(f(&format!("{base}?ssl=false"), false).is_err());
+        // port 443 is HTTPS, as for the Python driver, unless the URI says otherwise
+        assert_eq!(f("trino://u@h:443/c", false).unwrap(), "trino://u@h:443/c");
+        assert_eq!(
+            f("trino://u@h:443/c?SSL=false", false).unwrap(),
+            "trino://u@h:443/c?SSL=false"
+        );
+        assert_eq!(
+            f("trino://u@[::1]:8443/c", false).unwrap(),
+            "trino://u@[::1]:8443/c?SSL=false"
+        );
+        assert_eq!(
+            f("trino://u@[::1]:443", false).unwrap(),
+            "trino://u@[::1]:443"
+        );
+        assert_eq!(f("trino://h", false).unwrap(), "trino://h?SSL=false");
+    }
+
+    #[test]
     fn mssql_uri_path_becomes_the_database_parameter() {
         use super::mssql_database_uri as f;
         assert_eq!(
@@ -928,6 +1061,24 @@ mod tests {
         assert!(holds_invalid_utf8(&st).unwrap());
         let df = DataFrame::new(1, vec![list.into_column()]).unwrap();
         assert!(check_utf8(&df).is_err());
+        // maps: in the keys, in the values, and a map in a list
+        let map = |keys: &Series, values: &Series| {
+            let entries = polars_core::prelude::pack_map_entries(keys, values);
+            let storage = entries.implode().unwrap().into_series();
+            let dtype = DataType::Map(
+                Box::new(keys.dtype().clone()),
+                Box::new(values.dtype().clone()),
+            );
+            polars_core::prelude::MapChunked::try_from_storage(dtype, storage)
+                .unwrap()
+                .into_series()
+        };
+        assert!(holds_invalid_utf8(&map(&bad, &good)).unwrap());
+        assert!(holds_invalid_utf8(&map(&good, &bad)).unwrap());
+        assert!(!holds_invalid_utf8(&map(&good, &good)).unwrap());
+        let ints = Series::new("i".into(), [1i32]);
+        assert!(!holds_invalid_utf8(&map(&ints, &ints)).unwrap());
+        assert!(holds_invalid_utf8(&map(&good, &bad).implode().unwrap().into_series()).unwrap());
     }
 
     #[test]
