@@ -689,13 +689,14 @@ pub fn query_info(
                     // Identity, not the printed name: a user's collation named `"C"` first on the
                     // search_path prints as the built-in one. `to_regcollation` resolves the
                     // printed name as the server did; only a deterministic `pg_catalog` collation
-                    // is reported (anything else is empty: unknown).
+                    // is reported, or any deterministic one outside UTF-8 (anything else is
+                    // empty: unknown).
                     format!(
-                        "CASE WHEN current_setting('server_encoding') = 'UTF8' THEN \
-                        COALESCE((SELECT co.collname::text FROM pg_collation co \
-                        WHERE co.oid = to_regcollation(pg_collation_for({c})) \
-                        AND co.collnamespace = 'pg_catalog'::regnamespace \
-                        AND co.collisdeterministic), '') ELSE 'default' END"
+                        "COALESCE((SELECT CASE WHEN NOT co.collisdeterministic THEN '' \
+                        WHEN current_setting('server_encoding') <> 'UTF8' THEN 'default' \
+                        WHEN co.collnamespace = 'pg_catalog'::regnamespace \
+                        THEN co.collname::text ELSE '' END FROM pg_collation co \
+                        WHERE co.oid = to_regcollation(pg_collation_for({c}))), '')"
                     )
                 },
                 &text,

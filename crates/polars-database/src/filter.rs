@@ -1144,6 +1144,22 @@ impl Translator<'_> {
             // A MySQL `TIMESTAMP` literal is read in the session time zone, UTC only after
             // the session setup.
             DataType::Datetime(_, Some(_)) if self.mysql_without_setup() => None,
+            // A Python driver's `TIMESTAMP` is read as its UTC instant (the bridge converts a live
+            // session's), while a naive literal is compared in the session time zone: a column of
+            // unknown type may be one.
+            DataType::Datetime(_, None)
+                if self.mysql_without_setup()
+                    && matches!(
+                        self.config.backend.kind,
+                        BackendKind::Python { .. } | BackendKind::Sqlalchemy
+                    )
+                    && self
+                        .config
+                        .column(name)
+                        .is_some_and(|c| c.db_type.is_none()) =>
+            {
+                None
+            },
             // A naive literal is a `TIMESTAMP_NTZ`, which Databricks compares with a
             // `TIMESTAMP` (LTZ) column in the session's time zone: only a column known to
             // be an NTZ one is compared.
@@ -1644,6 +1660,26 @@ mod tests {
         assert_eq!(class_of(&ltz, &aware), Some(Class::Exact));
         let ltz_naive = c(naive, Some("timestamp"));
         assert_eq!(class_of(&ltz_naive, &plain), None);
+    }
+
+    #[test]
+    fn mysql_naive_comparison_on_a_column_of_unknown_type() {
+        // a Python driver's `TIMESTAMP` is read as UTC, but compared in the session time zone
+        let naive = DataType::Datetime(TimeUnit::Microseconds, None);
+        let plain = cmp("eq", "ts", "datetime[us]", "1719835200000000");
+        let pymysql = BackendKind::Python {
+            module: "pymysql".into(),
+        };
+        let c = |kind, t| config(DialectName::Singlestore, kind, &[("ts", naive.clone(), t)]);
+        assert_eq!(class_of(&c(pymysql.clone(), None), &plain), None);
+        assert_eq!(
+            class_of(&c(pymysql, Some("datetime")), &plain),
+            Some(Class::Exact)
+        );
+        assert_eq!(
+            class_of(&c(adbc("mysql"), None), &plain),
+            Some(Class::Exact)
+        );
     }
 
     #[test]

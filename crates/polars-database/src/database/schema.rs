@@ -374,6 +374,15 @@ fn any_leaf_pair(
         (DataType::Map(ka, va), DataType::Map(kb, vb)) => {
             any_leaf_pair(ka, kb, f) || any_leaf_pair(va, vb, f)
         },
+        // a map cast to its storage, a list of `key` / `value` structs
+        (DataType::Map(k, v), DataType::List(b)) => match b.as_ref() {
+            DataType::Struct(fields) => fields.iter().any(|fb| match fb.name().as_str() {
+                "key" => any_leaf_pair(k, fb.dtype(), f),
+                "value" => any_leaf_pair(v, fb.dtype(), f),
+                _ => false,
+            }),
+            _ => false,
+        },
         (DataType::Struct(a), DataType::Struct(b)) => b.iter().any(|fb| {
             a.iter()
                 .find(|fa| fa.name() == fb.name())
@@ -542,9 +551,12 @@ fn check_numeric_exact(src: &Column, cast: &Column) -> PolarsResult<()> {
 fn check_exact_at(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResult<()> {
     let path = |suffix: &str| -> PlSmallStr { format!("{}{suffix}", src.name()).into() };
     match (src.dtype(), cast.dtype()) {
-        (DataType::Map(_, _), DataType::Map(_, _)) => {
+        (DataType::Map(_, _), DataType::Map(_, _) | DataType::List(_)) => {
             // a map is a list of `key` / `value` structs: its values are checked as such
             let storage = |c: &Column| -> PolarsResult<Column> {
+                if !matches!(c.dtype(), DataType::Map(_, _)) {
+                    return Ok(c.clone());
+                }
                 Ok(c.as_materialized_series()
                     .map()?
                     .storage()
@@ -1027,6 +1039,15 @@ mod tests {
             &map(DataType::Int64),
             &map(DataType::Float64)
         ));
+        // and of its storage
+        let entries = DataType::List(Box::new(DataType::Struct(vec![
+            Field::new("key".into(), DataType::String),
+            Field::new(
+                "value".into(),
+                DataType::Datetime(TimeUnit::Microseconds, None),
+            ),
+        ])));
+        assert!(numeric_to_temporal(&map(DataType::Int64), &entries));
     }
 
     #[test]

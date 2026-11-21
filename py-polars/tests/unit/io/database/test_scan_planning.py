@@ -1264,6 +1264,12 @@ def test_mysql_tls_check_rejects_a_plain_connection() -> None:
             "SELECT s1.t.id, count(*) FROM s1.t JOIN s2.t ON true GROUP BY s1.t.id",
             True,
         ),
+        # a quoted dot is part of the name: `"a.b".x` isn't `a.b.x`
+        (
+            "sqlite",
+            'SELECT "a.b".x, count(*) FROM "a.b" CROSS JOIN a.b GROUP BY a.b.x',
+            False,
+        ),
         # `GROUP BY k` for `g AS k` groups `g`
         ("sqlite", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
         ("mysql", "SELECT g AS k, count(*) FROM t GROUP BY k", True),
@@ -2223,6 +2229,9 @@ def test_outer_order_by_of_a_query(query: str, expected: str | None) -> None:
         ("SELECT t.* FROM t ORDER BY ID", "`_pl`.`id`"),
         ("SELECT * FROM t ORDER BY id + 1", None),
         ("SELECT * FROM t JOIN u ON 1 = 1 ORDER BY t.id", None),
+        ("SELECT * FROM t AS x ORDER BY x.id", "`_pl`.`id`"),
+        ("SELECT * FROM t ORDER BY u.id", None),
+        ("SELECT t.* FROM (t JOIN u ON t.id + u.id = 3) ORDER BY u.id", None),
         ("SELECT *, 1 AS n FROM t ORDER BY id", None),
         ("SELECT * FROM t UNION SELECT * FROM u ORDER BY id", None),
     ],

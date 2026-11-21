@@ -884,10 +884,11 @@ def _is_aggregate_query(select: Any) -> bool:
     return False
 
 
-def _qualified_key(column: Any) -> str:
+def _qualified_key(column: Any) -> tuple[str, ...]:
     """
-    A qualified column as `catalog.schema.table.name`, each part folded to lower case
-    unless quoted (`s1.t.id` is not `s2.t.id`, nor `"T".id` `"t".id`).
+    A qualified column's parts (catalog, schema, table, name), each folded to lower case
+    unless quoted (`s1.t.id` is not `s2.t.id`, nor `"T".id` `"t".id`, nor `"a.b".x`
+    `a.b.x`).
     """
     parts = []
     for key in ("catalog", "db", "table", "this"):
@@ -896,7 +897,7 @@ def _qualified_key(column: Any) -> str:
             parts.append(
                 part.name if getattr(part, "quoted", False) else part.name.lower()
             )
-    return ".".join(parts)
+    return tuple(parts)
 
 
 def _bare_column_in_group_by(select: Any) -> bool:
@@ -909,7 +910,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
     if group is None and not _is_aggregate_query(select):
         return False
     projections = select.expressions
-    grouped: set[str] = set()
+    grouped: set[str | tuple[str, ...]] = set()
     # grouped columns by name, qualified ones (`a.id`) also by table: `b.id` isn't
     # grouped by `GROUP BY a.id`
     grouped_names: set[str] = set()
@@ -1141,7 +1142,9 @@ def _outer_order_by(
         elif (
             isinstance(key, exp.Column)
             # (`t.id` of `SELECT * FROM t`: the one table's column)
-            and (not key.table or (expanded and not stmt.args.get("joins")))
+            and (
+                not key.table or (expanded and key.table.lower() == _single_table(stmt))
+            )
             and key.name.lower() in lowered
         ):
             # an alias, or the selected column of that name
@@ -1166,6 +1169,17 @@ def _outer_order_by(
         )
         keys.append(_escaped_identifiers(ordered, dialect).sql(dialect=dialect))
     return ", ".join(keys)
+
+
+def _single_table(stmt: Any) -> str | None:
+    """
+    The lower-cased name (or alias) of the one table a query reads from; `None` for a
+    join or another source (a subquery, a parenthesised join).
+    """
+    from_ = stmt.args.get("from_", stmt.args.get("from"))
+    if from_ is None or stmt.args.get("joins") or not isinstance(from_.this, exp.Table):
+        return None
+    return str(from_.this.alias_or_name).lower()
 
 
 def _nested_queries(stmt: Any) -> bool:

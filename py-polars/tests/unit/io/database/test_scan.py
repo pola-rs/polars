@@ -1768,12 +1768,17 @@ def test_scan_duckdb_lossy_values_are_errors() -> None:
     def scan(sql: str, **kwargs: Any) -> pl.LazyFrame:
         return pl.scan_database(sql, conn, partition_on=None, pushdown=False, **kwargs)
 
-    # a Map's values are checked as a List's are
-    with pytest.raises(pl.exceptions.SchemaError, match="would round"):
-        scan(
-            "SELECT map(['a'], [1.5]) AS x",
-            schema={"x": pl.Map(pl.String, pl.Int64)},
-        ).collect()
+    # a Map's values are checked as a List's are, also cast to its entries
+    entries = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+    for dtype in [pl.Map(pl.String, pl.Int64), entries]:
+        with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+            scan("SELECT map(['a'], [1.5]) AS x", schema={"x": dtype}).collect()
+    for dtype in [
+        pl.Map(pl.String, pl.Datetime("us")),
+        pl.List(pl.Struct({"key": pl.String, "value": pl.Datetime("us")})),
+    ]:
+        with pytest.raises(pl.exceptions.SchemaError, match="raw ticks"):
+            scan("SELECT map(['a'], [1::BIGINT]) AS x", schema={"x": dtype}).collect()
     # a finite DOUBLE isn't an infinite Float16
     with pytest.raises(pl.exceptions.SchemaError, match="Float16"):
         scan("SELECT 1e5::DOUBLE AS x", schema={"x": pl.Float16}).collect()
@@ -5195,6 +5200,28 @@ def test_a_non_repeatable_source_over_the_count_buffer_says_so(
         assert lf.tail(3).collect().height == 3
 
 
+def test_a_source_that_may_write_is_counted_once_over_the_count_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `nextval()` advances the sequence: the rows counted are kept, not read again
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    conn.execute("CREATE SEQUENCE s START 1")
+    monkeypatch.setenv("POLARS_DATABASE_COUNT_BUFFER_BYTES", "1")
+    out = (
+        pl.scan_database(
+            "SELECT nextval('s') AS n FROM range(3)",
+            conn,
+            partition_on=None,
+            schema={"n": pl.Int64},
+        )
+        .tail(1)
+        .collect()
+    )
+    assert out["n"].to_list() == [3]
+    assert conn.execute("SELECT currval('s')").fetchone() == (3,)
+
+
 def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:
     # DuckDB folds ASCII case only: `"Ä"` and `"ä"` are different tables
     duckdb = pytest.importorskip("duckdb")
@@ -5322,6 +5349,14 @@ def test_scan_duckdb_timetz_typed_by_the_user_never_drops_its_offset() -> None:
     lf = scan(schema={"id": pl.Int32, "l": pl.List(pl.Time)})
     with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
         lf.collect()
+    # a field named like the type is no TIMETZ
+    out = pl.scan_database(
+        "SELECT {'TIME WITH TIME ZONE': 7} AS s",
+        conn,
+        partition_on=None,
+        schema={"s": pl.Struct({"TIME WITH TIME ZONE": pl.Int32})},
+    ).collect()
+    assert out["s"].to_list() == [{"TIME WITH TIME ZONE": 7}]
     # the advice works: the offset is in the text
     out = pl.scan_database(
         "SELECT id, CAST(t AS VARCHAR) AS t FROM t",

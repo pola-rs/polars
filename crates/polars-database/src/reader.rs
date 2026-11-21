@@ -526,8 +526,8 @@ impl PartitionReader {
     ///
     /// Returns the number of rows, and the rows unless they passed `COUNT_BUFFER_BYTES`: a result
     /// that big is counted and dropped (the read runs the query again, and checks that it finds as
-    /// many rows), so a `tail(n)` can't hold the whole result. A query that may write
-    /// ([`query_may_write`](crate::database::planner::query_may_write)) keeps all its rows.
+    /// many rows), so a `tail(n)` can't hold the whole result. A source that may write
+    /// ([`source_may_write`](crate::database::planner::source_may_write)) keeps all its rows.
     fn read_counted(&self, session: &mut Session) -> PolarsResult<(u64, Option<DataFrame>)> {
         let config = &self.shared.config;
         let overrides = config.options.schema_overrides.as_deref();
@@ -572,8 +572,8 @@ impl PartitionReader {
             }
             kept_bytes += batch.estimated_size(false);
             if kept_bytes > buffer_bytes && !keep_all {
-                // a query that may write must not run again: all its rows are kept
-                if crate::database::planner::query_may_write(config) {
+                // a source that may write must not run again: all its rows are kept
+                if crate::database::planner::source_may_write(config) {
                     keep_all = true;
                 } else {
                     dropped = true;

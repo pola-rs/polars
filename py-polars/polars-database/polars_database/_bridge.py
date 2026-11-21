@@ -1468,7 +1468,7 @@ def _sqlalchemy_psycopg2_guard() -> None:
         if (
             context is not None
             and context.execution_options.get(_SCAN_OPTION)
-            and type(cursor).__module__.split(".", 1)[0] == "psycopg2"
+            and _module_of(cursor) == "psycopg2"
         ):
             _psycopg2_bytes(cursor)
             _psycopg2_no_infinity(cursor)
@@ -2223,7 +2223,7 @@ def _time_with_zone_columns(result: Any) -> list[str]:
         return [
             d[0]
             for d in _description(result)
-            if (module == "duckdb" and "TIME WITH TIME ZONE" in str(d[1]).upper())
+            if (module == "duckdb" and _duckdb_holds_timetz(d[1]))
             or (
                 module in ("psycopg", "psycopg2", "pg8000")
                 and type(d[1]) is int
@@ -2231,6 +2231,18 @@ def _time_with_zone_columns(result: Any) -> list[str]:
             )
         ]
     return []
+
+
+def _duckdb_holds_timetz(dtype: Any) -> bool:
+    """Whether a DuckDB result type is or holds a `TIMETZ` (field names aside)."""
+    if isinstance(dtype, str):
+        return "TIME WITH TIME ZONE" in dtype.upper()
+    kind = getattr(dtype, "id", None)
+    if kind == "time with time zone":
+        return True
+    if kind not in ("list", "array", "struct", "map", "union"):
+        return False
+    return any(_duckdb_holds_timetz(child) for _, child in dtype.children)
 
 
 def _mysql_timestamp_columns(result: Any) -> list[str]:
@@ -2630,6 +2642,7 @@ class _Session:
             "pymysql",
             "MySQLdb",
             "mysql",
+            "mariadb",
         )
         # SQLAlchemy's `text()` reads `:name` and `\:` inside the string literals
         # written into the SQL; without parameters, the SQL goes to the driver as is

@@ -4037,25 +4037,27 @@ fn query_repeatable(config: &DatabaseScanConfig) -> bool {
     }
 }
 
-/// Whether running the source may change something (a function that writes, see [`repeatable`]):
-/// it must not run twice.
-pub(crate) fn query_may_write(config: &DatabaseScanConfig) -> bool {
-    let DatabaseRelation::Query { sql } = &config.options.relation else {
-        return false;
-    };
-    let functions_write = matches!(
+/// Whether running the source may change something (a function that writes: `nextval()`), so that
+/// it must not run twice. Only a query known to call no such function, a database whose
+/// functions can't write in a query, or a read-only session is sure not to; a view may call one
+/// (DuckDB's and Postgres' `nextval`).
+pub(crate) fn source_may_write(config: &DatabaseScanConfig) -> bool {
+    if matches!(
         config.dialect,
-        DialectName::Postgresql | DialectName::Mysql | DialectName::Singlestore
-    );
-    functions_write
-        && !read_only_session(
-            config.dialect,
-            &config.backend.kind,
-            config.options.connection.is_live(),
-        )
-        && sql_renderer()
+        DialectName::Sqlite | DialectName::Mssql | DialectName::Clickhouse
+    ) || read_only_session(
+        config.dialect,
+        &config.backend.kind,
+        config.options.connection.is_live(),
+    ) {
+        return false;
+    }
+    match &config.options.relation {
+        DatabaseRelation::Query { sql } => !sql_renderer()
             .and_then(|r| r.inspect_query(sql, config.dialect))
-            .is_ok_and(|f| f.parses && f.side_effects)
+            .is_ok_and(|f| f.parses && !f.side_effects),
+        DatabaseRelation::Table { .. } => true,
+    }
 }
 
 /// Turns the scan's `PartitionSpec` into partitions, querying bounds where needed.
