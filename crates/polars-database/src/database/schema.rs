@@ -556,7 +556,7 @@ fn value_kind_changed(from: &DataType, to: &DataType, converted: bool) -> bool {
     }
 }
 
-/// A column with a map (also in lists and arrays) whose time zone names are spellings of UTC
+/// A column with a map (also in lists, arrays and structs) whose time zone names are spellings of UTC
 /// (`Etc/UTC`) where the plan has `UTC`, as the plan. A Map key can't be cast between zone
 /// names (the cast refuses it), so the map is rebuilt from its entries cast on their own.
 fn relabel_utc_zones(col: &Column, to: &DataType) -> PolarsResult<Option<Column>> {
@@ -591,6 +591,11 @@ fn relabel_map_zones(s: &Series) -> PolarsResult<Option<Series>> {
         DataType::Array(inner, _) if has_map(inner) => {
             Some(s.array()?.apply_to_inner(&nested)?.into_series())
         },
+        DataType::Struct(fields) if fields.iter().any(|f| has_map(f.dtype())) => Some(
+            s.struct_()?
+                .try_apply_fields(|f| nested(f.clone()))?
+                .into_series(),
+        ),
         _ => None,
     })
 }
@@ -599,6 +604,7 @@ fn has_map(dtype: &DataType) -> bool {
     match dtype {
         DataType::Map(_, _) => true,
         DataType::List(inner) | DataType::Array(inner, _) => has_map(inner),
+        DataType::Struct(fields) => fields.iter().any(|f| has_map(f.dtype())),
         _ => false,
     }
 }
@@ -1198,6 +1204,39 @@ mod tests {
         assert_eq!(
             normalize_dtype(&DataType::Array(Box::new(est), 2)),
             DataType::Array(Box::new(utc), 2)
+        );
+    }
+
+    #[test]
+    fn utc_spellings_are_relabelled_in_maps_inside_structs() {
+        let tu = TimeUnit::Microseconds;
+        let etc = DataType::Datetime(tu, TimeZone::opt_try_new(Some("Etc/UTC")).unwrap());
+        let keys = Series::new("k".into(), [1_000_000i64]).cast(&etc).unwrap();
+        let values = Series::new("v".into(), [1i32]);
+        let entries = pack_map_entries(&keys, &values);
+        let dtype = DataType::Map(Box::new(etc.clone()), Box::new(DataType::Int32));
+        let map = MapChunked::try_from_storage(dtype, entries.implode().unwrap().into_series())
+            .unwrap()
+            .into_series()
+            .with_name("m".into());
+        let id = Series::new("id".into(), [7i32]);
+        let st = StructChunked::from_series("st".into(), 1, [map, id].iter())
+            .unwrap()
+            .into_series();
+        let planned = normalize_dtype(st.dtype());
+        let out = relabel_utc_zones(&st.into_column(), &planned)
+            .unwrap()
+            .expect("the map inside the struct is relabelled");
+        assert_eq!(format!("{:?}", out.dtype()), format!("{planned:?}"));
+        let DataType::Struct(fields) = out.dtype() else {
+            unreachable!()
+        };
+        assert_eq!(
+            fields[0].dtype(),
+            &DataType::Map(
+                Box::new(DataType::Datetime(tu, Some(TimeZone::UTC))),
+                Box::new(DataType::Int32)
+            )
         );
     }
 
