@@ -6790,7 +6790,7 @@ def test_postgres_pool_session_resolving_another_relation_is_refused(
     server = SERVERS["postgres17"]
     if server.uri is None:
         pytest.skip("no postgres17 URI")
-    schema, table = "vol_pg_rs_schema", "vol_pg_rs_t"
+    schema, table = f"vol_pg_rs_schema_{kind}", f"vol_pg_rs_t_{kind}"
     setup = [
         f"DROP SCHEMA IF EXISTS {schema} CASCADE",
         f"DROP TABLE IF EXISTS public.{table} CASCADE",
@@ -6852,7 +6852,7 @@ def test_pool_temp_table_on_one_session_is_refused_unless_all_have_one(
     driver = "psycopg" if name.startswith("postgres") else "pymysql"
     if not _installed(driver):
         pytest.skip(f"{driver} is not installed")
-    t = "vol_rs_shadow"
+    t = f"vol_rs_shadow_{name}_{kind}"
     rows = ", ".join(f"({i}, {i})" for i in range(1, 101))
     temp_rows = ", ".join(f"({i}, -1)" for i in range(1001, 1101))
     _execute(
