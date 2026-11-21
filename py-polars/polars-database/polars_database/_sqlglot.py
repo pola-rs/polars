@@ -286,7 +286,7 @@ def _from(f: Any) -> Any:
 
 
 def _subquery_parts(sub: Any) -> tuple[str, list[str]]:
-    """The SQL and the output columns of a `Subquery` (a plain string has no columns)."""
+    """The SQL and output columns of a `Subquery` (a plain string has none)."""
     if isinstance(sub, str):
         return sub, []
     return sub["sql"], sub.get("columns") or []

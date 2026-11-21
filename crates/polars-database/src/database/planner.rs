@@ -256,11 +256,65 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     None
 }
 
+/// The names a Trino query's output columns have, for the alias of its derived table. The
+/// discovered schema has them; under `schema=` (no I/O) the query's own: a column it names
+/// stays, one it doesn't is `_col<position>` as Trino names it (a user's name for it, or a
+/// literal's `1` that sqlglot reports, isn't it). Empty if they aren't known, or aren't unique.
+fn derived_column_names(
+    schema: &Schema,
+    user_schema: bool,
+    output: Option<&[PlSmallStr]>,
+) -> Vec<PlSmallStr> {
+    let names: Vec<PlSmallStr> = if !user_schema {
+        schema.iter_names().cloned().collect()
+    } else if let Some(output) = output {
+        output
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                if !n.is_empty() && schema.contains(n) {
+                    n.clone()
+                } else {
+                    format!("_col{i}").into()
+                }
+            })
+            .collect()
+    } else {
+        return vec![];
+    };
+    let unique = names.iter().collect::<PlHashSet<_>>().len();
+    if unique == names.len() { names } else { vec![] }
+}
+
+/// [`refuse_unwrappable_conversions`] for a scan planned under `schema=` (no I/O then): run
+/// on the first session opened.
+pub fn check_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &config.options.relation else {
+        return Ok(());
+    };
+    if !config.user_schema || config.dialect != DialectName::Trino {
+        return Ok(());
+    }
+    let facts = sql_renderer()
+        .and_then(|r| r.inspect_query(sql, config.dialect))
+        .ok();
+    refuse_unwrappable_conversions(
+        session,
+        &config.options,
+        facts.as_ref(),
+        &config.backend.kind,
+        config.session_setup_runs(),
+    )
+}
+
 /// A Trino query that names two output columns alike can't be wrapped, so its columns can't
 /// be read through a conversion: a `timestamp(7..12)` the drivers round (ADBC aborts the whole
 /// process on one outside 1677-2262), a `timestamp with time zone` in an array or map read an
 /// hour off in a zone's repeated hour. Refused before the query runs.
-fn refuse_unwrappable_conversions(
+pub(crate) fn refuse_unwrappable_conversions(
     session: &mut dyn DatabaseSession,
     options: &DatabaseScanOptions,
     facts: Option<&QueryFacts>,
@@ -1408,6 +1462,17 @@ pub fn resolve_scan(
         }
     }
 
+    let derived_columns = if is_query && dialect.names_derived_columns() {
+        derived_column_names(
+            &schema,
+            user_typed,
+            query_facts
+                .as_ref()
+                .and_then(|f| f.output_columns.as_deref()),
+        )
+    } else {
+        vec![]
+    };
     Ok(DatabaseScanConfig {
         sqlite_text_numbers,
         fingerprint: options.fingerprint(),
@@ -1425,6 +1490,7 @@ pub fn resolve_scan(
         user_schema: user_typed,
         derived_order_dropped,
         refused_columns: refused,
+        derived_columns,
         resolution,
         bounds_cache: Default::default(),
     })
@@ -3505,12 +3571,7 @@ pub fn compile_scan(
     }
 
     let renderer = sql_renderer()?;
-    let derived_columns = if config.user_schema {
-        vec![]
-    } else {
-        config.schema.iter_names().cloned().collect::<Vec<_>>()
-    };
-    let from = from_clause(options, dialect, &derived_columns);
+    let from = from_clause(options, dialect, &config.derived_columns);
 
     let mut columns = pushdown
         .columns
@@ -3991,14 +4052,7 @@ fn compile_unwrapped(
             };
             let read = if needs_wrapper {
                 // the alias the select items are qualified by (SQLite)
-                let derived = if config.user_schema {
-                    String::new()
-                } else {
-                    derived_column_list(
-                        dialect,
-                        &config.schema.iter_names().cloned().collect::<Vec<_>>(),
-                    )
-                };
+                let derived = derived_column_list(dialect, &config.derived_columns);
                 let mut read = format!(
                     "SELECT {} FROM ({}) {}{derived}",
                     escape_percent(config, fixed_select_list(dialect, &items)),

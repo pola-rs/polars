@@ -8596,12 +8596,18 @@ def test_trino_time_zone_values_in_arrays_and_maps_read_the_instants(
                     # whichever form the driver gives (datetimes, text, a struct): the
                     # wall-clock times it shows are those of UTC
                     shown = str(value)
-                    want = instants[row["id"]] if column == "a" else instants[row["id"]][:1]
+                    want = (
+                        instants[row["id"]]
+                        if column == "a"
+                        else instants[row["id"]][:1]
+                    )
                     for hhmm in want:
-                        assert f"{hhmm}" in shown or f"{int(hhmm[:2])}, {int(hhmm[3:])}" in shown, (
-                            driver, source, column, shown)
-                    assert "02:30" not in shown and "+0100" not in shown, (
-                        driver, source, column, shown)
+                        # (`00:30` as text, `0, 30` in a datetime's repr)
+                        as_repr = f"{int(hhmm[:2])}, {int(hhmm[3:])}"
+                        found = hhmm in shown or as_repr in shown
+                        assert found, (driver, source, column, shown)
+                    assert "02:30" not in shown, (driver, source, column, shown)
+                    assert "+0100" not in shown, (driver, source, column, shown)
         arrays = {d: str(df.schema["a"]) for d, df in frames.items()}
         assert len(set(arrays.values())) == 1, arrays
         if precision <= 6:
@@ -8650,10 +8656,82 @@ def test_trino_query_with_duplicate_names_over_wide_timestamps_is_refused() -> N
                 timeout=300,
                 check=False,
             )
-            assert out.returncode == 0, (driver, columns, out.returncode, out.stderr[-500:])
+            assert out.returncode == 0, (
+                driver,
+                columns,
+                out.returncode,
+                out.stderr[-500:],
+            )
             message = out.stdout
             assert "ERROR InvalidOperationError" in message, (driver, message)
-            assert "'ts9'" in message and "alias" in message, (driver, message)
+            assert "'ts9'" in message, (driver, message)
+            assert "alias" in message, (driver, message)
+
+
+@needs_trino
+def test_trino_query_with_unnamed_columns_reads_under_a_schema() -> None:
+    # `schema=` plans without I/O, and the wrapper still names the query's columns
+    table = "review_trino_unnamed_schema"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, s varchar)",
+            f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b')",
+        ],
+    )
+    cases: list[tuple[str, dict[str, Any], list[Any]]] = [
+        (
+            f"SELECT id, upper(s) FROM {table}",
+            {"id": pl.Int64, "_col1": pl.String},
+            [(1, "A"), (2, "B")],
+        ),
+        (f"SELECT count(*) FROM {table}", {"_col0": pl.Int64}, [(2,)]),
+        (
+            f"SELECT 1, id FROM {table} WHERE id = 2",
+            {"_col0": pl.Int32, "id": pl.Int64},
+            [(1, 2)],
+        ),
+        # a column the schema leaves out
+        (f"SELECT id, upper(s) FROM {table}", {"_col1": pl.String}, [("A",), ("B",)]),
+    ]
+    for driver in _runnable_drivers("trino"):
+        for source, schema, rows in cases:
+            got = _scan("trino", driver, source, schema=schema).collect()
+            assert sorted(got.rows()) == rows, (driver, source, got)
+
+
+@needs_trino
+def test_trino_query_with_duplicate_names_under_a_schema_is_refused() -> None:
+    # nothing is looked up when planning under `schema=`: the first session refuses
+    table = "review_trino_duplicate_names_schema"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, ts9 timestamp(9))",
+            f"INSERT INTO {table} VALUES (1, TIMESTAMP '2300-01-01 00:00:00.000000001')",
+        ],
+    )
+    uri = SERVERS["trino"].uri
+    assert uri is not None
+    child = _DUPLICATE_COLUMNS_CHILD.replace(
+        "driver=sys.argv[3])",
+        'driver=sys.argv[3], schema={"id": pl.Int64, "ts9": pl.String})',
+    )
+    source = f"SELECT a.id, a.ts9, b.ts9 FROM {table} a JOIN {table} b ON a.id = b.id"
+    for driver in _runnable_drivers("trino", ["trino", "adbc", "sqlalchemy"]):
+        out = subprocess.run(
+            [sys.executable, "-c", child, source, uri, driver],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+        assert out.returncode == 0, (driver, out.returncode, out.stderr[-500:])
+        assert "ERROR InvalidOperationError" in out.stdout, (driver, out.stdout)
+        assert "'ts9'" in out.stdout, (driver, out.stdout)
+        assert "alias" in out.stdout, (driver, out.stdout)
 
 
 @needs_trino

@@ -116,6 +116,11 @@ pub struct DatabaseScanConfig {
     /// database compares and sorts their values as text, so they are no range or order key.
     #[serde(default)]
     pub sqlite_text_numbers: Vec<PlSmallStr>,
+    /// The output columns of a Trino query, listed in the alias of the derived table the read
+    /// wraps it in (`(q) AS "_pl"("a", "_col1")`): Trino lets the outer query refer to a column
+    /// it named itself (`_col0`) only so. Empty where no alias list is written.
+    #[serde(default)]
+    pub derived_columns: Vec<PlSmallStr>,
     /// Columns the planner found unreadable right, with why: raised when one is read.
     #[serde(default)]
     pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,

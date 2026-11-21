@@ -99,8 +99,8 @@ fn split_type_list(inner: &str) -> Vec<&str> {
 /// The `name` and the type of a `row(..)` field (`x timestamp(3)`, `"a b" integer`, or an
 /// unnamed `timestamp(3)`).
 fn split_row_field(field: &str) -> (&str, &str) {
-    let end = if field.starts_with('"') {
-        field[1..].find('"').map_or(field.len(), |i| i + 2)
+    let end = if let Some(quoted) = field.strip_prefix('"') {
+        quoted.find('"').map_or(field.len(), |i| i + 2)
     } else {
         field.find([' ', '(']).unwrap_or(field.len())
     };

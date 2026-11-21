@@ -29,7 +29,7 @@ use crate::database::config::CompiledPartition;
 use crate::database::dialect::DialectName;
 use crate::database::planner::{
     check_mysql_session_zone, check_time_with_zone, check_unplanned_volatility,
-    time_text_risk_columns, truncating_columns,
+    check_unwrappable_conversions, time_text_risk_columns, truncating_columns,
 };
 use crate::database::schema::cast_columns;
 use crate::database::{DatabaseScanConfig, catalog};
@@ -232,6 +232,8 @@ pub struct Shared {
     /// The outcome of [`check_unplanned_volatility`], run on the first session opened:
     /// whether the source turned out volatile.
     volatility: OnceLock<Result<bool, String>>,
+    /// The outcome of [`check_unwrappable_conversions`], run on the first session opened.
+    unwrappable: OnceLock<Result<(), String>>,
     /// The outcome of [`check_mysql_session_zone`], run on the first session opened.
     session_zone: OnceLock<Result<(), String>>,
     /// The first session's resolution of the names, for a source planned without one.
@@ -258,6 +260,7 @@ impl Shared {
             backend: OnceLock::new(),
             volatility: OnceLock::new(),
             session_zone: OnceLock::new(),
+            unwrappable: OnceLock::new(),
             resolution_baseline: Mutex::new(None),
             pool: Mutex::new(Pool::default()),
             pool_changed: std::sync::Condvar::new(),
@@ -279,6 +282,15 @@ impl Shared {
             })
         });
         if let Err(e) = checked {
+            polars_bail!(InvalidOperation: "{e}");
+        }
+        let unwrappable = self.unwrappable.get_or_init(|| {
+            check_unwrappable_conversions(session.as_mut(), &self.config).map_err(|e| match e {
+                PolarsError::InvalidOperation(msg) => msg.to_string(),
+                e => e.to_string(),
+            })
+        });
+        if let Err(e) = unwrappable {
             polars_bail!(InvalidOperation: "{e}");
         }
         crate::database::planner::check_resolution(

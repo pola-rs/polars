@@ -1606,6 +1606,7 @@ mod tests {
             user_schema: false,
             derived_order_dropped: false,
             refused_columns: vec![],
+            derived_columns: vec![],
             resolution: None,
             sqlite_text_numbers: vec![],
             bounds_cache: Default::default(),
