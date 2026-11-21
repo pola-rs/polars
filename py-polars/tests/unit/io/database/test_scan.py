@@ -1095,8 +1095,9 @@ def test_scan_sqlite_filter_on_large_integers_read_as_floats(
     ]:
         with pytest.raises(errors):
             lf.filter(predicate).collect()
-    if driver == "connectorx":
-        # no float comparison is pushed there: the read meets the integer
+    if driver == "connectorx" or sys.platform == "win32":
+        # no float comparison is pushed there (ConnectorX; SQLite on Windows): the read
+        # meets the integer
         for predicate in [pl.col("x") == big, pl.col("x") < 2]:
             with pytest.raises(errors):
                 lf.filter(predicate).collect()
