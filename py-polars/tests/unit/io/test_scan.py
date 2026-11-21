@@ -23,7 +23,7 @@ from tests.unit.io.conftest import format_file_uri, normalize_path_separator_pl
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import SchemaDict
+    from polars._typing import EngineType, SchemaDict
     from tests.conftest import PlMonkeyPatch
 
 
@@ -795,6 +795,51 @@ def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
             schema={"index": pl.get_index_type(), "a": pl.Int64},
         ),
     )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scan_reuse_after_row_index_29441(
+    tmp_path: Path, data_file_extension: str, engine: EngineType
+) -> None:
+    path = tmp_path / f"data{data_file_extension}"
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    _write(df, path)
+    lf = _scan(path)
+
+    def self_join(lf: pl.LazyFrame) -> pl.DataFrame:
+        idx = lf.select("a").with_row_index("i").select("i")
+        return idx.join(
+            lf.with_row_index("i"), on="i", how="full", coalesce=True
+        ).collect(engine=engine)
+
+    assert_frame_equal(self_join(lf), df.with_row_index("i"), check_row_order=False)
+    assert_frame_equal(
+        self_join(lf.drop("b")), df.drop("b").with_row_index("i"), check_row_order=False
+    )
+    assert_frame_equal(lf.collect(engine=engine), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scan_row_index_does_not_leak_into_missing_columns_29441(
+    tmp_path: Path, engine: EngineType
+) -> None:
+    path = tmp_path / "data.parquet"
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    df.write_parquet(path)
+    lf = pl.scan_parquet(path, missing_columns="insert")
+
+    out = (
+        lf.select("a")
+        .join(lf.with_row_index("i").select("a", "i"), on="a")
+        .collect(engine=engine)
+    )
+    assert_frame_equal(
+        out, df.with_row_index("i").select("a", "i"), check_row_order=False
+    )
+    assert_frame_equal(lf.collect(engine=engine), df)
+    assert lf.collect_schema() == df.schema
 
 
 def test_scan_include_file_paths_respects_projection_pushdown() -> None:
