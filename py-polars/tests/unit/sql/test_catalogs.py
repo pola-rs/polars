@@ -5,6 +5,7 @@ import pickle
 import re
 import shutil
 import struct
+import sys
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
@@ -8414,6 +8415,9 @@ def test_call_rewrite_data_files_fails_after_commit(
     assert len(table_rows(lake, "tpch", "lineitem")) == 4
 
 
+NO_COLON_IN_NAMES = pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows file names cannot contain ':'"
+)
 ADD_FILES_COUNTS = {"added_files_count": pl.Int64, "changed_partition_count": pl.Int64}
 
 
@@ -8469,7 +8473,8 @@ def test_call_add_files(lake: CountingCatalog, tmp_path: Path) -> None:
     assert table.metadata.name_mapping() is not None
     # registered where they are, not copied
     paths = {task.file.file_path for task in table.scan().plan_files()}
-    assert {f"file://{folder}/a.parquet", f"file://{folder}/b.parquet"} <= paths
+    folder_uri = f"file://{folder.as_posix()}"
+    assert {f"{folder_uri}/a.parquet", f"{folder_uri}/b.parquet"} <= paths
     assert table_rows(lake, "tpch", "lineitem") == [
         (1, "a"),
         (2, "b"),
@@ -8554,12 +8559,12 @@ def test_call_add_files_partition_values(lake: CountingCatalog, tmp_path: Path) 
     assert task.file.partition[0] == (date(2026, 11, 20) - date(1970, 1, 1)).days
 
     # Hive's timestamp folder names, with a space
-    ctx.execute("CREATE TABLE h (k BIGINT, ts TIMESTAMP) PARTITION BY (ts)")
-    write_files(
-        tmp_path / "hts", {"ts=2026-11-20 10:00:00/a.parquet": pl.DataFrame({"k": [1]})}
-    )
-    ctx.execute(add_files_call("tpch.h", tmp_path / "hts"))
-    assert table_rows(lake, "tpch", "h") == [(1, datetime(2026, 11, 20, 10))]
+    if sys.platform != "win32":
+        ctx.execute("CREATE TABLE h (k BIGINT, ts TIMESTAMP) PARTITION BY (ts)")
+        hts = {"ts=2026-11-20 10:00:00/a.parquet": pl.DataFrame({"k": [1]})}
+        write_files(tmp_path / "hts", hts)
+        ctx.execute(add_files_call("tpch.h", tmp_path / "hts"))
+        assert table_rows(lake, "tpch", "h") == [(1, datetime(2026, 11, 20, 10))]
 
     # a removed partition field of a v1 table stays as `void`: NULL for every file
     schema = Schema(
@@ -8668,17 +8673,19 @@ def field_id_table(nested: bool) -> Any:
         ("lineitem", {"field_ids": False}, "InvalidOperationError", "field ids"),
         ("lineitem", {"field_ids": True}, "InvalidOperationError", "field ids"),
         ("l", {"legacy_list": True}, "SchemaError", "does not name"),
-        (
+        pytest.param(
             "ts",
             {"ts=2026-11-20 10:00:00,1234567/a.parquet": {"k": [1]}},
             "InvalidOperationError",
             "is not a timestamp",
+            marks=NO_COLON_IN_NAMES,
         ),
-        (
+        pytest.param(
             "ts",
             {"ts=2026-11-20 10:00:00.1234567/a.parquet": {"k": [1]}},
             "InvalidOperationError",
             "is not a timestamp",
+            marks=NO_COLON_IN_NAMES,
         ),
         ("lineitem", {"text": True}, "ComputeError", "not a Parquet file"),
         ("lineitem", {}, "ComputeError", "found no files"),

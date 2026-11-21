@@ -259,11 +259,15 @@ def _list_files(table: pyiceberg.table.Table, location: str) -> tuple[str, list[
         msg = f"add_files does not support '?' or '#' in the location '{location}'"
         raise InvalidOperationError(msg)
     # a local path as the location readers of the table will open
-    uri = urlparse(location)
-    if not uri.scheme or re.match(r"^[A-Za-z]:[\\/]", location):
-        location = "file://" + str(Path(location).resolve())
-    elif uri.scheme == "file" and not uri.netloc:
-        location = "file://" + str(Path(uri.path).resolve())
+    local = location.removeprefix("file://")
+    if re.match(r"^/?[A-Za-z]:[\\/]", local):
+        location = "file://" + Path(local.lstrip("/")).resolve().as_posix()
+    else:
+        uri = urlparse(location)
+        if not uri.scheme:
+            location = "file://" + Path(location).resolve().as_posix()
+        elif uri.scheme == "file" and not uri.netloc:
+            location = "file://" + Path(uri.path).resolve().as_posix()
     root = location.rstrip("/")
     try:
         found = _list(table.io, root)
