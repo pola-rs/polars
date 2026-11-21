@@ -607,6 +607,11 @@ impl Translator<'_> {
     /// decimal literal wider than its precision (DuckDB `HUGEINT` is read as
     /// `Decimal(38, 0)` but holds 39 digits) isn't a valid value.
     fn literal_fits(&self, name: &str, av: &AnyValue<'_>) -> bool {
+        if let Some(s) = av.get_str()
+            && self.literal_too_long(name, s)
+        {
+            return false;
+        }
         // A Trino `char(n)` is read padded with blanks, and compared without them (`'a  '`
         // read, `c = 'a  '` false): a literal ending in a blank may match what the
         // database doesn't.
@@ -678,6 +683,30 @@ impl Translator<'_> {
             return !sub_second;
         }
         true
+    }
+
+    /// Whether `text`, written as a string literal compared with the column, is past what the
+    /// database takes ([`DialectName::max_string_literal`]). A quote is written twice. Where the
+    /// column type is unknown, the national limit applies too. Such a filter is not pushed
+    /// (Polars applies it).
+    fn literal_too_long(&self, name: &str, text: &str) -> bool {
+        let dialect = self.dialect();
+        let Some(max_bytes) = dialect.max_string_literal(false) else {
+            return false;
+        };
+        let quotes = text.bytes().filter(|&b| b == b'\'').count();
+        if text.len() + quotes > max_bytes {
+            return true;
+        }
+        let national = self
+            .config
+            .column(name)
+            .and_then(|c| c.db_type.as_deref())
+            .is_none_or(|t| t.trim_start().to_ascii_lowercase().starts_with('n'));
+        national
+            && dialect
+                .max_string_literal(true)
+                .is_some_and(|max| text.encode_utf16().count() + quotes > max)
     }
 
     /// The fractional-second digits of a MySQL `DATETIME` / `TIMESTAMP` column, if declared.
@@ -906,6 +935,9 @@ impl Translator<'_> {
             self.compared(name)
         };
         let pattern = format!("{prefix}{}{suffix}", self.escape_like(pat));
+        if self.literal_too_long(name, &pattern) {
+            return None;
+        }
         let class = if strings.equality_exact && !self.dialect().like_case_insensitive() {
             Class::Exact
         } else if self.dialect().like_matches_per_character()
@@ -2214,6 +2246,53 @@ pub(crate) mod tests {
         // a `DateTime` has no such wrap: timestamps keep the wider range
         let us = AnyValue::Datetime(-86_400_000_000, TimeUnit::Microseconds, None);
         assert!(t.temporal_in_range(&us));
+    }
+
+    #[test]
+    fn oracle_string_literals_past_its_limit_are_not_pushed() {
+        let mut c = config(
+            DialectName::Oracle,
+            adbc("oracle"),
+            &[
+                ("v", DataType::String, Some("VARCHAR2")),
+                ("n", DataType::String, Some("NVARCHAR2")),
+                ("u", DataType::String, None),
+            ],
+        );
+        // byte-wise comparison (the session setup's `NLS_COMP=BINARY`): every operator pushes
+        let mut metas = c.columns.to_vec();
+        for m in &mut metas {
+            m.strings = StringSemantics {
+                empty_is_null: true,
+                ..StringSemantics::BINARY
+            };
+        }
+        c.columns = metas.into();
+        let is_in = |col: &str, values: &str| {
+            format!(
+                r#"{{"op": "is_in", "args": [{{"col": "{col}"}}], "nulls_equal": false,
+                "values": {{"dtype": "str", "values": [{values}]}}}}"#
+            )
+        };
+        let pushed = |col: &str, text: &str| {
+            let ops = ["eq", "neq", "starts_with", "contains_literal"];
+            let mut docs: Vec<String> = ops.iter().map(|op| cmp(op, col, "str", text)).collect();
+            docs.push(is_in(col, &format!(r#""x", "{text}""#)));
+            docs.iter()
+                .map(|d| translate_doc(&c, d).is_some())
+                .collect::<Vec<_>>()
+        };
+        // 4000 bytes in the database character set (a quote is written twice)
+        assert_eq!(pushed("v", &"a".repeat(3000)), [true; 5]);
+        assert_eq!(pushed("v", &"a".repeat(3997)), [true; 5]);
+        assert_eq!(pushed("v", &"a".repeat(4001)), [false; 5]);
+        assert_eq!(pushed("v", &"\u{20ac}".repeat(1332)), [true; 5]);
+        assert_eq!(pushed("v", &"\u{20ac}".repeat(1400)), [false; 5]);
+        // an NVARCHAR2 column: 2000 UTF-16 units
+        assert_eq!(pushed("n", &"a".repeat(1990)), [true; 5]);
+        assert_eq!(pushed("n", &"a".repeat(3000)), [false; 5]);
+        // an unknown type is held to the stricter limit
+        assert_eq!(pushed("u", &"a".repeat(3000)), [false; 5]);
     }
 
     #[test]

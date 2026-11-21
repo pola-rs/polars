@@ -7624,3 +7624,37 @@ def test_oracle_huge_batch_size_reads_every_row(driver: str, batch_size: int) ->
         batch_size=batch_size,
     )
     assert sorted(lf.collect()["ID"].to_list()) == list(range(1, 51))
+
+
+@pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
+@ORACLE_GROUP
+@pytest.mark.parametrize("driver", ["oracledb", "sqlalchemy"])
+def test_oracle_string_literals_past_the_literal_limit(driver: str) -> None:
+    # Oracle takes a string literal of 4000 bytes at most (ORA-01704), and 2000
+    # characters against an NVARCHAR2 column (ORA-01401): the filter runs in Polars
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE review_ora_lit'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            'CREATE TABLE review_ora_lit ("id" NUMBER(9), v VARCHAR2(4000 CHAR), '
+            "n NVARCHAR2(2000))",
+            "INSERT INTO review_ora_lit VALUES (1, 'abc', 'abc')",
+            "INSERT INTO review_ora_lit VALUES (2, RPAD('a', 3000, 'a'), "
+            "RPAD('a', 2000, 'a'))",
+            "INSERT INTO review_ora_lit VALUES (3, NULL, NULL)",
+        ],
+    )
+    lf = _scan("oracle", driver, "REVIEW_ORA_LIT")
+    filters = []
+    for column in ("V", "N"):
+        for text in ("a" * 3000, "a" * 4001, "b" * 5000, "\u20ac" * 1400):
+            col = pl.col(column)
+            filters += [
+                col == text,
+                col != text,
+                col.is_in([text, "abc"]),
+                col.str.starts_with(text[:-1]),
+                col.str.contains(text[1:], literal=True),
+            ]
+    check_filter_ids(lf, filters)

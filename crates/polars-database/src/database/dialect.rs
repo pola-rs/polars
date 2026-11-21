@@ -638,6 +638,18 @@ impl DialectName {
         }
     }
 
+    /// The longest string literal the database takes, if it has a limit: in bytes, or compared
+    /// with a column of a national character type (`national`) in UTF-16 units. Oracle (without
+    /// `MAX_STRING_SIZE=EXTENDED`): ORA-01704 at 4000 bytes, ORA-01401 against an `NVARCHAR2` /
+    /// `NCHAR` column at 4000 bytes of UTF-16.
+    pub fn max_string_literal(self, national: bool) -> Option<usize> {
+        match (self, national) {
+            (Self::Oracle, false) => Some(4000),
+            (Self::Oracle, true) => Some(2000),
+            _ => None,
+        }
+    }
+
     /// Whether `LIMIT`/`TOP`/`FETCH FIRST` is known to work for this dialect.
     pub fn supports_limit(self) -> bool {
         !matches!(self, Self::Generic | Self::Flightsql)
