@@ -13,7 +13,7 @@ macro_rules! push_expr {
         match $current_expr {
             DataTypeFunction(_) | Column(_) | Literal(_) | Len | Element => {},
             #[cfg(feature = "dtype-struct")]
-            Field(_) => {},
+            Field(_) | Path(_) => {},
             Alias(e, _) => $push($c, e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first

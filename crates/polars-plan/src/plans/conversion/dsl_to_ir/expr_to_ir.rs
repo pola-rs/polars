@@ -47,6 +47,9 @@ fn to_aexpr_impl_materialized_lit(
 
 pub struct ExprToIRContext<'a> {
     pub(super) with_fields: Option<Schema>,
+    /// Inside the evaluation of `list.eval` / `arr.eval` (and the like), where the schema still
+    /// holds the outer columns but only the element may be used.
+    pub(super) in_eval: bool,
     pub arena: &'a mut Arena<AExpr>,
     pub schema: &'a Schema,
 
@@ -61,6 +64,7 @@ impl<'a> ExprToIRContext<'a> {
     pub fn new(arena: &'a mut Arena<AExpr>, schema: &'a Schema) -> Self {
         Self {
             with_fields: None,
+            in_eval: false,
             arena,
             schema,
             allow_unknown: false,
@@ -86,6 +90,7 @@ impl<'a> ExprToIRContext<'a> {
 
         Self {
             with_fields,
+            in_eval: false,
             arena,
             schema,
             allow_unknown: false,
@@ -510,6 +515,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
             evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
                 with_fields: ctx.with_fields.clone(),
+                in_eval: true,
                 schema: &evaluation_schema,
                 arena: ctx.arena,
                 allow_unknown: ctx.allow_unknown,
@@ -582,6 +588,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
             for e in evaluation {
                 let mut eval_ctx = ExprToIRContext {
                     with_fields: Some(struct_schema.clone()),
+                    in_eval: ctx.in_eval,
                     arena: ctx.arena,
                     schema: &eval_schema,
                     allow_unknown: ctx.allow_unknown,
@@ -688,6 +695,10 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
             }
 
             (AExpr::StructField(name.clone()), name.clone())
+        },
+        #[cfg(feature = "dtype-struct")]
+        Expr::Path(path) => {
+            return recurse!(&super::field_path::field_path_to_expr(path, ctx)?);
         },
 
         e @ Expr::SubPlan { .. } | e @ Expr::Selector(_) => {
