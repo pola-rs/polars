@@ -1773,12 +1773,20 @@ def test_scan_duckdb_lossy_values_are_errors() -> None:
     for dtype in [pl.Map(pl.String, pl.Int64), entries]:
         with pytest.raises(pl.exceptions.SchemaError, match="would round"):
             scan("SELECT map(['a'], [1.5]) AS x", schema={"x": dtype}).collect()
-    for dtype in [
-        pl.Map(pl.String, pl.Datetime("us")),
-        pl.List(pl.Struct({"key": pl.String, "value": pl.Datetime("us")})),
+    for sql, dtype in [
+        ("SELECT map(['a'], [1::BIGINT]) AS x", pl.Map(pl.String, pl.Datetime("us"))),
+        (
+            "SELECT map(['a'], [1::BIGINT]) AS x",
+            pl.List(pl.Struct({"key": pl.String, "value": pl.Datetime("us")})),
+        ),
+        (
+            "SELECT [{'key': 'a', 'value': 1::BIGINT}] AS x",
+            pl.Map(pl.String, pl.Datetime("us")),
+        ),
+        ("SELECT 1::BIGINT AS x", pl.Struct({"t": pl.Datetime("us")})),
     ]:
         with pytest.raises(pl.exceptions.SchemaError, match="raw ticks"):
-            scan("SELECT map(['a'], [1::BIGINT]) AS x", schema={"x": dtype}).collect()
+            scan(sql, schema={"x": dtype}).collect()
     # a finite DOUBLE isn't an infinite Float16
     with pytest.raises(pl.exceptions.SchemaError, match="Float16"):
         scan("SELECT 1e5::DOUBLE AS x", schema={"x": pl.Float16}).collect()
@@ -5220,6 +5228,15 @@ def test_a_source_that_may_write_is_counted_once_over_the_count_buffer(
     )
     assert out["n"].to_list() == [3]
     assert conn.execute("SELECT currval('s')").fetchone() == (3,)
+    # also through a view
+    conn.execute("CREATE VIEW v AS SELECT nextval('s') AS n FROM range(3)")
+    for source in ["v", "SELECT n FROM v"]:
+        out = (
+            pl.scan_database(source, conn, partition_on=None, schema={"n": pl.Int64})
+            .tail(1)
+            .collect()
+        )
+        assert out["n"].to_list() == [conn.execute("SELECT currval('s')").fetchone()[0]]
 
 
 def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:
@@ -5233,6 +5250,15 @@ def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:
         for name in ["Ä", "ä"]:
             lf = pl.scan_database(name, conn, partition_on=None)
             check_filter_ids(lf, [pl.col("s") == "a", pl.col("s") != "a"])
+    # nor are `cafe` and `café`, also under a default collation that ignores accents
+    with duckdb.connect(":memory:") as conn:
+        conn.execute("CREATE TABLE ids AS SELECT range AS id FROM range(30)")
+        conn.execute("CREATE VIEW cafe AS SELECT id FROM ids")
+        conn.execute('CREATE VIEW "café" AS SELECT id, random() AS r FROM ids')
+        conn.execute("SET GLOBAL default_collation = 'noaccent'")
+        lf = pl.scan_database("café", conn, partition_on="id", partition_num=4)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
 
 
 def test_a_dialect_that_contradicts_the_connection_is_refused(tmp_path: Path) -> None:
@@ -5345,10 +5371,10 @@ def test_scan_duckdb_timetz_typed_by_the_user_never_drops_its_offset() -> None:
             lf.collect()
         with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
             lf.filter(pl.col("t").is_not_null()).collect()
-    # also nested
-    lf = scan(schema={"id": pl.Int32, "l": pl.List(pl.Time)})
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
-        lf.collect()
+    # also nested, or as a number
+    for schema in [{"id": pl.Int32, "l": pl.List(pl.Time)}, {"t": pl.Int64}]:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
+            scan(schema=schema).collect()
     # a field named like the type is no TIMETZ
     out = pl.scan_database(
         "SELECT {'TIME WITH TIME ZONE': 7} AS s",

@@ -1156,7 +1156,7 @@ impl Translator<'_> {
                     && self
                         .config
                         .column(name)
-                        .is_some_and(|c| c.db_type.is_none()) =>
+                        .is_some_and(crate::database::planner::type_unknown) =>
             {
                 None
             },
@@ -1672,6 +1672,13 @@ mod tests {
         };
         let c = |kind, t| config(DialectName::Singlestore, kind, &[("ts", naive.clone(), t)]);
         assert_eq!(class_of(&c(pymysql.clone(), None), &plain), None);
+        assert_eq!(
+            class_of(
+                &c(pymysql.clone(), Some(crate::database::planner::MYSQL_DATE)),
+                &plain
+            ),
+            None
+        );
         assert_eq!(
             class_of(&c(pymysql, Some("datetime")), &plain),
             Some(Class::Exact)

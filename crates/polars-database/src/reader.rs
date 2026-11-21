@@ -573,7 +573,8 @@ impl PartitionReader {
             kept_bytes += batch.estimated_size(false);
             if kept_bytes > buffer_bytes && !keep_all {
                 // a source that may write must not run again: all its rows are kept
-                if crate::database::planner::source_may_write(config) {
+                if crate::database::planner::source_may_write(config, self.shared.found_volatile())
+                {
                     keep_all = true;
                 } else {
                     dropped = true;

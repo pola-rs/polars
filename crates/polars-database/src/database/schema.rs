@@ -374,11 +374,19 @@ fn any_leaf_pair(
         (DataType::Map(ka, va), DataType::Map(kb, vb)) => {
             any_leaf_pair(ka, kb, f) || any_leaf_pair(va, vb, f)
         },
-        // a map cast to its storage, a list of `key` / `value` structs
-        (DataType::Map(k, v), DataType::List(b)) => match b.as_ref() {
+        // a map cast to its storage, a list of `key` / `value` structs, and back
+        (DataType::Map(k, v), DataType::List(entries)) => match entries.as_ref() {
             DataType::Struct(fields) => fields.iter().any(|fb| match fb.name().as_str() {
                 "key" => any_leaf_pair(k, fb.dtype(), f),
                 "value" => any_leaf_pair(v, fb.dtype(), f),
+                _ => false,
+            }),
+            _ => false,
+        },
+        (DataType::List(entries), DataType::Map(k, v)) => match entries.as_ref() {
+            DataType::Struct(fields) => fields.iter().any(|fa| match fa.name().as_str() {
+                "key" => any_leaf_pair(fa.dtype(), k, f),
+                "value" => any_leaf_pair(fa.dtype(), v, f),
                 _ => false,
             }),
             _ => false,
@@ -388,6 +396,8 @@ fn any_leaf_pair(
                 .find(|fa| fa.name() == fb.name())
                 .is_some_and(|fa| any_leaf_pair(fa.dtype(), fb.dtype(), f))
         }),
+        // a value cast to a struct of one field is cast to the field
+        (_, DataType::Struct(b)) if b.len() == 1 => any_leaf_pair(from, b[0].dtype(), f),
         _ => f(from, to),
     }
 }
@@ -551,7 +561,8 @@ fn check_numeric_exact(src: &Column, cast: &Column) -> PolarsResult<()> {
 fn check_exact_at(src: &Column, cast: &Column, root: &PlSmallStr) -> PolarsResult<()> {
     let path = |suffix: &str| -> PlSmallStr { format!("{}{suffix}", src.name()).into() };
     match (src.dtype(), cast.dtype()) {
-        (DataType::Map(_, _), DataType::Map(_, _) | DataType::List(_)) => {
+        (DataType::Map(_, _), DataType::Map(_, _) | DataType::List(_))
+        | (DataType::List(_), DataType::Map(_, _)) => {
             // a map is a list of `key` / `value` structs: its values are checked as such
             let storage = |c: &Column| -> PolarsResult<Column> {
                 if !matches!(c.dtype(), DataType::Map(_, _)) {
@@ -1048,6 +1059,15 @@ mod tests {
             ),
         ])));
         assert!(numeric_to_temporal(&map(DataType::Int64), &entries));
+        let ints = DataType::List(Box::new(DataType::Struct(vec![
+            Field::new("key".into(), DataType::String),
+            Field::new("value".into(), DataType::Int64),
+        ])));
+        let ticks = map(DataType::Datetime(TimeUnit::Microseconds, None));
+        assert!(numeric_to_temporal(&ints, &ticks));
+        // a struct of one field
+        let one = DataType::Struct(vec![Field::new("t".into(), DataType::Date)]);
+        assert!(numeric_to_temporal(&DataType::Int64, &one));
     }
 
     #[test]

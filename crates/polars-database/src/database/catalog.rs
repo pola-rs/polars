@@ -425,7 +425,11 @@ pub fn table_info(
                 .filter(|t| !t.is_empty());
                 match fresh {
                     Some(t) => info.types = t,
-                    None => evolving_types_failed = true,
+                    // the stored types may be stale: the driver's are read instead
+                    None => {
+                        evolving_types_failed = true;
+                        info.types.clear();
+                    },
                 }
                 // `DESCRIBE QUERY` shows a `char(n)` column as `string`
                 info.padding_unknown = true;
@@ -1104,10 +1108,12 @@ impl CatalogQueries {
     }
 }
 
-/// `expr` with ASCII letters lower-cased, as DuckDB folds identifiers (not `lower()`).
+/// `expr` with ASCII letters lower-cased, as DuckDB folds identifiers (not `lower()`), as bytes:
+/// compared without the session's `default_collation` (`noaccent` would make `café` `cafe`).
 fn duckdb_ascii_lower(expr: &str) -> String {
     format!(
-        "system.main.translate({expr}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')"
+        "system.main.encode(system.main.translate({expr}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', \
+        'abcdefghijklmnopqrstuvwxyz'))"
     )
 }
 
@@ -1403,9 +1409,8 @@ pub fn view_definition(
             s(name)
         ),
         // The first place the name resolves in (`duckdb_name_rank`): a temporary view hides
-        // a table of its name. Names compare by `lower()`, which folds more than DuckDB's
-        // identifiers do (`Vé` and `vÉ` are two views): two relations of the same rank are none
-        // found.
+        // a table of its name. Names compare with ASCII letters folded (`duckdb_ascii_lower`); two
+        // relations of the same rank are none found.
         DialectName::Duckdb => {
             let rank = duckdb_name_rank(parts, context, &search);
             format!(
@@ -2532,6 +2537,19 @@ mod tests {
                 assert!(!info.incomplete);
             }
         }
+        // `DESCRIBE QUERY` answers nothing: the stale types aren't used either
+        let mut s = Recorder {
+            log: vec![],
+            answer: |sql: &str| {
+                if sql.starts_with("DESCRIBE QUERY") {
+                    describe(&[])
+                } else {
+                    describe(&stale)
+                }
+            },
+        };
+        let info = table_info(&mut s, DialectName::Databricks, &["v".into()], true);
+        assert!(info.incomplete && info.types.is_empty());
     }
 
     #[test]

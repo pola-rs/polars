@@ -1244,7 +1244,7 @@ pub fn check_mysql_session_zone(
     let Some(column) = config.columns.iter().find(|c| {
         matches!(c.dtype, DataType::Datetime(_, Some(_)))
             && config.schema.contains(&c.name)
-            && c.db_type.as_deref().is_none_or(|t| t == MYSQL_DATE)
+            && type_unknown(c)
     }) else {
         return Ok(());
     };
@@ -1636,7 +1636,7 @@ const DUCKDB_TEXT: &str = "<duckdb text>";
 /// The `db_type` of a MySQL `Date` / `Datetime` column of an unknown type (a query's on a
 /// driver without the type lookup, or under `schema=`): it may be a `DATE` / `DATETIME` /
 /// `TIMESTAMP` holding zero dates (`mysql_zero_date_type`).
-const MYSQL_DATE: &str = "<mysql date>";
+pub(crate) const MYSQL_DATE: &str = "<mysql date>";
 /// The `db_type` of a SQLite Binary column: its blobs as they are, and no other value (a number or
 /// text, which drivers read as text, or as NULL, or lossily: an `%e` real) reads: the read fails on
 /// it (`explain_sqlite_error`). As an expression, it also has no declared type for ConnectorX to
@@ -2635,6 +2635,12 @@ fn references(e: &SqlExpr, column: &str) -> bool {
     }
 }
 
+/// The column's database type isn't known (none, or only that it is a MySQL date of some type,
+/// [`MYSQL_DATE`]).
+pub(crate) fn type_unknown(c: &ColumnMeta) -> bool {
+    c.db_type.as_deref().is_none_or(|t| t == MYSQL_DATE)
+}
+
 /// A MySQL column of unknown type, read as a type a date may be read as (`schema=`): it may be a
 /// date column holding zero dates, which the read refuses.
 pub(crate) fn zero_date_candidate(config: &DatabaseScanConfig, c: &ColumnMeta) -> bool {
@@ -3446,8 +3452,8 @@ pub(crate) fn time_text_risk_columns(config: &DatabaseScanConfig) -> PlHashMap<P
         .collect()
 }
 
-/// Refuses a `TIMETZ` column the driver's result description shows under `schema=` (declared
-/// `String`, `Time` or nested): it is read as the local time of day, its offset dropped.
+/// Refuses a `TIMETZ` column the driver's result description shows under `schema=`, whatever it is
+/// declared as: it is read as the local time of day, its offset dropped.
 pub(crate) fn check_time_with_zone(
     session: &dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -3459,10 +3465,7 @@ pub(crate) fn check_time_with_zone(
         let Some(column) = config.column(&name) else {
             continue;
         };
-        if column.db_type.is_some()
-            || !(column.dtype.is_nested()
-                || matches!(column.dtype, DataType::String | DataType::Time))
-        {
+        if column.db_type.is_some() {
             continue;
         }
         let quoted = config.dialect.quote_ident(&name);
@@ -4038,10 +4041,11 @@ fn query_repeatable(config: &DatabaseScanConfig) -> bool {
 }
 
 /// Whether running the source may change something (a function that writes: `nextval()`), so that
-/// it must not run twice. Only a query known to call no such function, a database whose
-/// functions can't write in a query, or a read-only session is sure not to; a view may call one
-/// (DuckDB's and Postgres' `nextval`).
-pub(crate) fn source_may_write(config: &DatabaseScanConfig) -> bool {
+/// it must not run twice. Only a query known to call no such function (nor a volatile view), a
+/// database whose functions can't write in a query, or a read-only session is sure not to; a view
+/// may call one (DuckDB's and Postgres' `nextval`). `found_volatile`: the source was found volatile
+/// when read (`schema=`).
+pub(crate) fn source_may_write(config: &DatabaseScanConfig, found_volatile: bool) -> bool {
     if matches!(
         config.dialect,
         DialectName::Sqlite | DialectName::Mssql | DialectName::Clickhouse
@@ -4053,9 +4057,13 @@ pub(crate) fn source_may_write(config: &DatabaseScanConfig) -> bool {
         return false;
     }
     match &config.options.relation {
-        DatabaseRelation::Query { sql } => !sql_renderer()
-            .and_then(|r| r.inspect_query(sql, config.dialect))
-            .is_ok_and(|f| f.parses && !f.side_effects),
+        DatabaseRelation::Query { sql } => {
+            config.volatile_source
+                || found_volatile
+                || !sql_renderer()
+                    .and_then(|r| r.inspect_query(sql, config.dialect))
+                    .is_ok_and(|f| f.parses && !f.side_effects)
+        },
         DatabaseRelation::Table { .. } => true,
     }
 }
