@@ -227,9 +227,14 @@ pub fn connect_options(
     if dialect == DialectName::Trino
         && let Some(u) = &mut uri
     {
+        // (the user's `connect_options` are added after the URI, below)
         let password = options
             .iter()
             .any(|(k, _)| k.as_c_str() == ADBC_OPTION_PASSWORD)
+            || spec
+                .connect_options
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("password"))
             || u.split_once("://")
                 .and_then(|(_, rest)| secret_userinfo_end(rest).map(|at| rest[..at].contains(':')))
                 .unwrap_or(false);
@@ -275,16 +280,20 @@ fn cstring(s: &str, what: &str) -> PolarsResult<CString> {
 
 /// The URI for the ADBC Trino driver, which connects over HTTPS unless the URI says `SSL=false`
 /// (exactly that, or `False`), where the `trino` Python driver connects over HTTP unless `SSL`
-/// is true: made to behave alike. A password is only sent over HTTPS (as the Python driver
-/// does), whatever `SSL` says. `SSL` takes the booleans the Python driver takes; another value,
-/// or the key in another case, is refused rather than read as HTTPS.
+/// is true or the port is 443: made to behave alike. A password (`password`: one in the
+/// URI's userinfo, its parameters or the connect options) is only sent over HTTPS (as the
+/// Python driver does), whatever `SSL` says. `SSL` takes the booleans the Python driver takes
+/// (and `disabled`, which the ADBC driver once took for `false`); another value, or the key in
+/// another case, is refused rather than read as HTTPS.
 fn trino_ssl_uri(uri: &str, password: bool) -> PolarsResult<String> {
     let (base, query) = uri.split_once('?').unwrap_or((uri, ""));
     let mut ssl = None;
     let mut kept = vec![];
+    let mut password = password;
     for kv in query.split('&').filter(|kv| !kv.is_empty()) {
         let (key, value) = kv.split_once('=').unwrap_or((kv, ""));
         if !key.eq_ignore_ascii_case("ssl") {
+            password |= key.eq_ignore_ascii_case("password");
             kept.push(kv.to_string());
             continue;
         }
@@ -296,7 +305,7 @@ fn trino_ssl_uri(uri: &str, password: bool) -> PolarsResult<String> {
         let decoded = percent_decode(value);
         ssl = Some(match decoded.trim().to_ascii_lowercase().as_str() {
             "1" | "true" | "yes" | "on" => true,
-            "0" | "false" | "no" | "off" => false,
+            "0" | "false" | "no" | "off" | "disabled" => false,
             _ => polars_bail!(
                 InvalidOperation:
                 "URI parameter SSL={decoded:?} for trino: expected a boolean (true or false)"
@@ -304,7 +313,11 @@ fn trino_ssl_uri(uri: &str, password: bool) -> PolarsResult<String> {
         });
     }
     // (HTTPS is the driver's default)
-    if !(password || ssl == Some(true)) {
+    let https = match ssl {
+        Some(ssl) => ssl,
+        None => trino_uri_port(base) == Some(443),
+    };
+    if !(password || https) {
         kept.push("SSL=false".to_string());
     }
     Ok(if kept.is_empty() {
@@ -312,6 +325,18 @@ fn trino_ssl_uri(uri: &str, password: bool) -> PolarsResult<String> {
     } else {
         format!("{base}?{}", kept.join("&"))
     })
+}
+
+/// The port of a `scheme://[userinfo@]host[:port]/…` URI, if it has one.
+fn trino_uri_port(uri: &str) -> Option<u16> {
+    let rest = uri.split_once("://")?.1;
+    let rest = &rest[secret_userinfo_end(rest).map_or(0, |at| at + 1)..];
+    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    // (after an IPv6 literal's `]`)
+    let host_end = authority.rfind(']').unwrap_or(0);
+    authority[host_end..]
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse().ok())
 }
 
 /// The `uri` database option for a connection target.
@@ -967,8 +992,33 @@ mod tests {
         // a password never goes over HTTP
         assert_eq!(f(base, true).unwrap(), base);
         assert_eq!(f(&format!("{base}?SSL=false"), true).unwrap(), base);
-        assert!(f(&format!("{base}?SSL=disabled"), false).is_err());
+        // a password in the URI's parameters too
+        assert_eq!(
+            f(&format!("{base}?password=p"), false).unwrap(),
+            format!("{base}?password=p")
+        );
+        // `disabled`, which the ADBC driver once took, still means HTTP
+        assert_eq!(
+            f(&format!("{base}?SSL=disabled"), false).unwrap(),
+            format!("{base}?SSL=false")
+        );
+        assert!(f(&format!("{base}?SSL=maybe"), false).is_err());
         assert!(f(&format!("{base}?ssl=false"), false).is_err());
+        // port 443 is HTTPS, as for the Python driver, unless the URI says otherwise
+        assert_eq!(f("trino://u@h:443/c", false).unwrap(), "trino://u@h:443/c");
+        assert_eq!(
+            f("trino://u@h:443/c?SSL=false", false).unwrap(),
+            "trino://u@h:443/c?SSL=false"
+        );
+        assert_eq!(
+            f("trino://u@[::1]:8443/c", false).unwrap(),
+            "trino://u@[::1]:8443/c?SSL=false"
+        );
+        assert_eq!(
+            f("trino://u@[::1]:443", false).unwrap(),
+            "trino://u@[::1]:443"
+        );
+        assert_eq!(f("trino://h", false).unwrap(), "trino://h?SSL=false");
     }
 
     #[test]
