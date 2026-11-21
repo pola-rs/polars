@@ -8,13 +8,12 @@ import operator
 import re
 import sys
 import types
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_ldf
-from polars.expr import Expr
 from polars.schema import Schema
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -25,6 +24,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame
     from polars._typing import SchemaDict
+    from polars.expr import Expr
 
 # An ODBC connection string names its driver or data source in any of its keys.
 _ODBC_KEY = re.compile(r"(^|;)\s*(driver|dsn|filedsn)\s*=", re.IGNORECASE)
@@ -312,10 +312,6 @@ def _string_options(options: Mapping[str, Any] | None) -> list[tuple[str, str]]:
     return [(str(k), str(v)) for k, v in (options or {}).items()]
 
 
-# The most partitions a scan may ask for (the plugin caps at the same number).
-_MAX_PARTITION_NUM = 65536
-
-
 def _positive_int(name: str, value: Any, maximum: int = sys.maxsize) -> None:
     if value is None:
         return
@@ -330,17 +326,6 @@ def _positive_int(name: str, value: Any, maximum: int = sys.maxsize) -> None:
     if index > maximum:
         msg = f"{name} must be at most {maximum}, got {value!r}"
         raise ValueError(msg)
-
-
-def _materialize(name: str, value: Any) -> Any:
-    """`value` as a tuple if it is an iterable without a length (e.g. a generator)."""
-    if value is None or isinstance(value, Collection):
-        return value
-    try:
-        return tuple(value)
-    except TypeError:
-        msg = f"{name} must be a sequence, got {qualified_type_name(value)!r}"
-        raise TypeError(msg) from None
 
 
 def _copy_containers(value: Any) -> Any:
@@ -482,8 +467,7 @@ def scan_database(
     Lazily read from a database table or query.
 
     The scan runs on the streaming engine. Projections, filters and limits are pushed
-    into the SQL sent to the database, and the read can be split into partitions that
-    are fetched concurrently.
+    into the SQL sent to the database, which is read with one query.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -609,25 +593,22 @@ def scan_database(
         `pl.Datetime("us")` (or `"ms"`), it is read with the digits beyond the unit
         cut (toward the earlier instant, never rounded).
     partition_on
-        `"auto"` partitions large tables on their integer or date primary key; a
-        column name partitions on that column (`pl.col("auto")` for a column named
-        "auto"); `None` reads with a single query.
+        Partitioning is not supported yet: this parameter is reserved. `"auto"` (the
+        default) and `None` read with a single query; a column raises an error.
     partition_num
-        The number of partitions, at most 65536. Without it: `max_connections`
-        partitions for a column, and for `"auto"` one per 256 MB of table, up to four
-        per connection (tables under 128 MB are read with one query).
+        Reserved for partitioning, which is not supported yet: passing it raises an
+        error.
     partition_range
-        `(low, high)` bounds of the partition column. They only set the stride: rows
-        outside them still land in the first or last partition.
+        Reserved for partitioning, which is not supported yet: passing it raises an
+        error.
     partition_predicates
-        One partition per SQL `WHERE` fragment. The fragments are inserted verbatim.
-        Not combined with `partition_on`, `partition_num` or `partition_range`.
+        Reserved for partitioning, which is not supported yet: passing it raises an
+        error.
     order_by
         Order rows by these columns. Without it, row order is unspecified.
     consistency : {'none', 'snapshot'}
-        `'snapshot'` requires every partition to see the same database state; it is
-        only supported with a single partition for now, so `partition_on="auto"`
-        reads with one query.
+        `'snapshot'` requires the whole read to see one database state. The source
+        is read with one query, which does.
     max_connections
         The maximum number of concurrent connections. Defaults: 1 for SQLite and
         DuckDB and for a live connection, 8 for Snowflake, BigQuery, Databricks,
@@ -644,22 +625,11 @@ def scan_database(
     Notes
     -----
     A `LazyFrame` snapshots what the scan found when it was planned: the table's
-    columns and types, the partitioning and, for a view or query, whether it is
-    volatile. Collecting the same `LazyFrame` again reuses that plan, also after the
-    database changed (a column dropped, added or retyped, a table replaced by a view
-    or another table): the second collect can then read the wrong columns or fail.
+    columns and types and, for a view or query, whether it is volatile. Collecting
+    the same `LazyFrame` again reuses that plan, also after the database changed (a
+    column dropped, added or retyped, a table replaced by a view or another table):
+    the second collect can then read the wrong columns or fail.
     Call `scan_database` again after such a change.
-
-    Behaviour changes: each partition runs the query again, so a source is partitioned
-    only where it is proven to return the same rows every time. That is a plain table
-    of a known kind (the catalog says so; its computed columns are checked too), or a
-    view or query of built-in, deterministic functions and operators from an
-    allowlist, over such tables. A user's function, macro or table function (whatever
-    its `DETERMINISTIC` or `IMMUTABLE` label), a clock, a random or order-dependent
-    function, a `LIMIT`, and a dialect without a catalog lookup (Snowflake, BigQuery,
-    Redshift, Trino, ...) are not proven: with `partition_on="auto"` the source is read
-    with one query, and an explicit `partition_on`, `partition_num`, `partition_range`
-    or `partition_predicates` raises an error naming what isn't proven.
 
     See Also
     --------
@@ -693,11 +663,6 @@ def scan_database(
     ):
         msg = f"order_by must be a column name or a sequence of column names, got {order_by!r}"
         raise TypeError(msg)
-    if isinstance(partition_predicates, str):
-        msg = "partition_predicates must be a sequence of SQL predicates, one per partition, not a str"
-        raise TypeError(msg)
-    partition_range = _materialize("partition_range", partition_range)
-    partition_predicates = _materialize("partition_predicates", partition_predicates)
     for name, options in (
         ("connect_options", connect_options),
         ("execute_options", execute_options),
@@ -720,64 +685,24 @@ def scan_database(
         if isinstance(params, Mapping):
             params = dict(params)
         params = _copy_containers(params)
-    _positive_int("partition_num", partition_num, _MAX_PARTITION_NUM)
     _positive_int("max_connections", max_connections)
     _positive_int("batch_size", batch_size)
 
-    # `"auto"` picks the column; `pl.col("auto")` names a column called "auto"
-    partition_auto = isinstance(partition_on, str) and partition_on == "auto"
-    if partition_on is not None and not isinstance(partition_on, str):
-        on: Any = partition_on  # (any object may be passed)
-        names = on.meta.root_names() if isinstance(on, Expr) else []
-        if len(names) != 1 or not on.meta.is_column():
-            msg = "partition_on must be a column name, `pl.col(name)`, 'auto' or None"
-            raise TypeError(msg)
-        partition_on = names[0]
-    if partition_predicates is not None:
-        if (
-            (partition_on is not None and not partition_auto)
-            or partition_num is not None
-            or partition_range
-        ):
-            msg = (
-                "partition_predicates define the partitions: don't combine them with "
-                "partition_on, partition_num or partition_range"
-            )
-            raise ValueError(msg)
-        if consistency == "snapshot" and len(partition_predicates) > 1:
-            msg = (
-                "consistency='snapshot' reads with one query: don't combine it with "
-                "partition_predicates"
-            )
-            raise ValueError(msg)
-    elif partition_on is None and (partition_num is not None or partition_range):
-        msg = (
-            "partition_num and partition_range need partitioning: partition_on is None"
+    if (
+        not (
+            partition_on is None
+            or (isinstance(partition_on, str) and partition_on == "auto")
         )
-        raise ValueError(msg)
-    elif partition_auto and partition_range:
-        msg = "partition_range needs partition_on=<column>"
-        raise ValueError(msg)
-    if not pushdown and (
-        partition_predicates is not None
-        or (partition_on is not None and not partition_auto)
         or partition_num is not None
-        or partition_range
+        or partition_range is not None
+        or partition_predicates is not None
     ):
         msg = (
-            "pushdown=False reads the source with a single query: don't combine it "
-            "with partition_on, partition_num, partition_range or partition_predicates"
+            "scan_database doesn't support partitioning yet: partition_on=<column>, "
+            "partition_num, partition_range and partition_predicates are reserved; pass "
+            "partition_on=None or 'auto' (both read with one query)"
         )
         raise ValueError(msg)
-    if partition_range is not None:
-        if len(partition_range) != 2:
-            msg = f"partition_range must be (low, high), got {partition_range!r}"
-            raise ValueError(msg)
-        lo, hi = partition_range
-        with contextlib.suppress(TypeError):
-            if lo > hi:
-                msg = f"partition_range must be (low, high), got {partition_range!r}"
-                raise ValueError(msg)
 
     for name, value in (("schema", schema), ("schema_overrides", schema_overrides)):
         if value is not None:
@@ -827,7 +752,7 @@ def scan_database(
     if connection_kind == "live":
         _check_live_sqlite3(connection)
 
-    from polars import DataFrame, Series
+    from polars import DataFrame
 
     resolver = _plugin().scan_resolver(
         source=source,
@@ -852,14 +777,10 @@ def scan_database(
         if schema_overrides is not None
         else None,
         partition_on=partition_on,
-        partition_auto=partition_auto,
-        partition_num=partition_num,
-        partition_range=Series(list(partition_range), strict=False)
-        if partition_range is not None
-        else None,
-        partition_predicates=list(partition_predicates)
-        if partition_predicates is not None
-        else None,
+        partition_auto=partition_on is not None,
+        partition_num=None,
+        partition_range=None,
+        partition_predicates=None,
         order_by=list(order_by or []),
         consistency=consistency,
         max_connections=max_connections,
