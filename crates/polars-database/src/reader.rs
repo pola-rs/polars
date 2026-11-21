@@ -234,6 +234,9 @@ pub struct Shared {
     volatility: OnceLock<Result<bool, String>>,
     /// The outcome of [`check_unwrappable_conversions`], run on the first session opened.
     unwrappable: OnceLock<Result<(), String>>,
+    /// The outcome of [`check_mssql_text_size`](crate::database::planner::check_mssql_text_size),
+    /// run on the first session under `SET TEXTSIZE`.
+    text_size: OnceLock<Result<(), String>>,
     /// The outcome of [`check_mysql_session_zone`], run on the first session opened.
     session_zone: OnceLock<Result<(), String>>,
     /// The first session's resolution of the names, for a source planned without one.
@@ -261,6 +264,7 @@ impl Shared {
             volatility: OnceLock::new(),
             session_zone: OnceLock::new(),
             unwrappable: OnceLock::new(),
+            text_size: OnceLock::new(),
             resolution_baseline: Mutex::new(None),
             pool: Mutex::new(Pool::default()),
             pool_changed: std::sync::Condvar::new(),
@@ -275,6 +279,14 @@ impl Shared {
             &self.config.options.connection,
             self.config.dialect,
         )?;
+        if let Some(limit) = session.text_size_limit()
+            && let Err(e) = self.text_size.get_or_init(|| {
+                crate::database::planner::check_mssql_text_size(limit, &self.config)
+                    .map_err(|e| e.to_string())
+            })
+        {
+            polars_bail!(InvalidOperation: "{e}");
+        }
         let checked = self.volatility.get_or_init(|| {
             check_unplanned_volatility(session.as_mut(), &self.config).map_err(|e| match e {
                 PolarsError::InvalidOperation(msg) => msg.to_string(),
