@@ -2932,11 +2932,12 @@ class _Session:
                     break
                 empty = False
                 if null_typed:
+                    schema = df.schema
                     df = df.with_columns(
                         [
                             pl.col(c).cast(dtype)
                             for c, dtype in null_typed.items()
-                            if c in df.columns and df.schema[c] == pl.Null
+                            if schema.get(c) == pl.Null
                         ]
                     )
                 yield df
