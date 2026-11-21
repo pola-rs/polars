@@ -1466,54 +1466,19 @@ pub fn view_definition(
     }
 }
 
-/// The name of `parts` if the session resolves it to a temporary table (Postgres, MySQL, MariaDB:
-/// a temporary table hides a permanent one of its name for the session that made it).
-pub fn temporary_relation(
-    session: &mut dyn DatabaseSession,
-    dialect: DialectName,
-    parts: &[PlSmallStr],
-) -> Option<String> {
-    let qualified = parts
-        .iter()
-        .map(|p| dialect.quote_ident(p))
-        .collect::<Vec<_>>()
-        .join(".");
-    let temporary = match dialect {
-        DialectName::Postgresql => {
-            let df = session
-                .catalog_query(&format!(
-                    // the relation or any table inheriting from it (a temporary child is read
-                    // through its parent, by the session that made it only)
-                    "WITH RECURSIVE d(oid) AS (SELECT to_regclass({})::oid UNION ALL \
-                    SELECT i.inhrelid FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
-                    SELECT COALESCE(bool_or(c.relpersistence = 't'), false) FROM d \
-                    JOIN pg_class c ON c.oid = d.oid",
-                    dialect.quote_str(&qualified)
-                ))
-                .ok()?;
-            matches!(cell(&df, 0, 0), Some(AnyValue::Boolean(true)))
-        },
-        // (`SHOW CREATE TABLE` of a temporary table starts with `CREATE TEMPORARY TABLE`; an error:
-        // no such table, or a view)
-        DialectName::Mysql | DialectName::Singlestore => {
-            let df = session
-                .catalog_query(&format!("SHOW CREATE TABLE {qualified}"))
-                .ok()?;
-            cell_str(&df, 1, 0).is_some_and(|t| {
-                t.trim_start()
-                    .to_ascii_uppercase()
-                    .starts_with("CREATE TEMPORARY")
-            })
-        },
-        _ => false,
-    };
-    temporary.then(|| {
-        parts
-            .iter()
-            .map(|p| p.as_str())
-            .collect::<Vec<_>>()
-            .join(".")
-    })
+/// Whether MySQL / MariaDB / SingleStore resolve `qualified` to a temporary table: `SHOW
+/// CREATE TABLE` of one starts with `CREATE TEMPORARY TABLE` (an error: no such table, or a
+/// view).
+fn mysql_temporary_table(session: &mut dyn DatabaseSession, qualified: &str) -> bool {
+    session
+        .catalog_query(&format!("SHOW CREATE TABLE {qualified}"))
+        .ok()
+        .and_then(|df| cell_str(&df, 1, 0))
+        .is_some_and(|t| {
+            t.trim_start()
+                .to_ascii_uppercase()
+                .starts_with("CREATE TEMPORARY")
+        })
 }
 
 /// Whether `dialect` has a [`resolution_fingerprint`]: the dialects where a session's own state
@@ -1529,12 +1494,13 @@ pub fn has_resolution_fingerprint(dialect: DialectName) -> bool {
 /// How each of `names` resolves on this session, as text that is equal for two sessions that
 /// resolve a name to the same relation, or to a temporary table of their own: for Postgres the
 /// relation the name resolves to as `perm:schema.name:relkind` or `temp:relkind`, and
-/// `+temp-children:N` when the session has `N` temporary tables of its own inheriting from it
-/// (permanent children are global DDL, not session state: a partition added later must not
-/// change the fingerprint); for MySQL / MariaDB / SingleStore the database
-/// and `temp` or `perm`. Session-specific ids (a temporary table's `pg_temp_N` schema, OIDs) are
-/// left out (and the temporary tables of other sessions, which `pg_class` lists too). One catalog statement on Postgres; MySQL has none that lists temporary tables, so
-/// one per name. `None`: the dialect has none, or the lookup failed.
+/// `+temp-children:a,b` when the session has temporary tables of its own (`a`, `b`) inheriting
+/// from it (permanent children are global DDL, not session state: a partition added later must
+/// not change the fingerprint); for MySQL / MariaDB / SingleStore `temp:` or `perm:` and the
+/// database. Session-specific ids (a temporary table's `pg_temp_N` schema, OIDs) are left out
+/// (and the temporary tables of other sessions, which `pg_class` lists too). One catalog
+/// statement on Postgres; MySQL has none that lists temporary tables, so one per name. `None`:
+/// the dialect has none, or the lookup failed.
 pub fn resolution_fingerprint(
     session: &mut dyn DatabaseSession,
     dialect: DialectName,
@@ -1554,10 +1520,11 @@ pub fn resolution_fingerprint(
         DialectName::Postgresql => {
             let cols = names
                 .iter()
-                .map(|parts| {
+                .enumerate()
+                .map(|(i, parts)| {
                     // the root relation the name resolves to (the session-dependent part), and
-                    // how many temporary children of its own this session has under it
-                    // (permanent children are DDL, the same for every session)
+                    // the temporary children of its own this session has under it (permanent
+                    // children are DDL, the same for every session)
                     format!(
                         "(WITH RECURSIVE d(oid, depth) AS (SELECT to_regclass({})::oid, 0 UNION ALL \
                         SELECT i.inhrelid, d.depth + 1 FROM pg_inherits i JOIN d ON i.inhparent = d.oid) \
@@ -1566,10 +1533,10 @@ pub fn resolution_fingerprint(
                         c.relkind::text END FROM d JOIN pg_class c ON c.oid = d.oid \
                         JOIN pg_namespace n ON n.oid = c.relnamespace WHERE d.depth = 0 \
                         AND (c.relpersistence <> 't' OR c.relnamespace = pg_my_temp_schema())), \
-                        'none') || COALESCE((SELECT '+temp-children:' || count(*) FROM d \
-                        JOIN pg_class c ON c.oid = d.oid WHERE d.depth > 0 \
-                        AND c.relpersistence = 't' AND c.relnamespace = pg_my_temp_schema() \
-                        HAVING count(*) > 0), ''))::text",
+                        'none') || COALESCE((SELECT '+temp-children:' || string_agg(c.relname::text, ',' \
+                        ORDER BY c.relname::text) FROM d JOIN pg_class c ON c.oid = d.oid \
+                        WHERE d.depth > 0 AND c.relpersistence = 't' \
+                        AND c.relnamespace = pg_my_temp_schema()), ''))::text AS r{i}",
                         dialect.quote_str(&qualified(parts))
                     )
                 })
@@ -1587,7 +1554,7 @@ pub fn resolution_fingerprint(
                     [db, _] => db.to_string(),
                     _ => default_db.clone(),
                 };
-                let temporary = temporary_relation(session, dialect, parts).is_some();
+                let temporary = mysql_temporary_table(session, &qualified(parts));
                 out.push(format!("{}:{db}", if temporary { "temp" } else { "perm" }));
             }
             Some(out)

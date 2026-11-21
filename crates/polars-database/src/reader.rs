@@ -267,7 +267,6 @@ impl Shared {
             &self.config,
             &self.resolution_baseline,
         )?;
-        crate::database::planner::check_temporary_relations(session.as_mut(), &self.config)?;
         let zone = self.session_zone.get_or_init(|| {
             check_mysql_session_zone(session.as_mut(), &self.config).map_err(|e| match e {
                 PolarsError::InvalidOperation(msg) => msg.to_string(),

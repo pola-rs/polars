@@ -6180,6 +6180,92 @@ def test_postgres_pool_session_resolving_another_relation_is_refused(
         )
 
 
+def test_postgres_temporary_child_of_another_session_doesnt_refuse_partitions() -> None:
+    # `pg_class` lists the temporary tables of every session
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    import psycopg
+
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    uri = server.uri
+    t = "vol_pg_other_temp_child"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS public.{t} CASCADE",
+            f"CREATE TABLE public.{t} (id int, v int)",
+            f"INSERT INTO public.{t} SELECT g, g FROM generate_series(1, 20) g",
+        ],
+    )
+    other = psycopg.connect(uri)
+    try:
+        other.execute(f"CREATE TEMPORARY TABLE {t}_child () INHERITS (public.{t})")
+        other.commit()
+        lf = pl.scan_database(
+            t, lambda: psycopg.connect(uri), partition_on="id", partition_num=4
+        )
+        assert lf.collect().height == 20
+    finally:
+        other.close()
+        _execute("postgres17", [f"DROP TABLE IF EXISTS public.{t} CASCADE"])
+
+
+def test_postgres_query_over_several_tables_resolving_another_relation_is_refused() -> (
+    None
+):
+    # one name of a join that a later session resolves to another relation
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    import psycopg
+
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    uri = server.uri
+    schema, table = "vol_pg_rs_join_schema", "vol_pg_rs_join_t"
+    _execute(
+        "postgres17",
+        [
+            f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+            f"DROP TABLE IF EXISTS public.{table}",
+            f"CREATE SCHEMA {schema}",
+            f"CREATE TABLE public.{table} (id int, v int)",
+            f"INSERT INTO public.{table} VALUES (1, 1), (2, 2)",
+            f"CREATE TABLE {schema}.{table} (id int, v int)",
+            f"INSERT INTO {schema}.{table} VALUES (1, -1), (2, -1)",
+        ],
+    )
+    search_path: list[str] = []
+
+    def factory() -> Any:
+        conn = psycopg.connect(uri)
+        for path in search_path:
+            conn.execute(f"SET search_path TO {path}")
+        conn.commit()
+        return conn
+
+    try:
+        lf = pl.scan_database(
+            f"SELECT a.id, a.v FROM {table} a JOIN public.{table} b ON a.id = b.id",
+            factory,
+            partition_on=None,
+        )
+        lf.collect_schema()
+        search_path.append(f"{schema}, public")
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="resolves"):
+            lf.collect()
+    finally:
+        _execute(
+            "postgres17",
+            [
+                f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+                f"DROP TABLE IF EXISTS public.{table}",
+            ],
+        )
+
+
 @pytest.mark.parametrize("kind", ["engine", "factory"])
 @pytest.mark.parametrize("name", ["postgres17", "mysql", "mariadb"])
 def test_pool_temp_table_on_one_session_is_refused_unless_all_have_one(

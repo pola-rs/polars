@@ -1132,6 +1132,10 @@ pub fn session_resolution(
 /// relation. Each session opened for a read resolves the planned names again, and a different
 /// answer is an error. `baseline` holds the first session's answer for a source planned without
 /// I/O (`schema=`), which then has none of its own.
+///
+/// A partitioned read over several connections must not read a temporary table of a session
+/// either: it shadows a permanent one of its name only for the session that made it, so the
+/// partitions that land on other sessions of the pool would read the permanent table, or none.
 pub fn check_resolution(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -1148,74 +1152,60 @@ pub fn check_resolution(
         return Ok(());
     }
     let found = catalog::resolution_fingerprint(session, config.dialect, &names);
+    let mut guard = baseline.lock().unwrap();
     let Some(found) = found else {
-        // planned with a fingerprint, but this session can't give one: not the same state
+        // planned with a fingerprint (or another session gave one), but this session can't
+        // give one: not the same state
         polars_ensure!(
-            config.resolution.is_none(),
+            config.resolution.is_none() && guard.is_none(),
             InvalidOperation:
             "could not check how this connection resolves the table names of the scan, which \
             the scan was planned on another connection's session for"
         );
         return Ok(());
     };
-    let mut guard = baseline.lock().unwrap();
+    let qualified = |i: usize| {
+        names[i]
+            .iter()
+            .map(|p| p.as_str())
+            .collect::<Vec<_>>()
+            .join(".")
+    };
     let planned = match &config.resolution {
         Some(p) => p,
         None => guard.get_or_insert_with(|| found.clone()),
     };
     if let Some(i) = planned.iter().zip(&found).position(|(a, b)| a != b) {
-        let name = names[i]
-            .iter()
-            .map(|p| p.as_str())
-            .collect::<Vec<_>>()
-            .join(".");
         polars_bail!(
             InvalidOperation:
-            "this connection resolves '{name}' to {}, but the scan was planned on a session \
+            "this connection resolves '{}' to {}, but the scan was planned on a session \
             where it is {}: a pooled connection's session state (search_path, temporary \
             tables, default database) differs from the one planned on. Read from one \
             connection (a live connection, or a factory that returns a configured one), or \
             qualify the name",
+            qualified(i),
             found[i],
             planned[i]
         );
     }
-    Ok(())
-}
-
-/// Postgres, MySQL, MariaDB: a partitioned read over connections the user made (a factory, an
-/// Engine's pool) must not read a temporary table of a session. A temporary table shadows a
-/// permanent one of its name for the session that made it, so the partitions that land on other
-/// sessions of the pool would read the permanent table, or none. Run on each session opened.
-pub fn check_temporary_relations(
-    session: &mut dyn DatabaseSession,
-    config: &DatabaseScanConfig,
-) -> PolarsResult<()> {
     let partitioned = config
         .compiled
         .as_deref()
         .is_some_and(|c| c.partitions.len() > 1);
-    if !partitioned
-        || config.options.connection.opened_by_plugin()
-        || config.max_connections() <= 1
-        || !matches!(
-            config.dialect,
-            DialectName::Postgresql | DialectName::Mysql | DialectName::Singlestore
-        )
+    if partitioned
+        && config.max_connections() > 1
+        && let Some(i) = found
+            .iter()
+            .position(|f| f.starts_with("temp:") || f.contains("+temp-children:"))
     {
-        return Ok(());
-    }
-    let relations = named_relations(&config.options, config.dialect);
-    for parts in relations {
-        if let Some(name) = catalog::temporary_relation(session, config.dialect, &parts) {
-            polars_bail!(
-                InvalidOperation:
-                "the table '{name}' is a temporary table of this session, which the other \
-                connections of the pool that the partitions read through don't see (they \
-                would read a permanent table of its name, or none): read it without \
-                partitioning (partition_on=None), or from one connection"
-            );
-        }
+        polars_bail!(
+            InvalidOperation:
+            "the table '{}' is a temporary table of this session, which the other \
+            connections of the pool that the partitions read through don't see (they \
+            would read a permanent table of its name, or none): read it without \
+            partitioning (partition_on=None), or from one connection",
+            qualified(i)
+        );
     }
     Ok(())
 }
