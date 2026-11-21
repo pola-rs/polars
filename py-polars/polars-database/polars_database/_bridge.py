@@ -1548,7 +1548,7 @@ def _object_columns_as_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
 
 def _valid_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
     """
-    Batches whose text is valid UTF-8, also nested in lists and structs.
+    Batches whose text is valid UTF-8, also nested in lists, maps and structs.
 
     The Databricks connector hands the bytes of a `STRING` over as they are (a value
     made of `unhex('FF')` is one), and Polars' String assumes UTF-8: an invalid byte
@@ -1563,6 +1563,8 @@ def _valid_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
             return True
         if isinstance(dtype, (pl.List, pl.Array)):
             return has_text(dtype.inner)
+        if isinstance(dtype, pl.Map):
+            return has_text(dtype.key) or has_text(dtype.value)
         if isinstance(dtype, pl.Struct):
             return any(has_text(f.dtype) for f in dtype.fields)
         return False
@@ -2210,9 +2212,9 @@ def _description(result: Any) -> Any:
 
 def _time_with_zone_columns(result: Any) -> list[str]:
     """
-    The names of a result's `TIMETZ` columns where the description tells (DuckDB's type
-    name, Postgres drivers' OID 1266): the drivers return such a value as the local time
-    of day, its offset dropped.
+    The names of a result's columns that are or hold a `TIMETZ` where the description
+    tells (DuckDB's type name, Postgres drivers' OIDs 1266 and 1270 for its array): the
+    drivers return such a value as the local time of day, its offset dropped.
     """
     module = _module_of(
         result if hasattr(result, "description") else getattr(result, "cursor", result)
@@ -2221,11 +2223,11 @@ def _time_with_zone_columns(result: Any) -> list[str]:
         return [
             d[0]
             for d in _description(result)
-            if (module == "duckdb" and str(d[1]).upper() == "TIME WITH TIME ZONE")
+            if (module == "duckdb" and "TIME WITH TIME ZONE" in str(d[1]).upper())
             or (
                 module in ("psycopg", "psycopg2", "pg8000")
                 and type(d[1]) is int
-                and d[1] == 1266
+                and d[1] in (1266, 1270)
             )
         ]
     return []
@@ -2620,10 +2622,10 @@ class _Session:
                 for m in ("cancel", "interrupt")
             )
         )
-        # a live MySQL driver's session reads a TIMESTAMP in its own time zone, which
-        # `execute` converts to UTC (a SQLAlchemy Connection is its driver's connection)
         # the last statement's result columns that are a `TIMETZ` (offset dropped)
         self.timetz_columns: list[str] = []
+        # a live MySQL driver's session reads a TIMESTAMP in its own time zone, which
+        # `execute` converts to UTC (a SQLAlchemy Connection is its driver's connection)
         self.mysql_converts = not owned and _module_of(_cancel_target(conn)) in (
             "pymysql",
             "MySQLdb",

@@ -270,6 +270,7 @@ pub fn hash_dtype<H: Hasher>(dtype: &DataType, h: &mut H) {
             width.hash(h);
         },
         DataType::Struct(fields) => {
+            fields.len().hash(h);
             for f in fields {
                 f.name().hash(h);
                 hash_dtype(f.dtype(), h);
@@ -291,7 +292,7 @@ pub fn hash_dtype<H: Hasher>(dtype: &DataType, h: &mut H) {
 
 #[cfg(test)]
 mod tests {
-    use polars_core::prelude::{TimeUnit, TimeZone};
+    use polars_core::prelude::{Field, TimeUnit, TimeZone};
 
     use super::*;
 
@@ -303,6 +304,8 @@ mod tests {
 
     #[test]
     fn dtype_hash_covers_parameters() {
+        let struct_of = DataType::Struct;
+        let int = |name: &str| Field::new(name.into(), DataType::Int64);
         let pairs = [
             (DataType::Decimal(10, 2), DataType::Decimal(10, 4)),
             (
@@ -320,6 +323,17 @@ mod tests {
             (
                 DataType::List(Box::new(DataType::Decimal(10, 2))),
                 DataType::List(Box::new(DataType::Decimal(10, 3))),
+            ),
+            // `{a: {b}, c}` and `{a: {b, c}}`
+            (
+                struct_of(vec![
+                    Field::new("a".into(), struct_of(vec![int("b")])),
+                    Field::new("c".into(), DataType::String),
+                ]),
+                struct_of(vec![Field::new(
+                    "a".into(),
+                    struct_of(vec![int("b"), Field::new("c".into(), DataType::String)]),
+                )]),
             ),
         ];
         for (a, b) in pairs {

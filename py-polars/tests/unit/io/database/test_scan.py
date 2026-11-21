@@ -5237,6 +5237,20 @@ def test_scan_duckdb_variant_is_refused_only_when_read() -> None:
     assert lf.select("id").collect().rows() == [(1,)]
     with pytest.raises(pl.exceptions.ComputeError, match="VARIANT"):
         lf.select("v").collect()
+    # a table's VARIANT too
+    conn.execute("CREATE TABLE t AS SELECT 1 AS id, 5::VARIANT AS v")
+    lf = pl.scan_database("t", conn, partition_on=None)
+    with pytest.raises(pl.exceptions.ComputeError, match="VARIANT"):
+        lf.select("v").collect()
+    out = pl.scan_database(
+        "t", conn, partition_on=None, schema_overrides={"v": pl.String}
+    ).collect()
+    assert out["v"].to_list() == ["5"]
+    # a field named like the type is no VARIANT
+    out = pl.scan_database(
+        "SELECT struct_pack(invariant := 1) AS s", conn, partition_on=None
+    ).collect()
+    assert out["s"].to_list() == [{"invariant": 1}]
 
 
 def test_scan_duckdb_nested_timetz_is_an_error() -> None:
@@ -5304,6 +5318,10 @@ def test_scan_duckdb_timetz_typed_by_the_user_never_drops_its_offset() -> None:
             lf.collect()
         with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
             lf.filter(pl.col("t").is_not_null()).collect()
+    # also nested
+    lf = scan(schema={"id": pl.Int32, "l": pl.List(pl.Time)})
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
+        lf.collect()
     # the advice works: the offset is in the text
     out = pl.scan_database(
         "SELECT id, CAST(t AS VARCHAR) AS t FROM t",
