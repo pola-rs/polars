@@ -673,6 +673,67 @@ def test_partitions(name: str, driver: str) -> None:
     assert_frame_equal(lf.collect().sort("id"), reference, check_dtypes=False)
 
 
+_PARTITIONED_OVERRIDE_TABLE = {
+    "postgres17": (
+        "review_part_override",
+        "CREATE TABLE review_part_override AS "
+        "SELECT g AS id, g * 3 AS n FROM generate_series(1, 400) g",
+    ),
+    "mysql": (
+        "review_part_override",
+        "CREATE TABLE review_part_override AS "
+        "WITH RECURSIVE s(g) AS (SELECT 1 UNION ALL SELECT g + 1 FROM s WHERE g < 400) "
+        "SELECT g AS id, g * 3 AS n FROM s",
+    ),
+    "oracle": (
+        "REVIEW_PART_OVERRIDE",
+        "CREATE TABLE review_part_override AS "
+        "SELECT level AS id, level * 3 AS n FROM dual CONNECT BY level <= 400",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", list(_PARTITIONED_OVERRIDE_TABLE))
+@pytest.mark.parametrize("partition_on", ["id", "auto"])
+def test_partitions_cut_a_column_read_as_text_on_its_database_type(
+    name: str, partition_on: str
+) -> None:
+    table, create = _PARTITIONED_OVERRIDE_TABLE[name]
+    drop = f"DROP TABLE {table}"
+    _execute(
+        name,
+        [
+            (
+                f"BEGIN EXECUTE IMMEDIATE '{drop}'; EXCEPTION WHEN OTHERS THEN NULL; END;"
+                if name == "oracle"
+                else f"{drop.replace('TABLE', 'TABLE IF EXISTS')}"
+            ),
+            create,
+            f"ALTER TABLE {table} ADD PRIMARY KEY (id)",
+        ],
+    )
+    key = "ID" if name == "oracle" else "id"
+    overrides = {key: pl.String}
+    driver = _default_driver(name)
+    lf = _scan(
+        name,
+        driver,
+        table,
+        partition_on=key if partition_on == "id" else "auto",
+        partition_num=4,
+        schema_overrides=overrides,
+    )
+    assert "partitions: 4" in lf.explain()
+    reference = _scan(
+        name, driver, table, partition_on=None, schema_overrides=overrides
+    ).collect()
+    assert reference.height == 400
+    assert reference.schema[key] == pl.String
+    out = lf.collect()
+    # the same rows: each in exactly one partition
+    assert_frame_equal(out.sort(out.columns), reference.sort(reference.columns))
+
+
 @functools.cache
 def _orders(name: str) -> pl.DataFrame:
     lf = _scan(name, _default_driver(name), "orders", partition_on=None)
@@ -1809,6 +1870,45 @@ def test_oracle_integer_is_a_38_digit_integer() -> None:
     check_filter_ids(lf, [pl.col("I") > 7, pl.col("S") == Decimal("1.25")])
 
 
+@needs_postgres
+@pytest.mark.parametrize(
+    "driver",
+    [
+        "psycopg",
+        "psycopg2",
+        "sqlalchemy",
+        "sqlalchemy+psycopg2",
+        "factory",
+        "live",
+        "adbc",
+    ],
+)
+@pytest.mark.parametrize("batch_size", [2**31 - 1, 2**31, 2**32, 2**33, sys.maxsize])
+def test_postgres_huge_batch_size_reads_every_row(driver: str, batch_size: int) -> None:
+    # the batch size is a hint: psycopg2 keeps it in a C int, where 2**32 reads no rows
+    table = "review_huge_batch"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} AS SELECT g AS id FROM generate_series(1, 20) g",
+        ],
+    )
+    if driver == "sqlalchemy+psycopg2":
+        pytest.importorskip("sqlalchemy")
+        assert POSTGRES is not None
+        lf = pl.scan_database(
+            table,
+            _sqlalchemy_url(POSTGRES, "psycopg2"),
+            driver="sqlalchemy",
+            batch_size=batch_size,
+        )
+    else:
+        lf = _scan("postgres17", driver, table, batch_size=batch_size)
+    assert sorted(lf.collect()["id"].to_list()) == list(range(1, 21))
+    assert lf.select(pl.len()).collect().item() == 20
+
+
 @pytest.mark.skipif(SERVERS["clickhouse"].uri is None, reason="no ClickHouse URI")
 @pytest.mark.parametrize("driver", ["adbc", "clickhouse_connect"])
 def test_clickhouse_query_columns_compare_by_their_type(driver: str) -> None:
@@ -1865,6 +1965,55 @@ def test_postgres_engine_connections_dont_keep_the_session_setup(driver: str) ->
             conn.rollback()
     finally:
         engine.dispose()
+
+
+@pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
+@ORACLE_GROUP
+@pytest.mark.parametrize("driver", ["oracledb", "sqlalchemy"])
+def test_oracle_string_literals_past_the_literal_limit(driver: str) -> None:
+    # Oracle takes a string literal of 4000 bytes at most (ORA-01704), and 2000
+    # characters against an NVARCHAR2 column (ORA-01401): the filter runs in Polars
+    _execute(
+        "oracle",
+        [
+            "BEGIN EXECUTE IMMEDIATE 'DROP TABLE review_ora_lit'; "
+            "EXCEPTION WHEN OTHERS THEN NULL; END;",
+            'CREATE TABLE review_ora_lit ("id" NUMBER(9), v VARCHAR2(4000 CHAR), '
+            "n NVARCHAR2(2000))",
+            "INSERT INTO review_ora_lit VALUES (1, 'abc', 'abc')",
+            "INSERT INTO review_ora_lit VALUES (2, RPAD('a', 3000, 'a'), "
+            "RPAD('a', 2000, 'a'))",
+            "INSERT INTO review_ora_lit VALUES (3, NULL, NULL)",
+        ],
+    )
+    lf = _scan("oracle", driver, "REVIEW_ORA_LIT")
+    filters = []
+    for column in ("V", "N"):
+        for text in ("a" * 3000, "a" * 4001, "b" * 5000, "\u20ac" * 1400):
+            col = pl.col(column)
+            filters += [
+                col == text,
+                col != text,
+                col.is_in([text, "abc"]),
+                col.str.starts_with(text[:-1]),
+                col.str.contains(text[1:], literal=True),
+            ]
+    check_filter_ids(lf, filters)
+
+
+@pytest.mark.skipif(SERVERS["oracle"].uri is None, reason="no Oracle URI")
+@ORACLE_GROUP
+@pytest.mark.parametrize("driver", ["oracledb", "sqlalchemy"])
+@pytest.mark.parametrize("batch_size", [2**31 - 1, 2**33, sys.maxsize])
+def test_oracle_huge_batch_size_reads_every_row(driver: str, batch_size: int) -> None:
+    # the driver allocates a whole fetch up front: the batch size is capped
+    lf = _scan(
+        "oracle",
+        driver,
+        "SELECT level AS id FROM dual CONNECT BY level <= 50",
+        batch_size=batch_size,
+    )
+    assert sorted(lf.collect()["ID"].to_list()) == list(range(1, 51))
 
 
 @pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
