@@ -34,6 +34,15 @@ if TYPE_CHECKING:
 
 # Rows per batch when the user gives no `batch_size`.
 DEFAULT_BATCH_SIZE = 50_000
+# `batch_size` is a fetch-size hint. Several drivers keep it in a C int (psycopg2's
+# `itersize` wraps to a negative or zero fetch count, SQLAlchemy and pymssql pass it
+# on), and a server takes no more than an int4 in `FETCH FORWARD`: a larger value is
+# clamped to what they accept, the rows then arrive in several batches.
+_MAX_FETCH_SIZE = 2**31 - 1
+# Oracle's drivers allocate the buffers of a whole fetch up front: 2**26 rows read,
+# 2**28 ran out of memory.
+_MAX_ORACLE_FETCH_SIZE = 2**24
+_ORACLE_MODULES = frozenset({"oracledb", "cx_Oracle"})
 
 # Python package (distribution) names, for version lookups.
 _DISTRIBUTIONS = {
@@ -2694,7 +2703,12 @@ class _Session:
         """
         from polars.io.database._executor import ConnectionExecutor
 
-        batch_size = batch_size or DEFAULT_BATCH_SIZE
+        batch_size = min(
+            batch_size or DEFAULT_BATCH_SIZE,
+            _MAX_ORACLE_FETCH_SIZE
+            if _module_of(_cancel_target(self.conn)) in _ORACLE_MODULES
+            else _MAX_FETCH_SIZE,
+        )
         params = self.params if bind else None
         raw_sqlalchemy = self._raw_sqlalchemy or (
             not bind and _module_of(self.conn) == "sqlalchemy"
