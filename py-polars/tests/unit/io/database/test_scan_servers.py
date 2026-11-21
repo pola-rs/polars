@@ -8224,6 +8224,254 @@ def test_mssql_scan_on_a_live_pymssql_connection_isnt_corrupted_by_another() -> 
         assert sorted(out_b["id"].to_list()) == [56, 57, 58, 59]
 
 
+# `sql_variant` base types: the value to store, and its exact text
+SQL_VARIANT_VALUES = {
+    "float": ("CAST(3.141592653589793 AS float)", "3.1415926535897931e+000"),
+    "float_tiny": ("CAST(1e-300 AS float)", "1.0000000000000000e-300"),
+    "real": ("CAST(0.1 AS real)", "1.0000000149011612e-001"),
+    "money": ("CAST(12.3456 AS money)", "12.3456"),
+    "smallmoney": ("CAST(-214748.3648 AS smallmoney)", "-214748.3648"),
+    "datetime": (
+        "CAST('2020-01-02T03:04:05.997' AS datetime)",
+        "2020-01-02 03:04:05.997",
+    ),
+    "smalldatetime": (
+        "CAST('2020-01-02T03:04:00' AS smalldatetime)",
+        "2020-01-02 03:04:00.000",
+    ),
+    "datetime2": (
+        "CAST('2020-01-02T03:04:05.1234567' AS datetime2(7))",
+        "2020-01-02 03:04:05.1234567",
+    ),
+    "datetimeoffset": (
+        "CAST('2020-01-02T03:04:05.123+05:30' AS datetimeoffset(3))",
+        "2020-01-02 03:04:05.1230000 +05:30",
+    ),
+    "date": ("CAST('2020-01-02' AS date)", "2020-01-02"),
+    "time": ("CAST('12:34:56.1234567' AS time(7))", "12:34:56.1234567"),
+    "binary": ("CAST(0x0102 AS binary(4))", "0x01020000"),
+    "varbinary": ("CAST(0x0102FF AS varbinary(10))", "0x0102FF"),
+    "decimal": ("CAST(123456789.123456789 AS decimal(18, 9))", "123456789.123456789"),
+    "numeric": ("CAST(-1.5 AS numeric(5, 2))", "-1.50"),
+    "bigint": ("CAST(12345678901234567 AS bigint)", "12345678901234567"),
+    "int": ("CAST(-5 AS int)", "-5"),
+    "bit": ("CAST(1 AS bit)", "1"),
+    "nvarchar": ("CAST(N'\u03a9\u20ac' AS nvarchar(10))", "\u03a9\u20ac"),
+    "varchar": ("CAST('plain' AS varchar(10))", "plain"),
+    "char": ("CAST('ab' AS char(4))", "ab  "),
+    "uniqueidentifier": (
+        "CAST('6F9619FF-8B86-D011-B42D-00C04FC964FF' AS uniqueidentifier)",
+        "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+    ),
+}
+
+
+@needs_mssql
+def test_mssql_sql_variant_is_read_as_exact_text() -> None:
+    # the plain text of a `sql_variant` rounds a float to 6 digits and money to 2
+    # decimals, writes dates and times in forms that drop digits, and follows the
+    # session's language
+    table = "review_variant_exact"
+    names = list(SQL_VARIANT_VALUES)
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, sv sql_variant)",
+            *(
+                f"INSERT INTO {table} VALUES ({i}, {SQL_VARIANT_VALUES[n][0]})"
+                for i, n in enumerate(names)
+            ),
+            f"INSERT INTO {table} VALUES ({len(names)}, NULL)",
+        ],
+    )
+    want = [SQL_VARIANT_VALUES[n][1] for n in names] + [None]
+
+    def check(lf: pl.LazyFrame, what: str) -> None:
+        got = lf.collect().sort("id")["sv"].to_list()
+        wrong = {
+            n: (g, w)
+            for n, g, w in zip(names + ["null"], got, want, strict=True)
+            if g != w
+        }
+        assert not wrong, f"{what}: (read, exact) {wrong}"
+
+    for driver in _runnable_drivers("mssql"):
+        check(_scan("mssql", driver, table), driver)
+    # a live connection in another language writes dates as it does
+    conn = _connect("mssql")
+    try:
+        cur = conn.cursor()
+        cur.execute("SET LANGUAGE French")
+        check(pl.scan_database(table, conn), "live connection, French")
+        cur.execute("SET LANGUAGE Japanese")
+        check(pl.scan_database(table, conn), "live connection, Japanese")
+    finally:
+        conn.close()
+
+
+def _mssql_engine_with(statement: str) -> Any:
+    """A SQLAlchemy engine whose pooled connections each run `statement` on opening."""
+    sa = pytest.importorskip("sqlalchemy")
+    uri = SERVERS["mssql"].uri
+    assert uri is not None
+    engine = sa.create_engine(uri.replace("mssql://", "mssql+pymssql://", 1))
+
+    @sa.event.listens_for(engine, "connect")  # type: ignore[untyped-decorator]
+    def _setting(dbapi_connection: Any, _: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute(statement)
+        dbapi_connection.commit()
+
+    return engine
+
+
+def _mssql_user_connections(statement: str) -> Iterator[tuple[str, Any]]:
+    """The user's connections: a live one and an engine's, each under `statement`."""
+    conn = _connect("mssql")
+    try:
+        cursor = conn.cursor()
+        cursor.execute(statement)
+        yield "live connection", conn
+    finally:
+        conn.close()
+    engine = _mssql_engine_with(statement)
+    try:
+        yield "engine", engine
+    finally:
+        engine.dispose()
+
+
+@needs_mssql
+def test_mssql_textsize_doesnt_hide_the_volatile_part_of_a_view() -> None:
+    # a session's `SET TEXTSIZE` cuts the text of a view's definition as it is read:
+    # the volatile column at its end was cut off, and the view was partitioned
+    _execute(
+        "mssql",
+        [
+            "DROP VIEW IF EXISTS review_textsize_v",
+            "DROP TABLE IF EXISTS review_textsize_cc",
+            "DROP TABLE IF EXISTS review_textsize_ids",
+            "CREATE TABLE review_textsize_ids (id int PRIMARY KEY)",
+            "INSERT INTO review_textsize_ids "
+            "SELECT TOP 400 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 "
+            "FROM sys.all_objects a, sys.all_objects b",
+            "CREATE VIEW review_textsize_v AS SELECT id, id AS same_a, id AS same_b, "
+            "id AS same_c, id AS same_d, id AS same_e, id AS same_f, "
+            "CAST(RAND(CHECKSUM(NEWID())) * 400 AS int) AS r FROM review_textsize_ids",
+            "CREATE TABLE review_textsize_cc (id int PRIMARY KEY, "
+            "a int, b int, c int, d int, e int, "
+            "r AS (CAST(RAND(CHECKSUM(NEWID())) * 400 AS int)))",
+            "INSERT INTO review_textsize_cc (id, a, b, c, d, e) "
+            "SELECT id, id, id, id, id, id FROM review_textsize_ids",
+        ],
+    )
+    for what, connection in _mssql_user_connections("SET TEXTSIZE 214"):
+        for source in ["review_textsize_v", "review_textsize_cc"]:
+            lf = pl.scan_database(
+                source, connection, partition_on="id", partition_num=4
+            )
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                lf.collect()
+            # unpartitioned, the rows are all there
+            assert pl.scan_database(source, connection).collect().height == 400, what
+
+
+@needs_mssql
+def test_mssql_rowcount_on_the_session_is_refused() -> None:
+    # `SET ROWCOUNT n` on a session stops every query after n rows: each partition
+    # returned up to n of its rows, and the catalog lookups were cut too
+    table = "review_rowcount"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, v int)",
+            f"INSERT INTO {table} "
+            "SELECT TOP 400 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1, 1 "
+            "FROM sys.all_objects a, sys.all_objects b",
+        ],
+    )
+    all_kwargs: list[dict[str, Any]] = [{}, {"partition_on": "id", "partition_num": 4}]
+    for _what, connection in _mssql_user_connections("SET ROWCOUNT 50"):
+        for kwargs in all_kwargs:
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="SET ROWCOUNT"
+            ):
+                pl.scan_database(table, connection, **kwargs).collect()
+            with pytest.raises(
+                pl.exceptions.InvalidOperationError, match="SET ROWCOUNT"
+            ):
+                pl.scan_database(
+                    f"SELECT * FROM {table}", connection, **kwargs
+                ).collect()
+    # and the session left as the user had it
+    conn = _connect("mssql")
+    try:
+        cur = conn.cursor()
+        cur.execute("SET ROWCOUNT 50")
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            pl.scan_database(table, conn).collect()
+        cur.execute(f"SELECT id FROM {table}")
+        assert len(cur.fetchall()) == 50
+        cur.execute("SET ROWCOUNT 0")
+        assert pl.scan_database(table, conn).collect().height == 400
+    finally:
+        conn.close()
+
+
+@needs_mssql
+@pytest.mark.parametrize("key", ["k0", "k10", "k37"])
+def test_mssql_partition_on_a_wide_decimal_key(key: str) -> None:
+    # ConnectorX panicked on the bounds of a `decimal(38, s)` key (read natively, where
+    # the rows are read as text)
+    table = "review_decimal_key"
+    _execute(
+        "mssql",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id int PRIMARY KEY, k0 decimal(38, 0), "
+            "k10 decimal(38, 10), k37 decimal(38, 37))",
+            *(
+                # (beyond the 28 digits ConnectorX's decimals hold)
+                f"INSERT INTO {table} VALUES ({i}, {i}{'0' * 33}, {i}{'0' * 25}.5, 0.{i}{i}{i})"
+                for i in range(1, 9)
+            ),
+        ],
+    )
+    for driver in _runnable_drivers("mssql"):
+        df = _scan("mssql", driver, table, partition_on=key, partition_num=3).collect()
+        assert sorted(df["id"].to_list()) == list(range(1, 9)), driver
+
+
+@needs_mssql
+def test_mssql_query_with_unnamed_columns() -> None:
+    # SQL Server refuses a derived table over a query with a column of no name
+    # (`SELECT count(*)`): such a column is named by its position, as ConnectorX names
+    # it, with every driver and with or without pushdown
+    source = "SELECT count(*), max(id) AS m, 1 + 1, sum(id) FROM edge"
+    names = ["column_0", "m", "column_2", "column_3"]
+    first: pl.DataFrame | None = None
+    for driver in _runnable_drivers("mssql"):
+        for pushdown in [True, False]:
+            df = _scan("mssql", driver, source, pushdown=pushdown).collect()
+            assert df.columns == names, (driver, pushdown)
+            assert df.height == 1
+            assert df["column_0"][0] == N_EDGE_ROWS
+            assert df["column_2"][0] == 2
+            if first is None:
+                first = df.with_columns(cs.numeric().cast(pl.Int64))
+            assert_frame_equal(df.with_columns(cs.numeric().cast(pl.Int64)), first)
+        kept = (
+            _scan("mssql", driver, source)
+            .filter(pl.col("column_0") > 0)
+            .select("column_0", "m")
+            .collect()
+        )
+        assert kept.height == 1, driver
+        assert kept.columns == ["column_0", "m"]
+
+
 @needs_mssql
 def test_mssql_python_factory() -> None:
     # `mssql_python` (Microsoft's driver) can only be given as a connection or a factory

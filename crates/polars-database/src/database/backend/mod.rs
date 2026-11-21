@@ -328,7 +328,37 @@ pub fn open_session(
             }
         }
     }
+    if dialect == DialectName::Mssql {
+        check_mssql_rowcount(session.as_mut())?;
+    }
     Ok(session)
+}
+
+/// Rows the probe of [`check_mssql_rowcount`] asks for.
+const ROWCOUNT_PROBE_ROWS: usize = 10_000;
+
+/// Refuses a SQL Server session under `SET ROWCOUNT n`: it cuts every `SELECT` after `n` rows
+/// (each partition's, and the catalog's own lookups), so rows would go missing without a sign.
+/// The session is the user's to set (a live connection, a pool's connect hook): it is left
+/// as it is, and the read refused. A limit of `ROWCOUNT_PROBE_ROWS` or more isn't seen.
+fn check_mssql_rowcount(session: &mut dyn DatabaseSession) -> PolarsResult<()> {
+    let digits = "(VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10))";
+    let sql = format!(
+        "SELECT 1 AS x FROM {digits} AS a(x), {digits} AS b(x), {digits} AS c(x), \
+        {digits} AS d(x)"
+    );
+    match session.catalog_query(&sql).map(|df| df.height()) {
+        Ok(ROWCOUNT_PROBE_ROWS) => Ok(()),
+        Ok(n) => polars_bail!(
+            InvalidOperation:
+            "this SQL Server session has SET ROWCOUNT in effect (a query for \
+            {ROWCOUNT_PROBE_ROWS} known rows returned {n}): every query would stop after that \
+            many rows, and the scan would read incomplete data. Run SET ROWCOUNT 0 on the \
+            connection, or remove it from the connection's setup"
+        ),
+        // a failing probe says nothing about the limit: the scan's own queries report it
+        Err(_) => Ok(()),
+    }
 }
 
 /// Casts columns that are `Null` on one side to the other side's dtype, numeric columns
@@ -639,6 +669,26 @@ mod tests {
         }
         assert!(open_session(&backend("NLS_COMP"), &spec, DialectName::Oracle).is_err());
         assert!(open_session(&backend("TIME ZONE"), &spec, DialectName::Postgresql).is_ok());
+    }
+
+    /// A session answering every query with this many rows.
+    struct Rows(usize);
+
+    impl DatabaseSession for Rows {
+        fn execute(&mut self, _: &str, _: Option<usize>) -> PolarsResult<BatchIter> {
+            use polars_core::prelude::Column;
+            let df = DataFrame::new(self.0, vec![Column::new("x".into(), vec![1i32; self.0])])?;
+            Ok(Box::new(std::iter::once(Ok(df))))
+        }
+    }
+
+    #[test]
+    fn mssql_session_under_rowcount_is_refused() {
+        assert!(check_mssql_rowcount(&mut Rows(ROWCOUNT_PROBE_ROWS)).is_ok());
+        for n in [0, 1, 50, ROWCOUNT_PROBE_ROWS - 1] {
+            let e = check_mssql_rowcount(&mut Rows(n)).err().unwrap();
+            assert!(e.to_string().contains("SET ROWCOUNT"), "{e}");
+        }
     }
 
     #[test]
