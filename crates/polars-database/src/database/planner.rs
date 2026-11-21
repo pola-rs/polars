@@ -1361,23 +1361,38 @@ pub fn check_unplanned_volatility(
         return Ok(false);
     }
     let volatility = unplanned_volatility(session, config);
-    if compiled.partitions.len() > 1
-        && let Some(column) =
-            volatility
-                .columns
-                .iter()
-                .find(|v| match &config.options.partitioning {
-                    PartitionSpec::Column { column, .. } => v.eq_ignore_ascii_case(column),
-                    PartitionSpec::Predicates(preds) => preds.iter().any(|p| names_column(p, v)),
-                    _ => false,
+    if compiled.partitions.len() > 1 {
+        let options = &config.options;
+        let key = match &options.partitioning {
+            PartitionSpec::Column { column, .. } => Some(column.as_str()),
+            PartitionSpec::Auto { .. } => {
+                options.order_by.first().map(|c| c.as_str()).or_else(|| {
+                    config
+                        .columns
+                        .iter()
+                        .find(|c| c.is_key)
+                        .map(|c| c.name.as_str())
                 })
-    {
-        polars_bail!(
-            InvalidOperation:
-            "this source can't be partitioned on '{column}': it is computed by an aggregate \
-            over floats or a volatile function, whose values differ between runs (found when \
-            reading: schema= skips the check when planning); partition on another column"
-        );
+            },
+            _ => None,
+        };
+        let unstable = volatility
+            .columns
+            .iter()
+            .find(|v| match &options.partitioning {
+                PartitionSpec::Predicates(preds) => preds.iter().any(|p| names_column(p, v)),
+                _ => key.is_some_and(|k| v.eq_ignore_ascii_case(k)),
+            });
+        if volatility.all_columns || unstable.is_some() {
+            polars_bail!(
+                InvalidOperation:
+                "this source can't be partitioned on {}: it may be computed by an aggregate \
+                over floats or a volatile function, whose values differ between runs (found \
+                when reading: schema= skips the check when planning); partition on another \
+                column, or pass partition_on=None",
+                unstable.map_or("its columns".to_string(), |c| format!("'{c}'"))
+            );
+        }
     }
     let Some(reason) = volatility.volatile else {
         return Ok(false);

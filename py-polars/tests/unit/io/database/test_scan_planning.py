@@ -2761,6 +2761,16 @@ def test_other_dialects_need_a_semicolon_between_statements(dialect: str) -> Non
         ("sqlite", "SELECT (SELECT id + count(*) OVER () FROM t) AS k FROM t", False),
         # an output aggregate a HAVING names by its alias decides which groups there are
         ("duckdb", "SELECT g, sum(x) AS s FROM t GROUP BY g HAVING s > 0", False),
+        (
+            "duckdb",
+            "SELECT g, sum(x) AS s, s > 0 AS p FROM t GROUP BY g HAVING p",
+            False,
+        ),
+        (
+            "sqlite",
+            "SELECT (SELECT x / (SELECT max(x) FROM t) FROM t) AS r FROM u",
+            False,
+        ),
         # Oracle fills a year or month the format doesn't have from the clock
         ("oracle", "SELECT EXTRACT(MONTH FROM TO_DATE('2024', 'YYYY')) FROM t", False),
         ("oracle", "SELECT TO_DATE(s, 'HH24:MI') FROM t", False),

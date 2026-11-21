@@ -1810,10 +1810,15 @@ def _multi_row_scalar_subquery(node: Any) -> bool:
         return True
     if query.args.get("from_", query.args.get("from")) is None:
         return False
+
+    def own(select: Any, kind: Any) -> bool:
+        # (one of its own, not of a query nested in it)
+        return any(n.find_ancestor(exp.Select) is query for n in select.find_all(kind))
+
     return (
         query.args.get("group") is not None
-        or any(s.find(exp.Window) is not None for s in query.selects)
-        or not all(s.find(exp.AggFunc) is not None for s in query.selects)
+        or any(own(s, exp.Window) for s in query.selects)
+        or not all(own(s, exp.AggFunc) for s in query.selects)
     )
 
 
@@ -2568,6 +2573,32 @@ def _hides_statement(
     return False
 
 
+def _filtered_aliases(stmt: Any) -> set[str]:
+    """
+    The lower-cased names a query's `HAVING` or `QUALIFY` uses, and those of the output
+    aliases they name in turn (`net > 0 AS profitable … HAVING profitable`).
+    """
+    names = {
+        c.name.lower()
+        for clause in (stmt.args.get("having"), stmt.args.get("qualify"))
+        if clause is not None
+        for c in clause.find_all(exp.Column)
+        if not c.table
+    }
+    selects = {s.alias_or_name.lower(): s for s in stmt.selects}
+    pending = list(names)
+    while pending:
+        select = selects.get(pending.pop())
+        if select is None:
+            continue
+        for c in select.find_all(exp.Column):
+            name = c.name.lower()
+            if not c.table and name not in names:
+                names.add(name)
+                pending.append(name)
+    return names
+
+
 def _executable_comment(tokens: list[Any], dialect: str | None) -> bool:
     """
     Whether a MySQL executable comment (`/*! … */`, MariaDB's `/*M! … */`) is in the
@@ -2662,14 +2693,9 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     projections = (
         {id(p) for p in stmt.selects} if isinstance(stmt, exp.Select) else set()
     )
-    # (the names a `HAVING` or `QUALIFY` uses: an output alias there is its aggregate)
-    filtered = {
-        c.name.lower()
-        for clause in (stmt.args.get("having"), stmt.args.get("qualify"))
-        if clause is not None
-        for c in clause.find_all(exp.Column)
-        if not c.table
-    }
+    # (the names a `HAVING` or `QUALIFY` uses: an output alias there is its expression,
+    # which may name other aliases)
+    filtered = _filtered_aliases(stmt)
     inexact: list[Any] = []
     for node in stmt.find_all(exp.Func):
         if not _inexact_aggregate(node, dialect):

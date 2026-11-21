@@ -1703,6 +1703,26 @@ def test_scan_partition_predicates_on_a_float_aggregate_are_refused(
     assert sorted(lf.collect()["g"].to_list()) == [0, 1, 2]
 
 
+def test_scan_schema_view_float_aggregate_key_is_refused(tmp_path: Path) -> None:
+    # `schema=` skips the check when planning: it runs when reading
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (g INTEGER, x REAL)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", [(i, i / 10) for i in range(9)])
+        conn.execute("CREATE VIEW totals AS SELECT g, SUM(x) AS s FROM t GROUP BY g")
+        conn.commit()
+    uri = f"sqlite:///{path}"
+    schema = {"g": pl.Int64, "s": pl.Float64}
+    for kwargs in [
+        {"partition_on": "s", "partition_range": (0.0, 1.0), "partition_num": 2},
+        {"partition_predicates": ["s < 0.5", "s >= 0.5"]},
+        {"order_by": "s", "partition_num": 2},
+    ]:
+        lf = pl.scan_database("totals", uri, schema=schema, **kwargs)  # type: ignore[arg-type]
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
+
+
 def test_scan_query_with_order_by_is_not_partitioned(tmp_path: Path) -> None:
     path = tmp_path / "t.db"
     with closing(sqlite3.connect(path)) as conn:
