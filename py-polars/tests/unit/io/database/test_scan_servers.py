@@ -2139,6 +2139,25 @@ def test_postgres_autocommit_connections_are_read(module: str) -> None:
 
 
 @needs_postgres
+def test_postgres_failed_scan_keeps_a_begun_orm_session_usable() -> None:
+    # the Session's transaction has no database transaction yet: the scan's failing
+    # statement begins one, which must not be left aborted
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    pytest.importorskip("psycopg")
+    assert POSTGRES is not None
+    engine = sqlalchemy.create_engine(_sqlalchemy_url(POSTGRES, "psycopg"))
+    try:
+        with engine.connect() as conn, orm.Session(bind=conn) as session:
+            session.begin()
+            with pytest.raises(pl.exceptions.ComputeError, match="does not exist"):
+                pl.scan_database("SELECT * FROM bos_no_such_table", session).collect()
+            assert session.execute(sqlalchemy.text("SELECT 1")).scalar() == 1
+    finally:
+        engine.dispose()
+
+
+@needs_postgres
 @pytest.mark.parametrize("driver", ["adbc", "psycopg", "pg8000", "sqlalchemy"])
 def test_postgres_credential_provider_with_user_only(driver: str) -> None:
     # the URI's password stays

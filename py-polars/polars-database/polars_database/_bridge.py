@@ -1635,11 +1635,7 @@ def _transaction_idle(conn: Any) -> bool | None:
             # A SQLAlchemy Connection, which begins one on its first statement, and
             # says so in AUTOCOMMIT too, where there is none
             # (an ORM Session has neither)
-            autocommit = getattr(conn, "_is_autocommit_isolation", None)
-            options = getattr(conn, "get_execution_options", None)
-            if (callable(autocommit) and autocommit()) or (
-                callable(options) and options().get("isolation_level") == "AUTOCOMMIT"
-            ):
+            if _sqlalchemy_autocommit(conn):
                 # no transaction of SQLAlchemy's, but the user's own `BEGIN` may be open
                 # on the driver's connection: that one says
                 fairy = getattr(conn, "connection", None)
@@ -1663,6 +1659,16 @@ def _transaction_idle(conn: Any) -> bool | None:
             # sqlite3, and mysql.connector (the status of its last result)
             return not in_transaction
     return None
+
+
+def _sqlalchemy_autocommit(conn: Any) -> bool:
+    """Whether a SQLAlchemy Connection runs in AUTOCOMMIT."""
+    autocommit = getattr(conn, "_is_autocommit_isolation", None)
+    options = getattr(conn, "get_execution_options", None)
+    return bool(
+        (callable(autocommit) and autocommit())
+        or (callable(options) and options().get("isolation_level") == "AUTOCOMMIT")
+    )
 
 
 def _refuse_pending_results(conn: Any) -> None:
@@ -2502,8 +2508,10 @@ class _Session:
                 if in_database and _is_orm_session(self.conn):
                     # an ORM transaction in AUTOCOMMIT has none in the database
                     run_on = _session_connection(self.conn)
-                    in_database = (
-                        run_on is None or _transaction_idle(run_on) is not True
+                    in_database = not (
+                        run_on is not None
+                        and _sqlalchemy_autocommit(run_on)
+                        and _transaction_idle(run_on) is True
                     )
                 if in_database and _postgres_family(self.conn):
                     # In the user's transaction, a failed statement (a catalog lookup
