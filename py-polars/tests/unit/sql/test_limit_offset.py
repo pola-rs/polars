@@ -197,3 +197,27 @@ def test_limit_offset_no_columns_raises(
 ) -> None:
     with pytest.raises(InvalidOperationError, match="conversion from"):
         pl.SQLContext(frames).execute(query).collect(engine=engine)
+
+
+@pytest.mark.parametrize("height", [0, 3])
+@pytest.mark.parametrize(
+    ("clause", "literal_clause"),
+    [
+        ("LIMIT FLOOR(RANDOM()) + 2", "LIMIT 2"),
+        ("LIMIT (SELECT 2)", "LIMIT 2"),
+        ("OFFSET FLOOR(RANDOM()) + 1", "OFFSET 1"),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_limit_offset_no_columns_matches_literal(
+    height: int,
+    clause: str,
+    literal_clause: str,
+    engine: Literal["in-memory", "streaming"],
+) -> None:
+    ctx = pl.SQLContext(t=pl.DataFrame({"x": range(height)}))
+    query = "SELECT COUNT(*) AS n FROM (SELECT * EXCLUDE x FROM t {}) s"
+    assert_frame_equal(
+        ctx.execute(query.format(clause)).collect(engine=engine),
+        ctx.execute(query.format(literal_clause)).collect(engine=engine),
+    )

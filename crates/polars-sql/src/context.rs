@@ -8104,12 +8104,22 @@ impl SQLContext {
         offset: Option<&SQLExpr>,
         limit: Option<&SQLExpr>,
     ) -> PolarsResult<LazyFrame> {
-        let columns: Vec<Expr> = self
+        let mut columns: Vec<Expr> = self
             .get_frame_schema(&mut lf)?
             .iter_names()
             .cloned()
             .map(Expr::Column)
             .collect();
+        // Slice a placeholder column if there are none, so the row counts are still evaluated
+        // and can raise.
+        let placeholder = columns.is_empty().then(|| {
+            let name = format_pl_smallstr!("__POLARS_SLICE_{}", unique_column_name());
+            lf = lf
+                .clone()
+                .with_column(int_range(lit(0), len(), 1, IDX_DTYPE).alias(name.clone()));
+            columns.push(Expr::Column(name.clone()));
+            name
+        });
         let mut parse = |expr: &SQLExpr| -> PolarsResult<Expr> {
             check_query_independent_value(expr, self)?;
             parse_sql_expr(expr, self, Some(&Schema::default())).map(random_once)
@@ -8152,22 +8162,19 @@ impl SQLContext {
             Some(limit) => row_count(limit, "LIMIT")?,
             None => lit(NULL).cast(DataType::Int64),
         };
-        if columns.is_empty() {
-            // Slice a placeholder so the row counts are still evaluated and can raise.
-            let name = format_pl_smallstr!("__POLARS_SLICE_{}", unique_column_name());
-            return Ok(frame
-                .select([lit(0).slice(offset, length).alias(name.clone())])
-                .drop(Selector::ByName {
-                    names: Arc::from([name]),
-                    strict: true,
-                }));
-        }
-        Ok(frame.select(
+        let frame = frame.select(
             columns
                 .into_iter()
                 .map(|column| column.slice(offset.clone(), length.clone()))
                 .collect::<Vec<_>>(),
-        ))
+        );
+        Ok(match placeholder {
+            Some(name) => frame.drop(Selector::ByName {
+                names: Arc::from([name]),
+                strict: true,
+            }),
+            None => frame,
+        })
     }
 
     fn process_qualified_wildcard(
