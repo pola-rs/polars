@@ -3156,6 +3156,7 @@ dependencies = [
  "polars",
  "polars-arrow",
  "polars-ooc",
+ "recursive",
  "signal-hook",
  "sqlparser",
  "unicode-width",

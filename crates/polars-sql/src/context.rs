@@ -25,19 +25,19 @@ use polars_utils::pl_path::PlRefPath;
 use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
     AlterColumnOperation, AlterTable, AlterTableOperation, Assignment, AssignmentTarget,
-    BinaryOperator as SQLBinaryOperator, CopySource, CopyTarget, CreateTable, CreateTableLikeKind,
-    CreateTableOptions, CreateView, Cte, Delete, Distinct, DropBehavior, ExcludeSelectItem,
-    Expr as SQLExpr, Fetch, FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArguments,
-    GroupByExpr, HiveDistributionStyle, HiveFormat, Ident, IdentWithAlias, Insert, Join,
-    JoinConstraint, JoinOperator, LimitClause, Merge, MergeAction, MergeClause, MergeClauseKind,
-    MergeInsertExpr, MergeInsertKind, MergeUpdateExpr, MergeUpdateKind, NamedWindowDefinition,
-    NamedWindowExpr, ObjectName, ObjectNamePart, ObjectType, OrderBy, OrderByKind, OutputClause,
-    Query, RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Spanned, SqlOption,
-    Statement, TableAlias, TableAliasColumnDef, TableFactor, TableObject, TableWithJoins, Truncate,
-    TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update, Value as SQLValue,
-    ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType,
-    With,
+    BinaryOperator as SQLBinaryOperator, CopyLegacyOption, CopyOption, CopySource, CopyTarget,
+    CreateTable, CreateTableLikeKind, CreateTableOptions, CreateView, Cte, Delete, Distinct,
+    DropBehavior, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, Function, FunctionArg,
+    FunctionArgExpr, FunctionArguments, GroupByExpr, HiveDistributionStyle, HiveFormat, Ident,
+    IdentWithAlias, Insert, Join, JoinConstraint, JoinOperator, LimitClause, Merge, MergeAction,
+    MergeClause, MergeClauseKind, MergeInsertExpr, MergeInsertKind, MergeUpdateExpr,
+    MergeUpdateKind, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
+    ObjectType, OrderBy, OrderByKind, OutputClause, Query, RenameSelectItem, SchemaName, Select,
+    SelectFlavor, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier,
+    Spanned, SqlOption, Statement, TableAlias, TableAliasColumnDef, TableFactor, TableObject,
+    TableWithJoins, Truncate, TruncateTableTarget, UnaryOperator as SQLUnaryOperator, Update,
+    Value as SQLValue, ValueWithSpan, Values, Visitor, VisitorMut, WildcardAdditionalOptions,
+    WindowSpec, WindowType, With,
 };
 use sqlparser::tokenizer::Token;
 
@@ -1728,9 +1728,9 @@ impl SQLContext {
         self
     }
 
-    /// Set whether SQL may read files and URLs, through table functions such as `read_parquet`
-    /// or a quoted path in `FROM`. Registered tables and catalogs stay readable, and statements
-    /// on catalogs are not limited. Writing files is set apart, by
+    /// Set whether SQL may read files and URLs, through table functions such as `read_parquet`,
+    /// a quoted path in `FROM`, or `COPY ... FROM`. Registered tables and catalogs stay readable,
+    /// and statements on catalogs are not limited. Writing files is set apart, by
     /// [`SQLContext::with_file_writes`].
     pub fn with_file_reads(mut self, allow: bool) -> Self {
         self.allow_file_reads = allow;
@@ -3032,10 +3032,7 @@ impl SQLContext {
             CopyTarget::Program { .. } => {
                 polars_bail!(SQLInterface: "COPY with PROGRAM is not supported")
             },
-            _ if !*to => polars_bail!(
-                SQLInterface:
-                "COPY FROM is not supported; use CREATE TABLE <name> AS SELECT * FROM '<file>' or INSERT INTO <name> SELECT * FROM '<file>'"
-            ),
+            _ if !*to => return self.execute_copy_from(source, target, options, legacy_options),
             CopyTarget::File { filename } => filename,
             _ => polars_bail!(
                 SQLInterface: "COPY TO STDOUT is not supported; use COPY ... TO '<file>'"
@@ -3376,21 +3373,11 @@ impl SQLContext {
         let TableObject::TableName(name) = &insert.table else {
             polars_bail!(SQLInterface: "`INSERT` into a table function is not supported")
         };
-        if let Some((tbl, table)) = self.catalog_change_target(name)? {
-            polars_bail!(
-                SQLInterface: "{} of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
-                statement, tbl, display_name(&table.full_name())
-            );
-        }
-        let (_, mut table) = self.get_named_table(name)?;
-        let tbl = object_name_to_string(name);
-        polars_ensure!(
-            key_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.is_some(),
-            SQLInterface: "{} requires a registered table; '{}' is not one", statement, tbl
-        );
+        let (tbl, table) = self.registered_target(name, statement)?;
         let Some(query) = insert_source(insert, outer)? else {
             polars_bail!(SQLInterface: "`INSERT ... DEFAULT VALUES` is not supported")
         };
+        // A VALUES list reads no table, so its rows are computed now.
         let reads_no_table = match query.body.as_ref() {
             SetExpr::Values(values) => !values
                 .rows
@@ -3398,37 +3385,154 @@ impl SQLContext {
                 .any(|row| row.iter().any(expr_contains_subquery)),
             _ => false,
         };
+        let columns = insert_columns(insert)?;
+        let rows = self.execute_query(&query)?;
+        let added = Added {
+            statement,
+            from: "the query",
+            now: reads_no_table,
+            overwrite: insert.overwrite,
+        };
+        self.add_rows(&tbl, table, rows, &columns, added)
+    }
+
+    /// The registered table that `statement` changes, by its name as written; a catalog table
+    /// is changed by `SQLContext::catalog_statement`.
+    fn registered_target(
+        &self,
+        name: &ObjectName,
+        statement: &str,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        if let Some((tbl, table)) = self.catalog_change_target(name)? {
+            polars_bail!(
+                SQLInterface: "{} of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
+                statement, tbl, display_name(&table.full_name())
+            );
+        }
+        let (_, table) = self.get_named_table(name)?;
+        let tbl = object_name_to_string(name);
+        polars_ensure!(
+            key_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.is_some(),
+            SQLInterface: "{} requires a registered table; '{}' is not one", statement, tbl
+        );
+        Ok((tbl, table))
+    }
+
+    /// Add `rows` to registered table `tbl`, whose frame is `table`: they go by position into
+    /// `columns` (every column if empty), converted to the column types. Later statements see
+    /// them, as after DELETE.
+    fn add_rows(
+        &mut self,
+        tbl: &str,
+        mut table: LazyFrame,
+        mut rows: LazyFrame,
+        columns: &[String],
+        added: Added<'_>,
+    ) -> PolarsResult<LazyFrame> {
         let held = match &table.logical_plan {
             DslPlan::DataFrameScan { df, .. } => Some(df.clone()),
             _ => None,
         };
-        let columns = insert_columns(insert)?;
-        let mut rows = self.execute_query(&query)?;
         let target = self.get_frame_schema(&mut table)?;
         let source = self.get_frame_schema(&mut rows)?;
-        let mut rows = rows_to_insert(rows, &source, &target, &columns, &tbl, statement)?;
-        // The rows of a VALUES list are computed now: a value that does not fit fails here. A
-        // table held in memory takes them in memory, so that its plan does not grow with each
-        // INSERT.
+        let mut rows = rows_to_insert(rows, &source, &target, columns, tbl, &added)?;
+        // Rows computed now fail here when a value does not fit. A table held in memory takes
+        // them in memory, so that its plan does not grow with each statement.
         let mut computed = None;
-        if reads_no_table {
+        if added.now {
             let df = rows.collect()?;
             rows = df.clone().lazy();
             computed = Some(df);
         }
-        let table = match (insert.overwrite, held, computed) {
+        let table = match (added.overwrite, held, computed) {
             (true, ..) => rows,
             (false, Some(held), Some(new)) => held.vstack(&new)?.lazy(),
             (false, ..) => concat([table, rows], UnionArgs::default())?,
         };
-        // Later statements see the new rows, as after DELETE. Locked only now: planning the
-        // query reads the table map.
+        // Locked only now: planning the rows reads the table map.
         let mut table_map = self.table_map.write().unwrap();
-        let Some(key) = key_ignoring_case(&table_map, &tbl)?.cloned() else {
-            polars_bail!(SQLInterface: "{} requires a registered table; '{}' is not one", statement, tbl)
+        let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() else {
+            polars_bail!(SQLInterface: "{} requires a registered table; '{}' is not one", added.statement, tbl)
         };
         table_map.insert(key, table.clone());
         Ok(table)
+    }
+
+    // COPY <tbl> [(<column>, ...)] FROM '<file>' [(<option>, ...)]: the rows of the file are
+    // read now, as Postgres does, and added as by INSERT.
+    fn execute_copy_from(
+        &mut self,
+        source: &CopySource,
+        target: &CopyTarget,
+        options: &[CopyOption],
+        legacy_options: &[CopyLegacyOption],
+    ) -> PolarsResult<LazyFrame> {
+        let CopySource::Table {
+            table_name,
+            columns,
+        } = source
+        else {
+            polars_bail!(SQLInterface: "COPY FROM takes a table, as in COPY <table> FROM '<file>'")
+        };
+        let path = match target {
+            CopyTarget::File { filename } => filename,
+            CopyTarget::Stdin => polars_bail!(
+                SQLInterface: "COPY FROM STDIN is not supported; give a file, as in COPY <table> FROM '<file>'"
+            ),
+            _ => {
+                polars_bail!(SQLInterface: "COPY FROM takes a file, as in COPY <table> FROM '<file>'")
+            },
+        };
+        polars_ensure!(
+            self.allow_file_reads,
+            SQLInterface: "reading files is disabled in this SQLContext"
+        );
+        if let Some((tbl, table)) = self.catalog_change_target(table_name)? {
+            polars_bail!(
+                SQLInterface: "COPY FROM into catalog table '{}' ('{}') is not supported; use INSERT INTO {} SELECT * FROM '<file>'",
+                tbl, display_name(&table.full_name()), tbl
+            );
+        }
+        let (tbl, mut table) = self.registered_target(table_name, "COPY FROM")?;
+        // One file, as in Postgres: a directory would be read as all of its files.
+        let local = expand_home_dir(PlRefPath::new(path))?;
+        polars_ensure!(
+            local.has_scheme() || !std::path::Path::new(local.as_str()).is_dir(),
+            SQLInterface: "COPY FROM reads one file; '{}' is a directory", path
+        );
+        let columns: Vec<String> = columns.iter().map(|c| c.value.clone()).collect();
+        // The types of the columns that the file fills, in order: a CSV field is read as the
+        // type of its column.
+        let target = self.get_frame_schema(&mut table)?;
+        let mut schema = Schema::with_capacity(target.len());
+        let names: Vec<&str> = match columns.is_empty() {
+            true => target.iter_names().map(|c| c.as_str()).collect(),
+            false => columns.iter().map(|c| c.as_str()).collect(),
+        };
+        for (i, name) in names.iter().enumerate() {
+            let Some(dtype) = target.get(name) else {
+                polars_bail!(
+                    ColumnNotFound: "column '{}' not found in table '{}'; column names are case-sensitive", name, tbl
+                )
+            };
+            polars_ensure!(
+                !names[..i].contains(name),
+                Duplicate: "column '{}' is listed more than once in COPY FROM", name
+            );
+            schema.with_column((*name).into(), dtype.clone());
+        }
+        // Another format keeps the columns of the file, by position.
+        let rows = match copy::read_rows(path, &schema, options, legacy_options)? {
+            (_, Some(rows)) => rows,
+            (format, None) => PolarsTableFunctions::read_as(format, path, self)?,
+        };
+        let added = Added {
+            statement: "COPY FROM",
+            from: "the file",
+            now: true,
+            overwrite: false,
+        };
+        self.add_rows(&tbl, table, rows, &columns, added)
     }
 
     // DELETE FROM <tbl> [WHERE ...]
@@ -10663,17 +10767,30 @@ fn insert_columns(insert: &Insert) -> PolarsResult<Vec<String>> {
         .collect()
 }
 
-/// The rows an `INSERT` adds to table `tbl` of schema `target`: the columns of `rows`, of
-/// schema `source`, go by position into `columns` (every column if empty), converted to the
-/// column types. Other columns are NULL.
+/// How a statement adds rows to a registered table (see `SQLContext::add_rows`).
+struct Added<'a> {
+    /// The statement, for errors.
+    statement: &'a str,
+    /// Where its rows come from, for errors: "the query", "the file".
+    from: &'a str,
+    /// Whether the rows are computed now, not when the table is read.
+    now: bool,
+    /// Whether the rows replace those of the table.
+    overwrite: bool,
+}
+
+/// The rows that a statement (`added`) adds to table `tbl` of schema `target`: the columns of
+/// `rows`, of schema `source`, go by position into `columns` (every column if empty),
+/// converted to the column types. Other columns are NULL.
 fn rows_to_insert(
     rows: LazyFrame,
     source: &Schema,
     target: &Schema,
     columns: &[String],
     tbl: &str,
-    statement: &str,
+    added: &Added<'_>,
 ) -> PolarsResult<LazyFrame> {
+    let statement = added.statement;
     let columns: Vec<PlSmallStr> = match columns.is_empty() {
         true => target.iter_names().cloned().collect(),
         false => columns.iter().map(|c| c.as_str().into()).collect(),
@@ -10690,8 +10807,8 @@ fn rows_to_insert(
     }
     polars_ensure!(
         source.len() == columns.len(),
-        SQLInterface: "{} writes {} columns of table '{}', but the query gives {}",
-        statement, columns.len(), tbl, source.len()
+        SQLInterface: "{} writes {} columns of table '{}', but {} gives {}",
+        statement, columns.len(), tbl, added.from, source.len()
     );
     let mut values = Vec::with_capacity(columns.len());
     let mut casts = Vec::with_capacity(target.len());
@@ -10703,8 +10820,8 @@ fn rows_to_insert(
         let (name, source_dtype) = source.get_at_index(i).unwrap();
         let Some(value) = assigned_value(Expr::Column(name.clone()), source_dtype, dtype) else {
             polars_bail!(
-                SchemaMismatch: "column '{}' of table '{}' has type {}, but the query gives {}; convert it with CAST",
-                column, tbl, sql_type_name(dtype), sql_type_name(source_dtype)
+                SchemaMismatch: "column '{}' of table '{}' has type {}, but {} gives {}; convert it with CAST",
+                column, tbl, sql_type_name(dtype), added.from, sql_type_name(source_dtype)
             )
         };
         values.push(value.alias(column.clone()));
