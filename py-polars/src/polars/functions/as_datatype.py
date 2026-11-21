@@ -10,7 +10,7 @@ from polars._utils.parse import (
 )
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Struct, Time
+from polars.datatypes import Date, Int32, String, Struct, Time
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
@@ -225,6 +225,98 @@ def date_(
     └────────────┴────────────┘
     """
     return datetime_(year, month, day).cast(Date).alias("date")
+
+
+def from_year_week_day(
+    year: Expr | str | int,
+    week: Expr | str | int,
+    day: Expr | str | int,
+) -> Expr:
+    """
+    Create a Date expression from an ISO year, week number, and weekday.
+
+    ISO weeks start on Monday. Week 1 is the week containing January 4,
+    so the ISO year can differ from the calendar year near New Year's Day.
+
+    Parameters
+    ----------
+    year
+        ISO year, as a column name, expression, or integer literal.
+    week
+        ISO week number, as a column name, expression, or integer literal.
+        Ranges from 1 to 52, or 53 in ISO years that contain 53 weeks.
+    day
+        ISO weekday, as a column name, expression, or integer literal.
+        Ranges from 1 (Monday) to 7 (Sunday).
+
+    Returns
+    -------
+    Expr
+        Expression of data type :class:`Date`, named "date".
+
+    Notes
+    -----
+    Invalid combinations of ISO year, week, and weekday raise an error.
+    A null component produces a null date.
+
+    See Also
+    --------
+    date : Create a date from calendar year, month, and day.
+    Expr.dt.iso_year : Extract the ISO year from a date.
+    Expr.dt.week : Extract the ISO week number from a date.
+    Expr.dt.weekday : Extract the ISO weekday from a date.
+
+    Examples
+    --------
+    An ISO week can span two calendar years:
+
+    >>> df = pl.DataFrame({"year": [2020, 2020], "week": [53, 53], "day": [1, 7]})
+    >>> df.select(pl.from_year_week_day("year", "week", "day"))
+    shape: (2, 1)
+    ┌────────────┐
+    │ date       │
+    │ ---        │
+    │ date       │
+    ╞════════════╡
+    │ 2020-12-28 │
+    │ 2021-01-03 │
+    └────────────┘
+
+    Pass a literal weekday to get the Monday of each ISO week:
+
+    >>> df.select(pl.from_year_week_day("year", "week", 1))
+    shape: (2, 1)
+    ┌────────────┐
+    │ date       │
+    │ ---        │
+    │ date       │
+    ╞════════════╡
+    │ 2020-12-28 │
+    │ 2020-12-28 │
+    └────────────┘
+    """
+    year_expr = wrap_expr(parse_into_expression(year)).cast(Int32)
+    week_expr = wrap_expr(parse_into_expression(week)).cast(Int32)
+    day_expr = wrap_expr(parse_into_expression(day)).cast(Int32)
+
+    # ISO years with more than four digits require an explicit sign.
+    year_str = year_expr.cast(String)
+    year_str = (
+        F.when(year_expr >= 10_000)
+        .then(year_str.str.replace("^", "+"))
+        .otherwise(year_str)
+    )
+    return (
+        (
+            year_str
+            + F.lit("-")
+            + week_expr.cast(String)
+            + F.lit("-")
+            + day_expr.cast(String)
+        )
+        .str.to_date("%G-%V-%u")
+        .alias("date")
+    )
 
 
 def time_(
