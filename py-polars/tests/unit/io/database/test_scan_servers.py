@@ -3048,6 +3048,35 @@ def test_clickhouse_connectorx_reads_every_row_or_fails() -> None:
 
 
 @needs_clickhouse
+@pytest.mark.parametrize("driver", ["adbc", "clickhouse_connect"])
+def test_clickhouse_map_of_arbitrary_bytes_is_an_error_not_a_string(
+    driver: str,
+) -> None:
+    # a ClickHouse String holds any bytes: in a Map(String, String) they would reach a
+    # Polars String that isn't UTF-8 (and abort the process on a string operation)
+    table = f"map_bytes_{driver}"
+    try:
+        _execute(
+            "clickhouse",
+            [
+                f"DROP TABLE IF EXISTS {table}",
+                f"CREATE TABLE {table} (id Int32, m Map(String, String)) "
+                "ENGINE = MergeTree ORDER BY id",
+                f"INSERT INTO {table} VALUES (1, map('k', 'v')), "
+                "(2, map(unhex('ff'), 'v')), (3, map('k', unhex('80')))",
+            ],
+        )
+        for source in [table, f"SELECT id, m FROM {table}"]:
+            lf = _scan("clickhouse", driver, source)
+            ok = lf.filter(pl.col("id") == 1).collect()
+            assert "k" in str(ok["m"].to_list())
+            with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)utf-?8"):
+                lf.collect()
+    finally:
+        _execute("clickhouse", [f"DROP TABLE IF EXISTS {table}"])
+
+
+@needs_clickhouse
 def test_clickhouse_connectorx_array_of_decimals_fails_only_when_read() -> None:
     # #442: ConnectorX fails on an array of decimals even for no rows, so the table
     # couldn't be planned: any projection failed

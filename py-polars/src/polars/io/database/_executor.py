@@ -56,6 +56,50 @@ _INVALID_QUERY_TYPES: Final[set[str]] = {
 _DATABRICKS_ALCHEMY_DRIVERS: Final = frozenset({"databricks", "databricks-sql-python"})
 
 
+def _has_text(dtype: Any) -> bool:
+    """Whether a dtype holds a String, also nested in lists, arrays, maps and structs."""
+    from polars.datatypes import Array, List, Map, String, Struct
+
+    if dtype == String:
+        return True
+    if isinstance(dtype, (List, Array)):
+        return _has_text(dtype.inner)
+    if isinstance(dtype, Map):
+        return _has_text(dtype.key) or _has_text(dtype.value)
+    if isinstance(dtype, Struct):
+        return any(_has_text(f.dtype) for f in dtype.fields)
+    return False
+
+
+def _check_utf8(df: DataFrame) -> DataFrame:
+    """
+    The frame, if its text is valid UTF-8, also nested in lists, structs and maps.
+
+    A driver that hands the bytes of a text value over as they are (the Databricks
+    connector and ADBC drivers over a `STRING` made of `unhex('FF')`) would otherwise
+    reach the caller as a String that breaks its contract (memory unsafety in string
+    operations).
+    """
+    from polars.exceptions import ComputeError
+
+    names = [c for c, dt in df.schema.items() if _has_text(dt)]
+    if names:
+        try:
+            df.select(names).to_arrow().validate(full=True)
+        except Exception as e:
+            msg = (
+                "the database returned text that isn't valid UTF-8 (a STRING made "
+                "of other bytes); read the column as BINARY with "
+                f"CAST(<column> AS BINARY) and decode it in Polars ({e})"
+            )
+            raise ComputeError(msg) from e
+    return df
+
+
+# the drivers that pass on the bytes of a text value without checking them
+_UNCHECKED_TEXT_DRIVERS: Final = frozenset({"adbc", "databricks"})
+
+
 def _close_after_frames(
     frames: Any, *, close: Callable[[], None]
 ) -> Generator[DataFrame]:
@@ -295,16 +339,18 @@ class ConnectionExecutor:
                     )
                     raise ValueError(msg)  # noqa: TRY301
 
+                check = driver in _UNCHECKED_TEXT_DRIVERS
                 frames = (
-                    self._apply_overrides(batch, (schema_overrides or {}))
-                    if isinstance(batch, DataFrame)
-                    else self._apply_overrides(
-                        DataFrame(batch), (schema_overrides or {})
+                    self._apply_overrides(
+                        _check_utf8(df) if check else df, (schema_overrides or {})
                     )
-                    for batch in self._fetch_arrow(
-                        driver_properties,
-                        iter_batches=iter_batches,
-                        batch_size=batch_size,
+                    for df in (
+                        batch if isinstance(batch, DataFrame) else DataFrame(batch)
+                        for batch in self._fetch_arrow(
+                            driver_properties,
+                            iter_batches=iter_batches,
+                            batch_size=batch_size,
+                        )
                     )
                 )
                 return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]

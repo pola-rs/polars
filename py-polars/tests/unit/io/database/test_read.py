@@ -1779,3 +1779,98 @@ def test_databricks_sqlalchemy_close_batches_before_first_next(
         assert closed == [True]
         assert conn.exec_driver_sql("SELECT 1").fetchall() == [(1,)]
     engine.dispose()
+
+
+def _invalid_text_table(shape: str) -> pa.Table:
+    # a STRING made of the byte 0xFF, which an Arrow driver passes on unchecked
+    bad = pa.Array.from_buffers(
+        pa.string(),
+        1,
+        [
+            None,
+            pa.py_buffer(b"\x00\x00\x00\x00\x01\x00\x00\x00"),
+            pa.py_buffer(b"\xff"),
+        ],
+    )
+    good = pa.array(["a"])
+    offsets = pa.array([0, 1], pa.int32())
+    column = {
+        "top": bad,
+        "list": pa.ListArray.from_arrays(offsets, bad),
+        "struct": pa.StructArray.from_arrays([good, bad], names=["a", "b"]),
+        "map_key": pa.MapArray.from_arrays(offsets, bad, good),
+        "map_value": pa.MapArray.from_arrays(offsets, good, bad),
+        "map_in_list": pa.ListArray.from_arrays(
+            offsets, pa.MapArray.from_arrays(offsets, good, bad)
+        ),
+    }[shape]
+    return pa.table({"id": pa.array([1]), "c": column})
+
+
+_INVALID_TEXT_SHAPES = ["top", "list", "struct", "map_key", "map_value", "map_in_list"]
+
+
+@pytest.mark.parametrize("shape", _INVALID_TEXT_SHAPES)
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_databricks_invalid_utf8_is_an_error(
+    shape: str, iter_batches: bool
+) -> None:
+    # the connector passes on the bytes of a STRING (`unhex('FF')`) as they are, and a
+    # Polars String of them breaks string operations
+    mc = MockConnection(
+        "databricks",
+        10 if iter_batches else None,
+        test_data=_invalid_text_table(shape),
+        repeat_batch_calls=True,
+        exact_batch_size=True,
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+        res = pl.read_database(
+            "SELECT 1",
+            mc,
+            iter_batches=iter_batches,
+            batch_size=10 if iter_batches else None,
+        )
+        if iter_batches:
+            list(res)  # type: ignore[arg-type]
+
+
+def test_read_database_databricks_valid_text_is_read() -> None:
+    good = pa.array(["a", "�", None])
+    offsets = pa.array([0, 1, 2, 3], pa.int32())
+    table = pa.table(
+        {
+            "s": good,
+            "m": pa.MapArray.from_arrays(offsets, pa.array(["k", "l", "m"]), good),
+        }
+    )
+    mc = MockConnection(
+        "databricks",
+        None,
+        test_data=table,
+        repeat_batch_calls=True,
+        exact_batch_size=True,
+    )
+    out = pl.read_database("SELECT 1", mc)
+    assert out["s"].to_list() == ["a", "�", None]
+    assert out["m"].dtype == pl.Map(pl.String, pl.String)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc_driver_sqlite not available")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_adbc_invalid_utf8_is_an_error(
+    iter_batches: bool, tmp_path: Path
+) -> None:
+    sql = "SELECT 1 AS id, CAST(X'FF' AS TEXT) AS s"
+    with closing(adbc_sqlite_connect(tmp_path / "x.db")) as conn:
+        with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+            res = pl.read_database(
+                sql,
+                conn,
+                iter_batches=iter_batches,
+                batch_size=10 if iter_batches else None,
+            )
+            if iter_batches:
+                list(res)  # type: ignore[arg-type]
+        ok = pl.read_database("SELECT 1 AS id, CAST(X'FF' AS BLOB) AS b", conn)
+        assert ok["b"].to_list() == [b"\xff"]

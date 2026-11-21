@@ -794,8 +794,8 @@ fn check_utf8(df: &DataFrame) -> PolarsResult<()> {
     Ok(())
 }
 
-/// Whether a column holds a string that isn't valid UTF-8, also nested in lists, arrays and
-/// structs (a Postgres `text[]` or composite on a `SQL_ASCII` database).
+/// Whether a column holds a string that isn't valid UTF-8, also nested in lists, arrays,
+/// maps and structs (a Postgres `text[]` or composite on a `SQL_ASCII` database).
 fn holds_invalid_utf8(s: &polars_core::series::Series) -> PolarsResult<bool> {
     use polars_core::prelude::DataType;
 
@@ -807,6 +807,10 @@ fn holds_invalid_utf8(s: &polars_core::series::Series) -> PolarsResult<bool> {
         DataType::List(inner) if has_string(inner) => holds_invalid_utf8(&s.list()?.get_inner())?,
         DataType::Array(inner, _) if has_string(inner) => {
             holds_invalid_utf8(&s.array()?.get_inner())?
+        },
+        DataType::Map(key, value) if has_string(key) || has_string(value) => {
+            let map = s.map()?;
+            holds_invalid_utf8(&map.keys())? || holds_invalid_utf8(&map.values())?
         },
         DataType::Struct(_) => {
             for f in s.struct_()?.fields_as_series() {
@@ -825,6 +829,7 @@ fn has_string(dtype: &polars_core::prelude::DataType) -> bool {
     match dtype {
         DataType::String | DataType::Struct(_) => true,
         DataType::List(inner) | DataType::Array(inner, _) => has_string(inner),
+        DataType::Map(key, value) => has_string(key) || has_string(value),
         _ => false,
     }
 }
@@ -1006,6 +1011,24 @@ mod tests {
         assert!(holds_invalid_utf8(&st).unwrap());
         let df = DataFrame::new(1, vec![list.into_column()]).unwrap();
         assert!(check_utf8(&df).is_err());
+        // maps: in the keys, in the values, and a map in a list
+        let map = |keys: &Series, values: &Series| {
+            let entries = polars_core::prelude::pack_map_entries(keys, values);
+            let storage = entries.implode().unwrap().into_series();
+            let dtype = DataType::Map(
+                Box::new(keys.dtype().clone()),
+                Box::new(values.dtype().clone()),
+            );
+            polars_core::prelude::MapChunked::try_from_storage(dtype, storage)
+                .unwrap()
+                .into_series()
+        };
+        assert!(holds_invalid_utf8(&map(&bad, &good)).unwrap());
+        assert!(holds_invalid_utf8(&map(&good, &bad)).unwrap());
+        assert!(!holds_invalid_utf8(&map(&good, &good)).unwrap());
+        let ints = Series::new("i".into(), [1i32]);
+        assert!(!holds_invalid_utf8(&map(&ints, &ints)).unwrap());
+        assert!(holds_invalid_utf8(&map(&good, &bad).implode().unwrap().into_series()).unwrap());
     }
 
     #[test]
