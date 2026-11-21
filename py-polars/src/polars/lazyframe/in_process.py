@@ -35,6 +35,14 @@ class InProcessQuery:
         fetched, returns at once. Called from one of Polars' own threads (inside a
         Python function a query runs, say), it only requests the cancellation and
         returns without waiting, as the query may be waiting for that thread.
+
+        As it waits for the query, it must not be called from another thread the
+        query itself waits on: for example an asyncio event loop that a Python
+        function of the query calls back into (with
+        `asyncio.run_coroutine_threadsafe(...).result()`, say), which would never
+        return. Call it off that thread instead, such as with
+        `await loop.run_in_executor(None, query.cancel)`. A keyboard interrupt
+        (Ctrl-C) while it waits raises `KeyboardInterrupt`; the query still stops.
         """
         self._inner.cancel()
 

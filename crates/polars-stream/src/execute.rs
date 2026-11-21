@@ -140,6 +140,7 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
 }
 
 /// Runs the given subgraph. Assumes the set of pipes is correct for the subgraph.
+#[allow(clippy::too_many_arguments)]
 fn run_subgraph(
     graph: &mut Graph,
     nodes: &PlHashSet<GraphNodeKey>,

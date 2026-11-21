@@ -26,7 +26,8 @@ const ABORT_OOC_OUT_OF_DISK_BIT: u64 = 2;
 const ABORT_CATCHERS_UNIT: u64 = 4;
 static ABORT_STATE: AtomicU64 = AtomicU64::new(0);
 
-fn decode_polars_abort(p: &dyn Any) -> Option<QueryAborted> {
+/// The reason of a Polars abort, if `p` is the payload of its panic.
+pub fn decode_polars_abort(p: &dyn Any) -> Option<QueryAborted> {
     let s = if let Some(s) = p.downcast_ref::<&str>() {
         s
     } else if let Some(s) = p.downcast_ref::<String>() {
