@@ -1,0 +1,47 @@
+﻿polars.RemoteEngine
+===================
+
+.. currentmodule:: polars
+
+.. autoclass:: RemoteEngine
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~RemoteEngine.__init__
+      ~RemoteEngine.collect
+      ~RemoteEngine.collect_all
+      ~RemoteEngine.collect_all_async
+      ~RemoteEngine.collect_async
+      ~RemoteEngine.collect_batches
+      ~RemoteEngine.execute
+      ~RemoteEngine.sink_batches
+      ~RemoteEngine.sink_csv
+      ~RemoteEngine.sink_ipc
+      ~RemoteEngine.sink_ndjson
+      ~RemoteEngine.sink_parquet
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~RemoteEngine.name
+      ~RemoteEngine.plan_engine
+      ~RemoteEngine.context
+      ~RemoteEngine.scaling_mode
+      ~RemoteEngine.engine
+      ~RemoteEngine.plan_type
+      ~RemoteEngine.n_retries
+      ~RemoteEngine.labels
+      ~RemoteEngine.config
+   
+   

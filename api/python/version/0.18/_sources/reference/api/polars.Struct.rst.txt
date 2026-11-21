@@ -1,0 +1,32 @@
+﻿polars.Struct
+=============
+
+.. currentmodule:: polars
+
+.. autoclass:: Struct
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Struct.__init__
+      ~Struct.base_type
+      ~Struct.is_
+      ~Struct.is_not
+      ~Struct.to_schema
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Struct.is_nested
+   
+   

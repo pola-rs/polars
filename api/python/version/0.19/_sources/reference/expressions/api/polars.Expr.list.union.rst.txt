@@ -1,0 +1,6 @@
+﻿polars.Expr.list.union
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.union

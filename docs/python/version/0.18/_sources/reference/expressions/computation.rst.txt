@@ -1,0 +1,66 @@
+===========
+Computation
+===========
+
+.. currentmodule:: polars
+.. autosummary::
+   :toctree: api/
+
+    Expr.abs
+    Expr.approx_n_unique
+    Expr.arccos
+    Expr.arccosh
+    Expr.arcsin
+    Expr.arcsinh
+    Expr.arctan
+    Expr.arctanh
+    Expr.arg_unique
+    Expr.cbrt
+    Expr.cos
+    Expr.cosh
+    Expr.cumcount
+    Expr.cummax
+    Expr.cummin
+    Expr.cumprod
+    Expr.cumsum
+    Expr.cumulative_eval
+    Expr.degrees
+    Expr.diff
+    Expr.dot
+    Expr.entropy
+    Expr.ewm_mean
+    Expr.ewm_std
+    Expr.ewm_var
+    Expr.exp
+    Expr.hash
+    Expr.kurtosis
+    Expr.log
+    Expr.log10
+    Expr.log1p
+    Expr.mode
+    Expr.n_unique
+    Expr.null_count
+    Expr.pct_change
+    Expr.radians
+    Expr.rank
+    Expr.rolling_apply
+    Expr.rolling_max
+    Expr.rolling_mean
+    Expr.rolling_median
+    Expr.rolling_min
+    Expr.rolling_quantile
+    Expr.rolling_skew
+    Expr.rolling_std
+    Expr.rolling_sum
+    Expr.rolling_var
+    Expr.search_sorted
+    Expr.sign
+    Expr.sin
+    Expr.sinh
+    Expr.skew
+    Expr.sqrt
+    Expr.tan
+    Expr.tanh
+    Expr.unique
+    Expr.unique_counts
+    Expr.value_counts

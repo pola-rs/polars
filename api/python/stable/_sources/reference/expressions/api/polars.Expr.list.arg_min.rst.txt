@@ -1,0 +1,6 @@
+﻿polars.Expr.list.arg_min
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.arg_min

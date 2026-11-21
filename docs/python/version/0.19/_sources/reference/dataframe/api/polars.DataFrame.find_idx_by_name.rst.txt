@@ -1,0 +1,6 @@
+﻿polars.DataFrame.find\_idx\_by\_name
+====================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.find_idx_by_name

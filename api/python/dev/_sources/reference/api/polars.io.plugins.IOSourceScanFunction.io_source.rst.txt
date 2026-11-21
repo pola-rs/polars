@@ -1,0 +1,6 @@
+﻿polars.io.plugins.IOSourceScanFunction.io\_source
+=================================================
+
+.. currentmodule:: polars.io.plugins
+
+.. autoattribute:: IOSourceScanFunction.io_source

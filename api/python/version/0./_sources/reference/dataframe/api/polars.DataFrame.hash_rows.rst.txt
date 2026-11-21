@@ -1,0 +1,6 @@
+﻿polars.DataFrame.hash\_rows
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.hash_rows

@@ -1,0 +1,6 @@
+﻿polars.map\_groups
+==================
+
+.. currentmodule:: polars
+
+.. autofunction:: map_groups

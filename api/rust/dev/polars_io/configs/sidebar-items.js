@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_CLOUD_FOOTER_READ_SIZE"],"fn":["cloud_footer_read_size","env_partitioned_upload_chunk_size","env_partitioned_upload_concurrency","env_upload_chunk_size","env_upload_concurrency"]};

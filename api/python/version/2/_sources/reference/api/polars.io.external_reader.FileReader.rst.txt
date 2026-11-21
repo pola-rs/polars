@@ -1,0 +1,28 @@
+﻿polars.io.external\_reader.FileReader
+=====================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. autoclass:: FileReader
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~FileReader.__init__
+      ~FileReader.collect_batches
+      ~FileReader.fetch_metadata
+      ~FileReader.initialize_serial
+      ~FileReader.n_rows_in_file
+      ~FileReader.on_drop
+      ~FileReader.schema
+   
+   
+
+   
+   
+   

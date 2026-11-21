@@ -1,0 +1,6 @@
+﻿polars.SQLContext.execute
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: SQLContext.execute

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ClosedWindow","Label","StartBy"],"fn":["ensure_duration_matches_data_type","ensure_is_constant_duration","group_by_values","group_by_windows"],"struct":["Bounds","BoundsIter","Duration","Window"]};

@@ -1,0 +1,6 @@
+﻿polars.row\_index
+=================
+
+.. currentmodule:: polars
+
+.. autofunction:: row_index

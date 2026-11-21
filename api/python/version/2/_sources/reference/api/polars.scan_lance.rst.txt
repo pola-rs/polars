@@ -1,0 +1,6 @@
+﻿polars.scan\_lance
+==================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_lance

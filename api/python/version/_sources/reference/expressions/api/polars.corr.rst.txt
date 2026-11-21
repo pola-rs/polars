@@ -1,0 +1,6 @@
+﻿polars.corr
+===========
+
+.. currentmodule:: polars
+
+.. autofunction:: corr

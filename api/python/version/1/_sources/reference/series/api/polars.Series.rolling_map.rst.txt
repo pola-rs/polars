@@ -1,0 +1,6 @@
+﻿polars.Series.rolling\_map
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.rolling_map

@@ -1,0 +1,6 @@
+﻿polars.lazyframe.in\_process.InProcessQuery.fetch
+=================================================
+
+.. currentmodule:: polars.lazyframe.in_process
+
+.. automethod:: InProcessQuery.fetch

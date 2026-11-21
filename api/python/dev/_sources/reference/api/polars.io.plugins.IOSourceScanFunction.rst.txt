@@ -1,0 +1,28 @@
+﻿polars.io.plugins.IOSourceScanFunction
+======================================
+
+.. currentmodule:: polars.io.plugins
+
+.. autoclass:: IOSourceScanFunction
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~IOSourceScanFunction.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~IOSourceScanFunction.io_source
+   
+   

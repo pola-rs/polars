@@ -1,0 +1,6 @@
+﻿polars.Series.struct.fields
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessorattribute:: Series.struct.fields

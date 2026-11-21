@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.is_row_separable
+=================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.is_row_separable

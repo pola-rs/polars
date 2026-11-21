@@ -1,0 +1,6 @@
+﻿polars.Config.set\_float\_precision
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_float_precision

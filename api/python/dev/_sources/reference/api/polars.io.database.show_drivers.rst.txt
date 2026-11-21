@@ -1,0 +1,6 @@
+﻿polars.io.database.show\_drivers
+================================
+
+.. currentmodule:: polars.io.database
+
+.. autofunction:: show_drivers

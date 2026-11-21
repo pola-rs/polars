@@ -1,0 +1,22 @@
+﻿polars.ParquetEncryptionProperties
+==================================
+
+.. currentmodule:: polars
+
+.. autoclass:: ParquetEncryptionProperties
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~ParquetEncryptionProperties.__init__
+   
+   
+
+   
+   
+   

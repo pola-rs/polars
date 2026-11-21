@@ -1,0 +1,6 @@
+﻿polars.Series.arccos
+====================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.arccos

@@ -1,0 +1,6 @@
+﻿polars.DataFrame.rows\_by\_key
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.rows_by_key

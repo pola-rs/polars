@@ -1,0 +1,6 @@
+﻿polars.DataFrame.join\_where
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.join_where

@@ -1,0 +1,22 @@
+﻿polars.io.parquet.encryption.CryptoFactory
+==========================================
+
+.. currentmodule:: polars.io.parquet.encryption
+
+.. autoclass:: CryptoFactory
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~CryptoFactory.__init__
+   
+   
+
+   
+   
+   

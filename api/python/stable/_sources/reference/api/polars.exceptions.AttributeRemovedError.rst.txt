@@ -1,0 +1,6 @@
+﻿polars.exceptions.AttributeRemovedError
+=======================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: AttributeRemovedError

@@ -1,0 +1,182 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-sql/src/copy.rs`."><title>copy.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="polars_sql" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (0dfb098f3 2026-08-31)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">polars_sql/</div>copy.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! `COPY`: the format and options of what `COPY ... TO` writes and `COPY ... FROM` reads.
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a></span><span class="attr">#[cfg(feature = <span class="string">"csv"</span>)]
+<a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span>std::sync::Arc;
+<a href=#5 id=5 data-nosnippet>5</a>
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>polars_core::prelude::<span class="kw-2">*</span>;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>polars_lazy::prelude::<span class="kw-2">*</span>;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>sqlparser::ast::{CopyLegacyOption, CopyOption};
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><span class="kw">crate</span>::table_functions::FileFormat;
+<a href=#11 id=11 data-nosnippet>11</a>
+<a href=#12 id=12 data-nosnippet>12</a><span class="doccomment">/// A `COPY ... TO STDOUT` statement, for the caller to write to its output (see
+<a href=#13 id=13 data-nosnippet>13</a>/// [`SQLContext::copy_to_stdout`](crate::SQLContext::copy_to_stdout)).
+<a href=#14 id=14 data-nosnippet>14</a></span><span class="attr">#[derive(Clone)]
+<a href=#15 id=15 data-nosnippet>15</a></span><span class="kw">pub struct </span>CopyToStdout {
+<a href=#16 id=16 data-nosnippet>16</a>    <span class="doccomment">/// The rows that the statement writes.
+<a href=#17 id=17 data-nosnippet>17</a>    </span><span class="kw">pub </span>rows: LazyFrame,
+<a href=#18 id=18 data-nosnippet>18</a>    <span class="doccomment">/// The format to write them in, with its options.
+<a href=#19 id=19 data-nosnippet>19</a>    </span><span class="kw">pub </span>format: FileWriteFormat,
+<a href=#20 id=20 data-nosnippet>20</a>}
+<a href=#21 id=21 data-nosnippet>21</a>
+<a href=#22 id=22 data-nosnippet>22</a><span class="doccomment">/// How `COPY` writes its rows: in the format that `FORMAT` names, else in that of the extension
+<a href=#23 id=23 data-nosnippet>23</a>/// of `path`, the file it writes. Standard output has no path.
+<a href=#24 id=24 data-nosnippet>24</a></span><span class="attr">#[allow(unreachable_code, unused_variables)]
+<a href=#25 id=25 data-nosnippet>25</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>write_format(
+<a href=#26 id=26 data-nosnippet>26</a>    path: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
+<a href=#27 id=27 data-nosnippet>27</a>    options: <span class="kw-2">&amp;</span>[CopyOption],
+<a href=#28 id=28 data-nosnippet>28</a>    legacy_options: <span class="kw-2">&amp;</span>[CopyLegacyOption],
+<a href=#29 id=29 data-nosnippet>29</a>) -&gt; PolarsResult&lt;FileWriteFormat&gt; {
+<a href=#30 id=30 data-nosnippet>30</a>    <span class="kw">let </span>(format, csv_options) = format_and_csv_options(path, options, legacy_options)<span class="question-mark">?</span>;
+<a href=#31 id=31 data-nosnippet>31</a>
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="attr">#[cfg(feature = <span class="string">"csv"</span>)]
+<a href=#33 id=33 data-nosnippet>33</a>    </span><span class="kw">if let </span>FileFormat::Csv = format {
+<a href=#34 id=34 data-nosnippet>34</a>        <span class="comment">// `FORMAT csv` holds for a path of any extension
+<a href=#35 id=35 data-nosnippet>35</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>csv = CsvWriterOptions {
+<a href=#36 id=36 data-nosnippet>36</a>            check_extension: <span class="bool-val">false</span>,
+<a href=#37 id=37 data-nosnippet>37</a>            ..Default::default()
+<a href=#38 id=38 data-nosnippet>38</a>        };
+<a href=#39 id=39 data-nosnippet>39</a>        <span class="kw">let </span>serialize = Arc::make_mut(<span class="kw-2">&amp;mut </span>csv.serialize_options);
+<a href=#40 id=40 data-nosnippet>40</a>        <span class="kw">for </span>(name, option) <span class="kw">in </span>csv_options {
+<a href=#41 id=41 data-nosnippet>41</a>            <span class="kw">match </span>option {
+<a href=#42 id=42 data-nosnippet>42</a>                CopyOption::Header(header) =&gt; csv.include_header = <span class="kw-2">*</span>header,
+<a href=#43 id=43 data-nosnippet>43</a>                CopyOption::Delimiter(c) =&gt; serialize.separator = single_byte(<span class="kw-2">*</span>c, name)<span class="question-mark">?</span>,
+<a href=#44 id=44 data-nosnippet>44</a>                CopyOption::Quote(c) =&gt; serialize.quote_char = single_byte(<span class="kw-2">*</span>c, name)<span class="question-mark">?</span>,
+<a href=#45 id=45 data-nosnippet>45</a>                CopyOption::Null(null) =&gt; serialize.null = null.as_str().into(),
+<a href=#46 id=46 data-nosnippet>46</a>                <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#47 id=47 data-nosnippet>47</a>            }
+<a href=#48 id=48 data-nosnippet>48</a>        }
+<a href=#49 id=49 data-nosnippet>49</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>(FileWriteFormat::Csv(csv));
+<a href=#50 id=50 data-nosnippet>50</a>    }
+<a href=#51 id=51 data-nosnippet>51</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>((name, <span class="kw">_</span>)) = csv_options.first() {
+<a href=#52 id=52 data-nosnippet>52</a>        <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"COPY option {} applies to the CSV format only"</span>, name);
+<a href=#53 id=53 data-nosnippet>53</a>    }
+<a href=#54 id=54 data-nosnippet>54</a>
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="prelude-val">Ok</span>(<span class="kw">match </span>format {
+<a href=#56 id=56 data-nosnippet>56</a>        <span class="attr">#[cfg(feature = <span class="string">"csv"</span>)]
+<a href=#57 id=57 data-nosnippet>57</a>        </span>FileFormat::Csv =&gt; <span class="macro">unreachable!</span>(),
+<a href=#58 id=58 data-nosnippet>58</a>        <span class="attr">#[cfg(feature = <span class="string">"parquet"</span>)]
+<a href=#59 id=59 data-nosnippet>59</a>        </span>FileFormat::Parquet =&gt; FileWriteFormat::Parquet(Default::default()),
+<a href=#60 id=60 data-nosnippet>60</a>        <span class="attr">#[cfg(feature = <span class="string">"ipc"</span>)]
+<a href=#61 id=61 data-nosnippet>61</a>        </span>FileFormat::Ipc =&gt; FileWriteFormat::Ipc(Default::default()),
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="attr">#[cfg(feature = <span class="string">"json"</span>)]
+<a href=#63 id=63 data-nosnippet>63</a>        </span>FileFormat::Ndjson =&gt; FileWriteFormat::NDJson(Default::default()),
+<a href=#64 id=64 data-nosnippet>64</a>    })
+<a href=#65 id=65 data-nosnippet>65</a>}
+<a href=#66 id=66 data-nosnippet>66</a>
+<a href=#67 id=67 data-nosnippet>67</a><span class="doccomment">/// How `COPY &lt;table&gt; FROM` reads the file at `path`: in the format that `FORMAT` names, else in
+<a href=#68 id=68 data-nosnippet>68</a>/// that of its extension. A CSV file is read here, by position into `schema`, the types of the
+<a href=#69 id=69 data-nosnippet>69</a>/// columns it fills. `None` for another format, which is read as `FROM '&lt;file&gt;'` reads it.
+<a href=#70 id=70 data-nosnippet>70</a></span><span class="attr">#[allow(unreachable_code, unused_variables)]
+<a href=#71 id=71 data-nosnippet>71</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>read_rows(
+<a href=#72 id=72 data-nosnippet>72</a>    path: <span class="kw-2">&amp;</span>str,
+<a href=#73 id=73 data-nosnippet>73</a>    schema: <span class="kw-2">&amp;</span>Schema,
+<a href=#74 id=74 data-nosnippet>74</a>    options: <span class="kw-2">&amp;</span>[CopyOption],
+<a href=#75 id=75 data-nosnippet>75</a>    legacy_options: <span class="kw-2">&amp;</span>[CopyLegacyOption],
+<a href=#76 id=76 data-nosnippet>76</a>) -&gt; PolarsResult&lt;(FileFormat, <span class="prelude-ty">Option</span>&lt;LazyFrame&gt;)&gt; {
+<a href=#77 id=77 data-nosnippet>77</a>    <span class="kw">let </span>(format, csv_options) = format_and_csv_options(<span class="prelude-val">Some</span>(path), options, legacy_options)<span class="question-mark">?</span>;
+<a href=#78 id=78 data-nosnippet>78</a>
+<a href=#79 id=79 data-nosnippet>79</a>    <span class="attr">#[cfg(feature = <span class="string">"csv"</span>)]
+<a href=#80 id=80 data-nosnippet>80</a>    </span><span class="kw">if let </span>FileFormat::Csv = format {
+<a href=#81 id=81 data-nosnippet>81</a>        <span class="kw">use </span>polars_io::csv::read::NullValues;
+<a href=#82 id=82 data-nosnippet>82</a>        <span class="kw">use </span>polars_utils::pl_path::PlRefPath;
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a>        <span class="kw">use </span><span class="kw">crate</span>::table_functions::expand_home_dir;
+<a href=#85 id=85 data-nosnippet>85</a>
+<a href=#86 id=86 data-nosnippet>86</a>        <span class="kw">let </span>path = expand_home_dir(PlRefPath::new(path))<span class="question-mark">?</span>;
+<a href=#87 id=87 data-nosnippet>87</a>        <span class="comment">// As in Postgres: no header unless the statement says so, fields by position, an
+<a href=#88 id=88 data-nosnippet>88</a>        // unquoted empty field is NULL and a quoted one an empty string.
+<a href=#89 id=89 data-nosnippet>89</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>header = <span class="bool-val">false</span>;
+<a href=#90 id=90 data-nosnippet>90</a>        <span class="comment">// One file, as in Postgres: no glob, so a missing file is an error.
+<a href=#91 id=91 data-nosnippet>91</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>reader = LazyCsvReader::new_paths(<span class="macro">vec!</span>[path].into())
+<a href=#92 id=92 data-nosnippet>92</a>            .with_glob(<span class="bool-val">false</span>)
+<a href=#93 id=93 data-nosnippet>93</a>            .with_has_header(<span class="bool-val">false</span>)
+<a href=#94 id=94 data-nosnippet>94</a>            .with_schema(<span class="prelude-val">Some</span>(Arc::new(schema.clone())))
+<a href=#95 id=95 data-nosnippet>95</a>            .with_raise_if_empty(<span class="bool-val">false</span>);
+<a href=#96 id=96 data-nosnippet>96</a>        <span class="kw">for </span>(name, option) <span class="kw">in </span>csv_options {
+<a href=#97 id=97 data-nosnippet>97</a>            <span class="kw">match </span>option {
+<a href=#98 id=98 data-nosnippet>98</a>                CopyOption::Header(h) =&gt; header = <span class="kw-2">*</span>h,
+<a href=#99 id=99 data-nosnippet>99</a>                CopyOption::Delimiter(c) =&gt; reader = reader.with_separator(single_byte(<span class="kw-2">*</span>c, name)<span class="question-mark">?</span>),
+<a href=#100 id=100 data-nosnippet>100</a>                CopyOption::Quote(c) =&gt; {
+<a href=#101 id=101 data-nosnippet>101</a>                    reader = reader.with_quote_char(<span class="prelude-val">Some</span>(single_byte(<span class="kw-2">*</span>c, name)<span class="question-mark">?</span>))
+<a href=#102 id=102 data-nosnippet>102</a>                },
+<a href=#103 id=103 data-nosnippet>103</a>                <span class="comment">// As in Postgres: then only the marker is NULL, and an empty field is an empty
+<a href=#104 id=104 data-nosnippet>104</a>                // string.
+<a href=#105 id=105 data-nosnippet>105</a>                </span>CopyOption::Null(null) <span class="kw">if </span>!null.is_empty() =&gt; {
+<a href=#106 id=106 data-nosnippet>106</a>                    reader = reader
+<a href=#107 id=107 data-nosnippet>107</a>                        .with_null_values(<span class="prelude-val">Some</span>(NullValues::AllColumnsSingle(null.as_str().into())))
+<a href=#108 id=108 data-nosnippet>108</a>                        .with_missing_is_null(<span class="bool-val">false</span>)
+<a href=#109 id=109 data-nosnippet>109</a>                },
+<a href=#110 id=110 data-nosnippet>110</a>                CopyOption::Null(<span class="kw">_</span>) =&gt; {},
+<a href=#111 id=111 data-nosnippet>111</a>                <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#112 id=112 data-nosnippet>112</a>            }
+<a href=#113 id=113 data-nosnippet>113</a>        }
+<a href=#114 id=114 data-nosnippet>114</a>        <span class="comment">// The first line is skipped whatever its names, as with Postgres's `HEADER true`.
+<a href=#115 id=115 data-nosnippet>115</a>        </span><span class="kw">let </span>reader = reader.with_skip_rows(usize::from(header));
+<a href=#116 id=116 data-nosnippet>116</a>        <span class="kw">return </span><span class="prelude-val">Ok</span>((format, <span class="prelude-val">Some</span>(reader.finish()<span class="question-mark">?</span>)));
+<a href=#117 id=117 data-nosnippet>117</a>    }
+<a href=#118 id=118 data-nosnippet>118</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>((name, <span class="kw">_</span>)) = csv_options.first() {
+<a href=#119 id=119 data-nosnippet>119</a>        <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"COPY option {} applies to the CSV format only"</span>, name);
+<a href=#120 id=120 data-nosnippet>120</a>    }
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="prelude-val">Ok</span>((format, <span class="prelude-val">None</span>))
+<a href=#122 id=122 data-nosnippet>122</a>}
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a><span class="doccomment">/// The format of a `COPY`: the one that `FORMAT` names, else that of the extension of `path`
+<a href=#125 id=125 data-nosnippet>125</a>/// (standard output has none). With the options that only the CSV format has, by name.
+<a href=#126 id=126 data-nosnippet>126</a></span><span class="kw">fn </span>format_and_csv_options&lt;<span class="lifetime">'a</span>&gt;(
+<a href=#127 id=127 data-nosnippet>127</a>    path: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
+<a href=#128 id=128 data-nosnippet>128</a>    options: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[CopyOption],
+<a href=#129 id=129 data-nosnippet>129</a>    legacy_options: <span class="kw-2">&amp;</span>[CopyLegacyOption],
+<a href=#130 id=130 data-nosnippet>130</a>) -&gt; PolarsResult&lt;(FileFormat, Vec&lt;(<span class="kw-2">&amp;</span><span class="lifetime">'static </span>str, <span class="kw-2">&amp;</span><span class="lifetime">'a </span>CopyOption)&gt;)&gt; {
+<a href=#131 id=131 data-nosnippet>131</a>    <span class="macro">polars_ensure!</span>(
+<a href=#132 id=132 data-nosnippet>132</a>        legacy_options.is_empty(),
+<a href=#133 id=133 data-nosnippet>133</a>        SQLInterface: <span class="string">"COPY takes its options in parentheses, as in (FORMAT csv, HEADER false)"
+<a href=#134 id=134 data-nosnippet>134</a>    </span>);
+<a href=#135 id=135 data-nosnippet>135</a>    <span class="kw">let </span><span class="kw-2">mut </span>format = <span class="prelude-val">None</span>;
+<a href=#136 id=136 data-nosnippet>136</a>    <span class="kw">let </span><span class="kw-2">mut </span>csv_options = Vec::new();
+<a href=#137 id=137 data-nosnippet>137</a>    <span class="kw">for </span>option <span class="kw">in </span>options {
+<a href=#138 id=138 data-nosnippet>138</a>        <span class="kw">match </span>option {
+<a href=#139 id=139 data-nosnippet>139</a>            CopyOption::Format(name) =&gt; format = <span class="prelude-val">Some</span>(name.value.as_str()),
+<a href=#140 id=140 data-nosnippet>140</a>            CopyOption::Header(<span class="kw">_</span>) =&gt; csv_options.push((<span class="string">"HEADER"</span>, option)),
+<a href=#141 id=141 data-nosnippet>141</a>            CopyOption::Delimiter(<span class="kw">_</span>) =&gt; csv_options.push((<span class="string">"DELIMITER"</span>, option)),
+<a href=#142 id=142 data-nosnippet>142</a>            CopyOption::Null(<span class="kw">_</span>) =&gt; csv_options.push((<span class="string">"NULL"</span>, option)),
+<a href=#143 id=143 data-nosnippet>143</a>            CopyOption::Quote(<span class="kw">_</span>) =&gt; csv_options.push((<span class="string">"QUOTE"</span>, option)),
+<a href=#144 id=144 data-nosnippet>144</a>            <span class="kw">_ </span>=&gt; {
+<a href=#145 id=145 data-nosnippet>145</a>                <span class="comment">// an option prints as its name and value
+<a href=#146 id=146 data-nosnippet>146</a>                </span><span class="kw">let </span>option = option.to_string();
+<a href=#147 id=147 data-nosnippet>147</a>                <span class="kw">let </span>name = option.split([<span class="string">' '</span>, <span class="string">'('</span>]).next().unwrap_or(<span class="kw-2">&amp;</span>option);
+<a href=#148 id=148 data-nosnippet>148</a>                <span class="macro">polars_bail!</span>(SQLInterface: <span class="string">"COPY option {} is not supported"</span>, name)
+<a href=#149 id=149 data-nosnippet>149</a>            },
+<a href=#150 id=150 data-nosnippet>150</a>        }
+<a href=#151 id=151 data-nosnippet>151</a>    }
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a>    <span class="kw">let </span>names = FileFormat::NAMES.join(<span class="string">", "</span>);
+<a href=#154 id=154 data-nosnippet>154</a>    <span class="kw">let </span>format = <span class="kw">match </span>(format, path) {
+<a href=#155 id=155 data-nosnippet>155</a>        (<span class="prelude-val">Some</span>(name), <span class="kw">_</span>) =&gt; FileFormat::from_name(name).ok_or_else(|| {
+<a href=#156 id=156 data-nosnippet>156</a>            <span class="macro">polars_err!</span>(
+<a href=#157 id=157 data-nosnippet>157</a>                SQLInterface: <span class="string">"COPY format '{}' is not supported; the formats are: {}"</span>, name, names
+<a href=#158 id=158 data-nosnippet>158</a>            )
+<a href=#159 id=159 data-nosnippet>159</a>        })<span class="question-mark">?</span>,
+<a href=#160 id=160 data-nosnippet>160</a>        (<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(path)) =&gt; FileFormat::of_path(path).ok_or_else(|| {
+<a href=#161 id=161 data-nosnippet>161</a>            <span class="macro">polars_err!</span>(
+<a href=#162 id=162 data-nosnippet>162</a>                SQLInterface:
+<a href=#163 id=163 data-nosnippet>163</a>                <span class="string">"COPY cannot tell the format of '{}' from its extension; add (FORMAT &lt;name&gt;), with one of: {}"</span>,
+<a href=#164 id=164 data-nosnippet>164</a>                path, names
+<a href=#165 id=165 data-nosnippet>165</a>            )
+<a href=#166 id=166 data-nosnippet>166</a>        })<span class="question-mark">?</span>,
+<a href=#167 id=167 data-nosnippet>167</a>        (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>) =&gt; <span class="macro">polars_bail!</span>(
+<a href=#168 id=168 data-nosnippet>168</a>            SQLInterface: <span class="string">"COPY TO STDOUT needs a format; add (FORMAT &lt;name&gt;), with one of: {}"</span>, names
+<a href=#169 id=169 data-nosnippet>169</a>        ),
+<a href=#170 id=170 data-nosnippet>170</a>    };
+<a href=#171 id=171 data-nosnippet>171</a>    <span class="prelude-val">Ok</span>((format, csv_options))
+<a href=#172 id=172 data-nosnippet>172</a>}
+<a href=#173 id=173 data-nosnippet>173</a>
+<a href=#174 id=174 data-nosnippet>174</a><span class="doccomment">/// The byte that the CSV reader or writer takes for the character of option `name`.
+<a href=#175 id=175 data-nosnippet>175</a></span><span class="attr">#[cfg(feature = <span class="string">"csv"</span>)]
+<a href=#176 id=176 data-nosnippet>176</a></span><span class="kw">fn </span>single_byte(c: char, name: <span class="kw-2">&amp;</span>str) -&gt; PolarsResult&lt;u8&gt; {
+<a href=#177 id=177 data-nosnippet>177</a>    u8::try_from(c)
+<a href=#178 id=178 data-nosnippet>178</a>        .ok()
+<a href=#179 id=179 data-nosnippet>179</a>        .filter(u8::is_ascii)
+<a href=#180 id=180 data-nosnippet>180</a>        .ok_or_else(|| <span class="macro">polars_err!</span>(SQLInterface: <span class="string">"COPY option {} takes one ASCII character"</span>, name))
+<a href=#181 id=181 data-nosnippet>181</a>}
+</code></pre></div></section></main></body></html>

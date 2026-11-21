@@ -1,0 +1,29 @@
+﻿polars.io.parquet.encryption.DecryptionConfiguration
+====================================================
+
+.. currentmodule:: polars.io.parquet.encryption
+
+.. autoclass:: DecryptionConfiguration
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~DecryptionConfiguration.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~DecryptionConfiguration.cache_lifetime
+      ~DecryptionConfiguration.read_kms_url
+   
+   

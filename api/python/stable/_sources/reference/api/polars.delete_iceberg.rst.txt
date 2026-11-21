@@ -1,0 +1,6 @@
+﻿polars.delete\_iceberg
+======================
+
+.. currentmodule:: polars
+
+.. autofunction:: delete_iceberg

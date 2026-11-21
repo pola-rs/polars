@@ -1,0 +1,6 @@
+﻿polars.Expr.hash
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.hash

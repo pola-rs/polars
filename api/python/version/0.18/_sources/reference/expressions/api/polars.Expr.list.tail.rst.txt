@@ -1,0 +1,6 @@
+﻿polars.Expr.list.tail
+=====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.tail

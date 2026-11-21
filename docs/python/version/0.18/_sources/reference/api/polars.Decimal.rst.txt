@@ -1,0 +1,33 @@
+﻿polars.Decimal
+==============
+
+.. currentmodule:: polars
+
+.. autoclass:: Decimal
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Decimal.__init__
+      ~Decimal.base_type
+      ~Decimal.is_
+      ~Decimal.is_not
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Decimal.is_nested
+      ~Decimal.precision
+      ~Decimal.scale
+   
+   

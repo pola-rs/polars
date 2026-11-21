@@ -1,0 +1,6 @@
+﻿polars.scan\_lines
+==================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_lines

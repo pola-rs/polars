@@ -1,0 +1,6 @@
+﻿polars.io.external\_reader.FileReader.initialize\_serial
+========================================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. automethod:: FileReader.initialize_serial

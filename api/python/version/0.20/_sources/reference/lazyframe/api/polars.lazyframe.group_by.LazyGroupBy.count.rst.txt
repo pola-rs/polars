@@ -1,0 +1,6 @@
+﻿polars.lazyframe.group\_by.LazyGroupBy.count
+============================================
+
+.. currentmodule:: polars.lazyframe.group_by
+
+.. automethod:: LazyGroupBy.count

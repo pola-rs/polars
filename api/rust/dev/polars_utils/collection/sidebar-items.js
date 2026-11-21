@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CollectionIter","CollectionWrap","MappedCollection"],"trait":["Collection"]};

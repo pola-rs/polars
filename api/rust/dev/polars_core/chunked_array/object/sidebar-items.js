@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["set_polars_allow_extension"],"mod":["builder","registry"],"struct":["ObjectArray"],"trait":["PolarsObject","PolarsObjectSafe"],"type":["ObjectValueIter"]};

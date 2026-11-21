@@ -1,0 +1,39 @@
+﻿polars.datatypes.Enum
+=====================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Enum
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Enum.__init__
+      ~Enum.base_type
+      ~Enum.is_
+      ~Enum.is_decimal
+      ~Enum.is_float
+      ~Enum.is_integer
+      ~Enum.is_nested
+      ~Enum.is_numeric
+      ~Enum.is_signed_integer
+      ~Enum.is_temporal
+      ~Enum.is_unsigned_integer
+      ~Enum.union
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Enum.categories
+   
+   

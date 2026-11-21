@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.with\_context
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.with_context

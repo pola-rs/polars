@@ -1,0 +1,6 @@
+﻿polars.io.external\_reader.FileReaderBuilder.reader\_capabilities
+=================================================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. automethod:: FileReaderBuilder.reader_capabilities

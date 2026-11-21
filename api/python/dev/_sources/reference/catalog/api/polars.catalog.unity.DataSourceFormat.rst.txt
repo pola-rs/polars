@@ -1,0 +1,6 @@
+﻿polars.catalog.unity.DataSourceFormat
+=====================================
+
+.. currentmodule:: polars.catalog.unity
+
+.. autodata:: DataSourceFormat

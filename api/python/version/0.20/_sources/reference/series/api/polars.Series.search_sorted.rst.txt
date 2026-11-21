@@ -1,0 +1,6 @@
+﻿polars.Series.search\_sorted
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.search_sorted

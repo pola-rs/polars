@@ -1,0 +1,6 @@
+﻿polars.n\_unique
+================
+
+.. currentmodule:: polars
+
+.. autofunction:: n_unique

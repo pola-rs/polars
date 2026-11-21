@@ -1,0 +1,6 @@
+﻿polars.io.external\_reader.FileReader.on\_drop
+==============================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. automethod:: FileReader.on_drop

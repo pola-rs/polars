@@ -1,0 +1,6 @@
+﻿polars.Series.is\_infinite
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.is_infinite

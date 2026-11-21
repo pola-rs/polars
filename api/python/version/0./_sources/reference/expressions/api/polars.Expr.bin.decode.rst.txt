@@ -1,0 +1,6 @@
+﻿polars.Expr.bin.decode
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.bin.decode

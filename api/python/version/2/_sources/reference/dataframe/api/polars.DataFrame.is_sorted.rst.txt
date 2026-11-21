@@ -1,0 +1,6 @@
+﻿polars.DataFrame.is\_sorted
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.is_sorted

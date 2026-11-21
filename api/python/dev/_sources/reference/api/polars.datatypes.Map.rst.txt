@@ -1,0 +1,44 @@
+﻿polars.datatypes.Map
+====================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Map
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Map.__init__
+      ~Map.base_type
+      ~Map.from_python
+      ~Map.is_
+      ~Map.is_decimal
+      ~Map.is_extension
+      ~Map.is_float
+      ~Map.is_integer
+      ~Map.is_nested
+      ~Map.is_numeric
+      ~Map.is_object
+      ~Map.is_signed_integer
+      ~Map.is_temporal
+      ~Map.is_unsigned_integer
+      ~Map.to_dtype_expr
+      ~Map.to_python
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Map.key
+      ~Map.value
+   
+   

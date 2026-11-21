@@ -1,0 +1,6 @@
+﻿polars.DataFrame.mean\_horizontal
+=================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.mean_horizontal

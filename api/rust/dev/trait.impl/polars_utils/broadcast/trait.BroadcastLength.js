@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["polars_core",[["impl <a class=\"trait\" href=\"polars_utils/broadcast/trait.BroadcastLength.html\" title=\"trait polars_utils::broadcast::BroadcastLength\">BroadcastLength</a> for <a class=\"enum\" href=\"polars_core/frame/column/enum.Column.html\" title=\"enum polars_core::frame::column::Column\">Column</a>",0],["impl <a class=\"trait\" href=\"polars_utils/broadcast/trait.BroadcastLength.html\" title=\"trait polars_utils::broadcast::BroadcastLength\">BroadcastLength</a> for <a class=\"struct\" href=\"polars_core/frame/column/struct.ScalarColumn.html\" title=\"struct polars_core::frame::column::ScalarColumn\">ScalarColumn</a>",0],["impl <a class=\"trait\" href=\"polars_utils/broadcast/trait.BroadcastLength.html\" title=\"trait polars_utils::broadcast::BroadcastLength\">BroadcastLength</a> for <a class=\"struct\" href=\"polars_core/series/struct.Series.html\" title=\"struct polars_core::series::Series\">Series</a>",0],["impl&lt;T: <a class=\"trait\" href=\"polars_core/datatypes/trait.PolarsDataType.html\" title=\"trait polars_core::datatypes::PolarsDataType\">PolarsDataType</a>&gt; <a class=\"trait\" href=\"polars_utils/broadcast/trait.BroadcastLength.html\" title=\"trait polars_utils::broadcast::BroadcastLength\">BroadcastLength</a> for <a class=\"struct\" href=\"polars_core/chunked_array/struct.ChunkedArray.html\" title=\"struct polars_core::chunked_array::ChunkedArray\">ChunkedArray</a>&lt;T&gt;",0]]],["polars_utils",[]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1428,20]}
