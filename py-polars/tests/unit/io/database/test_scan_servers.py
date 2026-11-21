@@ -6124,9 +6124,9 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
         "mysql",
         [
             "SET time_zone = '+00:00'",
-            "DROP TABLE IF EXISTS r31_tz",
-            "CREATE TABLE r31_tz (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
-            "INSERT INTO r31_tz VALUES (1, '2024-01-01 20:00:00')",
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id INT PRIMARY KEY, ts TIMESTAMP NULL)",
+            f"INSERT INTO {table} VALUES (1, '2024-01-01 20:00:00')",
         ],
     )
     schema: dict[str, PolarsDataType] = {
@@ -6136,22 +6136,22 @@ def test_mysql_live_session_zone_with_an_aware_datetime_of_unknown_type(
     expected = datetime(2024, 1, 1, 20, tzinfo=UTC)
     conn = _mysql_connection("mysql", module, "-08:00")
     try:
-        out = pl.scan_database("r31_tz", conn, schema=schema).collect()
+        out = pl.scan_database(table, conn, schema=schema).collect()
         assert out["ts"].item() == expected
         out = pl.scan_database(
-            "SELECT id, ts FROM r31_tz",
+            f"SELECT id, ts FROM {table}",
             conn,
             schema_overrides={"ts": pl.Datetime("us", "UTC")},
         ).collect()
         assert out["ts"].item() == expected
         # a table's declared type is known: the instant is read right
-        out = pl.scan_database("r31_tz", conn).collect()
+        out = pl.scan_database(table, conn).collect()
         assert out["ts"].item() == expected
     finally:
         conn.close()
     conn = _mysql_connection("mysql", module, "+00:00")
     try:
-        out = pl.scan_database("r31_tz", conn, schema=schema).collect()
+        out = pl.scan_database(table, conn, schema=schema).collect()
         assert out["ts"].item() == expected
     finally:
         conn.close()
