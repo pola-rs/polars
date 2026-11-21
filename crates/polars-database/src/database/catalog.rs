@@ -476,23 +476,23 @@ pub fn table_info(
             },
         };
     }
+    let qualified = parts
+        .iter()
+        .map(|p| dialect.quote_ident(p))
+        .collect::<Vec<_>>()
+        .join(".");
     if dialect == DialectName::Mssql
-        && let Some(df) = run(
-            "masked columns",
-            &mssql_masked_columns_sql(
-                &parts
-                    .iter()
-                    .map(|p| dialect.quote_ident(p))
-                    .collect::<Vec<_>>()
-                    .join("."),
-            ),
-        )
+        && let Some(df) = run("masked columns", &mssql_masked_columns_sql(&qualified))
     {
         for row in 0..df.height() {
             if let Some(name) = cell_str(&df, 0, row) {
                 info.masked.insert(name.into());
             }
         }
+    }
+    if dialect == DialectName::Mssql {
+        // a view's columns are read masked where their base columns are
+        mssql_query_masked_columns(session, &mut info, &qualified);
         if info
             .key_column
             .as_ref()
@@ -503,7 +503,7 @@ pub fn table_info(
     }
     // Without these, a column's comparison semantics would be assumed, not known: a
     // case-insensitive or blank-padded column could be compared as exact.
-    info.incomplete = not_found
+    info.incomplete |= not_found
         || evolving_types_failed
         || failed.iter().any(|w| {
             matches!(
@@ -1546,7 +1546,7 @@ pub fn view_definition(
             (c.relkind IN ('r', 'p', 'm') AND NOT c.relrowsecurity AND NOT EXISTS (\
             WITH RECURSIVE d(oid) AS (SELECT c.oid UNION ALL SELECT i.inhrelid FROM pg_inherits i \
             JOIN d ON i.inhparent = d.oid) \
-            SELECT 1 FROM d JOIN pg_class k ON k.oid = d.oid WHERE k.relkind NOT IN ('r', 'p'))))",
+            SELECT 1 FROM d JOIN pg_class k ON k.oid = d.oid WHERE k.relkind NOT IN ('r', 'p', 'm'))))",
             s(&qualified)
         ),
         DialectName::Mysql | DialectName::Singlestore => format!(
@@ -1786,6 +1786,9 @@ fn generated_columns(
     let name = parts.last()?.as_str();
     let schema = (parts.len() >= 2).then(|| parts[parts.len() - 2].as_str());
     let s = |v: &str| dialect.quote_str(v);
+    // DuckDB before 2.0 has no `is_generated`: where the table's text has a generated column,
+    // every column with an expression (a default too) is taken for one
+    let mut fallback = None;
     let sql = match dialect {
         DialectName::Mysql | DialectName::Singlestore => format!(
             "SELECT COLUMN_NAME, GENERATION_EXPRESSION FROM information_schema.COLUMNS \
@@ -1794,14 +1797,25 @@ fn generated_columns(
             schema.map_or_else(|| "DATABASE()".to_string(), s),
             s(name)
         ),
-        DialectName::Duckdb => format!(
-            "SELECT column_name, generation_expression FROM duckdb_columns() \
-            WHERE is_generated AND database_name = {} AND schema_name = {} \
-            AND system.main.lower(table_name) = system.main.lower({})",
-            s(&cell_str(row, 2, 0)?),
-            s(&cell_str(row, 3, 0)?),
-            s(name)
-        ),
+        DialectName::Duckdb => {
+            let place = format!(
+                "database_name = {} AND schema_name = {} \
+                AND system.main.lower(table_name) = system.main.lower({})",
+                s(&cell_str(row, 2, 0)?),
+                s(&cell_str(row, 3, 0)?),
+                s(name)
+            );
+            fallback = Some(format!(
+                "SELECT column_name, column_default FROM duckdb_columns() c \
+                WHERE column_default IS NOT NULL AND {place} AND EXISTS (SELECT 1 \
+                FROM duckdb_tables() t WHERE t.table_oid = c.table_oid \
+                AND system.main.upper(t.sql) LIKE '%GENERATED ALWAYS AS%')"
+            ));
+            format!(
+                "SELECT column_name, generation_expression FROM duckdb_columns() \
+                WHERE is_generated AND {place}"
+            )
+        },
         DialectName::Clickhouse => format!(
             "SELECT name, default_expression FROM system.columns WHERE database = {} \
             AND `table` = {} AND default_kind IN ('ALIAS', 'DEFAULT', 'MATERIALIZED')",
@@ -1818,7 +1832,11 @@ fn generated_columns(
         DialectName::Sqlite => return sqlite_generated_columns(session, parts, row),
         _ => return Some(vec![]),
     };
-    let df = match session.catalog_query(&sql) {
+    let mut result = session.catalog_query(&sql);
+    if let (Err(_), Some(sql)) = (&result, &fallback) {
+        result = session.catalog_query(sql);
+    }
+    let df = match result {
         Ok(df) => df,
         Err(e) => {
             if polars_core::config::verbose() {
@@ -1872,11 +1890,29 @@ fn sqlite_generated_columns(
 }
 
 /// The parenthesised expressions after `AS` (`x INT AS (a + b)`, `GENERATED ALWAYS AS (..)`) in a
-/// `CREATE TABLE` text, outside quotes, in order.
+/// `CREATE TABLE` text, outside quotes and comments, in order.
 fn sqlite_generated_expressions(sql: &str) -> Vec<String> {
     let chars: Vec<char> = sql.chars().collect();
+    // the end of a comment that starts at `i`, if one does
+    let comment_end = |i: usize| match (chars.get(i), chars.get(i + 1)) {
+        (Some('-'), Some('-')) => Some(
+            (i + 2..chars.len())
+                .find(|&k| chars[k] == '\n')
+                .unwrap_or(chars.len()),
+        ),
+        (Some('/'), Some('*')) => Some(
+            (i + 2..chars.len().saturating_sub(1))
+                .find(|&k| chars[k] == '*' && chars[k + 1] == '/')
+                .map_or(chars.len(), |k| k + 2),
+        ),
+        _ => None,
+    };
     let (mut out, mut i) = (vec![], 0);
     while i < chars.len() {
+        if let Some(end) = comment_end(i) {
+            i = end;
+            continue;
+        }
         match chars[i] {
             q @ ('\'' | '"' | '`') => {
                 i += 1;
@@ -1897,8 +1933,14 @@ fn sqlite_generated_expressions(sql: &str) -> Vec<String> {
                     .is_some_and(|c| c.is_alphanumeric() || *c == '_') =>
             {
                 let mut j = i + 2;
-                while j < chars.len() && chars[j].is_whitespace() {
-                    j += 1;
+                loop {
+                    if let Some(end) = comment_end(j) {
+                        j = end;
+                    } else if chars.get(j).is_some_and(|c| c.is_whitespace()) {
+                        j += 1;
+                    } else {
+                        break;
+                    }
                 }
                 if chars.get(j) == Some(&'(') {
                     let start = j + 1;
@@ -2912,13 +2954,12 @@ pub fn user_functions(
             fold_function_rows(&mut out, &df);
             return Some(out);
         },
-        // the connection's functions (a live one's own among them), with
-        // `SQLITE_DETERMINISTIC` (0x800) or not; one it doesn't have fails the read.
+        // the connection's functions (a live one's own among them), whatever their
+        // `SQLITE_DETERMINISTIC` flag; one it doesn't have fails the read.
         // Names compare by collation: the user's `lower()` may be what is being asked.
         DialectName::Sqlite => format!(
             "SELECT EXISTS (SELECT 1 FROM pragma_function_list \
-            WHERE name COLLATE NOCASE IN ({list}) AND (flags & 2048) = 0 \
-            AND (builtin = 0 OR name COLLATE NOCASE NOT IN ({list})))"
+            WHERE name COLLATE NOCASE IN ({list}) AND builtin = 0)"
         ),
         // macros have no stability: their bodies say; a user's Python function is not proven
         DialectName::Duckdb => format!(
@@ -3924,6 +3965,9 @@ mod tests {
             vec!["id % 7".to_string(), "abs(random()) + (1)".to_string()]
         );
         assert!(sqlite_generated_expressions("CREATE TABLE t (id INT)").is_empty());
+        let sql = "CREATE TABLE t (a INT /* as (1) */, -- as (2)\n\
+            k INT AS /* c */ (f(id)) VIRTUAL)";
+        assert_eq!(sqlite_generated_expressions(sql), vec!["f(id)".to_string()]);
     }
 
     #[test]

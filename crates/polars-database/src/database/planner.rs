@@ -1066,6 +1066,11 @@ pub fn resolve_scan(
                 // Overrides may only retype columns; they don't add any.
                 if let Some(existing) = schema.get_mut(name) {
                     let retyped = existing != dtype;
+                    // SQLite: a column found to hold text may have TEXT affinity (a query's
+                    // column of a TEXT column has it too)
+                    if dialect == DialectName::Sqlite && *existing == DataType::String {
+                        text_affinity.insert(name.clone());
+                    }
                     *existing = dtype.clone();
                     if let Some(c) = columns.iter_mut().find(|c| c.name == name) {
                         c.dtype = dtype.clone();
@@ -4052,7 +4057,7 @@ fn source_volatility(
     if let Some(f) = facts {
         cast_columns.extend(f.temporal_cast_columns.iter().cloned());
     }
-    let mut seen: PlHashSet<(Vec<PlSmallStr>, Vec<PlSmallStr>)> = PlHashSet::new();
+    let mut seen: PlHashSet<(Vec<PlSmallStr>, Vec<PlSmallStr>, bool)> = PlHashSet::new();
     let renderer = sql_renderer().ok();
     // Databricks: the session's SQL path, read once (for the built-ins' place in it and for where a
     // user's function is looked up)
@@ -4113,7 +4118,7 @@ fn source_volatility(
         while let Some((parts, context, own_columns, final_read)) = pending.pop() {
             // Names are already dialect-normalized or catalog-resolved. Keep their
             // case and resolution context: Postgres v and "V" can be different views.
-            let key = (context.clone(), parts.clone());
+            let key = (context.clone(), parts.clone(), final_read);
             if !seen.insert(key) {
                 continue;
             }
@@ -4152,6 +4157,7 @@ fn source_volatility(
                     for (column, expr) in generated {
                         let proven = renderer
                             .as_ref()
+                            .filter(|_| !expr.trim().is_empty())
                             .and_then(|r| r.inspect_query(&format!("SELECT {expr}"), dialect).ok())
                             .filter(|f| f.parses && f.repeatable);
                         match proven {
@@ -4694,6 +4700,17 @@ fn query_repeatable(config: &DatabaseScanConfig) -> bool {
 }
 
 /// Turns the scan's `PartitionSpec` into partitions, querying bounds where needed.
+/// Whether SQL text (a partition predicate) may name `column`: as a word of it, ignoring case
+/// (a name of other characters anywhere in it).
+fn names_column(sql: &str, column: &str) -> bool {
+    if column.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        sql.split(|c: char| !c.is_alphanumeric() && c != '_')
+            .any(|w| w.eq_ignore_ascii_case(column))
+    } else {
+        sql.to_lowercase().contains(&column.to_lowercase())
+    }
+}
+
 fn resolve_partitions(
     config: &DatabaseScanConfig,
     renderer: &dyn SqlRenderer,
@@ -4717,6 +4734,21 @@ fn resolve_partitions(
         PartitionSpec::None => return one(),
         PartitionSpec::Predicates(preds) => {
             let parts = partition::predicate_partitions(preds)?;
+            if parts.len() > 1
+                && let Some(c) = config
+                    .columns
+                    .iter()
+                    .find(|c| c.unstable && preds.iter().any(|p| names_column(p, &c.name)))
+            {
+                polars_bail!(
+                    InvalidOperation:
+                    "partition_predicates can't name '{}': it is computed by an aggregate over \
+                    floats or a volatile function, whose values differ in their last bits (or \
+                    more) between runs, so a row near a cut would be read by two partitions or \
+                    none; use predicates on other columns",
+                    c.name
+                );
+            }
             polars_ensure!(
                 options.order_by.is_empty() || parts.len() <= 1,
                 InvalidOperation:

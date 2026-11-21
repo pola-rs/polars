@@ -1446,11 +1446,18 @@ def test_scan_sqlite_partition_over_a_user_function(tmp_path: Path) -> None:
             lf = pl.scan_database(query, live, partition_on="id", partition_num=4)
             with pytest.raises(pl.exceptions.InvalidOperationError, match="myrand"):
                 lf.collect()
-        # a user's function is refused whatever its label (`deterministic=True` too)
+        # a user's function is refused whatever its label (`deterministic=True` too),
+        # one in a built-in's place as well
         lf = pl.scan_database(
             "SELECT id, twice(id) AS d FROM t", live, partition_on="d", partition_num=4
         )
         with pytest.raises(pl.exceptions.InvalidOperationError, match="twice"):
+            lf.collect()
+        live.create_function("abs", 1, lambda v: v, deterministic=True)
+        lf = pl.scan_database(
+            "SELECT id, abs(id) AS d FROM t", live, partition_on="d", partition_num=4
+        )
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
             lf.collect()
         # a temporary view over it, scanned as a table
         live.execute("CREATE TEMP VIEW uv AS SELECT id, myrand() AS r FROM t")
@@ -1646,6 +1653,40 @@ def test_scan_duckdb_generated_columns_and_ambiguous_names(tmp_path: Path) -> No
     for key in ["k", "id"]:
         lf = pl.scan_database("okgen", uri, partition_on=key, partition_num=4)
         assert sorted(lf.collect()["id"].to_list()) == list(range(300))
+
+
+def test_scan_sqlite_generated_column_after_a_comment(tmp_path: Path) -> None:
+    # the expression after `AS /* … */` is still read, and a user's function in it seen
+    with closing(sqlite3.connect(tmp_path / "t.db", check_same_thread=False)) as live:
+        live.create_function("f", 1, lambda v: v, deterministic=True)
+        live.execute(
+            "CREATE TABLE t (id INTEGER, a INT /* as (1) */, "
+            "k INT AS /* c */ (f(id)) VIRTUAL)"
+        )
+        live.executemany("INSERT INTO t (id) VALUES (?)", [(i,) for i in range(20)])
+        lf = pl.scan_database("t", live, partition_on="k", partition_num=2)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
+
+
+def test_scan_partition_predicates_on_a_float_aggregate_are_refused(
+    tmp_path: Path,
+) -> None:
+    # its last bits may differ between runs: a group near a cut would be read twice
+    path = tmp_path / "t.db"
+    with closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (g INTEGER, x REAL)")
+        conn.executemany(
+            "INSERT INTO t VALUES (?, ?)", [(i % 3, 0.1) for i in range(9)]
+        )
+        conn.commit()
+    query = "SELECT g, SUM(x) AS s FROM t GROUP BY g"
+    uri = f"sqlite:///{path}"
+    lf = pl.scan_database(query, uri, partition_predicates=["S < 1", "s >= 1"])
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="'s'"):
+        lf.collect()
+    lf = pl.scan_database(query, uri, partition_predicates=["g < 1", "g >= 1"])
+    assert sorted(lf.collect()["g"].to_list()) == [0, 1, 2]
 
 
 def test_scan_query_with_order_by_is_not_partitioned(tmp_path: Path) -> None:
@@ -5796,15 +5837,17 @@ def test_scan_sqlite_text_key_read_as_int_is_not_range_partitioned(
         )
         conn.commit()
     uri = f"sqlite:///{path}"
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
-        pl.scan_database(
-            "t",
-            uri,
-            schema_overrides={"k": pl.Int64},
-            partition_on="k",
-            partition_num=6,
-            partition_range=(0, 300),
-        ).collect()
+    # (a query's column of a TEXT column compares as text too)
+    for source in ["t", "SELECT k, v FROM t"]:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
+            pl.scan_database(
+                source,
+                uri,
+                schema_overrides={"k": pl.Int64},
+                partition_on="k",
+                partition_num=6,
+                partition_range=(0, 300),
+            ).collect()
     with pytest.raises(pl.exceptions.InvalidOperationError, match="TEXT column"):
         pl.scan_database(
             "t", uri, schema_overrides={"k": pl.Int64}, order_by="k"
