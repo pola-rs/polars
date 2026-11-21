@@ -174,7 +174,7 @@ def test_scan_csv_schema_new_columns_dtypes(
 
     with pytest.raises(
         SchemaError,
-        match=r"new_columns.*does not match number of columns in file",
+        match=r"number of dtypes in schema override must be equal",
     ):
         pl.scan_csv(
             file_path,
