@@ -298,8 +298,14 @@ pub enum SqlSelectItem {
 pub enum SqlFrom {
     /// `[catalog.][schema.]name`, unquoted parts.
     Table(Vec<PlSmallStr>),
-    /// A user query, wrapped as a derived table.
-    Subquery(String),
+    /// A user query, wrapped as a derived table. `columns`, if any, are its output columns, named
+    /// in the alias (`(q) AS "_pl"("a", "b")`) where the server doesn't let the outer query
+    /// refer to a column it named itself (Trino's `_col0`).
+    Subquery {
+        sql: String,
+        #[serde(default)]
+        columns: Vec<PlSmallStr>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
