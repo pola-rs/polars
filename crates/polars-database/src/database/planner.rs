@@ -914,7 +914,8 @@ pub fn resolve_scan(
                             )
                             .is_some();
                             (info.types_required && !converted)
-                                || (dialect == DialectName::Duckdb && converted)
+                                || (dialect == DialectName::Duckdb
+                                    && (converted || duckdb_type_holds(t, &["VARIANT"])))
                         })
                         .map(|t| t.as_str().into())
                 }),
@@ -1137,10 +1138,10 @@ pub fn resolve_scan(
             // A `TIMETZ` inside a list, struct or map reads as a `Time` without its offset
             // (`'10:00+02'` as `10:00`), and a nested value can't be read as text: refused,
             // whatever the column is typed as.
-            if c.db_type.as_deref().is_some_and(|t| {
-                let t = t.to_ascii_uppercase();
-                t.contains("TIMETZ") || t.contains("TIME WITH TIME ZONE")
-            }) {
+            if c.db_type
+                .as_deref()
+                .is_some_and(|t| duckdb_type_holds(t, &["TIMETZ", "TIME WITH TIME ZONE"]))
+            {
                 refused.push((
                     c.name.clone(),
                     format!(
@@ -1160,7 +1161,7 @@ pub fn resolve_scan(
             // not as its value: it is read as text, or refused.
             if c.db_type
                 .as_deref()
-                .is_some_and(|t| t.to_ascii_uppercase().contains("VARIANT"))
+                .is_some_and(|t| duckdb_type_holds(t, &["VARIANT"]))
             {
                 if c.dtype != DataType::String {
                     refused.push((
@@ -1432,12 +1433,9 @@ pub fn check_mysql_session_zone(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
 ) -> PolarsResult<()> {
-    // These drivers' TIMESTAMP columns are converted from the session's zone as they are read (the
-    // bridge's `_mysql_timestamps_to_utc`), by the result's own field types.
-    if session.converts_mysql_timestamps()
-        || matches!(&config.backend.kind, BackendKind::Python { module }
-            if matches!(module.as_str(), "pymysql" | "MySQLdb" | "mysql"))
-    {
+    // A live Python driver's TIMESTAMP columns are converted from the session's zone as they are
+    // read (the bridge's `_mysql_timestamps_to_utc`), by the result's own field types.
+    if session.converts_mysql_timestamps() {
         return Ok(());
     }
     // (SingleStore has no session setup either way)
@@ -1451,7 +1449,7 @@ pub fn check_mysql_session_zone(
     let Some(column) = config.columns.iter().find(|c| {
         matches!(c.dtype, DataType::Datetime(_, Some(_)))
             && config.schema.contains(&c.name)
-            && c.db_type.as_deref().is_none_or(|t| t == MYSQL_DATE)
+            && type_unknown(c)
     }) else {
         return Ok(());
     };
@@ -1519,6 +1517,11 @@ pub fn session_resolution(
 /// relation. Each session opened for a read resolves the planned names again, and a different
 /// answer is an error. `baseline` holds the first session's answer for a source planned without
 /// I/O (`schema=`), which then has none of its own.
+///
+/// A partitioned read over several connections must not read a temporary table of a session
+/// either: it shadows a permanent one of its name only for the session that made it, so the
+/// partitions that land on other sessions of the pool would read the permanent table, or none.
+/// (Oracle's global temporary tables are in the catalog: `catalog::oracle_session_bound`.)
 pub fn check_resolution(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -1535,75 +1538,58 @@ pub fn check_resolution(
         return Ok(());
     }
     let found = catalog::resolution_fingerprint(session, config.dialect, &names);
+    let mut guard = baseline.lock().unwrap();
     let Some(found) = found else {
-        // planned with a fingerprint, but this session can't give one: not the same state
+        // planned with a fingerprint (or another session gave one), but this session can't
+        // give one: not the same state
         polars_ensure!(
-            config.resolution.is_none(),
+            config.resolution.is_none() && guard.is_none(),
             InvalidOperation:
             "could not check how this connection resolves the table names of the scan, which \
             the scan was planned on another connection's session for"
         );
         return Ok(());
     };
-    let mut guard = baseline.lock().unwrap();
+    let qualified = |i: usize| {
+        names[i]
+            .iter()
+            .map(|p| p.as_str())
+            .collect::<Vec<_>>()
+            .join(".")
+    };
     let planned = match &config.resolution {
         Some(p) => p,
         None => guard.get_or_insert_with(|| found.clone()),
     };
     if let Some(i) = planned.iter().zip(&found).position(|(a, b)| a != b) {
-        let name = names[i]
-            .iter()
-            .map(|p| p.as_str())
-            .collect::<Vec<_>>()
-            .join(".");
         polars_bail!(
             InvalidOperation:
-            "this connection resolves '{name}' to {}, but the scan was planned on a session \
+            "this connection resolves '{}' to {}, but the scan was planned on a session \
             where it is {}: a pooled connection's session state (search_path, temporary \
             tables, default database) differs from the one planned on. Read from one \
             connection (a live connection, or a factory that returns a configured one), or \
             qualify the name",
+            qualified(i),
             found[i],
             planned[i]
         );
     }
-    Ok(())
-}
-
-/// Postgres, MySQL, MariaDB: a partitioned read over connections the user made (a factory, an
-/// Engine's pool) must not read a temporary table of a session. A temporary table shadows a
-/// permanent one of its name for the session that made it, so the partitions that land on other
-/// sessions of the pool would read the permanent table, or none. Run on each session opened.
-/// (Oracle's global temporary tables are in the catalog: `catalog::oracle_session_bound`.)
-pub fn check_temporary_relations(
-    session: &mut dyn DatabaseSession,
-    config: &DatabaseScanConfig,
-) -> PolarsResult<()> {
     let partitioned = config
         .compiled
         .as_deref()
         .is_some_and(|c| c.partitions.len() > 1);
-    if !partitioned
-        || config.options.connection.opened_by_plugin()
-        || config.max_connections() <= 1
-        || !matches!(
-            config.dialect,
-            DialectName::Postgresql | DialectName::Mysql | DialectName::Singlestore
-        )
+    if partitioned
+        && config.max_connections() > 1
+        && let Some(i) = found.iter().position(|f| f.starts_with("temp"))
     {
-        return Ok(());
-    }
-    let relations = named_relations(&config.options, config.dialect);
-    for parts in relations {
-        if let Some(name) = catalog::temporary_relation(session, config.dialect, &parts) {
-            polars_bail!(
-                InvalidOperation:
-                "the table '{name}' is a temporary table of this session, which the other \
-                connections of the pool that the partitions read through don't see (they \
-                would read a permanent table of its name, or none): read it without \
-                partitioning (partition_on=None), or from one connection"
-            );
-        }
+        polars_bail!(
+            InvalidOperation:
+            "the table '{}' is a temporary table of this session, which the other \
+            connections of the pool that the partitions read through don't see (they \
+            would read a permanent table of its name, or none): read it without \
+            partitioning (partition_on=None), or from one connection",
+            qualified(i)
+        );
     }
     Ok(())
 }
@@ -1631,10 +1617,6 @@ fn unplanned_volatility(
     )
 }
 
-/// ConnectorX reads other row counts than there are from a ClickHouse array of `Nullable(…)`,
-/// `DateTime64` or decimal values (none, or more), and nothing tells, and an array of
-/// `LowCardinality(…)` as one string: reading such a column is an error. Arrays of plain
-/// numbers, strings, dates and booleans read right.
 /// Refuses a read of a column the planner found it can't read right (it is raised when the column
 /// is read, so a query that leaves it out still works).
 fn check_refused_columns(config: &DatabaseScanConfig, columns: &[PlSmallStr]) -> PolarsResult<()> {
@@ -1648,6 +1630,10 @@ fn check_refused_columns(config: &DatabaseScanConfig, columns: &[PlSmallStr]) ->
     Ok(())
 }
 
+/// ConnectorX reads other row counts than there are from a ClickHouse array of `Nullable(…)`,
+/// `DateTime64` or decimal values (none, or more), and nothing tells, and an array of
+/// `LowCardinality(…)` as one string: reading such a column is an error. Arrays of plain
+/// numbers, strings, dates and booleans read right.
 fn check_connectorx_arrays(
     config: &DatabaseScanConfig,
     columns: &[PlSmallStr],
@@ -1859,7 +1845,7 @@ const DUCKDB_TEXT: &str = "<duckdb text>";
 /// The `db_type` of a MySQL `Date` / `Datetime` column of an unknown type (a query's on a
 /// driver without the type lookup, or under `schema=`): it may be a `DATE` / `DATETIME` /
 /// `TIMESTAMP` holding zero dates (`mysql_zero_date_type`).
-const MYSQL_DATE: &str = "<mysql date>";
+pub(crate) const MYSQL_DATE: &str = "<mysql date>";
 /// The `db_type` of a SQL Server column declared a `Datetime` under `schema=` (any unit, with
 /// or without a zone; no database type to go by): its UTC wall-clock time as text with all its
 /// fractional digits, which the read parses to the declared unit (`column_conversion`).
@@ -2225,68 +2211,8 @@ fn column_conversion(
             ELSE abs(-9223372036854775808) END"
         ));
     }
-    // Text in a column read as numbers is parsed by the read (`'1'` as 1), while SQLite
-    // compares it as text, above every number: an integer's or a real's text as SQLite
-    // writes it is read as that number, other text marked so that no read parses it (`'+1'`,
-    // `'1e0'`; it fails, as `'abc'` does).
-    let m = ops.mark();
-    let is_int = ops.is_integer(column);
-    let is_real = ops.is_real(column);
-    let is_text = ops.is_text(column);
-    let integer_text = ops.text_is(column, "INTEGER");
-    let real_text = ops.text_is(column, "REAL");
-    let other_text = format!("WHEN {is_text} THEN {m} || {column}");
-    if db_type == SQLITE_REAL_CUT {
-        return Some(format!(
-            "CASE WHEN {is_int} THEN CAST({column} AS REAL) \
-            WHEN {is_text} AND ({integer_text} \
-            OR {real_text}) THEN CAST({column} AS REAL) \
-            {other_text} ELSE {column} END"
-        ));
-    }
-    if db_type == SQLITE_REAL {
-        // an integer is a real only if that is exact (`CAST(.. AS INTEGER) = x` compares
-        // integers; 2^63 casts back to the largest integer, so is excluded); another is
-        // marked, so that no read parses it, and fails as other text does (rounding it would
-        // lose digits silently)
-        let exact = |int: &str| {
-            format!(
-                "CAST({int} AS REAL) < 9223372036854775808.0 \
-                AND CAST(CAST({int} AS REAL) AS INTEGER) = {int}"
-            )
-        };
-        let int_exact = exact(column);
-        let text_int = format!("CAST({column} AS INTEGER)");
-        let text_exact = exact(&text_int);
-        return Some(format!(
-            "CASE WHEN {is_int} THEN CASE WHEN {int_exact} \
-            THEN CAST({column} AS REAL) ELSE {m} || {column} END \
-            WHEN {is_text} AND {integer_text} THEN CASE WHEN {text_exact} \
-            THEN CAST({column} AS REAL) ELSE {m} || {column} END \
-            WHEN {is_text} AND {real_text} \
-            THEN CAST({column} AS REAL) \
-            {other_text} ELSE {column} END"
-        ));
-    }
-    if db_type == SQLITE_INTEGER || db_type == SQLITE_UNTYPED_INTEGER {
-        // another real stays a real, and fails the read (`1.5`, `1e19`): `CAST` would cut
-        // it; `CAST(x AS INTEGER) = x` compares exactly, not as reals
-        return Some(format!(
-            "CASE WHEN {is_real} AND CAST({column} AS INTEGER) = {column} \
-            THEN CAST({column} AS INTEGER) \
-            WHEN {is_text} AND {integer_text} THEN CAST({column} AS INTEGER) \
-            {other_text} ELSE {column} END"
-        ));
-    }
-    if db_type == SQLITE_INTEGER_CUT {
-        // a real as the cast to an override cuts it (one out of range stays one, and
-        // fails); text as in [`SQLITE_INTEGER`]
-        return Some(format!(
-            "CASE WHEN {is_real} AND {column} >= -9223372036854775808.0 \
-            AND {column} < 9223372036854775808.0 THEN CAST({column} AS INTEGER) \
-            WHEN {is_text} AND {integer_text} THEN CAST({column} AS INTEGER) \
-            {other_text} ELSE {column} END"
-        ));
+    if let Some(sql) = sqlite_number_conversion(ops, db_type, column) {
+        return Some(sql);
     }
     if let Some(sql) = dialect.text_conversion(db_type, column) {
         return Some(sql);
@@ -2638,6 +2564,85 @@ fn clickhouse_array_nanoseconds(db_type: &str, x: &str, depth: usize) -> Option<
         .then(|| format!("toUnixTimestamp64Nano({x})"))
 }
 
+/// SQL that reads a SQLite column of a number `db_type` ([`SQLITE_REAL`], [`SQLITE_INTEGER`], ...)
+/// exactly; `None` for another `db_type`.
+fn sqlite_number_conversion(ops: SqliteOps, db_type: &str, column: &str) -> Option<String> {
+    if !matches!(
+        db_type,
+        SQLITE_REAL_CUT
+            | SQLITE_REAL
+            | SQLITE_INTEGER
+            | SQLITE_UNTYPED_INTEGER
+            | SQLITE_INTEGER_CUT
+    ) {
+        return None;
+    }
+    // Text in a column read as numbers is parsed by the read (`'1'` as 1), while SQLite
+    // compares it as text, above every number: an integer's or a real's text as SQLite
+    // writes it is read as that number, other text marked so that no read parses it (`'+1'`,
+    // `'1e0'`; it fails, as `'abc'` does).
+    let m = ops.mark();
+    let is_int = ops.is_integer(column);
+    let is_real = ops.is_real(column);
+    let is_text = ops.is_text(column);
+    let integer_text = ops.text_is(column, "INTEGER");
+    let real_text = ops.text_is(column, "REAL");
+    let other_text = format!("WHEN {is_text} THEN {m} || {column}");
+    if db_type == SQLITE_REAL_CUT {
+        return Some(format!(
+            "CASE WHEN {is_int} THEN CAST({column} AS REAL) \
+            WHEN {is_text} AND ({integer_text} \
+            OR {real_text}) THEN CAST({column} AS REAL) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    if db_type == SQLITE_REAL {
+        // an integer is a real only if that is exact (`CAST(.. AS INTEGER) = x` compares
+        // integers; 2^63 casts back to the largest integer, so is excluded); another is
+        // marked, so that no read parses it, and fails as other text does (rounding it would
+        // lose digits silently)
+        let exact = |int: &str| {
+            format!(
+                "CAST({int} AS REAL) < 9223372036854775808.0 \
+                AND CAST(CAST({int} AS REAL) AS INTEGER) = {int}"
+            )
+        };
+        let int_exact = exact(column);
+        let text_int = format!("CAST({column} AS INTEGER)");
+        let text_exact = exact(&text_int);
+        return Some(format!(
+            "CASE WHEN {is_int} THEN CASE WHEN {int_exact} \
+            THEN CAST({column} AS REAL) ELSE {m} || {column} END \
+            WHEN {is_text} AND {integer_text} THEN CASE WHEN {text_exact} \
+            THEN CAST({column} AS REAL) ELSE {m} || {column} END \
+            WHEN {is_text} AND {real_text} \
+            THEN CAST({column} AS REAL) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    if db_type == SQLITE_INTEGER || db_type == SQLITE_UNTYPED_INTEGER {
+        // another real stays a real, and fails the read (`1.5`, `1e19`): `CAST` would cut
+        // it; `CAST(x AS INTEGER) = x` compares exactly, not as reals
+        return Some(format!(
+            "CASE WHEN {is_real} AND CAST({column} AS INTEGER) = {column} \
+            THEN CAST({column} AS INTEGER) \
+            WHEN {is_text} AND {integer_text} THEN CAST({column} AS INTEGER) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    if db_type == SQLITE_INTEGER_CUT {
+        // a real as the cast to an override cuts it (one out of range stays one, and
+        // fails); text as in [`SQLITE_INTEGER`]
+        return Some(format!(
+            "CASE WHEN {is_real} AND {column} >= -9223372036854775808.0 \
+            AND {column} < 9223372036854775808.0 THEN CAST({column} AS INTEGER) \
+            WHEN {is_text} AND {integer_text} THEN CAST({column} AS INTEGER) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    None
+}
+
 /// An Oracle `NUMBER` as text, whatever the session's NLS settings (a live connection's
 /// may write a decimal comma). `TM9` writes every digit; no calendar applies.
 fn oracle_number_text(column: &str) -> String {
@@ -2753,6 +2758,35 @@ fn split_top_level(s: &str) -> Vec<&str> {
 }
 
 /// A DuckDB struct (or union) field, `name TYPE` or `"a name" TYPE`: its name and type.
+/// Whether the DuckDB type `t` is one of `names`, or holds one in a list, array, struct, union or
+/// map (a field name or an enum label is no type).
+fn duckdb_type_holds(t: &str, names: &[&str]) -> bool {
+    let t = t.trim();
+    let starts = |p: &str| t.get(..p.len()).is_some_and(|s| s.eq_ignore_ascii_case(p));
+    if t.ends_with(']')
+        && let Some(open) = t.rfind('[')
+    {
+        return duckdb_type_holds(&t[..open], names);
+    }
+    for prefix in ["STRUCT(", "UNION("] {
+        if starts(prefix) {
+            return t[prefix.len()..].strip_suffix(')').is_some_and(|fields| {
+                split_top_level(fields)
+                    .into_iter()
+                    .any(|f| duckdb_field(f).is_some_and(|(_, ft)| duckdb_type_holds(ft, names)))
+            });
+        }
+    }
+    if starts("MAP(") {
+        return t["MAP(".len()..].strip_suffix(')').is_some_and(|kv| {
+            split_top_level(kv)
+                .into_iter()
+                .any(|part| duckdb_type_holds(part, names))
+        });
+    }
+    names.iter().any(|n| t.eq_ignore_ascii_case(n))
+}
+
 fn duckdb_field(field: &str) -> Option<(String, &str)> {
     let field = field.trim();
     if let Some(rest) = field.strip_prefix('"') {
@@ -2889,6 +2923,12 @@ fn references(e: &SqlExpr, column: &str) -> bool {
         E::Between(x, lo, hi) => [x, lo, hi].iter().any(|x| references(x, column)),
         E::Like { expr, .. } => references(expr, column),
     }
+}
+
+/// The column's database type isn't known (none, or only that it is a MySQL date of some type,
+/// [`MYSQL_DATE`]).
+pub(crate) fn type_unknown(c: &ColumnMeta) -> bool {
+    c.db_type.as_deref().is_none_or(|t| t == MYSQL_DATE)
 }
 
 /// A MySQL column of unknown type, read as a type a date may be read as (`schema=`): it may be a
@@ -3196,11 +3236,10 @@ fn discover_schema(
         // their classes are sampled instead (see `sqlite_class_dtype`).
         // A connection of the user's (a row driver) reads a column of a blob and other values as
         // the first value's type, and the rest as NULL: its classes are sampled too.
-        let own_connection = !options.connection.opened_by_plugin();
         let mut classes = sample_types && matches!(backend, BackendKind::ConnectorX);
         // (a connection of the user's may have replaced `typeof`: it calls no function there)
         let ops = SqliteOps {
-            portable: own_connection,
+            portable: !options.connection.opened_by_plugin(),
         };
         let class_items = || -> Vec<SqlSelectItem> {
             schema
@@ -3604,32 +3643,48 @@ fn select_item(config: &DatabaseScanConfig, c: &PlSmallStr) -> SqlSelectItem {
     }
 }
 
-/// The columns the plugin reads as epoch nanoseconds, a number, where the database type is
-/// a temporal one (ClickHouse `DateTime64(7..9)` through `toUnixTimestamp64Nano`, see
-/// `column_conversion`): the planned type, also an override of it, says the unit
-/// (`cast_to_user_schema`). Empty without `schema_overrides` (the only case that needs it).
-pub(crate) fn numeric_temporal_conversions(config: &DatabaseScanConfig) -> PlHashSet<PlSmallStr> {
-    let mut out = PlHashSet::new();
-    if config.options.schema_overrides.is_none()
-        || config.dialect != DialectName::Clickhouse
-        || matches!(config.backend.kind, BackendKind::Adbc { .. })
-    {
+/// The columns the plugin reads as numbers where the database type is a temporal one, with the
+/// dtype whose ticks they are: ClickHouse `DateTime64(7..9)` (also in arrays) as epoch nanoseconds
+/// through `toUnixTimestamp64Nano`, and a MySQL `TIME` on an Arrow driver as microseconds (see
+/// `column_conversion`). An override in that unit is no guess (`cast_to_user_schema`). Empty
+/// without `schema_overrides` (the only case that needs it).
+pub(crate) fn numeric_temporal_conversions(
+    config: &DatabaseScanConfig,
+) -> PlHashMap<PlSmallStr, DataType> {
+    let mut out = PlHashMap::new();
+    if config.options.schema_overrides.is_none() {
         return out;
     }
+    let backend = &config.backend.kind;
     for c in config.columns.iter() {
-        let nanoseconds = c.db_type.as_deref().is_some_and(|t| {
-            matches!(
-                declared_dtype(config.dialect, t),
-                Some(DataType::Datetime(TimeUnit::Nanoseconds, _))
-            )
-        });
-        if nanoseconds
-            && matches!(
-                select_item(config, &c.name),
-                SqlSelectItem::Expr { sql, .. } if sql.starts_with("toUnixTimestamp64Nano(")
-            )
-        {
-            out.insert(c.name.clone());
+        let Some(t) = c.db_type.as_deref() else {
+            continue;
+        };
+        let ticks = match config.dialect {
+            DialectName::Clickhouse if !matches!(backend, BackendKind::Adbc { .. }) => {
+                DataType::Datetime(TimeUnit::Nanoseconds, None)
+            },
+            DialectName::Mysql | DialectName::Singlestore
+                if !matches!(backend, BackendKind::Python { .. })
+                    && declared_dtype(config.dialect, t)
+                        == Some(DataType::Duration(TimeUnit::Microseconds)) =>
+            {
+                DataType::Duration(TimeUnit::Microseconds)
+            },
+            _ => continue,
+        };
+        let SqlSelectItem::Expr { sql, .. } = select_item(config, &c.name) else {
+            continue;
+        };
+        let own = match ticks {
+            DataType::Datetime(..) => {
+                sql.starts_with("toUnixTimestamp64Nano(")
+                    || (sql.starts_with("arrayMap(") && sql.contains("toUnixTimestamp64Nano("))
+            },
+            _ => true,
+        };
+        if own {
+            out.insert(c.name.clone(), ticks);
         }
     }
     out
@@ -3735,8 +3790,8 @@ pub(crate) fn truncating_columns(config: &DatabaseScanConfig) -> PlHashSet<PlSma
         .collect()
 }
 
-/// Refuses a `TIMETZ` column the driver's result description shows under `schema=` (declared
-/// `String` or `Time`): it is read as the local time of day, its offset dropped.
+/// Refuses a `TIMETZ` column the driver's result description shows under `schema=`, whatever it is
+/// declared as: it is read as the local time of day, its offset dropped.
 pub(crate) fn check_time_with_zone(
     session: &dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -3748,7 +3803,7 @@ pub(crate) fn check_time_with_zone(
         let Some(column) = config.column(&name) else {
             continue;
         };
-        if column.db_type.is_some() || !matches!(column.dtype, DataType::String | DataType::Time) {
+        if column.db_type.is_some() {
             continue;
         }
         let quoted = config.dialect.quote_ident(&name);
@@ -4732,6 +4787,34 @@ fn query_repeatable(config: &DatabaseScanConfig) -> bool {
     }
 }
 
+/// Whether running the source may change something (a function that writes: `nextval()`), so that
+/// it must not run twice. Only a query known to call no such function (nor a volatile view), a
+/// database whose functions can't write in a query, or a read-only session is sure not to; a view
+/// may call one (DuckDB's and Postgres' `nextval`). `found_volatile`: the source was found volatile
+/// when read (`schema=`).
+pub(crate) fn source_may_write(config: &DatabaseScanConfig, found_volatile: bool) -> bool {
+    if matches!(
+        config.dialect,
+        DialectName::Sqlite | DialectName::Mssql | DialectName::Clickhouse
+    ) || read_only_session(
+        config.dialect,
+        &config.backend.kind,
+        config.options.connection.is_live(),
+    ) {
+        return false;
+    }
+    match &config.options.relation {
+        DatabaseRelation::Query { sql } => {
+            config.volatile_source
+                || found_volatile
+                || !sql_renderer()
+                    .and_then(|r| r.inspect_query(sql, config.dialect))
+                    .is_ok_and(|f| f.parses && !f.side_effects)
+        },
+        DatabaseRelation::Table { .. } => true,
+    }
+}
+
 /// Turns the scan's `PartitionSpec` into partitions, querying bounds where needed.
 /// Whether SQL text (a partition predicate) may name `column`: as a word of it, ignoring case
 /// (a name of other characters anywhere in it, its quotes and doubled quotes left out).
@@ -5209,6 +5292,20 @@ mod tests {
             },
             false
         ));
+    }
+
+    #[test]
+    fn duckdb_type_holds_looks_at_types_only() {
+        let variant = |t: &str| duckdb_type_holds(t, &["VARIANT"]);
+        assert!(variant("VARIANT"));
+        assert!(variant("STRUCT(a INTEGER, v VARIANT)[]"));
+        assert!(variant("MAP(VARCHAR, VARIANT)"));
+        assert!(!variant("STRUCT(invariant INTEGER)"));
+        assert!(!variant("STRUCT(\"VARIANT\" INTEGER)"));
+        assert!(!variant("ENUM('VARIANT')"));
+        let timetz = |t: &str| duckdb_type_holds(t, &["TIMETZ", "TIME WITH TIME ZONE"]);
+        assert!(timetz("TIME WITH TIME ZONE[]"));
+        assert!(!timetz("STRUCT(timetz INTEGER)"));
     }
 
     #[test]

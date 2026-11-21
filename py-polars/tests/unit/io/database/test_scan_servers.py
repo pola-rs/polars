@@ -2007,7 +2007,7 @@ def test_mysql_user_statements_during_an_unbuffered_live_scan(driver: str) -> No
 
 
 @pytest.mark.skipif(SERVERS["mysql"].uri is None, reason="no MySQL URI")
-@pytest.mark.parametrize("how", ["pymysql", "sqlalchemy"])
+@pytest.mark.parametrize("how", ["pymysql", "sqlalchemy", "orm_session"])
 def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> None:
     # PyMySQL drops unread rows of an unbuffered cursor (with a warning) when another
     # statement runs: also through a SQLAlchemy Connection. (The later results of a
@@ -2027,10 +2027,18 @@ def test_pymysql_scan_refuses_to_discard_the_users_pending_result(how: str) -> N
     else:
         sqlalchemy = pytest.importorskip("sqlalchemy")
         engine = sqlalchemy.create_engine(_sqlalchemy_url(uri, "pymysql"))
-        conn = engine.connect()
-        result = conn.execution_options(stream_results=True).exec_driver_sql(
-            "SELECT id FROM edge"
-        )
+        if how == "sqlalchemy":
+            conn = engine.connect()
+            result = conn.execution_options(stream_results=True).exec_driver_sql(
+                "SELECT id FROM edge"
+            )
+        else:
+            orm = pytest.importorskip("sqlalchemy.orm")
+            conn = orm.Session(engine)
+            result = conn.execute(
+                sqlalchemy.text("SELECT id FROM edge"),
+                execution_options={"stream_results": True},
+            )
         result.fetchmany(1)
         source = conn
     try:
@@ -2056,19 +2064,21 @@ def test_pymysql_scan_after_a_stored_procedure_call(how: str) -> None:
     pymysql = pytest.importorskip("pymysql")
     uri = SERVERS["mysql"].uri
     assert uri is not None
+    proc = f"polars_scan_call_p_{how}"
     conn = pymysql.connect(**_parts(uri), autocommit=True)
     try:
         cur = conn.cursor()
-        cur.execute("DROP PROCEDURE IF EXISTS polars_scan_call_p")
-        cur.execute("CREATE PROCEDURE polars_scan_call_p() BEGIN SELECT 1 AS a; END")
+        cur.execute(f"DROP PROCEDURE IF EXISTS {proc}")
+        cur.execute(f"CREATE PROCEDURE {proc}() BEGIN SELECT 1 AS a; END")
         if how == "execute":
-            cur.execute("CALL polars_scan_call_p()")
+            cur.execute(f"CALL {proc}()")
         else:
-            cur.callproc("polars_scan_call_p")
+            cur.callproc(proc)
         assert cur.fetchall() == ((1,),)
         assert pl.scan_database("SELECT 7 AS x", conn).collect().item() == 7
-        cur.execute("DROP PROCEDURE polars_scan_call_p")
     finally:
+        with contextlib.suppress(Exception):
+            conn.cursor().execute(f"DROP PROCEDURE IF EXISTS {proc}")
         conn.close()
 
 
@@ -2125,10 +2135,48 @@ def test_postgres_autocommit_connections_are_read(module: str) -> None:
     whole = pl.scan_database("orders", connect, partition_on=None)
     assert lf.select("id").collect().height == whole.select("id").collect().height > 0
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy.orm")
     url = POSTGRES.replace("postgresql://", f"postgresql+{module}://", 1)
     engine = sqlalchemy.create_engine(url, isolation_level="AUTOCOMMIT")
     try:
         assert pl.scan_database(q, engine, batch_size=1000).collect().height == 5000
+        # an ORM transaction in AUTOCOMMIT has no database transaction to save
+        with sqlalchemy.orm.Session(engine) as session:
+            session.begin()
+            assert pl.scan_database(q, session).collect().height == 5000
+            assert session.in_transaction()
+    finally:
+        engine.dispose()
+
+
+@needs_postgres
+def test_postgres_scan_in_a_begun_sqlalchemy_transaction() -> None:
+    # the Session's transaction has no database transaction yet: the scan's failing
+    # statement begins one, which must not be left aborted
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    pytest.importorskip("psycopg")
+    assert POSTGRES is not None
+    engine = sqlalchemy.create_engine(_sqlalchemy_url(POSTGRES, "psycopg"))
+    try:
+        with engine.connect() as conn, orm.Session(bind=conn) as session:
+            session.begin()
+            with pytest.raises(pl.exceptions.ComputeError, match="does not exist"):
+                pl.scan_database("SELECT * FROM bos_no_such_table", session).collect()
+            assert session.execute(sqlalchemy.text("SELECT 1")).scalar() == 1
+    finally:
+        engine.dispose()
+    # the driver's own autocommit: no database transaction for a savepoint
+    engine = sqlalchemy.create_engine(
+        _sqlalchemy_url(POSTGRES, "psycopg"), connect_args={"autocommit": True}
+    )
+    try:
+        with engine.connect() as conn:
+            conn.begin()
+            assert pl.scan_database("SELECT 1 AS x", conn).collect().item() == 1
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                assert pl.scan_database("SELECT 1 AS x", session).collect().item() == 1
     finally:
         engine.dispose()
 
@@ -3337,12 +3385,12 @@ def test_mysql_query_with_side_effects_runs_once(name: str) -> None:
 
 
 @needs_postgres
-@pytest.mark.parametrize("module", ["psycopg", "pg8000", "sqlalchemy"])
+@pytest.mark.parametrize("module", ["psycopg", "pg8000", "sqlalchemy", "orm_session"])
 def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None:
     # A failed statement in the user's transaction (the lookup of a name that isn't
     # there, a query that fails) aborted it: their writes were lost, and the next
     # lookup failed with InFailedSqlTransaction, hiding the error
-    pytest.importorskip(module)
+    pytest.importorskip("sqlalchemy" if module == "orm_session" else module)
     assert POSTGRES is not None
     table = f"rvf_tx_{module}"
     _execute(
@@ -3355,7 +3403,7 @@ def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None
             f'INSERT INTO "Rvf{module}" VALUES (1)',
         ],
     )
-    if module == "sqlalchemy":
+    if module in ("sqlalchemy", "orm_session"):
         import sqlalchemy
 
         engine = sqlalchemy.create_engine(_sqlalchemy_url(POSTGRES, "psycopg"))
@@ -3384,14 +3432,19 @@ def test_postgres_failed_lookup_keeps_the_users_transaction(module: str) -> None
             finally:
                 cur.close()
 
+    source = conn
+    if module == "orm_session":
+        from sqlalchemy.orm import Session
+
+        source = Session(bind=conn)
     try:
         run(f"INSERT INTO {table} VALUES (1)")
         # found by the name as written, after the folded name's lookup failed
-        assert pl.scan_database(f"Rvf{module}", conn).collect().height == 1
+        assert pl.scan_database(f"Rvf{module}", source).collect().height == 1
         with pytest.raises(pl.exceptions.ComputeError, match="does not exist"):
-            pl.scan_database("rvf_no_such_table", conn).collect()
+            pl.scan_database("rvf_no_such_table", source).collect()
         with pytest.raises(pl.exceptions.ComputeError, match="division by zero"):
-            pl.scan_database("SELECT 1 / 0 AS x", conn).collect()
+            pl.scan_database("SELECT 1 / 0 AS x", source).collect()
         # the transaction goes on, with the user's write
         run(f"INSERT INTO {table} VALUES (2)")
         assert run(f"SELECT count(*) FROM {table}") == [(2,)]
@@ -7838,6 +7891,92 @@ def test_postgres_pool_session_resolving_another_relation_is_refused(
         )
 
 
+def test_postgres_temporary_child_of_another_session_doesnt_refuse_partitions() -> None:
+    # `pg_class` lists the temporary tables of every session
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    import psycopg
+
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    uri = server.uri
+    t = "vol_pg_other_temp_child"
+    _execute(
+        "postgres17",
+        [
+            f"DROP TABLE IF EXISTS public.{t} CASCADE",
+            f"CREATE TABLE public.{t} (id int, v int)",
+            f"INSERT INTO public.{t} SELECT g, g FROM generate_series(1, 20) g",
+        ],
+    )
+    other = psycopg.connect(uri)
+    try:
+        other.execute(f"CREATE TEMPORARY TABLE {t}_child () INHERITS (public.{t})")
+        other.commit()
+        lf = pl.scan_database(
+            t, lambda: psycopg.connect(uri), partition_on="id", partition_num=4
+        )
+        assert lf.collect().height == 20
+    finally:
+        other.close()
+        _execute("postgres17", [f"DROP TABLE IF EXISTS public.{t} CASCADE"])
+
+
+def test_postgres_query_over_several_tables_resolving_another_relation_is_refused() -> (
+    None
+):
+    # one name of a join that a later session resolves to another relation
+    if not _installed("psycopg"):
+        pytest.skip("psycopg is not installed")
+    import psycopg
+
+    server = SERVERS["postgres17"]
+    if server.uri is None:
+        pytest.skip("no postgres17 URI")
+    uri = server.uri
+    schema, table = "vol_pg_rs_join_schema", "vol_pg_rs_join_t"
+    _execute(
+        "postgres17",
+        [
+            f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+            f"DROP TABLE IF EXISTS public.{table}",
+            f"CREATE SCHEMA {schema}",
+            f"CREATE TABLE public.{table} (id int, v int)",
+            f"INSERT INTO public.{table} VALUES (1, 1), (2, 2)",
+            f"CREATE TABLE {schema}.{table} (id int, v int)",
+            f"INSERT INTO {schema}.{table} VALUES (1, -1), (2, -1)",
+        ],
+    )
+    search_path: list[str] = []
+
+    def factory() -> Any:
+        conn = psycopg.connect(uri)
+        for path in search_path:
+            conn.execute(f"SET search_path TO {path}")
+        conn.commit()
+        return conn
+
+    try:
+        lf = pl.scan_database(
+            f"SELECT a.id, a.v FROM {table} a JOIN public.{table} b ON a.id = b.id",
+            factory,
+            partition_on=None,
+        )
+        lf.collect_schema()
+        search_path.append(f"{schema}, public")
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="resolves"):
+            lf.collect()
+    finally:
+        _execute(
+            "postgres17",
+            [
+                f"DROP SCHEMA IF EXISTS {schema} CASCADE",
+                f"DROP TABLE IF EXISTS public.{table}",
+            ],
+        )
+
+
 @pytest.mark.parametrize("kind", ["engine", "factory"])
 @pytest.mark.parametrize("name", ["postgres17", "mysql", "mariadb"])
 def test_pool_temp_table_on_one_session_is_refused_unless_all_have_one(
@@ -7906,9 +8045,8 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
     # a `checkout` listener that reads a contextvar ran on a Polars thread
     import contextvars
 
-    from sqlalchemy import event
-
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
     if not _installed("psycopg"):
         pytest.skip("psycopg is not installed")
     server = SERVERS["postgres17"]
@@ -7929,7 +8067,7 @@ def test_postgres_checkout_listener_sees_the_callers_context() -> None:
         _sqlalchemy_url(server.uri, "psycopg"), pool_size=5
     )
 
-    @event.listens_for(engine, "checkout")
+    @event.listens_for(engine, "checkout")  # type: ignore[untyped-decorator]
     def _set_tenant(dbapi_connection: Any, *_: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute(f"SET search_path TO {tenant_var.get()}")
@@ -7964,9 +8102,8 @@ def test_postgres_engine_holds_nothing_between_collects(
     # statement) left the scan's pinned session `idle in transaction` for the
     # LazyFrame's whole life: it held a lock on the table, and under REPEATABLE READ a
     # later collect read the old snapshot
-    from sqlalchemy import event
-
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
     if not _installed("psycopg2"):
         pytest.skip("psycopg2 is not installed")
     server = SERVERS["postgres17"]
@@ -7988,7 +8125,7 @@ def test_postgres_engine_holds_nothing_between_collects(
         _sqlalchemy_url(server.uri, "psycopg2"), pool_size=2, **kwargs
     )
 
-    @event.listens_for(engine, "checkout")
+    @event.listens_for(engine, "checkout")  # type: ignore[untyped-decorator]
     def _set_search_path(dbapi_connection: Any, *_: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("SET search_path TO public")
@@ -8053,9 +8190,8 @@ def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
     # an Engine was read as a live connection: a `connect` listener's session zone
     # (here one that has the fall-back hour twice) made a TIMESTAMP unreadable. The scan
     # sets UTC on its checkout and restores the listener's zone before giving it back.
-    from sqlalchemy import event
-
     sqlalchemy = pytest.importorskip("sqlalchemy")
+    event = sqlalchemy.event
     if not _installed("pymysql"):
         pytest.skip("pymysql is not installed")
     server = SERVERS[name]
@@ -8076,7 +8212,7 @@ def test_mysql_engine_sessions_are_read_in_utc(name: str) -> None:
         _sqlalchemy_url(server.uri, "pymysql"), pool_size=2
     )
 
-    @event.listens_for(engine, "connect")
+    @event.listens_for(engine, "connect")  # type: ignore[untyped-decorator]
     def _zone(dbapi_connection: Any, *_: Any) -> None:
         cursor = dbapi_connection.cursor()
         try:

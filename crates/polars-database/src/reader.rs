@@ -224,7 +224,7 @@ pub struct Shared {
     /// The SQLite Binary columns whose batches are checked for blobs only.
     sqlite_blob_columns: Vec<(PlSmallStr, bool)>,
     /// [`numeric_temporal_conversions`](crate::database::planner::numeric_temporal_conversions)
-    own_numbers: PlHashSet<PlSmallStr>,
+    own_numbers: PlHashMap<PlSmallStr, DataType>,
     /// [`converted_columns`](crate::database::planner::converted_columns)
     converted: PlHashSet<PlSmallStr>,
     /// Instantiated once per execution: re-checks that the planned backend exists here.
@@ -286,7 +286,6 @@ impl Shared {
             &self.config,
             &self.resolution_baseline,
         )?;
-        crate::database::planner::check_temporary_relations(session.as_mut(), &self.config)?;
         let zone = self.session_zone.get_or_init(|| {
             check_mysql_session_zone(session.as_mut(), &self.config).map_err(|e| match e {
                 PolarsError::InvalidOperation(msg) => msg.to_string(),
@@ -529,7 +528,8 @@ impl PartitionReader {
     ///
     /// Returns the number of rows, and the rows unless they passed `COUNT_BUFFER_BYTES`: a result
     /// that big is counted and dropped (the read runs the query again, and checks that it finds as
-    /// many rows), so a `tail(n)` can't hold the whole result.
+    /// many rows), so a `tail(n)` can't hold the whole result. A source that may write
+    /// ([`source_may_write`](crate::database::planner::source_may_write)) keeps all its rows.
     fn read_counted(&self, session: &mut Session) -> PolarsResult<(u64, Option<DataFrame>)> {
         let config = &self.shared.config;
         let overrides = config.options.schema_overrides.as_deref();
@@ -537,7 +537,7 @@ impl PartitionReader {
         let (mut rows, mut kept_bytes, mut dropped) = (0u64, 0usize, false);
         let buffer_bytes = count_buffer_bytes()?;
         let batches = session.execute(&self.partition.sql, config.options.fetch.batch_size)?;
-        let mut checked = false;
+        let (mut checked, mut keep_all) = (false, false);
         for batch in batches {
             let batch = batch?;
             // (a Python statement runs at the first batch: its description is known now)
@@ -574,10 +574,16 @@ impl PartitionReader {
                 continue;
             }
             kept_bytes += batch.estimated_size(false);
-            if kept_bytes > buffer_bytes {
-                dropped = true;
-                out = None;
-                continue;
+            if kept_bytes > buffer_bytes && !keep_all {
+                // a source that may write must not run again: all its rows are kept
+                if crate::database::planner::source_may_write(config, self.shared.found_volatile())
+                {
+                    keep_all = true;
+                } else {
+                    dropped = true;
+                    out = None;
+                    continue;
+                }
             }
             match &mut out {
                 None => out = Some(batch),

@@ -711,8 +711,7 @@ def test_scan_order_by_needs_one_ordered_read(shop_uri: str) -> None:
 
 
 def test_scan_query_that_isnt_repeatable_counts_its_own_rows(shop_uri: str) -> None:
-    # each run picks other rows: the count that a negative slice needs is taken from
-    # the rows read, not from a second run (which "changed the table")
+    # each run picks other rows: a negative slice is taken from the rows read
     lf = pl.scan_database("SELECT * FROM orders WHERE abs(random()) % 2 = 0", shop_uri)
     tail = lf.tail(5).collect()
     assert tail.height == 5
@@ -2007,12 +2006,41 @@ def test_scan_duckdb_lossy_values_are_errors() -> None:
     def scan(sql: str, **kwargs: Any) -> pl.LazyFrame:
         return pl.scan_database(sql, conn, partition_on=None, pushdown=False, **kwargs)
 
-    # a Map's values are checked as a List's are
+    # a Map's values are checked as a List's are, also cast to its entries
+    entries = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+    for dtype in [pl.Map(pl.String, pl.Int64), entries]:
+        with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+            scan("SELECT map(['a'], [1.5]) AS x", schema={"x": dtype}).collect()
+    for sql, dtype in [
+        ("SELECT map(['a'], [1::BIGINT]) AS x", pl.Map(pl.String, pl.Datetime("us"))),
+        (
+            "SELECT map(['a'], [1::BIGINT]) AS x",
+            pl.List(pl.Struct({"key": pl.String, "value": pl.Datetime("us")})),
+        ),
+        (
+            "SELECT [{'key': 'a', 'value': 1::BIGINT}] AS x",
+            pl.Map(pl.String, pl.Datetime("us")),
+        ),
+        ("SELECT 1::BIGINT AS x", pl.Struct({"t": pl.Datetime("us")})),
+    ]:
+        with pytest.raises(pl.exceptions.SchemaError, match="raw ticks"):
+            scan(sql, schema={"x": dtype}).collect()
     with pytest.raises(pl.exceptions.SchemaError, match="would round"):
         scan(
-            "SELECT map(['a'], [1.5]) AS x",
+            "SELECT 1.5::DOUBLE AS x", schema={"x": pl.Struct({"v": pl.Int64})}
+        ).collect()
+    # a list of entries cast to a map is checked as one
+    with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+        scan(
+            "SELECT [{'key': 'a', 'value': 1.5::DOUBLE}] AS x",
             schema={"x": pl.Map(pl.String, pl.Int64)},
         ).collect()
+    # a list of entries with a repeated key is a map of one entry for it
+    out = scan(
+        "SELECT [{'key': 'a', 'value': 1.0}, {'key': 'a', 'value': 1.0}] AS x",
+        schema={"x": pl.Map(pl.String, pl.Int64)},
+    ).collect()
+    assert out.height == 1
     # a finite DOUBLE isn't an infinite Float16
     with pytest.raises(pl.exceptions.SchemaError, match="Float16"):
         scan("SELECT 1e5::DOUBLE AS x", schema={"x": pl.Float16}).collect()
@@ -5179,6 +5207,132 @@ def test_scan_assertion_pool_function_with_concurrent_connects(
         engine.dispose()
 
 
+def test_scan_factory_assertion_error_is_not_retried(shop_db: Path) -> None:
+    # only an AssertionPool's refusal of a second checkout is retried
+    calls = 0
+
+    def factory() -> sqlite3.Connection:
+        nonlocal calls
+        calls += 1
+        if calls > 2:
+            msg = "not configured"
+            raise AssertionError(msg)
+        return sqlite3.connect(shop_db, check_same_thread=False)
+
+    with pytest.raises(Exception, match="not configured"):
+        pl.scan_database("orders", factory, partition_on=None).collect()
+    assert calls == 3
+
+
+def test_scan_function_over_several_shared_pool_engines_is_refused() -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    a, b = (
+        sqlalchemy.create_engine("sqlite://", connect_args={"check_same_thread": False})
+        for _ in range(2)
+    )
+    try:
+        with pytest.raises(TypeError, match="several Engines"):
+            pl.scan_database("t", lambda: (a or b).connect())
+    finally:
+        a.dispose()
+        b.dispose()
+
+
+@pytest.mark.parametrize("dialect", ["sqlite", "postgresql"])
+def test_scan_shared_pool_factory_of_a_dialect_with_a_session_setup_is_refused(
+    dialect: str,
+) -> None:
+    # the plan relies on the session setup, which the user's connection must not get
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars_database._bridge import connect
+
+    engine = sqlalchemy.create_engine(
+        "sqlite://",
+        poolclass=sqlalchemy.pool.StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        user = engine.raw_connection()
+        user.driver_connection.execute("CREATE TABLE t (v INTEGER)")
+        user.driver_connection.execute("INSERT INTO t VALUES (1)")
+        args: tuple[Any, ...] = (
+            "python",
+            "factory",
+            engine.connect,
+            [],
+            [],
+            dialect,
+            None,
+        )
+        if dialect == "sqlite":
+            connect(*args).close()
+        else:
+            with pytest.raises(TypeError, match="pass the Engine itself"):
+                connect(*args)
+        assert user.driver_connection.in_transaction
+        user.close()
+    finally:
+        engine.dispose()
+
+
+def test_scan_orm_sessions_keep_their_transaction_and_give_back_their_checkout(
+    tmp_path: Path,
+) -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    engine = sqlalchemy.create_engine(
+        f"sqlite:///{tmp_path / 's.db'}",
+        poolclass=sqlalchemy.pool.QueuePool,
+        pool_size=1,
+        max_overflow=0,
+        isolation_level="AUTOCOMMIT",
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("CREATE TABLE t (v INTEGER)")
+            conn.exec_driver_sql("INSERT INTO t VALUES (1)")
+        # a scan of an idle Session gives its checkout back
+        with orm.Session(engine) as session:
+            assert pl.scan_database("SELECT * FROM t", session).collect().height == 1
+            assert engine.pool.checkedout() == 0
+        with engine.connect() as conn:
+            # a Session bound to a Connection keeps the transaction it began
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                assert (
+                    pl.scan_database("SELECT * FROM t", session).collect().height == 1
+                )
+                assert session.in_transaction()
+            # a function that returns such Sessions shares the caller's connection;
+            # its Session is left as it is
+            with orm.Session(bind=conn) as session:
+                session.begin()
+                for factory in (orm.sessionmaker(bind=conn), lambda: session):
+                    with pytest.raises(
+                        Exception, match="Sessions bound to one Connection"
+                    ):
+                        pl.scan_database("SELECT * FROM t", factory).collect()
+                assert session.in_transaction()
+    finally:
+        engine.dispose()
+
+
+def test_scan_function_engine_lookup_reads_only_its_globals_and_defaults() -> None:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from polars.io.database._scan import _factory_singleton_engine
+
+    engine = sqlalchemy.create_engine("sqlite://")
+    try:
+        ns: dict[str, Any] = {"engine": engine}
+        exec("def attribute():\n    return tenant.engine.connect()", ns)
+        exec("def default(e=None, *, k=engine):\n    return k.connect()", ns)
+        assert _factory_singleton_engine(ns["attribute"]) is None
+        assert _factory_singleton_engine(ns["default"]) is engine
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="Windows resolves `..` textually, before following a symlink",
@@ -5484,6 +5638,38 @@ def test_a_non_repeatable_source_over_the_count_buffer_says_so(
         assert lf.tail(3).collect().height == 3
 
 
+def test_a_source_that_may_write_is_counted_once_over_the_count_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `nextval()` advances the sequence: the rows counted are kept, not read again
+    duckdb = pytest.importorskip("duckdb")
+    conn = duckdb.connect()
+    conn.execute("CREATE SEQUENCE s START 1")
+    monkeypatch.setenv("POLARS_DATABASE_COUNT_BUFFER_BYTES", "1")
+    out = (
+        pl.scan_database(
+            "SELECT nextval('s') AS n FROM range(3)",
+            conn,
+            partition_on=None,
+            schema={"n": pl.Int64},
+        )
+        .tail(1)
+        .collect()
+    )
+    assert out["n"].to_list() == [3]
+    assert conn.execute("SELECT currval('s')").fetchone() == (3,)
+    # also through a view
+    conn.execute("CREATE VIEW v AS SELECT nextval('s') AS n FROM range(3)")
+    for source, last in [("v", 6), ("SELECT n FROM v", 9)]:
+        out = (
+            pl.scan_database(source, conn, partition_on=None, schema={"n": pl.Int64})
+            .tail(1)
+            .collect()
+        )
+        assert out["n"].to_list() == [last]
+        assert conn.execute("SELECT currval('s')").fetchone() == (last,)
+
+
 def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:
     # DuckDB folds ASCII case only: `"Ä"` and `"ä"` are different tables
     duckdb = pytest.importorskip("duckdb")
@@ -5495,6 +5681,15 @@ def test_duckdb_neighbouring_table_with_a_unicode_case_variant() -> None:
         for name in ["Ä", "ä"]:
             lf = pl.scan_database(name, conn, partition_on=None)
             check_filter_ids(lf, [pl.col("s") == "a", pl.col("s") != "a"])
+    # nor are `cafe` and `café`, also under a default collation that ignores accents
+    with duckdb.connect(":memory:") as conn:
+        conn.execute("CREATE TABLE ids AS SELECT range AS id FROM range(30)")
+        conn.execute("CREATE VIEW cafe AS SELECT id FROM ids")
+        conn.execute('CREATE VIEW "café" AS SELECT id, random() AS r FROM ids')
+        conn.execute("SET GLOBAL default_collation = 'noaccent'")
+        lf = pl.scan_database("café", conn, partition_on="id", partition_num=4)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
 
 
 def test_a_dialect_that_contradicts_the_connection_is_refused(tmp_path: Path) -> None:
@@ -5526,6 +5721,20 @@ def test_scan_duckdb_variant_is_refused_only_when_read() -> None:
     assert lf.select("id").collect().rows() == [(1,)]
     with pytest.raises(pl.exceptions.ComputeError, match="VARIANT"):
         lf.select("v").collect()
+    # a table's VARIANT too
+    conn.execute("CREATE TABLE t AS SELECT 1 AS id, 5::VARIANT AS v")
+    lf = pl.scan_database("t", conn, partition_on=None)
+    with pytest.raises(pl.exceptions.ComputeError, match="VARIANT"):
+        lf.select("v").collect()
+    out = pl.scan_database(
+        "t", conn, partition_on=None, schema_overrides={"v": pl.String}
+    ).collect()
+    assert out["v"].to_list() == ["5"]
+    # a field named like the type is no VARIANT
+    out = pl.scan_database(
+        "SELECT struct_pack(invariant := 1) AS s", conn, partition_on=None
+    ).collect()
+    assert out["s"].to_list() == [{"invariant": 1}]
 
 
 def test_scan_duckdb_nested_timetz_is_an_error() -> None:
@@ -5593,6 +5802,18 @@ def test_scan_duckdb_timetz_typed_by_the_user_never_drops_its_offset() -> None:
             lf.collect()
         with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
             lf.filter(pl.col("t").is_not_null()).collect()
+    # also nested, or as a number
+    for schema in [{"id": pl.Int32, "l": pl.List(pl.Time)}, {"t": pl.Int64}]:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="TIMETZ"):
+            scan(schema=schema).collect()
+    # a field named like the type is no TIMETZ
+    out = pl.scan_database(
+        "SELECT {'TIME WITH TIME ZONE': 7} AS s",
+        conn,
+        partition_on=None,
+        schema={"s": pl.Struct({"TIME WITH TIME ZONE": pl.Int32})},
+    ).collect()
+    assert out["s"].to_list() == [{"TIME WITH TIME ZONE": 7}]
     # the advice works: the offset is in the text
     out = pl.scan_database(
         "SELECT id, CAST(t AS VARCHAR) AS t FROM t",
@@ -5973,33 +6194,61 @@ def test_duckdb_float_sum_is_not_a_partition_key(tmp_path: Any) -> None:
     assert df.height == 100
 
 
-def test_negative_slice_over_a_table_changed_after_the_count_fails_loudly(
-    tmp_path: Path,
-) -> None:
-    # a tail is planned from COUNT(*) and read by a second statement. The host
-    # stopped pulling at the end of the slice, so the rows past it (a writer's inserts
-    # between the two) were never counted against the count: it returned the wrong rows
-    db = tmp_path / "t.db"
+def _sqlite_ids(db: Path, n: int) -> None:
     with closing(sqlite3.connect(db)) as setup:
         setup.execute("PRAGMA journal_mode=WAL")
-        setup.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
-        setup.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(1, 101)])
+        setup.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, version INTEGER)")
+        setup.executemany(
+            "INSERT INTO t VALUES (?, 0)", [(i,) for i in range(1, n + 1)]
+        )
         setup.commit()
-    inserted = iter(range(-1, -100, -1))
+
+
+@pytest.mark.parametrize("partition_num", [1, 4])
+def test_negative_slice_over_a_table_changed_before_the_read(
+    tmp_path: Path, partition_num: int
+) -> None:
+    # A negative slice is taken from the rows that are read, not from a separate
+    # count: a writer that commits right before the read can't shift it.
+    db = tmp_path / "t.db"
+    _sqlite_ids(db, 100)
     writer = sqlite3.connect(db, check_same_thread=False)
+    write = None
 
     def write_before_the_read(sql: str) -> None:
-        # a writer commits right after the count, as the read statement starts
-        if sql.startswith('SELECT "t"."id"'):
-            writer.execute("INSERT INTO t VALUES (?)", (next(inserted),))
-            writer.commit()
+        nonlocal write
+        if write is not None and sql.startswith('SELECT "t"."id"'):
+            write()
+            write = None
+
+    def insert_before() -> None:
+        writer.execute("INSERT INTO t VALUES (0, 0)")
+        writer.commit()
+
+    def append_and_bump_version() -> None:
+        writer.execute("INSERT INTO t VALUES (101, 0)")
+        writer.execute("UPDATE t SET version = 1")
+        writer.commit()
 
     with closing(writer), closing(sqlite3.connect(db, check_same_thread=False)) as conn:
         conn.set_trace_callback(write_before_the_read)
-        lf = pl.scan_database("t", conn, order_by="id", partition_on=None)
-        for q in [lf.tail(3), lf.slice(-10, 3)]:
-            with pytest.raises(pl.exceptions.ComputeError, match="changed"):
-                q.collect()
-        # (the same, without the writer)
-        conn.set_trace_callback(None)
-        assert lf.tail(3).collect()["id"].to_list() == [98, 99, 100]
+        lf = pl.scan_database(
+            "t",
+            conn,
+            order_by="id",
+            partition_on="id" if partition_num > 1 else None,
+            partition_num=partition_num if partition_num > 1 else None,
+        )
+
+        # A downstream limit stops the query after the first rows of the slice.
+        write = insert_before
+        q = lf.slice(-90, 10).filter(pl.col("id") > 0).head(1)
+        assert q.collect()["id"].to_list() == [11]
+
+        # The slice depends on the rows of every partition after it.
+        write = append_and_bump_version
+        out = lf.slice(-90, 3).collect()
+        assert out["id"].to_list() == [12, 13, 14]
+        assert out["version"].to_list() == [1, 1, 1]
+
+        assert lf.tail(3).collect()["id"].to_list() == [99, 100, 101]
