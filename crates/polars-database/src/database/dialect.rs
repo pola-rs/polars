@@ -65,25 +65,6 @@ pub(crate) fn trino_wide_temporal(t: &str) -> Option<TrinoWide> {
     )
 }
 
-/// Splits the inside of `array(..)`, `map(..)` or `row(..)` at its top-level commas.
-fn split_type_list(inner: &str) -> Vec<&str> {
-    let (mut parts, mut depth, mut quoted, mut start) = (vec![], 0usize, false, 0usize);
-    for (i, c) in inner.char_indices() {
-        match c {
-            '"' => quoted = !quoted,
-            '(' if !quoted => depth += 1,
-            ')' if !quoted => depth = depth.saturating_sub(1),
-            ',' if !quoted && depth == 0 => {
-                parts.push(inner[start..i].trim());
-                start = i + 1;
-            },
-            _ => {},
-        }
-    }
-    parts.push(inner[start..].trim());
-    parts
-}
-
 /// The `name` and the type of a `row(..)` field (`x timestamp(3)`, `"a b" integer`, `"a""b"
 /// integer`, or an unnamed `timestamp(3)`).
 fn split_row_field(field: &str) -> (&str, &str) {
@@ -134,7 +115,7 @@ fn trino_utc_inside(ty: &str, expr: &str, depth: usize) -> Option<(String, Strin
         ));
     }
     if let Some(kv) = inner("map(") {
-        let [key, value] = split_type_list(kv)[..] else {
+        let [key, value] = super::planner::split_top_level(kv)[..] else {
             return None;
         };
         let (k, v) = (format!("pl_k{depth}"), format!("pl_v{depth}"));
@@ -158,7 +139,10 @@ fn trino_utc_inside(ty: &str, expr: &str, depth: usize) -> Option<(String, Strin
     if let Some(fields) = inner("row(") {
         let mut found = false;
         let (mut values, mut types) = (vec![], vec![]);
-        for (i, field) in split_type_list(fields).into_iter().enumerate() {
+        for (i, field) in super::planner::split_top_level(fields)
+            .into_iter()
+            .enumerate()
+        {
             let (name, field_type) = split_row_field(field);
             let item = format!("({expr})[{}]", i + 1);
             let (sql, t) = match trino_utc_inside(field_type, &item, depth + 1) {
