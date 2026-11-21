@@ -4831,18 +4831,19 @@ fn resolve_partitions(
         );
     };
 
-    // ConnectorX's bundled SQLite parses a float literal inexactly (exponents beyond about
-    // +-85 miss the stored value), so a cut could lose rows.
+    // ConnectorX's bundled SQLite, and a SQLite built by MSVC (Python on Windows), parse a
+    // float literal inexactly (exponents beyond about +-85 miss the stored value): cuts closer
+    // than that error can be read out of order, so a row is lost or read twice.
     if matches!(kind, partition::RangeKind::Float)
         && config.dialect == DialectName::Sqlite
-        && matches!(config.backend.kind, BackendKind::ConnectorX)
+        && (cfg!(windows) || matches!(config.backend.kind, BackendKind::ConnectorX))
     {
         if why == "auto" {
             return one();
         }
         polars_bail!(
             InvalidOperation:
-            "can't partition '{column}' by ranges: ConnectorX's SQLite reads float literals \
+            "can't partition '{column}' by ranges: this SQLite reads float literals \
             inexactly, so a range on a float column could lose rows. Use another driver, \
             partition on an integer column, or use partition_predicates"
         );
