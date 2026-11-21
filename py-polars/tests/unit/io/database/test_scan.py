@@ -1669,6 +1669,20 @@ def test_scan_sqlite_generated_column_after_a_comment(tmp_path: Path) -> None:
             lf.collect()
 
 
+def test_scan_sqlite_virtual_table_shadowing_a_table_is_not_proven(
+    tmp_path: Path,
+) -> None:
+    # `t` resolves to the temporary virtual table, not to `main.t`
+    with closing(sqlite3.connect(tmp_path / "t.db", check_same_thread=False)) as live:
+        live.execute("CREATE TABLE t (id INTEGER)")
+        live.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(20)])
+        live.execute("CREATE VIRTUAL TABLE temp.t USING fts5(id)")
+        live.executemany("INSERT INTO temp.t VALUES (?)", [(i,) for i in range(20)])
+        lf = pl.scan_database("t", live, partition_on="id", partition_num=2)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
+            lf.collect()
+
+
 def test_scan_partition_predicates_on_a_float_aggregate_are_refused(
     tmp_path: Path,
 ) -> None:

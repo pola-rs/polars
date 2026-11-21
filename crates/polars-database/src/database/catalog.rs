@@ -883,6 +883,8 @@ fn mssql_query_masked_columns(
                 eprintln!("[scan_database]: lookup of the query's masked columns failed: {e}");
             }
             info.masked.extend(info.compare_types.keys().cloned());
+            info.masked
+                .extend(info.types.iter().map(|(name, _)| name.clone()));
         },
     }
 }
@@ -1529,8 +1531,7 @@ pub fn view_definition(
                 .map(|(i, sc)| {
                     format!(
                         "SELECT {i} AS o, type = 'view' AS v, sql, {} AS q FROM {}.sqlite_master \
-                        WHERE (type = 'view' OR (type = 'table' AND sql NOT LIKE 'CREATE VIRTUAL TABLE%')) \
-                        AND name = {} COLLATE NOCASE",
+                        WHERE type IN ('view', 'table') AND name = {} COLLATE NOCASE",
                         s(sc),
                         dialect.quote_ident(sc),
                         s(name)
@@ -1538,7 +1539,11 @@ pub fn view_definition(
                 })
                 .collect::<Vec<_>>()
                 .join(" UNION ALL ");
-            format!("SELECT v, sql, q FROM ({lookups}) ORDER BY o LIMIT 1")
+            // (a virtual table, which may read anything, gives no row: not proven)
+            format!(
+                "SELECT v, sql, q FROM (SELECT * FROM ({lookups}) ORDER BY o LIMIT 1) \
+                WHERE COALESCE(sql, '') NOT LIKE 'CREATE VIRTUAL TABLE%'"
+            )
         },
         DialectName::Postgresql => format!(
             "SELECT c.relkind = 'v', CASE WHEN c.relkind = 'v' THEN pg_get_viewdef(c.oid) END \
@@ -1946,6 +1951,10 @@ fn sqlite_generated_expressions(sql: &str) -> Vec<String> {
                     let start = j + 1;
                     let (mut depth, mut k) = (1, start);
                     while k < chars.len() && depth > 0 {
+                        if let Some(end) = comment_end(k) {
+                            k = end;
+                            continue;
+                        }
                         match chars[k] {
                             '(' => depth += 1,
                             ')' => depth -= 1,
@@ -3968,6 +3977,11 @@ mod tests {
         let sql = "CREATE TABLE t (a INT /* as (1) */, -- as (2)\n\
             k INT AS /* c */ (f(id)) VIRTUAL)";
         assert_eq!(sqlite_generated_expressions(sql), vec!["f(id)".to_string()]);
+        let sql = "CREATE TABLE t (k INT AS (id -- )\n+ f(id)) VIRTUAL)";
+        assert_eq!(
+            sqlite_generated_expressions(sql),
+            vec!["id -- )\n+ f(id)".to_string()]
+        );
     }
 
     #[test]

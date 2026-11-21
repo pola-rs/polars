@@ -1361,6 +1361,24 @@ pub fn check_unplanned_volatility(
         return Ok(false);
     }
     let volatility = unplanned_volatility(session, config);
+    if compiled.partitions.len() > 1
+        && let Some(column) =
+            volatility
+                .columns
+                .iter()
+                .find(|v| match &config.options.partitioning {
+                    PartitionSpec::Column { column, .. } => v.eq_ignore_ascii_case(column),
+                    PartitionSpec::Predicates(preds) => preds.iter().any(|p| names_column(p, v)),
+                    _ => false,
+                })
+    {
+        polars_bail!(
+            InvalidOperation:
+            "this source can't be partitioned on '{column}': it is computed by an aggregate \
+            over floats or a volatile function, whose values differ between runs (found when \
+            reading: schema= skips the check when planning); partition on another column"
+        );
+    }
     let Some(reason) = volatility.volatile else {
         return Ok(false);
     };
@@ -4701,13 +4719,19 @@ fn query_repeatable(config: &DatabaseScanConfig) -> bool {
 
 /// Turns the scan's `PartitionSpec` into partitions, querying bounds where needed.
 /// Whether SQL text (a partition predicate) may name `column`: as a word of it, ignoring case
-/// (a name of other characters anywhere in it).
+/// (a name of other characters anywhere in it, its quotes and doubled quotes left out).
 fn names_column(sql: &str, column: &str) -> bool {
     if column.chars().all(|c| c.is_alphanumeric() || c == '_') {
         sql.split(|c: char| !c.is_alphanumeric() && c != '_')
             .any(|w| w.eq_ignore_ascii_case(column))
     } else {
-        sql.to_lowercase().contains(&column.to_lowercase())
+        let unquoted = |s: &str| {
+            s.chars()
+                .filter(|c| !matches!(c, '"' | '`' | '[' | ']'))
+                .flat_map(char::to_lowercase)
+                .collect::<String>()
+        };
+        unquoted(sql).contains(&unquoted(column))
     }
 }
 
