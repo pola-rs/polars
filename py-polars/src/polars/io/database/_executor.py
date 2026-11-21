@@ -51,12 +51,16 @@ _INVALID_QUERY_TYPES: Final[set[str]] = {
     "VACUUM",
 }
 
+# the Databricks SQLAlchemy dialect's driver ("databricks-sql-python" before
+# databricks-sqlalchemy 2.x)
+_DATABRICKS_ALCHEMY_DRIVERS: Final = frozenset({"databricks", "databricks-sql-python"})
+
 
 def _close_after_frames(
     frames: Any, *, close: Callable[[], None]
 ) -> Generator[DataFrame]:
     """
-    Yield the frames, then close the cursor (also on an early stop or an error).
+    Yield the frames, then call `close` (also on an early stop or an error).
 
     The query has already run when this is returned. A generator that never started
     skips its `finally` when closed or collected, so it is primed here: it waits at
@@ -81,10 +85,8 @@ class ConnectionExecutor:
     # indicate if we can/should close the cursor on scope exit. note that we
     # should never close the underlying connection, or a user-supplied cursor.
     can_close_cursor: bool = False
-    # a pooled connection checked out for the cursor, given back when it is closed
-    _pooled_raw: Any = None
-    # a Databricks SQLAlchemy Engine/Connection whose cursor is chosen at `execute`
-    _databricks_source: Any = None
+    # a SQLAlchemy result whose cursor is read as Arrow (Databricks): ours to close
+    _owned_result: Any = None
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver_name = (
@@ -115,25 +117,38 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # if we created it and are finished with it, we can
-        # close the cursor (but NOT the connection)
-        if self._is_alchemy_async(self.cursor):
-            from sqlalchemy.ext.asyncio import AsyncConnection
+        # if we created it and are finished with it, we can close it
+        # (but NOT a connection or cursor of the caller's)
+        if (cleanup := self._take_cleanup()) is not None:
+            cleanup()
 
-            if isinstance(self.cursor, AsyncConnection):
-                _run_async(self._close_async_cursor())
-        elif self.can_close_cursor:
-            self._close_cursor()
+    def _take_cleanup(self) -> Callable[[], None] | None:
+        """
+        Take over closing what the executor opened; the returned callable closes it.
 
-    def _close_cursor(self) -> None:
-        """Close the cursor and give back a pooled connection taken for it."""
-        try:
-            if hasattr(self.cursor, "close"):
-                self.cursor.close()
-        finally:
-            raw, self._pooled_raw = self._pooled_raw, None
-            if raw is not None:
-                raw.close()
+        That is a SQLAlchemy result read as Arrow (`_owned_result`), then the cursor if
+        it is ours (`can_close_cursor`). Once taken, `__exit__` leaves both to the
+        callable, so a batch iterator can close them after its last batch.
+        """
+        result = self._owned_result
+        cursor = self.cursor if self.can_close_cursor else None
+        if result is None and cursor is None:
+            return None
+        self._owned_result = None
+        self.can_close_cursor = False
+        close_async = cursor is not None and self._is_alchemy_async(cursor)
+
+        def cleanup() -> None:
+            try:
+                if result is not None:
+                    result.close()
+            finally:
+                if close_async:
+                    _run_async(self._close_async_cursor(cursor))
+                elif cursor is not None and hasattr(cursor, "close"):
+                    cursor.close()
+
+        return cleanup
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
@@ -152,12 +167,12 @@ class ConnectionExecutor:
             df = df.with_columns(cast_cols)
         return df
 
-    async def _close_async_cursor(self) -> None:
-        if self.can_close_cursor and hasattr(self.cursor, "close"):
-            from sqlalchemy.ext.asyncio.exc import AsyncContextNotStarted
+    @staticmethod
+    async def _close_async_cursor(cursor: Any) -> None:
+        from sqlalchemy.ext.asyncio.exc import AsyncContextNotStarted
 
-            with suppress(AsyncContextNotStarted):
-                await self.cursor.close()
+        with suppress(AsyncContextNotStarted):
+            await cursor.close()
 
     @staticmethod
     def _check_module_version(module_name: str, minimum_version: str) -> None:
@@ -477,17 +492,7 @@ class ConnectionExecutor:
                 return conn
             else:
                 # where possible, use the raw connection to access arrow integration
-                # (the dialect's driver is "databricks" in databricks-sqlalchemy 2.x,
-                # "databricks-sql-python" before: not Arrow-typed rows, which lose
-                # nested values and the time zone of a TIMESTAMP)
-                if conn.engine.driver in ("databricks", "databricks-sql-python"):
-                    # str queries use the driver's own Arrow cursor, taken at
-                    # `execute`; SQLAlchemy statements keep SQLAlchemy's execution
-                    if not self._is_alchemy_engine(conn):
-                        _ = conn.connection  # (raises if closed)
-                    self._databricks_source = conn
-                    return conn
-                elif conn.engine.driver == "duckdb_engine":
+                if conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn
                 elif self._is_alchemy_engine(conn):
@@ -514,34 +519,6 @@ class ConnectionExecutor:
             "'execute' or 'cursor' method"
         )
         raise TypeError(msg)
-
-    def _databricks_cursor(self, conn: Any) -> Cursor:
-        """
-        A cursor of the driver's own on a Databricks SQLAlchemy `Engine`/`Connection`.
-
-        A `Connection` is its own DBAPI connection's session (its temporary views and
-        `SET`s). An `Engine`'s pooled connection is held until the cursor is closed,
-        which gives it back to the pool: it must not return while the cursor is in use.
-        """
-        if not self._is_alchemy_engine(conn):
-            # (the user's connection: only the cursor is ours to close)
-            # (flagged once the cursor exists: a failure must not close the user's)
-            cursor = conn.connection.driver_connection.cursor()
-            self.can_close_cursor = True
-            return cursor  # type: ignore[no-any-return]
-
-        raw = conn.raw_connection()
-        try:
-            cursor = raw.cursor()
-        except BaseException:
-            raw.close()
-            raise
-        # (held here, not in a closure patched onto the cursor: that is a reference
-        # cycle through the driver's connection, which the garbage collector never
-        # frees, so the pooled connection would stay checked out)
-        self._pooled_raw = raw
-        self.can_close_cursor = True
-        return cursor  # type: ignore[no-any-return]
 
     def _oracle_arrow_proxy(self) -> OracleCursorProxy | None:
         """Return an Arrow proxy for a SQLAlchemy "python-oracledb" connection."""
@@ -596,8 +573,15 @@ class ConnectionExecutor:
         is_async = self._is_alchemy_async(self.cursor)
         if (
             not is_async
-            and isinstance(params, Sequence)
             and hasattr(self.cursor, "exec_driver_sql")
+            and (
+                isinstance(params, Sequence)
+                # The legacy Databricks dialect accepts native DBAPI placeholders.
+                or (
+                    isinstance(query, str)
+                    and self.cursor.engine.driver == "databricks-sql-python"  # type: ignore[attr-defined]
+                )
+            )
         ):
             cursor_execute = self.cursor.exec_driver_sql
             if isinstance(query, TextClause):
@@ -632,17 +616,13 @@ class ConnectionExecutor:
 
         options = options or {}
 
-        if (source := self._databricks_source) is not None:
-            self._databricks_source = None
-            if isinstance(query, str):
-                self.driver_name = "databricks"
-                self.cursor = self._databricks_cursor(source)
-            elif self._is_alchemy_engine(source):
-                # (a SQLAlchemy statement: compiled and bound by SQLAlchemy)
-                self.cursor = source.connect()
-                self.can_close_cursor = True
-
+        databricks_arrow = False
         if self._is_alchemy_object(self.cursor):
+            databricks_arrow = (
+                isinstance(query, str)
+                and getattr(getattr(self.cursor, "engine", None), "driver", None)
+                in _DATABRICKS_ALCHEMY_DRIVERS
+            )
             # note: the Arrow "fetch_df_*" methods take raw SQL, so the Oracle fast-path
             # is only available for string queries; anything else must be compiled first
             if (
@@ -700,6 +680,17 @@ class ConnectionExecutor:
             result = self.cursor
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
             result = result.cursor  # type: ignore[union-attr]
+        elif (
+            databricks_arrow
+            and self._is_alchemy_result(result)
+            and result.returns_rows  # type: ignore[union-attr]
+            and hasattr(result.cursor, "fetchall_arrow")  # type: ignore[union-attr]
+        ):
+            # Arrow from the driver's cursor (rows lose nested values and the time
+            # zone of a TIMESTAMP); the result is kept open until the read is done
+            self.driver_name = "databricks"
+            self._owned_result = result
+            result = result.cursor  # type: ignore[union-attr]
 
         self.result = result
         return self
@@ -722,32 +713,21 @@ class ConnectionExecutor:
             msg = "cannot return a frame before executing a query"
             raise RuntimeError(msg)
 
-        can_close = self.can_close_cursor
+        for frame_init in (
+            self._from_arrow,  # init from arrow-native data (where support exists)
+            self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
+        ):
+            frame = frame_init(
+                batch_size=batch_size,
+                iter_batches=iter_batches,
+                schema_overrides=schema_overrides,
+                infer_schema_length=infer_schema_length,
+            )
+            if frame is not None:
+                if iter_batches and (cleanup := self._take_cleanup()) is not None:
+                    frame = _close_after_frames(frame, close=cleanup)
+                return frame
 
-        if defer_cursor_close := (iter_batches and can_close):
-            self.can_close_cursor = False
-
-        try:
-            for frame_init in (
-                self._from_arrow,  # init from arrow-native data (where support exists)
-                self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
-            ):
-                frame = frame_init(
-                    batch_size=batch_size,
-                    iter_batches=iter_batches,
-                    schema_overrides=schema_overrides,
-                    infer_schema_length=infer_schema_length,
-                )
-                if frame is not None:
-                    if defer_cursor_close:
-                        frame = _close_after_frames(frame, close=self._close_cursor)
-                    return frame
-        except BaseException:
-            # no frame iterator owns the cursor, so `__exit__` should close it
-            self.can_close_cursor = can_close
-            raise
-
-        self.can_close_cursor = can_close
         msg = (
             f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )

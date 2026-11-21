@@ -54,10 +54,14 @@ fn run_command() -> ExitCode {
         Ok(script) => script,
         Err(error) => return report(error),
     };
-    if format.is_one_file() && script.len() != 1 {
+    // A script that cannot be split is reported as such when it runs.
+    if format.is_one_file() && script.can_be_split() && !script.ends_in_its_only_result() {
         return report(usage_error(
             ErrorKind::InvalidValue,
-            format!("format '{format}' writes one file, so it takes a script of one statement"),
+            format!(
+                "format '{format}' writes one file, so the last statement must be the only one \
+                 that returns rows"
+            ),
         ));
     }
 
