@@ -711,8 +711,7 @@ def test_scan_order_by_needs_one_ordered_read(shop_uri: str) -> None:
 
 
 def test_scan_query_that_isnt_repeatable_counts_its_own_rows(shop_uri: str) -> None:
-    # each run picks other rows: the count that a negative slice needs is taken from
-    # the rows read, not from a second run (which "changed the table")
+    # each run picks other rows: a negative slice is taken from the rows read
     lf = pl.scan_database("SELECT * FROM orders WHERE abs(random()) % 2 = 0", shop_uri)
     tail = lf.tail(5).collect()
     assert tail.height == 5
@@ -4457,3 +4456,63 @@ def test_duckdb_type_names_as_dtypes() -> None:
         "STRUCT()",
     ]:
         assert nested(unread) == pl.Null, unread
+
+
+def _sqlite_ids(db: Path, n: int) -> None:
+    with closing(sqlite3.connect(db)) as setup:
+        setup.execute("PRAGMA journal_mode=WAL")
+        setup.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, version INTEGER)")
+        setup.executemany(
+            "INSERT INTO t VALUES (?, 0)", [(i,) for i in range(1, n + 1)]
+        )
+        setup.commit()
+
+
+@pytest.mark.parametrize("partition_num", [1, 4])
+def test_negative_slice_over_a_table_changed_before_the_read(
+    tmp_path: Path, partition_num: int
+) -> None:
+    # A negative slice is taken from the rows that are read, not from a separate
+    # count: a writer that commits right before the read can't shift it.
+    db = tmp_path / "t.db"
+    _sqlite_ids(db, 100)
+    writer = sqlite3.connect(db, check_same_thread=False)
+    write = None
+
+    def write_before_the_read(sql: str) -> None:
+        nonlocal write
+        if write is not None and sql.startswith('SELECT "t"."id"'):
+            write()
+            write = None
+
+    def insert_before() -> None:
+        writer.execute("INSERT INTO t VALUES (0, 0)")
+        writer.commit()
+
+    def append_and_bump_version() -> None:
+        writer.execute("INSERT INTO t VALUES (101, 0)")
+        writer.execute("UPDATE t SET version = 1")
+        writer.commit()
+
+    with closing(writer), closing(sqlite3.connect(db, check_same_thread=False)) as conn:
+        conn.set_trace_callback(write_before_the_read)
+        lf = pl.scan_database(
+            "t",
+            conn,
+            order_by="id",
+            partition_on="id" if partition_num > 1 else None,
+            partition_num=partition_num if partition_num > 1 else None,
+        )
+
+        # A downstream limit stops the query after the first rows of the slice.
+        write = insert_before
+        q = lf.slice(-90, 10).filter(pl.col("id") > 0).head(1)
+        assert q.collect()["id"].to_list() == [11]
+
+        # The slice depends on the rows of every partition after it.
+        write = append_and_bump_version
+        out = lf.slice(-90, 3).collect()
+        assert out["id"].to_list() == [12, 13, 14]
+        assert out["version"].to_list() == [1, 1, 1]
+
+        assert lf.tail(3).collect()["id"].to_list() == [99, 100, 101]

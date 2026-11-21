@@ -596,7 +596,10 @@ def test_bounds_use_exact_filters(
         out = lf.filter(pl.col("id") > 700).collect()
     _, err = capfd.readouterr()
     assert out.height == 299
-    bounds = next(line for line in err.splitlines() if "partition bounds" in line)
+    # the plugin writes to stderr with its own lock: another line can land in between
+    # the query's prefix and the query
+    start = err.index("partition bounds")
+    bounds = "\n".join(err[start:].splitlines()[:2])
     assert 'MAX("id")' in bounds
     assert '"id" > 700' in bounds
 
