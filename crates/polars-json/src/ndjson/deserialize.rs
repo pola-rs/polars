@@ -1,9 +1,7 @@
-use polars_arrow::array::Array;
-use polars_arrow::compute::concatenate::concatenate_unchecked;
-use simd_json::BorrowedValue;
+use simd_json::{Buffers, Tape};
 
 use super::*;
-use crate::json::ordered::TapeGuide;
+use crate::json::ordered::{TapeGuide, tape_to_default_value, tape_to_value};
 
 /// Deserializes an iterator of rows into an [`Array`][Array] of [`DataType`].
 ///
@@ -26,76 +24,32 @@ pub fn deserialize_iter<'a>(
     count: usize,
     allow_extra_fields_in_struct: bool,
 ) -> PolarsResult<ArrayRef> {
-    // The rows are parsed as one JSON array.
-    let guide_dtype = guide.map(|guide| guide.clone().to_large_list(true));
-    let guide = guide_dtype.as_ref().map(TapeGuide::new);
-    let mut arr: Vec<Box<dyn Array>> = Vec::new();
-    let mut buf = Vec::with_capacity(std::cmp::min(buf_size + count + 2, u32::MAX as usize));
-    buf.push(b'[');
-
-    fn _deserializer(
-        s: &mut [u8],
-        dtype: ArrowDataType,
-        guide: Option<&TapeGuide>,
-        allow_extra_fields_in_struct: bool,
-    ) -> PolarsResult<Box<dyn Array>> {
-        let parse_err = |e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into());
-        let out = match guide {
-            Some(guide) => {
-                let tape = simd_json::to_tape(s).map_err(parse_err)?;
-                crate::json::ordered::tape_to_value(&tape, guide, false)?
-            },
-            None => simd_json::to_borrowed_value(s).map_err(parse_err)?,
-        };
-        if let BorrowedValue::Array(rows) = out {
-            super::super::json::deserialize::_deserialize(
-                &rows,
-                dtype,
-                allow_extra_fields_in_struct,
-            )
-        } else {
-            unreachable!()
-        }
-    }
-    let mut row_iter = rows.peekable();
-
-    while let Some(row) = row_iter.next() {
+    let guide = guide.map(TapeGuide::new);
+    let mut buf = Vec::with_capacity(buf_size);
+    let mut row_ends = Vec::with_capacity(count);
+    for row in rows {
         buf.extend_from_slice(row.as_bytes());
-        buf.push(b',');
+        row_ends.push(buf.len());
+    }
 
-        let next_row_length = row_iter.peek().map(|row| row.len()).unwrap_or(0);
-        if buf.len() + next_row_length >= u32::MAX as usize {
-            let _ = buf.pop();
-            buf.push(b']');
-            arr.push(_deserializer(
-                &mut buf,
-                dtype.clone(),
-                guide.as_ref(),
-                allow_extra_fields_in_struct,
-            )?);
-            buf.clear();
-            buf.push(b'[');
-        }
+    // Each row is parsed on its own, so that the end of a row is also the end of its value.
+    let parse_err = |e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into());
+    let mut buffers = Buffers::default();
+    let mut tape = Tape(Vec::new());
+    let mut values = Vec::with_capacity(row_ends.len());
+    let mut rest = buf.as_mut_slice();
+    let mut row_start = 0;
+    for row_end in row_ends {
+        let (row, tail) = std::mem::take(&mut rest).split_at_mut(row_end - row_start);
+        rest = tail;
+        row_start = row_end;
+        simd_json::fill_tape(row, &mut buffers, &mut tape).map_err(parse_err)?;
+        let value = match &guide {
+            Some(guide) => tape_to_value(&tape, guide, false)?,
+            None => tape_to_default_value(&tape),
+        };
+        values.push(value);
     }
-    if buf.len() > 1 {
-        let _ = buf.pop();
-    }
-    buf.push(b']');
 
-    if arr.is_empty() {
-        _deserializer(
-            &mut buf,
-            dtype,
-            guide.as_ref(),
-            allow_extra_fields_in_struct,
-        )
-    } else {
-        arr.push(_deserializer(
-            &mut buf,
-            dtype,
-            guide.as_ref(),
-            allow_extra_fields_in_struct,
-        )?);
-        concatenate_unchecked(&arr)
-    }
+    super::super::json::deserialize::_deserialize(&values, dtype, allow_extra_fields_in_struct)
 }

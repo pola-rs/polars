@@ -2664,6 +2664,22 @@ def test_json_decode_categorical_enum(dtype: pl.DataType) -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (["1,2", "3"], pl.Int64),
+        (["[1],[2", "3]"], pl.List(pl.Int64)),
+        (['{"a":1},{"b":2}', '{"c":3}'], pl.Map(pl.String, pl.Int64)),
+        ([*(f"[{v}]" for v in range(100)), "[1],[2", "3]"], None),
+    ],
+)
+def test_json_decode_invalid_rows_28552(
+    values: list[str], dtype: pl.DataType | None
+) -> None:
+    with pytest.raises(ComputeError, match="error deserializing JSON"):
+        pl.Series(values).str.json_decode(dtype)
+
+
 def test_str_split_regex() -> None:
     df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
 
