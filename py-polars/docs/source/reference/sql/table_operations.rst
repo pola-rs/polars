@@ -12,7 +12,7 @@ Table Operations
    * - :ref:`CALL <call>`
      - Run a maintenance procedure on a table in an attached catalog.
    * - :ref:`COPY <copy>`
-     - Write the result of a query, or a table, to a file.
+     - Write the result of a query, or a table, to a file, or add the rows of a file to a table.
    * - :ref:`CREATE MACRO <create_macro>`
      - Create a named expression or query with parameters.
    * - :ref:`CREATE SCHEMA <create_schema>`
@@ -142,7 +142,7 @@ Column names are case-sensitive and name top-level columns. ``SET PARTITIONED BY
 
 CALL
 ----
-Run a maintenance procedure on a table of a catalog attached with
+Run a procedure on a table of a catalog attached with
 :meth:`SQLContext.register_catalog`. A ``CALL`` returns a result row.
 
 .. code-block:: sql
@@ -155,6 +155,73 @@ Run a maintenance procedure on a table of a catalog attached with
   or ``array('a', 'b')``.
 * The ``table`` argument is a string with the table's name in that catalog: ``'ns.t'``, or
   ``'t'`` in the catalog's default namespace. It may start with the catalog's name.
+
+**add_files**
+
+Adds existing Parquet files to a table in one commit, as an ``append`` snapshot. The files
+are not copied: the table refers to them where they are, and from then on owns them.
+Snapshot expiry, ``DROP TABLE ... PURGE`` and rewrites that replace them can delete them.
+Only the files' footers are read. To copy the rows instead, use
+``INSERT INTO <table> SELECT * FROM read_parquet('<files>')``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 60
+
+   * - Argument
+     - Description
+   * - ``table``
+     - The table. Required.
+   * - ``source_table``
+     - ``'parquet.`<path>`'``: a folder, or one file. Required. Files and folders whose
+       names start with ``_`` or ``.`` are skipped, except ``_col=value`` folders. A path
+       without a scheme is a local path, made absolute. ``?`` and ``#`` are not supported
+       in the path.
+   * - ``partition_filter``
+     - Not supported yet.
+   * - ``check_duplicate_files``
+     - ``TRUE`` refuses files the table already refers to. Default: ``TRUE``.
+   * - ``parallelism``
+     - Accepted. Has no effect.
+
+A file's partition value is never guessed:
+
+* Files directly in the folder: the file's column statistics must prove one value per
+  partition field, or that the column is NULL in every row. A file whose statistics are
+  missing, that mixes NULL with values, or whose partition column is a floating-point
+  column, is refused.
+* Files in ``col=value`` folders, as written for Hive tables: the folders give the value,
+  for a table partitioned by those columns as they are (identity). Values are strings,
+  integers, booleans, dates (``2024-06-01``), timestamps (``2024-06-01 10:00:00``, with
+  an offset such as ``+01:00`` for a timestamp with time zone) or decimals, written
+  exactly. ``__HIVE_DEFAULT_PARTITION__`` is NULL. If a file also holds
+  the column, its statistics must agree with the folder. A file may leave the column out
+  only if it is an optional top-level column.
+
+Files must not have Iceberg field ids, and their columns must fit the table's schema. The
+table's name mapping is set if it has none, as the files are read by column name. A name
+mapping the table has must map the files' columns as its schema does. Catalogs that do not
+allow that table property refuse the ``CALL``. It
+returns ``added_files_count`` and ``changed_partition_count``, the latter from the snapshot
+summary, NULL when the summary has none. A folder without files is refused, as a mistyped
+path on object storage lists as empty. Files are listed and read with the catalog's
+storage configuration for the table. They may be outside the table's location, but the
+catalog's credentials then may not reach them. Iceberg v3 tables are not supported yet.
+
+**Example:**
+
+.. code-block:: sql
+
+    -- Add the Parquet files in a landing folder to table `orders` in namespace `sales`
+    -- of catalog `lake`, without copying them.
+    CALL lake.system.add_files('sales.orders', 'parquet.`s3://bucket/landing/2024-06`')
+
+    -- A Hive-style folder: `.../region=eu/part-0.parquet`, for a table partitioned by
+    -- `region`.
+    CALL lake.system.add_files(
+        table => 'sales.orders',
+        source_table => 'parquet.`s3://bucket/hive/orders`'
+    )
 
 **rewrite_data_files**
 
@@ -271,6 +338,7 @@ COPY
 ----
 Write the result of a query, or a table, to a file. :meth:`SQLContext.execute` returns a
 ``LazyFrame`` that writes the file once it is collected; collecting it gives an empty frame.
+``COPY <table> FROM '<file>'`` adds the rows of a file to a table instead, see below.
 
 The format is the one that ``FORMAT`` names, or else the one of the file extension: ``csv``;
 ``parquet``; ``ipc``, ``arrow`` or ``feather``; ``ndjson`` or ``jsonl``. A CSV file takes the
@@ -280,9 +348,28 @@ The path can be a cloud URL, and a leading ``~`` is the home directory.
 The directory of the file must exist, and an existing file is replaced. If the query fails
 while it runs, a partial file can be left behind, also in the place of a file that existed.
 
-Only ``COPY ... TO '<file>'`` is supported. To load a file, read it in a query, as in
-``CREATE TABLE t AS SELECT * FROM 'data.csv'``. Writing files can be turned off with
-``SQLContext(allow_file_writes=False)``.
+Writing files can be turned off with ``SQLContext(allow_file_writes=False)``.
+
+``COPY <table> [(<column>, ...)] FROM '<file>'`` adds the rows of the file to a registered
+table, as :ref:`INSERT <insert>` does: the file's columns go by position into the listed
+columns, or into all of them, and the other columns get NULL. As in Postgres, the file is read
+at the ``COPY``, so a missing file or a value that does not fit fails there and leaves the
+table as it was. The format is chosen as for ``COPY ... TO``. The path names one file: a
+directory is refused, and a CSV path is not a glob.
+
+- A CSV file is read into the types of the columns, by position. ``HEADER`` is ``false``
+  unless given, as in Postgres; ``HEADER true`` skips the first line, whatever its names.
+  ``DELIMITER`` and ``QUOTE`` set the separator and the quote character.
+- In a CSV file, an unquoted empty field is NULL and a quoted ``""`` is an empty string. With
+  ``NULL '<marker>'``, the marker is NULL, and an empty field of a text column is an empty
+  string.
+- The CSV file is parsed as ``read_csv`` parses it, which accepts more than Postgres does: a
+  quoted marker is NULL too, an empty field of a column of another type is NULL, a row with
+  too few fields is filled with NULLs, a number too large for a ``REAL`` or ``DOUBLE`` column
+  is infinite, and booleans are ``true`` and ``false`` only.
+- A file of another format keeps its own column types, which convert as in ``INSERT``.
+- ``COPY ... FROM STDIN`` is not supported. Reading files can be turned off with
+  ``SQLContext(allow_file_reads=False)``.
 
 **Example:**
 
@@ -291,6 +378,8 @@ Only ``COPY ... TO '<file>'`` is supported. To load a file, read it in a query, 
     COPY (SELECT region, SUM(amount) AS total FROM sales GROUP BY region) TO 'totals.parquet'
     COPY sales (region, amount) TO 'sales.csv'
     COPY sales TO 'sales.txt' (FORMAT csv, DELIMITER '|', HEADER false)
+    COPY sales FROM 'sales.csv' (HEADER true)
+    COPY contacts (id, name, phone) FROM 'contacts.csv' (FORMAT csv, HEADER true, NULL '\N')
 
 .. _create_macro:
 

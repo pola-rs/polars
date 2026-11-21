@@ -32,7 +32,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable
+    from collections.abc import Callable, Collection, Iterable
 
     import pyarrow as pa
     import pyiceberg.catalog
@@ -348,9 +348,19 @@ def _raise_if_spec_changed(
 
 
 def _sink_transaction(
-    table: pyiceberg.table.Table, sink_uuid: str, spec_id: int | None
+    table: pyiceberg.table.Table,
+    sink_uuid: str,
+    spec_id: int | None,
+    *,
+    schema_id: int | None = None,
+    check: Callable[[TableMetadata], None] | None = None,
 ) -> Transaction:
-    """A transaction that commits only while `spec_id` (written for) is the default."""
+    """
+    A transaction that commits only while `spec_id` (written for) is the default.
+
+    With `schema_id`, also only while that schema is the current one. `check` is
+    called with the table's metadata before each retry, and may raise.
+    """
     from pyiceberg.exceptions import ValidationException
     from pyiceberg.table import Transaction
     from pyiceberg.table.update import AssertDefaultSpecId
@@ -365,6 +375,14 @@ def _sink_transaction(
             # pyiceberg would write the files' partition values under the new spec
             if spec_id is not None and self._table.metadata.default_spec_id != spec_id:
                 raise ValidationException(_SPEC_CHANGED)
+            if (
+                schema_id is not None
+                and self._table.metadata.current_schema_id != schema_id
+            ):
+                msg = "the table schema changed during the write"
+                raise ValidationException(msg)
+            if check is not None:
+                check(self._table.metadata)
             super()._rebuild_snapshot_updates()
 
     if spec_id is None:
