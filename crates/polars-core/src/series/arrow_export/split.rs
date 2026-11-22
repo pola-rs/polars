@@ -217,6 +217,16 @@ mod tests {
             .collect();
         let offsets: Vec<_> = maps.iter().map(|m| m.offsets().as_slice()).collect();
         assert_eq!(offsets, [&[0, 0, 0][..], &[0, 1]]);
+
+        // A one-row frame holds the row as a Scalar column.
+        let df = DataFrame::new_infer_height(vec![Column::from(s.slice(0..1))]).unwrap();
+        assert!(df.columns()[0].as_scalar_column().is_some());
+        let batches: Vec<_> = df
+            .try_iter_chunks(CompatLevel::newest(), false)
+            .collect::<PolarsResult<_>>()
+            .unwrap();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].arrays()[0].null_count(), 1);
     }
 
     #[cfg(feature = "dtype-array")]
@@ -269,8 +279,7 @@ mod tests {
         );
         let df = DataFrame::new_infer_height(vec![m.into_column(), i.into_column()]).unwrap();
 
-        let mut batches =
-            RecordBatchIter::new(Cow::Borrowed(&df), CompatLevel::newest(), false, None);
+        let mut batches = RecordBatchIter::new(Cow::Borrowed(&df), CompatLevel::newest(), false);
 
         let err = batches.next().unwrap().unwrap_err();
         assert!(matches!(err, PolarsError::ShapeMismatch(_)), "{err}");
@@ -398,7 +407,7 @@ mod tests {
         let scalar = scalar_map_column((0..1 << 20).collect(), 4096);
         let small = map_series(vec![map_chunk(&[1; 4096], None)]).with_name("small".into());
         let df = DataFrame::new_infer_height(vec![small.into_column(), scalar]).unwrap();
-        let batches = RecordBatchIter::new(Cow::Borrowed(&df), CompatLevel::newest(), false, None);
+        let batches = RecordBatchIter::new(Cow::Borrowed(&df), CompatLevel::newest(), false);
         let mut ends = vec![];
         let mut start = 0;
         while start < df.height() {

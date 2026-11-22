@@ -2185,21 +2185,17 @@ impl DataFrame {
         compat_level: CompatLevel,
         parallel: bool,
     ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + '_ {
-        RecordBatchIterWrap::new(Cow::Borrowed(self), compat_level, parallel, None)
+        RecordBatchIterWrap::new(Cow::Borrowed(self), compat_level, parallel)
     }
 
     /// Like [`DataFrame::try_iter_chunks`], but the iterator owns the frame, for consumers that
     /// outlive it, such as an arrow C stream.
-    ///
-    /// `schema` must be the arrow schema of this frame at `compat_level`; a stream of many
-    /// frames builds it once.
     pub fn into_try_iter_chunks(
         self,
-        schema: ArrowSchemaRef,
         compat_level: CompatLevel,
         parallel: bool,
     ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + 'static {
-        RecordBatchIterWrap::new(Cow::Owned(self), compat_level, parallel, Some(schema))
+        RecordBatchIterWrap::new(Cow::Owned(self), compat_level, parallel)
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches as physical values.
@@ -2796,12 +2792,7 @@ fn column_to_arrow(
 
 impl<'a> RecordBatchIter<'a> {
     /// See [`DataFrame::try_iter_chunks`], for a `df` with at least one column.
-    pub(crate) fn new(
-        df: Cow<'a, DataFrame>,
-        compat_level: CompatLevel,
-        parallel: bool,
-        schema: Option<ArrowSchemaRef>,
-    ) -> Self {
+    pub(crate) fn new(df: Cow<'a, DataFrame>, compat_level: CompatLevel, parallel: bool) -> Self {
         // Only some columns do work to export: strings and binaries are copied at the oldest
         // compat level, categoricals remap their keys and dictionary columns materialize.
         let must_convert = compat_level.0 == 0;
@@ -2814,15 +2805,12 @@ impl<'a> RecordBatchIter<'a> {
                     || c.as_dictionary_column().is_some()
             });
 
-        let schema = schema.unwrap_or_else(|| {
-            Arc::new(
-                df.columns()
-                    .iter()
-                    .map(|c| c.field().to_arrow(compat_level))
-                    .collect(),
-            )
-        });
-        debug_assert_eq!(schema.len(), df.width());
+        let schema: ArrowSchemaRef = Arc::new(
+            df.columns()
+                .iter()
+                .map(|c| c.field().to_arrow(compat_level))
+                .collect(),
+        );
         let map_columns = df
             .columns()
             .iter()
@@ -2909,17 +2897,20 @@ impl<'a> RecordBatchIter<'a> {
         let arrays = self.per_column(split.chunk.width(), |i| match &split.converted[i] {
             Some(arr) => Ok(arr.sliced(range.start, length)),
             // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
-            None => match split.chunk.columns()[i].as_series() {
-                Some(s) => s.slice(range.clone()).try_piece_to_arrow(
+            None => {
+                let c = &split.chunk.columns()[i];
+                let piece = match c.as_series() {
+                    // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
+                    Some(s) => s.slice(range.clone()),
+                    None => {
+                        let s = c.slice(range.clone()).take_materialized_series();
+                        if s.n_chunks() > 1 { s.rechunk() } else { s }
+                    },
+                };
+                piece.try_piece_to_arrow(
                     self.schema.get_at_index(i).unwrap().1.dtype(),
                     self.compat_level,
-                ),
-                None => column_to_arrow(
-                    &split.chunk.columns()[i],
-                    0,
-                    range.clone(),
-                    self.compat_level,
-                ),
+                )
             },
         })?;
         Ok(RecordBatch::new(length, self.schema.clone(), arrays))
@@ -3057,19 +3048,14 @@ pub enum RecordBatchIterWrap<'a> {
 }
 
 impl<'a> RecordBatchIterWrap<'a> {
-    fn new(
-        df: Cow<'a, DataFrame>,
-        compat_level: CompatLevel,
-        parallel: bool,
-        schema: Option<ArrowSchemaRef>,
-    ) -> Self {
+    fn new(df: Cow<'a, DataFrame>, compat_level: CompatLevel, parallel: bool) -> Self {
         debug_assert!(!df.should_rechunk(), "expected equal chunks");
 
         if df.width() == 0 {
             return Self::new_zero_width(df.height());
         }
 
-        Self::Batches(RecordBatchIter::new(df, compat_level, parallel, schema))
+        Self::Batches(RecordBatchIter::new(df, compat_level, parallel))
     }
 
     fn new_zero_width(height: usize) -> Self {
