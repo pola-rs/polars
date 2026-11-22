@@ -120,25 +120,29 @@ impl DataFrame {
     /// The columns may be chunked differently, and nothing is rechunked: a frame that may
     /// overflow is first cut at the chunk boundaries of its MAP columns, which can give more
     /// slices than needed.
-    pub fn split_for_arrow_export<'a>(
-        self,
-        arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
-    ) -> UnitVec<DataFrame> {
+    pub fn split_for_arrow_export<'a, I>(self, arrow_dtypes: I) -> UnitVec<DataFrame>
+    where
+        I: IntoIterator<Item = &'a ArrowDataType>,
+        I::IntoIter: Clone,
+    {
+        let arrow_dtypes = arrow_dtypes.into_iter();
         let height = self.height();
-        // Only a Polars Map exports to an arrow MAP. Checked before any row is read, as an empty
-        // Scalar column has none.
-        if height == 0 || !self.columns().iter().any(|c| c.dtype().contains_map()) {
+        // Before any row is read, as an empty Scalar column has none.
+        if height == 0 || !arrow_dtypes.clone().any(contains_arrow_map) {
             return unitvec![self];
         }
-        let dtypes: Vec<_> = arrow_dtypes.into_iter().collect();
-        assert_eq!(dtypes.len(), self.width(), "one arrow dtype per column");
+        assert_eq!(
+            arrow_dtypes.clone().count(),
+            self.width(),
+            "one arrow dtype per column"
+        );
         // Each MAP column, with the one row it repeats if it is a Scalar column.
         let map_columns: Vec<_> = self
             .columns()
             .iter()
-            .zip(&dtypes)
+            .zip(arrow_dtypes)
             .filter(|(_, dtype)| contains_arrow_map(dtype))
-            .map(|(c, dtype)| (c, *dtype, c.as_scalar_column().and_then(scalar_column_row)))
+            .map(|(c, dtype)| (c, dtype, c.as_scalar_column().and_then(scalar_column_row)))
             .collect();
 
         // The spans of all chunks added up bound every MAP of the frame.

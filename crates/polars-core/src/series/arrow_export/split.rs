@@ -447,6 +447,27 @@ mod tests {
         }
     }
 
+    /// A Parquet sink can be given an arrow MAP schema for a Polars `List(Struct)` column.
+    #[test]
+    fn split_for_arrow_export_follows_the_given_arrow_dtypes() {
+        let row = 1i64 << 30;
+        let storage_dtype = map_dtype().map_storage_dtype().unwrap();
+        let s = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                "l".into(),
+                vec![map_chunk(&[row, row], None)],
+                &storage_dtype,
+            )
+        };
+        let df = DataFrame::new_infer_height(vec![s.into_column()]).unwrap();
+        let arrow_dtype = map_dtype().to_arrow(CompatLevel::newest());
+
+        let pieces = df.split_for_arrow_export([&arrow_dtype]);
+
+        let heights: Vec<_> = pieces.iter().map(|p| p.height()).collect();
+        assert_eq!(heights, [1, 1]);
+    }
+
     #[test]
     fn split_for_arrow_export_bounds_a_scalar_map_by_the_height() {
         // One row of 2^20 entries fits; 4096 of them do not.

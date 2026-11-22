@@ -254,8 +254,10 @@ impl RowGroupEncoder {
                 task_metrics.as_deref(),
                 async move {
                     let (df, morsel_permit) = morsel.into_inner();
-                    let pieces =
-                        df.split_for_arrow_export(arrow_schema.iter_values().map(|f| f.dtype()));
+                    let pieces = df.split_for_arrow_export(
+                        (0..arrow_schema.len())
+                            .map(|i| arrow_schema.get_at_index(i).unwrap().1.dtype()),
+                    );
 
                     let mut row_groups = UnitVec::with_capacity(pieces.len());
                     for df in pieces {
