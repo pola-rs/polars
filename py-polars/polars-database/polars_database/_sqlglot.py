@@ -119,6 +119,11 @@ def _literal(v: Any, dialect: str | None) -> Any:
     if kind == "Int":
         return _number(str(int(x)))
     if kind == "Float":
+        if dialect == "sqlite":
+            # SQLite parses the shortest digits of some values to the next float; all 17
+            # are exact where it has `long double` (`sqlite_floats_exact`)
+            text = format(float(x), ".17g")
+            return _number(text if "." in text or "e" in text else f"{text}.0")
         return _number(repr(float(x)))
     if kind == "Decimal":
         if dialect == "clickhouse":
@@ -884,6 +889,22 @@ def _is_aggregate_query(select: Any) -> bool:
     return False
 
 
+def _qualified_key(column: Any) -> tuple[str, ...]:
+    """
+    A qualified column's parts (catalog, schema, table, name), each folded to lower case
+    unless quoted (`s1.t.id` is not `s2.t.id`, nor `"T".id` `"t".id`, nor `"a.b".x`
+    `a.b.x`).
+    """
+    parts = []
+    for key in ("catalog", "db", "table", "this"):
+        part = column.args.get(key)
+        if part is not None:
+            parts.append(
+                part.name if getattr(part, "quoted", False) else part.name.lower()
+            )
+    return tuple(parts)
+
+
 def _bare_column_in_group_by(select: Any) -> bool:
     """
     Whether a `GROUP BY` query (or an aggregate query without one) selects (or filters
@@ -894,7 +915,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
     if group is None and not _is_aggregate_query(select):
         return False
     projections = select.expressions
-    grouped: set[str] = set()
+    grouped: set[str | tuple[str, ...]] = set()
     # grouped columns by name, qualified ones (`a.id`) also by table: `b.id` isn't
     # grouped by `GROUP BY a.id`
     grouped_names: set[str] = set()
@@ -913,7 +934,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
                     # `GROUP BY k` for `g AS k` (or `t.g AS k`) groups `g`
                     grouped_names.add(named.name.lower())
                     if named.table:
-                        grouped.add(f"{named.table}.{named.name}".lower())
+                        grouped.add(_qualified_key(named))
                     else:
                         grouped_unqualified.add(named.name.lower())
         if isinstance(node, exp.Literal) and node.is_int:
@@ -925,7 +946,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
         if isinstance(node, exp.Column):
             grouped_names.add(node.name.lower())
             if node.table:
-                grouped.add(f"{node.table}.{node.name}".lower())
+                grouped.add(_qualified_key(node))
             else:
                 grouped_unqualified.add(node.name.lower())
         elif isinstance(node, exp.Var) and node.name.upper() == "ALL":
@@ -937,10 +958,7 @@ def _bare_column_in_group_by(select: Any) -> bool:
     def column_is_bare(node: Any, is_having: bool) -> bool:
         name = node.name.lower()
         if node.table:
-            is_grouped = (
-                f"{node.table}.{node.name}".lower() in grouped
-                or name in grouped_unqualified
-            )
+            is_grouped = _qualified_key(node) in grouped or name in grouped_unqualified
         else:
             is_grouped = name in grouped_names
         return not is_grouped and not (is_having and name in aliases)
@@ -1070,20 +1088,41 @@ def _top_level_order_by_without_limit(stmt: Any) -> bool:
         stmt = stmt.this
 
 
-def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
+def _outer_order_by(
+    stmt: Any,
+    dialect: str | None,
+    star_columns: list[str] | None = None,
+    star_ordinals: bool = True,
+) -> str | None:
     """
     The query's top-level `ORDER BY` (without the keyword) on its output columns,
     for a wrapper that repeats it outside; `None` if there is none, or a key is not an
     output column (a selected column, its alias, an expression selected as it is, or its
-    position) of an unambiguous, star-free select list.
+    position) of an unambiguous select list. A select list of a lone `*` (or `t.*`) is
+    the planned columns `star_columns`, where given; any other star is not expanded. A
+    position in it needs `star_ordinals`: the columns are the database's own, in its
+    order
+    (not a user's `schema=`).
     """
     while not stmt.args.get("order"):
         if not isinstance(stmt, (exp.Subquery, exp.Paren)):
             return None
         stmt = stmt.this
     selects = stmt.selects
-    if not selects or any(isinstance(s, exp.Star) or s.is_star for s in selects):
+    if not selects:
         return None
+    expanded = False
+    if any(isinstance(s, exp.Star) or s.is_star for s in selects):
+        if (
+            star_columns is None
+            or len(selects) != 1
+            or isinstance(stmt, exp.SetOperation)
+        ):
+            return None
+        selects = [exp.column(c, quoted=True) for c in star_columns]
+        expanded = True
+        if not selects:
+            return None
     names = [s.alias_or_name for s in selects]
     # (the servers that need this compare column names without regard to case)
     lowered = [n.lower() for n in names]
@@ -1103,11 +1142,14 @@ def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
                 ordinal = int(key.name)
             except ValueError:
                 return None
-            if 1 <= ordinal <= len(names):
+            if (star_ordinals or not expanded) and 1 <= ordinal <= len(names):
                 name = names[ordinal - 1]
         elif (
             isinstance(key, exp.Column)
-            and not key.table
+            # (`t.id` of `SELECT * FROM t`: the one table's column)
+            and (
+                not key.table or (expanded and key.table.lower() == _single_table(stmt))
+            )
             and key.name.lower() in lowered
         ):
             # an alias, or the selected column of that name
@@ -1132,6 +1174,17 @@ def _outer_order_by(stmt: Any, dialect: str | None) -> str | None:
         )
         keys.append(_escaped_identifiers(ordered, dialect).sql(dialect=dialect))
     return ", ".join(keys)
+
+
+def _single_table(stmt: Any) -> str | None:
+    """
+    The lower-cased name (or alias) of the one table a query reads from; `None` for a
+    join or another source (a subquery, a parenthesised join).
+    """
+    from_ = stmt.args.get("from_", stmt.args.get("from"))
+    if from_ is None or stmt.args.get("joins") or not isinstance(from_.this, exp.Table):
+        return None
+    return str(from_.this.alias_or_name).lower()
 
 
 def _nested_queries(stmt: Any) -> bool:
@@ -1409,6 +1462,47 @@ def _volatile_columns(stmt: Any, calls: list[Any]) -> list[str] | None:
     return columns
 
 
+# ClickHouse settings that change how a query runs, not what it returns (those with an
+# `*_overflow_mode` of `any` or `break`, `max_rows_to_*` limits, `max_execution_time`
+# under `timeout_overflow_mode = 'break'` and the like cut or change the result)
+_HARMLESS_SETTINGS = frozenset(
+    {
+        "max_threads",
+        "max_block_size",
+        "max_memory_usage",
+        "max_bytes_before_external_group_by",
+        "max_bytes_before_external_sort",
+        "log_comment",
+    }
+)
+
+
+def _unsafe_settings(node: Any) -> bool:
+    """Whether a query's `SETTINGS` clause has a setting outside the harmless ones."""
+    settings = node.args.get("settings")
+    if not settings:
+        return False
+    return not all(
+        isinstance(s, exp.EQ)
+        and isinstance(s.this, (exp.Column, exp.Identifier, exp.Var))
+        and s.this.name.lower() in _HARMLESS_SETTINGS
+        for s in settings
+    )
+
+
+def _any_unsafe_settings(stmt: Any) -> bool:
+    return any(_unsafe_settings(q) for q in stmt.find_all(exp.Query))
+
+
+def _positional_join(stmt: Any) -> bool:
+    """Whether a join pairs rows by their place (`PASTE`, `POSITIONAL`)."""
+    return any(
+        str(j.args.get("method") or "").upper() == "POSITIONAL"
+        or str(j.args.get("kind") or "").upper() == "PASTE"
+        for j in stmt.find_all(exp.Join)
+    )
+
+
 def _no_facts() -> dict[str, Any]:
     """The facts of a query that doesn't parse."""
     return {
@@ -1421,6 +1515,7 @@ def _no_facts() -> dict[str, Any]:
         "read_only": False,
         "repeatable": False,
         "top_level_limit": False,
+        "with_ties": False,
         "nested_queries": False,
         "side_effects": False,
         "side_effects_outside_rows": False,
@@ -1428,6 +1523,8 @@ def _no_facts() -> dict[str, Any]:
         "all_columns_volatile": False,
         "unknown_functions": [],
         "known_functions": [],
+        "positional_join": False,
+        "unsafe_settings": False,
         "tables": [],
         "body": None,
     }
@@ -1530,6 +1627,111 @@ def _unparsed_facts(
     return facts
 
 
+def outer_order_by(
+    sql: str,
+    dialect: str | None,
+    columns: list[str],
+    star_ordinals: bool = True,
+) -> str | None:
+    """
+    The query's `ORDER BY` on its output columns (see `_outer_order_by`), where a
+    `SELECT *` has the planned `columns`; `None` if it can't be kept that way.
+    """
+    try:
+        statements, _ = _parse_query(_without_lambda_parentheses(sql, dialect), dialect)
+    except sqlglot.errors.SqlglotError:
+        return None
+    if len(statements) != 1 or not isinstance(statements[0], exp.Query):
+        return None
+    return _outer_order_by(statements[0], dialect, columns, star_ordinals)
+
+
+# SQL Server's reserved keywords ("Reserved Keywords (Transact-SQL)"). It rejects one as
+# an unquoted alias, so a query that has one as an alias isn't valid to it as
+# written: but it runs statements with no `;` between them, and sqlglot parses
+# `SELECT … FROM c EXEC('…')` as `c`'s alias `EXEC`. Such a query isn't read only.
+_TSQL_RESERVED = frozenset(
+    {
+        "ADD", "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "AUTHORIZATION", "BACKUP",
+        "BEGIN", "BETWEEN", "BREAK", "BROWSE", "BULK", "BY", "CASCADE", "CASE", "CHECK",
+        "CHECKPOINT", "CLOSE", "CLUSTERED", "COALESCE", "COLLATE", "COLUMN", "COMMIT",
+        "COMPUTE", "CONSTRAINT", "CONTAINS", "CONTAINSTABLE", "CONTINUE", "CONVERT",
+        "CREATE", "CROSS", "CURRENT", "CURRENT_DATE", "CURRENT_TIME",
+        "CURRENT_TIMESTAMP", "CURRENT_USER", "CURSOR", "DATABASE", "DBCC", "DEALLOCATE",
+        "DECLARE", "DEFAULT", "DELETE", "DENY", "DESC", "DISK", "DISTINCT",
+        "DISTRIBUTED", "DOUBLE", "DROP", "DUMP", "ELSE", "END", "ERRLVL", "ESCAPE",
+        "EXCEPT", "EXEC", "EXECUTE", "EXISTS", "EXIT", "EXTERNAL", "FETCH", "FILE",
+        "FILLFACTOR", "FOR", "FOREIGN", "FREETEXT", "FREETEXTTABLE", "FROM", "FULL",
+        "FUNCTION", "GOTO", "GRANT", "GROUP", "HAVING", "HOLDLOCK", "IDENTITY",
+        "IDENTITY_INSERT", "IDENTITYCOL", "IF", "IN", "INDEX", "INNER", "INSERT",
+        "INTERSECT", "INTO", "IS", "JOIN", "KEY", "KILL", "LEFT", "LIKE", "LINENO",
+        "LOAD", "MERGE", "NATIONAL", "NOCHECK", "NONCLUSTERED", "NOT", "NULL", "NULLIF",
+        "OF", "OFF", "OFFSETS", "ON", "OPEN", "OPENDATASOURCE", "OPENQUERY",
+        "OPENROWSET", "OPENXML", "OPTION", "OR", "ORDER", "OUTER", "OVER", "PERCENT",
+        "PIVOT", "PLAN", "PRECISION", "PRIMARY", "PRINT", "PROC", "PROCEDURE", "PUBLIC",
+        "RAISERROR", "READ", "READTEXT", "RECONFIGURE", "REFERENCES", "REPLICATION",
+        "RESTORE", "RESTRICT", "RETURN", "REVERT", "REVOKE", "RIGHT", "ROLLBACK",
+        "ROWCOUNT", "ROWGUIDCOL", "RULE", "SAVE", "SCHEMA", "SECURITYAUDIT", "SELECT",
+        "SEMANTICKEYPHRASETABLE", "SEMANTICSIMILARITYDETAILSTABLE",
+        "SEMANTICSIMILARITYTABLE", "SESSION_USER", "SET", "SETUSER", "SHUTDOWN", "SOME",
+        "STATISTICS", "SYSTEM_USER", "TABLE", "TABLESAMPLE", "TEXTSIZE", "THEN", "TO",
+        "TOP", "TRAN", "TRANSACTION", "TRIGGER", "TRUNCATE", "TRY_CONVERT", "TSEQUAL",
+        "UNION", "UNIQUE", "UNPIVOT", "UPDATE", "UPDATETEXT", "USE", "USER", "VALUES",
+        "VARYING", "VIEW", "WAITFOR", "WHEN", "WHERE", "WHILE", "WITH", "WITHIN",
+        "WRITETEXT",
+    }
+)  # fmt: skip
+
+
+def _hides_statement(
+    statements: list[Any], tokens: list[Any], dialect: str | None
+) -> bool:
+    """
+    Whether an alias may be another statement's start (SQL Server only).
+
+    An unquoted alias, bare or after `AS`, that is a reserved keyword (`c EXEC(…)`,
+    `c COMMIT`), or a bare alias with a column list after a table name (`c EXEC([…])` is
+    `c` with the alias `EXEC` and the columns `[…]`; SQL Server has no such table alias,
+    where a derived table, `VALUES` or `APPLY` has `v(id, s)`). Fail closed: such a
+    query isn't read only, whatever the AST says.
+    """
+    if dialect != "tsql":
+        return False
+    by_start = {t.start: i for i, t in enumerate(tokens)}
+
+    def bare(ident: Any) -> bool:
+        i = by_start.get(ident.meta.get("start", -1)) if ident.meta else None
+        # (no position, or the token isn't the one the identifier was made of: unknown)
+        if i is None:
+            return True
+        return i == 0 or tokens[i - 1].token_type != sqlglot.TokenType.ALIAS
+
+    for stmt in statements:
+        for node in stmt.find_all(exp.TableAlias, exp.Alias):
+            alias = node.args.get("alias") if isinstance(node, exp.Alias) else node.this
+            names = [alias]
+            if isinstance(node, exp.TableAlias):
+                names += node.args.get("columns") or []
+            for ident in names:
+                if (
+                    isinstance(ident, exp.Identifier)
+                    and not ident.args.get("quoted")
+                    and ident.name.upper() in _TSQL_RESERVED
+                ):
+                    return True
+            if (
+                isinstance(alias, exp.Identifier)
+                and isinstance(node, exp.TableAlias)
+                and node.args.get("columns")
+                # (a derived table, `VALUES` or `APPLY` takes a bare alias and columns)
+                and isinstance(node.parent, exp.Table)
+                and isinstance(node.parent.this, exp.Identifier)
+                and bare(alias)
+            ):
+                return True
+    return False
+
+
 def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     """Facts about a user query that decide whether it can be wrapped."""
     facts = _no_facts()
@@ -1560,7 +1762,11 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
             # only what the tokens say is the same query
             if sqlglot.parse(body, read=dialect) == statements:
                 facts["body"] = original[: tokens[-1].end + 1]
-    facts["read_only"] = len(statements) == 1 and _is_read_only(statements[0])
+    facts["read_only"] = (
+        len(statements) == 1
+        and _is_read_only(statements[0])
+        and not _hides_statement(statements, tokens, dialect)
+    )
     if len(statements) != 1 or not isinstance(statements[0], exp.Query):
         return facts
 
@@ -1574,6 +1780,12 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     # what can't take another `LIMIT` after it
     facts["top_level_limit"] = any(
         stmt.args.get(k) for k in ("limit", "fetch", "offset", "locks")
+    )
+    # `FETCH FIRST n ROWS WITH TIES`, `TOP n WITH TIES`: a LIMIT around it may be pushed
+    # into it by the server (Trino), past the ties
+    facts["with_ties"] = any(
+        isinstance(node, exp.LimitOptions) and node.args.get("with_ties")
+        for node in stmt.walk()
     )
     facts["nested_queries"] = _nested_queries(stmt)
     relations = _relations(stmt)
@@ -1606,6 +1818,8 @@ def inspect_query(sql: str, dialect: str | None) -> dict[str, Any]:
     # user's function may be (`random()` inside), and each partition would run it again.
     facts["unknown_functions"] = _unknown_functions(stmt, dialect)
     facts["known_functions"] = _known_functions(stmt, tokens, dialect)
+    facts["positional_join"] = _positional_join(stmt)
+    facts["unsafe_settings"] = _any_unsafe_settings(stmt)
     # A view among them may call a volatile function (`catalog::view_definition`).
     facts["tables"] = _tables(stmt, dialect)
     # anywhere in the query: a nested LIMIT without a unique ORDER BY picks rows too

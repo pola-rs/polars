@@ -582,7 +582,9 @@ def test_dictionary_codes_predicate_keeping_few_rows_does_not_keep_dictionary(
     tmp_path: Path, parallel: str
 ) -> None:
     # The dictionary pays off for the chunk's rows, but not for the one row the
-    # predicate on the column keeps: that row is copied out of the dictionary.
+    # predicate on the column keeps: that row is copied out of the dictionary. The
+    # predicate is not an equality, which would become a constant and never decode the
+    # column.
     once = "only-once" + "x" * 100
     s = [once] + [f"{i % 1000:04}" + "x" * 100 for i in range(1, 100_000)]
     df = pl.DataFrame({"a": range(len(s)), "s": s})
@@ -590,7 +592,7 @@ def test_dictionary_codes_predicate_keeping_few_rows_does_not_keep_dictionary(
 
     out = (
         pl.scan_parquet(path, parallel=parallel)  # type: ignore[arg-type]
-        .filter(pl.col("s") == once)
+        .filter(pl.col("s").str.starts_with("only-once"))
         .collect()
     )
     assert_frame_equal(out, df.head(1))
@@ -607,3 +609,64 @@ def test_dictionary_codes_set_sorted_is_kept(tmp_path: Path, engine: str) -> Non
     )
     assert_frame_equal(out, df)
     assert out["s"].flags["SORTED_ASC"]
+
+
+def test_dictionary_codes_n_chunks_counts_codes(tmp_path: Path) -> None:
+    df = pl.DataFrame({"k": [LONG[i % 7] for i in range(4000)]})
+    path = _write(df, tmp_path / "f.parquet", row_group_size=4000)
+    batches = list(pl.scan_parquet(path).collect_batches(chunk_size=1000))
+    out = pl.concat(batches, rechunk=False)
+    assert out.n_chunks("all") == [4]
+    assert out.n_chunks() == 4
+    assert out.rows() == df.rows()
+    assert out.rechunk().n_chunks() == 1
+
+
+@pytest.mark.parametrize("include_key", [True, False])
+def test_dictionary_codes_partitioned_sink_across_row_groups(
+    tmp_path: Path, include_key: bool
+) -> None:
+    n = 12_000
+    idx = pl.int_range(n, eager=True)
+    # Each row group sees a different mix of values, so partition buffers see other
+    # dictionaries.
+    s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(
+        ((idx.hash(1) % 3_000).cast(pl.Int64) + idx // 3_000) % 3_000
+    )
+    df = pl.DataFrame({"p": idx.hash(2) % 7, "k": s, "v": idx})
+    path = _write(df, tmp_path / "f.parquet", row_group_size=3_000)
+    out_dir = tmp_path / "out"
+    pl.scan_parquet(path).sink_parquet(
+        pl.PartitionBy(out_dir, key="p", include_key=include_key),
+        mkdir=True,
+    )
+    parts = []
+    for f in sorted(out_dir.glob("**/*.parquet")):
+        part = pl.read_parquet(f, hive_partitioning=False)
+        if not include_key:
+            key = int(f.parent.name.split("=")[1])
+            part = part.with_columns(p=pl.lit(key, dtype=df.schema["p"]))
+        parts.append(part.select(df.columns))
+    assert_frame_equal(pl.concat(parts).sort("v"), df.sort("v"))
+
+
+def test_dictionary_codes_file_size_partitioned_sink_across_row_groups(
+    tmp_path: Path,
+) -> None:
+    # No keys: dictionary columns reach the partition buffer as they are, and each row
+    # group brings a dictionary with other values (appended after the buffer's first).
+    n = 12_000
+    idx = pl.int_range(n, eager=True)
+    s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(
+        ((idx.hash(1) % 3_000).cast(pl.Int64) + idx // 3_000 * 1_000) % 3_000
+    )
+    df = pl.DataFrame({"k": s, "v": idx})
+    path = _write(df, tmp_path / "f.parquet", row_group_size=3_000)
+    out_dir = tmp_path / "out"
+    pl.scan_parquet(path).sink_parquet(
+        pl.PartitionBy(out_dir, max_rows_per_file=5_000), mkdir=True
+    )
+    files = sorted(out_dir.glob("**/*.parquet"))
+    assert len(files) == 3
+    out = pl.concat([pl.read_parquet(f) for f in files])
+    assert_frame_equal(out, df)

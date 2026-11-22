@@ -4,7 +4,7 @@
 These run when `POLARS_TEST_DATABRICKS_URI` is set (see `_databricks.py`, which also
 seeds the tables). Every query goes over the internet to a metered warehouse and takes
 seconds, so each test reads a handful of small tables. The generic matrix (every
-row, the predicate corpus, partitions, types) is in `test_scan_servers.py`; here are the
+row, the predicate corpus, types) is in `test_scan_servers.py`; here are the
 checks that only Databricks needs: its `TIMESTAMP` is a local-time-zone type
 (`TIMESTAMP_NTZ` is the naive one), `TIME`, collations in column types, views, and
 string literals.
@@ -12,6 +12,7 @@ string literals.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 from datetime import UTC, date, datetime, time
@@ -26,7 +27,7 @@ from polars.testing import assert_frame_equal
 from tests.unit.io.database._databricks import CHAR_VALUES, ENV, ensure_seeded
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
 pytest.importorskip("polars_database")
 pytest.importorskip("sqlglot")
@@ -195,34 +196,20 @@ def test_query_timestamp_columns_are_classified_by_the_result_type() -> None:
 # --- views ---------------------------------------------------------------------------
 
 
-def test_partitioning_a_view_over_rand_is_refused() -> None:
-    # each partition would call `rand()` again and get other rows
+def test_views_are_read_with_one_query() -> None:
     for source in ("rand_view", "SELECT * FROM rand_view"):
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="rand_view"):
-            _scan(source, partition_on="id", partition_num=4).collect()
-    # without an explicit partition column, one read
-    assert _scan("rand_view", partition_on=None).collect().height == 100
-
-
-def test_partitioning_a_view_of_constant_rows() -> None:
-    lf = _scan("plain_view", partition_on="id", partition_num=4)
-    assert "partitions: 4" in lf.explain()
-    out = lf.collect().sort("id")
+        lf = _scan(source)
+        assert "partitions: 1" in lf.explain()
+        assert lf.collect().height == 100
+    out = _scan("plain_view").collect().sort("id")
     assert out["id"].to_list() == list(range(1, 101))
     assert out["twice"].to_list() == list(range(2, 201, 2))
-
-
-def test_view_through_a_python_driver_is_inspected_too() -> None:
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="rand_view"):
-        _scan(
-            "rand_view", "databricks.sql", partition_on="id", partition_num=2
-        ).collect()
 
 
 def test_nested_view_resolves_in_its_creation_namespace() -> None:
     # `nested_plain_view` reads `plain_view` unqualified, as of the schema it was
     # created in: from a session in another schema it is still found (the view's own
-    # namespace is the context of its names, not the session's), so it is not "volatile"
+    # namespace is the context of its names, not the session's)
     from tests.unit.io.database._databricks import connect, parts
 
     assert URI is not None
@@ -234,65 +221,59 @@ def test_nested_view_resolves_in_its_creation_namespace() -> None:
 
     p = parts(URI)
     qualified = f"{p['catalog']}.{p['schema']}"
-    lf = pl.scan_database(
-        f"{qualified}.nested_plain_view", factory, partition_on="id", partition_num=4
-    )
-    assert "partitions: 4" in lf.explain()
+    lf = pl.scan_database(f"{qualified}.nested_plain_view", factory)
     assert lf.collect().height == 100
-    # a volatile view behind another is found through the same lookup
-    for name in ("nested_rand_view", "nested_rand_query"):
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="rand_view"):
-            pl.scan_database(
-                f"{qualified}.{name}", factory, partition_on="id", partition_num=4
-            ).collect()
-    # and from a session in the view's schema, unqualified
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="rand_view"):
-        _scan("nested_rand_view", partition_on="id", partition_num=4).collect()
 
 
-def test_user_table_functions_make_a_source_volatile() -> None:
-    # a SQL table function over `rand()`: each partition would call it again
-    from tests.unit.io.database._databricks import parts
-
-    assert URI is not None
-    p = parts(URI)
-    udtf = f"{p['catalog']}.{p['schema']}.rand_udtf"
-    for source in ("udtf_view", f"SELECT * FROM {udtf}()"):
-        lf = _scan(source, partition_on="id", partition_num=4)
-        with pytest.raises(pl.exceptions.InvalidOperationError, match="partitioned"):
-            lf.collect()
-
-
-def test_temporary_views_are_not_inspectable_and_shadow_tables() -> None:
+def test_temporary_views_shadow_tables() -> None:
     from tests.unit.io.database._databricks import connect, execute
 
     assert URI is not None
     ensure_seeded(URI)
     conn = connect(URI)
     try:
-        execute(
-            conn,
-            "CREATE OR REPLACE TEMP VIEW tmp_rand AS "
-            "SELECT id, rand() AS r FROM range(1, 101) AS t(id)",
-        )
         # a temporary view hides the table `orders` of its name on this connection
         execute(
             conn,
             "CREATE OR REPLACE TEMP VIEW orders AS "
             "SELECT id, rand() AS r FROM range(1, 101) AS t(id)",
         )
-        for name in ("tmp_rand", "orders", "system.session.tmp_rand"):
-            lf = pl.scan_database(name, conn, partition_on="id", partition_num=4)
-            with pytest.raises(
-                pl.exceptions.InvalidOperationError, match=r"tmp_rand|orders"
-            ):
-                lf.collect()
         # the shadowing view is what is read
         assert pl.scan_database("orders", conn).collect_schema().names() == ["id", "r"]
     finally:
         conn.close()
     # another connection sees the table
     assert _scan("orders").collect_schema().names()[:2] == ["id", "customer"]
+
+
+def test_view_with_schema_evolution_has_the_current_collation() -> None:
+    # the stored schema of a `WITH SCHEMA EVOLUTION` view is stale until something reads
+    # it; the server compares by the base column's current collation
+    from tests.unit.io.database._databricks import connect, execute
+
+    assert URI is not None
+    ensure_seeded(URI)
+    conn = connect(URI)
+    try:
+        for stmt in [
+            "DROP VIEW IF EXISTS collation_v",
+            "DROP TABLE IF EXISTS collation_t",
+            "CREATE TABLE collation_t (id INT, s STRING)",
+            "INSERT INTO collation_t VALUES (1,'abc'),(2,'ABC'),(3,'Abc'),(4,'abd'),(5,NULL)",
+            "CREATE VIEW collation_v WITH SCHEMA EVOLUTION AS SELECT * FROM collation_t",
+            "ALTER TABLE collation_t ALTER COLUMN s TYPE STRING COLLATE UTF8_LCASE",
+        ]:
+            execute(conn, stmt)
+        # the first scan, before anything reads the view
+        lf = pl.scan_database("collation_v", conn)
+        assert _ids(lf.filter(pl.col("s") == "abc").collect()) == [1]
+    finally:
+        for stmt in [
+            "DROP VIEW IF EXISTS collation_v",
+            "DROP TABLE IF EXISTS collation_t",
+        ]:
+            execute(conn, stmt)
+        conn.close()
 
 
 # --- strings -------------------------------------------------------------------------
@@ -491,6 +472,26 @@ def test_wide_decimals_are_exact(how: str) -> None:
     assert lf.filter(pl.col("x") > Decimal(WIDE)).collect().height == 0
 
 
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql", "factory"])
+def test_invalid_utf8_text_is_an_error_not_a_string(how: str) -> None:
+    """A STRING of other bytes would be a String that fails Arrow validation."""
+    sql = "SELECT CAST(unhex('FF') AS STRING) AS s"
+    if how == "adbc":
+        with pytest.raises(Exception, match=r"(?i)utf-?8"):
+            _scan(sql, how).collect().to_arrow().validate(full=True)
+    else:
+        # the connector's text is checked as it is read, also inside a map
+        for source in [sql, "SELECT map(1, CAST(unhex('FF') AS STRING)) AS m"]:
+            with pytest.raises(Exception, match="isn't valid UTF-8"):
+                _scan(source, how).collect()
+    # a BINARY of the same byte, and valid text, read
+    ok = _scan(
+        "SELECT unhex('FF') AS b, CAST(unhex('EFBFBD') AS STRING) AS s", how
+    ).collect()
+    assert ok["b"].to_list() == [b"\xff"]
+    assert ok["s"].to_list() == ["\ufffd"]
+
+
 def test_decimal_predicates_on_a_table() -> None:
     lf = _scan("edge_types")
     reference = _scan("edge_types", pushdown=False).collect()
@@ -509,7 +510,7 @@ def test_decimal_predicates_on_a_table() -> None:
     )
 
 
-# --- partitions ----------------------------------------------------------------------
+# --- reads ---------------------------------------------------------------------------
 
 
 def _orders_sums() -> tuple[int, int]:
@@ -524,48 +525,25 @@ def _orders_sums() -> tuple[int, int]:
     return int(count), int(total)
 
 
-@pytest.mark.parametrize(
-    ("how", "partition_on", "partition_num"),
-    [
-        ("adbc", "id", 1),
-        ("adbc", "id", 4),
-        ("adbc", "ordered_on", 4),
-        ("adbc", "amount", 3),
-        ("adbc", "price", 5),
-        ("adbc", "auto", None),
-        ("databricks.sql", "id", 4),
-    ],
-)
-def test_partitions_read_every_row_once(
-    how: str, partition_on: str, partition_num: int | None
-) -> None:
+@pytest.mark.parametrize("how", ["adbc", "databricks.sql"])
+@pytest.mark.parametrize("source", ["orders", "SELECT * FROM orders"])
+def test_every_row_is_read_once(how: str, source: str) -> None:
     # the counts are the server's own; only the checksums cross the link
     count, total = _orders_sums()
-    kwargs: dict[str, Any] = {"partition_on": partition_on}
-    if partition_num is not None:
-        kwargs["partition_num"] = partition_num
-    lf = _scan("orders", how, **kwargs)
-    if partition_num is not None:
-        assert f"partitions: {partition_num}" in lf.explain()
-    out = lf.select(
-        pl.len().alias("n"),
-        pl.col("id").n_unique().alias("u"),
-        pl.col("id").sum().alias("s"),
-    ).collect()
+    out = (
+        _scan(source, how)
+        .select(
+            pl.len().alias("n"),
+            pl.col("id").n_unique().alias("u"),
+            pl.col("id").sum().alias("s"),
+        )
+        .collect()
+    )
     assert out.row(0) == (count, count, total)
 
 
-def test_query_partitions_read_every_row_once() -> None:
-    count, total = _orders_sums()
-    lf = _scan("SELECT * FROM orders", partition_on="id", partition_num=4)
-    assert "partitions: 4" in lf.explain()
-    assert lf.select(pl.len(), pl.col("id").sum()).collect().row(0) == (count, total)
-
-
-def test_partitions_over_a_filter_and_the_null_range() -> None:
-    lf = _scan("orders", partition_on="id", partition_num=4).filter(
-        pl.col("customer").is_null()
-    )
+def test_filter_on_the_null_customers() -> None:
+    lf = _scan("orders").filter(pl.col("customer").is_null())
     nulls = lf.select(pl.len()).collect().item()
     assert nulls == len([i for i in range(1, 5001) if i % 7 == 0])
 
@@ -620,3 +598,114 @@ def test_the_token_is_not_in_the_plan() -> None:
     token = re.search(r"token:([^@]+)@", URI)
     assert token is not None
     assert token[1] not in _scan("edge").explain()
+
+
+# --- a SQLAlchemy Engine ------------------------------------------------------------
+
+
+def _engine(zone: str | None = None) -> Any:
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("databricks.sqlalchemy")
+    from tests.unit.io.database._databricks import parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    p = parts(URI)
+    connect_args: dict[str, Any] = {}
+    if zone is not None:
+        connect_args["session_configuration"] = {"timezone": zone}
+    return sqlalchemy.create_engine(
+        f"databricks://token:{p['token']}@{p['host']}?http_path={p['http_path']}"
+        f"&catalog={p['catalog']}&schema={p['schema']}",
+        connect_args=connect_args,
+    )
+
+
+def test_sqlalchemy_connection_reads_on_its_own_session() -> None:
+    # the Engine's pooled connection was dropped when the cursor was made (and went back
+    # into the pool while in use), and a Connection read on another pooled connection:
+    # its temporary view wasn't there
+    engine = _engine()
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                "CREATE OR REPLACE TEMPORARY VIEW r42_tmp AS SELECT 7 AS x"
+            )
+            lf = pl.scan_database("SELECT x FROM r42_tmp", conn, partition_on=None)
+            assert lf.collect()["x"].to_list() == [7]
+            # the Connection is still the user's, and open
+            assert conn.exec_driver_sql("SELECT x FROM r42_tmp").fetchall() == [(7,)]
+        pl.scan_database("SELECT 1 AS x", engine, partition_on=None).collect()
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+def test_engine_read_database_early_stop_gives_back_the_pooled_connection() -> None:
+    # a batch iterator dropped after one batch, or failing part-way, left the pooled
+    # connection checked out for good (a cycle through the driver's connection)
+    engine = _engine()
+    try:
+        for _ in range(2):
+            it = pl.read_database(
+                "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
+            )
+            next(iter(it))
+            del it
+            assert engine.pool.checkedout() == 0
+        it = pl.read_database(
+            "SELECT id FROM edge_zones", engine, iter_batches=True, batch_size=1
+        )
+        gen: Any = iter(it)
+        next(gen)
+        with pytest.raises(RuntimeError, match="boom"):
+            gen.throw(RuntimeError("boom"))
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+@contextlib.contextmanager
+def _scratch(setup: list[str]) -> Iterator[str]:
+    """
+    Run `setup` statements in the test schema and yield the qualified schema.
+
+    The objects are dropped by name afterwards (`DROP ... IF EXISTS` of each `CREATE`).
+    """
+    from tests.unit.io.database._databricks import connect, execute, parts
+
+    assert URI is not None
+    ensure_seeded(URI)
+    p = parts(URI)
+    schema = f"`{p['catalog']}`.`{p['schema']}`"
+    conn = connect(URI)
+    drops: list[str] = []
+    try:
+        for sql in setup:
+            sql = sql.format(schema=schema)
+            m = re.match(r"CREATE (?:OR REPLACE )?(TABLE|VIEW) ([^\s(]+)", sql, re.I)
+            assert m is not None, sql
+            execute(conn, sql)
+            drops.append(f"DROP {m[1]} IF EXISTS {m[2]}")
+        yield schema
+    finally:
+        for sql in reversed(drops):
+            execute(conn, sql)
+        conn.close()
+
+
+def test_a_view_with_columns_named_like_the_describe_headings() -> None:
+    # columns named `# Detailed Table Information` and `Type` must not be read as the
+    # view's details, which would make the view a table: a filter on its `rand()`
+    # column stays in Polars
+    setup = [
+        "CREATE OR REPLACE VIEW {schema}.vol_headings AS SELECT id, "
+        "rand() AS `# Detailed Table Information`, 'x' AS `Type` "
+        "FROM range(1, 201) AS t(id)"
+    ]
+    with _scratch(setup) as schema:
+        name = f"{schema}.vol_headings"
+        for source in (name, f"SELECT * FROM {name}"):
+            lf = _scan(source).filter(pl.col("# Detailed Table Information") < 0.5)
+            assert _filters(lf)[0] == 0
+        assert _scan(name).collect().height == 200

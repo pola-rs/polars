@@ -8,6 +8,19 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     method: QuantileMethod,
 }
 
+impl<T: NativeType + IsFloat + PartialOrd> QuantileWindow<'_, T> {
+    /// The number of non-null values in the window.
+    pub fn n_values(&self) -> usize {
+        self.sorted.len() - self.sorted.null_count
+    }
+
+    /// The non-null value at `rank` in ascending order, for `rank < self.n_values()`.
+    pub fn value_at_rank(&self, rank: usize) -> T {
+        // The nulls sort first.
+        self.sorted.get(rank + self.sorted.null_count).unwrap()
+    }
+}
+
 impl<
     T: NativeType
         + IsFloat

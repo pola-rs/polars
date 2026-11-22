@@ -9,6 +9,8 @@ pub struct ConversionOptimizer {
     /// (expression, top-level expression, schema index, is filter predicate if in a filter)
     scratch: Vec<(Node, Node, usize, bool)>,
     schemas: Vec<Schema>,
+    /// The top-level expressions in the scratch space.
+    roots: Vec<Node>,
 
     simplify: Option<SimplifyExprRule>,
     coerce: Option<TypeCoercionRule>,
@@ -75,6 +77,7 @@ impl ConversionOptimizer {
         ConversionOptimizer {
             scratch: Vec::with_capacity(8),
             schemas: Vec::new(),
+            roots: Vec::new(),
             simplify,
             coerce,
             check,
@@ -145,6 +148,13 @@ impl ConversionOptimizer {
         };
 
         self.schemas.clear();
+        self.roots.clear();
+        self.roots.extend(
+            self.scratch
+                .iter()
+                .filter(|(node, root, schema_idx, _)| node == root && *schema_idx == 0)
+                .map(|(_, root, _, _)| *root),
+        );
         while let Some((current_expr_node, root, schema_idx, is_filter_predicate)) =
             self.scratch.pop()
         {
@@ -243,6 +253,17 @@ impl ConversionOptimizer {
                 schema_idx,
                 is_filter_predicate: is_filter_predicate && passes_on_filter_predicate(expr),
             });
+        }
+
+        // After type coercion, as it can make an argument a scalar.
+        for &root in &self.roots {
+            ensure_scalar_arguments(root, expr_arena).map_err(|e| {
+                e.with_expr_context(
+                    ExprIRDisplay::display_node(root, expr_arena)
+                        .to_string()
+                        .into(),
+                )
+            })?;
         }
 
         Ok(())

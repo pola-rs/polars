@@ -123,7 +123,7 @@ fn interpolate<T: ToPrimitive>(
 
 /// Computes `quantile` of `n_nonnull` values, where `order_stats(ranks, out)` writes the values at
 /// the given ascending ranks of the sorted values to `out`.
-fn quantile_with<T: ToPrimitive + Copy + Default>(
+pub(crate) fn quantile_with<T: ToPrimitive + Copy + Default>(
     n_nonnull: usize,
     quantile: f64,
     method: QuantileMethod,

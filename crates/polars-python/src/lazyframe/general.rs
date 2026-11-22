@@ -1802,6 +1802,24 @@ impl Iterator for ArrowStreamIterator {
             match next? {
                 Err(err) => return Some(Err(err)),
                 Ok(mut df) => {
+                    // Dictionary columns materialize here: do it in parallel, as with codes off
+                    // the decoder did.
+                    if df
+                        .columns()
+                        .iter()
+                        .any(|c| c.as_dictionary_column().is_some())
+                    {
+                        polars_core::runtime::RAYON.install(|| {
+                            use rayon::prelude::*;
+                            // SAFETY: materializing keeps the names and dtypes.
+                            unsafe { df.columns_mut_retain_schema() }
+                                .par_iter_mut()
+                                .filter(|c| c.as_dictionary_column().is_some())
+                                .for_each(|c| {
+                                    c.into_materialized_series();
+                                });
+                        });
+                    }
                     df.rechunk_mut();
                     self.arrays = Some(frame_to_struct_arrays(df, self.dtype.clone()));
                 },

@@ -5,17 +5,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
-use polars_cli::{Args, Input, Printer, Script, exit_code, run};
+use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
 
 // The allocator of the Python runtime, so that both perform alike.
 #[global_allocator]
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
-/// The stack of the thread that runs the command: the usual size of a main thread on Linux.
-/// The main thread on Windows has 1 MiB, which a debug build of the engine overflows.
-const STACK_SIZE: usize = 8 * 1024 * 1024;
-
 fn main() -> ExitCode {
+    // Debug frames are large, as in the Python package.
+    #[cfg(debug_assertions)]
+    {
+        recursive::set_minimum_stack_size(1024 * 1024);
+        recursive::set_stack_allocation_size(1024 * 1024 * 16);
+    }
     let command = std::thread::Builder::new()
         .name("polars-cli".to_string())
         .stack_size(STACK_SIZE)
@@ -38,7 +40,8 @@ fn run_command() -> ExitCode {
         Err(error) => return report(error),
     };
     let format = args.format();
-    let read_only = args.read_only();
+    let read_only = args.read_only_origin();
+    let verbose = args.verbose();
     let on_terminal = io::stdout().is_terminal();
     // Checked before the script is read, which can wait for standard input.
     if format.is_one_file() && on_terminal {
@@ -47,21 +50,30 @@ fn run_command() -> ExitCode {
             format!("format '{format}' is binary; send the output to a file or a pipe"),
         ));
     }
-    let script = match read_script(args.input()) {
+    let input = args.input();
+    let source = input.name();
+    let script = match read_script(input) {
         Ok(script) => script,
         Err(error) => return report(error),
     };
-    if format.is_one_file() && script.len() != 1 {
+    // A script that cannot be split is reported as such when it runs.
+    if format.is_one_file() && script.can_be_split() && !script.ends_in_its_only_result() {
         return report(usage_error(
             ErrorKind::InvalidValue,
-            format!("format '{format}' writes one file, so it takes a script of one statement"),
+            format!(
+                "format '{format}' writes one file, so the last statement must be the only one \
+                 that returns rows"
+            ),
         ));
     }
 
     let interrupted = handle_interrupts();
     // Not locked: Polars and the panic hook write to these streams from other threads.
     let stdout = BufWriter::new(io::stdout());
-    let mut printer = Printer::new(stdout, io::stderr(), format).on_terminal(on_terminal);
+    let mut printer = Printer::new(stdout, io::stderr(), format)
+        .on_terminal(on_terminal)
+        .source(source)
+        .verbose(verbose);
     let code = run(&script, read_only, &mut printer);
     // An interrupt that arrived while the last result was printed stopped nothing.
     if code == exit_code::OK && interrupted.load(Ordering::SeqCst) {

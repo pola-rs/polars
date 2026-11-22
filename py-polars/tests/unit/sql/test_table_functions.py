@@ -95,6 +95,12 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
         ("a,b\nNA,1\n", "null_values => 'NA'", {"null_values": "NA"}),
         ("a,b\nNA,-\n", "null_values => ['NA', '-']", {"null_values": ["NA", "-"]}),
         ("a,b\nNA,NA\n", "null_values => {'a': 'NA'}", {"null_values": {"a": "NA"}}),
+        # an empty field is an empty string, and only the marker is NULL
+        (
+            "a,b\n,\\N\n",
+            "null_values => '\\N', empty_string_is_null => false",
+            {"null_values": "\\N", "empty_string_is_null": False},
+        ),
         (
             "a\n1\nx\n",
             "schema_overrides => {'a': 'INT'}, ignore_errors => true",
@@ -245,7 +251,7 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
         (
             "glob => false",
             SQLInterfaceError,
-            r"option 'glob' is not supported in SQL$",
+            r"option 'glob' is not supported in SQL(\n|$)",
         ),
         (
             "columns => ['a']",
@@ -467,7 +473,7 @@ def test_read_ndjson_options_survive_plan_roundtrip(tmp_path: Path) -> None:
         (
             "batch_size => 10",
             SQLInterfaceError,
-            r"option 'batch_size' is not supported in SQL$",
+            r"option 'batch_size' is not supported in SQL(\n|$)",
         ),
         (
             "ignore_errors = true",
@@ -769,12 +775,12 @@ def test_read_parquet_options_survive_plan_roundtrip(tmp_path: Path) -> None:
         (
             "cast_options => NULL",
             SQLInterfaceError,
-            r"option 'cast_options' is not supported in SQL$",
+            r"option 'cast_options' is not supported in SQL(\n|$)",
         ),
         (
             "use_pyarrow => true",
             SQLInterfaceError,
-            r"option 'use_pyarrow' is not supported in SQL$",
+            r"option 'use_pyarrow' is not supported in SQL(\n|$)",
         ),
     ],
 )
@@ -901,7 +907,7 @@ def test_read_ipc_options_survive_plan_roundtrip(tmp_path: Path) -> None:
         (
             "use_pyarrow => true",
             SQLInterfaceError,
-            r"option 'use_pyarrow' is not supported in SQL$",
+            r"option 'use_pyarrow' is not supported in SQL(\n|$)",
         ),
     ],
 )

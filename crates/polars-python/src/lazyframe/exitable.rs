@@ -17,7 +17,7 @@ impl PyLazyFrame {
     }
 }
 
-#[pyclass(frozen, skip_from_py_object)]
+#[pyclass(frozen)]
 #[cfg(not(target_arch = "wasm32"))]
 #[repr(transparent)]
 #[derive(Clone)]
