@@ -39,6 +39,8 @@ Table Operations
      - Append rows to a table, or replace its rows.
    * - :ref:`MERGE <merge>`
      - Update, delete and insert rows of a table in an attached catalog from a source.
+   * - :ref:`SHOW FUNCTIONS <show_functions>`
+     - Returns the names of the SQL functions, optionally those that match a pattern.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables and views registered in the given context.
    * - :ref:`INFORMATION_SCHEMA.COLUMNS <information_schema_columns>`
@@ -769,6 +771,20 @@ rewritten, or changed the table's schema or partition spec.
     WHEN MATCHED AND s.cancelled THEN DELETE
     WHEN MATCHED THEN UPDATE SET status = s.status
     WHEN NOT MATCHED THEN INSERT (id, status) VALUES (s.id, s.status)
+
+.. _show_functions:
+
+SHOW FUNCTIONS
+--------------
+Returns the names of the SQL functions, table functions such as ``read_csv`` included, in a
+column ``name``. ``LIKE`` (or ``ILIKE``) keeps those that match a pattern; function names are
+case-insensitive, and so is the pattern.
+
+**Example:**
+
+.. code-block:: sql
+
+    SHOW FUNCTIONS LIKE 'regexp%'
 
 .. _show_tables:
 

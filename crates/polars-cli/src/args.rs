@@ -16,6 +16,9 @@ To set options, read the file with read_csv, read_parquet, read_ndjson or
 read_ipc. An unknown option is an error that lists the valid ones.
   polars -c \"SELECT * FROM read_csv('sales.csv', separator => ';')\"
 
+SHOW FUNCTIONS lists the SQL functions, and with LIKE those whose name matches.
+  polars -c \"SHOW FUNCTIONS LIKE '%date%'\"
+
 COPY writes a result to a file, in the format of the file's extension.
   polars -c \"COPY (SELECT * FROM 'sales.parquet') TO 'sales.csv'\"
 
