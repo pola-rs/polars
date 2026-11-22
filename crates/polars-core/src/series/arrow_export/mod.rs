@@ -54,11 +54,6 @@ fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
         return Some(compacted);
     }
 
-    trim_list_child(arr)
-}
-
-/// Slice the child of `arr` to the elements its offsets span; `None` if it already is.
-fn trim_list_child(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
     let offsets = arr.offsets();
     let first = *offsets.first() as usize;
     let len = offsets.range() as usize;
@@ -117,6 +112,9 @@ impl Series {
         chunk_idx: usize,
         compat_level: CompatLevel,
     ) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send + use<> {
+        if !self.dtype().contains_map() {
+            return Either::Left(std::iter::once(self.try_to_arrow(chunk_idx, compat_level)));
+        }
         let arrow_dtype = self.dtype().to_arrow(compat_level);
         let chunk = self.chunks()[chunk_idx].as_ref();
         if !contains_arrow_map(&arrow_dtype)
@@ -262,8 +260,8 @@ impl ToArrowConverter {
             },
             (DataType::List(item_dtype), ArrowDataType::LargeList(arrow_item_field)) => {
                 let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
-                // A split piece of a list of maps must export only the child it spans, as its
-                // whole child may overflow the `i32` offsets of an arrow MAP.
+                // A split piece of a list of maps must export only the child its live rows span,
+                // as its whole child may overflow the `i32` offsets of an arrow MAP.
                 let item_dtype_arrow = arrow_item_field.dtype();
                 let trimmed = (contains_arrow_map(item_dtype_arrow)
                     && !map_spans_fit(
@@ -272,7 +270,7 @@ impl ToArrowConverter {
                         0..arr.values().len(),
                         1,
                     ))
-                .then(|| trim_list_child(arr))
+                .then(|| normalize_map_entries(arr))
                 .flatten();
                 let arr = trimmed.as_ref().unwrap_or(arr);
 

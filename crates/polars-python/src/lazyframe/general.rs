@@ -1798,6 +1798,8 @@ impl Iterator for ArrowStreamIterator {
             if let Some(array) = self.arrays.as_mut().and_then(|arrays| arrays.next()) {
                 return Some(array);
             }
+            // Release the exhausted frame before waiting on the next one.
+            self.arrays = None;
             let next = self.inner.lock().next();
             match next? {
                 Err(err) => return Some(Err(err)),
