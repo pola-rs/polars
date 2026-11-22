@@ -7805,3 +7805,54 @@ def test_mssql_long_values_are_read_whole_by_every_driver() -> None:
     for connection in [_mssql_factory(SERVERS["mssql"].uri or "")]:
         df = pl.scan_database(t, connection).collect().sort("id")
         assert df["sv"].str.len_chars()[0] == 3000
+
+
+@needs_trino
+def test_trino_query_with_names_alike_but_for_case_is_refused() -> None:
+    # Trino folds names to lower case: `T` and `t` are duplicates, so the query can't be
+    # wrapped. ADBC aborted the process on the `timestamp(9)` outside 1677-2262, and the
+    # `trino` driver rounded it to microseconds. Each read runs in a child process.
+    uri = SERVERS["trino"].uri
+    assert uri is not None
+    source = (
+        "SELECT TIMESTAMP '1500-01-01 00:00:00.123456789' AS T, "
+        "TIMESTAMP '2020-01-01 00:00:00.1' AS t"
+    )
+    for driver in _runnable_drivers("trino", ["trino", "adbc", "sqlalchemy"]):
+        for pushdown in (True, False):
+            child = _DUPLICATE_COLUMNS_CHILD.replace(
+                "driver=sys.argv[3])", f"driver=sys.argv[3], pushdown={pushdown})"
+            )
+            out = subprocess.run(
+                [sys.executable, "-c", child, source, uri, driver],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+            assert out.returncode == 0, (driver, pushdown, out.stderr[-500:])
+            assert "ERROR InvalidOperationError" in out.stdout, (driver, out.stdout)
+            assert "alias" in out.stdout, (driver, out.stdout)
+
+
+@needs_trino
+def test_trino_query_naming_columns_in_another_case_reads_under_a_schema() -> None:
+    # Trino returns `ID` as `id`: the filter on `id` reads under the schema's names
+    table = "review_trino_upper_names"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, s varchar)",
+            f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b')",
+        ],
+    )
+    schema = {"id": pl.Int32, "s": pl.String}
+    for driver in _runnable_drivers("trino", ["trino", "adbc", "sqlalchemy"]):
+        for source in [f"SELECT ID, S FROM {table}", f"SELECT id, s FROM {table}"]:
+            got = (
+                _scan("trino", driver, source, schema=schema)
+                .filter(pl.col("id") > 1)
+                .collect()
+            )
+            assert got.rows() == [(2, "b")], (driver, source)
