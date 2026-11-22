@@ -7282,3 +7282,36 @@ def test_trino_uri_with_an_unknown_ssl_value_is_refused() -> None:
                 pl.scan_database(
                     "SELECT 1 AS x", f"{uri}?{parameter}", driver=driver
                 ).collect()
+
+
+@needs_trino
+def test_trino_query_with_duplicate_names_under_a_schema_is_refused() -> None:
+    # nothing is looked up when planning under `schema=`: the first session refuses
+    table = "review_trino_duplicate_names_schema"
+    _execute(
+        "trino",
+        [
+            f"DROP TABLE IF EXISTS {table}",
+            f"CREATE TABLE {table} (id integer, ts9 timestamp(9))",
+            f"INSERT INTO {table} VALUES (1, TIMESTAMP '2300-01-01 00:00:00.000000001')",
+        ],
+    )
+    uri = SERVERS["trino"].uri
+    assert uri is not None
+    child = _DUPLICATE_COLUMNS_CHILD.replace(
+        "driver=sys.argv[3])",
+        'driver=sys.argv[3], schema={"id": pl.Int64, "ts9": pl.String})',
+    )
+    source = f"SELECT a.id, a.ts9, b.ts9 FROM {table} a JOIN {table} b ON a.id = b.id"
+    for driver in _runnable_drivers("trino", ["trino", "adbc", "sqlalchemy"]):
+        out = subprocess.run(
+            [sys.executable, "-c", child, source, uri, driver],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+        assert out.returncode == 0, (driver, out.returncode, out.stderr[-500:])
+        assert "ERROR InvalidOperationError" in out.stdout, (driver, out.stdout)
+        assert "'ts9'" in out.stdout, (driver, out.stdout)
+        assert "alias" in out.stdout, (driver, out.stdout)

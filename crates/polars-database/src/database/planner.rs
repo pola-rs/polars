@@ -255,11 +255,39 @@ fn refuse_trino_unnamed<'a>(
     Ok(())
 }
 
+/// [`refuse_unwrappable_conversions`] for a scan planned under `schema=` (no I/O then): run
+/// on the first session opened.
+pub fn check_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &config.options.relation else {
+        return Ok(());
+    };
+    if !config.user_schema || config.dialect != DialectName::Trino {
+        return Ok(());
+    }
+    let Some(columns) = sql_renderer()
+        .and_then(|r| r.inspect_query(sql, config.dialect))
+        .ok()
+        .and_then(|f| f.output_columns)
+    else {
+        return Ok(());
+    };
+    refuse_unwrappable_conversions(
+        session,
+        &config.options,
+        &columns,
+        &config.backend.kind,
+        config.session_setup_runs(),
+    )
+}
+
 /// A Trino query that names two output columns alike can't be wrapped, so its columns can't be
 /// read through a conversion: a `timestamp(7..12)` the drivers round (ADBC aborts the whole
 /// process on one outside 1677-2262), a `timestamp with time zone` read an hour off in a zone's
 /// repeated hour. Refused before the query runs.
-fn refuse_unwrappable_conversions(
+pub(crate) fn refuse_unwrappable_conversions(
     session: &mut dyn DatabaseSession,
     options: &DatabaseScanOptions,
     columns: &[PlSmallStr],
@@ -694,6 +722,9 @@ pub fn resolve_scan(
                 },
             })
             .collect();
+        if is_query {
+            refuse_trino_unnamed(dialect, schema_.iter_names())?;
+        }
         // No I/O to ask the database about views and the functions sqlglot doesn't know.
         schema = schema_;
     } else {
