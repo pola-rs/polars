@@ -2,7 +2,9 @@ use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
 #[cfg(feature = "cov")]
 use polars_core::error::{polars_bail, polars_ensure};
-use polars_core::prelude::{Column, DataType, IntoColumn, RollingOptionsFixedWindow, TimeUnit};
+use polars_core::prelude::{
+    ChunkApply, Column, DataType, IntoColumn, IntoSeries, RollingOptionsFixedWindow, TimeUnit,
+};
 use polars_core::series::Series;
 #[cfg(feature = "cov")]
 use polars_plan::dsl::RollingCovOptions;
@@ -23,8 +25,24 @@ fn roll_with_temporal_conversion<F: FnOnce(&Series) -> PolarsResult<Series>>(
     // @scalar-opt
     let out = op(s.as_materialized_series())?;
 
+    let out = if matches!(dt, DataType::Date) {
+        out * US_IN_DAY as f64
+    } else {
+        out
+    };
+    let out = if dt.is_temporal() {
+        let ca = out.f64()?;
+        if matches!(dt, DataType::Duration(_)) {
+            ca.apply_values(f64::trunc).into_series()
+        } else {
+            ca.apply_values(f64::floor).into_series()
+        }
+    } else {
+        out
+    };
+
     Ok(match dt {
-        DataType::Date => (out * US_IN_DAY as f64)
+        DataType::Date => out
             .cast(&DataType::Int64)?
             .into_datetime(TimeUnit::Microseconds, None),
         DataType::Datetime(tu, tz) => out.cast(&DataType::Int64)?.into_datetime(*tu, tz.clone()),
@@ -50,6 +68,27 @@ pub(super) fn rolling_max(s: &Column, options: RollingOptionsFixedWindow) -> Pol
 }
 
 pub(super) fn rolling_mean(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
+    let dt = s.dtype();
+    if dt.is_temporal() && options.weights.is_none() {
+        let physical = if matches!(dt, DataType::Date) {
+            s.to_physical_repr().cast(&DataType::Int64)?
+        } else {
+            s.to_physical_repr()
+        };
+        let out = physical.as_materialized_series().rolling_mean_temporal(
+            options,
+            !matches!(dt, DataType::Duration(_)),
+            matches!(dt, DataType::Date),
+        )?;
+        return Ok(match dt {
+            DataType::Date => out.into_datetime(TimeUnit::Microseconds, None),
+            DataType::Datetime(tu, tz) => out.into_datetime(*tu, tz.clone()),
+            DataType::Duration(tu) => out.into_duration(*tu),
+            DataType::Time => out.into_time(),
+            _ => unreachable!(),
+        }
+        .into_column());
+    }
     roll_with_temporal_conversion(s, |s| s.rolling_mean(options))
 }
 

@@ -16,7 +16,7 @@ use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 pub use arg_min_max::{ArgMaxWindow, ArgMinMaxWindow, ArgMinWindow};
-pub use mean::MeanWindow;
+pub use mean::{ExactMeanWindow, MeanWindow};
 pub use min_max::MinMaxWindow;
 pub use moment::{rolling_corr, rolling_cov};
 use num_traits::{Bounded, Float, NumCast, One, Zero};
