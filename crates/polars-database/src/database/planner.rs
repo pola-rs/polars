@@ -231,6 +231,26 @@ fn first_keyword(sql: &str) -> &str {
     &s[..end]
 }
 
+/// The output column names given more than once, as the database tells names apart: Trino
+/// folds every name to lower case (`SELECT 1 AS T, 2 AS t` names two columns `t`), and names
+/// each column of no name apart (`_col0`, `_col1`).
+fn duplicated_output_names(dialect: DialectName, cols: &[PlSmallStr]) -> Vec<PlSmallStr> {
+    let trino = dialect == DialectName::Trino;
+    let mut seen = PlHashSet::with_capacity(cols.len());
+    let mut duplicated = vec![];
+    for c in cols.iter().filter(|c| !(trino && c.is_empty())) {
+        let key: PlSmallStr = if trino {
+            c.to_lowercase().into()
+        } else {
+            c.clone()
+        };
+        if !seen.insert(key.clone()) && !duplicated.contains(&key) {
+            duplicated.push(key);
+        }
+    }
+    duplicated
+}
+
 /// Why a user query can't be wrapped as a derived table, if it can't.
 fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str> {
     if !facts.parses {
@@ -245,28 +265,19 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     if dialect == DialectName::Mssql && facts.top_level_order_by_without_limit {
         return Some("SQL Server does not allow ORDER BY without TOP inside a derived table");
     }
-    if let Some(cols) = &facts.output_columns {
-        let mut seen = PlHashSet::with_capacity(cols.len());
-        // (Trino names each column of no name apart: `_col0`, `_col1`)
-        if !cols
-            .iter()
-            .filter(|c| dialect != DialectName::Trino || !c.is_empty())
-            .all(|c| seen.insert(c))
-        {
-            return Some("the query has duplicate output column names");
-        }
+    if let Some(cols) = &facts.output_columns
+        && !duplicated_output_names(dialect, cols).is_empty()
+    {
+        return Some("the query has duplicate output column names");
     }
     None
 }
 
 /// Trino names an output column of no name `_col<position>` (`SELECT count(*)`), and a query
 /// wrapping it can't refer to that name: such a query is refused.
-fn refuse_trino_unnamed<'a>(
-    dialect: DialectName,
-    mut names: impl Iterator<Item = &'a PlSmallStr>,
-) -> PolarsResult<()> {
+fn refuse_trino_unnamed(dialect: DialectName, names: &[PlSmallStr]) -> PolarsResult<()> {
     let unnamed = dialect == DialectName::Trino
-        && names.any(|n| {
+        && names.iter().any(|n| {
             n.strip_prefix("_col")
                 .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
         });
@@ -301,19 +312,18 @@ pub fn check_unwrappable_conversions(
     refuse_unwrappable_conversions(
         session,
         &config.options,
+        config.dialect,
         &columns,
         &config.backend.kind,
         config.session_setup_runs(),
     )
 }
 
-/// A Trino query that names two output columns alike can't be wrapped, so its columns can't be
-/// read through a conversion: a `timestamp(7..12)` the drivers round (ADBC aborts the whole
-/// process on one outside 1677-2262), a `timestamp with time zone` read an hour off in a zone's
-/// repeated hour. Refused before the query runs.
+/// Refuses a query that names two output columns alike and has a column read through a conversion.
 pub(crate) fn refuse_unwrappable_conversions(
     session: &mut dyn DatabaseSession,
     options: &DatabaseScanOptions,
+    dialect: DialectName,
     columns: &[PlSmallStr],
     backend: &BackendKind,
     setup_runs: bool,
@@ -321,14 +331,7 @@ pub(crate) fn refuse_unwrappable_conversions(
     let DatabaseRelation::Query { sql } = &options.relation else {
         return Ok(());
     };
-    let dialect = DialectName::Trino;
-    let mut seen = PlHashSet::with_capacity(columns.len());
-    let mut duplicated: Vec<&PlSmallStr> = vec![];
-    for c in columns.iter().filter(|c| !c.is_empty()) {
-        if !seen.insert(c) && !duplicated.contains(&c) {
-            duplicated.push(c);
-        }
-    }
+    let duplicated = duplicated_output_names(dialect, columns);
     if duplicated.is_empty() {
         return Ok(());
     }
@@ -751,7 +754,8 @@ pub fn resolve_scan(
             })
             .collect();
         if is_query {
-            refuse_trino_unnamed(dialect, schema_.iter_names())?;
+            let names = schema_.iter_names().cloned().collect::<Vec<_>>();
+            refuse_trino_unnamed(dialect, &names)?;
         }
         // No I/O to ask the database about views and the functions sqlglot doesn't know.
         schema = schema_;
@@ -788,6 +792,7 @@ pub fn resolve_scan(
             refuse_unwrappable_conversions(
                 session.as_mut(),
                 &options,
+                dialect,
                 columns,
                 &backend.kind,
                 setup_runs,
@@ -855,15 +860,15 @@ pub fn resolve_scan(
                     None => return Err(e),
                 },
             };
+        let names = discovered.iter_names().cloned().collect::<Vec<_>>();
         if is_query {
-            refuse_trino_unnamed(dialect, discovered.iter_names())?;
+            refuse_trino_unnamed(dialect, &names)?;
         }
         stats = info.stats;
         mixed_found = mixed_blobs;
         if !options.connection.opened_by_plugin() && !options.connection.is_live() {
             resolution = session_resolution(session.as_mut(), dialect, &options);
         }
-        let names = discovered.iter_names().cloned().collect::<Vec<_>>();
         volatility = source_volatility(
             session.as_mut(),
             dialect,
@@ -4969,6 +4974,30 @@ mod tests {
         assert!(mssql_text_size_cuts(&[&money], &plain).is_empty());
         let converted = ["SELECT CAST(CAST([m] AS DECIMAL(19, 4)) AS NVARCHAR(MAX)) FROM [t]"];
         assert_eq!(mssql_text_size_cuts(&[&money], &converted).len(), 1);
+    }
+
+    #[test]
+    fn trino_output_names_are_told_apart_without_case() {
+        let facts = |cols: &[&str]| QueryFacts {
+            parses: true,
+            single_select: true,
+            output_columns: Some(cols.iter().map(|c| (*c).into()).collect()),
+            ..Default::default()
+        };
+        // Trino folds every identifier: `T` and `t` name the same column
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Trino).is_some());
+        assert!(wrap_blocker(&facts(&["T", "u"]), DialectName::Trino).is_none());
+        // a database that tells them apart is left as it was
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Clickhouse).is_none());
+        // Trino names each column of no name apart (`_col0`), which is refused once found
+        assert!(wrap_blocker(&facts(&["", ""]), DialectName::Trino).is_none());
+        let names =
+            |cols: &[&str]| -> Vec<PlSmallStr> { cols.iter().map(|c| (*c).into()).collect() };
+        let unnamed = names(&["_col0", "id"]);
+        assert!(refuse_trino_unnamed(DialectName::Trino, &unnamed).is_err());
+        assert!(refuse_trino_unnamed(DialectName::Mssql, &unnamed).is_ok());
+        let named = names(&["_col", "_colx", "col0"]);
+        assert!(refuse_trino_unnamed(DialectName::Trino, &named).is_ok());
     }
 
     #[test]
