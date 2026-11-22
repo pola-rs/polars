@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use polars_arrow::record_batch::RecordBatch;
+use polars_utils::{UnitVec, unitvec};
 use rayon::prelude::*;
 
 use crate::frame::column::ScalarColumn;
@@ -122,14 +123,15 @@ impl DataFrame {
     pub fn split_for_arrow_export<'a>(
         self,
         arrow_dtypes: impl IntoIterator<Item = &'a ArrowDataType>,
-    ) -> Vec<DataFrame> {
+    ) -> UnitVec<DataFrame> {
+        let height = self.height();
+        // Only a Polars Map exports to an arrow MAP. Checked before any row is read, as an empty
+        // Scalar column has none.
+        if height == 0 || !self.columns().iter().any(|c| c.dtype().contains_map()) {
+            return unitvec![self];
+        }
         let dtypes: Vec<_> = arrow_dtypes.into_iter().collect();
         assert_eq!(dtypes.len(), self.width(), "one arrow dtype per column");
-        let height = self.height();
-        // Before any row is read, as an empty Scalar column has none.
-        if height == 0 || !dtypes.iter().any(|d| contains_arrow_map(d)) {
-            return vec![self];
-        }
         // Each MAP column, with the one row it repeats if it is a Scalar column.
         let map_columns: Vec<_> = self
             .columns()
@@ -155,7 +157,7 @@ impl DataFrame {
                 },
             });
         if fits {
-            return vec![self];
+            return unitvec![self];
         }
 
         // Within a candidate, each chunked MAP column is a slice of one of its chunks.

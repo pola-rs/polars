@@ -101,7 +101,7 @@ impl MorselSerializer {
             // Planned before rechunking, so that an oversized Map is never copied into one chunk.
             df.split_for_arrow_export(&arrow_dtypes)
         } else {
-            vec![df]
+            polars_utils::unitvec![df]
         };
         for mut df in pieces {
             rechunk_par(unsafe { df.columns_mut_retain_schema() }, task_metrics).await;

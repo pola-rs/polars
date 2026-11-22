@@ -12,8 +12,8 @@ use polars_parquet::arrow::geo::{GEO_KEY, validate_geo_schema};
 use polars_parquet::write::{
     CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
 };
-use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
+use polars_utils::{IdxSize, UnitVec};
 
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 use crate::nodes::io_sinks::components::size::{SplitMode, TargetSinkMorselSize};
@@ -89,7 +89,7 @@ impl InitializedState {
 /// overflow their `i32` offsets.
 struct EncodedRowGroups {
     /// The number of rows and the pages of each leaf column, per row group.
-    row_groups: Vec<(usize, Vec<Vec<CompressedPage>>)>,
+    row_groups: UnitVec<(usize, Vec<Vec<CompressedPage>>)>,
     morsel_permit: SinkMorselPermit,
 }
 

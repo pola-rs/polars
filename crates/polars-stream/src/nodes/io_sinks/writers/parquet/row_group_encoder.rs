@@ -257,7 +257,7 @@ impl RowGroupEncoder {
                     let pieces =
                         df.split_for_arrow_export(arrow_schema.iter_values().map(|f| f.dtype()));
 
-                    let mut row_groups = Vec::with_capacity(pieces.len());
+                    let mut row_groups = UnitVec::with_capacity(pieces.len());
                     for df in pieces {
                         row_groups.push(
                             encode_row_group(
