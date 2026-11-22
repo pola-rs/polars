@@ -275,10 +275,22 @@ def _from(f: Any) -> Any:
         # a placeholder, replaced by the verbatim user query after generation
         return exp.Table(
             this=exp.to_identifier(_SUBQUERY_PLACEHOLDER),
-            alias=exp.TableAlias(this=_ident("_pl")),
+            alias=exp.TableAlias(
+                this=_ident("_pl"),
+                # the output columns of a SQL Server query with a column of no name,
+                # which it refuses in a derived table
+                columns=[_ident(c) for c in _subquery_parts(x)[1]] or None,
+            ),
         )
     msg = f"unknown SQL FROM kind: {kind!r}"
     raise ValueError(msg)
+
+
+def _subquery_parts(sub: Any) -> tuple[str, list[str]]:
+    """The SQL and output columns of a `Subquery` (a plain string has none)."""
+    if isinstance(sub, str):
+        return sub, []
+    return sub["sql"], sub.get("columns") or []
 
 
 _SUBQUERY_PLACEHOLDER = f"__polars_subquery_{secrets.token_hex(8)}__"
@@ -387,7 +399,7 @@ def _finish(sql: str, query: dict[str, Any]) -> str:
         sql = sql.replace("%", "%%")
     from_ = query["from"]
     if "Subquery" in from_:
-        sub = from_["Subquery"]
+        sub = _subquery_parts(from_["Subquery"])[0]
         # a newline ends a trailing `--` (or MySQL `#`) comment of the user's query
         end = "\n" if "--" in sub or "#" in sub else ""
         sql = sql.replace(_SUBQUERY_PLACEHOLDER, f"({sub}{end})", 1)

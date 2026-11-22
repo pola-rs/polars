@@ -164,6 +164,12 @@ pub trait DatabaseSession: Send {
     fn time_with_zone_columns(&self) -> Vec<String> {
         vec![]
     }
+
+    /// A SQL Server session's `SET TEXTSIZE`, where it cuts long values (see
+    /// [`mssql_session_limits`]).
+    fn text_size_limit(&self) -> Option<i64> {
+        None
+    }
 }
 
 /// The batches of a query's result as one frame.
@@ -328,7 +334,133 @@ pub fn open_session(
             }
         }
     }
+    if dialect == DialectName::Mssql && backend.choice().kind.has_sessions() {
+        session = mssql_session_limits(session, spec.opened_by_plugin())?;
+    }
     Ok(session)
+}
+
+/// `SET TEXTSIZE` at which nothing is cut (as `-1` is, which ODBC drivers set).
+const MSSQL_MAX_TEXTSIZE: i64 = i32::MAX as i64;
+
+/// Sets what a SQL Server session the plugin opened reads, or reads what a user's session reads.
+/// `SET ROWCOUNT n` stops every `SELECT` after `n` rows (the read's, and the catalog's own
+/// lookups), and `SET TEXTSIZE n` cuts every `(n)varchar(max)`, `varbinary(max)`, `text`,
+/// `ntext`, `image` or `xml` value after `n` bytes (also one converted to `NVARCHAR(MAX)`): both
+/// without a sign. A session the plugin opened (a URI, an ODBC string) is its own: both are set
+/// to read everything (a FreeTDS `text size` could apply otherwise). A user's session (a live
+/// connection, a factory's or a pool's, whose connect hook may set either) is left as found:
+/// its settings are read once (`DBCC USEROPTIONS`), a row count refuses it, and a text size
+/// stays on the session ([`DatabaseSession::text_size_limit`]), for the reader to refuse a read
+/// whose columns it may cut.
+fn mssql_session_limits(
+    mut session: Box<dyn DatabaseSession>,
+    ours: bool,
+) -> PolarsResult<Box<dyn DatabaseSession>> {
+    if ours {
+        let sql = format!("SET ROWCOUNT 0; SET TEXTSIZE {MSSQL_MAX_TEXTSIZE}");
+        session.execute_update(&sql).map_err(|e| {
+            e.context(format!("session setup '{sql}' failed; the scan relies on it").into())
+        })?;
+        return Ok(session);
+    }
+    let (rowcount, text_size) = mssql_user_options(session.as_mut());
+    if let Some(n) = rowcount.filter(|n| *n != 0) {
+        polars_bail!(
+            InvalidOperation:
+            "this SQL Server session has SET ROWCOUNT {n} in effect: every query would stop \
+            after {n} rows, and the scan would read incomplete data. Run SET ROWCOUNT 0 on the \
+            connection, or remove it from the connection's setup"
+        );
+    }
+    Ok(match text_size {
+        Some(n) if (0..MSSQL_MAX_TEXTSIZE).contains(&n) => Box::new(TextSizeLimited {
+            inner: session,
+            limit: n,
+        }),
+        _ => session,
+    })
+}
+
+/// A session's `SET ROWCOUNT` (0 when it isn't listed) and `SET TEXTSIZE`, from `DBCC
+/// USEROPTIONS` (which every user may run, and a row count doesn't cut); `None` where they
+/// can't be read. Where `DBCC` fails, the text size is read from `@@TEXTSIZE`, and a row count
+/// under 10,000 is found by a query of 10,000 rows.
+fn mssql_user_options(session: &mut dyn DatabaseSession) -> (Option<i64>, Option<i64>) {
+    use super::catalog::cell_str;
+    let number = |s: Option<String>| s.and_then(|s| s.trim().parse::<i64>().ok());
+    match session.catalog_query("DBCC USEROPTIONS") {
+        Ok(df) if df.width() >= 2 => {
+            let value = |name: &str| {
+                (0..df.height())
+                    .find(|&row| {
+                        cell_str(&df, 0, row).is_some_and(|k| k.trim().eq_ignore_ascii_case(name))
+                    })
+                    .map(|row| number(cell_str(&df, 1, row)))
+            };
+            (
+                Some(value("rowcount").map_or(0, |n| n.unwrap_or(-1))),
+                value("textsize").flatten(),
+            )
+        },
+        _ => {
+            let text_size = session
+                .catalog_query("SELECT @@TEXTSIZE AS textsize")
+                .ok()
+                .and_then(|df| number(cell_str(&df, 0, 0)));
+            let digits = "(VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10))";
+            let probe = format!(
+                "SELECT 1 AS x FROM {digits} AS a(x), {digits} AS b(x), {digits} AS c(x), \
+                {digits} AS d(x)"
+            );
+            let rowcount = session
+                .catalog_query(&probe)
+                .ok()
+                .map(|df| df.height())
+                .map(|n| if n < 10_000 { n as i64 } else { 0 });
+            (rowcount, text_size)
+        },
+    }
+}
+
+/// A user's SQL Server session under `SET TEXTSIZE` ([`mssql_session_limits`]).
+struct TextSizeLimited {
+    inner: Box<dyn DatabaseSession>,
+    limit: i64,
+}
+
+impl DatabaseSession for TextSizeLimited {
+    fn execute(&mut self, sql: &str, batch_size: Option<usize>) -> PolarsResult<BatchIter> {
+        self.inner.execute(sql, batch_size)
+    }
+
+    fn execute_update(&mut self, sql: &str) -> PolarsResult<()> {
+        self.inner.execute_update(sql)
+    }
+
+    fn query(&mut self, sql: &str) -> PolarsResult<DataFrame> {
+        self.inner.query(sql)
+    }
+
+    fn catalog_query(&mut self, sql: &str) -> PolarsResult<DataFrame> {
+        self.inner.catalog_query(sql)
+    }
+
+    fn cancel_handle(&self) -> Option<CancelHandle> {
+        self.inner.cancel_handle()
+    }
+
+    fn converts_mysql_timestamps(&self) -> bool {
+        self.inner.converts_mysql_timestamps()
+    }
+
+    fn time_with_zone_columns(&self) -> Vec<String> {
+        self.inner.time_with_zone_columns()
+    }
+
+    fn text_size_limit(&self) -> Option<i64> {
+        Some(self.limit)
+    }
 }
 
 /// Casts columns that are `Null` on one side to the other side's dtype, numeric columns
@@ -639,6 +771,86 @@ mod tests {
         }
         assert!(open_session(&backend("NLS_COMP"), &spec, DialectName::Oracle).is_err());
         assert!(open_session(&backend("TIME ZONE"), &spec, DialectName::Postgresql).is_ok());
+    }
+
+    /// A session answering every query with these `DBCC USEROPTIONS` rows, logging it.
+    struct UserOptions(
+        Vec<(&'static str, &'static str)>,
+        Arc<std::sync::Mutex<Vec<String>>>,
+    );
+
+    impl DatabaseSession for UserOptions {
+        fn execute(&mut self, sql: &str, _: Option<usize>) -> PolarsResult<BatchIter> {
+            use polars_core::prelude::Column;
+            self.1.lock().unwrap().push(sql.to_string());
+            let (k, v): (Vec<_>, Vec<_>) = self.0.iter().copied().unzip();
+            let df = DataFrame::new(
+                k.len(),
+                vec![
+                    Column::new("Set Option".into(), k),
+                    Column::new("Value".into(), v),
+                ],
+            )?;
+            Ok(Box::new(std::iter::once(Ok(df))))
+        }
+    }
+
+    #[test]
+    fn mssql_session_limits_are_read_from_a_users_session_and_set_on_ours() {
+        let log = Arc::new(std::sync::Mutex::new(vec![]));
+        let session = |rows: &[(&'static str, &'static str)]| -> Box<dyn DatabaseSession> {
+            Box::new(UserOptions(rows.to_vec(), log.clone()))
+        };
+        let defaults = [("textsize", "2147483647"), ("language", "us_english")];
+        let s = mssql_session_limits(session(&defaults), false).unwrap();
+        assert_eq!(s.text_size_limit(), None);
+        let s = mssql_session_limits(session(&[("textsize", "-1")]), false).unwrap();
+        assert_eq!(s.text_size_limit(), None);
+        let s = mssql_session_limits(session(&[("textsize", "100")]), false).unwrap();
+        assert_eq!(s.text_size_limit(), Some(100));
+        // any row count, however large
+        for n in ["1", "50", "20000", "2147483647"] {
+            let rows = [("textsize", "-1"), ("rowcount", n)];
+            let e = mssql_session_limits(session(&rows), false).err().unwrap();
+            assert!(e.to_string().contains(&format!("SET ROWCOUNT {n}")), "{e}");
+        }
+        assert!(log.lock().unwrap().iter().all(|s| s == "DBCC USEROPTIONS"));
+        // ours: set, not read
+        log.lock().unwrap().clear();
+        let s = mssql_session_limits(session(&[("rowcount", "5")]), true).unwrap();
+        assert_eq!(s.text_size_limit(), None);
+        assert_eq!(
+            *log.lock().unwrap(),
+            ["SET ROWCOUNT 0; SET TEXTSIZE 2147483647"]
+        );
+    }
+
+    /// A session refusing `DBCC USEROPTIONS`, under `SET ROWCOUNT` of this many rows.
+    struct NoUserOptions(usize);
+
+    impl DatabaseSession for NoUserOptions {
+        fn execute(&mut self, sql: &str, _: Option<usize>) -> PolarsResult<BatchIter> {
+            use polars_core::prelude::Column;
+            if sql.starts_with("DBCC") {
+                polars_bail!(ComputeError: "permission denied");
+            }
+            let df = if sql.contains("@@TEXTSIZE") {
+                DataFrame::new(1, vec![Column::new("textsize".into(), ["-1"])])?
+            } else {
+                let rows = vec![1i32; self.0.min(10_000)];
+                DataFrame::new(rows.len(), vec![Column::new("x".into(), rows)])?
+            };
+            Ok(Box::new(std::iter::once(Ok(df))))
+        }
+    }
+
+    #[test]
+    fn mssql_row_count_is_probed_without_user_options() {
+        let e = mssql_session_limits(Box::new(NoUserOptions(50)), false)
+            .err()
+            .unwrap();
+        assert!(e.to_string().contains("SET ROWCOUNT 50"), "{e}");
+        assert!(mssql_session_limits(Box::new(NoUserOptions(usize::MAX)), false).is_ok());
     }
 
     #[test]
