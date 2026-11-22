@@ -89,6 +89,16 @@ def lake_ctx(catalog: CountingCatalog, **kwargs: Any) -> pl.SQLContext[pl.LazyFr
     return pl.SQLContext().register_catalog("lake", catalog, **kwargs)
 
 
+@pytest.fixture(params=["pyiceberg", "plugin"])
+def planner(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Plan scans with PyIceberg, or with the plugin only: a table it refuses raises."""
+    name: str = request.param
+    if name == "plugin":
+        pytest.importorskip("polars_iceberg")
+    monkeypatch.setenv("POLARS_ICEBERG_PLANNER", name)
+    return name
+
+
 LINEITEM = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
 
 
@@ -108,6 +118,7 @@ LINEITEM = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
         "SELECT * FROM (SELECT * FROM lineitem) AS sub",
     ],
 )
+@pytest.mark.usefixtures("planner")
 def test_catalog_table_names(lake: CountingCatalog, query: str) -> None:
     res = lake_ctx(lake).execute(query, eager=True)
     assert_frame_equal(res, LINEITEM, check_row_order=False)
@@ -144,6 +155,7 @@ def test_catalog_query_params(lake: CountingCatalog) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("qualifier", ["lake.tpch.orders", "tpch.orders", "orders"])
+@pytest.mark.usefixtures("planner")
 def test_catalog_table_read_by_nested_subquery(
     lake: CountingCatalog, qualifier: str
 ) -> None:
@@ -299,6 +311,7 @@ def test_catalog_table_spelled_twice(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     res = ctx.execute(
@@ -2772,6 +2785,7 @@ def test_alter_catalog_table_invalid_decimal(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_alter_catalog_table_name_mapping(
     lake: CountingCatalog, tmp_path: Path
 ) -> None:
@@ -3066,13 +3080,10 @@ def test_alter_catalog_table_partitioning(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize("planner", ["pyiceberg", "plugin"])
+@pytest.mark.usefixtures("planner")
 def test_alter_catalog_table_partitioning_reads_and_writes(
-    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, planner: str
+    lake: CountingCatalog,
 ) -> None:
-    if planner == "plugin":
-        pytest.importorskip("polars_iceberg")
-    monkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
     ctx = events_ctx(lake)
     ctx.execute("ALTER TABLE ev SET PARTITIONED BY (id)")
     ctx.execute("INSERT INTO ev SELECT * FROM src")
@@ -3866,6 +3877,7 @@ def test_insert_catalog_table_overwrite(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_insert_catalog_table_partitioned(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     ctx.execute(
@@ -4782,6 +4794,7 @@ def test_delete_catalog_table_cleans_metadata_check(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_delete_catalog_table_position_deletes(lake: CountingCatalog) -> None:
     from tests.unit.io.test_iceberg import _add_position_deletes
 
@@ -4826,6 +4839,7 @@ def test_merge_catalog_table_deletes_whole_file(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_delete_catalog_table_merge_on_read(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     ctx.execute(
@@ -6761,6 +6775,7 @@ def test_register_catalog_by_name_is_lazy(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
     resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
@@ -6962,6 +6977,7 @@ def history(
         ("FOR TIMESTAMP AS OF '2024-01-01 03:30:00+02:00'", [0, 1]),
     ],
 )
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel(
     history: tuple[pl.SQLContext[pl.LazyFrame], list[int]], clause: str, rows: list[int]
 ) -> None:
@@ -7002,6 +7018,7 @@ def test_catalog_pivot_qualifiers(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel_two_versions(
     lake: CountingCatalog,
     history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
@@ -7197,6 +7214,7 @@ def test_catalog_time_travel_expired_history(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel_statistics(
     lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
 ) -> None:
@@ -7302,6 +7320,7 @@ def test_catalog_time_travel_set_current_then_expiry(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel_reads(
     history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
 ) -> None:
@@ -7466,6 +7485,7 @@ def test_catalog_time_travel_commit_times(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel_catalog_by_name(
     lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
 ) -> None:
