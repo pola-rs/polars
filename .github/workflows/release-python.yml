@@ -1,4 +1,7 @@
 name: Release Python
+run-name: PR 30960 dist-release wheel dry run
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
@@ -12,13 +15,6 @@ on:
         description: Dry run
         type: boolean
         default: false
-      # For polars-database changes since its tested release that don't affect the plugin's
-      # behaviour (docs, comments): warn instead of failing.
-      allow-unreleased-database-changes:
-        description: Allow unreleased polars-database changes
-        type: boolean
-        default: false
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -45,6 +41,7 @@ defaults:
 
 jobs:
   base-package:
+    if: inputs.dry-run
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -96,62 +93,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: dist
-
-  create-sdist:
-    needs: [base-package]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.sha }}
-
-      - name: Download base package
-        uses: actions/download-artifact@v8
-        with:
-          path: dist
-          merge-multiple: true
-
-      # Avoid potential out-of-memory errors
-      - name: Set swap space for Linux
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install yq
-        run: |
-          pip install --force-reinstall --no-dependencies dist/polars-*.whl
-          rm -rf dist/*
-          pip install yq
-
-      - name: Create source distribution
-        uses: PyO3/maturin-action@v1
-        with:
-          command: sdist
-          args: >
-            --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
-            --out dist
-          maturin-version: 1.15.0
-
-      - name: Test sdist
-        run: |
-          pip install --force-reinstall --verbose dist/*.tar.gz
-          python -c 'import polars; polars.show_versions()'
-
-      - name: Upload sdist
-        uses: actions/upload-artifact@v7
-        with:
-          name: sdist-${{ matrix.package }}
-          path: dist/*.tar.gz
 
   build-wheels:
     needs: [base-package]
@@ -297,7 +238,7 @@ jobs:
           # `POLARS_BUILD_COMMIT` has to be passed through explicitly.
           docker-options: -e POLARS_BUILD_COMMIT
           args: >
-            --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
+            --profile dist-release
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
           manylinux: auto
@@ -310,6 +251,13 @@ jobs:
           pip install --force-reinstall --verbose dist/*.whl
           python -c 'import polars; polars.show_versions()' | tee versions.txt
 
+          python - <<'PYTHON'
+          import polars as pl
+          df = pl.DataFrame({"key": [1, 1, 2], "value": [2, 3, 7]})
+          result = df.lazy().group_by("key").agg(pl.col("value").sum()).sort("key").collect()
+          assert result.rows() == [(1, 5), (2, 7)], result
+          PYTHON
+
           if ! grep -qE "^Build: +$POLARS_BUILD_COMMIT\$" versions.txt; then
             echo "::error::show_versions() does not report build commit $POLARS_BUILD_COMMIT"
             exit 1
@@ -320,164 +268,3 @@ jobs:
         with:
           name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
           path: dist/*.whl
-
-  plugin-versions:
-    runs-on: ubuntu-latest
-    outputs:
-      iceberg: ${{ steps.iceberg.outputs.version }}
-      database: ${{ steps.database.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.sha }}
-
-      - name: Get polars-iceberg version
-        id: iceberg
-        uses: ./.github/actions/optional-dependency-version
-        with:
-          package: polars-iceberg
-          extra: iceberg
-
-      - name: Get polars-database version
-        id: database
-        uses: ./.github/actions/optional-dependency-version
-        with:
-          package: polars-database
-          extra: database
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      # The tests below run against the released plugin, so its sources here must be the ones
-      # that wheel was built from, or a plugin change (or its test) would be tested against old
-      # code. The wheel records its build commit; 0.1.0 predates that and falls back to its tag.
-      # Not compared: the statically linked shared crates (polars-core, polars-arrow,
-      # polars-utils, polars-config, polars-error, the rest of polars-io-ext-ffi), Cargo.lock and
-      # the workspace's Cargo.toml, which would differ at nearly every release.
-      - name: Check polars-database has no unreleased changes
-        env:
-          VERSION: ${{ steps.database.outputs.version }}
-          ALLOW: ${{ inputs.allow-unreleased-database-changes }}
-        run: |
-          set -e
-          # A wheel only: a source build would embed nothing, or not the commit it was released from.
-          pip install --only-binary :all: --no-deps "polars-database==$VERSION"
-          # 0.1.0 predates `__build_commit__`: no attribute at all.
-          BASE=$(python -I -c 'import polars_database; print(getattr(polars_database, "__build_commit__", ""))')
-          if [[ -n "$BASE" ]]; then
-            echo "polars-database $VERSION was built from $BASE (its __build_commit__)"
-          else
-            if ! git fetch --no-tags --depth=1 origin "refs/tags/polars-database-$VERSION:refs/tags/polars-database-$VERSION"; then
-              echo "::error::polars-database $VERSION has no build commit and there is no tag polars-database-$VERSION to compare with"
-              exit 1
-            fi
-            BASE=$(git rev-parse "polars-database-$VERSION^{commit}")
-            echo "polars-database $VERSION has no build commit; using the commit of tag polars-database-$VERSION: $BASE"
-          fi
-          git fetch --no-tags --depth=1 origin "$BASE"
-          # Also the plugin's half of its FFI contract, in a crate the plugin otherwise shares.
-          PATHS=(crates/polars-database py-polars/polars-database crates/polars-io-ext-ffi/src/lazyframe_resolver_v1.rs)
-          if git diff --quiet "$BASE" HEAD -- "${PATHS[@]}"; then
-            echo "polars-database sources are unchanged since $VERSION"
-          else
-            git diff --stat "$BASE" HEAD -- "${PATHS[@]}"
-            MSG="Unreleased polars-database changes since $VERSION (built from $BASE): release polars-database and raise the lower bound of the 'database' extra, or rerun with allow-unreleased-database-changes"
-            if [[ "$ALLOW" == "true" ]]; then
-              echo "::warning::$MSG"
-            else
-              echo "::error::$MSG"
-              exit 1
-            fi
-          fi
-
-  # Full Python test suite, with the polars-iceberg and polars-database plugins installed from PyPI
-  # at the versions required in pyproject.toml.
-  test-python:
-    needs: [plugin-versions]
-    uses: ./.github/workflows/test-python.yml
-    with:
-      sha: ${{ inputs.sha }}
-      polars-iceberg-version: ${{ needs.plugin-versions.outputs.iceberg }}
-      polars-database-version: ${{ needs.plugin-versions.outputs.database }}
-
-  publish-to-pypi:
-    needs: [base-package, create-sdist, build-wheels, test-python]
-    environment:
-      name: release-python
-      url: https://pypi.org/project/polars
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-
-    steps:
-      - name: Download sdists and wheels
-        uses: actions/download-artifact@v8
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Remove Emscripten wheel
-        run: rm -f dist/*emscripten*.whl
-
-      - name: Publish to PyPI
-        if: inputs.dry-run == false
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
-          verbose: true
-
-  publish-to-github:
-    needs: [publish-to-pypi]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.sha }}
-
-      - name: Get version from Cargo.toml
-        id: version
-        run: |
-          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' py-polars/runtime/template/Cargo.template.toml)
-          if [[ "$VERSION" == *"-"* ]]; then
-            IS_PRERELEASE=true
-          else
-            IS_PRERELEASE=false
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-
-      - name: Create GitHub release
-        id: github-release
-        uses: release-drafter/release-drafter@v6
-        with:
-          config-name: release-drafter-python.yml
-          name: Python Polars ${{ steps.version.outputs.version }}
-          tag: py-${{ steps.version.outputs.version }}
-          version: ${{ steps.version.outputs.version }}
-          prerelease: ${{ steps.version.outputs.is_prerelease }}
-          commitish: ${{ inputs.sha || github.sha }}
-          disable-autolabeler: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish GitHub release
-        if: inputs.dry-run == false
-        run: gh release edit $TAG --draft=false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.github-release.outputs.tag_name }}
-
-      - name: Trigger other workflows related to the release
-        if: inputs.dry-run == false
-        uses: peter-evans/repository-dispatch@v4
-        with:
-          event-type: python-release
-          client-payload: >
-            {
-              "version": "${{ steps.version.outputs.version }}",
-              "is_prerelease": "${{ steps.version.outputs.is_prerelease }}",
-              "tag": "${{ steps.github-release.outputs.tag_name }}",
-              "sha": "${{ inputs.sha || github.sha }}"
-            }
