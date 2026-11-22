@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
 use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
 use polars::series::Series;
 use polars_arrow::array::StructArray;
-use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchemaRef};
 use polars_arrow::ffi;
 use polars_arrow::record_batch::RecordBatch;
 use polars_core::utils::polars_arrow;
@@ -84,10 +86,10 @@ pub(crate) fn dataframe_to_stream<'py>(
     df: &DataFrame,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let schema = df.schema().to_arrow(CompatLevel::newest());
-    let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
+    let schema = Arc::new(df.schema().to_arrow(CompatLevel::newest()));
+    let dtype = ArrowDataType::Struct(schema.iter_values().cloned().collect());
     let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
-    let stream = ffi::export_iterator(frame_to_struct_arrays(df.clone(), dtype), field);
+    let stream = ffi::export_iterator(frame_to_struct_arrays(df.clone(), schema, dtype), field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
 }
 
@@ -114,9 +116,11 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
     PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }
 
-/// The record batches of `df` as arrow struct arrays of `dtype`, the way a C stream carries a table.
+/// The record batches of `df` as arrow struct arrays of `dtype`, the way a C stream carries a table;
+/// `schema` holds the fields of `dtype`.
 pub(crate) fn frame_to_struct_arrays(
     df: DataFrame,
+    schema: ArrowSchemaRef,
     dtype: ArrowDataType,
 ) -> Box<dyn Iterator<Item = PolarsResult<ArrayRef>> + Send> {
     // `into_try_iter_chunks` cuts a frame without columns into batches of the ideal morsel size.
@@ -126,7 +130,7 @@ pub(crate) fn frame_to_struct_arrays(
         return Box::new(array.into_iter());
     }
 
-    let batches = df.into_try_iter_chunks(CompatLevel::newest(), false);
+    let batches = df.into_try_iter_chunks(schema, CompatLevel::newest(), false);
     Box::new(batches.map(move |batch| {
         let batch = batch?;
         let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);

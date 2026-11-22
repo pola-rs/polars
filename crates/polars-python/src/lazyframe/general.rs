@@ -8,6 +8,7 @@ use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::prelude::delta_sink_state::DeltaSinkState;
 use polars::prelude::iceberg_sink_state::IcebergSinkState;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_arrow::ffi::export_iterator;
 #[cfg(feature = "csv")]
 use polars_buffer::Buffer;
@@ -1760,13 +1761,18 @@ impl PyCollectBatches {
         // Resolving the schema can call back into Python from another thread (e.g. a
         // `PythonDataset` scan, as produced by `scan_delta` / `scan_iceberg`). Holding
         // the GIL across that deadlocks, so release it for the duration.
-        let schema = py
-            .enter_polars(move || ldf.collect_schema())?
-            .to_arrow(CompatLevel::newest());
+        let schema = Arc::new(
+            py.enter_polars(move || ldf.collect_schema())?
+                .to_arrow(CompatLevel::newest()),
+        );
 
-        let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
+        let dtype = ArrowDataType::Struct(schema.iter_values().cloned().collect());
 
-        let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), dtype.clone()));
+        let iter = Box::new(ArrowStreamIterator::new(
+            self.inner.clone(),
+            schema,
+            dtype.clone(),
+        ));
         let field = ArrowField::new(PlSmallStr::EMPTY, dtype, false);
         let stream = export_iterator(iter, field);
         PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
@@ -1775,16 +1781,22 @@ impl PyCollectBatches {
 
 pub struct ArrowStreamIterator {
     inner: Arc<Mutex<CollectBatches>>,
+    schema: ArrowSchemaRef,
     dtype: ArrowDataType,
     /// The arrays of the frame collected last.
     arrays: Option<Box<dyn Iterator<Item = PolarsResult<ArrayRef>> + Send>>,
 }
 
 impl ArrowStreamIterator {
-    fn new(inner: Arc<Mutex<CollectBatches>>, schema: ArrowDataType) -> Self {
+    fn new(
+        inner: Arc<Mutex<CollectBatches>>,
+        schema: ArrowSchemaRef,
+        dtype: ArrowDataType,
+    ) -> Self {
         Self {
             inner,
-            dtype: schema,
+            schema,
+            dtype,
             arrays: None,
         }
     }
@@ -1823,7 +1835,11 @@ impl Iterator for ArrowStreamIterator {
                         });
                     }
                     df.rechunk_mut();
-                    self.arrays = Some(frame_to_struct_arrays(df, self.dtype.clone()));
+                    self.arrays = Some(frame_to_struct_arrays(
+                        df,
+                        self.schema.clone(),
+                        self.dtype.clone(),
+                    ));
                 },
             }
         }

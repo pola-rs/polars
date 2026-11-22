@@ -2185,17 +2185,21 @@ impl DataFrame {
         compat_level: CompatLevel,
         parallel: bool,
     ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + '_ {
-        RecordBatchIterWrap::new(Cow::Borrowed(self), compat_level, parallel)
+        RecordBatchIterWrap::new(Cow::Borrowed(self), compat_level, parallel, None)
     }
 
     /// Like [`DataFrame::try_iter_chunks`], but the iterator owns the frame, for consumers that
     /// outlive it, such as an arrow C stream.
+    ///
+    /// `schema` must be the arrow schema of this frame at `compat_level`; a stream of many
+    /// frames builds it once.
     pub fn into_try_iter_chunks(
         self,
+        schema: ArrowSchemaRef,
         compat_level: CompatLevel,
         parallel: bool,
     ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + 'static {
-        RecordBatchIterWrap::new(Cow::Owned(self), compat_level, parallel)
+        RecordBatchIterWrap::new(Cow::Owned(self), compat_level, parallel, Some(schema))
     }
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches as physical values.
@@ -2792,7 +2796,12 @@ fn column_to_arrow(
 
 impl<'a> RecordBatchIter<'a> {
     /// See [`DataFrame::try_iter_chunks`], for a `df` with at least one column.
-    pub(crate) fn new(df: Cow<'a, DataFrame>, compat_level: CompatLevel, parallel: bool) -> Self {
+    pub(crate) fn new(
+        df: Cow<'a, DataFrame>,
+        compat_level: CompatLevel,
+        parallel: bool,
+        schema: Option<ArrowSchemaRef>,
+    ) -> Self {
         // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.
         let must_convert = compat_level.0 == 0;
@@ -2804,12 +2813,15 @@ impl<'a> RecordBatchIter<'a> {
                 .iter()
                 .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
 
-        let schema: ArrowSchemaRef = Arc::new(
-            df.columns()
-                .iter()
-                .map(|c| c.field().to_arrow(compat_level))
-                .collect(),
-        );
+        let schema = schema.unwrap_or_else(|| {
+            Arc::new(
+                df.columns()
+                    .iter()
+                    .map(|c| c.field().to_arrow(compat_level))
+                    .collect(),
+            )
+        });
+        debug_assert_eq!(schema.len(), df.width());
         let map_columns = df
             .columns()
             .iter()
@@ -2849,7 +2861,18 @@ impl<'a> RecordBatchIter<'a> {
         f: impl Fn(usize) -> PolarsResult<T> + Send + Sync,
     ) -> PolarsResult<Vec<T>> {
         if self.parallel {
-            RAYON.install(|| (0..width).into_par_iter().map(f).collect())
+            // Collecting into a `Result` would lose the exact length, so the error is kept aside.
+            let error = std::sync::Mutex::new(None);
+            let out: Vec<Option<T>> = RAYON.install(|| {
+                (0..width)
+                    .into_par_iter()
+                    .map(|i| f(i).map_err(|err| *error.lock().unwrap() = Some(err)).ok())
+                    .collect()
+            });
+            if let Some(err) = error.into_inner().unwrap() {
+                return Err(err);
+            }
+            Ok(out.into_iter().map(Option::unwrap).collect())
         } else {
             // Collecting into a `Result` can't reserve the length, so the `Vec` would grow as it
             // fills.
@@ -3030,14 +3053,19 @@ pub enum RecordBatchIterWrap<'a> {
 }
 
 impl<'a> RecordBatchIterWrap<'a> {
-    fn new(df: Cow<'a, DataFrame>, compat_level: CompatLevel, parallel: bool) -> Self {
+    fn new(
+        df: Cow<'a, DataFrame>,
+        compat_level: CompatLevel,
+        parallel: bool,
+        schema: Option<ArrowSchemaRef>,
+    ) -> Self {
         debug_assert!(!df.should_rechunk(), "expected equal chunks");
 
         if df.width() == 0 {
             return Self::new_zero_width(df.height());
         }
 
-        Self::Batches(RecordBatchIter::new(df, compat_level, parallel))
+        Self::Batches(RecordBatchIter::new(df, compat_level, parallel, schema))
     }
 
     fn new_zero_width(height: usize) -> Self {
