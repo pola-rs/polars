@@ -6,6 +6,8 @@ use polars_utils::collection::{Collection, CollectionWrap};
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::WindowMapping;
+#[cfg(any(feature = "replace", feature = "search_sorted"))]
+use crate::plans::IRFunctionExpr;
 use crate::plans::{AExpr, aexpr_tree_traversal};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 
@@ -111,6 +113,11 @@ pub struct ExprHeightOptions {
     /// [`ExprProjectionHeight::Unknown`]: zipped with a column of one row, a range broadcasts it
     /// to the range's length, which a `Column` height would hide.
     pub range_is_unknown: bool,
+
+    /// If set, `search_sorted` has the height of its search keys, which is what the check of a
+    /// scalar argument needs. Otherwise it is [`ExprProjectionHeight::Unknown`], as in a group-by
+    /// it returns a list per group, even for a single key.
+    pub scalar_argument: bool,
 }
 
 impl Default for ExprHeightOptions {
@@ -119,6 +126,7 @@ impl Default for ExprHeightOptions {
             struct_field: ExprProjectionHeight::Unknown,
             structural_unknowns_only: false,
             range_is_unknown: false,
+            scalar_argument: false,
         }
     }
 }
@@ -267,6 +275,19 @@ impl ExprHeightVisitor<'_> {
             return Some(self.options.struct_field);
         }
 
+        #[cfg(feature = "search_sorted")]
+        if self.options.scalar_argument
+            && matches!(
+                aexpr,
+                AExpr::Function {
+                    function: IRFunctionExpr::SearchSorted { .. },
+                    ..
+                }
+            )
+        {
+            return input_heights.map(|h| *h.get(1).unwrap());
+        }
+
         if !self.options.structural_unknowns_only {
             return aexpr_projection_height(aexpr, input_heights);
         }
@@ -366,6 +387,20 @@ pub fn aexpr_projection_height(
             }
         },
 
+        // `old` and `new` are lookup tables, imploded by type coercion if they are flat. The
+        // `default` of `replace_strict` can be a column.
+        #[cfg(feature = "replace")]
+        AExpr::Function {
+            function: IRFunctionExpr::Replace | IRFunctionExpr::ReplaceStrict { .. },
+            ..
+        } => {
+            let input_heights = input_heights?;
+            let height = input_heights[0];
+            match input_heights.get(3) {
+                Some(default_height) => height.zip_with(*default_height),
+                None => height,
+            }
+        },
         AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
             if options.flags.returns_scalar() {
                 H::Scalar

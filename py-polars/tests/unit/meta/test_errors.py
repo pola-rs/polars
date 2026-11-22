@@ -853,10 +853,20 @@ def test_invalid_classmethod_error() -> None:
         ),
         # Raised while converting the expression.
         (
+            lambda lf: lf.select(
+                c=(pl.col("a").cumulative_eval(pl.element()) * 2).sum()
+            ),
+            InvalidOperationError,
+            'col("a").cumulative_eval(element(), min_samples=1)',
+            '[(col("a").cumulative_eval(element(), min_samples=1)) * (dyn int: 2)]'
+            '.sum().alias("c")',
+        ),
+        # Raised by the scalar argument check after type coercion.
+        (
             lambda lf: lf.select(c=(pl.col("a").shift(pl.col("b")) * 2).sum()),
             ShapeError,
             'col("a").shift([col("b")])',
-            '[(col("a").shift([col("b")])) * (dyn int: 2)].sum().alias("c")',
+            '(col("a").shift([col("b")]) * 2).sum()',
         ),
     ],
 )

@@ -1781,10 +1781,10 @@ pub struct ArrowStreamIterator {
 }
 
 impl ArrowStreamIterator {
-    fn new(inner: Arc<Mutex<CollectBatches>>, schema: ArrowDataType) -> Self {
+    fn new(inner: Arc<Mutex<CollectBatches>>, dtype: ArrowDataType) -> Self {
         Self {
             inner,
-            dtype: schema,
+            dtype,
             arrays: None,
         }
     }
@@ -1798,12 +1798,20 @@ impl Iterator for ArrowStreamIterator {
             if let Some(array) = self.arrays.as_mut().and_then(|arrays| arrays.next()) {
                 return Some(array);
             }
+            // Release the exhausted frame before waiting on the next one.
+            self.arrays = None;
             let next = self.inner.lock().next();
             match next? {
                 Err(err) => return Some(Err(err)),
                 Ok(mut df) => {
-                    df.rechunk_mut();
-                    self.arrays = Some(frame_to_struct_arrays(df, self.dtype.clone()));
+                    // Object columns need the GIL, so they can't be exported on other threads.
+                    let parallel = !df.columns().iter().any(|c| c.dtype().contains_objects());
+                    if parallel {
+                        df.rechunk_mut_par();
+                    } else {
+                        df.rechunk_mut();
+                    }
+                    self.arrays = Some(frame_to_struct_arrays(df, self.dtype.clone(), parallel));
                 },
             }
         }

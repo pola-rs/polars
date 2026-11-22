@@ -44,20 +44,13 @@ impl DataFrame {
     pub fn split_chunks(&mut self) -> impl Iterator<Item = DataFrame> + '_ {
         self.align_chunks_par();
 
-        let first_series_col_idx = self
-            .columns()
-            .iter()
-            .position(|col| col.as_series().is_some());
-        let df_height = self.height();
+        // Follows the first column that has chunks (a series, or a dictionary column's codes);
+        // scalar columns have none and are sliced.
+        let chunk_lengths: Vec<usize> = self.first_col_chunk_lengths().collect();
         let mut offset = 0;
-        (0..self.first_col_n_chunks()).map(move |i| {
-            // There might still be scalar/partitioned columns after aligning,
-            // so we follow the size of the chunked column, if any.
-            let chunk_size = first_series_col_idx
-                .map(|c| self.columns()[c].as_series().unwrap().chunks()[i].len())
-                .unwrap_or(df_height);
-            let rows = offset..offset + chunk_size;
-            offset += chunk_size;
+        (0..chunk_lengths.len()).map(move |i| {
+            let rows = offset..offset + chunk_lengths[i];
+            offset += chunk_lengths[i];
             self.chunk_frame(i, rows)
         })
     }
@@ -70,7 +63,7 @@ impl DataFrame {
             .map(|col| match col {
                 // `Column::from` would turn a one-row chunk into a Scalar, which reads the row.
                 Column::Series(s) => Column::Series(s.select_chunk(chunk_idx).into()),
-                // These have no chunks of their own to follow.
+                // These are sliced by offset.
                 Column::Scalar(_) | Column::Dictionary(_) => col.slice(rows.clone()),
             })
             .collect();

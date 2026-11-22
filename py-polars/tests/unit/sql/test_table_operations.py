@@ -986,3 +986,92 @@ def test_delete_reads_no_data() -> None:
     source = pl.LazyFrame({"a": [1, 2]}).map_batches(fail, schema={"a": pl.Int64})
     with pl.SQLContext({"t": source, "u": source}) as ctx:
         ctx.execute("DELETE FROM t WHERE a IN (SELECT a FROM u)")
+
+
+def test_insert_into_registered_table() -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute("CREATE TABLE t (id INT, name VARCHAR, sold DATE)")
+        ctx.execute("CREATE VIEW v AS SELECT count(*) AS n FROM t")
+        res = ctx.execute(
+            "INSERT INTO t VALUES (1, 'a', DATE '2026-01-02')", eager=True
+        )
+        assert res.height == 1
+
+        # the listed columns, others NULL; a fraction going into an integer rounds
+        ctx.execute("INSERT INTO t (name, id) VALUES ('b', 2.5), ('c', 3.4)")
+        # a query on the table reads it as before the INSERT
+        ctx.execute("INSERT INTO t SELECT id + 10, name, sold FROM t WHERE id = 1")
+        expected = pl.DataFrame(
+            {
+                "id": [1, 3, 3, 11],
+                "name": ["a", "b", "c", "a"],
+                "sold": [date(2026, 1, 2), None, None, date(2026, 1, 2)],
+            },
+            schema={"id": pl.Int32, "name": pl.String, "sold": pl.Date},
+        )
+        assert_frame_equal(ctx.execute("SELECT * FROM t", eager=True), expected)
+        assert ctx.execute("SELECT n FROM v", eager=True).item() == 4
+
+        ctx.execute("INSERT OVERWRITE t (id) VALUES (9)")
+        assert ctx.execute("SELECT id FROM t", eager=True)["id"].to_list() == [9]
+
+
+def test_update_registered_table() -> None:
+    with pl.SQLContext(
+        {"t": pl.LazyFrame({"a": [1, 2, 3], "b": [10, 20, None]})}
+    ) as ctx:
+        res = ctx.execute("UPDATE t SET b = b + 1 WHERE a > 1", eager=True)
+        assert res["b"].to_list() == [10, 21, None]
+
+        # values come from the row before the update; a NULL condition updates nothing
+        ctx.execute("UPDATE t SET a = b, b = a WHERE b > 15")
+        # a fraction going into an integer rounds
+        ctx.execute("UPDATE t AS x SET b = 7.5 WHERE x.b IS NULL")
+        expected = pl.DataFrame({"a": [1, 21, 3], "b": [10, 2, 8]})
+        assert_frame_equal(ctx.execute("SELECT * FROM t", eager=True), expected)
+
+
+@pytest.mark.parametrize(
+    ("statement", "error", "match"),
+    [
+        ("INSERT INTO t VALUES (1, 2)", SQLInterfaceError, "the query gives 2"),
+        ("INSERT INTO t (x) VALUES (1)", pl.exceptions.ColumnNotFoundError, "'x'"),
+        ("INSERT INTO t VALUES ('1')", pl.exceptions.SchemaError, "with CAST"),
+        ("UPDATE t SET a = 'x'", pl.exceptions.SchemaError, "with CAST"),
+        # a VALUES list is computed at the INSERT
+        (
+            "INSERT INTO t VALUES (2147483648)",
+            pl.exceptions.InvalidOperationError,
+            "'a'",
+        ),
+        ("INSERT INTO v VALUES (1)", SQLInterfaceError, "requires a registered"),
+        ("UPDATE v SET a = 1", SQLInterfaceError, "requires a registered"),
+    ],
+)
+def test_insert_update_failure_leaves_table_unchanged(
+    statement: str, error: type[Exception], match: str
+) -> None:
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})}) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(error, match=match):
+            ctx.execute(statement)
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [1]
+
+
+def test_statements_reading_their_own_table() -> None:
+    # an incremental load and a delete that read their own table, repeated: computed at
+    # the statement, so the table's plan does not grow with each of them
+    with pl.SQLContext({"src": pl.LazyFrame({"id": [1, 2, 3, 3]})}) as ctx:
+        ctx.execute("CREATE TABLE t (id BIGINT)")
+        ctx.execute("CREATE VIEW v AS SELECT id FROM t")
+        for _ in range(20):
+            ctx.execute(
+                "INSERT INTO t SELECT DISTINCT id FROM src "
+                "WHERE id NOT IN (SELECT id FROM t)"
+            )
+            ctx.execute("INSERT INTO t SELECT max(id) + 1 FROM v")
+        for _ in range(20):
+            ctx.execute("DELETE FROM t WHERE id IN (SELECT max(id) FROM v)")
+        assert ctx.execute("SELECT id FROM t ORDER BY id", eager=True)[
+            "id"
+        ].to_list() == [1, 2, 3]

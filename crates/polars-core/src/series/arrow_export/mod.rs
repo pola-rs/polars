@@ -119,6 +119,9 @@ impl Series {
         chunk_idx: usize,
         compat_level: CompatLevel,
     ) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send + use<> {
+        if !self.dtype().contains_map() {
+            return Either::Left(std::iter::once(self.try_to_arrow(chunk_idx, compat_level)));
+        }
         let arrow_dtype = self.dtype().to_arrow(compat_level);
         let chunk = self.chunks()[chunk_idx].as_ref();
         if !contains_arrow_map(&arrow_dtype)
@@ -136,10 +139,29 @@ impl Series {
                 return None;
             }
             let end = arrow_export_cut(rows, |r| map_spans_fit(arr, &arrow_dtype, r, 1));
-            let piece = chunk.slice(start..end).try_to_arrow(0, compat_level);
+            let piece = chunk
+                .slice(start..end)
+                .try_piece_to_arrow(&arrow_dtype, compat_level);
             start = end;
             Some(piece)
         }))
+    }
+
+    /// Export this single-chunk Series, a piece cut by [`arrow_export_cut`], as `arrow_dtype`.
+    ///
+    /// A one-row piece can still span more map entries than an arrow MAP holds. Its nulls are
+    /// then pushed down to its maps, which drop the entries of their null rows.
+    pub(crate) fn try_piece_to_arrow(
+        &self,
+        arrow_dtype: &ArrowDataType,
+        compat_level: CompatLevel,
+    ) -> PolarsResult<ArrayRef> {
+        if self.len() == 1 && !map_spans_fit(self.chunks()[0].as_ref(), arrow_dtype, 0..1, 1) {
+            if let Some(s) = self.propagate_nulls() {
+                return s.try_to_arrow(0, compat_level);
+            }
+        }
+        self.try_to_arrow(0, compat_level)
     }
 
     /// Export this Series to an arrow array. The dtype of the returned array will match the

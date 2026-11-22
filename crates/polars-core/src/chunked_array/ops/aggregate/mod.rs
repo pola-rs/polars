@@ -14,7 +14,7 @@ use polars_utils::float::IsFloat;
 use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 pub use quantile::{QuantileAggSeries, extract_quantiles, quantile_indices};
-pub(crate) use quantile::{quantile_of_nonnull, sorted_quantile};
+pub(crate) use quantile::{quantile_of_nonnull, quantile_with, sorted_quantile};
 pub use var::*;
 
 use super::float_sorted_arg_max::{

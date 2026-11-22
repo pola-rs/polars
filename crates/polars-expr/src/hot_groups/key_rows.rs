@@ -248,6 +248,7 @@ mod tests {
             layout.clone(),
             &PlRandomState::default(),
             true,
+            true,
         );
         keys.hashes = PrimitiveArray::from_vec(vec![HASH; a.len()]);
         HashKeys::KeyRows(keys)

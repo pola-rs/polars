@@ -42,7 +42,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -105,6 +105,19 @@ impl<T> From<T> for Wrap<T> {
     fn from(t: T) -> Self {
         Wrap(t)
     }
+}
+
+pub(crate) fn py_int_to_u128(ob: &Bound<'_, PyAny>) -> PyResult<u128> {
+    let py = ob.py();
+    let int = unsafe { Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyNumber_Index(ob.as_ptr()))? };
+    // On Python >= 3.14 negative values raise a ValueError instead of an OverflowError.
+    int.extract::<u128>().map_err(|err| {
+        if err.is_instance_of::<PyValueError>(py) {
+            PyOverflowError::new_err(err.value(py).to_string())
+        } else {
+            err
+        }
+    })
 }
 
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>

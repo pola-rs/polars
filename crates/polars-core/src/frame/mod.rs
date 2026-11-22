@@ -88,7 +88,28 @@ pub enum PivotColumnNaming {
     Auto,
 }
 
+/// The chunk lengths of a column that has chunks of its own: a series, or the codes of a
+/// dictionary column (which materializes with the same chunks). Scalar columns have none.
+fn column_chunk_lengths(c: &Column) -> Option<Box<dyn Iterator<Item = usize> + '_>> {
+    match c {
+        Column::Series(_) => c.as_series().map(|s| Box::new(s.chunk_lengths()) as _),
+        Column::Dictionary(d) => Some(Box::new(d.codes().chunk_lengths())),
+        Column::Scalar(_) => None,
+    }
+}
+
 impl DataFrame {
+    /// The chunk lengths the frame is laid out along: those of the first series column, as the
+    /// chunks of series columns are selected by index; only without one, those of the first
+    /// dictionary column's codes (which are sliced by offset).
+    fn chunk_lengths_of_leading_column(&self) -> Option<Box<dyn Iterator<Item = usize> + '_>> {
+        self.columns()
+            .iter()
+            .find(|c| matches!(c, Column::Series(_)))
+            .and_then(column_chunk_lengths)
+            .or_else(|| self.columns().iter().find_map(column_chunk_lengths))
+    }
+
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns().iter().map(Column::as_materialized_series)
     }
@@ -349,18 +370,14 @@ impl DataFrame {
         if !self
             .columns()
             .iter()
-            .filter_map(Column::as_series)
-            .map(|s| s.n_chunks())
+            .filter_map(column_chunk_lengths)
+            .map(|cl| cl.size_hint().0)
             .all_equal()
         {
             return true;
         }
 
-        let mut chunk_lengths = self
-            .columns()
-            .iter()
-            .filter_map(Column::as_series)
-            .map(|s| s.chunk_lengths());
+        let mut chunk_lengths = self.columns().iter().filter_map(column_chunk_lengths);
         match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {
@@ -474,18 +491,18 @@ impl DataFrame {
 
     /// The number of chunks for the first column.
     pub fn first_col_n_chunks(&self) -> usize {
-        match self.columns().iter().find_map(|col| col.as_series()) {
+        match self.chunk_lengths_of_leading_column() {
             None if self.width() == 0 => 0,
             None => 1,
-            Some(s) => s.n_chunks(),
+            Some(cl) => cl.size_hint().0,
         }
     }
 
     /// The chunk lengths of the first column that has chunks, see [`Self::first_col_n_chunks`].
     pub(crate) fn first_col_chunk_lengths(&self) -> impl Iterator<Item = usize> + '_ {
-        match self.columns().iter().find_map(|col| col.as_series()) {
+        match self.chunk_lengths_of_leading_column() {
             None => Either::Right((self.width() > 0).then_some(self.height()).into_iter()),
-            Some(s) => Either::Left(s.chunk_lengths()),
+            Some(cl) => Either::Left(cl),
         }
     }
 
@@ -493,7 +510,7 @@ impl DataFrame {
     pub fn max_n_chunks(&self) -> usize {
         self.columns()
             .iter()
-            .map(|s| s.as_series().map(|s| s.n_chunks()).unwrap_or(1))
+            .map(|c| column_chunk_lengths(c).map_or(1, |cl| cl.size_hint().0))
             .max()
             .unwrap_or(0)
     }
@@ -2168,11 +2185,22 @@ impl DataFrame {
         compat_level: CompatLevel,
         parallel: bool,
     ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + '_ {
+        // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
+        // as we must allocate arrow strings/binaries.
+        let parallel = parallel
+            && compat_level.0 == 0
+            && self
+                .columns()
+                .iter()
+                .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
         RecordBatchIterWrap::new(Cow::Borrowed(self), compat_level, parallel)
     }
 
     /// Like [`DataFrame::try_iter_chunks`], but the iterator owns the frame, for consumers that
     /// outlive it, such as an arrow C stream.
+    ///
+    /// With `parallel`, the columns of each batch are exported on the thread pool, whatever their
+    /// dtypes.
     pub fn into_try_iter_chunks(
         self,
         compat_level: CompatLevel,
@@ -2684,45 +2712,39 @@ impl DataFrame {
 
 /// Cursor over the chunks a [`DataFrame`] is laid out along.
 struct ChunkCursor {
-    /// The first column that has chunks; `None` when no column does.
-    chunked_column: Option<usize>,
-    n_chunks: usize,
+    /// The chunk lengths of the first column that has chunks (a series, or a dictionary
+    /// column's codes), as `first_col_chunk_lengths`; empty when no column has.
+    chunks: Vec<usize>,
+    height: usize,
     idx: usize,
 }
 
 impl ChunkCursor {
     fn new(df: &DataFrame) -> Self {
-        let chunked_column = df.columns().iter().position(|c| c.as_series().is_some());
-        let n_chunks = chunked_column.map_or(1, |i| df.columns()[i].n_chunks().max(1));
-
         Self {
-            chunked_column,
-            n_chunks,
+            chunks: df.first_col_chunk_lengths().collect(),
+            height: df.height(),
             idx: 0,
         }
     }
 
-    /// The index and number of rows of the next chunk of `df`.
-    fn next(&mut self, df: &DataFrame) -> Option<(usize, usize)> {
+    fn n_chunks(&self) -> usize {
+        usize::max(1, self.chunks.len())
+    }
+
+    /// The index and number of rows of the next chunk.
+    fn next(&mut self) -> Option<(usize, usize)> {
         let idx = self.idx;
-        if idx >= self.n_chunks {
+        if idx >= self.n_chunks() {
             return None;
         }
 
         self.idx += 1;
-        let chunks = self
-            .chunked_column
-            .map(|i| df.columns()[i].as_series().unwrap().chunks());
-        Some((
-            idx,
-            chunks
-                .and_then(|c| c.get(idx))
-                .map_or(df.height(), |c| c.len()),
-        ))
+        Some((idx, self.chunks.get(idx).copied().unwrap_or(self.height)))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = self.n_chunks - self.idx;
+        let n = self.n_chunks() - self.idx;
         (n, Some(n))
     }
 }
@@ -2759,6 +2781,17 @@ struct SplitChunk {
     start: usize,
 }
 
+/// `rows` of `c`, a column without chunks of its own, as a series of one chunk.
+fn materialize_rows(c: &Column, rows: std::ops::Range<usize>) -> Series {
+    // A column exported whole reuses the series it caches.
+    let s = if rows.len() == c.len() {
+        c.as_materialized_series().clone()
+    } else {
+        c.slice(rows).take_materialized_series()
+    };
+    if s.n_chunks() > 1 { s.rechunk() } else { s }
+}
+
 /// Export `rows` of `c`, which its chunk `idx` holds if it has chunks of its own.
 fn column_to_arrow(
     c: &Column,
@@ -2769,29 +2802,14 @@ fn column_to_arrow(
     match c.as_series() {
         Some(s) => s.try_to_arrow(idx, compat_level),
         // A dictionary column's codes need not have the chunks of the other columns.
-        None => {
-            let mut s = c.slice(rows).take_materialized_series();
-            if s.n_chunks() > 1 {
-                s = s.rechunk();
-            }
-            s.try_to_arrow(0, compat_level)
-        },
+        None => materialize_rows(c, rows).try_to_arrow(0, compat_level),
     }
 }
 
 impl<'a> RecordBatchIter<'a> {
     /// See [`DataFrame::try_iter_chunks`], for a `df` with at least one column.
     pub(crate) fn new(df: Cow<'a, DataFrame>, compat_level: CompatLevel, parallel: bool) -> Self {
-        // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
-        // as we must allocate arrow strings/binaries.
-        let must_convert = compat_level.0 == 0;
-        let parallel = parallel
-            && must_convert
-            && df.width() > 1
-            && df
-                .columns()
-                .iter()
-                .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
+        let parallel = parallel && df.width() > 1;
 
         let schema: ArrowSchemaRef = Arc::new(
             df.columns()
@@ -2834,7 +2852,18 @@ impl<'a> RecordBatchIter<'a> {
         f: impl Fn(usize) -> PolarsResult<T> + Send + Sync,
     ) -> PolarsResult<Vec<T>> {
         if self.parallel {
-            RAYON.install(|| (0..width).into_par_iter().map(f).collect())
+            // Collecting into a `Result` would lose the exact length, so the error is kept aside.
+            let error = std::sync::Mutex::new(None);
+            let out: Vec<Option<T>> = RAYON.install(|| {
+                (0..width)
+                    .into_par_iter()
+                    .map(|i| f(i).map_err(|err| *error.lock().unwrap() = Some(err)).ok())
+                    .collect()
+            });
+            if let Some(err) = error.into_inner().unwrap() {
+                return Err(err);
+            }
+            Ok(out.into_iter().map(Option::unwrap).collect())
         } else {
             // Collecting into a `Result` can't reserve the length, so the `Vec` would grow as it
             // fills.
@@ -2869,15 +2898,17 @@ impl<'a> RecordBatchIter<'a> {
         let length = range.len();
         let arrays = self.per_column(split.chunk.width(), |i| match &split.converted[i] {
             Some(arr) => Ok(arr.sliced(range.start, length)),
-            // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
-            None => match split.chunk.columns()[i].as_series() {
-                Some(s) => s.slice(range.clone()).try_to_arrow(0, self.compat_level),
-                None => column_to_arrow(
-                    &split.chunk.columns()[i],
-                    0,
-                    range.clone(),
+            None => {
+                let c = &split.chunk.columns()[i];
+                let piece = match c.as_series() {
+                    // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
+                    Some(s) => s.slice(range.clone()),
+                    None => materialize_rows(c, range.clone()),
+                };
+                piece.try_piece_to_arrow(
+                    self.schema.get_at_index(i).unwrap().1.dtype(),
                     self.compat_level,
-                ),
+                )
             },
         })?;
         Ok(RecordBatch::new(length, self.schema.clone(), arrays))
@@ -2940,7 +2971,7 @@ impl Iterator for RecordBatchIter<'_> {
             self.split = None;
         }
 
-        let (idx, length) = self.cursor.next(&self.df)?;
+        let (idx, length) = self.cursor.next()?;
         let rows = self.offset..self.offset + length;
         self.offset += length;
         if !self.fits(&self.df, idx, 0..length) {
@@ -2978,7 +3009,7 @@ impl Iterator for PhysRecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (idx, length) = self.cursor.next(self.df)?;
+        let (idx, length) = self.cursor.next()?;
         let offset = self.offset;
         self.offset += length;
 

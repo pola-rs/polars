@@ -180,6 +180,88 @@ mod tests {
         assert_eq!(maps[1].null_count(), 1);
     }
 
+    #[test]
+    fn a_null_list_row_over_too_many_map_entries_exports() {
+        let half = 1i64 << 30;
+        let maps = map_chunk(&[half, half, 1], None);
+        let list = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(maps.dtype().clone()),
+            Offsets::try_from_lengths([2, 1].into_iter())
+                .unwrap()
+                .into(),
+            maps,
+            Some(Bitmap::from([false, true])),
+        );
+        let s = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                "l".into(),
+                vec![list.boxed()],
+                &DataType::List(Box::new(map_dtype())),
+            )
+        };
+
+        let arrays: Vec<_> = s
+            .try_to_arrow_split(0, CompatLevel::newest())
+            .collect::<PolarsResult<_>>()
+            .unwrap();
+
+        // The maps under the null row are exported empty.
+        let lists: Vec<&ListArray<i64>> = arrays
+            .iter()
+            .map(|a| a.as_any().downcast_ref().unwrap())
+            .collect();
+        assert_eq!(lists[0].null_count(), 1);
+        let maps: Vec<&MapArray> = lists
+            .iter()
+            .map(|l| l.values().as_any().downcast_ref().unwrap())
+            .collect();
+        let offsets: Vec<_> = maps.iter().map(|m| m.offsets().as_slice()).collect();
+        assert_eq!(offsets, [&[0, 0, 0][..], &[0, 1]]);
+
+        // A one-row frame holds the row as a Scalar column.
+        let df = DataFrame::new_infer_height(vec![Column::from(s.slice(0..1))]).unwrap();
+        assert!(df.columns()[0].as_scalar_column().is_some());
+        let batches: Vec<_> = df
+            .try_iter_chunks(CompatLevel::newest(), false)
+            .collect::<PolarsResult<_>>()
+            .unwrap();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].arrays()[0].null_count(), 1);
+    }
+
+    #[cfg(feature = "dtype-array")]
+    #[test]
+    fn a_null_array_row_over_too_many_map_entries_exports() {
+        let half = 1i64 << 30;
+        let array_dtype = DataType::Array(Box::new(map_dtype()), 2);
+        let fsl = FixedSizeListArray::new(
+            array_dtype.to_physical().to_arrow(CompatLevel::newest()),
+            2,
+            map_chunk(&[half, half, 1, 1], None),
+            Some(Bitmap::from([false, true])),
+        );
+        let s = unsafe {
+            Series::from_chunks_and_dtype_unchecked("a".into(), vec![fsl.boxed()], &array_dtype)
+        };
+
+        let arrays: Vec<_> = s
+            .try_to_arrow_split(0, CompatLevel::newest())
+            .collect::<PolarsResult<_>>()
+            .unwrap();
+
+        // The maps under the null row are exported empty.
+        let maps: Vec<&MapArray> = arrays
+            .iter()
+            .map(|a| {
+                let fsl: &FixedSizeListArray = a.as_any().downcast_ref().unwrap();
+                fsl.values().as_any().downcast_ref().unwrap()
+            })
+            .collect();
+        let offsets: Vec<_> = maps.iter().map(|m| m.offsets().as_slice()).collect();
+        assert_eq!(offsets, [[0, 0, 0], [0, 1, 2]]);
+        assert_eq!(arrays[0].null_count(), 1);
+    }
+
     /// Python only hands `try_iter_chunks` frames it has aligned.
     #[test]
     fn a_split_chunk_with_misaligned_columns_errors() {

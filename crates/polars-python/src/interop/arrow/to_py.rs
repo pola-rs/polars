@@ -84,10 +84,17 @@ pub(crate) fn dataframe_to_stream<'py>(
     df: &DataFrame,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
+    // Materialize Scalar and Dictionary columns on `df` itself, so that repeated exports share
+    // their buffers. A Map column may be split without materializing it.
+    for c in df.columns() {
+        if c.as_series().is_none() && !c.dtype().contains_map() {
+            c.as_materialized_series();
+        }
+    }
     let schema = df.schema().to_arrow(CompatLevel::newest());
     let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
     let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
-    let stream = ffi::export_iterator(frame_to_struct_arrays(df.clone(), dtype), field);
+    let stream = ffi::export_iterator(frame_to_struct_arrays(df.clone(), dtype, false), field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
 }
 
@@ -118,6 +125,7 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
 pub(crate) fn frame_to_struct_arrays(
     df: DataFrame,
     dtype: ArrowDataType,
+    parallel: bool,
 ) -> Box<dyn Iterator<Item = PolarsResult<ArrayRef>> + Send> {
     // `into_try_iter_chunks` cuts a frame without columns into batches of the ideal morsel size.
     if df.width() == 0 {
@@ -126,7 +134,7 @@ pub(crate) fn frame_to_struct_arrays(
         return Box::new(array.into_iter());
     }
 
-    let batches = df.into_try_iter_chunks(CompatLevel::newest(), false);
+    let batches = df.into_try_iter_chunks(CompatLevel::newest(), parallel);
     Box::new(batches.map(move |batch| {
         let batch = batch?;
         let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);
