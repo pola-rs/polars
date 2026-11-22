@@ -1,6 +1,7 @@
 use crate::array::*;
 use crate::datatypes::PhysicalType;
 use crate::ffi;
+use crate::types::{months_days_ns, PrimitiveType};
 
 /// Trait describing how a struct presents itself to the
 /// [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
@@ -73,6 +74,9 @@ pub fn offset_buffers_children_dictionary(array: &dyn Array) -> BuffersChildren 
     match array.dtype().to_physical_type() {
         Null => ffi_dyn!(array, NullArray),
         Boolean => ffi_dyn!(array, BooleanArray),
+        Primitive(PrimitiveType::MonthDayNano) => {
+            ffi_dyn!(array, PrimitiveArray<months_days_ns>)
+        },
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             ffi_dyn!(array, PrimitiveArray<$T>)
         }),

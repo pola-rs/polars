@@ -1,8 +1,11 @@
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
-use polars_arrow::datatypes::{ArrowDataType, Field, IntegerType, UnionMode, UnionType};
+use polars_arrow::datatypes::{
+    ArrowDataType, Field, IntegerType, IntervalUnit, UnionMode, UnionType,
+};
 use polars_arrow::ffi;
 use polars_arrow::offset::OffsetsBuffer;
+use polars_arrow::types::months_days_ns;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
@@ -264,4 +267,97 @@ fn dictionary_nullable() -> PolarsResult<()> {
         Box::new(Utf8Array::<i64>::from_slice(["x", "yy"])),
     )?;
     test_round_trip(data)
+}
+
+#[test]
+fn months_days_ns_nullable() -> PolarsResult<()> {
+    let data = MonthsDaysNsArray::from([
+        Some(months_days_ns::new(1, 2, 3_000)),
+        None,
+        Some(months_days_ns::new(-1, 0, -500)),
+        Some(months_days_ns::new(12, 31, 1_000_000)),
+    ]);
+
+    fn round_trip_one(array: MonthsDaysNsArray, expected: &MonthsDaysNsArray) -> PolarsResult<()> {
+        let field = Field::new("a".into(), array.dtype().clone(), true);
+        let array_ffi = ffi::export_array_to_c(Box::new(array));
+        let schema_ffi = ffi::export_field_to_c(&field);
+
+        let result_field = unsafe { ffi::import_field_from_c(&schema_ffi)? };
+        let result_array =
+            unsafe { ffi::import_array_from_c(array_ffi, result_field.dtype.clone())? };
+
+        assert_eq!(result_field, field);
+        let imported = result_array
+            .as_any()
+            .downcast_ref::<MonthsDaysNsArray>()
+            .unwrap();
+        assert_eq!(imported.len(), expected.len());
+        assert_eq!(imported.validity(), expected.validity());
+        assert!(imported.iter().eq(expected.iter()));
+        Ok(())
+    }
+
+    round_trip_one(data.clone(), &data)?;
+    let sliced_expected = data.clone().sliced(1, 2);
+    round_trip_one(data.sliced(1, 2), &sliced_expected)?;
+    Ok(())
+}
+
+#[test]
+fn struct_with_months_days_ns() -> PolarsResult<()> {
+    let intervals = MonthsDaysNsArray::from([
+        Some(months_days_ns::new(1, 2, 3_000)),
+        None,
+        Some(months_days_ns::new(-1, 0, -500)),
+        Some(months_days_ns::new(12, 31, 1_000_000)),
+    ]);
+    let data = StructArray::new(
+        ArrowDataType::Struct(vec![Field::new(
+            "interval".into(),
+            ArrowDataType::Interval(IntervalUnit::MonthDayNano),
+            true,
+        )]),
+        4,
+        vec![Box::new(intervals.clone()) as Box<dyn Array>],
+        Some(Bitmap::from([true, true, false, true])),
+    );
+
+    fn round_trip_struct(
+        struct_arr: StructArray,
+        expected_validity: Option<&Bitmap>,
+        expected_intervals: &MonthsDaysNsArray,
+    ) -> PolarsResult<()> {
+        let field = Field::new("s".into(), struct_arr.dtype().clone(), true);
+        let array_ffi = ffi::export_array_to_c(Box::new(struct_arr));
+        let schema_ffi = ffi::export_field_to_c(&field);
+
+        let result_field = unsafe { ffi::import_field_from_c(&schema_ffi)? };
+        let result_array =
+            unsafe { ffi::import_array_from_c(array_ffi, result_field.dtype.clone())? };
+
+        assert_eq!(result_field, field);
+        let imported = result_array.as_any().downcast_ref::<StructArray>().unwrap();
+        assert_eq!(imported.validity(), expected_validity);
+        assert_eq!(imported.len(), expected_intervals.len());
+
+        let imported_child = imported.values()[0]
+            .as_any()
+            .downcast_ref::<MonthsDaysNsArray>()
+            .unwrap();
+        assert_eq!(imported_child.len(), expected_intervals.len());
+        assert_eq!(imported_child.validity(), expected_intervals.validity());
+        assert!(imported_child.iter().eq(expected_intervals.iter()));
+        Ok(())
+    }
+
+    round_trip_struct(data.clone(), data.validity(), &intervals)?;
+    let sliced_struct = data.sliced(1, 2);
+    let sliced_intervals = intervals.sliced(1, 2);
+    round_trip_struct(
+        sliced_struct.clone(),
+        sliced_struct.validity(),
+        &sliced_intervals,
+    )?;
+    Ok(())
 }

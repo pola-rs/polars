@@ -1,4 +1,5 @@
 use crate::array::*;
+use crate::types::{months_days_ns, PrimitiveType};
 use crate::{match_integer_type, with_match_primitive_type_full};
 
 macro_rules! ffi_dyn {
@@ -17,6 +18,9 @@ pub fn align_to_c_data_interface(array: Box<dyn Array>) -> Box<dyn Array> {
     match array.dtype().to_physical_type() {
         Null => ffi_dyn!(array, NullArray),
         Boolean => ffi_dyn!(array, BooleanArray),
+        Primitive(PrimitiveType::MonthDayNano) => {
+            ffi_dyn!(array, PrimitiveArray<months_days_ns>)
+        },
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             ffi_dyn!(array, PrimitiveArray<$T>)
         }),
