@@ -2781,6 +2781,17 @@ struct SplitChunk {
     start: usize,
 }
 
+/// `rows` of `c`, a column without chunks of its own, as a series of one chunk.
+fn materialize_rows(c: &Column, rows: std::ops::Range<usize>) -> Series {
+    // A column exported whole reuses the series it caches.
+    let s = if rows.len() == c.len() {
+        c.as_materialized_series().clone()
+    } else {
+        c.slice(rows).take_materialized_series()
+    };
+    if s.n_chunks() > 1 { s.rechunk() } else { s }
+}
+
 /// Export `rows` of `c`, which its chunk `idx` holds if it has chunks of its own.
 fn column_to_arrow(
     c: &Column,
@@ -2791,18 +2802,7 @@ fn column_to_arrow(
     match c.as_series() {
         Some(s) => s.try_to_arrow(idx, compat_level),
         // A dictionary column's codes need not have the chunks of the other columns.
-        None => {
-            // A column exported whole reuses the series it caches.
-            let mut s = if rows.len() == c.len() {
-                c.as_materialized_series().clone()
-            } else {
-                c.slice(rows).take_materialized_series()
-            };
-            if s.n_chunks() > 1 {
-                s = s.rechunk();
-            }
-            s.try_to_arrow(0, compat_level)
-        },
+        None => materialize_rows(c, rows).try_to_arrow(0, compat_level),
     }
 }
 
@@ -2902,16 +2902,12 @@ impl<'a> RecordBatchIter<'a> {
         let length = range.len();
         let arrays = self.per_column(split.chunk.width(), |i| match &split.converted[i] {
             Some(arr) => Ok(arr.sliced(range.start, length)),
-            // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
             None => {
                 let c = &split.chunk.columns()[i];
                 let piece = match c.as_series() {
                     // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
                     Some(s) => s.slice(range.clone()),
-                    None => {
-                        let s = c.slice(range.clone()).take_materialized_series();
-                        if s.n_chunks() > 1 { s.rechunk() } else { s }
-                    },
+                    None => materialize_rows(c, range.clone()),
                 };
                 piece.try_piece_to_arrow(
                     self.schema.get_at_index(i).unwrap().1.dtype(),
