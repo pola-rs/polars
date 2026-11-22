@@ -2792,7 +2792,12 @@ fn column_to_arrow(
         Some(s) => s.try_to_arrow(idx, compat_level),
         // A dictionary column's codes need not have the chunks of the other columns.
         None => {
-            let mut s = c.slice(rows).take_materialized_series();
+            // A column exported whole reuses the series it caches.
+            let mut s = if rows.len() == c.len() {
+                c.as_materialized_series().clone()
+            } else {
+                c.slice(rows).take_materialized_series()
+            };
             if s.n_chunks() > 1 {
                 s = s.rechunk();
             }
