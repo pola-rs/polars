@@ -1807,6 +1807,16 @@ def test_0_width_df_arrow_c_stream_is_one_batch() -> None:
         assert [batch.num_rows for batch in reader] == [1 << 20]
 
 
+def test_arrow_c_stream_exports_share_a_scalar_column() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(b=pl.lit(7, dtype=pl.Int64))
+
+    t1, t2 = pa.table(df), pa.table(df)
+
+    assert t1["b"].chunks[0].buffers()[1].address == (
+        t2["b"].chunks[0].buffers()[1].address
+    )
+
+
 def test_0_width_df_roundtrip() -> None:
     assert pl.DataFrame(height=(1 << 32) - 1).to_numpy().shape == ((1 << 32) - 1, 0)
     assert pl.DataFrame(np.zeros((10, 0))).shape == (10, 0)

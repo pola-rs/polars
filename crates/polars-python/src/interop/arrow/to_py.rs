@@ -84,6 +84,13 @@ pub(crate) fn dataframe_to_stream<'py>(
     df: &DataFrame,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
+    // Materialize Scalar columns on `df` itself, so that repeated exports share their buffers.
+    // A Map column is split without materializing it.
+    for c in df.columns() {
+        if let Some(sc) = c.as_scalar_column().filter(|_| !c.dtype().contains_map()) {
+            sc.as_materialized_series();
+        }
+    }
     let schema = df.schema().to_arrow(CompatLevel::newest());
     let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
     let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);

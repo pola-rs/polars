@@ -2185,11 +2185,22 @@ impl DataFrame {
         compat_level: CompatLevel,
         parallel: bool,
     ) -> impl Iterator<Item = PolarsResult<RecordBatch>> + Send + '_ {
+        // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
+        // as we must allocate arrow strings/binaries.
+        let parallel = parallel
+            && compat_level.0 == 0
+            && self
+                .columns()
+                .iter()
+                .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
         RecordBatchIterWrap::new(Cow::Borrowed(self), compat_level, parallel)
     }
 
     /// Like [`DataFrame::try_iter_chunks`], but the iterator owns the frame, for consumers that
     /// outlive it, such as an arrow C stream.
+    ///
+    /// With `parallel`, the columns of each batch are exported on the thread pool, whatever their
+    /// dtypes.
     pub fn into_try_iter_chunks(
         self,
         compat_level: CompatLevel,
@@ -2793,17 +2804,7 @@ fn column_to_arrow(
 impl<'a> RecordBatchIter<'a> {
     /// See [`DataFrame::try_iter_chunks`], for a `df` with at least one column.
     pub(crate) fn new(df: Cow<'a, DataFrame>, compat_level: CompatLevel, parallel: bool) -> Self {
-        // Only some columns do work to export: strings and binaries are copied at the oldest
-        // compat level, categoricals remap their keys and dictionary columns materialize.
-        let must_convert = compat_level.0 == 0;
-        let parallel = parallel
-            && df.width() > 1
-            && df.columns().iter().any(|c| {
-                (must_convert && matches!(c.dtype(), DataType::String | DataType::Binary))
-                    || c.dtype().contains_categoricals()
-                    || c.dtype().contains_enums()
-                    || c.as_dictionary_column().is_some()
-            });
+        let parallel = parallel && df.width() > 1;
 
         let schema: ArrowSchemaRef = Arc::new(
             df.columns()
