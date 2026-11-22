@@ -25,6 +25,7 @@ struct StatisticsColumns {
     min: Column,
     max: Column,
     null_count: Column,
+    nan_count: Column,
 }
 
 impl StatisticsColumns {
@@ -33,6 +34,7 @@ impl StatisticsColumns {
             min: Column::full_null(PlSmallStr::EMPTY, height, dtype),
             max: Column::full_null(PlSmallStr::EMPTY, height, dtype),
             null_count: Column::full_null(PlSmallStr::EMPTY, height, &null_count_dtype(dtype)),
+            nan_count: Column::full_null(PlSmallStr::EMPTY, height, &null_count_dtype(dtype)),
         }
     }
 
@@ -63,6 +65,9 @@ impl StatisticsColumns {
 
             null_count: Series::from_arrow(PlSmallStr::EMPTY, statistics.null_count.boxed())?
                 .into_column(),
+
+            nan_count: Series::from_arrow(PlSmallStr::EMPTY, statistics.nan_count.boxed())?
+                .into_column(),
         })
     }
 
@@ -72,11 +77,13 @@ impl StatisticsColumns {
         let min = self.min.with_name(format_pl_smallstr!("{b}_min"));
         let max = self.max.with_name(format_pl_smallstr!("{b}_max"));
         let null_count = self.null_count.with_name(format_pl_smallstr!("{b}_nc"));
+        let nan_count = self.nan_count.with_name(format_pl_smallstr!("{b}_nan"));
 
         Self {
             min,
             max,
             null_count,
+            nan_count,
         }
     }
 }
@@ -164,7 +171,7 @@ async fn static_skip_mask(
             }
         }
 
-        let mut columns = Vec::with_capacity(1 + skip_batch_columns.len() * 3);
+        let mut columns = Vec::with_capacity(1 + skip_batch_columns.len() * 4);
 
         let lengths: Vec<IdxSize> = row_groups_slice
             .iter()
@@ -200,11 +207,13 @@ async fn static_skip_mask(
                     statistics.null_count.len(),
                     &null_count_dtype(&projection.output_dtype()),
                 );
+                statistics.nan_count = statistics.null_count.clone();
             }
 
             let statistics = statistics.with_base_column_name(c);
 
             columns.extend([statistics.min, statistics.max, statistics.null_count]);
+            columns.push(statistics.nan_count);
         }
 
         if let Some(row_index) = row_index {
@@ -212,6 +221,7 @@ async fn static_skip_mask(
                 .with_base_column_name(&row_index.name);
 
             columns.extend([statistics.min, statistics.max, statistics.null_count]);
+            columns.push(statistics.nan_count);
         }
 
         let statistics_df = DataFrame::new(num_row_groups, columns)?;
@@ -699,10 +709,15 @@ fn build_struct_statistics_columns(
                 )
             };
 
+            let null_count = to_struct(&ncs)?;
+            // The NaN counts of struct fields are unknown, which never skips.
+            let nan_count = Column::full_null(PlSmallStr::EMPTY, height, null_count.dtype());
+
             Ok(Some(StatisticsColumns {
                 min: to_struct(&mins)?,
                 max: to_struct(&maxs)?,
-                null_count: to_struct(&ncs)?,
+                null_count,
+                nan_count,
             }))
         },
         _ => {
@@ -854,6 +869,7 @@ fn build_row_index_statistics(
         min: Series::from_array(PlSmallStr::EMPTY, min_value.freeze()).into_column(),
         max: Series::from_array(PlSmallStr::EMPTY, max_value.freeze()).into_column(),
         null_count: Series::from_array(PlSmallStr::EMPTY, null_count).into_column(),
+        nan_count: Column::full_null(PlSmallStr::EMPTY, row_groups.len(), &IDX_DTYPE),
     }
 }
 

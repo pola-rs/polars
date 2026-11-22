@@ -137,6 +137,17 @@ impl ColumnChunkMetadata {
             .null_count
     }
 
+    /// NaN count from the chunk statistics (PARQUET-2249).
+    /// `None` if there are no statistics, or the column metadata is missing.
+    pub fn nan_count(&self) -> Option<i64> {
+        self.column_chunk
+            .meta_data
+            .as_ref()?
+            .statistics
+            .as_ref()?
+            .nan_count
+    }
+
     /// Distinct count from the chunk statistics.
     /// `None` if there are no statistics, or the column metadata is missing.
     pub fn distinct_count(&self) -> Option<i64> {
