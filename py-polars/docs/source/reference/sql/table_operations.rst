@@ -532,7 +532,8 @@ not changed.
 
 The table keeps the condition, not its result. Each read of the table runs the condition
 again on the table's source. A subquery of the condition keeps its tables as registered at
-the time of the ``DELETE``.
+the time of the ``DELETE``. A condition whose subquery reads the table itself is computed at
+the ``DELETE``, as in Postgres.
 
 - A condition that names a missing column fails at the ``DELETE`` and leaves the table
   unchanged. Other errors in the condition, such as a string compared with an integer or a
@@ -700,7 +701,9 @@ original frame are not changed. The rows of a ``VALUES`` list without subqueries
 at the ``INSERT``. The rows of a query are not: the table keeps the query, and each read of
 the table runs it again, on the tables as they were at the time of the ``INSERT``. A value of
 the query that does not fit shows when the table is read, on each read until the table is
-registered again.
+registered again. A query that reads the table itself, as in an incremental load
+(``INSERT INTO t SELECT ... WHERE id NOT IN (SELECT id FROM t)``), is computed at the
+``INSERT``, as in Postgres.
 
 On a table of a catalog attached with :meth:`SQLContext.register_catalog`, it writes the
 rows in one commit. If another writer commits first, ``INSERT INTO`` retries.
