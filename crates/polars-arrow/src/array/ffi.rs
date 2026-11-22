@@ -1,7 +1,7 @@
 use crate::array::*;
 use crate::datatypes::PhysicalType;
 use crate::ffi;
-use crate::types::{months_days_ns, PrimitiveType};
+use crate::types::{PrimitiveType, months_days_ns};
 
 /// Trait describing how a struct presents itself to the
 /// [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
