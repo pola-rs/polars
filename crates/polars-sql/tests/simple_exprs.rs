@@ -601,8 +601,8 @@ fn test_arr_agg() {
                     .unique_stable()
                     .implode(true)
                     .explode(ExplodeOptions {
-                        empty_as_null: true,
-                        keep_nulls: true,
+                        empty_as_null: false,
+                        keep_nulls: false,
                     })
                     .alias("a"),
             ],
@@ -654,8 +654,8 @@ fn test_explode_with_multiple_columns() {
             strict: true,
         },
         ExplodeOptions {
-            empty_as_null: true,
-            keep_nulls: true,
+            empty_as_null: false,
+            keep_nulls: false,
         },
     );
     let mut context = SQLContext::new();
@@ -758,8 +758,8 @@ fn test_multiple_explodes_different_columns() {
                 strict: true,
             },
             ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
+                empty_as_null: false,
+                keep_nulls: false,
             },
         )
         .collect()
@@ -851,8 +851,8 @@ fn explode_same_name_with_cte() {
                 strict: true,
             },
             ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
+                empty_as_null: false,
+                keep_nulls: false,
             },
         )
         .explode(
@@ -861,8 +861,8 @@ fn explode_same_name_with_cte() {
                 strict: true,
             },
             ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
+                empty_as_null: false,
+                keep_nulls: false,
             },
         )
         .explode(
@@ -871,8 +871,8 @@ fn explode_same_name_with_cte() {
                 strict: true,
             },
             ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
+                empty_as_null: false,
+                keep_nulls: false,
             },
         )
         .collect()

@@ -107,6 +107,15 @@ pub struct DatabaseScanConfig {
     /// (MariaDB, Trino): a read without pushdown doesn't wrap it for conversions.
     #[serde(default)]
     pub derived_order_dropped: bool,
+    /// SQLite: the database was found to parse float literals exactly (`sqlite_floats_exact`):
+    /// float comparisons are pushed only then.
+    #[serde(default)]
+    pub sqlite_floats_exact: bool,
+    /// A SQL Server query with a column of no name: the derived table the read wraps it in lists
+    /// the schema's names in its alias (`(q) AS "_pl"("a", "column_1")`), as SQL Server refuses
+    /// a derived table with an unnamed column.
+    #[serde(default)]
+    pub unnamed_columns: bool,
     /// Columns the planner found unreadable right, with why: raised when one is read.
     #[serde(default)]
     pub refused_columns: Vec<(PlSmallStr, PlSmallStr)>,
@@ -130,6 +139,15 @@ pub(crate) fn session_setup_runs(connection: &ConnectionSpec, kind: &BackendKind
 pub type BoundsCache = Arc<Mutex<PlHashMap<String, (Option<f64>, Option<f64>)>>>;
 
 impl DatabaseScanConfig {
+    /// The columns the alias of a derived table over the query lists (`unnamed_columns`).
+    pub fn derived_columns(&self) -> Vec<PlSmallStr> {
+        if self.unnamed_columns {
+            self.schema.iter_names().cloned().collect()
+        } else {
+            vec![]
+        }
+    }
+
     pub fn column(&self, name: &str) -> Option<&ColumnMeta> {
         self.columns.iter().find(|c| c.name == name)
     }

@@ -30,10 +30,19 @@ from polars_database import _lib
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from polars import DataFrame
+    from polars import DataFrame, Schema
 
 # Rows per batch when the user gives no `batch_size`.
 DEFAULT_BATCH_SIZE = 50_000
+# `batch_size` is a fetch-size hint. Several drivers keep it in a C int (psycopg2's
+# `itersize` wraps to a negative or zero fetch count, SQLAlchemy and pymssql pass it
+# on), and a server takes no more than an int4 in `FETCH FORWARD`: a larger value is
+# clamped to what they accept, the rows then arrive in several batches.
+_MAX_FETCH_SIZE = 2**31 - 1
+# Oracle's drivers allocate the buffers of a whole fetch up front, also for a small
+# result (at least a pointer a row and column).
+_MAX_ORACLE_FETCH_SIZE = 2**20
+_ORACLE_MODULES = frozenset({"oracledb", "cx_Oracle"})
 
 # Python package (distribution) names, for version lookups.
 _DISTRIBUTIONS = {
@@ -421,6 +430,12 @@ def _connection_info(obj: Any) -> tuple[str, str]:
         with contextlib.suppress(Exception):
             vendor = str(obj.adbc_get_info().get("vendor_name", "")).lower()
             return _ADBC_VENDORS.get(vendor, ""), module
+    if module == "pyodbc":
+        # an ODBC driver of any DBMS: `SQL_DBMS_NAME` (17) says which. Only SQL Server's
+        # is checked; the others stay generic.
+        with contextlib.suppress(Exception):
+            if str(obj.getinfo(17)).lower() == "microsoft sql server":
+                return "mssql", module
     if module == "sqlalchemy":
         _require_sqlalchemy()
         engine = getattr(obj, "engine", None) or getattr(obj, "bind", None)
@@ -1584,42 +1599,23 @@ def _object_columns_as_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
         yield df
 
 
-def _valid_text(frames: Iterator[DataFrame]) -> Iterator[DataFrame]:
+def _databricks_raw_cursor(conn: Any, cx: Any) -> Any:
     """
-    Batches whose text is valid UTF-8, also nested in lists, maps and structs.
-
-    The Databricks connector hands the bytes of a `STRING` over as they are (a value
-    made of `unhex('FF')` is one), and Polars' String assumes UTF-8: an invalid byte
-    would reach the caller as a String that breaks its contract (memory unsafety in
-    string operations).
+    A cursor of the `databricks.sql` connection under a SQLAlchemy connection, or None:
+    the executor reads its Arrow results (the dialect's rows are not the database's
+    values). The statement runs on the same connection, in the same session.
     """
-    import polars as pl
-    from polars.exceptions import ComputeError
-
-    def has_text(dtype: Any) -> bool:
-        if dtype == pl.String:
-            return True
-        if isinstance(dtype, (pl.List, pl.Array)):
-            return has_text(dtype.inner)
-        if isinstance(dtype, pl.Map):
-            return has_text(dtype.key) or has_text(dtype.value)
-        if isinstance(dtype, pl.Struct):
-            return any(has_text(f.dtype) for f in dtype.fields)
-        return False
-
-    for df in frames:
-        names = [c for c, dt in df.schema.items() if has_text(dt)]
-        if names:
-            try:
-                df.select(names).to_arrow().validate(full=True)
-            except Exception as e:
-                msg = (
-                    "the database returned text that isn't valid UTF-8 (a STRING made "
-                    "of other bytes); read the column as BINARY with "
-                    f"CAST(<column> AS BINARY) and decode it in Polars ({e})"
-                )
-                raise ComputeError(msg) from e
-        yield df
+    if _module_of(conn) != "sqlalchemy" or cx.driver_name != "sqlalchemy":
+        return None
+    raw = _cancel_target(conn)
+    if raw is conn or _module_of(raw) != "databricks" or not hasattr(raw, "cursor"):
+        return None
+    cursor = raw.cursor()
+    if not hasattr(cursor, "fetchall_arrow"):
+        with contextlib.suppress(Exception):
+            cursor.close()
+        return None
+    return cursor
 
 
 def _oracle_row_cursor(cx: Any) -> Any:
@@ -2093,6 +2089,21 @@ def _shutdown_socket(conn: Any) -> None:
             return
 
 
+def _cast_null_columns(
+    frames: Iterator[DataFrame], schema: Schema
+) -> Iterator[DataFrame]:
+    """`frames` with each column of dtype `Null` cast to its dtype in `schema`."""
+    import polars as pl
+
+    for df in frames:
+        casts = [
+            pl.col(name).cast(schema[name])
+            for name, dtype in df.schema.items()
+            if dtype == pl.Null and schema.get(name, pl.Null) != pl.Null
+        ]
+        yield df.with_columns(casts) if casts else df
+
+
 def _empty_frame(result: Any, *, utc: bool) -> DataFrame:
     import polars as pl
 
@@ -2199,6 +2210,23 @@ _DATABRICKS_TYPE_DTYPES = {
     "boolean": "Boolean",
     "binary": "Binary",
     "date": "Date",
+}
+
+
+# Trino type names (`cursor.description`'s type codes) whose dtype is fixed. Left out
+# (typed from values): types with a zone or a variable precision, nested types,
+# `json`, `uuid`, intervals.
+_TRINO_TYPE_DTYPES = {
+    "boolean": "Boolean",
+    "tinyint": "Int8",
+    "smallint": "Int16",
+    "integer": "Int32",
+    "bigint": "Int64",
+    "real": "Float32",
+    "double": "Float64",
+    "varbinary": "Binary",
+    "date": "Date",
+    "json": "String",
 }
 
 
@@ -2514,7 +2542,30 @@ def _description_dtypes(cursor: Any, description: Any, *, utc: bool) -> list[Any
         name = _DATABRICKS_TYPE_DTYPES.get(type_name)
         return pl.Null if name is None else named(name)
 
+    def trino(d: Any) -> Any:
+        # `d[1]` is Trino's type name: `bigint`, `decimal(10,2)`, `varchar(5)`
+        type_name = str(d[1]).lower().strip()
+        if (m := re.fullmatch(r"decimal\((\d+),\s*(\d+)\)", type_name)) is not None:
+            p, s = int(m[1]), int(m[2])
+            return pl.Decimal(p, s) if 0 < p <= 38 and 0 <= s <= p else pl.Null
+        # (a precision above 6 is read as text, and an instant in UTC: the planner's
+        # conversions, `Dialect.text_conversion`, `column_conversion`)
+        if (
+            m := re.fullmatch(r"timestamp\((\d+)\)( with time zone)?", type_name)
+        ) is not None:
+            if int(m[1]) > 6:
+                return pl.String
+            return pl.Datetime("us", "UTC") if m[2] else pl.Datetime("us")
+        if (m := re.fullmatch(r"time\((\d+)\)", type_name)) is not None:
+            return pl.Time if int(m[1]) <= 6 else pl.String
+        if re.fullmatch(r"(varchar|char)(\(\d+\))?", type_name):
+            return pl.String
+        name = _TRINO_TYPE_DTYPES.get(type_name)
+        return pl.Null if name is None else getattr(pl, name)
+
     module = _module_of(cursor)
+    if module == "trino":
+        return [trino(d) for d in description]
     if module == "duckdb":
         # (only nested types: a scalar column is typed from the catalog's type)
         return [_duckdb_type_dtype(str(d[1]), nested_only=True) for d in description]
@@ -2721,7 +2772,12 @@ class _Session:
         """
         from polars.io.database._executor import ConnectionExecutor
 
-        batch_size = batch_size or DEFAULT_BATCH_SIZE
+        batch_size = min(
+            batch_size or DEFAULT_BATCH_SIZE,
+            _MAX_ORACLE_FETCH_SIZE
+            if _module_of(_cancel_target(self.conn)) in _ORACLE_MODULES
+            else _MAX_FETCH_SIZE,
+        )
         params = self.params if bind else None
         raw_sqlalchemy = self._raw_sqlalchemy or (
             not bind and _module_of(self.conn) == "sqlalchemy"
@@ -2833,6 +2889,12 @@ class _Session:
                         cx = ConnectionExecutor(raw)
                         cx_cursor = raw
                     raw.outputtypehandler = _oracle_decimal_handler(raw)
+                elif (raw := _databricks_raw_cursor(self.conn, cx)) is not None:
+                    # Through the connector's own Arrow cursor, as a connection
+                    # function reads: SQLAlchemy's rows lose the NaN, the time zone of
+                    # a TIMESTAMP and the nested values of a MAP
+                    cx = ConnectionExecutor(raw)
+                    cx_cursor = raw
                 if (
                     _module_of(self.conn) == "clickhouse_connect"
                     and "parameters" not in options
@@ -2918,14 +2980,24 @@ class _Session:
                         )
                         raise RuntimeError(msg)
                     frames = _mysql_timestamps_to_utc(frames, timestamps, live_zone)
-                if _module_of(cx.result) == "databricks":
-                    frames = _valid_text(frames)
                 # some drivers yield no batch for an empty result, and close the
                 # cursor when done: take the column names first
                 empty_frame = _empty_frame(
                     cx.result, utc=self.owned or bool(timestamps)
                 )
+                if _module_of(cx.result) == "trino":
+                    # a Trino batch types a column of NULLs only as `Null`
+                    frames = _cast_null_columns(frames, empty_frame.schema)
                 if on_connection:
+                    frames = iter(list(frames))
+                if (
+                    not self.owned
+                    and _module_of(_cancel_target(self.conn)) == "pymssql"
+                ):
+                    # pymssql has no MARS: a connection runs one statement at a time,
+                    # and another scan's statement while this result is unread would
+                    # discard it (no rows, the other's rows, or a shape error). Read
+                    # whole here, under the lock.
                     frames = iter(list(frames))
                 if idle and _transaction_idle(self.conn) is False:
                     frames = iter(list(frames))
@@ -3394,8 +3466,13 @@ class _ArrowOdbcSession:
             batch_size=batch_size or DEFAULT_BATCH_SIZE,
             **self.options,
         )
+        yielded = False
         for batch in reader:
+            yielded = True
             yield pl.DataFrame(batch)
+        if not yielded:
+            # the reader yields no batch for an empty result
+            yield pl.DataFrame(reader.schema.empty_table())
 
     def execute_update(self, sql: str) -> None:
         msg = "arrow-odbc can't run session statements"

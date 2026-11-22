@@ -134,6 +134,17 @@ def test_unnest_select_expressions() -> None:
     )
 
 
+def test_unnest_empty_or_null_list() -> None:
+    # as in Postgres and DuckDB: an empty or NULL list gives no row, a NULL element does
+    df = pl.DataFrame({"id": [1, 2, 3, 4], "xs": [[10, 11], [], None, [None]]})
+    expected = pl.DataFrame({"id": [1, 1, 4], "x": [10, 11, None]})
+    for query in [
+        "SELECT id, UNNEST(xs) AS x FROM self ORDER BY id, x",
+        "SELECT id, x FROM self CROSS JOIN UNNEST(xs) AS u(x) ORDER BY id, x",
+    ]:
+        assert_sql_matches(df, query=query, compare_with="duckdb", expected=expected)
+
+
 def test_unnest_aggregates() -> None:
     df = pl.DataFrame({"a": [i // 100 for i in range(1, 1000)]})
     query = """

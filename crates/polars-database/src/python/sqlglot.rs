@@ -162,6 +162,7 @@ impl SqlglotRenderer {
                 read_only: get("read_only")?,
                 repeatable: get("repeatable")?,
                 top_level_limit: get("top_level_limit")?,
+                with_ties: get("with_ties")?,
                 nested_queries: get("nested_queries")?,
                 side_effects: get("side_effects")?,
                 side_effects_outside_rows: get("side_effects_outside_rows")?,
@@ -169,6 +170,8 @@ impl SqlglotRenderer {
                 all_columns_volatile: get("all_columns_volatile")?,
                 unknown_functions: unknown_functions.into_iter().map(Into::into).collect(),
                 known_functions: known_functions.into_iter().map(Into::into).collect(),
+                positional_join: get("positional_join")?,
+                unsafe_settings: get("unsafe_settings")?,
                 tables: tables
                     .into_iter()
                     .map(|t| t.into_iter().map(Into::into).collect())

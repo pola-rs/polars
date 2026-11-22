@@ -1701,6 +1701,94 @@ def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
         pq.write_table(arrow_tbl, f)
 
 
+_MDN = pa.month_day_nano_interval()
+_INTERVALS = [(2, 3, 4001), None, (-1, 0, 1_000)]
+
+
+def _mdn_table(column: pa.Array) -> pa.Table:
+    return pa.table({"c": column})
+
+
+def _mdn_ipc(column: pa.Array) -> bytes:
+    f = io.BytesIO()
+    with pa.ipc.new_file(f, _mdn_table(column).schema) as w:
+        w.write_table(_mdn_table(column))
+    return f.getvalue()
+
+
+@pytest.mark.parametrize(
+    "to_intervals",
+    [
+        lambda: pl.Series(pa.array(_INTERVALS, _MDN)),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.list_(_MDN))).explode(),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.large_list(_MDN))).explode(),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.list_(_MDN, 3))).explode(),
+        lambda: pl.Series(
+            pa.array([[(9, 9, 9)], _INTERVALS], pa.list_(_MDN)).slice(1)
+        ).explode(),
+        lambda: pl.Series(
+            pa.chunked_array([[_INTERVALS[:1]], [_INTERVALS[1:]]], pa.list_(_MDN))
+        ).explode(),
+        lambda: pl.Series(
+            pa.array([[(9, 9, 9)] * 3, _INTERVALS], pa.list_(_MDN, 3)).slice(1)
+        ).explode(),
+        lambda: pl.Series(pa.array([None, _INTERVALS], pa.list_(_MDN))).explode()[1:],
+        lambda: pl.Series(
+            pa.DictionaryArray.from_arrays(
+                pa.array([0], pa.int32()), pa.array([_INTERVALS], pa.list_(_MDN))
+            )
+        ).explode(),
+        lambda: pl.read_ipc(_mdn_ipc(pa.array([_INTERVALS], pa.list_(_MDN))))[
+            "c"
+        ].explode(),
+        lambda: pl.Series(
+            pa.array([{"a": v} for v in _INTERVALS], pa.struct([("a", _MDN)]))
+        ).struct.field("a"),
+        lambda: pl.DataFrame(_mdn_table(pa.array(_INTERVALS, _MDN)).to_reader())["c"],
+        lambda: pl.DataFrame(
+            _mdn_table(pa.array([_INTERVALS], pa.list_(_MDN))).to_reader()
+        )["c"].explode(),
+        lambda: (
+            pl.scan_arrow_c_stream(
+                _mdn_table(pa.array([_INTERVALS], pa.list_(_MDN))).to_reader()
+            )
+            .collect()["c"]
+            .explode()
+        ),
+    ],
+)
+def test_nested_month_day_nano_import_30920(
+    to_intervals: Callable[[], pl.Series], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
+    s = to_intervals()
+    assert s.dtype == pl.Struct(
+        {"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Duration("ns")}
+    )
+    assert s.is_null().to_list() == [False, True, False]
+    out = s.struct.unnest().with_columns(pl.col("nanoseconds").cast(pl.Int64))
+    expected = pl.DataFrame(
+        {
+            "months": [2, None, -1],
+            "days": [3, None, 0],
+            "nanoseconds": [4001, None, 1000],
+        },
+        schema={"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Int64},
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "dtype", [pa.list_(_MDN), pa.large_list(_MDN), pa.list_(_MDN, 3)]
+)
+def test_nested_month_day_nano_import_disabled_30920(dtype: pa.DataType) -> None:
+    arr = pa.array([_INTERVALS], dtype)
+    with pytest.raises(ComputeError, match="POLARS_IMPORT_INTERVAL_AS_STRUCT"):
+        pl.Series(arr)
+    with pytest.raises(ComputeError, match="POLARS_IMPORT_INTERVAL_AS_STRUCT"):
+        pl.DataFrame(_mdn_table(arr).to_reader())
+
+
 def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow() == pa.schema(
         [pa.field("x", pa.string_view())]
@@ -1709,6 +1797,24 @@ def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow(
         compat_level=CompatLevel.oldest()
     ) == pa.schema([pa.field("x", pa.large_string())])
+
+
+def test_0_width_df_arrow_c_stream_is_one_batch() -> None:
+    df = pl.DataFrame(height=1 << 20)
+
+    for stream in [df, df.lazy().collect_batches()]:
+        reader = pa.RecordBatchReader.from_stream(stream)
+        assert [batch.num_rows for batch in reader] == [1 << 20]
+
+
+def test_arrow_c_stream_exports_share_a_scalar_column() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(b=pl.lit(7, dtype=pl.Int64))
+
+    t1, t2 = pa.table(df), pa.table(df)
+
+    assert t1["b"].chunks[0].buffers()[1].address == (
+        t2["b"].chunks[0].buffers()[1].address
+    )
 
 
 def test_0_width_df_roundtrip() -> None:

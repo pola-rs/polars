@@ -1056,3 +1056,22 @@ def test_insert_update_failure_leaves_table_unchanged(
         with pytest.raises(error, match=match):
             ctx.execute(statement)
         assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [1]
+
+
+def test_statements_reading_their_own_table() -> None:
+    # an incremental load and a delete that read their own table, repeated: computed at
+    # the statement, so the table's plan does not grow with each of them
+    with pl.SQLContext({"src": pl.LazyFrame({"id": [1, 2, 3, 3]})}) as ctx:
+        ctx.execute("CREATE TABLE t (id BIGINT)")
+        ctx.execute("CREATE VIEW v AS SELECT id FROM t")
+        for _ in range(20):
+            ctx.execute(
+                "INSERT INTO t SELECT DISTINCT id FROM src "
+                "WHERE id NOT IN (SELECT id FROM t)"
+            )
+            ctx.execute("INSERT INTO t SELECT max(id) + 1 FROM v")
+        for _ in range(20):
+            ctx.execute("DELETE FROM t WHERE id IN (SELECT max(id) FROM v)")
+        assert ctx.execute("SELECT id FROM t ORDER BY id", eager=True)[
+            "id"
+        ].to_list() == [1, 2, 3]

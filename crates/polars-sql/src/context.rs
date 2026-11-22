@@ -2757,8 +2757,9 @@ impl SQLContext {
                 strict: true,
             },
             ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
+                // As in Postgres: an empty or NULL list gives no row.
+                empty_as_null: false,
+                keep_nulls: false,
             },
         );
         if !rename_from.is_empty() {
@@ -3386,11 +3387,24 @@ impl SQLContext {
             _ => false,
         };
         let columns = insert_columns(insert)?;
-        let rows = self.execute_query(&query)?;
+        // A query that reads the table itself, also through a view, is computed now too, as in
+        // Postgres: its rows join the table as data, so that the table's plan never holds itself,
+        // which would double it with each such INSERT. Its reads of the table share one plan,
+        // computed once. The query is planned with the table in a cache, which tells.
+        let shared = match reads_no_table {
+            true => None,
+            false => self.share_target(&tbl)?,
+        };
+        let rows = self.execute_query(&query);
+        if shared.is_some() {
+            self.set_registered(&tbl, table.clone())?;
+        }
+        let rows = rows?;
+        let reads_target = shared.is_some_and(|id| holds_cache(&rows.logical_plan, id, 1));
         let added = Added {
             statement,
             from: "the query",
-            now: reads_no_table,
+            now: reads_no_table || reads_target,
             overwrite: insert.overwrite,
         };
         self.add_rows(&tbl, table, rows, &columns, added)
@@ -3535,6 +3549,36 @@ impl SQLContext {
         self.add_rows(&tbl, table, rows, &columns, added)
     }
 
+    /// Put the plan of registered table `tbl` in a cache, for a statement that changes the table
+    /// and may also read it, and give the cache's id: a plan that holds it reads the table, and
+    /// all its reads share one plan, computed once. `None` for a table that is not registered,
+    /// which is left for the statement to report. Restore the table with `set_registered`.
+    fn share_target(&self, tbl: &str) -> PolarsResult<Option<UniqueId>> {
+        let mut table_map = self.table_map.write().unwrap();
+        let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() else {
+            return Ok(None);
+        };
+        let table = table_map.get(&key).unwrap();
+        let shared = match table.logical_plan {
+            DslPlan::Cache { .. } => table.clone(),
+            _ => table.clone().cache(),
+        };
+        let DslPlan::Cache { id, .. } = shared.logical_plan else {
+            unreachable!()
+        };
+        table_map.insert(key, shared);
+        Ok(Some(id))
+    }
+
+    /// Register `lf` again as table `tbl`, under the name it has.
+    fn set_registered(&self, tbl: &str, lf: LazyFrame) -> PolarsResult<()> {
+        let mut table_map = self.table_map.write().unwrap();
+        if let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() {
+            table_map.insert(key, lf);
+        }
+        Ok(())
+    }
+
     // DELETE FROM <tbl> [WHERE ...]
     fn execute_delete_from_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         let Statement::Delete(delete) = stmt else {
@@ -3550,13 +3594,48 @@ impl SQLContext {
                 tbl, display_name(&table.full_name())
             );
         }
-        let lf = self.delete_target(from, "DELETE")?;
         let tbl = object_name_to_string(name);
+        let lf = self.delete_target(from, "DELETE")?;
         polars_ensure!(
             key_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.is_some(),
             SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl
         );
-        let remaining = match selection {
+        // A condition whose subquery reads the table itself, also through a view, is computed now,
+        // as in Postgres (see `execute_insert`). The subquery is planned with the table in a
+        // cache, which tells; the rows it filters are `lf`, taken before.
+        let original = match selection.is_some_and(expr_contains_subquery) {
+            true => get_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.cloned(),
+            false => None,
+        };
+        let shared = match original {
+            Some(_) => self.share_target(&tbl)?,
+            None => None,
+        };
+        let remaining = self.delete_remaining(lf, selection);
+        if let Some(original) = original {
+            self.set_registered(&tbl, original)?;
+        }
+        let mut remaining = remaining?;
+        if shared.is_some_and(|id| holds_cache(&remaining.logical_plan, id, 1)) {
+            remaining = remaining.collect()?.lazy();
+        }
+        // Later statements see the remaining rows, as after TRUNCATE. Locked only now:
+        // resolving the table and its WHERE read the table map.
+        let mut table_map = self.table_map.write().unwrap();
+        let Some(key) = key_ignoring_case(&table_map, &tbl)?.cloned() else {
+            polars_bail!(SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl)
+        };
+        table_map.insert(key, remaining.clone());
+        Ok(remaining)
+    }
+
+    /// The rows of `lf`, the table that a `DELETE` changes, that its condition leaves.
+    fn delete_remaining(
+        &mut self,
+        lf: LazyFrame,
+        selection: Option<&SQLExpr>,
+    ) -> PolarsResult<LazyFrame> {
+        Ok(match selection {
             // no WHERE clause; equivalent to TRUNCATE (drop all rows)
             None => lf.clear(),
             // apply constraint as inverted filter (drops rows matching the selection)
@@ -3567,15 +3646,7 @@ impl SQLContext {
                 LazyFrame::from(remaining.logical_plan.clone()).collect_schema()?;
                 remaining
             },
-        };
-        // Later statements see the remaining rows, as after TRUNCATE. Locked only now:
-        // resolving the table and its WHERE read the table map.
-        let mut table_map = self.table_map.write().unwrap();
-        let Some(key) = key_ignoring_case(&table_map, &tbl)?.cloned() else {
-            polars_bail!(SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl)
-        };
-        table_map.insert(key, remaining.clone());
-        Ok(remaining)
+        })
     }
 
     /// The table that a `DELETE` or `UPDATE` (`statement`) changes.
@@ -4950,8 +5021,9 @@ impl SQLContext {
                     strict: true,
                 },
                 ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
+                    // As in Postgres: an empty or NULL list gives no row.
+                    empty_as_null: false,
+                    keep_nulls: false,
                 },
             );
             projections = projections
@@ -10774,6 +10846,15 @@ fn insert_source(insert: &Insert, outer: Option<&Query>) -> PolarsResult<Option<
         }
     }
     Ok(Some(source))
+}
+
+/// Whether `plan` holds the cache `id` at least `times` times.
+fn holds_cache(plan: &DslPlan, id: UniqueId, times: usize) -> bool {
+    plan.into_iter()
+        .filter(|p| matches!(p, DslPlan::Cache { id: cache, .. } if *cache == id))
+        .take(times)
+        .count()
+        == times
 }
 
 /// The columns an `INSERT` lists; empty for all columns.
