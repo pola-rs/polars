@@ -3566,7 +3566,9 @@ impl SQLFunctionVisitor<'_> {
             SQLExpr::Value(ValueWithSpan {
                 value: SQLValue::SingleQuotedString(p),
                 ..
-            }) => regex::Regex::new(p).ok().map(|re| re.captures_len() - 1),
+            }) => polars_utils::regex_cache::compile_regex(p)
+                .ok()
+                .map(|re| re.captures_len() - 1),
             _ => None,
         };
         let subexpr = match (subexpr, groups) {
