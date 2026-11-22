@@ -1772,3 +1772,14 @@ def test_group_by_window_named_like_key() -> None:
         """
     )
     assert res.rows() == [("y", 2, 1), ("x", None, 2)]
+
+
+def test_aggregate_in_where() -> None:
+    # WHERE filters rows before aggregating, as in Postgres
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [4000, 2000, 100]})
+    with pytest.raises(
+        SQLSyntaxError, match="aggregate functions are not allowed in WHERE"
+    ):
+        df.sql("SELECT g FROM self WHERE x > 0 AND SUM(x) > 5000 GROUP BY g")
+    res = df.sql("SELECT g, x FROM self WHERE x > (SELECT AVG(x) FROM self)")
+    assert res.rows() == [(1, 4000)]

@@ -86,7 +86,7 @@ use crate::subquery::{
     LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
     is_correlated_subquery, quantified_as_exists, row_indexed_once,
 };
-use crate::subquery_pull_up::{NESTED_PREFIX, select_values};
+use crate::subquery_pull_up::{NESTED_PREFIX, builtin_aggregate_call, select_values};
 use crate::table_functions::{PolarsTableFunctions, expand_home_dir};
 use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::{map_sql_dtype_to_polars, sql_type_name};
@@ -1339,6 +1339,7 @@ impl SQLContext {
         let Some(selection) = selection else {
             return Ok(lit(true));
         };
+        self.reject_aggregate_in_where(selection)?;
         polars_ensure!(
             !expr_contains_subquery(selection),
             SQLInterface: "subqueries are not supported in the WHERE of a catalog {}", statement
@@ -5548,6 +5549,9 @@ impl SQLContext {
         bindings: &mut SubqueryBindings,
         select_stmt: Option<&Select>,
     ) -> PolarsResult<LazyFrame> {
+        if let Some(where_expr) = where_expr {
+            self.reject_aggregate_in_where(where_expr)?;
+        }
         let quantified = where_expr.and_then(|where_expr| {
             let conjuncts = flatten_and_conditions(where_expr);
             let rewritten: Vec<_> = conjuncts
@@ -5631,6 +5635,7 @@ impl SQLContext {
         schema: Option<SchemaRef>,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
+            self.reject_aggregate_in_where(expr)?;
             let schema = match schema {
                 None => self.get_frame_schema(&mut lf)?,
                 Some(s) => s,
@@ -5725,6 +5730,20 @@ impl SQLContext {
             lf = drop_subquery_placeholders(lf, placeholders);
         }
         Ok(lf)
+    }
+
+    /// Fail on an aggregate in `WHERE`, as Postgres does; a subquery's `WHERE` is not checked.
+    fn reject_aggregate_in_where(&self, expr: &SQLExpr) -> PolarsResult<()> {
+        if self.nesting > 0 {
+            return Ok(());
+        }
+        match builtin_aggregate_call(self, expr) {
+            Some(name) => polars_bail!(
+                SQLSyntax: "aggregate functions are not allowed in WHERE (found `{}`); filter groups with HAVING, or compare with a subquery's aggregate",
+                name
+            ),
+            None => Ok(()),
+        }
     }
 
     /// Fail if parsing since `n_grouping_calls` were registered added a `GROUPING()` call.
