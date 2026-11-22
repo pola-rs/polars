@@ -72,14 +72,32 @@ type ArgMaxWindow<'a, T> = ArgMinMaxWindow<'a, T, MaxIgnoreNan>;
 // if the windows don't overlap, we should not use these kernels as they are single threaded, so
 // we miss out on easy parallelization.
 //
-// The kernels need one chunk, so callers rechunk the values first. A rechunk costs one pass over
-// the values, the per-window fallback a pass per window.
-pub fn _use_rolling_kernels(groups: &GroupsSlice, overlapping: bool, monotonic: bool) -> bool {
+// The kernels need one chunk, so callers rechunk first. Chunked input only takes the kernels
+// for dense windows.
+//
+// TODO: Single-chunk input takes the kernels at any step, also where the per-window pass is
+// faster. A test for it must handle streaming batches and sliced groups.
+pub fn _use_rolling_kernels(
+    groups: &GroupsSlice,
+    overlapping: bool,
+    monotonic: bool,
+    chunks: &[ArrayRef],
+) -> bool {
     match groups.len() {
         0 | 1 => false,
-        _ => overlapping && monotonic,
+        n_windows => {
+            overlapping
+                && monotonic
+                && (chunks.len() == 1 || {
+                    let n_rows: usize = chunks.iter().map(|arr| arr.len()).sum();
+                    n_rows <= n_windows.saturating_mul(ROLLING_KERNEL_MAX_STEP)
+                })
+        },
     }
 }
+
+/// Max average rows between window starts for which chunked input takes the kernels.
+const ROLLING_KERNEL_MAX_STEP: usize = 4;
 
 /// Rolling min_by/max_by for numeric `by` columns using O(n) deque kernel.
 ///
@@ -128,7 +146,7 @@ where
     // This iterators length can be trusted
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
-    // The kernels read the validity unchecked at the same indices as the values.
+    // Validity is read unchecked at the indices of the values.
     assert_eq!(validity.len(), values.len());
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
@@ -140,7 +158,7 @@ where
         .enumerate()
         .map(|(idx, (start, len))| {
             let (start, len) = (start as usize, len as usize);
-            // The windows must lie within the values. Chunked input has to be rechunked first.
+            // Windows must lie within the values, so chunked input has to be rechunked first.
             assert!(start <= values.len() && len <= values.len() - start);
 
             // SAFETY: checked above.
@@ -179,7 +197,7 @@ where
         .enumerate()
         .map(|(idx, (start, len))| {
             let (start, len) = (start as usize, len as usize);
-            // The windows must lie within the values. Chunked input has to be rechunked first.
+            // Windows must lie within the values, so chunked input has to be rechunked first.
             assert!(start <= values.len() && len <= values.len() - start);
 
             // SAFETY: checked above.
@@ -391,7 +409,7 @@ where
             overlapping,
             monotonic,
         } => {
-            if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+            if _use_rolling_kernels(groups, *overlapping, *monotonic, ca.chunks()) {
                 // this cast is a no-op for floats
                 let s = ca
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
@@ -643,7 +661,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self.rechunk();
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
@@ -745,7 +763,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self.rechunk();
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
@@ -826,7 +844,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self.rechunk();
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
@@ -931,7 +949,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self.rechunk();
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
@@ -1007,7 +1025,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
                     let ca = self.rechunk();
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
@@ -1101,7 +1119,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
                     let ca = self.rechunk();
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
@@ -1167,7 +1185,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -1244,7 +1262,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -1410,7 +1428,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();
@@ -1455,7 +1473,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();
@@ -1500,7 +1518,7 @@ where
                 overlapping,
                 monotonic,
             } => {
-                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+                if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
                     let ca = self
                         .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
                         .unwrap();
@@ -1537,5 +1555,42 @@ where
             GroupQuantile::Scalar(0.5),
             QuantileMethod::Linear,
         )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_use_rolling_kernels() {
+        let max_step = ROLLING_KERNEL_MAX_STEP;
+        let n_rows = 10 * max_step;
+        let windows = |step: usize| -> GroupsSlice {
+            (0..n_rows)
+                .step_by(step)
+                .map(|start| [start as IdxSize, (n_rows - start).min(2 * step) as IdxSize])
+                .collect()
+        };
+        let half = Float64Chunked::from_vec(PlSmallStr::EMPTY, vec![0.0; n_rows / 2]);
+        let one = Float64Chunked::from_vec(PlSmallStr::EMPTY, vec![0.0; n_rows]);
+        let one = one.chunks().as_slice();
+        let two = [half.chunks()[0].clone(), half.chunks()[0].clone()];
+        let (dense, sparse) = (windows(max_step), windows(2 * max_step));
+        let single: GroupsSlice = vec![[0, n_rows as IdxSize]];
+
+        // One chunk: always the kernel.
+        assert!(_use_rolling_kernels(&dense, true, true, one));
+        assert!(_use_rolling_kernels(&sparse, true, true, one));
+        // Chunked: the kernel only for dense windows.
+        assert!(_use_rolling_kernels(&dense, true, true, &two));
+        assert!(!_use_rolling_kernels(&sparse, true, true, &two));
+        // Never for disjoint, non-monotonic, single or no windows.
+        for chunks in [one, &two[..]] {
+            assert!(!_use_rolling_kernels(&dense, false, true, chunks));
+            assert!(!_use_rolling_kernels(&dense, true, false, chunks));
+            assert!(!_use_rolling_kernels(&single, true, true, chunks));
+            assert!(!_use_rolling_kernels(&vec![], true, true, chunks));
+        }
     }
 }

@@ -44,7 +44,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
 
             let iter = windows.iter().enumerate().map(|(i, &[start, len])| {
                 let (start, len) = (start as usize, len as usize);
-                // The windows must lie within `by`. Chunked input has to be rechunked first.
+                // Windows must lie within `by`, so chunked input has to be rechunked first.
                 assert!(start <= by.len() && len <= by.len() - start);
                 let end = start + len;
 
@@ -62,7 +62,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
             PrimitiveArray::from_trusted_len_iter(iter)
         },
         Some(validity) => {
-            // The window reads the validity unchecked at the same indices as `by`.
+            // Validity is read unchecked at the indices of `by`.
             assert_eq!(validity.len(), by.len());
             let mut window = <ArgMinMaxWindow<'_, B, P> as RollingAggWindowNulls<B, IdxSize>>::new(
                 by,
@@ -75,7 +75,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
 
             let iter = windows.iter().enumerate().map(|(i, &[start, len])| {
                 let (start, len) = (start as usize, len as usize);
-                // The windows must lie within `by`. Chunked input has to be rechunked first.
+                // Windows must lie within `by`, so chunked input has to be rechunked first.
                 assert!(start <= by.len() && len <= by.len() - start);
                 let end = start + len;
 

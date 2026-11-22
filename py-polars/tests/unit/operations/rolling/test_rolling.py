@@ -3037,7 +3037,7 @@ def test_rolling_slice_per_window_offset_values_30432() -> None:
 
 def _windows_frame(n: int) -> pl.DataFrame:
     i = pl.int_range(0, n, eager=True)
-    # Magnitudes far apart make the summation order visible in the result.
+    # Magnitudes far apart expose the summation order.
     v = (i.cast(pl.Float64) * 0.618).sin() * (10.0 ** ((i % 7) * 3).cast(pl.Float64))
     return pl.DataFrame({"k": i % 2, "t": i // 2, "i": i, "v": v, "w": (i * 7) % 11})
 
@@ -3065,8 +3065,7 @@ def _window_aggs() -> list[pl.Expr]:
 
 
 def test_rolling_expr_chunked_input_28597() -> None:
-    # The window aggregations rechunk their input instead of recomputing every
-    # window, so a chunked frame gives exactly the results of one chunk.
+    # A chunked frame gives exactly the results of one chunk.
     df = _windows_frame(1200)
     chunked = pl.concat([df[:400], df[400:800], df[800:]], rechunk=False)
     assert chunked["v"].n_chunks() == 3
@@ -3079,9 +3078,8 @@ def test_rolling_expr_chunked_input_28597() -> None:
 
 
 def test_rolling_by_keys_matches_each_key_28597() -> None:
-    # Reordering by key leaves the columns chunked once the thread pool is larger
-    # than the frame is wide; every key must still get the results of its own frame.
-    # The pool size is fixed at import, so this runs in a fresh process.
+    # More threads than columns leave keyed windows chunked. Every key must still
+    # get the results of its own frame. A fresh process fixes the pool size.
     script = textwrap.dedent(
         """
         import polars as pl

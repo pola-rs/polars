@@ -105,7 +105,7 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             overlapping,
             monotonic,
         } => {
-            if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+            if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
                 let ca = ca.rechunk();
                 let arr = ca.downcast_as_array();
                 let values = arr.values().as_slice();
@@ -173,7 +173,7 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             overlapping,
             monotonic,
         } => {
-            if _use_rolling_kernels(groups_slice, *overlapping, *monotonic) {
+            if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
                 let ca = ca.rechunk();
                 let arr = ca.downcast_as_array();
                 let values = arr.values().as_slice();
