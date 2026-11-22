@@ -130,7 +130,9 @@ pub(crate) fn frame_to_struct_arrays(
         return Box::new(array.into_iter());
     }
 
-    let batches = df.into_try_iter_chunks(schema, CompatLevel::newest(), false);
+    // Object columns need the GIL, so they can't be exported on other threads.
+    let parallel = !df.columns().iter().any(|c| c.dtype().contains_objects());
+    let batches = df.into_try_iter_chunks(schema, CompatLevel::newest(), parallel);
     Box::new(batches.map(move |batch| {
         let batch = batch?;
         let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);

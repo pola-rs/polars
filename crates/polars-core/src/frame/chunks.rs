@@ -59,7 +59,7 @@ impl DataFrame {
             .map(|col| match col {
                 // `Column::from` would turn a one-row chunk into a Scalar, which reads the row.
                 Column::Series(s) => Column::Series(s.select_chunk(chunk_idx).into()),
-                // These have no chunks of their own to follow.
+                // These are sliced by offset.
                 Column::Scalar(_) | Column::Dictionary(_) => col.slice(rows.clone()),
             })
             .collect();

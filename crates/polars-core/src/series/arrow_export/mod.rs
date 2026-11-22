@@ -54,6 +54,11 @@ fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
         return Some(compacted);
     }
 
+    trim_list_child(arr)
+}
+
+/// Slice the child of `arr` to the elements its offsets span; `None` if it already is.
+fn trim_list_child(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
     let offsets = arr.offsets();
     let first = *offsets.first() as usize;
     let len = offsets.range() as usize;
@@ -132,10 +137,29 @@ impl Series {
                 return None;
             }
             let end = arrow_export_cut(rows, |r| map_spans_fit(arr, &arrow_dtype, r, 1));
-            let piece = chunk.slice(start..end).try_to_arrow(0, compat_level);
+            let piece = chunk
+                .slice(start..end)
+                .try_piece_to_arrow(&arrow_dtype, compat_level);
             start = end;
             Some(piece)
         }))
+    }
+
+    /// Export this single-chunk Series, a piece cut by [`arrow_export_cut`], as `arrow_dtype`.
+    ///
+    /// A one-row piece can still span more map entries than an arrow MAP holds. Its nulls are
+    /// then pushed down to its maps, which drop the entries of their null rows.
+    pub(crate) fn try_piece_to_arrow(
+        &self,
+        arrow_dtype: &ArrowDataType,
+        compat_level: CompatLevel,
+    ) -> PolarsResult<ArrayRef> {
+        if self.len() == 1 && !map_spans_fit(self.chunks()[0].as_ref(), arrow_dtype, 0..1, 1) {
+            if let Some(s) = self.propagate_nulls() {
+                return s.try_to_arrow(0, compat_level);
+            }
+        }
+        self.try_to_arrow(0, compat_level)
     }
 
     /// Export this Series to an arrow array. The dtype of the returned array will match the
@@ -260,8 +284,8 @@ impl ToArrowConverter {
             },
             (DataType::List(item_dtype), ArrowDataType::LargeList(arrow_item_field)) => {
                 let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
-                // A split piece of a list of maps must export only the child its live rows span,
-                // as its whole child may overflow the `i32` offsets of an arrow MAP.
+                // A split piece of a list of maps must export only the child it spans, as its
+                // whole child may overflow the `i32` offsets of an arrow MAP.
                 let item_dtype_arrow = arrow_item_field.dtype();
                 let trimmed = (contains_arrow_map(item_dtype_arrow)
                     && !map_spans_fit(
@@ -270,7 +294,7 @@ impl ToArrowConverter {
                         0..arr.values().len(),
                         1,
                     ))
-                .then(|| normalize_map_entries(arr))
+                .then(|| trim_list_child(arr))
                 .flatten();
                 let arr = trimmed.as_ref().unwrap_or(arr);
 

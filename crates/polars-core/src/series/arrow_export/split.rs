@@ -205,16 +205,51 @@ mod tests {
             .collect::<PolarsResult<_>>()
             .unwrap();
 
-        // The null row drops the maps under it.
+        // The maps under the null row are exported empty.
         let lists: Vec<&ListArray<i64>> = arrays
             .iter()
             .map(|a| a.as_any().downcast_ref().unwrap())
             .collect();
-        let offsets: Vec<_> = lists.iter().map(|l| l.offsets().as_slice()).collect();
-        assert_eq!(offsets, [[0, 0], [0, 1]]);
         assert_eq!(lists[0].null_count(), 1);
-        let maps: &MapArray = lists[1].values().as_any().downcast_ref().unwrap();
-        assert_eq!(maps.offsets().as_slice(), [0, 1]);
+        let maps: Vec<&MapArray> = lists
+            .iter()
+            .map(|l| l.values().as_any().downcast_ref().unwrap())
+            .collect();
+        let offsets: Vec<_> = maps.iter().map(|m| m.offsets().as_slice()).collect();
+        assert_eq!(offsets, [&[0, 0, 0][..], &[0, 1]]);
+    }
+
+    #[cfg(feature = "dtype-array")]
+    #[test]
+    fn a_null_array_row_over_too_many_map_entries_exports() {
+        let half = 1i64 << 30;
+        let array_dtype = DataType::Array(Box::new(map_dtype()), 2);
+        let fsl = FixedSizeListArray::new(
+            array_dtype.to_physical().to_arrow(CompatLevel::newest()),
+            2,
+            map_chunk(&[half, half, 1, 1], None),
+            Some(Bitmap::from([false, true])),
+        );
+        let s = unsafe {
+            Series::from_chunks_and_dtype_unchecked("a".into(), vec![fsl.boxed()], &array_dtype)
+        };
+
+        let arrays: Vec<_> = s
+            .try_to_arrow_split(0, CompatLevel::newest())
+            .collect::<PolarsResult<_>>()
+            .unwrap();
+
+        // The maps under the null row are exported empty.
+        let maps: Vec<&MapArray> = arrays
+            .iter()
+            .map(|a| {
+                let fsl: &FixedSizeListArray = a.as_any().downcast_ref().unwrap();
+                fsl.values().as_any().downcast_ref().unwrap()
+            })
+            .collect();
+        let offsets: Vec<_> = maps.iter().map(|m| m.offsets().as_slice()).collect();
+        assert_eq!(offsets, [[0, 0, 0], [0, 1, 2]]);
+        assert_eq!(arrays[0].null_count(), 1);
     }
 
     /// Python only hands `try_iter_chunks` frames it has aligned.

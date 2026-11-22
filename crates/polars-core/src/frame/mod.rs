@@ -2802,16 +2802,17 @@ impl<'a> RecordBatchIter<'a> {
         parallel: bool,
         schema: Option<ArrowSchemaRef>,
     ) -> Self {
-        // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
-        // as we must allocate arrow strings/binaries.
+        // Only some columns do work to export: strings and binaries are copied at the oldest
+        // compat level, categoricals remap their keys and dictionary columns materialize.
         let must_convert = compat_level.0 == 0;
         let parallel = parallel
-            && must_convert
             && df.width() > 1
-            && df
-                .columns()
-                .iter()
-                .any(|s| matches!(s.dtype(), DataType::String | DataType::Binary));
+            && df.columns().iter().any(|c| {
+                (must_convert && matches!(c.dtype(), DataType::String | DataType::Binary))
+                    || c.dtype().contains_categoricals()
+                    || c.dtype().contains_enums()
+                    || c.as_dictionary_column().is_some()
+            });
 
         let schema = schema.unwrap_or_else(|| {
             Arc::new(
@@ -2909,7 +2910,10 @@ impl<'a> RecordBatchIter<'a> {
             Some(arr) => Ok(arr.sliced(range.start, length)),
             // `Column::slice` would turn a one-row Series into a Scalar, which reads the row.
             None => match split.chunk.columns()[i].as_series() {
-                Some(s) => s.slice(range.clone()).try_to_arrow(0, self.compat_level),
+                Some(s) => s.slice(range.clone()).try_piece_to_arrow(
+                    self.schema.get_at_index(i).unwrap().1.dtype(),
+                    self.compat_level,
+                ),
                 None => column_to_arrow(
                     &split.chunk.columns()[i],
                     0,
