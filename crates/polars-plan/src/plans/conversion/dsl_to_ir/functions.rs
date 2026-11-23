@@ -1425,16 +1425,8 @@ fn check_quantile_fraction(
     arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<Vec<f64>>> {
     check_quantile_dtype(fraction.dtype(schema, arena)?, allowed)?;
-    let value = match arena.get(fraction.node()) {
-        AExpr::Literal(
-            lv @ (LiteralValue::Scalar(_)
-            | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
-        ) => lv.to_any_value(),
-        _ => None,
-    };
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let fraction = Series::from_any_values(PlSmallStr::EMPTY, &[value], true)?;
-    extract_quantiles(&fraction, allowed).map(Some)
+    match arena.get(fraction.node()) {
+        AExpr::Literal(lv) => lv.extract_quantiles(allowed),
+        _ => Ok(None),
+    }
 }
