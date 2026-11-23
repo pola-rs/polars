@@ -25,7 +25,7 @@ from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Generator, Iterator
     from types import TracebackType
     from typing import Self
 
@@ -53,19 +53,105 @@ _INVALID_QUERY_TYPES: Final[set[str]] = {
     "VACUUM",
 }
 
+# the Databricks SQLAlchemy dialect's driver ("databricks-sql-python" before
+# databricks-sqlalchemy 2.x)
+_DATABRICKS_ALCHEMY_DRIVERS: Final = frozenset({"databricks", "databricks-sql-python"})
 
-class CloseAfterFrameIter:
-    """Allows cursor close to be deferred until the last batch is returned."""
 
-    def __init__(self, frames: Any, *, cursor: Cursor) -> None:
-        self._iter_frames = frames
-        self._cursor = cursor
+def _has_text(dtype: Any) -> bool:
+    """Whether a dtype holds a String, also nested or in an extension."""
+    from polars.datatypes import Array, BaseExtension, List, Map, String, Struct
 
-    def __iter__(self) -> Iterator[DataFrame]:
-        yield from self._iter_frames
+    if dtype == String:
+        return True
+    if isinstance(dtype, BaseExtension):
+        return _has_text(dtype.ext_storage())
+    if isinstance(dtype, (List, Array)):
+        return _has_text(dtype.inner)
+    if isinstance(dtype, Map):
+        return _has_text(dtype.key) or _has_text(dtype.value)
+    if isinstance(dtype, Struct):
+        return any(_has_text(f.dtype) for f in dtype.fields)
+    return False
 
-        if hasattr(self._cursor, "close"):
-            self._cursor.close()
+
+def _as_binary(dtype: Any) -> Any:
+    """The physical dtype with Binary for each String, or None if it holds no String."""
+    from polars.datatypes import Array, Binary, Field, List, String, Struct
+
+    if dtype == String:
+        return Binary
+    if isinstance(dtype, (List, Array)):
+        inner = _as_binary(dtype.inner)
+        if inner is None:
+            return None
+        return List(inner) if isinstance(dtype, List) else Array(inner, dtype.size)
+    if isinstance(dtype, Struct):
+        fields = [_as_binary(f.dtype) for f in dtype.fields]
+        if all(f is None for f in fields):
+            return None
+        return Struct(
+            [
+                Field(f.name, f.dtype if b is None else b)
+                for f, b in zip(dtype.fields, fields, strict=True)
+            ]
+        )
+    return None
+
+
+def _check_utf8(df: DataFrame) -> DataFrame:
+    """
+    The frame, if its text is valid UTF-8, also nested in lists, structs and maps.
+
+    A driver that hands the bytes of a text value over as they are (the Databricks
+    connector and ADBC drivers over a `STRING` made of `unhex('FF')`) would otherwise
+    reach the caller as a String that breaks its contract (memory unsafety in string
+    operations).
+    """
+    from polars.exceptions import ComputeError
+
+    for s in df.iter_columns():
+        if not _has_text(s.dtype):
+            continue
+        # `to_physical` selects the column by name, which may be a pattern
+        physical = s.rename("s").to_physical()
+        try:
+            physical.cast(_as_binary(physical.dtype)).cast(physical.dtype)
+        except Exception as e:
+            msg = (
+                "the database returned text that isn't valid UTF-8 (a STRING made "
+                "of other bytes); read the column as BINARY with "
+                f"CAST(<column> AS BINARY) and decode it in Polars ({e})"
+            )
+            raise ComputeError(msg) from e
+    return df
+
+
+# the drivers that pass on the bytes of a text value without checking them
+_UNCHECKED_TEXT_DRIVERS: Final = frozenset({"adbc", "databricks"})
+
+
+def _close_after_frames(
+    frames: Any, *, close: Callable[[], None]
+) -> Generator[DataFrame]:
+    """
+    Yield the frames, then call `close` (also on an early stop or an error).
+
+    The query has already run when this is returned. A generator that never started
+    skips its `finally` when closed or collected, so it is primed here: it waits at
+    a first `yield` inside the `try`, and `close()` before the first `next()` works.
+    """
+
+    def gen() -> Generator[DataFrame]:
+        try:
+            yield None  # type: ignore[misc]  # (priming)
+            yield from frames
+        finally:
+            close()
+
+    g = gen()
+    next(g)
+    return g
 
 
 def _trino_field_names(value: tuple[Any, ...]) -> list[str | None]:
@@ -143,6 +229,8 @@ class ConnectionExecutor:
     # indicate if we can/should close the cursor on scope exit. note that we
     # should never close the underlying connection, or a user-supplied cursor.
     can_close_cursor: bool = False
+    # a SQLAlchemy result whose cursor is read as Arrow (Databricks): ours to close
+    _owned_result: Any = None
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver_name = (
@@ -173,15 +261,38 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # if we created it and are finished with it, we can
-        # close the cursor (but NOT the connection)
-        if self._is_alchemy_async(self.cursor):
-            from sqlalchemy.ext.asyncio import AsyncConnection
+        # if we created it and are finished with it, we can close it
+        # (but NOT a connection or cursor of the caller's)
+        if (cleanup := self._take_cleanup()) is not None:
+            cleanup()
 
-            if isinstance(self.cursor, AsyncConnection):
-                _run_async(self._close_async_cursor())
-        elif self.can_close_cursor and hasattr(self.cursor, "close"):
-            self.cursor.close()
+    def _take_cleanup(self) -> Callable[[], None] | None:
+        """
+        Take over closing what the executor opened; the returned callable closes it.
+
+        That is a SQLAlchemy result read as Arrow (`_owned_result`), then the cursor if
+        it is ours (`can_close_cursor`). Once taken, `__exit__` leaves both to the
+        callable, so a batch iterator can close them after its last batch.
+        """
+        result = self._owned_result
+        cursor = self.cursor if self.can_close_cursor else None
+        if result is None and cursor is None:
+            return None
+        self._owned_result = None
+        self.can_close_cursor = False
+        close_async = cursor is not None and self._is_alchemy_async(cursor)
+
+        def cleanup() -> None:
+            try:
+                if result is not None:
+                    result.close()
+            finally:
+                if close_async:
+                    _run_async(self._close_async_cursor(cursor))
+                elif cursor is not None and hasattr(cursor, "close"):
+                    cursor.close()
+
+        return cleanup
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
@@ -200,12 +311,12 @@ class ConnectionExecutor:
             df = df.with_columns(cast_cols)
         return df
 
-    async def _close_async_cursor(self) -> None:
-        if self.can_close_cursor and hasattr(self.cursor, "close"):
-            from sqlalchemy.ext.asyncio.exc import AsyncContextNotStarted
+    @staticmethod
+    async def _close_async_cursor(cursor: Any) -> None:
+        from sqlalchemy.ext.asyncio.exc import AsyncContextNotStarted
 
-            with suppress(AsyncContextNotStarted):
-                await self.cursor.close()
+        with suppress(AsyncContextNotStarted):
+            await cursor.close()
 
     @staticmethod
     def _check_module_version(module_name: str, minimum_version: str) -> None:
@@ -330,16 +441,18 @@ class ConnectionExecutor:
                     )
                     raise ValueError(msg)  # noqa: TRY301
 
+                check = driver in _UNCHECKED_TEXT_DRIVERS
                 frames = (
-                    self._apply_overrides(batch, (schema_overrides or {}))
-                    if isinstance(batch, DataFrame)
-                    else self._apply_overrides(
-                        DataFrame(batch), (schema_overrides or {})
+                    self._apply_overrides(
+                        _check_utf8(df) if check else df, (schema_overrides or {})
                     )
-                    for batch in self._fetch_arrow(
-                        driver_properties,
-                        iter_batches=iter_batches,
-                        batch_size=batch_size,
+                    for df in (
+                        batch if isinstance(batch, DataFrame) else DataFrame(batch)
+                        for batch in self._fetch_arrow(
+                            driver_properties,
+                            iter_batches=iter_batches,
+                            batch_size=batch_size,
+                        )
                     )
                 )
                 return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]
@@ -566,10 +679,7 @@ class ConnectionExecutor:
                 return conn
             else:
                 # where possible, use the raw connection to access arrow integration
-                if conn.engine.driver == "databricks-sql-python":
-                    self.driver_name = "databricks"
-                    return conn.engine.raw_connection().cursor()
-                elif conn.engine.driver == "duckdb_engine":
+                if conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn
                 elif self._is_alchemy_engine(conn):
@@ -650,8 +760,15 @@ class ConnectionExecutor:
         is_async = self._is_alchemy_async(self.cursor)
         if (
             not is_async
-            and isinstance(params, Sequence)
             and hasattr(self.cursor, "exec_driver_sql")
+            and (
+                isinstance(params, Sequence)
+                # The legacy Databricks dialect accepts native DBAPI placeholders.
+                or (
+                    isinstance(query, str)
+                    and self.cursor.engine.driver == "databricks-sql-python"  # type: ignore[attr-defined]
+                )
+            )
         ):
             cursor_execute = self.cursor.exec_driver_sql
             if isinstance(query, TextClause):
@@ -686,7 +803,13 @@ class ConnectionExecutor:
 
         options = options or {}
 
+        databricks_arrow = False
         if self._is_alchemy_object(self.cursor):
+            databricks_arrow = (
+                isinstance(query, str)
+                and getattr(getattr(self.cursor, "engine", None), "driver", None)
+                in _DATABRICKS_ALCHEMY_DRIVERS
+            )
             # note: the Arrow "fetch_df_*" methods take raw SQL, so the Oracle fast-path
             # is only available for string queries; anything else must be compiled first
             if (
@@ -738,9 +861,22 @@ class ConnectionExecutor:
             )
             result = cursor_execute(query, *positional_options)
 
-        # note: some cursors execute in-place, some access results via a property
-        result = self.cursor if (result is None or result is True) else result
+        # note: some cursors execute in-place, some access results via a property, and
+        # some (eg: pymysql, MySQLdb) return the affected row count
+        if result is None or result is True or type(result) is int:
+            result = self.cursor
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
+            result = result.cursor  # type: ignore[union-attr]
+        elif (
+            databricks_arrow
+            and self._is_alchemy_result(result)
+            and result.returns_rows  # type: ignore[union-attr]
+            and hasattr(result.cursor, "fetchall_arrow")  # type: ignore[union-attr]
+        ):
+            # Arrow from the driver's cursor (rows lose nested values and the time
+            # zone of a TIMESTAMP); the result is kept open until the read is done
+            self.driver_name = "databricks"
+            self._owned_result = result
             result = result.cursor  # type: ignore[union-attr]
 
         self.result = result
@@ -764,33 +900,21 @@ class ConnectionExecutor:
             msg = "cannot return a frame before executing a query"
             raise RuntimeError(msg)
 
-        can_close = self.can_close_cursor
+        for frame_init in (
+            self._from_arrow,  # init from arrow-native data (where support exists)
+            self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
+        ):
+            frame = frame_init(
+                batch_size=batch_size,
+                iter_batches=iter_batches,
+                schema_overrides=schema_overrides,
+                infer_schema_length=infer_schema_length,
+            )
+            if frame is not None:
+                if iter_batches and (cleanup := self._take_cleanup()) is not None:
+                    frame = _close_after_frames(frame, close=cleanup)
+                return frame
 
-        if defer_cursor_close := (iter_batches and can_close):
-            self.can_close_cursor = False
-
-        try:
-            for frame_init in (
-                self._from_arrow,  # init from arrow-native data (where support exists)
-                self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
-            ):
-                frame = frame_init(
-                    batch_size=batch_size,
-                    iter_batches=iter_batches,
-                    schema_overrides=schema_overrides,
-                    infer_schema_length=infer_schema_length,
-                )
-                if frame is not None:
-                    if defer_cursor_close:
-                        frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
-                        frame = (df for df in frame_cursor)
-                    return frame
-        except BaseException:
-            # no frame iterator owns the cursor, so `__exit__` should close it
-            self.can_close_cursor = can_close
-            raise
-
-        self.can_close_cursor = can_close
         msg = (
             f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )

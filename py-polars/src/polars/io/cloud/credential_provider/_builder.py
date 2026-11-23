@@ -439,6 +439,16 @@ DEFAULT_CREDENTIAL_PROVIDER: CredentialProviderFunction | Literal["auto"] | None
 )
 
 
+# Client options of the GCS store (without the `google_` prefix), beyond
+# `AUTOINIT_IGNORED_KEYS`.
+_GCP_CLIENT_KEYS: Final[frozenset[str]] = AUTOINIT_IGNORED_KEYS | {
+    "base_url",
+    "read_timeout",
+    "randomize_addresses",
+    "disable_system_certificates",
+}
+
+
 def _init_credential_provider_builder(
     credential_provider: CredentialProviderFunction
     | CredentialProviderBuilder
@@ -617,6 +627,7 @@ def _init_credential_provider_builder(
         elif _is_gcp_cloud(scheme):
             token = None
             unhandled_key = None
+            client_key = None
 
             if storage_options is not None:
                 for k, v in storage_options.items():
@@ -627,6 +638,9 @@ def _init_credential_provider_builder(
                         token = v
                     elif k in AUTOINIT_IGNORED_KEYS:
                         continue
+                    elif k.removeprefix("google_") in _GCP_CLIENT_KEYS:
+                        # Fine next to a token; else the rust side, as before.
+                        client_key = k
                     else:
                         # We assume some sort of access key was given, so we
                         # just dispatch to the rust side.
@@ -646,6 +660,9 @@ def _init_credential_provider_builder(
                 return CredentialProviderBuilder(
                     AutoInit(UserProvidedGCPToken, token=token)
                 )
+
+            if client_key is not None:
+                return None
 
             if (default := get_default_credential_provider()) is not None:
                 return default

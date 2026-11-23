@@ -12,6 +12,7 @@ use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, 
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::slice_enum::Slice;
 use rayon::prelude::*;
 
 use crate::expression::StreamExpr;
@@ -36,6 +37,9 @@ mod utils;
 // If one side is this much bigger than the other side we'll always use the
 // smaller side as the build side without checking cardinalities.
 const LOPSIDED_SAMPLE_FACTOR: usize = 10;
+
+/// How many times fewer estimated rows an incomplete side needs to be built.
+const LOPSIDED_ESTIMATE_FACTOR: usize = 8;
 
 /// The side a plan's build side names, if any.
 fn build_side_left(side: Option<&JoinBuildSide>) -> Option<bool> {
@@ -115,7 +119,7 @@ fn fold_sample<T: Send>(
                 let acc = {
                     let df = morsel.df_blocking();
                     if morsel_idx == last_morsel_idx {
-                        fold(acc, &df.slice(0, last_morsel_slice))
+                        fold(acc, &df.slice(Slice::head(last_morsel_slice)))
                     } else {
                         fold(acc, &df)
                     }

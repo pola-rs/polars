@@ -38,7 +38,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 }
                 return f.write_char(')');
             },
-            AExpr::Column(name) => return write!(f, "col({name})"),
+            AExpr::Column(name) | AExpr::EvalColumn(name) => return write!(f, "col({name})"),
             #[cfg(feature = "dtype-struct")]
             AExpr::StructField(name) => return write!(f, "field({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
@@ -253,8 +253,9 @@ impl<'a> TreeFmtNode<'a> {
                         h,
                         &(if let Some(slice) = options.slice {
                             format!(
-                                "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                                options.maintain_order
+                                "SLICED UNION[maintain_order: {0}]: {1}",
+                                options.maintain_order,
+                                slice.fmt_tuple()
                             )
                         } else {
                             format!("UNION[maintain_order: {0}]", options.maintain_order)
@@ -398,8 +399,8 @@ impl<'a> TreeFmtNode<'a> {
                     ),
                     vec![self.lp_node(None, *input)],
                 ),
-                Slice { input, offset, len } => ND(
-                    wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
+                Slice { input, slice } => ND(
+                    wh(h, &format!("SLICE[{slice}]")),
                     vec![self.lp_node(None, *input)],
                 ),
                 MapFunction { input, function } => ND(

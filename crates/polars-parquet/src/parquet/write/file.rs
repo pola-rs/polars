@@ -234,6 +234,13 @@ impl<W: Write> FileWriter<W> {
         &self.schema
     }
 
+    /// The row groups written so far.
+    /// Unlike [`Self::metadata`], these still hold the statistics of encrypted columns!
+    /// Check `crypto_metadata` before exposing anything derived from them.
+    pub(crate) fn row_groups(&self) -> &[RowGroup] {
+        &self.row_groups
+    }
+
     /// Returns the [`ThriftFileMetadata`]. This is Some iff the [`Self::end`] has been called
     /// and the file is not encrypted. Encrypted files return None, as their plaintext metadata
     /// would expose information about encrypted columns, such as statistics.

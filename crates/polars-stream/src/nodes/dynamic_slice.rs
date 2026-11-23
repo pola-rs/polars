@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use polars_async::executor::TaskMetricAggregator;
+use polars_core::prelude::AnyValue;
 use polars_core::schema::Schema;
+use polars_error::{polars_ensure, polars_err};
+use polars_utils::slice_enum::Slice;
 
 use super::compute_node_prelude::*;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
@@ -51,18 +54,37 @@ impl ComputeNode for DynamicSliceNode {
             if let Self::GatheringParams { offset, length } = self {
                 let offset = offset.get_output()?.unwrap();
                 let length = length.get_output()?.unwrap();
+                polars_ensure!(
+                    offset.height() <= 1, ComputeError:
+                    "invalid argument to slice; expected an offset literal, got series of length {}",
+                    offset.height()
+                );
+                polars_ensure!(
+                    length.height() <= 1, ComputeError:
+                    "invalid argument to slice; expected a length literal, got series of length {}",
+                    length.height()
+                );
                 let offset_item = offset.columns()[0].get(0)?;
                 let length_item = length.columns()[0].get(0)?;
-                let offset = offset_item.extract::<i64>().unwrap_or(0);
-                let length = length_item.extract::<usize>().unwrap_or(usize::MAX);
-                if let Ok(non_neg_offset) = offset.try_into() {
-                    *self = Self::Streaming(StreamingSliceNode::new(non_neg_offset, length));
-                } else {
-                    *self = Self::Negative(NegativeSliceNode::new(
-                        offset,
-                        length,
-                        state.task_metrics.clone(),
-                    ));
+                let offset = offset_item.extract::<i64>().ok_or_else(
+                    || polars_err!(ComputeError: "unable to extract offset from {offset_item:?}"),
+                )?;
+                let length = match length_item {
+                    AnyValue::Null => None,
+                    length => Some(length.extract::<usize>().ok_or_else(
+                        || polars_err!(ComputeError: "unable to extract length from {length:?}"),
+                    )?),
+                };
+                match Slice::new(offset, length) {
+                    Some(slice) if slice.is_negative() => {
+                        let (offset, length) = slice.to_signed_offset_len();
+                        *self = Self::Negative(NegativeSliceNode::new(
+                            offset,
+                            length.unwrap(),
+                            state.task_metrics.clone(),
+                        ));
+                    },
+                    slice => *self = Self::Streaming(StreamingSliceNode::new(slice)),
                 }
             }
         }

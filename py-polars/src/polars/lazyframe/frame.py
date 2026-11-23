@@ -1681,7 +1681,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    def sql(self, query: str, *, table_name: str = "self") -> LazyFrame:
+    def sql(
+        self,
+        query: str,
+        *,
+        table_name: str = "self",
+        params: Sequence[Any] | Mapping[str, Any] | None = None,
+    ) -> LazyFrame:
         """
         Execute a SQL query against the LazyFrame.
 
@@ -1701,6 +1707,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         table_name
             Optionally provide an explicit name for the table that represents the
             calling frame (defaults to "self").
+        params
+            The values of the query parameters. A sequence gives the values of the
+            positional parameters `?` (in order) or `$1`, `$2`, ...; a mapping gives
+            the values of the named parameters `$name` or `:name`. A parameter acts as
+            a literal of its value, so it can never inject SQL.
 
         Notes
         -----
@@ -1765,7 +1776,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         with SQLContext(register_globals=False, eager=False) as ctx:
             name = table_name if table_name else "self"
             ctx.register(name=name, frame=self)
-            return ctx.execute(query)
+            return ctx.execute(query, params=params)
 
     @removed_parameters(
         RenamedParameter(
@@ -2959,7 +2970,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         from deltalake import DeltaTable, write_deltalake
 
-        _check_for_unsupported_types(self.collect_schema().dtypes())
+        from polars.io.delta._sink import _native_sink_state, _write_native
+
+        schema = self.collect_schema()
+        _check_for_unsupported_types(schema.dtypes())
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
@@ -2992,13 +3006,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 _get_credentials_from_provider_expiry_aware(provider) or {}
             )
 
-        # We aren't calling into polars-native write functions so we just update
-        # the storage_options here.
+        # The credentials are passed as storage options, to deltalake or to the
+        # native sink.
         storage_options = (
             {**(storage_options or {}), **credential_provider_creds}
             if storage_options is not None or credential_provider_builder is not None
             else None
         )
+
+        if (
+            sink_state := _native_sink_state(
+                target,
+                mode=mode,
+                storage_options=storage_options,
+                delta_write_options=delta_write_options,
+                schema=schema,
+            )
+        ) is not None:
+            _write_native(sink_state, self, engine=engine, optimizations=optimizations)
+            if isinstance(target, DeltaTable):
+                # `write_deltalake` also leaves the table object at the new version.
+                target.update_incremental()
+            return None
+
         stream = self.collect_batches(
             engine=engine,
             maintain_order=False,
@@ -3048,6 +3078,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
+        | str
         | None = None,
         storage_options: StorageOptionsDict | None = None,
         compression: ParquetCompression = "zstd",
@@ -3067,6 +3098,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         target
             A PyIceberg Table object, or a 'namespace.table_name' identifier string.
+            The data is partitioned by the table's partition spec as loaded. If the
+            table's partition spec changes before the commit, the sink fails.
         mode : {'append', 'overwrite'}
             How to handle existing data.
 
@@ -3099,8 +3132,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :func:`polars.delete_iceberg`. Columns nested within a nullable
               struct are not supported.
             - A PyIceberg ``BooleanExpression`` or filter string, e.g.
-              ``"date = '2026-10-01'"``, is used as-is, with the semantics of
-              PyIceberg's ``Table.overwrite(overwrite_filter=...)``.
+              ``"date = '2026-10-01'"``, deletes the rows for which it is true. A
+              comparison with null is null, which keeps the row, as in SQL. NaN
+              is equal to NaN and greater than any other number, as in Polars.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -3110,7 +3144,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             partitions that the incoming data is written to. Requires a table
             whose partition spec uses only identity transforms, on source columns
             that are not floating-point, nanosecond timestamps, or nested within a
-            nullable struct. If there is no incoming data, nothing is deleted.
+            nullable struct. If there is no incoming data, nothing is deleted. Data
+            files written under an earlier partition spec lose exactly the rows of
+            those partitions.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -3126,7 +3162,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             `Float32`, `Categorical` and `Enum` to `String`, `Array` to `List`, and
             `Datetime` to microseconds, with time zones converted to UTC. Columns
             without a lossless Iceberg type (e.g. `UInt64`, nanosecond `Datetime`,
-            `Duration`) raise an error before the table is created.
+            `Duration`) raise an error before the table is created. `Map` keys are
+            not cast, so a `Map` whose keys need a cast (e.g. `Int8`) or hold times
+            (nanoseconds in Polars, microseconds in Iceberg) raises too.
 
             The table is created before the query runs, so it remains (empty)
             if the query fails.
@@ -3135,15 +3173,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             they do not exist when the table is created. Requires
             `create_if_not_exists=True`.
         snapshot_properties
-            Custom properties to add to the Iceberg snapshot summary.
+            Custom properties to add to the Iceberg snapshot summary. Keys and values
+            must be strings.
         catalog
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
+
+            This can also be a catalog name, which will be resolved at plan and
+            commit time through `pyiceberg.catalog.load_catalog(name)`.
         storage_options
             Extra options for the storage backends supported by `pyiceberg`.
             For cloud storages, this may include configurations for authentication etc.
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+            Storage credentials vended by the table's catalog are used by default,
+            and renewed from the catalog before they expire, so the catalog's own
+            authentication must outlive the sink (e.g. PyIceberg's ``auth.type``
+            rather than a static ``token``). Credentials given here replace them.
+
+            Not renewed: credentials vended without an expiry, and those of a
+            table created by SQL ``CREATE TABLE AS``.
         compression
             Parquet compression codec.
         compression_level
@@ -3173,8 +3223,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ``mode="overwrite"`` replaces all table data, unless ``overwrite_filter`` or
         ``partition_overwrite`` is given. The delete and the append are committed
-        in a single transaction. Data files that only partially match the delete
-        filter are rewritten by PyIceberg during the commit.
+        as one snapshot. Data files whose rows all match the delete filter are
+        dropped. The other rows of data files that match only partly are written to
+        new files during the commit (copy-on-write), and rows removed by earlier
+        delete files stay deleted. Incremental scans
+        (``scan_iceberg(from_snapshot_id_exclusive=...)``) read appended snapshots
+        only, so they do not return the rows of an overwrite. Overwriting Iceberg v3
+        tables, and rewriting a data file whose delete files cannot be applied (such
+        as equality deletes or position deletes that cover several data files), is
+        not supported yet.
         ``schema_mode="overwrite"`` is not supported for
         partitioned tables or tables with a sort order. Custom location providers
         are not supported.
@@ -9220,7 +9277,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         scaling_mode: pc._typing.ScalingMode = "auto",
     ) -> pc.LazyFrameRemote:
         """
-        Run a query remotely on Polars Cloud.
+        Run a query remotely on Polars Nanook.
 
         This allows you to run Polars remotely on
         one or more workers via several strategies

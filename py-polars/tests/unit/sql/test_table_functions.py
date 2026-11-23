@@ -95,6 +95,12 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
         ("a,b\nNA,1\n", "null_values => 'NA'", {"null_values": "NA"}),
         ("a,b\nNA,-\n", "null_values => ['NA', '-']", {"null_values": ["NA", "-"]}),
         ("a,b\nNA,NA\n", "null_values => {'a': 'NA'}", {"null_values": {"a": "NA"}}),
+        # an empty field is an empty string, and only the marker is NULL
+        (
+            "a,b\n,\\N\n",
+            "null_values => '\\N', empty_string_is_null => false",
+            {"null_values": "\\N", "empty_string_is_null": False},
+        ),
         (
             "a\n1\nx\n",
             "schema_overrides => {'a': 'INT'}, ignore_errors => true",
@@ -245,7 +251,7 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
         (
             "glob => false",
             SQLInterfaceError,
-            r"option 'glob' is not supported in SQL$",
+            r"option 'glob' is not supported in SQL(\n|$)",
         ),
         (
             "columns => ['a']",
@@ -467,7 +473,7 @@ def test_read_ndjson_options_survive_plan_roundtrip(tmp_path: Path) -> None:
         (
             "batch_size => 10",
             SQLInterfaceError,
-            r"option 'batch_size' is not supported in SQL$",
+            r"option 'batch_size' is not supported in SQL(\n|$)",
         ),
         (
             "ignore_errors = true",
@@ -769,12 +775,12 @@ def test_read_parquet_options_survive_plan_roundtrip(tmp_path: Path) -> None:
         (
             "cast_options => NULL",
             SQLInterfaceError,
-            r"option 'cast_options' is not supported in SQL$",
+            r"option 'cast_options' is not supported in SQL(\n|$)",
         ),
         (
             "use_pyarrow => true",
             SQLInterfaceError,
-            r"option 'use_pyarrow' is not supported in SQL$",
+            r"option 'use_pyarrow' is not supported in SQL(\n|$)",
         ),
     ],
 )
@@ -901,7 +907,7 @@ def test_read_ipc_options_survive_plan_roundtrip(tmp_path: Path) -> None:
         (
             "use_pyarrow => true",
             SQLInterfaceError,
-            r"option 'use_pyarrow' is not supported in SQL$",
+            r"option 'use_pyarrow' is not supported in SQL(\n|$)",
         ),
     ],
 )
@@ -912,3 +918,122 @@ def test_read_ipc_option_errors(
     pl.DataFrame({"a": [1]}).write_ipc(path)
     with pytest.raises(error, match=match):
         _read_ipc_sql(path, options)
+
+
+@pytest.mark.parametrize(
+    ("ext", "write"),
+    [
+        ("csv", pl.DataFrame.write_csv),
+        ("parquet", pl.DataFrame.write_parquet),
+        ("PARQUET", pl.DataFrame.write_parquet),
+        ("ipc", pl.DataFrame.write_ipc),
+        ("arrow", pl.DataFrame.write_ipc),
+        ("feather", pl.DataFrame.write_ipc),
+        ("ndjson", pl.DataFrame.write_ndjson),
+        ("jsonl", pl.DataFrame.write_ndjson),
+    ],
+)
+def test_from_quoted_path(tmp_path: Path, ext: str, write: Any) -> None:
+    df = pl.DataFrame({"x": [1, 2], "s": ["a", "b"]})
+    path = (tmp_path / f"data.{ext}").as_posix()
+    write(df, path)
+
+    with pl.SQLContext() as ctx:
+        assert_frame_equal(ctx.execute(f"SELECT * FROM '{path}'", eager=True), df)
+        res = ctx.execute(f"SELECT t.s FROM '{path}' AS t WHERE t.x > 1", eager=True)
+        assert res.rows() == [("b",)]
+        res = ctx.execute(f"DESCRIBE '{path}'", eager=True)
+        assert res.rows() == [("x", "BIGINT"), ("s", "VARCHAR")]
+
+
+def test_from_quoted_name_that_is_not_a_path() -> None:
+    with pl.SQLContext(t=pl.DataFrame({"a": [1]})) as ctx:
+        # a name in quotes is a table first
+        assert ctx.execute("SELECT * FROM 't'", eager=True).rows() == [(1,)]
+        # so is a name without the extension of a file format
+        for name in ("data", "data.txt", "data.json"):
+            with pytest.raises(
+                SQLInterfaceError,
+                match=rf"relation '{name}' was not found.*read_csv",
+            ):
+                ctx.execute(f"SELECT * FROM '{name}'", eager=True)
+
+
+_READS_DISABLED = "reading files is disabled in this SQLContext"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM read_csv('{csv}')",
+        "SELECT * FROM read_parquet('{parquet}')",
+        "SELECT * FROM read_ipc('{ipc}')",
+        "SELECT * FROM read_json('{ndjson}')",
+        "SELECT * FROM read_ndjson('{ndjson}')",
+        "SELECT * FROM read_csv(['{csv}', '{csv}'])",
+        "SELECT * FROM read_parquet('{dir}/*.parquet')",
+        "SELECT * FROM read_parquet('{dir}/missing.parquet')",
+        "SELECT * FROM read_parquet('s3://bucket/data.parquet')",
+        "SELECT * FROM '{csv}'",
+        "SELECT * FROM '{parquet}' AS t WHERE t.x > 1",
+        "DESCRIBE '{parquet}'",
+        "WITH c AS (SELECT * FROM read_csv('{csv}')) SELECT * FROM c",
+        "SELECT * FROM t WHERE x IN (SELECT x FROM read_csv('{csv}'))",
+        "SELECT (SELECT COUNT(*) FROM '{parquet}') AS n",
+        "SELECT * FROM t WHERE EXISTS (SELECT 1 FROM '{csv}' AS f WHERE f.x = t.x)",
+        "SELECT x FROM t UNION ALL SELECT x FROM '{csv}'",
+        "SELECT * FROM t JOIN read_parquet('{parquet}') AS f USING (x)",
+        "SELECT * FROM t, LATERAL (SELECT f.s FROM '{csv}' AS f WHERE f.x = t.x) AS q",
+        "EXPLAIN SELECT * FROM read_csv('{csv}')",
+        "CREATE TABLE c AS SELECT * FROM read_csv('{csv}')",
+    ],
+)
+@pytest.mark.parametrize("eager", [False, True])
+def test_file_reads_disabled(tmp_path: Path, query: str, eager: bool) -> None:
+    df = pl.DataFrame({"x": [1, 2], "s": ["a", "b"]})
+    paths = {"dir": tmp_path.as_posix()}
+    for ext in ["csv", "parquet", "ipc", "ndjson"]:
+        paths[ext] = (tmp_path / f"data.{ext}").as_posix()
+        getattr(df, f"write_{ext}")(paths[ext])
+    query = query.format(**paths)
+
+    ctx = pl.SQLContext(t=pl.DataFrame({"x": [1]}), allow_file_reads=False)
+    # the error comes from `execute`, also for a lazy result
+    with pytest.raises(SQLInterfaceError, match=_READS_DISABLED):
+        ctx.execute(query, eager=eager)
+
+    if "missing" not in query and "s3://" not in query:
+        pl.SQLContext(t=pl.DataFrame({"x": [1]})).execute(query, eager=True)
+
+
+@pytest.mark.parametrize("source", ["read_csv('{path}')", "'{path}'"])
+def test_file_reads_disabled_in_views(tmp_path: Path, source: str) -> None:
+    path = (tmp_path / "data.csv").as_posix()
+    pl.DataFrame({"x": [1, 2]}).write_csv(path)
+    source = source.format(path=path)
+
+    ctx = pl.SQLContext(allow_file_reads=False)
+    with pytest.raises(SQLInterfaceError, match=_READS_DISABLED):
+        ctx.execute(f"CREATE VIEW v AS SELECT * FROM {source}")
+    with pytest.raises(SQLInterfaceError, match="'v' was not found"):
+        ctx.execute("SELECT * FROM v")
+
+
+def test_file_reads_disabled_keeps_tables_and_series() -> None:
+    lf = pl.LazyFrame({"x": [1, 2]})
+    ctx = pl.SQLContext(t=lf, allow_file_reads=False)
+    for query in [
+        "SELECT * FROM 't'",
+        "SELECT * FROM generate_series(1, 2)",
+        "SELECT * FROM range(1, 3)",
+    ]:
+        assert ctx.execute(query, eager=True).rows() == [(1,), (2,)]
+
+    # a quoted name that is a registered table reads the table
+    ctx.register("data.csv", lf)
+    assert ctx.execute("SELECT * FROM 'data.csv'", eager=True).rows() == [(1,), (2,)]
+
+    # no hint to read a missing table as a file
+    with pytest.raises(SQLInterfaceError, match="was not found") as exc:
+        ctx.execute("SELECT * FROM 'data.txt'")
+    assert "read_csv" not in str(exc.value)

@@ -85,6 +85,13 @@ impl PhysicalExpr for RollingExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut index_column = self.index_column.evaluate_on_groups(df, groups, state)?;
+        polars_ensure!(
+            !matches!(
+                index_column.agg_state(),
+                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+            ),
+            InvalidOperation: "the index column of `rolling` must have a value per row, not per group"
+        );
 
         index_column.groups();
 
@@ -191,7 +198,9 @@ impl PhysicalExpr for RollingExpr {
                     }));
                     i += idx.len();
                 }
-                GroupsType::Idx(nested_groups.into())
+                let mut nested_groups: GroupsIdx = nested_groups.into();
+                nested_groups.set_sorted_idxs_in_groups(idx.has_sorted_idxs_in_groups());
+                GroupsType::Idx(nested_groups)
             },
             GroupsType::Slice {
                 groups,

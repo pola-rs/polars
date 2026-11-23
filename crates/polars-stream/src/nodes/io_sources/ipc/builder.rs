@@ -4,12 +4,13 @@ use polars_arrow::io::ipc::read::FileMetadata;
 use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_core::schema::SchemaRef;
 #[cfg(feature = "ipc")]
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{ScanFieldSelection, ScanSource};
 #[cfg(feature = "ipc")]
 use polars_utils::pl_str::PlSmallStr;
 
@@ -24,6 +25,11 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 pub struct IpcReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
     pub options: Arc<IpcScanOptions>,
+    /// Struct fields to read of the columns not read whole.
+    pub field_selection: Option<Arc<ScanFieldSelection>>,
+    /// The full schema of the scan, set with `field_selection`. The pruned struct columns are
+    /// checked against it as if read whole, so that the cast policies raise as they would then.
+    pub scan_schema: Option<SchemaRef>,
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
@@ -35,6 +41,8 @@ impl std::fmt::Debug for IpcReaderBuilder {
         f.debug_struct("IpcBuilder")
             .field("first_metadata", &self.first_metadata)
             .field("options", &self.options)
+            .field("field_selection", &self.field_selection)
+            .field("scan_schema", &self.scan_schema)
             .field("pipeline_budget", &self.pipeline_budget)
             .finish()
     }
@@ -114,6 +122,8 @@ impl FileReaderBuilder for IpcReaderBuilder {
             scan_source,
             cloud_options,
             config,
+            field_selection: self.field_selection.clone(),
+            scan_schema: self.scan_schema.clone(),
             metadata,
             byte_source_builder,
             record_batch_prefetch_sync: RecordBatchPrefetchSync {

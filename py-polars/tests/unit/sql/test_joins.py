@@ -3561,6 +3561,56 @@ def test_join_where_number_with_string_raises(condition: str) -> None:
             "GROUP BY k) d ON d.k = a.k ORDER BY a.x",
             [(10, 12), (20, 21)],
         ),
+        (
+            "SELECT a.x, d.v FROM a, LATERAL (SELECT b.v FROM b WHERE b.k = a.k) d "
+            "ORDER BY a.x, d.v",
+            [(10, 100), (10, 101), (20, 200)],
+        ),
+        (
+            "SELECT a.x, d.v, e.w FROM a, (SELECT b.v FROM b WHERE b.k = a.k) d, "
+            "LATERAL (SELECT d.v + a.x AS w) e WHERE e.w > 120 ORDER BY a.x, d.v",
+            [(20, 200, 220)],
+        ),
+        (
+            "SELECT a.x, d.m, d.n FROM a, LATERAL (SELECT MAX(b.v) AS m, "
+            "COUNT(*) AS n FROM b WHERE b.k = a.k) d ORDER BY a.x",
+            [(10, 101, 2), (20, 200, 1), (30, None, 0)],
+        ),
+        (
+            "SELECT a.x, d.m FROM a CROSS JOIN LATERAL (SELECT "
+            "COALESCE(MAX(b.v), 0) + a.x AS m FROM b WHERE b.k = a.k) d ORDER BY a.x",
+            [(10, 111), (20, 220), (30, 30)],
+        ),
+        (
+            "SELECT a.x, d.m FROM a LEFT JOIN LATERAL (SELECT MAX(b.v) AS m FROM b "
+            "WHERE b.k = a.k HAVING COUNT(*) > 1) d ON TRUE ORDER BY a.x",
+            [(10, 101), (20, None), (30, None)],
+        ),
+        (
+            "SELECT a.x, d.n FROM a, LATERAL (SELECT COUNT(*) AS n FROM b "
+            "WHERE b.k = a.k HAVING n > 1) d ORDER BY a.x",
+            [(10, 2)],
+        ),
+        (
+            "SELECT a.x, d.v FROM a, LATERAL (SELECT 0 AS v FROM b "
+            "WHERE b.k = a.k HAVING MAX(v) > 100) d ORDER BY a.x",
+            [(10, 0), (20, 0)],
+        ),
+        (
+            "SELECT a.x, d.s FROM a, LATERAL (SELECT SUM(b.v * a.x) AS s FROM b "
+            "WHERE b.k = a.k) d ORDER BY a.x",
+            [(10, 2010), (20, 4000), (30, None)],
+        ),
+        (
+            "SELECT a.x, d.n FROM a, LATERAL (SELECT COUNT(*) AS n WHERE a.k > 1) d "
+            "ORDER BY a.x",
+            [(10, 0), (20, 1), (30, 0)],
+        ),
+        (
+            "SELECT a.x, d.n FROM a, LATERAL (SELECT COUNT(*) AS n FROM b) d "
+            "ORDER BY a.x",
+            [(10, 4), (20, 4), (30, 4)],
+        ),
     ],
 )
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -3608,6 +3658,7 @@ def test_lateral_derived_table_reads_left_input_once(
     [
         "SELECT a.x, c.v FROM b RIGHT JOIN c ON b.v = c.v",
         "SELECT COUNT(*) AS n FROM b WHERE b.v = a.k GROUP BY ()",
+        "SELECT MAX(b.v) FROM b WHERE b.v > a.k",
         "SELECT a.k AS z FROM b ORDER BY SUM(b.v)",
         "SELECT SUM(a.x) AS s FROM b GROUP BY b.v",
         "SELECT a.k FROM b GROUP BY 2",
@@ -3624,6 +3675,44 @@ def test_lateral_derived_table_unsupported(derived: str) -> None:
         pl.SQLContext(a=a, b=b, c=c).execute(
             f"SELECT a.k FROM a CROSS JOIN ({derived}) d", eager=True
         )
+
+
+def test_lateral_comma_form_reads_earlier_tables_only() -> None:
+    a = pl.DataFrame({"k": [1, 2]})
+    c = pl.DataFrame({"k": [9]})
+    with pytest.raises(ColumnNotFoundError):
+        pl.SQLContext(a=a, c=c).execute(
+            "SELECT a.k FROM a, LATERAL (SELECT c.k AS v) d, c", eager=True
+        )
+
+
+@pytest.mark.parametrize(
+    ("derived", "check"),
+    [
+        (
+            "SELECT MIN(r.v) AS x, MAX(r.w) AS y FROM "
+            "(SELECT v, w FROM b GROUP BY v, w LIMIT 1) r WHERE r.v > a.k",
+            "d.x = d.y",
+        ),
+        (
+            "SELECT COUNT(*) AS x, SUM(1) AS y FROM b "
+            "WHERE b.v > a.k AND RANDOM() > 0.5 HAVING COUNT(*) > 0",
+            "d.x = d.y AND d.x > 0",
+        ),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lateral_aggregates_read_the_same_rows(
+    derived: str, check: str, engine: Literal["in-memory", "streaming"]
+) -> None:
+    a = pl.DataFrame({"k": [-1]})
+    b = pl.DataFrame({"v": range(2000), "w": range(2000)})
+    result = (
+        pl.SQLContext(a=a, b=b)
+        .execute(f"SELECT {check} AS ok FROM a, LATERAL ({derived}) d")
+        .collect(engine=engine)
+    )
+    assert result["ok"].to_list() == [True]
 
 
 def test_lateral_derived_table_ambiguous_outer_column() -> None:
@@ -3663,3 +3752,97 @@ def test_join_untyped_literal_keys(on: str, how: str) -> None:
         check_dtypes=False,
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM a POSITIONAL JOIN b",
+        "SELECT * FROM b POSITIONAL JOIN a",
+        "SELECT x.k, y.k AS k2 FROM a AS x POSITIONAL JOIN a y",
+        "SELECT * FROM a POSITIONAL JOIN (SELECT v FROM b WHERE v > 7) AS c",
+        "SELECT a.k, b.v, c.s FROM a POSITIONAL JOIN b JOIN a AS c ON c.k = b.v - 7",
+        "SELECT o.k, p.v FROM a AS o CROSS JOIN LATERAL (SELECT b.v FROM a POSITIONAL JOIN b) AS p",
+    ],
+)
+def test_positional_join(query: str) -> None:
+    assert_sql_matches(
+        {
+            "a": pl.LazyFrame({"k": [1, 2], "s": ["x", "y"]}),
+            "b": pl.LazyFrame({"v": [7, 8, 9]}),
+        },
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_positional_join_names_and_errors() -> None:
+    a = pl.DataFrame({"k": [1, 2]})
+    b = pl.DataFrame({"k": [7, 8, 9]})
+    tables = {
+        "a": a,
+        "b": b,
+        "positional": a,
+        "update": a,
+        "ns.positional": a,
+        "ns.table": a,
+    }
+    with pl.SQLContext(tables) as ctx:
+        # names that are keywords
+        for left in [
+            "a",
+            "a AS x",
+            "a x",
+            "(SELECT * FROM a) AS s",
+            "a AS update",
+            "a update",
+            "ns.table",
+            "update",
+            "a AS using",
+        ]:
+            assert_frame_equal(
+                ctx.execute(f"SELECT * FROM {left} POSITIONAL JOIN b", eager=True),
+                pl.DataFrame({"k": [1, 2, None], "k:b": [7, 8, 9]}),
+            )
+        assert_frame_equal(
+            ctx.execute(
+                "SELECT * FROM b POSITIONAL JOIN update POSITIONAL JOIN a", eager=True
+            ),
+            pl.DataFrame(
+                {"k": [7, 8, 9], "k:update": [1, 2, None], "k:a": [1, 2, None]}
+            ),
+        )
+        # where a name or a column goes, the word is a name
+        assert ctx.execute(
+            "SELECT b.k FROM b JOIN (SELECT 8 AS positional) AS p ON b.k = positional "
+            "JOIN a ON a.k = 1",
+            eager=True,
+        ).rows() == [(8,)]
+        for query in [
+            # an alias followed by its join condition
+            "SELECT positional.k FROM b JOIN a positional ON positional.k = b.k - 6 "
+            "JOIN a ON a.k = positional.k",
+            "SELECT positional.k FROM a JOIN a positional USING (k) "
+            "JOIN b ON b.k - 6 = positional.k",
+            "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6",
+            "SELECT positional.k FROM positional JOIN b ON positional.k = b.k - 6",
+            "SELECT p.k FROM (positional AS p JOIN b ON p.k = b.k - 6)",
+            "SELECT ns.positional.k FROM ns.positional JOIN b ON ns.positional.k = b.k - 6",
+        ]:
+            assert sorted(ctx.execute(query, eager=True).rows()) == [(1,), (2,)]
+        ctx.execute("CREATE VIEW v AS SELECT * FROM a POSITIONAL JOIN b")
+        assert ctx.execute("SELECT count(*) AS n FROM v", eager=True).item() == 3
+        # a correlated LATERAL would pair the rows of the outer values
+        with pytest.raises(SQLInterfaceError):
+            ctx.execute(
+                "SELECT o.k, p.k FROM a AS o CROSS JOIN LATERAL "
+                "(SELECT b.k FROM a POSITIONAL JOIN b WHERE a.k = o.k) AS p",
+                eager=True,
+            )
+        for constraint in ["ON a.k = b.k", "USING (k)"]:
+            with pytest.raises(
+                SQLInterfaceError, match="does not take a join condition"
+            ):
+                ctx.execute(f"SELECT * FROM a POSITIONAL JOIN b {constraint}")

@@ -1,5 +1,4 @@
-#[cfg(feature = "dtype-f16")]
-use num_traits::real::Real;
+use num_traits::{Float, NumCast, One, ToPrimitive, Zero};
 use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
@@ -188,29 +187,12 @@ pub trait LogSeries: SeriesSealed {
     /// where `pk` are discrete probabilities.
     fn entropy(&self, base: f64, normalize: bool) -> PolarsResult<f64> {
         let s = self.as_series();
-
-        // If there is only one value in the series, return 0.0 to prevent the function from returning -0.0.
-        if s.len() == 1 {
-            return Ok(0.0);
-        }
         match s.dtype() {
             dt if dt.is_float() => {
-                let pk = s;
-
-                let pk = if normalize {
-                    let sum = pk.sum_reduce().unwrap().into_series(PlSmallStr::EMPTY);
-
-                    if sum.get(0).unwrap().extract::<f64>().unwrap() != 1.0 {
-                        (pk / &sum)?
-                    } else {
-                        pk.clone()
-                    }
-                } else {
-                    pk.clone()
-                };
-
-                let base = &Series::new(PlSmallStr::EMPTY, [base]);
-                (&pk * &pk.log(base)?)?.sum::<f64>().map(|v| -v)
+                with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+                    Ok(entropy_float(ca, base, normalize))
+                })
             },
             dt if dt.is_integer() || dt.is_decimal() || dt.is_bool() => s
                 .cast(&DataType::Float64)
@@ -218,6 +200,71 @@ pub trait LogSeries: SeriesSealed {
             dt => polars_bail!(opq = entropy, dt),
         }
     }
+
+    /// Compute `x * log(y, base)` elementwise, which is 0 where `x` is 0 unless `y` is NaN.
+    ///
+    /// `x` and `y` must have the same dtype; the planner casts them to their supertype.
+    fn x_log_y(&self, y: &Series, base: f64) -> PolarsResult<Series> {
+        let x = self.as_series();
+        polars_ensure!(
+            x.dtype() == y.dtype(),
+            InvalidOperation: "`x_log_y` expects inputs of the same dtype, got `{}` and `{}`",
+            x.dtype(), y.dtype()
+        );
+        match x.dtype() {
+            dt if dt.is_float() => with_match_physical_float_polars_type!(dt, |$T| {
+                let x_ca: &ChunkedArray<$T> = x.as_ref().as_ref();
+                let y_ca: &ChunkedArray<$T> = y.as_ref().as_ref();
+                let base = NumCast::from(base).unwrap();
+                let out: ChunkedArray<$T> =
+                    broadcast_binary_elementwise_values(x_ca, y_ca, |x, y| x_log_y(x, y, base));
+                Ok(out.into_series())
+            }),
+            dt if dt.is_integer() || dt.is_decimal() || dt.is_bool() => {
+                let f64 = DataType::Float64;
+                x.cast(&f64)?.x_log_y(&y.cast(&f64)?, base)
+            },
+            dt => polars_bail!(opq = x_log_y, dt),
+        }
+    }
+}
+
+fn x_log_y<F: Float>(x: F, y: F, base: F) -> F {
+    if x == F::zero() && !y.is_nan() {
+        F::zero()
+    } else {
+        x * y.log(base)
+    }
+}
+
+/// Entropy with `0 * log(0) = 0` and NaN for negative weights.
+fn entropy_float<T>(ca: &ChunkedArray<T>, base: f64, normalize: bool) -> f64
+where
+    T: PolarsFloatType,
+    T::Native: Float,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
+{
+    let zero = T::Native::zero();
+    let total = if normalize {
+        ca.sum().unwrap_or(zero)
+    } else {
+        T::Native::one()
+    };
+    // Also covers empty, all-null and all-zero input.
+    if total == zero {
+        return f64::NAN;
+    }
+    let base: T::Native = NumCast::from(base).unwrap();
+    let plogp = ca.apply_values(|x| {
+        // Checked before dividing, so that a negative weight can't underflow to `-0.0`.
+        if x < zero {
+            T::Native::nan()
+        } else {
+            let p = x / total;
+            x_log_y(p, p, base)
+        }
+    });
+    -plogp.sum().map_or(0.0, |t| t.to_f64().unwrap())
 }
 
 impl LogSeries for Series {}

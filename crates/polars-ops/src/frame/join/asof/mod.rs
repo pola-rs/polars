@@ -9,6 +9,7 @@ use num_traits::NumCast;
 use polars_core::prelude::*;
 use polars_defs::join::AsofStrategy;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 use polars_utils::total_ord::TotalOrd;
 
 use super::{_finish_join, build_tables, build_tables_from_arrays, par_map_collect};
@@ -277,7 +278,7 @@ pub trait AsofJoin: IntoDf {
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         suffix: Option<PlSmallStr>,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         coalesce: bool,
         allow_eq: bool,
         check_sortedness: bool,
@@ -307,9 +308,9 @@ pub trait AsofJoin: IntoDf {
         };
 
         let mut left = self_df.clone();
-        if let Some((offset, len)) = slice {
-            left = left.slice(offset, len);
-            take_idx = take_idx.slice(offset, len);
+        if let Some(slice) = slice {
+            left = left.slice(slice);
+            take_idx = take_idx.slice(slice);
         }
 
         // SAFETY: join tuples are in bounds.

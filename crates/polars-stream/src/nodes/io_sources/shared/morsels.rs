@@ -21,7 +21,7 @@ pub(crate) fn split_to_morsels(
 
     (0..i64::try_from(df.height()).unwrap())
         .step_by(rows_per_morsel)
-        .map(move |offset| df.slice(offset, rows_per_morsel))
+        .map(move |offset| df.slice((offset, rows_per_morsel)))
         .filter(|df| df.height() > 0)
 }
 

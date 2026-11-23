@@ -58,7 +58,7 @@ where
                 split
                     .into_par_iter()
                     .map(|(offset, len)| {
-                        let ca = self.slice(offset as i64, len);
+                        let ca = self.slice((offset, len));
                         let byte_hashes = fill_bytes_hashes(&ca, null_h, hb.clone());
 
                         // SAFETY:

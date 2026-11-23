@@ -20,6 +20,7 @@ mod eager;
 mod ewm;
 #[cfg(feature = "ewma_by")]
 mod ewm_by;
+mod format_spec;
 #[cfg(feature = "fused")]
 mod fused;
 mod horizontal;

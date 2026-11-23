@@ -67,6 +67,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "anstream"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
+dependencies = [
+ "anstyle",
+ "anstyle-parse",
+ "anstyle-query",
+ "anstyle-wincon",
+ "colorchoice",
+ "is_terminal_polyfill",
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
+
+[[package]]
+name = "anstyle-parse"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
+dependencies = [
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle-query"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "anstyle-wincon"
+version = "3.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
+dependencies = [
+ "anstyle",
+ "once_cell_polyfill",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -974,6 +1024,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa8876b300ab35ba921adea3dfd70157a46249b33f95c9084ae5709785478946"
+dependencies = [
+ "clap_builder",
+ "clap_derive",
+]
+
+[[package]]
+name = "clap_builder"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0797fb7aeb1406c84efac526901f7ec3ead2124f946b494e72879d4b54704d"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "clap_lex",
+ "strsim",
+]
+
+[[package]]
+name = "clap_derive"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9c751b79415d4e559e3d1fcf128e09e720eb673a06d26cf6f392d37d75b66e0"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
+name = "clap_lex"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
+
+[[package]]
 name = "clipboard-win"
 version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1005,6 +1095,12 @@ dependencies = [
  "btparse",
  "termcolor",
 ]
+
+[[package]]
+name = "colorchoice"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "combine"
@@ -2183,6 +2279,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78"
 
 [[package]]
+name = "is_terminal_polyfill"
+version = "1.70.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
 name = "iter-read"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2638,9 +2740,9 @@ dependencies = [
 
 [[package]]
 name = "numpy"
-version = "0.29.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a5b15d63a5ff39e378daed0e1340d3a5964703ea9712eb09a0dc66fade996f4"
+checksum = "aa0b9111761885449e894981fa8051dcf69e0bd114aecbd4bcdd830b6be4ed92"
 dependencies = [
  "half",
  "libc",
@@ -2793,6 +2895,12 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "once_cell_polyfill"
+version = "1.70.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openssl-probe"
@@ -2963,7 +3071,6 @@ name = "polars-arrow"
 version = "0.55.1"
 dependencies = [
  "async-stream",
- "atoi_simd",
  "avro-schema",
  "bitflags",
  "bytemuck",
@@ -3042,6 +3149,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-cli"
+version = "0.55.1"
+dependencies = [
+ "clap",
+ "polars",
+ "polars-arrow",
+ "polars-ooc",
+ "recursive",
+ "signal-hook",
+ "sqlparser",
+ "unicode-width",
+]
+
+[[package]]
 name = "polars-compute"
 version = "0.55.1"
 dependencies = [
@@ -3061,6 +3182,7 @@ dependencies = [
  "polars-utils",
  "proptest",
  "rand 0.10.2",
+ "rayon",
  "schemars",
  "serde",
  "strength_reduce",
@@ -3122,6 +3244,35 @@ dependencies = [
  "uuid",
  "version_check",
  "xxhash-rust",
+]
+
+[[package]]
+name = "polars-database"
+version = "0.1.1"
+dependencies = [
+ "bitflags",
+ "chrono",
+ "percent-encoding",
+ "polars-arrow",
+ "polars-config",
+ "polars-core",
+ "polars-error",
+ "polars-io-ext-ffi",
+ "polars-utils",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+ "strum",
+ "strum_macros",
+]
+
+[[package]]
+name = "polars-database-python"
+version = "0.1.1"
+dependencies = [
+ "polars-database",
+ "pyo3",
 ]
 
 [[package]]
@@ -3195,7 +3346,6 @@ name = "polars-error"
 version = "0.55.1"
 dependencies = [
  "avro-schema",
- "object_store",
  "parking_lot",
  "polars-arrow-format",
  "pyo3",
@@ -3243,6 +3393,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-iceberg"
+version = "0.1.1"
+dependencies = [
+ "chrono",
+ "flate2",
+ "futures",
+ "hex",
+ "polars-arrow",
+ "polars-error",
+ "polars-io-ext-ffi",
+ "polars-utils",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "snap",
+ "tokio",
+ "zstd",
+]
+
+[[package]]
+name = "polars-iceberg-python"
+version = "0.1.1"
+dependencies = [
+ "polars-iceberg",
+ "pyo3",
+]
+
+[[package]]
 name = "polars-io"
 version = "0.55.1"
 dependencies = [
@@ -3260,6 +3438,7 @@ dependencies = [
  "futures",
  "glob",
  "hashbrown 0.17.1",
+ "http-body 1.1.0",
  "itoa",
  "libc",
  "memchr",
@@ -3267,6 +3446,7 @@ dependencies = [
  "num-traits",
  "object_store",
  "parking_lot",
+ "parquet-key-management",
  "percent-encoding",
  "polars-arrow",
  "polars-buffer",
@@ -3274,6 +3454,7 @@ dependencies = [
  "polars-config",
  "polars-core",
  "polars-error",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-parquet",
  "polars-schema",
@@ -3532,6 +3713,7 @@ dependencies = [
  "polars-error",
  "polars-ffi",
  "polars-io",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-parquet",
  "polars-row",
@@ -3723,6 +3905,7 @@ dependencies = [
  "polars-error",
  "polars-expr",
  "polars-io",
+ "polars-io-ext-ffi",
  "polars-json",
  "polars-mem-engine",
  "polars-observer",
@@ -3930,9 +4113,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4688ddedf473e32662b9b067670129a8afb8c18e351482c70d62ba4a88171e8b"
+checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -3948,18 +4131,18 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f41027e41b4bd03f6e60f9f417fe24a6341a6bb744edd62b6f709f2a52ea30e9"
+checksum = "70130e2b6dd1ee589a8788026a429561ca5c40fa7a2fa7914c2282eddae24700"
 dependencies = [
  "target-lexicon",
 ]
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e591a95526fead067432c3b3a33fc74770b87b1e04e73671090d9c2055a2b327"
+checksum = "5e7ff73c555c286d212d4ce7e5fbda845a973c4f61bd5f160f5f2c3c2a04d1c4"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -3967,26 +4150,26 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73225868fc1cd84eef2c3c230ddb91273bf1de46aeb8a4248da76d32a0924a1c"
+checksum = "c46d2e5862c7bb8207e3b639f713dda3c499933444784154c11d013c5a691b60"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.29.2"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "571575aa3749fa6216757dd47d2a3e7ef360f329a40f0666a9fbd14889024952"
+checksum = "38b89f066f2ae72a2aef52d1537ca2fcd104440ebfadee06e97aa90738a25b9b"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -4990,6 +5173,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
 
 [[package]]
+name = "strsim"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
 name = "strum"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5177,8 +5366,8 @@ dependencies = [
 
 [[package]]
 name = "tikv-jemalloc-sys"
-version = "0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8"
-source = "git+https://github.com/pola-rs/jemallocator?rev=0d683dfb157097e2075d5e0eaf25f71f514a7552#0d683dfb157097e2075d5e0eaf25f71f514a7552"
+version = "0.7.1+5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc"
+source = "git+https://github.com/pola-rs/jemallocator?rev=e947a0d1a786e221ac1c14ba1566b55151e61ec9#e947a0d1a786e221ac1c14ba1566b55151e61ec9"
 dependencies = [
  "cc",
  "libc",
@@ -5561,6 +5750,12 @@ name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
+
+[[package]]
+name = "utf8parse"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"

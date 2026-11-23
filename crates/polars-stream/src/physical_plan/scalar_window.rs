@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 use polars_error::PolarsResult;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::reduce::into_reduction;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, is_scalar_window_reduction};
@@ -82,7 +83,7 @@ pub fn scalar_window_params(
     Ok(ScalarWindowParams {
         windows,
         read_schema: Arc::new(read_schema),
-        key_schema: Arc::new(key_schema),
+        key_encoder: KeyEncoder::new(Arc::new(key_schema), true, &[]),
         output_schema,
     })
 }

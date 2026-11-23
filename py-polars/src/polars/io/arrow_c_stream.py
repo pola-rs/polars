@@ -88,11 +88,12 @@ def scan_arrow_c_stream(source: Any) -> LazyFrame:
         remaining = n_rows
         while (batch := reader.next_batch(with_columns)) is not None:
             df = pl.DataFrame._from_pydf(batch)
-            if predicate is not None:
-                df = df.filter(predicate)
+            # `n_rows` counts rows before the predicate.
             if remaining is not None:
                 df = df.head(remaining)
                 remaining -= df.height
+            if predicate is not None:
+                df = df.filter(predicate)
             yield df
             if remaining is not None and remaining <= 0:
                 return

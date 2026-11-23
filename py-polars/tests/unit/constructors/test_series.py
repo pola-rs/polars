@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -155,6 +156,127 @@ def test_series_init_pandas_timestamp_18127() -> None:
     result = pl.Series([pd.Timestamp("2000-01-01T00:00:00.123456789", tz="UTC")])
     # Note: time unit is not (yet) respected, it should be Datetime('ns', 'UTC').
     assert result.dtype == pl.Datetime("us", "UTC")
+
+
+def test_series_init_pandas_timestamp_out_of_datetime_range() -> None:
+    result = pl.Series([pd.Timestamp(np.datetime64("10000-01-01", "s"))])
+    assert result.dtype == pl.Datetime("us")
+    assert result.dt.year().item() == 10000
+    assert result.dt.epoch("s").item() == 253402300800
+
+
+def test_series_init_pandas_timestamp_out_of_datetime_range_time_zone() -> None:
+    ts = pd.Timestamp(np.datetime64("10000-01-01", "s"))
+    try:
+        ts = ts.tz_localize("America/New_York")
+    except (NotImplementedError, ValueError):
+        pytest.skip("this pandas version cannot localize out-of-range Timestamps")
+    result = pl.Series([ts])
+    assert result.dtype == pl.Datetime("us", "America/New_York")
+    assert result.dt.epoch("s").item() == 253402300800 + 5 * 3600
+
+
+def test_series_init_pandas_timestamp_time_zone() -> None:
+    tz = ZoneInfo("Europe/Amsterdam")
+    result = pl.Series([pd.Timestamp("2200-07-01 12:00", tz=tz)])
+    assert result.dtype == pl.Datetime("us", "Europe/Amsterdam")
+    assert result.item() == datetime(2200, 7, 1, 12, tzinfo=tz)
+
+
+def test_series_init_datetime_subclass_from_pandas_named_module() -> None:
+    class Datetime(datetime):
+        @property
+        def asm8(self) -> np.datetime64:
+            return np.datetime64("2001-05-04", "s")
+
+    Datetime.__module__ = "pandas_helpers"
+    assert pl.Series([Datetime(2025, 1, 2)]).item() == datetime(2025, 1, 2)
+
+
+def test_series_init_pandas_timedelta_non_nanosecond_unit() -> None:
+    result = pl.Series([pd.Timedelta(np.timedelta64(1, "s"))])
+    assert result.dtype == pl.Duration("us")
+    assert result.item() == timedelta(seconds=1)
+
+
+def test_series_init_pandas_timedelta_out_of_microsecond_range() -> None:
+    result = pl.Series([pd.Timedelta(np.timedelta64(10**9, "D"))])
+    assert result.dtype == pl.Duration("ms")
+    assert result.cast(pl.Int64).item() == 86_400_000_000_000_000
+
+
+def test_series_init_pandas_timedelta_nanoseconds() -> None:
+    result = pl.Series([pd.Timedelta(-1, "ns"), pd.Timedelta(1_999, "ns")])
+    assert result.to_list() == [timedelta(microseconds=-1), timedelta(microseconds=1)]
+
+
+def test_series_init_datetime_subclass_with_asm8() -> None:
+    class Datetime(datetime):
+        @property
+        def asm8(self) -> np.timedelta64:
+            return np.timedelta64(1, "s")
+
+    assert pl.Series([Datetime(2025, 1, 2)]).item() == datetime(2025, 1, 2)
+
+
+def test_series_init_pandas_timestamp_nanoseconds_before_epoch() -> None:
+    result = pl.Series([pd.Timestamp("1969-12-31T23:59:59.999999999")])
+    assert result.item() == datetime(1969, 12, 31, 23, 59, 59, 999999)
+
+
+def test_series_init_pandas_nat() -> None:
+    with pytest.raises(TypeError, match="cannot convert pandas NaT"):
+        pl.Series([type(pd.NaT)()])
+    with pytest.raises(TypeError, match="cannot convert pandas NaT"):
+        pl.Series([pd.NaT])
+
+
+def test_series_init_pandas_timestamp_subclass() -> None:
+    class Timestamp(pd.Timestamp):
+        pass
+
+    ts = pd.Timestamp(np.datetime64("10000-01-01", "s"))
+    ts.__class__ = Timestamp
+    assert pl.Series([ts]).dt.year().item() == 10000
+
+
+class _VariableOffset(tzinfo):
+    def utcoffset(self, dt: datetime | None) -> timedelta | None:
+        if dt is None:
+            return None
+        return timedelta(hours=2 if 4 <= dt.month <= 9 else 1)
+
+    def dst(self, dt: datetime | None) -> timedelta | None:
+        return None
+
+    def tzname(self, dt: datetime | None) -> str | None:
+        return None
+
+
+def test_series_init_pandas_timestamp_variable_offset_time_zone() -> None:
+    dt = datetime(2020, 7, 1, 12, tzinfo=_VariableOffset())
+    with pytest.raises(TypeError):
+        pl.Series([dt])
+    with pytest.raises(TypeError):
+        pl.Series([pd.Timestamp(dt)])
+
+
+def test_series_init_pandas_timestamp_fixed_offset_time_zone() -> None:
+    dt = datetime(2020, 7, 1, 12, tzinfo=timezone(timedelta(hours=2)))
+    assert_series_equal(pl.Series([pd.Timestamp(dt)]), pl.Series([dt]))
+
+
+def test_series_init_uint128_index_error_propagates() -> None:
+    class Index:
+        def __index__(self) -> int:
+            msg = "bad index"
+            raise ValueError(msg)
+
+        def __float__(self) -> float:
+            return 7.0
+
+    with pytest.raises(ValueError, match="bad index"):
+        pl.Series([1, Index()], dtype=pl.UInt128, strict=False)
 
 
 def test_series_init_np_2d_zero_zero_shape() -> None:
