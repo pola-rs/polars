@@ -86,7 +86,7 @@ use crate::subquery::{
     LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
     is_correlated_subquery, quantified_as_exists, row_indexed_once,
 };
-use crate::subquery_pull_up::{NESTED_PREFIX, select_values};
+use crate::subquery_pull_up::{NESTED_PREFIX, builtin_aggregate_call, select_values};
 use crate::table_functions::{PolarsTableFunctions, expand_home_dir};
 use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::{map_sql_dtype_to_polars, sql_type_name};
@@ -1339,6 +1339,7 @@ impl SQLContext {
         let Some(selection) = selection else {
             return Ok(lit(true));
         };
+        self.reject_aggregate_in_where(selection)?;
         polars_ensure!(
             !expr_contains_subquery(selection),
             SQLInterface: "subqueries are not supported in the WHERE of a catalog {}", statement
@@ -1804,6 +1805,7 @@ impl SQLContext {
                 _ => self.execute_query(query)?,
             },
             stmt @ Statement::ShowTables { .. } => self.execute_show_tables(stmt)?,
+            Statement::ShowFunctions { filter } => self.execute_show_functions(filter.as_ref())?,
             stmt @ Statement::CreateTable { .. } => self.execute_create_table(stmt)?,
             stmt @ Statement::Drop {
                 object_type: ObjectType::Table,
@@ -2892,6 +2894,47 @@ impl SQLContext {
         let tables = Column::new("name".into(), self.get_tables());
         let df = DataFrame::new_infer_height(vec![tables])?;
         Ok(df.lazy())
+    }
+
+    // SHOW FUNCTIONS [LIKE '<pattern>']: the function names, matched ignoring case.
+    fn execute_show_functions(
+        &mut self,
+        filter: Option<&sqlparser::ast::ShowStatementFilter>,
+    ) -> PolarsResult<LazyFrame> {
+        let mut names = crate::keywords::all_functions();
+        names.sort_unstable();
+        names.dedup();
+        let df = DataFrame::new_infer_height(vec![Column::new("name".into(), names)])?;
+        let pattern = match filter {
+            None => return Ok(df.lazy()),
+            Some(
+                sqlparser::ast::ShowStatementFilter::Like(pattern)
+                | sqlparser::ast::ShowStatementFilter::ILike(pattern)
+                | sqlparser::ast::ShowStatementFilter::NoKeyword(pattern),
+            ) => pattern.as_str(),
+            Some(sqlparser::ast::ShowStatementFilter::Where(_)) => {
+                polars_bail!(SQLInterface: "SHOW FUNCTIONS takes LIKE '<pattern>', not WHERE")
+            },
+        };
+        // a backslash escapes the next character, as in Postgres
+        let mut regex = String::from("(?is)^");
+        let mut chars = pattern.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                '%' => regex.push_str(".*"),
+                '_' => regex.push('.'),
+                '\\' => {
+                    if let Some(c) = chars.next() {
+                        regex.push_str(&regex::escape(&c.to_string()));
+                    }
+                },
+                c => regex.push_str(&regex::escape(&c.to_string())),
+            }
+        }
+        regex.push('$');
+        Ok(df
+            .lazy()
+            .filter(col("name").str().contains(lit(regex), true)))
     }
 
     // DROP TABLE <tbl>
@@ -5548,6 +5591,9 @@ impl SQLContext {
         bindings: &mut SubqueryBindings,
         select_stmt: Option<&Select>,
     ) -> PolarsResult<LazyFrame> {
+        if let Some(where_expr) = where_expr {
+            self.reject_aggregate_in_where(where_expr)?;
+        }
         let quantified = where_expr.and_then(|where_expr| {
             let conjuncts = flatten_and_conditions(where_expr);
             let rewritten: Vec<_> = conjuncts
@@ -5631,6 +5677,7 @@ impl SQLContext {
         schema: Option<SchemaRef>,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
+            self.reject_aggregate_in_where(expr)?;
             let schema = match schema {
                 None => self.get_frame_schema(&mut lf)?,
                 Some(s) => s,
@@ -5725,6 +5772,20 @@ impl SQLContext {
             lf = drop_subquery_placeholders(lf, placeholders);
         }
         Ok(lf)
+    }
+
+    /// Fail on an aggregate in `WHERE`, as Postgres does; a subquery's `WHERE` is not checked.
+    fn reject_aggregate_in_where(&self, expr: &SQLExpr) -> PolarsResult<()> {
+        if self.nesting > 0 {
+            return Ok(());
+        }
+        match builtin_aggregate_call(self, expr) {
+            Some(name) => polars_bail!(
+                SQLSyntax: "aggregate functions are not allowed in WHERE (found `{}`); filter groups with HAVING, or compare with a subquery's aggregate",
+                name
+            ),
+            None => Ok(()),
+        }
     }
 
     /// Fail if parsing since `n_grouping_calls` were registered added a `GROUPING()` call.

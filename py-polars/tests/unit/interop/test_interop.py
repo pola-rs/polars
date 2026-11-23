@@ -175,6 +175,167 @@ def test_arrow_dict_chunks_to_categorical() -> None:
     assert s.to_list() == ["b", "a", "b", "c", None, "a"]
 
 
+@pytest.mark.parametrize("index_type", [pa.int8(), pa.int32()])
+@pytest.mark.parametrize(
+    "values",
+    [
+        pa.array([7, 10**18, 42]),
+        pa.array([1.5, 2.5, 3.5]),
+        pa.array(
+            [Decimal("1.50"), Decimal("2.25"), Decimal("3")], pa.decimal128(10, 2)
+        ),
+        pa.array([True, False, True]),
+        pa.array([date(2024, 1, 1), date(2024, 5, 6), date(2024, 7, 8)]),
+        pa.array([time(1), time(2), time(3)]),
+        pa.array([datetime(2024, 1, 1), datetime(2024, 5, 6), datetime(2024, 7, 8)]),
+        pa.array([5, 3600, 86400], pa.duration("s")),
+        pa.array([0, 1, 2], pa.timestamp("us", "UTC")),
+        pa.array([b"\xff\x00", b"ok", b""]),
+        pa.array([b"ab", b"cd", b"ef"], pa.binary(2)),
+    ],
+)
+def test_arrow_dict_chunks_keep_value_type_30729(
+    index_type: pa.DataType, values: pa.Array
+) -> None:
+    # Each chunk has its own dictionary, as when data is read batch by batch.
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(pa.array([0, 1], index_type), values[:2]),
+            pa.DictionaryArray.from_arrays(pa.array([1, None], index_type), values[1:]),
+        ]
+    )
+    expected = cast("pl.Series", pl.from_arrow(ca.combine_chunks())).alias("c")
+    assert expected.dtype != pl.Categorical
+
+    assert_series_equal(cast("pl.Series", pl.from_arrow(ca)).alias("c"), expected)
+    assert_series_equal(pl.Series("c", ca), expected)
+    assert_series_equal(pl.DataFrame({"c": ca})["c"], expected)
+
+
+@pytest.mark.parametrize("value_type", [pa.duration("s"), pa.timestamp("s", "UTC")])
+@pytest.mark.parametrize("overflow", [-(2**63 // 1000) - 1, (2**63 - 1) // 1000 + 1])
+def test_arrow_dict_chunks_temporal_seconds_overflow(
+    value_type: pa.DataType, overflow: int
+) -> None:
+    ca = _two_dict_chunks(pa.int8(), pa.array([1, 2, overflow], value_type))
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.from_arrow(ca)
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.Series("c", ca)
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.DataFrame({"c": ca})
+
+
+@pytest.mark.parametrize(
+    ("value_type", "dtype"),
+    [
+        (pa.duration("s"), pl.Duration("ms")),
+        (pa.timestamp("s", "Europe/Amsterdam"), pl.Datetime("ms", "Europe/Amsterdam")),
+    ],
+)
+def test_arrow_dict_chunks_temporal_seconds_bounds(
+    value_type: pa.DataType, dtype: pl.DataType
+) -> None:
+    min_seconds = -(2**63 // 1000)
+    max_seconds = (2**63 - 1) // 1000
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(
+                pa.array([0, 1, None], pa.int8()),
+                pa.array([min_seconds, None, max_seconds + 1], value_type),
+            ),
+            pa.DictionaryArray.from_arrays(
+                pa.array([None], pa.int8()), pa.array([min_seconds - 1], value_type)
+            ),
+            pa.DictionaryArray.from_arrays(
+                pa.array([0, 1], pa.int8()),
+                pa.array([max_seconds, min_seconds], value_type),
+            ),
+        ]
+    )
+    expected = pl.Series(
+        "c",
+        [min_seconds * 1000, None, None, None, max_seconds * 1000, min_seconds * 1000],
+    )
+    for s in (
+        cast("pl.Series", pl.from_arrow(ca)).alias("c"),
+        pl.Series("c", ca),
+        pl.DataFrame({"c": ca})["c"],
+    ):
+        assert s.dtype == dtype
+        assert_series_equal(s.to_physical(), expected)
+
+
+def test_arrow_dict_chunks_small_index_overflow_30729() -> None:
+    # The combined dictionary has more entries than an int8 index can address.
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(
+                pa.array(range(100), pa.int8()), pa.array(range(100))
+            ),
+            pa.DictionaryArray.from_arrays(
+                pa.array(range(100), pa.int8()), pa.array(range(100, 200))
+            ),
+        ]
+    )
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Int64
+    assert s.to_list() == list(range(200))
+
+
+def _two_dict_chunks(index_type: pa.DataType, values: pa.Array) -> pa.ChunkedArray:
+    return pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(pa.array([0, 1], index_type), values[:2]),
+            pa.DictionaryArray.from_arrays(pa.array([1, None], index_type), values[1:]),
+        ]
+    )
+
+
+def test_arrow_dict_chunks_small_index_strings_30729() -> None:
+    ca = _two_dict_chunks(pa.int8(), pa.array(["a", "b", "c"]))
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["a", "b", "c", None]
+
+
+def test_arrow_dict_chunks_nested_dictionary_values_30729() -> None:
+    # Dictionaries of dictionaries can't be combined as such and stay strings.
+    inner = pa.DictionaryArray.from_arrays(pa.array([0, 1], pa.int8()), ["a", "b"])
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(pa.array([0, None], pa.int8()), inner),
+            pa.DictionaryArray.from_arrays(pa.array([1], pa.int8()), inner),
+        ]
+    )
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["a", None, "b"]
+
+
+def test_arrow_dict_chunks_unsupported_value_types_stay_strings_30729() -> None:
+    # Arrow corrupts float16 dictionary values when combining chunks.
+    ca = _two_dict_chunks(pa.int8(), pa.array([1.5, 2.5, 3.5], pa.float16()))
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.cast(pl.String).to_list() == ["1.5", "2.5", "3.5", None]
+
+    # Polars doesn't import a negative decimal scale.
+    values = pa.array([Decimal(100), Decimal(200), Decimal(300)], pa.decimal128(10, -2))
+    s = cast("pl.Series", pl.from_arrow(_two_dict_chunks(pa.int8(), values)))
+    assert s.dtype == pl.Categorical
+    assert s.len() == 4
+
+
+def test_arrow_dict_chunks_without_view_type_checks_30729(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Older pyarrow versions don't have `pa.types.is_binary_view`.
+    monkeypatch.delattr(pa.types, "is_binary_view", raising=False)
+    ca = _two_dict_chunks(pa.int8(), pa.array([7, 10**18, 42]))
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.to_list() == [7, 10**18, 42, None]
+
+
 def test_arrow_list_chunked_array() -> None:
     a = pa.array([[1, 2], [3, 4]])
     ca = pa.chunked_array([a, a, a])
