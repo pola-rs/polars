@@ -1449,18 +1449,21 @@ def test_outer_join_where_key_with_one_input_condition(
     assert "NESTED LOOP JOIN" not in query.explain()
 
 
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("how", ["left", "right", "full"])
 @pytest.mark.parametrize("sorted_keys", [False, True])
-@pytest.mark.parametrize("morsel_size", [2, 100_000])
+@pytest.mark.parametrize(
+    ("engine", "morsel_size"),
+    [("in-memory", None), ("streaming", 2), ("streaming", 100_000)],
+)
 def test_outer_join_where_key_with_both_inputs_condition(
     engine: EngineType,
     how: Literal["left", "right", "full"],
     sorted_keys: bool,
-    morsel_size: int,
+    morsel_size: int | None,
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(morsel_size))
+    if morsel_size is not None:
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(morsel_size))
     left = pl.LazyFrame({"k": [1, 1, 1, 2, 2, 3, None], "v": [1, 5, 4, 2, None, 9, 1]})
     right = pl.LazyFrame({"k": [1, 1, 2, 3, 4, None], "v": [3, 0, None, 1, 0, 2]})
     if sorted_keys:

@@ -155,16 +155,21 @@ print("OK", end="")
     assert out == b"OK"
 
 
-@pytest.mark.parametrize("chunk_size", [None, 150_000, 400_000])
+@pytest.mark.parametrize("chunk_size", [None, 2, 3])
 def test_sink_batches_null_column_after_typed_batches(chunk_size: int | None) -> None:
     # A batch whose column was inferred as Null is cast to the type of the first batch.
-    n = 200_000
-    lf = pl.LazyFrame({"a": pl.int_range(3 * n, eager=True)})
-    calls = {"null": 0}
+    # Keep the typed and null-producing rows in separate sources so they arrive
+    # in distinct morsels regardless of the morsel size or number of threads.
+    lf = pl.concat(
+        [
+            pl.LazyFrame({"a": [0, 1, 2]}),
+            pl.LazyFrame({"a": [3]}),
+            pl.LazyFrame({"a": [4, 5, 6]}),
+        ]
+    )
 
     def f(df: pl.DataFrame) -> pl.DataFrame:
-        if df.item(0, 0) >= n:
-            calls["null"] += 1
+        if df.item(0, 0) >= 3:
             return pl.DataFrame({"a": pl.Series("a", [None] * df.height)})
         return df
 
@@ -175,9 +180,7 @@ def test_sink_batches_null_column_after_typed_batches(chunk_size: int | None) ->
         engine="streaming",
     )
 
-    assert calls["null"] > 0
     assert all(df.schema == {"a": pl.Int64} for df in frames)
-    out = pl.concat(frames)["a"]
-    assert out.len() == 3 * n
-    assert out.head(1).to_list() == [0]
-    assert out.tail(1).to_list() == [None]
+    assert_frame_equal(
+        pl.concat(frames), pl.DataFrame({"a": [0, 1, 2, None, None, None, None]})
+    )
