@@ -6,6 +6,7 @@ use polars_error::{PolarsResult, polars_bail};
 use super::super::{WriteOptions, utils};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::utils::ExactSizedIter;
+use crate::parquet::compression::{CompressionOptions, compress};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::encoding::delta_bitpacked::encode;
 use crate::parquet::page::DataPage;
@@ -119,6 +120,57 @@ where
     array_to_page(array, options, type_, Encoding::Plain, encode_plain)
 }
 
+fn encode_byte_stream_split_i32(values: &[i32], out: &mut Vec<u8>) {
+    out.reserve(4 * values.len());
+    for byte in 0..4 {
+        out.extend(values.iter().map(|&v| v.to_le_bytes()[byte]));
+    }
+}
+
+pub(crate) fn select_i32_decimal_encoding(
+    array: &PrimitiveArray<i128>,
+    compression: CompressionOptions,
+) -> PolarsResult<Encoding> {
+    const WINDOWS: usize = 4;
+    const WINDOW_LEN: usize = 256;
+    const SAMPLE_LEN: usize = WINDOWS * WINDOW_LEN;
+
+    if array.len() - array.null_count() < 16 * SAMPLE_LEN {
+        return Ok(Encoding::Plain);
+    }
+
+    let mut sample = Vec::with_capacity(SAMPLE_LEN);
+    for window in 0..WINDOWS {
+        let start = window * (array.len() / WINDOWS);
+        for i in start..start + WINDOW_LEN {
+            if array.is_valid(i) {
+                sample.push(array.value(i) as i32);
+            }
+        }
+    }
+    if sample.len() < WINDOW_LEN {
+        return Ok(Encoding::Plain);
+    }
+
+    let mut bytes: Vec<u8> = sample.iter().copied().flat_map(i32::to_le_bytes).collect();
+    let mut compressed = Vec::new();
+    compress(compression, &bytes, &mut compressed)?;
+    let plain_size = compressed.len();
+    bytes.clear();
+    compressed.clear();
+    encode_byte_stream_split_i32(&sample, &mut bytes);
+    compress(compression, &bytes, &mut compressed)?;
+
+    // Splitting costs extra work on read. Require a saving of at least 1/32 of the input.
+    Ok(
+        if compressed.len() + bytes.len().div_ceil(32) <= plain_size {
+            Encoding::ByteStreamSplit
+        } else {
+            Encoding::Plain
+        },
+    )
+}
+
 pub(crate) fn i32_to_byte_stream_split_page(
     array: &PrimitiveArray<i32>,
     options: WriteOptions,
@@ -139,10 +191,7 @@ pub(crate) fn i32_to_byte_stream_split_page(
             } else {
                 values
             };
-            out.reserve(4 * values.len());
-            for byte in 0..4 {
-                out.extend(values.iter().map(|&v| i32::to_le_bytes(v)[byte]));
-            }
+            encode_byte_stream_split_i32(values, &mut out);
             out
         },
     )
