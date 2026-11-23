@@ -1424,6 +1424,53 @@ fn holds_values(from: &DataType, to: &DataType) -> bool {
     }
 }
 
+/// The first built-in aggregate that `node` calls, outside subqueries and `OVER`.
+pub(crate) fn builtin_aggregate_call(
+    ctx: &SQLContext,
+    node: &(impl Visit + ?Sized),
+) -> Option<String> {
+    struct Aggregates<'a> {
+        ctx: &'a SQLContext,
+        query_depth: usize,
+        found: Option<String>,
+    }
+
+    impl Visitor for Aggregates<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if let SQLExpr::Function(function) = expr
+                && self.query_depth == 0
+                && function.over.is_none()
+                && PolarsSQLFunctions::try_from_sql(function, self.ctx)
+                    .is_ok_and(|f| f.is_builtin_aggregate())
+            {
+                self.found = Some(function.name.to_string());
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut aggregates = Aggregates {
+        ctx,
+        query_depth: 0,
+        found: None,
+    };
+    let _ = node.visit(&mut aggregates);
+    aggregates.found
+}
+
 /// Whether `node` calls an aggregate outside of its subqueries. A function that isn't
 /// known counts as one.
 pub(crate) fn has_aggregate(ctx: &SQLContext, node: &(impl Visit + ?Sized)) -> bool {
