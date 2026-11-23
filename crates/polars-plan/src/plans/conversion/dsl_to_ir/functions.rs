@@ -838,9 +838,9 @@ pub(super) fn convert_functions(
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         F::Quantile { method } => {
-            // Planning doesn't know whether a group-by uses the fraction, so it allows strings. A
+            // Planning doesn't know whether a group-by uses the fraction, so it allows lists. A
             // group-by checks for one number per group when it runs.
-            let allowed = QuantileFractionDtypes::NumberOrListOrStr;
+            let allowed = QuantileFractionDtypes::NumberOrList;
             check_quantile_fraction(&e[1], allowed, ctx.schema, ctx.arena)?;
             I::Quantile { method }
         },
@@ -931,7 +931,7 @@ pub(super) fn convert_functions(
             let quantile_input = e.get(1).ok_or_else(
                 || polars_err!(InvalidOperation: "missing argument 'quantile' in `approx_quantile`"),
             )?;
-            let allowed = QuantileFractionDtypes::NumberOrListOrStr;
+            let allowed = QuantileFractionDtypes::NumberOrList;
             let quantiles =
                 check_quantile_fraction(quantile_input, allowed, ctx.schema, ctx.arena)?;
             let method = method.resolve(quantiles.as_deref());

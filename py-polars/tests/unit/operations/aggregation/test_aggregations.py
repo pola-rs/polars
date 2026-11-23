@@ -808,18 +808,23 @@ def test_quantile_out_of_range_literal_empty(
             q.collect_schema()
 
 
-def test_quantile_str_fraction() -> None:
-    # `quantile` outside a group-by parses a string, for backward compatibility.
-    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
-    expr = pl.col("a").quantile(pl.lit("0.5"))
-    assert lf.select(expr).collect().item() == 2.0
-    for q in [lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
-        with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
-            q.collect()
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+def test_quantile_str_fraction(op: str) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3], "s": ["0.5", "0.5", "0.5"]})
+    for fraction in [pl.lit("0.5"), pl.lit(["0.5"]), pl.col("s").first()]:
+        expr = getattr(pl.col("a"), op)(fraction)
+        for q in [
+            lf.select(expr),
+            lf.select(expr.over("g")),
+            lf.group_by("g").agg(expr),
+        ]:
+            with pytest.raises(
+                SchemaError, match="expected expression of dtype 'numeric'"
+            ):
+                q.collect_schema()
     # A Python string names a column, as in every expression.
-    for op in ["quantile", "approx_quantile"]:
-        with pytest.raises(ColumnNotFoundError):
-            lf.select(getattr(pl.col("a"), op)("0.5")).collect_schema()
+    with pytest.raises(ColumnNotFoundError):
+        lf.select(getattr(pl.col("a"), op)("0.5")).collect_schema()
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

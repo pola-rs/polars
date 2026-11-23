@@ -206,7 +206,7 @@ pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
     let quantile = s[1].as_materialized_series();
-    let quantiles = extract_quantiles(quantile, QuantileFractionDtypes::NumberOrListOrStr)?;
+    let quantiles = extract_quantiles(quantile, QuantileFractionDtypes::NumberOrList)?;
     let out = match quantile.dtype() {
         DataType::List(_) => input.quantiles_reduce(&quantiles, method)?,
         _ => input.quantile_reduce(quantiles[0], method)?,

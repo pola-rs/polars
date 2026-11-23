@@ -59,10 +59,6 @@ pub enum QuantileFractionDtypes {
     Number,
     /// One number or a list of numbers.
     NumberOrList,
-    /// One number or a list of numbers, where a string, alone or in a list, is parsed as a
-    /// number. `quantile` expressions outside a group-by accept strings, for backward
-    /// compatibility.
-    NumberOrListOrStr,
 }
 
 /// Returns an error if a `quantile` fraction of `dtype` isn't one of `allowed`. The Null dtype
@@ -75,8 +71,7 @@ pub fn check_quantile_dtype(dtype: &DataType, allowed: QuantileFractionDtypes) -
     };
     let ok = inner.is_numeric()
         || inner.is_null()
-        || matches!(inner, DataType::Unknown(UnknownKind::Any))
-        || (inner.is_string() && allowed == A::NumberOrListOrStr);
+        || matches!(inner, DataType::Unknown(UnknownKind::Any));
     polars_ensure!(
         ok,
         SchemaMismatch: "expected expression of dtype 'numeric' for quantile, got '{}'", dtype
