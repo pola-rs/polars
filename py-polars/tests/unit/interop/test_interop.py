@@ -240,34 +240,57 @@ def test_arrow_dict_chunks_preserve_signed_zero(value_type: pa.DataType) -> None
 
 
 @pytest.mark.parametrize("value_type", [pa.duration("s"), pa.timestamp("s", "UTC")])
-def test_arrow_dict_chunks_temporal_seconds_overflow(value_type: pa.DataType) -> None:
-    items = [
-        pa.DictionaryArray.from_arrays(
-            pa.array([0], pa.int8()), pa.array([value], value_type)
-        )
-        for value in (1, (2**63 - 1) // 1000 + 1)
-    ]
-    ca = pa.chunked_array(items)
-    with pytest.raises(ComputeError, match="overflows when converting seconds"):
-        pl.from_arrow(ca)
-    with pytest.raises(ComputeError, match="overflows when converting seconds"):
-        pl.from_arrow(pa.table({"c": ca}))
-
-
-@pytest.mark.parametrize("keys", [[0, None], [None, None]])
-@pytest.mark.parametrize("value_type", [pa.duration("s"), pa.timestamp("s", "UTC")])
-def test_arrow_dict_ignores_unused_temporal_overflow(
-    keys: list[int | None], value_type: pa.DataType
+@pytest.mark.parametrize("overflow", [-(2**63 // 1000) - 1, (2**63 - 1) // 1000 + 1])
+def test_arrow_dict_chunks_temporal_seconds_overflow(
+    value_type: pa.DataType, overflow: int
 ) -> None:
-    array = pa.DictionaryArray.from_arrays(
-        pa.array(keys, pa.int8()), pa.array([1, 2**63 - 1], value_type)
+    ca = _two_dict_chunks(pa.int8(), pa.array([1, 2, overflow], value_type))
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.from_arrow(ca)
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.Series("c", ca)
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.DataFrame({"c": ca})
+
+
+@pytest.mark.parametrize(
+    ("value_type", "dtype"),
+    [
+        (pa.duration("s"), pl.Duration("ms")),
+        (pa.timestamp("s", "Europe/Amsterdam"), pl.Datetime("ms", "Europe/Amsterdam")),
+    ],
+)
+def test_arrow_dict_chunks_temporal_seconds_bounds(
+    value_type: pa.DataType, dtype: pl.DataType
+) -> None:
+    min_seconds = -(2**63 // 1000)
+    max_seconds = (2**63 - 1) // 1000
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(
+                pa.array([0, 1, None], pa.int8()),
+                pa.array([min_seconds, None, max_seconds + 1], value_type),
+            ),
+            pa.DictionaryArray.from_arrays(
+                pa.array([None], pa.int8()), pa.array([min_seconds - 1], value_type)
+            ),
+            pa.DictionaryArray.from_arrays(
+                pa.array([0, 1], pa.int8()),
+                pa.array([max_seconds, min_seconds], value_type),
+            ),
+        ]
     )
-    expected = cast("pl.Series", pl.from_arrow(array.dictionary_decode())).alias("c")
-    assert_series_equal(cast("pl.Series", pl.from_arrow(array)).alias("c"), expected)
-    assert_series_equal(
-        cast("pl.DataFrame", pl.from_arrow(pa.record_batch({"c": array})))["c"],
-        expected,
+    expected = pl.Series(
+        "c",
+        [min_seconds * 1000, None, None, None, max_seconds * 1000, min_seconds * 1000],
     )
+    for s in (
+        cast("pl.Series", pl.from_arrow(ca)).alias("c"),
+        pl.Series("c", ca),
+        pl.DataFrame({"c": ca})["c"],
+    ):
+        assert s.dtype == dtype
+        assert_series_equal(s.to_physical(), expected)
 
 
 def test_arrow_dict_chunks_small_index_overflow_30729() -> None:
