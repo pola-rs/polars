@@ -174,20 +174,11 @@ pub fn approx_quantile_estimate(
             make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
 
-    let quantiles = if quantiles_is_list {
-        quantiles.strict_cast(&DataType::List(Box::new(DataType::Float64)))?
-    } else {
-        quantiles
-            .strict_cast(&DataType::Float64)?
-            .to_unit_list()
-            .into_series()
+    let quantiles = cast_quantile_fractions(quantiles, QuantileFractionDtypes::NumberOrList)?;
+    let quantiles = match quantiles_is_list {
+        true => quantiles,
+        false => quantiles.to_unit_list().into_series(),
     };
-    // A null list of fractions counts as one null fraction.
-    let fractions = quantiles.explode(ExplodeOptions {
-        empty_as_null: false,
-        keep_nulls: true,
-    })?;
-    check_quantiles(fractions.f64()?.iter())?;
 
     let quantiles = quantiles.broadcast_to(sketch.len())?.list()?.to_owned();
     let quantiles_inner = quantiles.get_inner();
@@ -259,7 +250,7 @@ fn approx_quantile_estimate_inner<
     values: &Float64Chunked,
 ) -> PolarsResult<Vec<Option<T>>> {
     let mut out = Vec::with_capacity(values.len());
-    let mut values = values.no_null_iter();
+    let mut values = values.iter();
     let lengths = quantiles
         .downcast_iter()
         .flat_map(|arr| arr.offsets().lengths());
@@ -268,9 +259,9 @@ fn approx_quantile_estimate_inner<
             .map(pl_serialize::deserialize_from_reader::<_, _, false>)
             .transpose()?;
         for quantile in values.by_ref().take(len) {
-            let estimate = match &sketch {
-                Some(sketch) => sketch.estimate_quantile(quantile)?.cloned(),
-                None => None,
+            let estimate = match (&sketch, quantile) {
+                (Some(sketch), Some(quantile)) => sketch.estimate_quantile(quantile)?.cloned(),
+                _ => None,
             };
             out.push(estimate);
         }

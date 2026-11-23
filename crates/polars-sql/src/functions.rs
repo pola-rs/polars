@@ -2,8 +2,8 @@ use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileFractionDtypes, QuantileMethod,
-    Scalar, Schema, TimeUnit, TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail,
-    polars_ensure, polars_err,
+    Scalar, Schema, TimeUnit, TimeZone, UnknownKind, datetime_to_timestamp_us,
+    extract_non_null_quantiles, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rank")]
@@ -4343,13 +4343,14 @@ fn parse_quantile_literal(
     fname: &str,
     arg: &FunctionArgExpr,
 ) -> PolarsResult<Expr> {
-    let quantiles = match &quantile {
-        Expr::Literal(lv) => lv.extract_quantiles(QuantileFractionDtypes::Number)?,
+    let fraction = match &quantile {
+        Expr::Literal(lv) => lv.to_quantile_fraction()?,
         _ => None,
     };
-    let Some(quantiles) = quantiles else {
+    let Some(fraction) = fraction else {
         polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg)
     };
+    let quantiles = extract_non_null_quantiles(&fraction, QuantileFractionDtypes::Number)?;
     Ok(Expr::from(quantiles[0]))
 }
 

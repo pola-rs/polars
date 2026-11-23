@@ -2432,17 +2432,19 @@ class Series(metaclass=_Meta):
 
     @overload
     def quantile(
-        self, quantile: list_[float], interpolation: QuantileMethod = ...
-    ) -> list_[float] | list_[None]: ...
+        self, quantile: Sequence[float | None], interpolation: QuantileMethod = ...
+    ) -> list_[float | None]: ...
 
     @overload
     def quantile(
-        self, quantile: float, interpolation: QuantileMethod = ...
+        self, quantile: float | None, interpolation: QuantileMethod = ...
     ) -> float | None: ...
 
     def quantile(
-        self, quantile: float | list_[float], interpolation: QuantileMethod = "nearest"
-    ) -> float | None | list_[float] | list_[None]:
+        self,
+        quantile: float | Sequence[float | None] | None,
+        interpolation: QuantileMethod = "nearest",
+    ) -> float | None | list_[float | None]:
         """
         Get the quantile value of this Series.
 
@@ -2450,12 +2452,13 @@ class Series(metaclass=_Meta):
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            A null quantile gives a null result.
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Returns
         -------
-        float | None | list[float] | list[None]
+        float | None | list[float | None]
             A single quantile value if a float is provided, or a list of quantile values if a list is provided.
 
         Examples
@@ -10056,19 +10059,20 @@ class Series(metaclass=_Meta):
     @unstable()
     def approx_quantile(
         self,
-        quantile: float | list_[float],
+        quantile: float | Sequence[float | None] | None,
         *,
         method: ApproxQuantileMethod = "auto",
         error: float = 0.001,
         error_tightness: ApproxQuantileErrorBound = "empirical",
-    ) -> PythonLiteral | list_[PythonLiteral]:
+    ) -> PythonLiteral | list_[PythonLiteral | None] | None:
         """
         Compute approximate quantile(s) of this Series.
 
         Parameters
         ----------
         quantile
-            A single quantile or a list of quantiles.
+            A single quantile or a list of quantiles. A null quantile gives a null
+            result.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all

@@ -1426,9 +1426,9 @@ pub(super) fn convert_functions(
     Ok((ctx.arena.add(ae_function), output_name))
 }
 
-/// Checks the fraction given to `quantile` or `approx_quantile`, and returns its values if it is a
-/// literal. `allowed` gives the dtypes the fraction may have. Checking here makes every engine
-/// raise on a bad fraction, even on empty input.
+/// Checks the fraction given to `quantile` or `approx_quantile`, and returns its non-null values if
+/// it is a literal. `allowed` gives the dtypes the fraction may have. Checking here makes every
+/// engine raise on a bad fraction, even on empty input.
 fn check_quantile_fraction(
     fraction: &ExprIR,
     allowed: QuantileFractionDtypes,
@@ -1436,8 +1436,12 @@ fn check_quantile_fraction(
     arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<Vec<f64>>> {
     check_quantile_dtype(fraction.dtype(schema, arena)?, allowed)?;
-    match arena.get(fraction.node()) {
-        AExpr::Literal(lv) => lv.extract_quantiles(allowed),
-        _ => Ok(None),
-    }
+    let AExpr::Literal(lv) = arena.get(fraction.node()) else {
+        return Ok(None);
+    };
+    let Some(fraction) = lv.to_quantile_fraction()? else {
+        return Ok(None);
+    };
+    let quantiles = extract_quantiles(&fraction, allowed)?.unwrap_or_default();
+    Ok(Some(quantiles.into_iter().flatten().collect()))
 }
