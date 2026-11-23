@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
-use polars_core::prelude::{DataType, SchemaRef};
+use polars_core::prelude::{DataType, Schema, SchemaRef};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
@@ -80,6 +80,9 @@ pub struct DatabaseScanConfig {
     pub backend: BackendChoice,
     /// The planned schema. Every partition is cast to it.
     pub schema: SchemaRef,
+    /// Google BigQuery columns typed from sampled rows, before unknown leaves get a
+    /// String fallback. A Null leaf here has no observed JSON kind.
+    pub bigquery_sampled_schema: Schema,
     pub columns: Arc<[ColumnMeta]>,
     pub stats: TableStats,
     /// Set by each resolution ([`compile_scan`](super::compile_scan)).
@@ -233,6 +236,7 @@ impl PartialEq for DatabaseScanConfig {
         self.fingerprint == other.fingerprint
             && self.dialect == other.dialect
             && self.backend == other.backend
+            && self.bigquery_sampled_schema == other.bigquery_sampled_schema
             && self.compiled == other.compiled
             && self.connection_share == other.connection_share
     }
@@ -244,6 +248,7 @@ impl Hash for DatabaseScanConfig {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.fingerprint.hash(state);
         self.dialect.hash(state);
+        self.bigquery_sampled_schema.hash(state);
         self.compiled.hash(state);
     }
 }

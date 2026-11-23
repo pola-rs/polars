@@ -33,7 +33,12 @@ _URI = re.compile(r"^[A-Za-z][\w+.-]*://")
 _FILE_URI = re.compile(r"^(sqlite|duckdb)(\+\w+)?:", re.IGNORECASE)
 
 
-def _connection_kind(connection: Any) -> tuple[str, Any]:
+def _connection_kind(
+    connection: Any,
+    *,
+    params: Any = None,
+    execute_options: Mapping[str, Any] | None = None,
+) -> tuple[str, Any]:
     """Classify a connection as `uri`, `odbc`, `factory`, `engine` or `live`."""
     if isinstance(connection, str):
         # a URI first: a SQLAlchemy URI can carry an ODBC string (`?odbc_connect=…`)
@@ -78,7 +83,13 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
             _check_bigquery_pool(connection)
             # (a subclass of one shares the connection just the same)
             pool = getattr(connection, "pool", None)
-            if any(c.__name__ in _SHARED_CONNECTION_POOLS for c in type(pool).__mro__):
+            if _has_shared_pool(connection):
+                if getattr(connection.dialect, "name", None) == "bigquery":
+                    if _has_shared_pool(connection, ("StaticPool",)):
+                        # The bridge retains this checkout's SQLAlchemy execution
+                        # layer and releases the checkout without a pool reset.
+                        return "engine", _in_caller_context(connection.connect)
+                    _check_bigquery_shared_options(connection, params, execute_options)
                 # one connection (per thread) that the user's own statements use too
                 # (temporary tables, session settings, an open transaction): read as
                 # a live connection
@@ -95,25 +106,25 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
             # when the execution ends: nothing is held between collects.
             return "engine", _in_caller_context(connection.connect)
 
-    if (engine := _session_shared_engine(connection)) is not None:
+    if (shared := _session_shared_engine(connection)) is not None:
         # an ORM Session over such an Engine: the one connection is the user's too, and
         # the Session's own rollback or release would end the transaction on it
-        if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
-            _plugin()
-            from polars_database._bridge import _check_bigquery_orm_session
-
-            _check_bigquery_orm_session(connection)
+        engine, session = shared
+        _check_bigquery_shared_options(engine, params, execute_options, session)
         return "live", _shared_dbapi_connection(engine)
     if (
         callable(connection)
         and not hasattr(connection, "cursor")
         and not hasattr(connection, "execute")
     ):
-        _check_bigquery_pool(getattr(connection, "__self__", None))
         if (engine := _factory_singleton_engine(connection)) is not None:
             # a SingletonThreadPool opens a connection for each thread that asks and
             # closes others' beyond its `pool_size`: read through the calling thread's
             # one connection, as for the Engine itself
+            if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
+                _check_bigquery_shared_factory(
+                    connection, engine, params, execute_options
+                )
             return "live", _shared_dbapi_connection(engine)
         return "factory", _in_caller_context(connection)
     if hasattr(connection, "cursor") or hasattr(connection, "execute"):
@@ -134,8 +145,8 @@ def _has_shared_pool(engine: Any, names: tuple[str, ...] | None = None) -> bool:
     )
 
 
-def _session_shared_engine(obj: Any) -> Any:
-    """The Engine of a live ORM Session if its pool shares one connection, else None."""
+def _session_shared_engine(obj: Any) -> tuple[Any, Any] | None:
+    """The Engine and ORM Session when its pool shares one connection."""
     if type(obj).__name__ == "scoped_session":
         # (its registry's Session of this thread; making it connects to nothing)
         with contextlib.suppress(Exception):
@@ -148,7 +159,7 @@ def _session_shared_engine(obj: Any) -> Any:
     with contextlib.suppress(Exception):
         engine = obj.get_bind()
         if _has_shared_pool(engine):
-            return engine
+            return engine, obj
     return None
 
 
@@ -161,6 +172,7 @@ def _factory_singleton_engine(factory: Any) -> Any:
     Engine is found where the factory is its `connect`/`raw_connection`, a
     `sessionmaker`, a `functools.partial` or wrapper of one, or a function that refers
     to one (closure or global); None if there is none. Raises if it refers to several.
+    Check that any referenced BigQuery Engine is safe to check out.
     """
     seen: set[int] = set()
     engines: list[Any] = []
@@ -174,6 +186,11 @@ def _factory_singleton_engine(factory: Any) -> Any:
         ):
             return
         seen.add(id(obj))
+        if any(
+            cls.__name__ == "Engine" and cls.__module__ == "sqlalchemy.engine.base"
+            for cls in type(obj).__mro__
+        ):
+            _check_bigquery_pool(obj)
         if _has_shared_pool(obj, ("SingletonThreadPool", "AssertionPool")):
             engines.append(obj)
             return
@@ -280,6 +297,46 @@ def _check_bigquery_pool(engine: Any) -> None:
         from polars_database._bridge import _check_bigquery_pool as check_pool
 
         check_pool(engine)
+
+
+def _check_bigquery_shared_options(
+    engine: Any,
+    params: Any,
+    execute_options: Mapping[str, Any] | None,
+    session: Any = None,
+) -> None:
+    if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
+        _plugin()
+        from polars_database._bridge import _check_bigquery_shared_options as check
+
+        check(engine, params, execute_options, session)
+
+
+def _check_bigquery_shared_factory(
+    factory: Any,
+    engine: Any,
+    params: Any,
+    execute_options: Mapping[str, Any] | None,
+) -> None:
+    from sqlalchemy.engine import Engine
+
+    while isinstance(factory, functools.partial) and not (
+        factory.args or factory.keywords
+    ):
+        factory = factory.func
+    if getattr(factory, "__self__", None) is engine:
+        method = getattr(factory, "__func__", None)
+        if method is Engine.raw_connection:
+            return
+        if method is Engine.connect:
+            _check_bigquery_shared_options(engine, params, execute_options)
+            return
+    msg = (
+        "scan_database cannot use a BigQuery factory over a SingletonThreadPool or "
+        "AssertionPool because it may configure a shared checkout; pass an established "
+        "SQLAlchemy Connection or use engine.connect directly"
+    )
+    raise TypeError(msg)
 
 
 # Python package of the I/O plugin that implements `scan_database`.
@@ -651,6 +708,12 @@ def scan_database(
     reports a precision of at most 38 digits. Wider or unparameterized BIGNUMERIC
     columns are read as exact fixed-point strings, including in empty results.
 
+    For a BigQuery SQLAlchemy pool that shares a DB-API connection, pass an
+    established SQLAlchemy Connection when the scan needs parameters or job
+    settings that the shared checkout cannot preserve. This also avoids a pool
+    pre-ping during checkout. A named BigQuery destination table is rejected
+    because schema discovery itself executes a query.
+
     See Also
     --------
     read_database
@@ -729,7 +792,9 @@ def scan_database(
             _check_dtypes(name, value)
 
     engine = connection
-    connection_kind, connection = _connection_kind(connection)
+    connection_kind, connection = _connection_kind(
+        connection, params=params, execute_options=execute_options
+    )
     if connection_kind == "engine":
         # a pooled Engine: one checkout per execution, partitions read one at a time
         # (see `_connection_kind`)

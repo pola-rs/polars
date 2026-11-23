@@ -391,9 +391,8 @@ def build(query: dict[str, Any], dialect: str | None = None) -> Any:
 
 def _finish(sql: str, query: dict[str, Any]) -> str:
     """
-    The generated SQL with the user's query in place of its placeholder. Under `params=`
-    the statement is %-formatted by the driver: a `%` the plugin wrote (a column's name)
-    is doubled, the user's query is left as they wrote it.
+    Replace the source placeholder with the user's query. Double generated `%` before
+    inserting the query when the driver unescapes percent signs.
     """
     if query.get("escape_percent"):
         sql = sql.replace("%", "%%")

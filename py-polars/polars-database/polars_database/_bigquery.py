@@ -6,18 +6,19 @@ from decimal import Decimal
 from enum import IntFlag, auto
 from functools import partial
 from json import loads
+from operator import itemgetter
 from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from polars.exceptions import ComputeError, DuplicateError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from polars._typing import PolarsDataType
 
 
-_SCALAR_DTYPES = {
+_SCALAR_DTYPES: dict[str, PolarsDataType] = {
     "BOOLEAN": pl.Boolean,
     "BOOL": pl.Boolean,
     "BYTES": pl.Binary,
@@ -96,21 +97,63 @@ class _JsonObservations:
         self.new_objects: set[tuple[str | None, ...]] = set()
 
 
+class _JsonBatch:
+    def __init__(self) -> None:
+        self.kinds: dict[tuple[str | None, ...], _JsonKind] = {}
+        self.object_keys: dict[tuple[str | None, ...], dict[str, None]] = {}
+        self.wide_integers: set[tuple[str | None, ...]] = set()
+        self.dtypes: dict[tuple[str | None, ...], PolarsDataType] = {}
+        self.prepare_paths: set[tuple[str | None, ...]] = set()
+
+    def prepare_at(self, path: tuple[str | None, ...]) -> None:
+        if path not in self.prepare_paths:
+            self.prepare_paths.update(path[:i] for i in range(1, len(path) + 1))
+
+    def dtype(self, path: tuple[str | None, ...]) -> PolarsDataType:
+        if path not in self.dtypes:
+            self.dtypes[path] = self._infer_dtype(path)
+        return self.dtypes[path]
+
+    def _infer_dtype(self, path: tuple[str | None, ...]) -> PolarsDataType:
+        kind = self.kinds.get(path)
+        if kind is None:
+            return pl.Null
+        if kind == _JsonKind.BOOLEAN:
+            return pl.Boolean
+        if kind == _JsonKind.STRING:
+            return pl.String
+        if kind == _JsonKind.ARRAY:
+            return pl.List(self.dtype((*path, None)))
+        if kind == _JsonKind.OBJECT:
+            return pl.Struct(
+                {key: self.dtype((*path, key)) for key in self.object_keys[path]}
+            )
+        if kind & _JsonKind.FLOAT:
+            return pl.Float64
+        # BigQuery JSON integers span the signed and unsigned 64-bit ranges.
+        return pl.Int128 if path in self.wide_integers else pl.Int64
+
+
 def _observe_json(
     value: Any,
     path: tuple[str | None, ...],
-    batch_kinds: dict[tuple[str | None, ...], _JsonKind],
+    batch: _JsonBatch,
     history: _JsonObservations | None,
+    *,
+    in_list: bool,
 ) -> None:
     if value is None:
         return
     kind = _JSON_KINDS[type(value)]
-    if kind == _JsonKind.INTEGER and abs(value) > 2**53:
-        bits = value.bit_length()
-        if bits > 1024 or value % (1 << (bits - 53)):
-            kind = _JsonKind.INEXACT_AS_FLOAT
-    kinds = batch_kinds if history is None else history.kinds
-    combined = kinds.get(path, kind) | kind
+    if kind == _JsonKind.INTEGER:
+        if not -(2**63) <= value < 2**63:
+            batch.wide_integers.add(path)
+        if abs(value) > 2**53:
+            bits = value.bit_length()
+            if bits > 1024 or value % (1 << (bits - 53)):
+                kind = _JsonKind.INEXACT_AS_FLOAT
+    batch_combined = batch.kinds.get(path, kind) | kind
+    combined = batch_combined | (history.kinds.get(path, kind) if history else kind)
     if combined != kind and combined not in (
         _JsonKind.INTEGER | _JsonKind.FLOAT,
         _JsonKind.INTEGER | _JsonKind.INEXACT_AS_FLOAT,
@@ -123,12 +166,18 @@ def _observe_json(
             "from mixed JSON types; use TO_JSON_STRING(<json>) in the source query"
         )
         raise ComputeError(msg)
-    kinds[path] = combined
+    batch.kinds[path] = batch_combined
+    if history is not None:
+        history.kinds[path] = combined
+    if in_list and batch_combined == (_JsonKind.INTEGER | _JsonKind.FLOAT):
+        batch.prepare_at(path)
     if kind == _JsonKind.ARRAY:
+        batch.prepare_at(path)
         item_path = (*path, None)
         for item in value:
-            _observe_json(item, item_path, batch_kinds, history)
+            _observe_json(item, item_path, batch, history, in_list=True)
     elif kind == _JsonKind.OBJECT:
+        keys = batch.object_keys.setdefault(path, {})
         # Keep all keys observed in the object's first nonempty batch. A result with
         # changing keys may grow only the current batch's observations after that.
         known_keys = None
@@ -140,21 +189,50 @@ def _observe_json(
             elif path in history.new_objects:
                 known_keys.update(value)
         for key, item in value.items():
+            keys[key] = None
             _observe_json(
                 item,
                 (*path, key),
-                batch_kinds,
+                batch,
                 history if known_keys is not None and key in known_keys else None,
+                in_list=in_list,
             )
+
+
+def _prepare_json(value: Any, path: tuple[str | None, ...], batch: _JsonBatch) -> Any:
+    if value is None or path not in batch.prepare_paths:
+        return value
+    dtype = batch.dtype(path)
+    if isinstance(dtype, pl.List):
+        # Row construction infers a Python list's dtype from its own first item,
+        # even when a schema was supplied. Pass the typed elements instead.
+        item_path = (*path, None)
+        return pl.Series(
+            [_prepare_json(item, item_path, batch) for item in value], dtype=dtype.inner
+        )
+    if isinstance(dtype, pl.Struct):
+        return {
+            key: _prepare_json(item, (*path, key), batch) for key, item in value.items()
+        }
+    if dtype == pl.Float64:
+        # The typed Series constructor needs floats even when the integer fits exactly.
+        return float(value)
+    return value
 
 
 def _field_conversion(
     field: Any,
     path: tuple[str, ...],
-    convert_json: Callable[[Any, tuple[str, ...]], Any],
+    convert_json: Callable[[tuple[str, ...], Any], Any],
+    json_fields: dict[tuple[str, ...], bool],
+    *,
+    in_list: bool,
 ) -> tuple[PolarsDataType, Callable[[Any], Any] | None]:
     kind = field.field_type.upper()
     name = ".".join(path)
+    in_list = in_list or field.mode == "REPEATED"
+    dtype: PolarsDataType
+    convert: Callable[[Any], Any] | None
     if kind == "TIMESTAMP":
         # The newer drivers expose an enum whose microsecond value is None.
         precision = getattr(field, "timestamp_precision", None)
@@ -199,7 +277,9 @@ def _field_conversion(
                 _decimal_value, name=name, precision=precision, scale=scale
             )
     elif kind in {"RECORD", "STRUCT"}:
-        schema, conversions = _schema(field.fields, convert_json, prefix=path)
+        schema, conversions = _schema(
+            field.fields, convert_json, json_fields, prefix=path, in_list=in_list
+        )
         dtype = pl.Struct(schema)
         convert = (
             (
@@ -222,7 +302,8 @@ def _field_conversion(
     elif kind in _SCALAR_DTYPES:
         dtype, convert = _SCALAR_DTYPES[kind], None
     elif kind == "JSON":
-        dtype, convert = pl.Unknown, partial(convert_json, path=path)
+        json_fields[path] = in_list
+        dtype, convert = pl.Unknown, partial(convert_json, path)
     else:
         # Keep row inference for types with no fixed Polars mapping.
         dtype, convert = pl.Unknown, None
@@ -238,9 +319,11 @@ def _field_conversion(
 
 def _schema(
     fields: Sequence[Any],
-    convert_json: Callable[[Any, tuple[str, ...]], Any],
+    convert_json: Callable[[tuple[str, ...], Any], Any],
+    json_fields: dict[tuple[str, ...], bool],
     *,
     prefix: tuple[str, ...] = (),
+    in_list: bool = False,
 ) -> tuple[dict[str, PolarsDataType], list[Callable[[Any], Any] | None]]:
     schema = {}
     conversions = []
@@ -249,7 +332,9 @@ def _schema(
         if field.name in schema:
             msg = f"BigQuery field {'.'.join(path)!r} appears more than once in the result schema"
             raise DuplicateError(msg)
-        dtype, convert = _field_conversion(field, path, convert_json)
+        dtype, convert = _field_conversion(
+            field, path, convert_json, json_fields, in_list=in_list
+        )
         schema[field.name] = dtype
         conversions.append(convert)
     return schema, conversions
@@ -290,14 +375,27 @@ def _has_unknown(dtype: PolarsDataType) -> bool:
     return dtype == pl.Unknown
 
 
-def _resolve_unknown(dtype: PolarsDataType, values: Sequence[Any]) -> PolarsDataType:
-    """Infer unknown leaves using row construction, even inside empty containers."""
+def _resolve_unknown(
+    dtype: PolarsDataType,
+    values: Callable[[], Iterable[Any]],
+    path: tuple[str, ...],
+    batch: _JsonBatch,
+    json_fields: dict[tuple[str, ...], bool],
+) -> PolarsDataType:
+    """Resolve nested unknowns, reading values for leaves without native JSON types."""
     if isinstance(dtype, pl.Struct):
+
+        def field_values(name: str) -> Iterator[Any]:
+            return (value[name] for value in values() if value is not None)
+
         return pl.Struct(
             {
                 field.name: _resolve_unknown(
                     field.dtype,
-                    [value[field.name] for value in values if value is not None],
+                    partial(field_values, field.name),
+                    (*path, field.name),
+                    batch,
+                    json_fields,
                 )
                 if _has_unknown(field.dtype)
                 else field.dtype
@@ -305,15 +403,52 @@ def _resolve_unknown(dtype: PolarsDataType, values: Sequence[Any]) -> PolarsData
             }
         )
     if isinstance(dtype, pl.List):
-        elements = [item for value in values if value is not None for item in value]
-        return pl.List(_resolve_unknown(dtype.inner, elements))
+        return pl.List(
+            _resolve_unknown(
+                dtype.inner,
+                lambda: (
+                    item for value in values() if value is not None for item in value
+                ),
+                path,
+                batch,
+                json_fields,
+            )
+        )
     if dtype == pl.Unknown:
-        if not values:
+        if path in json_fields:
+            return batch.dtype(path)
+        rows = [(value,) for value in values()]
+        if not rows:
             return pl.Null
-        return pl.DataFrame(
-            [(value,) for value in values], orient="row", infer_schema_length=None
-        ).dtypes[0]
+        return pl.DataFrame(rows, orient="row", infer_schema_length=None).dtypes[0]
     return dtype
+
+
+def _prepare_unknown(
+    value: Any,
+    declared: PolarsDataType,
+    resolved: PolarsDataType,
+    path: tuple[str, ...],
+    batch: _JsonBatch,
+) -> Any:
+    if value is None or path not in batch.prepare_paths:
+        return value
+    if isinstance(declared, pl.Struct) and isinstance(resolved, pl.Struct):
+        return {
+            field.name: _prepare_unknown(
+                value[field.name], field.dtype, typed.dtype, (*path, field.name), batch
+            )
+            for field, typed in zip(declared.fields, resolved.fields, strict=True)
+        }
+    if isinstance(declared, pl.List) and isinstance(resolved, pl.List):
+        return pl.Series(
+            [
+                _prepare_unknown(item, declared.inner, resolved.inner, path, batch)
+                for item in value
+            ],
+            dtype=resolved.inner,
+        )
+    return _prepare_json(value, path, batch)
 
 
 def result_frames(
@@ -336,16 +471,21 @@ def result_frames(
     fetch_rows = cursor.fetchmany if fetchmany is None else fetchmany
     storage = False
     json_history = _JsonObservations()
-    batch_json_kinds: dict[tuple[str | None, ...], _JsonKind] = {}
+    json_batch = _JsonBatch()
+    # Tracks which native JSON fields are themselves in a BigQuery REPEATED list.
+    json_fields: dict[tuple[str, ...], bool] = {}
 
-    def convert_json(value: Any, path: tuple[str, ...]) -> Any:
+    def convert_json(path: tuple[str, ...], value: Any) -> Any:
         # REST already decodes JSON, including JSON null as Python None.
         if storage:
             value = loads(value)
-        _observe_json(value, path, batch_json_kinds, json_history)
+        in_list = json_fields[path]
+        if value is not None and in_list:
+            json_batch.prepare_at(path)
+        _observe_json(value, path, json_batch, json_history, in_list=in_list)
         return value
 
-    schema, conversions = _schema(fields, convert_json)
+    schema, conversions = _schema(fields, convert_json, json_fields)
     text_columns = [
         field.name
         for field in fields
@@ -356,16 +496,22 @@ def result_frames(
         for i, (name, dtype) in enumerate(schema.items())
         if _has_unknown(dtype)
     ]
-    nested_unknown = [entry for entry in unknown if entry[2] != pl.Unknown]
+    infer_before_rows = [
+        entry
+        for entry in unknown
+        if entry[2] != pl.Unknown or (entry[1],) in json_fields
+    ]
 
     def batches() -> Iterator[pl.DataFrame]:
-        nonlocal storage
+        nonlocal storage, json_batch
         if unknown:
             rows, storage = _fetch_first_batch(cursor, fetch_rows, batch_size)
         else:
             rows = fetch_rows(batch_size)
         converts = any(conversions)
         while rows:
+            if json_fields:
+                json_batch = _JsonBatch()
             data = (
                 [
                     tuple(
@@ -376,16 +522,34 @@ def result_frames(
                 if converts
                 else [tuple(row) for row in rows]
             )
-            batch_json_kinds.clear()
             json_history.new_objects.clear()
             batch_schema = schema
-            if nested_unknown:
+            if infer_before_rows:
                 # A nested Unknown can reach Arrow before it is resolved, for
                 # example on a null list. Infer just its leaves first.
                 batch_schema = schema | {
-                    name: _resolve_unknown(dtype, [row[i] for row in data])
-                    for i, name, dtype in nested_unknown
+                    name: _resolve_unknown(
+                        dtype,
+                        partial(map, itemgetter(i), data),
+                        (name,),
+                        json_batch,
+                        json_fields,
+                    )
+                    for i, name, dtype in infer_before_rows
                 }
+            if json_batch.prepare_paths:
+                prepared = [
+                    entry
+                    for entry in unknown
+                    if (entry[1],) in json_batch.prepare_paths
+                ]
+                for i, row in enumerate(data):
+                    values = list(row)
+                    for j, name, dtype in prepared:
+                        values[j] = _prepare_unknown(
+                            values[j], dtype, batch_schema[name], (name,), json_batch
+                        )
+                    data[i] = tuple(values)
             yield pl.DataFrame(
                 data,
                 schema=batch_schema,
@@ -396,5 +560,7 @@ def result_frames(
 
     empty_schema = schema.copy() if unknown else schema
     for _, name, dtype in unknown:
-        empty_schema[name] = _resolve_unknown(dtype, ())
+        empty_schema[name] = _resolve_unknown(
+            dtype, tuple, (name,), json_batch, json_fields
+        )
     return pl.DataFrame(schema=empty_schema), batches(), text_columns

@@ -16,6 +16,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
+    from polars._typing import PolarsDataType
+
 pytest.importorskip("polars_database")
 
 
@@ -134,22 +136,21 @@ def test_bigquery_schema_stays_typed_per_batch(
         ),
     ]
     record = pl.Struct({"z": pl.Int64, "a": pl.String, "t": pl.Datetime("us", "UTC")})
-    schema = pl.Schema(
-        {
-            "n": pl.Decimal(38, 9),
-            "narrow": pl.Decimal(38, 5),
-            "b": pl.String,
-            "wide": pl.String,
-            "xs": pl.List(pl.Int64),
-            "ss": pl.List(record),
-            "s": record,
-            "ts": pl.Datetime("us", "UTC"),
-            "wall": pl.Datetime("us"),
-            "text": pl.String,
-            "texts": pl.List(pl.String),
-            "point": pl.String,
-        }
-    )
+    dtypes: dict[str, PolarsDataType] = {
+        "n": pl.Decimal(38, 9),
+        "narrow": pl.Decimal(38, 5),
+        "b": pl.String,
+        "wide": pl.String,
+        "xs": pl.List(pl.Int64),
+        "ss": pl.List(record),
+        "s": record,
+        "ts": pl.Datetime("us", "UTC"),
+        "wall": pl.Datetime("us"),
+        "text": pl.String,
+        "texts": pl.List(pl.String),
+        "point": pl.String,
+    }
+    schema = pl.Schema(dtypes)
     cursor = cursor_cls(fields, rows if with_rows else [])
     session = _Session(_Connection(cursor), owned=False, execute_options={})
     batches = list(session.execute("SELECT * FROM t", batch_size=1))
@@ -213,6 +214,20 @@ def test_bigquery_json_inference_does_not_claim_a_declared_dtype() -> None:
     assert empty.schema == pl.Schema({"j": pl.Null})
     assert text_columns == []
     assert_frame_equal(next(batches), pl.DataFrame({"j": [None, 3]}))
+
+
+def test_bigquery_json_infers_non_null_values_after_null_only_batch() -> None:
+    from polars_database._bigquery import result_frames
+
+    fields = (_Field("j", "JSON"), _Field("r", "JSON", "REPEATED"))
+    empty, batches, _ = result_frames(
+        _Cursor(fields, [(None, []), ([2, 0.5], [2, 0.5])]), 1
+    )
+    assert empty.schema == {"j": pl.Null, "r": pl.List(pl.Null)}
+    assert next(batches).schema == empty.schema
+    actual = next(batches)
+    assert actual.schema == {"j": pl.List(pl.Float64), "r": pl.List(pl.Float64)}
+    assert actual.rows() == [([2.0, 0.5], [2.0, 0.5])]
 
 
 def test_bigquery_nested_json_inference_preserves_declared_siblings() -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from io import BytesIO
 from itertools import islice
 from json import dumps
 from types import SimpleNamespace
@@ -12,10 +13,22 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
-pytest.importorskip("polars_database")
+bridge = pytest.importorskip("polars_database._bridge")
 pytest.importorskip("sqlglot")
+
+
+@pytest.fixture(autouse=True)
+def _mock_bigquery_driver_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    probe: Callable[[str], tuple[str | None, str | None] | None] = bridge.probe
+
+    def mock_probe(kind: str) -> tuple[str | None, str | None] | None:
+        if kind == "python:google.cloud.bigquery":
+            return None, None
+        return probe(kind)
+
+    monkeypatch.setattr(bridge, "probe", mock_probe)
 
 
 @dataclass
@@ -35,7 +48,8 @@ class _Cursor:
         self,
         fields: list[_Field],
         rows: list[tuple[Any, ...]],
-        storage_rows: list[tuple[Any, ...]] | None = None,
+        storage_rows: list[tuple[Any, ...]] | None,
+        sqls: list[str],
     ) -> None:
         self._query_rows = SimpleNamespace(schema=fields)
         self.description = [
@@ -43,10 +57,12 @@ class _Cursor:
         ]
         self._rows = rows
         self._storage_rows = storage_rows
+        self._sqls = sqls
         self._remaining: Iterator[tuple[Any, ...]] | None = None
         self._sql = ""
 
     def execute(self, sql: str) -> None:
+        self._sqls.append(sql)
         self._sql = sql
         self._remaining = None
 
@@ -82,9 +98,10 @@ class _Connection:
         self.fields = fields
         self.rows = rows
         self.storage_rows = storage_rows
+        self.sqls: list[str] = []
 
     def cursor(self) -> _Cursor:
-        return _Cursor(self.fields, self.rows, self.storage_rows)
+        return _Cursor(self.fields, self.rows, self.storage_rows, self.sqls)
 
 
 def test_bigquery_only_pushes_equality_on_native_string() -> None:
@@ -107,6 +124,14 @@ def test_bigquery_only_pushes_equality_on_native_string() -> None:
         "data", conn, schema={"label": pl.String, "amount": pl.String, "geo": pl.String}
     )
     assert "filters 0/1" in lf.filter(pl.col("amount") == "1.25").explain()
+
+
+def test_bigquery_double_percent_filter_stays_local() -> None:
+    conn = _Connection([_Field("label", "STRING")], [("a%%b",), ("a%b",)])
+    scan = pl.scan_database("data", conn).filter(pl.col("label") == "a%%b")
+    assert scan.collect()["label"].to_list() == ["a%%b"]
+    assert conn.sqls
+    assert all("a%%b" not in sql for sql in conn.sqls)
 
 
 def test_bigquery_sampled_json_filters_stay_local() -> None:
@@ -149,10 +174,11 @@ def test_bigquery_json_rest_sample_and_storage_rows_match() -> None:
             fields=(_Field("n", "INTEGER"), _Field("j", "JSON", "REPEATED")),
         ),
     ]
-    rows = [
+    rows: list[tuple[Any, ...]] = [
         ({"x": 1}, "null", "null", [{"n": 5, "j": [1, 2]}]),
         ({"x": 2}, '"123"', '"123"', [{"n": None, "j": []}]),
-    ] * 500 + [(None, None, "[123]", [])]
+    ]
+    rows = rows * 500 + [(None, None, "[123]", [])]
     storage_rows = [
         (
             dumps(j),
@@ -170,7 +196,8 @@ def test_bigquery_json_rest_sample_and_storage_rows_match() -> None:
 
 
 def test_bigquery_json_resolves_unsampled_container_leaves() -> None:
-    rows = [([], {"a": None})] * 1000 + [([123], {"a": 456})]
+    rows: list[tuple[Any, ...]] = [([], {"a": None})]
+    rows = rows * 1000 + [([123], {"a": 456})]
     conn = _Connection([_Field("j", "JSON"), _Field("obj", "JSON")], rows)
     lf = pl.scan_database("data", conn, batch_size=1000)
     assert lf.collect_schema() == {
@@ -302,3 +329,118 @@ def test_bigquery_array_null_filters_stay_local(supplied_schema: bool) -> None:
     assert "filters 0/1" in is_not_null.explain()
     assert is_null.collect().is_empty()
     assert is_not_null.collect()["xs"].to_list() == [[]]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    ("values", "dtype"), [([2, 0.5], pl.Float64), ([-1, 2**63 + 1], pl.Int128)]
+)
+def test_bigquery_json_numeric_array_inference_is_order_independent(
+    values: list[float | int], dtype: type[pl.DataType], reverse: bool
+) -> None:
+    values = values[::-1] if reverse else values
+    row = (values, {"a": [{"b": values}]}, values, [{"n": v} for v in values])
+    conn = _Connection(
+        [
+            _Field("a", "JSON"),
+            _Field("b", "JSON"),
+            _Field("c", "JSON", "REPEATED"),
+            _Field("d", "JSON"),
+        ],
+        [row],
+    )
+    lf = pl.scan_database("data", conn)
+    assert lf.collect_schema() == {
+        "a": pl.List(dtype),
+        "b": pl.Struct({"a": pl.List(pl.Struct({"b": pl.List(dtype)}))}),
+        "c": pl.List(dtype),
+        "d": pl.List(pl.Struct({"n": dtype})),
+    }
+    assert lf.collect().rows() == [row]
+
+
+@pytest.mark.parametrize(
+    ("sample", "late", "path"),
+    [
+        ({"a": 1}, 2, "j"),
+        ({"a": [{"b": 1}]}, {"a": [2]}, r"j\.a\[\]"),
+        ("1", 2, "j"),
+        (1, "2", "j"),
+        ([{"a": "1"}], [{"a": 2}], r"j\[\]\.a"),
+    ],
+)
+def test_bigquery_json_checks_sampled_kind_after_pushed_filter_and_limit(
+    sample: Any, late: Any, path: str
+) -> None:
+    conn = _Connection(
+        [_Field("id", "INTEGER"), _Field("j", "JSON")],
+        [(i, sample) for i in range(1, 1001)] + [(1001, late)],
+        [(1001, dumps(late))],
+    )
+    # The data job sees only the last row after SQL filter pushdown. There are no
+    # earlier rows in that cursor's history that could reveal the type changed.
+    lf = pl.scan_database("SELECT id, j FROM data", conn)
+    filtered = lf.filter(pl.col("id") == 1001).head(1)
+    plan = filtered.explain()
+    assert "filters 1/1 (1 exact)" in plan
+    with pytest.raises(
+        pl.exceptions.SchemaError, match=rf"field '{path}'.*type changed"
+    ):
+        filtered.collect()
+
+
+def test_bigquery_json_checks_sampled_kind_after_serialize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from polars_database import _bridge
+
+    conn = _Connection(
+        [_Field("id", "INTEGER"), _Field("j", "JSON")],
+        [(i, {"a": 1}) for i in range(1, 1001)] + [(1001, 2)],
+        [(1001, "2")],
+    )
+    monkeypatch.setattr(_bridge, "_connect_bigquery", lambda *_: (conn, lambda: None))
+    lf = pl.scan_database("SELECT id, j FROM data", "bigquery://", driver="bigquery")
+    filtered = lf.filter(pl.col("id") == 1001).head(1)
+    serialized = filtered.serialize()
+    with pytest.raises(
+        pl.exceptions.SchemaError, match=r"JSON field 'j'.*type changed"
+    ):
+        pl.LazyFrame.deserialize(BytesIO(serialized)).collect()
+
+
+@pytest.mark.parametrize("overrides", [False, True])
+def test_bigquery_json_allows_user_requested_cast(overrides: bool) -> None:
+    conn = _Connection([_Field("j", "JSON")], [("1",)] * 1000, [("2",)])
+    schema = {"j": pl.String}
+    lf = pl.scan_database(
+        "data",
+        conn,
+        schema_overrides=schema if overrides else None,
+        schema=None if overrides else schema,
+    )
+    assert lf.collect().rows() == [("2",)]
+
+
+def test_bigquery_json_checks_sampled_kind_after_pushed_limit() -> None:
+    conn = _Connection([_Field("j", "JSON")], [("1",)] * 1000, [("2",)])
+    lf = pl.scan_database("data", conn).head(1)
+    assert "limit: 1" in lf.explain()
+    with pytest.raises(
+        pl.exceptions.SchemaError, match=r"JSON field 'j'.*type changed"
+    ):
+        lf.collect()
+
+
+@pytest.mark.parametrize("late", [None, 2**53 + 1, 2**53 + 2])
+def test_bigquery_json_allows_only_exact_casts_to_sampled_float(
+    late: int | None,
+) -> None:
+    conn = _Connection([_Field("j", "JSON")], [([0.5],)] * 1000, [(dumps([late]),)])
+    lf = pl.scan_database("data", conn).head(1)
+    assert lf.collect_schema() == {"j": pl.List(pl.Float64)}
+    if late == 2**53 + 1:
+        with pytest.raises(pl.exceptions.SchemaError, match="would round"):
+            lf.collect()
+    else:
+        assert lf.collect().rows() == [([late],)]

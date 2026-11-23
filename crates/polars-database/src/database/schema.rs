@@ -338,6 +338,47 @@ pub fn cast_to_user_schema(
     )
 }
 
+/// Check JSON kinds before a cast can turn a number into a string or a one-field
+/// object. Null marks an unobserved leaf, and the regular cast checks numeric exactness.
+pub(crate) fn check_bigquery_json(df: &DataFrame, sampled: &Schema) -> PolarsResult<()> {
+    for (name, planned) in sampled.iter() {
+        if let Ok(col) = df.column(name) {
+            check_bigquery_json_kind(col.dtype(), planned, name)?;
+        }
+    }
+    Ok(())
+}
+
+fn check_bigquery_json_kind(actual: &DataType, planned: &DataType, path: &str) -> PolarsResult<()> {
+    if actual == planned {
+        return Ok(());
+    }
+    match (actual, planned) {
+        (DataType::Null, _) | (_, DataType::Null) => Ok(()),
+        (DataType::List(a), DataType::List(b)) => {
+            check_bigquery_json_kind(a, b, &format!("{path}[]"))
+        },
+        (DataType::Struct(a), DataType::Struct(b)) => {
+            for field in b {
+                if let Some(actual) = a.iter().find(|actual| actual.name() == field.name()) {
+                    check_bigquery_json_kind(
+                        actual.dtype(),
+                        field.dtype(),
+                        &format!("{path}.{}", field.name()),
+                    )?;
+                }
+            }
+            Ok(())
+        },
+        (a, b) if is_number(a) && is_number(b) => Ok(()),
+        _ => polars_bail!(
+            SchemaMismatch:
+            "BigQuery JSON field '{path}' is {actual} but {planned} was sampled: \
+            the JSON type changed since the scan was planned; use TO_JSON_STRING(<json>) in the source query"
+        ),
+    }
+}
+
 /// [`cast_to_user_schema`], where `plugin_converted` are the columns the plugin reads through a
 /// conversion of its own (a number as text, a decimal as text): their dtype is not the database's,
 /// so a text read for a number is no change of the column's kind. `truncating`: the temporal
