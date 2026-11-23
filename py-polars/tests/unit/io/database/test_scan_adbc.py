@@ -47,7 +47,7 @@ def edge_db(tmp_path: Path) -> str:
 
 
 def test_adbc_reads_edge_values(edge_db: str) -> None:
-    df = pl.scan_database("t", edge_db, driver="adbc").collect()
+    df = pl.scan_database("t", edge_db, driver="adbc", batch_size=32).collect()
     expected = pl.scan_database("t", edge_db, driver="sqlite3").collect()
     assert_frame_equal(df.sort("id"), expected.sort("id"))
 
