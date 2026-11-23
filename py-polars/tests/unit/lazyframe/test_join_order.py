@@ -1529,12 +1529,12 @@ def test_equality_filter_stays_a_filter_on_joins_unlike_it(
 def test_equality_filter_key_has_in_memory_distinct_counts(suffixed: bool) -> None:
     # `ax` and `bx` hold one value, so joining on them first is a cross join. Only
     # the distinct counts of the frames show that.
-    a = pl.LazyFrame({"a": [i % 100 for i in range(1000)], "ax": [1] * 1000})
-    b = pl.LazyFrame({"b": range(1000), "bx": [1] * 1000})
-    c = {"ca": [i % 100 for i in range(5000)], "cb": [i % 500 for i in range(5000)]}
+    a = pl.LazyFrame({"a": [i % 10 for i in range(100)], "ax": [1] * 100})
+    b = pl.LazyFrame({"b": range(100), "bx": [1] * 100})
+    c = {"ca": [i % 10 for i in range(500)], "cb": [i % 50 for i in range(500)]}
     if suffixed:
         # The filter reads the `bx` of `c` under its suffixed name.
-        c["bx"] = [1] * 5000
+        c["bx"] = [1] * 500
     q = (
         b.join(pl.LazyFrame(c), left_on="b", right_on="cb", coalesce=False)
         .join(a, left_on="ca", right_on="a", coalesce=False)

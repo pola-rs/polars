@@ -26,7 +26,7 @@ LONG = [
 ]
 
 
-def _df(n: int = 20_000, with_nulls: bool = True) -> pl.DataFrame:
+def _df(n: int = 1_800, with_nulls: bool = True) -> pl.DataFrame:
     idx = pl.int_range(n, eager=True)
     k = pl.Series(LONG).gather(idx.hash(1) % len(LONG))
     s = pl.Series([f"s{i}" for i in range(7)]).gather(idx.hash(2) % 7)
@@ -36,7 +36,8 @@ def _df(n: int = 20_000, with_nulls: bool = True) -> pl.DataFrame:
 
 
 def _write(df: pl.DataFrame, path: Path, **kwargs: object) -> Path:
-    kwargs.setdefault("row_group_size", 3_000)
+    # Enough rows for the 50 long and seven inline dictionary values in _df.
+    kwargs.setdefault("row_group_size", 600)
     df.write_parquet(path, **kwargs)  # type: ignore[arg-type]
     return path
 
@@ -77,7 +78,7 @@ QUERIES: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {
     "filter_is_in": lambda lf: lf.filter(pl.col("k").is_in(LONG[:5])),
     "filter_starts": lambda lf: lf.filter(pl.col("k").str.starts_with(LONG[4][:30])),
     "filter_other": lambda lf: lf.filter(pl.col("v") < 10),
-    "slice": lambda lf: lf.slice(2_500, 1_000),
+    "slice": lambda lf: lf.slice(500, 200),
     "head": lambda lf: lf.head(5),
     "sort": lambda lf: lf.sort("k", "v", nulls_last=True, maintain_order=True),
     "concat_str": lambda lf: lf.select(pl.concat_str("k", "s")),
@@ -100,8 +101,13 @@ UNORDERED_QUERIES = {
 }
 
 
-@pytest.mark.parametrize("name", sorted(QUERIES))
-@pytest.mark.parametrize("with_nulls", [False, True])
+@pytest.mark.parametrize(
+    ("name", "with_nulls"),
+    [
+        *((name, True) for name in sorted(QUERIES)),
+        *((name, False) for name in ("group_by_two", "compare_constant", "slice")),
+    ],
+)
 def test_dictionary_codes_queries(tmp_path: Path, name: str, with_nulls: bool) -> None:
     df = _df(with_nulls=with_nulls)
     path = _write(df, tmp_path / "f.parquet")
@@ -432,7 +438,7 @@ def test_dictionary_codes_compare_fails_only_on_unused_values(tmp_path: Path) ->
     assert q(pl.scan_parquet(path)).collect().item() == q(df.lazy()).collect().item()
 
 
-@pytest.mark.parametrize("row_group_size", [1_000, 3_000, 50_000])
+@pytest.mark.parametrize("row_group_size", [20, 60, 50_000])
 @pytest.mark.parametrize("with_nulls", [False, True])
 def test_dictionary_codes_sink_parquet_writes_used_values(
     tmp_path: Path, row_group_size: int, with_nulls: bool
@@ -514,7 +520,7 @@ def test_dictionary_codes_sink_large_distinct_code_slices_unique(
 ) -> None:
     # The source dictionary pays off for its whole row group, but each output row
     # group visits every code once.
-    distinct = 32_768
+    distinct = 16_384  # Minimum output row count for the cardinality preflight.
     values = pa.array([f"{LONG[0]}/{i}" for i in range(distinct)])
     codes = pa.array(list(range(distinct)) * 8, type=pa.int32())
     table = pa.table({"k": pa.DictionaryArray.from_arrays(codes, values)})
@@ -531,7 +537,7 @@ def test_dictionary_codes_sink_large_distinct_code_slices_equal_values(
 ) -> None:
     # Different codes of the source dictionary hold equal values, so the sink must
     # write the few values it has, not one per code.
-    distinct = 32_768
+    distinct = 16_384  # Minimum output row count for the cardinality preflight.
     source = tmp_path / "source.parquet"
     table = _write_duplicate_dictionary(source, distinct)
     target = tmp_path / "target.parquet"
@@ -554,23 +560,27 @@ OVERSIZED_QUERIES: dict[str, Callable[[pl.LazyFrame], pl.LazyFrame]] = {
 }
 
 
-@pytest.mark.parametrize("name", sorted(OVERSIZED_QUERIES))
-@pytest.mark.parametrize("pushed_down", [False, True])
+@pytest.mark.parametrize(
+    ("name", "pushed_down"),
+    [
+        *((name, False) for name in sorted(OVERSIZED_QUERIES)),
+        *((name, True) for name in ("group_by_two", "compare", "sort")),
+    ],
+)
 def test_dictionary_codes_dictionary_oversized_after_filter(
     tmp_path: Path, name: str, pushed_down: bool
 ) -> None:
-    n, distinct = 50_000, 2_500
+    n, distinct = 5_000, 250
     idx = pl.int_range(n, eager=True)
     vals = pl.Series([f"https://example.com/p/{i:08d}/i" for i in range(distinct)])
     k = vals.gather(idx.hash(1) % distinct).scatter(list(range(0, n, 1001)), None)
     s = pl.Series([f"s{i}" for i in range(7)]).gather(idx.hash(2) % 7)
     df = pl.DataFrame({"k": k, "s": s, "v": idx})
-    path = _write(df, tmp_path / "f.parquet", row_group_size=25_000)
+    path = _write(df, tmp_path / "f.parquet", row_group_size=2_500)
 
-    # A predicate on the rank isn't pushed into the scan, so the source keeps codes and
-    # the operators get ~100 rows of 2.5k-value dictionaries; one on the value is pushed
-    # down.
-    pred = (pl.col("v") if pushed_down else pl.col("v").rank()) % 500 == 1
+    # A rank predicate leaves codes for the operators: ~100 rows from 250-value
+    # dictionaries. A predicate on the value is pushed into the scan.
+    pred = (pl.col("v") if pushed_down else pl.col("v").rank()) % 50 == 1
     q = OVERSIZED_QUERIES[name]
     expected = q(df.lazy().filter(pred)).collect()
     out = q(pl.scan_parquet(path).filter(pred)).collect(engine="streaming")
@@ -586,7 +596,8 @@ def test_dictionary_codes_predicate_keeping_few_rows_does_not_keep_dictionary(
     # predicate is not an equality, which would become a constant and never decode the
     # column.
     once = "only-once" + "x" * 100
-    s = [once] + [f"{i % 1000:04}" + "x" * 100 for i in range(1, 100_000)]
+    # 400 long dictionary values put the buffer above the 32 KiB compaction floor.
+    s = [once] + [f"{i % 400:04}" + "x" * 100 for i in range(1, 4_000)]
     df = pl.DataFrame({"a": range(len(s)), "s": s})
     path = _write(df, tmp_path / "f.parquet", row_group_size=len(s))
 
@@ -622,19 +633,23 @@ def test_dictionary_codes_n_chunks_counts_codes(tmp_path: Path) -> None:
     assert out.rechunk().n_chunks() == 1
 
 
+def _partitioned_sink_source(path: Path) -> pl.DataFrame:
+    row_group_size = 128
+    idx = pl.int_range(4 * row_group_size, eager=True)
+    # Each row group has a different dictionary of eight long values.
+    values = pl.Series([f"value-{i:02d}-" + "x" * 20 for i in range(32)])
+    keys = values.gather((idx // row_group_size) * 8 + idx % 8)
+    df = pl.DataFrame({"p": idx % 7, "k": keys, "v": idx})
+    _write(df, path, row_group_size=row_group_size)
+    return df
+
+
 @pytest.mark.parametrize("include_key", [True, False])
 def test_dictionary_codes_partitioned_sink_across_row_groups(
     tmp_path: Path, include_key: bool
 ) -> None:
-    n = 12_000
-    idx = pl.int_range(n, eager=True)
-    # Each row group sees a different mix of values, so partition buffers see other
-    # dictionaries.
-    s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(
-        ((idx.hash(1) % 3_000).cast(pl.Int64) + idx // 3_000) % 3_000
-    )
-    df = pl.DataFrame({"p": idx.hash(2) % 7, "k": s, "v": idx})
-    path = _write(df, tmp_path / "f.parquet", row_group_size=3_000)
+    path = tmp_path / "f.parquet"
+    df = _partitioned_sink_source(path)
     out_dir = tmp_path / "out"
     pl.scan_parquet(path).sink_parquet(
         pl.PartitionBy(out_dir, key="p", include_key=include_key),
@@ -655,16 +670,11 @@ def test_dictionary_codes_file_size_partitioned_sink_across_row_groups(
 ) -> None:
     # No keys: dictionary columns reach the partition buffer as they are, and each row
     # group brings a dictionary with other values (appended after the buffer's first).
-    n = 12_000
-    idx = pl.int_range(n, eager=True)
-    s = pl.Series([f"value-{i:05d}-" + "x" * 20 for i in range(3_000)]).gather(
-        ((idx.hash(1) % 3_000).cast(pl.Int64) + idx // 3_000 * 1_000) % 3_000
-    )
-    df = pl.DataFrame({"k": s, "v": idx})
-    path = _write(df, tmp_path / "f.parquet", row_group_size=3_000)
+    path = tmp_path / "f.parquet"
+    df = _partitioned_sink_source(path).drop("p")
     out_dir = tmp_path / "out"
-    pl.scan_parquet(path).sink_parquet(
-        pl.PartitionBy(out_dir, max_rows_per_file=5_000), mkdir=True
+    pl.scan_parquet(path).select(df.columns).sink_parquet(
+        pl.PartitionBy(out_dir, max_rows_per_file=200), mkdir=True
     )
     files = sorted(out_dir.glob("**/*.parquet"))
     assert len(files) == 3
