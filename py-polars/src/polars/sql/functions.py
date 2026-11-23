@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from polars.dataframe import DataFrame
     from polars.lazyframe import LazyFrame
 
@@ -11,14 +13,29 @@ __all__ = ["sql"]
 
 
 @overload
-def sql(query: str, *, eager: Literal[False] = False) -> LazyFrame: ...
+def sql(
+    query: str,
+    *,
+    eager: Literal[False] = False,
+    params: Sequence[Any] | Mapping[str, Any] | None = ...,
+) -> LazyFrame: ...
 
 
 @overload
-def sql(query: str, *, eager: Literal[True]) -> DataFrame: ...
+def sql(
+    query: str,
+    *,
+    eager: Literal[True],
+    params: Sequence[Any] | Mapping[str, Any] | None = ...,
+) -> DataFrame: ...
 
 
-def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
+def sql(
+    query: str,
+    *,
+    eager: bool = False,
+    params: Sequence[Any] | Mapping[str, Any] | None = None,
+) -> DataFrame | LazyFrame:
     """
     Execute a SQL query against frames in the global namespace.
 
@@ -30,6 +47,11 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
         SQL query to execute.
     eager
         Automatically collect the result and return a DataFrame instead of a LazyFrame.
+    params
+        The values of the query parameters. A sequence gives the values of the
+        positional parameters `?` (in order) or `$1`, `$2`, ...; a mapping gives the
+        values of the named parameters `$name` or `:name`. A parameter acts as a
+        literal of its value, so it can never inject SQL.
 
     Notes
     -----
@@ -137,4 +159,5 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
     return SQLContext.execute_global(
         query=query,
         eager=eager,
+        params=params,
     )

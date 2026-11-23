@@ -31,7 +31,7 @@ use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 /// Whether the decoder may evaluate a predicate on this column as it decodes the values.
 fn filter_while_decoding(projection: &ArrowFieldProjection) -> bool {
     use ArrowDataType as A;
-    let ArrowFieldProjection::Plain(arrow_field) = projection else {
+    let ArrowFieldProjection::Plain(arrow_field, None) = projection else {
         return false;
     };
     match arrow_field.dtype() {

@@ -84,7 +84,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                         df.height().saturating_sub(n)
                     )
                 }
-                parsed_dfs.push(df.slice(0, len));
+                parsed_dfs.push(df.slice(Slice::head(len)));
                 break;
             }
         }

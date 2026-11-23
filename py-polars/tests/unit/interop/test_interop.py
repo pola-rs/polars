@@ -27,6 +27,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -171,6 +173,113 @@ def test_arrow_dict_chunks_to_categorical() -> None:
     s = cast("pl.Series", pl.from_arrow(ca))
     assert s.dtype == pl.Categorical
     assert s.to_list() == ["b", "a", "b", "c", None, "a"]
+
+
+@pytest.mark.parametrize("index_type", [pa.int8(), pa.int32()])
+@pytest.mark.parametrize(
+    "values",
+    [
+        pa.array([7, 10**18, 42]),
+        pa.array([1.5, 2.5, 3.5]),
+        pa.array(
+            [Decimal("1.50"), Decimal("2.25"), Decimal("3")], pa.decimal128(10, 2)
+        ),
+        pa.array([True, False, True]),
+        pa.array([date(2024, 1, 1), date(2024, 5, 6), date(2024, 7, 8)]),
+        pa.array([time(1), time(2), time(3)]),
+        pa.array([datetime(2024, 1, 1), datetime(2024, 5, 6), datetime(2024, 7, 8)]),
+        pa.array([5, 3600, 86400], pa.duration("s")),
+        pa.array([0, 1, 2], pa.timestamp("us", "UTC")),
+        pa.array([b"\xff\x00", b"ok", b""]),
+        pa.array([b"ab", b"cd", b"ef"], pa.binary(2)),
+    ],
+)
+def test_arrow_dict_chunks_keep_value_type_30729(
+    index_type: pa.DataType, values: pa.Array
+) -> None:
+    # Each chunk has its own dictionary, as when data is read batch by batch.
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(pa.array([0, 1], index_type), values[:2]),
+            pa.DictionaryArray.from_arrays(pa.array([1, None], index_type), values[1:]),
+        ]
+    )
+    expected = cast("pl.Series", pl.from_arrow(ca.combine_chunks())).alias("c")
+    assert expected.dtype != pl.Categorical
+
+    assert_series_equal(cast("pl.Series", pl.from_arrow(ca)).alias("c"), expected)
+    assert_series_equal(pl.Series("c", ca), expected)
+    assert_series_equal(pl.DataFrame({"c": ca})["c"], expected)
+
+
+def test_arrow_dict_chunks_small_index_overflow_30729() -> None:
+    # The combined dictionary has more entries than an int8 index can address.
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(
+                pa.array(range(100), pa.int8()), pa.array(range(100))
+            ),
+            pa.DictionaryArray.from_arrays(
+                pa.array(range(100), pa.int8()), pa.array(range(100, 200))
+            ),
+        ]
+    )
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Int64
+    assert s.to_list() == list(range(200))
+
+
+def _two_dict_chunks(index_type: pa.DataType, values: pa.Array) -> pa.ChunkedArray:
+    return pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(pa.array([0, 1], index_type), values[:2]),
+            pa.DictionaryArray.from_arrays(pa.array([1, None], index_type), values[1:]),
+        ]
+    )
+
+
+def test_arrow_dict_chunks_small_index_strings_30729() -> None:
+    ca = _two_dict_chunks(pa.int8(), pa.array(["a", "b", "c"]))
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["a", "b", "c", None]
+
+
+def test_arrow_dict_chunks_nested_dictionary_values_30729() -> None:
+    # Dictionaries of dictionaries can't be combined as such and stay strings.
+    inner = pa.DictionaryArray.from_arrays(pa.array([0, 1], pa.int8()), ["a", "b"])
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(pa.array([0, None], pa.int8()), inner),
+            pa.DictionaryArray.from_arrays(pa.array([1], pa.int8()), inner),
+        ]
+    )
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["a", None, "b"]
+
+
+def test_arrow_dict_chunks_unsupported_value_types_stay_strings_30729() -> None:
+    # Arrow corrupts float16 dictionary values when combining chunks.
+    ca = _two_dict_chunks(pa.int8(), pa.array([1.5, 2.5, 3.5], pa.float16()))
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.cast(pl.String).to_list() == ["1.5", "2.5", "3.5", None]
+
+    # Polars doesn't import a negative decimal scale.
+    values = pa.array([Decimal(100), Decimal(200), Decimal(300)], pa.decimal128(10, -2))
+    s = cast("pl.Series", pl.from_arrow(_two_dict_chunks(pa.int8(), values)))
+    assert s.dtype == pl.Categorical
+    assert s.len() == 4
+
+
+def test_arrow_dict_chunks_without_view_type_checks_30729(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Older pyarrow versions don't have `pa.types.is_binary_view`.
+    monkeypatch.delattr(pa.types, "is_binary_view", raising=False)
+    ca = _two_dict_chunks(pa.int8(), pa.array([7, 10**18, 42]))
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.to_list() == [7, 10**18, 42, None]
 
 
 def test_arrow_list_chunked_array() -> None:
@@ -1017,6 +1126,28 @@ def test_from_arrow_invalid_time_zone() -> None:
         pl.from_arrow(arr)
 
 
+@pytest.mark.parametrize("time_zone", ["+05:30", "GMT+8", "Z", "not-a-zone"])
+@pytest.mark.parametrize("n_rows", [0, 1])
+def test_from_arrow_unreadable_time_zone_is_an_error_not_a_panic(
+    time_zone: str, n_rows: int
+) -> None:
+    # an empty batch took a path that unwrapped the time zone (a panic)
+    values = [datetime(2021, 1, 1)] * n_rows
+    ts = pa.array(values, type=pa.timestamp("us", tz=time_zone))
+    nested = pa.array([values] * n_rows, type=pa.list_(ts.type))
+    for table in [
+        pa.table({"ts": ts}),
+        pa.table({"x": nested}),
+        pa.table(
+            {"s": pa.array([{"t": v} for v in values], pa.struct([("t", ts.type)]))}
+        ),
+    ]:
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.from_arrow(table)
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.DataFrame(table)
+
+
 @pytest.mark.parametrize(
     ("fixed_offset", "etc_tz"),
     [
@@ -1677,6 +1808,94 @@ def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
         pq.write_table(arrow_tbl, f)
 
 
+_MDN = pa.month_day_nano_interval()
+_INTERVALS = [(2, 3, 4001), None, (-1, 0, 1_000)]
+
+
+def _mdn_table(column: pa.Array) -> pa.Table:
+    return pa.table({"c": column})
+
+
+def _mdn_ipc(column: pa.Array) -> bytes:
+    f = io.BytesIO()
+    with pa.ipc.new_file(f, _mdn_table(column).schema) as w:
+        w.write_table(_mdn_table(column))
+    return f.getvalue()
+
+
+@pytest.mark.parametrize(
+    "to_intervals",
+    [
+        lambda: pl.Series(pa.array(_INTERVALS, _MDN)),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.list_(_MDN))).explode(),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.large_list(_MDN))).explode(),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.list_(_MDN, 3))).explode(),
+        lambda: pl.Series(
+            pa.array([[(9, 9, 9)], _INTERVALS], pa.list_(_MDN)).slice(1)
+        ).explode(),
+        lambda: pl.Series(
+            pa.chunked_array([[_INTERVALS[:1]], [_INTERVALS[1:]]], pa.list_(_MDN))
+        ).explode(),
+        lambda: pl.Series(
+            pa.array([[(9, 9, 9)] * 3, _INTERVALS], pa.list_(_MDN, 3)).slice(1)
+        ).explode(),
+        lambda: pl.Series(pa.array([None, _INTERVALS], pa.list_(_MDN))).explode()[1:],
+        lambda: pl.Series(
+            pa.DictionaryArray.from_arrays(
+                pa.array([0], pa.int32()), pa.array([_INTERVALS], pa.list_(_MDN))
+            )
+        ).explode(),
+        lambda: pl.read_ipc(_mdn_ipc(pa.array([_INTERVALS], pa.list_(_MDN))))[
+            "c"
+        ].explode(),
+        lambda: pl.Series(
+            pa.array([{"a": v} for v in _INTERVALS], pa.struct([("a", _MDN)]))
+        ).struct.field("a"),
+        lambda: pl.DataFrame(_mdn_table(pa.array(_INTERVALS, _MDN)).to_reader())["c"],
+        lambda: pl.DataFrame(
+            _mdn_table(pa.array([_INTERVALS], pa.list_(_MDN))).to_reader()
+        )["c"].explode(),
+        lambda: (
+            pl.scan_arrow_c_stream(
+                _mdn_table(pa.array([_INTERVALS], pa.list_(_MDN))).to_reader()
+            )
+            .collect()["c"]
+            .explode()
+        ),
+    ],
+)
+def test_nested_month_day_nano_import_30920(
+    to_intervals: Callable[[], pl.Series], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
+    s = to_intervals()
+    assert s.dtype == pl.Struct(
+        {"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Duration("ns")}
+    )
+    assert s.is_null().to_list() == [False, True, False]
+    out = s.struct.unnest().with_columns(pl.col("nanoseconds").cast(pl.Int64))
+    expected = pl.DataFrame(
+        {
+            "months": [2, None, -1],
+            "days": [3, None, 0],
+            "nanoseconds": [4001, None, 1000],
+        },
+        schema={"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Int64},
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "dtype", [pa.list_(_MDN), pa.large_list(_MDN), pa.list_(_MDN, 3)]
+)
+def test_nested_month_day_nano_import_disabled_30920(dtype: pa.DataType) -> None:
+    arr = pa.array([_INTERVALS], dtype)
+    with pytest.raises(ComputeError, match="POLARS_IMPORT_INTERVAL_AS_STRUCT"):
+        pl.Series(arr)
+    with pytest.raises(ComputeError, match="POLARS_IMPORT_INTERVAL_AS_STRUCT"):
+        pl.DataFrame(_mdn_table(arr).to_reader())
+
+
 def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow() == pa.schema(
         [pa.field("x", pa.string_view())]
@@ -1685,6 +1904,24 @@ def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow(
         compat_level=CompatLevel.oldest()
     ) == pa.schema([pa.field("x", pa.large_string())])
+
+
+def test_0_width_df_arrow_c_stream_is_one_batch() -> None:
+    df = pl.DataFrame(height=1 << 20)
+
+    for stream in [df, df.lazy().collect_batches()]:
+        reader = pa.RecordBatchReader.from_stream(stream)
+        assert [batch.num_rows for batch in reader] == [1 << 20]
+
+
+def test_arrow_c_stream_exports_share_a_scalar_column() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(b=pl.lit(7, dtype=pl.Int64))
+
+    t1, t2 = pa.table(df), pa.table(df)
+
+    assert t1["b"].chunks[0].buffers()[1].address == (
+        t2["b"].chunks[0].buffers()[1].address
+    )
 
 
 def test_0_width_df_roundtrip() -> None:
@@ -1861,3 +2098,41 @@ def test_series_from_arrow_large_list_keeps_fast_explode_28626(
     assert imported.to_list() == values
     assert imported.flags["FAST_EXPLODE"] is fast_explode
     assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", ["x", "y", None, "x"], dtype=pl.Categorical),
+        pl.Series("a", ["x", "y", None, "x"], dtype=pl.Enum(["x", "y"])),
+        pl.Series("a", [["x", "y"], None], dtype=pl.List(pl.Categorical)),
+    ],
+)
+def test_export_arrow_to_c_logical_dtype(s: pl.Series) -> None:
+    import ctypes
+
+    # sizeof(struct ArrowArray) and sizeof(struct ArrowSchema) on 64-bit platforms.
+    c_array = ctypes.create_string_buffer(80)
+    c_schema = ctypes.create_string_buffer(72)
+    s._export_arrow_to_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
+    arr = pa.Array._import_from_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
+    arr.validate(full=True)
+    assert arr.equals(s.to_arrow(compat_level=CompatLevel.newest()))
+
+
+@pytest.mark.parametrize(
+    "export",
+    [
+        lambda df: pa.table(df),
+        lambda df: pa.RecordBatchReader.from_stream(df.lazy().collect_batches()),
+    ],
+    ids=["DataFrame", "LazyFrame.collect_batches"],
+)
+def test_arrow_c_stream_raises_on_a_nul_in_a_column_name(
+    export: Callable[[pl.DataFrame], Any],
+) -> None:
+    # Exporting the name panics in the stream's `get_schema` callback.
+    df = pl.DataFrame({"a\0b": [1]})
+
+    with pytest.raises(OSError, match="panic in an Arrow C stream callback"):
+        export(df)

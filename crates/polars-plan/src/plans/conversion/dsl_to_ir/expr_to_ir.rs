@@ -53,6 +53,8 @@ pub struct ExprToIRContext<'a> {
     pub allow_unknown: bool,
     /// Check whether mentioned column names exist in the schema.
     pub check_column_names: bool,
+    /// In the evaluation of an `eval`: the columns of the frame it reads.
+    pub(super) eval_columns: Option<PlIndexSet<PlSmallStr>>,
 }
 
 impl<'a> ExprToIRContext<'a> {
@@ -63,6 +65,7 @@ impl<'a> ExprToIRContext<'a> {
             schema,
             allow_unknown: false,
             check_column_names: true,
+            eval_columns: None,
         }
     }
 
@@ -87,6 +90,7 @@ impl<'a> ExprToIRContext<'a> {
             schema,
             allow_unknown: false,
             check_column_names: true,
+            eval_columns: None,
         }
     }
 
@@ -155,7 +159,12 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
             if ctx.check_column_names {
                 ctx.schema.try_index_of(name)?;
             }
-            (AExpr::Column(name.clone()), name.clone())
+            if let Some(eval_columns) = &mut ctx.eval_columns {
+                eval_columns.insert(name.clone());
+                (AExpr::EvalColumn(name.clone()), name.clone())
+            } else {
+                (AExpr::Column(name.clone()), name.clone())
+            }
         },
         Expr::BinaryExpr { left, op, right } => {
             let (l, output_name) = recurse!(left)?;
@@ -497,16 +506,6 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
-            // Perform this before schema resolution so that we can better error messages.
-            for e in evaluation.as_ref().into_iter() {
-                if matches!(e, Expr::Column(_)) {
-                    polars_bail!(
-                        ComputeError:
-                        "named columns are not allowed in `eval` functions; consider using `element`"
-                    );
-                }
-            }
-
             let mut evaluation_schema = ctx.schema.clone();
             evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
@@ -515,8 +514,19 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
                 arena: ctx.arena,
                 allow_unknown: ctx.allow_unknown,
                 check_column_names: ctx.check_column_names,
+                eval_columns: Some(PlIndexSet::new()),
             };
             let (evaluation, _) = to_aexpr_impl(evaluation, &mut evaluation_ctx)?;
+            // Read in the context of the `eval`, which may be the evaluation of another.
+            let columns = evaluation_ctx
+                .eval_columns
+                .unwrap()
+                .into_iter()
+                .map(|name| {
+                    let (node, _) = to_aexpr_impl(&Expr::Column(name.clone()), ctx)?;
+                    Ok(ExprIR::new(node, OutputName::Alias(name)))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             match variant {
                 EvalVariant::List | EvalVariant::ListAgg => {},
@@ -544,6 +554,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
                     expr,
                     evaluation,
                     variant: *variant,
+                    columns,
                 },
                 output_name,
             )
@@ -575,8 +586,11 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
                     schema: &eval_schema,
                     allow_unknown: ctx.allow_unknown,
                     check_column_names: ctx.check_column_names,
+                    eval_columns: ctx.eval_columns.take(),
                 };
-                let exprir = to_expr_ir(e, &mut eval_ctx)?;
+                let exprir = to_expr_ir(e, &mut eval_ctx);
+                ctx.eval_columns = eval_ctx.eval_columns;
+                let exprir = exprir?;
 
                 // The evaluated fields are zipped back into the input struct, so they must have a
                 // height that can be related to it. `StructField` references are the height of
@@ -592,6 +606,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
                             ExprHeightOptions {
                                 struct_field: ExprProjectionHeight::Column,
                                 structural_unknowns_only: true,
+                                ..Default::default()
                             },
                         ),
                         ExprProjectionHeight::Unknown
@@ -618,7 +633,7 @@ fn to_aexpr_impl_inner(expr: &Expr, ctx: &mut ExprToIRContext) -> PolarsResult<(
         Expr::KeepName(expr) => {
             let (expr, _) = to_aexpr_impl(expr, ctx)?;
             let name = ArenaExprIter::iter(ctx.arena, expr).find_map(|e| match e.1 {
-                AExpr::Column(name) => Some(name.clone()),
+                AExpr::Column(name) | AExpr::EvalColumn(name) => Some(name.clone()),
                 _ => None,
             });
             let Some(name) = name else {

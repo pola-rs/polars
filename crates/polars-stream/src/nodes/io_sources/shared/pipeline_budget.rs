@@ -25,9 +25,6 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 // - A scan whose output is blocked (e.g. a join's probe side during the build) keeps fetching and
 //   can grow toward its store's budget.
 
-static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
-    LazyLock::new(|| std::env::var("POLARS_LOG_CONCURRENCY").is_ok());
-
 /// Default of `POLARS_CLOUD_PREFETCH_ORDERED_SLACK_MS`.
 const DEFAULT_ORDERED_SLACK_MS: u64 = 100;
 
@@ -417,7 +414,7 @@ impl PipelineBudget {
             }
         }
 
-        if *SHOULD_LOG_CONCURRENCY {
+        if polars_config::config().log_concurrency() {
             self.log_stats
                 .grow_cap
                 .store(grow_cap as u8, Ordering::Relaxed);
@@ -455,7 +452,9 @@ impl PipelineBudget {
         let mut charged_kbytes: u32 = self.permit_kbytes(n_bytes).try_into().unwrap_or(u32::MAX);
         let mut oversized = (charged_kbytes as usize) < n_bytes.div_ceil(1 << 10);
 
-        if *SHOULD_LOG_CONCURRENCY && self.kbytes.available_permits() < charged_kbytes as usize {
+        if polars_config::config().log_concurrency()
+            && self.kbytes.available_permits() < charged_kbytes as usize
+        {
             self.log_stats.kbytes_waits.fetch_add(1, Ordering::Relaxed);
         }
 
@@ -490,12 +489,12 @@ impl PipelineBudget {
         }
         let _oversized = oversized.then(|| OversizedPermit::new(&self.oversized_in_flight));
 
-        if *SHOULD_LOG_CONCURRENCY && self.count.available_permits() == 0 {
+        if polars_config::config().log_concurrency() && self.count.available_permits() == 0 {
             self.log_stats.count_waits.fetch_add(1, Ordering::Relaxed);
         }
         let _count = self.count.clone().acquire_owned().await.unwrap();
 
-        if *SHOULD_LOG_CONCURRENCY {
+        if polars_config::config().log_concurrency() {
             if let Ok(mut last_log) = self.last_reported.lock() {
                 let count_limit = self.count_limit();
                 let kbytes_limit = self.kbytes_limit();

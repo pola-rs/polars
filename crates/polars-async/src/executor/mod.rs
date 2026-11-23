@@ -661,3 +661,69 @@ fn random_permutation<R: Rng>(len: u32, rng: &mut R) -> impl Iterator<Item = u32
             i
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::pin::pin;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::task::{Context, Waker};
+    use std::time::{Duration, Instant};
+
+    use parking_lot::Mutex;
+
+    use super::{TaskPriority, task_scope};
+
+    struct SetOnDrop<'a>(&'a AtomicBool);
+
+    impl Drop for SetOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Tearing down a scope cancels its tasks one by one; a task still mid-poll on a worker,
+    /// joining a sibling cancelled before it, must not panic (#192).
+    #[test]
+    fn join_sibling_cancelled_by_scope_teardown() {
+        let sibling_cancelled = AtomicBool::new(false);
+        let outcome = Mutex::new(None);
+        let (started_send, started_recv) = std::sync::mpsc::channel();
+
+        task_scope(None, |scope| {
+            let guard = SetOnDrop(&sibling_cancelled);
+            // Spawned first, so the teardown cancels it first.
+            let sibling = scope.spawn_task(TaskPriority::High, async move {
+                let _guard = guard;
+                std::future::pending::<()>().await
+            });
+
+            let sibling_cancelled = &sibling_cancelled;
+            let outcome = &outcome;
+            scope.spawn_task(TaskPriority::High, async move {
+                let mut sibling = pin!(sibling);
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(sibling.as_mut().poll(&mut cx).is_pending());
+                started_send.send(()).unwrap();
+
+                // Stay mid-poll until the teardown has cancelled the sibling (and released its
+                // lock), then join it once more.
+                let deadline = Instant::now() + Duration::from_secs(30);
+                while !sibling_cancelled.load(Ordering::SeqCst) && Instant::now() < deadline {
+                    std::thread::yield_now();
+                }
+                std::thread::sleep(Duration::from_millis(100));
+                let polled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    sibling.as_mut().poll(&mut cx).is_pending()
+                }));
+                *outcome.lock() = Some(polled.is_ok_and(|pending| pending));
+            });
+
+            // Leave the scope only once the joiner is running.
+            started_recv.recv().unwrap();
+        });
+
+        assert!(sibling_cancelled.load(Ordering::SeqCst));
+        assert_eq!(*outcome.lock(), Some(true));
+    }
+}

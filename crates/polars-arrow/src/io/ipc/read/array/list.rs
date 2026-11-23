@@ -1,27 +1,68 @@
 use std::collections::VecDeque;
-use std::io::{Read, Seek};
 
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::bool::UnsafeBool;
 
 use super::super::super::IpcField;
-use super::super::deserialize::{read, skip};
+use super::super::deserialize::{read_pruned, skip};
 use super::super::read_basic::*;
-use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
+use super::super::{Compression, Dictionaries, IpcBuffer, Node, ReadSeek, Version};
 use crate::array::ListArray;
 use crate::datatypes::ArrowDataType;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 use crate::offset::{Offset, OffsetsBuffer};
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_list<O: Offset, R: Read + Seek>(
+pub fn read_list<O: Offset>(
     field_nodes: &mut VecDeque<Node>,
     variadic_buffer_counts: &mut VecDeque<usize>,
     dtype: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
-    reader: &mut R,
+    reader: &mut dyn ReadSeek,
+    dictionaries: &Dictionaries,
+    block_offset: u64,
+    is_little_endian: bool,
+    compression: Option<Compression>,
+    limit: Option<usize>,
+    version: Version,
+    scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
+) -> PolarsResult<ListArray<O>>
+where
+    Vec<u8>: TryInto<O::Bytes>,
+{
+    read_list_pruned(
+        field_nodes,
+        variadic_buffer_counts,
+        &dtype.clone(),
+        dtype,
+        ipc_field,
+        buffers,
+        reader,
+        dictionaries,
+        block_offset,
+        is_little_endian,
+        compression,
+        limit,
+        version,
+        scratch,
+        checked,
+    )
+}
+
+/// Reads a list of dtype `file_dtype` as `dtype`, a list whose element has a pruned dtype (see
+/// [`read_pruned`]).
+#[allow(clippy::too_many_arguments)]
+pub fn read_list_pruned<O: Offset>(
+    field_nodes: &mut VecDeque<Node>,
+    variadic_buffer_counts: &mut VecDeque<usize>,
+    file_dtype: &ArrowDataType,
+    dtype: ArrowDataType,
+    ipc_field: &IpcField,
+    buffers: &mut VecDeque<IpcBuffer>,
+    reader: &mut dyn ReadSeek,
     dictionaries: &Dictionaries,
     block_offset: u64,
     is_little_endian: bool,
@@ -49,7 +90,7 @@ where
 
     let length = try_get_array_length(field_node, limit)?;
 
-    let offsets = read_buffer::<O, _>(
+    let offsets = read_buffer::<O>(
         buffers,
         1 + length,
         reader,
@@ -63,12 +104,14 @@ where
 
     let last_offset = offsets.last().unwrap().to_usize();
 
-    let field = ListArray::<O>::get_child_field(&dtype);
+    let field = ListArray::<O>::get_child_field(file_dtype);
+    let pruned_dtype = ListArray::<O>::get_child_type(&dtype);
 
-    let values = read(
+    let values = read_pruned(
         field_nodes,
         variadic_buffer_counts,
         field,
+        pruned_dtype,
         &ipc_field.fields[0],
         buffers,
         reader,

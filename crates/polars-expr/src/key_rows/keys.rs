@@ -19,7 +19,8 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 
 use super::layout::{ColLayout, KeyRowLayout, bytes_eq};
 use crate::hash_keys::{
-    array_column, column_array, for_each_hash_prehashed, for_each_hash_subset_prehashed,
+    DictCodes, MAX_DICT_CODE_CACHE_LEN, array_column, column_array, for_each_hash_prehashed,
+    for_each_hash_subset_prehashed,
 };
 
 const HASH_MULTIPLE: u64 = 0x5851f42d4c957f2d;
@@ -227,8 +228,14 @@ impl KeyColumn {
             .into_column()
     }
 
-    /// Folds this column into the hash of each row.
-    fn hash_into(&self, hashes: &mut [u64], random_state: &PlRandomState) {
+    /// Folds this column into the hash of each row. `dict_codes` are the codes of a view column
+    /// that comes from a dictionary, whose cached hashes replace hashing long values.
+    fn hash_into(
+        &self,
+        hashes: &mut [u64],
+        random_state: &PlRandomState,
+        dict_codes: Option<&DictCodes>,
+    ) {
         let validity = self.validity.as_ref();
         unsafe {
             match &self.values {
@@ -256,6 +263,21 @@ impl KeyColumn {
                     fold_each(hashes, validity, |h, i| {
                         let x = *v.get_unchecked(i);
                         fold(fold(h, x as u64), (x >> 64) as u64)
+                    })
+                },
+                ColValues::View(views, _) if let Some(dc) = dict_codes => {
+                    let views = views.as_slice();
+                    let codes = dc.codes.as_slice();
+                    let dict_hashes = dc.hashes.as_slice();
+                    fold_each(hashes, validity, |h, i| {
+                        let view = *views.get_unchecked(i);
+                        let bits = view.as_u128();
+                        let hi = if view.length <= View::MAX_INLINE_SIZE {
+                            (bits >> 64) as u64
+                        } else {
+                            *dict_hashes.get_unchecked(*codes.get_unchecked(i) as usize)
+                        };
+                        folded_multiply(h ^ bits as u64, hi ^ VIEW_MULTIPLE)
                     })
                 },
                 ColValues::View(views, buffers) => {
@@ -318,6 +340,59 @@ pub struct KeyRowKeys {
     /// Keys with a null, when nulls are not keys.
     pub(crate) validity: Option<Bitmap>,
     data: KeyData,
+    /// Set when every key column comes from a small dictionary: equal combined codes are equal
+    /// keys.
+    pub(crate) combined_codes: Option<CombinedCodes>,
+}
+
+/// One code per key over the dictionaries of all key columns.
+#[derive(Clone, Debug)]
+pub(crate) struct CombinedCodes {
+    /// The id of each column's dictionary.
+    pub(crate) dict_ids: Vec<u64>,
+    /// The number of combined codes.
+    pub(crate) len: usize,
+    /// The combined code of each key, a null being one more code of its column.
+    pub(crate) codes: Buffer<u32>,
+}
+
+impl CombinedCodes {
+    fn new(columns: &[Column], dict_codes: &[Option<DictCodes>]) -> Option<Self> {
+        let mut len = 1usize;
+        let mut dict_ids = Vec::with_capacity(columns.len());
+        for dc in dict_codes {
+            let dc = dc.as_ref()?;
+            len = len.checked_mul(dc.dict.len() + 1)?;
+            if len > MAX_DICT_CODE_CACHE_LEN {
+                return None;
+            }
+            dict_ids.push(dc.dict.id());
+        }
+        let mut codes = vec![0u32; columns[0].len()];
+        let mut stride = 1u32;
+        for (column, dc) in columns.iter().zip(dict_codes.iter().flatten()) {
+            let null_code = dc.dict.len() as u32;
+            let validity = column.as_dictionary_column()?.codes().rechunk_validity();
+            match validity.filter(|v| v.unset_bits() > 0) {
+                None => {
+                    for (c, k) in codes.iter_mut().zip(dc.codes.iter()) {
+                        *c += *k * stride;
+                    }
+                },
+                Some(v) => {
+                    for ((c, k), is_valid) in codes.iter_mut().zip(dc.codes.iter()).zip(v.iter()) {
+                        *c += if is_valid { *k } else { null_code } * stride;
+                    }
+                },
+            }
+            stride *= null_code + 1;
+        }
+        Some(Self {
+            dict_ids,
+            len,
+            codes: Buffer::from(codes),
+        })
+    }
 }
 
 impl KeyRowKeys {
@@ -326,6 +401,7 @@ impl KeyRowKeys {
         layout: Arc<KeyRowLayout>,
         random_state: &PlRandomState,
         null_is_valid: bool,
+        build_combined_codes: bool,
     ) -> Self {
         assert_eq!(columns.len(), layout.cols.len());
         let len = columns[0].len();
@@ -336,9 +412,21 @@ impl KeyRowKeys {
             .map(|(column, col)| KeyColumn::new(column, col))
             .collect();
         let mut hashes = vec![random_state.hash_one(HASH_MULTIPLE); len];
-        for col in &cols {
-            col.hash_into(&mut hashes, random_state);
+        let dict_codes: Vec<Option<DictCodes>> = columns
+            .iter()
+            .map(|c| {
+                c.as_dictionary_column()
+                    .and_then(|d| DictCodes::try_new(d, random_state))
+            })
+            .collect();
+        for (col, dc) in cols.iter().zip(&dict_codes) {
+            col.hash_into(&mut hashes, random_state, dc.as_ref());
         }
+        let combined_codes = if build_combined_codes {
+            CombinedCodes::new(columns, &dict_codes)
+        } else {
+            None
+        };
         let validity = if null_is_valid {
             None
         } else {
@@ -351,6 +439,7 @@ impl KeyRowKeys {
             hashes: PrimitiveArray::from_vec(hashes),
             validity,
             data: KeyData::Columns(cols),
+            combined_codes,
         }
     }
 
@@ -368,6 +457,7 @@ impl KeyRowKeys {
                 rows: Buffer::from(rows),
                 buffers: buffers.into(),
             },
+            combined_codes: None,
         }
     }
 
@@ -385,6 +475,10 @@ impl KeyRowKeys {
         };
         size_of_val(self.hashes.values().as_slice())
             + self.validity.as_ref().map_or(0, |v| v.len().div_ceil(8))
+            + self
+                .combined_codes
+                .as_ref()
+                .map_or(0, |cc| size_of_val(cc.codes.as_slice()))
             + data
     }
 
@@ -426,6 +520,7 @@ impl KeyRowKeys {
             hashes: column_array(df, "hashes"),
             validity: Some(validity).filter(|v| v.unset_bits() > 0),
             data: KeyData::Columns(cols),
+            combined_codes: None,
         }
     }
 
@@ -602,6 +697,14 @@ impl KeyRowKeys {
                 .as_ref()
                 .map(|v| take_bitmap_unchecked(v, idxs)),
             data,
+            combined_codes: self.combined_codes.as_ref().map(|cc| CombinedCodes {
+                dict_ids: cc.dict_ids.clone(),
+                len: cc.len,
+                codes: idxs
+                    .iter()
+                    .map(|i| *cc.codes.get_unchecked(*i as usize))
+                    .collect(),
+            }),
         }
     }
 }

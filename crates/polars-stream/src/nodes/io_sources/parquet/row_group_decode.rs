@@ -3,19 +3,23 @@ use std::sync::{Arc, Mutex};
 
 use polars_async::executor::{TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
+use polars_core::frame::column::{DictionaryColumn, SharedDictionary, dictionary_codes_enabled};
 use polars_core::prelude::{
-    ArrowDataType, ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IDX_DTYPE, IntoColumn,
+    ArrowDataType, ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IDX_DTYPE,
+    IntoColumn, StringChunked, UInt32Chunked,
 };
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
+use polars_core::utils::polars_arrow::array::{Array, Utf8ViewArray, View};
 use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::{DynamicPredicateSource, PhysicalIoExpr, ScanIOPredicate};
 use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
-use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
+use polars_parquet::read::{ColumnChunkMetadata, Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 
@@ -349,13 +353,14 @@ impl RowGroupDecoder {
                                         [get_projected_field_at_output_index(i)];
 
                                     let (col, pred_true_mask) = decode_column(
-                                        projection.arrow_field(),
+                                        projection,
                                         &row_group_data,
                                         filter.clone(),
                                         expected_num_rows,
                                     )?;
 
-                                    let col = projection.apply_transform(col)?;
+                                    let col = projection
+                                        .apply_transform(col, row_group_data.row_group_idx)?;
 
                                     Ok((col, pred_true_mask))
                                 })
@@ -387,16 +392,32 @@ fn row_index_column(
     Column::new_row_index(row_index.name.clone(), offset, slice_range.len())
 }
 
+/// The column chunks of the leaves of `projection` to decode: all leaves of the column, or the
+/// selected ones of a pruned struct.
+fn projected_column_chunks<'a>(
+    projection: &'a ArrowFieldProjection,
+    row_group_data: &'a RowGroupData,
+) -> Option<impl Iterator<Item = &'a ColumnChunkMetadata>> {
+    let leaves = projection.leaves(row_group_data.row_group_idx);
+
+    Some(
+        row_group_data
+            .row_group_metadata
+            .columns_under_root_iter(&projection.arrow_field().name)?
+            .enumerate()
+            .filter(move |(i, _)| leaves.is_none_or(|leaves| leaves.binary_search(i).is_ok()))
+            .map(|(_, col_md)| col_md),
+    )
+}
+
 fn decode_column(
-    arrow_field: &ArrowField,
+    projection: &ArrowFieldProjection,
     row_group_data: &RowGroupData,
     filter: Option<polars_parquet::read::Filter>,
     expected_num_rows: usize,
 ) -> PolarsResult<(Column, Bitmap)> {
-    let Some(iter) = row_group_data
-        .row_group_metadata
-        .columns_under_root_iter(&arrow_field.name)
-    else {
+    let arrow_field = projection.decode_field(row_group_data.row_group_idx);
+    let Some(iter) = projected_column_chunks(projection, row_group_data) else {
         return Ok((
             Column::full_null(
                 arrow_field.name.clone(),
@@ -421,6 +442,15 @@ fn decode_column(
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let skip_num_rows_check = matches!(filter, Some(Filter::Predicate(_)));
+
+    if let Some((column, pred_true_mask)) =
+        try_decode_dictionary_column(arrow_field, &columns_to_deserialize, filter.clone())?
+    {
+        if !skip_num_rows_check {
+            assert_eq!(column.len(), expected_num_rows);
+        }
+        return Ok((column, pred_true_mask));
+    }
 
     let (arrays, pred_true_mask) = polars_io::prelude::_internal::to_deserializer(
         columns_to_deserialize,
@@ -448,6 +478,123 @@ fn decode_column(
     // TODO: Also load in the metadata.
 
     Ok((series.into_column(), pred_true_mask))
+}
+
+/// A dictionary-coded column is only kept when the dictionary has at most one value per this many
+/// rows; a larger dictionary saves too little.
+const MIN_ROWS_PER_DICTIONARY_VALUE: usize = 8;
+/// The same for values that fit in a view (12 bytes), which are cheap to hash and compare.
+const MIN_ROWS_PER_SHORT_DICTIONARY_VALUE: usize = 32;
+
+/// Whether `num_rows` rows of a column chunk (those its filter keeps) are worth decoding as codes
+/// into a dictionary of `dict_len` values taking `dict_bytes` bytes (PLAIN-encoded, so with a
+/// 4-byte length each).
+fn dictionary_pays_off(num_rows: usize, dict_len: usize, dict_bytes: usize) -> bool {
+    let avg_len = dict_bytes.saturating_sub(4 * dict_len) / dict_len.max(1);
+    let min_rows_per_value = if avg_len <= View::MAX_INLINE_SIZE as usize {
+        MIN_ROWS_PER_SHORT_DICTIONARY_VALUE
+    } else {
+        MIN_ROWS_PER_DICTIONARY_VALUE
+    };
+    dict_len.saturating_mul(min_rows_per_value) <= num_rows
+}
+
+/// Copies out the values of `arr` if its rows use little of its buffers, as the decoder does for
+/// dictionary-encoded pages, so that a few rows don't keep a whole dictionary alive.
+fn compact_dictionary_values(arr: &Utf8ViewArray) -> Utf8ViewArray {
+    // Below this the copy is not worth it, as `gc` allocates at least one block.
+    const GC_MIN_BUFFER_LEN: usize = 32 * 1024;
+    if arr.total_buffer_len() < GC_MIN_BUFFER_LEN
+        || arr.total_bytes_len() >= arr.total_buffer_len() / 4
+    {
+        return arr.clone();
+    }
+    // Null rows' views hold a value (that of code 0); clear them so they are not copied.
+    let views = match arr.validity() {
+        Some(validity) => arr
+            .views()
+            .iter()
+            .zip(validity.iter())
+            .map(|(v, is_valid)| if is_valid { *v } else { View::default() })
+            .collect::<Vec<_>>()
+            .into(),
+        None => arr.views().clone(),
+    };
+    // SAFETY: the views are the array's own or empty.
+    unsafe {
+        Utf8ViewArray::new_unchecked_unknown_md(
+            arr.dtype().clone(),
+            views,
+            arr.data_buffers().clone(),
+            arr.validity().cloned(),
+            Some(arr.total_buffer_len()),
+        )
+    }
+    .gc()
+}
+
+/// Decodes a flat String column chunk as a [`DictionaryColumn`] if all its data pages are
+/// dictionary-encoded and the dictionary is small; returns `None` without decoding otherwise.
+///
+/// A predicate's result is only known after decoding: if the rows it keeps are too few for the
+/// codes to pay off, they are returned materialized instead.
+fn try_decode_dictionary_column(
+    arrow_field: &ArrowField,
+    columns_to_deserialize: &[(&ColumnChunkMetadata, Buffer<u8>)],
+    filter: Option<polars_parquet::read::Filter>,
+) -> PolarsResult<Option<(Column, Bitmap)>> {
+    let [(col_md, chunk)] = columns_to_deserialize else {
+        return Ok(None);
+    };
+    if !dictionary_codes_enabled()
+        || !matches!(
+            arrow_field.dtype,
+            ArrowDataType::Utf8View | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8
+        )
+    {
+        return Ok(None);
+    }
+
+    let is_predicate = matches!(filter, Some(Filter::Predicate(_)));
+    let Some((arrays, pred_true_mask)) = polars_io::prelude::_internal::to_dictionary_codes(
+        col_md,
+        chunk.clone(),
+        &arrow_field.name,
+        filter,
+        dictionary_pays_off,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    // Every chunk holds the same dictionary, as all pages are dictionary-encoded.
+    let values = arrays[0]
+        .values()
+        .as_any()
+        .downcast_ref::<Utf8ViewArray>()
+        .unwrap()
+        .clone();
+    // PLAIN-encoded, as `dictionary_pays_off` takes it.
+    let dict_len = values.len();
+    let dict_bytes = values.total_bytes_len() + 4 * dict_len;
+    let dict = SharedDictionary::new(values);
+    let codes = arrays
+        .into_iter()
+        .map(|a| a.keys().clone())
+        .collect::<Vec<_>>();
+    let codes = UInt32Chunked::from_chunk_iter(PlSmallStr::EMPTY, codes);
+    // SAFETY: the decoder checks every index against the dictionary's length.
+    let column = unsafe { DictionaryColumn::new_unchecked(arrow_field.name.clone(), dict, codes) };
+    if is_predicate && !dictionary_pays_off(column.len(), dict_len, dict_bytes) {
+        let s = column.take_materialized_series();
+        let ca = s.str().unwrap();
+        let ca = StringChunked::from_chunk_iter(
+            ca.name().clone(),
+            ca.downcast_iter().map(compact_dictionary_values),
+        );
+        return Ok(Some((ca.into_column(), pred_true_mask)));
+    }
+    Ok(Some((column.into_column(), pred_true_mask)))
 }
 
 /// Filters columns, in parallel depending number of rows / columns.
@@ -612,7 +759,6 @@ impl Pass {
             },
         };
         let projection = &self.projected_arrow_fields[field_idx];
-        let arrow_field = projection.arrow_field();
 
         if let Some((i, c)) = predicate_column
             && self.mask.is_none()
@@ -620,7 +766,7 @@ impl Pass {
             && let Some(filter) = &c.decode_filter
         {
             let (column, mask) = decode_column(
-                arrow_field,
+                projection,
                 &self.row_group_data,
                 Some(Filter::Predicate(filter.clone())),
                 self.num_rows,
@@ -629,7 +775,8 @@ impl Pass {
                 Some(v) => Column::new_scalar(column.name().clone(), v.clone(), mask.set_bits()),
                 None => column,
             };
-            let mut column = projection.apply_transform(column)?;
+            let mut column =
+                projection.apply_transform(column, self.row_group_data.row_group_idx)?;
             let mut mask = mask;
             if let Some(m) = dynamic_mask(c, &column)?
                 && m.unset_bits() > 0
@@ -647,11 +794,11 @@ impl Pass {
 
         let column = match &self.mask {
             Some(mask) => {
-                decode_column_prefiltered(arrow_field, &self.row_group_data, mask, self.num_rows)?
+                decode_column_prefiltered(projection, &self.row_group_data, mask, self.num_rows)?
             },
-            None => decode_column(arrow_field, &self.row_group_data, None, self.num_rows)?.0,
+            None => decode_column(projection, &self.row_group_data, None, self.num_rows)?.0,
         };
-        let column = projection.apply_transform(column)?;
+        let column = projection.apply_transform(column, self.row_group_data.row_group_idx)?;
         let predicate = evaluate(&column)?;
         Ok(Decoded {
             source,
@@ -977,15 +1124,13 @@ fn compose_masks(outer: &Bitmap, inner: &Bitmap) -> Bitmap {
 }
 
 fn decode_column_prefiltered(
-    arrow_field: &ArrowField,
+    projection: &ArrowFieldProjection,
     row_group_data: &RowGroupData,
     mask_bitmap: &Bitmap,
     expected_num_rows: usize,
 ) -> PolarsResult<Column> {
-    let Some(iter) = row_group_data
-        .row_group_metadata
-        .columns_under_root_iter(&arrow_field.name)
-    else {
+    let arrow_field = projection.decode_field(row_group_data.row_group_idx);
+    let Some(iter) = projected_column_chunks(projection, row_group_data) else {
         return Ok(Column::full_null(
             arrow_field.name.clone(),
             expected_num_rows,
@@ -1011,6 +1156,17 @@ fn decode_column_prefiltered(
 
     let deserialize_filter =
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));
+
+    if prefilter
+        && let Some((column, _)) = try_decode_dictionary_column(
+            arrow_field,
+            &columns_to_deserialize,
+            deserialize_filter.clone(),
+        )?
+    {
+        assert_eq!(column.len(), expected_num_rows);
+        return Ok(column);
+    }
 
     let (array, _) = polars_io::prelude::_internal::to_deserializer(
         columns_to_deserialize,

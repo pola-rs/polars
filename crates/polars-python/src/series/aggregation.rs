@@ -1,4 +1,3 @@
-use DataType::*;
 use polars::prelude::*;
 use pyo3::prelude::*;
 
@@ -48,11 +47,27 @@ impl PySeries {
     }
 
     fn arg_max(&self, py: Python) -> PyResult<Option<usize>> {
-        py.enter_polars_ok(|| self.series.read().arg_max())
+        py.enter_polars(|| {
+            let s = self.series.read();
+            polars_ensure!(
+                !s.dtype().is_object(),
+                InvalidOperation: "`arg_max` operation not supported for dtype `{}`",
+                s.dtype()
+            );
+            PolarsResult::Ok(s.arg_max())
+        })
     }
 
     fn arg_min(&self, py: Python) -> PyResult<Option<usize>> {
-        py.enter_polars_ok(|| self.series.read().arg_min())
+        py.enter_polars(|| {
+            let s = self.series.read();
+            polars_ensure!(
+                !s.dtype().is_object(),
+                InvalidOperation: "`arg_min` operation not supported for dtype `{}`",
+                s.dtype()
+            );
+            PolarsResult::Ok(s.arg_min())
+        })
     }
 
     fn min<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -64,29 +79,11 @@ impl PySeries {
     }
 
     fn mean<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let s = self.series.read();
-        match s.dtype() {
-            Boolean => scalar_to_py(
-                py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().mean_reduce()),
-                py,
-            ),
-            // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.mean_reduce()), py),
-            _ => Ok(s.mean().into_pyobject(py)?),
-        }
+        scalar_to_py(py.enter_polars(|| self.series.read().mean_reduce()), py)
     }
 
     fn median<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let s = self.series.read();
-        match s.dtype() {
-            Boolean => scalar_to_py(
-                py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().median_reduce()),
-                py,
-            ),
-            // For non-numeric output types we require median_reduce.
-            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.median_reduce()), py),
-            _ => Ok(s.median().into_pyobject(py)?),
-        }
+        scalar_to_py(py.enter_polars(|| self.series.read().median_reduce()), py)
     }
 
     fn product<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

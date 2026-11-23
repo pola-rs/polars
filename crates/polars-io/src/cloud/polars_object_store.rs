@@ -371,6 +371,7 @@ impl PolarsObjectStore {
                     Some(controller) => Some(controller.acquire(bytes_req).await),
                     None => None,
                 };
+                let t_start = Instant::now();
 
                 let controller_ref = controller.as_deref();
                 let (out, ttfb) = self
@@ -415,10 +416,12 @@ impl PolarsObjectStore {
                     .await?;
 
                 if let Some(controller) = &controller {
+                    let completion_time = Instant::now();
                     controller.record_io(IoSample {
                         n_bytes: out.len() as u64,
                         ttfb,
-                        completion_time: Instant::now(),
+                        ttlb: completion_time - t_start,
+                        completion_time,
                     });
                 }
 
@@ -729,6 +732,7 @@ impl PolarsObjectStore {
 
         let io_session = metrics.start_rx_session();
 
+        let t_start = Instant::now();
         let out = self
             .exec_with_rebuild_retry_on_err(|s| async move {
                 let t0 = Instant::now();
@@ -755,10 +759,12 @@ impl PolarsObjectStore {
 
                 if let Some(controller) = controller {
                     controller.record_arrived(bytes.len() as u64);
+                    let completion_time = Instant::now();
                     controller.record_io(IoSample {
                         n_bytes: bytes.len() as u64,
                         ttfb,
-                        completion_time: Instant::now(),
+                        ttlb: completion_time - t_start,
+                        completion_time,
                     });
                 }
 

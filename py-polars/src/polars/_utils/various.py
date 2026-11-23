@@ -618,7 +618,7 @@ def re_escape(s: str) -> str:
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
 
 
-# Don't rename or move. This is used by polars cloud
+# Don't rename or move. This is used by polars nanook
 def display_dot_graph(
     *,
     dot: str,

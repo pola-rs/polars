@@ -45,6 +45,7 @@ class _LazyModule(ModuleType):
         "pandas": "pd.",
         "pyarrow": "pa.",
         "polars_cloud": "pc.",
+        "polars_nanook": "pc.",
     }
 
     def __init__(
@@ -193,7 +194,11 @@ else:
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     polars_cloud, _POLARS_CLOUD_AVAILABLE = _lazy_import("polars_nanook")
     if not _POLARS_CLOUD_AVAILABLE:
-        polars_cloud, _POLARS_CLOUD_AVAILABLE = _lazy_import("polars_cloud")
+        # `polars_cloud` is the deprecated name of `polars_nanook`; use it only if it is
+        # installed, so that the missing-package errors name `polars_nanook`
+        _legacy_cloud, _LEGACY_CLOUD_AVAILABLE = _lazy_import("polars_cloud")
+        if _LEGACY_CLOUD_AVAILABLE:
+            polars_cloud, _POLARS_CLOUD_AVAILABLE = _legacy_cloud, True
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
