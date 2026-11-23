@@ -196,7 +196,10 @@ def _resolve_unknown(dtype: PolarsDataType, values: Sequence[Any]) -> PolarsData
 
 
 def result_frames(
-    cursor: Any, batch_size: int
+    cursor: Any,
+    batch_size: int,
+    *,
+    fetchmany: Callable[[int], Sequence[Any]] | None = None,
 ) -> tuple[pl.DataFrame, Iterator[pl.DataFrame], list[str]]:
     # BigQuery's DB-API description flattens REPEATED fields and drops nested fields
     # and decimal parameters. The cursor uses its RowIterator's schema to build that
@@ -222,9 +225,11 @@ def result_frames(
         if _has_unknown(dtype)
     ]
     nested_unknown = [entry for entry in unknown if entry[2] != pl.Unknown]
+    # SQLAlchemy owns any buffered rows and applies its own result processors.
+    read_rows = cursor.fetchmany if fetchmany is None else fetchmany
 
     def batches() -> Iterator[pl.DataFrame]:
-        while rows := cursor.fetchmany(batch_size):
+        while rows := read_rows(batch_size):
             data = (
                 [
                     tuple(
