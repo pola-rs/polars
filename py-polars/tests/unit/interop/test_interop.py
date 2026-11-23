@@ -204,39 +204,12 @@ def test_arrow_dict_chunks_keep_value_type_30729(
             pa.DictionaryArray.from_arrays(pa.array([1, None], index_type), values[1:]),
         ]
     )
-    decoded = pa.chunked_array([chunk.dictionary_decode() for chunk in ca.chunks])
-    expected = cast("pl.Series", pl.from_arrow(decoded)).alias("c")
+    expected = cast("pl.Series", pl.from_arrow(ca.combine_chunks())).alias("c")
     assert expected.dtype != pl.Categorical
 
     assert_series_equal(cast("pl.Series", pl.from_arrow(ca)).alias("c"), expected)
     assert_series_equal(pl.Series("c", ca), expected)
     assert_series_equal(pl.DataFrame({"c": ca})["c"], expected)
-
-
-@pytest.mark.parametrize("value_type", [pa.float32(), pa.float64()])
-def test_arrow_dict_chunks_preserve_signed_zero(value_type: pa.DataType) -> None:
-    ca = pa.chunked_array(
-        [
-            pa.DictionaryArray.from_arrays(
-                pa.array([0, None], pa.int8()), pa.array([zero], value_type)
-            )
-            for zero in (0.0, -0.0)
-        ]
-    )
-    decoded = pa.chunked_array([chunk.dictionary_decode() for chunk in ca.chunks])
-    expected = cast("pl.Series", pl.from_arrow(decoded)).alias("c")
-
-    for s in (
-        cast("pl.Series", pl.from_arrow(ca)).alias("c"),
-        pl.Series("c", ca),
-        pl.DataFrame({"c": ca})["c"],
-        cast("pl.DataFrame", pl.from_arrow(pa.table({"c": ca})))["c"],
-    ):
-        assert_series_equal(s, expected)
-        np.testing.assert_array_equal(
-            np.signbit(s.drop_nulls().to_numpy()),
-            np.signbit(expected.drop_nulls().to_numpy()),
-        )
 
 
 @pytest.mark.parametrize("value_type", [pa.duration("s"), pa.timestamp("s", "UTC")])

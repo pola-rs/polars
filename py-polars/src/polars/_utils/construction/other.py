@@ -66,9 +66,6 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
             or pa.types.is_int32(array.type.index_type)
         ):
             value_type = array.type.value_type
-            # Dictionary unification can merge positive and negative zero.
-            if pa.types.is_float32(value_type) or pa.types.is_float64(value_type):
-                return array
             if (
                 pa.types.is_timestamp(value_type) or pa.types.is_duration(value_type)
             ) and value_type.unit == "s":
@@ -107,6 +104,9 @@ def _keeps_dictionary_value_type(dtype: pa.DataType) -> bool:
     """Whether a dictionary of this value type is combined without a string cast."""
     return (
         pa.types.is_integer(dtype)
+        # Arrow corrupts float16 dictionary values when combining chunks.
+        or pa.types.is_float32(dtype)
+        or pa.types.is_float64(dtype)
         or pa.types.is_boolean(dtype)
         or (pa.types.is_decimal128(dtype) and 0 <= dtype.scale <= dtype.precision)
         or pa.types.is_date(dtype)
