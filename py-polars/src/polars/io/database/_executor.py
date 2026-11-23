@@ -185,16 +185,18 @@ def _convert_trino_value(value: Any, row_type: type[tuple[Any, ...]]) -> Any:
     if isinstance(value, row_type):
         names = _trino_field_names(value)
         counts = Counter(names)
-        reserved = {name for name, count in counts.items() if count == 1}
         fields: dict[str, Any] = {}
         fallback = 0
         for idx, (name, field_value) in enumerate(zip(names, value, strict=True)):
-            if name is None or counts[name] > 1:
+            if name is not None and counts[name] == 1:
+                field_name = name
+            else:
                 fallback = max(fallback, idx)
-                while (name := f"field_{fallback}") in reserved:
+                # Keep candidate names reserved for unique fields later in the row.
+                while counts[field_name := f"field_{fallback}"] == 1:
                     fallback += 1
                 fallback += 1
-            fields[name] = _convert_trino_value(field_value, row_type)
+            fields[field_name] = _convert_trino_value(field_value, row_type)
         return fields
     elif isinstance(value, list):
         return [_convert_trino_value(v, row_type) for v in value]
