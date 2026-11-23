@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use polars_arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
+use polars_arrow::array::{Array, FixedSizeListArray, LargeUnionArray, ListArray, StructArray};
 use polars_arrow::datatypes::ArrowDataType;
 
 /// The most entries an arrow MAP array, or values of one variant a dense arrow Union, can hold,
@@ -11,7 +11,9 @@ const MAX_I32_SPAN: u64 = i32::MAX as u64;
 pub(crate) fn contains_i32_offsets(dtype: &ArrowDataType) -> bool {
     match dtype {
         ArrowDataType::Map(_, _) => true,
-        ArrowDataType::Union(u) => u.mode.is_dense(),
+        ArrowDataType::Union(u) => {
+            u.mode.is_dense() || u.fields.iter().any(|f| contains_i32_offsets(f.dtype()))
+        },
         ArrowDataType::LargeList(field) | ArrowDataType::FixedSizeList(field, _) => {
             contains_i32_offsets(field.dtype())
         },
@@ -26,10 +28,9 @@ pub(crate) fn contains_i32_offsets(dtype: &ArrowDataType) -> bool {
 ///
 /// A span bounds what export keeps, which can be less: a MAP drops the entries of its null rows
 /// (`normalize_map_entries`). An array that `dtype` doesn't describe spans nothing, which leaves
-/// the mismatch for conversion to report. A Union's rows bound the values of each of its variants.
-///
-/// TODO: follow the arrays in a Union's variants; a MAP there that overflows now fails to export
-/// instead of being split. Their spans need a scan of the Union's types and offsets.
+/// the mismatch for conversion to report. A Union's rows bound the values of each of its variants,
+/// and its variants are followed only where their whole array could overflow, as that scans the
+/// Union's types.
 fn max_i32_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowDataType) -> u64 {
     match dtype {
         ArrowDataType::Map(entries, _) | ArrowDataType::LargeList(entries) => {
@@ -71,7 +72,33 @@ fn max_i32_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowDataType) ->
                 .unwrap_or(0)
         },
         ArrowDataType::Extension(ext) => max_i32_span(array, rows, &ext.inner),
-        ArrowDataType::Union(u) if u.mode.is_dense() => rows.len() as u64,
+        ArrowDataType::Union(u) if u.mode.is_dense() => {
+            let own = rows.len() as u64;
+            let Some(arr) = array.as_any().downcast_ref::<LargeUnionArray>() else {
+                return own;
+            };
+            let types = &arr.types()[rows.clone()];
+            let offsets = &arr.offsets()[rows];
+            arr.fields()
+                .iter()
+                .zip(&u.fields)
+                .enumerate()
+                .filter(|(_, (child, f))| {
+                    contains_i32_offsets(f.dtype())
+                        && !i32_spans_fit(child.as_ref(), f.dtype(), 0..child.len(), 1)
+                })
+                .map(|(t, (child, f))| {
+                    // A child's offsets increase, so its rows here span it from the first to the
+                    // last, the range that export slices or compacts it to.
+                    let Some(first) = types.iter().position(|&x| x as usize == t) else {
+                        return 0;
+                    };
+                    let last = types.iter().rposition(|&x| x as usize == t).unwrap();
+                    let child_rows = offsets[first] as usize..offsets[last] as usize + 1;
+                    max_i32_span(child.as_ref(), child_rows, f.dtype())
+                })
+                .fold(own, u64::max)
+        },
         _ => 0,
     }
 }
@@ -162,6 +189,77 @@ mod tests {
                 &map_dtype(),
             )
         }
+    }
+
+    /// A `Union({"m": Map(Boolean, Null), "i": Int32})` of one chunk whose row `r` holds
+    /// variant `types[r]`; the `m` rows take the maps of `lens` in order.
+    #[cfg(feature = "dtype-union")]
+    fn union_of_maps(lens: &[i64], types: &[i8], validity: Option<Bitmap>) -> Series {
+        use polars_arrow::array::LargeUnionArray;
+
+        let fields = vec![
+            Field::new("m".into(), map_dtype()),
+            Field::new("i".into(), DataType::Int32),
+        ];
+        let dtype = DataType::Union(UnionFields::try_new(fields).unwrap());
+        let mut next = [0i64; 2];
+        let offsets: Vec<i64> = types
+            .iter()
+            .map(|&t| {
+                next[t as usize] += 1;
+                next[t as usize] - 1
+            })
+            .collect();
+        let ints = Int32Array::from_vec(vec![0; next[1] as usize]).boxed();
+        let arr = LargeUnionArray::new(
+            dtype.to_physical_arrow(CompatLevel::newest()),
+            types.to_vec().into(),
+            offsets.into(),
+            vec![map_chunk(lens, None), ints],
+            validity,
+        );
+        unsafe { Series::from_chunks_and_dtype_unchecked("u".into(), vec![arr.boxed()], &dtype) }
+    }
+
+    /// The rows of each piece, and the most entries of a piece's MAP child.
+    #[cfg(feature = "dtype-union")]
+    fn union_pieces(s: &Series) -> Vec<(usize, i32)> {
+        use polars_arrow::array::UnionArray;
+
+        s.try_to_arrow_split(0, CompatLevel::newest())
+            .map(|a| {
+                let a = a.unwrap();
+                let u: &UnionArray = a.as_any().downcast_ref().unwrap();
+                let m: &MapArray = u.fields()[0].as_any().downcast_ref().unwrap();
+                (u.len(), *m.offsets().last())
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "dtype-union")]
+    #[test]
+    fn a_union_is_split_on_the_entries_of_its_maps() {
+        let half = i32::MAX as i64 / 2 + 1;
+        // The `i` row between the maps must not make their child ranges overlap.
+        let s = union_of_maps(&[half, half], &[0, 1, 0], None);
+
+        assert_eq!(union_pieces(&s), [(2, half as i32), (1, half as i32)]);
+        let df = s.into_frame();
+        let batches: Vec<_> = df
+            .try_iter_chunks(CompatLevel::newest(), false)
+            .map(|b| b.unwrap().len())
+            .collect();
+        assert_eq!(batches, [2, 1]);
+    }
+
+    /// A union masks the child values of its null rows, and a MAP drops the entries of null rows.
+    #[cfg(feature = "dtype-union")]
+    #[test]
+    fn a_null_union_row_with_too_many_map_entries_exports() {
+        let lens = [1, i32::MAX as i64 + 1];
+        let s = union_of_maps(&lens, &[0, 0], Some(Bitmap::from([true, false])));
+
+        assert_eq!(union_pieces(&s), [(1, 1), (1, 0)]);
     }
 
     /// Python can't build a MAP row with more than `i32::MAX` entries cheaply: arrow import caps
