@@ -137,7 +137,7 @@ pub(crate) fn with_copy_options(message: String) -> String {
     };
     let found = head[start..].split_whitespace().next().unwrap_or_default();
     let hint = match found.to_ascii_uppercase().as_str() {
-        "SEPARATOR" | "SEP" | "DELIM" | "DELIMETER" => " (DELIMITER sets the separator)",
+        "SEPARATOR" | "SEP" | "DELIM" => " (DELIMITER sets the separator)",
         "QUOTE_CHAR" | "QUOTECHAR" | "QUOTE_STYLE" => " (QUOTE sets the quote character)",
         "NULLSTR" | "NULL_VALUE" | "NULL_VALUES" | "NULLVALUE" => " (NULL sets the text of a NULL)",
         "HAS_HEADER" | "HEADERS" => " (HEADER says whether there is a header row)",
