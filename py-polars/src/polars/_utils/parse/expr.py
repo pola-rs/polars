@@ -39,6 +39,17 @@ def parse_quantile_fraction(quantile: Any) -> pl.Series:
     return pl.Series([quantile], strict=False)
 
 
+def parse_quantile_values(quantile: Any, *, allow_list: bool = True) -> list[float]:
+    """
+    Check a Python `quantile` fraction and return its values.
+
+    The fraction gets the checks that polars runs on any fraction. Unless `allow_list`
+    is set, it must be one number.
+    """
+    fraction = parse_quantile_fraction(quantile)
+    return plr.extract_quantiles(fraction._s, allow_list)
+
+
 def parse_quantile_into_expression(quantile: Any) -> PyExpr:
     """
     Parse a `quantile` fraction into an expression.

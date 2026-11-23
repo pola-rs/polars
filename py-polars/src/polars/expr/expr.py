@@ -38,6 +38,7 @@ from polars._utils.parse import (
     parse_into_list_of_expressions,
     parse_predicates_constraints_into_expression,
     parse_quantile_into_expression,
+    parse_quantile_values,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -8925,6 +8926,7 @@ class Expr(metaclass=_Meta):
         """  # noqa: W505
         window_size = _prepare_rolling_by_window_args(window_size)
         by_pyexpr = parse_into_expression(by)
+        quantile = parse_quantile_values(quantile, allow_list=False)[0]
         return wrap_expr(
             self._pyexpr.rolling_quantile_by(
                 by_pyexpr,
@@ -9971,6 +9973,7 @@ class Expr(metaclass=_Meta):
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
         """  # noqa: W505
+        quantile = parse_quantile_values(quantile, allow_list=False)[0]
         return wrap_expr(
             self._pyexpr.rolling_quantile(
                 quantile,
