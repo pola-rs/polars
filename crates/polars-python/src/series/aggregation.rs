@@ -93,31 +93,19 @@ impl PySeries {
     fn quantile<'py>(
         &self,
         py: Python<'py>,
-        quantile: Bound<'py, PyAny>,
+        quantile: PySeries,
         interpolation: Wrap<QuantileMethod>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        // Accept either a single float or a list of floats
-        if let Ok(q_float) = quantile.extract::<f64>() {
-            // Single quantile: use quantile_reduce
-            scalar_to_py(
-                py.enter_polars(|| self.series.read().quantile_reduce(q_float, interpolation.0)),
-                py,
-            )
-        } else if let Ok(q_list) = quantile.extract::<Vec<f64>>() {
-            // Multiple quantiles: use quantiles_reduce
-            scalar_to_py(
-                py.enter_polars(|| {
-                    self.series
-                        .read()
-                        .quantiles_reduce(&q_list, interpolation.0)
-                }),
-                py,
-            )
-        } else {
-            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                "quantile must be a float or a list of floats",
-            ))
-        }
+        let fraction = quantile.series.into_inner();
+        let out = py.enter_polars(|| {
+            let quantiles = extract_quantiles(&fraction, QuantileFractionDtypes::NumberOrList)?;
+            let series = self.series.read();
+            match fraction.dtype() {
+                DataType::List(_) => series.quantiles_reduce(&quantiles, interpolation.0),
+                _ => series.quantile_reduce(quantiles[0], interpolation.0),
+            }
+        });
+        scalar_to_py(out, py)
     }
 
     fn std<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {

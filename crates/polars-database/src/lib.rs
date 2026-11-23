@@ -22,8 +22,9 @@ pub const PACKAGE_NAME: &str = "polars_database";
 /// The version of the serialized plan formats of [`resolver`] and [`reader`]: bincode of
 /// the structs, so positional. Bump it whenever a serialized struct (or one inside it,
 /// [`database::DatabaseScanOptions`] and the like) changes, so that a plan made by another
-/// version fails with a clear error instead of being misread. One decimal digit.
-const SERDE_VERSION: u8 = 4;
+/// version fails with a clear error instead of being misread. Version 6 also requires
+/// validation markers for all unobserved BigQuery JSON leaves. One decimal digit.
+const SERDE_VERSION: u8 = 6;
 const _: () = assert!(SERDE_VERSION < 10);
 
 /// The prefix of a serialized plan of `kind` (`PLDBRS` or `PLDBRB`): the kind and the
@@ -73,11 +74,13 @@ mod tests {
             bytes.extend_from_slice(b"payload");
             assert_eq!(strip_serde_header(&bytes, kind).unwrap(), b"payload");
 
-            // the first, unversioned format
-            let old = [kind.as_bytes(), b"1payload"].concat();
-            let err = strip_serde_header(&old, kind).unwrap_err().to_string();
-            assert!(err.contains("incompatible version"), "{err}");
-            assert!(err.contains("plan format 1"), "{err}");
+            // The first format was unversioned. Also check the format immediately before this one.
+            for version in [1, SERDE_VERSION - 1] {
+                let old = [kind.as_bytes(), &[b'0' + version], b"payload"].concat();
+                let err = strip_serde_header(&old, kind).unwrap_err().to_string();
+                assert!(err.contains("incompatible version"), "{err}");
+                assert!(err.contains(&format!("plan format {version}")), "{err}");
+            }
 
             // another kind of plan, or foreign bytes
             let other = if kind == "PLDBRS" { "PLDBRB" } else { "PLDBRS" };

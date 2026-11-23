@@ -170,8 +170,6 @@ pub fn qcut(
     allow_duplicates: bool,
     include_breaks: bool,
 ) -> PolarsResult<Series> {
-    polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
-
     let s = s.cast(&DataType::Float64)?;
     let Some(mut qbreaks) = quantiles_without_nan(s.f64()?, &probs, QuantileMethod::Linear)? else {
         // No usable values (all null/NaN/empty): no breakpoints. With

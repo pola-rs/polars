@@ -52,40 +52,76 @@ pub fn quantile_indices(
     }
 }
 
-/// Extracts the quantiles of the `quantile` expression input, a single quantile or a list of them.
-pub fn extract_quantiles(quantile: &Series) -> PolarsResult<Vec<f64>> {
-    polars_ensure!(!quantile.is_empty(), ComputeError:
+/// The dtypes a `quantile` fraction may have, which depend on where it is given.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuantileFractionDtypes {
+    /// One number, as in a group-by, where each group takes one fraction.
+    Number,
+    /// One number or a list of numbers.
+    NumberOrList,
+}
+
+/// Returns an error if a `quantile` fraction of `dtype` isn't one of `allowed`. The Null dtype
+/// passes, and `check_quantiles` then rejects the null value. An unresolved dtype passes too.
+pub fn check_quantile_dtype(dtype: &DataType, allowed: QuantileFractionDtypes) -> PolarsResult<()> {
+    use QuantileFractionDtypes as A;
+    let inner = match dtype {
+        DataType::List(inner) if allowed != A::Number => inner.as_ref(),
+        dtype => dtype,
+    };
+    let ok = inner.is_numeric()
+        || inner.is_null()
+        || matches!(inner, DataType::Unknown(UnknownKind::Any));
+    polars_ensure!(
+        ok,
+        SchemaMismatch: "expected expression of dtype 'numeric' for quantile, got '{}'", dtype
+    );
+    Ok(())
+}
+
+/// Checks the fraction given to `quantile` and returns its values. `fraction` holds one row: a
+/// number or a list of numbers. `allowed` gives the dtypes it may have.
+pub fn extract_quantiles(
+    fraction: &Series,
+    allowed: QuantileFractionDtypes,
+) -> PolarsResult<Vec<f64>> {
+    check_quantile_dtype(fraction.dtype(), allowed)?;
+    polars_ensure!(!fraction.is_empty(), ComputeError:
         "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
         got an empty input"
     );
-    polars_ensure!(quantile.len() == 1, ComputeError:
+    polars_ensure!(fraction.len() == 1, ComputeError:
         "polars does not support varying quantiles yet, \
         make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
-    let quantiles = match quantile.dtype() {
-        DataType::List(_) => {
-            let inner = quantile.list()?.get_as_series(0).ok_or_else(
-                || polars_err!(ComputeError: "quantile expression contains null values"),
-            )?;
-            polars_ensure!(!inner.has_nulls(), ComputeError: "quantile expression contains null values");
-            inner
-                .cast(&DataType::Float64)?
-                .f64()?
-                .into_no_null_iter()
-                .collect()
-        },
-        _ => vec![quantile.get(0)?.try_extract()?],
+    // A null list of fractions counts as one null fraction.
+    let values = match fraction.dtype() {
+        DataType::List(_) => fraction.explode(ExplodeOptions {
+            empty_as_null: false,
+            keep_nulls: true,
+        })?,
+        _ => fraction.clone(),
     };
-    check_quantiles(&quantiles)?;
-    Ok(quantiles)
+    let values = values.strict_cast(&DataType::Float64)?;
+    let values = values.f64()?;
+    check_quantiles(values.iter())?;
+    Ok(values.into_no_null_iter().collect())
 }
 
-fn check_quantiles(quantiles: &[f64]) -> PolarsResult<()> {
-    for &q in quantiles {
-        polars_ensure!(
-            (0.0..=1.0).contains(&q),
-            ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
-        );
+/// Returns an error if a quantile is null, NaN or outside `0.0..=1.0`.
+pub fn check_quantiles(
+    quantiles: impl IntoIterator<Item = impl Into<Option<f64>>>,
+) -> PolarsResult<()> {
+    for q in quantiles {
+        match q.into() {
+            Some(q) => polars_ensure!(
+                (0.0..=1.0).contains(&q),
+                ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
+            ),
+            None => polars_bail!(
+                ComputeError: "`quantile` should be between 0.0 and 1.0, got null"
+            ),
+        }
     }
     Ok(())
 }
@@ -274,7 +310,7 @@ fn ca_quantile<T: PolarsNumericType>(
     quantile: f64,
     method: QuantileMethod,
 ) -> PolarsResult<Option<f64>> {
-    check_quantiles(&[quantile])?;
+    check_quantiles([quantile])?;
     let n_nonnull = ca.len() - ca.null_count();
     Ok(quantile_with(n_nonnull, quantile, method, |ranks, out| {
         order_statistics(ca, ranks, out)
@@ -287,7 +323,7 @@ fn ca_quantiles<T: PolarsNumericType>(
     quantiles: &[f64],
     method: QuantileMethod,
 ) -> PolarsResult<Vec<Option<f64>>> {
-    check_quantiles(quantiles)?;
+    check_quantiles(quantiles.iter().copied())?;
     let n_nonnull = ca.len() - ca.null_count();
     Ok(quantiles_with(
         n_nonnull,
@@ -304,7 +340,7 @@ pub fn quantiles_without_nan(
     quantiles: &[f64],
     method: QuantileMethod,
 ) -> PolarsResult<Option<Vec<f64>>> {
-    check_quantiles(quantiles)?;
+    check_quantiles(quantiles.iter().copied())?;
     let n_nan: usize = ca
         .downcast_iter()
         .map(|arr| arr.non_null_values_iter().filter(|v| v.is_nan()).count())

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, DuplicateError
+from polars.exceptions import ComputeError, DuplicateError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 inf = float("inf")
@@ -168,6 +170,23 @@ def test_qcut_full_nan() -> None:
 
     expected = pl.Series("a", [None, None], dtype=pl.Categorical)
     assert_series_equal(result, expected, categorical_as_str=True)
+
+
+@pytest.mark.parametrize(
+    ("quantiles", "error", "match"),
+    [
+        *[
+            (q, ComputeError, r"between 0\.0 and 1\.0")
+            for q in [[1.5], [inf], [float("nan")], [None]]
+        ],
+        ([True], SchemaError, "dtype 'numeric'"),
+    ],
+)
+def test_qcut_invalid_fraction(
+    quantiles: Any, error: type[Exception], match: str
+) -> None:
+    with pytest.raises(error, match=match):
+        pl.Series([1.0, 2.0, 3.0]).qcut(quantiles)
 
 
 def test_qcut_inf_breakpoint_raises() -> None:
