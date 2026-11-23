@@ -1,5 +1,7 @@
 use std::borrow::Cow;
+use std::ops::Range;
 
+use polars_arrow::array::builder::{ShareStrategy, make_builder};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::filter::filter_with_bitmap;
@@ -524,34 +526,75 @@ fn windowed_entries_array(arr: &LargeListArray) -> ArrayRef {
     }
 }
 
-/// Mask the windowed entries by row validity; `None` if no null row spans an entry.
+/// The runs of the windowed entries that no null row spans, in order; `None` if no null row spans
+/// an entry.
 ///
 /// Scans validity runs once, allocating only once a null row is found to span entries.
-fn live_entry_mask(arr: &LargeListArray) -> Option<Bitmap> {
+fn live_entry_runs(arr: &LargeListArray) -> Option<Vec<Range<usize>>> {
     let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
     let offsets = arr.offsets();
     let first = *offsets.first() as usize;
     let n_entries = offsets.range() as usize;
 
-    let mut mask: Option<BitmapBuilder> = None;
-    let mut runs = validity.iter();
+    let mut runs: Option<Vec<Range<usize>>> = None;
+    // The first entry after the last null-row window.
+    let mut live = 0;
+    let mut rows = validity.iter();
     let mut row = 0;
-    while runs.num_remaining() > 0 {
-        row += runs.take_leading_ones();
-        let end = row + runs.take_leading_zeros();
-        let (start, stop) = (offsets[row] as usize, offsets[end] as usize);
+    while rows.num_remaining() > 0 {
+        row += rows.take_leading_ones();
+        let end = row + rows.take_leading_zeros();
+        let (start, stop) = (offsets[row] as usize - first, offsets[end] as usize - first);
         if stop > start {
-            // Fill the live run before this null-row window in bulk.
-            let mask = mask.get_or_insert_with(|| BitmapBuilder::with_capacity(n_entries));
-            mask.extend_constant(start - first - mask.len(), true);
-            mask.extend_constant(stop - start, false);
+            let runs = runs.get_or_insert_with(Vec::new);
+            if start > live {
+                runs.push(live..start);
+            }
+            live = stop;
         }
         row = end;
     }
 
-    let mut mask = mask?;
-    mask.extend_constant(n_entries - mask.len(), true);
-    Some(mask.freeze())
+    let mut runs = runs?;
+    if n_entries > live {
+        runs.push(live..n_entries);
+    }
+    Some(runs)
+}
+
+/// The shortest average run worth copying run by run instead of filtering with a mask, which
+/// costs a bit per entry.
+const MIN_COPIED_RUN_LEN: usize = 64;
+
+/// The entries of `runs` of `entries`: a slice for one run, copied run by run when the runs are
+/// long, and filtered with a mask otherwise.
+fn take_entry_runs(entries: &ArrayRef, runs: &[Range<usize>]) -> ArrayRef {
+    match runs {
+        [] => entries.sliced(0, 0),
+        [run] => entries.sliced(run.start, run.len()),
+        _ if runs.len() * MIN_COPIED_RUN_LEN <= entries.len() => {
+            let mut builder = make_builder(entries.dtype());
+            builder.reserve(runs.iter().map(|r| r.len()).sum());
+            for run in runs {
+                builder.subslice_extend(
+                    entries.as_ref(),
+                    run.start,
+                    run.len(),
+                    ShareStrategy::Always,
+                );
+            }
+            builder.freeze_reset()
+        },
+        _ => {
+            let mut mask = BitmapBuilder::with_capacity(entries.len());
+            for run in runs {
+                mask.extend_constant(run.start - mask.len(), false);
+                mask.extend_constant(run.len(), true);
+            }
+            mask.extend_constant(entries.len() - mask.len(), false);
+            filter_with_bitmap(entries.as_ref(), &mask.freeze())
+        },
+    }
 }
 
 /// One chunk's entries of the field at `i`, restricted to the entries of live rows.
@@ -564,8 +607,8 @@ fn live_entry_field_chunk(arr: &LargeListArray, i: usize) -> ArrayRef {
         .downcast_ref::<StructArray>()
         .expect("map entries are a struct");
     let field = entries.values()[i].clone();
-    match live_entry_mask(arr) {
-        Some(mask) => filter_with_bitmap(field.as_ref(), &mask),
+    match live_entry_runs(arr) {
+        Some(runs) => take_entry_runs(&field, &runs),
         None => field,
     }
 }
@@ -599,9 +642,8 @@ fn live_lengths(arr: &LargeListArray) -> impl Iterator<Item = usize> + '_ {
 
 /// Filter out entries under null rows and rebuild offsets; `None` if unchanged.
 pub(crate) fn compact_null_rows_chunk(arr: &LargeListArray) -> Option<LargeListArray> {
-    let mask = live_entry_mask(arr)?;
-    let entries = windowed_entries_array(arr);
-    let entries = filter_with_bitmap(entries.as_ref(), &mask);
+    let runs = live_entry_runs(arr)?;
+    let entries = take_entry_runs(&windowed_entries_array(arr), &runs);
     let validity = arr.validity().expect("a masked chunk has null rows");
 
     Some(LargeListArray::new(
