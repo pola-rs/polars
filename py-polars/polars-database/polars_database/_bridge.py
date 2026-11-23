@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import copy
 import functools
 import importlib.util
 import inspect
@@ -22,6 +23,7 @@ import time
 import weakref
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _dist_version
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit
 
@@ -43,6 +45,7 @@ _MAX_FETCH_SIZE = 2**31 - 1
 # result (at least a pointer a row and column).
 _MAX_ORACLE_FETCH_SIZE = 2**20
 _ORACLE_MODULES = frozenset({"oracledb", "cx_Oracle"})
+_BIGQUERY_MODULE = "google.cloud.bigquery"
 
 # Python package (distribution) names, for version lookups.
 _DISTRIBUTIONS = {
@@ -50,7 +53,7 @@ _DISTRIBUTIONS = {
     "psycopg2": "psycopg2-binary",
     "mysql.connector": "mysql-connector-python",
     "snowflake.connector": "snowflake-connector-python",
-    "google.cloud.bigquery": "google-cloud-bigquery",
+    _BIGQUERY_MODULE: "google-cloud-bigquery",
     "databricks.sql": "databricks-sql-connector",
     "clickhouse_connect": "clickhouse-connect",
     "clickhouse_driver": "clickhouse-driver",
@@ -120,7 +123,10 @@ def _module_of(obj: Any) -> str:
 
 
 def _top_module(cls: type) -> str:
-    module = (getattr(cls, "__module__", None) or "builtins").split(".", 1)[0]
+    module = getattr(cls, "__module__", None) or "builtins"
+    if module == _BIGQUERY_MODULE or module.startswith(f"{_BIGQUERY_MODULE}."):
+        return _BIGQUERY_MODULE
+    module = module.split(".", 1)[0]
     # compiled driver modules can have a leading underscore (eg: "_duckdb")
     public = module.lstrip("_")
     return public if public != module and _has_module(public) else module
@@ -147,7 +153,7 @@ _DRIVER_MODULES = frozenset(
         "pyodbc",
         "snowflake",
         "databricks",
-        "google",
+        _BIGQUERY_MODULE,
         "trino",
         "redshift_connector",
     }
@@ -782,6 +788,108 @@ def _raise_unmapped(module: str, names: list[str]) -> None:
             "or pin another driver with driver=..."
         )
         raise ValueError(msg)
+
+
+def _bigquery_uri(uri: str) -> tuple[str | None, str | None, dict[str, str]]:
+    """Project and dataset for drivers without native BigQuery URI support."""
+    parsed = urlsplit(_strip_driver(uri))
+    path = parsed.path.removeprefix("/")
+    if parsed.netloc:
+        project, dataset = parsed.netloc, path
+    else:
+        project, _, dataset = path.partition("/")
+    project, dataset = unquote(project), unquote(dataset)
+    if (
+        parsed.scheme != "bigquery"
+        or "://" not in uri
+        or "#" in uri
+        or (not project and parsed.path not in ("", "/"))
+        or (project and not re.fullmatch(r"[A-Za-z0-9_-]+", project))
+        or (dataset and not re.fullmatch(r"[A-Za-z0-9_]+", dataset))
+    ):
+        msg = "expected bigquery://project[/dataset] or bigquery:///project[/dataset]"
+        raise ValueError(msg)
+    params: dict[str, str] = {}
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        key = key.lower()
+        if key in params:
+            msg = "duplicate BigQuery URI parameter"
+            raise ValueError(msg)
+        params[key] = value
+    query_dataset = params.pop("datasetid", None)
+    if query_dataset is not None:
+        if dataset or not re.fullmatch(r"[A-Za-z0-9_]+", query_dataset):
+            msg = "BigQuery URI needs a single valid dataset name"
+            raise ValueError(msg)
+        dataset = query_dataset
+    return project or None, dataset or None, params
+
+
+def _connect_bigquery(
+    uri: str, options: dict[str, Any]
+) -> tuple[Any, Callable[[], None] | None]:
+    project, dataset, params = _bigquery_uri(uri)
+    location = params.pop("location", None)
+    prefer_storage = params.pop("prefer_bqstorage_client", None)
+    _raise_unmapped(_BIGQUERY_MODULE, list(params))
+    dbapi_kw = dict(options)
+    if prefer_storage is not None:
+        dbapi_kw.setdefault(
+            "prefer_bqstorage_client",
+            _convert(
+                _BIGQUERY_MODULE, "prefer_bqstorage_client", prefer_storage, _bool
+            ),
+        )
+    client_kw = _drop_none(project=project, location=location)
+    for key in (
+        "project",
+        "location",
+        "credentials",
+        "client_options",
+        "client_info",
+        "default_query_job_config",
+        "default_load_job_config",
+        "default_job_creation_mode",
+    ):
+        if key in dbapi_kw:
+            client_kw[key] = dbapi_kw.pop(key)
+    if dbapi_kw.get("client") is not None and (client_kw or dataset):
+        msg = "BigQuery client cannot be combined with URI project, dataset or client options"
+        raise ValueError(msg)
+
+    dbapi = importlib.import_module(f"{_BIGQUERY_MODULE}.dbapi")
+    if not client_kw and dataset is None:
+        return dbapi.connect(**dbapi_kw), None
+    bigquery = importlib.import_module(_BIGQUERY_MODULE)
+    if dataset is not None:
+        if not (project := client_kw.get("project")):
+            msg = "a BigQuery URI dataset requires a project"
+            raise ValueError(msg)
+        default_dataset = f"{project}.{dataset}"
+        config = client_kw.get("default_query_job_config")
+        if config is None:
+            config = bigquery.QueryJobConfig(default_dataset=default_dataset)
+        elif config.default_dataset is None:
+            config = copy.deepcopy(config)
+            config.default_dataset = default_dataset
+        elif str(config.default_dataset) != default_dataset:
+            msg = "BigQuery URI dataset contradicts default_query_job_config.default_dataset"
+            raise ValueError(msg)
+        client_kw["default_query_job_config"] = config
+    client = bigquery.Client(**client_kw)
+    try:
+        conn = dbapi.connect(**{**dbapi_kw, "client": client})
+    except BaseException:
+        client.close()
+        raise
+
+    def close() -> None:
+        try:
+            conn.close()
+        finally:
+            client.close()
+
+    return conn, close
 
 
 def _tls_context(
@@ -2745,6 +2853,7 @@ class _Session:
         )
         # the last statement's result columns that are a `TIMETZ` (offset dropped)
         self.timetz_columns: list[str] = []
+        self.bigquery_text_columns: list[str] = []
         # a live MySQL driver's session reads a TIMESTAMP in its own time zone, which
         # `execute` converts to UTC (a SQLAlchemy Connection is its driver's connection)
         self.mysql_converts = not owned and _module_of(_cancel_target(conn)) in (
@@ -2784,6 +2893,7 @@ class _Session:
         )
         state = self._state
         self.timetz_columns = []
+        self.bigquery_text_columns = []
         entered = False
         cursor = None
         cx_cursor: Any = None
@@ -2954,40 +3064,50 @@ class _Session:
                     # psycopg2's named cursors describe the result only after a fetch;
                     # `FETCH FORWARD 0` returns no row
                     cursor.fetchmany(0)
-                frames = _object_columns_as_text(
-                    _no_panics(
-                        cx.to_polars(  # type: ignore[arg-type]
-                            iter_batches=True,
-                            batch_size=batch_size,
-                            # every row types a batch: a column whose first rows are
-                            # NULL would fail on its first value otherwise
-                            infer_schema_length=None,
+                if _module_of(cx.result) == "google.cloud.bigquery":
+                    from polars_database._bigquery import result_frames
+
+                    empty_frame, frames, self.bigquery_text_columns = result_frames(
+                        cx.result, batch_size
+                    )
+                    frames = _object_columns_as_text(_no_panics(frames))
+                else:
+                    frames = _object_columns_as_text(
+                        _no_panics(
+                            cx.to_polars(  # type: ignore[arg-type]
+                                iter_batches=True,
+                                batch_size=batch_size,
+                                # every row types a batch: a column whose first rows are
+                                # NULL would fail on its first value otherwise
+                                infer_schema_length=None,
+                            )
                         )
                     )
-                )
-                # A live MySQL session reads a TIMESTAMP in its own time zone, as naive
-                # wall-clock time: the instants (UTC), as the table source reads them
-                self.timetz_columns = _time_with_zone_columns(cx.result)
-                timestamps = _mysql_timestamp_columns(cx.result) if mysql_live else []
-                if timestamps:
-                    if live_zone is None:
-                        msg = (
-                            f"the TIMESTAMP column(s) {timestamps} are read in this "
-                            "connection's time zone, which can't be told exactly (the "
-                            "server's own zone, or an abbreviation): run SET time_zone "
-                            "= '+00:00' on the connection first, or give an IANA name "
-                            "or an offset"
-                        )
-                        raise RuntimeError(msg)
-                    frames = _mysql_timestamps_to_utc(frames, timestamps, live_zone)
-                # some drivers yield no batch for an empty result, and close the
-                # cursor when done: take the column names first
-                empty_frame = _empty_frame(
-                    cx.result, utc=self.owned or bool(timestamps)
-                )
-                if _module_of(cx.result) == "trino":
-                    # a Trino batch types a column of NULLs only as `Null`
-                    frames = _cast_null_columns(frames, empty_frame.schema)
+                    # A live MySQL session reads a TIMESTAMP in its own time zone, as
+                    # naive wall-clock time: return UTC instants like a table source.
+                    self.timetz_columns = _time_with_zone_columns(cx.result)
+                    timestamps = (
+                        _mysql_timestamp_columns(cx.result) if mysql_live else []
+                    )
+                    if timestamps:
+                        if live_zone is None:
+                            msg = (
+                                f"the TIMESTAMP column(s) {timestamps} are read in this "
+                                "connection's time zone, which can't be told exactly (the "
+                                "server's own zone, or an abbreviation): run SET time_zone "
+                                "= '+00:00' on the connection first, or give an IANA name "
+                                "or an offset"
+                            )
+                            raise RuntimeError(msg)
+                        frames = _mysql_timestamps_to_utc(frames, timestamps, live_zone)
+                    # some drivers yield no batch for an empty result, and close the
+                    # cursor when done: take the column names first
+                    empty_frame = _empty_frame(
+                        cx.result, utc=self.owned or bool(timestamps)
+                    )
+                    if _module_of(cx.result) == "trino":
+                        # a Trino batch types a column of NULLs only as `Null`
+                        frames = _cast_null_columns(frames, empty_frame.schema)
                 if on_connection:
                     frames = iter(list(frames))
                 if (
@@ -3485,6 +3605,35 @@ class _ArrowOdbcSession:
         pass
 
 
+def _is_bigquery_wheel(driver: str) -> bool:
+    if (found := probe("adbc:bigquery")) is not None and found[1] is not None:
+        with contextlib.suppress(OSError):
+            return Path(driver).samefile(found[1])
+    return False
+
+
+def _bigquery_wheel_options(
+    uri: str, database_options: dict[str, str], statement_options: dict[str, str]
+) -> None:
+    project, dataset, params = _bigquery_uri(uri)
+    location = params.pop("location", None)
+    _raise_unmapped("adbc-driver-bigquery", list(params))
+    prefix = "adbc.bigquery.sql."
+    for key, value in (
+        ("project_id", project),
+        ("dataset_id", dataset),
+        ("location", location),
+    ):
+        if value is not None:
+            database_options.setdefault(prefix + key, value)
+    # The wheel seeds statements with the connection's project and dataset. BigQuery
+    # rejects a default project without a dataset, even for SELECT 1.
+    if not statement_options.get(
+        prefix + "query.default_dataset_id", database_options.get(prefix + "dataset_id")
+    ):
+        statement_options.setdefault(prefix + "query.default_project_id", "")
+
+
 class _AdbcSession:
     """
     An ADBC connection opened through `adbc_driver_manager`.
@@ -3518,16 +3667,28 @@ class _AdbcSession:
             raise ModuleNotFoundError(msg)
 
         # the driver manager's own arguments: as options they would load another driver
-        reserved = {"driver", "entrypoint", "load_flags", "init_func"} & dict(
-            options
-        ).keys()
+        database_options = dict(options)
+        reserved = {
+            "driver",
+            "entrypoint",
+            "load_flags",
+            "init_func",
+        } & database_options.keys()
         if reserved:
             msg = (
                 f"connect option(s) {sorted(reserved)} can't be used with ADBC: "
                 "adbc_driver_manager reads them as its own arguments"
             )
             raise ValueError(msg)
-        kwargs: dict[str, Any] = {"driver": driver, **dict(options)}
+        self._execute_options = dict(execute_options)
+        if (
+            (uri := database_options.get("uri")) is not None
+            and uri.lower().startswith("bigquery:")
+            and _is_bigquery_wheel(driver)
+        ):
+            del database_options["uri"]
+            _bigquery_wheel_options(uri, database_options, self._execute_options)
+        kwargs: dict[str, Any] = {"driver": driver, **database_options}
         if entrypoint:
             kwargs["entrypoint"] = entrypoint
         self._db = AdbcDatabase(**kwargs)
@@ -3536,7 +3697,6 @@ class _AdbcSession:
         except BaseException:
             self._db.close()
             raise
-        self._execute_options = dict(execute_options)
         self._lock = threading.Lock()
         # held while a statement or the connection is cancelled or closed: the driver
         # manager calls the driver for both without a lock of its own, and a cancel must
@@ -3806,6 +3966,13 @@ def _open(
         else:
             conn = mod.connect(target, **connect_opts)
         return _Session(conn, owned=True, **session)
+
+    if head == "python" and tail == _BIGQUERY_MODULE:
+        if creds is not None and any(value is not None for value in creds):
+            msg = "BigQuery does not use username and password credentials; pass Google credentials in connect_options"
+            raise ValueError(msg)
+        conn, close = _connect_bigquery(target, connect_opts)
+        return _Session(conn, owned=True, close=close, **session)
 
     uri = _canonical_scheme(_with_credentials(target, creds), dialect, head)
     uri = _with_connect_timeout(uri, dialect, kind)

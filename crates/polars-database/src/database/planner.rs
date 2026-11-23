@@ -11,7 +11,9 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::backend::resolve::{detect_dialect, object_info, resolve_backend};
-use super::backend::{BackendKind, DatabaseSession, open_backend, open_session_with_retries};
+use super::backend::{
+    BackendKind, DatabaseSession, collect_batches, open_backend, open_session_with_retries,
+};
 use super::catalog::{self, CatalogInfo};
 use super::config::{
     ColumnMeta, CompiledPartition, CompiledScan, DatabaseScanConfig, TableStats, session_setup_runs,
@@ -726,13 +728,15 @@ pub fn resolve_scan(
     let mut money_columns: PlHashMap<PlSmallStr, String> = PlHashMap::default();
     let volatility_unchecked = user_schema.is_some();
     let user_typed = user_schema.is_some();
+    let google_bigquery = is_google_bigquery(dialect, &backend.kind);
 
     if let Some(schema_) = user_schema {
         // No I/O: a user schema is authoritative, and column semantics stay conservative:
         // collations are unknown, and so are some types behind the dtypes: SQL Server's
         // legacy `datetime`, a MySQL `YEAR` (see the filter), and a SQLite column's
-        // affinity (a `String` may hold numbers that compare as such). Otherwise the
-        // user's `String` states a text column.
+        // affinity (a `String` may hold numbers that compare as such). BigQuery's Google
+        // driver returns some non-text types as Strings. Otherwise the user's `String`
+        // states a text column.
         columns = schema_
             .iter()
             .map(|(name, dtype)| ColumnMeta {
@@ -742,7 +746,7 @@ pub fn resolve_scan(
                 strings: catalog::unknown_string_semantics(dialect),
                 is_key: false,
                 comparable: match dtype {
-                    DataType::String => dialect != DialectName::Sqlite,
+                    DataType::String => dialect != DialectName::Sqlite && !google_bigquery,
                     DataType::Datetime(_, _) => dialect != DialectName::Mssql,
                     // A float or decimal dtype over a column of another numeric type
                     // (`real` read as Float64, `numeric` read as a float or at another
@@ -825,7 +829,7 @@ pub fn resolve_scan(
                 options.connection.opened_by_plugin(),
                 &info,
             );
-            let (discovered, sampled, mixed) = discover_schema(
+            let discovered = discover_schema(
                 session,
                 options,
                 dialect,
@@ -834,32 +838,37 @@ pub fn resolve_scan(
                 select_list.as_deref(),
                 &info,
             )?;
-            PolarsResult::Ok((info, discovered, sampled, mixed))
+            PolarsResult::Ok((info, discovered))
         };
-        let (mut info, mut discovered, sampled, mixed_blobs) =
-            match discover(session.as_mut(), &options) {
-                Ok(found) => found,
-                // No table by the folded name: the name as written, on a new session (a failed
-                // statement can abort the session's transaction).
-                Err(e) => match as_written {
-                    Some(written) => {
-                        // closed first: a pool of one connection would wait for it
-                        drop(session);
-                        session = catalog::with_describe_cache(
-                            open_session_with_retries(
-                                backend_impl.as_ref(),
-                                &written.connection,
-                                dialect,
-                            )?,
+        let (mut info, discovery) = match discover(session.as_mut(), &options) {
+            Ok(found) => found,
+            // No table by the folded name: the name as written, on a new session (a failed
+            // statement can abort the session's transaction).
+            Err(e) => match as_written {
+                Some(written) => {
+                    // closed first: a pool of one connection would wait for it
+                    drop(session);
+                    session = catalog::with_describe_cache(
+                        open_session_with_retries(
+                            backend_impl.as_ref(),
+                            &written.connection,
                             dialect,
-                        );
-                        let found = discover(session.as_mut(), &written).map_err(|_| e)?;
-                        options = written;
-                        found
-                    },
-                    None => return Err(e),
+                        )?,
+                        dialect,
+                    );
+                    let found = discover(session.as_mut(), &written).map_err(|_| e)?;
+                    options = written;
+                    found
                 },
-            };
+                None => return Err(e),
+            },
+        };
+        let DiscoveredSchema {
+            schema: mut discovered,
+            sampled,
+            mixed_blobs,
+            bigquery_text_columns,
+        } = discovery;
         let names = discovered.iter_names().cloned().collect::<Vec<_>>();
         if is_query {
             refuse_trino_unnamed(dialect, &names)?;
@@ -1081,6 +1090,12 @@ pub fn resolve_scan(
                 is_key: info.key_column.as_ref() == Some(name),
                 comparable: !info.incomplete
                     && info.compares_like_polars(dialect, name, dtype)
+                    // The Google driver reads GEOGRAPHY and wide BIGNUMERIC as text, and
+                    // can decode untyped values differently from SQL (JSON null as null).
+                    && (!google_bigquery
+                        || (!sampled.contains(name.as_str())
+                            && (*dtype != DataType::String
+                                || bigquery_text_columns.contains(name.as_str()))))
                     // read as text, compared as its own type
                     && !(dialect == DialectName::Duckdb
                         && info
@@ -1136,6 +1151,14 @@ pub fn resolve_scan(
             sqlite_floats_exact_found = sqlite_floats_exact(session.as_mut());
         }
         schema = Arc::new(discovered);
+    }
+
+    // BigQuery emits NULL arrays as empty lists in query results. A SQL null filter runs
+    // before this conversion and would select different rows.
+    if dialect == DialectName::Bigquery {
+        for c in &mut columns {
+            c.comparable &= !matches!(c.dtype, DataType::List(_));
+        }
     }
 
     // ConnectorX writes every decimal as `Decimal(38, 10)`, cutting digits beyond 10
@@ -3224,8 +3247,61 @@ fn fixed_select_list(dialect: DialectName, items: &[SqlSelectItem]) -> String {
         .join(", ")
 }
 
+fn is_google_bigquery(dialect: DialectName, backend: &BackendKind) -> bool {
+    dialect == DialectName::Bigquery
+        && matches!(backend, BackendKind::Python { module }
+            if module == "google.cloud.bigquery" || module.starts_with("google.cloud.bigquery."))
+}
+
+fn bigquery_has_unknown_leaf(dtype: &DataType) -> bool {
+    match dtype {
+        DataType::Null => true,
+        DataType::List(inner) => bigquery_has_unknown_leaf(inner),
+        DataType::Struct(fields) => fields.iter().any(|f| bigquery_has_unknown_leaf(f.dtype())),
+        _ => false,
+    }
+}
+
+/// Keep the result's declared fields and fill in the leaves the Google driver couldn't type.
+fn fill_bigquery_unknown(dtype: &mut DataType, sampled: Option<&DataType>) {
+    match (dtype, sampled) {
+        (dtype @ DataType::Null, sampled) => {
+            *dtype = sampled
+                .filter(|d| !d.is_null())
+                .map_or(DataType::String, normalize_dtype);
+        },
+        (DataType::List(inner), sampled) => {
+            let sampled = match sampled {
+                Some(DataType::List(inner)) => Some(inner.as_ref()),
+                _ => None,
+            };
+            fill_bigquery_unknown(inner, sampled);
+        },
+        (DataType::Struct(fields), sampled) => {
+            let sampled: PlHashMap<_, _> = match sampled {
+                Some(DataType::Struct(fields)) => {
+                    fields.iter().map(|f| (f.name(), f.dtype())).collect()
+                },
+                _ => PlHashMap::new(),
+            };
+            for field in fields {
+                let inferred = sampled.get(&field.name).copied();
+                fill_bigquery_unknown(&mut field.dtype, inferred);
+            }
+        },
+        _ => {},
+    }
+}
+
 /// The result schema of the relation, without reading rows, and the columns typed from a
 /// sample of their values (not by the result's types).
+struct DiscoveredSchema {
+    schema: Schema,
+    sampled: PlHashSet<PlSmallStr>,
+    mixed_blobs: Vec<PlSmallStr>,
+    bigquery_text_columns: PlHashSet<String>,
+}
+
 fn discover_schema(
     session: &mut dyn DatabaseSession,
     options: &DatabaseScanOptions,
@@ -3234,7 +3310,7 @@ fn discover_schema(
     query: &QueryDiscovery,
     select_list: Option<&[SqlSelectItem]>,
     info: &CatalogInfo,
-) -> PolarsResult<(Schema, PlHashSet<PlSmallStr>, Vec<PlSmallStr>)> {
+) -> PolarsResult<DiscoveredSchema> {
     let is_query = matches!(options.relation, DatabaseRelation::Query { .. });
     let probe = match query.probe.as_ref().filter(|_| is_query) {
         Some(probe) => probe.clone(),
@@ -3280,7 +3356,7 @@ fn discover_schema(
     // all the same if it doesn't parse (the database may take it); else it is run, for
     // its first batch, only if that can't change anything.
     let mut ran_query = false;
-    let first = match &options.relation {
+    let mut first = match &options.relation {
         DatabaseRelation::Query { sql } if !query.wrappable => {
             let probed = match query.parses {
                 false => first_batch(session, &probe),
@@ -3302,6 +3378,29 @@ fn discover_schema(
         },
         _ => first_batch(session, &probe)?,
     };
+    if dialect == DialectName::Bigquery
+        && matches!(backend, BackendKind::Adbc { .. })
+        && first.width() == 0
+    {
+        // The Apache BigQuery driver drops the Arrow schema of a zero-row result.
+        // A scalar subquery over the empty probe returns a typed NULL struct. Expand it
+        // to get one row with the fields' declared types, without reading source rows.
+        if !ran_query {
+            let typed_probe = format!(
+                "SELECT _pl_record.* FROM (SELECT (SELECT AS STRUCT * FROM ({probe}) AS _pl_empty) AS _pl_record)"
+            );
+            first = first_batch(session, &typed_probe)?;
+        }
+        polars_ensure!(
+            first.width() > 0,
+            InvalidOperation: "the ADBC BigQuery driver returned no fields for the schema query; pass schema=..."
+        );
+    }
+    let bigquery_text_columns = if dialect == DialectName::Bigquery {
+        session.bigquery_text_columns().into_iter().collect()
+    } else {
+        PlHashSet::new()
+    };
 
     let mut schema: Schema = first
         .schema()
@@ -3314,13 +3413,17 @@ fn discover_schema(
     // sample, which runs a query: not one known to be volatile (`nextval`), nor one that
     // may write where the session doesn't refuse it. SQLite's functions can't write.
     let sample_types = dialect == DialectName::Sqlite;
+    let google_bigquery = is_google_bigquery(dialect, backend);
     let sampled = schema
         .iter()
-        .filter(|(_, dt)| sample_types || dt.is_null())
+        .filter(|(_, dt)| {
+            sample_types || dt.is_null() || google_bigquery && bigquery_has_unknown_leaf(dt)
+        })
         .map(|(name, _)| name.clone())
         .collect::<PlHashSet<_>>();
     let untyped = !sampled.is_empty();
     let mut mixed = Vec::new();
+    let mut bigquery_sample = None;
     let may_sample = !is_query
         || sample_types
         || !(query.volatile || (query.side_effects && !query.read_only_session));
@@ -3381,7 +3484,16 @@ fn discover_schema(
         if verbose() {
             eprintln!("[scan_database]: typing columns from a sample: {sample_sql}");
         }
-        let sample = match session.query(&sample_sql) {
+        let result = if google_bigquery {
+            // Infer across the bounded sample in one batch. Individual batches may
+            // independently infer different dtypes for a JSON leaf.
+            session
+                .execute(&sample_sql, Some(TYPE_SAMPLE_ROWS as usize))
+                .and_then(|batches| collect_batches(batches, &sample_sql))
+        } else {
+            session.query(&sample_sql)
+        };
+        let sample = match result {
             Ok(sample) => sample,
             // a row driver can't build a frame of a column of values of several classes (a blob
             // next to numbers): their classes are sampled instead
@@ -3395,23 +3507,27 @@ fn discover_schema(
             },
             Err(e) => return Err(e),
         };
-        for (name, dtype) in schema.iter_mut() {
-            if (dtype.is_null() || (sample_types && sample.height() > 0))
-                && let Ok(col) = sample.column(name)
-            {
-                *dtype = if classes {
-                    sqlite_class_dtype(col)
-                } else {
-                    normalize_dtype(col.dtype())
-                };
-            }
-            // No values to type by (ADBC types an empty result's columns Int64): the
-            // declared type's affinity tells what values the column holds.
-            if sample_types
-                && (sample.height() == 0 || dtype.is_null())
-                && let Some(t) = info.compare_types.get(name)
-            {
-                *dtype = sqlite_affinity_dtype(t);
+        if google_bigquery {
+            bigquery_sample = Some(sample);
+        } else {
+            for (name, dtype) in schema.iter_mut() {
+                if (dtype.is_null() || (sample_types && sample.height() > 0))
+                    && let Ok(col) = sample.column(name)
+                {
+                    *dtype = if classes {
+                        sqlite_class_dtype(col)
+                    } else {
+                        normalize_dtype(col.dtype())
+                    };
+                }
+                // No values to type by (ADBC types an empty result's columns Int64): the
+                // declared type's affinity tells what values the column holds.
+                if sample_types
+                    && (sample.height() == 0 || dtype.is_null())
+                    && let Some(t) = info.compare_types.get(name)
+                {
+                    *dtype = sqlite_affinity_dtype(t);
+                }
             }
         }
     }
@@ -3450,12 +3566,23 @@ fn discover_schema(
     }
     // Still untyped (every sampled value is NULL, or no rows to sample): a dtype any value
     // can be cast to, not `Null`, which no value read later would fit.
-    for (_, dtype) in schema.iter_mut() {
-        if dtype.is_null() {
+    for (name, dtype) in schema.iter_mut() {
+        if google_bigquery && sampled.contains(name.as_str()) {
+            let inferred = bigquery_sample
+                .as_ref()
+                .and_then(|sample| sample.column(name).ok())
+                .map(Column::dtype);
+            fill_bigquery_unknown(dtype, inferred);
+        } else if dtype.is_null() {
             *dtype = DataType::String;
         }
     }
-    Ok((schema, sampled, mixed))
+    Ok(DiscoveredSchema {
+        schema,
+        sampled,
+        mixed_blobs: mixed,
+        bigquery_text_columns,
+    })
 }
 
 /// Whether sampled storage classes hold a blob and a value of another class.

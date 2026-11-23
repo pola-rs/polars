@@ -630,6 +630,11 @@ def scan_database(
     the second collect can then read the wrong columns or fail.
     Call `scan_database` again after such a change.
 
+    With Google's BigQuery DB-API driver, NUMERIC columns are read as Polars
+    decimals. BIGNUMERIC columns are also read as decimals when the result schema
+    reports a precision of at most 38 digits. Wider or unparameterized BIGNUMERIC
+    columns are read as exact fixed-point strings, including in empty results.
+
     See Also
     --------
     read_database
