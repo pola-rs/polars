@@ -2454,6 +2454,31 @@ def test_using_column_in_later_from_entry(query: str) -> None:
         pl.SQLContext(a=a, s=s, d=d, e=e).execute(query, eager=True)
 
 
+@pytest.mark.parametrize("join", ["FULL JOIN", "RIGHT JOIN"])
+def test_using_key_of_outer_join(join: str) -> None:
+    # as in Postgres: `k` from either side, `l.k` and `r.k` from their own
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2], "lv": ["l1", "l2"]}),
+        "r": pl.DataFrame({"k": [2, 3], "rv": ["r2", "r3"]}),
+        "m": pl.DataFrame({"k": [3, 4], "mv": ["m3", "m4"]}),
+    }
+    for query in [
+        f"SELECT k, l.k AS lk, r.k AS rk, lv, rv FROM l {join} r USING (k) ORDER BY k",
+        f"SELECT l.*, rv FROM l {join} r USING (k) WHERE k = 3",
+        f"SELECT k, lv, rv, mv FROM l {join} r USING (k) JOIN m USING (k) ORDER BY k",
+    ]:
+        assert_sql_matches(frames, query=query, compare_with="duckdb")
+    for query in [
+        f"SELECT * FROM l {join} r USING (k)",
+        f"SELECT j.* FROM (l {join} r USING (k)) AS j",
+        f"SELECT COLUMNS('.*') FROM l {join} r USING (k)",
+        f"SELECT COLUMNS(*) FROM l {join} r USING (k)",
+        f"SELECT * FROM (l {join} r USING (k)) AS j(a, b, c, d)",
+    ]:
+        res = pl.SQLContext(frames).execute(query)
+        assert not any(name.startswith("__POLARS") for name in res.collect_schema())
+
+
 def test_duplicate_column_detection_via_wildcard() -> None:
     # selecting a column explicitly that is already included in a qualified
     # wildcard from the same table should raise a duplicate column error
