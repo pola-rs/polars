@@ -3963,7 +3963,7 @@ class Expr(metaclass=_Meta):
     @unstable()
     def approx_quantile(
         self,
-        quantile: float | list_[float] | Expr,
+        quantile: float | Sequence[float | None] | Expr | None,
         *,
         method: ApproxQuantileMethod = "auto",
         error: float = 0.001,
@@ -4839,7 +4839,7 @@ class Expr(metaclass=_Meta):
 
     def quantile(
         self,
-        quantile: float | list_[float] | Expr,
+        quantile: float | Sequence[float | None] | Expr | None,
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
