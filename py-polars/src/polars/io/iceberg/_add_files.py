@@ -11,20 +11,29 @@ follow-up if imports of many files are slow.
 from __future__ import annotations
 
 import contextlib
+import functools
+import io
 import re
 import uuid
 from datetime import UTC
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn
 from urllib.parse import unquote, urlparse
 
 if TYPE_CHECKING:
+    import pyarrow as pa
     import pyarrow.parquet as pq
     import pyiceberg.table
     from pyiceberg.manifest import DataFile, ManifestFile
     from pyiceberg.partitioning import PartitionField, PartitionSpec
     from pyiceberg.schema import Schema
     from pyiceberg.table import Transaction
+    from pyiceberg.table.metadata import TableMetadata
+    from pyiceberg.table.name_mapping import NameMapping
+
+    from polars._typing import PolarsDataType
+    from polars.datatypes import DataType
+    from polars.schema import Schema as PlSchema
 
 # Hive's name for a NULL partition value in a folder name.
 _HIVE_NULL = "__HIVE_DEFAULT_PARTITION__"
@@ -44,6 +53,42 @@ class _DuplicateFiles(Exception):
 
     def __init__(self, paths: list[str]) -> None:
         self.paths = paths
+
+
+class _Target(NamedTuple):
+    """The table as loaded, which every file is checked against."""
+
+    metadata: TableMetadata
+    schema: Schema
+    paths: dict[str, int]
+    stats_columns: dict[int, Any]
+    mapping: NameMapping | None
+    names: dict[str, int]
+    read_schema: PlSchema
+
+
+def _target(table: pyiceberg.table.Table) -> _Target:
+    from pyiceberg.io.pyarrow import (
+        compute_statistics_plan,
+        parquet_path_to_id_mapping,
+        schema_to_pyarrow,
+    )
+    from pyiceberg.schema import index_by_name
+
+    from polars.schema import Schema as PlSchema
+
+    metadata = table.metadata
+    schema = metadata.schema()
+    return _Target(
+        metadata=metadata,
+        schema=schema,
+        paths=parquet_path_to_id_mapping(schema),
+        stats_columns=compute_statistics_plan(schema, metadata.properties),
+        mapping=metadata.name_mapping(),
+        names=index_by_name(schema),
+        # the columns a scan of the table reads
+        read_schema=PlSchema(schema_to_pyarrow(schema)),
+    )
 
 
 def add_files(
@@ -87,13 +132,14 @@ def add_files(
         )
         raise NotImplementedError(msg)
 
-    schema = table.schema()
+    target = _target(table)
+    schema = target.schema
     spec = table.spec()
     root, files = _list_files(table, location)
     folders = _hive_values(files, root, spec, schema, name)
     data_files = list(
         ExecutorFactory.get_or_create().map(
-            lambda pv: _data_file(table, pv[0], pv[1], name),
+            lambda pv: _data_file(table, target, pv[0], pv[1], name),
             zip(files, folders, strict=True),
         )
     )
@@ -417,6 +463,7 @@ def _hive_values(
 
 def _data_file(
     table: pyiceberg.table.Table,
+    target: _Target,
     path: str,
     folder_values: dict[int, str | None],
     name: str,
@@ -427,17 +474,16 @@ def _data_file(
     from pyiceberg.io.pyarrow import (
         UnsupportedPyArrowTypeException,
         _check_pyarrow_schema_compatible,
-        compute_statistics_plan,
         data_file_statistics_from_parquet_metadata,
-        parquet_path_to_id_mapping,
     )
     from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
     from pyiceberg.typedef import Record
 
     from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 
-    metadata = table.metadata
-    schema = metadata.schema()
+    metadata = target.metadata
+    schema = target.schema
+    paths = target.paths
     input_file = table.io.new_input(path)
     try:
         with input_file.open() as stream:
@@ -463,8 +509,8 @@ def _data_file(
             f"{_INSERT_HINT}"
         )
         raise SchemaError(msg) from error
+    _check_readable(footer, target.read_schema, path, name)
     # e.g. a legacy list layout (`list.item`) that the table's column paths do not name
-    paths = parquet_path_to_id_mapping(schema)
     columns = [footer.schema.column(i).path for i in range(footer.num_columns)]
     if unnamed := [c for c in columns if c not in paths]:
         msg = (
@@ -473,25 +519,26 @@ def _data_file(
         )
         raise SchemaError(msg)
     # files without field ids are read through the name mapping the table has
-    if (mapping := metadata.name_mapping()) is not None:
-        _check_name_mapping(arrow_schema, mapping, metadata, path, name)
+    if target.mapping is not None:
+        _check_name_mapping(arrow_schema, target, path, name)
     try:
         statistics = data_file_statistics_from_parquet_metadata(
             parquet_metadata=footer,
-            stats_columns=compute_statistics_plan(schema, metadata.properties),
+            stats_columns=target.stats_columns,
             parquet_column_mapping=paths,
         )
         partition = [
             _partition_value(footer, field, schema, folder_values, path, name)
             for field in metadata.spec().fields
         ]
-    except (ValueError, TypeError) as error:
+        serialized = statistics.to_serialized_dict()
+    # e.g. a date statistic beyond year 9999
+    except (ValueError, TypeError, OverflowError) as error:
         msg = (
             f"add_files: the statistics of '{path}' do not fit table '{name}'. "
             f"{_INSERT_HINT}"
         )
         raise SchemaError(msg) from error
-    serialized = statistics.to_serialized_dict()
     # PyIceberg keeps the bounds of the row groups that have them: those would prune
     # the rows of a row group without
     for field_id in _incomplete_bounds(footer, paths):
@@ -539,7 +586,7 @@ def _incomplete_bounds(footer: pq.FileMetaData, paths: dict[str, int]) -> set[in
 
 
 def _check_name_mapping(
-    arrow_schema: Any, mapping: Any, metadata: Any, path: str, name: str
+    arrow_schema: pa.Schema, target: _Target, path: str, name: str
 ) -> None:
     """Refuse a file that the table's name mapping maps otherwise than its schema."""
     from pyiceberg.io.pyarrow import pyarrow_to_schema
@@ -553,13 +600,107 @@ def _check_name_mapping(
     )
     try:
         mapped = pyarrow_to_schema(
-            arrow_schema, name_mapping=mapping, format_version=metadata.format_version
+            arrow_schema,
+            name_mapping=target.mapping,
+            format_version=target.metadata.format_version,
         )
     except ValueError as error:
         raise SchemaError(msg) from error
-    expected = index_by_name(metadata.schema())
+    expected = target.names
     if any(expected.get(column) != i for column, i in index_by_name(mapped).items()):
         raise SchemaError(msg)
+
+
+def _check_readable(
+    footer: pq.FileMetaData, read_schema: PlSchema, path: str, name: str
+) -> None:
+    """Refuse a file that a scan of the table cannot read, without reading its data."""
+    from polars.exceptions import PanicException, PolarsError, SchemaError
+
+    # a scan reads no column of an empty file
+    if footer.num_rows == 0:
+        return
+    try:
+        _readable(_ColumnTypes(footer), tuple(read_schema.items()))
+    # e.g. a time zone named `Z`, which Polars cannot parse
+    except (PolarsError, PanicException) as error:
+        msg = (
+            f"add_files: Polars cannot read the columns of '{path}' as the columns of "
+            f"table '{name}'. {_INSERT_HINT}"
+        )
+        raise SchemaError(msg) from error
+
+
+class _ColumnTypes:
+    """A footer, equal to the footers with the same column types."""
+
+    def __init__(self, footer: pq.FileMetaData) -> None:
+        self.footer: pq.FileMetaData | None = footer
+        # the Parquet types (the first line holds the object's address), the names
+        columns = str(footer.schema).split("\n", 1)[1]
+        names = footer.schema.to_arrow_schema()
+        metadata = tuple(sorted((footer.metadata or {}).items()))
+        self.key = (columns, names, metadata)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _ColumnTypes) and self.key == other.key
+
+    def __hash__(self) -> int:
+        # hashing the Arrow schema is slow for wide files
+        columns, _, metadata = self.key
+        return hash((columns, metadata))
+
+
+@functools.lru_cache(maxsize=64)
+def _readable(
+    column_types: _ColumnTypes, read_schema: tuple[tuple[str, DataType], ...]
+) -> None:
+    """Scan a file with `column_types` as the table's scans do; raises if it cannot."""
+    import polars as pl
+    from polars.exceptions import SchemaError
+    from polars.io.scan_options.cast_options import ScanCastOptions
+
+    assert column_types.footer is not None
+    footer_only = io.BytesIO()
+    column_types.footer.write_metadata_file(footer_only)
+    file_schema = pl.read_parquet_schema(footer_only.getvalue())
+    # one row of nulls: a scan skips the column types of an empty file
+    nulls = io.BytesIO()
+    pl.DataFrame(schema=file_schema).clear(1).write_parquet(nulls)
+    pl.scan_parquet(
+        nulls.getvalue(),
+        schema=dict(read_schema),
+        missing_columns="insert",
+        extra_columns="ignore",
+        cast_options=ScanCastOptions._default_iceberg(),
+    ).collect()
+    # a scan rounds map keys to another decimal scale, which can merge keys
+    file = dict(file_schema)
+    for column, dtype in read_schema:
+        if column in file and _rescaled(file[column], dtype):
+            msg = f"column '{column}' has decimals of another scale"
+            raise SchemaError(msg)
+    # the cache keeps the key, not the footer
+    column_types.footer = None
+
+
+def _rescaled(file: PolarsDataType, table: PolarsDataType) -> bool:
+    """Whether a decimal in `file` has another scale than in `table`."""
+    from polars.datatypes import Array, Decimal, List, Map, Struct
+
+    if isinstance(file, Decimal) and isinstance(table, Decimal):
+        return file.scale != table.scale
+    if isinstance(file, Map) and isinstance(table, Map):
+        return _rescaled(file.key, table.key) or _rescaled(file.value, table.value)
+    if isinstance(file, (List, Array)) and isinstance(table, (List, Array)):
+        return _rescaled(file.inner, table.inner)
+    if isinstance(file, Struct) and isinstance(table, Struct):
+        fields = {f.name: f.dtype for f in file.fields}
+        return any(
+            f.name in fields and _rescaled(fields[f.name], f.dtype)
+            for f in table.fields
+        )
+    return False
 
 
 def _has_field_id(field: Any) -> bool:
