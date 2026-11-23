@@ -154,7 +154,7 @@ def test_search_sorted_needle_blocks(
     assert split.n_chunks() == 2
 
     block = 1 << 12
-    n = 16 * block
+    n = 16 * block + 17
     vals = rng.integers(-60, 60, n).astype(float)
     vals[rng.random(n) < 0.05] = np.nan
     for run in [slice(0, 5 * block), slice(11 * block, n)]:
