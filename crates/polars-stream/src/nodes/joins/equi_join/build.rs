@@ -26,6 +26,10 @@ use crate::nodes::joins::BufferedStream;
 use crate::nodes::joins::runtime_filter::KeyFilterBuilder;
 use crate::nodes::joins::tuning::{BuildStats, JoinTuning};
 
+/// In-memory build sides up to this many rows get one table instead of one per pipeline: building
+/// it takes little time, and probes then skip partitioning their rows.
+const SINGLE_TABLE_MAX_ROWS: u64 = 1 << 16;
+
 #[derive(Default)]
 pub struct LocalBuilder {
     // The morsels seen by this builder, with their hashed keys.
@@ -257,7 +261,11 @@ impl BuildState {
         } else {
             None
         };
-        let num_partitions = stored_partitions.unwrap_or(state.num_pipelines);
+        let num_partitions = stored_partitions.unwrap_or(if stats.rows <= SINGLE_TABLE_MAX_ROWS {
+            1
+        } else {
+            state.num_pipelines
+        });
         let partitioner = HashPartitioner::new(num_partitions, 0);
         let partition_keys = sketch.estimate() / num_partitions;
 
