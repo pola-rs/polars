@@ -75,6 +75,7 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
         if hasattr(connection, "url") and callable(
             getattr(connection, "connect", None)
         ):
+            _check_bigquery_pool(connection)
             # (a subclass of one shares the connection just the same)
             pool = getattr(connection, "pool", None)
             if any(c.__name__ in _SHARED_CONNECTION_POOLS for c in type(pool).__mro__):
@@ -97,12 +98,18 @@ def _connection_kind(connection: Any) -> tuple[str, Any]:
     if (engine := _session_shared_engine(connection)) is not None:
         # an ORM Session over such an Engine: the one connection is the user's too, and
         # the Session's own rollback or release would end the transaction on it
+        if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
+            _plugin()
+            from polars_database._bridge import _check_bigquery_orm_session
+
+            _check_bigquery_orm_session(connection)
         return "live", _shared_dbapi_connection(engine)
     if (
         callable(connection)
         and not hasattr(connection, "cursor")
         and not hasattr(connection, "execute")
     ):
+        _check_bigquery_pool(getattr(connection, "__self__", None))
         if (engine := _factory_singleton_engine(connection)) is not None:
             # a SingletonThreadPool opens a connection for each thread that asks and
             # closes others' beyond its `pool_size`: read through the calling thread's
@@ -240,6 +247,7 @@ def _shared_dbapi_connection(engine: Any) -> Any:
     _plugin()
     from polars_database._bridge import _release_without_reset
 
+    _check_bigquery_pool(engine)
     pool = engine.pool
     if any(c.__name__ == "AssertionPool" for c in type(pool).__mro__) and getattr(
         pool, "_checked_out", False
@@ -264,6 +272,14 @@ def _shared_dbapi_connection(engine: Any) -> Any:
     dbapi_connection = fairy.driver_connection
     _release_without_reset(fairy)
     return dbapi_connection
+
+
+def _check_bigquery_pool(engine: Any) -> None:
+    if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
+        _plugin()
+        from polars_database._bridge import _check_bigquery_pool as check_pool
+
+        check_pool(engine)
 
 
 # Python package of the I/O plugin that implements `scan_database`.

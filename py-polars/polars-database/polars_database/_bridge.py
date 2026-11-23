@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 import weakref
+from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _dist_version
 from pathlib import Path
@@ -308,6 +309,7 @@ def shared_pool_connection(obj: Any) -> Any:
     if _module_of(obj) == "sqlalchemy" and type(obj).__name__ == "Connection":
         fairy = getattr(obj, "connection", None)
     elif _is_orm_session(obj):
+        _check_bigquery_orm_session(obj)
         # a Session checks its connection out on first use, and gives it back on
         # `rollback()`/`close()`: read the Engine's one connection instead
         engine = None
@@ -336,6 +338,7 @@ def shared_pool_connection(obj: Any) -> Any:
 
 def _engine_shared_connection(engine: Any) -> Any:
     """The one DB-API connection of an Engine whose pool shares it, left as it is."""
+    _check_bigquery_pool(engine)
     pool = engine.pool
     if any(c.__name__ == "AssertionPool" for c in type(pool).__mro__) and getattr(
         pool, "_checked_out", False
@@ -393,6 +396,7 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
     """`(dialect, module)` of a connection factory or live connection object."""
     if kind == "factory":
         conn = obj()
+        _check_bigquery_pool(conn)
         _refuse_bound_session(conn)
         if (shared := shared_pool_connection(conn)) is not None:
             return _connection_info(shared)
@@ -904,6 +908,29 @@ def _check_bigquery_destination(config: Any) -> None:
 
 def _bigquery_destination_error() -> ValueError:
     return ValueError("scan_database cannot run with a BigQuery destination table")
+
+
+def _check_bigquery_pool(engine: Any) -> None:
+    if getattr(
+        getattr(engine, "dialect", None), "name", None
+    ) == "bigquery" and getattr(getattr(engine, "pool", None), "_pre_ping", False):
+        # SQLAlchemy runs SELECT 1 on the checked-out DB-API connection before
+        # returning it to Polars. That ping would use the client's job defaults.
+        msg = (
+            "scan_database cannot check out a BigQuery connection with pool_pre_ping "
+            "enabled; pass an established SQLAlchemy Connection or disable pool_pre_ping"
+        )
+        raise ValueError(msg)
+
+
+def _check_bigquery_orm_session(session: Any) -> None:
+    if _is_orm_session(session) and _sqlalchemy_dialect(session) == "bigquery":
+        # SQLAlchemy 2.1's Session.execute merges these options independently of
+        # Connection options. Checking them must not open the session's connection.
+        options = getattr(session, "execution_options", None)
+        if isinstance(options, Mapping):
+            _check_bigquery_destination(options.get("job_config"))
+        _check_bigquery_pool(session.get_bind())
 
 
 def _check_bigquery_execute(conn: Any, options: dict[str, Any]) -> None:
@@ -2839,6 +2866,8 @@ class _Session:
         invalidate: Callable[[], None] | None = None,
     ) -> None:
         _register_at_exit_before_duckdb(conn)
+        if _module_of(conn) == "sqlalchemy" and getattr(conn, "invalidated", False):
+            _check_bigquery_pool(conn.engine)
         self.conn = conn
         self.owned = owned
         # from the user's function, whose `close` may return it to a pool of theirs
@@ -2940,6 +2969,7 @@ class _Session:
             with state.lock:
                 state.active += 1
                 entered = True
+                _check_bigquery_orm_session(self.conn)
                 if not self.owned:
                     _refuse_pending_results(self.conn)
                 # A live connection outside a transaction is left without one. Polars
@@ -3017,7 +3047,7 @@ class _Session:
                 if not bind:
                     for key in {"parameters", "params", _params_keyword(cx)}:
                         options.pop(key, None)
-                _check_bigquery_execute(self.conn, options)
+                _check_bigquery_execute(cx.cursor, options)
                 oracle_arrow = (
                     cx.driver_name == "oracledb_proxy"
                     or cx._oracle_arrow_proxy() is not None
@@ -3050,6 +3080,7 @@ class _Session:
                 if params is not None:
                     # each driver names the parameters argument of `execute()` itself
                     options[_params_keyword(cx)] = params
+                sqlalchemy_bigquery = False
                 if (
                     _module_of(self.conn) == "sqlalchemy"
                     and not oracle_arrow
@@ -3062,6 +3093,13 @@ class _Session:
                         **(options.get("execution_options") or {}),
                         _SCAN_OPTION: True,
                     }
+                    sqlalchemy_bigquery = _sqlalchemy_dialect(cx.cursor) == "bigquery"
+                    if sqlalchemy_bigquery:
+                        # Let the Google cursor start fetching when the scan can
+                        # observe its REST/Storage choice. It already pages rows.
+                        options["execution_options"].update(
+                            stream_results=False, yield_per=None, no_parameters=False
+                        )
                 runner = (
                     cx.cursor
                     if cx.driver_name == "duckdb" and cx.cursor is not self.conn
@@ -3082,11 +3120,15 @@ class _Session:
                 if exec_driver_sql is not None:
                     # as `cx.execute`, but without `text()` (see `__init__`); with
                     # `no_parameters`, `%`-style drivers don't format the SQL either
-                    # (`text()` escaped `%` for them)
+                    # (`text()` escaped `%` for them). BigQuery needs the dialect's
+                    # regular execute hook to pass job_config even without parameters.
                     execution_options = options.pop("execution_options", None) or {}
                     result = exec_driver_sql(
                         sql,
-                        execution_options={**execution_options, "no_parameters": True},
+                        execution_options={
+                            **execution_options,
+                            "no_parameters": not sqlalchemy_bigquery,
+                        },
                         **options,
                     )
                     if cx.driver_name == "duckdb" and cx._is_alchemy_result(result):
@@ -3308,8 +3350,10 @@ class _Session:
             import pymysql.cursors  # type: ignore[import-untyped]
 
             return self.conn.cursor(pymysql.cursors.SSCursor)
-        if module == "sqlalchemy" and callable(
-            opts := getattr(self.conn, "execution_options", None)
+        if (
+            module == "sqlalchemy"
+            and callable(opts := getattr(self.conn, "execution_options", None))
+            and _sqlalchemy_dialect(self.conn) != "bigquery"
         ):
             # the dialect's own streaming cursor (named, SSCursor, ...), but not in
             # AUTOCOMMIT: a Postgres named cursor needs a transaction there is none of
@@ -3950,6 +3994,7 @@ def connect(
                             raise
                         time.sleep(0.002)
         _refuse_bound_session(checkout)
+        _check_bigquery_pool(checkout)
         if (shared := shared_pool_connection(checkout)) is not None:
             if dialect in _SESSION_SETUP_DIALECTS:
                 # the plan relies on the session setup, which the user's connection
@@ -4057,7 +4102,12 @@ def _open(
                 "driver=..., or pass a connection factory"
             )
             raise ValueError(msg) from None
-        conn = engine.connect()
+        try:
+            _check_bigquery_pool(engine)
+            conn = engine.connect()
+        except BaseException:
+            engine.dispose()
+            raise
 
         def close() -> None:
             conn.close()
