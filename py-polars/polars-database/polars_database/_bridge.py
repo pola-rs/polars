@@ -339,7 +339,8 @@ def shared_pool_connection(
             return None
         if _has_pool(engine, "SingletonThreadPool"):
             raise _singleton_pool_error()
-        _check_shared_sqlalchemy_options(engine, params, execute_options, obj)
+        if _sqlalchemy_dialect(engine) == "bigquery":
+            _check_bigquery_shared_options(engine, params, execute_options, obj)
         return _engine_shared_connection(engine)
     if type(fairy).__name__ != "_ConnectionFairy":
         return None
@@ -352,14 +353,8 @@ def shared_pool_connection(
     if any(c.__name__ == "SingletonThreadPool" for c in type(pool).__mro__):
         _release_without_reset(fairy)
         raise _singleton_pool_error()
-    if is_connection:
-        try:
-            if _sqlalchemy_dialect(obj) == "bigquery":
-                return _BigQuerySharedCheckout(obj, fairy)
-            _check_shared_sqlalchemy_options(obj, params, execute_options)
-        except BaseException:
-            _release_without_reset(fairy)
-            raise
+    if is_connection and _sqlalchemy_dialect(obj) == "bigquery":
+        return _BigQuerySharedCheckout(obj, fairy)
     _release_without_reset(fairy)
     return driver
 
@@ -1015,7 +1010,7 @@ def _has_sqlalchemy_execution_hooks(target: Any) -> bool:
     )
 
 
-def _check_shared_sqlalchemy_options(
+def _check_bigquery_shared_options(
     target: Any,
     params: Any,
     execute_options: Mapping[str, Any] | None,
@@ -1025,10 +1020,9 @@ def _check_shared_sqlalchemy_options(
     options = (execute_options or {}).get("execution_options")
     target_options = target.get_execution_options()
     session_options = getattr(session, "execution_options", None)
-    if _sqlalchemy_dialect(target) == "bigquery":
-        for execution_options in (options, target_options, session_options):
-            if isinstance(execution_options, Mapping):
-                _check_bigquery_destination(execution_options.get("job_config"))
+    for execution_options in (options, target_options, session_options):
+        if isinstance(execution_options, Mapping):
+            _check_bigquery_destination(execution_options.get("job_config"))
     if (
         params is not None
         or execute_options
@@ -1047,7 +1041,8 @@ def _check_shared_sqlalchemy_options(
     ):
         msg = (
             "scan_database cannot preserve SQLAlchemy execution options, listeners "
-            "or parameters through this shared pool; pass an established SQLAlchemy Connection"
+            "or parameters through this shared BigQuery pool; pass an established "
+            "SQLAlchemy Connection"
         )
         raise TypeError(msg)
 
@@ -1803,7 +1798,7 @@ def _sqlalchemy_psycopg2_guard() -> None:
     from sqlalchemy.engine import Engine
 
     # retval=True keeps the listener itself in the dispatch rather than wrapping
-    # it, so the shared-pool check can recognize this psycopg2-only hook.
+    # it, so the BigQuery execution checks can recognize this psycopg2-only hook.
     event.listen(Engine, "before_cursor_execute", _psycopg2_scan_cursor, retval=True)
 
 
