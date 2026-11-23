@@ -5,8 +5,7 @@ use polars_error::*;
 use super::{Version, WriteOptions};
 use crate::parquet::CowBuffer;
 use crate::parquet::compression::CompressionOptions;
-use crate::parquet::encoding::Encoding;
-use crate::parquet::encoding::hybrid_rle::{self, encode};
+use crate::parquet::encoding::{Encoding, hybrid_rle};
 use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
 use crate::parquet::schema::types::PrimitiveType;
@@ -30,7 +29,7 @@ pub fn write_def_levels(
                     None => <bool as hybrid_rle::Encoder<bool>>::run_length_encode(
                         writer, len, true, 1,
                     )?,
-                    Some(validity) => encode::<bool, _, _>(writer, validity.iter(), 1)?,
+                    Some(validity) => hybrid_rle::encode_bitmap(writer, validity)?,
                 }
 
                 // write the first 4 bytes as length
@@ -41,7 +40,7 @@ pub fn write_def_levels(
                 None => {
                     <bool as hybrid_rle::Encoder<bool>>::run_length_encode(writer, len, true, 1)?
                 },
-                Some(validity) => encode::<bool, _, _>(writer, validity.iter(), 1)?,
+                Some(validity) => hybrid_rle::encode_bitmap(writer, validity)?,
             },
         }
 
@@ -270,4 +269,46 @@ fn increment_utf8(s: &mut str) -> Option<usize> {
     let new_char_byte_len = new_char.encode_utf8(trailing).len();
 
     Some(idx + new_char_byte_len)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sliced_definition_level_runs() {
+        let mask: Bitmap = (0..9000)
+            .map(|i| match i % 181 {
+                0..=65 => true,
+                66..=98 => false,
+                _ => i % 3 != 0,
+            })
+            .collect();
+        for offset in 0..8 {
+            for len in (0..=196).chain([8191, 8192, 8193]) {
+                let slice = mask.clone().sliced(offset, len);
+                let expected: Vec<_> = slice.iter().map(u32::from).collect();
+                for version in [Version::V1, Version::V2] {
+                    let mut buffer = vec![0xa5];
+                    write_def_levels(&mut buffer, true, Some(&slice), len, version).unwrap();
+                    assert_eq!(buffer[0], 0xa5);
+                    let data = match version {
+                        Version::V1 => {
+                            let n = u32::from_le_bytes(buffer[1..5].try_into().unwrap());
+                            assert_eq!(n as usize, buffer.len() - 5);
+                            &buffer[5..]
+                        },
+                        Version::V2 => &buffer[1..],
+                    };
+                    let mut reference = Vec::new();
+                    hybrid_rle::encode(&mut reference, slice.iter(), 1).unwrap();
+                    assert_eq!(data, reference);
+                    let actual = hybrid_rle::HybridRleDecoder::new(data, 1, len)
+                        .collect()
+                        .unwrap();
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
+    }
 }

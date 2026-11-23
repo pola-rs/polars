@@ -9,7 +9,8 @@ use polars_arrow::compute::arity::unary;
 use polars_arrow::datatypes::{ArrowDataType, TimeUnit};
 use polars_arrow::offset::{Offset, Offsets};
 use polars_arrow::types::NativeType;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_err};
+use polars_utils::aliases::PlIndexSet;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::vec::PushUnchecked;
@@ -352,15 +353,26 @@ pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &PrimitiveArray<T>,
     ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let iter = from.iter().map(|x| x.copied());
-    let mut array = MutableDictionaryArray::<K, _>::try_empty(
-        MutablePrimitiveArray::<T>::from(from.dtype().clone()),
-        ordered,
-    )?;
-    array.reserve(from.len());
-    array.try_extend(iter)?;
+    let mut values = PlIndexSet::default();
+    let mut previous = None;
+    let mut key = K::default();
+    let mut keys = Vec::with_capacity(from.len());
+    for value in from.iter() {
+        let Some(&value) = value else {
+            keys.push(K::default());
+            continue;
+        };
+        if previous != Some(value) {
+            let (index, _) = values.insert_full(value);
+            key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
+            previous = Some(value);
+        }
+        keys.push(key);
+    }
 
-    Ok(array.into())
+    let keys = PrimitiveArray::new(K::PRIMITIVE.into(), keys.into(), from.validity().cloned());
+    let values = PrimitiveArray::new(from.dtype().clone(), values.into_iter().collect(), None);
+    DictionaryArray::try_from_keys(keys, Box::new(values), ordered)
 }
 
 /// # Safety

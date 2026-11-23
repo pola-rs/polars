@@ -4,7 +4,7 @@ use super::bitpacked_encode;
 use crate::parquet::encoding::{bitpacked, ceil8, uleb128};
 
 // Arbitrary value that balances memory usage and storage overhead
-const MAX_VALUES_PER_LITERAL_RUN: usize = (1 << 10) * 8;
+pub(super) const MAX_VALUES_PER_LITERAL_RUN: usize = (1 << 10) * 8;
 
 pub trait Encoder<T: PartialEq + Default + Copy> {
     fn bitpacked_encode<W: Write, I: Iterator<Item = T>>(
