@@ -12,12 +12,7 @@ pub fn normalize_dtype(dtype: &DataType) -> DataType {
     match dtype {
         DataType::Datetime(tu, Some(tz)) if tz.as_str().is_empty() => DataType::Datetime(*tu, None),
         // The session time zone is UTC; drivers spell it differently.
-        DataType::Datetime(tu, Some(tz))
-            if matches!(
-                tz.as_str(),
-                "Etc/UTC" | "Etc/UCT" | "UCT" | "Universal" | "Etc/Universal" | "Zulu" | "Etc/Zulu"
-            ) =>
-        {
+        DataType::Datetime(tu, Some(tz)) if is_utc_alias(tz.as_str()) => {
             DataType::Datetime(*tu, Some(TimeZone::UTC))
         },
         // Opaque driver types are read as their storage, except ADBC Postgres `NUMERIC`
@@ -48,6 +43,25 @@ pub fn normalize_dtype(dtype: &DataType) -> DataType {
                 .collect(),
         ),
         dt => dt.clone(),
+    }
+}
+
+/// A spelling of UTC other than `UTC` itself, which Polars names zones by.
+fn is_utc_alias(tz: &str) -> bool {
+    matches!(
+        tz,
+        "Etc/UTC" | "Etc/UCT" | "UCT" | "Universal" | "Etc/Universal" | "Zulu" | "Etc/Zulu"
+    )
+}
+
+/// Whether a dtype holds a time zone that [`normalize_dtype`] renames (a spelling of UTC).
+fn has_utc_alias(dtype: &DataType) -> bool {
+    match dtype {
+        DataType::Datetime(_, Some(tz)) => is_utc_alias(tz.as_str()),
+        DataType::List(inner) | DataType::Array(inner, _) => has_utc_alias(inner),
+        DataType::Map(key, value) => has_utc_alias(key) || has_utc_alias(value),
+        DataType::Struct(fields) => fields.iter().any(|f| has_utc_alias(f.dtype())),
+        _ => false,
     }
 }
 
@@ -127,6 +141,23 @@ pub fn declared_dtype(dialect: DialectName, db_type: &str) -> Option<DataType> {
             TimeUnit::Microseconds,
             Some(TimeZone::UTC),
         ));
+    }
+    // An array of them, also nested: read as UTC instants too (the values are converted,
+    // see `column_conversion`; the driver would plan the zone of the first value it reads).
+    // Wider ones keep the unit the driver reads.
+    if dialect == DialectName::Trino
+        && t.starts_with("array(")
+        && t.ends_with(')')
+        && t.contains("timestamp(")
+        && t.match_indices("timestamp(")
+            .all(|(i, _)| crate::database::dialect::trino_wide_temporal(&t[i..]).is_none())
+    {
+        let inner = &t["array(".len()..t.len() - 1];
+        if let Some(element @ (DataType::Datetime(_, Some(_)) | DataType::List(_))) =
+            declared_dtype(dialect, inner)
+        {
+            return Some(DataType::List(Box::new(element)));
+        }
     }
     // Postgres `timestamptz` is an instant, read as UTC (a live connection's session zone
     // may be another: see `column_conversion`).
@@ -338,6 +369,14 @@ pub fn cast_columns(
         } else {
             col
         };
+        let relabelled;
+        let col = match relabel_utc_zones(col, dtype)? {
+            Some(c) => {
+                relabelled = c;
+                &relabelled
+            },
+            None => col,
+        };
         let converted;
         let col = match duration_to_time(col, dtype)? {
             Some(c) => {
@@ -526,6 +565,46 @@ fn value_kind_changed(from: &DataType, to: &DataType, converted: bool) -> bool {
                     (DataType::Datetime(_, None), DataType::Datetime(_, Some(_)))
                 )
         })
+}
+
+/// A column with a map (also in lists, arrays and structs) whose time zone names are spellings of UTC
+/// (`Etc/UTC`) where the plan has `UTC`, as the plan. A Map key can't be cast between zone
+/// names (the cast refuses it), so the map is rebuilt from its entries cast on their own.
+fn relabel_utc_zones(col: &Column, to: &DataType) -> PolarsResult<Option<Column>> {
+    if !has_utc_alias(col.dtype()) || normalize_dtype(col.dtype()) != *to {
+        return Ok(None);
+    }
+    Ok(relabel_map_zones(col.as_materialized_series())?.map(Series::into_column))
+}
+
+fn relabel_map_zones(s: &Series) -> PolarsResult<Option<Series>> {
+    let nested =
+        |inner: Series| -> PolarsResult<Series> { Ok(relabel_map_zones(&inner)?.unwrap_or(inner)) };
+    Ok(match s.dtype() {
+        DataType::Map(_, _) => {
+            let normal = normalize_dtype(s.dtype());
+            let storage_dtype = normal.map_storage_dtype().ok_or_else(|| {
+                polars_err!(ComputeError: "can't take the storage dtype of the map type {normal}")
+            })?;
+            // maps inside the entries first: their keys can't be cast either
+            let storage = nested(s.map()?.storage().clone())?
+                .cast_with_options(&storage_dtype, CastOptions::Strict)?;
+            let map = MapChunked::try_from_storage(normal, storage.with_name(s.name().clone()))?;
+            Some(map.into_series())
+        },
+        DataType::List(inner) if inner.contains_map() => {
+            Some(s.list()?.apply_to_inner(&nested)?.into_series())
+        },
+        DataType::Array(inner, _) if inner.contains_map() => {
+            Some(s.array()?.apply_to_inner(&nested)?.into_series())
+        },
+        DataType::Struct(fields) if fields.iter().any(|f| f.dtype().contains_map()) => Some(
+            s.struct_()?
+                .try_apply_fields(|f| nested(f.clone()))?
+                .into_series(),
+        ),
+        _ => None,
+    })
 }
 
 fn has_extension(dtype: &DataType) -> bool {
@@ -1201,6 +1280,63 @@ mod tests {
     }
 
     #[test]
+    fn utc_spellings_are_relabelled_in_maps_inside_structs() {
+        let tu = TimeUnit::Microseconds;
+        let etc = DataType::Datetime(tu, TimeZone::opt_try_new(Some("Etc/UTC")).unwrap());
+        let keys = Series::new("k".into(), [1_000_000i64]).cast(&etc).unwrap();
+        let values = Series::new("v".into(), [1i32]);
+        let entries = pack_map_entries(&keys, &values);
+        let dtype = DataType::Map(Box::new(etc.clone()), Box::new(DataType::Int32));
+        let map = MapChunked::try_from_storage(dtype, entries.implode().unwrap().into_series())
+            .unwrap()
+            .into_series()
+            .with_name("m".into());
+        let id = Series::new("id".into(), [7i32]);
+        let st = StructChunked::from_series("st".into(), 1, [map, id].iter())
+            .unwrap()
+            .into_series();
+        let planned = normalize_dtype(st.dtype());
+        let out = relabel_utc_zones(&st.into_column(), &planned)
+            .unwrap()
+            .expect("the map inside the struct is relabelled");
+        assert_eq!(format!("{:?}", out.dtype()), format!("{planned:?}"));
+        let DataType::Struct(fields) = out.dtype() else {
+            unreachable!()
+        };
+        assert_eq!(
+            fields[0].dtype(),
+            &DataType::Map(
+                Box::new(DataType::Datetime(tu, Some(TimeZone::UTC))),
+                Box::new(DataType::Int32)
+            )
+        );
+    }
+
+    #[test]
+    fn utc_spellings_are_relabelled_in_maps_inside_maps() {
+        let tu = TimeUnit::Microseconds;
+        let etc = DataType::Datetime(tu, TimeZone::opt_try_new(Some("Etc/UTC")).unwrap());
+        let keys = Series::new("k".into(), [1_000_000i64]).cast(&etc).unwrap();
+        let values = Series::new("v".into(), [1i32]);
+        let inner_dtype = DataType::Map(Box::new(etc), Box::new(DataType::Int32));
+        let inner = pack_map_entries(&keys, &values).implode().unwrap();
+        let inner = MapChunked::try_from_storage(inner_dtype.clone(), inner.into_series())
+            .unwrap()
+            .into_series();
+        let outer_keys = Series::new("k".into(), ["a"]);
+        let entries = pack_map_entries(&outer_keys, &inner);
+        let dtype = DataType::Map(Box::new(DataType::String), Box::new(inner_dtype));
+        let map = MapChunked::try_from_storage(dtype, entries.implode().unwrap().into_series())
+            .unwrap()
+            .into_series();
+        let planned = normalize_dtype(map.dtype());
+        let out = relabel_utc_zones(&map.into_column(), &planned)
+            .unwrap()
+            .expect("the inner map is relabelled");
+        assert_eq!(format!("{:?}", out.dtype()), format!("{planned:?}"));
+    }
+
+    #[test]
     fn inexact_numeric_casts_fail() {
         let cast = |col: Column, dtype: DataType| {
             let df = DataFrame::new(col.len(), vec![col]).unwrap();
@@ -1405,6 +1541,18 @@ mod tests {
                 TimeUnit::Microseconds,
                 Some(TimeZone::UTC)
             ))
+        );
+        let utc = DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC));
+        assert_eq!(
+            declared_dtype(
+                DialectName::Trino,
+                "array(array(timestamp(6) with time zone))"
+            ),
+            Some(DataType::List(Box::new(DataType::List(Box::new(utc)))))
+        );
+        assert_eq!(
+            declared_dtype(DialectName::Trino, "array(timestamp(9) with time zone)"),
+            None
         );
     }
 

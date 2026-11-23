@@ -2961,7 +2961,8 @@ def test_scan_duckdb_stopped_early_exits_cleanly(tmp_path: Path, stop: str) -> N
     duckdb = pytest.importorskip("duckdb")
     path = str(tmp_path / "t.duckdb")
     with duckdb.connect(path) as conn:
-        conn.execute("CREATE TABLE t AS SELECT range AS id FROM range(2000000)")
+        # Keep many batches after the first one so the early-stop paths have work left.
+        conn.execute("CREATE TABLE t AS SELECT range AS id FROM range(128000)")
     read = {
         "head": "assert lf.head(3).collect().height == 3",
         "collect_batches": "for df in lf.collect_batches():\n    break",
@@ -2971,8 +2972,10 @@ def test_scan_duckdb_stopped_early_exits_cleanly(tmp_path: Path, stop: str) -> N
         textwrap.dedent(
             f"""
         import polars as pl
-        lf = pl.scan_database("t", {f"duckdb:///{path}"!r}, batch_size=1000)
-        assert lf.collect().height == 2000000
+        lf = pl.scan_database(
+            "t", {f"duckdb:///{path}"!r}, batch_size=1000, pushdown=False
+        )
+        assert lf.collect().height == 128000
         """
         )
         + read

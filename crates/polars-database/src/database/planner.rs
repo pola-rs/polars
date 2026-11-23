@@ -37,15 +37,39 @@ fn verbose() -> bool {
 }
 
 /// The `FROM` target of a relation, for the fixed discovery and catalog SQL.
-fn quoted_relation(dialect: DialectName, relation: &DatabaseRelation) -> String {
+fn quoted_relation(
+    dialect: DialectName,
+    relation: &DatabaseRelation,
+    columns: &[PlSmallStr],
+) -> String {
     match relation {
         DatabaseRelation::Table { parts, .. } => parts
             .iter()
             .map(|p| dialect.quote_ident(p))
             .collect::<Vec<_>>()
             .join("."),
-        DatabaseRelation::Query { sql } => format!("({}) pl_q", wrappable(sql)),
+        DatabaseRelation::Query { sql } => {
+            format!(
+                "({}) pl_q{}",
+                wrappable(sql),
+                derived_column_list(dialect, columns)
+            )
+        },
     }
+}
+
+/// The alias's column list (`("a", "b")`) of a derived table over a SQL Server query with a
+/// column of no name (see [`DatabaseScanConfig::unnamed_columns`]); empty without the columns.
+fn derived_column_list(dialect: DialectName, columns: &[PlSmallStr]) -> String {
+    if columns.is_empty() {
+        return String::new();
+    }
+    let names = columns
+        .iter()
+        .map(|c| dialect.quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("({names})")
 }
 
 fn strip_statement_end(sql: &str) -> &str {
@@ -207,6 +231,26 @@ fn first_keyword(sql: &str) -> &str {
     &s[..end]
 }
 
+/// The output column names given more than once, as the database tells names apart: Trino
+/// folds every name to lower case (`SELECT 1 AS T, 2 AS t` names two columns `t`), and names
+/// each column of no name apart (`_col0`, `_col1`).
+fn duplicated_output_names(dialect: DialectName, cols: &[PlSmallStr]) -> Vec<PlSmallStr> {
+    let trino = dialect == DialectName::Trino;
+    let mut seen = PlHashSet::with_capacity(cols.len());
+    let mut duplicated = vec![];
+    for c in cols.iter().filter(|c| !(trino && c.is_empty())) {
+        let key: PlSmallStr = if trino {
+            c.to_lowercase().into()
+        } else {
+            c.clone()
+        };
+        if !seen.insert(key.clone()) && !duplicated.contains(&key) {
+            duplicated.push(key);
+        }
+    }
+    duplicated
+}
+
 /// Why a user query can't be wrapped as a derived table, if it can't.
 fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str> {
     if !facts.parses {
@@ -221,13 +265,110 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     if dialect == DialectName::Mssql && facts.top_level_order_by_without_limit {
         return Some("SQL Server does not allow ORDER BY without TOP inside a derived table");
     }
-    if let Some(cols) = &facts.output_columns {
-        let mut seen = PlHashSet::with_capacity(cols.len());
-        if !cols.iter().all(|c| seen.insert(c)) {
-            return Some("the query has duplicate output column names");
-        }
+    if let Some(cols) = &facts.output_columns
+        && !duplicated_output_names(dialect, cols).is_empty()
+    {
+        return Some("the query has duplicate output column names");
     }
     None
+}
+
+/// Trino names an output column of no name `_col<position>` (`SELECT count(*)`), and a query
+/// wrapping it can't refer to that name: such a query is refused.
+fn refuse_trino_unnamed(dialect: DialectName, names: &[PlSmallStr]) -> PolarsResult<()> {
+    let unnamed = dialect == DialectName::Trino
+        && names.iter().any(|n| {
+            n.strip_prefix("_col")
+                .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+        });
+    polars_ensure!(
+        !unnamed,
+        InvalidOperation:
+        "the query has a column of no name, which Trino doesn't let a wrapping query refer to; \
+        alias each of its expressions (`SELECT count(*) AS n`)"
+    );
+    Ok(())
+}
+
+/// [`refuse_unwrappable_conversions`] for a scan planned under `schema=` (no I/O then): run
+/// on the first session opened.
+pub fn check_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &config.options.relation else {
+        return Ok(());
+    };
+    if !config.user_schema || config.dialect != DialectName::Trino {
+        return Ok(());
+    }
+    let Some(columns) = sql_renderer()
+        .and_then(|r| r.inspect_query(sql, config.dialect))
+        .ok()
+        .and_then(|f| f.output_columns)
+    else {
+        return Ok(());
+    };
+    refuse_unwrappable_conversions(
+        session,
+        &config.options,
+        config.dialect,
+        &columns,
+        &config.backend.kind,
+        config.session_setup_runs(),
+    )
+}
+
+/// Refuses a query that names two output columns alike and has a column read through a conversion.
+pub(crate) fn refuse_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    options: &DatabaseScanOptions,
+    dialect: DialectName,
+    columns: &[PlSmallStr],
+    backend: &BackendKind,
+    setup_runs: bool,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &options.relation else {
+        return Ok(());
+    };
+    let duplicated = duplicated_output_names(dialect, columns);
+    if duplicated.is_empty() {
+        return Ok(());
+    }
+    let Some(types) = catalog::trino_positional_types(session, sql, columns.len()) else {
+        return Ok(());
+    };
+    let converted = columns
+        .iter()
+        .zip(&types)
+        .enumerate()
+        .filter(|(_, (c, t))| {
+            column_conversion(
+                dialect,
+                backend,
+                setup_runs,
+                options.connection.opened_by_plugin(),
+                t,
+                &dialect.quote_ident(c),
+            )
+            .is_some()
+        })
+        .map(|(i, (c, t))| match c.is_empty() {
+            true => format!("column {} ({t})", i + 1),
+            false => format!("{c} ({t})"),
+        })
+        .collect::<Vec<_>>();
+    if converted.is_empty() {
+        return Ok(());
+    }
+    polars_bail!(
+        InvalidOperation:
+        "the query names its columns {} more than once, so it can't be wrapped to read {} \
+        right (the drivers read such a column wrong or abort); alias the duplicated columns \
+        (`SELECT a.ts AS a_ts, b.ts AS b_ts`)",
+        duplicated.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(", "),
+        converted.join(", ")
+    );
 }
 
 /// What schema discovery may do with a query source.
@@ -261,6 +402,9 @@ struct QueryDiscovery {
     all_columns_volatile: bool,
     /// Every session is read-only ([`read_only_session`]): the database refuses a write.
     read_only_session: bool,
+    /// A SQL Server query with a column of no name: all its output columns, as a derived table
+    /// over it names them (`column_1` for the second; see [`catalog::mssql_unnamed_columns`]).
+    derived: Vec<PlSmallStr>,
     /// The SQL that finds its schema without running it, where the usual probe would
     /// (MySQL: [`mysql_query_probe`]).
     probe: Option<String>,
@@ -527,6 +671,7 @@ pub fn resolve_scan(
             all_columns_volatile: facts.as_ref().is_ok_and(|f| f.all_columns_volatile),
             read_only_session,
             probe: None,
+            derived: vec![],
         };
         if let Some(reason) = blocker
             && pushdown_disabled.is_none()
@@ -608,6 +753,10 @@ pub fn resolve_scan(
                 },
             })
             .collect();
+        if is_query {
+            let names = schema_.iter_names().cloned().collect::<Vec<_>>();
+            refuse_trino_unnamed(dialect, &names)?;
+        }
         // No I/O to ask the database about views and the functions sqlglot doesn't know.
         schema = schema_;
     } else {
@@ -636,8 +785,29 @@ pub fn resolve_scan(
         {
             query.probe = Some(mysql_query_probe(session.as_mut(), sql, &query)?);
         }
+        if is_query
+            && dialect == DialectName::Trino
+            && let Some(columns) = query_facts.as_ref().and_then(|f| f.output_columns.as_ref())
+        {
+            refuse_unwrappable_conversions(
+                session.as_mut(),
+                &options,
+                dialect,
+                columns,
+                &backend.kind,
+                setup_runs,
+            )?;
+        }
         // The catalog first: some declared types are read as text (`text_conversion`), and
         // discovery must select them the same way the scan will.
+        // SQL Server refuses a derived table with an unnamed column: they are named by position.
+        if let DatabaseRelation::Query { sql } = &options.relation
+            && dialect == DialectName::Mssql
+            && query.wrappable
+        {
+            query.derived = catalog::mssql_unnamed_columns(session.as_mut(), &wrappable(sql))
+                .unwrap_or_default();
+        }
         let discover = |session: &mut dyn DatabaseSession, options: &DatabaseScanOptions| {
             let info = match &options.relation {
                 DatabaseRelation::Table { parts, .. } => catalog::table_info(
@@ -690,12 +860,15 @@ pub fn resolve_scan(
                     None => return Err(e),
                 },
             };
+        let names = discovered.iter_names().cloned().collect::<Vec<_>>();
+        if is_query {
+            refuse_trino_unnamed(dialect, &names)?;
+        }
         stats = info.stats;
         mixed_found = mixed_blobs;
         if !options.connection.opened_by_plugin() && !options.connection.is_live() {
             resolution = session_resolution(session.as_mut(), dialect, &options);
         }
-        let names = discovered.iter_names().cloned().collect::<Vec<_>>();
         volatility = source_volatility(
             session.as_mut(),
             dialect,
@@ -728,7 +901,7 @@ pub fn resolve_scan(
         // `ORDER BY` of a wrapped query.)
         if is_query && read_wrapped(&options, &pushdown_disabled, &query, dialect) {
             let names = discovered.iter_names().cloned().collect::<Vec<_>>();
-            let from = quoted_relation(dialect, &options.relation);
+            let from = quoted_relation(dialect, &options.relation, &query.derived);
             // Python drivers refuse DDL, ConnectorX runs each statement on its own connection.
             let temp_tables = matches!(backend.kind, BackendKind::Adbc { .. });
             info = catalog::query_info(
@@ -1271,6 +1444,7 @@ pub fn resolve_scan(
         derived_order_dropped,
         sqlite_floats_exact: sqlite_floats_exact_found,
         refused_columns: refused,
+        unnamed_columns: !query.derived.is_empty() && !user_typed,
         resolution,
         bounds_cache: Default::default(),
     })
@@ -2142,6 +2316,12 @@ fn column_conversion(
     if let Some(sql) = dialect.text_conversion(db_type, column) {
         return Some(sql);
     }
+    // Trino arrays, maps and rows holding such a value: each as an instant in UTC too
+    if dialect == DialectName::Trino
+        && let Some(sql) = super::dialect::trino_nested_utc(db_type, column)
+    {
+        return Some(sql);
+    }
     // Trino `timestamp(p) with time zone`: the instant in UTC (a named zone's repeated hour
     // reads an hour off otherwise: the value holds the zone's name, not its offset)
     if dialect == DialectName::Trino
@@ -2649,7 +2829,7 @@ fn duckdb_bad_value(t: &str, x: &str, depth: usize) -> Option<String> {
 const MAX_DECIMAL_38: &str = "99999999999999999999999999999999999999";
 
 /// The parts of a type's argument list, split at its top-level commas.
-fn split_top_level(s: &str) -> Vec<&str> {
+pub(crate) fn split_top_level(s: &str) -> Vec<&str> {
     // inside `"identifiers"` and `'enum labels'` (where `(`, `"` or `,` are text; a doubled quote
     // closes and reopens)
     let (mut parts, mut depth, mut quote, mut start) = (vec![], 0usize, None::<char>, 0);
@@ -3061,7 +3241,7 @@ fn discover_schema(
         None => format!(
             "SELECT {} FROM {} WHERE 1 = 0",
             select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s)),
-            quoted_relation(dialect, &options.relation)
+            quoted_relation(dialect, &options.relation, &query.derived)
         ),
     };
     let first_batch = |session: &mut dyn DatabaseSession, sql: &str| {
@@ -3191,7 +3371,7 @@ fn discover_schema(
             }
         };
         let render = |items: Vec<SqlSelectItem>| -> PolarsResult<String> {
-            let mut sample_query = SqlQuery::select(items, from_clause(options));
+            let mut sample_query = SqlQuery::select(items, from_clause(options, &query.derived));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
                 crate::filter::percent_formatted(&options.connection, backend);
@@ -3254,7 +3434,7 @@ fn discover_schema(
             })
             .collect::<Vec<_>>();
         if !items.is_empty() {
-            let mut sample_query = SqlQuery::select(items, from_clause(options));
+            let mut sample_query = SqlQuery::select(items, from_clause(options, &query.derived));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
                 crate::filter::percent_formatted(&options.connection, backend);
@@ -3323,10 +3503,13 @@ fn sqlite_affinity_dtype(t: &str) -> DataType {
     }
 }
 
-fn from_clause(options: &DatabaseScanOptions) -> SqlFrom {
+fn from_clause(options: &DatabaseScanOptions, columns: &[PlSmallStr]) -> SqlFrom {
     match &options.relation {
         DatabaseRelation::Table { parts, .. } => SqlFrom::Table(parts.clone()),
-        DatabaseRelation::Query { sql } => SqlFrom::Subquery(strip_statement_end(sql).into()),
+        DatabaseRelation::Query { sql } => SqlFrom::Subquery {
+            sql: strip_statement_end(sql).into(),
+            columns: columns.to_vec(),
+        },
     }
 }
 
@@ -3370,7 +3553,7 @@ pub fn compile_scan(
     }
 
     let renderer = sql_renderer()?;
-    let from = from_clause(options);
+    let from = from_clause(options, &config.derived_columns());
 
     let mut columns = pushdown
         .columns
@@ -3585,6 +3768,81 @@ pub(crate) fn numeric_temporal_conversions(
     out
 }
 
+/// Refuses a read on a SQL Server session under `SET TEXTSIZE limit` (a user's: see
+/// `mssql_session_limits`) that may return a value it cuts: a column of a type it cuts
+/// (`(n)varchar(max)`, `varbinary(max)`, `text`, `ntext`, `image`, `xml`, and `sql_variant` or
+/// CLR types, read as text or bytes), any text or binary column (the catalog doesn't tell
+/// `nvarchar(max)` from `nvarchar(n)`, and a query's types may be unknown), or one the SQL
+/// converts to `NVARCHAR(MAX)` / `VARBINARY(MAX)`.
+pub(crate) fn check_mssql_text_size(limit: i64, config: &DatabaseScanConfig) -> PolarsResult<()> {
+    let read: Vec<&ColumnMeta> = match &config.compiled {
+        Some(c) => c.columns.iter().filter_map(|n| config.column(n)).collect(),
+        None => config.columns.iter().collect(),
+    };
+    let sqls: Vec<&str> = config
+        .compiled
+        .iter()
+        .flat_map(|c| c.partitions.iter().map(|p| p.sql.as_str()))
+        .collect();
+    let cut = mssql_text_size_cuts(&read, &sqls);
+    polars_ensure!(
+        cut.is_empty(),
+        InvalidOperation:
+        "this SQL Server session has SET TEXTSIZE {limit} in effect: it cuts each value of \
+        {} longer than {limit} bytes without a sign. Run SET TEXTSIZE -1 on the connection, or \
+        remove it from the connection's setup",
+        cut.join(", ")
+    );
+    Ok(())
+}
+
+/// What [`check_mssql_text_size`] refuses: the columns read, and the SQL that reads them.
+fn mssql_text_size_cuts(read: &[&ColumnMeta], sqls: &[&str]) -> Vec<String> {
+    fn text_or_bytes(d: &DataType) -> bool {
+        match d {
+            DataType::List(inner) | DataType::Array(inner, _) => text_or_bytes(inner),
+            DataType::Struct(fields) => fields.iter().any(|f| text_or_bytes(f.dtype())),
+            DataType::String | DataType::Binary | DataType::BinaryOffset | DataType::Unknown(_) => {
+                true
+            },
+            d => d.is_categorical() || d.is_enum() || d.is_object(),
+        }
+    }
+    let long_type = |t: &str| {
+        let t = t.trim().to_ascii_lowercase();
+        let base = t.split('(').next().unwrap_or("").trim();
+        matches!(
+            base,
+            "varchar"
+                | "nvarchar"
+                | "varbinary"
+                | "text"
+                | "ntext"
+                | "image"
+                | "xml"
+                | "sql_variant"
+                | "geography"
+                | "geometry"
+                | "hierarchyid"
+        )
+    };
+    let mut cut: Vec<String> = read
+        .iter()
+        .filter(|c| text_or_bytes(&c.dtype) || c.db_type.as_deref().is_some_and(long_type))
+        .map(|c| format!("'{}'", c.name))
+        .collect();
+    if cut.is_empty()
+        && sqls.iter().any(|s| {
+            s.as_bytes()
+                .windows(5)
+                .any(|w| w.eq_ignore_ascii_case(b"(MAX)"))
+        })
+    {
+        cut.push("a column read as text".into());
+    }
+    cut
+}
+
 /// The columns whose read may legitimately be another kind of value than the planned dtype
 /// (`cast_columns` doesn't refuse a retyped column there): every column but DuckDB's, whose drivers
 /// return what the type says (as text only where the plugin converts it, a marker `db_type`). Other
@@ -3730,7 +3988,7 @@ pub(crate) fn as_utc_instants(mut df: DataFrame, names: &[PlSmallStr]) -> Polars
 /// The quoted relation a scan's columns can be qualified by.
 fn relation_qualifier(config: &DatabaseScanConfig) -> String {
     match &config.options.relation {
-        relation @ DatabaseRelation::Table { .. } => quoted_relation(config.dialect, relation),
+        relation @ DatabaseRelation::Table { .. } => quoted_relation(config.dialect, relation, &[]),
         DatabaseRelation::Query { .. } => config.dialect.quote_ident("_pl"),
     }
 }
@@ -3827,9 +4085,11 @@ fn compile_unwrapped(
                 let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
                 items.extend(utf8_checks(config, &names));
             }
-            let needs_wrapper = items
-                .iter()
-                .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
+            // (a SQL Server query with unnamed columns is read with the planned names)
+            let needs_wrapper = config.unnamed_columns
+                || items
+                    .iter()
+                    .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
             // A server that drops a derived table's ORDER BY would return the rows in another
             // order: the wrapper repeats the query's ORDER BY outside, on its output columns
             // (the conversions stay: a TIMESTAMP's instant, a FLOAT's digits). Where a key is
@@ -3860,8 +4120,9 @@ fn compile_unwrapped(
             };
             let read = if needs_wrapper {
                 // the alias the select items are qualified by (SQLite)
+                let derived = derived_column_list(dialect, &config.derived_columns());
                 let mut read = format!(
-                    "SELECT {} FROM ({}) {}",
+                    "SELECT {} FROM ({}) {}{derived}",
                     escape_percent(config, fixed_select_list(dialect, &items)),
                     wrappable(sql),
                     relation_qualifier(config)
@@ -3876,13 +4137,17 @@ fn compile_unwrapped(
             } else {
                 sql.to_string()
             };
+            let count_derived = derived_column_list(dialect, &config.derived_columns());
             (
                 read,
-                format!("SELECT COUNT(*) FROM ({}) pl_q", wrappable(sql)),
+                format!(
+                    "SELECT COUNT(*) FROM ({}) pl_q{count_derived}",
+                    wrappable(sql)
+                ),
             )
         },
         relation => {
-            let from = quoted_relation(dialect, relation);
+            let from = quoted_relation(dialect, relation, &[]);
             // the select list applies the column conversions, as a pushed-down scan does
             let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
             let mut items = names
@@ -4683,6 +4948,58 @@ fn run_bounds(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mssql_text_size_refuses_reads_of_long_values() {
+        let col = |name: &str, dtype: DataType, db_type: Option<&str>| ColumnMeta {
+            name: name.into(),
+            dtype,
+            db_type: db_type.map(Into::into),
+            strings: crate::database::dialect::StringSemantics::UNKNOWN,
+            is_key: false,
+            comparable: true,
+        };
+        let id = col("id", DataType::Int32, Some("int"));
+        let nv = col("nv", DataType::String, Some("nvarchar"));
+        let sv = col("sv", DataType::String, Some("sql_variant"));
+        let img = col("img", DataType::Null, Some("image"));
+        let untyped = col("u", DataType::Binary, None);
+        let money = col("m", DataType::Decimal(19, 4), Some("money"));
+        let plain = ["SELECT [id] FROM [t]"];
+        assert!(mssql_text_size_cuts(&[&id], &plain).is_empty());
+        assert_eq!(mssql_text_size_cuts(&[&id, &nv], &plain), ["'nv'"]);
+        for c in [&sv, &img, &untyped] {
+            assert_eq!(mssql_text_size_cuts(&[c], &plain).len(), 1, "{}", c.name);
+        }
+        // read through a conversion to NVARCHAR(MAX)
+        assert!(mssql_text_size_cuts(&[&money], &plain).is_empty());
+        let converted = ["SELECT CAST(CAST([m] AS DECIMAL(19, 4)) AS NVARCHAR(MAX)) FROM [t]"];
+        assert_eq!(mssql_text_size_cuts(&[&money], &converted).len(), 1);
+    }
+
+    #[test]
+    fn trino_output_names_are_told_apart_without_case() {
+        let facts = |cols: &[&str]| QueryFacts {
+            parses: true,
+            single_select: true,
+            output_columns: Some(cols.iter().map(|c| (*c).into()).collect()),
+            ..Default::default()
+        };
+        // Trino folds every identifier: `T` and `t` name the same column
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Trino).is_some());
+        assert!(wrap_blocker(&facts(&["T", "u"]), DialectName::Trino).is_none());
+        // a database that tells them apart is left as it was
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Clickhouse).is_none());
+        // Trino names each column of no name apart (`_col0`), which is refused once found
+        assert!(wrap_blocker(&facts(&["", ""]), DialectName::Trino).is_none());
+        let names =
+            |cols: &[&str]| -> Vec<PlSmallStr> { cols.iter().map(|c| (*c).into()).collect() };
+        let unnamed = names(&["_col0", "id"]);
+        assert!(refuse_trino_unnamed(DialectName::Trino, &unnamed).is_err());
+        assert!(refuse_trino_unnamed(DialectName::Mssql, &unnamed).is_ok());
+        let named = names(&["_col", "_colx", "col0"]);
+        assert!(refuse_trino_unnamed(DialectName::Trino, &named).is_ok());
+    }
+
     #[test]
     fn utc_zone_is_decided_by_name() {
         for z in [

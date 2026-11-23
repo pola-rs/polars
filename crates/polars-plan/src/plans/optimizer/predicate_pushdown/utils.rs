@@ -698,7 +698,7 @@ pub(crate) fn map_column_references_with_casts(
             &mut MapColumnReferences {
                 rename_map,
                 casts,
-                column_nodes: PlIndexMap::with_capacity(rename_map.len()),
+                column_nodes: PlIndexMap::new(),
             },
             expr_arena,
         )

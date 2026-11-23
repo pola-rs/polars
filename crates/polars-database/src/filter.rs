@@ -607,6 +607,11 @@ impl Translator<'_> {
     /// decimal literal wider than its precision (DuckDB `HUGEINT` is read as
     /// `Decimal(38, 0)` but holds 39 digits) isn't a valid value.
     fn literal_fits(&self, name: &str, av: &AnyValue<'_>) -> bool {
+        if let Some(s) = av.get_str()
+            && self.literal_too_long(name, s)
+        {
+            return false;
+        }
         // A Trino `char(n)` is read padded with blanks, and compared without them (`'a  '`
         // read, `c = 'a  '` false): a literal ending in a blank may match what the
         // database doesn't.
@@ -678,6 +683,30 @@ impl Translator<'_> {
             return !sub_second;
         }
         true
+    }
+
+    /// Whether `text`, written as a string literal compared with the column, is past what the
+    /// database takes ([`DialectName::max_string_literal`]). A quote is written twice. Where the
+    /// column type is unknown, the national limit applies too. Such a filter is not pushed
+    /// (Polars applies it).
+    fn literal_too_long(&self, name: &str, text: &str) -> bool {
+        let dialect = self.dialect();
+        let Some(max_bytes) = dialect.max_string_literal(false) else {
+            return false;
+        };
+        let quotes = text.bytes().filter(|&b| b == b'\'').count();
+        if text.len() + quotes > max_bytes {
+            return true;
+        }
+        let national = self
+            .config
+            .column(name)
+            .and_then(|c| c.db_type.as_deref())
+            .is_none_or(|t| t.trim_start().to_ascii_lowercase().starts_with('n'));
+        national
+            && dialect
+                .max_string_literal(true)
+                .is_some_and(|max| text.encode_utf16().count() + quotes > max)
     }
 
     /// The fractional-second digits of a MySQL `DATETIME` / `TIMESTAMP` column, if declared.
@@ -906,6 +935,9 @@ impl Translator<'_> {
             self.compared(name)
         };
         let pattern = format!("{prefix}{}{suffix}", self.escape_like(pat));
+        if self.literal_too_long(name, &pattern) {
+            return None;
+        }
         let class = if strings.equality_exact && !self.dialect().like_case_insensitive() {
             Class::Exact
         } else if self.dialect().like_matches_per_character()
@@ -933,7 +965,11 @@ impl Translator<'_> {
 
     /// Whether a date or timestamp literal is within what the dialect's types hold.
     fn temporal_in_range(&self, av: &AnyValue<'_>) -> bool {
-        let (lo, hi) = self.dialect().temporal_literal_days();
+        let (lo, hi) = if matches!(av, AnyValue::Date(_)) {
+            self.dialect().date_literal_days()
+        } else {
+            self.dialect().temporal_literal_days()
+        };
         let days = match av {
             AnyValue::Date(d) => *d as i64,
             AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _) => {
@@ -1265,9 +1301,10 @@ impl Translator<'_> {
             {
                 None
             },
-            // An indexed MariaDB `DOUBLE(M, D)` rounds an equality literal to `D` digits.
+            // An indexed MariaDB `FLOAT(M, D)` / `DOUBLE(M, D)` compares a literal as rounded to
+            // `D` digits where a scan reads the value unrounded: `=` misses the stored value,
+            // and `>=` an indexed `DOUBLE(M, D)` row equal to the literal.
             dt if dt.is_float()
-                && !op.is_ordering()
                 && matches!(
                     self.dialect(),
                     DialectName::Mysql | DialectName::Singlestore
@@ -1630,6 +1667,7 @@ pub(crate) mod tests {
             derived_order_dropped: false,
             sqlite_floats_exact: true,
             refused_columns: vec![],
+            unnamed_columns: false,
             resolution: None,
             bounds_cache: Default::default(),
         }
@@ -2187,6 +2225,75 @@ pub(crate) mod tests {
             class_of(&pg, &cmp("eq", "d", "date", "-141427")),
             Some(Class::Exact)
         );
+    }
+
+    #[test]
+    fn clickhouse_date_literals_stay_in_the_date_range() {
+        // ClickHouse prunes parts by converting the constant to `Date` (1970-01-01 ..
+        // 2149-06-06, less a margin for functions of it), which wraps: a literal outside
+        // loses rows
+        let cfg = config(
+            DialectName::Clickhouse,
+            adbc("clickhouse"),
+            &[("d", DataType::Date, Some("Date32"))],
+        );
+        let t = Translator { config: &cfg };
+        for days in [-1, 0, 6, 65_501, 65_536, 120_529] {
+            assert!(!t.temporal_in_range(&AnyValue::Date(days)), "{days}");
+        }
+        for days in [7, 8, 65_500] {
+            assert!(t.temporal_in_range(&AnyValue::Date(days)), "{days}");
+        }
+        // a `DateTime` has no such wrap: timestamps keep the wider range
+        let us = AnyValue::Datetime(-86_400_000_000, TimeUnit::Microseconds, None);
+        assert!(t.temporal_in_range(&us));
+    }
+
+    #[test]
+    fn oracle_string_literals_past_its_limit_are_not_pushed() {
+        let mut c = config(
+            DialectName::Oracle,
+            adbc("oracle"),
+            &[
+                ("v", DataType::String, Some("VARCHAR2")),
+                ("n", DataType::String, Some("NVARCHAR2")),
+                ("u", DataType::String, None),
+            ],
+        );
+        // byte-wise comparison (the session setup's `NLS_COMP=BINARY`): every operator pushes
+        let mut metas = c.columns.to_vec();
+        for m in &mut metas {
+            m.strings = StringSemantics {
+                empty_is_null: true,
+                ..StringSemantics::BINARY
+            };
+        }
+        c.columns = metas.into();
+        let is_in = |col: &str, values: &str| {
+            format!(
+                r#"{{"op": "is_in", "args": [{{"col": "{col}"}}], "nulls_equal": false,
+                "values": {{"dtype": "str", "values": [{values}]}}}}"#
+            )
+        };
+        let pushed = |col: &str, text: &str| {
+            let ops = ["eq", "neq", "starts_with", "contains_literal"];
+            let mut docs: Vec<String> = ops.iter().map(|op| cmp(op, col, "str", text)).collect();
+            docs.push(is_in(col, &format!(r#""x", "{text}""#)));
+            docs.iter()
+                .map(|d| translate_doc(&c, d).is_some())
+                .collect::<Vec<_>>()
+        };
+        // 4000 bytes in the database character set (a quote is written twice)
+        assert_eq!(pushed("v", &"a".repeat(3000)), [true; 5]);
+        assert_eq!(pushed("v", &"a".repeat(3997)), [true; 5]);
+        assert_eq!(pushed("v", &"a".repeat(4001)), [false; 5]);
+        assert_eq!(pushed("v", &"\u{20ac}".repeat(1332)), [true; 5]);
+        assert_eq!(pushed("v", &"\u{20ac}".repeat(1400)), [false; 5]);
+        // an NVARCHAR2 column: 2000 UTF-16 units
+        assert_eq!(pushed("n", &"a".repeat(1990)), [true; 5]);
+        assert_eq!(pushed("n", &"a".repeat(3000)), [false; 5]);
+        // an unknown type is held to the stricter limit
+        assert_eq!(pushed("u", &"a".repeat(3000)), [false; 5]);
     }
 
     #[test]
