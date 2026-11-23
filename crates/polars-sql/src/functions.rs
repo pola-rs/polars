@@ -1,8 +1,9 @@
 use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
-    TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
+    AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileFractionDtypes, QuantileMethod,
+    Scalar, Schema, TimeUnit, TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail,
+    polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rank")]
@@ -4321,30 +4322,21 @@ fn literal_sum(arg: &Expr) -> Option<Expr> {
     }
 }
 
-/// Parse a literal quantile argument, validating that it lies in [0, 1].
+/// Parses a quantile argument, which must be a literal, and checks it like any `quantile`
+/// fraction.
 fn parse_quantile_literal(
     quantile: Expr,
     fname: &str,
     arg: &FunctionArgExpr,
 ) -> PolarsResult<Expr> {
-    match quantile {
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) if (0.0..=1.0).contains(&f) => {
-            Ok(Expr::from(f))
-        },
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if (0..=1).contains(&n) => {
-            Ok(Expr::from(n as f64))
-        },
-        ref e if let Some(f) = decimal_literal_to_f64(e) => {
-            if !(0.0..=1.0).contains(&f) {
-                polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
-            }
-            Ok(Expr::from(f))
-        },
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_) | DynLiteralValue::Int(_))) => {
-            polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
-        },
-        _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg),
-    }
+    let quantiles = match &quantile {
+        Expr::Literal(lv) => lv.extract_quantiles(QuantileFractionDtypes::Number)?,
+        _ => None,
+    };
+    let Some(quantiles) = quantiles else {
+        polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg)
+    };
+    Ok(Expr::from(quantiles[0]))
 }
 
 /// SQL `REGEXP_REPLACE(e, pattern, replacement [, flags])`. The 'g' flag replaces every
