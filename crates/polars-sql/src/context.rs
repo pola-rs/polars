@@ -1846,8 +1846,17 @@ impl SQLContext {
             Statement::Update(update) => self.execute_update(update)?,
             Statement::Merge(merge) => self.execute_merge(merge)?,
             stmt @ Statement::Copy { .. } => self.execute_copy(stmt)?,
+            stmt @ (Statement::StartTransaction { .. }
+            | Statement::Commit { .. }
+            | Statement::Rollback { .. }
+            | Statement::Savepoint { .. }
+            | Statement::ReleaseSavepoint { .. }
+            | Statement::Set(sqlparser::ast::Set::SetTransaction { .. })) => polars_bail!(
+                SQLInterface: "`{}` is not supported: there are no transactions, and each statement applies as it runs",
+                transaction_keywords(stmt)
+            ),
             _ => polars_bail!(
-                SQLInterface: "statement type is not supported:\n{:?}", ast,
+                SQLInterface: "`{}` statements are not supported", kind_of(ast)
             ),
         })
     }
@@ -2736,7 +2745,7 @@ impl SQLContext {
                     SQLInterface: "CROSS JOIN UNNEST with both literal arrays and column references is not supported"
                 ),
                 other => polars_bail!(
-                    SQLSyntax: "UNNEST expects column references or array literals, found {:?}", other
+                    SQLSyntax: "UNNEST expects column references or array literals, found `{}`", other
                 ),
             };
             // alias: column name from "AS t(col)", or table alias
@@ -4361,8 +4370,8 @@ impl SQLContext {
                                 | JoinOperator::RightSemi(_) => JoinType::Semi,
                                 join_type => polars_bail!(
                                     SQLInterface:
-                                    "join type '{:?}' not currently supported",
-                                    join_type
+                                    "`{}` joins are not supported",
+                                    kind_of(join_type)
                                 ),
                             },
                             keep_right,
@@ -4412,7 +4421,7 @@ impl SQLContext {
                         )
                     },
                     join_type => {
-                        polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type)
+                        polars_bail!(SQLInterface: "`{}` joins are not supported", kind_of(join_type))
                     },
                 };
                 if let Some(keys) = lateral_keys {
@@ -5544,7 +5553,7 @@ impl SQLContext {
                     items.push(ProjectionItem::Exprs(vec![expr.alias(name)], true));
                 },
                 SelectItem::ExprWithAliases { .. } => {
-                    polars_bail!(SQLSyntax: "multiple aliases per expression are not supported: {:?}", select_item)
+                    polars_bail!(SQLSyntax: "multiple aliases per expression are not supported: `{}`", select_item)
                 },
                 SelectItem::QualifiedWildcard(kind, wildcard_options) => match kind {
                     SelectItemQualifiedWildcardKind::ObjectName(obj_name) => {
@@ -5560,7 +5569,7 @@ impl SQLContext {
                         has_qualified_wildcard = true;
                     },
                     SelectItemQualifiedWildcardKind::Expr(_) => {
-                        polars_bail!(SQLSyntax: "qualified wildcard on expressions not yet supported: {:?}", select_item)
+                        polars_bail!(SQLSyntax: "qualified wildcard on expressions not yet supported: `{}`", select_item)
                     },
                 },
                 SelectItem::Wildcard(wildcard_options) => {
@@ -9531,7 +9540,9 @@ fn process_join_constraint(
             }
             Ok((on.clone(), on, vec![]))
         },
-        _ => polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint),
+        _ => {
+            polars_bail!(SQLInterface: "`{}` join constraints are not supported", kind_of(constraint))
+        },
     }
 }
 
@@ -9788,6 +9799,50 @@ fn cast_matching_struct_fields(name: &PlSmallStr, dtype: &DataType, to: &DataTyp
         expr
     };
     expr.strict_cast(to.clone())
+}
+
+/// The kind of a parsed statement or clause, from its variant name: `CREATE INDEX` for
+/// `CreateIndex`.
+pub(crate) fn kind_of(node: &impl std::fmt::Debug) -> String {
+    let debug = format!("{node:?}");
+    let name = debug
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .next()
+        .unwrap_or_default();
+    let mut kind = String::new();
+    for (i, c) in name.char_indices() {
+        if i > 0 && c.is_ascii_uppercase() {
+            kind.push(' ');
+        }
+        kind.push(c.to_ascii_uppercase());
+    }
+    kind
+}
+
+/// The leading keywords of transaction statement `statement`: `BEGIN`, `SET TRANSACTION`.
+fn transaction_keywords(statement: &Statement) -> String {
+    const WORDS: &[&str] = &[
+        "ABORT",
+        "BEGIN",
+        "COMMIT",
+        "END",
+        "RELEASE",
+        "ROLLBACK",
+        "SAVEPOINT",
+        "SET",
+        "START",
+        "TRANSACTION",
+        "WORK",
+    ];
+    let text = statement.to_string();
+    let words: Vec<&str> = text
+        .split_whitespace()
+        .take_while(|w| WORDS.contains(w))
+        .collect();
+    match words.is_empty() {
+        true => kind_of(statement),
+        false => words.join(" "),
+    }
 }
 
 /// Whether `stmt` is a query that only reads; `INSERT`/`UPDATE` bodies write to the context.

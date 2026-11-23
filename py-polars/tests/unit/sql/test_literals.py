@@ -86,7 +86,7 @@ def test_bit_hex_errors() -> None:
 
         with pytest.raises(
             SQLInterfaceError,
-            match=r'NationalStringLiteral\("hmmm"\) is not a supported literal',
+            match="value `N'hmmm'` is not a supported literal",
         ):
             pl.sql_expr("N'hmmm'")
 
