@@ -3887,7 +3887,9 @@ impl SQLFunctionVisitor<'_> {
         let total = if is_distinct {
             sum
         } else {
-            (sum.clone() * rows.clone()).cast(DataTypeExpr::OfExpr(Box::new(sum)))
+            // Signed: an integer constant takes the other operand's type.
+            let rows = rows.clone().cast(DataType::Int64);
+            (sum.clone() * rows).cast(DataTypeExpr::OfExpr(Box::new(sum)))
         };
         when(rows.gt(lit(0)).and(c.is_not_null()))
             .then(total)
