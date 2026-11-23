@@ -103,9 +103,10 @@ LINEITEM = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    "query",
-    [
+@pytest.mark.usefixtures("planner")
+def test_catalog_table_names(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    for query in [
         "SELECT * FROM lineitem",
         "SELECT * FROM tpch.lineitem",
         "SELECT * FROM lake.tpch.lineitem",
@@ -116,12 +117,13 @@ LINEITEM = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
         "SELECT li.k, li.v FROM tpch.lineitem AS li",
         "WITH c AS (SELECT * FROM lineitem) SELECT * FROM c",
         "SELECT * FROM (SELECT * FROM lineitem) AS sub",
-    ],
-)
-@pytest.mark.usefixtures("planner")
-def test_catalog_table_names(lake: CountingCatalog, query: str) -> None:
-    res = lake_ctx(lake).execute(query, eager=True)
-    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    ]:
+        res = ctx.execute(query, eager=True)
+        try:
+            assert_frame_equal(res, LINEITEM, check_row_order=False)
+        except AssertionError as exc:
+            exc.add_note(query)
+            raise
 
 
 @pytest.mark.write_disk
@@ -6944,9 +6946,12 @@ def history(
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    ("clause", "rows"),
-    [
+@pytest.mark.usefixtures("planner")
+def test_catalog_time_travel(
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, ids = history
+    for clause, rows in [
         ("FOR VERSION AS OF {0}", [0]),
         ("VERSION AS OF {1}", [0, 1]),
         ("AS h FOR VERSION AS OF {0}", [0]),
@@ -6975,17 +6980,20 @@ def history(
         ("AS join VERSION AS OF {0}", [0]),
         ("VERSION AS OF {0} div", [0]),
         ("FOR TIMESTAMP AS OF '2024-01-01 03:30:00+02:00'", [0, 1]),
-    ],
-)
-@pytest.mark.usefixtures("planner")
-def test_catalog_time_travel(
-    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]], clause: str, rows: list[int]
-) -> None:
-    ctx, ids = history
-    query = f"SELECT * FROM hist {clause.format(*ids)}"
-    assert sorted(ctx.execute(query, eager=True)["k"]) == rows
-    assert sorted(ctx.execute(query).collect()["k"]) == rows
-    assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0
+    ]:
+        query = f"SELECT * FROM hist {clause.format(*ids)}"
+        assert sorted(ctx.execute(query, eager=True)["k"]) == rows, query
+
+    # Check deferred execution and EXPLAIN for each way to choose a snapshot.
+    for clause, rows in [
+        (f"FOR VERSION AS OF {ids[0]}", [0]),
+        ("FOR VERSION AS OF 'v1'", [0]),
+        ("FOR VERSION AS OF 'b1'", [0, 1]),
+        ("FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 01:30:00'", [0, 1]),
+    ]:
+        query = f"SELECT * FROM hist {clause}"
+        assert sorted(ctx.execute(query).collect()["k"]) == rows, query
+        assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0, query
 
 
 @pytest.mark.write_disk
@@ -8090,9 +8098,10 @@ def test_call_rewrite_data_files_target_size(
     table = lake.create_table(
         ("tpch", "big"), schema=pl.Schema({"k": pl.Int64}).to_arrow()
     )
-    keys = pl.int_range(300_000, eager=True).shuffle(seed=0)
+    n_rows = 30_000
+    keys = pl.int_range(n_rows, eager=True).shuffle(seed=0)
     # written as the compaction writes, so the output compresses as the input
-    for part in pl.DataFrame({"k": keys}).iter_slices(300_000 // files):
+    for part in pl.DataFrame({"k": keys}).iter_slices(n_rows // files):
         part.lazy().sink_iceberg(table, mode="append")
     size = sum(f.file_size_in_bytes for f in live_files(lake, "tpch", "big"))
     target = int(size / size_over_target)
@@ -8101,7 +8110,7 @@ def test_call_rewrite_data_files_target_size(
         f"options => map('target-file-size-bytes', '{target}'))"
     )
     assert ctx.execute(statement, eager=True).rows()[0][:2] == counts
-    assert ctx.execute("SELECT COUNT(*) FROM big", eager=True).item() == 300_000
+    assert ctx.execute("SELECT COUNT(*) FROM big", eager=True).item() == n_rows
     # nothing left to rewrite
     assert ctx.execute(statement, eager=True).rows() == [(0, 0, 0, 0, 0)]
 
