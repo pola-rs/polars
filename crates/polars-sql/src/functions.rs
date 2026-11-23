@@ -26,10 +26,10 @@ use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
-    DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
-    FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
-    ObjectName, OrderByExpr, OrderBySort, Value as SQLValue, ValueWithSpan, WindowFrame,
-    WindowFrameBound, WindowFrameUnits, WindowSpec,
+    BinaryOperator as SQLBinaryOperator, DateTimeField, DuplicateTreatment, Expr as SQLExpr,
+    Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentClause,
+    FunctionArgumentList, FunctionArguments, Ident, ObjectName, OrderByExpr, OrderBySort,
+    Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound, WindowFrameUnits, WindowSpec,
 };
 use sqlparser::tokenizer::Span;
 
@@ -541,6 +541,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT PRINTF('%s costs %.2f', col1, col2) FROM df;
     /// ```
     Printf,
+    /// SQL 'json_extract_path' function, as in Postgres.
+    /// The value at a path of keys or array indexes, as `#>` reads it.
+    /// ```sql
+    /// SELECT JSON_EXTRACT_PATH(col1, 'user', 'name') FROM df;
+    /// ```
+    JsonExtractPath,
+    /// SQL 'json_extract_path_text' function, as in Postgres.
+    /// The value at a path of keys or array indexes as text, as `#>>` reads it.
+    /// ```sql
+    /// SELECT JSON_EXTRACT_PATH_TEXT(col1, 'user', 'name') FROM df;
+    /// ```
+    JsonExtractPathText,
     /// SQL 'regexp_extract' function.
     /// Returns the given capture group of the first match of `pattern` (optional: `group`,
     /// 0 for the whole match), or an empty string if there is no match.
@@ -548,6 +560,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT REGEXP_EXTRACT(col1, '(\d+)-(\d+)', 2) FROM df;
     /// ```
     RegexpExtract,
+    /// SQL 'regexp_substr' function, as in Postgres.
+    /// The `n`th match of `pattern`, or its capture group `subexpr`; NULL if there is none.
+    /// ```sql
+    /// SELECT REGEXP_SUBSTR(col1, 'user=(\w+)', 1, 1, 'i', 1) FROM df;
+    /// ```
+    RegexpSubstr,
     /// SQL 'regexp_like' function.
     /// True if `pattern` matches the value (optional: `flags`).
     /// ```sql
@@ -1144,9 +1162,9 @@ impl PolarsSQLFunctions {
             InitCap => true,
             BitLength | Date | EndsWith | Left | LeftPad | LeftTrim | Length | Lower
             | Normalize | OctetLength | RegexpExtract | RegexpLike | RegexpMatches
-            | RegexpReplace | Replace | Repeat | Reverse | Right | RightPad | RightTrim
-            | SplitPart | StartsWith | StrPos | Substring | StringToArray | Strptime
-            | TryStrptime | Time | Timestamp | Upper => true,
+            | RegexpSubstr | RegexpReplace | Replace | Repeat | Reverse | Right | RightPad
+            | RightTrim | SplitPart | StartsWith | StrPos | Substring | StringToArray
+            | Strptime | TryStrptime | Time | Timestamp | Upper => true,
             _ => false,
         }
     }
@@ -1256,6 +1274,8 @@ impl PolarsSQLFunctions {
             "if",
             "ifnull",
             "initcap",
+            "json_extract_path",
+            "json_extract_path_text",
             "lag",
             "last",
             "last_value",
@@ -1310,6 +1330,7 @@ impl PolarsSQLFunctions {
             "regexp_like",
             "regexp_matches",
             "regexp_replace",
+            "regexp_substr",
             "repeat",
             "replace",
             "reverse",
@@ -1484,6 +1505,9 @@ impl PolarsSQLFunctions {
             "regexp_like" => Self::RegexpLike,
             "regexp_matches" => Self::RegexpMatches,
             "regexp_replace" => Self::RegexpReplace,
+            "regexp_substr" => Self::RegexpSubstr,
+            "json_extract_path" => Self::JsonExtractPath,
+            "json_extract_path_text" => Self::JsonExtractPathText,
             "repeat" => Self::Repeat,
             "replace" => Self::Replace,
             "reverse" => Self::Reverse,
@@ -2077,6 +2101,9 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             RegexpExtract => self.visit_regexp_extract(),
+            RegexpSubstr => self.visit_regexp_substr(),
+            JsonExtractPath => self.visit_json_extract_path(false),
+            JsonExtractPathText => self.visit_json_extract_path(true),
             RegexpMatches => self.visit_regexp_matches(),
             RegexpReplace => self.try_visit_variadic(|args| match args {
                 [e, pat, replacement] => regexp_replace(e, pat, replacement, None),
@@ -3498,6 +3525,152 @@ impl SQLFunctionVisitor<'_> {
         let e = when(value.is_not_null().and(pattern.is_not_null()))
             .then(extracted.fill_null(lit("")))
             .otherwise(Expr::Literal(LiteralValue::untyped_null()));
+        self.apply_window_spec(e)
+    }
+
+    /// `REGEXP_SUBSTR(string, pattern [, 1 [, n [, flags [, subexpr]]]])`, as in Postgres.
+    fn visit_regexp_substr(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let exprs: Vec<&SQLExpr> = args
+            .iter()
+            .map(|arg| match arg {
+                FunctionArgExpr::Expr(e) => Ok(e),
+                _ => polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects expressions; found {}", arg),
+            })
+            .collect::<PolarsResult<_>>()?;
+        let [value, pattern, rest @ ..] = exprs.as_slice() else {
+            polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len())
+        };
+        polars_ensure!(
+            rest.len() <= 4,
+            SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len()
+        );
+        let int_arg = |this: &mut Self, i: usize, name: &str, min: i64| -> PolarsResult<i64> {
+            let Some(arg) = rest.get(i) else {
+                return Ok(if name == "subexpr" { 0 } else { 1 });
+            };
+            match parse_sql_expr(arg, this.ctx, this.active_schema)? {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= min as i128 => {
+                    Ok(n as i64)
+                },
+                _ => polars_bail!(
+                    SQLSyntax: "REGEXP_SUBSTR expects an integer literal of at least {} as `{}`; found {}",
+                    min, name, arg
+                ),
+            }
+        };
+        let start = int_arg(self, 0, "start", 1)?;
+        let n = int_arg(self, 1, "n", 1)?;
+        let subexpr = int_arg(self, 3, "subexpr", 0)?;
+        let mut case_insensitive = false;
+        if let Some(flags) = rest.get(2) {
+            let SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::SingleQuotedString(flags),
+                ..
+            }) = flags
+            else {
+                polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects literal flags; found {}", flags)
+            };
+            // As in Postgres, the last of 'c' and 'i' decides.
+            for flag in flags.chars() {
+                match flag {
+                    'i' => case_insensitive = true,
+                    'c' => case_insensitive = false,
+                    _ => {
+                        polars_bail!(SQLSyntax: "REGEXP_SUBSTR supports the flags 'c' and 'i'; found '{}'", flag)
+                    },
+                }
+            }
+        }
+        // Another start would need `^` to anchor at the start of the whole string.
+        polars_ensure!(
+            start == 1,
+            SQLInterface: "REGEXP_SUBSTR supports a `start` of 1 only (found {})", start
+        );
+        // As in Postgres, a pattern without capture groups is its own group 1.
+        let groups = match pattern {
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::SingleQuotedString(p),
+                ..
+            }) => polars_utils::regex_cache::compile_regex(p)
+                .ok()
+                .map(|re| re.captures_len() - 1),
+            _ => None,
+        };
+        let subexpr = match (subexpr, groups) {
+            (1, Some(0)) => 0,
+            (subexpr, _) => subexpr,
+        };
+        let value = self.string_arg(value)?;
+        let mut pattern = self.string_arg(pattern)?;
+        if case_insensitive {
+            pattern = concat_str([lit("(?i)"), pattern], "", false);
+        }
+        let e = match (n, subexpr) {
+            (1, group) => value.str().extract(pattern, group as usize),
+            (n, 0) => value
+                .str()
+                .extract_all(pattern)
+                .list()
+                .get(lit(n - 1), true),
+            _ => polars_bail!(
+                SQLInterface: "REGEXP_SUBSTR of a capture group (`subexpr`) is supported for the first match only"
+            ),
+        };
+        self.apply_window_spec(e)
+    }
+
+    /// `JSON_EXTRACT_PATH[_TEXT](json, key, ...)`: `json #> '{key,...}'` (or `#>>`).
+    fn visit_json_extract_path(&mut self, text: bool) -> PolarsResult<Expr> {
+        let name = match text {
+            true => "JSON_EXTRACT_PATH_TEXT",
+            false => "JSON_EXTRACT_PATH",
+        };
+        let args = extract_args(self.func)?;
+        let [FunctionArgExpr::Expr(json), keys @ ..] = args.as_slice() else {
+            polars_bail!(SQLSyntax: "{} expects a JSON value and a path of keys", name)
+        };
+        polars_ensure!(!keys.is_empty(), SQLSyntax: "{} expects at least one key", name);
+        let mut path = String::from("{");
+        for (i, key) in keys.iter().enumerate() {
+            if i > 0 {
+                path.push(',');
+            }
+            match key {
+                FunctionArgExpr::Expr(SQLExpr::Value(ValueWithSpan { value, .. })) => match value {
+                    // quoted only when needed: a struct's path does not read quotes
+                    SQLValue::SingleQuotedString(s) if !needs_quotes(s) => path.push_str(s),
+                    SQLValue::SingleQuotedString(s) => {
+                        let s = s.replace('\\', "\\\\").replace('"', "\\\"");
+                        path.push_str(&format!("\"{s}\""));
+                    },
+                    SQLValue::Number(n, _) => path.push_str(n),
+                    SQLValue::Null => path.push_str("NULL"),
+                    _ => polars_bail!(SQLSyntax: "{} expects literal keys; found {}", name, key),
+                },
+                _ => polars_bail!(SQLSyntax: "{} expects literal keys; found {}", name, key),
+            }
+        }
+        path.push('}');
+        // A Postgres text array element that is read as written.
+        fn needs_quotes(key: &str) -> bool {
+            key.is_empty()
+                || key.eq_ignore_ascii_case("NULL")
+                || key.contains([',', '{', '}', '"', '\\'])
+                || key.contains(char::is_whitespace)
+        }
+        let access = SQLExpr::BinaryOp {
+            left: Box::new(json.clone()),
+            op: match text {
+                true => SQLBinaryOperator::HashLongArrow,
+                false => SQLBinaryOperator::HashArrow,
+            },
+            right: Box::new(SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::SingleQuotedString(path),
+                span: Span::empty(),
+            })),
+        };
+        let e = self.parse_sql_arg(&access)?;
         self.apply_window_spec(e)
     }
 
