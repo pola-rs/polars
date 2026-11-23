@@ -29,6 +29,43 @@ use crate::parquet::types::decode;
 
 pub const GEO_KEY: &str = "geo";
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct GeoParquetVersion {
+    major: u32,
+    minor: u32,
+}
+
+impl GeoParquetVersion {
+    const V1_0: Self = Self { major: 1, minor: 0 };
+    const V1_1: Self = Self { major: 1, minor: 1 };
+
+    /// Parses `major.minor[.patch]`.
+    fn parse(version: &str) -> Option<Self> {
+        let parts: Vec<u32> = version
+            .split('.')
+            .map(|part| part.parse().ok())
+            .collect::<Option<_>>()?;
+        match parts[..] {
+            [major, minor] | [major, minor, _] => Some(Self { major, minor }),
+            _ => None,
+        }
+    }
+
+    fn has_native_encodings(self) -> bool {
+        self >= Self::V1_1
+    }
+
+    fn has_coverings(self) -> bool {
+        self >= Self::V1_1
+    }
+}
+
+impl std::fmt::Display for GeoParquetVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.0", self.major, self.minor)
+    }
+}
+
 /// The geoparquet spec states that something that has no `crs` key should be considered "OGC: CRS84".
 const DEFAULT_CRS: &str = "OGC:CRS84";
 
@@ -134,7 +171,7 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
         return;
     };
     let version = geo["version"].as_str().unwrap_or_default();
-    if version.split('.').next() != Some("1") {
+    if GeoParquetVersion::parse(version).is_none_or(|v| v.major != 1) {
         polars_warn!(
             "ignoring GeoParquet metadata with unsupported version '{}'",
             version
@@ -313,8 +350,8 @@ pub(crate) fn geo_key_value(
 ) -> PolarsResult<Option<KeyValue>> {
     let version = match std::env::var("POLARS_GEOPARQUET_WRITE").as_deref() {
         Err(_) | Ok("") => return Ok(None),
-        Ok("1.0") => "1.0.0",
-        Ok("1.1") => "1.1.0",
+        Ok("1.0") => GeoParquetVersion::V1_0,
+        Ok("1.1") => GeoParquetVersion::V1_1,
         Ok(v) => polars_bail!(
             InvalidOperation: "invalid POLARS_GEOPARQUET_WRITE value '{}', expected '1.0' or '1.1'", v
         ),
@@ -333,7 +370,9 @@ pub(crate) fn geo_key_value(
         let name = &field.name;
         let encoding = ENCODINGS
             .iter()
-            .find(|e| ext.name == e.geoarrow && (e.list_depth.is_none() || version != "1.0.0"))
+            .find(|e| {
+                ext.name == e.geoarrow && (e.list_depth.is_none() || version.has_native_encodings())
+            })
             .ok_or_else(|| {
                 polars_err!(
                     InvalidOperation: "cannot write column '{}' of type '{}' as GeoParquet {}",
@@ -383,7 +422,7 @@ pub(crate) fn geo_key_value(
             column.insert("epoch".into(), epoch.clone());
         }
 
-        if version != "1.0.0"
+        if version.has_coverings()
             && let Some((box_name, covering)) =
                 bbox_covering_col_of_geometry(schema, name, crs.as_ref())?
         {
@@ -413,7 +452,7 @@ pub(crate) fn geo_key_value(
 
     Ok(primary_column.map(|primary_column| {
         let geo = json!({
-            "version": version,
+            "version": version.to_string(),
             "primary_column": primary_column,
             "columns": columns,
         });
@@ -426,7 +465,7 @@ pub(crate) fn geo_key_value(
 
 fn check_boxes_are_coverings(
     schema: &ArrowSchema,
-    version: &str,
+    version: GeoParquetVersion,
     covering_columns: &[String],
 ) -> PolarsResult<()> {
     for field in schema.iter_values() {
@@ -439,7 +478,7 @@ fn check_boxes_are_coverings(
             continue;
         }
         // A box that can't be a covering under any name should not be told to rename.
-        let reason = if version == "1.0.0" {
+        let reason = if !version.has_coverings() {
             "GeoParquet 1.0 has no coverings; write GeoParquet 1.1 instead"
         } else if box_layout(&ext.inner).is_none() {
             "a covering's fields must be Float64 xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order"
