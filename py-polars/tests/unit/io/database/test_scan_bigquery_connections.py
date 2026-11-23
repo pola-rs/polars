@@ -11,6 +11,7 @@ from unittest.mock import Mock
 import pytest
 
 import polars as pl
+from polars._utils.various import parse_version
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -69,7 +70,7 @@ def test_bigquery_sqlalchemy_typed_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("sqlglot")
-    from google.cloud.bigquery import SchemaField
+    from google.cloud.bigquery import QueryJobConfig, SchemaField
 
     fields = [
         SchemaField("n", "NUMERIC"),
@@ -85,9 +86,10 @@ def test_bigquery_sqlalchemy_typed_results(
     timestamp = datetime(2025, 1, 1, 12, 34, 56, 123456, tzinfo=UTC)
     rows = [(exact, timestamp, [{"ts": timestamp}])]
 
-    def query(sql: str, **_kwargs: Any) -> _GoogleRows:
+    def query(sql: str, *, job_config: Any, **_kwargs: Any) -> _GoogleRows:
         if sql == "SELECT 1":
             return _GoogleRows([SchemaField("id", "INTEGER")], [(1,)])
+        assert job_config.maximum_bytes_billed == 1024
         return _GoogleRows(fields, [] if empty or "WHERE 1 = 0" in sql else rows)
 
     monkeypatch.setattr(bigquery_client, "query_and_wait", query)
@@ -111,6 +113,13 @@ def test_bigquery_sqlalchemy_typed_results(
             connection,
             partition_on=None,
             batch_size=1,
+            execute_options={
+                "execution_options": {
+                    "job_config": QueryJobConfig(maximum_bytes_billed=1024),
+                    "stream_results": True,
+                    "yield_per": 1,
+                }
+            },
             **options,
         )
         utc = pl.Datetime("us", "UTC")
@@ -237,6 +246,102 @@ def test_bigquery_sqlalchemy_uri_rejects_named_destination(
         scan.collect_schema()
     create_client.assert_not_called()
     query.assert_not_called()
+
+
+def test_bigquery_sqlalchemy_pool_pre_ping(
+    bigquery_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sa = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy_bigquery")
+    pytest.importorskip("sqlglot")
+    from google.cloud.bigquery import SchemaField
+
+    uri = "bigquery:///?user_supplied_client=true"
+    connect_args = {"client": bigquery_client, "prefer_bqstorage_client": False}
+    engine = sa.create_engine(uri, pool_pre_ping=True, connect_args=connect_args)
+    query = Mock(side_effect=AssertionError("scan issued a BigQuery query"))
+    monkeypatch.setattr(bigquery_client, "query", query)
+    monkeypatch.setattr(bigquery_client, "query_and_wait", query)
+
+    try:
+        for checkout in (engine, engine.connect):
+            with pytest.raises(ValueError, match=r"BigQuery.*pool_pre_ping"):
+                pl.scan_database("SELECT 17 AS id", checkout, partition_on=None)
+
+        factory_scan = pl.scan_database(
+            "SELECT 17 AS id", lambda: engine, partition_on=None
+        )
+        with pytest.raises(
+            pl.exceptions.ComputeError, match=r"BigQuery.*pool_pre_ping"
+        ):
+            factory_scan.collect_schema()
+
+        uri_scan = pl.scan_database(
+            "SELECT 17 AS id",
+            uri,
+            driver="sqlalchemy",
+            connect_options={"pool_pre_ping": True, "connect_args": connect_args},
+            partition_on=None,
+        )
+        with pytest.raises(
+            pl.exceptions.ComputeError, match=r"BigQuery.*pool_pre_ping"
+        ):
+            uri_scan.collect_schema()
+        query.assert_not_called()
+
+        def result(sql: str, **_kwargs: Any) -> _GoogleRows:
+            return _GoogleRows(
+                [SchemaField("id", "INTEGER")], [] if "WHERE 1 = 0" in sql else [(17,)]
+            )
+
+        monkeypatch.setattr(bigquery_client, "query_and_wait", result)
+        with engine.connect() as conn:
+            scan = pl.scan_database("SELECT 17 AS id", conn, partition_on=None)
+            assert scan.collect().rows() == [(17,)]
+            assert conn.exec_driver_sql("SELECT 17").scalar_one() == 17
+    finally:
+        engine.dispose()
+
+
+def test_bigquery_sqlalchemy_session_job_config(
+    bigquery_engine: Any, bigquery_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sa = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    pytest.importorskip("sqlglot")
+    if parse_version(sa.__version__) < (2, 1):
+        pytest.skip("Session-wide execution options require SQLAlchemy 2.1")
+    from google.cloud.bigquery import QueryJobConfig, SchemaField
+
+    def scan(session: Any) -> pl.LazyFrame:
+        return pl.scan_database(
+            "SELECT :answer AS id",
+            session,
+            params={"answer": 17},
+            schema={"id": pl.Int64},
+            partition_on=None,
+        )
+
+    query = Mock(side_effect=AssertionError("scan issued a BigQuery query"))
+    monkeypatch.setattr(bigquery_client, "query", query)
+    monkeypatch.setattr(bigquery_client, "query_and_wait", query)
+    destination = QueryJobConfig(destination="billing-project.dataset.table")
+    with orm.Session(
+        bigquery_engine, execution_options={"job_config": destination}
+    ) as s:
+        with pytest.raises(pl.exceptions.ComputeError, match="BigQuery destination"):
+            scan(s).collect()
+        assert not s.in_transaction()
+    query.assert_not_called()
+
+    def harmless(_sql: str, *, job_config: Any, **_kwargs: Any) -> _GoogleRows:
+        assert job_config.maximum_bytes_billed == 1024
+        return _GoogleRows([SchemaField("id", "INTEGER")], [(17,)])
+
+    monkeypatch.setattr(bigquery_client, "query_and_wait", harmless)
+    safe = QueryJobConfig(maximum_bytes_billed=1024)
+    with orm.Session(bigquery_engine, execution_options={"job_config": safe}) as s:
+        assert scan(s).collect().rows() == [(17,)]
 
 
 def test_bigquery_connection_module() -> None:
@@ -471,7 +576,7 @@ def test_bigquery_adbc_factory_recovers_schema_from_empty_arrow_probe(
             pass
 
     scan = pl.scan_database(
-        "SELECT 17 AS id", Connection, dialect=dialect, partition_on=None
+        "SELECT 17 AS id", lambda: Connection(), dialect=dialect, partition_on=None
     )
     assert scan.collect_schema() == pl.Schema({"id": pl.Int64})
     assert scan.collect().rows() == ([] if empty else [(17,)])
