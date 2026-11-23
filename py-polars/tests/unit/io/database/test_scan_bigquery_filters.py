@@ -214,6 +214,26 @@ def test_bigquery_json_rejects_late_mixed_types(first: Any, late: Any) -> None:
         lf.collect()
 
 
+@pytest.mark.parametrize("batch_size", [1, 2, 1000])
+def test_bigquery_json_tracks_keys_introduced_within_first_batch(
+    batch_size: int,
+) -> None:
+    conn = _Connection(
+        [_Field("j", "JSON")],
+        [({"a": 0},)] + [({"a": 1, "b": "2"},)] * 999 + [({"a": 1, "b": 2},)],
+    )
+    lf = pl.scan_database("data", conn, batch_size=batch_size)
+    if batch_size == 1:
+        # Its first data batch lacks a field seen during sample inference.
+        with pytest.raises(pl.exceptions.SchemaError, match="struct"):
+            lf.collect()
+    else:
+        with pytest.raises(
+            pl.exceptions.ComputeError, match="cannot be inferred losslessly"
+        ):
+            lf.collect()
+
+
 @pytest.mark.parametrize(("first", "late"), [(True, 2), (2, True)])
 def test_bigquery_json_rejects_boolean_numeric_cast_after_sample(
     first: Any, late: Any

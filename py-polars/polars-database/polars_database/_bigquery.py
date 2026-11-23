@@ -92,7 +92,8 @@ _JSON_KINDS = {
 class _JsonObservations:
     def __init__(self) -> None:
         self.kinds: dict[tuple[str | None, ...], _JsonKind] = {}
-        self.object_keys: dict[tuple[str | None, ...], frozenset[str]] = {}
+        self.object_keys: dict[tuple[str | None, ...], set[str]] = {}
+        self.new_objects: set[tuple[str | None, ...]] = set()
 
 
 def _observe_json(
@@ -128,13 +129,16 @@ def _observe_json(
         for item in value:
             _observe_json(item, item_path, batch_kinds, history)
     elif kind == _JsonKind.OBJECT:
-        # Keep the first nonempty shape across batches. A result with changing keys
-        # may grow the current batch's observations only.
+        # Keep all keys observed in the object's first nonempty batch. A result with
+        # changing keys may grow only the current batch's observations after that.
         known_keys = None
         if history is not None and value:
             known_keys = history.object_keys.get(path)
             if known_keys is None:
-                known_keys = history.object_keys[path] = frozenset(value)
+                known_keys = history.object_keys[path] = set(value)
+                history.new_objects.add(path)
+            elif path in history.new_objects:
+                known_keys.update(value)
         for key, item in value.items():
             _observe_json(
                 item,
@@ -373,6 +377,7 @@ def result_frames(
                 else [tuple(row) for row in rows]
             )
             batch_json_kinds.clear()
+            json_history.new_objects.clear()
             batch_schema = schema
             if nested_unknown:
                 # A nested Unknown can reach Arrow before it is resolved, for
