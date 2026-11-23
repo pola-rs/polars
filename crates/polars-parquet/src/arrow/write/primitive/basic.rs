@@ -120,13 +120,6 @@ where
     array_to_page(array, options, type_, Encoding::Plain, encode_plain)
 }
 
-fn encode_byte_stream_split_i32(values: &[i32], out: &mut Vec<u8>) {
-    out.reserve(4 * values.len());
-    for byte in 0..4 {
-        out.extend(values.iter().map(|&v| v.to_le_bytes()[byte]));
-    }
-}
-
 pub(crate) fn select_i32_decimal_encoding(
     array: &PrimitiveArray<i128>,
     compression: CompressionOptions,
@@ -156,46 +149,18 @@ pub(crate) fn select_i32_decimal_encoding(
     let mut compressed = Vec::new();
     compress(compression, &bytes, &mut compressed)?;
     let plain_size = compressed.len();
+    let min_saving = bytes.len().div_ceil(32);
     bytes.clear();
     compressed.clear();
-    encode_byte_stream_split_i32(&sample, &mut bytes);
+    encode(sample.into_iter().map(i64::from), &mut bytes, 1);
     compress(compression, &bytes, &mut compressed)?;
 
-    // Splitting costs extra work on read. Require a saving of at least 1/32 of the input.
-    Ok(
-        if compressed.len() + bytes.len().div_ceil(32) <= plain_size {
-            Encoding::ByteStreamSplit
-        } else {
-            Encoding::Plain
-        },
-    )
-}
-
-pub(crate) fn i32_to_byte_stream_split_page(
-    array: &PrimitiveArray<i32>,
-    options: WriteOptions,
-    type_: PrimitiveType,
-) -> PolarsResult<Page> {
-    array_to_page::<i32, i32, _>(
-        array,
-        options,
-        type_,
-        Encoding::ByteStreamSplit,
-        |array, nullability, mut out| {
-            let values = array.values().as_slice();
-            let compacted;
-            let values = if nullability.is_optional() && array.has_nulls() {
-                compacted =
-                    polars_compute::filter::filter_values(values, array.validity().unwrap());
-                compacted.as_slice()
-            } else {
-                values
-            };
-            encode_byte_stream_split_i32(values, &mut out);
-            out
-        },
-    )
-    .map(Page::Data)
+    // Delta decoding costs extra work on read. Require a saving of 1/32 of the raw sample.
+    Ok(if compressed.len() + min_saving <= plain_size {
+        Encoding::DeltaBinaryPacked
+    } else {
+        Encoding::Plain
+    })
 }
 
 pub fn array_to_page_integer<T, P>(
