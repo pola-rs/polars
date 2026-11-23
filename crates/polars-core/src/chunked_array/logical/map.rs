@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 use polars_arrow::array::builder::{ShareStrategy, make_builder};
+use polars_arrow::bitmap::utils::BitmapIter;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::filter::filter_with_bitmap;
@@ -526,55 +527,88 @@ fn windowed_entries_array(arr: &LargeListArray) -> ArrayRef {
     }
 }
 
-/// The runs of the windowed entries that no null row spans, in order; `None` if no null row spans
-/// an entry.
-///
-/// Scans validity runs once, allocating only once a null row is found to span entries.
-fn live_entry_runs(arr: &LargeListArray) -> Option<Vec<Range<usize>>> {
-    let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
-    let offsets = arr.offsets();
-    let first = *offsets.first() as usize;
-    let n_entries = offsets.range() as usize;
+/// The runs of the windowed entries of a chunk that no null row spans, in order; walked from its
+/// validity runs without allocating.
+#[derive(Clone)]
+struct LiveEntryRuns<'a> {
+    offsets: &'a [i64],
+    rows: BitmapIter<'a>,
+    /// The next row of `rows`.
+    row: usize,
+    /// The first entry after the last null-row window.
+    live: usize,
+    n_entries: usize,
+}
 
-    let mut runs: Option<Vec<Range<usize>>> = None;
-    // The first entry after the last null-row window.
-    let mut live = 0;
-    let mut rows = validity.iter();
-    let mut row = 0;
-    while rows.num_remaining() > 0 {
-        row += rows.take_leading_ones();
-        let end = row + rows.take_leading_zeros();
-        let (start, stop) = (offsets[row] as usize - first, offsets[end] as usize - first);
-        if stop > start {
-            let runs = runs.get_or_insert_with(Vec::new);
-            if start > live {
-                runs.push(live..start);
+impl<'a> LiveEntryRuns<'a> {
+    /// `None` if the chunk has no null row.
+    fn new(arr: &'a LargeListArray) -> Option<Self> {
+        let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
+        Some(Self {
+            offsets: arr.offsets().as_slice(),
+            rows: validity.iter(),
+            row: 0,
+            live: 0,
+            n_entries: arr.offsets().range() as usize,
+        })
+    }
+}
+
+impl Iterator for LiveEntryRuns<'_> {
+    type Item = Range<usize>;
+
+    fn next(&mut self) -> Option<Range<usize>> {
+        let first = self.offsets[0];
+        while self.rows.num_remaining() > 0 {
+            self.row += self.rows.take_leading_ones();
+            let end = self.row + self.rows.take_leading_zeros();
+            let start = (self.offsets[self.row] - first) as usize;
+            let stop = (self.offsets[end] - first) as usize;
+            self.row = end;
+            if stop > start {
+                let run = self.live..start;
+                self.live = stop;
+                if !run.is_empty() {
+                    return Some(run);
+                }
             }
-            live = stop;
         }
-        row = end;
+        let run = self.live..self.n_entries;
+        self.live = self.n_entries;
+        (!run.is_empty()).then_some(run)
     }
-
-    let mut runs = runs?;
-    if n_entries > live {
-        runs.push(live..n_entries);
-    }
-    Some(runs)
 }
 
 /// The shortest average run worth copying run by run instead of filtering with a mask, which
 /// costs a bit per entry.
 const MIN_COPIED_RUN_LEN: usize = 64;
 
-/// The entries of `runs` of `entries`: a slice for one run, copied run by run when the runs are
-/// long, and filtered with a mask otherwise.
-fn take_entry_runs(entries: &ArrayRef, runs: &[Range<usize>]) -> ArrayRef {
-    match runs {
-        [] => entries.sliced(0, 0),
-        [run] => entries.sliced(run.start, run.len()),
-        _ if runs.len() * MIN_COPIED_RUN_LEN <= entries.len() => {
+/// The entries of `runs` of `entries`, or `None` if the runs cover them all: a slice for one run,
+/// copied run by run when the runs are long, and filtered with a mask otherwise.
+///
+/// Walks the runs once to count them and once to take them, so that no strategy stores them. The
+/// count stops once the runs are too many to copy, which bounds the first walk to a
+/// `MIN_COPIED_RUN_LEN`th of the entries.
+fn take_entry_runs(entries: &ArrayRef, runs: LiveEntryRuns<'_>) -> Option<ArrayRef> {
+    let max_copied = entries.len() / MIN_COPIED_RUN_LEN;
+    let (mut count, mut live, mut first) = (0, 0, None);
+    for run in runs.clone() {
+        count += 1;
+        live += run.len();
+        first.get_or_insert(run.start);
+        if count > max_copied.max(1) {
+            break;
+        }
+    }
+    // Two runs have a null row with entries between them, so only a single run can cover all.
+    if count <= 1 && live == entries.len() {
+        return None;
+    }
+    Some(match (count, first) {
+        (1, Some(start)) => entries.sliced(start, live),
+        _ if count <= max_copied => {
             let mut builder = make_builder(entries.dtype());
-            builder.reserve(runs.iter().map(|r| r.len()).sum());
+            builder.reserve(live);
             for run in runs {
                 builder.subslice_extend(
                     entries.as_ref(),
@@ -594,7 +628,7 @@ fn take_entry_runs(entries: &ArrayRef, runs: &[Range<usize>]) -> ArrayRef {
             mask.extend_constant(entries.len() - mask.len(), false);
             filter_with_bitmap(entries.as_ref(), &mask.freeze())
         },
-    }
+    })
 }
 
 /// One chunk's entries of the field at `i`, restricted to the entries of live rows.
@@ -607,10 +641,9 @@ fn live_entry_field_chunk(arr: &LargeListArray, i: usize) -> ArrayRef {
         .downcast_ref::<StructArray>()
         .expect("map entries are a struct");
     let field = entries.values()[i].clone();
-    match live_entry_runs(arr) {
-        Some(runs) => take_entry_runs(&field, &runs),
-        None => field,
-    }
+    LiveEntryRuns::new(arr)
+        .and_then(|runs| take_entry_runs(&field, runs))
+        .unwrap_or(field)
 }
 
 /// Zero-based row offsets over the live entries of `arr`, with null rows emptied.
@@ -642,8 +675,7 @@ fn live_lengths(arr: &LargeListArray) -> impl Iterator<Item = usize> + '_ {
 
 /// Filter out entries under null rows and rebuild offsets; `None` if unchanged.
 pub(crate) fn compact_null_rows_chunk(arr: &LargeListArray) -> Option<LargeListArray> {
-    let runs = live_entry_runs(arr)?;
-    let entries = take_entry_runs(&windowed_entries_array(arr), &runs);
+    let entries = take_entry_runs(&windowed_entries_array(arr), LiveEntryRuns::new(arr)?)?;
     let validity = arr.validity().expect("a masked chunk has null rows");
 
     Some(LargeListArray::new(
