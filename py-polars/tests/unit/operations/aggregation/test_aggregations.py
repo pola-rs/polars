@@ -812,13 +812,27 @@ def test_quantile_out_of_range_literal_empty(
             q.collect_schema()
 
 
-@pytest.mark.parametrize("quantile", [pl.lit(True), pl.lit("0.5")])
-def test_quantile_non_numeric_fraction_grouped(quantile: pl.Expr) -> None:
+def test_quantile_str_fraction() -> None:
+    # `quantile` outside a group-by parses a string, for backward compatibility.
     lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
-    expr = pl.col("a").quantile(quantile)
+    expr = pl.col("a").quantile(pl.lit("0.5"))
+    assert lf.select(expr).collect().item() == 2.0
     for q in [lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
         with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
             q.collect()
+
+
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+@pytest.mark.parametrize(
+    "quantile",
+    [pl.lit(True), pl.lit([True, False]), pl.col("b"), pl.lit(date(1970, 1, 1))],
+)
+def test_quantile_non_numeric_fraction(op: str, quantile: pl.Expr) -> None:
+    lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64, "b": pl.Boolean})
+    expr = getattr(pl.col("a"), op)(quantile)
+    for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
+            q.collect_schema()
 
 
 @pytest.mark.parametrize(

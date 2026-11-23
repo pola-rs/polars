@@ -52,19 +52,56 @@ pub fn quantile_indices(
     }
 }
 
-/// Extracts the quantiles of the `quantile` expression input, a single quantile or a list of them.
-pub fn extract_quantiles(quantile: &Series) -> PolarsResult<Vec<f64>> {
-    polars_ensure!(!quantile.is_empty(), ComputeError:
+/// The dtypes a `quantile` fraction may have, which depend on where it is given.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuantileFractionDtypes {
+    /// One number, as in a group-by, where each group takes one fraction.
+    Number,
+    /// One number or a list of numbers.
+    NumberOrList,
+    /// One number or a list of numbers, where a string, alone or in a list, is parsed as a
+    /// number. `quantile` expressions outside a group-by accept strings, for backward
+    /// compatibility.
+    NumberOrListOrStr,
+}
+
+/// Returns an error if a `quantile` fraction of `dtype` isn't one of `allowed`. The Null dtype and
+/// an unresolved dtype pass.
+pub fn check_quantile_dtype(dtype: &DataType, allowed: QuantileFractionDtypes) -> PolarsResult<()> {
+    use QuantileFractionDtypes as A;
+    let inner = match dtype {
+        DataType::List(inner) if allowed != A::Number => inner.as_ref(),
+        dtype => dtype,
+    };
+    let ok = inner.is_numeric()
+        || inner.is_null()
+        || matches!(inner, DataType::Unknown(UnknownKind::Any))
+        || (inner.is_string() && allowed == A::NumberOrListOrStr);
+    polars_ensure!(
+        ok,
+        SchemaMismatch: "expected expression of dtype 'numeric' for quantile, got '{}'", dtype
+    );
+    Ok(())
+}
+
+/// Checks the fraction given to `quantile` and returns its values. `fraction` holds one row: a
+/// number or a list of numbers. `allowed` gives the dtypes it may have.
+pub fn extract_quantiles(
+    fraction: &Series,
+    allowed: QuantileFractionDtypes,
+) -> PolarsResult<Vec<f64>> {
+    check_quantile_dtype(fraction.dtype(), allowed)?;
+    polars_ensure!(!fraction.is_empty(), ComputeError:
         "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
         got an empty input"
     );
-    polars_ensure!(quantile.len() == 1, ComputeError:
+    polars_ensure!(fraction.len() == 1, ComputeError:
         "polars does not support varying quantiles yet, \
         make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
-    let quantiles = match quantile.dtype() {
+    let quantiles = match fraction.dtype() {
         DataType::List(_) => {
-            let inner = quantile.list()?.get_as_series(0).ok_or_else(
+            let inner = fraction.list()?.get_as_series(0).ok_or_else(
                 || polars_err!(ComputeError: "quantile expression contains null values"),
             )?;
             polars_ensure!(!inner.has_nulls(), ComputeError: "quantile expression contains null values");
@@ -74,7 +111,7 @@ pub fn extract_quantiles(quantile: &Series) -> PolarsResult<Vec<f64>> {
                 .into_no_null_iter()
                 .collect()
         },
-        _ => vec![quantile.get(0)?.try_extract()?],
+        _ => vec![fraction.get(0)?.try_extract()?],
     };
     check_quantiles(&quantiles)?;
     Ok(quantiles)

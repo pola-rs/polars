@@ -150,6 +150,7 @@ pub fn approx_quantile_estimate(
     values_dtype: &DataType,
 ) -> PolarsResult<Series> {
     let sketch = sketch.binary().expect("incorrect dtype");
+    check_quantile_dtype(quantiles.dtype(), QuantileFractionDtypes::NumberOrListOrStr)?;
     let quantiles_is_list = quantiles.dtype().is_list();
     if sketch.is_empty() {
         let dtype = if quantiles_is_list {

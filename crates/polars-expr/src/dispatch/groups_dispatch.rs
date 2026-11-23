@@ -15,7 +15,8 @@ use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
     Float64Chunked, GroupPositions, GroupsIdx, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries,
-    LargeListArray, ListChunked, check_quantiles, explode_with_row_offsets, extract_quantiles,
+    LargeListArray, ListChunked, QuantileFractionDtypes, check_quantile_dtype, check_quantiles,
+    explode_with_row_offsets, extract_quantiles,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -716,12 +717,7 @@ pub fn quantile<'a>(
             ),
         }
     };
-    polars_ensure!(
-        quantile_column.dtype().is_numeric(),
-        SchemaMismatch:
-            "expected expression of dtype 'numeric' for quantile, got '{}'",
-        quantile_column.dtype()
-    );
+    check_quantile_dtype(quantile_column.dtype(), QuantileFractionDtypes::Number)?;
 
     let per_group_quantiles;
     let quantile = if per_group {
@@ -748,7 +744,10 @@ pub fn quantile<'a>(
         }
         GroupQuantile::PerGroup(quantiles)
     } else {
-        let quantile = extract_quantiles(quantile_column.as_materialized_series())?[0];
+        let quantile = extract_quantiles(
+            quantile_column.as_materialized_series(),
+            QuantileFractionDtypes::Number,
+        )?[0];
         if let AggState::LiteralScalar(c) = &mut ac.state {
             *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
             return Ok(ac);

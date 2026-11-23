@@ -838,8 +838,10 @@ pub(super) fn convert_functions(
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         F::Quantile { method } => {
-            // Checking a literal fraction here makes every engine raise, even on empty input.
-            literal_quantiles(ctx.arena.get(e[1].node()))?;
+            // Planning doesn't know whether a group-by uses the fraction, so it allows strings. A
+            // group-by checks for one number per group when it runs.
+            let allowed = QuantileFractionDtypes::NumberOrListOrStr;
+            check_quantile_fraction(&e[1], allowed, ctx.schema, ctx.arena)?;
             I::Quantile { method }
         },
         #[cfg(feature = "mode")]
@@ -929,7 +931,9 @@ pub(super) fn convert_functions(
             let quantile_input = e.get(1).ok_or_else(
                 || polars_err!(InvalidOperation: "missing argument 'quantile' in `approx_quantile`"),
             )?;
-            let quantiles = literal_quantiles(ctx.arena.get(quantile_input.node()))?;
+            let allowed = QuantileFractionDtypes::NumberOrListOrStr;
+            let quantiles =
+                check_quantile_fraction(quantile_input, allowed, ctx.schema, ctx.arena)?;
             let method = method.resolve(quantiles.as_deref());
             let error = match use_formal_bound {
                 true => error,
@@ -1411,12 +1415,18 @@ pub(super) fn convert_functions(
     Ok((ctx.arena.add(ae_function), output_name))
 }
 
-/// Returns the fractions given to `quantile` or `approx_quantile` if that input is a literal: one
-/// number or a list of numbers. Null elements of a list are left out, since a null fraction gives
-/// a null result. Returns `None` for any other input. Returns an error if a literal fraction is NaN
-/// or outside `0.0..=1.0`.
-fn literal_quantiles(fraction: &AExpr) -> PolarsResult<Option<Vec<f64>>> {
-    let value = match fraction {
+/// Checks the fraction given to `quantile` or `approx_quantile`, and returns its values if it is a
+/// literal: one number or a list of numbers. Null elements of a list are left out, since a null
+/// fraction gives a null result. `allowed` gives the dtypes the fraction may have. Checking here
+/// makes every engine raise on a bad fraction, even on empty input.
+fn check_quantile_fraction(
+    fraction: &ExprIR,
+    allowed: QuantileFractionDtypes,
+    schema: &Schema,
+    arena: &Arena<AExpr>,
+) -> PolarsResult<Option<Vec<f64>>> {
+    check_quantile_dtype(fraction.dtype(schema, arena)?, allowed)?;
+    let value = match arena.get(fraction.node()) {
         AExpr::Literal(
             lv @ (LiteralValue::Scalar(_)
             | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
