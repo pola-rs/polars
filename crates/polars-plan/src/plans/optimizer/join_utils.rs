@@ -16,6 +16,7 @@ pub(super) fn join_right_output_to_input(
     schema_left: &Schema,
     schema_right: &Schema,
     options: &JoinOptionsIR,
+    include_identity: bool,
 ) -> PolarsResult<PlIndexMap<PlSmallStr, PlSmallStr>> {
     if options.args.how.is_semi_anti() {
         return Ok(PlIndexMap::default());
@@ -24,7 +25,10 @@ pub(super) fn join_right_output_to_input(
     Ok(schema_right
         .iter_names()
         .zip(output_names)
-        .filter_map(|(input, output)| Some((output?, input.clone())))
+        .filter_map(|(input, output)| {
+            let output = output.filter(|output| include_identity || output != input)?;
+            Some((output, input.clone()))
+        })
         .collect())
 }
 

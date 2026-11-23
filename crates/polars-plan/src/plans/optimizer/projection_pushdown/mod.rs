@@ -1012,9 +1012,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 project_left.reserve(input_schema_left.len());
                 project_right.reserve(input_schema_right.len());
 
-                let right_output_to_input =
-                    join_right_output_to_input(&input_schema_left, &input_schema_right, options)
-                        .unwrap();
+                let right_output_to_input = join_right_output_to_input(
+                    &input_schema_left,
+                    &input_schema_right,
+                    options,
+                    true,
+                )
+                .unwrap();
 
                 let has_cross_filter =
                     matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. });
