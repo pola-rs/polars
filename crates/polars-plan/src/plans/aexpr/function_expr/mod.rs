@@ -414,6 +414,10 @@ pub enum IRFunctionExpr {
     MeanHorizontal {
         ignore_nulls: bool,
     },
+    VarHorizontal {
+        ignore_nulls: bool,
+        ddof: u8,
+    },
     #[cfg(feature = "ewma")]
     EwmMean {
         options: EWMOptions,
@@ -585,6 +589,10 @@ impl Hash for IRFunctionExpr {
 
             SumHorizontal { ignore_nulls } | MeanHorizontal { ignore_nulls } => {
                 ignore_nulls.hash(state)
+            },
+            VarHorizontal { ignore_nulls, ddof } => {
+                ignore_nulls.hash(state);
+                ddof.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
             | ArgMax | Product | Shift | ShiftAndFill => {},
@@ -1080,6 +1088,7 @@ impl IRFunctionExpr {
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",
             MeanHorizontal { .. } => "mean_horizontal",
+            VarHorizontal { .. } => "var_horizontal",
             #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma_by")]
@@ -1507,6 +1516,8 @@ impl IRFunctionExpr {
                     (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
                 ),
             F::MeanHorizontal { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+            F::VarHorizontal { .. } => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             F::SumHorizontal { .. } => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)

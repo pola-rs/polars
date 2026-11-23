@@ -1312,6 +1312,7 @@ pub(super) fn convert_functions(
         F::MinHorizontal => I::MinHorizontal,
         F::SumHorizontal { ignore_nulls } => I::SumHorizontal { ignore_nulls },
         F::MeanHorizontal { ignore_nulls } => I::MeanHorizontal { ignore_nulls },
+        F::VarHorizontal { ignore_nulls, ddof } => I::VarHorizontal { ignore_nulls, ddof },
         #[cfg(feature = "ewma")]
         F::EwmMean { options } => I::EwmMean { options },
         #[cfg(feature = "ewma_by")]

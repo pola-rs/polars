@@ -53,3 +53,10 @@ pub fn mean_horizontal(exprs: Vec<PyExpr>, ignore_nulls: bool) -> PyResult<PyExp
     let e = dsl::mean_horizontal(exprs, ignore_nulls).map_err(PyPolarsErr::from)?;
     Ok(e.into())
 }
+
+#[pyfunction]
+pub fn var_horizontal(exprs: Vec<PyExpr>, ignore_nulls: bool, ddof: u8) -> PyResult<PyExpr> {
+    let exprs = exprs.to_exprs();
+    let e = dsl::var_horizontal(exprs, ignore_nulls, ddof).map_err(PyPolarsErr::from)?;
+    Ok(e.into())
+}

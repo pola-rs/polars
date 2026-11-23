@@ -230,7 +230,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::ToPhysical => false,
         F::SetSortedFlag(_) => false,
         F::MaxHorizontal | F::MinHorizontal => false,
-        F::SumHorizontal { .. } | F::MeanHorizontal { .. } => false,
+        F::SumHorizontal { .. } | F::MeanHorizontal { .. } | F::VarHorizontal { .. } => false,
         #[cfg(feature = "ewma")]
         F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } | F::EwmSum { .. } => false,
         #[cfg(feature = "ewma_by")]

@@ -6,6 +6,7 @@ from polars.functions.aggregation.horizontal import (
     mean_horizontal,
     min_horizontal,
     sum_horizontal,
+    var_horizontal,
 )
 from polars.functions.aggregation.vertical import (
     all,
@@ -30,4 +31,5 @@ __all__ = [
     "min_horizontal",
     "sum",
     "sum_horizontal",
+    "var_horizontal",
 ]

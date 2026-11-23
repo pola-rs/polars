@@ -614,6 +614,39 @@ def test_mean_horizontal_all_null() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_var_horizontal() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [2.0, 4.0, 6.0], "c": [3, None, 9]})
+    result = lf.select(pl.var_horizontal(pl.all()).alias("var"))
+
+    expected = pl.LazyFrame({"var": [1.0, 2.0, 9.0]}, schema={"var": pl.Float64})
+    assert_frame_equal(result, expected)
+
+
+def test_var_horizontal_nulls() -> None:
+    lf = pl.LazyFrame({"a": [5, 5, None], "b": [9, None, None]})
+    result_ignore = lf.select(pl.var_horizontal(pl.all(), ddof=0).alias("var"))
+    result_keep = lf.select(
+        pl.var_horizontal(pl.all(), ignore_nulls=False, ddof=0).alias("var")
+    )
+
+    expected_without = pl.LazyFrame(
+        {"var": [4.0, 0.0, None]}, schema={"var": pl.Float64}
+    )
+    expected_with = pl.LazyFrame({"var": [4.0, None, None]}, schema={"var": pl.Float64})
+    assert_frame_equal(result_ignore, expected_without)
+    assert_frame_equal(result_keep, expected_with)
+
+
+def test_var_horizontal_float32() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [2.0, 4.0, 6.0], "c": [3, None, 9]}).cast(
+        pl.Float32
+    )
+    result = lf.select(pl.var_horizontal(pl.all()).alias("var"))
+
+    expected = pl.LazyFrame({"var": [1.0, 2.0, 9.0]}, schema={"var": pl.Float32})
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     ("in_dtype", "out_dtype"),
     [

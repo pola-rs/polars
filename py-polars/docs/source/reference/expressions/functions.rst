@@ -90,6 +90,7 @@ These functions are available from the Polars module root and can be used as exp
    time_range
    time_ranges
    var
+   var_horizontal
    when
    zeros
 

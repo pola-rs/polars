@@ -177,6 +177,20 @@ pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> Polars
     ))
 }
 
+/// Compute the variance of all values horizontally across columns.
+pub fn var_horizontal<E: AsRef<[Expr]>>(
+    exprs: E,
+    ignore_nulls: bool,
+    ddof: u8,
+) -> PolarsResult<Expr> {
+    let exprs = exprs.as_ref().to_vec();
+    polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+    Ok(Expr::n_ary(
+        FunctionExpr::VarHorizontal { ignore_nulls, ddof },
+        exprs,
+    ))
+}
+
 /// Folds the expressions from left to right keeping the first non-null values.
 ///
 /// It is an error to provide an empty `exprs`.

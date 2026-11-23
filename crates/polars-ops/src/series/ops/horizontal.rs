@@ -370,6 +370,67 @@ pub fn mean_horizontal(
     }
 }
 
+pub fn var_horizontal(
+    columns: &[Column],
+    null_strategy: NullStrategy,
+    ddof: u8,
+) -> PolarsResult<Option<Column>> {
+    broadcast_len(columns.iter()).context("var_horizontal")?;
+
+    let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) = columns.iter().partition(|s| {
+        let dtype = s.dtype();
+        dtype.is_primitive_numeric() || dtype.is_decimal() || dtype.is_bool() || dtype.is_null()
+    });
+
+    if !non_numeric_columns.is_empty() {
+        let col = non_numeric_columns.first().cloned();
+        polars_bail!(
+            InvalidOperation: "'horizontal_var' expects numeric expressions, found {:?} (dtype={})",
+            col.unwrap().name(),
+            col.unwrap().dtype(),
+        );
+    }
+    let columns = numeric_columns.into_iter().cloned().collect::<Vec<_>>();
+    let num_columns = columns.len();
+    match num_columns {
+        0 => Ok(None),
+        _ => {
+            let mean = mean_horizontal(columns.as_slice(), null_strategy)?.unwrap();
+            let mut n = columns[0]
+                .is_not_null()
+                .into_column()
+                .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)?;
+            let first_diff = std::ops::Sub::sub(&columns[0], &mean)?;
+            let mut running_diff = std::ops::Mul::mul(&first_diff, &first_diff)?;
+            if null_strategy == NullStrategy::Ignore {
+                running_diff = running_diff.fill_null(FillNullStrategy::Zero)?;
+            }
+            for c in &columns[1..] {
+                let has_value = c
+                    .is_not_null()
+                    .into_column()
+                    .cast_with_options(&DataType::UInt32, CastOptions::NonStrict)?;
+                let diff = std::ops::Sub::sub(c, &mean)?;
+                let mut squared = std::ops::Mul::mul(&diff, &diff)?;
+                if null_strategy == NullStrategy::Ignore {
+                    squared = squared.fill_null(FillNullStrategy::Zero)?;
+                }
+                n = std::ops::Add::add(&n, &has_value)?;
+                running_diff = std::ops::Add::add(&running_diff, &squared)?;
+            }
+
+            let n = n.u32()?.clone();
+            let n = n.set(&n.lt_eq(ddof as u32), None)?;
+
+            let divisor = &n - (ddof as u32);
+            let divisor = divisor.into_column().cast(running_diff.dtype())?;
+            let result = std::ops::Div::div(&running_diff, &divisor)?;
+
+            Ok(Some(result))
+        },
+    }
+}
+
 pub fn coalesce_columns(s: &[Column]) -> PolarsResult<Column> {
     // Each iteration recomputes the null mask and allocates a new `out`; a single
     // pass over all inputs would be faster for many inputs with many nulls.

@@ -210,6 +210,7 @@ from polars.functions import (
     time_ranges,
     union,
     var,
+    var_horizontal,
     when,
     zeros,
 )
@@ -495,6 +496,7 @@ __all__ = [
     "tail",
     "time",
     "var",
+    "var_horizontal",
     # polars.functions.len
     "len",
     # polars.functions.random

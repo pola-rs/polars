@@ -29,7 +29,7 @@ pub use concat::*;
 pub use correlation::*;
 pub use horizontal::{
     all_horizontal, any_horizontal, coalesce, fold_exprs, max_horizontal, mean_horizontal,
-    min_horizontal, reduce_exprs, sum_horizontal,
+    min_horizontal, reduce_exprs, sum_horizontal, var_horizontal,
 };
 #[cfg(feature = "dtype-struct")]
 pub use horizontal::{cum_fold_exprs, cum_reduce_exprs, cum_sum_horizontal};

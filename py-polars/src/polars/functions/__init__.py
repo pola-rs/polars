@@ -12,6 +12,7 @@ from polars.functions.aggregation import (
     min_horizontal,
     sum,
     sum_horizontal,
+    var_horizontal,
 )
 from polars.functions.as_datatype import (
     concat_arr,
@@ -187,6 +188,7 @@ __all__ = [
     "tail",
     "time",
     "var",
+    "var_horizontal",
     # polars.functions.len
     "len",
     # polars.functions.whenthen

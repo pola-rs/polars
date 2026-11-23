@@ -439,6 +439,10 @@ pub enum FunctionExpr {
     MeanHorizontal {
         ignore_nulls: bool,
     },
+    VarHorizontal {
+        ignore_nulls: bool,
+        ddof: u8,
+    },
     #[cfg(feature = "ewma")]
     EwmMean {
         options: EWMOptions,
@@ -598,6 +602,10 @@ impl Hash for FunctionExpr {
             },
             SumHorizontal { ignore_nulls } | MeanHorizontal { ignore_nulls } => {
                 ignore_nulls.hash(state)
+            },
+            VarHorizontal { ignore_nulls, ddof } => {
+                ignore_nulls.hash(state);
+                ddof.hash(state)
             },
             #[cfg(feature = "dtype-struct")]
             CumSumHorizontal => {},
@@ -1059,6 +1067,7 @@ impl Display for FunctionExpr {
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",
             MeanHorizontal { .. } => "mean_horizontal",
+            VarHorizontal { .. } => "var_horizontal",
             #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma_by")]

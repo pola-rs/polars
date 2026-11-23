@@ -606,6 +606,17 @@ impl IRFunctionExpr {
                 }
                 f
             }),
+            VarHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
+                match f.dtype {
+                    #[cfg(feature = "dtype-f16")]
+                    DataType::Float16 => {},
+                    DataType::Float32 => {},
+                    _ => {
+                        f.dtype = DataType::Float64;
+                    },
+                }
+                f
+            }),
             #[cfg(feature = "ewma")]
             EwmMean { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma_by")]

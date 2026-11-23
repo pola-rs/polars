@@ -544,6 +544,7 @@ pub fn function_expr_to_udf(
         F::MinHorizontal => wrap!(misc::min_horizontal),
         F::SumHorizontal { ignore_nulls } => wrap!(misc::sum_horizontal, ignore_nulls),
         F::MeanHorizontal { ignore_nulls } => wrap!(misc::mean_horizontal, ignore_nulls),
+        F::VarHorizontal { ignore_nulls, ddof } => wrap!(misc::var_horizontal, ignore_nulls, ddof),
         #[cfg(feature = "ewma")]
         F::EwmMean { options } => map!(misc::ewm_mean, options),
         #[cfg(feature = "ewma_by")]

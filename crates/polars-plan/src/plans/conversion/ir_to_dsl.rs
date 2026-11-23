@@ -1276,6 +1276,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::MinHorizontal => F::MinHorizontal,
         IF::SumHorizontal { ignore_nulls } => F::SumHorizontal { ignore_nulls },
         IF::MeanHorizontal { ignore_nulls } => F::MeanHorizontal { ignore_nulls },
+        IF::VarHorizontal { ignore_nulls, ddof } => F::VarHorizontal { ignore_nulls, ddof },
         #[cfg(feature = "ewma")]
         IF::EwmMean { options } => F::EwmMean { options },
         #[cfg(feature = "ewma_by")]

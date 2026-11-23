@@ -365,6 +365,10 @@ def var(column: str, ddof: int = 1) -> Expr:
         where N represents the number of elements.
         By default ddof is 1.
 
+    See Also
+    --------
+    var_horizontal
+
     Examples
     --------
     >>> df = pl.DataFrame(
