@@ -1090,12 +1090,13 @@ pub fn resolve_scan(
                 is_key: info.key_column.as_ref() == Some(name),
                 comparable: !info.incomplete
                     && info.compares_like_polars(dialect, name, dtype)
-                    // The Google driver reads GEOGRAPHY and wide BIGNUMERIC as text, and
-                    // can decode untyped values differently from SQL (JSON null as null).
-                    && (!google_bigquery
-                        || (!sampled.contains(name.as_str())
-                            && (*dtype != DataType::String
-                                || bigquery_text_columns.contains(name.as_str()))))
+                    // BigQuery drivers also read GEOGRAPHY, JSON and wide BIGNUMERIC as
+                    // strings. Require evidence of native STRING from result metadata.
+                    && (dialect != DialectName::Bigquery
+                        || *dtype != DataType::String
+                        || bigquery_text_columns.contains(name.as_str()))
+                    // The Google driver also decodes JSON null as a Polars null.
+                    && (!google_bigquery || !sampled.contains(name.as_str()))
                     // read as text, compared as its own type
                     && !(dialect == DialectName::Duckdb
                         && info

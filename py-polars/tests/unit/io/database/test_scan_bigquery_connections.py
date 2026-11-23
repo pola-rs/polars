@@ -475,6 +475,43 @@ def test_bigquery_adbc_wheel_options_preserve_explicit_settings() -> None:
     assert statement == {prefix + "query.disable_query_cache": "true"}
 
 
+_BIGQUERY_ADBC_ROW = {"id": 17, "geo": "POINT(1 2)", "doc": '{"x":1}', "label": "a"}
+_BIGQUERY_ADBC_SCHEMA = {
+    "id": pl.Int64,
+    "geo": pl.String,
+    "doc": pl.String,
+    "label": pl.String,
+}
+
+
+def _bigquery_adbc_table(pa: Any, *, empty: bool = False, probe: bool = False) -> Any:
+    # ADBC can expose a native GEOGRAPHY or JSON as the same Arrow type as STRING.
+    return pa.table(
+        {
+            name: pa.array(
+                [] if empty else [None if probe else value],
+                type=pa.int64() if name == "id" else pa.string(),
+            )
+            for name, value in _BIGQUERY_ADBC_ROW.items()
+        }
+    )
+
+
+def _check_bigquery_adbc_text_filters(scan: pl.LazyFrame, sqls: list[str]) -> None:
+    for name in ("geo", "doc", "label"):
+        value = _BIGQUERY_ADBC_ROW[name]
+        sqls.clear()
+        assert scan.filter(pl.col(name) == value).select(name).collect().rows() == [
+            (value,)
+        ]
+        assert any(sql.startswith(f"SELECT `{name}`") for sql in sqls)
+        assert not any(f"WHERE `{name}`" in sql for sql in sqls), sqls
+
+    sqls.clear()
+    assert scan.filter(pl.col("id") == 17).select("id").collect().rows() == [(17,)]
+    assert any("WHERE `id` = 17" in sql for sql in sqls), sqls
+
+
 @pytest.mark.parametrize("empty", [False, True])
 def test_bigquery_adbc_wheel_recovers_schema_from_empty_arrow_probe(
     empty: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -501,11 +538,11 @@ def test_bigquery_adbc_wheel_recovers_schema_from_empty_arrow_probe(
             sqls.append(sql)
             if "SELECT _pl_record.*" in sql:
                 assert "WHERE 1 = 0" in sql
-                table = pa.table({"id": pa.array([None], type=pa.int64())})
+                table = _bigquery_adbc_table(pa, probe=True)
             elif "WHERE 1 = 0" in sql or empty:
                 table = pa.table({})
             else:
-                table = pa.table({"id": pa.array([17], type=pa.int64())})
+                table = _bigquery_adbc_table(pa)
             return table.to_reader(), table.num_rows
 
         stmt.execute_query.side_effect = execute_query
@@ -524,14 +561,16 @@ def test_bigquery_adbc_wheel_recovers_schema_from_empty_arrow_probe(
         SimpleNamespace(ArrowArrayStreamHandle=pa.RecordBatchReader),
     )
     scan = pl.scan_database(
-        "SELECT 17 AS id",
+        "SELECT * FROM fixture",
         "bigquery:///project",
         driver=str(library),
         partition_on=None,
     )
-    assert scan.collect_schema() == pl.Schema({"id": pl.Int64})
-    assert scan.collect().rows() == ([] if empty else [(17,)])
+    assert scan.collect_schema() == pl.Schema(_BIGQUERY_ADBC_SCHEMA)
+    assert scan.collect().to_dicts() == ([] if empty else [_BIGQUERY_ADBC_ROW])
     assert any("SELECT _pl_record.*" in sql for sql in sqls)
+    if not empty:
+        _check_bigquery_adbc_text_filters(scan, sqls)
 
 
 @pytest.mark.parametrize("dialect", [None, "bigquery"])
@@ -555,13 +594,11 @@ def test_bigquery_adbc_factory_recovers_schema_from_empty_arrow_probe(
         def execute(self, sql: str) -> None:
             sqls.append(sql)
             if "SELECT _pl_record.*" in sql:
-                self.result = pa.table({"id": pa.array([None], type=pa.int64())})
+                self.result = _bigquery_adbc_table(pa, probe=True)
             elif "WHERE 1 = 0" in sql:
                 self.result = pa.table({})
             else:
-                self.result = pa.table(
-                    {"id": pa.array([] if empty else [17], type=pa.int64())}
-                )
+                self.result = _bigquery_adbc_table(pa, empty=empty)
 
         def fetch_record_batch(self) -> Any:
             return self.result.to_reader()
@@ -582,8 +619,13 @@ def test_bigquery_adbc_factory_recovers_schema_from_empty_arrow_probe(
             pass
 
     scan = pl.scan_database(
-        "SELECT 17 AS id", lambda: Connection(), dialect=dialect, partition_on=None
+        "SELECT * FROM fixture",
+        lambda: Connection(),
+        dialect=dialect,
+        partition_on=None,
     )
-    assert scan.collect_schema() == pl.Schema({"id": pl.Int64})
-    assert scan.collect().rows() == ([] if empty else [(17,)])
+    assert scan.collect_schema() == pl.Schema(_BIGQUERY_ADBC_SCHEMA)
+    assert scan.collect().to_dicts() == ([] if empty else [_BIGQUERY_ADBC_ROW])
     assert any("SELECT _pl_record.*" in sql for sql in sqls)
+    if not empty:
+        _check_bigquery_adbc_text_filters(scan, sqls)
