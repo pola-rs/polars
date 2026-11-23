@@ -153,11 +153,9 @@ mod not;
 #[cfg(feature = "dtype-array")]
 pub mod concat_arr;
 pub mod concat_list;
-#[cfg(feature = "dtype-duration")]
-pub(crate) mod duration;
-#[cfg(feature = "dtype-duration")]
-pub use duration::*;
 pub use not::*;
+#[cfg(feature = "dtype-duration")]
+pub use polars_core::chunked_array::temporal::impl_duration;
 
 pub trait SeriesSealed {
     fn as_series(&self) -> &Series;

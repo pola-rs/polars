@@ -1,7 +1,7 @@
 use chrono::{Datelike, Timelike};
-use polars_arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
+#[cfg(feature = "dtype-duration")]
+use polars_core::chunked_array::temporal::impl_duration;
 use polars_defs::time::date_diff::DateDiffUnit;
-use polars_utils::array;
 
 use super::*;
 
@@ -335,31 +335,25 @@ impl DurationArgs {
     impl_unit_setter!(with_microseconds(microseconds));
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 
+    #[cfg(feature = "dtype-duration")]
     fn as_literal(&self) -> Option<Expr> {
-        use time_unit::convert_time_units;
-
-        let extract_i64_as_i128 = |e: &Expr| {
+        // Fold by evaluating the function expr on the literals, cast as type coercion casts
+        // them (other dtypes, nulls, and integers that do not fit into i64 are not folded)
+        let to_column = |e: &Expr| {
             let Expr::Literal(lv) = e else { return None };
             let av = lv.to_any_value()?;
-            if !av.is_integer() {
+            let av = if av.is_integer() {
+                AnyValue::Int64(av.extract()?)
+            } else if av.is_float() {
+                AnyValue::Float64(av.extract()?)
+            } else {
                 return None;
             };
-            av.extract::<i64>().map(i128::from)
-        };
-        let extract_f64 = |e: &Expr| {
-            let Expr::Literal(lv) = e else { return None };
-            let av = lv.to_any_value()?;
-            av.extract::<f64>()
-        };
-        let overflows_i64 = |e: &&Expr| {
-            let Expr::Literal(lv) = e else { return false };
-            let av = lv.to_any_value();
-            match av {
-                Some(AnyValue::UInt128(x)) => x > i64::MAX as u128,
-                Some(AnyValue::UInt64(x)) => x > i64::MAX as u64,
-                Some(AnyValue::Int128(x)) => x < i64::MIN as i128 || x > i64::MAX as i128,
-                _ => false,
-            }
+            Some(Column::new_scalar(
+                PlSmallStr::EMPTY,
+                Scalar::new(av.dtype(), av),
+                1,
+            ))
         };
 
         let fields = [
@@ -372,46 +366,16 @@ impl DurationArgs {
             &self.microseconds,
             &self.nanoseconds,
         ];
-
-        // go into the function expr implementation to throw an error
-        if fields.iter().any(overflows_i64) {
-            return None;
-        }
-
-        let d = if let Some(fields) = array::try_map(fields, extract_i64_as_i128) {
-            let [w, d, h, m, s, ms, us, ns] = fields;
-
-            let total_ns = w * 7 * NANOSECONDS_IN_DAY as i128
-                + d * NANOSECONDS_IN_DAY as i128
-                + h * 3600 * NANOSECONDS as i128
-                + m * 60 * NANOSECONDS as i128
-                + s * NANOSECONDS as i128
-                + ms * 1_000_000
-                + us * 1_000
-                + ns;
-
-            convert_time_units(total_ns, TimeUnit::Nanoseconds, self.time_unit) as i64
-        } else if let Some(fields) = array::try_map(fields, extract_f64) {
-            let [w, d, h, m, s, ms, us, ns] = fields;
-
-            let total_ns = w * 7.0 * NANOSECONDS_IN_DAY as f64
-                + d * NANOSECONDS_IN_DAY as f64
-                + h * 3600.0 * NANOSECONDS as f64
-                + m * 60.0 * NANOSECONDS as f64
-                + s * NANOSECONDS as f64
-                + ms * 1_000_000.0
-                + us * 1_000.0
-                + ns;
-
-            convert_time_units(total_ns, TimeUnit::Nanoseconds, self.time_unit) as i64
-        } else {
-            return None;
-        };
+        let inputs = fields
+            .into_iter()
+            .map(to_column)
+            .collect::<Option<Vec<_>>>()?;
+        let d = impl_duration(&inputs, self.time_unit).ok()?;
 
         Some(
             Expr::Literal(LiteralValue::Scalar(Scalar::new(
                 DataType::Duration(self.time_unit),
-                AnyValue::Duration(d, self.time_unit),
+                d.get(0).ok()?.into_static(),
             )))
             .alias(PlSmallStr::from_static("duration")),
         )

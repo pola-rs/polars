@@ -172,25 +172,6 @@ impl TimeUnit {
     }
 }
 
-#[cfg(any(feature = "rows", feature = "object"))]
-#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
-#[inline]
-pub fn convert_time_units<T>(v: T, tu_l: TimeUnit, tu_r: TimeUnit) -> T
-where
-    T: num_traits::Num + num_traits::NumCast,
-{
-    use TimeUnit::*;
-    match (tu_l, tu_r) {
-        (Nanoseconds, Microseconds) => v / T::from(1_000).unwrap(),
-        (Nanoseconds, Milliseconds) => v / T::from(1_000_000).unwrap(),
-        (Microseconds, Nanoseconds) => v * T::from(1_000).unwrap(),
-        (Microseconds, Milliseconds) => v / T::from(1_000).unwrap(),
-        (Milliseconds, Microseconds) => v * T::from(1_000).unwrap(),
-        (Milliseconds, Nanoseconds) => v * T::from(1_000_000).unwrap(),
-        _ => v,
-    }
-}
-
 /// Error for a temporal value that can't be represented in another time unit.
 pub fn time_unit_conversion_error(
     from: impl std::fmt::Display,
