@@ -1722,21 +1722,26 @@ def test_read_database_trino_row_field_names(
 
 
 @pytest.mark.usefixtures("mock_trino")
-def test_read_database_trino_row_shadowed_metadata() -> None:
-    row = _TrinoNamedRowTuple(
-        [["wrong", "names"], {"names": ["also", "wrong"]}],
-        ["_names", "__annotations__"],
-        ["array", "map"],
-    )
-    cursor = _TrinoCursor(
-        [
-            (
-                "v",
-                "row(_names array(varchar), __annotations__ map(varchar, array(varchar)))",
-            )
-        ],
-        [[row]],
-    )
+@pytest.mark.parametrize(
+    ("names", "values", "type_code"),
+    [
+        (
+            ["_names", "__annotations__"],
+            [["wrong", "names"], {"names": ["also", "wrong"]}],
+            "row(_names array(varchar), __annotations__ map(varchar, array(varchar)))",
+        ),
+        (
+            ["__dict__"],
+            [{"_names": ["wrong"]}],
+            "row(__dict__ map(varchar, array(varchar)))",
+        ),
+    ],
+)
+def test_read_database_trino_row_shadowed_metadata(
+    names: list[str], values: list[Any], type_code: str
+) -> None:
+    row = _TrinoNamedRowTuple(values, list(names), ["unknown"] * len(names))
+    cursor = _TrinoCursor([("v", type_code)], [[row]])
     with pytest.raises(ValueError, match="missing or shadowed driver metadata"):
         pl.read_database("SELECT v", cursor)
 

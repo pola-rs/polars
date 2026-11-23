@@ -165,13 +165,15 @@ def _trino_field_names(value: tuple[Any, ...]) -> list[str | None]:
         ),
         (names_attr, names_attr),
     ):
-        # Trino sets named fields as attributes. Both metadata attributes can
-        # therefore hold a field value instead of the driver's own container.
+        # Trino sets named fields as attributes. A field can replace a
+        # metadata container or the whole instance dictionary (__dict__).
         if (
             isinstance(names, list)
             and len(names) == len(value)
             and all(name is None or isinstance(name, str) for name in names)
-            and not any(metadata is field_value for field_value in value)
+            and not any(
+                metadata is field_value or attrs is field_value for field_value in value
+            )
         ):
             return names
     msg = "Cannot determine field names for a Trino ROW: missing or shadowed driver metadata"
