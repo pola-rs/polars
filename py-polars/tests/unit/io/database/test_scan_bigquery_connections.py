@@ -4,6 +4,7 @@ import sys
 from contextlib import ExitStack, closing
 from datetime import UTC, datetime
 from decimal import Decimal
+from importlib.machinery import ModuleSpec
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
@@ -541,7 +542,12 @@ def test_bigquery_adbc_factory_recovers_schema_from_empty_arrow_probe(
     pa = pytest.importorskip("pyarrow")
     pytest.importorskip("sqlglot")
     monkeypatch.setitem(
-        sys.modules, "adbc_driver_manager", SimpleNamespace(__version__="1.13.0")
+        sys.modules,
+        "adbc_driver_manager",
+        SimpleNamespace(
+            __spec__=ModuleSpec("adbc_driver_manager", loader=None),
+            __version__="1.13.0",
+        ),
     )
     sqls: list[str] = []
 
