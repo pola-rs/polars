@@ -255,6 +255,13 @@ def test_series_init_pytz_datetime(
         # fixed offsets without a `key`
         (datetime(2020, 1, 1, 0, 0, 0, 7, tzinfo=dateutil.tz.tzutc()), "UTC"),
         (datetime(2020, 1, 1, 12, tzinfo=dateutil.tz.tzoffset(None, -5400)), "UTC"),
+        # named zones after 2100 (beyond chrono-tz)
+        (
+            datetime(
+                2150, 7, 1, 8, 0, 0, 1, tzinfo=zoneinfo.ZoneInfo("Europe/Amsterdam")
+            ),
+            "Europe/Amsterdam",
+        ),
     ],
 )
 def test_series_init_datetime_as_python(value: datetime, time_zone: str) -> None:

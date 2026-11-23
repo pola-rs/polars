@@ -408,8 +408,8 @@ pub(crate) fn py_object_to_any_value(
         let unix_epoch = DateTime::UNIX_EPOCH.naive_utc();
 
         if tzinfo.is_none() {
-            let datetime = ob.extract::<NaiveDateTime>()?;
-            let delta = datetime - unix_epoch;
+            // (pyo3's `NaiveDateTime` conversion would look up `tzinfo` again)
+            let delta = naive_datetime(ob.cast::<PyDateTime>()?)? - unix_epoch;
             let timestamp = delta.num_microseconds().unwrap();
             return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
         }
@@ -422,11 +422,7 @@ pub(crate) fn py_object_to_any_value(
                 let timestamp = if datetime.year() >= 2100 {
                     // chrono-tz does not support dates after 2100
                     // https://github.com/chronotope/chrono-tz/issues/135
-                    pl_utils(py)
-                        .bind(py)
-                        .getattr(intern!(py, "datetime_to_int"))?
-                        .call1((ob, intern!(py, "us")))?
-                        .extract::<i64>()?
+                    aware_timestamp(ob)?
                 } else {
                     let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
                     delta.num_microseconds().unwrap()
