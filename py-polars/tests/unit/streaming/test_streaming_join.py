@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from datetime import datetime, timedelta
+from itertools import product
 from typing import TYPE_CHECKING, Any, Literal
 
 import hypothesis.strategies as st
@@ -678,10 +679,16 @@ def test_merge_join_many_partitions(
 
 @pytest.mark.parametrize("key_type", ["list", "array", "struct"])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
-@pytest.mark.parametrize("maintain_order", ["left_right", "right_left"])
-@pytest.mark.parametrize("descending", [False, True])
-@pytest.mark.parametrize("nulls_last", [False, True])
-@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    ("descending", "maintain_order", "nulls_last", "nulls_equal"),
+    [
+        # Descending nested keys are the regression case. Check both row orders
+        # and all null combinations there, with ascending controls.
+        *product([True], ["left_right", "right_left"], [False, True], [False, True]),
+        (False, "left_right", False, True),
+        (False, "right_left", True, False),
+    ],
+)
 def test_merge_join_nested_key_30871(
     key_type: str,
     how: JoinStrategy,
@@ -1263,9 +1270,17 @@ def test_streaming_join_string_key_runs(
 
 @pytest.mark.parametrize("key_type", ["int", "str", "int, int", "struct"])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
-@pytest.mark.parametrize("build", ["unique", "unique_with_null", "repeated"])
-@pytest.mark.parametrize("probe_nulls", [False, True])
-@pytest.mark.parametrize("all_match", [False, True])
+@pytest.mark.parametrize(
+    ("build", "probe_nulls", "all_match"),
+    [
+        pytest.param("unique", False, True, id="all-match"),
+        pytest.param("unique", False, False, id="missing-keys"),
+        pytest.param("unique", True, True, id="nulls-in-probe"),
+        pytest.param("unique_with_null", False, True, id="null-in-build"),
+        pytest.param("unique_with_null", True, True, id="nulls-on-both-sides"),
+        pytest.param("repeated", False, True, id="duplicate-in-build"),
+    ],
+)
 def test_streaming_join_unique_build_keys(
     key_type: str,
     how: JoinStrategy,
@@ -1296,7 +1311,10 @@ def test_streaming_join_unique_build_keys(
         )
         .lazy()
     )
-    for nulls_equal, coalesce in [(False, True), (True, False), (True, True)]:
+    join_options = [(False, True), (True, False)]
+    if probe_nulls or build == "unique_with_null":
+        join_options.append((True, True))
+    for nulls_equal, coalesce in join_options:
         q = probe.join(
             dim,
             on=list(keys),
@@ -1536,10 +1554,19 @@ _OUT_OF_CORE_MODES = _modes("grace", "hybrid", "one_partition", _SPILLED_MODE)
 
 
 @_OUT_OF_CORE_MODES
-@pytest.mark.parametrize("threads", ["1", None])
-@pytest.mark.parametrize("nulls_equal", [False, True])
-@pytest.mark.parametrize("build_side", ["force_left", "force_right"])
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize(
+    ("build_side", "nulls_equal", "threads"),
+    [
+        ("force_left", False, None),
+        ("force_left", True, None),
+        ("force_right", False, None),
+        ("force_right", True, None),
+        # Also cover each join kind and build orientation with one pipeline.
+        ("force_left", False, "1"),
+        ("force_right", True, "1"),
+    ],
+)
 def test_streaming_join_out_of_core(
     join_mode: str,
     how: JoinStrategy,

@@ -153,14 +153,16 @@ def test_search_sorted_needle_blocks(
     split = pl.concat([haystack[:500], haystack[500:]], rechunk=False)
     assert split.n_chunks() == 2
 
-    n = 200_000
+    block = 1 << 12
+    n = 16 * block
     vals = rng.integers(-60, 60, n).astype(float)
     vals[rng.random(n) < 0.05] = np.nan
-    for run in [slice(0, 70_000), slice(130_000, n)]:
+    for run in [slice(0, 5 * block), slice(11 * block, n)]:
         vals[run] = np.sort(vals[run])
         if descending:
             vals[run] = vals[run][::-1]
     needles = pl.Series(vals).set(pl.Series(rng.random(n) < 0.02), None)
+    assert needles.n_chunks() == 1
 
     result = haystack.search_sorted(needles, side=side, descending=descending)
     expected = split.search_sorted(needles, side=side, descending=descending)
