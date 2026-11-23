@@ -7,13 +7,18 @@ use std::sync::LazyLock;
 pub use skeleton::{run_query, visualize_physical_plan};
 
 mod execute;
+mod execution_order;
 pub use dispatch::build_streaming_query_executor;
 pub(crate) mod expression;
 mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
+mod hash_shuffle;
 pub use skeleton::StreamingQuery;
 mod metrics;
-pub use metrics::{GraphMetrics, NodeMetrics};
+pub use metrics::{
+    AggMode, CustomMetric, GraphMetrics, Metric, MetricKind, MetricReporter, NodeMetrics,
+    NodeMetricsRegistry, QueryMetrics, kind,
+};
 mod observer_metrics;
 pub use observer_metrics::StreamingQueryMetricsSnapshotter;
 pub use polars_observer::{
@@ -21,7 +26,7 @@ pub use polars_observer::{
     register_query_observer_factory,
 };
 mod morsel;
-mod nodes;
+pub mod nodes;
 mod physical_plan;
 pub use physical_plan::{
     NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior, physical_plan_to_description,
@@ -47,3 +52,5 @@ static DEFAULT_ZIP_HEAD_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
         .map(|x| x.parse().unwrap())
         .unwrap_or(4)
 });
+
+polars_utils::define_unique_column_name!("PHYS");

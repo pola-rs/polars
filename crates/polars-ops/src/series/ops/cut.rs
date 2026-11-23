@@ -1,5 +1,6 @@
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
+use polars_core::chunked_array::ops::binning::quantiles_without_nan;
 use polars_core::prelude::*;
 use polars_core::utils::cut::compute_cut_labels;
 
@@ -149,7 +150,11 @@ pub fn cut(
     }
 
     let cut_labels = if let Some(l) = labels {
-        polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(quantiles) + 1 labels");
+        polars_ensure!(
+            l.len() == breaks.len() + 1,
+            ShapeMismatch: "expected {} labels (len(breaks) + 1), got {}",
+            breaks.len() + 1, l.len()
+        );
         l
     } else {
         compute_cut_labels(&breaks, left_closed)?
@@ -168,11 +173,7 @@ pub fn qcut(
     polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
 
     let s = s.cast(&DataType::Float64)?;
-    let s2 = s.sort(SortOptions::default())?;
-    let ca = s2.f64()?;
-    let ca = ca.set(&ca.is_nan(), None)?;
-
-    if ca.null_count() == ca.len() {
+    let Some(mut qbreaks) = quantiles_without_nan(s.f64()?, &probs, QuantileMethod::Linear)? else {
         // No usable values (all null/NaN/empty): no breakpoints. With
         // `include_breaks` the output must still be a Struct to match the schema.
         let cat_dtype = DataType::from_categories(Categories::global());
@@ -191,13 +192,7 @@ pub fn qcut(
             .into_series());
         }
         return Ok(Series::full_null(s.name().clone(), s.len(), &cat_dtype));
-    }
-
-    let mut qbreaks: Vec<_> = ca
-        .quantiles(&probs, QuantileMethod::Linear)?
-        .into_iter()
-        .map(|opt| opt.unwrap())
-        .collect();
+    };
 
     // Interpolating across an infinity gives a NaN breakpoint that would panic
     // the sort below; reject it, as `cut` already does.
@@ -213,7 +208,11 @@ pub fn qcut(
     }
 
     let cut_labels = if let Some(l) = labels {
-        polars_ensure!(l.len() == qbreaks.len() + 1, ShapeMismatch: "provide len(quantiles) + 1 labels");
+        polars_ensure!(
+            l.len() == qbreaks.len() + 1,
+            ShapeMismatch: "expected {} labels (len(breaks) + 1), got {}",
+            qbreaks.len() + 1, l.len()
+        );
         l
     } else {
         compute_cut_labels(&qbreaks, left_closed)?

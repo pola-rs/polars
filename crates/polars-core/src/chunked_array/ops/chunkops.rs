@@ -4,12 +4,12 @@ use std::cell::Cell;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::compute::concatenate::concatenate_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
+use polars_utils::slice_enum::Slice;
 
 use super::*;
 use crate::chunked_array::flags::StatisticsFlags;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
-use crate::utils::slice_offsets;
 
 pub(crate) fn split_at(
     chunks: &[ArrayRef],
@@ -18,7 +18,7 @@ pub(crate) fn split_at(
 ) -> (Vec<ArrayRef>, Vec<ArrayRef>) {
     let mut new_chunks_left = Vec::with_capacity(1);
     let mut new_chunks_right = Vec::with_capacity(1);
-    let (raw_offset, _) = slice_offsets(offset, 0, own_length);
+    let raw_offset = Slice::resolve_offset(offset, own_length);
 
     let mut remaining_offset = raw_offset;
     let mut iter = chunks.iter().filter(|c| !c.is_empty());
@@ -51,15 +51,13 @@ pub(crate) fn split_at(
 
 pub(crate) fn slice(
     chunks: &[ArrayRef],
-    offset: i64,
-    slice_length: usize,
+    slice: Slice,
     own_length: usize,
 ) -> (Vec<ArrayRef>, usize) {
     let mut new_chunks = Vec::with_capacity(1);
-    let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
-
-    let mut remaining_length = slice_len;
-    let mut remaining_offset = raw_offset;
+    let range = slice.resolve(own_length);
+    let mut remaining_length = range.len();
+    let mut remaining_offset = range.start;
     let mut new_len = 0;
 
     for chunk in chunks {
@@ -101,7 +99,7 @@ thread_local!(pub static CHECK_LENGTH: Cell<bool> = const { Cell::new(true) });
 
 /// Meant for internal use. In very rare conditions this can be turned off.
 /// # Safety
-/// The caller must ensure the Series that exceeds the length get's deconstructed
+/// The caller must ensure the Series that exceeds the length gets deconstructed
 /// into array values or list values before and never is used.
 pub unsafe fn _set_check_length(check: bool) {
     CHECK_LENGTH.set(check)
@@ -225,6 +223,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         for (arr, validity) in unsafe { self.chunks_mut().iter_mut() }.zip(validities.iter()) {
             *arr = arr.with_validity(validity.clone())
         }
+        self.compute_len();
     }
 
     /// Split the array. The chunks are reallocated the underlying data slices are zero copy.
@@ -245,16 +244,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         (out_l, out_r)
     }
 
-    /// Slice the array. The chunks are reallocated the underlying data slices are zero copy.
-    ///
-    /// When offset is negative it will be counted from the end of the array.
-    /// This method will never error,
-    /// and will slice the best match when offset, or length is out of bounds
-    pub fn slice(&self, offset: i64, length: usize) -> Self {
+    /// Get a zero copy view of the elements `slice` selects. The chunks are reallocated, the
+    /// buffers are not.
+    pub fn slice(&self, slice: impl Into<Slice>) -> Self {
+        let slice = slice.into();
+
         // The len: 0 special cases ensure we release memory.
         // A normal slice, slice the buffers and thus keep the whole memory allocated.
         let exec = || {
-            let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+            let (chunks, len) = self::slice(&self.chunks, slice, self.len());
             let mut out = unsafe { self.copy_with_chunks(chunks) };
 
             use StatisticsFlags as F;
@@ -264,7 +262,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             out
         };
 
-        match length {
+        match slice.resolve(self.len()).len() {
             0 => match self.dtype() {
                 #[cfg(feature = "object")]
                 DataType::Object(_) => exec(),
@@ -280,7 +278,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     where
         Self: Sized,
     {
-        self.slice(0, num_elements)
+        self.slice(Slice::head(num_elements))
     }
 
     /// Get the head of the [`ChunkedArray`]
@@ -289,10 +287,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     where
         Self: Sized,
     {
-        match length {
-            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
-            None => self.slice(0, std::cmp::min(10, self.len())),
-        }
+        self.slice(Slice::head(length.unwrap_or(10)))
     }
 
     /// Get the tail of the [`ChunkedArray`]
@@ -301,11 +296,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     where
         Self: Sized,
     {
-        let len = match length {
-            Some(len) => std::cmp::min(len, self.len()),
-            None => std::cmp::min(10, self.len()),
-        };
-        self.slice(-(len as i64), len)
+        self.slice(Slice::tail(length.unwrap_or(10)))
     }
 
     /// Remove empty chunks.
@@ -376,7 +367,7 @@ mod test {
             .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
 
-        a.append(&a.slice(0, 2)).unwrap();
+        a.append(&a.slice(Slice::head(2))).unwrap();
         let a = a.rechunk();
         assert!(a.cat32().unwrap().get_mapping().num_cats_upper_bound() > 0);
     }

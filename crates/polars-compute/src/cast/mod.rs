@@ -37,7 +37,7 @@ pub use utf8_to::*;
 pub struct CastOptionsImpl {
     /// default to false
     /// whether an overflowing cast should be converted to `None` (default), or be wrapped (i.e. `256i16 as u8 = 0` vectorized).
-    /// Settings this to `true` is 5-6x faster for numeric types.
+    /// Setting this to `true` is 5-6x faster for numeric types.
     pub wrapped: bool,
     /// default to false
     /// whether to cast to an integer at the best-effort
@@ -414,7 +414,11 @@ pub fn cast(
     match (from_type, to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
         (Struct(from_fd), Struct(to_fd)) => {
-            polars_ensure!(from_fd.len() == to_fd.len(), InvalidOperation: "Cannot cast struct with different number of fields.");
+            polars_ensure!(
+                from_fd.len() == to_fd.len(),
+                InvalidOperation: "Cannot cast struct with different number of fields ({} vs {}).",
+                from_fd.len(), to_fd.len()
+            );
             cast_struct(array.as_any().downcast_ref().unwrap(), to_type, options).map(|x| x.boxed())
         },
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
@@ -423,9 +427,29 @@ pub fn cast(
         (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
             dictionary_cast_dyn::<$T>(array, to_type, options)
         }),
-        (_, Dictionary(index_type, value_type, ordered)) => match_integer_type!(index_type, |$T| {
-            cast_to_dictionary::<$T>(array, value_type, *ordered, options)
-        }),
+        (_, Dictionary(index_type, value_type, ordered)) => {
+            let narrow = matches!(
+                index_type,
+                IntegerType::Int8
+                    | IntegerType::Int16
+                    | IntegerType::Int32
+                    | IntegerType::UInt8
+                    | IntegerType::UInt16
+                    | IntegerType::UInt32
+            );
+            let dict = if narrow {
+                cast_to_dictionary::<u32>(array, value_type, *ordered, options)?
+            } else {
+                cast_to_dictionary::<u64>(array, value_type, *ordered, options)?
+            };
+            if dict.dtype() == to_type {
+                Ok(dict)
+            } else if narrow {
+                dictionary_cast_dyn::<u32>(dict.as_ref(), to_type, options)
+            } else {
+                dictionary_cast_dyn::<u64>(dict.as_ref(), to_type, options)
+            }
+        },
         // not supported by polars
         // (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(
         //     array.as_any().downcast_ref().unwrap(),
@@ -998,11 +1022,13 @@ pub fn cast(
         #[cfg(all(feature = "dtype-decimal", feature = "dtype-i128"))]
         (Decimal(_, _), Int128) => decimal_to_integer_dyn::<i128>(array),
         #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
-        (Decimal(_, _), Float16) => decimal_to_float_dyn::<pf16>(array),
+        (Decimal(_, _), Float16) => decimal_to_float_dyn(array, |x, s| {
+            pf16::from(crate::decimal::dec128_to_f64(x, s))
+        }),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, _), Float32) => decimal_to_float_dyn::<f32>(array),
+        (Decimal(_, _), Float32) => decimal_to_float_dyn(array, crate::decimal::dec128_to_f32),
         #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, _), Float64) => decimal_to_float_dyn::<f64>(array),
+        (Decimal(_, _), Float64) => decimal_to_float_dyn(array, crate::decimal::dec128_to_f64),
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, _), Decimal(to_p, to_s)) => decimal_to_decimal_dyn(array, *to_p, *to_s),
         // end numeric casts

@@ -780,3 +780,23 @@ def test_pivot_fill_null_type_coercion_26843() -> None:
     )
     expected = pl.DataFrame({"y": [3, 4], "1": [5, 0], "2": [0, 6]})
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("evaluation", "a", "b"),
+    [
+        (pl.element() * 10, [[10, 20], [40]], [[30], None]),
+        (pl.len(), [[2], [1]], [[1], None]),
+    ],
+)
+def test_pivot_nested_eval_keeps_its_element(
+    evaluation: pl.Expr, a: list[Any], b: list[Any]
+) -> None:
+    df = pl.DataFrame({"k": [0, 0, 1], "c": ["a", "b", "a"], "l": [[1, 2], [3], [4]]})
+    out = df.pivot(
+        "c",
+        index="k",
+        values="l",
+        aggregate_function=pl.element().first().list.eval(evaluation),
+    )
+    assert out.to_dict(as_series=False) == {"k": [0, 1], "a": a, "b": b}

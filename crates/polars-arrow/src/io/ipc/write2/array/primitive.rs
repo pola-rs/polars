@@ -2,12 +2,10 @@ use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
 use crate::array::PrimitiveArray;
-use crate::io::ipc::compression;
 use crate::io::ipc::endianness::is_native_little_endian;
-use crate::io::ipc::write::Compression;
 use crate::io::ipc::write2::array::{
     BufferOrSlice, IpcBatchSerializationContext, pad_and_finish_ipc_buffer, write_bitmap,
-    write_bytes,
+    write_bytes, write_compressed,
 };
 use crate::types::NativeType;
 
@@ -52,17 +50,7 @@ pub(super) fn write_native_type_iter<T: NativeType, I: ExactSizeIterator<Item = 
             bytes_scratch.extend_from_slice(v.as_ref());
         });
 
-        ctx.arrow_data
-            .write_all(&(bytes_scratch.len() as i64).to_le_bytes())?;
-
-        match compression {
-            Compression::LZ4 => {
-                compression::compress_lz4(bytes_scratch, ctx.arrow_data.as_io_write())?;
-            },
-            Compression::ZSTD(level) => {
-                compression::compress_zstd(bytes_scratch, ctx.arrow_data.as_io_write(), level)?;
-            },
-        }
+        write_compressed(ctx.arrow_data, bytes_scratch, compression)?;
     } else {
         iter.try_for_each(|v| ctx.arrow_data.write_all(v.as_ref()))?
     }

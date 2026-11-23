@@ -21,7 +21,7 @@
 // 0b001_101_110  -> 0b0000_0001, 0b0000_0101, 0b0000_0110
 //
 // This file is a bit insane. It unrolls all the possible num_bits vs. combinations. These are very
-// highly used functions in Parquet and therefore this that been extensively unrolled and
+// highly used functions in Parquet and therefore this has been extensively unrolled and
 // optimized. Attempts have been done to introduce SIMD here, but those attempts have not paid off
 // in comparison to auto-vectorization.
 //

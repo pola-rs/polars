@@ -10,12 +10,14 @@ use polars_defs::join::AsofStrategy;
 use polars_defs::join::JoinType;
 use polars_io::HiveOptions;
 use polars_io::cloud::CloudOptions;
+use polars_io::external_reader::ExternalReaderBuilder;
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
-#[cfg(feature = "iejoin")]
-use polars_plan::prelude::JoinTypeOptionsIR;
-use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
+use polars_plan::prelude::{
+    FileScanIR, FileWriteFormat, FunctionIR, JoinTypeOptionsIR, PythonPredicate, SinkTypeIR,
+    UnifiedScanArgs,
+};
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
@@ -26,6 +28,22 @@ use super::expr_nodes::PyGroupbyOptions;
 use crate::lazyframe::visit::PyExprIR;
 use crate::series::PySeries;
 use crate::{PyDataFrame, Wrap};
+
+/// Reject sink options that can't be passed on to the visitor.
+fn check_sink_supported(payload: &SinkTypeIR) -> PyResult<()> {
+    let file_format = match payload {
+        SinkTypeIR::File(options) => &options.file_format,
+        SinkTypeIR::Partitioned(options) => &options.file_format,
+        SinkTypeIR::Memory | SinkTypeIR::Callback(_) => return Ok(()),
+    };
+    match file_format {
+        #[cfg(feature = "parquet")]
+        FileWriteFormat::Parquet(options) if options.encryption.is_some() => {
+            Err(PyNotImplementedError::new_err("parquet encryption"))
+        },
+        _ => Ok(()),
+    }
+}
 
 fn scan_type_to_pyobject(
     py: Python<'_>,
@@ -43,6 +61,9 @@ fn scan_type_to_pyobject(
         },
         #[cfg(feature = "parquet")]
         FileScanIR::Parquet { options, .. } => {
+            if options.decryption.is_some() {
+                return Err(PyNotImplementedError::new_err("parquet decryption"));
+            }
             let options = serde_json::to_string(options)
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             let cloud_options = serde_json::to_string(cloud_options)
@@ -61,6 +82,14 @@ fn scan_type_to_pyobject(
         FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
         FileScanIR::ExpandedPaths { name } => {
             Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
+        FileScanIR::ExternalReaderBuilder { external } => match external {
+            ExternalReaderBuilder::Python(object) => {
+                Ok(("external-reader", object).into_py_any(py)?)
+            },
+            #[cfg(feature = "io_plugin_ffi")]
+            ExternalReaderBuilder::Ffi(_) => Err(PyNotImplementedError::new_err("I/O plugin scan")),
+            ExternalReaderBuilder::Rust(()) => unreachable!(),
         },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
@@ -96,7 +125,7 @@ pub struct Filter {
     predicate: PyExprIR,
 }
 
-#[pyclass(frozen, skip_from_py_object)]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: UnifiedScanArgs,
@@ -104,12 +133,12 @@ pub struct PyFileOptions {
 
 #[pymethods]
 impl PyFileOptions {
+    // TODO: @3.0: Expose a slice that runs to the end with a `None` length.
     #[getter]
     fn n_rows(&self) -> Option<(i64, IdxSize)> {
         self.inner
             .pre_slice
-            .clone()
-            .map(|slice| slice.to_signed_offset_len())
+            .map(|slice| slice.to_legacy_signed_offset_len())
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {
@@ -173,7 +202,7 @@ impl PyFileOptions {
 
                             position_deletes.set_item(*k, py_paths)?;
                         },
-                        IcebergDeletes::DeletionVector(path) => {
+                        IcebergDeletes::DeletionVector { path, .. } => {
                             deletion_vectors.set_item(*k, path.as_str())?
                         },
                     }
@@ -201,7 +230,7 @@ impl PyFileOptions {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
-            Some(ColumnMapping::Iceberg(schema)) => (
+            Some(ColumnMapping::Iceberg { schema, .. }) => (
                 "iceberg-column-mapping",
                 iceberg_schema_to_pyobject(py, schema)?,
             )
@@ -229,6 +258,7 @@ impl PyFileOptions {
             Some(DefaultFieldValues::Iceberg(default_values)) => {
                 let IcebergDefaultFieldValues {
                     identity_transformed_partition_fields,
+                    identity_partition_present: _,
                     initial_defaults,
                 } = default_values.as_ref();
 
@@ -305,6 +335,7 @@ fn iceberg_column_to_pyobject(py: Python<'_>, column: &IcebergColumn) -> PyResul
         name,
         physical_id,
         type_,
+        mapped_names: _,
     } = column;
 
     let type_ = match type_ {
@@ -432,6 +463,8 @@ pub struct Join {
     left_on: Vec<PyExprIR>,
     #[pyo3(get)]
     right_on: Vec<PyExprIR>,
+    #[pyo3(get)]
+    predicate: Option<PyExprIR>,
     #[pyo3(get)]
     options: Py<PyAny>,
 }
@@ -568,12 +601,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             }
             .into_py_any(py)
         },
-        IR::Slice { input, offset, len } => Slice {
-            input: input.0,
-            offset: *offset,
-            len: *len,
-        }
-        .into_py_any(py),
+        IR::Slice { input, slice } => {
+            // TODO: @3.0: Expose a slice that runs to the end with a `None` length.
+            let (offset, len) = slice.to_legacy_signed_offset_len();
+            Slice {
+                input: input.0,
+                offset,
+                len,
+            }
+            .into_py_any(py)
+        },
         IR::Filter { input, predicate } => Filter {
             input: input.0,
             predicate: predicate.into(),
@@ -588,6 +625,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             output_schema: _,
             scan_type,
             unified_scan_args,
+            maintain_order: _,
         } => {
             Scan {
                 paths: {
@@ -687,9 +725,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: slice
-                .as_ref()
-                .map(|t| (t.0, t.1, t.2.as_ref().map(|p| p.id().as_u128()))),
+            slice: slice.as_ref().map(|(slice, dyn_pred)| {
+                let (offset, len) = slice.to_legacy_signed_offset_len();
+                (
+                    offset,
+                    len as usize,
+                    dyn_pred.as_ref().map(|p| p.id().as_u128()),
+                )
+            }),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {
@@ -705,19 +748,34 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             apply,
             maintain_order,
             options,
-        } => GroupBy {
-            input: input.0,
-            keys: keys.iter().map(|e| e.into()).collect(),
-            aggs: aggs.iter().map(|e| e.into()).collect(),
-            apply: apply.as_ref().map_or(Ok(()), |_| {
-                Err(PyNotImplementedError::new_err(format!(
-                    "apply inside GroupBy {plan:?}"
-                )))
-            })?,
-            maintain_order: *maintain_order,
-            options: PyGroupbyOptions::new(options.as_ref().clone()).into_py_any(py)?,
-        }
-        .into_py_any(py),
+        } => {
+            if options
+                .dynamic
+                .as_ref()
+                .is_some_and(|dynamic| dynamic.placement.is_some())
+                || options
+                    .rolling
+                    .as_ref()
+                    .is_some_and(|rolling| rolling.placement.is_some())
+            {
+                return Err(PyNotImplementedError::new_err(
+                    "Not expecting to see a window placement in a user query",
+                ));
+            }
+            GroupBy {
+                input: input.0,
+                keys: keys.iter().map(|e| e.into()).collect(),
+                aggs: aggs.iter().map(|e| e.into()).collect(),
+                apply: apply.as_ref().map_or(Ok(()), |_| {
+                    Err(PyNotImplementedError::new_err(format!(
+                        "apply inside GroupBy {plan:?}"
+                    )))
+                })?,
+                maintain_order: *maintain_order,
+                options: PyGroupbyOptions::new(options.as_ref().clone()).into_py_any(py)?,
+            }
+            .into_py_any(py)
+        },
         IR::Join {
             input_left,
             input_right,
@@ -729,6 +787,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 input_right: input_right.0,
                 left_on: options.options.left_on().map(|e| e.into()).collect(),
                 right_on: options.options.right_on().map(|e| e.into()).collect(),
+                predicate: match &options.options {
+                    JoinTypeOptionsIR::CrossAndFilter { predicate } => Some(predicate.into()),
+                    _ => options.options.fused_predicate().map(|e| e.into()),
+                },
                 options: {
                     let how = &options.args.how;
                     let name = Into::<&str>::into(how).into_pyobject(py)?;
@@ -778,20 +840,30 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                                 )
                                     .into_py_any(py)?
                             },
-                            // This is a cross join fused with a predicate. Shown in the IR::explain as
-                            // NESTED LOOP JOIN
-                            JoinType::Cross if options.is_non_equi() => {
-                                return Err(PyNotImplementedError::new_err("nested loop join"));
+                            _ => match &options.options {
+                                // An outer join whose ON condition was rewritten to inequalities.
+                                #[cfg(feature = "iejoin")]
+                                JoinTypeOptionsIR::IEJoin { ie_options, .. } => (
+                                    name,
+                                    crate::Wrap(ie_options.operator1).into_py_any(py)?,
+                                    ie_options.operator2.as_ref().map_or_else(
+                                        || Ok(py.None()),
+                                        |op| crate::Wrap(*op).into_py_any(py),
+                                    )?,
+                                )
+                                    .into_py_any(py)?,
+                                // Shown in IR::explain as NESTED LOOP JOIN.
+                                JoinTypeOptionsIR::CrossAndFilter { .. } => {
+                                    (name, "cross_and_filter").into_py_any(py)?
+                                },
+                                _ if options.options.has_fused_predicate() => {
+                                    (name, "fused_predicate").into_py_any(py)?
+                                },
+                                _ => name.into_any().unbind(),
                             },
-                            _ if options.options.has_fused_predicate() => {
-                                return Err(PyNotImplementedError::new_err(
-                                    "join with a fused predicate",
-                                ));
-                            },
-                            _ => name.into_any().unbind(),
                         },
                         options.args.nulls_equal,
-                        options.args.slice,
+                        legacy_slice(options.args.slice),
                         options.args.suffix().as_str(),
                         options.args.coalesce.coalesce(how),
                         Into::<&str>::into(options.args.maintain_order),
@@ -822,6 +894,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             should_broadcast: options.should_broadcast,
         }
         .into_py_any(py),
+        IR::Window { input, exprs, .. } => HStack {
+            input: input.0,
+            exprs: exprs.iter().map(|e| e.into()).collect(),
+            should_broadcast: true,
+        }
+        .into_py_any(py),
         IR::Distinct { input, options } => Distinct {
             input: input.0,
             options: (
@@ -836,7 +914,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     },
                 )?,
                 options.maintain_order,
-                options.slice,
+                legacy_slice(options.slice),
             )
                 .into_py_any(py)?,
         }
@@ -930,7 +1008,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
             // Remaining options are implementation detail, not logical
-            slice: options.slice,
+            slice: legacy_slice(options.slice),
             rows: options.rows,
             maintain_order: options.maintain_order,
         }
@@ -949,16 +1027,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 .into_py_any(py)?,
         }
         .into_py_any(py),
-        IR::Sink { input, payload } => Sink {
-            input: input.0,
-            payload: PyString::new(
-                py,
-                &serde_json::to_string(payload)
-                    .map_err(|err| PyValueError::new_err(format!("{err:?}")))?,
-            )
-            .into(),
-        }
-        .into_py_any(py),
+        IR::Sink { input, payload } => {
+            check_sink_supported(payload)?;
+            Sink {
+                input: input.0,
+                payload: PyString::new(
+                    py,
+                    &serde_json::to_string(payload)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?,
+                )
+                .into(),
+            }
+            .into_py_any(py)
+        },
         IR::SinkMultiple { .. } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a SinkMultiple node",
         )),
@@ -981,6 +1062,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::Resolver { .. } => Err(PyNotImplementedError::new_err(
             "not implemented: IR::Resolver to Python conversion",
         )),
+        IR::Recursive { .. } | IR::WorkingTableScan { .. } => {
+            Err(PyNotImplementedError::new_err("recursive query"))
+        },
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
+}
+
+// TODO: @3.0: Expose a slice that runs to the end with a `None` length.
+pub(crate) fn legacy_slice(slice: Option<polars_utils::slice_enum::Slice>) -> Option<(i64, usize)> {
+    slice.map(|slice| {
+        let (offset, len) = slice.to_legacy_signed_offset_len();
+        (offset, len as usize)
+    })
 }

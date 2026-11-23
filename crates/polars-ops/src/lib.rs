@@ -1,9 +1,10 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "nightly", allow(internal_features))]
+#![cfg_attr(feature = "nightly", feature(float_erf, titlecase))]
 #![cfg_attr(
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
-)] // Maybe be caused by some feature
+)] // May be caused by some feature
 
 pub mod chunked_array;
 #[cfg(feature = "pivot")]
@@ -11,3 +12,5 @@ pub use frame::unpivot;
 pub mod frame;
 pub mod prelude;
 pub mod series;
+
+polars_utils::define_unique_column_name!("OPS");

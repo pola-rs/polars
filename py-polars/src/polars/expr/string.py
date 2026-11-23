@@ -68,6 +68,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         exact
@@ -118,6 +120,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         time_unit : {None, 'us', 'ns', 'ms'}
             Unit of time for the resulting Datetime column. If set to None (default),
             the time unit is inferred from the format string if given, eg:
@@ -147,12 +151,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         ambiguous
-            Determine how to deal with ambiguous datetimes:
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice).
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Examples
         --------
@@ -199,6 +205,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         cache
@@ -243,6 +251,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Required when using the distributed engine (or else the operation will
+            run on a single node).
         strict
             Raise an error if any conversion fails.
         exact
@@ -255,12 +265,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         ambiguous
-            Determine how to deal with ambiguous datetimes:
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice).
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Notes
         -----
@@ -2324,6 +2336,38 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.str_reverse())
 
+    def from_code_point(self) -> Expr:
+        """
+        Convert integer Unicode code points to strings of one character.
+
+        The input must be an integer column; the output is a string column.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Raises
+        ------
+        ComputeError
+            If a value is negative, above 1114111 (``0x10FFFF``), or a UTF-16
+            surrogate (55296 to 57343).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"code": [65, 233, 8364, None]})
+        >>> df.with_columns(pl.col("code").str.from_code_point().alias("char"))
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ code ┆ char │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 65   ┆ A    │
+        │ 233  ┆ é    │
+        │ 8364 ┆ €    │
+        │ null ┆ null │
+        └──────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.str_from_code_point())
+
     def slice(
         self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
     ) -> Expr:
@@ -2627,7 +2671,9 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         patterns
-            String patterns to search.
+            String patterns to search: one list for the whole column, as a Python
+            list or an expression that returns a single list, such as
+            `pl.col("p").implode()`.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
@@ -2685,16 +2731,15 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         patterns
-            String patterns to search and replace.
-            Accepts expression input. Strings are parsed as column names, and other
-            non-expression inputs are parsed as literals. Also accepts a mapping of
-            patterns to their replacement as syntactic sugar for
-            `replace_many(pl.Series(mapping.keys()), pl.Series(mapping.values()))`.
+            String patterns to search and replace: one list for the whole column, as a
+            Python list or an expression that returns a single list, such as
+            `pl.col("p").implode()`. Also accepts a mapping of patterns to their
+            replacement as syntactic sugar for
+            `replace_many(list(mapping.keys()), list(mapping.values()))`.
         replace_with
-            Strings to replace where a pattern was a match.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-            Length must match the length of `patterns` or have length 1. This can be
-            broadcasted, so it supports many:one and many:many.
+            Strings to replace where a pattern was a match: one list, like
+            `patterns`. Its length must match the length of `patterns` or be 1. This
+            can be broadcasted, so it supports many:one and many:many.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect

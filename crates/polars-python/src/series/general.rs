@@ -92,13 +92,18 @@ impl PySeries {
     }
 
     pub fn rechunk(&self, py: Python<'_>, in_place: bool) -> PyResult<Option<Self>> {
-        let series = py.enter_polars_ok(|| self.series.read().rechunk())?;
-        if in_place {
-            *self.series.write() = series;
-            Ok(None)
-        } else {
-            Ok(Some(series.into()))
-        }
+        // The write lock must be taken with the GIL released: readers such as `to_arrow`
+        // hold the read lock across calls into Python, so blocking on the lock while
+        // holding the GIL deadlocks both threads.
+        py.enter_polars_ok(|| {
+            let series = self.series.read().rechunk();
+            if in_place {
+                *self.series.write() = series;
+                None
+            } else {
+                Some(Self::from(series))
+            }
+        })
     }
 
     /// Get a value by index.
@@ -447,8 +452,11 @@ impl PySeries {
     #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let s = self.series.read();
-        let length = length.unwrap_or(usize::MAX);
-        s.slice(offset, length).into()
+        match Slice::new(offset, length) {
+            Some(slice) => s.slice(slice),
+            None => s.clone(),
+        }
+        .into()
     }
 
     pub fn not_(&self, py: Python) -> PyResult<Self> {

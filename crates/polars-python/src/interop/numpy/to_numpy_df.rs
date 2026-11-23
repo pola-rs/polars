@@ -30,6 +30,62 @@ impl PyDataFrame {
     ) -> PyResult<Py<PyAny>> {
         df_to_numpy(py, &self.df.read(), order.0, writable, allow_copy)
     }
+
+    /// Convert this DataFrame to a NumPy ndarray of values and a boolean ndarray of the same
+    /// shape marking the null values. The mask is `None` if there are no nulls.
+    ///
+    /// The values array has the data type it would have without nulls. Its values at null
+    /// positions are unspecified.
+    fn to_numpy_masked(
+        &self,
+        py: Python<'_>,
+        order: Wrap<IndexOrder>,
+        writable: bool,
+        allow_copy: bool,
+    ) -> PyResult<(Py<PyAny>, Option<Py<PyAny>>)> {
+        let df = self.df.read();
+        let values = df_values_to_numpy(py, &df, order.0, writable, allow_copy)?;
+        let mask = df_null_mask_to_numpy(py, &df, order.0)?;
+        Ok((values, mask))
+    }
+}
+
+/// Convert a DataFrame to a NumPy ndarray with the data type it would have without nulls.
+///
+/// The values at null positions are unspecified.
+pub(super) fn df_values_to_numpy(
+    py: Python<'_>,
+    df: &DataFrame,
+    order: IndexOrder,
+    writable: bool,
+    allow_copy: bool,
+) -> PyResult<Py<PyAny>> {
+    let columns = df
+        .columns()
+        .iter()
+        .map(|c| c.as_materialized_series().with_validity(None).into_column())
+        .collect();
+    let df = unsafe { DataFrame::new_unchecked(df.height(), columns) };
+    df_to_numpy(py, &df, order, writable, allow_copy)
+}
+
+/// Create a boolean NumPy ndarray marking the null values of the DataFrame, with the same shape as
+/// the output of [`df_values_to_numpy`], or `None` if there are no nulls.
+pub(super) fn df_null_mask_to_numpy(
+    py: Python<'_>,
+    df: &DataFrame,
+    order: IndexOrder,
+) -> PyResult<Option<Py<PyAny>>> {
+    if !df.columns().iter().any(|c| c.has_nulls()) {
+        return Ok(None);
+    }
+    let columns = df
+        .columns()
+        .iter()
+        .map(|c| c.is_null().into_column())
+        .collect();
+    let mask_df = unsafe { DataFrame::new_unchecked(df.height(), columns) };
+    df_to_numpy(py, &mask_df, order, true, true).map(Some)
 }
 
 pub(super) fn df_to_numpy(
@@ -257,6 +313,8 @@ fn try_df_to_numpy_numeric_supertype(
     let st = dtypes_to_supertype(df.columns().iter().map(|s| s.dtype())).ok()?;
 
     let np_array = match st {
+        // NumPy has no 128-bit integer types.
+        DataType::Int128 | DataType::UInt128 => return None,
         dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
             let arr = py.enter_polars(|| df.to_ndarray::<$T>(order)).ok()?;
             arr.into_pyarray(py).into_py_any(py).ok()?

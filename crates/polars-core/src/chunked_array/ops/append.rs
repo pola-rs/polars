@@ -1,5 +1,6 @@
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -26,6 +27,23 @@ pub(crate) fn new_chunks_owned(chunks: &mut Vec<ArrayRef>, other: Vec<ArrayRef>,
     }
 }
 
+/// Keeps the nesting flags of `ca` only if `other` has them too, as they must hold for every chunk.
+/// This applies to an empty `other` as well, whose chunks replace those of an empty `ca`.
+fn retain_nesting_flags<T: PolarsDataType>(ca: &mut ChunkedArray<T>, other: &ChunkedArray<T>) {
+    let nesting = StatisticsFlags::HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS
+        | StatisticsFlags::HAS_PROPAGATED_NULLS;
+    ca.set_flags(ca.get_flags() - (nesting - other.get_flags()));
+}
+
+/// Unit-length arrays are sorted but don't necessarily carry the flag.
+fn unit_or_sorted_flag<T: PolarsDataType>(ca: &ChunkedArray<T>) -> IsSorted {
+    if ca.len() == 1 {
+        IsSorted::Ascending
+    } else {
+        ca.is_sorted_flag()
+    }
+}
+
 pub(super) fn update_sorted_flag_before_append<T>(ca: &mut ChunkedArray<T>, other: &ChunkedArray<T>)
 where
     T: PolarsDataType,
@@ -44,10 +62,11 @@ where
             ca.is_empty()
                 || (
                     // lhs is non-empty and all-null, so rhs must have nulls ordered first
-                    other.is_sorted_any() && 1 + other.last_non_null().unwrap() == other.len()
+                    unit_or_sorted_flag(other) != IsSorted::Not
+                        && 1 + other.last_non_null().unwrap() == other.len()
                 )
             {
-                other.is_sorted_flag()
+                unit_or_sorted_flag(other)
             } else {
                 IsSorted::Not
             }
@@ -58,10 +77,10 @@ where
             other.is_empty()
                 || (
                     // rhs is non-empty and all-null, so lhs must have nulls ordered last
-                    ca.is_sorted_any() && ca.first_non_null().unwrap() == 0
+                    unit_or_sorted_flag(ca) != IsSorted::Not && ca.first_non_null().unwrap() == 0
                 )
             {
-                ca.is_sorted_flag()
+                unit_or_sorted_flag(ca)
             } else {
                 IsSorted::Not
             }
@@ -70,15 +89,25 @@ where
             // both arrays have non-null values.
             // for arrays of unit length we can ignore the sorted flag, as it is
             // not necessarily set.
-            if !(ca.is_sorted_any() || ca.len() == 1)
-                || !(other.is_sorted_any() || other.len() == 1)
-                || !(
-                    // We will coerce for single values
-                    ca.len() - ca.null_count() == 1
-                        || other.len() - other.null_count() == 1
-                        || ca.is_sorted_flag() == other.is_sorted_flag()
-                )
-            {
+            let both_sorted = (ca.is_sorted_any() || ca.len() == 1)
+                && (other.is_sorted_any() || other.len() == 1);
+
+            // We will coerce for a single distinct value, which is sorted in both directions.
+            // Only compare values when the flags differ, as that is relatively expensive.
+            let flags_differ = ca.is_sorted_flag() != other.is_sorted_flag();
+            let is_single_value = |arr: &ChunkedArray<T>| {
+                arr.len() - arr.null_count() == 1
+                    || (both_sorted
+                        && flags_differ
+                        && unsafe {
+                            arr.value_unchecked(arr.first_non_null().unwrap())
+                                .tot_eq(&arr.value_unchecked(arr.last_non_null().unwrap()))
+                        })
+            };
+            let l_single = is_single_value(ca);
+            let r_single = is_single_value(other);
+
+            if !both_sorted || (flags_differ && !(l_single || r_single)) {
                 IsSorted::Not
             } else {
                 let l_idx = ca.last_non_null().unwrap();
@@ -103,10 +132,7 @@ where
                     let l_val = unsafe { ca.value_unchecked(l_idx) };
                     let r_val = unsafe { other.value_unchecked(r_idx) };
 
-                    match (
-                        ca.len() - ca.null_count() == 1,
-                        other.len() - other.null_count() == 1,
-                    ) {
+                    match (l_single, r_single) {
                         (true, true) => {
                             out = [IsSorted::Descending, IsSorted::Ascending]
                                 [l_val.tot_le(&r_val) as usize];
@@ -196,6 +222,7 @@ impl ListChunked {
         if !other.get_fast_explode_list() {
             self.unset_fast_explode_list()
         }
+        retain_nesting_flags(self, &other);
 
         new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
@@ -222,6 +249,7 @@ impl ArrayChunked {
         self.null_count += other.null_count;
 
         self.set_sorted_flag(IsSorted::Not);
+        retain_nesting_flags(self, &other);
 
         new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())
@@ -248,6 +276,7 @@ impl StructChunked {
         self.null_count += other.null_count;
 
         self.set_sorted_flag(IsSorted::Not);
+        retain_nesting_flags(self, &other);
 
         new_chunks_owned(&mut self.chunks, std::mem::take(&mut other.chunks), len);
         Ok(())

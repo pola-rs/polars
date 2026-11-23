@@ -10,15 +10,14 @@ use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
 use polars_core::runtime::ASYNC;
 use polars_error::{polars_bail, polars_ensure};
-use polars_utils::IdxSize;
 use polars_utils::aliases::PlIndexSet;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
-use polars_utils::index::idxsize_try_from;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_thread_pool::PyThreadPool;
 use polars_utils::scratch_vec::ScratchVec;
+use polars_utils::slice_enum::Slice;
 
 use crate::dsl::dsl_resolver::{DslResolverTrait as _, ResolveDslArgs, ResolvedDsl};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
@@ -44,7 +43,7 @@ pub(super) fn call_dsl_resolvers(
 
     #[cfg(feature = "python")]
     let py_lazyframe_resolve_threadpool: LazyCell<Arc<PyThreadPool>> =
-        LazyCell::new(|| Arc::new(PyThreadPool::new()));
+        LazyCell::new(|| Arc::new(PyThreadPool::new_scan_resolve_thread_pool()));
 
     let expr_arena_ref = &*expr_arena;
 
@@ -156,7 +155,10 @@ pub(super) fn call_dsl_resolvers(
         ir_arena,
     ) {
         ControlFlow::Continue(()) => {},
-        ControlFlow::Break(err) => return Err(err),
+        ControlFlow::Break(err) => {
+            drain_resolve_tasks(&mut resolve_tasks);
+            return Err(err);
+        },
     }
 
     let verbose = verbose();
@@ -171,7 +173,7 @@ pub(super) fn call_dsl_resolvers(
             eprintln!("call_dsl_resolvers: n_resolvers: {n}")
         }
 
-        ASYNC.block_in_place_on(async {
+        let out = ASYNC.block_in_place_on(async {
             let mut optimize_scratch = ScratchVec::default();
 
             while let Some((node, args, resolved)) = resolve_tasks.next().await {
@@ -260,6 +262,14 @@ pub(super) fn call_dsl_resolvers(
                     to_alp(dsl, expr_arena, ir_arena, &mut opt_flags)?
                 };
 
+                polars_ensure!(
+                    !matches!(
+                        ir_arena.get(ir_node),
+                        IR::Sink { .. } | IR::SinkMultiple { .. }
+                    ),
+                    InvalidOperation: "LazyFrame resolver cannot return a sink"
+                );
+
                 let ir_node_schema = ir_arena.get(ir_node).schema(ir_arena).into_owned();
 
                 // The resolver is only handed a `limit` (= offset + len), never the
@@ -268,15 +278,15 @@ pub(super) fn call_dsl_resolvers(
                 // carries a slice, which means we can always apply the slice here.
                 debug_assert!(slice.is_none() || filters.is_empty());
 
-                if let Some((mut offset, len)) = slice {
-                    if slice_offset_applied {
-                        offset = 0
-                    }
+                let slice = match slice {
+                    Some(slice) if slice_offset_applied => slice.len().map(Slice::head),
+                    slice => slice,
+                };
 
+                if let Some(slice) = slice {
                     ir_node = ir_arena.add(IR::Slice {
                         input: ir_node,
-                        offset,
-                        len: idxsize_try_from(len).unwrap_or(IdxSize::MAX),
+                        slice,
                     });
                 }
 
@@ -352,8 +362,25 @@ pub(super) fn call_dsl_resolvers(
             }
 
             PolarsResult::Ok(())
-        })?;
+        });
+        if out.is_err() {
+            drain_resolve_tasks(&mut resolve_tasks);
+        }
+        out?;
     }
 
     Ok(())
+}
+
+/// Waits (a bounded time, [`crate::utils::RESOLVER_DRAIN_TIMEOUT`]) for the resolvers still running
+/// when another one failed. A resolver may call a plugin on a blocking thread, which can't be
+/// aborted: it should not keep running after the query has returned its error, but one that never
+/// returns must not hang the error.
+fn drain_resolve_tasks<T>(resolve_tasks: &mut FuturesUnordered<Pin<Box<dyn Future<Output = T>>>>) {
+    if !resolve_tasks.is_empty()
+        && ASYNC.block_in_place_on(crate::utils::drain_bounded(resolve_tasks))
+        && verbose()
+    {
+        eprintln!("call_dsl_resolvers: gave up waiting for resolvers still running after an error");
+    }
 }

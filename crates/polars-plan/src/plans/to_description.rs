@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use polars_core::prelude::SortMultipleOptions;
 use polars_defs::join::JoinType;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
+use polars_defs::time::group_by::{DynamicGroupOptionsIR, RollingGroupOptionsIR};
 #[cfg(feature = "python")]
 use polars_descriptions::PythonPredicateDescription;
 use polars_descriptions::{
@@ -14,6 +14,7 @@ use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
 
+use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::dsl::{HConcatOptions, SinkTypeIR, UnifiedScanArgs, UnionOptions};
 use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::{AExpr, ExprIR, IR};
@@ -81,7 +82,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 .map(|x| x.iter().map(ToString::to_string).collect()),
             maintain_order: *maintain_order,
             keep_strategy: format!("{:?}", keep_strategy),
-            slice: *slice,
+            slice: slice.map(|s| s.to_signed_offset_len()),
         },
         IR::Filter { predicate, .. } => IrPropsDescription::Filter {
             predicate: fmt_predicate(predicate, expr_arena),
@@ -93,12 +94,12 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             options,
             ..
         } => {
-            let slice = options.slice;
+            let slice = options.slice.map(|s| s.to_signed_offset_len());
             let keys = fmt_exprs(keys, expr_arena);
             let aggs = fmt_exprs(aggs, expr_arena);
 
             #[cfg(feature = "dynamic_group_by")]
-            if let Some(DynamicGroupOptions {
+            if let Some(DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,
@@ -107,6 +108,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement: _,
             }) = &options.dynamic
             {
                 IrPropsDescription::DynamicGroupBy {
@@ -121,11 +123,12 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     group_by: keys,
                     start_by: format!("{:?}", start_by),
                 }
-            } else if let Some(RollingGroupOptions {
+            } else if let Some(RollingGroupOptionsIR {
                 index_column,
                 period,
                 offset,
                 closed_window,
+                placement: _,
             }) = &options.rolling
             {
                 IrPropsDescription::RollingGroupBy {
@@ -174,6 +177,32 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             exprs: fmt_exprs(exprs, expr_arena),
             should_broadcast: *should_broadcast,
         },
+        IR::Window {
+            partition_by,
+            order_by,
+            exprs,
+            maintain_order,
+            ordered_eval,
+            ..
+        } => IrPropsDescription::Window {
+            partition_by: partition_by.iter().map(ToString::to_string).collect(),
+            order_by: order_by
+                .iter()
+                .flat_map(|(names, options)| {
+                    names
+                        .iter()
+                        .enumerate()
+                        .map(|(i, name)| SortColumnDescription {
+                            expr: name.to_string(),
+                            descending: options.descending[i],
+                            nulls_last: options.nulls_last[i],
+                        })
+                })
+                .collect(),
+            exprs: fmt_exprs(exprs, expr_arena),
+            maintain_order: *maintain_order,
+            ordered_eval: *ordered_eval,
+        },
         IR::Invalid => IrPropsDescription::Invalid,
         IR::Join { options, .. } => {
             let o = options.as_ref();
@@ -193,13 +222,13 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 maintain_order: fmt_from_static_str(args.maintain_order),
                 validation: fmt_from_static_str(args.validation),
                 suffix: args.suffix.as_ref().map(ToString::to_string),
-                slice: args.slice,
+                slice: args.slice.map(|s| s.to_signed_offset_len()),
             };
 
             match &args.how {
                 JoinType::Cross => IrPropsDescription::CrossJoin {
                     maintain_order: fmt_from_static_str(args.maintain_order),
-                    slice: args.slice,
+                    slice: args.slice.map(|s| s.to_signed_offset_len()),
                     predicate: match &o.options {
                         JoinTypeOptionsIR::CrossAndFilter { predicate } => {
                             Some(fmt_predicate(predicate, expr_arena))
@@ -239,7 +268,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                             ]
                         }),
                         suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice,
+                        slice: args.slice.map(|s| s.to_signed_offset_len()),
                         coalesce: fmt_from_static_str(args.coalesce),
                         allow_eq: *allow_eq,
                         check_sortedness: *check_sortedness,
@@ -266,7 +295,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                             vec![fmt_from_static_str(operator1)]
                         },
                         suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice,
+                        slice: args.slice.map(|s| s.to_signed_offset_len()),
                     },
                     _ => generic_join(),
                 },
@@ -318,10 +347,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     .map(|cols| cols.iter().map(|x| x.to_string()).collect()),
                 row_index_name: row_index.as_ref().map(|ri| ri.name.to_string()),
                 row_index_offset: row_index.as_ref().map(|ri| idxsize_to_u64(ri.offset)),
-                pre_slice: pre_slice
-                    .as_ref()
-                    .map(|x| x.to_signed_offset_len())
-                    .map(|x| (x.0, idxsize_to_u64(x.1))),
+                pre_slice: pre_slice.as_ref().map(|x| x.to_signed_offset_len()),
                 predicate: predicate.as_ref().map(|e| fmt_predicate(e, expr_arena)),
                 predicate_file_skip_applied: predicate_file_skip_applied.map(|pfs| {
                     PredicateFileSkipDescription {
@@ -364,9 +390,9 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
         IR::SinkMultiple { inputs, .. } => IrPropsDescription::SinkMultiple {
             num_inputs: inputs.len(),
         },
-        IR::Slice { offset, len, .. } => IrPropsDescription::Slice {
-            offset: *offset,
-            len: idxsize_to_u64(*len),
+        IR::Slice { slice, .. } => {
+            let (offset, len) = slice.to_signed_offset_len();
+            IrPropsDescription::Slice { offset, len }
         },
         IR::Sort {
             by_column,
@@ -391,8 +417,9 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     nulls_last,
                 })
                 .collect(),
-            slice: slice.as_ref().map(|(offset, len, dyn_pred)| {
-                (*offset, *len, dyn_pred.as_ref().map(|dp| format!("{dp:?}")))
+            slice: slice.as_ref().map(|(slice, dyn_pred)| {
+                let (offset, len) = slice.to_signed_offset_len();
+                (offset, len, dyn_pred.as_ref().map(|dp| format!("{dp:?}")))
             }),
             maintain_order: *maintain_order,
             limit: limit.map(idxsize_to_u64),
@@ -409,7 +436,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
         } => IrPropsDescription::Union {
             num_inputs: inputs.len(),
             maintain_order: *maintain_order,
-            slice: *slice,
+            slice: slice.map(|s| s.to_signed_offset_len()),
         },
         #[cfg(feature = "python")]
         IR::PythonScan {
@@ -422,6 +449,8 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     predicate,
                     validate_schema,
                     is_pure,
+                    explain_name,
+                    explain_detail,
                     ..
                 },
             ..
@@ -448,6 +477,8 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             schema_names: schema.iter_names().map(ToString::to_string).collect(),
             is_pure: *is_pure,
             validate_schema: *validate_schema,
+            explain_name: explain_name.as_ref().map(|s| s.to_string()),
+            explain_detail: explain_detail.as_ref().map(|s| s.to_string()),
         },
         IR::UnoptimizedDispatch {
             inputs, operation, ..
@@ -467,8 +498,34 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             keys: key.iter().map(|k| k.to_string()).collect(),
             maintain_order: *maintain_order,
         },
-        #[allow(unreachable_patterns)]
-        _ => IrPropsDescription::Other,
+        IR::Recursive { id, .. } => IrPropsDescription::Recursive { id: id.to_string() },
+        IR::WorkingTableScan { id, .. } => {
+            IrPropsDescription::WorkingTableScan { id: id.to_string() }
+        },
+        IR::Resolver {
+            resolver,
+            resolver_schema,
+            projection,
+            slice,
+            filters,
+            filter_drop_columns_idx,
+            resolved_dsl,
+            resolved_ir,
+        } => IrPropsDescription::Resolver {
+            name: resolver.name().ok().map(|x| x.to_string()),
+            schema_names: resolver_schema
+                .iter_names()
+                .map(ToString::to_string)
+                .collect(),
+            projection: projection
+                .as_deref()
+                .map(|cols| cols.iter().map(ToString::to_string).collect()),
+            slice: slice.map(|s| s.to_signed_offset_len()),
+            filters: fmt_exprs(filters, expr_arena),
+            filter_drop_columns_idx: *filter_drop_columns_idx,
+            num_cached_resolves: resolved_dsl.lock().unwrap().len(),
+            is_resolved: resolved_ir.is_some(),
+        },
     }
 }
 

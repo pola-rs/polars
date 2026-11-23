@@ -4,119 +4,654 @@ import contextlib
 import importlib
 import importlib.util
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
+from urllib.parse import urlparse
 
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_ldf
+from polars.exceptions import ComputeError
 from polars.io.cloud._utils import NoPickleOption
+from polars.io.iceberg._catalog_resolver import check_catalog_name, resolve_catalog
 from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
-    _convert_iceberg_to_object_store_storage_options,
+    _reusable_catalog,
 )
-from polars.io.iceberg._utils import _normalize_windows_iceberg_file_uri
+from polars.io.iceberg._utils import (
+    _cast_columns,
+    _exact_col,
+    _exact_field,
+    _is_null_pushdown_safe,
+    _normalize_windows_iceberg_file_uri,
+    predicate_to_pyiceberg_delete_filter,
+)
 from polars.io.partition import _InternalPlPathProviderConfig
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Collection, Iterable
 
     import pyarrow as pa
     import pyiceberg.catalog
     import pyiceberg.table
-    from pyiceberg.io.pyarrow import (
-        DataFileStatistics,
-        MetricModeTypes,
-        StatisticsCollector,
-    )
+    from pyiceberg.expressions import BooleanExpression
+    from pyiceberg.io import FileIO
+    from pyiceberg.io.pyarrow import StatisticsCollector
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
-    from pyiceberg.table import Transaction
+    from pyiceberg.table import (
+        CommitTableResponse,
+        CreateTableTransaction,
+        StagedTable,
+        Transaction,
+    )
     from pyiceberg.table.metadata import TableMetadata
+    from pyiceberg.table.sorting import SortOrder
+    from pyiceberg.table.update import TableRequirement, TableUpdate
+    from pyiceberg.transforms import Transform
     from pyiceberg.typedef import Record
+    from pyiceberg.types import IcebergType
 
     import polars as pl
     from polars._plr import PyLazyFrame
-    from polars._typing import ParquetCompression, StorageOptionsDict
+    from polars._typing import (
+        ParquetCompression,
+        PolarsDataType,
+        StorageOptionsDict,
+    )
 
 
-_IcebergSinkedFile = tuple[str, int, int, bytes]
+# `(path, num_rows, num_bytes, parquet_metadata, partition_keys)`
+_IcebergSinkedFile = tuple[str, int, int, bytes, "pl.DataFrame | None"]
+
+_SINK_UUID_PROPERTY = "polars.sink-uuid"
 
 
-def _nested_partition_source_ids(schema: Schema, spec: PartitionSpec) -> set[int]:
-    return {
-        field.source_id
-        for field in spec.fields
-        if schema.accessor_for_field(field.source_id).inner is not None
-    }
+class _StagedTableOption(NoPickleOption["pyiceberg.table.Table"]):
+    """A staged table, which cannot be loaded by name after unpickling."""
+
+    def __getstate__(self) -> tuple[()]:
+        msg = "a staged Iceberg create cannot be serialized"
+        raise TypeError(msg)
 
 
-def _partition_source_expr(schema: Schema, source_id: int) -> pl.Expr:
+class _AlreadyCommitted(Exception):
+    """A snapshot tagged with this sink's uuid already landed.
+
+    Deliberately not a `CommitFailedException` or `ValidationException`, so pyiceberg
+    does not clean up this transaction's manifests when it propagates.
+    """
+
+    def __init__(self, table: pyiceberg.table.Table) -> None:
+        self.table = table
+
+
+@dataclass(kw_only=True)
+class _ReplaceFiles:
+    """Data files a sink's commit replaces by the files it wrote (`UPDATE`, `DELETE`).
+
+    A commit is refused once the table's schema or partition spec is no longer the one
+    the files were read with.
+    """
+
+    data_files: list[DataFile]
+    # Rows that concurrent writers must not add or delete for a retry to rebase.
+    conflict_filter: BooleanExpression
+    schema_id: int
+    spec_id: int
+    # The table property that sets the isolation level: of a delete or an update.
+    isolation: Literal["delete", "update"] = "update"
+
+
+class _HandBack:
+    """In place of `replace_files`: the sink writes, and hands its files back here.
+
+    For files an outer commit adds (an overwrite's rewritten rows).
+    """
+
+    files: list[_IcebergSinkedFile] | None = None
+    sort_order_id: int | None = None
+
+    def __init__(self, max_rows_per_file: int | None = None) -> None:
+        # files sized by rows instead of estimated bytes (compaction)
+        self.max_rows_per_file = max_rows_per_file
+
+    def __getstate__(self) -> tuple[()]:
+        msg = "a sink that hands back its files cannot be serialized"
+        raise TypeError(msg)
+
+
+def _create_namespace_if_not_exists(
+    catalog: pyiceberg.catalog.Catalog,
+    namespace: tuple[str, ...],
+    *,
+    create_parents: bool = True,
+) -> None:
+    """Create `namespace`, and any missing parent namespaces."""
+    try:
+        # Tolerates a concurrent create of the same namespace.
+        catalog.create_namespace_if_not_exists(namespace)
+    except Exception:
+        # The create may have landed with its response lost.
+        with contextlib.suppress(Exception):
+            if catalog.namespace_exists(namespace):
+                return
+
+        # The parent namespace may be missing. Catalogs report this differently
+        # (e.g. REST raises a `RESTError` rather than `NoSuchNamespaceError`), so
+        # check for it directly.
+        parent_missing = False
+        if create_parents and len(namespace) > 1:
+            with contextlib.suppress(Exception):
+                parent_missing = not catalog.namespace_exists(namespace[:-1])
+
+        if not parent_missing:
+            raise
+    else:
+        return
+
+    _create_namespace_if_not_exists(catalog, namespace[:-1])
+    _create_namespace_if_not_exists(catalog, namespace, create_parents=False)
+
+
+def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) -> None:
+    # Same check as `Table.refresh`: a dropped and recreated table must not take
+    # over the caller's table.
+    if src.metadata.table_uuid != dst.metadata.table_uuid:
+        msg = (
+            "Table UUID does not match: "
+            f"current={dst.metadata.table_uuid} != refreshed={src.metadata.table_uuid}"
+        )
+        raise ValueError(msg)
+    dst.metadata = src.metadata
+    dst.metadata_location = src.metadata_location
+    dst.io = src.io
+    dst.config = src.config
+
+
+def _already_committed(metadata: TableMetadata, sink_uuid: str) -> bool:
+    return any(
+        s.summary is not None and s.summary.get(_SINK_UUID_PROPERTY) == sink_uuid
+        for s in metadata.snapshots
+    )
+
+
+def _landed(
+    current: pyiceberg.table.Table, table: pyiceberg.table.Table, sink_uuid: str
+) -> bool:
+    """Whether the sink's commit to `table` landed in `current`, as loaded now."""
+    from pyiceberg.table import StagedTable
+
+    # a staged create's snapshot can be expired, but its uuid stays
+    return _already_committed(current.metadata, sink_uuid) or (
+        isinstance(table, StagedTable)
+        and current.metadata.table_uuid == table.metadata.table_uuid
+    )
+
+
+def _rejected(error: Exception) -> bool:
+    """Whether a failed catalog commit is certain not to land."""
+    from pyiceberg.exceptions import (
+        AuthorizationExpiredError,
+        BadRequestError,
+        CommitFailedException,
+        ForbiddenError,
+        NoSuchNamespaceError,
+        NoSuchTableError,
+        OAuthError,
+        RESTError,
+        TableAlreadyExistsError,
+        TooManyRequestsError,
+        UnauthorizedError,
+        ValidationException,
+    )
+
+    # a plain RESTError is an unmapped 4xx response
+    return type(error) is RESTError or isinstance(
+        error,
+        (
+            AuthorizationExpiredError,
+            BadRequestError,
+            CommitFailedException,
+            ForbiddenError,
+            NoSuchNamespaceError,
+            NoSuchTableError,
+            NotImplementedError,
+            OAuthError,
+            TableAlreadyExistsError,
+            TooManyRequestsError,
+            UnauthorizedError,
+            ValidationException,
+        ),
+    )
+
+
+class _SinkCatalog:
+    """Delegates to `catalog`, but recovers the outcome of a failed `commit_table`.
+
+    pyiceberg deletes a transaction's manifests when a commit fails, and does not
+    always check first whether the commit landed (empty overwrite producers, zero
+    retries, the final attempt). Resolving the outcome here, before pyiceberg sees
+    the failure, keeps a landed snapshot's manifests. A failure that is not a
+    rejection is raised as `CommitStateUnknownException`: the commit may still land.
+    """
+
+    def __init__(
+        self, catalog: pyiceberg.catalog.Catalog, sink_uuid: str, *, verbose: bool
+    ) -> None:
+        self._catalog = catalog
+        self._sink_uuid = sink_uuid
+        self._verbose = verbose
+        self._snapshot_ids: set[int] = set()
+        # what the last commit request raised, its outcome already resolved
+        self._raised: Exception | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._catalog, name)
+
+    def commit_table(
+        self,
+        table: pyiceberg.table.Table,
+        requirements: tuple[TableRequirement, ...],
+        updates: tuple[TableUpdate, ...],
+    ) -> CommitTableResponse:
+        try:
+            return self._commit_table(table, requirements, updates)
+        except Exception as e:
+            self._raised = e
+            raise
+
+    def landed_after(
+        self, table: pyiceberg.table.Table, error: Exception
+    ) -> pyiceberg.table.Table:
+        """The table as it is now, if a commit that failed after its request landed.
+
+        For `error` raised after a commit request but not by it (eg: the refresh for a
+        retry). Re-raises `error` if no request was sent or it is the request's own,
+        and raises `CommitStateUnknownException` if the commit may still land.
+        """
+        from pyiceberg.exceptions import CommitStateUnknownException
+
+        if not self._snapshot_ids or error is self._raised:
+            raise error
+        try:
+            current = self._catalog.load_table(table.name())
+        except Exception:
+            current = None
+        if current is None or not _already_committed(current.metadata, self._sink_uuid):
+            msg = "a failed Iceberg commit may still land"
+            raise CommitStateUnknownException(msg) from error
+        return current
+
+    def _commit_table(
+        self,
+        table: pyiceberg.table.Table,
+        requirements: tuple[TableRequirement, ...],
+        updates: tuple[TableUpdate, ...],
+    ) -> CommitTableResponse:
+        from pyiceberg.exceptions import CommitStateUnknownException
+        from pyiceberg.table import CommitTableResponse
+        from pyiceberg.table.update import AddSnapshotUpdate
+
+        self._snapshot_ids.update(
+            u.snapshot.snapshot_id for u in updates if isinstance(u, AddSnapshotUpdate)
+        )
+
+        try:
+            return self._catalog.commit_table(table, requirements, updates)
+        except Exception as e:
+            try:
+                current = self._catalog.load_table(table.name())
+            except Exception:
+                msg = "could not verify the outcome of a failed Iceberg commit"
+                raise CommitStateUnknownException(msg) from e
+
+            metadata = current.metadata
+            if any(s.snapshot_id in self._snapshot_ids for s in metadata.snapshots):
+                if self._verbose:
+                    eprint("IcebergSinkState[commit]: recovered lost commit response")
+                return CommitTableResponse(
+                    metadata=metadata,
+                    metadata_location=current.metadata_location,  # type: ignore[call-arg]
+                )
+
+            if _already_committed(metadata, self._sink_uuid):
+                raise _AlreadyCommitted(current) from e
+
+            if _rejected(e) or isinstance(e, CommitStateUnknownException):
+                raise
+            msg = "a failed Iceberg commit may still land"
+            raise CommitStateUnknownException(msg) from e
+
+
+_SPEC_CHANGED = "the partition spec changed during the write"
+
+
+def _raise_if_spec_changed(
+    table: pyiceberg.table.Table, spec_id: int | None, error: Exception
+) -> None:
+    """After a rejected commit, raise if `spec_id` is no longer the default spec."""
+    from pyiceberg.exceptions import ValidationException
+
+    if spec_id is None:
+        return
+    try:
+        current = table.catalog.load_table(table.name())
+    except Exception:
+        return
+    if current.metadata.default_spec_id != spec_id:
+        raise ValidationException(_SPEC_CHANGED) from error
+
+
+def _sink_transaction(
+    table: pyiceberg.table.Table,
+    sink_uuid: str,
+    spec_id: int | None,
+    *,
+    schema_id: int | None = None,
+    check: Callable[[TableMetadata], None] | None = None,
+) -> Transaction:
+    """
+    A transaction that commits only while `spec_id` (written for) is the default.
+
+    With `schema_id`, also only while that schema is the current one. `check` is
+    called with the table's metadata before each retry, and may raise.
+    """
+    from pyiceberg.exceptions import ValidationException
+    from pyiceberg.table import Transaction
+    from pyiceberg.table.update import AssertDefaultSpecId
+
+    class _SinkTransaction(Transaction):  # type: ignore[misc]
+        # pyiceberg calls this after refreshing the table for a retry, before it
+        # writes new manifests. A twin that lands after this check moves the branch
+        # ref, so the next commit fails and `_SinkCatalog` finds the twin.
+        def _rebuild_snapshot_updates(self) -> None:
+            if _already_committed(self._table.metadata, sink_uuid):
+                raise _AlreadyCommitted(self._table)
+            # pyiceberg would write the files' partition values under the new spec
+            if spec_id is not None and self._table.metadata.default_spec_id != spec_id:
+                raise ValidationException(_SPEC_CHANGED)
+            if (
+                schema_id is not None
+                and self._table.metadata.current_schema_id != schema_id
+            ):
+                msg = "the table schema changed during the write"
+                raise ValidationException(msg)
+            if check is not None:
+                check(self._table.metadata)
+            super()._rebuild_snapshot_updates()
+
+    if spec_id is None:
+        return _SinkTransaction(table)
+    if table.metadata.default_spec_id != spec_id:
+        raise ValidationException(_SPEC_CHANGED)
+    tx = _SinkTransaction(table)
+    tx._stage((), (AssertDefaultSpecId(default_spec_id=spec_id),))  # type: ignore[call-arg]
+    return tx
+
+
+def _replace_transaction(
+    table: pyiceberg.table.Table, sink_uuid: str, replace: _ReplaceFiles
+) -> Transaction:
+    from pyiceberg.exceptions import ValidationException
+    from pyiceberg.table import Transaction
+
+    base_snapshot_id = table.metadata.current_snapshot_id
+
+    class _ReplaceTransaction(Transaction):  # type: ignore[misc]
+        def _rebuild_snapshot_updates(self) -> None:
+            metadata = self._table.metadata
+            if _already_committed(metadata, sink_uuid):
+                raise _AlreadyCommitted(self._table)
+            if (
+                metadata.current_schema_id != replace.schema_id
+                or metadata.default_spec_id != replace.spec_id
+            ):
+                msg = "the table schema or partition spec changed during the write"
+                raise ValidationException(msg)
+            # a delete committed meanwhile would not apply to the newer file
+            if _added_conflicting_deletes(self._table, base_snapshot_id, replace):
+                msg = "another writer deleted rows of the rewritten files"
+                raise ValidationException(msg)
+            super()._rebuild_snapshot_updates()
+
+    return _ReplaceTransaction(table)
+
+
+def _added_conflicting_deletes(
+    table: pyiceberg.table.Table, base_snapshot_id: int | None, replace: _ReplaceFiles
+) -> bool:
+    """Whether the snapshots after `base_snapshot_id` may delete replaced files' rows.
+
+    Whatever the delete files' statistics. `True` if the base is not an ancestor of the
+    current snapshot.
+    """
+    from pyiceberg.manifest import DataFileContent, ManifestContent, ManifestEntryStatus
+    from pyiceberg.table.snapshots import ancestors_of
+
+    from polars.io.iceberg._dataset import _referenced_data_file
+
+    replaced = {data_file.file_path for data_file in replace.data_files}
+    metadata = table.metadata
+    for snapshot in ancestors_of(metadata.current_snapshot(), metadata):
+        if snapshot.snapshot_id == base_snapshot_id:
+            return False
+        for manifest in snapshot.manifests(table.io):
+            if (
+                manifest.added_snapshot_id != snapshot.snapshot_id
+                or manifest.content != ManifestContent.DELETES
+            ):
+                continue
+            for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
+                # a rewritten manifest also lists delete files committed before
+                if entry.status != ManifestEntryStatus.ADDED:
+                    continue
+                delete = entry.data_file
+                if delete.content == DataFileContent.EQUALITY_DELETES:
+                    return True
+                referenced = _referenced_data_file(delete)
+                if referenced is None or referenced in replaced:
+                    return True
+    return base_snapshot_id is not None
+
+
+def _assert_replace_base(tx: Transaction, replace: _ReplaceFiles) -> None:
+    """Stage the requirements of `replace`, before any schema update."""
+    from pyiceberg.table.update import AssertCurrentSchemaId, AssertDefaultSpecId
+
+    tx._stage(
+        (),
+        (
+            AssertCurrentSchemaId(current_schema_id=replace.schema_id),  # type: ignore[call-arg]
+            AssertDefaultSpecId(default_spec_id=replace.spec_id),  # type: ignore[call-arg]
+        ),
+    )
+
+
+def _stage_replace(
+    tx: Transaction,
+    replace: _ReplaceFiles,
+    data_files: list[DataFile],
+    snapshot_properties: dict[str, str],
+) -> None:
+    """Stage one snapshot replacing the files of `replace` by `data_files`."""
+    from pyiceberg.table.snapshots import Operation
+
+    with tx.update_snapshot(snapshot_properties=snapshot_properties).overwrite() as ow:
+        _set_isolation_operation(
+            ow,
+            Operation.DELETE if replace.isolation == "delete" else Operation.OVERWRITE,
+        )
+        # labelled as Iceberg Java: a commit that only removes files is a delete
+        only_removes = replace.data_files and not data_files
+        if only_removes and ow._operation == Operation.OVERWRITE:
+            ow._operation = Operation.DELETE
+        ow.delete_by_predicate(replace.conflict_filter)
+        for data_file in replace.data_files:
+            ow.delete_data_file(data_file)
+        for data_file in data_files:
+            ow.append_data_file(data_file)
+
+
+def _check_overwrite_version(table: pyiceberg.table.Table) -> None:
+    if table.format_version > 2:
+        msg = (
+            f"overwrite of an Iceberg v{table.format_version} table is not supported "
+            f"yet: table '{'.'.join(table.name())}'"
+        )
+        raise NotImplementedError(msg)
+
+
+def _remove_files(io: FileIO, paths: list[str]) -> None:
+    """Remove files this sink wrote and will not commit; best effort."""
+    for path in paths:
+        with contextlib.suppress(Exception):
+            io.delete(path)
+
+
+def _set_isolation_operation(producer: Any, operation: Any) -> None:
+    """Have `producer` validate with the isolation level of `operation`'s property."""
+    # private in pyiceberg 0.12: `_validate_concurrency` reads it
+    if not hasattr(producer, "_isolation_operation"):
+        msg = "this PyIceberg version does not support choosing the isolation level"
+        raise NotImplementedError(msg)
+    producer._isolation_operation = operation
+
+
+def _iceberg_source_expr(schema: Schema, source_id: int) -> pl.Expr:
     from pyiceberg.types import StructType
-
-    import polars as pl
 
     accessor = schema.accessor_for_field(source_id)
     source_field = schema.fields[accessor.position]
-    expr = pl.col(source_field.name)
+    expr = _exact_col(source_field.name)
 
     while accessor.inner is not None:
         accessor = accessor.inner
         source_type = source_field.field_type
         if not isinstance(source_type, StructType):
-            msg = f"partition source field {source_id} has non-struct parent"
+            msg = f"Iceberg source field {source_id} has non-struct parent"
             raise TypeError(msg)
         source_field = source_type.fields[accessor.position]
-        expr = expr.struct.field(source_field.name)
+        expr = _exact_field(expr, source_field.name)
 
     return expr
 
 
-def _infer_partition_from_statistics(
-    statistics: DataFileStatistics, spec: PartitionSpec, schema: Schema
+def _partition_record(
+    partition_keys: pl.DataFrame | None, spec: PartitionSpec, schema: Schema
 ) -> Record:
+    """
+    The partition of a sinked file, from its partition keys (`_partition_key_exprs`).
+
+    Parquet statistics cannot give it: they are truncated for long values, absent for
+    NaN, and do not distinguish signed zeros.
+    """
+    import struct
+
     from pyiceberg.partitioning import partition_record_value
+    from pyiceberg.transforms import IdentityTransform
     from pyiceberg.typedef import Record
+    from pyiceberg.types import DoubleType, FloatType
+
+    if not spec.fields:
+        return Record()
+
+    if partition_keys is None or partition_keys.shape != (1, len(spec.fields)):
+        msg = (
+            "Iceberg sink: partition keys of a file do not match the partition spec: "
+            f"{None if partition_keys is None else partition_keys.schema}"
+        )
+        raise ComputeError(msg)
 
     partition_values: list[Any] = []
-    for field in spec.fields:
-        aggregate = statistics.column_aggregates.get(field.source_id)
-        if aggregate is None:
-            partition_values.append(None)
-            continue
-
+    for field, value in zip(spec.fields, partition_keys.row(0), strict=True):
         source_type = schema.find_field(field.source_id).field_type
-        transform = field.transform.transform(source_type)
-        lower_value = transform(
-            partition_record_value(field, aggregate.current_min, schema)
-        )
-        upper_value = transform(
-            partition_record_value(field, aggregate.current_max, schema)
-        )
-        # A file can contain different source values in one transformed partition.
-        if lower_value != upper_value:
-            msg = (
-                "Cannot infer partition value from Parquet metadata for partition "
-                f"field '{field.name}': {lower_value=}, {upper_value=}"
-            )
-            raise ValueError(msg)
-        partition_values.append(lower_value)
+        if value is None or not isinstance(field.transform, IdentityTransform):
+            # Transforms give partition values.
+            pass
+        elif isinstance(source_type, (FloatType, DoubleType)):
+            # The key holds the bits, to keep signed zeros apart.
+            value = struct.unpack("<d", struct.pack("<q", value))[0]
+        elif not isinstance(value, int):
+            # Temporal keys are already in the partition representation.
+            value = partition_record_value(field, value, schema)
+        partition_values.append(value)
 
     return Record(*partition_values)
+
+
+def _temporal_transform_expr(
+    expr: pl.Expr, source_type: IcebergType, transform: Transform[Any, Any]
+) -> pl.Expr:
+    from pyiceberg.transforms import DayTransform, MonthTransform, YearTransform
+
+    import polars as pl
+
+    if type(source_type).__name__ in {"TimestamptzType", "TimestamptzNanoType"}:
+        expr = expr.dt.convert_time_zone("UTC")
+
+    if isinstance(transform, YearTransform):
+        return expr.dt.year() - 1970
+    if isinstance(transform, MonthTransform):
+        return (expr.dt.year() - 1970) * 12 + expr.dt.month() - 1
+    if isinstance(transform, DayTransform):
+        return expr.cast(pl.Date).cast(pl.Int32)
+    return expr.dt.epoch("us") // 3_600_000_000
+
+
+def _bucket_transform_expr(
+    expr: pl.Expr, source_type: IcebergType, num_buckets: int
+) -> pl.Expr | None:
+    """Iceberg `bucket[num_buckets]` transform, or None for an unsupported type."""
+    from pyiceberg.types import (
+        BinaryType,
+        DateType,
+        DecimalType,
+        FixedType,
+        IntegerType,
+        LongType,
+        StringType,
+        TimeType,
+        UUIDType,
+    )
+
+    import polars as pl
+
+    # The hash depends on the representation, so first cast to the source type.
+    if isinstance(source_type, (IntegerType, LongType)):
+        expr = expr.cast(pl.Int64)
+    elif isinstance(source_type, DateType):
+        expr = expr.cast(pl.Date)
+    elif isinstance(source_type, TimeType):
+        expr = expr.cast(pl.Time)
+    elif isinstance(source_type, DecimalType):
+        expr = expr.cast(pl.Decimal(source_type.precision, source_type.scale))
+    elif isinstance(source_type, StringType):
+        expr = expr.cast(pl.String)
+    elif isinstance(source_type, (BinaryType, FixedType, UUIDType)):
+        expr = expr.cast(pl.Binary)
+    elif type(source_type).__name__ not in {
+        "TimestampType",
+        "TimestamptzType",
+        "TimestampNanoType",
+        "TimestamptzNanoType",
+    }:
+        # Timestamps of any time unit are hashed as microseconds since the epoch.
+        return None
+
+    return (expr._mm3_hash() & 0x7FFFFFFF) % num_buckets
 
 
 def _data_files_from_sink_metadata(
     table_metadata: TableMetadata,
     sinked_files: list[_IcebergSinkedFile],
-    nested_source_ids: set[int],
+    sort_order_id: int | None,
 ) -> Iterable[DataFile]:
     from pyiceberg.io.pyarrow import (
-        MetricModeTypes,
-        MetricsMode,
         compute_statistics_plan,
         parquet_path_to_id_mapping,
     )
@@ -124,14 +659,6 @@ def _data_files_from_sink_metadata(
 
     schema = table_metadata.schema()
     statistics_plan = compute_statistics_plan(schema, table_metadata.properties)
-    nested_metrics_modes = {}
-    for source_id in nested_source_ids:
-        nested_metrics_modes[source_id] = statistics_plan[source_id].mode.type
-        # Nested bounds are needed temporarily to infer the partition value.
-        statistics_plan[source_id] = replace(
-            statistics_plan[source_id],
-            mode=MetricsMode(MetricModeTypes.FULL),
-        )
     parquet_column_mapping = parquet_path_to_id_mapping(schema)
 
     executor = ExecutorFactory.get_or_create()
@@ -142,7 +669,7 @@ def _data_files_from_sink_metadata(
             sinked_file,
             statistics_plan,
             parquet_column_mapping,
-            nested_metrics_modes,
+            sort_order_id,
         )
         for sinked_file in sinked_files
     ]
@@ -154,19 +681,18 @@ def _data_file_from_sink_metadata(
     sinked_file: _IcebergSinkedFile,
     statistics_plan: dict[int, StatisticsCollector],
     parquet_column_mapping: dict[str, int],
-    nested_metrics_modes: dict[int, MetricModeTypes],
+    sort_order_id: int | None,
 ) -> DataFile:
     import pyarrow as pa
     import pyarrow.parquet as pq
     from pyiceberg.io.pyarrow import (
-        MetricModeTypes,
         _check_pyarrow_schema_compatible,
         data_file_statistics_from_parquet_metadata,
     )
     from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 
     schema = table_metadata.schema()
-    file_path, num_rows, num_bytes, parquet_metadata_bytes = sinked_file
+    file_path, num_rows, num_bytes, parquet_metadata_bytes, partition_keys = sinked_file
     parquet_metadata = pq.read_metadata(pa.BufferReader(parquet_metadata_bytes))
 
     if parquet_metadata.num_rows != num_rows:
@@ -182,17 +708,8 @@ def _data_file_from_sink_metadata(
         stats_columns=statistics_plan,
         parquet_column_mapping=parquet_column_mapping,
     )
-    partition = _infer_partition_from_statistics(
-        statistics, table_metadata.spec(), schema
-    )
+    partition = _partition_record(partition_keys, table_metadata.spec(), schema)
     serialized_statistics = statistics.to_serialized_dict()
-    for source_id, metrics_mode in nested_metrics_modes.items():
-        serialized_statistics["lower_bounds"].pop(source_id, None)
-        serialized_statistics["upper_bounds"].pop(source_id, None)
-        if metrics_mode is MetricModeTypes.NONE:
-            serialized_statistics["value_counts"].pop(source_id, None)
-            serialized_statistics["null_value_counts"].pop(source_id, None)
-            serialized_statistics["nan_value_counts"].pop(source_id, None)
 
     data_file_args = {
         "content": DataFileContent.DATA,
@@ -200,7 +717,7 @@ def _data_file_from_sink_metadata(
         "file_format": FileFormat.PARQUET,
         "partition": partition,
         "file_size_in_bytes": num_bytes,
-        "sort_order_id": None,
+        "sort_order_id": sort_order_id,
         "spec_id": table_metadata.default_spec_id,
         "equality_ids": None,
         "key_metadata": None,
@@ -212,45 +729,156 @@ def _data_file_from_sink_metadata(
     return factory(**data_file_args)
 
 
-def _add_files(
+def _data_files_for_commit(
     transaction: Transaction,
     sinked_files: list[_IcebergSinkedFile],
-    snapshot_properties: dict[str, str],
-) -> None:
-    from pyiceberg.table import TableProperties
-
-    table_metadata = transaction.table_metadata
-    nested_source_ids = _nested_partition_source_ids(
-        table_metadata.schema(), table_metadata.spec()
+    sort_order_id: int | None,
+) -> list[DataFile]:
+    return list(
+        _data_files_from_sink_metadata(
+            transaction.table_metadata,
+            sinked_files,
+            sort_order_id,
+        )
     )
-    if table_metadata.name_mapping() is None:
-        transaction.set_properties(
-            {
-                TableProperties.DEFAULT_NAME_MAPPING: table_metadata.schema().name_mapping.model_dump_json()
-            }
+
+
+def _written_partitions(
+    table_metadata: TableMetadata, sinked_files: list[_IcebergSinkedFile]
+) -> set[Record]:
+    """The partitions of the default spec that `sinked_files` are written to."""
+    spec = table_metadata.spec()
+    schema = table_metadata.schema()
+    _check_dynamic_overwrite_spec(spec, schema)
+    return {_partition_record(keys, spec, schema) for *_, keys in sinked_files}
+
+
+def _dynamic_overwrite_filter(
+    table_metadata: TableMetadata, partitions: set[Record]
+) -> BooleanExpression:
+    """Match the rows of `partitions` (of the default spec)."""
+    from pyiceberg.expressions import AlwaysFalse, And, EqualTo, IsNull, Or, Reference
+
+    spec = table_metadata.spec()
+    schema = table_metadata.schema()
+    names = [schema.find_column_name(field.source_id) for field in spec.fields]
+
+    partition_filters: list[BooleanExpression] = []
+    for partition in partitions:
+        predicates: list[BooleanExpression] = []
+        for i, name in enumerate(names):
+            assert name is not None
+            value = partition[i]
+            if value is None:
+                predicates.append(IsNull(Reference(name)))  # type: ignore[call-arg]
+            else:
+                predicates.append(EqualTo(Reference(name), value))  # type: ignore[call-arg]
+        partition_filters.append(
+            And(*predicates) if len(predicates) > 1 else predicates[0]
         )
 
+    if not partition_filters:
+        return AlwaysFalse()
+    if len(partition_filters) == 1:
+        return partition_filters[0]
+    return Or(*partition_filters)
+
+
+def _check_dynamic_overwrite_spec(spec: PartitionSpec, schema: Schema) -> None:
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import DoubleType, FloatType
+
+    if spec.is_unpartitioned():
+        msg = "partition_overwrite='dynamic' requires a partitioned Iceberg table"
+        raise ValueError(msg)
+    for field in spec.fields:
+        if not isinstance(field.transform, IdentityTransform):
+            msg = (
+                "partition_overwrite='dynamic' only supports identity partition "
+                f"transforms, got {field.transform} for partition field '{field.name}'"
+            )
+            raise NotImplementedError(msg)
+        source_type = schema.find_field(field.source_id).field_type
+        # NaN partition values cannot be matched with `EqualTo`.
+        if isinstance(source_type, (FloatType, DoubleType)):
+            msg = (
+                "partition_overwrite='dynamic' does not support floating-point "
+                f"partition source columns (partition field '{field.name}')"
+            )
+            raise NotImplementedError(msg)
+        # PyIceberg has no nanosecond literals.
+        if type(source_type).__name__ in {"TimestampNanoType", "TimestamptzNanoType"}:
+            msg = (
+                "partition_overwrite='dynamic' does not support nanosecond "
+                f"timestamp partition source columns (partition field '{field.name}')"
+            )
+            raise NotImplementedError(msg)
+        # A null optional ancestor makes the source column null, which
+        # `IsNull` does not match.
+        source_name = schema.find_column_name(field.source_id)
+        assert source_name is not None
+        if not _is_null_pushdown_safe(source_name.split("."), schema):
+            msg = (
+                "partition_overwrite='dynamic' does not support partition source "
+                f"columns nested within an optional struct (partition field "
+                f"'{field.name}')"
+            )
+            raise NotImplementedError(msg)
+
+
+def _add_files(
+    transaction: Transaction,
+    data_files: list[DataFile],
+    snapshot_properties: dict[str, str],
+) -> None:
     with transaction.update_snapshot(
         snapshot_properties=snapshot_properties
     ).fast_append() as append_files:
-        for data_file in _data_files_from_sink_metadata(
-            table_metadata,
-            sinked_files,
-            nested_source_ids,
-        ):
+        for data_file in data_files:
             append_files.append_data_file(data_file)
 
 
-def _partition_key_exprs(
-    table: pyiceberg.table.Table, source_schema: pa.Schema | None = None
-) -> list[pl.Expr] | None:
-    spec = table.spec()
+def _delete_dir(io: FileIO, location: str) -> None:
+    """Delete the directory `location` and everything under it, if it exists."""
+    from pyiceberg.io.pyarrow import PyArrowFileIO
 
+    uri = urlparse(location)
+    # FileIOs drop a query or fragment, and fsspec expands globs: both widen the delete
+    if any(c in location for c in "?#*["):
+        msg = f"not deleting '{location}': it has one of the characters ?#*["
+        raise ValueError(msg)
+
+    if isinstance(io, PyArrowFileIO):
+        from pyarrow.fs import FileType
+
+        scheme, netloc, path = io.parse_location(location)
+        path = path.rstrip("/")
+        fs = io.fs_by_scheme(scheme, netloc)
+        if fs.get_file_info(path).type != FileType.NotFound:
+            fs.delete_dir(path)
+        return
+
+    from pyiceberg.io.fsspec import FsspecFileIO
+
+    if isinstance(io, FsspecFileIO):
+        fs = io.get_fs(uri.scheme or "file", uri.hostname)
+        with contextlib.suppress(FileNotFoundError):
+            fs.rm(location, recursive=True)
+        return
+
+    msg = f"deleting a directory with {type(io).__name__}"
+    raise NotImplementedError(msg)
+
+
+def _partition_key_exprs(
+    spec: PartitionSpec, schema: Schema, source_schema: pa.Schema | None = None
+) -> list[pl.Expr] | None:
+    """Partition keys of the data, written with `schema`."""
     if not spec.fields:
         return None
 
-    from pyiceberg.io.pyarrow import MetricModeTypes, compute_statistics_plan
     from pyiceberg.transforms import (
+        BucketTransform,
         DayTransform,
         HourTransform,
         IdentityTransform,
@@ -258,14 +886,19 @@ def _partition_key_exprs(
         TruncateTransform,
         YearTransform,
     )
-    from pyiceberg.types import BinaryType, IntegerType, LongType, StringType
+    from pyiceberg.types import (
+        BinaryType,
+        DateType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        LongType,
+        StringType,
+        TimeType,
+    )
 
     import polars as pl
 
-    schema = table.schema()
-    nested_source_ids = _nested_partition_source_ids(schema, spec)
-    statistics_plan = compute_statistics_plan(schema, table.metadata.properties)
-    bounds_metrics_modes = {MetricModeTypes.TRUNCATE, MetricModeTypes.FULL}
     reserved_names = {field.name for field in schema.fields}
     if source_schema is not None:
         reserved_names.update(source_schema.names)
@@ -273,45 +906,39 @@ def _partition_key_exprs(
 
     for field in spec.fields:
         source_field = schema.find_field(field.source_id)
-        statistics = statistics_plan.get(field.source_id)
-        if field.source_id not in nested_source_ids and (
-            statistics is None or statistics.mode.type not in bounds_metrics_modes
-        ):
-            source_name = schema.find_column_name(field.source_id)
-            metrics_mode = (
-                statistics.mode.type.value if statistics is not None else "unavailable"
-            )
-            msg = (
-                "sink to Iceberg table with partition field "
-                f"'{field.name}' on source column '{source_name}' with "
-                f"'{metrics_mode}' metrics; partition value inference requires "
-                "lower and upper bounds"
-            )
-            raise NotImplementedError(msg)
-
         source_type = source_field.field_type
         transform = field.transform
-        expr = _partition_source_expr(schema, field.source_id)
+        expr = _iceberg_source_expr(schema, field.source_id)
 
+        # The keys are the partition values (see `_partition_record`).
         if isinstance(transform, IdentityTransform):
-            pass
+            if isinstance(source_type, (FloatType, DoubleType)):
+                # Iceberg keeps signed zeros apart, Polars' grouping does not. NaNs
+                # are one partition.
+                value = expr.cast(pl.Float64)
+                expr = (
+                    pl.when(value.is_nan())
+                    .then(pl.lit(0x7FF8000000000000, pl.Int64))
+                    .otherwise(value.reinterpret(dtype=pl.Int64))
+                )
+            elif isinstance(source_type, DateType):
+                expr = expr.cast(pl.Date).to_physical()
+            elif isinstance(source_type, TimeType):
+                expr = expr.cast(pl.Time).to_physical() // 1000
+            elif type(source_type).__name__ in {
+                "TimestampType",
+                "TimestamptzType",
+            }:
+                expr = expr.dt.cast_time_unit("us").to_physical()
+            elif type(source_type).__name__ in {
+                "TimestampNanoType",
+                "TimestamptzNanoType",
+            }:
+                expr = expr.dt.cast_time_unit("ns").to_physical()
         elif isinstance(
             transform, (YearTransform, MonthTransform, DayTransform, HourTransform)
         ):
-            if type(source_type).__name__ in {
-                "TimestamptzType",
-                "TimestamptzNanoType",
-            }:
-                expr = expr.dt.convert_time_zone("UTC")
-
-            if isinstance(transform, YearTransform):
-                expr = expr.dt.year() - 1970
-            elif isinstance(transform, MonthTransform):
-                expr = (expr.dt.year() - 1970) * 12 + expr.dt.month() - 1
-            elif isinstance(transform, DayTransform):
-                expr = expr.cast(pl.Date).cast(pl.Int32)
-            else:
-                expr = expr.dt.epoch("us") // 3_600_000_000
+            expr = _temporal_transform_expr(expr, source_type, transform)
         elif isinstance(transform, TruncateTransform):
             if isinstance(source_type, (IntegerType, LongType)):
                 expr = expr - expr % transform.width
@@ -325,6 +952,15 @@ def _partition_key_exprs(
                     f"'{transform}' partition transform on '{source_type}'"
                 )
                 raise NotImplementedError(msg)
+        elif isinstance(transform, BucketTransform):
+            bucket = _bucket_transform_expr(expr, source_type, transform.num_buckets)
+            if bucket is None:
+                msg = (
+                    "sink to Iceberg table with "
+                    f"'{transform}' partition transform on '{source_type}'"
+                )
+                raise NotImplementedError(msg)
+            expr = bucket
         else:
             msg = f"sink to Iceberg table with '{transform}' partition transform"
             raise NotImplementedError(msg)
@@ -338,17 +974,345 @@ def _partition_key_exprs(
     return exprs
 
 
+def _create_table_schema(
+    schema: pl.Schema,
+    *,
+    required: Collection[str] = (),
+    context: str = "create_if_not_exists",
+    with_data: bool = True,
+) -> tuple[Schema, dict[str, pl.DataType]]:
+    """Iceberg schema of a table created from `schema`.
+
+    Also returns the casts that make the data match the table schema, all of which
+    are lossless. Raises if a column has no lossless Iceberg equivalent. The
+    top-level columns in `required` become required fields; `context` starts the
+    error message. Without data (`with_data=False`), map keys may widen too.
+    """
+    from itertools import count
+
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import (
+        BinaryType,
+        BooleanType,
+        DateType,
+        DecimalType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        ListType,
+        LongType,
+        MapType,
+        NestedField,
+        StringType,
+        StructType,
+        TimestampType,
+        TimestamptzType,
+        TimeType,
+    )
+
+    import polars as pl
+
+    field_ids = count(1)
+    unsupported: list[str] = []
+
+    def contains_time(dtype: PolarsDataType) -> bool:
+        if dtype == pl.Time:
+            return True
+        if isinstance(dtype, (pl.List, pl.Array)):
+            return contains_time(dtype.inner)
+        if isinstance(dtype, pl.Struct):
+            return any(contains_time(field.dtype) for field in dtype.fields)
+        if isinstance(dtype, pl.Map):
+            return contains_time(dtype.key) or contains_time(dtype.value)
+        return False
+
+    def convert(
+        dtype: PolarsDataType, path: str
+    ) -> tuple[IcebergType, pl.DataType] | None:
+        if dtype == pl.Boolean:
+            return BooleanType(), pl.Boolean()
+        if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.UInt8, pl.UInt16):
+            return IntegerType(), pl.Int32()
+        if dtype in (pl.Int64, pl.UInt32):
+            return LongType(), pl.Int64()
+        if dtype in (pl.Float16, pl.Float32):
+            return FloatType(), pl.Float32()
+        if dtype == pl.Float64:
+            return DoubleType(), pl.Float64()
+        if isinstance(dtype, pl.Decimal):
+            if not 0 <= dtype.scale <= dtype.precision <= 38:
+                unsupported.append(
+                    f"'{path}' ({dtype}): an Iceberg decimal has a precision of at "
+                    "most 38 and a scale of at most its precision"
+                )
+                return None
+            return DecimalType(dtype.precision, dtype.scale), dtype
+        if dtype in (pl.String, pl.Categorical, pl.Enum):
+            return StringType(), pl.String()
+        if dtype == pl.Binary:
+            return BinaryType(), pl.Binary()
+        if dtype == pl.Date:
+            return DateType(), pl.Date()
+        if dtype == pl.Time:
+            # Microsecond precision, like any Iceberg time column.
+            return TimeType(), pl.Time()
+        if isinstance(dtype, pl.Datetime):
+            if dtype.time_unit == "ns":
+                unsupported.append(
+                    f"'{path}' ({dtype}): Iceberg timestamps have microsecond "
+                    "precision, cast to Datetime('us')"
+                )
+                return None
+            # A time zone is only a display setting: the instants are preserved.
+            if dtype.time_zone is None:
+                return TimestampType(), pl.Datetime("us")
+            return TimestamptzType(), pl.Datetime("us", "UTC")
+        if isinstance(dtype, (pl.List, pl.Array)):
+            element_id = next(field_ids)
+            if (inner := convert(dtype.inner, f"{path}[]")) is None:
+                return None
+            element_type, element_dtype = inner
+            return (
+                ListType(element_id, element_type, element_required=False),
+                pl.List(element_dtype),
+            )
+        if isinstance(dtype, pl.Map):
+            key_id, value_id = next(field_ids), next(field_ids)
+            key = convert(dtype.key, f"{path}.key")
+            value = convert(dtype.value, f"{path}.value")
+            if key is None or value is None:
+                return None
+            if with_data and key[1] != dtype.key:
+                unsupported.append(
+                    f"'{path}' ({dtype}): Polars cannot cast map keys to {key[1]}; "
+                    "convert them with `map.entries()`, a cast and `list.to_map()`"
+                )
+                return None
+            if with_data and contains_time(dtype.key):
+                # Iceberg stores times in microseconds: keys could merge
+                unsupported.append(
+                    f"'{path}' ({dtype}): the keys hold nanosecond times, which "
+                    "Iceberg stores in microseconds, so distinct keys could merge"
+                )
+                return None
+            return (
+                MapType(key_id, key[0], value_id, value[0], value_required=False),
+                pl.Map(key[1], value[1]),
+            )
+        if isinstance(dtype, pl.Struct):
+            fields, struct_fields = [], []
+            for field in dtype.fields:
+                field_id = next(field_ids)
+                if (inner := convert(field.dtype, f"{path}.{field.name}")) is None:
+                    continue
+                fields.append(NestedField(field_id, field.name, inner[0]))
+                struct_fields.append(pl.Field(field.name, inner[1]))
+            if len(struct_fields) < len(dtype.fields):
+                return None
+            return StructType(*fields), pl.Struct(struct_fields)
+
+        unsupported.append(f"'{path}' ({dtype})")
+        return None
+
+    fields, casts = [], {}
+    for name, dtype in schema.items():
+        field_id = next(field_ids)
+        if (converted := convert(dtype, name)) is None:
+            continue
+        iceberg_type, cast_dtype = converted
+        fields.append(
+            NestedField(field_id, name, iceberg_type, required=name in required)
+        )
+        if cast_dtype != dtype:
+            casts[name] = cast_dtype
+
+    if unsupported:
+        columns = ", ".join(unsupported)
+        msg = f"{context}: columns without a lossless Iceberg type: {columns}"
+        raise TypeError(msg)
+
+    return Schema(*fields), casts
+
+
+def _sort_key_exprs(
+    schema: Schema, sort_order: SortOrder, input_schema: pl.Schema
+) -> tuple[list[pl.Expr], list[bool], list[bool]]:
+    from pyiceberg.table.sorting import NullOrder, SortDirection
+    from pyiceberg.transforms import (
+        BucketTransform,
+        DayTransform,
+        HourTransform,
+        IdentityTransform,
+        MonthTransform,
+        TruncateTransform,
+        VoidTransform,
+        YearTransform,
+    )
+    from pyiceberg.types import (
+        BinaryType,
+        DecimalType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        LongType,
+        StringType,
+        StructType,
+    )
+
+    import polars as pl
+
+    exprs: list[pl.Expr] = []
+    descending: list[bool] = []
+    nulls_last: list[bool] = []
+    sort_order.check_compatible(schema)
+
+    for field in sort_order.fields:
+        accessor = schema.accessor_for_field(field.source_id)
+        source_field = schema.fields[accessor.position]
+        input_type = input_schema.get(source_field.name)
+        while input_type is not None and accessor.inner is not None:
+            accessor = accessor.inner
+            source_struct = source_field.field_type
+            assert isinstance(source_struct, StructType)
+            source_field = source_struct.fields[accessor.position]
+            input_type = (
+                pl.Schema(dict(input_type)).get(source_field.name)
+                if isinstance(input_type, pl.Struct)
+                else None
+            )
+        if input_type is None or input_type == pl.Null:
+            continue
+
+        source_type = schema.find_field(field.source_id).field_type
+        transform = field.transform
+        expr = _iceberg_source_expr(schema, field.source_id)
+
+        if isinstance(transform, IdentityTransform):
+            if isinstance(source_type, (FloatType, DoubleType)):
+                value = expr.cast(pl.Float64)
+                bits = value.reinterpret(dtype=pl.Int64)
+                # Iceberg distinguishes signed zero and places negative NaNs first.
+                bits = (
+                    pl.when(value.is_nan())
+                    .then(
+                        pl.when(bits < 0).then(-(1 << 51)).otherwise(0x7FF8000000000000)
+                    )
+                    .otherwise(bits)
+                )
+                expr = bits ^ pl.when(bits < 0).then((1 << 63) - 1).otherwise(0)
+        elif isinstance(
+            transform, (YearTransform, MonthTransform, DayTransform, HourTransform)
+        ):
+            expr = _temporal_transform_expr(expr, source_type, transform)
+        elif isinstance(transform, TruncateTransform):
+            if isinstance(source_type, (IntegerType, LongType, DecimalType)):
+                # The quotient preserves ordering and ties without truncation overflow.
+                expr = expr.to_physical() // transform.width
+            elif isinstance(source_type, StringType):
+                expr = expr.str.slice(0, transform.width)
+            elif isinstance(source_type, BinaryType):
+                expr = expr.bin.slice(0, transform.width)
+            else:
+                msg = f"Iceberg sort transform '{transform}' on '{source_type}'"
+                raise NotImplementedError(msg)
+        elif isinstance(transform, BucketTransform):
+            bucket = _bucket_transform_expr(expr, source_type, transform.num_buckets)
+            if bucket is None:
+                msg = f"Iceberg sort transform '{transform}' on '{source_type}'"
+                raise NotImplementedError(msg)
+            expr = bucket
+        elif isinstance(transform, VoidTransform):
+            continue
+        else:
+            msg = f"Iceberg sort transform '{transform}'"
+            raise NotImplementedError(msg)
+
+        exprs.append(expr)
+        descending.append(field.direction is SortDirection.DESC)
+        nulls_last.append(field.null_order is NullOrder.NULLS_LAST)
+
+    return exprs, descending, nulls_last
+
+
+def _check_snapshot_properties(snapshot_properties: Any) -> None:
+    # Snapshot summary values are strings in the Iceberg spec.
+    if snapshot_properties is None:
+        return
+    if not isinstance(snapshot_properties, dict):
+        msg = (
+            "snapshot_properties must be a dict, "
+            f"got {type(snapshot_properties).__name__}"
+        )
+        raise TypeError(msg)
+    for key, value in snapshot_properties.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            msg = (
+                f"snapshot_properties[{key!r}] must be a str mapped to a str, "
+                f"got {type(key).__name__}: {type(value).__name__}"
+            )
+            raise TypeError(msg)
+
+
+# A sink state's catalog class module and qualname, catalog name and properties, and
+# the caller's catalog, if any.
+_SinkCatalogFields: TypeAlias = tuple[
+    str | None, str | None, str, dict[str, Any], "pyiceberg.catalog.Catalog | None"
+]
+
+
+def _sink_catalog_fields(
+    target: str | pyiceberg.table.Table,
+    catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None,
+) -> _SinkCatalogFields:
+    """The catalog fields of a sink to `target` through `catalog`, or its catalog."""
+    catalog_instance: pyiceberg.catalog.Catalog | None
+    if isinstance(target, str):
+        catalog_config, catalog_instance = (
+            IcebergCatalogConfig._from_api_parameter_or_environment_default(
+                catalog,
+                fn_name="sink_iceberg",
+            )
+        )
+    else:
+        catalog_config = IcebergCatalogConfig.from_catalog(target.catalog)
+        catalog_instance = target.catalog
+
+    from pyiceberg.catalog.noop import NoopCatalog
+
+    if catalog_config.class_ is NoopCatalog:
+        msg = (
+            "cannot sink to static Iceberg table: "
+            f"{type(target) = }, {getattr(target, 'catalog', None) = }"
+        )
+        raise TypeError(msg)
+
+    return (
+        catalog_config.class_.__module__,
+        catalog_config.class_.__qualname__,
+        catalog_config.name,
+        dict(catalog_config.properties),
+        catalog_instance,
+    )
+
+
 @dataclass(kw_only=True)
 class IcebergSinkState:
-    py_catalog_class_module: str
-    py_catalog_class_qualname: str
+    # `None` means these will be lazily resolved using the catalog_name
+    py_catalog_class_module: str | None
+    py_catalog_class_qualname: str | None
 
     catalog_name: str
-    catalog_properties: dict[str, str]
+    catalog_properties: dict[str, Any]
 
     table_name: str
     mode: Literal["append", "overwrite"]
     schema_mode: Literal["merge", "overwrite"] | None
+    # Rows deleted by `mode="overwrite"`. None deletes all rows.
+    # A `pl.Expr` is converted when the sink is resolved.
+    overwrite_filter: BooleanExpression | pl.Expr | None
+    dynamic_partition_overwrite: bool
+    create_if_not_exists: bool
+    create_namespace_if_not_exists: bool
     snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
     compression: ParquetCompression
@@ -358,9 +1322,17 @@ class IcebergSinkState:
 
     sink_uuid_str: str
 
+    # A `StagedTable` is created by the commit, with the written data.
     table_: NoPickleOption[pyiceberg.table.Table]
+    # The caller's catalog, used before rebuilding one from the properties.
+    catalog_: NoPickleOption[pyiceberg.catalog.Catalog]
     source_schema: pa.Schema | None
+    sort_order_id: int | None
+    # The partition spec of the partition keys.
+    partition_spec_id: int | None
     commit_result_df: NoPickleOption[pl.DataFrame]
+    # Data files the commit replaces, instead of appending or overwriting.
+    replace_files: _ReplaceFiles | _HandBack | None = None
 
     @staticmethod
     def new(
@@ -368,88 +1340,238 @@ class IcebergSinkState:
         *,
         mode: Literal["append", "overwrite"] = "append",
         schema_mode: Literal["merge", "overwrite"] | None = None,
+        overwrite_filter: pl.Expr | BooleanExpression | str | None = None,
+        partition_overwrite: Literal["dynamic"] | None = None,
+        create_if_not_exists: bool = False,
+        create_namespace_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
-        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
+        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | str | None = None,
         storage_options: StorageOptionsDict | None = None,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
         row_group_size: int | None = None,
         maintain_order: bool = True,
+        replace_files: _ReplaceFiles | _HandBack | None = None,
     ) -> IcebergSinkState:
         if schema_mode == "overwrite" and mode != "overwrite":
             msg = "schema_mode='overwrite' requires mode='overwrite'"
             raise ValueError(msg)
 
-        catalog_config = (
-            (
-                IcebergCatalogConfig._from_api_parameter_or_environment_default(
-                    catalog,
-                    fn_name="sink_iceberg",
-                )
-            )
-            if isinstance(target, str)
-            else (
-                IcebergCatalogConfig(
-                    class_=type(target.catalog),
-                    name=target.catalog.name,
-                    properties=target.catalog.properties,
-                )
-            )
-        )
+        if partition_overwrite not in (None, "dynamic"):
+            msg = f"invalid partition_overwrite: {partition_overwrite!r}"
+            raise ValueError(msg)
 
-        from pyiceberg.catalog.noop import NoopCatalog
+        if overwrite_filter is not None or partition_overwrite is not None:
+            if mode != "overwrite":
+                msg = (
+                    "overwrite_filter and partition_overwrite require mode='overwrite'"
+                )
+                raise ValueError(msg)
+            if overwrite_filter is not None and partition_overwrite is not None:
+                msg = "overwrite_filter and partition_overwrite are mutually exclusive"
+                raise ValueError(msg)
+            if schema_mode == "overwrite":
+                msg = (
+                    "schema_mode='overwrite' cannot be combined with overwrite_filter "
+                    "or partition_overwrite"
+                )
+                raise ValueError(msg)
 
-        if catalog_config.class_ is NoopCatalog:
-            msg = (
-                "cannot sink to static Iceberg table: "
-                f"{type(target) = }, {getattr(target, 'catalog', None) = }"
+        if isinstance(overwrite_filter, str):
+            from pyiceberg.expressions.parser import parse
+
+            overwrite_filter = parse(overwrite_filter)
+
+        import polars as pl
+
+        if isinstance(overwrite_filter, pl.Expr) and not isinstance(target, str):
+            # Fail early when the table is available.
+            overwrite_filter = predicate_to_pyiceberg_delete_filter(
+                overwrite_filter, target
             )
+
+        if create_if_not_exists and not isinstance(target, str):
+            msg = "create_if_not_exists=True requires a table identifier as `target`"
             raise TypeError(msg)
 
+        if create_namespace_if_not_exists and not create_if_not_exists:
+            msg = (
+                "create_namespace_if_not_exists=True requires create_if_not_exists=True"
+            )
+            raise ValueError(msg)
+
+        _check_snapshot_properties(snapshot_properties)
+
+        if isinstance(catalog, str):
+            if not isinstance(target, str):
+                msg = "a catalog name requires a table identifier as `target`"
+                raise TypeError(msg)
+            # Only the name is kept: each process that loads the table, including
+            # one that only commits, resolves it with its own resolver.
+            catalog_fields: _SinkCatalogFields = (
+                None,
+                None,
+                check_catalog_name(catalog),
+                {},
+                None,
+            )
+        else:
+            catalog_fields = _sink_catalog_fields(target, catalog)
+        (
+            catalog_class_module,
+            catalog_class_qualname,
+            catalog_name,
+            catalog_properties,
+            catalog_instance,
+        ) = catalog_fields
+
         return IcebergSinkState(
-            py_catalog_class_module=catalog_config.class_.__module__,
-            py_catalog_class_qualname=catalog_config.class_.__qualname__,
-            catalog_name=catalog_config.name,
-            catalog_properties=catalog_config.properties,
+            py_catalog_class_module=catalog_class_module,
+            py_catalog_class_qualname=catalog_class_qualname,
+            catalog_name=catalog_name,
+            catalog_properties=catalog_properties,
             table_name=target if isinstance(target, str) else ".".join(target.name()),
             mode=mode,
             schema_mode=schema_mode,
-            snapshot_properties=snapshot_properties or {},
-            iceberg_storage_properties=storage_options or {},
+            overwrite_filter=overwrite_filter,
+            dynamic_partition_overwrite=partition_overwrite == "dynamic",
+            create_if_not_exists=create_if_not_exists,
+            create_namespace_if_not_exists=create_namespace_if_not_exists,
+            snapshot_properties=dict(snapshot_properties or {}),
+            iceberg_storage_properties=dict(storage_options or {}),
             compression=compression,
             compression_level=compression_level,
             row_group_size=row_group_size,
             maintain_order=maintain_order,
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
+            catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
             source_schema=None,
+            sort_order_id=None,
+            partition_spec_id=None,
             commit_result_df=NoPickleOption(),
+            replace_files=replace_files,
         )
+
+    @staticmethod
+    def new_create(
+        transaction: CreateTableTransaction,
+        *,
+        storage_options: StorageOptionsDict | None = None,
+    ) -> IcebergSinkState:
+        """A sink that creates the staged table of `transaction` with the data.
+
+        The create commits the data as the table's first snapshot, so a failed write
+        leaves no table, and the data is never added to a table created meanwhile.
+        """
+        state = IcebergSinkState.new(
+            transaction._table, mode="append", storage_options=storage_options
+        )
+        state.table_ = _StagedTableOption(transaction._table)
+        return state
 
     def table(self) -> pyiceberg.table.Table:
         if self.table_.get() is None:
-            module = importlib.import_module(self.py_catalog_class_module)
-            qualname_split = self.py_catalog_class_qualname.split(".")
+            catalog = self.catalog_.get()
+            if catalog is None:
+                class_module = self.py_catalog_class_module
+                class_qualname = self.py_catalog_class_qualname
 
-            catalog_class: type[pyiceberg.catalog.Catalog] = getattr(
-                module, qualname_split[0]
-            )
+                if class_module is None and class_qualname is None:
+                    # Only the catalog's name was kept: resolve it in this process.
+                    catalog = resolve_catalog(self.catalog_name)
+                elif class_module is None or class_qualname is None:
+                    msg = (
+                        "invalid Iceberg sink state: the catalog class module and "
+                        "qualname must both be set, or both be None to resolve the "
+                        f"catalog by name; found {class_module = }, {class_qualname = }"
+                    )
+                    raise ValueError(msg)
+                else:
+                    # The state was serialized: rebuild with the captured class.
+                    module = importlib.import_module(class_module)
+                    qualname_split = class_qualname.split(".")
 
-            for part in qualname_split[1:]:
-                catalog_class = getattr(catalog_class, part)
+                    catalog_class: type[pyiceberg.catalog.Catalog] = getattr(
+                        module, qualname_split[0]
+                    )
 
-            catalog = catalog_class(self.catalog_name, **self.catalog_properties)
-            self.table_.set(catalog.load_table(self.table_name))
+                    for part in qualname_split[1:]:
+                        catalog_class = getattr(catalog_class, part)
+
+                    catalog = catalog_class(
+                        self.catalog_name, **self.catalog_properties
+                    )
+            self.table_.set(self._load_or_create_table(catalog))
 
         return self.table_.get()  # type: ignore[return-value]
 
-    def _get_converted_storage_options(self) -> dict[str, str]:
-        return _convert_iceberg_to_object_store_storage_options(
-            self.iceberg_storage_properties
+    def _load_or_create_table(
+        self, catalog: pyiceberg.catalog.Catalog
+    ) -> pyiceberg.table.Table:
+        from pyiceberg.exceptions import NoSuchTableError
+
+        # Load first: this also runs at commit time, possibly in another process,
+        # where the table normally exists already.
+        try:
+            return catalog.load_table(self.table_name)
+        except NoSuchTableError:
+            if not self.create_if_not_exists:
+                raise
+
+        try:
+            return self._create_table(catalog)
+        except Exception:
+            # The create may have landed with its response lost.
+            try:
+                return catalog.load_table(self.table_name)
+            except NoSuchTableError:
+                pass
+            raise
+
+    def _create_table(
+        self, catalog: pyiceberg.catalog.Catalog
+    ) -> pyiceberg.table.Table:
+        from pyiceberg.exceptions import NoSuchNamespaceError
+
+        # Tolerates a concurrent create of the same table.
+        try:
+            return catalog.create_table_if_not_exists(
+                self.table_name, schema=self._get_source_schema()
+            )
+        except NoSuchNamespaceError:
+            if not self.create_namespace_if_not_exists:
+                raise
+
+        _create_namespace_if_not_exists(
+            catalog, catalog.namespace_from(self.table_name)
+        )
+
+        return catalog.create_table_if_not_exists(
+            self.table_name, schema=self._get_source_schema()
+        )
+
+    def _get_converted_storage_options(self) -> dict[str, Any]:
+        from polars.io.iceberg._plugin import _native_storage_options
+
+        # The table's FileIO properties (e.g. catalog credentials), as for scans
+        return (
+            _native_storage_options(self.table(), self.iceberg_storage_properties) or {}
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
-        if self.schema_mode is not None:
+        if self.create_if_not_exists:
+            from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+            # Cast the data to match a table created from it, which can only have
+            # Iceberg types.
+            table_schema, casts = _create_table_schema(lf.collect_schema())
+            if casts:
+                lf = _cast_columns(lf, casts)
+            self.source_schema = schema_to_pyarrow(
+                table_schema, include_field_ids=False
+            )
+        elif self.schema_mode is not None:
             self.source_schema = lf.collect_schema().to_arrow()
         return wrap_ldf(lf._ldf.sink_iceberg(self))
 
@@ -470,11 +1592,13 @@ class IcebergSinkState:
             with transaction.update_schema(allow_incompatible_changes=True) as update:
                 update.union_by_name(self._get_source_schema())
 
-    def _schema_for_write(self, table: pyiceberg.table.Table) -> pa.Schema:
+    def _schemas_for_write(
+        self, table: pyiceberg.table.Table
+    ) -> tuple[Schema, pa.Schema]:
         from pyiceberg.io.pyarrow import pyarrow_to_schema, schema_to_pyarrow
 
         if self.schema_mode is None:
-            return schema_to_pyarrow(table.schema())
+            return table.schema(), schema_to_pyarrow(table.schema())
 
         transaction = table.transaction()
         self._update_schema(transaction)
@@ -482,7 +1606,7 @@ class IcebergSinkState:
         source_schema = pyarrow_to_schema(
             self._get_source_schema(), name_mapping=evolved_schema.name_mapping
         )
-        return schema_to_pyarrow(source_schema)
+        return evolved_schema, schema_to_pyarrow(source_schema)
 
     def _attach_resolved_sink(self, plf: PyLazyFrame) -> PyLazyFrame:
         from pyiceberg.table import TableProperties
@@ -498,11 +1622,17 @@ class IcebergSinkState:
             msg = "schema_mode='overwrite' is not supported for partitioned Iceberg tables"
             raise NotImplementedError(msg)
 
-        partition_key_exprs = _partition_key_exprs(table, self.source_schema)
-
-        if table.sort_order().fields:
-            msg = "sink to Iceberg table with sort order"
+        sort_order = table.sort_order()
+        if sort_order.fields and self.schema_mode == "overwrite":
+            msg = "schema_mode='overwrite' is not supported for Iceberg tables with a sort order"
             raise NotImplementedError(msg)
+
+        # Under schema evolution, the keys are of the data as written.
+        schema, arrow_schema = self._schemas_for_write(table)
+        partition_key_exprs = _partition_key_exprs(
+            table.spec(), schema, self.source_schema
+        )
+        self.partition_spec_id = table.spec().spec_id
 
         if location_provider_impl := table_properties.get(
             TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL
@@ -528,9 +1658,47 @@ class IcebergSinkState:
             else None
         )
 
-        arrow_schema = self._schema_for_write(table)
+        # Fail before writing any data.
+        if self.mode == "overwrite" and self.replace_files is None:
+            _check_overwrite_version(table)
+        if self.dynamic_partition_overwrite:
+            _check_dynamic_overwrite_spec(table.spec(), schema)
+        if isinstance(self.overwrite_filter, pl.Expr):
+            self.overwrite_filter = predicate_to_pyiceberg_delete_filter(
+                self.overwrite_filter, table
+            )
+        elif self.overwrite_filter is not None:
+            from pyiceberg.expressions.visitors import bind
+
+            bind(schema, self.overwrite_filter, case_sensitive=True)
+        if self.overwrite_filter is not None:
+            from polars.io.iceberg._delete import _exact_filter, _filter_predicate
+
+            _filter_predicate(
+                table.schema(), _exact_filter(table.schema(), self.overwrite_filter)
+            )
+
+        lf = wrap_ldf(plf)
+        self.sort_order_id = None
+        if sort_order.fields:
+            exprs, descending, nulls_last = _sort_key_exprs(
+                schema, sort_order, lf.collect_schema()
+            )
+            if exprs:
+                lf = lf.sort(
+                    exprs,
+                    descending=descending,
+                    nulls_last=nulls_last,
+                    maintain_order=self.maintain_order,
+                )
+            self.sort_order_id = sort_order.order_id
 
         approximate_bytes_per_file = 2 * 1024 * 1024 * 1024
+        max_rows_per_file = (
+            self.replace_files.max_rows_per_file
+            if isinstance(self.replace_files, _HandBack)
+            else None
+        )
 
         if v := property_as_int(
             properties=table_metadata.properties,
@@ -541,34 +1709,54 @@ class IcebergSinkState:
                 estimated_compression_ratio * v, (1 << 64) - 1
             )
 
-        return (
-            wrap_ldf(plf)
-            .sink_parquet(
-                pl.PartitionBy(
-                    _normalize_windows_iceberg_file_uri(
-                        self.sink_base_path(
-                            object_storage_enabled=object_storage_enabled
-                        )
-                    ),
-                    file_path_provider=PlIcebergPathProviderConfig(
-                        object_storage_partitioned_paths=object_storage_partitioned_paths
-                    ),
-                    key=partition_key_exprs,
-                    include_key=False if partition_key_exprs is not None else None,
-                    approximate_bytes_per_file=approximate_bytes_per_file,
-                ),
-                arrow_schema=arrow_schema,
-                compression=self.compression,
-                compression_level=self.compression_level,
-                row_group_size=self.row_group_size,
-                maintain_order=self.maintain_order,
-                storage_options=self._get_converted_storage_options(),
-                lazy=True,
-            )
-            ._ldf
+        from polars.io.iceberg._credentials import renewing_credential_provider
+        from polars.io.iceberg._plugin import _data_location
+
+        storage_options, credential_provider = renewing_credential_provider(
+            table,
+            self._get_converted_storage_options(),
+            self.iceberg_storage_properties,
+            _data_location(table),
+            # Only the name was kept: renewals resolve it too.
+            catalog_name=(
+                self.catalog_name if self.py_catalog_class_module is None else None
+            ),
         )
 
+        # The provider is taken as `scan_parquet` does, untyped.
+        return lf.sink_parquet(  # type: ignore[call-overload]
+            pl.PartitionBy(
+                _normalize_windows_iceberg_file_uri(
+                    self.sink_base_path(object_storage_enabled=object_storage_enabled)
+                ),
+                file_path_provider=PlIcebergPathProviderConfig(
+                    object_storage_partitioned_paths=object_storage_partitioned_paths
+                ),
+                key=partition_key_exprs,
+                include_key=False if partition_key_exprs is not None else None,
+                max_rows_per_file=max_rows_per_file,
+                approximate_bytes_per_file=(
+                    approximate_bytes_per_file if max_rows_per_file is None else None
+                ),
+            ),
+            arrow_schema=arrow_schema,
+            compression=self.compression,
+            compression_level=self.compression_level,
+            row_group_size=self.row_group_size,
+            maintain_order=True if sort_order.fields else self.maintain_order,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
+            lazy=True,
+        )._ldf
+
     def commit(self, sinked_files: list[_IcebergSinkedFile]) -> pl.DataFrame:
+        """Commit the sinked files to the table.
+
+        A re-execution of the same sink invocation (same `sink_uuid_str`) is skipped
+        while the snapshot it tagged is retained. It commits again once that snapshot
+        has expired, or if the table is rolled back while the re-execution is in
+        flight: no catalog requirement can detect the latter.
+        """
         import polars as pl
         import polars._utils.logging
 
@@ -578,94 +1766,498 @@ class IcebergSinkState:
         if verbose:
             eprint(f"IcebergSinkState[commit]: mode: '{self.mode}'")
 
+        from polars.io.iceberg._credentials import refresh_file_io
+
         table = self.table()
+        # The manifests are written with the table's FileIO, whose vended credentials
+        # may have expired while the data was written.
+        refresh_file_io(table)
 
-        original_metadata_location = table.metadata_location
-
-        if sys.platform == "win32":
-            sinked_files = [
-                (
-                    f"file://{path[8:]}" if path.startswith("file:///") else path,
-                    num_rows,
-                    num_bytes,
-                    parquet_metadata,
-                )
-                for path, num_rows, num_bytes, parquet_metadata in sinked_files
-            ]
-
-        with table.transaction() as tx:
-            self._update_schema(tx)
-
-            if self.mode == "overwrite":
-                from pyiceberg.expressions import AlwaysTrue
-
-                tx.delete(AlwaysTrue(), snapshot_properties=self.snapshot_properties)
-
-            if verbose:
-                eprint("IcebergSinkState[commit]: begin add_files")
-
-            start_instant = perf_counter()
-
-            _add_files(
-                tx,
-                sinked_files,
-                self.snapshot_properties,
-            )
-
-            if verbose:
-                elapsed = perf_counter() - start_instant
-                eprint(f"IcebergSinkState[commit]: finish add_files ({elapsed:.3f}s)")
-                eprint("IcebergSinkState[commit]: begin transaction commit")
-
-            start_instant = perf_counter()
-
-        if verbose:
-            now = perf_counter()
-            elapsed = now - start_instant
-            eprint(
-                f"IcebergSinkState[commit]: finish transaction commit ({elapsed:.3f}s)"
-            )
-        else:
-            now = None
-
-        new_metadata_location = table.metadata_location
-
-        assert new_metadata_location != original_metadata_location
+        self._commit(table, sinked_files, verbose=verbose)
 
         self.commit_result_df.set(
             pl.DataFrame(
-                {"metadata_path": new_metadata_location},
+                {"metadata_path": table.metadata_location},
                 schema={"metadata_path": pl.String},
                 height=1,
             )
         )
 
-        if now is not None:
-            total_elapsed = now - function_start_instant
-
+        if verbose:
+            total_elapsed = perf_counter() - function_start_instant
             eprint(
                 f"IcebergSinkState[commit]: finished, total elapsed time: {total_elapsed:.3f}s"
             )
 
         return self.commit_result_df.get()  # type: ignore[return-value]
 
-    def sink_base_path(self, *, object_storage_enabled: bool) -> str:
-        from pyiceberg.table import TableProperties
+    def _commit(
+        self,
+        table: pyiceberg.table.Table,
+        sinked_files: list[_IcebergSinkedFile],
+        *,
+        verbose: bool,
+    ) -> None:
+        from pyiceberg.exceptions import (
+            CommitFailedException,
+            CommitStateUnknownException,
+            ValidationException,
+        )
+        from pyiceberg.table import StagedTable, Table
 
-        table = self.table()
-        table_metadata = table.metadata
-        table_properties = table_metadata.properties
+        if sys.platform == "win32":
+            sinked_files = [
+                (
+                    f"file://{path[8:]}" if path.startswith("file:///") else path,
+                    *rest,
+                )
+                for path, *rest in sinked_files
+            ]
 
-        sink_base_path = (
-            path.rstrip("/")
-            if (path := table_properties.get(TableProperties.WRITE_DATA_PATH))
-            else f"{table_metadata.location.rstrip('/')}/data"
+        if isinstance(self.replace_files, _HandBack):
+            # the engine resolved a copy of this state, which has the sort order
+            self.replace_files.files = sinked_files
+            self.replace_files.sort_order_id = self.sort_order_id
+            return
+
+        if _already_committed(table.metadata, self.sink_uuid_str):
+            if verbose:
+                eprint("IcebergSinkState[commit]: already committed, skipping")
+            return
+
+        original_metadata_location = table.metadata_location
+        snapshot_properties = self.snapshot_properties | {
+            _SINK_UUID_PROPERTY: self.sink_uuid_str
+        }
+
+        if isinstance(table, StagedTable):
+            self._commit_create(
+                table, sinked_files, snapshot_properties, verbose=verbose
+            )
+            return
+
+        if self.mode == "overwrite" and self.replace_files is None:
+            self._commit_overwrite(
+                table, sinked_files, snapshot_properties, verbose=verbose
+            )
+            return
+
+        sink_catalog = _SinkCatalog(table.catalog, self.sink_uuid_str, verbose=verbose)
+        wrapped = Table(
+            table.name(),
+            table.metadata,
+            table.metadata_location,
+            table.io,
+            sink_catalog,  # type: ignore[arg-type]
+            table.config,
+        )
+        replace = self.replace_files
+        transaction = (
+            _sink_transaction(wrapped, self.sink_uuid_str, self.partition_spec_id)
+            if replace is None
+            else _replace_transaction(wrapped, self.sink_uuid_str, replace)
         )
 
-        if object_storage_enabled:
-            return f"{sink_base_path}/"
+        try:
+            with transaction as tx:
+                if replace is None:
+                    start_instant = self._stage_write(
+                        tx, sinked_files, snapshot_properties, verbose=verbose
+                    )
+                else:
+                    start_instant = perf_counter()
+                    # a rewritten file whose rows were all removed leaves no file
+                    empty = [path for path, rows, *_ in sinked_files if rows == 0]
+                    if empty:
+                        _remove_files(self.storage_file_io(), empty)
+                    _assert_replace_base(tx, replace)
+                    data_files = _data_files_for_commit(
+                        tx, [f for f in sinked_files if f[1] > 0], self.sort_order_id
+                    )
+                    _stage_replace(tx, replace, data_files, snapshot_properties)
 
-        return f"{sink_base_path}/{self.sink_uuid_str}/"
+                if verbose:
+                    elapsed = perf_counter() - start_instant
+                    eprint(
+                        f"IcebergSinkState[commit]: finish add_files ({elapsed:.3f}s)"
+                    )
+                    eprint("IcebergSinkState[commit]: begin transaction commit")
+
+                start_instant = perf_counter()
+        except _AlreadyCommitted as e:
+            if verbose:
+                eprint("IcebergSinkState[commit]: already committed, skipping")
+            _copy_table_state(e.table, table)
+            return
+        except (CommitStateUnknownException, ValidationException):
+            raise
+        except Exception as e:
+            if isinstance(e, CommitFailedException):
+                spec_id = self.partition_spec_id if replace is None else replace.spec_id
+                _raise_if_spec_changed(table, spec_id, e)
+            _copy_table_state(sink_catalog.landed_after(table, e), table)
+            return
+
+        if verbose:
+            elapsed = perf_counter() - start_instant
+            eprint(
+                f"IcebergSinkState[commit]: finish transaction commit ({elapsed:.3f}s)"
+            )
+
+        _copy_table_state(wrapped, table)
+
+        assert table.metadata_location != original_metadata_location
+
+    def _stage_write(
+        self,
+        tx: Transaction,
+        sinked_files: list[_IcebergSinkedFile],
+        snapshot_properties: dict[str, str],
+        *,
+        verbose: bool,
+    ) -> float:
+        """Stage an append of the sinked files, returning when it began."""
+        self._check_layout(tx.table_metadata)
+        self._update_schema(tx)
+
+        data_files = _data_files_for_commit(tx, sinked_files, self.sort_order_id)
+
+        if verbose:
+            eprint("IcebergSinkState[commit]: begin add_files")
+
+        start_instant = perf_counter()
+
+        _add_files(tx, data_files, snapshot_properties)
+
+        return start_instant
+
+    def _commit_overwrite(
+        self,
+        table: pyiceberg.table.Table,
+        sinked_files: list[_IcebergSinkedFile],
+        snapshot_properties: dict[str, str],
+        *,
+        verbose: bool,
+    ) -> None:
+        """Commit an overwrite as one snapshot: the files with deleted rows replaced.
+
+        Data files whose rows all match are dropped. The other rows of partly matching
+        files are written again (copy-on-write), into this sink's directory.
+        """
+        from pyiceberg.exceptions import (
+            CommitFailedException,
+            CommitStateUnknownException,
+            ValidationException,
+        )
+        from pyiceberg.expressions import AlwaysFalse, AlwaysTrue
+        from pyiceberg.table import Table
+
+        from polars.io.iceberg._delete import (
+            _candidate_tasks,
+            _classify_files,
+            _exact_filter,
+            _filter_predicate,
+            _live_data_files,
+            _matching_files,
+        )
+
+        _check_overwrite_version(table)
+        if (
+            self.partition_spec_id is not None
+            and table.metadata.default_spec_id != self.partition_spec_id
+        ):
+            raise ValidationException(_SPEC_CHANGED)
+        partitions: set[Record] = set()
+        if self.dynamic_partition_overwrite:
+            partitions = _written_partitions(table.metadata, sinked_files)
+            delete_filter = _dynamic_overwrite_filter(table.metadata, partitions)
+        elif self.overwrite_filter is not None:
+            # Converted from a `pl.Expr` when the sink was resolved.
+            delete_filter = self.overwrite_filter  # type: ignore[assignment]
+        else:
+            delete_filter = AlwaysTrue()
+        if verbose:
+            kind = (
+                "dynamic partitions"
+                if self.dynamic_partition_overwrite
+                else "filter"
+                if self.overwrite_filter is not None
+                else "all rows"
+            )
+            eprint(f"IcebergSinkState[commit]: overwrite: {kind}")
+
+        removed: list[DataFile] = []
+        rewritten: list[_IcebergSinkedFile] = []
+        rewritten_sort_order_id = None
+        if delete_filter == AlwaysTrue():
+            removed = _live_data_files(table)
+        elif delete_filter != AlwaysFalse():
+            schema = table.schema()
+            delete_filter = _exact_filter(schema, delete_filter)
+            predicate = _filter_predicate(schema, delete_filter)
+            # files proven whole from metadata are not read
+            removed, may_match = _classify_files(
+                table, delete_filter, whole_partitions=partitions
+            )
+            tasks = (
+                [
+                    t
+                    for t in _candidate_tasks(table, delete_filter)
+                    if t.file.file_path in may_match
+                ]
+                if may_match
+                else []
+            )
+            whole, partial = _matching_files(
+                table, tasks, predicate, self.iceberg_storage_properties
+            )
+            removed += [t.file for t in whole + partial]
+            if partial:
+                rewritten, rewritten_sort_order_id = self._write_survivors(
+                    table, partial, predicate
+                )
+
+        # a written file without rows is not added
+        written = [f for f in sinked_files if f[1] > 0]
+        rewritten = [f for f in rewritten if f[1] > 0]
+        rewritten_paths = [path for path, *_ in rewritten]
+        empty = [path for path, rows, *_ in sinked_files if rows == 0]
+        if empty:
+            _remove_files(self.storage_file_io(), empty)
+        # an overwrite that changes nothing commits nothing, as Iceberg Java
+        if delete_filter == AlwaysFalse() and not written and self.schema_mode is None:
+            if verbose:
+                eprint("IcebergSinkState[commit]: nothing to commit")
+            return
+
+        replace = _ReplaceFiles(
+            data_files=removed,
+            conflict_filter=delete_filter,
+            schema_id=table.metadata.current_schema_id,
+            spec_id=table.metadata.default_spec_id,
+            isolation="delete",
+        )
+        sink_catalog = _SinkCatalog(table.catalog, self.sink_uuid_str, verbose=verbose)
+        wrapped = Table(
+            table.name(),
+            table.metadata,
+            table.metadata_location,
+            table.io,
+            sink_catalog,  # type: ignore[arg-type]
+            table.config,
+        )
+        try:
+            try:
+                with _replace_transaction(wrapped, self.sink_uuid_str, replace) as tx:
+                    _assert_replace_base(tx, replace)
+                    self._check_layout(tx.table_metadata)
+                    self._update_schema(tx)
+                    data_files = _data_files_for_commit(
+                        tx, written, self.sort_order_id
+                    ) + _data_files_for_commit(tx, rewritten, rewritten_sort_order_id)
+                    _stage_replace(tx, replace, data_files, snapshot_properties)
+                    if verbose:
+                        eprint("IcebergSinkState[commit]: begin transaction commit")
+            except (
+                _AlreadyCommitted,
+                CommitStateUnknownException,
+                ValidationException,
+            ):
+                raise
+            except Exception as e:
+                if isinstance(e, CommitFailedException):
+                    _raise_if_spec_changed(table, replace.spec_id, e)
+                _copy_table_state(sink_catalog.landed_after(table, e), table)
+                return
+        except _AlreadyCommitted as e:
+            # an earlier run of this sink landed, without these rewritten files
+            _remove_files(self.storage_file_io(), rewritten_paths)
+            if verbose:
+                eprint("IcebergSinkState[commit]: already committed, skipping")
+            _copy_table_state(e.table, table)
+            return
+        except CommitStateUnknownException:
+            raise
+        except Exception:
+            # not committed: these files are of this commit only
+            _remove_files(self.storage_file_io(), rewritten_paths)
+            raise
+
+        _copy_table_state(wrapped, table)
+
+    def _write_survivors(
+        self,
+        table: pyiceberg.table.Table,
+        tasks: list[pyiceberg.table.FileScanTask],
+        predicate: pl.Expr,
+    ) -> tuple[list[_IcebergSinkedFile], int | None]:
+        """Write the rows of the files of `tasks` that `predicate` keeps, uncommitted.
+
+        Returns the written files and their sort order. They go into this sink's
+        directory, under its uuid, as the files of the overwrite.
+        """
+        from polars.io.iceberg.functions import _scan_iceberg_files
+
+        hand_back = _HandBack()
+        state = IcebergSinkState.new(
+            table,
+            mode="append",
+            storage_options=self.iceberg_storage_properties,
+            compression=self.compression,
+            compression_level=self.compression_level,
+            row_group_size=self.row_group_size,
+            maintain_order=self.maintain_order,
+            replace_files=hand_back,
+        )
+        state.sink_uuid_str = self.sink_uuid_str
+        rows = _scan_iceberg_files(table, tasks, self.iceberg_storage_properties)
+        state.attach_sink(rows.remove(predicate)).collect()
+        assert hand_back.files is not None
+        return hand_back.files, hand_back.sort_order_id
+
+    def _check_layout(self, metadata: TableMetadata) -> None:
+        """Raise if the sort order written for is gone."""
+        if (
+            self.sort_order_id is not None
+            and metadata.sort_order_by_id(self.sort_order_id) is None
+        ):
+            msg = f"Iceberg sort order {self.sort_order_id} is no longer available"
+            raise ValueError(msg)
+
+    def _commit_create(
+        self,
+        table: StagedTable,
+        sinked_files: list[_IcebergSinkedFile],
+        snapshot_properties: dict[str, str],
+        *,
+        verbose: bool,
+    ) -> None:
+        """Create the staged table, with the sinked files as its first snapshot.
+
+        Raises `CommitStateUnknownException` when the create may have landed: its
+        data files must then be kept.
+        """
+        from pyiceberg.exceptions import (
+            CommitStateUnknownException,
+            NoSuchTableError,
+        )
+        from pyiceberg.table import CreateTableTransaction
+
+        # Same initial changes as the transaction that staged the table.
+        transaction = CreateTableTransaction(table)
+        data_files = _data_files_for_commit(
+            transaction, sinked_files, self.sort_order_id
+        )
+        _add_files(transaction, data_files, snapshot_properties)
+
+        if verbose:
+            eprint("IcebergSinkState[commit]: begin create table")
+
+        start_instant = perf_counter()
+        try:
+            transaction.commit_transaction()
+        except Exception as error:
+            verified = True
+            try:
+                current = table.catalog.load_table(table.name())
+            except NoSuchTableError:
+                current = None
+            except Exception:
+                current, verified = None, False
+            if current is not None and _landed(current, table, self.sink_uuid_str):
+                if verbose:
+                    eprint("IcebergSinkState[commit]: recovered lost commit response")
+                _copy_table_state(current, table)
+                return
+            # another writer's table under the name is no proof: ours may be renamed
+            if not _rejected(error):
+                if not verified:
+                    msg = "could not verify the outcome of a failed Iceberg create"
+                    raise CommitStateUnknownException(msg) from error
+                if isinstance(error, CommitStateUnknownException):
+                    raise
+                msg = "a failed Iceberg create may still land"
+                raise CommitStateUnknownException(msg) from error
+            # an unverified rejection keeps its manifests
+            if verified:
+                for producer in transaction._snapshot_producers:
+                    producer._clean_all_uncommitted()
+            raise
+
+        if verbose:
+            elapsed = perf_counter() - start_instant
+            eprint(f"IcebergSinkState[commit]: finish create table ({elapsed:.3f}s)")
+
+    def written_files_dir(self) -> tuple[str, bool]:
+        """The directory of this sink's data files, and whether it is the sink's own.
+
+        The object-storage layout puts them next to other writers' files.
+        """
+        from pyiceberg.table import TableProperties
+        from pyiceberg.utils.properties import property_as_bool
+
+        object_storage_enabled = property_as_bool(
+            self.table().metadata.properties,
+            TableProperties.OBJECT_STORE_ENABLED,
+            TableProperties.OBJECT_STORE_ENABLED_DEFAULT,
+        )
+        location = self.sink_base_path(object_storage_enabled=object_storage_enabled)
+        return location, not object_storage_enabled
+
+    def remove_written_files(self) -> str | None:
+        """Delete the data files of a sink whose commit did not land, best effort.
+
+        Returns the directory where data files may remain: files outside a directory
+        of the sink's own, or that a landed commit references, are left in place.
+        """
+        from pyiceberg.exceptions import NoSuchTableError
+
+        location, own = self.written_files_dir()
+        if not own:
+            return location
+        from polars.io.iceberg._credentials import refresh_file_io
+
+        table = self.table()
+        try:
+            current = table.catalog.load_table(table.name())
+            if _landed(current, table, self.sink_uuid_str):
+                return location
+            # The files are deleted with the FileIO, as for the commit.
+            refresh_file_io(table, current)
+        except NoSuchTableError:
+            pass
+        except Exception:
+            return location
+        try:
+            _delete_dir(self.storage_file_io(), location)
+        except Exception:
+            return location
+        return None
+
+    def storage_file_io(self) -> FileIO:
+        """The table's FileIO, with the storage options the data was written with."""
+        from pyiceberg.io import load_file_io
+
+        table = self.table()
+        if not self.iceberg_storage_properties:
+            return table.io
+        # Empty values are unset, as for the write.
+        user = {
+            k: v
+            for k, v in self.iceberg_storage_properties.items()
+            if v not in ("", None)
+        }
+        return load_file_io({**table.io.properties, **user}, location=table.location())
+
+    def sink_base_path(self, *, object_storage_enabled: bool) -> str:
+        from polars.io.iceberg._plugin import _data_location
+
+        sink_base_path = _data_location(self.table())
+
+        if object_storage_enabled:
+            return sink_base_path
+
+        return f"{sink_base_path}{self.sink_uuid_str}/"
 
 
 @dataclass(frozen=True, kw_only=True)

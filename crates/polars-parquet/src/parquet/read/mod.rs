@@ -3,21 +3,17 @@ mod compression;
 pub mod levels;
 mod metadata;
 mod page;
-#[cfg(feature = "async")]
-mod stream;
 
 use std::io::{Cursor, Seek, SeekFrom};
 
 pub use column::*;
 pub use compression::{BasicDecompressor, decompress};
 pub use metadata::{
-    deserialize_metadata, deserialize_num_rows, read_metadata, read_metadata_with_size,
-    read_num_rows,
+    deserialize_file_crypto_metadata, deserialize_metadata, deserialize_num_rows, read_metadata,
+    read_metadata_with_decryption, read_num_rows,
 };
 pub use page::{PageIterator, PageMetaData, PageReader};
 use polars_buffer::Buffer;
-#[cfg(feature = "async")]
-pub use stream::read_metadata as read_metadata_async;
 
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::ColumnChunkMetadata;
@@ -29,12 +25,7 @@ pub fn get_page_iterator(
     scratch: Vec<u8>,
     max_page_size: usize,
 ) -> ParquetResult<PageReader> {
-    let col_start = column_chunk.byte_range().start;
+    let col_start = column_chunk.byte_range()?.start;
     reader.seek(SeekFrom::Start(col_start))?;
-    Ok(PageReader::new(
-        reader,
-        column_chunk,
-        scratch,
-        max_page_size,
-    ))
+    PageReader::new(reader, column_chunk, scratch, max_page_size)
 }

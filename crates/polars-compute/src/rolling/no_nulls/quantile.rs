@@ -13,6 +13,18 @@ pub struct QuantileWindow<'a, T: NativeType> {
     method: QuantileMethod,
 }
 
+impl<T: NativeType + PartialOrd> QuantileWindow<'_, T> {
+    /// The number of values in the window.
+    pub fn n_values(&self) -> usize {
+        self.sorted.len()
+    }
+
+    /// The value at `rank` in ascending order, for `rank < self.n_values()`.
+    pub fn value_at_rank(&self, rank: usize) -> T {
+        self.sorted.get(rank)
+    }
+}
+
 impl<
     T: NativeType
         + Float
@@ -112,7 +124,7 @@ impl<
 pub fn rolling_quantile<T>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
@@ -145,13 +157,13 @@ where
                 };
                 let out = super::quantile_filter::rolling_quantile::<_, Vec<_>>(
                     params.method,
-                    min_periods,
+                    min_samples,
                     window_size,
                     values,
                     params.prob,
                 );
                 let validity = create_validity(
-                    min_periods,
+                    min_samples,
                     values.len(),
                     window_size,
                     offset_fn,
@@ -168,7 +180,7 @@ where
             rolling_apply_agg_window::<QuantileWindow<_>, _, _, _>(
                 values,
                 window_size,
-                min_periods,
+                min_samples,
                 offset_fn,
                 params,
             )
@@ -189,7 +201,7 @@ where
                 params.prob,
                 params.method,
                 window_size,
-                min_periods,
+                min_samples,
                 offset_fn,
                 center,
                 weights,
@@ -248,7 +260,7 @@ fn rolling_apply_weighted_quantile<T, Fo>(
     p: f64,
     method: QuantileMethod,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     det_offsets_fn: Fo,
     center: bool,
     weights: &[f64],
@@ -304,7 +316,7 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(
-        min_periods,
+        min_samples,
         len,
         window_size,
         det_offsets_fn,

@@ -13,9 +13,12 @@ use crate::nodes::io_sinks::components::file_sink::FileSinkPermit;
 use crate::nodes::io_sinks::components::partition_key::PartitionKey;
 use crate::nodes::io_sinks::components::partition_morsel_sender::PartitionMorselSender;
 use crate::nodes::io_sinks::components::partition_sink_starter::PartitionSinkStarter;
-use crate::nodes::io_sinks::components::partition_state::PartitionState;
+use crate::nodes::io_sinks::components::partition_state::{
+    PartitionState, empty_without_dictionaries,
+};
 use crate::nodes::io_sinks::components::partitioner::{self, PartitionedDataFrames};
 use crate::nodes::io_sinks::components::size::RowCountAndSize;
+use crate::nodes::io_sinks::writers::interface::FinishSignal;
 
 pub struct PartitionDistributor {
     pub node_name: PlSmallStr,
@@ -29,6 +32,7 @@ pub struct PartitionDistributor {
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
     pub partition_sink_starter: PartitionSinkStarter,
     pub no_partition_keys: bool,
+    pub finish: FinishSignal,
     pub verbose: bool,
 }
 
@@ -44,6 +48,7 @@ impl PartitionDistributor {
             open_sinks_semaphore,
             partition_sink_starter,
             no_partition_keys,
+            finish,
             verbose,
         } = self;
 
@@ -84,7 +89,7 @@ impl PartitionDistributor {
                         .insert_full(
                             key,
                             PartitionState {
-                                buffered_rows: df.clear(),
+                                buffered_rows: empty_without_dictionaries(&df),
                                 keys_df: Arc::new(keys_df),
                                 ..Default::default()
                             },
@@ -202,6 +207,8 @@ impl PartitionDistributor {
             drop(input_wait_token);
         }
 
+        finish.wait().await?;
+
         if verbose {
             eprintln!("{node_name}: Begin finalize");
         }
@@ -279,6 +286,7 @@ impl PartitionDistributor {
             if let Some(file_sink_task_data) = partition.file_sink_task_data.take() {
                 executor::spawn(
                     TaskPriority::Low,
+                    partition_sink_starter.task_metrics.as_deref(),
                     error_capture
                         .clone()
                         .wrap_future(file_sink_task_data.close()),

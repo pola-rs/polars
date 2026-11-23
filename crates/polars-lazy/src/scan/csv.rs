@@ -408,6 +408,7 @@ impl LazyFileListReader for LazyCsvReader {
                 expand_paths: true,
                 hidden_file_prefix: None,
                 projection: None,
+                field_selection: None,
                 column_mapping: None,
                 default_values: None,
                 row_index,
@@ -418,8 +419,10 @@ impl LazyFileListReader for LazyCsvReader {
                 include_file_paths: self.include_file_paths,
                 deletion_files: None,
                 table_statistics: None,
+                hive_partitions: None,
                 row_count: None,
                 source_sizes: None,
+                resolve_heavy_sources: None,
             },
         )?
         .build()

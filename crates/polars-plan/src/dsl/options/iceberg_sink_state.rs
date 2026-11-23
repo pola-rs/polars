@@ -4,29 +4,38 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
 
+use super::iceberg_properties::IcebergProperties;
+
 /// `class IcebergSinkState` in Python
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "python", derive(pyo3::IntoPyObject, pyo3::FromPyObject))]
 pub struct IcebergSinkState {
-    /// Python class module
-    pub py_catalog_class_module: PlSmallStr,
-    /// Python class qualname
-    pub py_catalog_class_qualname: PlSmallStr,
+    /// Python class module. `None` means it will be lazily resolved using the catalog_name.
+    pub py_catalog_class_module: Option<PlSmallStr>,
+    /// Python class qualname. `None` means it will be lazily resolved using the catalog_name.
+    pub py_catalog_class_qualname: Option<PlSmallStr>,
 
     pub catalog_name: PlSmallStr,
-    pub catalog_properties: BTreeMap<PlSmallStr, PlSmallStr>,
+    pub catalog_properties: IcebergProperties,
 
     pub table_name: PlSmallStr,
     pub mode: IcebergCommitMode,
     pub schema_mode: Option<IcebergSchemaMode>,
+    #[cfg(feature = "python")]
+    pub overwrite_filter: Option<PythonObject>, // pyiceberg.expressions.BooleanExpression
+    pub dynamic_partition_overwrite: bool,
+    pub create_if_not_exists: bool,
+    pub create_namespace_if_not_exists: bool,
     pub snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
-    pub iceberg_storage_properties: BTreeMap<PlSmallStr, PlSmallStr>,
+    pub iceberg_storage_properties: IcebergProperties,
     pub compression: PlSmallStr,
     pub compression_level: Option<i32>,
     pub row_group_size: Option<usize>,
     pub maintain_order: bool,
+    pub sort_order_id: Option<i32>,
+    pub partition_spec_id: Option<i32>,
 
     pub sink_uuid_str: String,
 
@@ -34,10 +43,16 @@ pub struct IcebergSinkState {
     pub table_: Option<PythonObject>, // NoPickleOption[pyiceberg.table.Table]
 
     #[cfg(feature = "python")]
+    pub catalog_: Option<PythonObject>, // NoPickleOption[pyiceberg.catalog.Catalog]
+
+    #[cfg(feature = "python")]
     pub source_schema: Option<PythonObject>, // pyarrow.Schema
 
     #[cfg(feature = "python")]
     pub commit_result_df: Option<PythonObject>, // NoPickleOption[pl.DataFrame]
+
+    #[cfg(feature = "python")]
+    pub replace_files: Option<PythonObject>, // _ReplaceFiles: the data files a commit replaces
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]

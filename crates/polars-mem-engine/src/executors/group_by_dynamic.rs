@@ -1,4 +1,5 @@
-use polars_defs::time::group_by::DynamicGroupOptions;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
 
 use super::*;
 
@@ -10,9 +11,9 @@ pub(crate) struct GroupByDynamicExec {
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     #[cfg(feature = "dynamic_group_by")]
-    pub(crate) options: DynamicGroupOptions,
+    pub(crate) options: DynamicGroupOptionsIR,
     pub(crate) output_schema: SchemaRef,
-    pub(crate) slice: Option<(i64, usize)>,
+    pub(crate) slice: Option<Slice>,
     pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
 
@@ -57,16 +58,16 @@ impl GroupByDynamicExec {
         // it is unused because we only use it to keep the lifetime of sliced_group valid
         let mut sliced_groups = None;
 
-        if let Some((offset, len)) = self.slice {
-            sliced_groups = Some(groups.slice(offset, len));
+        if let Some(slice) = self.slice {
+            sliced_groups = Some(groups.slice(slice));
             groups = sliced_groups.as_ref().unwrap();
 
-            time_key = time_key.slice(offset, len);
+            time_key = time_key.slice(slice);
 
             // todo! optimize this, we can prevent an agg_first aggregation upstream
             // the ordering has changed due to the group_by
             for key in keys.iter_mut() {
-                *key = key.slice(offset, len)
+                *key = key.slice(slice)
             }
         }
 

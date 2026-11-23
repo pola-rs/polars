@@ -9,10 +9,10 @@ This document describes the overall design of this module.
   a prefix `io_`.
 - modules MUST re-export any API of external dependencies they require as part of their public API.
   E.g.
-  - if a module as an API `write(writer: &mut csv:Writer<W>, ...)`, it MUST contain
+  - if a module has an API `write(writer: &mut csv:Writer<W>, ...)`, it MUST contain
     `pub use csv::Writer;`.
 
-  The rational is that adding this crate to `cargo.toml` must be sufficient to use it.
+  The rationale is that adding this crate to `cargo.toml` must be sufficient to use it.
 - Each directory SHOULD contain two directories, `read` and `write`, corresponding to functionality
   about reading from the format and writing to the format respectively.
 - The base module SHOULD contain `use pub read;` and `use pub write;`.

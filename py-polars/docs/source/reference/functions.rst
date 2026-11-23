@@ -16,6 +16,7 @@ Conversion
     from_pandas
     from_records
     from_repr
+    from_torch
     json_normalize
 
 Miscellaneous

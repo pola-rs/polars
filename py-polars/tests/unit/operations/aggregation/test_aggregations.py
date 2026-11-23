@@ -12,8 +12,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
@@ -24,7 +24,9 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ApproxQuantileMethod,
+        EngineType,
         PolarsDataType,
+        QuantileMethod,
         TimeUnit,
     )
     from tests.conftest import PlMonkeyPatch
@@ -68,6 +70,29 @@ def test_boolean_aggs() -> None:
         "std": [0.5773502691896258],
         "var": [0.33333333333333337],
     }
+
+
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [
+        # The exact mean is 14:24:00, but the days mean is not representable in f64
+        # and the microsecond conversion truncates. Both engines must agree on it.
+        (
+            [20000, 20000, 20000, 20000, 20003],
+            datetime(2024, 10, 4, 14, 23, 59, 999999),
+        ),
+        ([32768, 32768, 32768, 32768, 32772], datetime(2059, 9, 19, 19, 12)),
+    ],
+)
+def test_date_mean_engine_consistency_29357(
+    days: list[int], expected: datetime
+) -> None:
+    df = pl.DataFrame({"a": pl.Series(days, dtype=pl.Int32)}).select(
+        pl.col("a").cast(pl.Date)
+    )
+
+    assert df.select(pl.col("a").mean()).item() == expected
+    assert df.group_by(pl.lit(1)).agg(pl.col("a").mean())["a"].item() == expected
 
 
 def test_duration_aggs() -> None:
@@ -117,10 +142,79 @@ def test_median() -> None:
     assert s.median() == 2
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series(["a", "b"]),
+        pl.Series(["a", "b"], dtype=pl.Categorical),
+        pl.Series(["a", "b"], dtype=pl.Enum(["a", "b"])),
+        pl.Series([b"a", b"b"]),
+        pl.Series([[1], [2]]),
+        pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1)),
+        pl.Series([{"a": 1}, {"a": 2}]),
+    ],
+)
+def test_series_mean_median_unsupported_dtype_raises(s: pl.Series) -> None:
+    with pytest.raises(InvalidOperationError, match="`mean` operation not supported"):
+        s.mean()
+    with pytest.raises(InvalidOperationError, match="`median` operation not supported"):
+        s.median()
+
+
+def test_series_mean_median_match_expr() -> None:
+    for s in [
+        pl.Series([0, 0, 1], dtype=pl.Float32),
+        pl.Series([True, False, True]),
+        pl.Series([None, None], dtype=pl.Null),
+    ]:
+        for agg in ["mean", "median"]:
+            expected = pl.select(getattr(pl.lit(s), agg)()).item()
+            assert getattr(s, agg)() == expected
+    # Float32 is averaged in f64 and rounded to f32, as in the expression.
+    assert pl.Series([0, 0, 1], dtype=pl.Float32).mean() == 0.3333333432674408
+
+
 def test_single_element_std() -> None:
     s = pl.Series([1])
     assert s.std(ddof=1) is None
     assert s.std(ddof=0) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("dtype", "out_dtype", "values", "expected"),
+    [
+        (
+            pl.Float64,
+            pl.Float64,
+            [None, 5.0, float("nan"), float("inf")],
+            [None, 0.0, float("nan"), float("nan")],
+        ),
+        (
+            pl.Float32,
+            pl.Float32,
+            [None, 5.0, float("nan"), float("-inf")],
+            [None, 0.0, float("nan"), float("nan")],
+        ),
+        (pl.Int64, pl.Float64, [None, 5, None, 7], [None, 0.0, None, 0.0]),
+    ],
+)
+def test_group_by_single_value_var_std_30712(
+    dtype: PolarsDataType,
+    out_dtype: PolarsDataType,
+    values: list[Any],
+    expected: list[float | None],
+) -> None:
+    df = pl.DataFrame(
+        {"g": [1, 2, 3, 4], "x": values}, schema={"g": pl.Int64, "x": dtype}
+    ).sort("g")
+    out = df.group_by("g", maintain_order=True).agg(
+        v=pl.col("x").var(ddof=0), s=pl.col("x").std(ddof=0)
+    )
+    expected_df = pl.DataFrame(
+        {"g": [1, 2, 3, 4], "v": expected, "s": expected},
+        schema={"g": pl.Int64, "v": out_dtype, "s": out_dtype},
+    )
+    assert_frame_equal(out, expected_df)
 
 
 def test_quantile() -> None:
@@ -135,6 +229,16 @@ def test_quantile() -> None:
     assert_frame_equal(
         df.select(pl.col("a").quantile([0.5], interpolation="linear")), expected
     )
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("quantile", [5e-324, 0.24999999999999997, 0.9999999999999998])
+def test_quantile_ignores_nulls(method: QuantileMethod, quantile: float) -> None:
+    s = pl.Series([0.0, 1.0, 2.0])
+    with_nulls = pl.Series([None, 0.0, 1.0, None, 2.0, None])
+    assert with_nulls.quantile(quantile, method) == s.quantile(quantile, method)
 
 
 def test_quantile_error_checking() -> None:
@@ -153,6 +257,154 @@ def test_multi_quantile_group_by_unsupported_26956() -> None:
         pl.exceptions.SchemaError, match="expected expression of dtype 'numeric'"
     ):
         df.group_by("g").agg(pl.col("v").quantile([0.25, 0.75]))
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("layout", ["idx", "slice", "sorted_slice"])
+def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [0, 0, 0, 1, 1, 1, 1, 2, 2, 3],
+            "v": [None, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "q": [0.1, 0.1, 0.1, 0.8, 0.8, 0.8, 0.8, 0.5, 0.5, None],
+        }
+    )
+    if layout == "idx":
+        df = df.sample(fraction=1.0, shuffle=True, seed=0)
+    elif layout == "slice":
+        df = df.with_columns(pl.col("g").set_sorted())
+    elif layout == "sorted_slice":
+        df = df.with_columns(pl.col("g", "v").set_sorted())
+
+    expected = {
+        g: None if part["q"][0] is None else part["v"].quantile(part["q"][0], method)
+        for (g,), part in df.group_by("g")
+    }
+    quantile = pl.col("v").quantile(pl.col("q").first(), method)
+
+    out = df.lazy().group_by("g").agg(quantile).collect()
+    assert dict(out.iter_rows()) == expected
+    out = df.lazy().select("g", quantile.over("g")).collect()
+    assert out["v"].to_list() == [expected[g] for g in out["g"]]
+
+
+def _assert_rolling_quantile_matches_series(
+    v: pl.Series, q: list[float | None], period: int, method: QuantileMethod
+) -> None:
+    df = pl.DataFrame({"t": range(len(v)), "v": v, "q": q})
+    windows = [v[max(0, i - period + 1) : i + 1] for i in range(len(v))]
+
+    def oracle(w: pl.Series, p: float | None) -> float | None:
+        if p is None or not 0.0 <= p <= 1.0:
+            return None
+        return w.quantile(p, method)
+
+    rolling = df.rolling("t", period=f"{period}i")
+    per_window = rolling.agg(pl.col("v").quantile(pl.col("q").last(), method))
+    assert per_window["v"].to_list() == [
+        oracle(w, p) for w, p in zip(windows, q, strict=True)
+    ]
+    literal = rolling.agg(pl.col("v").quantile(0.3, method))
+    assert literal["v"].to_list() == [oracle(w, 0.3) for w in windows]
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("with_nulls", [False, True])
+def test_quantile_varying_per_rolling_window_20951(
+    method: QuantileMethod, with_nulls: bool
+) -> None:
+    rng = np.random.default_rng(0)
+    n = 60
+    v = pl.Series("v", rng.integers(0, 10, n), dtype=pl.Float64)
+    if with_nulls:
+        v = v.scatter(rng.choice(n, n // 3, replace=False), None)
+    q: list[float | None] = list(rng.random(n))
+    q[5], q[17], q[40] = None, 1.5, -0.5
+    _assert_rolling_quantile_matches_series(v, q, 5, method)
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "method"),
+    [
+        ([1e308, 1e308, 1e308], pl.Float64, "midpoint"),
+        ([-3e38, 3e38, -3e38], pl.Float32, "linear"),
+    ],
+)
+def test_quantile_rolling_interpolation_does_not_overflow(
+    values: list[float], dtype: PolarsDataType, method: QuantileMethod
+) -> None:
+    v = pl.Series("v", values, dtype=dtype)
+    _assert_rolling_quantile_matches_series(v, [0.0, 0.5, 0.0], 2, method)
+
+
+@pytest.mark.parametrize(
+    "quantile_arg",
+    [pl.col("q"), pl.col("q").head(1)],
+    ids=["column", "head"],
+)
+def test_quantile_non_scalar_in_group_by_raises(quantile_arg: pl.Expr) -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3], "q": [0.5, 0.5, 0.5]})
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
+        df.group_by("g").agg(pl.col("v").quantile(quantile_arg))
+
+
+def test_quantile_series_literal_of_two_values_in_group_by_raises() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3]})
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
+        df.group_by("g").agg(pl.col("v").quantile(pl.lit(pl.Series([0.5, 0.5]))))
+
+
+def test_quantile_literal_values_per_group_quantile() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, None, None, 1.5]})
+    lf = df.lazy().group_by("g", maintain_order=True)
+    out = lf.agg(pl.lit(3).quantile(pl.col("q").first()))
+    assert out.collect_schema()["literal"] == pl.Float64
+    assert out.collect()["literal"].to_list() == [3.0, None, None]
+    with pytest.raises(InvalidOperationError, match="not supported for dtype `bool`"):
+        lf.agg(pl.lit(True).quantile(pl.col("q").first())).collect()
+
+
+def test_quantile_series_literal_in_group_by_empty_frame() -> None:
+    df = pl.DataFrame(schema={"g": pl.Int64, "v": pl.Float64})
+    q = pl.lit(pl.Series([0.5])).item()
+    out = df.lazy().group_by("g").agg(pl.col("v").quantile(q)).collect()
+    assert out.schema == {"g": pl.Int64, "v": pl.Float64}
+    assert out.is_empty()
+
+
+@pytest.mark.parametrize("n_groups", [1, 2])
+@pytest.mark.parametrize(
+    "quantile_arg", [pl.col("q").mode(), pl.col("q").head(1)], ids=["mode", "head"]
+)
+def test_quantile_non_scalar_raises_for_any_group_count(
+    n_groups: int, quantile_arg: pl.Expr
+) -> None:
+    df = pl.DataFrame({"g": [0, 0, n_groups - 1], "v": [1, 2, 3], "q": [0.5] * 3})
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
+        df.group_by("g").agg(pl.col("v").quantile(quantile_arg))
+
+
+def test_quantile_series_literal_in_group_by() -> None:
+    df = pl.DataFrame({"g": [0, 0, 1], "v": [1, 2, 3]})
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("v").quantile(pl.lit(pl.Series([0.5])).item())
+    )
+    assert out["v"].to_list() == [2.0, 3.0]
+
+
+@pytest.mark.parametrize(
+    "s", [pl.Series([], dtype=pl.Date), pl.Series([None, None], dtype=pl.Date)]
+)
+def test_quantile_date_without_values(s: pl.Series) -> None:
+    assert s.quantile(0.5) is None
+    result = pl.LazyFrame({"a": s}).select(pl.col("a").quantile(0.5)).collect()
+    assert_frame_equal(
+        result, pl.DataFrame({"a": [None]}, schema={"a": pl.Datetime("us")})
+    )
 
 
 def test_quantile_date() -> None:
@@ -368,6 +620,7 @@ APPROX_QUANTILE_METHODS: list[ApproxQuantileMethod] = [
         ([datetime(2020, 1, 1) + timedelta(hours=i) for i in range(20)], pl.Datetime),
         ([timedelta(seconds=i) for i in range(20)], pl.Duration),
         ([f"{i:04d}" for i in range(20)], pl.String),
+        ([f"{i:04d}".encode() for i in range(20)], pl.Binary),
         ([i % 3 == 0 for i in range(20)], pl.Boolean),
         (list(range(20)), pl.Decimal(10, 2)),
     ],
@@ -387,6 +640,37 @@ def test_approx_quantile_dtypes(values: list[Any], dtype: PolarsDataType) -> Non
     assert value in s.to_list()
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series(["b", "a", None, "c"], dtype=pl.Categorical),
+        pl.Series(["b", "a", None, "c"], dtype=pl.Enum(["c", "b", "a"])),
+        pl.Series([None, None], dtype=pl.Null),
+        pl.Series([[2], [1, 3], None, [], [None]], dtype=pl.List(pl.Int64)),
+        pl.Series([["b"], ["a"], None], dtype=pl.List(pl.Categorical)),
+        pl.Series([[2, 1], [1, 3], None, [1, None]], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series(
+            [{"x": 2, "y": "a"}, {"x": 1, "y": "b"}, None, {"x": None, "y": "z"}]
+        ),
+        pl.Series([{"x": 2}, {"a": 1}, None], dtype=pl.Map(pl.String, pl.Int64)),
+    ],
+)
+def test_approx_quantile_orders_like_sort(s: pl.Series) -> None:
+    df = pl.DataFrame({"a": s, "g": [i % 2 for i in range(len(s))]})
+    sorted_ = s.drop_nulls().sort().to_list()
+    expected = [sorted_[0], sorted_[-1]] if sorted_ else [None, None]
+
+    result = df.select(pl.col("a").approx_quantile([0.0, 1.0]))
+    assert result.schema["a"] == pl.List(s.dtype)
+    assert result.item().to_list() == expected
+
+    result = df.group_by("g").agg(pl.col("a").approx_quantile([0.0, 1.0])).sort("g")
+    for g, estimates in result.iter_rows():
+        sorted_ = s.filter(df["g"] == g).drop_nulls().sort().to_list()
+        expected = [sorted_[0], sorted_[-1]] if sorted_ else [None, None]
+        assert estimates == expected
+
+
 def test_approx_quantile_dyn_literal_input() -> None:
     for expr, dtype in (
         (pl.lit(1).approx_quantile(0.5), pl.Int32),
@@ -396,6 +680,14 @@ def test_approx_quantile_dyn_literal_input() -> None:
         lf = pl.LazyFrame().select(expr)
         assert lf.collect_schema()["literal"] == dtype
         assert lf.collect().schema["literal"] == dtype
+
+
+@pytest.mark.parametrize(("quantile", "expected"), [(0.5, 2), (1, 3)])
+def test_approx_quantile_dyn_literal_quantile(quantile: float, expected: int) -> None:
+    # The quantile is given its dtype, rather than staying a dynamic literal.
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select(pl.col("a").approx_quantile(quantile))
+    assert "dyn" not in q.explain()
+    assert q.collect().item() == expected
 
 
 def test_approx_quantile_empty() -> None:
@@ -419,7 +711,7 @@ def test_approx_quantile_empty_group() -> None:
 
 
 def test_approx_quantile_unsupported_dtype() -> None:
-    s = pl.Series("a", [b"a", b"b", b"c"], dtype=pl.Binary)
+    s = pl.Series("a", [object(), object()], dtype=pl.Object)
     with pytest.raises(InvalidOperationError):
         s.to_frame().select(pl.col("a").approx_quantile(0.5))
 
@@ -445,21 +737,20 @@ def test_approx_quantile_null_quantile() -> None:
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
 def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(pl.col("a").approx_quantile(pl.col("q")))
 
 
 @pytest.mark.parametrize(
     ("quantile", "expected"),
     [
-        (pl.lit(pl.Series([0.5])), 3.0),
-        (pl.lit(pl.Series([[0.1, 0.9]])), [1.0, 5.0]),
+        (pl.Series([0.5]).item(), 3.0),
+        ([0.1, 0.9], [1.0, 5.0]),
     ],
 )
-def test_approx_quantile_series_literal_quantile(
-    quantile: pl.Expr, expected: float | list[float]
+def test_approx_quantile_python_quantile(
+    quantile: float | list[float], expected: float | list[float]
 ) -> None:
-    # A one-row Series literal is broadcast like a scalar.
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0]})
     out = df.select(pl.col("a").approx_quantile(quantile))
     assert out.to_series().to_list() == [expected]
@@ -474,13 +765,13 @@ def test_quantile_null_quantile() -> None:
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
 def test_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(pl.col("a").quantile(pl.col("q")))
 
 
 def test_quantile_empty_quantile_group_by() -> None:
     df = pl.DataFrame(schema={"g": pl.Int64, "a": pl.Float64, "q": pl.Float64})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
 
 
@@ -541,6 +832,23 @@ def test_approx_quantile_smallest_error(method: ApproxQuantileMethod) -> None:
     assert got.to_list() == [0.0, 10.0, 19.0]
 
 
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_lossless_rank(method: ApproxQuantileMethod) -> None:
+    for n in range(4, 16):
+        quantiles = [0.0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1.0]
+        s = pl.Series("a", _shuffled(n), dtype=pl.Float64)
+        got = (
+            s.to_frame()
+            .select(
+                pl.col("a").approx_quantile(
+                    quantiles, error=2**-32, method=method, error_tightness="formal"
+                )
+            )["a"]
+            .explode()
+        )
+        assert got.to_list() == [float(_rank(q, n)) for q in quantiles]
+
+
 @pytest.mark.slow
 def test_approx_quantile_protected_tail_is_exact() -> None:
     # This is what picking a method buys: `req_lo` keeps the low ranks exact and
@@ -569,6 +877,7 @@ def test_approx_quantile_group_by_is_exact(
     # pre-aggregate paths of the streaming group-by. Every group still fits in a
     # sketch, so the estimate is the exact rank.
     plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
     groups, per_group = 10, 5
     df = pl.DataFrame(
         {
@@ -633,6 +942,24 @@ def test_approx_quantile_merged_rank_error(method: ApproxQuantileMethod) -> None
     assert abs(got - _rank(quantile, n)) / n <= error
 
 
+def test_approx_quantile_small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    # Large enough for KLL to switch to its sampler.
+    n, error, quantile = 400_000, 0.01, 0.5
+    values = _shuffled(n)
+    with_nulls = [v for pair in zip(values, [None] * n, strict=True) for v in pair]
+    got = (
+        pl.LazyFrame({"a": with_nulls})
+        .select(pl.col("a").approx_quantile(quantile, error=error, method="kll"))
+        .collect()
+        .item()
+    )
+
+    assert got in values
+    # `error` holds in 99.7% of runs; twice it keeps the test from flaking.
+    assert abs(got - _rank(quantile, n)) / n <= 2 * error
+
+
 @pytest.mark.slow
 @given(
     values=st.lists(
@@ -678,10 +1005,7 @@ def test_quantile_varying_quantiles_unsupported(
 ) -> None:
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "q": [0.1, 0.5, 0.9]})
 
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=r"does not support varying (approximate )?quantiles",
-    ):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(fn(pl.col("a"), pl.col("q")))
 
 
@@ -993,13 +1317,13 @@ def test_agg_empty_sum_after_filter_14734() -> None:
         .collect
     )
 
-    last = f()
+    last = f(engine="in-memory")
 
-    # We need both possible output orders, which should happen within
-    # 1000 iterations (during testing it usually happens within 10).
+    # We need both possible output orders, which the in-memory engine gives
+    # within 1000 iterations (during testing it usually happens within 10).
     limit = 1000
     i = 0
-    while (curr := f()).equals(last):
+    while (curr := f(engine="in-memory")).equals(last):
         i += 1
         assert i != limit
 
@@ -1422,7 +1746,6 @@ def test_agg_with_slice_then_cast_23682(
     ],
 )
 @pytest.mark.parametrize("grouped", [False, True])
-@pytest.mark.may_fail_lazy_schema  # TODO: uint128
 def test_agg_invalid_same_engines_behavior(
     op: str, expr: pl.Expr, df: pl.DataFrame, grouped: bool
 ) -> None:
@@ -1505,6 +1828,21 @@ def test_invalid_agg_dtypes_should_raise(
         df.lazy().select(expr).collect(engine="streaming")
 
 
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime, pl.Time, pl.Categorical, pl.Enum(["a", "b"])],
+)
+def test_sum_unsupported_dtype_raises_in_all_contexts(dtype: pl.DataType) -> None:
+    values = ["a", "b"] if dtype in (pl.Categorical, pl.Enum) else [0, 1]
+    lf = pl.LazyFrame({"g": [1, 1], "v": pl.Series(values).cast(dtype)})
+    expr = pl.col("v").sum()
+    for q in [lf.select(expr), lf.group_by("g").agg(expr), lf.select(expr.over("g"))]:
+        with pytest.raises(
+            InvalidOperationError, match="`sum` operation not supported for dtype"
+        ):
+            q.collect_schema()
+
+
 @given(
     df=dataframes(
         min_size=1,
@@ -1545,7 +1883,6 @@ def test_item_too_many(df: pl.DataFrame) -> None:
     df=dataframes(
         min_size=1,
         max_size=1,
-        allow_null=False,
         excluded_dtypes=[
             # TODO: polars/#24936
             pl.Struct,
@@ -1557,6 +1894,28 @@ def test_item_on_groups(df: pl.DataFrame) -> None:
     q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).item())
     assert_frame_equal(q.collect(), df)
     assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+@pytest.mark.parametrize("value", [2.0, "x", True])
+def test_item_on_groups_null_29780(value: Any) -> None:
+    dtype = pl.Series([value]).dtype
+    df = pl.DataFrame({"g": [1, 2], "a": [None, value]})
+
+    q = df.lazy().group_by("g").agg(pl.col("a").item()).sort("g")
+    assert_frame_equal(q.collect(), df)
+
+    q = df.lazy().select(pl.col("a").item().over("g"))
+    assert_frame_equal(q.collect(), df.select("a"))
+
+    for values, allow_empty, expected in [
+        ([None, value], False, "a single value"),
+        ([None, None], True, "no or a single value"),
+    ]:
+        lf = pl.LazyFrame({"g": [1, 1], "a": values}, schema_overrides={"a": dtype})
+        q = lf.group_by("g").agg(pl.col("a").item(allow_empty=allow_empty))
+        match = f"aggregation 'item' expected {expected}, got 2 values"
+        with pytest.raises(ComputeError, match=match):
+            q.collect()
 
 
 def test_item_on_groups_empty() -> None:
@@ -1783,6 +2142,90 @@ def test_grouped_minmax_after_reverse_on_sorted_column_26141(
     assert_frame_equal(out, expected_df)
 
 
+@pytest.mark.parametrize(
+    ("values", "aggs"),
+    [
+        (list(range(6)), ["min", "max", "arg_min", "arg_max"]),
+        ([float(i) for i in range(6)], ["min", "max", "arg_min", "arg_max"]),
+        ([None, 1, 2, 3, 4, 5], ["min", "max", "arg_min", "arg_max"]),
+        (list("abcdef"), ["min", "max", "arg_min", "arg_max"]),
+        # Every group has ties,
+        # and `arg_min`/`arg_max` leave unspecified which tie they return.
+        ([False] * 3 + [True] * 3, ["min", "max"]),
+    ],
+)
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("sorted_key", [False, True])
+def test_grouped_minmax_after_in_group_reorder_on_sorted_column_30550(
+    values: list[Any], aggs: list[str], descending: bool, sorted_key: bool
+) -> None:
+    if descending:
+        values = values[::-1]
+    # A sorted key gives slice groups instead of hashed index groups.
+    keys = [1, 1, 1, 2, 2, 2] if sorted_key else [1, 2] * 3
+    unflagged = pl.DataFrame({"g": keys, "x": values})
+    df = unflagged.with_columns(pl.col("x").set_sorted(descending=descending))
+    if sorted_key:
+        df = df.with_columns(pl.col("g").set_sorted())
+
+    reversed_x = pl.col("x").reverse()
+    reorders = [
+        pl.col("x"),
+        reversed_x,
+        pl.col("x").sort(descending=not descending),
+        pl.col("x").sort_by("x", descending=not descending).head(2),
+        # These rebuild the reversed groups,
+        # and must not mark them as having sorted indices.
+        reversed_x.filter(reversed_x.is_not_null()),
+        reversed_x.unique(maintain_order=True),
+        reversed_x.slice(0, 2),
+        reversed_x.forward_fill(),
+    ]
+    exprs = [
+        getattr(reorder, agg)().alias(f"{i}_{agg}")
+        for i, reorder in enumerate(reorders)
+        for agg in aggs
+    ]
+    assert_frame_equal(
+        df.group_by("g").agg(exprs),
+        unflagged.group_by("g").agg(exprs),
+        check_row_order=False,
+    )
+
+
+def test_window_min_with_order_by_on_sorted_column_30550() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, 3]}).sort("x")
+    out = df.select(pl.col("x").min().over("g", order_by=-pl.col("x")))
+    assert out["x"].to_list() == [1, 1, 1]
+
+
+def test_grouped_window_min_with_order_by_on_sorted_column_30550() -> None:
+    unflagged = pl.DataFrame({"g": [1, 2] * 3, "x": list(range(6))})
+    df = unflagged.with_columns(pl.col("x").set_sorted())
+
+    expr = pl.col("x").min().over(pl.lit(1), order_by=-pl.col("x"))
+    assert_frame_equal(
+        df.group_by("g").agg(expr),
+        unflagged.group_by("g").agg(expr),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
+def test_grouped_min_max_by_after_reverse_on_sorted_column_30550(
+    agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    unflagged = pl.DataFrame({"g": [1, 2] * 3, "x": list(range(6))})
+    df = unflagged.with_columns(pl.col("x").set_sorted())
+
+    expr = agg_by(pl.col("x").reverse(), pl.col("x").reverse())
+    assert_frame_equal(
+        df.group_by("g").agg(expr),
+        unflagged.group_by("g").agg(expr),
+        check_row_order=False,
+    )
+
+
 @pytest.mark.parametrize("agg_by", [pl.Expr.min_by, pl.Expr.max_by])
 def test_min_max_by_series_length_mismatch_26049(
     agg_by: Callable[[pl.Expr, pl.Expr], pl.Expr],
@@ -1896,6 +2339,63 @@ def test_min_max_by_all_null_by_group(agg: Callable[..., pl.Expr]) -> None:
 
 
 @pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+@pytest.mark.parametrize(
+    "by",
+    [
+        pl.Series([float("nan")] * 2),
+        pl.Series([0] * 2, dtype=pl.UInt8),
+        pl.Series([-128] * 2, dtype=pl.Int8),
+        pl.Series([127] * 2, dtype=pl.Int8),
+        pl.Series([""] * 2),
+    ],
+)
+def test_min_max_by_extreme_keys_29760(
+    agg: Callable[..., pl.Expr], by: pl.Series
+) -> None:
+    lf = pl.LazyFrame({"v": [1, 1], "by": by})
+    out = lf.select(agg(pl.col("v"), pl.col("by"))).collect()
+    assert_frame_equal(out, pl.DataFrame({"v": [1]}))
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+def test_min_max_by_scalar_inputs_29760(agg: Callable[..., pl.Expr]) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2, 2], "a": list(range(5))})
+    a = pl.col("a")
+
+    def select(e: pl.Expr, lf: pl.LazyFrame = lf) -> Any:
+        return lf.select(e).collect().item()
+
+    def agg_by_group(e: pl.Expr) -> list[Any]:
+        q = lf.group_by("g", maintain_order=True).agg(e)
+        return q.collect()["a"].to_list()
+
+    # A scalar `by` ties every row, so any row of the input may be returned.
+    assert select(agg(a, pl.lit(1))) in range(5)
+    assert select(agg(a, a.max())) in range(5)
+    assert select(agg(a, pl.lit(None, pl.Int64))) is None
+    first, second = agg_by_group(agg(a, a.max()))
+    assert first in range(3)
+    assert second in range(3, 5)
+    assert agg_by_group(agg(a, pl.lit(None, pl.Int64))) == [None, None]
+
+    # A scalar value is the result whenever `by` has a non-null key.
+    assert select(agg(pl.lit(7), a).alias("a")) == 7
+    assert select(agg(a.max(), a)) == 4
+    assert select(agg(pl.lit(7), a), lf.clear()) is None
+    assert agg_by_group(agg(pl.lit(7), a).alias("a")) == [7, 7]
+    assert agg_by_group(agg(a.max(), a)) == [2, 4]
+
+    # A unit-length group of a non-scalar expression is not broadcast.
+    for e in [agg(a, a.head(1)), agg(a.head(1), a)]:
+        with pytest.raises(pl.exceptions.ShapeError):
+            agg_by_group(e)
+
+    # The rolling kernel can't gather a scalar value with the key's positions.
+    q = lf.rolling("a", period="3i").agg(agg(pl.col("g").sum(), a).alias("s"))
+    assert q.collect()["s"].to_list() == [1, 2, 3, 4, 5]
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
 def test_min_max_by_all_null_by_group_slice(agg: Callable[..., pl.Expr]) -> None:
     df = pl.DataFrame(
         {
@@ -1918,6 +2418,471 @@ def test_min_max_by_all_null_by_group_slice(agg: Callable[..., pl.Expr]) -> None
         .collect()
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [(pl.Expr.min_by, ["b", "d"]), (pl.Expr.max_by, ["a", "d"])],
+)
+@pytest.mark.parametrize(
+    "by",
+    [
+        pl.Series([[1, 5], [0, 9], None, [3]]),
+        pl.Series([{"x": 1, "y": 5}, {"x": 0, "y": 9}, None, {"x": 3, "y": 0}]),
+        pl.Series([[1, 5], [0, 9], None, [3, 0]], dtype=pl.Array(pl.Int64, 2)),
+    ],
+    ids=["list", "struct", "array"],
+)
+def test_min_max_by_nested_by_group_by(
+    agg: Callable[..., pl.Expr], expected: list[str], by: pl.Series
+) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2, 2], "by": by, "v": ["a", "b", "c", "d"]})
+    q = lf.group_by("g", maintain_order=True).agg(agg(pl.col("v"), pl.col("by")))
+    assert_frame_equal(q.collect(), pl.DataFrame({"g": [1, 2], "v": expected}))
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [(pl.Expr.min_by, [1, 5, None]), (pl.Expr.max_by, [3, 5, None])],
+)
+def test_min_max_by_row_encoded_value(
+    agg: Callable[..., pl.Expr], expected: list[int | None]
+) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2, 3], "x": [3, 1, None, 5, 7], "by": [2, 1, None, 4, None]}
+    )
+    q = lf.group_by("g", maintain_order=True).agg(
+        agg(pl.col("x")._row_encode(), pl.col("by")).cast(pl.Binary)
+    )
+    expected_x = [
+        None
+        if v is None
+        else pl.select(pl.lit(v, pl.Int64)._row_encode().cast(pl.Binary)).item()
+        for v in expected
+    ]
+    expected_df = pl.DataFrame(
+        {"g": [1, 2, 3], "x": pl.Series(expected_x, dtype=pl.Binary)}
+    )
+    assert_frame_equal(q.collect(), expected_df)
+
+
+def _nested_series(keys: list[int | None], kind: str) -> pl.Series:
+    """Nested values that sort like `keys`."""
+    if kind == "list":
+        return pl.Series([None if k is None else [k] for k in keys])
+    if kind == "array":
+        values = [None if k is None else [k] for k in keys]
+        return pl.Series(values, dtype=pl.Array(pl.Int64, 1))
+    if kind == "struct":
+        return pl.Series([None if k is None else {"a": k} for k in keys])
+    entries = [None if k is None else [{"key": k, "value": 0}] for k in keys]
+    return pl.Series(entries).cast(pl.Map(pl.Int64, pl.Int64))
+
+
+NESTED_KINDS = ["list", "array", "struct", "map"]
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_arg_min_max_nested_skips_nulls_30734(kind: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3],
+            "s": _nested_series([2, None, 1, 3, 4, None, None], kind),
+        }
+    )
+    aggs = [pl.col("s").arg_min().alias("min"), pl.col("s").arg_max().alias("max")]
+    idx = {"min": pl.get_index_type(), "max": pl.get_index_type()}
+
+    expected = pl.DataFrame(
+        {"min": [2], "max": [4]},
+        schema_overrides=idx,
+    )
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+    expected = pl.DataFrame(
+        {"g": [1, 2, 3], "min": [2, 0, None], "max": [0, 1, None]},
+        schema_overrides=idx,
+    )
+    assert_frame_equal(df.group_by("g", maintain_order=True).agg(aggs), expected)
+    q = df.lazy().group_by("g").agg(aggs)
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+    expected = pl.DataFrame(
+        {"min": [2, 2, 2, 0, 0, None, None], "max": [0, 0, 0, 1, 1, None, None]},
+        schema_overrides=idx,
+    )
+    over = [a.over("g") for a in aggs]
+    assert_frame_equal(df.select(over), expected)
+    assert_frame_equal(df.lazy().select(over).collect(), expected)
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_min_max_by_nested_key_skips_nulls_30734(kind: str) -> None:
+    df = pl.DataFrame({"i": [0, 1, 2], "s": _nested_series([2, None, 1], kind)})
+    aggs = [pl.col("i").min_by("s").alias("min"), pl.col("i").max_by("s").alias("max")]
+    expected = pl.DataFrame({"min": [2], "max": [0]})
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+    df = pl.DataFrame({"i": [0, 1], "s": _nested_series([None, None], kind)})
+    expected = pl.DataFrame(
+        {"min": [None], "max": [None]}, schema={"min": pl.Int64, "max": pl.Int64}
+    )
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+
+
+@pytest.mark.parametrize("kind", NESTED_KINDS)
+def test_min_max_nested(kind: str) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3],
+            "s": _nested_series([2, None, 1, 3, 4, None, None], kind),
+        }
+    )
+    aggs = [pl.col("s").min().alias("min"), pl.col("s").max().alias("max")]
+
+    lo = _nested_series([1], kind).alias("min")
+    hi = _nested_series([4], kind).alias("max")
+    expected = pl.DataFrame([lo, hi])
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+    assert_series_equal(pl.Series("min", [df["s"].min()], dtype=lo.dtype), lo)
+    assert_series_equal(pl.Series("max", [df["s"].max()], dtype=hi.dtype), hi)
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("g", [1, 2, 3]),
+            _nested_series([1, 3, None], kind).alias("min"),
+            _nested_series([2, 4, None], kind).alias("max"),
+        ]
+    )
+    assert_frame_equal(df.group_by("g", maintain_order=True).agg(aggs), expected)
+    q = df.lazy().group_by("g").agg(aggs)
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+    expected = df.select("g").join(expected, on="g", maintain_order="left").drop("g")
+    over = [a.over("g") for a in aggs]
+    assert_frame_equal(df.select(over), expected)
+    assert_frame_equal(df.lazy().select(over).collect(), expected)
+
+
+def test_frame_min_max_nested() -> None:
+    df = pl.DataFrame({"x": [2, 1], "l": [[2], [1]], "s": [{"a": 1}, {"a": 2}]})
+    expected = pl.DataFrame({"x": [1], "l": [[1]], "s": [{"a": 1}]})
+    assert_frame_equal(df.min(), expected)
+    assert_frame_equal(df.lazy().min().collect(), expected)
+    expected = pl.DataFrame({"x": [2], "l": [[2]], "s": [{"a": 2}]})
+    assert_frame_equal(df.max(), expected)
+    assert_frame_equal(df.lazy().max().collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("values", "lo", "hi"),
+    [
+        # A null element or field is a value; a list sorts after its prefixes.
+        ([[None], None, [1], [], [1, 0]], 3, 4),
+        ([{"a": None, "b": 5}, None, {"a": 1, "b": 0}, {"a": 1, "b": -1}], 0, 2),
+        # NaN is larger than any other number.
+        ([[float("nan")], None, [1.0], [1.0, float("nan")]], 2, 0),
+        ([{"a": float("nan")}, None, {"a": 1.0}], 2, 0),
+        # Categoricals compare lexically, unlike the order they were first seen in.
+        (
+            pl.Series(
+                [{"c": "agg_nested_b"}, {"c": "agg_nested_a"}, None, {"c": "c"}],
+                dtype=pl.Struct({"c": pl.Categorical()}),
+            ),
+            1,
+            3,
+        ),
+    ],
+)
+def test_ordering_aggs_nested_values(values: Any, lo: int, hi: int) -> None:
+    s = pl.Series("s", values)
+    df = pl.DataFrame({"g": [1] * len(s), "i": range(len(s)), "s": s})
+    aggs = [
+        pl.col("s").min().alias("min"),
+        pl.col("s").max().alias("max"),
+        pl.col("s").arg_min().alias("arg_min"),
+        pl.col("s").arg_max().alias("arg_max"),
+        pl.col("i").min_by("s").alias("min_by"),
+        pl.col("i").max_by("s").alias("max_by"),
+    ]
+    expected = pl.DataFrame(
+        [
+            s.gather([lo]).alias("min"),
+            s.gather([hi]).alias("max"),
+            pl.Series("arg_min", [lo], dtype=pl.get_index_type()),
+            pl.Series("arg_max", [hi], dtype=pl.get_index_type()),
+            pl.Series("min_by", [lo]),
+            pl.Series("max_by", [hi]),
+        ]
+    )
+    assert_frame_equal(df.select(aggs), expected)
+    assert_frame_equal(df.lazy().select(aggs).collect(), expected)
+    assert_frame_equal(df.group_by("g").agg(aggs).drop("g"), expected)
+    assert_frame_equal(df.lazy().group_by("g").agg(aggs).collect().drop("g"), expected)
+    # Without `arg_min`/`arg_max`, which have no streaming grouped reduction.
+    streamable = aggs[:2] + aggs[4:]
+    q = df.lazy().group_by("g").agg(streamable)
+    expected = expected.select("min", "max", "min_by", "max_by")
+    assert_frame_equal(q.collect().drop("g"), expected)
+
+
+def test_ordering_aggs_nested_rolling() -> None:
+    s = pl.Series([{"a": 3}, None, {"a": 1}, {"a": 2}, None, {"a": 5}, {"a": 4}])
+    df = pl.DataFrame({"i": range(len(s)), "s": s})
+    aggs = [
+        pl.col("s").min().alias("min"),
+        pl.col("s").max().alias("max"),
+        pl.col("s").arg_min().alias("arg_min"),
+        pl.col("s").arg_max().alias("arg_max"),
+        pl.col("i").min_by("s").alias("min_by"),
+        pl.col("i").max_by("s").alias("max_by"),
+    ]
+    out = df.rolling("i", period="3i").agg(aggs)
+    expected = pl.concat(
+        [df.slice(max(i - 2, 0), min(i, 2) + 1).select(aggs) for i in range(len(s))]
+    )
+    assert_frame_equal(out.drop("i"), expected)
+    assert out["min"].to_list()[2:] == [
+        {"a": 1},
+        {"a": 1},
+        {"a": 1},
+        {"a": 2},
+        {"a": 4},
+    ]
+
+
+def test_sum_map_raise_30734() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "s": _nested_series([2, None, 1], "map")})
+    expr = pl.col("s").sum()
+    msg = "operation not supported for dtype"
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.group_by("g").agg(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr.over("g"))
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.lazy().group_by("g").agg(expr).collect_schema()
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.lazy().select(expr.over("g")).collect_schema()
+
+
+class _AggExtension(pl.datatypes.BaseExtension):
+    def __init__(self, storage: pl.DataType) -> None:
+        super().__init__(name="testing.aggregations_extension", storage=storage)
+
+
+pl.register_extension_type("testing.aggregations_extension", _AggExtension)
+
+
+def _check_extension_aggs(
+    df: pl.DataFrame,
+    q: Callable[[Any], Any],
+    ordered: bool,
+) -> None:
+    """Check that `q` on `df` gives what it gives on the storage of column `s`."""
+    dtype = df.schema["s"]
+    storage_df = df.with_columns(pl.col("s").ext.storage())
+    expected = q(storage_df)
+    to_ext = [c for c in ["min", "max"] if c in expected.columns]
+    expected = expected.with_columns(pl.col(to_ext).ext.to(dtype))
+    assert expected["min"].null_count() < expected.height
+    assert_frame_equal(q(df), expected, check_row_order=ordered)
+    assert_frame_equal(q(df.lazy()).collect(), expected, check_row_order=ordered)
+
+
+@pytest.mark.parametrize(
+    "storage",
+    [pl.Int64(), pl.String(), pl.Categorical(), pl.Struct({"a": pl.Int64})],
+)
+def test_ordering_aggs_extension(storage: pl.DataType) -> None:
+    keys = [2, None, 1, 3, 4, None, None]
+    if storage == pl.String:
+        values: list[Any] = [None if k is None else str(k) for k in keys]
+    elif storage == pl.Categorical:
+        # First seen out of lexical order, so that physical and lexical order differ.
+        values = [None if k is None else f"agg_ext_{k}" for k in keys]
+    elif storage == pl.Struct:
+        values = [None if k is None else {"a": k} for k in keys]
+    else:
+        values = keys
+    dtype = _AggExtension(storage)
+    s = pl.Series("s", values, dtype=storage).ext.to(dtype)
+    df = pl.DataFrame({"g": [1, 1, 1, 2, 2, 3, 3], "i": range(7), "s": s})
+    aggs = [
+        pl.col("s").min().alias("min"),
+        pl.col("s").max().alias("max"),
+        pl.col("s").arg_min().alias("arg_min"),
+        pl.col("s").arg_max().alias("arg_max"),
+        pl.col("i").min_by("s").alias("min_by"),
+        pl.col("i").max_by("s").alias("max_by"),
+    ]
+    # Without `arg_min`/`arg_max`, which have no streaming grouped reduction.
+    streamable = aggs[:2] + aggs[4:]
+
+    _check_extension_aggs(df, lambda df: df.select(aggs), True)
+    _check_extension_aggs(df, lambda df: df.group_by("g").agg(aggs), False)
+    _check_extension_aggs(df, lambda df: df.group_by("g").agg(streamable), False)
+    _check_extension_aggs(df, lambda df: df.select(a.over("g") for a in aggs), True)
+    _check_extension_aggs(df, lambda df: df.rolling("i", period="3i").agg(aggs), True)
+
+    assert s.arg_min() == 2
+    assert s.arg_max() == 4
+    expected = df.select(pl.col("s").min()).to_series()
+    assert_series_equal(pl.Series("s", [s.min()], dtype=dtype), expected)
+    expected = df.select(pl.col("s").max()).to_series()
+    assert_series_equal(pl.Series("s", [s.max()], dtype=dtype), expected)
+
+
+def test_nan_min_max_extension() -> None:
+    f = pl.Series("s", [1.0, float("nan"), None, 2.0, 3.0, None])
+    df = pl.DataFrame(
+        {"g": [1, 1, 1, 2, 2, 3], "s": f.ext.to(_AggExtension(pl.Float64()))}
+    )
+    aggs = [pl.col("s").nan_min().alias("min"), pl.col("s").nan_max().alias("max")]
+
+    _check_extension_aggs(df, lambda df: df.select(aggs), True)
+    _check_extension_aggs(df, lambda df: df.group_by("g").agg(aggs), False)
+    _check_extension_aggs(df, lambda df: df.select(a.over("g") for a in aggs), True)
+    out = df.select(aggs).select(pl.all().ext.storage())
+    assert math.isnan(out["min"].item())
+    assert math.isnan(out["max"].item())
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("o").min(),
+        pl.col("o").max(),
+        pl.col("o").sum(),
+        pl.col("o").arg_min(),
+        pl.col("o").arg_max(),
+        pl.col("i").min_by("o"),
+        pl.col("i").max_by("o"),
+    ],
+)
+def test_ordering_aggs_object_raise(expr: pl.Expr) -> None:
+    o = pl.Series([object(), None, object()], dtype=pl.Object)
+    df = pl.DataFrame({"g": [1, 1, 1], "i": [0, 1, 2], "o": o})
+    msg = "operation not supported for (by )?dtype `object`"
+    for q in [
+        df.lazy().select(expr),
+        df.lazy().group_by("g").agg(expr),
+        df.lazy().select(expr.over("g")),
+    ]:
+        with pytest.raises(InvalidOperationError, match=msg):
+            q.collect_schema()
+        with pytest.raises(InvalidOperationError, match=msg):
+            q.collect()
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.group_by("g").agg(expr)
+    with pytest.raises(InvalidOperationError, match=msg):
+        df.select(expr.over("g"))
+
+
+@pytest.mark.parametrize("method", [pl.Series.arg_min, pl.Series.arg_max])
+def test_arg_min_max_object_series_raise(method: Callable[[pl.Series], Any]) -> None:
+    o = pl.Series([object(), None, object()], dtype=pl.Object)
+    with pytest.raises(InvalidOperationError, match="not supported for dtype `object`"):
+        method(o)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_get_arg_min_max_to_min_max_by(engine: EngineType) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3],
+            "x": [1, 2, 3, 4, 5, 6, 7],
+            "s": ["a", "b", "c", "d", "e", "f", "g"],
+            "y": [2.0, None, 5.0, None, None, float("nan"), 3.0],
+        }
+    )
+    exprs = {
+        "x_max": pl.col("x").get(pl.col("y").arg_max()),
+        "s_max": pl.col("s").get(pl.col("y").arg_max()),
+        "x_min": pl.col("x").get(pl.col("y").arg_min()),
+    }
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2, 3],
+            "x_max": [3, None, 7],
+            "s_max": ["c", None, "g"],
+            "x_min": [1, None, 7],
+        }
+    )
+
+    q = df.lazy().group_by("g").agg(**exprs)
+    plan = q.explain()
+    assert "max_by" in plan
+    assert "min_by" in plan
+    assert ".get(" not in plan
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "in-memory-map" not in dot
+    assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+    q = df.lazy().select(**exprs)
+    assert_frame_equal(q.collect(engine=engine), expected.drop("g").head(1))
+
+    q = df.lazy().select(**{k: v.over("g") for k, v in exprs.items()})
+    assert_frame_equal(
+        q.collect(engine=engine),
+        df.select("g").join(expected, on="g", maintain_order="left").drop("g"),
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_get_arg_max_not_length_preserving(engine: EngineType) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [9, 1, 2]})
+    q = df.lazy().select(pl.col("x").get(pl.col("y").filter(pl.col("y") < 5).arg_max()))
+    assert "max_by" not in q.explain()
+    assert q.collect(engine=engine).item() == 2
+
+    # A Series broadcasts a one-row column to its own length.
+    df = pl.DataFrame({"x": [10], "y": [2]})
+    two = pl.Series([0, 1])
+    for e, expected in [
+        (pl.col("x").get((pl.col("y") + two).arg_max(), null_on_oob=True), None),
+        ((pl.col("x") + two).get(pl.col("y").arg_max()), 10),
+    ]:
+        q = df.lazy().select(e)
+        assert "max_by" not in q.explain()
+        assert q.collect(engine=engine).item() == expected
+
+
+@pytest.mark.parametrize("evict", [False, True])
+def test_get_shared_arg_max_same_row_streaming(
+    evict: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    if evict:
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+        plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+        plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
+    n = 100
+    # Every row of a group has the same `y`, so any row may be picked, but `x` and `s`
+    # must come from the same one.
+    df = pl.DataFrame(
+        {
+            "g": [i % 5 for i in range(n)],
+            "x": list(range(n)),
+            "s": [str(i) for i in range(n)],
+            "y": [i % 5 for i in range(n)],
+        }
+    )
+    best = pl.col("y").arg_max()
+    out = (
+        df.lazy()
+        .group_by("g")
+        .agg(x=pl.col("x").get(best), s=pl.col("s").get(best))
+        .collect(engine="streaming")
+    )
+    assert out.height == 5
+    assert out["s"].to_list() == [str(x) for x in out["x"]]
 
 
 @pytest.mark.parametrize(

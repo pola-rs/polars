@@ -3,26 +3,136 @@
 //! Anything that cannot be estimated yields `None` rather than a guess, so a caller
 //! can tell "no estimate" apart from "estimated to be small".
 
-use std::sync::Arc;
+use std::cell::OnceCell;
+use std::rc::Rc;
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 
-use polars_utils::aliases::InitHashMaps;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{Column, DataType, Series, SeriesTrait};
+use polars_core::scalar::Scalar;
+use polars_core::schema::Schema;
 #[expect(clippy::disallowed_types)] // We don't iterate over it.
 use polars_utils::aliases::PlHashMap;
+#[expect(clippy::disallowed_types)] // We don't iterate over it.
+use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
-use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
+use super::{
+    Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count, range_width,
+};
+use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, MintermIter,
+    AExpr, ExprIR, FunctionIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR,
     into_column,
 };
 use crate::prelude::{JoinType, Operator};
+use crate::utils::aexpr_to_leaf_names_iter;
 
-// We don't iterate over it.
+/// Estimates already made, and the columns of in-memory frames worth counting.
+#[derive(Default)]
+pub(crate) struct StatsCache {
+    // We don't iterate over it.
+    #[expect(clippy::disallowed_types)]
+    nodes: PlHashMap<Node, Option<NodeStats>>,
+    key_columns: SharedKeyColumns,
+}
+
+/// Names of the columns of in-memory frames worth counting, see
+/// [`key_column_names`].
 #[expect(clippy::disallowed_types)]
-pub(crate) type StatsCache = PlHashMap<Node, Option<NodeStats>>;
+pub(crate) type KeyColumns = PlHashSet<PlSmallStr>;
+
+/// [`KeyColumns`] made on the first in-memory frame, shared by the caches of a pass.
+pub(crate) type SharedKeyColumns = Rc<OnceCell<KeyColumns>>;
+
+impl StatsCache {
+    /// A cache that shares `key_columns` with other caches of the same pass, so the
+    /// arena is walked at most once.
+    pub(crate) fn with_key_columns(key_columns: &SharedKeyColumns) -> Self {
+        Self {
+            key_columns: key_columns.clone(),
+            ..Self::default()
+        }
+    }
+
+    /// A cache that also counts the in-memory columns `more_key_columns`.
+    pub(crate) fn with_more_key_columns(
+        more_key_columns: Vec<PlSmallStr>,
+        ir_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+    ) -> Self {
+        let names = key_column_names(more_key_columns, ir_arena, expr_arena);
+        Self {
+            key_columns: Rc::new(OnceCell::from(names)),
+            ..Self::default()
+        }
+    }
+
+    /// Forget the estimate of `node`, whose id is about to be reused.
+    pub(crate) fn remove(&mut self, node: &Node) {
+        self.nodes.remove(node);
+    }
+}
+
+/// `names` and the names of every column used as a join, group-by or distinct key
+/// anywhere in the arena, and of the columns aliased to them.
+///
+/// Counting the distinct values of an in-memory column costs a pass over a sample of
+/// it, so only these are counted. The arena may hold nodes no longer in the plan,
+/// which only adds names.
+fn key_column_names(
+    names: Vec<PlSmallStr>,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> KeyColumns {
+    let mut names: KeyColumns = names.into_iter().collect();
+    let add_keys = |keys: &[ExprIR], names: &mut KeyColumns| {
+        for key in keys {
+            names.insert(key.output_name().clone());
+            names.extend(aexpr_to_leaf_names_iter(key.node(), expr_arena).cloned());
+        }
+    };
+    let mut aliases: Vec<(&PlSmallStr, &PlSmallStr)> = Vec::new();
+    for i in 0..ir_arena.len() {
+        match ir_arena.get(Node(i)) {
+            IR::Join { options, .. } => {
+                if let JoinTypeOptionsIR::Equi { on, .. } = &options.options {
+                    for (left, right) in on.iter() {
+                        add_keys(std::slice::from_ref(left), &mut names);
+                        add_keys(std::slice::from_ref(right), &mut names);
+                    }
+                }
+            },
+            IR::GroupBy { keys, .. } => add_keys(keys, &mut names),
+            IR::Distinct { input, options } => match &options.subset {
+                Some(subset) => names.extend(subset.iter().cloned()),
+                None => names.extend(ir_arena.get(*input).schema(ir_arena).iter_names().cloned()),
+            },
+            IR::Select { expr: exprs, .. } | IR::HStack { exprs, .. } => {
+                aliases.extend(exprs.iter().filter_map(|e| {
+                    let source = into_column(e.node(), expr_arena)?;
+                    (source != e.output_name()).then_some((e.output_name(), source))
+                }));
+            },
+            _ => {},
+        }
+    }
+    // A chain of aliases needs a round per link.
+    loop {
+        let before = names.len();
+        for (output, source) in &aliases {
+            if names.contains(*output) {
+                names.insert((*source).clone());
+            }
+        }
+        if names.len() == before {
+            break names;
+        }
+    }
+}
 
 /// Fallback selectivity for a filter conjunct with no better estimate.
 const DEFAULT_SELECTIVITY: f64 = 0.2;
@@ -56,7 +166,7 @@ pub fn node_stats(
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<NodeStats> {
-    node_stats_with_cache(node, ir_arena, expr_arena, &mut StatsCache::new())
+    node_stats_with_cache(node, ir_arena, expr_arena, &mut StatsCache::default())
 }
 
 /// [`node_stats`], reusing what `cache` already holds.
@@ -71,27 +181,29 @@ pub(crate) fn node_stats_with_cache(
     expr_arena: &Arena<AExpr>,
     cache: &mut StatsCache,
 ) -> Option<NodeStats> {
-    if let Some(hit) = cache.get(&node) {
+    if let Some(hit) = cache.nodes.get(&node) {
         return hit.clone();
     }
     let ir = ir_arena.get(node);
     let stats = match ir {
         IR::Scan {
             predicate,
+            file_info,
             unified_scan_args,
             ..
         } => {
             let rows = leaf_row_count(ir);
-            let unfiltered = rows.value()? as f64;
+            // Estimates must be at least one, but the row bound can be exactly zero.
+            let unfiltered = (rows.value()? as f64).max(MIN_CARDINALITY);
             let mut max_rows = match rows {
                 Card::Exact(rows) => Some(rows as f64),
                 _ => None,
             };
             // The slice is applied before the predicate, so it narrows first.
             let mut filtered = unfiltered;
-            if let Some(slice) = &unified_scan_args.pre_slice {
-                filtered = sliced(filtered, slice.clone());
-                max_rows = max_rows.map(|m| sliced(m, slice.clone()));
+            if let Some(slice) = unified_scan_args.pre_slice {
+                filtered = sliced(filtered, slice);
+                max_rows = max_rows.map(|m| sliced(m, slice));
             }
             let columns = scan_columns(ir);
             if let Some(p) = predicate {
@@ -101,6 +213,7 @@ pub(crate) fn node_stats_with_cache(
                     p.node(),
                     expr_arena,
                     columns.as_deref(),
+                    &file_info.schema,
                 );
             }
             Some(NodeStats {
@@ -111,9 +224,20 @@ pub(crate) fn node_stats_with_cache(
             })
         },
 
-        IR::DataFrameScan { .. } => {
+        IR::DataFrameScan {
+            df,
+            schema,
+            output_schema,
+        } => {
             let rows = (leaf_row_count(ir).value()? as f64).max(MIN_CARDINALITY);
-            Some(NodeStats::of_rows(rows))
+            let names = output_schema.as_ref().unwrap_or(schema);
+            let key_columns = cache
+                .key_columns
+                .get_or_init(|| key_column_names(Vec::new(), ir_arena, expr_arena));
+            Some(NodeStats {
+                columns: dataframe_columns(df, names, key_columns),
+                ..NodeStats::of_rows(rows)
+            })
         },
         IR::GroupBy {
             input,
@@ -129,9 +253,13 @@ pub(crate) fn node_stats_with_cache(
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             // A computed key holds neither the values nor the distinct count of the
             // column it is named after, so only a key reading one column contributes.
-            let ndv = keys
+            let sources: Vec<Option<&PlSmallStr>> = keys
                 .iter()
                 .map(|k| into_column(k.node(), expr_arena))
+                .collect();
+            let ndv = sources
+                .iter()
+                .copied()
                 .collect::<Option<Vec<_>>>()
                 .and_then(|mut sources| {
                     // Several keys reading one column split it no finer than one of
@@ -141,7 +269,13 @@ pub(crate) fn node_stats_with_cache(
                     inner.key_distinct_count_product(&sources)
                 });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
-            Some(one_row_per_group(inner, &names, ndv, options.slice))
+            Some(one_row_per_group(
+                inner,
+                &names,
+                &sources,
+                ndv,
+                options.slice,
+            ))
         },
         IR::Distinct { input, options } => {
             let input_schema;
@@ -154,7 +288,14 @@ pub(crate) fn node_stats_with_cache(
             };
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let ndv = inner.key_distinct_count_product(&names);
-            Some(one_row_per_group(inner, &names, ndv, options.slice))
+            let sources: Vec<Option<&PlSmallStr>> = names.iter().copied().map(Some).collect();
+            Some(one_row_per_group(
+                inner,
+                &names,
+                &sources,
+                ndv,
+                options.slice,
+            ))
         },
         IR::Filter { input, predicate } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
@@ -164,6 +305,7 @@ pub(crate) fn node_stats_with_cache(
                 predicate.node(),
                 expr_arena,
                 inner.columns.as_deref(),
+                &ir_arena.get(*input).schema(ir_arena),
             );
             Some(inner.filter(filtered))
         },
@@ -174,12 +316,12 @@ pub(crate) fn node_stats_with_cache(
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(match slice {
                 None => inner,
-                Some((offset, len, _)) => inner.slice((*offset, *len)),
+                Some((slice, _)) => inner.slice(*slice),
             })
         },
-        IR::Slice { input, offset, len } => {
+        IR::Slice { input, slice } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            Some(inner.slice((*offset, *len as usize)))
+            Some(inner.slice(*slice))
         },
         IR::Union { inputs, options } => {
             let mut acc = NodeStats::of_rows(0.0);
@@ -227,9 +369,12 @@ pub(crate) fn node_stats_with_cache(
             let key_domains = composite_key_domain(
                 on.iter().map(|(left_key, right_key)| {
                     let left_key = left_key.plain_column(expr_arena);
-                    let domain =
-                        key_domain(&left, left_key, &right, right_key.plain_column(expr_arena));
-                    own_domain(left_key).map_or(domain, |own| domain.max(own))
+                    let right_key = right_key.plain_column(expr_arena);
+                    let domain = key_domain(&left, left_key, &right, right_key);
+                    let domain = own_domain(left_key).map_or(domain, |own| domain.max(own));
+                    let unique_rows = unique_side_rows(&left, left_key, &right, domain)
+                        .or_else(|| unique_side_rows(&right, right_key, &left, domain));
+                    (domain, unique_rows)
                 }),
                 left.unfiltered.max(right.unfiltered),
             );
@@ -260,6 +405,7 @@ pub(crate) fn node_stats_with_cache(
                         fused_predicate.node(),
                         expr_arena,
                         stats.columns.as_deref(),
+                        &ir.schema(ir_arena),
                     );
                     stats.filter(filtered)
                 },
@@ -295,14 +441,54 @@ pub(crate) fn node_stats_with_cache(
             let columns = passed_through_columns(&inner, expr, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
-        IR::HStack { input, exprs, .. } => {
+        IR::HStack { input, exprs, .. } | IR::Window { input, exprs, .. } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let columns = shadowed_columns(&inner, exprs, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
+        // As tall as the tallest input.
+        IR::HConcat { inputs, .. } => {
+            let (first, rest) = inputs.split_first()?;
+            let mut acc = node_stats_with_cache(*first, ir_arena, expr_arena, cache)?;
+            for input in rest {
+                let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+                acc = NodeStats {
+                    filtered: acc.filtered.max(inner.filtered),
+                    unfiltered: acc.unfiltered.max(inner.unfiltered),
+                    max_rows: acc.max_rows.zip(inner.max_rows).map(|(a, b)| a.max(b)),
+                    columns: join_columns(&acc, &inner),
+                };
+            }
+            // A shorter input is padded with nulls or broadcast, so its null counts
+            // no longer hold.
+            if !rest.is_empty() {
+                acc.columns = acc.columns.map(|columns| {
+                    let columns = columns.iter().map(|(name, stats)| {
+                        let stats = ScanColumnStats {
+                            null_count: Card::Unknown,
+                            ..stats.clone()
+                        };
+                        (name.clone(), stats)
+                    });
+                    Arc::new(columns.collect())
+                });
+            }
+            Some(acc)
+        },
+        IR::MapFunction {
+            input,
+            function: FunctionIR::RowIndex { name, .. },
+        } => {
+            let mut inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            // The input's statistics may still describe a dropped column of that name.
+            if let Some(columns) = inner.columns.as_mut().filter(|c| c.contains_key(name)) {
+                Arc::make_mut(columns).remove(name);
+            }
+            Some(inner)
+        },
         _ => None,
     };
-    cache.insert(node, stats.clone());
+    cache.nodes.insert(node, stats.clone());
     stats
 }
 
@@ -314,8 +500,8 @@ impl NodeStats {
     }
 
     /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
-    fn slice(mut self, slice: impl Into<Slice> + Clone) -> Self {
-        self.max_rows = self.max_rows.map(|m| sliced(m, slice.clone()));
+    fn slice(mut self, slice: Slice) -> Self {
+        self.max_rows = self.max_rows.map(|m| sliced(m, slice));
         let filtered = sliced(self.filtered, slice);
         self.filter(filtered)
     }
@@ -354,6 +540,15 @@ impl NodeStats {
     fn int_domain(&self, name: &str) -> Option<f64> {
         let domain = self.column(name)?.int_domain()?;
         Some(domain.clamp(MIN_CARDINALITY, self.unfiltered))
+    }
+
+    /// Distinct values in `name`: the larger of its distinct count and its
+    /// integer domain.
+    pub fn key_distinct_estimate(&self, name: &str) -> Option<f64> {
+        match (self.distinct_count_key(name), self.int_domain(name)) {
+            (Some(ndv), Some(domain)) => Some(ndv.max(domain)),
+            (ndv, domain) => ndv.or(domain),
+        }
     }
 
     /// Distinct combinations of `keys`, or `None` unless every one is known.
@@ -420,19 +615,10 @@ fn join_columns(left: &NodeStats, right: &NodeStats) -> Option<Arc<ScanColumnSta
 }
 
 /// Column statistics of a scan, keyed on its output names.
-///
-/// A scan with a column mapping reports nothing: resolving file names to output
-/// names needs the physical-id lookup in the multi-scan reader.
 fn scan_columns(ir: &IR) -> Option<Arc<ScanColumnStatsMap>> {
-    let IR::Scan {
-        file_info,
-        unified_scan_args,
-        ..
-    } = ir
-    else {
+    let IR::Scan { file_info, .. } = ir else {
         return None;
     };
-    unified_scan_args.column_mapping.is_none().then_some(())?;
     file_info.stats.columns.clone()
 }
 
@@ -446,7 +632,13 @@ fn passed_through_columns(
 ) -> Option<Arc<ScanColumnStatsMap>> {
     let mut kept = ScanColumnStatsMap::default();
     for e in exprs {
-        let source = into_column(e.node(), expr_arena)?;
+        if let Some(stats) = literal_column(e, expr_arena) {
+            kept.insert(e.output_name().clone(), stats);
+            continue;
+        }
+        let Some(source) = into_column(e.node(), expr_arena) else {
+            continue;
+        };
         if let Some(stats) = inner.column(source) {
             kept.insert(e.output_name().clone(), stats.clone());
         }
@@ -455,21 +647,27 @@ fn passed_through_columns(
 }
 
 /// The input's statistics, less every column `exprs` overwrites with a computed
-/// one. `with_columns` keeps the rest of the frame as it was.
+/// one, plus those of the literal columns it adds. `with_columns` keeps the rest of
+/// the frame as it was.
 fn shadowed_columns(
     inner: &NodeStats,
     exprs: &[ExprIR],
     expr_arena: &Arena<AExpr>,
 ) -> Option<Arc<ScanColumnStatsMap>> {
-    let columns = inner.columns.as_ref()?;
+    let empty = ScanColumnStatsMap::default();
+    let columns = inner.columns.as_deref().unwrap_or(&empty);
+    let literals: Vec<(&PlSmallStr, ScanColumnStats)> = exprs
+        .iter()
+        .filter_map(|e| Some((e.output_name(), literal_column(e, expr_arena)?)))
+        .collect();
     let overwrites = |e: &ExprIR| {
         into_column(e.node(), expr_arena) != Some(e.output_name())
             && columns.contains_key(e.output_name())
     };
-    if !exprs.iter().any(overwrites) {
-        return Some(Arc::clone(columns));
+    if literals.is_empty() && !exprs.iter().any(overwrites) {
+        return inner.columns.clone();
     }
-    let kept: ScanColumnStatsMap = columns
+    let mut kept: ScanColumnStatsMap = columns
         .iter()
         .filter(|(name, _)| {
             !exprs
@@ -478,7 +676,24 @@ fn shadowed_columns(
         })
         .map(|(name, stats)| (name.clone(), stats.clone()))
         .collect();
+    kept.extend(
+        literals
+            .into_iter()
+            .map(|(name, stats)| (name.clone(), stats)),
+    );
     (!kept.is_empty()).then(|| Arc::new(kept))
+}
+
+/// Statistics of a column holding one non-null literal on every row.
+fn literal_column(e: &ExprIR, expr_arena: &Arena<AExpr>) -> Option<ScanColumnStats> {
+    match expr_arena.get(e.node()) {
+        AExpr::Literal(lv) if lv.is_scalar() && !lv.is_null() => Some(ScanColumnStats {
+            distinct: Card::Exact(1),
+            null_count: Card::Exact(0),
+            ..Default::default()
+        }),
+        _ => None,
+    }
 }
 
 /// Whether an expression leaves the frame's height alone, either by producing one
@@ -493,16 +708,18 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 /// Estimates for a node emitting one row per distinct combination of `keys`,
 /// optionally sliced.
 ///
-/// `keys` names the output columns, and `ndv` is the distinct combinations they hold
-/// if that is known.
+/// `keys` names the output columns, `sources` the input column each key reads if
+/// it reads one, and `ndv` is the distinct combinations they hold if that
+/// is known.
 ///
-/// The output columns are the keys, each holding as many distinct values as the
-/// node has rows.
+/// The output columns are the keys. A single key holds as many distinct values as
+/// the node has rows. Each of several keys holds the values of its input column.
 fn one_row_per_group(
     inner: NodeStats,
     keys: &[&PlSmallStr],
+    sources: &[Option<&PlSmallStr>],
     ndv: Option<f64>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> NodeStats {
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
@@ -516,8 +733,157 @@ fn one_row_per_group(
         groups.unfiltered = sliced(groups.unfiltered, slice);
         groups.max_rows = groups.max_rows.map(|m| sliced(m, slice));
     }
-    groups.columns = single_key_column(keys, groups.filtered);
+    groups.columns = match keys {
+        [_] => single_key_column(keys, groups.filtered),
+        // A slice keeps only some groups, so it may drop values of any key.
+        _ if slice.is_none() => multi_key_columns(keys, sources, &inner),
+        _ => None,
+    };
     groups
+}
+
+/// The distinct values and range of each of several keys are those of the input
+/// column it reads.
+fn multi_key_columns(
+    keys: &[&PlSmallStr],
+    sources: &[Option<&PlSmallStr>],
+    inner: &NodeStats,
+) -> Option<Arc<ScanColumnStatsMap>> {
+    let map: ScanColumnStatsMap = keys
+        .iter()
+        .zip(sources)
+        .filter_map(|(name, source)| {
+            let stats = ScanColumnStats {
+                null_count: Card::Unknown,
+                sampled_row_groups: None,
+                ..inner.column(source.as_ref()?)?.clone()
+            };
+            Some(((*name).clone(), stats))
+        })
+        .collect();
+    (!map.is_empty()).then(|| Arc::new(map))
+}
+
+/// Share of nulls above which an in-memory column gets no distinct count.
+const MAX_NULL_FRACTION: f64 = 0.25;
+
+/// Rows a sample of an in-memory frame reads.
+const NDV_SAMPLE_ROWS: usize = 1 << 14;
+
+/// Distinct counts of the columns `names` of an in-memory frame that are in
+/// `key_columns`.
+///
+/// Exact when the frame has at most [`NDV_SAMPLE_ROWS`] rows, otherwise estimated
+/// from a uniform sample.
+fn dataframe_columns(
+    df: &DataFrame,
+    names: &Schema,
+    key_columns: &KeyColumns,
+) -> Option<Arc<ScanColumnStatsMap>> {
+    if df.height() == 0 {
+        return None;
+    }
+    let map: ScanColumnStatsMap = names
+        .iter_names()
+        .filter(|name| key_columns.contains(*name))
+        .filter_map(|name| {
+            let column = df.column(name).ok()?;
+            let distinct = column_distinct(column)?;
+            let stats = ScanColumnStats {
+                distinct,
+                ..Default::default()
+            };
+            Some((name.clone(), stats))
+        })
+        .collect();
+    (!map.is_empty()).then(|| Arc::new(map))
+}
+
+/// Distinct counts already made, keyed on the address of a column's data.
+///
+/// The weak reference keeps that address from being reused while the entry
+/// exists, and tells whether the column is still alive.
+// We don't iterate over it.
+#[expect(clippy::disallowed_types)]
+type DistinctCache = PlHashMap<usize, (Weak<dyn SeriesTrait>, usize, Option<Card>)>;
+
+static DISTINCT_CACHE: LazyLock<Mutex<DistinctCache>> = LazyLock::new(Default::default);
+
+/// Entries kept before dead columns are dropped from [`DISTINCT_CACHE`].
+const MAX_CACHED_COLUMNS: usize = 1 << 12;
+
+fn column_distinct(column: &Column) -> Option<Card> {
+    if let Some(column) = column.as_scalar_column() {
+        // Every row holds the one value, so a null one is a column of nulls.
+        return (!column.scalar().is_null()).then_some(Card::Exact(1));
+    }
+    let dtype = column.dtype();
+    if dtype.is_nested() || dtype.is_object() {
+        return None;
+    }
+    let series = column.as_materialized_series();
+    let key = Arc::as_ptr(&series.0) as *const () as usize;
+    // A column can be appended to in place, so the length must match too.
+    if let Some((weak, len, distinct)) = DISTINCT_CACHE.lock().unwrap().get(&key)
+        && weak.strong_count() > 0
+        && *len == series.len()
+    {
+        return *distinct;
+    }
+
+    let distinct = series_distinct(series);
+    let mut cache = DISTINCT_CACHE.lock().unwrap();
+    if cache.len() >= MAX_CACHED_COLUMNS {
+        cache.retain(|_, (weak, _, _)| weak.strong_count() > 0);
+        if cache.len() >= MAX_CACHED_COLUMNS {
+            cache.clear();
+        }
+    }
+    cache.insert(key, (Arc::downgrade(&series.0), series.len(), distinct));
+    distinct
+}
+
+/// Distinct non-null values, exact up to [`NDV_SAMPLE_ROWS`] rows, otherwise
+/// estimated from a uniform sample of it.
+///
+/// A null matches nothing in a join, so it is not counted as a value. A join
+/// estimate still counts null rows as if they matched, so no count is given for a
+/// column with more than [`MAX_NULL_FRACTION`] nulls.
+fn series_distinct(series: &Series) -> Option<Card> {
+    if series.null_count() as f64 > MAX_NULL_FRACTION * series.len() as f64 {
+        return None;
+    }
+    if series.len() <= NDV_SAMPLE_ROWS {
+        let distinct = series.drop_nulls().n_unique().ok()?;
+        return Some(Card::Exact(distinct as u64));
+    }
+    let non_null = series.len() - series.null_count();
+    // Uniform, so the rows of a value stored next to each other are drawn together
+    // as often as anywhere else. A fixed seed keeps plans the same between runs.
+    let sample = series
+        .sample_n(NDV_SAMPLE_ROWS, false, None, Some(0))
+        .ok()?
+        .drop_nulls();
+    if sample.is_empty() {
+        return (non_null == 0).then_some(Card::Exact(0));
+    }
+    let groups = sample.group_tuples(false, false).ok()?;
+    let singletons = groups.iter().filter(|g| g.len() == 1).count();
+    let estimate = sampled_distinct(non_null, sample.len(), groups.len(), singletons);
+    Some(Card::approx(estimate))
+}
+
+/// Distinct values in `rows` rows, from a sample of `sampled` rows holding
+/// `distinct` values of which `singletons` occur once.
+///
+/// This is the Haas-Stokes estimator: a sample without repeats reads as a unique
+/// column, one where every value repeats as a column with no other values.
+fn sampled_distinct(rows: usize, sampled: usize, distinct: usize, singletons: usize) -> u64 {
+    let (rows, sampled) = (rows as f64, sampled as f64);
+    let (distinct, singletons) = (distinct as f64, singletons as f64);
+    let denominator = sampled - singletons + singletons * sampled / rows;
+    let estimate = sampled * distinct / denominator;
+    estimate.clamp(distinct, rows).round() as u64
 }
 
 /// A group-by over one key holds exactly one row per distinct value of it. Several
@@ -532,6 +898,9 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
             null_count: Card::Unknown,
             avg_byte_width: None,
             int_range: None,
+            int_range_partial: false,
+            sampled_row_groups: None,
+            int_range_sampled: false,
         },
     );
     Some(Arc::new(map))
@@ -539,7 +908,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
 
 /// Rows left after applying `slice` to a relation of `rows` rows.
 fn sliced(rows: f64, slice: impl Into<Slice>) -> f64 {
-    let bounded = slice.into().restrict_to_bounds(rows as usize);
+    let bounded = slice.into().resolve(rows as usize);
     (bounded.len() as f64).max(MIN_CARDINALITY)
 }
 
@@ -559,7 +928,7 @@ fn n_groups(rows: f64, n_keys: usize, ndv: Option<f64>) -> f64 {
     rows.powf(exponent).clamp(MIN_CARDINALITY, rows)
 }
 
-/// Rows left after `predicate`, estimated one `AND` conjunct at a time.
+/// Rows left after `predicate`.
 ///
 /// `rows` is what the conjuncts narrow. `unfiltered` is the relation the column
 /// statistics describe, which a slice may already have cut into.
@@ -569,13 +938,125 @@ fn apply_predicate(
     predicate: Node,
     expr_arena: &Arena<AExpr>,
     columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
 ) -> f64 {
-    let mut selectivity = 1.0;
-    for conjunct in MintermIter::new(predicate, expr_arena) {
-        selectivity *= conjunct_selectivity(conjunct, expr_arena, columns, unfiltered)
-            .unwrap_or(DEFAULT_SELECTIVITY);
-    }
+    let (selectivity, _) =
+        predicate_selectivity(predicate, expr_arena, columns, schema, unfiltered);
     (rows * selectivity).max(MIN_CARDINALITY)
+}
+
+/// Fraction of rows `predicate` keeps, estimated per column for the constraints of
+/// its `AND` chain and one conjunct at a time for the rest. The flag is `false` when
+/// any part of it fell back to [`DEFAULT_SELECTIVITY`].
+#[recursive]
+fn predicate_selectivity(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
+    rows: f64,
+) -> (f64, bool) {
+    let chain = and_chain_bounds(predicate, schema, expr_arena);
+    if chain.unsat {
+        return (0.0, true);
+    }
+    let mut selectivity = 1.0;
+    let mut known = true;
+    let mut apply = |factor: Option<f64>| {
+        known &= factor.is_some();
+        selectivity *= factor.unwrap_or(DEFAULT_SELECTIVITY);
+    };
+    let mut non_null_counted = Vec::new();
+    for bounds in &chain.columns {
+        let factor = column_selectivity(bounds, columns, schema, rows);
+        if factor.is_some() {
+            non_null_counted.push(&bounds.name);
+        }
+        apply(factor);
+    }
+    for &conjunct in &chain.other {
+        // The column's estimate already holds only its non-null rows.
+        if let Some((name, false)) = null_check(conjunct, expr_arena)
+            && non_null_counted.contains(&name)
+        {
+            continue;
+        }
+        apply(conjunct_selectivity(
+            conjunct, expr_arena, columns, schema, rows,
+        ));
+    }
+    (selectivity, known)
+}
+
+/// Integer range and type of `name`, when the range covers all its sources and is
+/// in the unit of its values.
+fn int_range<'a>(
+    name: &str,
+    columns: Option<&ScanColumnStatsMap>,
+    schema: &'a Schema,
+) -> Option<(i128, i128, &'a DataType)> {
+    let dtype = schema.get(name)?;
+    // Files of one scan may store a `Datetime`, `Duration` or `Time` in different
+    // units, and their ranges are merged as stored.
+    if !(dtype.is_integer() || dtype.is_date()) {
+        return None;
+    }
+    let stats = columns?.get(name)?;
+    let (min, max) = stats.int_range?;
+    (max >= min && !stats.int_range_partial).then_some((min, max, dtype))
+}
+
+fn int_value(value: &Scalar, dtype: &DataType) -> Option<i128> {
+    (value.dtype() == dtype).then_some(())?;
+    value.as_any_value().extract::<i128>()
+}
+
+/// Fraction of rows holding a null in `name`, when it is known.
+fn null_fraction(name: &str, columns: Option<&ScanColumnStatsMap>, rows: f64) -> Option<f64> {
+    let nulls = columns?.get(name)?.null_count.confident(0.0)?;
+    Some((nulls as f64 / rows.max(MIN_CARDINALITY)).clamp(0.0, 1.0))
+}
+
+/// Fraction of rows a column's constraints keep, assuming its non-null values are
+/// spread evenly over its integer range.
+fn column_selectivity(
+    bounds: &ColumnBounds,
+    columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
+    rows: f64,
+) -> Option<f64> {
+    let (min, max, dtype) = int_range(&bounds.name, columns, schema)?;
+    let lower = match &bounds.lower {
+        Some((value, inclusive)) => int_value(value, dtype)?.saturating_add(i128::from(!inclusive)),
+        None => min,
+    };
+    let upper = match &bounds.upper {
+        Some((value, inclusive)) => int_value(value, dtype)?.saturating_sub(i128::from(!inclusive)),
+        None => max,
+    };
+    let (lower, upper) = (lower.max(min), upper.min(max));
+    // The distinct values of `values` inside the kept range.
+    let kept_values = |values: &[Scalar]| -> Option<Vec<i128>> {
+        let mut kept = values
+            .iter()
+            .map(|value| int_value(value, dtype))
+            .collect::<Option<Vec<_>>>()?;
+        kept.retain(|v| (lower..=upper).contains(v));
+        kept.sort_unstable();
+        kept.dedup();
+        Some(kept)
+    };
+    let excluded = kept_values(&bounds.excluded)?;
+    let kept = match &bounds.allowed {
+        Some(allowed) => {
+            let mut allowed = kept_values(allowed)?;
+            allowed.retain(|v| excluded.binary_search(v).is_err());
+            allowed.len() as f64
+        },
+        None => range_width(lower, upper).max(0.0) - excluded.len() as f64,
+    };
+    let non_null = 1.0 - null_fraction(&bounds.name, columns, rows).unwrap_or(0.0);
+    Some(kept.max(0.0) / range_width(min, max) * non_null)
 }
 
 /// Fraction of rows one conjunct keeps, or `None` when nothing describes it.
@@ -583,18 +1064,59 @@ fn conjunct_selectivity(
     conjunct: Node,
     expr_arena: &Arena<AExpr>,
     columns: Option<&ScanColumnStatsMap>,
+    schema: &Schema,
     rows: f64,
 ) -> Option<f64> {
-    let (name, function) = match expr_arena.get(conjunct) {
+    // Its value is only known at run time.
+    if let AExpr::Function {
+        function: IRFunctionExpr::DynamicPred { .. },
+        ..
+    } = expr_arena.get(conjunct)
+    {
+        return Some(1.0);
+    }
+    if let AExpr::BinaryExpr {
+        left,
+        op: Operator::Or | Operator::LogicalOr,
+        right,
+    } = expr_arena.get(conjunct)
+    {
+        let (left, left_known) = predicate_selectivity(*left, expr_arena, columns, schema, rows);
+        let (right, right_known) = predicate_selectivity(*right, expr_arena, columns, schema, rows);
+        return (left_known && right_known).then_some(left + right - left * right);
+    }
+    let (name, is_null) = null_check(conjunct, expr_arena)?;
+
+    let Some(null_fraction) = null_fraction(name, columns, rows) else {
+        // Nothing describes the column. Most frames are mostly non-null; how many rows
+        // hold a null is anyone's guess.
+        return (!is_null).then_some(1.0);
+    };
+    Some(if is_null {
+        null_fraction
+    } else {
+        1.0 - null_fraction
+    })
+}
+
+/// The column an `is_null` or `is_not_null` check reads, and whether it keeps the
+/// nulls.
+fn null_check(conjunct: Node, expr_arena: &Arena<AExpr>) -> Option<(&PlSmallStr, bool)> {
+    match expr_arena.get(conjunct) {
         AExpr::Function {
             input,
             function: IRFunctionExpr::Boolean(function),
             ..
         } => {
+            let is_null = match function {
+                IRBooleanFunction::IsNull => true,
+                IRBooleanFunction::IsNotNull => false,
+                _ => return None,
+            };
             let [arg] = input.as_slice() else {
                 return None;
             };
-            (into_column(arg.node(), expr_arena)?, function)
+            Some((into_column(arg.node(), expr_arena)?, is_null))
         },
         // Pushing an equi-join key into one of its sides leaves `x == x` behind. That
         // is a null check on the key, not the arbitrary comparison it looks like.
@@ -604,29 +1126,8 @@ fn conjunct_selectivity(
             right,
         } => {
             let name = into_column(*left, expr_arena)?;
-            if name != into_column(*right, expr_arena)? {
-                return None;
-            }
-            (name, &IRBooleanFunction::IsNotNull)
+            (name == into_column(*right, expr_arena)?).then_some((name, false))
         },
-        _ => return None,
-    };
-
-    let Some(nulls) = columns
-        .and_then(|columns| columns.get(name))
-        .and_then(|stats| stats.null_count.confident(0.0))
-    else {
-        // Nothing describes the column. Most frames are mostly non-null; how many rows
-        // hold a null is anyone's guess.
-        return match function {
-            IRBooleanFunction::IsNotNull => Some(1.0),
-            _ => None,
-        };
-    };
-    let null_fraction = (nulls as f64 / rows.max(MIN_CARDINALITY)).clamp(0.0, 1.0);
-    match function {
-        IRBooleanFunction::IsNull => Some(null_fraction),
-        IRBooleanFunction::IsNotNull => Some(1.0 - null_fraction),
         _ => None,
     }
 }
@@ -645,10 +1146,47 @@ pub fn join_cardinality(left: f64, right: f64, key_domain_product: f64) -> f64 {
 
 /// Domain size of a composite key, from the domains of the columns making it up.
 ///
-/// The parts multiply, which holds only if they vary independently. `max_rows` bounds
+/// Each part is its domain, and the rows of a side it is unique on, if any. The
+/// parts multiply, which holds only if they vary independently. `max_rows` bounds
 /// the result, since neither side holds more distinct combinations than it has rows.
-pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> f64 {
-    parts.product::<f64>().min(max_rows).max(MIN_CARDINALITY)
+///
+/// Once one part is unique on a side, each row of the other side matches at most one
+/// row there, so the other parts cannot narrow the join further. The rows of that
+/// side then bound the result instead.
+pub fn composite_key_domain(parts: impl Iterator<Item = (f64, Option<f64>)>, max_rows: f64) -> f64 {
+    let mut product = 1.0;
+    let mut largest = MIN_CARDINALITY;
+    let mut unique_rows: Option<f64> = None;
+    for (domain, rows) in parts {
+        product *= domain;
+        largest = largest.max(domain);
+        if let Some(rows) = rows {
+            unique_rows = Some(unique_rows.map_or(rows, |r| r.max(rows)));
+        }
+    }
+    let bound = unique_rows.map_or(max_rows, |rows| rows.max(largest));
+    product.min(bound).max(MIN_CARDINALITY)
+}
+
+/// The rows of `side`, if the key joining it to `other` is unique on it.
+///
+/// Only the smaller side counts. Its own distinct count, or else its range, must
+/// reach its rows. Without either, [`key_domain`] guessed the key unique on the
+/// smaller side, and the shared `domain` reaching its rows says so.
+pub fn unique_side_rows(
+    side: &NodeStats,
+    key: Option<&PlSmallStr>,
+    other: &NodeStats,
+    domain: f64,
+) -> Option<f64> {
+    let rows = side.unfiltered;
+    let distinct = key
+        .and_then(|name| {
+            side.distinct_count_key(name)
+                .or_else(|| side.int_domain(name))
+        })
+        .unwrap_or(domain);
+    (rows <= other.unfiltered && distinct >= rows).then_some(rows)
 }
 
 /// Domain size of the key joining two leaves.
@@ -708,6 +1246,8 @@ pub fn key_domain(
 
 #[cfg(test)]
 mod tests {
+    use polars_core::prelude::AnyValue;
+
     use super::*;
 
     fn leaf(unfiltered: f64, filtered: f64) -> NodeStats {
@@ -1019,6 +1559,55 @@ mod tests {
         );
     }
 
+    /// Once one part of a composite key is unique on a side, the other parts do not
+    /// narrow the join further.
+    #[test]
+    fn composite_key_domain_stops_at_a_unique_part() {
+        // (ts, region) against a 576 row price table, unique on ts there.
+        let parts = [(576.0, Some(576.0)), (400.0, None)];
+        assert_eq!(composite_key_domain(parts.into_iter(), 46_000.0), 576.0);
+
+        let parts = [(576.0, None), (400.0, None)];
+        assert_eq!(composite_key_domain(parts.into_iter(), 46_000.0), 46_000.0);
+
+        // The bound never drops below a part's own domain.
+        let parts = [(10_000.0, Some(100.0)), (5.0, None)];
+        assert_eq!(composite_key_domain(parts.into_iter(), 1e6), 10_000.0);
+    }
+
+    /// A key is unique on the smaller side only by that side's own statistics, not
+    /// by a domain the larger side set.
+    #[test]
+    fn unique_side_rows_reads_the_smaller_side() {
+        let k = key("k");
+        let large = leaf_with_range(1_000_000.0, (0, 9_999));
+        // 2000 rows over 10 values.
+        let small = leaf_with_range(2_000.0, (0, 9));
+        let domain = key_domain(&large, Some(&k), &small, Some(&k));
+        assert!(domain >= 2_000.0);
+        assert_eq!(unique_side_rows(&small, Some(&k), &large, domain), None);
+
+        // Without statistics the key is guessed unique on the smaller side.
+        // A known distinct count wins over a wide range.
+        let sparse = leaf(2_000.0, 2_000.0).with_column(
+            "k",
+            ScanColumnStats {
+                distinct: Card::Exact(10),
+                int_range: Some((0, 1_000_000)),
+                ..Default::default()
+            },
+        );
+        assert_eq!(unique_side_rows(&sparse, Some(&k), &large, 1e6), None);
+
+        let opaque = leaf(2_000.0, 2_000.0);
+        let domain = key_domain(&large, Some(&k), &opaque, Some(&k));
+        assert_eq!(
+            unique_side_rows(&opaque, Some(&k), &large, domain),
+            Some(2_000.0)
+        );
+        assert_eq!(unique_side_rows(&large, Some(&k), &opaque, domain), None);
+    }
+
     /// A distinct count that is only a rough bound must not steer the domain.
     #[test]
     fn a_low_confidence_distinct_count_is_ignored() {
@@ -1095,11 +1684,54 @@ mod tests {
         });
 
         // A quarter of the rows are null, against the flat 0.2 fallback.
-        let kept = apply_predicate(1000.0, 1000.0, is_null, &expr_arena, Some(map));
+        let kept = apply_predicate(
+            1000.0,
+            1000.0,
+            is_null,
+            &expr_arena,
+            Some(map),
+            &Schema::default(),
+        );
         assert!((kept - 250.0).abs() < 1e-9, "got {kept}");
         // An unknown column falls back.
-        let kept = apply_predicate(1000.0, 1000.0, is_null, &expr_arena, None);
+        let kept = apply_predicate(
+            1000.0,
+            1000.0,
+            is_null,
+            &expr_arena,
+            None,
+            &Schema::default(),
+        );
         assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn a_computed_column_keeps_the_statistics_of_the_others() {
+        let range = ScanColumnStats {
+            int_range: Some((0, 99)),
+            ..Default::default()
+        };
+        let stats = leaf(100.0, 100.0)
+            .with_column("a", range.clone())
+            .with_column("b", range);
+
+        let mut expr_arena = Arena::new();
+        let a = expr_arena.add(AExpr::Column(key("a")));
+        let b = expr_arena.add(AExpr::Column(key("b")));
+        let one = expr_arena.add(AExpr::Literal(Scalar::from(1i64).into()));
+        let b_plus_one = expr_arena.add(AExpr::BinaryExpr {
+            left: b,
+            op: Operator::Plus,
+            right: one,
+        });
+        let exprs = [
+            ExprIR::new(a, crate::plans::OutputName::Alias(key("x"))),
+            ExprIR::new(b_plus_one, crate::plans::OutputName::Alias(key("b"))),
+        ];
+
+        let columns = passed_through_columns(&stats, &exprs, &expr_arena).unwrap();
+        assert_eq!(columns.get("x").unwrap().int_range, Some((0, 99)));
+        assert!(!columns.contains_key("b"));
     }
 
     #[test]
@@ -1114,14 +1746,358 @@ mod tests {
             right: b,
         });
 
-        let one = apply_predicate(1000.0, 1000.0, a, &expr_arena, None);
+        let one = apply_predicate(1000.0, 1000.0, a, &expr_arena, None, &Schema::default());
         assert!((one - 200.0).abs() < 1e-9, "got {one}");
-        let two = apply_predicate(1000.0, 1000.0, and, &expr_arena, None);
+        let two = apply_predicate(1000.0, 1000.0, and, &expr_arena, None, &Schema::default());
         assert!((two - 40.0).abs() < 1e-9, "got {two}");
         // However many conjuncts pile up, an estimate never reaches zero.
         assert_eq!(
-            apply_predicate(1.0, 1.0, and, &expr_arena, None),
+            apply_predicate(1.0, 1.0, and, &expr_arena, None, &Schema::default()),
             MIN_CARDINALITY
         );
+    }
+
+    /// A leaf over one column `a` of `dtype` with the integer range `range`, and a
+    /// schema for it.
+    fn ranged_column(dtype: DataType, range: (i128, i128)) -> (NodeStats, Schema) {
+        let stats = leaf(1000.0, 1000.0).with_column(
+            "a",
+            ScanColumnStats {
+                int_range: Some(range),
+                ..Default::default()
+            },
+        );
+        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), dtype)]);
+        (stats, schema)
+    }
+
+    fn compare(expr_arena: &mut Arena<AExpr>, op: Operator, value: Scalar) -> Node {
+        let left = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let right = expr_arena.add(AExpr::Literal(value.into()));
+        expr_arena.add(AExpr::BinaryExpr { left, op, right })
+    }
+
+    fn and(expr_arena: &mut Arena<AExpr>, left: Node, right: Node) -> Node {
+        expr_arena.add(AExpr::BinaryExpr {
+            left,
+            op: Operator::And,
+            right,
+        })
+    }
+
+    #[test]
+    fn range_bounds_on_one_column_are_one_interval() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let lower = compare(&mut expr_arena, Operator::GtEq, Scalar::from(100i64));
+        let upper = compare(&mut expr_arena, Operator::Lt, Scalar::from(300i64));
+        let both = and(&mut expr_arena, lower, upper);
+
+        let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+        let kept = apply_predicate(1000.0, 1000.0, lower, &expr_arena, map, &schema);
+        assert!((kept - 900.0).abs() < 1e-9, "got {kept}");
+        // Without a range the column's bounds count once.
+        let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, None, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[cfg(feature = "dtype-date")]
+    #[test]
+    fn date_bounds_use_the_date_range() {
+        // 1992-01-01 to 1998-08-02 as days since the epoch.
+        let (stats, schema) = ranged_column(DataType::Date, (8035, 10440));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let date = |days| Scalar::new(DataType::Date, AnyValue::Date(days));
+        // 1994-01-01 to 1995-01-01.
+        let lower = compare(&mut expr_arena, Operator::GtEq, date(8766));
+        let upper = compare(&mut expr_arena, Operator::Lt, date(9131));
+        let both = and(&mut expr_arena, lower, upper);
+
+        let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
+        assert!((kept - 1000.0 * 365.0 / 2406.0).abs() < 1e-9, "got {kept}");
+
+        // A literal of another type says nothing about the range.
+        let other = compare(&mut expr_arena, Operator::GtEq, Scalar::from(8766i32));
+        let kept = apply_predicate(1000.0, 1000.0, other, &expr_arena, map, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn bounds_outside_the_range_keep_no_rows() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let above = compare(&mut expr_arena, Operator::Gt, Scalar::from(999i64));
+        let kept = apply_predicate(1000.0, 1000.0, above, &expr_arena, map, &schema);
+        assert_eq!(kept, MIN_CARDINALITY);
+
+        let lower = compare(&mut expr_arena, Operator::Gt, Scalar::from(500i64));
+        let upper = compare(&mut expr_arena, Operator::Lt, Scalar::from(100i64));
+        let crossed = and(&mut expr_arena, lower, upper);
+        let kept = apply_predicate(1000.0, 1000.0, crossed, &expr_arena, map, &schema);
+        assert_eq!(kept, MIN_CARDINALITY);
+    }
+
+    #[test]
+    fn or_of_known_parts_is_their_union() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let one = compare(&mut expr_arena, Operator::Eq, Scalar::from(1i64));
+        let two = compare(&mut expr_arena, Operator::Eq, Scalar::from(2i64));
+        let either = expr_arena.add(AExpr::BinaryExpr {
+            left: one,
+            op: Operator::Or,
+            right: two,
+        });
+        let kept = apply_predicate(1_000_000.0, 1_000_000.0, either, &expr_arena, map, &schema);
+        assert!((kept - 1999.0).abs() < 1e-6, "got {kept}");
+
+        // One unknown side leaves the whole `OR` unknown.
+        let opaque = expr_arena.add(AExpr::Column(PlSmallStr::from_str("b")));
+        let either = expr_arena.add(AExpr::BinaryExpr {
+            left: one,
+            op: Operator::Or,
+            right: opaque,
+        });
+        let kept = apply_predicate(1000.0, 1000.0, either, &expr_arena, map, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[cfg(feature = "is_in")]
+    fn is_in(expr_arena: &mut Arena<AExpr>, values: &[i64]) -> Node {
+        use polars_core::prelude::{NamedFrom, Series};
+
+        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let values = Series::new(PlSmallStr::EMPTY, values);
+        let haystack = expr_arena.add(AExpr::Literal(
+            Scalar::new(
+                DataType::List(Box::new(DataType::Int64)),
+                AnyValue::List(values),
+            )
+            .into(),
+        ));
+        expr_arena.add(AExpr::Function {
+            input: vec![
+                ExprIR::from_node(a, expr_arena),
+                ExprIR::from_node(haystack, expr_arena),
+            ],
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                nulls_equal: false,
+                needle_cast: None,
+            }),
+            options: crate::prelude::FunctionOptions::elementwise(),
+        })
+    }
+
+    #[cfg(feature = "is_in")]
+    #[test]
+    fn is_in_keeps_the_distinct_values_inside_the_range() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let node = is_in(&mut expr_arena, &[1, 2, 5000]);
+        let kept = apply_predicate(1000.0, 1000.0, node, &expr_arena, map, &schema);
+        assert!((kept - 2.0).abs() < 1e-9, "got {kept}");
+
+        let node = is_in(&mut expr_arena, &[1; 100]);
+        let kept = apply_predicate(1000.0, 1000.0, node, &expr_arena, map, &schema);
+        assert!((kept - 1.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[cfg(feature = "is_in")]
+    #[test]
+    fn is_in_and_bounds_on_one_column_are_one_estimate() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 999));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let node = is_in(&mut expr_arena, &[10, 11, 500]);
+        let lower = compare(&mut expr_arena, Operator::GtEq, Scalar::from(10i64));
+        let upper = compare(&mut expr_arena, Operator::LtEq, Scalar::from(11i64));
+        let bounds = and(&mut expr_arena, lower, upper);
+        let both = and(&mut expr_arena, node, bounds);
+        let kept = apply_predicate(100_000.0, 100_000.0, both, &expr_arena, map, &schema);
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn exclusions_outside_the_range_keep_every_row() {
+        let (stats, schema) = ranged_column(DataType::Int64, (0, 0));
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let node = compare(&mut expr_arena, Operator::NotEq, Scalar::from(1i64));
+        let kept = apply_predicate(1000.0, 1000.0, node, &expr_arena, map, &schema);
+        assert!((kept - 1000.0).abs() < 1e-9, "got {kept}");
+
+        let node = compare(&mut expr_arena, Operator::NotEq, Scalar::from(0i64));
+        let kept = apply_predicate(1000.0, 1000.0, node, &expr_arena, map, &schema);
+        assert_eq!(kept, MIN_CARDINALITY);
+    }
+
+    #[test]
+    fn a_range_holds_only_the_non_null_rows() {
+        let stats = leaf(1000.0, 1000.0).with_column(
+            "a",
+            ScanColumnStats {
+                int_range: Some((0, 0)),
+                null_count: Card::Exact(900),
+                ..Default::default()
+            },
+        );
+        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), DataType::Int64)]);
+        let mut expr_arena = Arena::new();
+        let node = compare(&mut expr_arena, Operator::GtEq, Scalar::from(0i64));
+        let kept = apply_predicate(
+            1000.0,
+            1000.0,
+            node,
+            &expr_arena,
+            stats.columns.as_deref(),
+            &schema,
+        );
+        assert!((kept - 100.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn a_partial_range_is_not_used() {
+        let mut expr_arena = Arena::new();
+        let node = compare(&mut expr_arena, Operator::Gt, Scalar::from(999i64));
+
+        let stats = leaf(1000.0, 1000.0).with_column(
+            "a",
+            ScanColumnStats {
+                int_range: Some((0, 999)),
+                int_range_partial: true,
+                ..Default::default()
+            },
+        );
+        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), DataType::Int64)]);
+        let kept = apply_predicate(
+            1000.0,
+            1000.0,
+            node,
+            &expr_arena,
+            stats.columns.as_deref(),
+            &schema,
+        );
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    #[test]
+    fn a_datetime_range_is_not_used() {
+        let mut expr_arena = Arena::new();
+        let (stats, schema) = ranged_column(
+            DataType::Datetime(polars_core::prelude::TimeUnit::Milliseconds, None),
+            (0, 999),
+        );
+        let value = Scalar::new(
+            DataType::Datetime(polars_core::prelude::TimeUnit::Milliseconds, None),
+            AnyValue::Datetime(999, polars_core::prelude::TimeUnit::Milliseconds, None),
+        );
+        let node = compare(&mut expr_arena, Operator::Gt, value);
+        let kept = apply_predicate(
+            1000.0,
+            1000.0,
+            node,
+            &expr_arena,
+            stats.columns.as_deref(),
+            &schema,
+        );
+        assert!((kept - 200.0).abs() < 1e-9, "got {kept}");
+    }
+
+    #[test]
+    fn a_not_null_check_on_a_ranged_column_counts_once() {
+        let stats = leaf(1000.0, 1000.0).with_column(
+            "a",
+            ScanColumnStats {
+                int_range: Some((0, 0)),
+                null_count: Card::Exact(900),
+                ..Default::default()
+            },
+        );
+        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), DataType::Int64)]);
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let bound = compare(&mut expr_arena, Operator::GtEq, Scalar::from(0i64));
+        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let not_null = expr_arena.add(AExpr::Function {
+            input: vec![ExprIR::from_node(a, &expr_arena)],
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
+            options: crate::prelude::FunctionOptions::elementwise(),
+        });
+        let self_eq = expr_arena.add(AExpr::BinaryExpr {
+            left: a,
+            op: Operator::Eq,
+            right: a,
+        });
+        for check in [not_null, self_eq] {
+            let both = and(&mut expr_arena, bound, check);
+            let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
+            assert!((kept - 100.0).abs() < 1e-9, "got {kept}");
+        }
+    }
+
+    #[test]
+    fn a_full_width_integer_range_is_counted() {
+        for (dtype, range, bound) in [
+            (DataType::UInt64, (0, u64::MAX as i128), Scalar::from(0u64)),
+            (
+                DataType::Int64,
+                (i64::MIN as i128, i64::MAX as i128),
+                Scalar::from(i64::MIN),
+            ),
+        ] {
+            let (stats, schema) = ranged_column(dtype, range);
+            let mut expr_arena = Arena::new();
+            let bound = compare(&mut expr_arena, Operator::GtEq, bound);
+            let kept = apply_predicate(
+                1000.0,
+                1000.0,
+                bound,
+                &expr_arena,
+                stats.columns.as_deref(),
+                &schema,
+            );
+            assert!((kept - 1000.0).abs() < 1e-9, "got {kept}");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-categorical")]
+    fn opposite_null_checks_keep_nothing() {
+        let stats = leaf(1000.0, 1000.0).with_column(
+            "a",
+            ScanColumnStats {
+                null_count: Card::Exact(0),
+                ..Default::default()
+            },
+        );
+        let dtype = DataType::from_frozen_categories(
+            polars_core::prelude::FrozenCategories::new(["x", "y"]).unwrap(),
+        );
+        let schema = Schema::from_iter([(PlSmallStr::from_str("a"), dtype)]);
+        let map = stats.columns.as_deref();
+        let mut expr_arena = Arena::new();
+        let a = expr_arena.add(AExpr::Column(PlSmallStr::from_str("a")));
+        let mut null_check = |function| {
+            expr_arena.add(AExpr::Function {
+                input: vec![ExprIR::from_node(a, &expr_arena)],
+                function: IRFunctionExpr::Boolean(function),
+                options: crate::prelude::FunctionOptions::elementwise(),
+            })
+        };
+        let not_null = null_check(IRBooleanFunction::IsNotNull);
+        let is_null = null_check(IRBooleanFunction::IsNull);
+
+        for (first, second) in [(not_null, is_null), (is_null, not_null)] {
+            let both = and(&mut expr_arena, first, second);
+            let kept = apply_predicate(1000.0, 1000.0, both, &expr_arena, map, &schema);
+            assert_eq!(kept, MIN_CARDINALITY);
+        }
     }
 }

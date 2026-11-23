@@ -55,7 +55,10 @@ impl Future for TaskParkFuture<'_> {
                 TaskParker::PARKED => {
                     // Refresh our waker.
                     match &mut *self.parker.waker.lock() {
-                        Some(w) => w.clone_from(cx.waker()),
+                        Some(w) => {
+                            w.clone_from(cx.waker());
+                            return Poll::Pending;
+                        },
                         None => return Poll::Ready(()), // Apparently someone woke us up.
                     }
                 },

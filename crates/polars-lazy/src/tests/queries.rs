@@ -1301,6 +1301,26 @@ fn test_regex_selection() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_sort_first_last_nan() -> PolarsResult<()> {
+    let df = df!["a" => [1.0, f64::NAN, 2.0]]?;
+    let out = df
+        .lazy()
+        .select([
+            col("a")
+                .sort(SortOptions::default().with_order_descending(true))
+                .first()
+                .alias("first"),
+            col("a").sort(SortOptions::default()).last().alias("last"),
+        ])
+        .collect_with_engine(Engine::InMemory)?
+        .unwrap_single();
+    for name in ["first", "last"] {
+        assert!(out.column(name)?.f64()?.get(0).unwrap().is_nan());
+    }
+    Ok(())
+}
+
+#[test]
 fn test_sort_by() -> PolarsResult<()> {
     let df = df![
         "a" => [1, 2, 3, 4, 5],
@@ -1977,7 +1997,7 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
                 .with_maintain_order(true)
                 .with_nulls_last(true),
         )
-        .slice(0, 3)
+        .slice(Slice::head(3))
         .collect()?;
     assert!(res.equals(&df![
         "A" => [1, 1, 1],
@@ -2077,5 +2097,25 @@ fn test_join_where_left_maintain_order() -> PolarsResult<()> {
     );
     // 998 left rows match both right rows, `a == 1` matches one, and 1001 are unmatched.
     assert_eq!(a.len(), 998 * 2 + 1 + 1001);
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "iejoin")]
+fn test_join_where_left_pushed_condition_keeps_validation() -> PolarsResult<()> {
+    // `validate` is not reachable from `join_where` in Python.
+    use polars_defs::join::JoinValidation;
+    let left = df!["a" => [1, 2]]?.lazy();
+    let right = df!["b" => [1, 2]]?.lazy();
+
+    let query = left
+        .join_builder()
+        .with(right)
+        .how(JoinType::Left)
+        .validate(JoinValidation::OneToOne)
+        .join_where(vec![col("b").gt(lit(0))])
+        .filter(col("b").is_not_null());
+
+    assert!(query.collect().is_err());
     Ok(())
 }

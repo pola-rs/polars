@@ -1518,3 +1518,19 @@ def test_read_excel_renamed_options_removed() -> None:
     msg = "It was renamed to 'read_options'."
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.read_excel(BytesIO(), read_csv_options={})  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize("pyarrow_available", [True, False])
+def test_read_excel_calamine_pyarrow_available(
+    pyarrow_available: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "polars.io.spreadsheet.functions._PYARROW_AVAILABLE", pyarrow_available
+    )
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    xls = BytesIO()
+    df.write_excel(xls)
+
+    read_df = pl.read_excel(xls, engine="calamine")
+    assert_frame_equal(read_df, df)

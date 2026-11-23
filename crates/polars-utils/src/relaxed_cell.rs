@@ -80,6 +80,11 @@ macro_rules! impl_relaxed_cell {
             pub const fn $new(value: $T) -> Self {
                 Self(<$A>::new(value))
             }
+
+            #[inline(always)]
+            pub fn fetch_or(&self, val: $T) -> $T {
+                self.0.fetch_or(val, Ordering::Relaxed)
+            }
         }
 
         impl AtomicNative for $T {

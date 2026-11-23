@@ -24,6 +24,7 @@ polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "tem
 polars-defs = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
+polars-ooc = { workspace = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }

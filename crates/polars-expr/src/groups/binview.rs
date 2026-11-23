@@ -4,12 +4,14 @@ use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 
 use super::*;
-use crate::hash_keys::HashKeys;
+use crate::hash_keys::{DictCodeCache, HashKeys};
 
 #[derive(Default)]
 pub struct BinviewHashGrouper {
     idx_map: BinaryViewIndexMap<()>,
     null_idx: IdxSize,
+    /// The group of each code of the last dictionary.
+    dict_groups: DictCodeCache,
 }
 
 impl BinviewHashGrouper {
@@ -17,6 +19,7 @@ impl BinviewHashGrouper {
         Self {
             idx_map: BinaryViewIndexMap::default(),
             null_idx: IdxSize::MAX,
+            dict_groups: DictCodeCache::default(),
         }
     }
 
@@ -52,13 +55,30 @@ impl BinviewHashGrouper {
     /// # Safety
     /// The view must be valid for the given buffer set.
     #[inline(always)]
+    unsafe fn group_idx(
+        &self,
+        hash: u64,
+        view: &View,
+        buffers: &Buffer<Buffer<u8>>,
+    ) -> Option<IdxSize> {
+        unsafe { self.idx_map.get_index_of_view(hash, view, buffers) }
+    }
+
+    #[inline(always)]
+    fn null_group_idx(&self) -> Option<IdxSize> {
+        (self.null_idx < IdxSize::MAX).then_some(self.null_idx)
+    }
+
+    /// # Safety
+    /// The view must be valid for the given buffer set.
+    #[inline(always)]
     unsafe fn contains_key(&self, hash: u64, view: &View, buffers: &Buffer<Buffer<u8>>) -> bool {
-        unsafe { self.idx_map.get_view(hash, view, buffers).is_some() }
+        unsafe { self.group_idx(hash, view, buffers).is_some() }
     }
 
     #[inline(always)]
     fn contains_null(&self) -> bool {
-        self.null_idx < IdxSize::MAX
+        self.null_group_idx().is_some()
     }
 
     /// # Safety
@@ -104,11 +124,54 @@ impl Grouper for BinviewHashGrouper {
         &mut self,
         hash_keys: &HashKeys,
         subset: &[IdxSize],
-        group_idxs: Option<&mut Vec<IdxSize>>,
+        mut group_idxs: Option<&mut Vec<IdxSize>>,
     ) {
         let HashKeys::Binview(hash_keys) = hash_keys else {
             unreachable!()
         };
+
+        if let Some(dc) = &hash_keys.dict_codes {
+            // Taken out of `self` to insert keys while it's borrowed; put back however it goes, as
+            // it keeps the rows it declined and the entries of another dictionary.
+            let mut dict_groups = std::mem::take(&mut self.dict_groups);
+            let done = if let Some(cache) = dict_groups.entries_for(&dc.dict, subset.len()) {
+                let codes = dc.codes.as_slice();
+                let views = hash_keys.keys.views().as_slice();
+                let buffers = hash_keys.keys.data_buffers();
+                let validity = hash_keys.keys.validity();
+                if let Some(g) = group_idxs.as_deref_mut() {
+                    g.reserve(subset.len());
+                }
+                for idx in subset {
+                    let idx = *idx as usize;
+                    // SAFETY: the subset indices are in bounds, and so are valid codes.
+                    let group = unsafe {
+                        if validity.is_some_and(|v| !v.get_bit_unchecked(idx)) {
+                            hash_keys.null_is_valid.then(|| self.insert_null())
+                        } else {
+                            let code = *codes.get_unchecked(idx) as usize;
+                            let cached = cache.get_unchecked_mut(code);
+                            if *cached == IdxSize::MAX {
+                                let hash = hash_keys.hashes.value_unchecked(idx);
+                                *cached = self.insert_key(hash, *views.get_unchecked(idx), buffers);
+                            }
+                            Some(*cached)
+                        }
+                    };
+                    let Some(group) = group else { continue };
+                    if let Some(g) = group_idxs.as_deref_mut() {
+                        g.push(group);
+                    }
+                }
+                true
+            } else {
+                false
+            };
+            self.dict_groups = dict_groups;
+            if done {
+                return;
+            }
+        }
 
         unsafe {
             let views = hash_keys.keys.views().as_slice();
@@ -217,11 +280,13 @@ impl Grouper for BinviewHashGrouper {
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     let view = views.get_unchecked(idx as usize);
                     grouper.contains_key(h, view, buffers)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 if has_group != invert {
@@ -258,14 +323,61 @@ impl Grouper for BinviewHashGrouper {
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     let view = views.get_unchecked(idx as usize);
                     grouper.contains_key(h, view, buffers)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 contains_key.push(has_group != invert);
+            });
+        }
+    }
+
+    /// # Safety
+    /// All groupers must be a BinviewHashGrouper.
+    unsafe fn mark_groups_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        hash_keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        marks: &mut [MutableBitmap],
+    ) {
+        let HashKeys::Binview(hash_keys) = hash_keys else {
+            unreachable!()
+        };
+        assert!(partitioner.num_partitions() == groupers.len());
+        assert!(marks.len() == groupers.len());
+
+        unsafe {
+            let null_p = partitioner.null_partition();
+            let buffers = hash_keys.keys.data_buffers();
+            let views = hash_keys.keys.views().as_slice();
+            hash_keys.for_each_hash(|idx, opt_h| {
+                let (p, group_idx) = if let Some(h) = opt_h {
+                    let p = partitioner.hash_to_partition(h);
+                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
+                    let grouper =
+                        &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
+                    let view = views.get_unchecked(idx as usize);
+                    (p, grouper.group_idx(h, view, buffers))
+                } else if hash_keys.null_is_valid {
+                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
+                    let grouper =
+                        &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
+                    (null_p, grouper.null_group_idx())
+                } else {
+                    (null_p, None)
+                };
+
+                if let Some(group_idx) = group_idx {
+                    marks
+                        .get_unchecked_mut(p)
+                        .set_unchecked(group_idx as usize, true);
+                }
             });
         }
     }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import sys
 from functools import partial
@@ -50,6 +51,262 @@ def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
             }
         ).with_columns(normalize_path_separator_pl(pl.col("f"))),
     )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_include_file_paths_predicate_pushdown_22413(
+    tmp_path: Path, scan: Any, write: Any
+) -> None:
+    a_path = tmp_path / "a"
+    b_path = tmp_path / "b"
+
+    write(pl.DataFrame({"a": [5, 10]}), a_path)
+    write(pl.DataFrame({"a": [1996]}), b_path)
+
+    lf = scan([a_path, b_path], include_file_paths="f")
+    expected = pl.DataFrame(
+        {
+            "a": [5, 10, 1996],
+            "f": [str(a_path), str(a_path), str(b_path)],
+        }
+    ).with_columns(normalize_path_separator_pl(pl.col("f")))
+
+    a_path_lit = normalize_path_separator_pl(pl.lit(str(a_path)))
+    for predicate in [
+        pl.col("f") == a_path_lit,
+        pl.col("f") != a_path_lit,
+        pl.col("f").str.ends_with("b"),
+        (pl.col("f") == a_path_lit) & (pl.col("a") > 5),
+    ]:
+        q = lf.filter(predicate)
+        plan = q.explain()
+        assert "FILTER" not in plan
+        assert "SELECTION" in plan
+        assert plan.index("SELECTION") > plan.index("SCAN")
+
+        assert_frame_equal(q.collect(), expected.filter(predicate))
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+def test_include_file_paths_predicate_skips_row_groups_22413(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a_path = tmp_path / "a"
+    b_path = tmp_path / "b"
+
+    pl.DataFrame({"a": range(10)}).write_parquet(a_path, row_group_size=5)
+    pl.DataFrame({"a": range(10, 20)}).write_parquet(b_path, row_group_size=5)
+
+    # The path predicate is mixed with a data column, so no file is skipped and the
+    # reader has to prune row groups.
+    q = pl.scan_parquet([a_path, b_path], include_file_paths="f").filter(
+        (pl.col("f") == normalize_path_separator_pl(pl.lit(str(a_path))))
+        | (pl.col("a") >= 15)
+    )
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+
+    assert out["a"].to_list() == [*range(10), *range(15, 20)]
+    # The path column is not stored in the files, so the reader uses the path as its
+    # min / max statistics.
+    assert "Predicate pushdown: reading 2 / 2 row groups" in capture
+    assert "Predicate pushdown: reading 1 / 2 row groups" in capture
+
+
+def _write_three_files(tmp_path: Path, write: Any) -> tuple[list[Path], pl.DataFrame]:
+    paths = [tmp_path / "a", tmp_path / "b", tmp_path / "c"]
+    dfs = [
+        pl.DataFrame({"a": [5, 10]}),
+        pl.DataFrame({"a": [1996]}),
+        pl.DataFrame({"a": [7, 8, 9]}),
+    ]
+    for path, df in zip(paths, dfs, strict=True):
+        write(df, path)
+    expected = pl.concat(
+        [df.with_columns(f=pl.lit(str(p))) for p, df in zip(paths, dfs, strict=True)]
+    ).with_columns(normalize_path_separator_pl(pl.col("f")))
+    return paths, expected
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_include_file_paths_predicate_skips_files(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    scan: Any,
+    write: Any,
+) -> None:
+    (a, b, c), expected = _write_three_files(tmp_path, write)
+    lf = scan([a, b, c], include_file_paths="f")
+
+    def lit(p: Path) -> pl.Expr:
+        expr: pl.Expr = normalize_path_separator_pl(pl.lit(str(p)))
+        return expr
+
+    cases = [
+        # (predicate, number of skipped files)
+        (pl.col("f") == lit(a), 2),
+        (pl.col("f") != lit(a), 1),
+        (pl.col("f").str.ends_with("b"), 2),
+        (
+            pl.col("f").is_in(normalize_path_separator_pl(pl.Series([str(a), str(c)]))),
+            1,
+        ),
+        ((pl.col("f") == lit(a)) & (pl.col("a") > 5), 2),
+        ((pl.col("f") != lit(b)) & (pl.col("a") < 9), 1),
+        # Mixed in an OR: nothing can be decided per file.
+        ((pl.col("f") == lit(a)) | (pl.col("a") > 100), 0),
+    ]
+
+    for predicate, n_skipped in cases:
+        out, capture = _collect_verbose(lf.filter(predicate), plmonkeypatch, capfd)
+        assert_frame_equal(out, expected.filter(predicate))
+        if n_skipped > 0:
+            assert f"allows skipping {n_skipped} / 3 files" in capture
+        else:
+            assert "allows skipping" not in capture
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+def test_include_file_paths_predicate_does_not_open_skipped_files(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    a_path = tmp_path / "a"
+    b_path = tmp_path / "b"
+    pl.DataFrame({"a": [1, 2]}).write_parquet(a_path)
+    # Not a valid file: opening it would fail.
+    b_path.write_bytes(b"not a parquet file")
+
+    q = pl.scan_parquet(
+        [a_path, b_path], include_file_paths="f", schema={"a": pl.Int64}
+    ).filter(pl.col("f") == normalize_path_separator_pl(pl.lit(str(a_path))))
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    assert out["a"].to_list() == [1, 2]
+    assert "allows skipping 1 / 2 files" in capture
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+@pytest.mark.parametrize("row_index", [False, True])
+def test_include_file_paths_literal_predicate(
+    tmp_path: Path, scan: Any, write: Any, row_index: bool
+) -> None:
+    (a, b, _), expected = _write_three_files(tmp_path, write)
+    kwargs: dict[str, Any] = {"row_index_name": "i"} if row_index else {}
+    lf = scan([a, b], include_file_paths="f", **kwargs)
+    expected = expected.head(3)
+    if row_index:
+        expected = expected.with_row_index("i")
+
+    for predicate in [
+        pl.lit(False),
+        pl.lit(None, dtype=pl.Boolean),
+        pl.lit(False) & (pl.col("a") > 0),
+        pl.lit(True),
+        pl.lit(True) & (pl.col("a") > 5),
+    ]:
+        assert_frame_equal(lf.filter(predicate).collect(), expected.filter(predicate))
+
+
+def test_include_file_paths_literal_predicate_buffers() -> None:
+    bufs: list[IO[bytes]] = [io.BytesIO(), io.BytesIO()]
+    pl.DataFrame({"a": [1, 2]}).write_parquet(bufs[0])
+    pl.DataFrame({"a": [3]}).write_parquet(bufs[1])
+    for buf in bufs:
+        buf.seek(0)
+    lf = pl.scan_parquet(bufs, include_file_paths="f")
+    for predicate, n in [
+        (pl.lit(False), 0),
+        (pl.lit(None, dtype=pl.Boolean), 0),
+        (pl.lit(False) & (pl.col("a") > 0), 0),
+        (pl.lit(True), 3),
+        (pl.col("f") == "in-mem", 3),
+        (pl.col("f") == "other", 0),
+    ]:
+        assert lf.filter(predicate).collect().height == n
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+    ],
+)
+def test_include_file_paths_predicate_with_hive(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    scan: Any,
+    write: Any,
+) -> None:
+    paths = []
+    frames = []
+    for i in range(4):
+        d = tmp_path / f"h={i % 2}"
+        d.mkdir(exist_ok=True)
+        path = d / f"f{i}"
+        df = pl.DataFrame({"a": [i, i + 10]})
+        write(df, path)
+        paths.append(path)
+        frames.append(
+            df.with_columns(h=pl.lit(i % 2, dtype=pl.Int64), f=pl.lit(str(path)))
+        )
+    expected = pl.concat(frames).with_columns(normalize_path_separator_pl(pl.col("f")))
+
+    lf = scan(paths, include_file_paths="f", hive_partitioning=True).select(
+        "a", "h", "f"
+    )
+    f_lit = normalize_path_separator_pl(pl.lit(str(paths[2])))
+    for predicate, n_skipped in [
+        ((pl.col("h") == 0) & (pl.col("f") != f_lit), 3),
+        ((pl.col("h") == 1) & (pl.col("f") == f_lit), 4),
+        ((pl.col("h") == 0) & (pl.col("f") != f_lit) & (pl.col("a") > 0), 3),
+        ((pl.col("h") == 1) | (pl.col("f") == f_lit), 1),
+        ((pl.col("h") == 1) | (pl.col("f") == f_lit) | (pl.col("a") > 100), 0),
+    ]:
+        out, capture = _collect_verbose(lf.filter(predicate), plmonkeypatch, capfd)
+        assert_frame_equal(out, expected.filter(predicate), check_row_order=False)
+        if n_skipped > 0:
+            assert f"allows skipping {n_skipped} / 4 files" in capture
+        else:
+            assert "allows skipping" not in capture
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_include_file_paths_predicate_with_row_index_and_slice(
+    tmp_path: Path, scan: Any, write: Any
+) -> None:
+    (a, b, c), expected = _write_three_files(tmp_path, write)
+    a_lit = normalize_path_separator_pl(pl.lit(str(a)))
+    c_lit = normalize_path_separator_pl(pl.lit(str(c)))
+
+    lf = scan([a, b, c], include_file_paths="f", row_index_name="i")
+    expected_i = expected.with_row_index("i")
+    for predicate in [pl.col("f") == c_lit, pl.col("f") != a_lit]:
+        assert_frame_equal(lf.filter(predicate).collect(), expected_i.filter(predicate))
+        assert_frame_equal(
+            lf.filter(predicate).head(2).collect(),
+            expected_i.filter(predicate).head(2),
+        )
+
+    lf = scan([a, b, c], include_file_paths="f")
+    for predicate in [pl.col("f") == c_lit, pl.col("f") != a_lit]:
+        assert_frame_equal(
+            lf.head(4).filter(predicate).collect(), expected.head(4).filter(predicate)
+        )
+        assert_frame_equal(
+            lf.filter(predicate).head(2).collect(), expected.filter(predicate).head(2)
+        )
 
 
 @pytest.mark.parametrize(
@@ -497,15 +754,16 @@ def test_multiscan_slice_middle(
 
 
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
-@given(offset=st.integers(-100, 100), length=st.integers(0, 101))
+@given(offset=st.integers(-100, 100), length=st.none() | st.integers(0, 101))
 def test_multiscan_slice_parametric(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     offset: int,
-    length: int,
+    length: int | None,
 ) -> None:
+    ref_df = pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame()
     ref = io.BytesIO()
-    write(pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame(), ref)
+    write(ref_df, ref)
     ref.seek(0)
 
     fs = [io.BytesIO() for _ in range(13)]
@@ -514,7 +772,7 @@ def test_multiscan_slice_parametric(
         f.seek(0)
 
     assert_frame_equal(
-        scan(ref).slice(offset, length).collect(),
+        ref_df.slice(offset, length),
         scan(fs).slice(offset, length).collect(engine="streaming"),
     )
 
@@ -1386,3 +1644,392 @@ def test_hive_join_rewrite_null_partition(tmp_path: Path, nulls_equal: bool) -> 
             q.collect(),
             q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
         )
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.parametrize(
+    ("scan", "write", "env_var"),
+    [
+        (
+            pl.scan_parquet,
+            partial(pl.DataFrame.write_parquet, row_group_size=100),
+            "POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET",
+        ),
+        (
+            pl.scan_ipc,
+            partial(pl.DataFrame.write_ipc, record_batch_size=100),
+            "POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET",
+        ),
+    ],
+)
+def test_prefetch_kbytes_budget_below_download_chunk_29464(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: Any,
+    scan: Any,
+    write: Any,
+    env_var: str,
+) -> None:
+    plmonkeypatch.setenv(env_var, "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    dfs = [
+        pl.DataFrame({"a": range(i * 1000, (i + 1) * 1000), "b": ["x" * 50] * 1000})
+        for i in range(3)
+    ]
+    paths = [tmp_path / f"{i}" for i in range(len(dfs))]
+    for df, path in zip(dfs, paths, strict=True):
+        write(df, path)
+
+    capfd.readouterr()
+    out = scan(paths).collect(engine="streaming")
+    capture = capfd.readouterr().err
+
+    assert "prefetch_kbytes_limit: 1 (env)\n" in capture
+    assert_frame_equal(out, pl.concat(dfs))
+
+
+# Formats that opt in to emitting files unordered.
+UNORDERED_FILES_SCAN_AND_WRITE = [
+    pytest.param(pl.scan_parquet, pl.DataFrame.write_parquet, "parquet", id="parquet"),
+    pytest.param(pl.scan_ipc, pl.DataFrame.write_ipc, "ipc", id="ipc"),
+]
+
+
+def _multiscan_unordered_frames(
+    n_files: int = 20, n_rows: int = 1_000
+) -> list[pl.DataFrame]:
+    return [
+        pl.select(
+            a=pl.int_range(i * n_rows, (i + 1) * n_rows), f=pl.lit(i, dtype=pl.Int64)
+        )
+        for i in range(n_files)
+    ]
+
+
+def _multiscan_unordered_sources(
+    write: Any, ext: str, tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> tuple[list[Path], pl.DataFrame]:
+    # Files are only emitted unordered for remote sources; force the async path.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_MAX_CONCURRENT_SCANS", "4")
+    dfs = _multiscan_unordered_frames()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for i, df in enumerate(dfs):
+        path = tmp_path / f"{i:02}.{ext}"
+        write(df, path)
+        paths.append(path)
+    return paths, pl.concat(dfs)
+
+
+def _assert_files_order(capture: str, expected: str) -> None:
+    # CI also runs with reader capabilities cleared, which takes the ordered fallback.
+    if os.environ.get("POLARS_FORCE_EMPTY_READER_CAPABILITIES") == "1":
+        expected = "unordered_files: false (reason: no capability)"
+    assert expected in capture
+
+
+def _collect_verbose(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, str]:
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        out = q.collect(engine="streaming")
+        return out, capfd.readouterr().err
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, df = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
+    lf = scan(sources)
+
+    out, capture = _collect_verbose(lf.select(pl.col("a").sum()), plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: true, unordered_init: true")
+    assert out.item() == df["a"].sum()
+
+    # Row positions are tracked, so readers initialize in order.
+    q = lf.with_row_index().filter(pl.col("a") % 3 == 0).select(pl.col("index").max())
+    _, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(
+        capture,
+        "unordered_files: true, unordered_init: false (reason: row index or slice)",
+    )
+
+    # The measurement knob forces file order without touching the query.
+    plmonkeypatch.setenv("POLARS_FORCE_ORDERED_MULTISCAN", "1")
+    _, capture = _collect_verbose(lf.select(pl.col("a").sum()), plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: false (reason: forced)")
+    plmonkeypatch.delenv("POLARS_FORCE_ORDERED_MULTISCAN")
+
+    def collect(q: pl.LazyFrame) -> pl.DataFrame:
+        return q.collect(engine="streaming")
+
+    assert_frame_equal(collect(lf.sort("a")), df)
+    assert_frame_equal(
+        collect(lf.with_row_index().filter(pl.col("a") % 3 == 0).sort("index")),
+        df.with_row_index().filter(pl.col("a") % 3 == 0),
+    )
+    assert_frame_equal(
+        collect(lf.slice(1_234, 10_000).select(pl.col("a").sum(), pl.len())),
+        df.slice(1_234, 10_000).select(pl.col("a").sum(), pl.len()),
+    )
+    assert_frame_equal(
+        collect(lf.group_by("f").agg(pl.len(), pl.col("a").min()).sort("f")),
+        df.group_by("f").agg(pl.len(), pl.col("a").min()).sort("f"),
+    )
+    # Order is observed.
+    assert_frame_equal(collect(lf), df)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_multiscan_unordered_files_requires_capability(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # CSV does not opt in to emitting files unordered.
+    sources, df = _multiscan_unordered_sources(
+        pl.DataFrame.write_csv, "csv", tmp_path, plmonkeypatch
+    )
+    q = pl.scan_csv(sources).select(pl.col("a").sum())
+
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    assert "unordered_files: false (reason: no capability)" in capture
+    assert out.item() == df["a"].sum()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_post_apply(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # File paths and missing columns go through each file's post-apply pipeline.
+    plmonkeypatch.setenv("POLARS_MAX_CONCURRENT_SCANS", "4")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    # Only parquet scans have a missing columns option.
+    insert_missing = ext == "parquet"
+    dfs = []
+    for i, df in enumerate(_multiscan_unordered_frames()):
+        path = tmp_path / f"{i:02}.{ext}"
+        write(df.drop("f") if insert_missing and i == 7 else df, path)
+        dfs.append(df.with_columns(path=pl.lit(str(path))))
+    df = pl.concat(dfs).with_columns(normalize_path_separator_pl(pl.col("path")))
+
+    kwargs: dict[str, Any] = {}
+    if insert_missing:
+        df = df.with_columns(
+            pl.when(pl.col("f") == 7).then(None).otherwise(pl.col("f")).alias("f")
+        )
+        kwargs["missing_columns"] = "insert"
+    lf = scan(tmp_path / f"*.{ext}", include_file_paths="path", **kwargs)
+    # `f` is constant per file; `min` keeps the query order-agnostic.
+    aggs = [pl.len(), pl.col("a").min(), pl.col("f").min()]
+    q = lf.group_by("path").agg(aggs)
+
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+
+    _assert_files_order(capture, "unordered_files: true")
+    assert_frame_equal(out.sort("path"), df.group_by("path").agg(aggs).sort("path"))
+    assert_frame_equal(lf.sort("a").collect(engine="streaming"), df)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_single_effective_source(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # With one file left to read there is nothing to interleave.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    sources, df = _multiscan_unordered_sources(
+        write, ext, tmp_path / "flat", plmonkeypatch
+    )
+
+    capfd.readouterr()
+    out = scan(sources[:1]).select(pl.col("a").sum()).collect(engine="streaming")
+    assert "unordered_files: false (reason: single source)" in capfd.readouterr().err
+    assert out.item() == df.head(1_000)["a"].sum()
+
+    # The hive partition filter skips every file but one.
+    hive = tmp_path / "hive"
+    for i, frame in enumerate(df.partition_by("f", maintain_order=True)):
+        (hive / f"f={i}").mkdir(parents=True)
+        write(frame.drop("f"), hive / f"f={i}" / f"0.{ext}")
+    lf = scan(hive, hive_partitioning=True)
+
+    capfd.readouterr()
+    out = (
+        lf.filter(pl.col("f") == 3)
+        .select(pl.col("a").sum())
+        .collect(engine="streaming")
+    )
+    assert "unordered_files: false (reason: single source)" in capfd.readouterr().err
+    assert out.item() == df.filter(pl.col("f") == 3)["a"].sum()
+
+    capfd.readouterr()
+    out = (
+        lf.filter(pl.col("f") >= 3)
+        .select(pl.col("a").sum())
+        .collect(engine="streaming")
+    )
+    _assert_files_order(capfd.readouterr().err, "unordered_files: true")
+    assert out.item() == df.filter(pl.col("f") >= 3)["a"].sum()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_error(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, _ = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
+    write(pl.DataFrame({"a": ["x"], "f": [0]}), sources[10])
+    q = scan(sources).select(pl.col("a").sum())
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        with pytest.raises(pl.exceptions.SchemaError):
+            q.collect(engine="streaming")
+        capture = capfd.readouterr().err
+
+    # The error must surface from the unordered path.
+    _assert_files_order(capture, "unordered_files: true")
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_collect_all(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, df = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
+    q = scan(sources).select(pl.col("a").sum())
+    out = io.BytesIO()
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        _, head, count = pl.collect_all(
+            [q.sink_parquet(out, lazy=True), q.head(10), q.select(pl.len())],
+            engine="streaming",
+        )
+        capture = capfd.readouterr().err
+
+    _assert_files_order(capture, "unordered_files: true")
+    assert head.item() == df["a"].sum()
+    assert count.item() == 1
+    out.seek(0)
+    assert pl.read_parquet(out).item() == df["a"].sum()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_local_stays_ordered(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, df = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
+    q = scan(sources).select(pl.col("a").sum())
+
+    # Same query and sources; only the async gate flips.
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: true")
+    assert out.item() == df["a"].sum()
+
+    # Local reads have no stragglers to hide, so files stay ordered.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: false (reason: not remote)")
+    assert out.item() == df["a"].sum()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+@pytest.mark.parametrize("max_bytes", ["1", "100", "1000000"])
+def test_multiscan_max_concurrent_scan_bytes(
+    scan: Any,
+    write: Any,
+    max_bytes: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_CONCURRENT_SCAN_BYTES", max_bytes)
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+
+    dfs = [pl.DataFrame({"a": range(10 * i, 10 * i + 10)}) for i in range(5)]
+    paths = [tmp_path / f"{i}.data" for i in range(5)]
+    for df, path in zip(dfs, paths, strict=True):
+        write(df, path)
+    df = pl.concat(dfs)
+
+    lf = scan(paths)
+    assert_frame_equal(
+        lf.with_row_index().filter(pl.col("a") % 3 == 0).collect(engine="streaming"),
+        df.with_row_index().filter(pl.col("a") % 3 == 0),
+    )
+    assert_frame_equal(lf.slice(15, 20).collect(engine="streaming"), df.slice(15, 20))
+    assert lf.select(pl.len()).collect(engine="streaming").item() == 50
+
+    capfd.readouterr()
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    assert_frame_equal(lf.collect(engine="streaming"), df)
+    log = capfd.readouterr().err.splitlines()
+
+    # Each file takes its bytes before it starts and gives them back once it is done.
+    acquired = [line for line in log if "acquired read bytes" in line]
+    assert len(acquired) == 5
+    assert len([line for line in log if "releasing read bytes" in line]) == 5
+    if max_bytes == "1":
+        # A limit below one file reads the files one at a time.
+        active = 0
+        for line in log:
+            if "acquired read bytes" in line:
+                active += 1
+                assert active == 1
+            elif "releasing read bytes" in line:
+                active -= 1

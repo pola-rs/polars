@@ -1,6 +1,5 @@
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::index::{idxsize_to_u64, idxsize_try_from};
 use polars_utils::scratch_vec::{ScratchUnitVec, ScratchVec};
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
@@ -15,7 +14,6 @@ pub(super) struct SlicePushDown {
     pub(super) slice_node_in_optimized_plan: bool,
     pub(super) ae_nodes_scratch: ScratchVec<Node>,
     pub(super) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
-    pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchIndexSet<Node>,
     optimized_cache_inputs: PlIndexMap<UniqueId, Node>,
 }
 
@@ -31,59 +29,9 @@ impl SlicePushDown {
             slice_node_in_optimized_plan: false,
             ae_nodes_scratch: ScratchVec::default(),
             ae_slice_pd_state_scratch: ScratchVec::default(),
-            ae_slice_pd_direct_col_slice_nodes: ScratchIndexSet::default(),
             optimized_cache_inputs: PlIndexMap::default(),
         }
     }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) struct State {
-    pub(crate) offset: i64,
-    pub(crate) len: IdxSize,
-}
-
-impl State {
-    fn to_slice_enum(self) -> Slice {
-        let offset = self.offset;
-        let len: usize = usize::try_from(self.len).unwrap();
-
-        (offset, len).into()
-    }
-}
-
-/// Returns a combined slice if the 2 slices can be combined.
-pub(crate) fn combine_outer_inner_slice(outer_slice: State, inner_slice: State) -> Option<State> {
-    // Both are positive, can combine into a single slice.
-    if outer_slice.offset >= 0 && inner_slice.offset >= 0 {
-        return Some(State {
-            offset: inner_slice.offset.checked_add(outer_slice.offset).unwrap(),
-            len: if inner_slice.len as i128 > outer_slice.offset as i128 {
-                (inner_slice.len - outer_slice.offset as IdxSize).min(outer_slice.len)
-            } else {
-                0
-            },
-        });
-    }
-
-    // Both are negative, can also combine (but not so simply).
-    if outer_slice.offset < 0 && inner_slice.offset < 0 {
-        // We use 128-bit arithmetic to avoid overflows, clamping at the end.
-        let inner_start_rel_end = inner_slice.offset as i128;
-        let inner_stop_rel_end = inner_start_rel_end + inner_slice.len as i128;
-        let naive_outer_start_rel_end = inner_stop_rel_end + outer_slice.offset as i128;
-        let naive_outer_stop_rel_end = naive_outer_start_rel_end + outer_slice.len as i128;
-        let clamped_outer_start_rel_end = naive_outer_start_rel_end.max(inner_start_rel_end);
-        let clamped_outer_stop_rel_end = naive_outer_stop_rel_end.max(clamped_outer_start_rel_end);
-
-        return Some(State {
-            offset: clamped_outer_start_rel_end.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
-            len: (clamped_outer_stop_rel_end - clamped_outer_start_rel_end)
-                .min(IdxSize::MAX as i128) as IdxSize,
-        });
-    }
-
-    None
 }
 
 /// Can push down slice when:
@@ -156,7 +104,7 @@ impl SlicePushDown {
     fn no_pushdown_finish_opt(
         &mut self,
         lp: IR,
-        state: Option<State>,
+        state: Option<Slice>,
         lp_arena: &mut Arena<IR>,
     ) -> PolarsResult<IR> {
         match state {
@@ -166,8 +114,7 @@ impl SlicePushDown {
 
                 let lp = IR::Slice {
                     input,
-                    offset: state.offset,
-                    len: state.len,
+                    slice: state,
                 };
                 Ok(lp)
             },
@@ -179,7 +126,7 @@ impl SlicePushDown {
     fn no_pushdown_restart_opt(
         &mut self,
         lp: IR,
-        state: Option<State>,
+        state: Option<Slice>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
@@ -204,7 +151,7 @@ impl SlicePushDown {
     fn pushdown_and_continue(
         &mut self,
         lp: IR,
-        state: Option<State>,
+        state: Option<Slice>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
@@ -227,11 +174,12 @@ impl SlicePushDown {
     fn pushdown(
         &mut self,
         ir_node: Node,
-        state: Option<State>,
+        state: Option<Slice>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         use IR::*;
+        use polars_utils::slice_enum::Slice;
 
         // Cache nodes with the same cache id share one logical input.
         // Optimize that input once, then reuse it for later cache nodes
@@ -257,8 +205,6 @@ impl SlicePushDown {
 
         let mut common_expr_col_slice = None;
         let mut col_hit_count: Option<usize> = Some(0);
-        let mut ae_slice_pd_direct_col_slice_nodes =
-            std::mem::take(self.ae_slice_pd_direct_col_slice_nodes.get());
 
         for eir in ir.exprs() {
             self.aexpr_slice_pushdown_rec(
@@ -266,7 +212,6 @@ impl SlicePushDown {
                 expr_arena,
                 &mut common_expr_col_slice,
                 &mut col_hit_count,
-                &mut ae_slice_pd_direct_col_slice_nodes,
                 maintain_errors,
             );
         }
@@ -280,62 +225,62 @@ impl SlicePushDown {
                 break 'add_common_ir_slice;
             };
 
-            let Some((limit, 0)) = common_expr_col_slice.zip(col_hit_count) else {
+            let Some((ir_slice, 0)) = common_expr_col_slice.zip(col_hit_count) else {
                 break 'add_common_ir_slice;
             };
-
-            let (ir_slice, offset_correction) = limit.to_slice_with_correction();
 
             let input = *input;
             let new_input_node = lp_arena.add(IR::Slice {
                 input,
-                offset: ir_slice.offset,
-                len: ir_slice.len,
+                slice: ir_slice,
             });
 
-            let IR::Select { input, .. } = lp_arena.get_mut(ir_node) else {
+            let IR::Select { input, expr, .. } = lp_arena.get_mut(ir_node) else {
                 unreachable!()
             };
 
             *input = new_input_node;
 
-            for node in ae_slice_pd_direct_col_slice_nodes.drain(..) {
-                use slice_pushdown_expr::Slice;
+            // Every slice on a column in these expressions is contained in `ir_slice`.
+            let col_slice_nodes: PlIndexSet<Node> = expr
+                .iter()
+                .flat_map(|e| expr_arena.iter(e.node()))
+                .filter_map(|(node, ae)| match ae {
+                    AExpr::Slice { input, .. }
+                        if matches!(expr_arena.get(*input), AExpr::Column(_)) =>
+                    {
+                        Some(node)
+                    },
+                    _ => None,
+                })
+                .collect();
+
+            for node in col_slice_nodes {
+                use slice_pushdown_expr::ExprSlice;
                 let AExpr::Slice {
-                    input: input_node,
-                    offset: offset_node,
+                    input,
+                    offset,
                     length,
-                } = expr_arena.get(node)
+                } = *expr_arena.get(node)
                 else {
                     unreachable!()
                 };
 
-                let input_node = *input_node;
-                let offset_node = *offset_node;
-
-                let Slice::Extracted(ae_slice) =
-                    Slice::from_nodes(offset_node, *length, expr_arena)
+                let ExprSlice::Extracted(ae_slice) =
+                    ExprSlice::from_nodes(offset, length, expr_arena)
                 else {
                     unreachable!()
                 };
 
-                if ae_slice.len == ir_slice.len {
-                    assert_eq!(ae_slice.offset, ir_slice.offset);
-                    expr_arena.replace(node, expr_arena.get(input_node).clone());
-                } else if offset_correction != 0 {
-                    let new_offset = ae_slice.offset.checked_sub(offset_correction).unwrap();
-                    expr_arena.replace(
-                        offset_node,
-                        AExpr::Literal(LiteralValue::Scalar(Scalar::new(
-                            DataType::Int64,
-                            AnyValue::Int64(new_offset),
-                        ))),
-                    );
+                expr_arena.replace(node, expr_arena.get(input).clone());
+                // `ir_slice` encloses every column slice, so `try_within` is `None` only for an
+                // open-ended slice equal to `ir_slice`.
+                if ae_slice != ir_slice {
+                    let slice_within_ir_slice = ae_slice.try_within(ir_slice).unwrap();
+                    ExprSlice::Extracted(slice_within_ir_slice).slice_arena_node(node, expr_arena);
                 }
             }
         }
-
-        *self.ae_slice_pd_direct_col_slice_nodes.get() = ae_slice_pd_direct_col_slice_nodes;
 
         match (lp_arena.take(ir_node), state) {
             #[cfg(feature = "python")]
@@ -344,8 +289,10 @@ impl SlicePushDown {
                 // TODO! we currently skip slice pushdown if there is a predicate.
                 // we can modify the readers to only limit after predicates have been applied
                 Some(state),
-            ) if state.offset == 0 && matches!(options.predicate, PythonPredicate::None) => {
-                options.n_rows = Some(state.len as usize);
+            ) if matches!(state, Slice::Positive { offset: 0, .. })
+                && matches!(options.predicate, PythonPredicate::None) =>
+            {
+                options.n_rows = state.len();
                 let lp = PythonScan { options };
                 Ok(lp)
             },
@@ -360,6 +307,7 @@ impl SlicePushDown {
                     predicate,
                     predicate_file_skip_applied,
                     scan_type,
+                    maintain_order,
                 },
                 Some(state),
             ) if predicate.is_none()
@@ -384,17 +332,25 @@ impl SlicePushDown {
 
                     FileScanIR::ExpandedPaths { .. } => false,
 
+                    FileScanIR::ExternalReaderBuilder { external } => {
+                        state.is_positive()
+                            || external.counts_match_reads()
+                            // Only the row count is read.
+                            || output_schema
+                                .as_ref()
+                                .unwrap_or(&file_info.schema)
+                                .is_empty()
+                    },
+
                     // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
-                    FileScanIR::Anonymous { .. } => state.offset == 0,
+                    FileScanIR::Anonymous { .. } => {
+                        state.is_positive() && state.positive_offset() == 0
+                    },
                 } =>
             {
                 if let Some(existing) = &mut unified_scan_args.pre_slice {
-                    let (offset, len) = existing.to_signed_offset_len();
-
-                    return if let Some(combined) =
-                        combine_outer_inner_slice(state, State { offset, len })
-                    {
-                        *existing = combined.to_slice_enum();
+                    return if let Some(combined) = existing.reslice(state) {
+                        *existing = combined;
 
                         let lp = Scan {
                             sources,
@@ -405,6 +361,7 @@ impl SlicePushDown {
                             unified_scan_args,
                             predicate,
                             predicate_file_skip_applied,
+                            maintain_order,
                         };
 
                         lp_arena.replace(ir_node, lp);
@@ -419,13 +376,14 @@ impl SlicePushDown {
                             unified_scan_args,
                             predicate,
                             predicate_file_skip_applied,
+                            maintain_order,
                         };
 
                         self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
                     };
                 }
 
-                unified_scan_args.pre_slice = Some(state.to_slice_enum());
+                unified_scan_args.pre_slice = Some(state);
 
                 let lp = Scan {
                     sources,
@@ -436,6 +394,7 @@ impl SlicePushDown {
                     unified_scan_args,
                     predicate,
                     predicate_file_skip_applied,
+                    maintain_order,
                 };
 
                 Ok(lp)
@@ -449,7 +408,7 @@ impl SlicePushDown {
                 },
                 Some(state),
             ) => {
-                let df = df.slice(state.offset, state.len as usize);
+                let df = df.slice(state);
                 let lp = DataFrameScan {
                     df: Arc::new(df),
                     schema,
@@ -466,14 +425,9 @@ impl SlicePushDown {
             ) => {
                 if let Some(existing_slice) = options.slice.as_mut() {
                     return if let Some(outer_slice) = opt_state
-                        && let Some(combined) = combine_outer_inner_slice(
-                            outer_slice,
-                            State {
-                                offset: existing_slice.0,
-                                len: existing_slice.1 as IdxSize,
-                            },
-                        ) {
-                        *existing_slice = (combined.offset, combined.len as usize);
+                        && let Some(combined) = existing_slice.reslice(outer_slice)
+                    {
+                        *existing_slice = combined;
                         let lp = Union { inputs, options };
                         self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
                     } else {
@@ -482,16 +436,15 @@ impl SlicePushDown {
                     };
                 }
 
-                let subplan_slice: Option<State> = opt_state
-                    .filter(|x| x.offset >= 0)
-                    .and_then(|x| x.len.checked_add(x.offset.try_into().unwrap()))
-                    .map(|len| State { offset: 0, len });
+                let subplan_slice = opt_state
+                    .filter(|x| x.is_positive())
+                    .and_then(|x| x.bounding_limit());
 
                 for input in &mut inputs {
                     let input_lp = self.pushdown(*input, subplan_slice, lp_arena, expr_arena)?;
                     lp_arena.replace(*input, input_lp);
                 }
-                options.slice = opt_state.map(|x| (x.offset, x.len.try_into().unwrap()));
+                options.slice = opt_state;
                 let lp = Union { inputs, options };
                 Ok(lp)
             },
@@ -507,14 +460,8 @@ impl SlicePushDown {
                 && !options.options.has_fused_predicate() =>
             {
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).args.slice {
-                    return if let Some(combined) = combine_outer_inner_slice(
-                        state,
-                        State {
-                            offset: existing_slice.0,
-                            len: existing_slice.1 as IdxSize,
-                        },
-                    ) {
-                        *existing_slice = (combined.offset, combined.len as usize);
+                    return if let Some(combined) = existing_slice.reslice(state) {
+                        *existing_slice = combined;
                         let lp = Join {
                             input_left,
                             input_right,
@@ -534,23 +481,10 @@ impl SlicePushDown {
                 }
 
                 // For left/right/full joins we can push a limit.
-                let input_limit_slice = if state.offset < 0 {
-                    IdxSize::try_from(-state.offset).ok().map(|len| State {
-                        offset: state.offset,
-                        len,
-                    })
-                } else {
-                    IdxSize::try_from(state.offset)
-                        .ok()
-                        .and_then(|offset| offset.checked_add(state.len))
-                        .map(|limit| State {
-                            offset: 0,
-                            len: limit,
-                        })
-                };
+                let input_limit_slice = state.bounding_limit();
 
                 let order = options.args.maintain_order;
-                let non_negative_offset = state.offset >= 0;
+                let non_negative_offset = state.is_positive();
                 let can_limit_left = match options.args.how {
                     JoinType::Left => !matches!(
                         order,
@@ -598,7 +532,7 @@ impl SlicePushDown {
 
                 // then assign the slice state to the join operation
 
-                Arc::make_mut(&mut options).args.slice = Some((state.offset, state.len as usize));
+                Arc::make_mut(&mut options).args.slice = Some(state);
 
                 Ok(Join {
                     input_left,
@@ -624,14 +558,8 @@ impl SlicePushDown {
                 let input = lp_arena.add(input_lp);
 
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).slice {
-                    return if let Some(combined) = combine_outer_inner_slice(
-                        state,
-                        State {
-                            offset: existing_slice.0,
-                            len: existing_slice.1 as IdxSize,
-                        },
-                    ) {
-                        *existing_slice = (combined.offset, combined.len as usize);
+                    return if let Some(combined) = existing_slice.reslice(state) {
+                        *existing_slice = combined;
                         let lp = GroupBy {
                             input,
                             keys,
@@ -657,7 +585,7 @@ impl SlicePushDown {
                 }
 
                 let mut_options = Arc::make_mut(&mut options);
-                mut_options.slice = Some((state.offset, state.len as usize));
+                mut_options.slice = Some(state);
 
                 Ok(GroupBy {
                     input,
@@ -675,14 +603,8 @@ impl SlicePushDown {
                 let input = lp_arena.add(input_lp);
 
                 if let Some(existing_slice) = &mut options.slice {
-                    return if let Some(combined) = combine_outer_inner_slice(
-                        state,
-                        State {
-                            offset: existing_slice.0,
-                            len: existing_slice.1 as IdxSize,
-                        },
-                    ) {
-                        *existing_slice = (combined.offset, combined.len as usize);
+                    return if let Some(combined) = existing_slice.reslice(state) {
+                        *existing_slice = combined;
                         let lp = Distinct { input, options };
                         self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
                     } else {
@@ -691,7 +613,7 @@ impl SlicePushDown {
                     };
                 }
 
-                options.slice = Some((state.offset, state.len as usize));
+                options.slice = Some(state);
                 Ok(Distinct { input, options })
             },
             (
@@ -704,16 +626,11 @@ impl SlicePushDown {
                 Some(state),
             ) => {
                 if let Some(existing_slice) = &mut slice {
-                    let existing_dyn_predicate = &existing_slice.2;
+                    let existing_dyn_predicate = &existing_slice.1;
                     return if existing_dyn_predicate.is_none()
-                        && let Some(combined) = combine_outer_inner_slice(
-                            state,
-                            State {
-                                offset: existing_slice.0,
-                                len: existing_slice.1 as IdxSize,
-                            },
-                        ) {
-                        *existing_slice = (combined.offset, combined.len as usize, None);
+                        && let Some(combined) = existing_slice.0.reslice(state)
+                    {
+                        *existing_slice = (combined, None);
                         let lp = Sort {
                             input,
                             by_column,
@@ -732,7 +649,7 @@ impl SlicePushDown {
                     };
                 }
 
-                let new_slice = Some((state.offset, state.len as usize, None));
+                let new_slice = Some((state, None));
                 assert!(slice.is_none() || slice == new_slice);
 
                 // first restart optimization in inputs and get the updated LP
@@ -746,56 +663,21 @@ impl SlicePushDown {
                     sort_options,
                 })
             },
-            (
-                Slice {
-                    input,
-                    offset,
-                    mut len,
-                },
-                Some(outer_slice),
-            ) => {
-                // If offset is negative the length can never be greater than it.
-                if offset < 0 {
-                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
-                    if len as u64 > offset.unsigned_abs() as u64 {
-                        len = offset.unsigned_abs() as IdxSize;
-                    }
-                }
-
-                if let Some(combined) =
-                    combine_outer_inner_slice(outer_slice, State { offset, len })
-                {
+            (IR::Slice { input, slice }, Some(outer_slice)) => {
+                if let Some(combined) = slice.reslice(outer_slice) {
                     self.pushdown(input, Some(combined), lp_arena, expr_arena)
                 } else {
-                    let lp =
-                        self.pushdown(input, Some(State { offset, len }), lp_arena, expr_arena)?;
+                    let lp = self.pushdown(input, Some(slice), lp_arena, expr_arena)?;
                     let input = lp_arena.add(lp);
                     self.slice_node_in_optimized_plan = true;
-                    Ok(Slice {
+                    Ok(IR::Slice {
                         input,
-                        offset: outer_slice.offset,
-                        len: outer_slice.len,
+                        slice: outer_slice,
                     })
                 }
             },
-            (
-                Slice {
-                    input,
-                    offset,
-                    mut len,
-                },
-                None,
-            ) => {
-                // If offset is negative the length can never be greater than it.
-                if offset < 0 {
-                    #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u64.
-                    if len as u64 > offset.unsigned_abs() as u64 {
-                        len = offset.unsigned_abs() as IdxSize;
-                    }
-                }
-
-                let state = Some(State { offset, len });
-                self.pushdown(input, state, lp_arena, expr_arena)
+            (IR::Slice { input, slice }, None) => {
+                self.pushdown(input, Some(slice), lp_arena, expr_arena)
             },
             m @ (Filter { .. }, _)
             | m @ (DataFrameScan { .. }, _)
@@ -824,6 +706,42 @@ impl SlicePushDown {
             ) => {
                 let (lp, state) = m;
                 self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
+            },
+            // A positive slice of a row index over a resolver: the resolver reads only the
+            // slice, numbered from where the slice starts (else the in-memory engine reads the
+            // whole source).
+            (
+                MapFunction {
+                    input,
+                    function:
+                        FunctionIR::RowIndex {
+                            name,
+                            offset,
+                            schema,
+                        },
+                },
+                Some(state),
+            ) if state.is_positive()
+                && matches!(
+                    lp_arena.get(input),
+                    Resolver { resolved_ir: None, filters, .. } if filters.is_empty()
+                ) =>
+            {
+                let shifted = IdxSize::try_from(state.positive_offset())
+                    .ok()
+                    .and_then(|o| offset.unwrap_or(0).checked_add(o));
+                let lp = MapFunction {
+                    input,
+                    function: FunctionIR::RowIndex {
+                        name,
+                        offset: shifted.or(offset),
+                        schema,
+                    },
+                };
+                match shifted {
+                    Some(_) => self.pushdown_and_continue(lp, Some(state), lp_arena, expr_arena),
+                    None => self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena),
+                }
             },
             (MapFunction { input, function }, _) if function.allow_predicate_pd() => {
                 let lp = MapFunction { input, function };
@@ -927,7 +845,7 @@ impl SlicePushDown {
                     options,
                 },
                 Some(inner_state),
-            ) if inner_state.offset < 0 => {
+            ) if inner_state.is_negative() => {
                 // Negative offset cannot push through hconcat, as this would
                 // cause misalignment on inputs with non-equal lengths.
                 // https://github.com/pola-rs/polars/issues/27552
@@ -981,14 +899,8 @@ impl SlicePushDown {
                 },
                 Some(mut state),
             ) if filters.is_empty() => {
-                state = if let Some((offset, len)) = slice {
-                    let Some(State { offset, len }) = combine_outer_inner_slice(
-                        state,
-                        State {
-                            offset,
-                            len: idxsize_try_from(len).unwrap_or(IdxSize::MAX),
-                        },
-                    ) else {
+                state = if let Some(existing) = slice {
+                    let Some(combined) = existing.reslice(state) else {
                         return self.no_pushdown_restart_opt(
                             Resolver {
                                 resolver,
@@ -1005,12 +917,12 @@ impl SlicePushDown {
                             expr_arena,
                         );
                     };
-                    State { offset, len }
+                    combined
                 } else {
                     state
                 };
 
-                slice = Some((state.offset, idxsize_to_u64(state.len)));
+                slice = Some(state);
 
                 Ok(Resolver {
                     resolver,

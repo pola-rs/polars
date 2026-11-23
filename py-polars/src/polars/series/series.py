@@ -62,6 +62,7 @@ from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
     _is_generator,
+    is_sequence,
     parse_version,
     qualified_type_name,
     require_same_type,
@@ -127,6 +128,7 @@ if TYPE_CHECKING:
     from builtins import set as set_
     from builtins import str as str_
     from collections.abc import Callable, Collection, Generator, Mapping
+    from typing import Self
 
     import jax
 
@@ -156,11 +158,6 @@ if TYPE_CHECKING:
         TemporalLiteral,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 elif BUILDING_SPHINX_DOCS:
@@ -218,7 +215,9 @@ class Series(metaclass=_Meta):
         on the `strict` parameter:
 
         - If `strict` is set to True (default), the inferred data type is equal to the
-          first non-null value, or `Null` if all values are null.
+          first non-null value, or `Null` if all values are null. If that value is a
+          struct (eg: a dict), the inferred :class:`Struct` has the fields of all the
+          struct values (in first-seen order).
         - If `strict` is set to False, the inferred data type is the supertype of the
           values, or :class:`Object` if no supertype can be found. **WARNING**: A full
           pass over the values is required to determine the supertype.
@@ -789,8 +788,11 @@ class Series(metaclass=_Meta):
             assert f is not None
             return self._from_pyseries(f(d))
 
-        if isinstance(other, Sequence) and not isinstance(other, str):
+        if is_sequence(other):
             if self.dtype in (List, Array):
+                if _check_for_numpy(other) and isinstance(other, np.ndarray):
+                    msg = f"cannot compare a Series of dtype {self.dtype} to a NumPy array"
+                    raise TypeError(msg)
                 other = [other]
             other = Series("", other)
             if other.dtype == Null:
@@ -1044,18 +1046,24 @@ class Series(metaclass=_Meta):
             other = pl.Series("", [None])
 
         if isinstance(other, Series):
-            return self._from_pyseries(getattr(self._s, op_s)(other._s))
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(other._s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(other._s))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
-            return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
+            _s = Series(self.name, other)._s
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(_s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(_s))
         elif isinstance(other, timedelta):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
-        elif (
-            isinstance(other, (float, date, datetime, str))
-            and not self.dtype.is_float()
+        elif isinstance(other, str) or (
+            isinstance(other, (float, date, datetime)) and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -1120,7 +1128,7 @@ class Series(metaclass=_Meta):
 
     def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
         """
-        Convert leaf dtype the to given primitive datatype.
+        Convert leaf dtype to the given primitive datatype.
 
         This is equivalent to logic in DataType::cast_leaf() in Rust.
         """
@@ -1156,6 +1164,7 @@ class Series(metaclass=_Meta):
             if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
+                or self.dtype == String
                 or isinstance(self.dtype, (List, Array, Duration))
                 or (
                     isinstance(other, Series) and isinstance(other.dtype, (List, Array))
@@ -1250,20 +1259,26 @@ class Series(metaclass=_Meta):
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        if self.dtype.is_float():
-            self.__rfloordiv__(other)
         if isinstance(other, (int, float)) and self.dtype.is_decimal():
             return self.to_frame().select(other / F.col(self.name)).to_series()
 
         if isinstance(other, int):
             other = float(other)
-        return self.cast(Float64).__rfloordiv__(other)
+        if self.dtype != String:
+            self = self.cast(Float64)
+        return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        return self._arithmetic(other, "div", "div_<>_rhs")
+        if isinstance(other, Series):
+            return other // self
+        return (
+            self.to_frame()
+            .select_seq((F.lit(other) // F.col(self.name)).alias(self.name))
+            .to_series()
+        )
 
     def __rmul__(self, other: Any) -> Series:
         if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
@@ -1279,6 +1294,8 @@ class Series(metaclass=_Meta):
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
+        if isinstance(other, Series):
+            return other.pow(self)
         return (
             self.to_frame()
             .select_seq((other ** F.col(self.name)).alias(self.name))
@@ -1869,6 +1886,33 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    def x_log_y(self, y: Series | float, base: float = math.e) -> Series:
+        """
+        Compute `x * log(y)` to a given base, where `x` is this Series.
+
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
+
+        Parameters
+        ----------
+        y
+            The values to take the logarithm of.
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> s = pl.Series([0, 1, 2, 3])
+        >>> s.x_log_y(pl.Series([0, 2, 4, 8]), base=2)
+        shape: (4,)
+        Series: '' [f64]
+        [
+            0.0
+            1.0
+            4.0
+            9.0
+        ]
+        """
+
     def log10(self) -> Series:
         """
         Compute the base 10 logarithm of the input array, element-wise.
@@ -1900,6 +1944,44 @@ class Series(metaclass=_Meta):
             2.718282
             7.389056
             20.085537
+        ]
+        """
+
+    def erf(self) -> Series:
+        """
+        Compute the error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erf()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            -0.842701
+            0.0
+            0.842701
+        ]
+        """
+
+    def erfc(self) -> Series:
+        """
+        Compute the complementary error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erfc()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.842701
+            1.0
+            0.157299
         ]
         """
 
@@ -2171,6 +2253,10 @@ class Series(metaclass=_Meta):
         """
         Get the minimal value in this Series.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2183,6 +2269,10 @@ class Series(metaclass=_Meta):
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get the minimum value in this Series, ordered by an expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
@@ -2209,6 +2299,10 @@ class Series(metaclass=_Meta):
         """
         Get the maximum value in this Series.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2221,6 +2315,10 @@ class Series(metaclass=_Meta):
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get the maximum value in this Series, ordered by an expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
@@ -2266,7 +2364,7 @@ class Series(metaclass=_Meta):
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        This differs from numpy's `nanmin` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
         Examples
@@ -3045,6 +3143,9 @@ class Series(metaclass=_Meta):
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+        `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
+        NaN. With `normalize=True`, input that sums to zero (including empty,
+        all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
         Parameters
         ----------
@@ -3634,7 +3735,13 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    def sql(self, query: str_, *, table_name: str_ = "self") -> DataFrame:
+    def sql(
+        self,
+        query: str_,
+        *,
+        table_name: str_ = "self",
+        params: Sequence[Any] | Mapping[str_, Any] | None = None,
+    ) -> DataFrame:
         """
         Execute a SQL query against the Series.
 
@@ -3652,6 +3759,8 @@ class Series(metaclass=_Meta):
         table_name
             Optionally provide an explicit name for the table that represents the
             calling frame (defaults to "self").
+        params
+            The values of the query parameters; see :meth:`DataFrame.sql`.
 
         Notes
         -----
@@ -3692,7 +3801,7 @@ class Series(metaclass=_Meta):
         ┌──────┬─────┬─────┐
         │ y    ┆ m   ┆ d   │
         │ ---  ┆ --- ┆ --- │
-        │ i32  ┆ i8  ┆ i8  │
+        │ i64  ┆ i64 ┆ i64 │
         ╞══════╪═════╪═════╡
         │ 2099 ┆ 2   ┆ 14  │
         │ 2026 ┆ 3   ┆ 5   │
@@ -3714,7 +3823,7 @@ class Series(metaclass=_Meta):
         │ 3   ┆ 6   │
         └─────┴─────┘
         """
-        return self.to_frame().sql(query, table_name=table_name)
+        return self.to_frame().sql(query, table_name=table_name, params=params)
 
     def sort(
         self,
@@ -3917,7 +4026,7 @@ class Series(metaclass=_Meta):
         k
             Number of elements to return.
         reverse
-            Consider the `k` largest elements of the `by` column( (instead of the `k`
+            Consider the `k` largest elements of the `by` column (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
 
@@ -3996,6 +4105,10 @@ class Series(metaclass=_Meta):
         """
         Get an index of a minimal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
@@ -4015,6 +4128,10 @@ class Series(metaclass=_Meta):
     def arg_max(self) -> int | None:
         """
         Get an index of a maximal value.
+
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
 
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index
@@ -5006,6 +5123,33 @@ class Series(metaclass=_Meta):
             )
         ).to_series()
 
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: Literal[False] = ...,
+    ) -> np.ndarray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: Literal[True],
+    ) -> np.ma.MaskedArray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: bool,
+    ) -> np.ndarray[Any, Any]: ...
+
     @removed_parameters(
         RemovedParameter(
             name="use_pyarrow",
@@ -5027,6 +5171,7 @@ class Series(metaclass=_Meta):
         *,
         writable: bool = False,
         allow_copy: bool = True,
+        masked: bool = False,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
@@ -5048,6 +5193,16 @@ class Series(metaclass=_Meta):
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+        masked
+            Return a `numpy.ma.MaskedArray` in which null values are masked. The data
+            keeps the type it would have without nulls, and the values under the mask
+            are unspecified. Nulls inside nested values are converted as they are
+            without `masked`, except for `Array` and `Struct` values. `writable` and
+            `allow_copy` only apply to the data, not the mask.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -5087,7 +5242,26 @@ class Series(metaclass=_Meta):
         >>> s.to_numpy()
         array([[1, 2, 3],
                [4, 5, 6]])
+
+        Set `masked=True` to represent null values with a mask instead, which preserves
+        the data type.
+
+        >>> s = pl.Series([1, 2, None], dtype=pl.UInt16)
+        >>> arr = s.to_numpy(masked=True)
+        >>> arr.dtype
+        dtype('uint16')
+        >>> arr.mask
+        array([False, False,  True])
         """  # noqa: W505
+        if masked:
+            msg = (
+                "the `masked` parameter of `Series.to_numpy()` is considered unstable."
+            )
+            issue_unstable_warning(msg)
+            data, mask = self._s.to_numpy_masked(
+                writable=writable, allow_copy=allow_copy
+            )
+            return np.ma.MaskedArray(data, mask=np.ma.nomask if mask is None else mask)
         return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
     @unstable()
@@ -6337,7 +6511,12 @@ class Series(metaclass=_Meta):
             pl_return_dtype = parse_into_dtype(return_dtype)
 
         if not _disable_inefficient_map_warning:
-            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+            warn_on_inefficient_map(
+                function,
+                columns=[self.name],
+                map_target="series",
+                dtype=self.dtype,
+            )
 
         return self._from_pyseries(
             self._s.map_elements(
@@ -7094,7 +7273,7 @@ class Series(metaclass=_Meta):
             2001-01-02 00:00:00
         ]
 
-        Compute the rolling mean with the temporal windows
+        Compute the rolling sum with the temporal windows
         from the second series closed on the right:
 
         >>> s.rolling_sum_by(d, "3h")
@@ -8380,10 +8559,14 @@ class Series(metaclass=_Meta):
         dtype: type[int | float] | PolarsDataType | None = None,
     ) -> Series:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed between numeric types of the same size. To
+        convert between types of different sizes, use :meth:`cast` instead.
+
+        A `Decimal` can also be reinterpreted to and from `Int128`, its unscaled integer
+        representation: `1.23` as `Decimal(5, 2)` becomes `123`. Reinterpreting an
+        `Int128` raises if the value doesn't fit the precision of the target `Decimal`.
 
         Exactly one of `signed` or `dtype` must be specified.
 
@@ -9684,7 +9867,7 @@ class Series(metaclass=_Meta):
         """
         Flags the Series as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays.
+        Enables downstream code to use fast paths for sorted arrays.
 
         Parameters
         ----------
@@ -9916,8 +10099,8 @@ class Series(metaclass=_Meta):
 
         Notes
         -----
-        * As long as your data can fit in RAM, it is always more efficient to use the
-          regular :meth:`quantile` function instead.
+        * If the series has fewer than 100 million items, it is generally more efficient
+          to use the regular :meth:`quantile` function instead.
 
         * NaN values are regarded as larger than any finite number (and equal to one
           another). As a result, ``NaN`` values are treated as the largest values when
@@ -9988,6 +10171,8 @@ class Series(metaclass=_Meta):
         unordered: bool = False,
         descending: Sequence[bool] | None = None,
         nulls_last: Sequence[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
     ) -> Series:
         """Decode from the row encoding."""
         return (
@@ -9999,6 +10184,8 @@ class Series(metaclass=_Meta):
                     unordered=unordered,
                     descending=descending,
                     nulls_last=nulls_last,
+                    output=output,
+                    encode_nulls=encode_nulls,
                 )
             )
             .to_series()
@@ -10055,5 +10242,5 @@ def _resolve_temporal_dtype(
         elif time_unit == "ms":
             dtype = PolarsType("ms")
         elif time_unit == "D" and ndtype.type == np.datetime64:
-            dtype = Date
+            dtype = Date if dtype is None else Datetime("us")
     return dtype

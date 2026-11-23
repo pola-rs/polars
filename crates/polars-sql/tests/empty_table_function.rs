@@ -46,3 +46,13 @@ fn test_empty_table_json_function() {
         .and_then(|lf| lf.collect());
     assert!(actual.is_err());
 }
+
+#[test]
+#[cfg(feature = "json")]
+fn test_empty_table_ndjson_function() {
+    let mut ctx = SQLContext::new();
+    let actual = ctx
+        .execute("SELECT * FROM read_ndjson()")
+        .and_then(|lf| lf.collect());
+    assert!(actual.is_err());
+}

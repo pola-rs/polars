@@ -72,6 +72,15 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
 
 pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
+    // A sum needs the full precision, as for `Series::sum`.
+    #[cfg(feature = "dtype-decimal")]
+    if let Decimal(precision, scale) = inner_dtype
+        && *precision < polars_compute::decimal::DEC128_MAX_PREC
+    {
+        let wide = Decimal(polars_compute::decimal::DEC128_MAX_PREC, *scale);
+        let ca = ca.cast(&List(Box::new(wide.clone())))?;
+        return sum_with_nulls(ca.list()?, &wide);
+    }
     let mut out = match inner_dtype {
         Boolean => {
             let out: IdxCa =

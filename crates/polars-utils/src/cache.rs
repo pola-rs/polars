@@ -81,6 +81,18 @@ impl<K, V, S> LruCache<K, V, S> {
             build_hasher,
         }
     }
+
+    pub fn max_capacity(&self) -> usize {
+        self.max_capacity
+    }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
 }
 
 impl<K: Hash + Eq, V, S: BuildHasher> LruCache<K, V, S> {

@@ -45,6 +45,8 @@ Computation
     Series.ewm_sum_by
     Series.ewm_std
     Series.ewm_var
+    Series.erf
+    Series.erfc
     Series.exp
     Series.first
     Series.hash
@@ -93,3 +95,4 @@ Computation
     Series.sqrt
     Series.tan
     Series.tanh
+    Series.x_log_y

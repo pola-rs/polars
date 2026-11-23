@@ -4,15 +4,19 @@ import datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -830,6 +834,62 @@ def test_arr_first_last() -> None:
 
 
 @pytest.mark.parametrize(
+    ("rows", "stored"),
+    [
+        ([[1, 2], None, [3, 4]], [9, 9]),
+        ([[1.5, 2.5], None, [3.5, 4.5]], [9.0, 9.0]),
+        ([["a", "b"], None, ["c", "d"]], ["z", "z"]),
+        ([[True, False], None, [False, False]], [True, True]),
+        ([[[1], [2]], None, [[3], [4]]], [[9], [9]]),
+        ([[{"f": 1}, {"f": 2}], None, [{"f": 3}, {"f": 4}]], [{"f": 9}, {"f": 9}]),
+    ],
+)
+def test_arr_null_rows_ignore_stored_values_30273(
+    rows: list[list[Any] | None], stored: list[Any]
+) -> None:
+    # A null row stores valid values, which must not be read.
+    flat = [v for r in rows for v in (stored if r is None else r)]
+    mask = pa.array([r is None for r in rows])
+    s = pl.Series("a", pa.FixedSizeListArray.from_arrays(pa.array(flat), 2, mask=mask))
+    expected = pl.Series("a", rows, dtype=s.dtype)
+
+    ops: list[Callable[[pl.Series], pl.Series]] = [
+        lambda s: s.arr.first(),
+        lambda s: s.arr.last(),
+        lambda s: s.arr.get(1),
+        lambda s: s.arr.get(-1, null_on_oob=False),
+        lambda s: s.arr.get(pl.Series([i % 2 for i in range(s.len())])),
+    ]
+    if s.dtype.inner.is_numeric():  # type: ignore[attr-defined]
+        ops += [lambda s: s.arr.min(), lambda s: s.arr.max()]
+    two_chunks = pl.concat([s, s], rechunk=False).slice(1, 4)
+    two_expected = pl.concat([expected, expected]).slice(1, 4)
+    for op in ops:
+        assert_series_equal(op(s), op(expected))
+        assert_series_equal(op(s[1:]), op(expected[1:]))
+        assert_series_equal(op(two_chunks), op(two_expected))
+
+
+def test_arr_get_null_rows_ignore_stored_values_nested_30273() -> None:
+    mask = pa.array([False, True, False])
+    inner = pa.FixedSizeListArray.from_arrays(pa.array([1, 2, 9, 9, 3, 4]), 2)
+    s = pl.Series(pa.FixedSizeListArray.from_arrays(inner, 1, mask=mask))
+    assert s.arr.first().to_list() == [[1, 2], None, [3, 4]]
+
+    cats = pa.array(["a", "z", "c"]).dictionary_encode()
+    s = pl.Series(pa.FixedSizeListArray.from_arrays(cats, 1, mask=mask))
+    assert s.dtype == pl.Array(pl.Categorical, 1)
+    assert s.arr.get(0).to_list() == ["a", None, "c"]
+
+
+def test_arr_first_max_after_null_gather_30273() -> None:
+    idx = pl.Series([0, None, 1], dtype=pl.get_index_type())
+    s = pl.Series([[1, 2], [3, 4]], dtype=pl.Array(pl.Int64, 2)).gather(idx)
+    assert s.arr.first().to_list() == [1, None, 3]
+    assert s.arr.max().to_list() == [2, None, 4]
+
+
+@pytest.mark.parametrize(
     ("data", "set", "dtype"),
     [
         ([1, 2], [[1, 2], [3, 4]], pl.Int64),
@@ -977,6 +1037,31 @@ def test_array_count_matches_wildcard_expansion() -> None:
         "a": [0],
         "b": [1],
     }
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_arr_count_matches_scalar_element(engine: EngineType) -> None:
+    # More rows than threads, so that a streaming morsel holds several rows.
+    df = pl.DataFrame(
+        {"a": [[1, 2, 1]] * 300, "x": [1] * 300},
+        schema={"a": pl.Array(pl.Int64, 3), "x": pl.Int64},
+    )
+    out = (
+        df.lazy()
+        .select(pl.col("a").arr.count_matches(pl.col("x").first()))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [2] * 300
+
+
+@pytest.mark.parametrize("height", [1, 3])
+def test_arr_count_matches_element_per_row_raises(height: int) -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 1]] * height, "x": [1] * height},
+        schema={"a": pl.Array(pl.Int64, 3), "x": pl.Int64},
+    )
+    with pytest.raises(ShapeError, match="'element' must be a scalar value"):
+        df.select(pl.col("a").arr.count_matches(pl.col("x")))
 
 
 def test_array_to_struct() -> None:

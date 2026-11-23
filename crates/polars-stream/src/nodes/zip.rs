@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::functions::concat_df_horizontal;
 use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
@@ -108,8 +109,11 @@ impl InputHead {
     }
 
     async fn consume_broadcast(&mut self) -> DataFrame {
-        assert!(self.is_broadcast == Some(true) && self.total_len == 1);
-        let out = self.morsels.pop_front().unwrap().into_df().await;
+        assert!(self.is_broadcast == Some(true) && self.total_len <= 1);
+        let out = match self.morsels.pop_front() {
+            Some(morsel) => morsel.into_df().await,
+            None => DataFrame::empty(),
+        };
         self.clear();
         out
     }
@@ -133,7 +137,11 @@ pub struct ZipNode {
 }
 
 impl ZipNode {
-    pub fn new(zip_behavior: ZipBehavior, schemas: Vec<Arc<Schema>>) -> Self {
+    pub fn new(
+        zip_behavior: ZipBehavior,
+        schemas: Vec<Arc<Schema>>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         let input_heads = schemas
             .into_iter()
             .map(|s| InputHead::new(s, zip_behavior))
@@ -142,7 +150,7 @@ impl ZipNode {
             zip_behavior,
             out_seq: MorselSeq::new(0),
             input_heads,
-            spill_ctx: MostRecentSpillContext::new("zip".into()),
+            spill_ctx: MostRecentSpillContext::new("zip".into(), task_metrics),
         }
     }
 }
@@ -369,7 +377,10 @@ impl ComputeNode for ZipNode {
                 for input_head in &mut self.input_heads {
                     out.push(input_head.consume_broadcast().await);
                 }
-                let out_df = concat_df_horizontal(&out, false, true, false)?;
+                // An empty input without columns also counts as a broadcast. Whether the others
+                // broadcast to its length of zero is up to the zip behavior, as in memory.
+                let unit_length_as_scalar = matches!(self.zip_behavior, ZipBehavior::Broadcast);
+                let out_df = concat_df_horizontal(&out, false, false, unit_length_as_scalar)?;
                 out.clear();
 
                 let morsel = Morsel::new_unregistered(out_df, self.out_seq, source_token.clone());

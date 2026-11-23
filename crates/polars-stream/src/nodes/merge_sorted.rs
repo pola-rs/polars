@@ -18,6 +18,10 @@ pub struct MergeSortedNode {
 
     maintain_order: bool,
 
+    // Whether the inputs will not produce any more morsels.
+    left_input_done: bool,
+    right_input_done: bool,
+
     // Not yet merged buffers.
     left_unmerged: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
@@ -31,6 +35,9 @@ impl MergeSortedNode {
             starting_nulls: false,
 
             maintain_order,
+
+            left_input_done: false,
+            right_input_done: false,
 
             left_unmerged: VecDeque::new(),
             right_unmerged: VecDeque::new(),
@@ -112,7 +119,7 @@ fn find_mergeable(
                 right_cutoff = right_null_count;
             } else {
                 // If there are ending nulls then first do things without the
-                // nulls and then repeat with only the nulls the nulls.
+                // nulls and then repeat with only the nulls.
                 let left_is_all_nulls = left_null_count == left.height();
                 let right_is_all_nulls = right_null_count == right.height();
 
@@ -202,10 +209,12 @@ impl ComputeNode for MergeSortedNode {
         // Abstraction: we merge buffer state with port state so we can map
         // to one three possible 'effective' states:
         // no data now (_blocked); data available (); or no data anymore (_done)
-        let left_done = recv[0] == PortState::Done && self.left_unmerged.is_empty();
-        let right_done = recv[1] == PortState::Done && self.right_unmerged.is_empty();
+        self.left_input_done = recv[0] == PortState::Done;
+        self.right_input_done = recv[1] == PortState::Done;
+        let left_done = self.left_input_done && self.left_unmerged.is_empty();
+        let right_done = self.right_input_done && self.right_unmerged.is_empty();
 
-        // We're done as soon as one side is done.
+        // We're done when the output is done or both sides are done.
         if send[0] == PortState::Done || (left_done && right_done) {
             recv[0] = PortState::Done;
             recv[1] = PortState::Done;
@@ -255,6 +264,8 @@ impl ComputeNode for MergeSortedNode {
         let seq = &mut self.seq;
         let starting_nulls = &mut self.starting_nulls;
         let maintain_order = self.maintain_order;
+        let left_input_done = self.left_input_done;
+        let right_input_done = self.right_input_done;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
 
@@ -407,9 +418,9 @@ impl ComputeNode for MergeSortedNode {
                     // If one of the ports is done and does not have buffered data anymore, we
                     // flush the data on the other side. After this point, this node just pipes
                     // data through.
-                    let pass = if left.is_none() && left_unmerged.is_empty() {
+                    let pass = if left_input_done && left_unmerged.is_empty() {
                         Some((right.as_mut(), &mut *right_unmerged))
-                    } else if right.is_none() && right_unmerged.is_empty() {
+                    } else if right_input_done && right_unmerged.is_empty() {
                         Some((left.as_mut(), &mut *left_unmerged))
                     } else {
                         None
@@ -444,6 +455,15 @@ impl ComputeNode for MergeSortedNode {
                                     return Ok(());
                                 }
                             }
+                        }
+                    } else {
+                        // One side is blocked and has no buffered data, so nothing more can be
+                        // merged in this phase. Stop the other side and buffer what it produced.
+                        if let Some(p) = &mut left {
+                            buffer_unmerged(p, left_unmerged).await;
+                        }
+                        if let Some(p) = &mut right {
+                            buffer_unmerged(p, right_unmerged).await;
                         }
                     }
 
@@ -495,7 +515,7 @@ impl ComputeNode for MergeSortedNode {
                                 // input so we can divide by half.
                                 let (m1, m2) = merged.split_at((merged.height() / 2) as i64);
 
-                                // MorselSeq have to be monotonely non-decreasing so we can
+                                // MorselSeq have to be monotonically non-decreasing so we can
                                 // pass the same sequence token twice.
                                 let morsel =
                                     Morsel::new_unregistered(m1, seq, source_token.clone());

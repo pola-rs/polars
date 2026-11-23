@@ -1,5 +1,4 @@
 use polars::prelude::*;
-use polars_arrow::array::Array;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::prelude::*;
 
@@ -10,12 +9,14 @@ use crate::utils::EnterPolarsExt;
 impl PySeries {
     fn scatter(&self, py: Python<'_>, idx: PySeries, values: PySeries) -> PyResult<()> {
         py.enter_polars(|| {
+            let mut lock = self.series.write();
+            // Prepare while the series is still in place, so an error or a panic leaves it intact.
+            let (idx, values) =
+                prepare_scatter(&lock, &idx.series.into_inner(), &values.series.into_inner())?;
             // We take the value because we want a ref count of 1 so that we can
             // have mutable access cheaply via _get_inner_mut().
-            let mut lock = self.series.write();
             let s = std::mem::take(&mut *lock);
-            let result = scatter(s, &idx.series.into_inner(), &values.series.into_inner());
-            match result {
+            match scatter(s, &idx, &values) {
                 Ok(out) => {
                     *lock = out;
                     Ok(())
@@ -29,70 +30,61 @@ impl PySeries {
     }
 }
 
-fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, PolarsError)> {
-    let logical_dtype = s.dtype().clone();
-    let converted_values;
-    let values = if logical_dtype.is_categorical() || logical_dtype.is_enum() {
-        if matches!(
+/// Converts `idx` to bounded indices and casts `values` to the physical dtype of `s`.
+fn prepare_scatter(s: &Series, idx: &Series, values: &Series) -> PolarsResult<(IdxCa, Series)> {
+    let logical_dtype = s.dtype();
+    let is_categorical = logical_dtype.is_categorical() || logical_dtype.is_enum();
+    let valid_values = if is_categorical {
+        matches!(
             values.dtype(),
             DataType::Categorical(_, _) | DataType::Enum(_, _) | DataType::String | DataType::Null
-        ) {
-            converted_values = values.strict_cast(&logical_dtype);
-            match converted_values {
-                Ok(ref values) => values,
-                Err(err) => return Err((s, err)),
-            }
-        } else {
-            return Err((
-                s,
-                polars_err!(InvalidOperation: "invalid values dtype '{}' for scattering into dtype '{}'", values.dtype(), logical_dtype),
-            ));
-        }
+        )
     } else if logical_dtype.is_decimal() {
-        if values.dtype().is_numeric() {
-            converted_values = values.strict_cast(&logical_dtype);
-            match converted_values {
-                Ok(ref values) => values,
-                Err(err) => return Err((s, err)),
-            }
-        } else {
-            return Err((
-                s,
-                polars_err!(InvalidOperation: "invalid values dtype '{}' for scattering into dtype '{}'", values.dtype(), logical_dtype),
-            ));
-        }
+        values.dtype().is_numeric() || values.dtype().is_null()
+    } else {
+        true
+    };
+    polars_ensure!(
+        valid_values,
+        InvalidOperation: "invalid values dtype '{}' for scattering into dtype '{}'", values.dtype(), logical_dtype
+    );
+
+    // Cast to the logical dtype, so values keep their meaning (a Decimal its value, a Categorical
+    // its string) and values that don't fit raise instead of becoming null.
+    let converted_values;
+    let values = if values.dtype() != logical_dtype {
+        converted_values = values.strict_cast(logical_dtype)?;
+        // A Struct cast to a non-struct dtype stays a Struct.
+        polars_ensure!(
+            converted_values.dtype() == logical_dtype,
+            InvalidOperation: "invalid values dtype '{}' for scattering into dtype '{}'", values.dtype(), logical_dtype
+        );
+        &converted_values
     } else {
         values
     };
 
     let null_on_oob = false;
-    let idx = match polars_ops::prelude::convert_and_bound_index(idx, s.len(), null_on_oob) {
-        Ok(idx) => idx,
-        Err(err) => return Err((s, err)),
-    };
-    let idx = idx.rechunk();
-    let idx = idx.downcast_as_array();
-    if idx.has_nulls() {
-        return Err((
-            s,
-            PolarsError::ComputeError("index values should not be null".into()),
-        ));
-    }
-    let idx = idx.values().as_slice();
+    let idx = polars_ops::prelude::convert_and_bound_index(idx, s.len(), null_on_oob)?;
+    let idx = idx.rechunk().into_owned();
+    polars_ensure!(!idx.has_nulls(), ComputeError: "index values should not be null");
 
-    let mut values = match values.to_physical_repr().cast(&s.dtype().to_physical()) {
-        Ok(values) => values,
-        Err(err) => return Err((s, err)),
-    };
+    let mut values = values.to_physical_repr().into_owned();
 
     // Broadcast values input.
     if values.len() == 1 && idx.len() > 1 {
         values = values.new_from_index(0, idx.len());
     }
+    Ok((idx, values))
+}
+
+fn scatter(s: Series, idx: &IdxCa, values: &Series) -> Result<Series, (Series, PolarsError)> {
+    let logical_dtype = s.dtype().clone();
+    let idx = idx.downcast_as_array().values().as_slice();
 
     let mut phys = s.to_physical_repr().into_owned();
-    drop(s); // Reduce refcount to make use of in-place mutation of possible.
-    let ret = scatter_impl(&mut phys, &logical_dtype, idx, &values);
+    drop(s); // Reduce refcount to make use of in-place mutation if possible.
+    let ret = scatter_impl(&mut phys, &logical_dtype, idx, values);
     match ret {
         Ok(s) => Ok(unsafe { s.from_physical_unchecked(&logical_dtype).unwrap() }),
         Err(e) => Err((

@@ -96,13 +96,19 @@ impl DataFrameBuilder {
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
-                Column::Series(s) => {
+                // Only the rows taken are materialized, not the whole dictionary column.
+                Column::Dictionary(d) if d.lazy_as_materialized_series().is_none() => {
+                    let s = d.slice((start, length)).take_materialized_series();
+                    builder.subslice_extend(&s, 0, s.len(), share);
+                },
+                Column::Series(_) | Column::Dictionary(_) => {
+                    let s = column.as_materialized_series();
                     builder.subslice_extend(s, start, length, share);
                 },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
-                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, len, share);
+                    builder.subslice_extend_each_repeated(&scalar_as_series, 0, 1, len, share);
                 },
             }
         }
@@ -124,13 +130,24 @@ impl DataFrameBuilder {
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
-                Column::Series(s) => {
+                Column::Dictionary(d) if d.lazy_as_materialized_series().is_none() => {
+                    let s = d.slice((start, length)).take_materialized_series();
+                    builder.subslice_extend_repeated(&s, 0, s.len(), repeats, share);
+                },
+                Column::Series(_) | Column::Dictionary(_) => {
+                    let s = column.as_materialized_series();
                     builder.subslice_extend_repeated(s, start, length, repeats, share);
                 },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
-                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, len * repeats, share);
+                    builder.subslice_extend_each_repeated(
+                        &scalar_as_series,
+                        0,
+                        1,
+                        len * repeats,
+                        share,
+                    );
                 },
             }
         }
@@ -153,13 +170,24 @@ impl DataFrameBuilder {
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
-                Column::Series(s) => {
+                Column::Dictionary(d) if d.lazy_as_materialized_series().is_none() => {
+                    let s = d.slice((start, length)).take_materialized_series();
+                    builder.subslice_extend_each_repeated(&s, 0, s.len(), repeats, share);
+                },
+                Column::Series(_) | Column::Dictionary(_) => {
+                    let s = column.as_materialized_series();
                     builder.subslice_extend_each_repeated(s, start, length, repeats, share);
                 },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
-                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, len * repeats, share);
+                    builder.subslice_extend_each_repeated(
+                        &scalar_as_series,
+                        0,
+                        1,
+                        len * repeats,
+                        share,
+                    );
                 },
             }
         }
@@ -184,12 +212,24 @@ impl DataFrameBuilder {
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
-                Column::Series(s) => {
+                Column::Dictionary(d) if d.lazy_as_materialized_series().is_none() => {
+                    // SAFETY: the indices are in bounds.
+                    let s = unsafe { d.take_slice_unchecked(idxs) }.take_materialized_series();
+                    builder.subslice_extend(&s, 0, s.len(), share);
+                },
+                Column::Series(_) | Column::Dictionary(_) => {
+                    let s = column.as_materialized_series();
                     builder.gather_extend(s, idxs, share);
                 },
                 Column::Scalar(sc) => {
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
-                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, idxs.len(), share);
+                    builder.subslice_extend_each_repeated(
+                        &scalar_as_series,
+                        0,
+                        1,
+                        idxs.len(),
+                        share,
+                    );
                 },
             }
         }
@@ -208,7 +248,18 @@ impl DataFrameBuilder {
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
-                Column::Series(s) => {
+                Column::Dictionary(d) if d.lazy_as_materialized_series().is_none() => {
+                    // Out-of-bounds indices become null indices, which gather nulls.
+                    let idxs = idxs
+                        .iter()
+                        .map(|i| ((*i as usize) < d.len()).then_some(*i))
+                        .collect::<IdxCa>();
+                    // SAFETY: the valid indices are in bounds.
+                    let s = unsafe { d.take_unchecked(&idxs) }.take_materialized_series();
+                    builder.subslice_extend(&s, 0, s.len(), share);
+                },
+                Column::Series(_) | Column::Dictionary(_) => {
+                    let s = column.as_materialized_series();
                     builder.opt_gather_extend(s, idxs, share);
                 },
                 Column::Scalar(sc) => {

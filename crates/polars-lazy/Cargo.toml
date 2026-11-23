@@ -37,6 +37,7 @@ tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 bytes = { workspace = true }
+polars-descriptions = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
@@ -264,6 +265,7 @@ interpolate = ["polars-expr/interpolate", "polars-stream?/interpolate"]
 interpolate_by = ["polars-expr/interpolate_by"]
 rolling_window = [
   "polars-expr/rolling_window",
+  "polars-stream?/rolling_window",
 ]
 rolling_window_by = [
   "polars-expr/rolling_window_by",
@@ -301,6 +303,7 @@ python = [
   "polars-mem-engine/python",
   "polars-stream?/python",
 ]
+io_plugin_ffi = ["polars-io/io_plugin_ffi", "polars-plan/io_plugin_ffi", "polars-stream?/io_plugin_ffi"]
 row_hash = ["polars-expr/row_hash"]
 reinterpret = ["polars-expr/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-expr/string_pad"]

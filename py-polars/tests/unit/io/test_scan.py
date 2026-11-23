@@ -857,7 +857,7 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
 
     assert_frame_equal(q.collect(), expect)
 
-    # This filter expr with stprtime is effectively what LazyFrame.sql()
+    # This filter expr with strptime is effectively what LazyFrame.sql()
     # generates
     q = lf.filter(
         pl.col("date")
@@ -1464,7 +1464,6 @@ def test_scan_expand_paths_no_glob(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_scan_sink_error_captures_path() -> None:
     storage_options = {
         "aws_endpoint_url": "http://localhost:333",
@@ -1599,7 +1598,7 @@ def test_scan_sink_metrics_multiple_phases(
     (
         pl.scan_parquet(path)
         .join(pl.scan_parquet(path), on="a")
-        .sink_parquet(tmp_path / "b", row_group_size=1)
+        .sink_parquet(tmp_path / "b", row_group_size=1, engine="streaming")
     )
     capture = capfd.readouterr().err
 
@@ -1624,12 +1623,16 @@ def test_scan_sink_metrics_multiple_phases(
             maintain_order="right",
         )
         .collect(),
+        # Both sides of the join scan the file.
         pl.DataFrame(
             {
-                "io_total_bytes_requested": [f"{expected_read_amount_bytes}", "0"],
-                "io_total_bytes_received": [f"{expected_read_amount_bytes}", "0"],
-                "io_total_bytes_sent": ["0", f"{137254 + created_by_size}"],
-                "node_name": ["multi-scan[parquet]", "io-sink[single-file[parquet]]"],
+                "io_total_bytes_requested": [f"{expected_read_amount_bytes}"] * 2
+                + ["0"],
+                "io_total_bytes_received": [f"{expected_read_amount_bytes}"] * 2
+                + ["0"],
+                "io_total_bytes_sent": ["0", "0", f"{137254 + created_by_size}"],
+                "node_name": ["multi-scan[parquet]"] * 2
+                + ["io-sink[single-file[parquet]]"],
             }
         ),
     )
@@ -1693,7 +1696,7 @@ def test_read_projection_and_row_index(format: str, use_pyarrow: bool) -> None:
     )
 
 
-@pytest.mark.parametrize("use_bytesio", [True, False])
+@pytest.mark.parametrize("file_type", ["bytesio", "buffered", "unbuffered"])
 @pytest.mark.parametrize("lazy", [True, False])
 @pytest.mark.parametrize("format", ["parquet", "ipc", "csv", "ndjson"])
 @pytest.mark.write_disk
@@ -1701,7 +1704,7 @@ def test_scan_from_object_nonzero_offset(
     tmp_path: Path,
     lazy: bool,
     format: str,
-    use_bytesio: bool,
+    file_type: str,
 ) -> None:
     def read(source: Any) -> Any:
         return (
@@ -1720,19 +1723,57 @@ def test_scan_from_object_nonzero_offset(
 
     f_bytesio = io.BytesIO()
     padding = 100 * b"\xff"
+    # `buffering=0` opens an unbuffered `io.FileIO`.
+    buffering = 0 if file_type == "unbuffered" else -1
 
-    with path.open("wb") as f_wb_disk:
-        f_wb = f_bytesio if use_bytesio else f_wb_disk
+    with path.open("wb", buffering=buffering) as f_wb_disk:
+        f_wb = f_bytesio if file_type == "bytesio" else f_wb_disk
         f_wb.write(padding)
         write(pl.DataFrame({"x": 1}), f_wb)
 
     f_bytesio.seek(0)
 
-    with path.open("rb") as f_rb_disk:
-        f_rb = f_bytesio if use_bytesio else f_rb_disk
+    with path.open("rb", buffering=buffering) as f_rb_disk:
+        f_rb = f_bytesio if file_type == "bytesio" else f_rb_disk
         assert f_rb.read(100) == padding
 
         assert_frame_equal(read(f_rb), pl.DataFrame({"x": 1}))
+
+
+@pytest.mark.parametrize(
+    "read_fn",
+    [
+        "read_csv",
+        "scan_csv",
+        "read_ndjson",
+        "scan_ndjson",
+        "read_parquet",
+        "scan_parquet",
+        "read_ipc",
+        "scan_ipc",
+        "read_ipc_stream",
+        "read_json",
+    ],
+)
+def test_read_from_unbuffered_pipe_30860(read_fn: str) -> None:
+    df = pl.DataFrame({"x": [1, 2]})
+    f = io.BytesIO()
+    getattr(df, f"write_{read_fn.split('_', 1)[1]}")(f)
+
+    payload = f.getvalue()
+    # Must fit in the pipe buffer, or the write blocks.
+    assert len(payload) < 4096
+
+    r, w = os.pipe()
+    os.write(w, payload)
+    os.close(w)
+
+    with io.FileIO(r) as f_pipe:
+        out = getattr(pl, read_fn)(f_pipe)
+        if isinstance(out, pl.LazyFrame):
+            out = out.collect()
+
+    assert_frame_equal(out, df)
 
 
 @pytest.mark.write_disk

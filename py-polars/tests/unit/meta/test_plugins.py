@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -19,6 +20,29 @@ from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        ({}, True),
+        ({"is_deterministic": True}, True),
+        ({"is_deterministic": False}, False),
+    ],
+)
+def test_register_plugin_function_determinism(
+    tmp_path: Path, options: dict[str, Any], expected: bool
+) -> None:
+    plugin_path = tmp_path / "lib.so"
+    plugin_path.touch()
+    expr = register_plugin_function(
+        plugin_path=plugin_path, function_name="hello", args="x", **options
+    )
+
+    serialized = json.loads(expr.meta.serialize(format="json"))
+    plugin = serialized["Function"]["function"]["FfiPlugin"]
+    assert plugin["is_deterministic"] is expected
+
+
+@pytest.mark.write_disk
 def test_register_plugin_function_invalid_plugin_path(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
@@ -34,7 +58,7 @@ def test_register_plugin_function_invalid_plugin_path(
 
     with pytest.raises(
         ComputeError,
-        match=f"error loading dynamic library: .*: {re.escape(str(plugin_path))}$",
+        match=f"(?m)error loading dynamic library: .*: {re.escape(str(plugin_path))}$",
     ):
         pl.select(expr)
 
@@ -63,7 +87,8 @@ def test_register_plugin_function_invalid_plugin_long_path(
         ),
     ) as exc_info:
         pl.select(expr)
-    assert str(plugin_path) not in str(exc_info.value)
+    # Only the IO error is truncated, the expression context shows the full path.
+    assert str(plugin_path) not in str(exc_info.value).splitlines()[0]
 
 
 @pytest.mark.parametrize(

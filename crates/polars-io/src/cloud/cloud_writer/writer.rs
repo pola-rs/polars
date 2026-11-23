@@ -36,10 +36,6 @@ impl CloudWriter {
         }
     }
 
-    pub async fn start(&mut self) -> PolarsResult<()> {
-        self.writer.start().await
-    }
-
     pub async fn write_all_owned(&mut self, mut bytes: Bytes) -> PolarsResult<()> {
         while !bytes.is_empty() {
             self.bufferer.push_owned(&mut bytes);
@@ -65,27 +61,10 @@ impl CloudWriter {
         Ok(())
     }
 
-    pub(super) async fn flush(&mut self) -> PolarsResult<()> {
-        if let Some(payload) = self.bufferer.flush() {
-            self.writer.put(payload).await?;
-        }
-
-        assert!(self.bufferer.is_empty());
-
-        Ok(())
-    }
-
-    pub(super) fn has_buffered_bytes(&self) -> bool {
-        !self.bufferer.is_empty()
-    }
-
     pub async fn finish(&mut self) -> PolarsResult<()> {
-        if let Some(payload) = self.bufferer.flush() {
-            self.writer.put(payload).await?;
-        }
-
+        let tail = self.bufferer.flush();
         assert!(self.bufferer.is_empty());
 
-        self.writer.finish().await
+        self.writer.finish(tail).await
     }
 }

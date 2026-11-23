@@ -57,7 +57,7 @@ impl LineBatchProcessor {
 
         if !matches!(output_port, LineBatchProcessorOutputPort::Closed) {
             while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().await {
-                let df = chunk_reader.read_chunk(&bytes)?;
+                let df = chunk_reader.read_chunk(bytes)?;
 
                 n_rows_processed = n_rows_processed.saturating_add(df.height());
 

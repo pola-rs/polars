@@ -14,6 +14,7 @@ use polars_arrow::array::{
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::bitmap::utils::SlicesIterator;
 use polars_arrow::with_match_primitive_type_full;
+pub use primitive::filter_values;
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
     assert_eq!(array.len(), mask.len());
@@ -34,6 +35,7 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
     // is very minimal: only a clone of the mask and the array.
     //
     // This also allows dispatching to the fast paths way, way, way more often.
+    let full_len = array.len();
     let mut mask = mask.clone();
     let leading_zeros = mask.take_leading_zeros();
     mask.take_trailing_zeros();
@@ -48,7 +50,14 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
         return new_empty_array(array.dtype().clone());
     }
     if false_count == 0 {
-        return array.to_boxed();
+        if mask.len() * 2 >= full_len {
+            return array.to_boxed();
+        }
+        // A short run is copied, so that it doesn't keep the whole array alive. String data
+        // stays shared, as in the other cases.
+        let mut builder = make_builder(array.dtype());
+        builder.subslice_extend(array, 0, array.len(), ShareStrategy::Always);
+        return builder.freeze();
     }
 
     use polars_arrow::datatypes::PhysicalType::*;

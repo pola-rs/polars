@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_async::executor::{self, TaskPriority};
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -15,6 +15,7 @@ pub struct PartitionerPipeline {
     pub partitioned_dfs_tx:
         tokio::sync::mpsc::Sender<executor::AbortOnDropHandle<PolarsResult<PartitionedDataFrames>>>,
     pub in_memory_exec_state: Arc<ExecutionState>,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl PartitionerPipeline {
@@ -25,6 +26,7 @@ impl PartitionerPipeline {
             inflight_morsel_semaphore,
             partitioned_dfs_tx,
             in_memory_exec_state,
+            task_metrics,
         } = self;
 
         loop {
@@ -43,6 +45,7 @@ impl PartitionerPipeline {
             if partitioned_dfs_tx
                 .send(executor::AbortOnDropHandle::new(executor::spawn(
                     TaskPriority::Low,
+                    task_metrics.as_deref(),
                     async move {
                         partitioner
                             .partition_morsel(morsel, in_memory_exec_state.as_ref())

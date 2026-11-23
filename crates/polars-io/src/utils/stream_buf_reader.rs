@@ -58,6 +58,15 @@ impl StreamBufReader {
 
         ASYNC.block_in_place_on(state.producer_task_handle)?
     }
+
+    /// Returns the next fetched buffer without copying, or an empty buffer at EOF.
+    pub fn next_buffer(&mut self) -> std::io::Result<Buffer<u8>> {
+        self.fill_buf()?;
+        Ok(self
+            .get_open_state()
+            .map(|state| std::mem::take(&mut state.current))
+            .unwrap_or_default())
+    }
 }
 
 #[cfg(feature = "async")]

@@ -522,12 +522,14 @@ def test_scan_cast_options(
     df1 = pl.select(lv1)
     df2 = pl.select(lv2)
 
-    # `cast()` from the Python API should give the same results.
+    # `cast()` from the Python API should give the same results. A strict cast rejects
+    # missing or reordered struct fields.
+    strict = not isinstance(expected.dtype, pl.Struct)
     assert_frame_equal(
         pl.concat(
             [
-                df1.cast(expected.dtype),
-                df2.cast(expected.dtype),
+                df1.cast(expected.dtype, strict=strict),
+                df2.cast(expected.dtype, strict=strict),
             ]
         ),
         expected.to_frame(),

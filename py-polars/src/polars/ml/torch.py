@@ -9,15 +9,10 @@ from polars.expr import Expr
 from polars.selectors import exclude
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Sequence
+    from typing import Self
 
     from torch import Tensor, memory_format
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 try:
     import torch
     from torch.utils.data import TensorDataset

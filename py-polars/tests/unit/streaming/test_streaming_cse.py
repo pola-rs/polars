@@ -2,15 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
-
-pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_cse_expr_selection_streaming(plmonkeypatch: PlMonkeyPatch) -> None:

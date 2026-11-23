@@ -240,15 +240,11 @@ async fn new_cloud_writer(
     let (cloud_location, object_store) =
         crate::cloud::build_object_store(path, cloud_options, false).await?;
 
-    let mut writer = CloudWriter::new(
+    Ok(CloudWriter::new(
         object_store,
         object_path_from_str(&cloud_location.prefix)?,
         cloud_upload_chunk_size,
         cloud_upload_concurrency,
         io_metrics,
-    );
-
-    writer.start().await?;
-
-    Ok(writer)
+    ))
 }

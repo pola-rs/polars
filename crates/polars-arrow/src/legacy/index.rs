@@ -26,18 +26,10 @@ where
     #[inline]
     fn negative_to_usize(self, len: usize) -> Option<usize> {
         if self >= Zero::zero() {
-            if (self.to_usize().unwrap()) < len {
-                Some(self.to_usize().unwrap())
-            } else {
-                None
-            }
+            self.to_usize().filter(|idx| *idx < len)
         } else {
-            let subtract = self.abs().to_usize().unwrap();
-            if subtract > len {
-                None
-            } else {
-                Some(len - subtract)
-            }
+            let subtract = usize::try_from(self.to_i128()?.unsigned_abs()).ok()?;
+            len.checked_sub(subtract)
         }
     }
 }

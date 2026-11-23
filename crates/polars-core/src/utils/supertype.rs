@@ -154,6 +154,19 @@ pub fn get_supertype_with_options(
     fn inner(l: &DataType, r: &DataType, options: SuperTypeOptions) -> Option<DataType> {
         use DataType::*;
         if l == r {
+            // `l == r` holds for any two dynamic integers, so combine those properly.
+            if let (Unknown(UnknownKind::Int(a)), Unknown(UnknownKind::Int(b))) = (l, r) {
+                // Keep a value that needs the smallest integer type fitting both.
+                // For `x >= 0`, `-x - 1` fits in exactly the same signed types as `x`.
+                let v = match (a.is_negative(), b.is_negative()) {
+                    (false, false) => *a.max(b),
+                    (true, true) => *a.min(b),
+                    (true, false) => (*a).min(-b - 1),
+                    (false, true) => (*b).min(-a - 1),
+                };
+                return Some(Unknown(UnknownKind::Int(v)));
+            }
+
             return Some(l.clone());
         }
         match (l, r) {
@@ -475,7 +488,11 @@ pub fn get_supertype_with_options(
             }
             #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
-                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
+                // Keep all integer digits and the larger scale. Beyond precision 38 values
+                // that don't fit raise when cast.
+                let s = (*s1).max(*s2);
+                let p = ((p1 - s1).max(p2 - s2) + s).min(DEC128_MAX_PREC);
+                Some(Decimal(p, s))
             },
             #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
             (Decimal(_, _), Float16) => Some(Float64),
@@ -514,6 +531,7 @@ pub fn get_supertype_with_options(
                     },
                     // Materialize float to float
                     UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_bool() => Some(Unknown(UnknownKind::Float)),
                     UnknownKind::Float if dt.is_integer() => {
                         if dt.is_known() {
                             Some(Float64)
@@ -530,26 +548,18 @@ pub fn get_supertype_with_options(
                     dynam if dt.is_null() => Some(Unknown(*dynam)),
                     // Find integers sizes
                     UnknownKind::Int(v) if dt.is_primitive_numeric() => {
-                        // Both dyn int
-                        if let Unknown(UnknownKind::Int(v_other)) = dt {
-                            // Take the maximum value to ensure we bubble up the required minimal size.
-                            Some(Unknown(UnknownKind::Int(std::cmp::max(*v, *v_other))))
-                        }
-                        // dyn int vs number
-                        else {
-                            let smallest_fitting_dtype = if dt.is_unsigned_integer() && !v.is_negative() {
-                                materialize_dyn_int_pos(*v).dtype()
-                            } else {
-                                materialize_smallest_dyn_int(*v).dtype()
-                            };
-                            match dt {
-                                UInt64 if smallest_fitting_dtype.is_signed_integer() => {
-                                    // Ensure we don't cast to float when dealing with dynamic literals
-                                    Some(Int64)
-                                },
-                                _ => {
-                                    get_supertype(dt, &smallest_fitting_dtype)
-                                }
+                        let smallest_fitting_dtype = if dt.is_unsigned_integer() && !v.is_negative() {
+                            materialize_dyn_int_pos(*v).dtype()
+                        } else {
+                            materialize_smallest_dyn_int(*v).dtype()
+                        };
+                        match dt {
+                            UInt64 if matches!(smallest_fitting_dtype, Int8 | Int16 | Int32 | Int64) => {
+                                // Ensure we don't cast to float when dealing with dynamic literals
+                                Some(Int64)
+                            },
+                            _ => {
+                                get_supertype(dt, &smallest_fitting_dtype)
                             }
                         }
                     }
@@ -668,6 +678,9 @@ fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
         Some(v) => AnyValue::UInt32(v),
         None => match u64::try_from(v).ok() {
             Some(v) => AnyValue::UInt64(v),
+            #[cfg(feature = "dtype-u128")]
+            None => AnyValue::UInt128(v as u128),
+            #[cfg(not(feature = "dtype-u128"))]
             None => AnyValue::Null,
         },
     }
@@ -682,16 +695,7 @@ fn materialize_smallest_dyn_int(v: i128) -> AnyValue<'static> {
     if let Ok(v) = i16::try_from(v) {
         return AnyValue::Int16(v);
     }
-    match i32::try_from(v).ok() {
-        Some(v) => AnyValue::Int32(v),
-        None => match i64::try_from(v).ok() {
-            Some(v) => AnyValue::Int64(v),
-            None => match u64::try_from(v).ok() {
-                Some(v) => AnyValue::UInt64(v),
-                None => AnyValue::Null,
-            },
-        },
-    }
+    materialize_dyn_int(v)
 }
 
 pub fn merge_dtypes_many<I: IntoIterator<Item = D> + Clone, D: AsRef<DataType>>(

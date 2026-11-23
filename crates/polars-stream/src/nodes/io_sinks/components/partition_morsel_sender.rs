@@ -10,7 +10,9 @@ use crate::nodes::io_sinks::components::error_capture::ErrorCapture;
 use crate::nodes::io_sinks::components::file_sink::FileSinkPermit;
 use crate::nodes::io_sinks::components::hstack_columns::HStackColumns;
 use crate::nodes::io_sinks::components::partition_sink_starter::PartitionSinkStarter;
-use crate::nodes::io_sinks::components::partition_state::PartitionState;
+use crate::nodes::io_sinks::components::partition_state::{
+    PartitionState, empty_without_dictionaries,
+};
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::components::size::{
     NonZeroRowCountAndSize, RowCountAndSize, SplitMode, TargetSinkMorselSize,
@@ -106,6 +108,7 @@ impl PartitionMorselSender {
                     if let Ok(permit) = self.open_sinks_semaphore.clone().try_acquire_owned() {
                         executor::spawn(
                             TaskPriority::Low,
+                            self.partition_sink_starter.task_metrics.as_deref(),
                             self.error_capture.clone().wrap_future(handle),
                         );
 
@@ -136,7 +139,11 @@ impl PartitionMorselSender {
                 i64::try_from(num_rows_to_take).unwrap(),
             );
 
-            partition.buffered_rows = remaining;
+            partition.buffered_rows = if remaining.height() == 0 {
+                empty_without_dictionaries(&remaining)
+            } else {
+                remaining
+            };
 
             let morsel_permit = self
                 .inflight_morsel_semaphore

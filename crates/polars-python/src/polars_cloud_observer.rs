@@ -11,15 +11,14 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use uuid::Uuid;
 
-const POLARS_CLOUD_PACKAGE_NAME: &str = "polars_cloud";
 const POLARS_CLOUD_OBSERVER_CLASS_NAME: &str = "QueryCloudObserver";
 
-/// Class provided by polars_cloud which allows for query status reporting.
+/// Class provided by polars_nanook which allows for query status reporting.
 type PolarsCloudQueryObserver = Arc<Py<PyAny>>;
-/// Class returned by polars_cloud with a 'close' method, to be called when query ended.
+/// Class returned by polars_nanook with a 'close' method, to be called when query ended.
 type PolarsCloudQueryFinishedGuard = Py<PyAny>;
 
-/// This wrapper is passed back to polars_cloud to expose the [CloudStreamingMetricsHandle::snapshot_query_metrics] function to allow for metric polling.
+/// This wrapper is passed back to polars_nanook to expose the [CloudStreamingMetricsHandle::snapshot_query_metrics] function to allow for metric polling.
 #[pyclass(name = "CloudStreamingMetricsHandle")]
 pub struct CloudStreamingMetricsHandle {
     metrics: Box<dyn QueryMetricsSnapshotter>,
@@ -28,9 +27,9 @@ pub struct CloudStreamingMetricsHandle {
 #[pymethods]
 impl CloudStreamingMetricsHandle {
     fn snapshot_query_metrics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let rows = self.metrics.snapshot();
-        let bytes =
-            rmp_serde::to_vec_named(&rows).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let snapshot = self.metrics.snapshot();
+        let bytes = rmp_serde::to_vec_named(&snapshot)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(PyBytes::new(py, &bytes))
     }
 }
@@ -133,7 +132,7 @@ impl QueryObserver for PolarsCloudObserver {
     }
 }
 
-/// Register the `polars_cloud` query observer. `workspace` and `organization` select
+/// Register the `polars_nanook` query observer. `workspace` and `organization` select
 /// where query metrics are sent to, each given as a name or an id; `None` uses the
 /// default workspace or organization of the account.
 #[pyfunction]
@@ -149,22 +148,27 @@ pub fn set_query_monitoring(
         return Ok(());
     }
 
-    let module = py.import(POLARS_CLOUD_PACKAGE_NAME).map_err(|e| {
+    let package_name: String = py
+        .import("polars._dependencies")?
+        .getattr("polars_cloud")?
+        .getattr("__name__")?
+        .extract()?;
+    let module = py.import(package_name.as_str()).map_err(|e| {
         PyRuntimeError::new_err(format!(
-            "query monitoring requires the `polars_cloud>=0.11.0` package, which could not be imported. \
-             Install it into this environment (e.g. `pip install 'polars-cloud>=0.11.0'`). ({e})",
+            "query monitoring requires the `{package_name}>=0.13.0` package, which could not be imported. \
+             Install it into this environment (e.g. `pip install 'polars-nanook>=0.13.0'`). ({e})",
         ))
     })?;
     let cls = module
         .getattr(POLARS_CLOUD_OBSERVER_CLASS_NAME)
         .map_err(|_| {
-            PyRuntimeError::new_err(
-                "the installed `polars_cloud` is incompatible with this Polars build.\
-             Ensure the polars_cloud and polars versions match.",
-            )
+            PyRuntimeError::new_err(format!(
+                "the installed `{package_name}` is incompatible with this Polars build. \
+             Ensure the {package_name} and polars versions match.",
+            ))
         })?;
     // Only the arguments that are set are passed, as keywords, so that older
-    // `polars_cloud` versions whose observer does not take them keep working.
+    // `polars_nanook` versions whose observer does not take them keep working.
     let kwargs = PyDict::new(py);
     if let Some(workspace) = workspace {
         kwargs.set_item("workspace", workspace)?;
@@ -176,7 +180,7 @@ pub fn set_query_monitoring(
         .call((), Some(&kwargs))
         .map_err(|e| {
             PyRuntimeError::new_err(format!(
-                "failed to construct the Polars Cloud observer: {e}"
+                "failed to construct the Polars Nanook observer: {e}"
             ))
         })?
         .unbind();

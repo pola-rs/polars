@@ -98,7 +98,12 @@ impl StaticArrayBuilder for StructArrayBuilder {
             builder.subslice_extend_each_repeated(&**other_values, start, length, repeats, share);
         }
         self.validity
-            .subslice_extend_from_opt_validity(other.validity(), start, length);
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
         self.length += length.min(other.len().saturating_sub(start)) * repeats;
     }
 

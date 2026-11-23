@@ -6,6 +6,8 @@ use polars_utils::collection::{Collection, CollectionWrap};
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::WindowMapping;
+#[cfg(any(feature = "replace", feature = "search_sorted"))]
+use crate::plans::IRFunctionExpr;
 use crate::plans::{AExpr, aexpr_tree_traversal};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 
@@ -45,11 +47,33 @@ impl ExprProjectionHeight {
 #[recursive::recursive]
 pub fn aexpr_projection_height_rec(
     ae_node: Node,
-    mut expr_arena: &Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
     stack: &mut ScratchVec<Node>,
     edges_stack: &mut ScratchVec<ExprProjectionHeight>,
 ) -> ExprProjectionHeight {
-    let mut visitor = ExprHeightVisitor::default();
+    aexpr_projection_height_rec_with(
+        ae_node,
+        expr_arena,
+        stack,
+        edges_stack,
+        ExprHeightOptions::default(),
+    )
+}
+
+/// As [`aexpr_projection_height_rec`], but with the resolution of nodes whose height cannot be
+/// derived from the expression alone under the caller's control. See [`ExprHeightOptions`].
+#[recursive::recursive]
+pub fn aexpr_projection_height_rec_with(
+    ae_node: Node,
+    mut expr_arena: &Arena<AExpr>,
+    stack: &mut ScratchVec<Node>,
+    edges_stack: &mut ScratchVec<ExprProjectionHeight>,
+    options: ExprHeightOptions,
+) -> ExprProjectionHeight {
+    let mut visitor = ExprHeightVisitor {
+        options,
+        _phantom: PhantomData,
+    };
 
     aexpr_tree_traversal(
         ae_node,
@@ -62,8 +86,76 @@ pub fn aexpr_projection_height_rec(
     .unwrap()
 }
 
-#[derive(Default)]
-pub struct ExprHeightVisitor<'a>(PhantomData<&'a ()>);
+/// Controls how [`ExprHeightVisitor`] resolves the nodes whose height cannot be derived from the
+/// expression alone.
+#[derive(Debug, Clone, Copy)]
+pub struct ExprHeightOptions {
+    /// The height reported for a `StructField` reference.
+    ///
+    /// A `StructField` has the height of the struct it is evaluated against, which is unrelated to
+    /// the height of the frame, hence [`ExprProjectionHeight::Unknown`] by default. Within the
+    /// `evaluation` of an `AExpr::StructEval` that struct *is* the reference height, so there it
+    /// is [`ExprProjectionHeight::Column`].
+    pub struct_field: ExprProjectionHeight,
+
+    /// If set, only the nodes that change the height *structurally* report
+    /// [`ExprProjectionHeight::Unknown`]; every other node that cannot be resolved reports the
+    /// zipped height of its inputs.
+    ///
+    /// Opaque expressions such as `map_batches`, `fold` and `search_sorted` have a height that is
+    /// not statically known, which is not the same as them changing the height -- they typically
+    /// do produce one value per input row. Callers that turn `Unknown` into a user-facing error
+    /// should set this so that those are not rejected, and leave the rest to the runtime shape
+    /// checks.
+    pub structural_unknowns_only: bool,
+
+    /// If set, a [`ExprProjectionHeight::Range`] is reported as
+    /// [`ExprProjectionHeight::Unknown`]: zipped with a column of one row, a range broadcasts it
+    /// to the range's length, which a `Column` height would hide.
+    pub range_is_unknown: bool,
+
+    /// If set, `search_sorted` has the height of its search keys, which is what the check of a
+    /// scalar argument needs. Otherwise it is [`ExprProjectionHeight::Unknown`], as in a group-by
+    /// it returns a list per group, even for a single key.
+    pub scalar_argument: bool,
+}
+
+impl Default for ExprHeightOptions {
+    fn default() -> Self {
+        Self {
+            struct_field: ExprProjectionHeight::Unknown,
+            structural_unknowns_only: false,
+            range_is_unknown: false,
+            scalar_argument: false,
+        }
+    }
+}
+
+/// Returns whether `aexpr` produces a number of rows that is unrelated to the number of rows of
+/// its input, no matter what the data is.
+fn changes_height_structurally(aexpr: &AExpr) -> bool {
+    match aexpr {
+        AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => true,
+        AExpr::Sort { options, .. } => options.limit.is_some(),
+        AExpr::SortBy { sort_options, .. } => sort_options.limit.is_some(),
+        AExpr::Over { mapping, .. } => matches!(mapping, WindowMapping::Explode),
+        _ => false,
+    }
+}
+
+pub struct ExprHeightVisitor<'a> {
+    options: ExprHeightOptions,
+    _phantom: PhantomData<&'a ()>,
+}
+
+impl Default for ExprHeightVisitor<'_> {
+    fn default() -> Self {
+        Self {
+            options: ExprHeightOptions::default(),
+            _phantom: PhantomData,
+        }
+    }
+}
 
 impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
     type Key = Node;
@@ -86,14 +178,18 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
         storage: &mut Self::Storage,
         edges: &mut dyn crate::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
-        ControlFlow::Continue(
-            if let Some(height) = aexpr_projection_height(storage.get(key), None) {
-                edges.outputs()[0] = height;
-                SubtreeVisit::Skip
-            } else {
-                SubtreeVisit::Visit
-            },
-        )
+        #[cfg(feature = "dtype-struct")]
+        if let Some(height) = self.struct_eval_height(storage.get(key), storage) {
+            edges.outputs()[0] = height;
+            return ControlFlow::Continue(SubtreeVisit::Skip);
+        }
+
+        ControlFlow::Continue(if let Some(height) = self.height(storage.get(key), None) {
+            edges.outputs()[0] = height;
+            SubtreeVisit::Skip
+        } else {
+            SubtreeVisit::Visit
+        })
     }
 
     fn post_visit(
@@ -102,9 +198,123 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
         storage: &mut Self::Storage,
         edges: &mut dyn crate::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        edges.outputs()[0] =
-            aexpr_projection_height(storage.get(key), Some(&mut *edges.inputs())).unwrap();
+        // @NOTE. `post_visit` also runs for nodes whose subtree `pre_visit` skipped, so the
+        // `StructField` override has to live in `height()` rather than in `pre_visit`.
+        #[cfg(feature = "dtype-struct")]
+        if matches!(storage.get(key), AExpr::StructEval { .. }) {
+            // Set by `pre_visit`.
+            return ControlFlow::Continue(());
+        }
+        edges.outputs()[0] = self
+            .height(storage.get(key), Some(&mut *edges.inputs()))
+            .unwrap();
         ControlFlow::Continue(())
+    }
+}
+
+impl ExprHeightVisitor<'_> {
+    /// The height of a `StructEval`: that of its input struct, broadcast by the new fields, in
+    /// which a `StructField` has the height of that struct.
+    #[cfg(feature = "dtype-struct")]
+    fn struct_eval_height(
+        &self,
+        aexpr: &AExpr,
+        arena: &Arena<AExpr>,
+    ) -> Option<ExprProjectionHeight> {
+        let AExpr::StructEval {
+            expr, evaluation, ..
+        } = aexpr
+        else {
+            return None;
+        };
+
+        let mut stack = ScratchVec::default();
+        let mut edges_stack = ScratchVec::default();
+        let input_height = aexpr_projection_height_rec_with(
+            *expr,
+            arena,
+            &mut stack,
+            &mut edges_stack,
+            self.options,
+        );
+        let options = ExprHeightOptions {
+            struct_field: input_height,
+            ..self.options
+        };
+        let height = evaluation.iter().fold(input_height, |acc, e| {
+            acc.zip_with(aexpr_projection_height_rec_with(
+                e.node(),
+                arena,
+                &mut stack,
+                &mut edges_stack,
+                options,
+            ))
+        });
+        Some(height)
+    }
+
+    fn height(
+        &self,
+        aexpr: &AExpr,
+        input_heights: Option<&mut dyn Collection<ExprProjectionHeight>>,
+    ) -> Option<ExprProjectionHeight> {
+        let height = self.height_inner(aexpr, input_heights);
+        if self.options.range_is_unknown && height == Some(ExprProjectionHeight::Range) {
+            return Some(ExprProjectionHeight::Unknown);
+        }
+        height
+    }
+
+    fn height_inner(
+        &self,
+        aexpr: &AExpr,
+        input_heights: Option<&mut dyn Collection<ExprProjectionHeight>>,
+    ) -> Option<ExprProjectionHeight> {
+        #[cfg(feature = "dtype-struct")]
+        if matches!(aexpr, AExpr::StructField(_)) {
+            return Some(self.options.struct_field);
+        }
+
+        #[cfg(feature = "search_sorted")]
+        if self.options.scalar_argument
+            && matches!(
+                aexpr,
+                AExpr::Function {
+                    function: IRFunctionExpr::SearchSorted { .. },
+                    ..
+                }
+            )
+        {
+            return input_heights.map(|h| *h.get(1).unwrap());
+        }
+
+        if !self.options.structural_unknowns_only {
+            return aexpr_projection_height(aexpr, input_heights);
+        }
+
+        if changes_height_structurally(aexpr) {
+            return Some(ExprProjectionHeight::Unknown);
+        }
+
+        let Some(input_heights) = input_heights else {
+            // Returning `None` makes the traversal descend into the subtree and ask again from
+            // `post_visit`, where the input heights are available.
+            return aexpr_projection_height(aexpr, None)
+                .filter(|h| !matches!(h, ExprProjectionHeight::Unknown));
+        };
+
+        let heights = || (0..input_heights.len()).map(|i| *input_heights.get(i).unwrap());
+        let zipped = ExprProjectionHeight::zipped_projection_height(heights());
+        // Only an `Unknown` that this node introduces itself may be assumed away; one that is
+        // inherited from an input has to keep propagating, or a structural height change deeper
+        // in the expression would be laundered here.
+        let inherited_unknown = heights().any(|h| matches!(h, ExprProjectionHeight::Unknown));
+
+        Some(match aexpr_projection_height(aexpr, Some(input_heights)) {
+            Some(ExprProjectionHeight::Unknown) | None if !inherited_unknown => zipped,
+            Some(height) => height,
+            None => ExprProjectionHeight::Unknown,
+        })
     }
 }
 
@@ -124,6 +334,7 @@ pub fn aexpr_projection_height(
         Column(_) => H::Column,
 
         Element => H::Column,
+        EvalColumn(_) => H::Scalar,
         #[cfg(feature = "dtype-struct")]
         StructField(_) => H::Unknown,
         Literal(lv) => {
@@ -134,11 +345,13 @@ pub fn aexpr_projection_height(
             }
         },
 
-        Eval { .. } => input_heights?[0],
+        Eval { .. } => H::zipped_projection_height(input_heights?.iter().copied()),
         #[cfg(feature = "dtype-struct")]
         StructEval { .. } => input_heights?[0],
 
         Filter { .. } | Slice { .. } | Explode { .. } => H::Unknown,
+        Sort { options, .. } if options.limit.is_some() => H::Unknown,
+        SortBy { sort_options, .. } if sort_options.limit.is_some() => H::Unknown,
 
         Agg(_) | AnonymousAgg { .. } => H::Scalar,
         Len => H::Scalar,
@@ -174,6 +387,20 @@ pub fn aexpr_projection_height(
             }
         },
 
+        // `old` and `new` are lookup tables, imploded by type coercion if they are flat. The
+        // `default` of `replace_strict` can be a column.
+        #[cfg(feature = "replace")]
+        AExpr::Function {
+            function: IRFunctionExpr::Replace | IRFunctionExpr::ReplaceStrict { .. },
+            ..
+        } => {
+            let input_heights = input_heights?;
+            let height = input_heights[0];
+            match input_heights.get(3) {
+                Some(default_height) => height.zip_with(*default_height),
+                None => height,
+            }
+        },
         AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
             if options.flags.returns_scalar() {
                 H::Scalar

@@ -32,7 +32,7 @@ pub use horizontal::{
     min_horizontal, reduce_exprs, sum_horizontal,
 };
 #[cfg(feature = "dtype-struct")]
-pub use horizontal::{cum_fold_exprs, cum_reduce_exprs};
+pub use horizontal::{cum_fold_exprs, cum_reduce_exprs, cum_sum_horizontal};
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
 #[cfg(all(
@@ -57,6 +57,22 @@ use crate::dsl::*;
 /// Return the number of rows in the context.
 pub fn len() -> Expr {
     Expr::Len
+}
+
+/// Replace `exprs`, at plan time, with the expression returned by `callback`.
+///
+/// The callback receives the input expressions and their resolved dtypes, in the same order.
+/// Inputs that expand to multiple columns (e.g. selectors) are combined
+/// in the same way as other multi-input functions,
+/// calling `callback` once per combination.
+pub fn pipe_with_dtype<E: AsRef<[Expr]>>(
+    exprs: E,
+    callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>,
+) -> Expr {
+    Expr::PipeWithDtype {
+        input: exprs.as_ref().to_vec(),
+        callback,
+    }
 }
 
 /// First column in a DataFrame.

@@ -28,6 +28,7 @@ mod range;
 mod rolling;
 #[cfg(feature = "rolling_window_by")]
 mod rolling_by;
+mod sql;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(feature = "dtype-struct")]
@@ -75,6 +76,7 @@ pub use self::range::{DateRangeArgs, RangeFunction};
 pub use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
 pub use self::rolling_by::RollingFunctionBy;
+pub use self::sql::{SqlBinaryOp, SqlFunction};
 #[cfg(feature = "strings")]
 pub use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -82,6 +84,52 @@ pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::TrigonometricFunction;
 use super::*;
+
+#[cfg(feature = "dtype-decimal")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub enum DecimalArithOp {
+    Mul,
+    Div,
+}
+
+#[cfg(feature = "dtype-decimal")]
+impl DecimalArithOp {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Mul => "decimal_mul",
+            Self::Div => "decimal_div",
+        }
+    }
+}
+
+#[cfg(feature = "dtype-decimal")]
+impl Display for DecimalArithOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// Arithmetic on the truncated quotient, for any numeric type.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub enum TruncArithOp {
+    /// The remainder with the dividend's sign.
+    Rem,
+    /// The quotient rounded toward zero.
+    IntDiv,
+}
+
+impl TruncArithOp {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Rem => "trunc_rem",
+            Self::IntDiv => "trunc_int_div",
+        }
+    }
+}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -124,6 +172,8 @@ pub enum FunctionExpr {
     Pow(PowFunction),
     #[cfg(feature = "row_hash")]
     Hash(u64),
+    /// 32-bit MurmurHash3 as defined by the Iceberg specification.
+    Mm3Hash,
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "index_of")]
@@ -261,17 +311,35 @@ pub enum FunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
+    XLogY {
+        base: f64,
+    },
+    #[cfg(feature = "log")]
     Log,
     #[cfg(feature = "log")]
     Log1p,
     #[cfg(feature = "log")]
     Exp,
+    #[cfg(feature = "log")]
+    Erf,
+    #[cfg(feature = "log")]
+    Erfc,
     Unique(bool),
     #[cfg(feature = "round_series")]
     Round {
         decimals: u32,
         mode: RoundMode,
     },
+    /// Decimal arithmetic producing `Decimal(38, scale)`, with the result rounded half-even.
+    #[cfg(feature = "dtype-decimal")]
+    DecimalArith {
+        op: DecimalArithOp,
+        scale: usize,
+    },
+    /// See [`SqlFunction`].
+    Sql(SqlFunction),
+    /// See [`TruncArithOp`].
+    TruncArith(TruncArithOp),
     #[cfg(feature = "round_series")]
     RoundSF {
         digits: i32,
@@ -328,6 +396,7 @@ pub enum FunctionExpr {
     /// This will lead to calls over FFI.
     FfiPlugin {
         flags: FunctionOptions,
+        is_deterministic: bool,
         /// Shared library.
         lib: PlSmallStr,
         /// Identifier in the shared lib.
@@ -359,6 +428,8 @@ pub enum FunctionExpr {
         return_dtype: Option<DataTypeExpr>,
         include_init: bool,
     },
+    #[cfg(feature = "dtype-struct")]
+    CumSumHorizontal,
 
     MaxHorizontal,
     MinHorizontal,
@@ -406,9 +477,22 @@ pub enum FunctionExpr {
     Reinterpret(Option<bool>, Option<DataType>),
     ExtendConstant,
 
-    RowEncode(RowEncodingVariant),
+    RowEncode {
+        variant: RowEncodingVariant,
+        output: RowEncodingOutputType,
+        /// Per column whether its nulls are encoded, `None` means for all columns.
+        encode_nulls: Option<Vec<bool>>,
+        /// Whether a row is null if any of its values is null.
+        propagate_nulls: bool,
+    },
     #[cfg(feature = "dtype-struct")]
-    RowDecode(Vec<(PlSmallStr, DataTypeExpr)>, RowEncodingVariant),
+    RowDecode {
+        fields: Vec<(PlSmallStr, DataTypeExpr)>,
+        variant: RowEncodingVariant,
+        output: RowEncodingOutputType,
+        /// Per column whether its nulls are encoded, `None` means for all columns.
+        encode_nulls: Option<Vec<bool>>,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -465,10 +549,12 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
                 flags: _,
+                is_deterministic,
                 lib,
                 symbol,
                 kwargs,
             } => {
+                is_deterministic.hash(state);
                 kwargs.hash(state);
                 lib.hash(state);
                 symbol.hash(state);
@@ -513,6 +599,8 @@ impl Hash for FunctionExpr {
             SumHorizontal { ignore_nulls } | MeanHorizontal { ignore_nulls } => {
                 ignore_nulls.hash(state)
             },
+            #[cfg(feature = "dtype-struct")]
+            CumSumHorizontal => {},
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
             | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
             Append { upcast } => upcast.hash(state),
@@ -541,6 +629,7 @@ impl Hash for FunctionExpr {
             Sign => {},
             #[cfg(feature = "row_hash")]
             Hash(seed) => seed.hash(state),
+            Mm3Hash => {},
             FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -620,17 +709,30 @@ impl Hash for FunctionExpr {
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
+            XLogY { base } => base.to_bits().hash(state),
+            #[cfg(feature = "log")]
             Log => {},
             #[cfg(feature = "log")]
             Log1p => {},
             #[cfg(feature = "log")]
             Exp => {},
+            #[cfg(feature = "log")]
+            Erf => {},
+            #[cfg(feature = "log")]
+            Erfc => {},
             Unique(a) => a.hash(state),
             #[cfg(feature = "round_series")]
             Round { decimals, mode } => {
                 decimals.hash(state);
                 mode.hash(state);
             },
+            #[cfg(feature = "dtype-decimal")]
+            DecimalArith { op, scale } => {
+                op.hash(state);
+                scale.hash(state);
+            },
+            Sql(f) => f.hash(state),
+            TruncArith(op) => op.hash(state),
             #[cfg(feature = "round_series")]
             FunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
@@ -723,11 +825,28 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
 
-            RowEncode(variants) => variants.hash(state),
+            RowEncode {
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            } => {
+                variant.hash(state);
+                output.hash(state);
+                encode_nulls.hash(state);
+                propagate_nulls.hash(state);
+            },
             #[cfg(feature = "dtype-struct")]
-            RowDecode(fs, variants) => {
-                fs.hash(state);
-                variants.hash(state);
+            RowDecode {
+                fields,
+                variant,
+                output,
+                encode_nulls,
+            } => {
+                fields.hash(state);
+                variant.hash(state);
+                output.hash(state);
+                encode_nulls.hash(state);
             },
         }
     }
@@ -768,6 +887,7 @@ impl Display for FunctionExpr {
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
             Hash(_) => "hash",
+            Mm3Hash => "mm3_hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]
@@ -866,11 +986,17 @@ impl Display for FunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
+            XLogY { .. } => "x_log_y",
+            #[cfg(feature = "log")]
             Log => "log",
             #[cfg(feature = "log")]
             Log1p => "log1p",
             #[cfg(feature = "log")]
             Exp => "exp",
+            #[cfg(feature = "log")]
+            Erf => "erf",
+            #[cfg(feature = "log")]
+            Erfc => "erfc",
             Unique(stable) => {
                 if *stable {
                     "unique_stable"
@@ -880,6 +1006,10 @@ impl Display for FunctionExpr {
             },
             #[cfg(feature = "round_series")]
             Round { .. } => "round",
+            #[cfg(feature = "dtype-decimal")]
+            DecimalArith { op, .. } => return Display::fmt(op, f),
+            Sql(func) => return Display::fmt(func, f),
+            TruncArith(op) => op.name(),
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]
@@ -923,6 +1053,8 @@ impl Display for FunctionExpr {
             CumReduceHorizontal { .. } => "cum_reduce",
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal { .. } => "cum_fold",
+            #[cfg(feature = "dtype-struct")]
+            CumSumHorizontal => "cum_sum_horizontal",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",
@@ -951,9 +1083,9 @@ impl Display for FunctionExpr {
             Reinterpret(_, _) => "reinterpret",
             ExtendConstant => "extend_constant",
 
-            RowEncode(..) => "row_encode",
+            RowEncode { .. } => "row_encode",
             #[cfg(feature = "dtype-struct")]
-            RowDecode(..) => "row_decode",
+            RowDecode { .. } => "row_decode",
         };
         write!(f, "{s}")
     }

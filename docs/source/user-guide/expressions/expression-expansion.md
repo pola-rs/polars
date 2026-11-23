@@ -69,8 +69,8 @@ When we use a data type with expression expansion we cannot know, beforehand, ho
 single expression will expand to. We need the schema of the input dataframe if we want to determine
 what is the final list of expressions that is to be applied.
 
-If we weren't sure about whether the price columns where of the type `Float64` or `Float32`, we
-could specify both data types:
+If we weren't sure about whether the price columns were of the type `Float64` or `Float32`, we could
+specify both data types:
 
 {{code_block('user-guide/expressions/expression-expansion', 'col-with-dtypes', [], ['col'],
 ['dtype_cols'])}}

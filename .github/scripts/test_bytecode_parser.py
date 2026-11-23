@@ -22,6 +22,8 @@ import pytest
 from polars._utils.udfs import BytecodeParser
 from tests.unit.operations.map.test_inefficient_map_warning import (
     MY_DICT,
+    MY_LIST,
+    MY_STRING,
     NOOP_TEST_CASES,
     TEST_CASES,
 )
@@ -53,6 +55,8 @@ def test_bytecode_parser_expression_in_ipython(
         "import numpy as np; "
         "import json; "
         f"MY_DICT = {MY_DICT};"
+        f"MY_LIST = {MY_LIST};"
+        f"MY_STRING = {MY_STRING!r};"
         f'bytecode_parser = BytecodeParser({func}, map_target="expr");'
         f'print(bytecode_parser.to_expression("{col}"));'
     )

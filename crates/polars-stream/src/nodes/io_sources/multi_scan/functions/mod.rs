@@ -13,10 +13,28 @@ use polars_utils::slice_enum::Slice;
 pub mod resolve_projections;
 pub mod resolve_slice;
 
+/// Maximum number of bytes of local, uncompressed files that are read at the same time, see
+/// `FileReader::local_read_size`.
+pub fn calc_max_concurrent_scan_bytes(num_pipelines: usize) -> usize {
+    if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCAN_BYTES").map(|x| {
+        x.parse::<NonZeroUsize>()
+            .unwrap_or_else(|_| panic!("invalid value for POLARS_MAX_CONCURRENT_SCAN_BYTES: {x}"))
+            .get()
+    }) {
+        return v;
+    }
+
+    num_pipelines
+        .saturating_mul(8 * 1024 * 1024)
+        .max(256 * 1024 * 1024)
+}
+
 pub fn calc_n_readers_pre_init(
     num_pipelines: usize,
     num_sources: usize,
     pre_slice: Option<&Slice>,
+    preferred_remote_pre_init: Option<usize>,
+    reader_max_concurrent: Option<usize>,
 ) -> usize {
     if let Ok(v) = std::env::var("POLARS_NUM_READERS_PRE_INIT").map(|x| {
         x.parse::<NonZeroUsize>()
@@ -26,30 +44,39 @@ pub fn calc_n_readers_pre_init(
         return v;
     }
 
-    let max_files_with_slice = match pre_slice {
-        // Calculate the max number of files assuming 1 row per file.
-        Some(v @ Slice::Positive { .. }) => v.end_position().max(1),
-        Some(Slice::Negative { .. }) | None => usize::MAX,
-    };
+    // Calculate the max number of files assuming 1 row per file.
+    let max_files_with_slice = pre_slice
+        .and_then(|v| v.end_position())
+        .map_or(usize::MAX, |end| end.max(1));
 
     // Set this generously high, there are users who scan 10,000's of small files from the cloud.
-    num_pipelines
-        .saturating_add(3)
+    preferred_remote_pre_init
+        .unwrap_or(num_pipelines.saturating_add(3))
         .min(max_files_with_slice)
         .min(num_sources)
         .clamp(1, 128)
+        .min(reader_max_concurrent.map_or(usize::MAX, |cap| cap.max(1)))
 }
 
-pub fn calc_max_concurrent_scans(num_pipelines: usize, num_sources: usize) -> usize {
-    if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
+/// `reader_max_concurrent` is the reader's own hard cap: `POLARS_MAX_CONCURRENT_SCANS` may lower
+/// it, not raise it. More readers than e.g. a database scan's sessions can deadlock an ordered
+/// read: a later reader holds the last session while its output waits behind the first.
+pub fn calc_max_concurrent_scans(
+    num_pipelines: usize,
+    num_sources: usize,
+    reader_max_concurrent: Option<usize>,
+) -> usize {
+    let n = if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
         x.parse::<NonZeroUsize>()
             .unwrap_or_else(|_| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}"))
             .get()
     }) {
-        return v;
-    }
+        v
+    } else {
+        num_pipelines.min(num_sources).clamp(1, 128)
+    };
 
-    num_pipelines.min(num_sources).clamp(1, 128)
+    n.min(reader_max_concurrent.map_or(usize::MAX, |cap| cap.max(1)))
 }
 
 pub async fn is_compressed_source(
@@ -69,9 +96,13 @@ pub async fn is_compressed_source(
         .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref(), io_metrics)
         .await?;
 
-    let Ok(first_4_bytes) = byte_source.get_range(0..4).await else {
+    // Note: `get_range()` requires the range to be in-bounds, so clamp against the file size -
+    // sources smaller than the magic are simply not compressed.
+    let n_magic_bytes = byte_source.get_size().await?.min(4);
+
+    let Ok(magic_bytes) = byte_source.get_range(0..n_magic_bytes).await else {
         return Ok(false);
     };
 
-    Ok(SupportedCompression::check(&first_4_bytes).is_some())
+    Ok(SupportedCompression::check(&magic_bytes).is_some())
 }

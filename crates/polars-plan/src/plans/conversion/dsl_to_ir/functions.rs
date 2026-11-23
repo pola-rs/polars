@@ -14,7 +14,7 @@ use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
 
 pub(super) fn convert_functions(
-    input: Vec<Expr>,
+    input: &[Expr],
     function: FunctionExpr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
@@ -49,7 +49,10 @@ pub(super) fn convert_functions(
                 A::Get(v) => IA::Get(v),
                 A::Join(v) => IA::Join(v),
                 #[cfg(feature = "is_in")]
-                A::Contains { nulls_equal } => IA::Contains { nulls_equal },
+                A::Contains { nulls_equal } => IA::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "array_count")]
                 A::CountMatches => IA::CountMatches,
                 A::Shift => IA::Shift,
@@ -156,8 +159,8 @@ pub(super) fn convert_functions(
                 M::Keys => IM::Keys,
                 M::Values => IM::Values,
                 M::Length => IM::Length,
-                M::ContainsKey => IM::ContainsKey,
-                M::Get => IM::Get,
+                M::ContainsKey => IM::ContainsKey { needle_cast: None },
+                M::Get => IM::Get { needle_cast: None },
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -181,7 +184,10 @@ pub(super) fn convert_functions(
             I::ListExpr(match list_function {
                 L::Concat => IL::Concat,
                 #[cfg(feature = "is_in")]
-                L::Contains { nulls_equal } => IL::Contains { nulls_equal },
+                L::Contains { nulls_equal } => IL::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "list_drop_nulls")]
                 L::DropNulls => IL::DropNulls,
                 #[cfg(feature = "list_sample")]
@@ -234,7 +240,11 @@ pub(super) fn convert_functions(
             use IRStringFunction as IS;
             use StringFunction as S;
             I::StringExpr(match string_function {
-                S::Format { format, insertions } => {
+                S::Format {
+                    format,
+                    insertions,
+                    specs,
+                } => {
                     if input_is_empty {
                         polars_ensure!(
                             insertions.is_empty(),
@@ -248,7 +258,11 @@ pub(super) fn convert_functions(
 
                         return Ok((out, get_literal_name()));
                     } else {
-                        IS::Format { format, insertions }
+                        IS::Format {
+                            format,
+                            insertions,
+                            specs,
+                        }
                     }
                 },
                 #[cfg(feature = "concat_str")]
@@ -281,6 +295,7 @@ pub(super) fn convert_functions(
                 S::ToInteger { dtype, strict } => IS::ToInteger { dtype, strict },
                 S::LenBytes => IS::LenBytes,
                 S::LenChars => IS::LenChars,
+                S::FromCodePoint => IS::FromCodePoint,
                 S::Lowercase => IS::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 S::JsonDecode(dtype) => IS::JsonDecode(dtype.into_datatype(ctx.schema)?),
@@ -390,7 +405,10 @@ pub(super) fn convert_functions(
                 S::Drop(pl_small_strs, strict) => IS::DropFields(pl_small_strs, strict),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
-                S::SelectFields(_) => unreachable!("handled by expression expansion"),
+                // Expression expansion resolves these, but `Expr.meta` converts without it.
+                S::SelectFields(selector) => polars_bail!(
+                    InvalidOperation: "'Expr: struct.field({selector})' not allowed in this context/location"
+                ),
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
                 S::MapFieldNames(f) => IS::MapFieldNames(f),
@@ -460,6 +478,7 @@ pub(super) fn convert_functions(
                     IT::ReplaceTimeZone(time_zone, non_existent)
                 },
                 T::Combine(time_unit) => IT::Combine(time_unit),
+                T::DateDiff(unit) => IT::DateDiff(unit),
                 T::DatetimeFunction {
                     time_unit,
                     time_zone,
@@ -506,7 +525,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "is_between")]
                 B::IsBetween { closed } => IB::IsBetween { closed },
                 #[cfg(feature = "is_in")]
-                B::IsIn { nulls_equal } => IB::IsIn { nulls_equal },
+                B::IsIn { nulls_equal } => IB::IsIn {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "is_close")]
                 B::IsClose {
                     abs_tol,
@@ -619,21 +641,17 @@ pub(super) fn convert_functions(
         }),
         #[cfg(feature = "row_hash")]
         F::Hash(seed) => I::Hash(seed),
+        F::Mm3Hash => I::Mm3Hash,
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
-        F::IndexOf => {
-            polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar value passed to `index_of`");
-            I::IndexOf
-        },
+        F::IndexOf => I::IndexOf,
         #[cfg(feature = "search_sorted")]
         F::SearchSorted { side, descending } => I::SearchSorted { side, descending },
         #[cfg(feature = "range")]
         F::Range(range_function) => I::Range(match range_function {
             RangeFunction::IntRange { step, dtype } => {
                 let dtype = dtype.into_datatype(ctx.schema)?;
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `int_range`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar stop passed to `int_range`");
                 polars_ensure!(dtype.is_integer(), SchemaMismatch: "non-integer `dtype` passed to `int_range`: '{dtype}'");
                 IRRangeFunction::IntRange { step, dtype }
             },
@@ -642,12 +660,7 @@ pub(super) fn convert_functions(
                 polars_ensure!(dtype.is_integer(), SchemaMismatch: "non-integer `dtype` passed to `int_ranges`: '{dtype}'");
                 IRRangeFunction::IntRanges { dtype }
             },
-            RangeFunction::LinearSpace { closed } => {
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `linear_space`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `linear_space`");
-                polars_ensure!(e[2].is_scalar(ctx.arena), ShapeMismatch: "non-scalar num_samples passed to `linear_space`");
-                IRRangeFunction::LinearSpace { closed }
-            },
+            RangeFunction::LinearSpace { closed } => IRRangeFunction::LinearSpace { closed },
             RangeFunction::LinearSpaces {
                 closed,
                 array_width,
@@ -660,22 +673,10 @@ pub(super) fn convert_functions(
                 interval,
                 closed,
                 arg_type,
-            } => {
-                use DateRangeArgs::*;
-                let arg_names = match arg_type {
-                    StartEndSamples => vec!["start", "end", "num_samples"],
-                    StartEndInterval => vec!["start", "end"],
-                    StartIntervalSamples => vec!["start", "num_samples"],
-                    EndIntervalSamples => vec!["end", "num_samples"],
-                };
-                for (idx, &name) in arg_names.iter().enumerate() {
-                    polars_ensure!(e[idx].is_scalar(ctx.arena), ShapeMismatch: "non-scalar {name} passed to `date_range`");
-                }
-                IRRangeFunction::DateRange {
-                    interval,
-                    closed,
-                    arg_type,
-                }
+            } => IRRangeFunction::DateRange {
+                interval,
+                closed,
+                arg_type,
             },
             #[cfg(all(feature = "range", feature = "dtype-date"))]
             RangeFunction::DateRanges {
@@ -694,24 +695,12 @@ pub(super) fn convert_functions(
                 time_unit,
                 time_zone,
                 arg_type,
-            } => {
-                use DateRangeArgs::*;
-                let arg_names = match arg_type {
-                    StartEndSamples => vec!["start", "end", "num_samples"],
-                    StartEndInterval => vec!["start", "end"],
-                    StartIntervalSamples => vec!["start", "num_samples"],
-                    EndIntervalSamples => vec!["end", "num_samples"],
-                };
-                for (idx, &name) in arg_names.iter().enumerate() {
-                    polars_ensure!(e[idx].is_scalar(ctx.arena), ShapeMismatch: "non-scalar {name} passed to `datetime_range`");
-                }
-                IRRangeFunction::DatetimeRange {
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone,
-                    arg_type,
-                }
+            } => IRRangeFunction::DatetimeRange {
+                interval,
+                closed,
+                time_unit,
+                time_zone,
+                arg_type,
             },
             #[cfg(all(feature = "range", feature = "dtype-datetime"))]
             RangeFunction::DatetimeRanges {
@@ -729,8 +718,6 @@ pub(super) fn convert_functions(
             },
             #[cfg(all(feature = "range", feature = "dtype-time"))]
             RangeFunction::TimeRange { interval, closed } => {
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `time_range`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `time_range`");
                 IRRangeFunction::TimeRange { interval, closed }
             },
             #[cfg(all(feature = "range", feature = "dtype-time"))]
@@ -846,15 +833,8 @@ pub(super) fn convert_functions(
             }
             I::ConcatExpr { rechunk: false }
         },
-        F::ShiftAndFill => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'fill_value' must be a scalar value");
-            I::ShiftAndFill
-        },
-        F::Shift => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            I::Shift
-        },
+        F::ShiftAndFill => I::ShiftAndFill,
+        F::Shift => I::Shift,
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
         F::Quantile { method } => I::Quantile { method },
@@ -878,16 +858,16 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
-        F::MinBy => I::MinBy,
-        F::MaxBy => I::MaxBy,
+        F::MinBy => I::MinBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
+        F::MaxBy => I::MaxBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
-        F::Repeat => {
-            polars_ensure!(&e[0].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            I::Repeat
-        },
+        F::Repeat => I::Repeat,
         #[cfg(feature = "round_series")]
         F::Clip { has_min, has_max } => I::Clip { has_min, has_max },
         F::AsList => I::AsList,
@@ -896,7 +876,15 @@ pub(super) fn convert_functions(
         #[cfg(feature = "top_k")]
         F::TopK { descending } => I::TopK { descending },
         #[cfg(feature = "top_k")]
-        F::TopKBy { descending } => I::TopKBy { descending },
+        F::TopKBy { descending } => {
+            // The inputs are the values, `k` and then the keys.
+            let options = SortMultipleOptions::default()
+                .with_order_descending_multi(descending)
+                .expand_flags(e.len().saturating_sub(2))?;
+            I::TopKBy {
+                descending: options.descending,
+            }
+        },
         #[cfg(feature = "cum_agg")]
         F::CumCount { reverse } => I::CumCount { reverse },
         #[cfg(feature = "cum_agg")]
@@ -934,8 +922,10 @@ pub(super) fn convert_functions(
                 (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
-            let quantile = match ctx.arena.get(e[1].node()) {
-                AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
+            let quantile_input = e.get(1).ok_or_else(
+                || polars_err!(InvalidOperation: "missing argument 'quantile' in `approx_quantile`"),
+            )?;
+            let quantile = match ctx.arena.get(quantile_input.node()) {
                 AExpr::Literal(
                     lv @ (LiteralValue::Scalar(_)
                     | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
@@ -962,11 +952,19 @@ pub(super) fn convert_functions(
                 .materialize_unknown(false)?;
             let sketch = AExprBuilder::function(
                 vec![e[0].clone()],
-                I::ApproxQuantileSketch { method, error },
+                I::ApproxQuantileSketch {
+                    method,
+                    error,
+                    failure_probability:
+                        polars_compute::approx_quantile::DEFAULT_FAILURE_PROBABILITY,
+                },
                 ctx.arena,
             );
             let estimate = AExprBuilder::function(
-                vec![sketch.expr_ir_retain_name(ctx.arena), e[1].clone()],
+                vec![
+                    sketch.expr_ir_retain_name(ctx.arena),
+                    quantile_input.clone(),
+                ],
                 I::ApproxQuantileEstimate { values_dtype },
                 ctx.arena,
             );
@@ -974,10 +972,7 @@ pub(super) fn convert_functions(
         },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]
-        F::Diff(n) => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            I::Diff(n)
-        },
+        F::Diff(n) => I::Diff(n),
         #[cfg(feature = "pct_change")]
         F::PctChange => I::PctChange,
         #[cfg(feature = "interpolate")]
@@ -987,14 +982,30 @@ pub(super) fn convert_functions(
         #[cfg(feature = "log")]
         F::Entropy { base, normalize } => I::Entropy { base, normalize },
         #[cfg(feature = "log")]
+        F::XLogY { base } => I::XLogY { base },
+        #[cfg(feature = "log")]
         F::Log => I::Log,
         #[cfg(feature = "log")]
         F::Log1p => I::Log1p,
         #[cfg(feature = "log")]
         F::Exp => I::Exp,
+        #[cfg(feature = "log")]
+        F::Erf => I::Erf,
+        #[cfg(feature = "log")]
+        F::Erfc => I::Erfc,
         F::Unique(v) => I::Unique(v),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => I::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { op, scale } => I::DecimalArith { op, scale },
+        F::Sql(function) => {
+            let output_name = e[0].output_name().clone();
+            return Ok((
+                super::sql::lower_sql_function(function, e, ctx)?,
+                output_name,
+            ));
+        },
+        F::TruncArith(op) => I::TruncArith(op),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]
@@ -1162,11 +1173,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => I::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
@@ -1211,6 +1224,37 @@ pub(super) fn convert_functions(
             returns_scalar,
             return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
             include_init,
+        },
+        #[cfg(feature = "dtype-struct")]
+        F::CumSumHorizontal => {
+            let mut dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            for e in &e[1..] {
+                dtype = try_get_supertype(&dtype, e.dtype(ctx.schema, ctx.arena)?)?;
+            }
+            let mut dtype = dtype.materialize_unknown(false)?;
+            if dtype == DataType::Boolean {
+                dtype = IDX_DTYPE;
+            }
+
+            let mut acc = AExprBuilder::lit_scalar(Scalar::from(0i32), ctx.arena)
+                .cast(dtype.clone(), ctx.arena);
+            let fields = e
+                .iter()
+                .map(|e| {
+                    acc = AExprBuilder::new_from_aexpr(
+                        AExpr::Cast {
+                            expr: acc.plus(e.node(), ctx.arena).node(),
+                            dtype: dtype.clone(),
+                            options: CastOptions::NonStrict,
+                        },
+                        ctx.arena,
+                    );
+                    acc.expr_ir(e.output_name().clone())
+                })
+                .collect();
+            let output_name = e[0].output_name().clone();
+            let out = AExprBuilder::function(fields, I::AsStruct, ctx.arena);
+            return Ok((out.node(), output_name));
         },
 
         F::MaxHorizontal => I::MaxHorizontal,
@@ -1282,6 +1326,12 @@ pub(super) fn convert_functions(
                     target_dtype.numeric_to_unsigned_bit_repr(),
                 ) {
                     (Some(l), Some(r)) if l == r => {},
+                    #[cfg(feature = "dtype-decimal")]
+                    _ if matches!(
+                        (&input_dtype, &target_dtype),
+                        (DataType::Int128, DataType::Decimal(_, _))
+                            | (DataType::Decimal(_, _), DataType::Int128)
+                    ) => {},
                     _ => polars_bail!(
                         InvalidOperation:
                         "cannot reinterpret from {input_dtype:?} to {target_dtype:?}"
@@ -1295,26 +1345,60 @@ pub(super) fn convert_functions(
 
             I::Reinterpret(target_dtype)
         },
-        F::ExtendConstant => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
-            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            I::ExtendConstant
-        },
+        F::ExtendConstant => I::ExtendConstant,
 
-        F::RowEncode(v) => {
-            let dts = e
+        F::RowEncode {
+            mut variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => {
+            let dtypes = e
                 .iter()
-                .map(|e| Ok(e.dtype(ctx.schema, ctx.arena)?.clone()))
+                .map(|e| {
+                    e.dtype(ctx.schema, ctx.arena)?
+                        .clone()
+                        .materialize_unknown(false)
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            I::RowEncode(dts, v)
+            if let RowEncodingVariant::Ordered {
+                descending,
+                nulls_last,
+                ..
+            } = &mut variant
+            {
+                let options = SortMultipleOptions {
+                    descending: descending.take().unwrap_or(vec![false]),
+                    nulls_last: nulls_last.take().unwrap_or(vec![false]),
+                    ..Default::default()
+                }
+                .expand_flags(e.len())?;
+                *descending = Some(options.descending);
+                *nulls_last = Some(options.nulls_last);
+            }
+            I::RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            }
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, v) => I::RowDecode(
-            fs.into_iter()
+        F::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => I::RowDecode {
+            fields: fields
+                .into_iter()
                 .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))
                 .collect::<PolarsResult<Vec<_>>>()?,
-            v,
-        ),
+            variant,
+            output,
+            encode_nulls,
+        },
     };
 
     let mut options = ir_function.function_options();

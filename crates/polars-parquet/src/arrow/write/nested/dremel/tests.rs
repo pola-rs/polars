@@ -5,11 +5,14 @@ mod def {
     use crate::write::pages::{ListNested, PrimitiveNested, StructNested};
 
     fn test(nested: Vec<Nested>, expected: Vec<u16>) {
-        let mut iter = BufferedDremelIter::new(&nested).map(|d| d.def);
-        // assert_eq!(iter.size_hint().0, expected.len());
-        let result = iter.by_ref().collect::<Vec<_>>();
-        assert_eq!(result, expected);
-        // assert_eq!(iter.size_hint().0, 0);
+        let levels = Levels::<u16>::new(&nested, true);
+        assert_eq!(levels.def, expected);
+        assert_eq!(levels.rep.len(), expected.len());
+
+        let levels = Levels::<u8>::new(&nested, false);
+        let def = levels.def.iter().map(|&d| u16::from(d)).collect::<Vec<_>>();
+        assert_eq!(def, expected);
+        assert!(levels.rep.is_empty());
     }
 
     #[test]
@@ -748,10 +751,9 @@ mod rep {
     use super::*;
 
     fn test(nested: Vec<Nested>, expected: Vec<u16>) {
-        let mut iter = BufferedDremelIter::new(&nested).map(|d| d.rep);
-        // assert_eq!(iter.size_hint().0, expected.len());
-        assert_eq!(iter.by_ref().collect::<Vec<_>>(), expected);
-        // assert_eq!(iter.size_hint().0, 0);
+        let levels = Levels::<u16>::new(&nested, true);
+        assert_eq!(levels.rep, expected);
+        assert_eq!(levels.def.len(), expected.len());
     }
 
     #[test]

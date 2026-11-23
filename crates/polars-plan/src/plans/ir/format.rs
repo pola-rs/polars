@@ -1,10 +1,12 @@
 use std::fmt::{self, Display, Formatter, Write};
 
 use polars_core::frame::DataFrame;
+use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
-use polars_utils::aliases::{InitHashMaps as _, PlIndexSet};
+use polars_utils::aliases::{InitHashMaps as _, PlIndexMap, PlIndexSet};
 use polars_utils::format_list_truncated;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
@@ -22,15 +24,19 @@ pub struct IRDisplay<'a> {
 
 #[derive(Clone, Copy)]
 pub struct ExprIRDisplay<'a> {
-    pub(crate) node: Node,
+    pub(crate) root: &'a AExpr,
     pub(crate) output_name: &'a OutputName,
     pub(crate) expr_arena: &'a Arena<AExpr>,
 }
 
 impl<'a> ExprIRDisplay<'a> {
     pub fn display_node(node: Node, expr_arena: &'a Arena<AExpr>) -> Self {
+        Self::display_aexpr(expr_arena.get(node), expr_arena)
+    }
+
+    pub fn display_aexpr(root: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> Self {
         Self {
-            node,
+            root,
             output_name: &OutputName::None,
             expr_arena,
         }
@@ -66,14 +72,56 @@ impl AsExpr for ExprIR {
     }
 }
 
+pub(crate) struct WindowHeaderDisplay<'a> {
+    pub(crate) partition_by: &'a [PlSmallStr],
+    pub(crate) order_by: Option<&'a (Vec<PlSmallStr>, SortMultipleOptions)>,
+    pub(crate) maintain_order: bool,
+    pub(crate) ordered_eval: bool,
+}
+
+impl Display for WindowHeaderDisplay<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "WINDOW[maintain_order: {}, ordered_eval: {}] PARTITION BY [",
+            self.maintain_order, self.ordered_eval
+        )?;
+        for (i, name) in self.partition_by.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "\"{name}\"")?;
+        }
+        f.write_char(']')?;
+        if let Some((names, options)) = self.order_by {
+            f.write_str(" ORDER BY ")?;
+            for (i, name) in names.iter().enumerate() {
+                if i > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "\"{name}\"")?;
+                if options.descending[i] {
+                    f.write_str(" DESC")?;
+                }
+                if options.nulls_last[i] {
+                    f.write_str(" NULLS LAST")?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn write_scan(
     f: &mut dyn fmt::Write,
     name: &str,
+    scan_type: Option<&FileScanIR>,
     sources: &ScanSources,
     indent: usize,
     n_columns: usize,
     total_columns: usize,
+    field_selection: Option<&ScanFieldSelection>,
     row_estimation: Option<u64>,
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
@@ -87,6 +135,25 @@ fn write_scan(
         ScanSourcesDisplay(sources),
     )?;
 
+    if let Some(FileScanIR::ExternalReaderBuilder { external }) = scan_type {
+        let props = match external.explain_properties() {
+            Ok(x) => x,
+            Err(e) => PlIndexMap::from_iter([(
+                "Error:".into(),
+                format!("failed explain_properties(): {e:?}"),
+            )]),
+        };
+
+        let indent = indent + INDENT_INCREMENT;
+
+        for (k, v) in props {
+            writeln!(f)?;
+            // One line per property. This is text, not a graph label: quotes stay as they are.
+            let v = v.replace('\n', "\\n");
+            write!(f, "{:indent$}{k}: {v}", "")?;
+        }
+    }
+
     let total_columns = total_columns - usize::from(row_index.is_some());
     if n_columns != usize::MAX {
         write!(
@@ -96,6 +163,9 @@ fn write_scan(
         )?;
     } else {
         write!(f, "\n{:indent$}PROJECT */{total_columns} COLUMNS", "")?;
+    }
+    if let Some(field_selection) = field_selection {
+        write!(f, "\n{:indent$}PROJECT FIELDS: {field_selection}", "")?;
     }
     if let Some(predicate) = predicate {
         write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
@@ -135,7 +205,7 @@ impl<'a> IRDisplay<'a> {
 
     fn display_expr(&self, root: &'a ExprIR) -> ExprIRDisplay<'a> {
         ExprIRDisplay {
-            node: root.node(),
+            root: self.lp.expr_arena.get(root.node()),
             output_name: root.output_name_inner(),
             expr_arena: self.lp.expr_arena,
         }
@@ -180,8 +250,9 @@ impl<'a> IRDisplay<'a> {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 let name = if let Some(slice) = options.slice {
                     format!(
-                        "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                        options.maintain_order
+                        "SLICED UNION[maintain_order: {0}]: {1}",
+                        options.maintain_order,
+                        slice.fmt_tuple()
                     )
                 } else {
                     format!("UNION[maintain_order: {0}]", options.maintain_order)
@@ -304,6 +375,17 @@ impl<'a> IRDisplay<'a> {
                     ._format(f, sub_indent, seen_caches)?;
                 write!(f, "\n{:indent$}END MERGE_SORTED", "")
             },
+            Recursive { anchor, step, .. } => {
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
+                write!(f, ":")?;
+
+                write!(f, "\n{:indent$}ANCHOR:", "")?;
+                self.with_root(*anchor)
+                    ._format(f, sub_indent, seen_caches)?;
+                write!(f, "\n{:indent$}STEP:", "")?;
+                self.with_root(*step)._format(f, sub_indent, seen_caches)?;
+                write!(f, "\n{:indent$}END RECURSIVE", "")
+            },
             ir_node => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 for input in ir_node.inputs() {
@@ -325,7 +407,7 @@ impl<'a> ExprIRDisplay<'a> {
 
     fn with_root<T: AsExpr>(&self, root: &'a T) -> Self {
         Self {
-            node: root.node(),
+            root: self.expr_arena.get(root.node()),
             output_name: root.output_name(),
             expr_arena: self.expr_arena,
         }
@@ -333,7 +415,7 @@ impl<'a> ExprIRDisplay<'a> {
 
     fn parenthesize_if_binexpr(self) -> impl Display + 'a {
         std::fmt::from_fn(move |f| {
-            if let AExpr::BinaryExpr { .. } = self.expr_arena.get(self.node) {
+            if let AExpr::BinaryExpr { .. } = self.root {
                 write!(f, "({self})")
             } else {
                 write!(f, "{self}")
@@ -366,7 +448,7 @@ impl<T: AsExpr> Display for ExprIRSliceDisplay<'_, T> {
         f.write_char('[')?;
         if let Some(fst) = iter.next() {
             let fst = ExprIRDisplay {
-                node: fst.node(),
+                root: self.expr_arena.get(fst.node()),
                 output_name: fst.output_name(),
                 expr_arena: self.expr_arena,
             };
@@ -375,7 +457,7 @@ impl<T: AsExpr> Display for ExprIRSliceDisplay<'_, T> {
 
         for expr in iter {
             let expr = ExprIRDisplay {
-                node: expr.node(),
+                root: self.expr_arena.get(expr.node()),
                 output_name: expr.output_name(),
                 expr_arena: self.expr_arena,
             };
@@ -397,7 +479,7 @@ impl<T: AsExpr> fmt::Debug for ExprIRSliceDisplay<'_, T> {
 impl Display for ExprIRDisplay<'_> {
     #[recursive]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let root = self.expr_arena.get(self.node);
+        let root = self.root;
 
         let has_alias = matches!(self.output_name, OutputName::Alias(_));
         use AExpr::*;
@@ -423,6 +505,7 @@ impl Display for ExprIRDisplay<'_> {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 let function = self.with_root(function).parenthesize_if_binexpr();
                 let partition_by = self.with_slice(partition_by);
@@ -448,7 +531,7 @@ impl Display for ExprIRDisplay<'_> {
                 }
                 f.write_char(')')
             },
-            Column(name) => write!(f, "col(\"{name}\")"),
+            Column(name) | EvalColumn(name) => write!(f, "col(\"{name}\")"),
             #[cfg(feature = "dtype-struct")]
             StructField(name) => write!(f, "field(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
@@ -464,10 +547,11 @@ impl Display for ExprIRDisplay<'_> {
             },
             Sort { expr, options } => {
                 let expr = self.with_root(expr).parenthesize_if_binexpr();
-                if options.descending {
-                    write!(f, "{expr}.sort(desc)")
+                let order = if options.descending { "desc" } else { "asc" };
+                if let Some(limit) = options.limit {
+                    write!(f, "{expr}.sort({order}, limit={limit})")
                 } else {
-                    write!(f, "{expr}.sort(asc)")
+                    write!(f, "{expr}.sort({order})")
                 }
             },
             SortBy {
@@ -507,23 +591,27 @@ impl Display for ExprIRDisplay<'_> {
                     Min {
                         input,
                         propagate_nans,
+                        propagate_nulls,
                     } => {
                         self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
-                        if *propagate_nans {
-                            write!(f, ".nan_min()")
+                        let name = if *propagate_nans { "nan_min" } else { "min" };
+                        if *propagate_nulls {
+                            write!(f, ".{name}(propagate_nulls)")
                         } else {
-                            write!(f, ".min()")
+                            write!(f, ".{name}()")
                         }
                     },
                     Max {
                         input,
                         propagate_nans,
+                        propagate_nulls,
                     } => {
                         self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
-                        if *propagate_nans {
-                            write!(f, ".nan_max()")
+                        let name = if *propagate_nans { "nan_max" } else { "max" };
+                        if *propagate_nulls {
+                            write!(f, ".{name}(propagate_nulls)")
                         } else {
-                            write!(f, ".max()")
+                            write!(f, ".{name}()")
                         }
                     },
                     Median(expr) => write!(
@@ -587,11 +675,17 @@ impl Display for ExprIRDisplay<'_> {
                         "{}.n_unique()",
                         self.with_root(expr).parenthesize_if_binexpr()
                     ),
-                    Sum(expr) => write!(
-                        f,
-                        "{}.sum()",
-                        self.with_root(expr).parenthesize_if_binexpr()
-                    ),
+                    Sum {
+                        input,
+                        null_on_empty,
+                    } => {
+                        self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
+                        if *null_on_empty {
+                            write!(f, ".sum(null_on_empty=true)")
+                        } else {
+                            write!(f, ".sum()")
+                        }
+                    },
                     Count {
                         input,
                         include_nulls: false,
@@ -666,6 +760,7 @@ impl Display for ExprIRDisplay<'_> {
                 expr,
                 evaluation,
                 variant,
+                columns: _,
             } => {
                 let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let evaluation = self.with_root(evaluation);
@@ -686,10 +781,15 @@ impl Display for ExprIRDisplay<'_> {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr,
+                evaluation,
+                variant,
+            } => {
                 let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let evaluation = self.with_slice(evaluation);
-                write!(f, "{expr}.struct.with_fields({evaluation})")
+                let name = variant.to_name();
+                write!(f, "{expr}.{name}({evaluation})")
             },
             Slice {
                 input,
@@ -840,10 +940,12 @@ pub fn write_ir_non_recursive(
             write_scan(
                 f,
                 &header_name,
+                None,
                 &ScanSources::default(),
                 indent,
                 n_columns,
                 total_columns,
+                None,
                 None,
                 &predicate,
                 options
@@ -859,12 +961,8 @@ pub fn write_ir_non_recursive(
 
             Ok(())
         },
-        IR::Slice {
-            input: _,
-            offset,
-            len,
-        } => {
-            write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", "")
+        IR::Slice { input: _, slice } => {
+            write!(f, "{:indent$}SLICE[{slice}]", "")
         },
         IR::Filter {
             input: _,
@@ -884,6 +982,7 @@ pub fn write_ir_non_recursive(
             unified_scan_args,
             hive_parts: _,
             output_schema: _,
+            maintain_order: _,
         } => {
             let n_columns = unified_scan_args
                 .projection
@@ -898,13 +997,15 @@ pub fn write_ir_non_recursive(
             write_scan(
                 f,
                 (&**scan_type).into(),
+                Some(&**scan_type),
                 sources,
                 indent,
                 n_columns,
                 file_info.schema.len(),
+                unified_scan_args.field_selection.as_deref(),
                 row_estimation,
                 &predicate,
-                unified_scan_args.pre_slice.clone(),
+                unified_scan_args.pre_slice,
                 unified_scan_args.row_index.as_ref(),
                 unified_scan_args.deletion_files.as_ref(),
             )
@@ -976,11 +1077,10 @@ pub fn write_ir_non_recursive(
                 f.write_char('[')?;
 
                 let mut comma = false;
-                if let Some((o, l, dyn_pred)) = slice {
+                if let Some((s, dyn_pred)) = slice {
+                    write!(f, "slice: {}", s.fmt_tuple())?;
                     if let Some(dyn_pred) = &dyn_pred {
-                        write!(f, "slice: ({o}, {l}, {dyn_pred:?})")?;
-                    } else {
-                        write!(f, "slice: ({o}, {l})")?;
+                        write!(f, ", {dyn_pred:?}")?;
                     }
                     comma = true;
                 }
@@ -1087,6 +1187,25 @@ pub fn write_ir_non_recursive(
             write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
             write!(f, "\n{:indent$} {exprs} ", "")
         },
+        IR::Window {
+            input: _,
+            partition_by,
+            order_by,
+            exprs,
+            schema: _,
+            maintain_order,
+            ordered_eval,
+        } => {
+            let header = WindowHeaderDisplay {
+                partition_by,
+                order_by: order_by.as_ref(),
+                maintain_order: *maintain_order,
+                ordered_eval: *ordered_eval,
+            };
+            let exprs = ExprIRSliceDisplay { exprs, expr_arena };
+            write!(f, "{:indent$}{header}:", "")?;
+            write!(f, "\n{:indent$} {exprs} ", "")
+        },
         IR::Distinct { input: _, options } => {
             write!(
                 f,
@@ -1098,8 +1217,9 @@ pub fn write_ir_non_recursive(
         IR::Union { inputs: _, options } => {
             let name = if let Some(slice) = options.slice {
                 format!(
-                    "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                    options.maintain_order
+                    "SLICED UNION[maintain_order: {0}]: {1}",
+                    options.maintain_order,
+                    slice.fmt_tuple()
                 )
             } else {
                 format!("UNION[maintain_order: {0}]", options.maintain_order)
@@ -1137,6 +1257,8 @@ pub fn write_ir_non_recursive(
                 .collect::<Vec<_>>()
                 .join(", "),
         ),
+        IR::Recursive { id, .. } => write!(f, "{:indent$}RECURSIVE[id: {id}]", ""),
+        IR::WorkingTableScan { id, .. } => write!(f, "{:indent$}WORKING TABLE[id: {id}]", ""),
         IR::UnoptimizedDispatch {
             inputs: _,
             arg_map: _,

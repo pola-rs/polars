@@ -15,7 +15,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
@@ -64,6 +64,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 container.extend([*function]);
                 container.extend(partition_by.iter().cloned());
@@ -73,11 +74,17 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
+                columns,
             } => {
-                container.extend([*expr, *evaluation]);
+                // We don't use the evaluation here because it does not contain inputs.
+                _ = evaluation;
+                container.extend([*expr]);
+                container.extend(columns.iter().map(ExprIR::node));
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 container.extend([*expr]);
                 container.extend(evaluation.iter().map(|x| x.node()));
             },
@@ -103,7 +110,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
@@ -152,6 +159,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -163,13 +171,17 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
+                columns,
             } => {
                 // We don't use the evaluation here because it does not contain inputs.
                 _ = evaluation;
+                container.extend(columns.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 // Evaluation is included. In case this is not allowed, use `inputs_rev_strict()`.
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
@@ -200,7 +212,9 @@ impl AExpr {
 
         match self {
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 // Evaluation is explicitly excluded. It is up to the caller to handle
                 // any tree traversal if required.
                 _ = evaluation;
@@ -213,13 +227,13 @@ impl AExpr {
     /// Push the children of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
-    /// This is subtly different from `input_rev` as this only all expressions included in the
-    /// expression not only the input expressions,
+    /// This is subtly different from `inputs_rev` as this includes all expressions in the
+    /// expression, not only the input expressions.
     pub fn children_rev<E: Extend<Node>>(&self, container: &mut E) {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
@@ -268,6 +282,7 @@ impl AExpr {
                 partition_by,
                 order_by,
                 mapping: _,
+                may_reorder: _,
             } => {
                 if let Some((n, _)) = order_by {
                     container.extend([*n]);
@@ -279,9 +294,16 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
-            } => container.extend([*evaluation, *expr]),
+                columns,
+            } => {
+                container.extend([*evaluation]);
+                container.extend(columns.iter().rev().map(ExprIR::node));
+                container.extend([*expr]);
+            },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
@@ -298,7 +320,7 @@ impl AExpr {
     pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => return self,
             #[cfg(feature = "dtype-struct")]
             StructField(_) => return self,
             Cast { expr, .. } => expr,
@@ -352,13 +374,20 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
+                columns,
             } => {
+                assert_eq!(inputs.len(), columns.len() + 1);
                 *expr = inputs[0];
+                for (c, node) in columns.iter_mut().zip(&inputs[1..]) {
+                    c.set_node(*node);
+                }
                 _ = evaluation; // Intentional.
                 return self;
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 *expr = inputs[0];
                 _ = evaluation; // Intentional.
                 return self;
@@ -408,7 +437,7 @@ impl AExpr {
     pub fn replace_children(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => return self,
             #[cfg(feature = "dtype-struct")]
             StructField(_) => return self,
             Cast { expr, .. } => expr,
@@ -462,13 +491,20 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
+                columns,
             } => {
+                assert_eq!(inputs.len(), columns.len() + 2);
                 *expr = inputs[0];
-                *evaluation = inputs[1];
+                for (c, node) in columns.iter_mut().zip(&inputs[1..]) {
+                    c.set_node(*node);
+                }
+                *evaluation = inputs[columns.len() + 1];
                 return self;
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 assert_eq!(inputs.len(), evaluation.len() + 1);
                 *expr = inputs[0];
                 for (e, node) in evaluation.iter_mut().zip(inputs[1..].iter()) {
@@ -536,7 +572,7 @@ impl IRAggExpr {
             Item { input, .. } => Single(*input),
             Mean(input) => Single(*input),
             Implode { input, .. } => Single(*input),
-            Sum(input) => Single(*input),
+            Sum { input, .. } => Single(*input),
             Count { input, .. } => Single(*input),
             Std(input, _) => Single(*input),
             Var(input, _) => Single(*input),
@@ -556,7 +592,7 @@ impl IRAggExpr {
             Item { input, .. } => input,
             Mean(input) => input,
             Implode { input, .. } => input,
-            Sum(input) => input,
+            Sum { input, .. } => input,
             Count { input, .. } => input,
             Std(input, _) => input,
             Var(input, _) => input,

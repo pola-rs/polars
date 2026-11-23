@@ -1,14 +1,17 @@
 use std::marker::PhantomData;
 
 use polars_arrow::array::{DictionaryArray, DictionaryKey, MutableBinaryViewArray, PrimitiveArray};
-use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_arrow::datatypes::ArrowDataType;
+use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::vec::with_cast_mut_vec;
 
+use super::PredicateFilter;
 use super::binview::{BinViewDecoder, BinaryIter};
 use super::utils::{
-    self, Decoder, StateTranslation, dict_indices_decoder, freeze_validity, unspecialized_decode,
+    self, Decoder, DictPredicate, StateTranslation, dict_indices_decoder, freeze_validity,
+    unspecialized_decode,
 };
 use crate::parquet::encoding::Encoding;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
@@ -58,7 +61,7 @@ impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
 
 /// Special decoder for Polars Enum and Categorical's.
 ///
-/// These are marked as special in the Arrow Field Metadata and they have the properly that for a
+/// These are marked as special in the Arrow Field Metadata and they have the property that for a
 /// given row group all the values are in the dictionary page and all data pages are dictionary
 /// encoded. This makes the job of decoding them extremely simple and fast.
 pub struct CategoricalDecoder<T> {
@@ -66,6 +69,12 @@ pub struct CategoricalDecoder<T> {
     decoder: BinViewDecoder,
     plain_page_dict: MutableBinaryViewArray<[u8]>,
     plain_page_dict_lookup: PlHashMap<Box<[u8]>, T>,
+
+    /// The predicate result for each value in `plain_page_dict` evaluated so far.
+    plain_page_dict_mask: MutableBitmap,
+
+    /// The dictionary page's values, to find the code of a constant.
+    dict: Option<<BinViewDecoder as utils::Decoder>::Dict>,
 
     key_type: PhantomData<T>,
 }
@@ -77,6 +86,8 @@ impl<T> CategoricalDecoder<T> {
             decoder: BinViewDecoder::new_string(),
             plain_page_dict: MutableBinaryViewArray::new(),
             plain_page_dict_lookup: PlHashMap::new(),
+            plain_page_dict_mask: MutableBitmap::new(),
+            dict: None,
             key_type: PhantomData,
         }
     }
@@ -90,11 +101,23 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
     type DecodedState = (Vec<T>, BitmapBuilder);
     type Output = DictionaryArray<T>;
 
+    const PREDICATE_TARGET_GROWS: bool = true;
+
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<T>::with_capacity(capacity),
             BitmapBuilder::with_capacity(capacity),
         )
+    }
+
+    fn evaluate_dict_predicate(
+        &self,
+        dict: &Self::Dict,
+        predicate: &PredicateFilter,
+    ) -> PolarsResult<Bitmap> {
+        // SAFETY: The dictionary was checked to be UTF-8 when it was deserialized.
+        let dict = unsafe { dict.to_utf8view_unchecked() };
+        predicate.predicate.try_evaluate(&dict)
     }
 
     fn evaluate_predicate(
@@ -123,9 +146,116 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         Ok(true)
     }
 
+    fn unspecialized_predicate_decode(
+        &mut self,
+        state: utils::State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut BitmapBuilder,
+        predicate: &PredicateFilter,
+        dict: Option<Self::Dict>,
+        dict_predicate: Option<&DictPredicate>,
+        _dtype: &ArrowDataType,
+    ) -> ParquetResult<()> {
+        let is_optional = state.is_optional;
+        let mut page = self.with_capacity(StateTranslation::<Self>::num_rows(&state.translation));
+        self.extend_filtered_with_state(state, &mut page, None, &mut Vec::new())?;
+        let (keys, validity) = page;
+
+        let dict_len = dict.as_ref().map_or(0, |dict| dict.len());
+        let dict_mask = match dict_predicate {
+            Some(DictPredicate::Mask(mask)) => Some(mask),
+            _ => None,
+        };
+        let mut evaluate_rows = matches!(dict_predicate, Some(DictPredicate::EvaluateRows));
+        let num_evaluated = dict_len + self.plain_page_dict_mask.len();
+        if !evaluate_rows && num_evaluated < dict_len + self.plain_page_dict.len() {
+            let mut new_values = MutableBinaryViewArray::<[u8]>::new();
+            for value in self
+                .plain_page_dict
+                .values_iter()
+                .skip(num_evaluated - dict_len)
+            {
+                new_values.push_value(value);
+            }
+            // SAFETY: Plain page values are treated as UTF-8 when the array is finalized.
+            let new_values = unsafe { new_values.freeze().to_utf8view_unchecked() };
+            match predicate.predicate.try_evaluate(&new_values) {
+                Ok(mask) => self.plain_page_dict_mask.extend_from_bitmap(&mask),
+                Err(_) => evaluate_rows = true,
+            }
+        }
+
+        let validity = is_optional.then(|| validity.freeze());
+
+        // The predicate result for each valid row.
+        let row_mask = if evaluate_rows {
+            let mut values = MutableBinaryViewArray::<[u8]>::with_capacity(keys.len());
+            for (i, key) in keys.iter().enumerate() {
+                if validity.as_ref().is_none_or(|v| v.get_bit(i)) {
+                    // SAFETY: The keys are unsigned.
+                    let key = unsafe { key.as_usize() };
+                    values.push_value(match &dict {
+                        Some(dict) if key < dict_len => dict.value(key),
+                        _ => self.plain_page_dict.value(key - dict_len),
+                    });
+                }
+            }
+            // SAFETY: The values are treated as UTF-8 when the array is finalized.
+            let values = unsafe { values.freeze().to_utf8view_unchecked() };
+            let mask = predicate
+                .predicate
+                .try_evaluate(&values)
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
+            Some(mask)
+        } else {
+            None
+        };
+        let mut num_valid = 0;
+
+        let null_is_true = validity.as_ref().is_some_and(|v| v.unset_bits() > 0)
+            && predicate
+                .predicate
+                .evaluate_null()
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
+        let start_len = pred_true_mask.len();
+        for (i, key) in keys.iter().enumerate() {
+            // SAFETY: The validity has one bit per key.
+            let is_valid = validity
+                .as_ref()
+                .is_none_or(|v| unsafe { v.get_bit_unchecked(i) });
+            let keep = if !is_valid {
+                null_is_true
+            } else if let Some(row_mask) = &row_mask {
+                num_valid += 1;
+                row_mask.get_bit(num_valid - 1)
+            } else {
+                // SAFETY: The keys are unsigned.
+                let key = unsafe { key.as_usize() };
+                match dict_mask {
+                    // SAFETY: The mask has one bit per dictionary value.
+                    Some(dict_mask) if key < dict_len => unsafe {
+                        dict_mask.get_bit_unchecked(key)
+                    },
+                    _ => self.plain_page_dict_mask.get(key - dict_len),
+                }
+            };
+            pred_true_mask.push(keep);
+            if keep && predicate.include_values {
+                decoded.0.push(*key);
+                if is_optional {
+                    decoded.1.push(is_valid);
+                }
+            }
+        }
+        debug_assert_eq!(pred_true_mask.len() - start_len, keys.len());
+
+        Ok(())
+    }
+
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
         let dict = self.decoder.deserialize_dict(page)?;
         self.dict_size = dict.len();
+        self.dict = Some(dict.clone());
         Ok(dict)
     }
 
@@ -157,6 +287,17 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
     ) -> ParquetResult<DictionaryArray<T>> {
         let validity = freeze_validity(validity);
         let keys = PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), validity);
+
+        // Nothing was added by PLAIN pages: share the dictionary page's buffers and views (O(1))
+        // instead of copying every view for each chunk.
+        if self.plain_page_dict.len() == 0
+            && let Some(dict) = dict.as_ref()
+        {
+            // SAFETY: The dictionary was checked to be UTF-8 when it was deserialized.
+            let dict = unsafe { dict.to_utf8view_unchecked() }.boxed();
+            // SAFETY: This was checked during decoding
+            return Ok(unsafe { DictionaryArray::try_new_unchecked(dtype, keys, dict) }.unwrap());
+        }
 
         let mut view_dict = MutableBinaryViewArray::with_capacity(
             dict.as_ref().map_or(0, |dict| dict.len()) + self.plain_page_dict.len(),
@@ -240,12 +381,125 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
 
     fn extend_constant(
         &mut self,
-        _decoded: &mut Self::DecodedState,
-        _length: usize,
-        _value: &crate::read::expr::ParquetScalar,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &crate::read::expr::ParquetScalar,
     ) -> ParquetResult<()> {
-        Err(ParquetError::not_supported(
-            "categorical with pushed-down equality filter",
-        ))
+        use crate::read::expr::ParquetScalar;
+
+        let needle = match value {
+            ParquetScalar::Null => {
+                decoded.0.resize(decoded.0.len() + length, T::default());
+                decoded.1.extend_constant(length, false);
+                return Ok(());
+            },
+            ParquetScalar::String(v) => v.as_bytes(),
+            ParquetScalar::Binary(v) => v.as_ref(),
+            _ => {
+                return Err(ParquetError::not_supported(
+                    "categorical with a non-string equality filter",
+                ));
+            },
+        };
+
+        // Any code whose value equals the constant will do.
+        let dict_len = self.dict.as_ref().map_or(0, |d| d.len());
+        let code = self
+            .dict
+            .as_ref()
+            .and_then(|d| d.values_iter().position(|v| v == needle))
+            .or_else(|| {
+                self.plain_page_dict
+                    .values_iter()
+                    .position(|v| v == needle)
+                    .map(|i| dict_len + i)
+            })
+            .ok_or_else(|| {
+                ParquetError::oos("equality filter matched a value not in the dictionary")
+            })?;
+        let code = T::try_from(code)
+            .ok()
+            .ok_or_else(|| ParquetError::oos("dictionary code does not fit the key type"))?;
+        decoded.0.resize(decoded.0.len() + length, code);
+        decoded.1.extend_constant(length, true);
+        Ok(())
+    }
+}
+
+/// Decodes a flat String column chunk into codes into its dictionary page.
+///
+/// Every data page must be dictionary-encoded (see `PageReader::dictionary_only_len`). The
+/// dictionary values in the output share the dictionary page's buffers.
+pub fn decode_dictionary_codes(
+    field_name: &str,
+    pages: crate::parquet::read::BasicDecompressor,
+    filter: Option<super::Filter>,
+) -> ParquetResult<(Vec<DictionaryArray<u32>>, Bitmap)> {
+    let dtype = ArrowDataType::Dictionary(
+        polars_arrow::datatypes::IntegerType::UInt32,
+        Box::new(ArrowDataType::Utf8View),
+        false,
+    );
+    let (_, arrays, pred_true_mask) = utils::PageDecoder::new(
+        field_name,
+        pages,
+        dtype,
+        CategoricalDecoder::<u32>::new(),
+        None,
+    )?
+    .collect(filter)?;
+    Ok((arrays, pred_true_mask))
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::BinaryViewArray;
+
+    use super::*;
+
+    fn finalize_chunk(
+        decoder: &CategoricalDecoder<u32>,
+        dict: &BinaryViewArray,
+        keys: Vec<u32>,
+    ) -> DictionaryArray<u32> {
+        let dtype = ArrowDataType::Dictionary(
+            polars_arrow::datatypes::IntegerType::UInt32,
+            Box::new(ArrowDataType::Utf8View),
+            false,
+        );
+        let state = (keys, BitmapBuilder::new());
+        decoder.finalize(dtype, Some(dict.clone()), state).unwrap()
+    }
+
+    /// Only the codes decoder grows its predicate targets (its finalize is O(1)); others size them
+    /// for the matches, as unused capacity is not given back.
+    #[test]
+    fn only_the_codes_decoder_grows_predicate_targets() {
+        const { assert!(<CategoricalDecoder<u32> as utils::Decoder>::PREDICATE_TARGET_GROWS) };
+        const { assert!(!<BinViewDecoder as utils::Decoder>::PREDICATE_TARGET_GROWS) };
+    }
+
+    /// Chunks of one column chunk must share the dictionary page's views and buffers, not copy
+    /// them per chunk.
+    #[test]
+    fn finalize_shares_dictionary_page() {
+        let dict = BinaryViewArray::from_slice_values(
+            (0..1000)
+                .map(|i| format!("a-long-dictionary-value-number-{i}").into_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let decoder = CategoricalDecoder::<u32>::new();
+        let a = finalize_chunk(&decoder, &dict, vec![0, 1, 2]);
+        let b = finalize_chunk(&decoder, &dict, vec![3, 4]);
+        for chunk in [&a, &b] {
+            let values = chunk
+                .values()
+                .as_any()
+                .downcast_ref::<polars_arrow::array::Utf8ViewArray>()
+                .unwrap();
+            assert_eq!(values.len(), dict.len());
+            assert_eq!(values.views().as_ptr(), dict.views().as_ptr());
+            assert_eq!(values.data_buffers().as_ptr(), dict.data_buffers().as_ptr());
+        }
     }
 }

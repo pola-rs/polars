@@ -94,4 +94,10 @@ mod tests {
             assert!(functions.contains(&name));
         }
     }
+
+    #[test]
+    #[cfg(feature = "json")]
+    fn read_ndjson_is_discoverable() {
+        assert!(all_functions().contains(&"read_ndjson"));
+    }
 }

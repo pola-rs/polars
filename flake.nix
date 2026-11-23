@@ -427,8 +427,8 @@
                     export WORKSPACE_ROOT=$(git rev-parse --show-toplevel)
                     export VENV=$WORKSPACE_ROOT/.venv
 
-                    # Jemmalloc compiled with gcc doesn't like when we ask for the
-                    # compiler to compile with fortify source so lets enable everything
+                    # Jemalloc compiled with gcc doesn't like when we ask for the
+                    # compiler to compile with fortify source so let's enable everything
                     # but fortify and fortify3.
                     export NIX_HARDENING_ENABLE="bindnow format pic relro stackclashprotection stackprotector strictoverflow zerocallusedregs"
 

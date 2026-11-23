@@ -1,7 +1,8 @@
-use polars_defs::time::group_by::RollingGroupOptions;
-use polars_utils::unique_column_name;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::RollingGroupOptionsIR;
 
 use super::*;
+use crate::unique_column_name;
 
 #[cfg_attr(not(feature = "dynamic_group_by"), allow(dead_code))]
 pub(crate) struct GroupByRollingExec {
@@ -9,9 +10,9 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     #[cfg(feature = "dynamic_group_by")]
-    pub(crate) options: RollingGroupOptions,
+    pub(crate) options: RollingGroupOptionsIR,
     pub(crate) output_schema: SchemaRef,
-    pub(crate) slice: Option<(i64, usize)>,
+    pub(crate) slice: Option<Slice>,
     pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
 
@@ -92,13 +93,13 @@ impl GroupByRollingExec {
         // it is unused because we only use it to keep the lifetime of sliced_group valid
         let mut sliced_groups = None;
 
-        if let Some((offset, len)) = self.slice {
-            sliced_groups = Some(groups.slice(offset, len));
+        if let Some(slice) = self.slice {
+            sliced_groups = Some(groups.slice(slice));
             groups = sliced_groups.as_ref().unwrap();
 
-            time_key = time_key.slice(offset, len);
+            time_key = time_key.slice(slice);
             for k in &mut keys {
-                *k = k.slice(offset, len);
+                *k = k.slice(slice);
             }
         }
 

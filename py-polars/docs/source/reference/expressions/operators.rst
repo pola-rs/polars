@@ -45,6 +45,7 @@ Numeric
     Expr.pow
     Expr.sub
     Expr.truediv
+    Expr.truncdiv
 
 
 Binary

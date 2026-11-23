@@ -313,6 +313,7 @@ impl_trivial_total!(char);
 impl_trivial_total!(&str);
 impl_trivial_total!(&[u8]);
 impl_trivial_total!(String);
+impl_trivial_total!(Vec<u8>);
 
 macro_rules! impl_float_eq_ord {
     ($T:ty) => {

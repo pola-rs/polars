@@ -8,15 +8,10 @@ from polars._utils.various import parse_version
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Coroutine, Iterable, Iterator
+    from typing import Self
 
     import pyarrow as pa
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 class ODBCCursorProxy:

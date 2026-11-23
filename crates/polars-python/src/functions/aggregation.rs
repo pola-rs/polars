@@ -41,6 +41,13 @@ pub fn sum_horizontal(exprs: Vec<PyExpr>, ignore_nulls: bool) -> PyResult<PyExpr
 }
 
 #[pyfunction]
+pub fn cum_sum_horizontal(exprs: Vec<PyExpr>) -> PyResult<PyExpr> {
+    let exprs = exprs.to_exprs();
+    let e = dsl::cum_sum_horizontal(exprs).map_err(PyPolarsErr::from)?;
+    Ok(e.into())
+}
+
+#[pyfunction]
 pub fn mean_horizontal(exprs: Vec<PyExpr>, ignore_nulls: bool) -> PyResult<PyExpr> {
     let exprs = exprs.to_exprs();
     let e = dsl::mean_horizontal(exprs, ignore_nulls).map_err(PyPolarsErr::from)?;

@@ -13,6 +13,8 @@ mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
+#[cfg(feature = "parquet")]
+pub(crate) mod encryption_sharing;
 pub mod expr_ir;
 mod functions;
 pub mod hive;
@@ -20,6 +22,8 @@ pub(crate) mod iterator;
 mod lit;
 pub mod optimizer;
 pub mod options;
+#[cfg(feature = "parquet")]
+pub(crate) mod parquet_footers;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]

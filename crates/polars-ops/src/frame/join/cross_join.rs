@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use polars_core::utils::{
     _set_partition_size, CustomIterTools, NoNull, accumulate_dataframes_vertical_unchecked,
     concat_df_unchecked, par_iter_bounded, split,
@@ -10,19 +12,19 @@ use super::*;
 fn slice_take(
     total_rows: IdxSize,
     n_rows_right: IdxSize,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     inner: fn(IdxSize, IdxSize, IdxSize) -> IdxCa,
 ) -> IdxCa {
     match slice {
         None => inner(0, total_rows, n_rows_right),
-        Some((offset, len)) => {
-            let (offset, len) = slice_offsets(offset, len, total_rows as usize);
-            inner(offset as IdxSize, (len + offset) as IdxSize, n_rows_right)
+        Some(slice) => {
+            let range = slice.resolve(total_rows as usize);
+            inner(range.start as IdxSize, range.end as IdxSize, n_rows_right)
         },
     }
 }
 
-fn take_left(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, usize)>) -> IdxCa {
+fn take_left(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<Slice>) -> IdxCa {
     fn inner(offset: IdxSize, total_rows: IdxSize, n_rows_right: IdxSize) -> IdxCa {
         let mut take: NoNull<IdxCa> = (offset..total_rows)
             .map(|i| i / n_rows_right)
@@ -33,7 +35,7 @@ fn take_left(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, usi
     slice_take(total_rows, n_rows_right, slice, inner)
 }
 
-fn take_right(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, usize)>) -> IdxCa {
+fn take_right(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<Slice>) -> IdxCa {
     fn inner(offset: IdxSize, total_rows: IdxSize, n_rows_right: IdxSize) -> IdxCa {
         let take: NoNull<IdxCa> = (offset..total_rows)
             .map(|i| i % n_rows_right)
@@ -49,7 +51,7 @@ pub trait CrossJoin: IntoDf {
         &self,
         other: &DataFrame,
         suffix: Option<PlSmallStr>,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         maintain_order: MaintainOrderJoin,
     ) -> PolarsResult<DataFrame> {
         let (l_df, r_df) = cross_join_dfs(self.to_df(), other, slice, true, maintain_order)?;
@@ -63,7 +65,7 @@ impl CrossJoin for DataFrame {}
 fn cross_join_dfs<'a>(
     mut df_self: &'a DataFrame,
     mut other: &'a DataFrame,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     parallel: bool,
     maintain_order: MaintainOrderJoin,
 ) -> PolarsResult<(DataFrame, DataFrame)> {
@@ -140,10 +142,10 @@ pub(super) fn fused_cross_filter(
     suffix: Option<PlSmallStr>,
     cross_join_options: &CrossJoinOptions,
     maintain_order: MaintainOrderJoin,
-    // If this is set, we didn't do a `how=cross`, but `how=left,anti,semi` in `join_where`
-    emit_unmatched_left: bool,
     how: &JoinType,
 ) -> PolarsResult<DataFrame> {
+    let emit_unmatched_left = how.emits_unmatched_left();
+    let emit_unmatched_right = how.emits_unmatched_right();
     let unfiltered_size = (left.height() as u64).saturating_mul(right.height() as u64);
     let chunk_size = (unfiltered_size / _set_partition_size() as u64).clamp(1, 100_000);
     let num_chunks = (unfiltered_size / chunk_size).max(1) as usize;
@@ -156,7 +158,7 @@ pub(super) fn fused_cross_filter(
     // Every left row's full run of candidate matches must stay within a single chunk so a
     // match can be decided per-chunk; that only holds when left is the (chunked) primary side.
     polars_ensure!(
-        !emit_unmatched_left || left_is_primary,
+        !(emit_unmatched_left || emit_unmatched_right) || left_is_primary,
         InvalidOperation: "'maintain_order={:?}' is not supported for `join_where` with 'how'={}",
         maintain_order,
         how
@@ -175,8 +177,16 @@ pub(super) fn fused_cross_filter(
     let rename_names = names.get_column_names();
     let rename_names = &rename_names[left.width()..];
     let len_right = right.height();
+    // The right rows that matched in any chunk.
+    let right_matched: Vec<AtomicU64> = if emit_unmatched_right {
+        (0..len_right.div_ceil(64))
+            .map(|_| AtomicU64::new(0))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-    let dfs = RAYON.install(|| {
+    let mut dfs = RAYON.install(|| {
         par_iter_bounded(&cartesian_prod)
             .map(|(left_chunk, right_chunk)| {
                 let (mut joined, right_taken) =
@@ -189,10 +199,13 @@ pub(super) fn fused_cross_filter(
 
                 unsafe { joined.hstack_mut_unchecked(&right_columns) };
 
-                if !emit_unmatched_left {
+                if !emit_unmatched_left && !emit_unmatched_right {
                     cross_join_options.predicate.apply(joined, false)
                 } else {
-                    let mask = cross_join_options.predicate.evaluate(&joined)?;
+                    let mask = cross_join_options
+                        .predicate
+                        .evaluate(&joined)?
+                        .broadcast_owned_to(joined.height())?;
 
                     let len_left = left_chunk.height();
                     debug_assert_eq!(joined.height(), len_left * len_right);
@@ -206,21 +219,29 @@ pub(super) fn fused_cross_filter(
                         None => mask_arr.values().clone(),
                     };
 
-                    // Emit each left row's matches, or a single null-extended row when it has
-                    // none, so that unmatched rows keep their position in the left input's
-                    // order instead of being appended after the matched ones.
+                    // Emit each left row's matches. With `emit_unmatched_left`, a left row
+                    // without a match gives a single null-extended row in its place in the
+                    // left input's order, instead of being appended after the matched ones.
                     let capacity = match_bits.set_bits() + len_left;
                     let mut left_idx: Vec<IdxSize> = Vec::with_capacity(capacity);
                     let mut right_idx: Vec<NullableIdxSize> = Vec::with_capacity(capacity);
                     for i in 0..len_left {
                         let run = match_bits.clone().sliced(i * len_right, len_right);
                         if run.unset_bits() == len_right {
-                            left_idx.push(i as IdxSize);
-                            right_idx.push(NullableIdxSize::null());
+                            if emit_unmatched_left {
+                                left_idx.push(i as IdxSize);
+                                right_idx.push(NullableIdxSize::null());
+                            }
                         } else {
                             for j in run.true_idx_iter() {
                                 left_idx.push(i as IdxSize);
                                 right_idx.push(NullableIdxSize::from(j as IdxSize));
+                                if emit_unmatched_right {
+                                    let (word, bit) = (&right_matched[j / 64], 1 << (j % 64));
+                                    if word.load(Ordering::Relaxed) & bit == 0 {
+                                        word.fetch_or(bit, Ordering::Relaxed);
+                                    }
+                                }
                             }
                         }
                     }
@@ -241,6 +262,29 @@ pub(super) fn fused_cross_filter(
             })
             .collect::<PolarsResult<Vec<_>>>()
     })?;
+
+    if emit_unmatched_right {
+        // The right rows that matched no left row, null-extended on the left.
+        let unmatched: Vec<IdxSize> = (0..len_right)
+            .filter(|&j| right_matched[j / 64].load(Ordering::Relaxed) & (1 << (j % 64)) == 0)
+            .map(|j| j as IdxSize)
+            .collect();
+        if !unmatched.is_empty() {
+            let mut out = DataFrame::full_null(left.schema(), unmatched.len());
+            let mut right_columns = if unmatched.len() == len_right {
+                right.clone()
+            } else {
+                let idx = unsafe { IdxCa::mmap_slice(PlSmallStr::EMPTY, &unmatched) };
+                unsafe { right.take_unchecked(&idx) }
+            }
+            .into_columns();
+            for (c, name) in right_columns.iter_mut().zip(rename_names) {
+                c.rename((*name).clone());
+            }
+            unsafe { out.hstack_mut_unchecked(&right_columns) };
+            dfs.push(out);
+        }
+    }
 
     Ok(accumulate_dataframes_vertical_unchecked(dfs))
 }

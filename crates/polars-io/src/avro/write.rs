@@ -67,9 +67,22 @@ where
         let schema = schema_to_arrow_checked(df.schema(), CompatLevel::oldest(), "avro")?;
         let record = write::to_record(&schema, self.name.clone())?;
 
+        avro_schema::write::write_metadata(&mut self.writer, record.clone(), self.compression)
+            .map_err(to_compute_err)?;
+
+        // Slicing list children to their offsets avoids converting and serializing unused values.
+        let df = DataFrame::new(
+            df.height(),
+            df.apply_columns(|c| {
+                c.trim_lists_to_normalized_offsets()
+                    .unwrap_or_else(|| c.clone())
+            }),
+        )?;
+
         let mut data = vec![];
         let mut compressed_block = avro_schema::file::CompressedBlock::default();
-        for chunk in df.iter_chunks(CompatLevel::oldest(), true) {
+        for chunk in df.try_iter_chunks(CompatLevel::oldest(), true) {
+            let chunk = chunk?;
             let mut serializers = chunk
                 .iter()
                 .zip(record.fields.iter())
@@ -82,9 +95,6 @@ where
             let _was_compressed =
                 avro_schema::write::compress(&mut block, &mut compressed_block, self.compression)
                     .map_err(to_compute_err)?;
-
-            avro_schema::write::write_metadata(&mut self.writer, record.clone(), self.compression)
-                .map_err(to_compute_err)?;
 
             avro_schema::write::write_block(&mut self.writer, &compressed_block)
                 .map_err(to_compute_err)?;

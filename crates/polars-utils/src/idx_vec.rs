@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn test_untivec_realloc_lt_len() {
+    fn test_unitvec_realloc_lt_len() {
         super::UnitVec::<usize>::from([1, 2]).realloc(1)
     }
 

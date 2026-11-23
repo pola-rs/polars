@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use polars_core::prelude::SortMultipleOptions;
 use polars_defs::join::JoinType;
 #[cfg(feature = "dynamic_group_by")]
-use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
 #[cfg(feature = "iejoin")]
 use polars_descriptions::InequalityOperatorDescription;
 #[cfg(feature = "python")]
@@ -22,15 +22,17 @@ use polars_plan::plans::options::JoinTypeOptionsIR;
 #[cfg(feature = "python")]
 use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
-use polars_utils::arena::Arena;
+use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
-use slotmap::{Key, SlotMap};
+use polars_utils::slice_enum::Slice;
+use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use crate::{PhysNode, PhysNodeKey, PhysNodeKind};
 
 pub fn physical_plan_to_description(
     roots: &[PhysNodeKey],
-    phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
+    phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &SecondaryMap<PhysNodeKey, Node>,
     expr_arena: &Arena<AExpr>,
 ) -> Vec<PhysicalNodeDescription> {
     let mut nodes = Vec::new();
@@ -44,12 +46,11 @@ pub fn physical_plan_to_description(
     }
 
     while let Some(key) = queue.pop_front() {
-        let node = &phys_sm[key];
-        let kind = node.kind();
-        let (properties, inputs) = phys_props(kind, expr_arena);
+        let (properties, inputs) = phys_props(phys_sm[key].kind(), expr_arena);
         let node = PhysicalNodeDescription {
             id: key.data().as_ffi(),
             input_ids: inputs.iter().map(|k| k.data().as_ffi()).collect(),
+            ir_node_id: Some(phys_to_ir[key].0),
             properties,
         };
 
@@ -88,6 +89,13 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::SpillFrameSource { frames, schema } => (
+            PhysicalPropsDescription::InMemorySource {
+                n_rows: frames.iter().map(|sf| sf.height()).sum(),
+                schema_names: schema.iter_names().map(ToString::to_string).collect(),
+            },
+            vec![],
+        ),
         PhysNodeKind::InputIndependentSelect { selectors, .. } => (
             PhysicalPropsDescription::InputIndependentSelect {
                 selectors: fmt_exprs(selectors, expr_arena),
@@ -112,26 +120,21 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
-        PhysNodeKind::StreamingSlice {
-            input,
-            offset,
-            length,
-            ..
-        } => (
+        PhysNodeKind::StreamingSlice { input, slice } => (
             PhysicalPropsDescription::Slice {
-                offset: *offset as i64,
-                length: *length,
+                offset: slice.positive_offset(),
+                length: slice.len(),
             },
             vec![input.node],
         ),
         PhysNodeKind::NegativeSlice {
             input,
-            offset,
+            offset_from_end,
             length,
             ..
         } => (
             PhysicalPropsDescription::NegativeSlice {
-                offset: *offset,
+                offset: Slice::tail(*offset_from_end).to_signed_offset_len().0,
                 length: *length,
             },
             vec![input.node],
@@ -273,6 +276,27 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::Window {
+            input,
+            partition_by,
+            order_by,
+            exprs,
+            ordered_eval,
+            maintain_order,
+            scalar: _,
+        } => (
+            PhysicalPropsDescription::Window {
+                partition_by: partition_by.iter().map(ToString::to_string).collect(),
+                order_by: order_by
+                    .iter()
+                    .flat_map(|(names, _)| names.iter().map(ToString::to_string))
+                    .collect(),
+                exprs: fmt_exprs(exprs, expr_arena),
+                ordered_eval: *ordered_eval,
+                maintain_order: *maintain_order,
+            },
+            vec![input.node],
+        ),
         PhysNodeKind::Map { input, .. } => (PhysicalPropsDescription::Map, vec![input.node]),
         PhysNodeKind::ColumnarFunction {
             inputs, format_str, ..
@@ -282,6 +306,19 @@ pub fn phys_props(
                 name: format_str.clone(),
             },
             inputs.iter().map(|s| s.node).collect(),
+        ),
+        PhysNodeKind::RollingFixedWindowFunction {
+            input,
+            window,
+            format_str,
+            ..
+        } => (
+            PhysicalPropsDescription::RollingFixedWindowFunction {
+                name: format_str.clone(),
+                offset: window.offset,
+                length: window.length as u64,
+            },
+            vec![input.node],
         ),
         PhysNodeKind::SortedGroupBy {
             input,
@@ -293,7 +330,7 @@ pub fn phys_props(
             PhysicalPropsDescription::SortedGroupBy {
                 key: key.to_string(),
                 aggs: fmt_exprs(aggs, expr_arena),
-                slice: slice.map(|(o, l)| (idxsize_to_u64(o), idxsize_to_u64(l))),
+                slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
             },
             vec![input.node],
         ),
@@ -323,7 +360,7 @@ pub fn phys_props(
                         nulls_last,
                     })
                     .collect(),
-                slice: *slice,
+                slice: slice.map(|s| s.to_signed_offset_len()),
                 multithreaded: *multithreaded,
                 maintain_order: *maintain_order,
                 limit: limit.map(idxsize_to_u64),
@@ -404,6 +441,17 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::Recursive {
+            anchor, externals, ..
+        } => (
+            PhysicalPropsDescription::Recursive {
+                num_external_inputs: externals.len(),
+            },
+            std::iter::once(anchor)
+                .chain(externals)
+                .map(|s| s.node)
+                .collect(),
+        ),
         PhysNodeKind::OrderedUnion { inputs, .. } => (
             PhysicalPropsDescription::OrderedUnion {
                 num_inputs: inputs.len(),
@@ -455,7 +503,10 @@ pub fn phys_props(
             let pre_slice = pre_slice.as_ref().map(|x| x.to_signed_offset_len());
             (
                 PhysicalPropsDescription::MultiScan {
-                    scan_type: file_reader_builder.reader_name().to_string(),
+                    scan_type: match file_reader_builder.reader_name() {
+                        Ok(x) => x.to_string(),
+                        Err(e) => format!("(error fetching scan type: {e:?})"),
+                    },
                     num_sources: scan_sources.len(),
                     first_source: scan_sources
                         .first()
@@ -466,7 +517,7 @@ pub fn phys_props(
                         .collect(),
                     row_index_name: row_index.as_ref().map(|ri| ri.name.to_string()),
                     row_index_offset: row_index.as_ref().map(|ri| idxsize_to_u64(ri.offset)),
-                    pre_slice: pre_slice.map(|(o, l)| (o, idxsize_to_u64(l))),
+                    pre_slice,
                     predicate: predicate
                         .as_ref()
                         .map(|e| e.display(expr_arena).to_string()),
@@ -495,6 +546,7 @@ pub fn phys_props(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges: _,
         } => (
             PhysicalPropsDescription::GroupBy {
                 num_inputs: inputs.len(),
@@ -521,6 +573,9 @@ pub fn phys_props(
             args,
             fused_predicate,
             runtime_filters: _,
+            estimated_rows: _,
+            key_ranges: _,
+            pre_drop_schema: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),
@@ -592,6 +647,17 @@ pub fn phys_props(
             },
             vec![input_left.node, input_right.node],
         ),
+        // Note: `PhysNodeKind::AsOfJoin` is not feature-gated, but it can only be constructed
+        // from a `JoinType::AsOf`, which is.
+        #[cfg(not(feature = "asof_join"))]
+        PhysNodeKind::AsOfJoin {
+            input_left,
+            input_right,
+            ..
+        } => (
+            PhysicalPropsDescription::Other,
+            vec![input_left.node, input_right.node],
+        ),
         #[cfg(feature = "asof_join")]
         PhysNodeKind::AsOfJoin {
             input_left,
@@ -602,7 +668,6 @@ pub fn phys_props(
             ..
         } => {
             let props = match &args.how {
-                #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
                     use polars_defs::join::AsOfOptions;
 
@@ -633,7 +698,7 @@ pub fn phys_props(
                             ]
                         }),
                         suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice,
+                        slice: args.slice.map(|s| s.to_signed_offset_len()),
                         coalesce: fmt_from_static_str(args.coalesce),
                         allow_eq: *allow_eq,
                         check_sortedness: *check_sortedness,
@@ -657,12 +722,13 @@ pub fn phys_props(
                 left_on: left_on.iter().map(ToString::to_string).collect(),
                 right_on: right_on.iter().map(ToString::to_string).collect(),
                 suffix: args.suffix.as_ref().map(ToString::to_string),
-                slice: args.slice,
+                slice: args.slice.map(|s| s.to_signed_offset_len()),
                 coalesce: fmt_from_static_str(args.coalesce),
                 descending: *descending,
             },
             vec![input_left.node, input_right.node],
         ),
+        PhysNodeKind::Reverse { input } => (PhysicalPropsDescription::Reverse, vec![input.node]),
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
@@ -679,7 +745,7 @@ pub fn phys_props(
                 maintain_order: fmt_from_static_str(args.maintain_order),
                 validation: fmt_from_static_str(args.validation),
                 suffix: args.suffix.as_ref().map(ToString::to_string),
-                slice: args.slice,
+                slice: args.slice.map(|s| s.to_signed_offset_len()),
             };
 
             let props = match &args.how {
@@ -714,7 +780,7 @@ pub fn phys_props(
                             ]
                         }),
                         suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice,
+                        slice: args.slice.map(|s| s.to_signed_offset_len()),
                         coalesce: fmt_from_static_str(args.coalesce),
                         allow_eq: *allow_eq,
                         check_sortedness: *check_sortedness,
@@ -748,7 +814,7 @@ pub fn phys_props(
                                 vec![to_description(operator1)]
                             },
                             suffix: args.suffix.as_ref().map(ToString::to_string),
-                            slice: args.slice,
+                            slice: args.slice.map(|s| s.to_signed_offset_len()),
                         }
                     },
                     _ => generic_join(),
@@ -776,7 +842,7 @@ pub fn phys_props(
             slice,
             ..
         } => {
-            let DynamicGroupOptions {
+            let DynamicGroupOptionsIR {
                 index_column,
                 every,
                 period,
@@ -785,6 +851,7 @@ pub fn phys_props(
                 include_boundaries,
                 closed_window,
                 start_by,
+                placement: _,
             } = options;
             (
                 PhysicalPropsDescription::DynamicGroupBy {
@@ -797,7 +864,7 @@ pub fn phys_props(
                     include_boundaries: *include_boundaries,
                     closed_window: fmt_from_static_str(closed_window),
                     aggs: fmt_exprs(aggs, expr_arena),
-                    slice: slice.map(|(o, l)| (idxsize_to_u64(o), idxsize_to_u64(l))),
+                    slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
                 },
                 vec![input.node],
             )
@@ -818,7 +885,7 @@ pub fn phys_props(
                 period: period.to_string(),
                 offset: offset.to_string(),
                 closed_window: fmt_from_static_str(closed),
-                slice: slice.map(|(o, l)| (idxsize_to_u64(o), idxsize_to_u64(l))),
+                slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
                 aggs: fmt_exprs(aggs, expr_arena),
             },
             vec![input.node],
@@ -880,6 +947,8 @@ pub fn phys_props(
                     predicate,
                     validate_schema,
                     is_pure,
+                    explain_name,
+                    explain_detail,
                     ..
                 },
             ..
@@ -907,6 +976,8 @@ pub fn phys_props(
                 schema_names: schema.iter_names().map(ToString::to_string).collect(),
                 is_pure: *is_pure,
                 validate_schema: *validate_schema,
+                explain_name: explain_name.as_ref().map(|s| s.to_string()),
+                explain_detail: explain_detail.as_ref().map(|s| s.to_string()),
             },
             vec![],
         ),
@@ -922,8 +993,10 @@ pub fn phys_props(
         PhysNodeKind::EwmStd { input, options, .. } => {
             (ewm_props(options, "EwmStd"), vec![input.node])
         },
-        #[allow(unreachable_patterns)]
-        _ => (PhysicalPropsDescription::Other, vec![]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmSum { input, options, .. } => {
+            (ewm_props(options, "EwmSum"), vec![input.node])
+        },
     }
 }
 
@@ -934,7 +1007,7 @@ fn ewm_props(options: &polars_ops::series::EWMOptions, variant: &str) -> Physica
         alpha: options.alpha,
         adjust: options.adjust,
         bias: options.bias,
-        min_periods: options.min_periods,
+        min_samples: options.min_samples,
         ignore_nulls: options.ignore_nulls,
     }
 }

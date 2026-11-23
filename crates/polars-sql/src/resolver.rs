@@ -3,7 +3,7 @@ use std::sync::{Arc, Once};
 
 use polars_error::PolarsResult;
 use polars_lazy::prelude::LazyFrame;
-use polars_plan::dsl::{DslPlan, SqlResolver, set_sql_resolver};
+use polars_plan::dsl::{DslPlan, SqlCatalogTable, SqlResolver, set_sql_resolver};
 use polars_plan::plans::{AExpr, IR};
 use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
@@ -18,6 +18,7 @@ impl SqlResolver for DslSqlResolver {
         &self,
         query: &str,
         relations: Vec<(PlSmallStr, DslPlan)>,
+        catalog_tables: Vec<SqlCatalogTable>,
         cached: Option<&(dyn Any + Send + Sync)>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
@@ -26,6 +27,7 @@ impl SqlResolver for DslSqlResolver {
         for (name, plan) in relations {
             ctx.register(&name, LazyFrame::from(plan));
         }
+        ctx.restore_catalog_tables(catalog_tables);
         let cached = cached.and_then(|stmt| stmt.downcast_ref::<Statement>());
         ctx.execute_with_arenas(query, cached, lp_arena, expr_arena)
     }

@@ -93,6 +93,11 @@ pub enum AnyValue<'a> {
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     /// One row of a map, as its `Struct {key, value}` entries series.
+    ///
+    /// As with [`MapChunked::from_storage_unchecked`], the caller must supply unique keys, or the
+    /// value keeps its duplicates.
+    ///
+    /// [`MapChunked::from_storage_unchecked`]: crate::prelude::MapChunked::from_storage_unchecked
     #[cfg(feature = "dtype-map")]
     Map(Series),
     #[cfg(feature = "dtype-array")]
@@ -434,6 +439,10 @@ impl<'a> AnyValue<'a> {
             (av, DataType::Int64) => AnyValue::Int64(av.extract::<i64>()?),
             (av, DataType::Int128) => AnyValue::Int128(av.extract::<i128>()?),
             (av, DataType::Float16) => AnyValue::Float16(av.extract::<pf16>()?),
+            #[cfg(feature = "dtype-decimal")]
+            (AnyValue::Decimal(v, _, s), DataType::Float32) => {
+                AnyValue::Float32(polars_compute::decimal::dec128_to_f32(*v, *s))
+            },
             (av, DataType::Float32) => AnyValue::Float32(av.extract::<f32>()?),
             (av, DataType::Float64) => AnyValue::Float64(av.extract::<f64>()?),
 
@@ -451,6 +460,8 @@ impl<'a> AnyValue<'a> {
             (AnyValue::Float16(v), DataType::Boolean) => AnyValue::Boolean(*v != pf16::default()),
             (AnyValue::Float32(v), DataType::Boolean) => AnyValue::Boolean(*v != f32::default()),
             (AnyValue::Float64(v), DataType::Boolean) => AnyValue::Boolean(*v != f64::default()),
+            #[cfg(feature = "dtype-decimal")]
+            (AnyValue::Decimal(v, _, _), DataType::Boolean) => AnyValue::Boolean(*v != 0),
 
             // Categorical casts.
             #[cfg(feature = "dtype-categorical")]
@@ -602,14 +613,9 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Duration(av.extract::<i64>()?, *tu)
             },
             #[cfg(all(feature = "dtype-duration", feature = "dtype-time"))]
-            (AnyValue::Time(v), DataType::Duration(tu)) => AnyValue::Duration(
-                match *tu {
-                    TimeUnit::Nanoseconds => *v,
-                    TimeUnit::Microseconds => *v / 1_000i64,
-                    TimeUnit::Milliseconds => *v / 1_000_000i64,
-                },
-                *tu,
-            ),
+            (AnyValue::Time(v), DataType::Duration(tu)) => {
+                AnyValue::Duration(tu.from_nsecs(*v), *tu)
+            },
             #[cfg(feature = "dtype-duration")]
             (AnyValue::Duration(v, tu), DataType::Duration(tu_r)) => AnyValue::Duration(
                 match (tu, tu_r) {
@@ -772,8 +778,24 @@ impl<'a> AnyValue<'a> {
 
     #[inline]
     pub fn extract_bool(&self) -> Option<bool> {
+        use AnyValue::*;
         match self {
-            AnyValue::Boolean(v) => Some(*v),
+            Boolean(v) => Some(*v),
+            Int8(v) => Some(*v != 0),
+            Int16(v) => Some(*v != 0),
+            Int32(v) => Some(*v != 0),
+            Int64(v) => Some(*v != 0),
+            Int128(v) => Some(*v != 0),
+            UInt8(v) => Some(*v != 0),
+            UInt16(v) => Some(*v != 0),
+            UInt32(v) => Some(*v != 0),
+            UInt64(v) => Some(*v != 0),
+            UInt128(v) => Some(*v != 0),
+            Float16(v) => Some(*v != pf16::default()),
+            Float32(v) => Some(*v != 0.0),
+            Float64(v) => Some(*v != 0.0),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(v, _, _) => Some(*v != 0),
             _ => None,
         }
     }

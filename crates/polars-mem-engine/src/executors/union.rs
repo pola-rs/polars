@@ -21,13 +21,9 @@ impl Executor for UnionExec {
         let mut inputs = std::mem::take(&mut self.inputs);
         let n_inputs = inputs.len();
 
-        let sliced_path = if let Some((offset, _)) = self.options.slice {
-            offset >= 0
-        } else {
-            false
-        };
+        let positive_slice = self.options.slice.filter(|s| s.is_positive());
 
-        if !self.options.parallel || sliced_path {
+        if !self.options.parallel || positive_slice.is_some() {
             if state.verbose() {
                 if !self.options.parallel {
                     eprintln!("UNION: `parallel=false` union is run sequentially")
@@ -36,8 +32,8 @@ impl Executor for UnionExec {
                 }
             }
 
-            let (slice_offset, mut slice_len) = self.options.slice.unwrap_or((0, usize::MAX));
-            let mut slice_offset = slice_offset as usize;
+            // The positive slice relative to the start of the current input.
+            let mut remaining_slice = positive_slice;
             let mut dfs = Vec::with_capacity(inputs.len());
 
             for (idx, mut input) in inputs.into_iter().enumerate() {
@@ -46,47 +42,40 @@ impl Executor for UnionExec {
 
                 let df = input.execute(&mut state)?;
 
-                if !sliced_path {
+                let Some(slice) = remaining_slice else {
                     dfs.push(df);
                     continue;
+                };
+
+                // TODO!: don't read the file yet if it is before the slice!
+                let height = df.height();
+                let (range, next_slice) = slice.split_front(height);
+                let is_exhausted = next_slice.is_some_and(|s| s.is_empty());
+                let is_last = idx + 1 == n_inputs || is_exhausted;
+
+                // Keep the union schema when the slice skips every input.
+                if !range.is_empty() || (is_last && dfs.is_empty()) {
+                    dfs.push(df.slice(range));
                 }
 
-                let height = df.height();
-                // this part can be skipped as we haven't reached the offset yet
-                // TODO!: don't read the file yet!
-                if slice_offset > height {
-                    slice_offset -= height;
-                    // Keep the union schema when the offset skips every input.
-                    if dfs.is_empty() && idx + 1 == n_inputs {
-                        dfs.push(df.clear());
-                    }
-                }
-                // applying the slice
-                // continue iteration
-                else if slice_offset + slice_len > height {
-                    slice_len -= height - slice_offset;
-                    if slice_offset == 0 {
-                        dfs.push(df);
-                    } else {
-                        dfs.push(df.slice(slice_offset as i64, usize::MAX));
-                        slice_offset = 0;
-                    }
-                }
-                // we finished the slice
-                else {
-                    dfs.push(df.slice(slice_offset as i64, slice_len));
+                if is_exhausted {
                     break;
                 }
+                remaining_slice = next_slice;
             }
 
-            concat_df(&dfs)
+            let df = concat_df(&dfs)?;
+            Ok(match self.options.slice.filter(|s| s.is_negative()) {
+                Some(slice) => df.slice(slice),
+                None => df,
+            })
         } else {
             if state.verbose() {
                 eprintln!("UNION: union is run in parallel")
             }
 
             // we don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
-            // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
+            // this might then lead to a rayon SO. So we take a multiple of the threads to keep work stealing
             // within bounds
             let out = RAYON.install(|| {
                 inputs
@@ -107,8 +96,8 @@ impl Executor for UnionExec {
             });
 
             concat_df(out?.iter().flat_map(|dfs| dfs.iter())).map(|df| {
-                if let Some((offset, len)) = self.options.slice {
-                    df.slice(offset, len)
+                if let Some(slice) = self.options.slice {
+                    df.slice(slice)
                 } else {
                     df
                 }

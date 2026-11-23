@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn as _, PlHashMap};
+use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn as _, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, LIST_ELEMENT_DEFAULT_ID};
@@ -343,6 +343,23 @@ impl ColumnSelectorBuilder {
             };
         }
 
+        // Decimal precision widening with equal scale (allowed Iceberg type promotion).
+        #[cfg(feature = "dtype-decimal")]
+        if let (
+            DataType::Decimal(target_precision, target_scale),
+            DataType::Decimal(incoming_precision, incoming_scale),
+        ) = (target_dtype, incoming_dtype)
+        {
+            return if target_scale != incoming_scale || target_precision < incoming_precision {
+                mismatch_err("incoming dtype cannot safely cast to target dtype")
+            } else if self.cast_columns_policy.integer_upcast {
+                // Lossless, so use overflowing to elide validation.
+                attach_cast(CastOptions::Overflowing)
+            } else {
+                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')")
+            };
+        }
+
         if target_dtype.is_float() && incoming_dtype.is_float() {
             match (target_dtype, incoming_dtype) {
                 (DataType::Float64, DataType::Float32)
@@ -469,16 +486,9 @@ impl ColumnSelectorBuilder {
         input_selector: ColumnSelector,
         incoming_column: &IcebergColumn,
         target_column: &IcebergColumn,
-        mut iceberg_default_value_provider: Option<IcebergDefaultValueProviderRef>,
+        iceberg_default_value_provider: Option<IcebergDefaultValueProviderRef>,
     ) -> PolarsResult<ColumnSelector> {
         use IcebergColumnType as ICT;
-
-        match &target_column.type_ {
-            ICT::FixedSizeList(..) | ICT::List(_) | ICT::Map(..) => {
-                iceberg_default_value_provider = None
-            },
-            ICT::Struct(_) | ICT::Primitive { .. } => {},
-        }
 
         let selector = (|| {
             let target_dtype = &target_column.type_;
@@ -545,7 +555,7 @@ impl ColumnSelectorBuilder {
                                     ColumnSelector::Constant(Box::new((
                                         output_column.name.clone(),
                                         iceberg_default_value_provider
-                                            .map(|x| build_iceberg_default_value(x, target_column))
+                                            .map(|x| build_iceberg_default_value(x, output_column))
                                             .transpose()?
                                             .flatten()
                                             .unwrap_or_else(|| {
@@ -724,6 +734,51 @@ impl ColumnSelectorBuilder {
     }
 }
 
+/// Whether `column` is, or has a nested struct field that is, a primitive with an
+/// identity-partition value. Of a pruned struct, this asks the provider for what its fields were
+/// before pruning.
+fn has_partition_value(provider: IcebergDefaultValueProviderRef, column: &IcebergColumn) -> bool {
+    match &column.type_ {
+        IcebergColumnType::Primitive { .. } => {
+            provider.has_identity_partition_value(column.physical_id)
+        },
+        IcebergColumnType::Struct(fields) => provider
+            .struct_has_partition_value(column.physical_id)
+            .unwrap_or_else(|| {
+                fields
+                    .values()
+                    .any(|field| has_partition_value(provider, field))
+            }),
+        _ => false,
+    }
+}
+
+/// Adds to `out` the physical IDs of the structs in `column` (not pruned) that have a field with
+/// an identity-partition value, for [`IcebergDefaultValueProviderRef::with_partitioned_structs`].
+pub fn collect_partitioned_structs(
+    provider: IcebergDefaultValueProviderRef,
+    column: &IcebergColumn,
+    out: &mut PlHashSet<u32>,
+) -> bool {
+    match &column.type_ {
+        IcebergColumnType::Primitive { .. } => {
+            provider.has_identity_partition_value(column.physical_id)
+        },
+        IcebergColumnType::Struct(fields) => {
+            let mut any = false;
+            for field in fields.values() {
+                any |= collect_partitioned_structs(provider, field, out);
+            }
+            if any {
+                out.insert(column.physical_id);
+            }
+            any
+        },
+        // Structs inside lists and maps are not filled from defaults.
+        _ => false,
+    }
+}
+
 pub fn build_iceberg_default_value(
     iceberg_default_value_provider: IcebergDefaultValueProviderRef,
     target_column: &IcebergColumn,
@@ -753,15 +808,24 @@ pub fn build_iceberg_default_value_impl(
         ICT::Struct(fields) => {
             use polars_core::prelude::StructChunked;
 
-            let mut is_input_passthrough = true;
+            // A missing struct is null unless it has a default itself (`{}`, the only non-null
+            // struct default), or a nested field has an identity-partition value: only then do
+            // its fields take their own defaults.
+            if iceberg_default_value_provider
+                .get_default_value(target_column.physical_id)?
+                .is_none()
+                && !has_partition_value(iceberg_default_value_provider, target_column)
+            {
+                return Ok(None);
+            }
 
+            // The struct is valid, also when none of its fields (left after pruning) has a
+            // default.
             let mut field_columns = Vec::with_capacity(fields.len());
 
             for field in fields.values() {
                 let opt_default =
                     build_iceberg_default_value_impl(iceberg_default_value_provider, field)?;
-
-                is_input_passthrough &= opt_default.is_none();
 
                 field_columns.push(if let Some(default) = opt_default {
                     assert_eq!(default.len(), 1);
@@ -771,15 +835,11 @@ pub fn build_iceberg_default_value_impl(
                 });
             }
 
-            if is_input_passthrough {
-                Ok(None)
-            } else {
-                Ok(Some(
-                    StructChunked::from_columns(target_column.name.clone(), 1, &field_columns)?
-                        .into_series()
-                        .into_column(),
-                ))
-            }
+            Ok(Some(
+                StructChunked::from_columns(target_column.name.clone(), 1, &field_columns)?
+                    .into_series()
+                    .into_column(),
+            ))
         },
 
         ICT::Primitive { dtype } => Ok(iceberg_default_value_provider

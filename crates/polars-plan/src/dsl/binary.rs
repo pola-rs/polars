@@ -1,5 +1,5 @@
 use super::*;
-/// Specialized expressions for [`Series`] of [`DataType::String`].
+/// Specialized expressions for [`Series`] of [`DataType::Binary`].
 pub struct BinaryNameSpace(pub(crate) Expr);
 
 impl BinaryNameSpace {

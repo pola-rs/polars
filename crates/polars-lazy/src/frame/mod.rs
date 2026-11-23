@@ -41,6 +41,7 @@ pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::plans::ExecutionHooks;
 use polars_plan::prelude::ir_plan_to_description;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 
 use crate::frame::cached_arenas::CachedArena;
 use crate::prelude::*;
@@ -362,7 +363,7 @@ impl LazyFrame {
             by_exprs,
             sort_options.with_order_reversed().with_nulls_last(true),
         )
-        .slice(0, k)
+        .slice(Slice::head(k as usize))
     }
 
     pub fn bottom_k<E: AsRef<[Expr]>>(
@@ -373,7 +374,7 @@ impl LazyFrame {
     ) -> Self {
         // this will optimize to bottom-k
         self.sort_by_exprs(by_exprs, sort_options.with_nulls_last(true))
-            .slice(0, k)
+            .slice(Slice::head(k as usize))
     }
 
     /// Reverse the `DataFrame` from top to bottom.
@@ -612,11 +613,17 @@ impl LazyFrame {
     }
 
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
+    //
+    // The plan is optimized as for the GPU engine, the one consumer of such callbacks
+    // (cudf-polars): it does not support every optimization (e.g. struct-field pruning, as it
+    // ignores the field selection of scans).
     pub fn _collect_post_opt<P>(self, post_opt: P) -> PolarsResult<DataFrame>
     where
         P: FnOnce(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
     {
-        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
+        let (mut state, mut physical_plan, _) = self
+            .with_gpu(true)
+            .prepare_collect_post_opt(false, post_opt)?;
         physical_plan.execute(&mut state)
     }
 
@@ -1723,46 +1730,39 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Slice the DataFrame using an offset (starting row) and a length.
+    /// Slice the DataFrame.
     ///
-    /// If `offset` is negative, it is counted from the end of the DataFrame. For
-    /// instance, `lf.slice(-5, 3)` gets three rows, starting at the row fifth from the
-    /// end.
+    /// The slice is given as a [`Slice`] or as an `(offset, len)` tuple. A negative `offset`
+    /// counts from the end of the DataFrame: `lf.slice((-5i64, 3))` gets three rows, starting at
+    /// the row fifth from the end. [`Slice::skip`] gives a slice that runs to the end, or `None`
+    /// for an offset of 0.
     ///
-    /// If `offset` and `len` are such that the slice extends beyond the end of the
-    /// DataFrame, the portion between `offset` and the end will be returned. In this
-    /// case, the number of rows in the returned DataFrame will be less than `len`.
-    pub fn slice(self, offset: i64, len: IdxSize) -> LazyFrame {
+    /// If the slice extends beyond the end of the DataFrame, only the rows up to the end are
+    /// returned.
+    pub fn slice(self, slice: impl Into<Slice>) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().slice(offset, len).build();
+        let lp = self.get_plan_builder().slice(slice.into()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
     /// Remove all the rows of the LazyFrame.
     pub fn clear(self) -> LazyFrame {
-        self.slice(0, 0)
+        self.slice(Slice::EMPTY)
     }
 
     /// Get the first row.
-    ///
-    /// Equivalent to `self.slice(0, 1)`.
     pub fn first(self) -> LazyFrame {
-        self.slice(0, 1)
+        self.slice(Slice::head(1))
     }
 
     /// Get the last row.
-    ///
-    /// Equivalent to `self.slice(-1, 1)`.
     pub fn last(self) -> LazyFrame {
-        self.slice(-1, 1)
+        self.slice(Slice::tail(1))
     }
 
     /// Get the last `n` rows.
-    ///
-    /// Equivalent to `self.slice(-(n as i64), n)`.
     pub fn tail(self, n: IdxSize) -> LazyFrame {
-        let neg_tail = -(n as i64);
-        self.slice(neg_tail, n)
+        self.slice(Slice::tail(n as usize))
     }
 
     #[cfg(feature = "pivot")]
@@ -1807,7 +1807,7 @@ impl LazyFrame {
 
     /// Limit the DataFrame to the first `n` rows.
     pub fn limit(self, n: IdxSize) -> LazyFrame {
-        self.slice(0, n)
+        self.slice(Slice::head(n as usize))
     }
 
     /// Apply a function/closure once the logical plan get executed.
@@ -2187,6 +2187,8 @@ impl JoinBuilder {
     /// The expressions you want to join both tables on.
     ///
     /// The passed expressions must be valid in both `LazyFrame`s in the join.
+    /// Selectors expand independently against each input schema. The results are
+    /// paired in order and both sides must produce the same nonzero number of keys.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
         self.left_on.clone_from(&on);
@@ -2196,7 +2198,8 @@ impl JoinBuilder {
 
     /// The expressions you want to join the left table on.
     ///
-    /// The passed expressions must be valid in the left table.
+    /// The passed expressions and selectors must be valid in the left table.
+    /// The total expanded key count must be nonzero and match the right side.
     pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.left_on = on.as_ref().to_vec();
         self
@@ -2204,7 +2207,8 @@ impl JoinBuilder {
 
     /// The expressions you want to join the right table on.
     ///
-    /// The passed expressions must be valid in the right table.
+    /// The passed expressions and selectors must be valid in the right table.
+    /// The total expanded key count must be nonzero and match the left side.
     pub fn right_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.right_on = on.as_ref().to_vec();
         self
@@ -2391,7 +2395,7 @@ pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorB
     }
 };
 
-fn run_in_memory_query(
+pub(crate) fn run_in_memory_query(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,

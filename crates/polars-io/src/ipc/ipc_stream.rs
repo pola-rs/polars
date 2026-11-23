@@ -1,7 +1,7 @@
 //! # (De)serializing Arrows Streaming IPC format.
 //!
 //! Arrow Streaming IPC is a [binary format](https://arrow.apache.org/docs/python/ipc.html).
-//! It used for sending an arbitrary length sequence of record batches.
+//! It is used for sending an arbitrary length sequence of record batches.
 //! The format must be processed from start to end, and does not support random access.
 //! It is different than IPC, if you can't deserialize a file with `IpcReader::new`, it's probably an IPC Stream File.
 //!
@@ -278,10 +278,10 @@ where
 
         ipc_stream_writer.start(&df.schema().to_arrow(self.compat_level), None)?;
         let df = chunk_df_for_writing(df, 512 * 512)?;
-        let iter = df.iter_chunks(self.compat_level, true);
+        let iter = df.try_iter_chunks(self.compat_level, true);
 
         for batch in iter {
-            ipc_stream_writer.write(&batch, None)?
+            ipc_stream_writer.write(&batch?, None)?
         }
         ipc_stream_writer.finish()?;
         Ok(())

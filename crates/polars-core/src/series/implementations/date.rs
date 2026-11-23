@@ -184,8 +184,8 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.physical_mut().shrink_to_fit()
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0.slice(offset, length).into_series()
+    fn slice(&self, slice: Slice) -> Series {
+        self.0.slice(slice).into_series()
     }
 
     fn split_at(&self, offset: i64) -> (Series, Series) {
@@ -321,7 +321,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
                 let mut out = self.0.cast_with_options(dtype, CastOptions::NonStrict)?;
-                out.set_sorted_flag(self.0.physical().is_sorted_flag());
+                // Overflowing values become null, which may break the order of the nulls.
+                if out.null_count() == self.0.null_count() {
+                    out.set_sorted_flag(self.0.physical().is_sorted_flag());
+                }
                 Ok(out)
             },
             _ => self.0.cast_with_options(dtype, cast_options),
@@ -428,9 +431,9 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     #[cfg(feature = "dtype-datetime")]
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let quantile = self.0.physical().quantile_reduce(quantile, method)?;
-        let v = quantile.value().extract::<f64>().unwrap();
-        let datetime_us_value = (v * (US_IN_DAY as f64)) as i64;
-        let av = AnyValue::Datetime(datetime_us_value, TimeUnit::Microseconds, None);
+        let v = quantile.value().extract::<f64>();
+        let av = AnyValue::from(v.map(|v| (v * (US_IN_DAY as f64)) as i64))
+            .as_datetime(TimeUnit::Microseconds, None);
         Ok(Scalar::new(
             DataType::Datetime(TimeUnit::Microseconds, None),
             av,

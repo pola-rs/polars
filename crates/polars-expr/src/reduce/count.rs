@@ -5,6 +5,7 @@ use super::*;
 
 pub struct CountReduce {
     counts: Vec<u64>,
+    layout: LaneLayout,
     evicted_counts: Vec<u64>,
     include_nulls: bool,
 }
@@ -13,8 +14,24 @@ impl CountReduce {
     pub fn new(include_nulls: bool) -> Self {
         Self {
             counts: Vec::new(),
+            layout: LaneLayout::single(0),
             evicted_counts: Vec::new(),
             include_nulls,
+        }
+    }
+
+    /// The validity of the rows that count, `None` if all rows count.
+    fn validity(&self, values: &Column) -> Option<Bitmap> {
+        if self.include_nulls || !values.has_nulls() {
+            None
+        } else if let Some(d) = values.as_dictionary_column() {
+            // Only the validity is needed, so a dictionary column isn't materialized.
+            d.codes().rechunk_validity()
+        } else {
+            let values = values.as_materialized_series(); // @scalar-opt
+            let chunks = values.chunks();
+            assert!(chunks.len() == 1);
+            chunks[0].validity().cloned()
         }
     }
 }
@@ -29,7 +46,8 @@ impl GroupedReduction for CountReduce {
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
-        self.counts.resize(num_groups as usize, 0);
+        self.layout
+            .resize(&mut self.counts, num_groups as usize, 0, |a, b| *a += b);
     }
 
     fn update_group(
@@ -47,6 +65,38 @@ impl GroupedReduction for CountReduce {
         Ok(())
     }
 
+    unsafe fn update_groups_subset(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        assert!(subset.len() == group_idxs.len());
+        let valid = self.validity(values);
+        let valid = valid.as_ref();
+
+        self.layout.expand(&mut self.counts, 0);
+        let stride = self.layout.stride;
+        let counts = self.counts.as_mut_slice();
+        let mut offset = 0usize;
+        if let Some(valid) = valid {
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let slot = *g as usize + (offset & LANE_MASK);
+                *counts.get_unchecked_mut(slot) += valid.get_bit_unchecked(*i as usize) as u64;
+                offset = offset.wrapping_add(stride);
+            }
+        } else {
+            for g in group_idxs {
+                let slot = *g as usize + (offset & LANE_MASK);
+                *counts.get_unchecked_mut(slot) += 1;
+                offset = offset.wrapping_add(stride);
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &[&Column],
@@ -56,12 +106,10 @@ impl GroupedReduction for CountReduce {
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
         assert!(subset.len() == group_idxs.len());
-        let values = values.as_materialized_series(); // @scalar-opt
-        let chunks = values.chunks();
-        assert!(chunks.len() == 1);
-        let arr = &*chunks[0];
-        if arr.has_nulls() && !self.include_nulls {
-            let valid = arr.validity().unwrap();
+        let valid = self.validity(values);
+        let valid = valid.as_ref();
+        self.layout.collapse(&mut self.counts, |a, b| *a += b);
+        if let Some(valid) = valid {
             for (i, g) in subset.iter().zip(group_idxs) {
                 let grp = self.counts.get_unchecked_mut(g.idx());
                 if g.should_evict() {
@@ -83,6 +131,41 @@ impl GroupedReduction for CountReduce {
         Ok(())
     }
 
+    fn supports_runs(&self) -> bool {
+        true
+    }
+
+    unsafe fn update_groups_runs(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        runs: &[GroupRun],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        assert!(subset.len() == group_idxs.len());
+        let valid = self.validity(values);
+        self.layout.collapse(&mut self.counts, |a, b| *a += b);
+        for run in runs {
+            let pos = run.pos as usize;
+            let len = run.len as usize;
+            let g = group_idxs.get_unchecked(pos);
+            let grp = self.counts.get_unchecked_mut(g.idx());
+            if g.should_evict() {
+                self.evicted_counts.push(*grp);
+                *grp = 0;
+            }
+            *grp += match &valid {
+                Some(valid) => {
+                    len - valid.null_count_range(*subset.get_unchecked(pos) as usize, len)
+                },
+                None => len,
+            } as u64;
+        }
+        Ok(())
+    }
+
     unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
@@ -91,25 +174,34 @@ impl GroupedReduction for CountReduce {
     ) -> PolarsResult<()> {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(subset.len() == group_idxs.len());
+        let other_lanes = other.layout.num_lanes();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
-                *self.counts.get_unchecked_mut(*g as usize) +=
-                    *other.counts.get_unchecked(*i as usize);
+                let grp = self.counts.get_unchecked_mut(*g as usize);
+                for l in 0..other_lanes {
+                    *grp += *other
+                        .counts
+                        .get_unchecked(*i as usize + l * other.layout.stride);
+                }
             }
         }
         Ok(())
     }
 
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        let counts = core::mem::take(&mut self.evicted_counts);
         Box::new(Self {
-            counts: core::mem::take(&mut self.evicted_counts),
+            layout: LaneLayout::single(counts.len()),
+            counts,
             evicted_counts: Vec::new(),
             include_nulls: self.include_nulls,
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
+        self.layout.fold(&mut self.counts, |a, b| *a += b);
+        self.layout = LaneLayout::single(0);
         let v: Vec<u64> = core::mem::take(&mut self.counts);
         let len = v.len();
 

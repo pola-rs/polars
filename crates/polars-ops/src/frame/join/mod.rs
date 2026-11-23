@@ -17,7 +17,9 @@ use std::hash::Hash;
 
 pub use args::*;
 #[cfg(feature = "asof_join")]
-pub use asof::{_check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy};
+pub use asof::{
+    _asof_key_to_physical, _check_asof_columns, _join_asof_dispatch, AsofJoin, AsofJoinBy,
+};
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
@@ -29,22 +31,20 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
 use polars_arrow::trusted_len::TrustedLen;
-#[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
-    encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
+    encode_rows_with_layout_par, get_binary_offset_row_encoding_layout,
+    get_optimal_row_encoding_layout,
 };
 use polars_core::datatypes::DataType;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 pub(super) use polars_core::series::IsSorted;
-use polars_core::utils::slice_offsets;
-#[allow(unused_imports)]
-use polars_core::utils::slice_slice;
 use polars_defs::join::{
     JoinArgs, JoinCoalesce, JoinType, JoinTypeOptions, JoinValidation, MaintainOrderJoin,
 };
 use polars_utils::hashing::BytesHash;
+use polars_utils::slice_enum::Slice;
 use rayon::prelude::*;
 
 use self::cross_join::fused_cross_filter;
@@ -142,6 +142,11 @@ pub trait DataFrameJoinOps: IntoDf {
         // This join has no per-candidate match condition, so it filters after the fact.
         if let Some(JoinTypeOptions::FusedPredicate(fused_options)) = &options {
             debug_assert!(args.slice.is_none());
+            // Filtering after an outer join would drop its unmatched rows.
+            polars_ensure!(
+                args.how.is_inner(),
+                InvalidOperation: "a fused join predicate is only supported for inner joins on the in-memory engine"
+            );
             let predicate = fused_options.predicate.clone();
             let joined = self._join_impl(
                 other,
@@ -164,7 +169,6 @@ pub trait DataFrameJoinOps: IntoDf {
                 args.suffix.clone(),
                 cross_options,
                 args.maintain_order,
-                args.how.emits_unmatched_left(),
                 &args.how,
             );
         }
@@ -261,13 +265,16 @@ pub trait DataFrameJoinOps: IntoDf {
             } else {
                 iejoin::iejoin
             };
-            let emit_unmatched = if args.how.emits_unmatched_left() {
-                iejoin::EmitUnmatched::Left
-            } else if args.how.emits_unmatched_right() {
-                iejoin::EmitUnmatched::Right
-            } else {
-                iejoin::EmitUnmatched::None
-            };
+            let emit_unmatched =
+                if args.how.emits_unmatched_left() && args.how.emits_unmatched_right() {
+                    iejoin::EmitUnmatched::Both
+                } else if args.how.emits_unmatched_left() {
+                    iejoin::EmitUnmatched::Left
+                } else if args.how.emits_unmatched_right() {
+                    iejoin::EmitUnmatched::Right
+                } else {
+                    iejoin::EmitUnmatched::None
+                };
             return func(
                 left_df,
                 other,
@@ -374,10 +381,7 @@ pub trait DataFrameJoinOps: IntoDf {
             (a.clone(), a)
         } else {
             // Row encode the keys.
-            (
-                prepare_keys_multiple(&selected_left, args.nulls_equal)?.into_series(),
-                prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series(),
-            )
+            prepare_keys_multiple(&selected_left, &selected_right, args.nulls_equal)?
         };
 
         let drop_names = if should_coalesce {
@@ -595,9 +599,9 @@ trait DataFrameJoinOpsPrivate: IntoDf {
             );
         let need_sort = args.maintain_order != MaintainOrderJoin::None && !already_left_sorted;
 
-        if !need_sort && let Some((offset, len)) = args.slice {
-            join_tuples_left = slice_slice(join_tuples_left, offset, len);
-            join_tuples_right = slice_slice(join_tuples_right, offset, len);
+        if !need_sort && let Some(slice) = args.slice {
+            join_tuples_left = &join_tuples_left[slice];
+            join_tuples_right = &join_tuples_right[slice];
         }
 
         let other = if let Some(drop_names) = drop_names {
@@ -634,8 +638,8 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 
             df.sort_in_place(columns, options)?;
 
-            if let Some((offset, len)) = args.slice {
-                df = df.slice(offset, len);
+            if let Some(slice) = args.slice {
+                df = df.slice(slice);
             }
 
             let [mut a, b]: [Column; 2] = df.into_columns().try_into().unwrap();
@@ -666,29 +670,49 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 impl DataFrameJoinOps for DataFrame {}
 impl DataFrameJoinOpsPrivate for DataFrame {}
 
-fn prepare_keys_multiple(s: &[Series], nulls_equal: bool) -> PolarsResult<BinaryOffsetChunked> {
-    let keys = s
-        .iter()
-        .map(|s| {
-            let phys = s.to_physical_repr();
-            match phys.dtype() {
-                #[cfg(feature = "dtype-f16")]
-                DataType::Float16 => phys.f16().unwrap().to_canonical().into_column(),
-                DataType::Float32 => phys.f32().unwrap().to_canonical().into_column(),
-                DataType::Float64 => phys.f64().unwrap().to_canonical().into_column(),
-                _ => phys.into_owned().into_column(),
-            }
-        })
-        .collect::<Vec<_>>();
+/// Row encodes the keys of both sides.
+fn prepare_keys_multiple(
+    left: &[Series],
+    right: &[Series],
+    nulls_equal: bool,
+) -> PolarsResult<(Series, Series)> {
+    let to_keys = |s: &[Series]| {
+        s.iter()
+            .map(|s| {
+                let phys = s.to_physical_repr();
+                match phys.dtype() {
+                    #[cfg(feature = "dtype-f16")]
+                    DataType::Float16 => phys.f16().unwrap().to_canonical().into_column(),
+                    DataType::Float32 => phys.f32().unwrap().to_canonical().into_column(),
+                    DataType::Float64 => phys.f64().unwrap().to_canonical().into_column(),
+                    _ => phys.into_owned().into_column(),
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let (left, right) = (to_keys(left), to_keys(right));
 
-    if nulls_equal {
-        encode_rows_vertical_par_unordered(&keys)
+    let opts = vec![RowEncodingOptions::new_unsorted(); left.len()];
+    let same_dtypes = left.iter().zip(&right).all(|(l, r)| l.dtype() == r.dtype());
+    let propagate_nulls = !nulls_equal;
+    let (left_layout, right_layout) = if same_dtypes {
+        let layout = get_optimal_row_encoding_layout(&left, &[&right], &opts);
+        (layout.clone(), layout)
     } else {
-        encode_rows_vertical_par_unordered_broadcast_nulls(&keys)
-    }
+        (
+            get_binary_offset_row_encoding_layout(&left, &opts),
+            get_binary_offset_row_encoding_layout(&right, &opts),
+        )
+    };
+    Ok((
+        encode_rows_with_layout_par(&left, &left_layout, propagate_nulls)?,
+        encode_rows_with_layout_par(&right, &right_layout, propagate_nulls)?,
+    ))
 }
 
-// Duplicate column names are allowed
+/// The returned right ids are plain row indices into `b`.
+///
+/// Duplicate column names are allowed.
 pub fn private_left_join_multiple_keys(
     a: &[Column],
     b: &[Column],
@@ -704,7 +728,12 @@ pub fn private_left_join_multiple_keys(
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();
 
-    let a = prepare_keys_multiple(&a_cols, nulls_equal)?.into_series();
-    let b = prepare_keys_multiple(&b_cols, nulls_equal)?.into_series();
-    sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, nulls_equal)
+    let (a, b) = prepare_keys_multiple(&a_cols, &b_cols, nulls_equal)?;
+    sort_or_hash_left(
+        &a,
+        &b.rechunk(),
+        false,
+        JoinValidation::ManyToMany,
+        nulls_equal,
+    )
 }

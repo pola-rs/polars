@@ -44,7 +44,7 @@ pub struct PyDataFrame(pub DataFrame);
 #[cfg(feature = "lazy")]
 #[repr(transparent)]
 #[derive(Clone)]
-/// A wrapper around a [`DataFrame`] that can be converted to and from python with `pyo3`.
+/// A wrapper around a [`LazyFrame`] that can be converted to and from python with `pyo3`.
 /// # Warning
 /// If the [`LazyFrame`] contains in memory data,
 /// such as a [`DataFrame`] this will be serialized/deserialized.
@@ -439,9 +439,16 @@ impl<'py> IntoPyObject<'py> for PyDataType {
                 class.call0()
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, _) => {
-                let class = pl.getattr(intern!(py, "Categorical")).unwrap();
-                class.call1(())
+            DataType::Categorical(cats, _) => {
+                let categories_class = pl.getattr(intern!(py, "Categories"))?;
+                let physical = PyDataType(cats.physical().into()).into_pyobject(py)?;
+                let categories = categories_class.call1((
+                    cats.name().as_str(),
+                    cats.namespace().as_str(),
+                    physical,
+                ))?;
+                let class = pl.getattr(intern!(py, "Categorical"))?;
+                class.call1((categories,))
             },
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(categories, _) => {
@@ -586,7 +593,23 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyDataType {
             "Binary" => DataType::Binary,
             #[cfg(feature = "dtype-categorical")]
             "Categorical" => {
-                DataType::Categorical(Categories::global(), Categories::global().mapping())
+                let categories = ob.getattr(intern!(py, "categories"))?;
+                let name = categories
+                    .call_method0(intern!(py, "name"))?
+                    .extract::<String>()?;
+                let namespace = categories
+                    .call_method0(intern!(py, "namespace"))?
+                    .extract::<String>()?;
+                let physical = categories
+                    .call_method0(intern!(py, "physical"))?
+                    .extract::<PyDataType>()?;
+                let physical = match physical.0 {
+                    DataType::UInt8 => CategoricalPhysical::U8,
+                    DataType::UInt16 => CategoricalPhysical::U16,
+                    DataType::UInt32 => CategoricalPhysical::U32,
+                    _ => unreachable!(),
+                };
+                DataType::from_categories(Categories::new(name.into(), namespace.into(), physical))
             },
             #[cfg(feature = "dtype-categorical")]
             "Enum" => {

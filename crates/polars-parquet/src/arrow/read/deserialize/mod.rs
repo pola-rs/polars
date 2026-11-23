@@ -17,8 +17,11 @@ use polars_arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType, Field};
 use polars_arrow::offset::Offsets;
+pub(crate) use primitive::convert_i128;
 use simple::page_iter_to_array;
+pub(crate) use simple::unify_timestamp_unit;
 
+pub use self::categorical::decode_dictionary_codes;
 pub use self::nested_utils::{InitNested, NestedState, init_nested};
 pub use self::utils::filter::{Filter, PredicateFilter};
 use self::utils::freeze_validity;
@@ -67,9 +70,10 @@ pub fn create_list(
                 validity,
             )))
         },
-        ArrowDataType::FixedSizeList(_, _) => Ok(Box::new(FixedSizeListArray::new(
-            dtype, length, values, validity,
-        ))),
+        ArrowDataType::FixedSizeList(_, _) => Ok(Box::new(
+            FixedSizeListArray::try_new(dtype, length, values, validity)
+                .map_err(|e| ParquetError::oos(e.to_string()))?,
+        )),
         _ => unreachable!(),
     }
 }

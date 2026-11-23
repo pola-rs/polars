@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 #[cfg(feature = "pivot")]
 use polars_core::frame::PivotColumnNaming;
+use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,9 @@ new_key_type! {
     /// A key type for identifying DslPlan nodes in a serialized DSL plan.
     pub(crate) struct DslPlanKey;
 }
+
+/// A catalog table of a deferred SQL query (see `SqlCatalogTable`), with its plan as a key.
+type SerializableSqlCatalogTable = (Arc<[PlSmallStr]>, Arc<[PlSmallStr]>, DslPlanKey);
 
 /// A representation of DslPlan that does not contain any `Arc` pointers, and
 /// instead uses indices to refer to DataFrames and other DslPlan nodes.
@@ -116,13 +120,12 @@ pub(crate) enum SerializableDslPlanNode {
     Sort {
         input: DslPlanKey,
         by_column: Vec<Expr>,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         sort_options: SortMultipleOptions,
     },
     Slice {
         input: DslPlanKey,
-        offset: i64,
-        len: IdxSize,
+        slice: Slice,
     },
     MapFunction {
         input: DslPlanKey,
@@ -150,10 +153,21 @@ pub(crate) enum SerializableDslPlanNode {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    Recursive {
+        anchor: DslPlanKey,
+        step: DslPlanKey,
+        id: UniqueId,
+        round_local_caches: Arc<[UniqueId]>,
+    },
+    WorkingTable {
+        id: UniqueId,
+        schema: SchemaRef,
+    },
     #[allow(clippy::upper_case_acronyms)]
     SQL {
         query: Arc<String>,
         relations: Vec<(PlSmallStr, DslPlanKey)>,
+        catalog_tables: Vec<SerializableSqlCatalogTable>,
     },
     IR {
         dsl: DslPlanKey,
@@ -332,10 +346,9 @@ fn convert_dsl_plan_to_serializable_plan(
             slice: *slice,
             sort_options: sort_options.clone(),
         },
-        DP::Slice { input, offset, len } => SP::Slice {
+        DP::Slice { input, slice } => SP::Slice {
             input: dsl_plan_key(input, arenas),
-            offset: *offset,
-            len: *len,
+            slice: *slice,
         },
         DP::MapFunction { input, function } => SP::MapFunction {
             input: dsl_plan_key(input, arenas),
@@ -377,15 +390,38 @@ fn convert_dsl_plan_to_serializable_plan(
             key: key.clone(),
             maintain_order: *maintain_order,
         },
+        DP::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => SP::Recursive {
+            anchor: dsl_plan_key(anchor, arenas),
+            step: dsl_plan_key(step, arenas),
+            id: *id,
+            round_local_caches: round_local_caches.clone(),
+        },
+        DP::WorkingTable { id, schema } => SP::WorkingTable {
+            id: *id,
+            schema: schema.clone(),
+        },
         DP::SQL {
             query,
             relations,
+            catalog_tables,
             cached_stmt: _,
         } => SP::SQL {
             query: query.clone(),
             relations: relations
                 .iter()
                 .map(|(name, plan)| (name.clone(), dsl_plan_key_from_ref(plan, arenas)))
+                .collect(),
+            catalog_tables: catalog_tables
+                .iter()
+                .map(|(name, full_name, plan)| {
+                    let key = dsl_plan_key_from_ref(plan, arenas);
+                    (name.clone(), full_name.clone(), key)
+                })
                 .collect(),
         },
         DP::IR {
@@ -600,10 +636,9 @@ fn try_convert_serializable_plan_to_dsl_plan(
             slice: *slice,
             sort_options: sort_options.clone(),
         }),
-        SP::Slice { input, offset, len } => Ok(DP::Slice {
+        SP::Slice { input, slice } => Ok(DP::Slice {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
-            offset: *offset,
-            len: *len,
+            slice: *slice,
         }),
         SP::MapFunction { input, function } => Ok(DP::MapFunction {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
@@ -645,13 +680,39 @@ fn try_convert_serializable_plan_to_dsl_plan(
             key: key.clone(),
             maintain_order: *maintain_order,
         }),
-        SP::SQL { query, relations } => Ok(DP::SQL {
+        SP::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => Ok(DP::Recursive {
+            anchor: get_dsl_plan(*anchor, ser_dsl_plan, arenas)?,
+            step: get_dsl_plan(*step, ser_dsl_plan, arenas)?,
+            id: *id,
+            round_local_caches: round_local_caches.clone(),
+        }),
+        SP::WorkingTable { id, schema } => Ok(DP::WorkingTable {
+            id: *id,
+            schema: schema.clone(),
+        }),
+        SP::SQL {
+            query,
+            relations,
+            catalog_tables,
+        } => Ok(DP::SQL {
             query: query.clone(),
             relations: relations
                 .iter()
                 .map(|(name, key)| {
                     let plan = get_dsl_plan(*key, ser_dsl_plan, arenas)?;
                     Ok((name.clone(), Arc::unwrap_or_clone(plan)))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?,
+            catalog_tables: catalog_tables
+                .iter()
+                .map(|(name, full_name, key)| {
+                    let plan = get_dsl_plan(*key, ser_dsl_plan, arenas)?;
+                    Ok((name.clone(), full_name.clone(), Arc::unwrap_or_clone(plan)))
                 })
                 .collect::<PolarsResult<Vec<_>>>()?,
             cached_stmt: Default::default(),
@@ -775,9 +836,13 @@ mod tests {
     #[test]
     fn test_dsl_plan_serialization() {
         let name = || "a".into();
+        let other_name = || "b".into();
         let df = Arc::new(
-            DataFrame::new_infer_height(vec![Column::new(name(), Series::new(name(), &[1, 2, 3]))])
-                .unwrap(),
+            DataFrame::new_infer_height(vec![
+                Column::new(name(), vec![1, 2, 3]),
+                Column::new(other_name(), vec![4, 5, 6]),
+            ])
+            .unwrap(),
         );
         let dfscan = Arc::new(DslPlan::DataFrameScan {
             df: df.clone(),
@@ -792,7 +857,8 @@ mod tests {
             input_left: dfscan.clone(),
             input_right: dfscan,
             condition: JoinCondition::Equi {
-                on: vec![(Expr::Column(name()), Expr::Column(name()))],
+                left_on: vec![Expr::Selector(Selector::Wildcard)],
+                right_on: vec![Expr::Column(name()), Expr::Column(other_name())],
             },
             options: Arc::new(join_options),
         };

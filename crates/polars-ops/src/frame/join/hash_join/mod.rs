@@ -12,7 +12,6 @@ use polars_core::runtime::RAYON;
 use polars_core::utils::_set_partition_size;
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::index::ChunkId;
-use polars_utils::unique_column_name;
 pub(super) use single_keys::*;
 pub use single_keys_dispatch::SeriesJoin;
 #[cfg(feature = "asof_join")]
@@ -27,6 +26,7 @@ pub(crate) use sort_merge::*;
 pub use super::*;
 #[cfg(feature = "chunked_ids")]
 use crate::chunked_array::gather::chunked::TakeChunkedHorPar;
+use crate::unique_column_name;
 
 pub fn default_join_ids() -> ChunkJoinOptIds {
     #[cfg(feature = "chunked_ids")]
@@ -39,7 +39,7 @@ pub fn default_join_ids() -> ChunkJoinOptIds {
     }
 }
 
-macro_rules! det_hash_prone_order {
+macro_rules! det_hash_probe_order {
     ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
         if $self.len() > $other.len() {
@@ -50,7 +50,7 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-pub(super) use det_hash_prone_order;
+pub(super) use det_hash_probe_order;
 #[cfg(feature = "performant")]
 use polars_arrow::legacy::conversion::primitive_to_vec;
 
@@ -115,11 +115,11 @@ pub trait JoinDispatch: IntoDf {
     unsafe fn _finish_anti_semi_join(
         &self,
         mut idx: &[IdxSize],
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
     ) -> DataFrame {
         let ca_self = self.to_df();
-        if let Some((offset, len)) = slice {
-            idx = slice_slice(idx, offset, len);
+        if let Some(slice) = slice {
+            idx = &idx[slice];
         }
         // idx from anti-semi join should always be sorted
         ca_self._take_unchecked_slice_sorted(idx, true, IsSorted::Ascending)
@@ -130,7 +130,7 @@ pub trait JoinDispatch: IntoDf {
         &self,
         s_left: &Series,
         s_right: &Series,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         anti: bool,
         nulls_equal: bool,
     ) -> PolarsResult<DataFrame> {
@@ -182,8 +182,8 @@ pub trait JoinDispatch: IntoDf {
             df.sort_in_place(columns, options)?;
 
             // If the order is maintained, we can only slice after sorting
-            if let Some((offset, len)) = args.slice {
-                df = df.slice(offset, len);
+            if let Some(slice) = args.slice {
+                df = df.slice(slice);
             }
 
             let join_tuples_left = df.column("a").unwrap().idx().unwrap();
@@ -193,10 +193,10 @@ pub trait JoinDispatch: IntoDf {
                 || unsafe { other.take_unchecked(join_tuples_right) },
             )
         } else {
-            if let Some((offset, len)) = args.slice {
-                let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
-                join_idx_l.slice(offset, len);
-                join_idx_r.slice(offset, len);
+            if let Some(slice) = args.slice {
+                let range = slice.resolve(join_idx_l.len());
+                join_idx_l.slice(range.start, range.len());
+                join_idx_r.slice(range.start, range.len());
             }
             let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
             let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);

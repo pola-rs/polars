@@ -1,3 +1,4 @@
+#[cfg(feature = "dtype-f16")]
 use num_traits::AsPrimitive;
 use polars_arrow::array::*;
 use polars_arrow::datatypes::ArrowDataType;

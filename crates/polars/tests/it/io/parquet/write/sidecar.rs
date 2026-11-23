@@ -15,7 +15,7 @@ fn basic() -> Result<(), ParquetError> {
         // say we will write 10 files
         let relative_path = format!("part-{i}.parquet");
         let writer = std::io::Cursor::new(vec![]);
-        let mut writer = FileWriter::new(
+        let mut writer = FileWriter::try_new(
             writer,
             schema.clone(),
             WriteOptions {
@@ -23,7 +23,8 @@ fn basic() -> Result<(), ParquetError> {
                 version: Version::V2,
             },
             None,
-        );
+            None,
+        )?;
         writer.end(None)?;
         let (_, mut metadata) = writer.into_inner_and_metadata();
 

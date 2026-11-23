@@ -68,9 +68,14 @@ def elem_order_sign(
         return 0
     elif isinstance(lhs, bool) and isinstance(rhs, bool):
         return -1 if (lhs < rhs) ^ descending else 1
-    elif isinstance(lhs, datetime.date) and isinstance(rhs, datetime.date):
-        return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, datetime.datetime) and isinstance(rhs, datetime.datetime):
+        return -1 if (lhs < rhs) ^ descending else 1
+    elif (
+        isinstance(lhs, datetime.date)
+        and not isinstance(lhs, datetime.datetime)
+        and isinstance(rhs, datetime.date)
+        and not isinstance(rhs, datetime.datetime)
+    ):
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, datetime.time) and isinstance(rhs, datetime.time):
         return -1 if (lhs < rhs) ^ descending else 1
@@ -99,7 +104,7 @@ def elem_order_sign(
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, list) and isinstance(rhs, list):
         for lh, rh in zip(lhs, rhs, strict=False):
-            # Nulls lasts is set to descending for nested values. See #22557.
+            # Nulls last is set to descending for nested values. See #22557.
             o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
                 return o
@@ -110,7 +115,7 @@ def elem_order_sign(
             return -1 if (len(lhs) < len(rhs)) ^ descending else 1
     elif isinstance(lhs, dict) and isinstance(rhs, dict):
         for lh, rh in zip(lhs.values(), rhs.values(), strict=True):
-            # Nulls lasts is set to descending for nested values. See #22557.
+            # Nulls last is set to descending for nested values. See #22557.
             o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
                 return o

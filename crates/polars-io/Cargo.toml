@@ -15,6 +15,7 @@ polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
+polars-io-ext-ffi = { workspace = true, optional = true, features = ["lazyframe_resolver"] }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-schema = { workspace = true }
@@ -33,6 +34,7 @@ flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
 hashbrown = { workspace = true }
+http-body = { version = "1", optional = true }
 itoa = { workspace = true, optional = true }
 libc = { workspace = true }
 memchr = { workspace = true }
@@ -40,6 +42,7 @@ memmap = { workspace = true }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
+parquet-key-management = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
@@ -51,7 +54,7 @@ serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
-strum = { workspace = true }
+strum = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 tokio = { workspace = true }
 zmij = { workspace = true, optional = true }
@@ -59,13 +62,12 @@ zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 fs4 = { version = "1.1", features = ["sync"], optional = true }
-home = "0.5.4"
 
 [dev-dependencies]
 tempfile = "3"
 
 [features]
-catalog = ["cloud", "serde", "reqwest", "futures", "chrono"]
+catalog = ["cloud", "serde", "reqwest", "futures", "chrono", "strum"]
 default = ["decompress"]
 # support for arrows json parsing
 json = [
@@ -75,7 +77,7 @@ json = [
   "dtype-struct",
   "csv",
 ]
-scan_lines = []
+scan_lines = ["simdutf8"]
 serde = [
   "dep:serde",
   "serde_json",
@@ -132,6 +134,8 @@ dtype-decimal = ["polars-core/dtype-decimal", "polars-json?/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-parquet", "polars-parquet/compression", "polars-core/partition_by"]
+# Parquet encryption with keys managed by a KMS, using a KMS client implemented in Python
+parquet_kms = ["parquet", "python", "dep:parquet-key-management"]
 async = [
   "async-trait",
   "futures",
@@ -141,8 +145,8 @@ async = [
 ]
 cloud = [
   "object_store",
+  "dep:http-body",
   "async",
-  "polars-error/object_store",
   "serde_json",
   "serde",
   "file_cache",
@@ -161,6 +165,8 @@ temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []
 nightly = []
 python = ["pyo3", "polars-error/python", "polars-utils/python"]
+# Host side of the generic I/O plugin contracts (`file_reader.v1`, `lazyframe_resolver.v1`).
+io_plugin_ffi = ["dep:polars-io-ext-ffi", "dtype-struct"]
 allow_unused = []
 
 [package.metadata.docs.rs]

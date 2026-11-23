@@ -42,6 +42,8 @@ Computation
     Expr.ewm_sum_by
     Expr.ewm_std
     Expr.ewm_var
+    Expr.erf
+    Expr.erfc
     Expr.exp
     Expr.hash
     Expr.hist
@@ -89,3 +91,4 @@ Computation
     Expr.unique
     Expr.unique_counts
     Expr.value_counts
+    Expr.x_log_y

@@ -52,6 +52,7 @@ impl LazyFrame {
                 expand_paths: true,
                 hidden_file_prefix: None,
                 projection: None,
+                field_selection: None,
                 column_mapping: None,
                 default_values: None,
                 row_index: None,
@@ -62,8 +63,10 @@ impl LazyFrame {
                 include_file_paths: None,
                 deletion_files: None,
                 table_statistics: None,
+                hive_partitions: None,
                 row_count: None,
                 source_sizes: None,
+                resolve_heavy_sources: None,
             },
         )?
         .build()

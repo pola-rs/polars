@@ -34,6 +34,25 @@ pub mod prefetch {
         }
     }
 
+    /// Prefetch the cache line of `ptr` into the L1 cache. A prefetch never
+    /// faults, so `ptr` may point anywhere.
+    #[inline(always)]
+    pub fn prefetch_l1(ptr: *const u8) {
+        _ = ptr; // Silence unused - not always used on all platforms.
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            use std::arch::x86_64::*;
+            unsafe { _mm_prefetch::<_MM_HINT_T0>(ptr as *const _) };
+        }
+
+        #[cfg(all(target_arch = "aarch64", feature = "nightly"))]
+        {
+            use std::arch::aarch64::*;
+            unsafe { _prefetch(ptr as *const _, _PREFETCH_READ, _PREFETCH_LOCALITY3) };
+        }
+    }
+
     /// Attempt to prefetch the memory in the slice to the L2 cache.
     pub fn prefetch_l2(slice: &[u8]) {
         if slice.is_empty() {

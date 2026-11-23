@@ -38,6 +38,8 @@ Database
 
    read_database
    read_database_uri
+   scan_database
+   io.database.show_drivers
    DataFrame.write_database
 
 Delta Lake
@@ -80,6 +82,15 @@ Iceberg
    scan_iceberg
    DataFrame.write_iceberg
    LazyFrame.sink_iceberg
+   delete_iceberg
+
+Lance
+~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_lance
+
 
 JSON
 ~~~~
@@ -131,6 +142,47 @@ Parquet
    scan_parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
+
+Parquet encryption
+~~~~~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   ParquetDecryptionProperties
+   ParquetEncryptionProperties
+
+.. currentmodule:: polars.io.parquet.encryption
+
+.. autosummary::
+   :toctree: api/
+
+   CryptoFactory
+   DecryptionConfiguration
+   EncryptionConfiguration
+   KmsClient
+   KmsConnectionConfig
+   ParquetDecryptionConfig
+   ParquetEncryptionConfig
+
+.. currentmodule:: polars
+
+External
+~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_external_reader
+
+.. currentmodule:: polars.io.external_reader
+
+.. autosummary::
+   :toctree: api/
+
+   FileReader
+   FileReaderBuilder
+   ReaderCapabilities
+
+.. currentmodule:: polars
 
 Arrow Datasets
 ~~~~~~~~~~~~~~~~

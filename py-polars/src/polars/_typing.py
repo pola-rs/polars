@@ -32,6 +32,12 @@ if TYPE_CHECKING:
     from polars._dependencies import numpy as np
     from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
+    from polars.io.parquet.encryption import (
+        ParquetDecryptionConfig,
+        ParquetDecryptionProperties,
+        ParquetEncryptionConfig,
+        ParquetEncryptionProperties,
+    )
     from polars.lazyframe.engine import Engine
     from polars.selectors import Selector
 
@@ -152,6 +158,12 @@ class TorchTensor(Protocol):
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[type["TemporalType"], "TemporalType"]
+ParquetEncryption: TypeAlias = Union[
+    "ParquetEncryptionProperties", "ParquetEncryptionConfig"
+]
+ParquetDecryption: TypeAlias = Union[
+    "ParquetDecryptionProperties", "ParquetDecryptionConfig"
+]
 PolarsIntegerType: TypeAlias = Union[type["IntegerType"], "IntegerType"]
 OneOrMoreDataTypes: TypeAlias = PolarsDataType | Iterable[PolarsDataType]
 PythonDataType: TypeAlias = (
@@ -200,16 +212,40 @@ Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
+DateDiffUnit: TypeAlias = Literal[
+    "year",
+    "quarter",
+    "month",
+    "week",
+    "day",
+    "hour",
+    "minute",
+    "second",
+    "millisecond",
+    "microsecond",
+    "nanosecond",
+]
 CsvCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
-ColumnMapping: TypeAlias = tuple[
-    Literal["iceberg-column-mapping"],
-    # This is "pa.Schema". Not typed as that causes pyright strict type checking
-    # failures for users who don't have pyarrow-stubs installed.
-    Any,
-]
+ColumnMapping: TypeAlias = (
+    tuple[
+        Literal["iceberg-column-mapping"],
+        # This is "pa.Schema". Not typed as that causes pyright strict type checking
+        # failures for users who don't have pyarrow-stubs installed.
+        Any,
+    ]
+    | tuple[
+        Literal["iceberg-column-mapping"],
+        Any,
+        # Names of the table's name mapping, by field ID.
+        dict[int, list[str]] | None,
+    ]
+)
 DefaultFieldValues: TypeAlias = tuple[
-    Literal["iceberg"], tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
+    Literal["iceberg"],
+    # (identity-partition values, initial defaults[, identity-partition presence])
+    tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
+    | tuple[dict[int, Union["Series", str]], dict[int, "Series"], dict[int, "Series"]],
 ]
 DeletionFiles: TypeAlias = (
     tuple[Literal["iceberg"], tuple[dict[int, list[str]], dict[int, str]]]
@@ -288,7 +324,7 @@ InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
     "inner", "left", "right", "full", "semi", "anti", "cross"
 ]  # JoinType
-JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
+JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right", "full"]  # JoinType
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
@@ -448,7 +484,7 @@ AsyncResult: TypeAlias = Union[
     "_GeventDataFrameResult[AsyncResultT]", "_AioDataFrameResult[AsyncResultT]"
 ]
 
-# Remote execution on Polars Cloud; mirrors `polars_cloud._typing`
+# Remote execution on Polars Nanook; mirrors `polars_nanook._typing`
 ScalingMode: TypeAlias = Literal["auto", "single-node", "distributed"]
 PlanTypePreference: TypeAlias = Literal["dot", "plain"]
 

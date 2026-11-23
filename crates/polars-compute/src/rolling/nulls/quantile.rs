@@ -8,6 +8,19 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     method: QuantileMethod,
 }
 
+impl<T: NativeType + IsFloat + PartialOrd> QuantileWindow<'_, T> {
+    /// The number of non-null values in the window.
+    pub fn n_values(&self) -> usize {
+        self.sorted.len() - self.sorted.null_count
+    }
+
+    /// The non-null value at `rank` in ascending order, for `rank < self.n_values()`.
+    pub fn value_at_rank(&self, rank: usize) -> T {
+        // The nulls sort first.
+        self.sorted.get(rank + self.sorted.null_count).unwrap()
+    }
+}
+
 impl<
     T: NativeType
         + IsFloat
@@ -72,7 +85,7 @@ impl<
 
         idx = std::cmp::min(idx, length - 1);
 
-        // we can unwrap because we sliced of the nulls
+        // we can unwrap because we sliced off the nulls
         match self.method {
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
@@ -105,8 +118,8 @@ impl<
         }
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.sorted.is_valid(min_periods)
+    fn is_valid(&self, min_samples: usize) -> bool {
+        self.sorted.is_valid(min_samples)
     }
 
     fn slice_len(&self) -> usize {
@@ -117,7 +130,7 @@ impl<
 pub fn rolling_quantile<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
@@ -155,7 +168,7 @@ where
 
         let out = super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(
             params.method,
-            min_periods,
+            min_samples,
             window_size,
             arr.clone(),
             params.prob,
@@ -168,7 +181,7 @@ where
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,
-        min_periods,
+        min_samples,
         offset_fn,
         params,
     )

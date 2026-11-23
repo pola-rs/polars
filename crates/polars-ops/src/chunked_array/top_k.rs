@@ -188,9 +188,12 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
         };
 
         return if slice_at_start {
-            Ok(src.slice(offset as i64, out_len))
+            Ok(src.slice((offset, out_len)))
         } else {
-            Ok(src.slice(-(offset as i64) - (out_len as i64), out_len))
+            Ok(src.slice(Slice::Negative {
+                offset_from_end: offset + out_len,
+                len: out_len,
+            }))
         };
     }
 
@@ -212,7 +215,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
             Ok(ca.into_column())
         },
         DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_column()),
-        DataType::Null => Ok(src.slice(0, k)),
+        DataType::Null => Ok(src.slice(Slice::head(k))),
         dt if dt.is_primitive_numeric() => {
             macro_rules! dispatch {
                 ($ca:expr) => {{ top_k_num_impl($ca, k, descending).into_column() }};
@@ -279,7 +282,7 @@ fn top_k_by_impl(
     }
 
     let multithreaded = k >= 10000 && RAYON.current_num_threads() > 1;
-    let mut sort_options = SortMultipleOptions {
+    let sort_options = SortMultipleOptions {
         descending: descending.into_iter().map(|x| !x).collect(),
         nulls_last: vec![true; by.len()],
         multithreaded,
@@ -287,7 +290,7 @@ fn top_k_by_impl(
         limit: None,
     };
 
-    let idx = _arg_bottom_k(k, by, &mut sort_options)?;
+    let idx = _arg_bottom_k(k, by, sort_options)?;
 
     let result = unsafe {
         src.as_materialized_series()

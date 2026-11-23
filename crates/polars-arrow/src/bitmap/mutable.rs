@@ -702,7 +702,7 @@ impl MutableBitmap {
         unsafe { Self::try_from_trusted_len_iter_unchecked(iterator) }
     }
 
-    /// Creates a new [`MutableBitmap`] from an falible iterator of booleans.
+    /// Creates a new [`MutableBitmap`] from a fallible iterator of booleans.
     ///
     /// # Safety
     /// The caller must guarantee that the iterator is `TrustedLen`.
@@ -717,7 +717,7 @@ impl MutableBitmap {
         let mut buffer = vec![0u8; length.div_ceil(8)];
 
         let chunks = length / 8;
-        let reminder = length % 8;
+        let remainder = length % 8;
 
         let data = buffer.as_mut_slice();
         data[..chunks].iter_mut().try_for_each(|byte| {
@@ -727,7 +727,7 @@ impl MutableBitmap {
             })
         })?;
 
-        if reminder != 0 {
+        if remainder != 0 {
             let last = &mut data[chunks];
             iterator.enumerate().try_for_each(|(i, value)| {
                 *last = set_bit_in_byte(*last, i, value?);

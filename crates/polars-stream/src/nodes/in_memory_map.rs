@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::schema::Schema;
 use polars_plan::plans::DataFrameUdf;
 
@@ -17,9 +18,13 @@ pub enum InMemoryMapNode {
 }
 
 impl InMemoryMapNode {
-    pub fn new(input_schema: Arc<Schema>, map: Arc<dyn DataFrameUdf>) -> Self {
+    pub fn new(
+        input_schema: Arc<Schema>,
+        map: Arc<dyn DataFrameUdf>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         Self::Sink {
-            sink_node: InMemorySinkNode::new(input_schema),
+            sink_node: InMemorySinkNode::new(input_schema, task_metrics),
             map,
         }
     }
@@ -72,8 +77,12 @@ impl ComputeNode for InMemoryMapNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self, Self::Sink { .. })
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self {
+            Self::Sink { .. } => NodeMemoryUsage::Accumulating,
+            Self::Source(src) => src.memory_usage(),
+            Self::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

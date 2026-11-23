@@ -155,21 +155,16 @@ pub trait StringMethods: AsString {
             },
         };
 
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
-
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
             while !s.is_empty() {
                 let timestamp = if tz_aware {
                     DateTime::parse_and_remainder(s, fmt)
                         .ok()
-                        .map(|(dt, _r)| func(dt.naive_utc()))
+                        .map(|(dt, _r)| tu.datetime_to_timestamp(dt.naive_utc()))
                 } else {
-                    infer::parse_datetime_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
+                    infer::parse_datetime_and_remainder(s, fmt)
+                        .map(|(nd, _r)| tu.datetime_to_timestamp(nd))
                 };
                 match timestamp {
                     Some(ts) => return Some(ts),
@@ -264,19 +259,13 @@ pub trait StringMethods: AsString {
         let fmt = strptime::compile_fmt(fmt)?;
         let use_cache = use_cache && string_ca.len() > 50;
 
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
-
         if tz_aware {
             #[cfg(feature = "timezones")]
             {
                 let mut convert = LruCachedFunc::new(
                     |s: &str| {
                         let dt = DateTime::parse_from_str(s, &fmt).ok()?;
-                        Some(func(dt.naive_utc()))
+                        Some(tu.datetime_to_timestamp(dt.naive_utc()))
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );
@@ -301,7 +290,7 @@ pub trait StringMethods: AsString {
                 let mut convert = LruCachedFunc::new(
                     |s: &str| match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
                         None => transform(s, &fmt),
-                        Some(ndt) => Some(func(ndt)),
+                        Some(ndt) => Some(tu.datetime_to_timestamp(ndt)),
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );

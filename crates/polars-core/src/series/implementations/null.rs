@@ -214,8 +214,8 @@ impl SeriesTrait for NullChunked {
     }
 
     fn deposit(&self, validity: &Bitmap) -> Series {
-        assert_eq!(validity.set_bits(), 0);
-        self.clone().into_series()
+        assert_eq!(self.len(), validity.set_bits());
+        NullChunked::new(self.name.clone(), validity.len()).into_series()
     }
 
     fn len(&self) -> usize {
@@ -281,8 +281,8 @@ impl SeriesTrait for NullChunked {
         AnyValue::Null
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
-        let (chunks, len) = chunkops::slice(&self.chunks, offset, length, self.len());
+    fn slice(&self, slice: Slice) -> Series {
+        let (chunks, len) = chunkops::slice(&self.chunks, slice, self.len());
         NullChunked {
             name: self.name.clone(),
             length: len,

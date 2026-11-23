@@ -6,6 +6,7 @@
 
 pub(crate) mod bounds;
 pub(crate) mod group_by;
+pub mod index_space;
 #[cfg(test)]
 mod test;
 pub(crate) mod window;

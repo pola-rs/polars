@@ -2,6 +2,14 @@
 
 SHELL=bash
 BASE ?= main
+ifeq ($(VENV),)
+VENV := ../.venv
+endif
+ifeq ($(OS),Windows_NT)
+	VENV_BIN=$(VENV)/Scripts
+else
+	VENV_BIN=$(VENV)/bin
+endif
 
 .PHONY: fix
 fix:
@@ -46,6 +54,7 @@ miri:  ## Run miri
 .PHONY: test
 test:  ## Run tests
 	cargo test --all-features \
+		-p polars-cli \
 		-p polars-compute \
 		-p polars-core \
 		-p polars-defs \
@@ -64,6 +73,7 @@ test:  ## Run tests
 .PHONY: nextest
 nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
+		-p polars-cli \
 		-p polars-compute \
 		-p polars-core \
 		-p polars-defs \
@@ -97,6 +107,16 @@ bench-save:  ## Run benchmark and save
 .PHONY: bench-cmp
 bench-cmp:  ## Run benchmark and compare
 	cargo bench --features=random --bench $(BENCH) -- --load-baseline $(FEAT) --baseline $(BASE)
+
+.PHONY: build-polars-iceberg
+build-polars-iceberg:  ## Compile and install the `polars_iceberg` I/O plugin (py-polars/polars-iceberg) into the venv
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m ../py-polars/polars-iceberg/Cargo.toml $(ARGS) --uv
+
+.PHONY: build-polars-database
+build-polars-database:  ## Compile and install the `polars_database` I/O plugin (py-polars/polars-database) into the venv
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m ../py-polars/polars-database/Cargo.toml $(ARGS) --uv
 
 .PHONY: doctest
 doctest:  ## Check that documentation builds

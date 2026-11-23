@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use polars_arrow::array::builder::ShareStrategy;
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
 use polars_error::polars_warn;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::compute_node_prelude::*;
@@ -25,6 +27,7 @@ impl CrossJoinNode {
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
         args: &JoinArgs,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         let left_is_build = match args.maintain_order {
             MaintainOrderJoin::None => match args.build_side {
@@ -50,7 +53,7 @@ impl CrossJoinNode {
         } else {
             &right_input_schema
         };
-        let sink_node = InMemorySinkNode::new(build_input_schema.clone());
+        let sink_node = InMemorySinkNode::new(build_input_schema.clone(), task_metrics);
         let right_rename = right_input_schema
             .iter_names()
             .map(|rname| {
@@ -83,8 +86,12 @@ impl ComputeNode for CrossJoinNode {
         "cross-join"
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        true
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            CrossJoinState::Build(_) => NodeMemoryUsage::Accumulating,
+            CrossJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
+            CrossJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn update_state(
@@ -212,7 +219,7 @@ impl ComputeNode for CrossJoinNode {
                                             let height = (build_df.height() - build_offset)
                                                 .min(ideal_morsel_size);
                                             let build_join_df =
-                                                build_df.slice(build_offset as i64, height);
+                                                build_df.slice((build_offset, height));
                                             let probe_join_df =
                                                 probe_df.new_from_index(probe_offset, height);
                                             let combined = combine(build_join_df, probe_join_df);
@@ -240,8 +247,8 @@ impl ComputeNode for CrossJoinNode {
                                             cached_build_df_repeated =
                                                 build_repeater.freeze_reset();
                                         }
-                                        let build_join_df =
-                                            cached_build_df_repeated.slice(0, build_height);
+                                        let build_join_df = cached_build_df_repeated
+                                            .slice(Slice::head(build_height));
 
                                         probe_repeater.subslice_extend_each_repeated(
                                             &probe_df,

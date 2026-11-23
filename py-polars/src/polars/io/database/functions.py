@@ -101,7 +101,7 @@ def read_database(
         a single DataFrame is yielded from the iterator.
 
         .. note::
-            If using SQLALchemy, you may also want to pass `stream_results=True` to the
+            If using SQLAlchemy, you may also want to pass `stream_results=True` to the
             connection's `execution_options` method when setting this parameter, which
             will establish a server-side cursor; without this option some drivers (such
             as "psycopg2") will still materialise the entire result set client-side

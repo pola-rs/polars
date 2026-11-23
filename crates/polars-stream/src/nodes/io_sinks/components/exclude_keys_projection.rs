@@ -25,4 +25,9 @@ impl ExcludeKeysProjection {
             Self::Width(len) => *len,
         }
     }
+
+    #[allow(unused)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }

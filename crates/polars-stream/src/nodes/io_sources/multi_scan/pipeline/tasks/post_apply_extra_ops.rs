@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::executor::{self, AbortOnDropHandle, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_error::PolarsResult;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -20,6 +20,7 @@ pub struct PostApplyExtraOps {
     pub first_morsel_position: RowCounter,
     pub num_pipelines: usize,
     pub max_concurrent_scans: usize,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl PostApplyExtraOps {
@@ -31,7 +32,9 @@ impl PostApplyExtraOps {
             first_morsel_position,
             num_pipelines,
             max_concurrent_scans,
+            task_metrics,
         } = self;
+        let metrics = task_metrics.as_deref();
 
         let verbose = polars_core::config::verbose();
         let rows_before = Arc::new(RelaxedCell::new_u64(0));
@@ -44,7 +47,7 @@ impl PostApplyExtraOps {
         // Distributor
         {
             let ops_applier = ops_applier.clone();
-            executor::spawn(TaskPriority::Low, async move {
+            executor::spawn(TaskPriority::Low, metrics, async move {
                 // Position tracking
                 let mut row_counter: RowCounter = first_morsel_position;
 
@@ -60,11 +63,7 @@ impl PostApplyExtraOps {
                     unreachable!();
                 };
 
-                assert!(
-                    physical_pre_slice
-                        .as_ref()
-                        .is_none_or(|x| matches!(x, Slice::Positive { .. }))
-                );
+                assert!(physical_pre_slice.is_none_or(|x| !x.is_negative()));
 
                 loop {
                     let row_count_this_morsel = {
@@ -76,15 +75,14 @@ impl PostApplyExtraOps {
                         //   * Instead, `physical_rows` will be a counter that has the `deleted_rows` count subtracted
                         //     from it (because we are taking the height of the morsels after the rows are deleted).
                         let deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
-                            let Slice::Positive { offset, len } = Slice::Positive {
+                            let range = Slice::Positive {
                                 offset: row_counter.num_physical_rows(),
                                 len: morsel.height(),
                             }
-                            .restrict_to_bounds(mask.len()) else {
-                                unreachable!()
-                            };
+                            .resolve(mask.len());
 
-                            mask.slice(offset, len).num_deleted_rows()
+                            mask.slice(range.start, range.len())
+                                .num_deleted_rows(range.len())
                         });
 
                         RowCounter::new(physical_rows, deleted_rows)
@@ -92,8 +90,8 @@ impl PostApplyExtraOps {
 
                     // We hit this if a reader does not support PRE_SLICE.
                     if physical_pre_slice
-                        .clone()
-                        .is_some_and(|x| x.offsetted(row_counter.num_physical_rows()).len() == 0)
+                        .and_then(|x| x.offsetted(row_counter.num_physical_rows()))
+                        .is_some_and(|x| x.is_empty())
                     {
                         // Note: We do not return any flag indicating that we have reached end of slice
                         // from this context. The read should be stopped on a higher level by using
@@ -126,7 +124,7 @@ impl PostApplyExtraOps {
                 let rows_before = rows_before.clone();
                 let rows_after = rows_after.clone();
 
-                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, metrics, async move {
                     while let Ok((mut morsel, row_offset)) = morsel_rx.recv().await {
                         rows_before.fetch_add(morsel.height() as u64);
                         let mut df = morsel.df_mut().await;
@@ -143,7 +141,7 @@ impl PostApplyExtraOps {
             })
             .collect::<Vec<_>>();
 
-        let handle = AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+        let handle = executor::spawn(TaskPriority::Low, metrics, async move {
             for handle in worker_handles {
                 handle.await?;
             }
@@ -158,8 +156,8 @@ impl PostApplyExtraOps {
             }
 
             Ok(())
-        }));
+        });
 
-        (rx, handle)
+        (rx, AbortOnDropHandle::new(handle))
     }
 }

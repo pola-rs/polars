@@ -1,11 +1,10 @@
 from collections import OrderedDict
 import os
-from typing import List, Optional, Set
+from typing import Any, List, Optional, Set
 import yaml
 import logging
 
-
-from mkdocs_macros.plugin import MacrosPlugin
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 # Supported Languages and their metadata
 LANGUAGES = OrderedDict(
@@ -74,7 +73,7 @@ def create_api_function_link(language: str, function_key: str) -> Optional[str]:
         function_key (str): Key to the specific function
 
     Returns:
-        str: If the function is found than the link else None
+        str: If the function is found then the link else None
     """
     info = API_REFERENCE_LINKS.get(language, {}).get(function_key)
 
@@ -107,7 +106,7 @@ def code_tab(
         api_functions (List[str]): List of api functions which should be linked
 
     Returns:
-        str: A markdown formatted string represented a single tab
+        str: A markdown formatted string representing a single tab
     """
     language = language_info["code_name"]
 
@@ -132,7 +131,7 @@ def code_tab(
     """
 
 
-def define_env(env: MacrosPlugin) -> None:
+def define_env(env: Any) -> None:
     @env.macro
     def code_header(
         language: str, section: str = [], api_functions: List[str] = []

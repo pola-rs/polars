@@ -127,7 +127,7 @@ class DataTypeExpr:
 
     def matches(self, selector: pl.Selector) -> pl.Expr:
         """
-        Get whether the output DataType is matches a certain selector.
+        Get whether the output DataType matches a certain selector.
 
         Examples
         --------

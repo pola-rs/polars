@@ -3,21 +3,31 @@ use std::ops::{Deref, DerefMut};
 
 use polars_arrow::offset::OffsetsBuffer;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::slice_enum::Slice;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
 use crate::prelude::*;
 use crate::runtime::RAYON;
-use crate::utils::{NoNull, flatten, slice_slice};
+use crate::utils::{NoNull, flatten};
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
-    pub(crate) sorted_by_first_idx: bool,
+    /// If true, the groups are ordered by their first index.
+    pub(crate) groups_sorted_by_first_idx: bool,
+    /// If true, the indices within every group are non-decreasing.
+    /// Sorted columns then take their per-group min and max from the group ends.
+    /// `false` only costs speed, never correctness.
+    pub(crate) sorted_idxs_in_groups: bool,
     /// Positions of the start of each group.
     first: Vec<IdxSize>,
     /// Global positions of all elements of all groups.
+    ///
+    /// A group can hold the same position more than once. For example, `max().over("g")`
+    /// inside `agg` computes one value per partition, and each row of a partition gets the
+    /// position of that value.
     all: Vec<IdxVec>,
 }
 
@@ -82,7 +92,8 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
             first.set_len(cap);
         }
         GroupsIdx {
-            sorted_by_first_idx: false,
+            groups_sorted_by_first_idx: false,
+            sorted_idxs_in_groups: false,
             first,
             all,
         }
@@ -90,16 +101,17 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
 }
 
 impl GroupsIdx {
-    pub fn new(first: Vec<IdxSize>, all: Vec<IdxVec>, sorted_by_first_idx: bool) -> Self {
+    pub fn new(first: Vec<IdxSize>, all: Vec<IdxVec>, groups_sorted_by_first_idx: bool) -> Self {
         Self {
-            sorted_by_first_idx,
+            groups_sorted_by_first_idx,
+            sorted_idxs_in_groups: false,
             first,
             all,
         }
     }
 
     pub fn sort_by_first_idx(&mut self) {
-        if self.sorted_by_first_idx {
+        if self.groups_sorted_by_first_idx {
             return;
         }
         let mut idx = 0;
@@ -128,10 +140,22 @@ impl GroupsIdx {
         let (first, all) = RAYON.install(|| rayon::join(take_first, take_all));
         self.first = first;
         self.all = all;
-        self.sorted_by_first_idx = true
+        self.groups_sorted_by_first_idx = true
     }
     pub fn is_sorted_by_first_idx(&self) -> bool {
-        self.sorted_by_first_idx
+        self.groups_sorted_by_first_idx
+    }
+
+    pub fn has_sorted_idxs_in_groups(&self) -> bool {
+        self.sorted_idxs_in_groups
+    }
+
+    /// Marks whether the indices within every group are ascending,
+    /// which speeds up the per-group minimum and maximum of sorted columns.
+    /// Only pass `sorted=true` if they are. `sorted=false` is always correct.
+    pub fn set_sorted_idxs_in_groups(&mut self, sorted: bool) {
+        debug_assert!(!sorted || self.all.iter().all(|idx| idx.is_sorted()));
+        self.sorted_idxs_in_groups = sorted;
     }
 
     pub fn iter(
@@ -168,7 +192,8 @@ impl GroupsIdx {
     // Create an 'empty group', containing 1 group of length 0
     pub fn new_empty() -> Self {
         Self {
-            sorted_by_first_idx: false,
+            groups_sorted_by_first_idx: false,
+            sorted_idxs_in_groups: true,
             first: vec![0],
             all: vec![vec![].into()],
         }
@@ -179,7 +204,8 @@ impl FromIterator<IdxItem> for GroupsIdx {
     fn from_iter<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self {
         let (first, all) = iter.into_iter().unzip();
         GroupsIdx {
-            sorted_by_first_idx: false,
+            groups_sorted_by_first_idx: false,
+            sorted_idxs_in_groups: false,
             first,
             all,
         }
@@ -216,7 +242,8 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
     {
         let (first, all) = par_iter.into_par_iter().unzip();
         GroupsIdx {
-            sorted_by_first_idx: false,
+            groups_sorted_by_first_idx: false,
+            sorted_idxs_in_groups: false,
             first,
             all,
         }
@@ -278,6 +305,32 @@ impl Default for GroupsType {
     }
 }
 
+/// Returns whether `groups` is monotonic:
+/// True if for every consecutive pair of group slices both the
+/// start and the end offset are non-decreasing.
+pub fn slice_groups_are_monotonic(groups: &GroupsSlice) -> bool {
+    if groups.len() < 2 {
+        return true;
+    }
+
+    let (offset, len) = (groups[0][0], groups[0][1]);
+    let mut prev_start = offset;
+    let mut prev_end = offset + len;
+
+    for g in &groups[1..] {
+        let start = g[0];
+        let end = g[0] + g[1];
+
+        if start < prev_start || end < prev_end {
+            return false;
+        }
+
+        prev_start = start;
+        prev_end = end;
+    }
+    true
+}
+
 impl GroupsType {
     pub fn new_slice(groups: GroupsSlice, overlapping: bool, monotonic: bool) -> Self {
         #[cfg(debug_assertions)]
@@ -304,31 +357,7 @@ impl GroupsType {
             }
 
             assert!(overlapping || !groups_overlap(&groups));
-
-            fn groups_are_monotonic(groups: &GroupsSlice) -> bool {
-                if groups.len() < 2 {
-                    return true;
-                }
-
-                let (offset, len) = (groups[0][0], groups[0][1]);
-                let mut prev_start = offset;
-                let mut prev_end = offset + len;
-
-                for g in &groups[1..] {
-                    let start = g[0];
-                    let end = g[0] + g[1];
-
-                    if start < prev_start || end < prev_end {
-                        return false;
-                    }
-
-                    prev_start = start;
-                    prev_end = end;
-                }
-                true
-            }
-
-            assert!(!monotonic || groups_are_monotonic(&groups));
+            assert!(!monotonic || slice_groups_are_monotonic(&groups));
         }
 
         Self::Slice {
@@ -345,10 +374,12 @@ impl GroupsType {
                 polars_warn!(
                     "Had to reallocate groups, missed an optimization opportunity. Please open an issue."
                 );
-                groups
+                let mut groups: GroupsIdx = groups
                     .iter()
                     .map(|&[first, len]| (first, (first..first + len).collect::<IdxVec>()))
-                    .collect()
+                    .collect();
+                groups.sorted_idxs_in_groups = true;
+                groups
             },
         }
     }
@@ -420,7 +451,7 @@ impl GroupsType {
                 }
             },
             GroupsType::Slice { .. } => {
-                // invariant of the type
+                // Only reached for non-overlapping slices, which are ordered by start.
             },
         }
     }
@@ -428,6 +459,18 @@ impl GroupsType {
     pub(crate) fn is_sorted_by_first_idx(&self) -> bool {
         match self {
             GroupsType::Idx(groups) => groups.is_sorted_by_first_idx(),
+            // Overlapping slices can step back, e.g. after a per-window `slice` offset.
+            GroupsType::Slice {
+                overlapping,
+                monotonic,
+                ..
+            } => !*overlapping || *monotonic,
+        }
+    }
+
+    pub fn has_sorted_idxs_in_groups(&self) -> bool {
+        match self {
+            GroupsType::Idx(groups) => groups.has_sorted_idxs_in_groups(),
             GroupsType::Slice { .. } => true,
         }
     }
@@ -674,7 +717,14 @@ impl<'a> Iterator for GroupsTypeIter<'a> {
         self.idx += 1;
         out
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.len.saturating_sub(self.idx);
+        (remaining, Some(remaining))
+    }
 }
+
+impl ExactSizeIterator for GroupsTypeIter<'_> {}
 
 pub struct GroupsTypeParIter<'a> {
     vals: &'a GroupsType,
@@ -717,7 +767,7 @@ pub struct GroupPositions {
     sliced: ManuallyDrop<GroupsType>,
     // Unsliced buffer
     original: Arc<GroupsType>,
-    offset: i64,
+    offset: usize,
     len: usize,
 }
 
@@ -755,9 +805,13 @@ impl Default for GroupPositions {
 }
 
 impl GroupPositions {
-    pub fn slice(&self, offset: i64, len: usize) -> Self {
-        let offset = self.offset + offset;
-        slice_groups(self.original.clone(), offset, len)
+    pub fn slice(&self, slice: impl Into<Slice>) -> Self {
+        let range = slice.into().resolve(self.len());
+        slice_groups(
+            self.original.clone(),
+            self.offset + range.start,
+            range.len(),
+        )
     }
 
     pub fn sort_by_first_idx(&mut self) {
@@ -817,7 +871,7 @@ impl GroupPositions {
     }
 }
 
-fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<GroupsType> {
+fn slice_groups_inner(g: &GroupsType, offset: usize, len: usize) -> ManuallyDrop<GroupsType> {
     // SAFETY:
     // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
     // so that we never call drop on them.
@@ -826,21 +880,19 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
     match g {
         GroupsType::Idx(groups) => {
             let first = unsafe {
-                let first = slice_slice(groups.first(), offset, len);
+                let first = &groups.first()[offset..][..len];
                 let ptr = first.as_ptr() as *mut _;
                 Vec::from_raw_parts(ptr, first.len(), first.len())
             };
 
             let all = unsafe {
-                let all = slice_slice(groups.all(), offset, len);
+                let all = &groups.all()[offset..][..len];
                 let ptr = all.as_ptr() as *mut _;
                 Vec::from_raw_parts(ptr, all.len(), all.len())
             };
-            ManuallyDrop::new(GroupsType::Idx(GroupsIdx::new(
-                first,
-                all,
-                groups.is_sorted_by_first_idx(),
-            )))
+            let mut sliced = GroupsIdx::new(first, all, groups.is_sorted_by_first_idx());
+            sliced.sorted_idxs_in_groups = groups.has_sorted_idxs_in_groups();
+            ManuallyDrop::new(GroupsType::Idx(sliced))
         },
         GroupsType::Slice {
             groups,
@@ -848,7 +900,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
             monotonic,
         } => {
             let groups = unsafe {
-                let groups = slice_slice(groups, offset, len);
+                let groups = &groups[offset..][..len];
                 let ptr = groups.as_ptr() as *mut _;
                 Vec::from_raw_parts(ptr, groups.len(), groups.len())
             };
@@ -858,7 +910,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
     }
 }
 
-fn slice_groups(g: Arc<GroupsType>, offset: i64, len: usize) -> GroupPositions {
+fn slice_groups(g: Arc<GroupsType>, offset: usize, len: usize) -> GroupPositions {
     let sliced = slice_groups_inner(g.as_ref(), offset, len);
 
     GroupPositions {

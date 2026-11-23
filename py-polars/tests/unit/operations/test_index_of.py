@@ -322,7 +322,7 @@ def test_non_found_correct_type() -> None:
 def test_error_on_multiple_values() -> None:
     with pytest.raises(
         pl.exceptions.ShapeError,
-        match="non-scalar value passed to",
+        match="'element' must be a scalar value in `index_of`",
     ):
         pl.Series("a", [1, 2, 3]).index_of(pl.Series([2, 3]))
 
@@ -445,7 +445,7 @@ def test_out_of_range_float32() -> None:
 def assert_lossy_cast_rejected(
     series_dtype: PolarsDataType, value: Any, value_dtype: PolarsDataType
 ) -> None:
-    # We create a Series with a null because previously lossless casts would
+    # We create a Series with a null because previously lossy casts would
     # sometimes get turned into nulls and you'd get an answer.
     series = pl.Series([None], dtype=series_dtype)
     with pytest.raises(InvalidOperationError, match="cannot cast losslessly"):

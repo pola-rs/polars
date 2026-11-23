@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 import zoneinfo  # noqa: F401
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import (
+    UTC,
+    date,
+    datetime,
+    time,
+    timedelta,
+    timezone,  # noqa: F401
+)
 
 import pytest
 
@@ -36,7 +43,7 @@ def test_to_init_repr() -> None:
                 "enum": ["a", "b", "c"],
                 "duration": [timedelta(days=1), timedelta(days=2), None],
                 "binary": [bytes([0]), bytes([0, 1]), bytes([0, 1, 2])],
-                "object": [timezone.utc, timezone.utc, timezone.utc],
+                "object": [UTC, UTC, UTC],
             },
         )
         .with_columns(

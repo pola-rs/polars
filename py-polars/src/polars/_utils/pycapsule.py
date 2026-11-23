@@ -4,7 +4,7 @@ import contextlib
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.construction.dataframe import dataframe_to_pydf
-from polars._utils.wrap import wrap_df, wrap_s
+from polars._utils.wrap import wrap_df
 
 with contextlib.suppress(ImportError):
     from polars._plr import PySeries
@@ -33,16 +33,15 @@ def pycapsule_to_frame(
     if hasattr(obj, "__arrow_c_array__"):
         # This uses the fact that PySeries.from_arrow_c_array will create a
         # struct-typed Series. Then we unpack that to a DataFrame.
-        tmp_col_name = ""
-        s = wrap_s(PySeries.from_arrow_c_array(obj))
-        df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+        # `struct_unnest` is a single Rust call that releases the GIL; going via
+        # `DataFrame.unnest` would run the whole lazy engine while holding it,
+        # which serializes construction across Python threads.
+        df = wrap_df(PySeries.from_arrow_c_array(obj).struct_unnest())
 
     elif hasattr(obj, "__arrow_c_stream__"):
         # This uses the fact that PySeries.from_arrow_c_stream will create a
         # struct-typed Series. Then we unpack that to a DataFrame.
-        tmp_col_name = ""
-        s = wrap_s(PySeries.from_arrow_c_stream(obj))
-        df = s.to_frame(tmp_col_name).unnest(tmp_col_name)
+        df = wrap_df(PySeries.from_arrow_c_stream(obj).struct_unnest())
     else:
         msg = f"object does not support PyCapsule interface; found {obj!r} "
         raise TypeError(msg)

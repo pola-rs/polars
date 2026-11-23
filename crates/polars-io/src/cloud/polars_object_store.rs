@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use hashbrown::hash_map::RawEntryMut;
+use object_store::client::{HttpError, HttpErrorKind};
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
 use polars_buffer::Buffer;
@@ -43,9 +44,54 @@ impl std::error::Error for PolarsObjectStoreError {
     }
 }
 
+/// The `io::ErrorKind` for an `object_store::Error`, taken from the error
+/// variant or from the innermost `io::Error` in its source chain.
+pub fn object_store_error_kind(source: &object_store::Error) -> std::io::ErrorKind {
+    use std::io::ErrorKind::*;
+
+    match source {
+        object_store::Error::NotFound { .. } => NotFound,
+        object_store::Error::PermissionDenied { .. }
+        | object_store::Error::Unauthenticated { .. } => PermissionDenied,
+        _ => io_error_kind_from_source(source),
+    }
+}
+
+/// The kind of the innermost `io::Error` in the source chain of `error`,
+/// falling back to the kind of the innermost `HttpError`, or `Other`.
+pub fn io_error_kind_from_source(error: &(dyn std::error::Error + 'static)) -> std::io::ErrorKind {
+    use std::io::ErrorKind::*;
+
+    let mut kind = Other;
+    let mut http_kind = None;
+    let mut cur = Some(error);
+    while let Some(e) = cur {
+        if let Some(io) = e.downcast_ref::<std::io::Error>()
+            && io.kind() != Other
+        {
+            kind = io.kind();
+        } else if let Some(http) = e.downcast_ref::<HttpError>() {
+            http_kind = Some(http.kind());
+        }
+        cur = e.source();
+    }
+    if kind == Other {
+        // object_store maps this in its private `From<RetryError> for io::Error`,
+        // but the kind is lost when the error is boxed into `Error::Generic`.
+        kind = match http_kind {
+            Some(HttpErrorKind::Timeout) => TimedOut,
+            Some(HttpErrorKind::Connect) => NotConnected,
+            Some(HttpErrorKind::Interrupted) => ConnectionAborted,
+            _ => Other,
+        };
+    }
+    kind
+}
+
 impl From<PolarsObjectStoreError> for std::io::Error {
     fn from(value: PolarsObjectStoreError) -> Self {
-        std::io::Error::other(value)
+        let kind = object_store_error_kind(&value.source);
+        std::io::Error::new(kind, value)
     }
 }
 
@@ -184,19 +230,27 @@ mod inner {
                 Err(e) => e,
             };
 
+            let rebuild = self.inner.builder.rebuild_on_error();
+
             if config::verbose() {
                 eprintln!(
-                    "[PolarsObjectStore]: got error: {}, will rebuild store and retry",
-                    orig_err
+                    "[PolarsObjectStore]: got error: {}, will {}retry",
+                    orig_err,
+                    if rebuild { "rebuild store and " } else { "" }
                 );
             }
 
-            let store = self
-                .rebuild_inner(&store)
-                .await
-                .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
+            let store = if rebuild {
+                let store = self
+                    .rebuild_inner(&store)
+                    .await
+                    .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
+                Cow::Owned(store)
+            } else {
+                store
+            };
 
-            func(Cow::Owned(store)).await.map_err(|e| {
+            func(store).await.map_err(|e| {
                 let e: PolarsError = self.error_context().attach_err_info(e).into();
 
                 if self.inner.builder.is_azure()
@@ -254,6 +308,30 @@ impl ObjectStoreErrorContext {
 
 pub use inner::PolarsObjectStore;
 
+/// `GetResult::bytes` for a streamed body of `len` bytes (the returned range) that reports arrived
+/// bytes to the controller as they come in, per `ARRIVAL_FLUSH_BYTES`.
+async fn collect_body(
+    stream: futures::stream::BoxStream<'static, object_store::Result<bytes::Bytes>>,
+    len: u64,
+    controller: &ConcurrencyController,
+) -> object_store::Result<bytes::Bytes> {
+    const ARRIVAL_FLUSH_BYTES: u64 = 64 * 1024;
+
+    let mut pending = 0;
+    let out = object_store::collect_bytes(
+        stream.inspect_ok(|chunk| {
+            pending += chunk.len() as u64;
+            if pending >= ARRIVAL_FLUSH_BYTES {
+                controller.record_arrived(std::mem::take(&mut pending));
+            }
+        }),
+        Some(len),
+    )
+    .await;
+    controller.record_arrived(pending);
+    out
+}
+
 pub type ObjectStorePath = object_store::path::Path;
 
 impl PolarsObjectStore {
@@ -293,7 +371,9 @@ impl PolarsObjectStore {
                     Some(controller) => Some(controller.acquire(bytes_req).await),
                     None => None,
                 };
+                let t_start = Instant::now();
 
+                let controller_ref = controller.as_deref();
                 let (out, ttfb) = self
                     .io_metrics()
                     .record_io_read(
@@ -310,7 +390,25 @@ impl PolarsObjectStore {
                                 )
                                 .await?;
                             let ttfb = t0.elapsed();
-                            let out = response.bytes().await?;
+                            let out = match controller_ref {
+                                Some(controller)
+                                    if matches!(
+                                        response.payload,
+                                        object_store::GetResultPayload::Stream(_)
+                                    ) =>
+                                {
+                                    let len = response.range.end - response.range.start;
+                                    collect_body(response.into_stream(), len, controller).await?
+                                },
+                                _ => {
+                                    let out = response.bytes().await?;
+                                    // Not streamed (local files): the bytes arrive at completion.
+                                    if let Some(controller) = controller_ref {
+                                        controller.record_arrived(out.len() as u64);
+                                    }
+                                    out
+                                },
+                            };
 
                             Ok((out, ttfb))
                         }),
@@ -318,10 +416,12 @@ impl PolarsObjectStore {
                     .await?;
 
                 if let Some(controller) = &controller {
+                    let completion_time = Instant::now();
                     controller.record_io(IoSample {
                         n_bytes: out.len() as u64,
                         ttfb,
-                        completion_time: Instant::now(),
+                        ttlb: completion_time - t_start,
+                        completion_time,
                     });
                 }
 
@@ -534,7 +634,10 @@ impl PolarsObjectStore {
         let mut suffix_rejected = false;
 
         if n > 0 && self.suffix_range_supported() {
-            match self.try_get_suffix(path, n, config.strategy).await {
+            match self
+                .try_get_with_size(path, SizedRange::Suffix(n), config.strategy)
+                .await
+            {
                 Ok(v) => return Ok(v),
                 Err(e) if is_suffix_range_rejection(&e) => {
                     suffix_rejected = true;
@@ -564,38 +667,72 @@ impl PolarsObjectStore {
         Ok((bytes, size))
     }
 
-    async fn try_get_suffix(
+    /// Fetch the first `n` bytes of the object, and the total size of the object. Returns fewer
+    /// than `n` bytes if the object is smaller than `n`.
+    ///
+    /// A bounded range request carries the object size in its `Content-Range`, saving a HEAD.
+    /// Empty objects and backends ignoring the range fall back to HEAD + bounded range.
+    pub async fn get_prefix(
         &self,
         path: &Path,
         n: usize,
+        config: FetchConfig,
+    ) -> PolarsResult<(Buffer<u8>, usize)> {
+        if n > 0 {
+            match self
+                .try_get_with_size(path, SizedRange::Prefix(n), config.strategy)
+                .await
+            {
+                Err(e) if is_prefix_range_rejection(&e) => {},
+                out => return out,
+            }
+        }
+
+        let size = self.head(path, config.strategy).await?.size as usize;
+        let bytes = self.get_range(path, 0..n.min(size), config).await?;
+
+        Ok((bytes, size))
+    }
+
+    /// Range request that also returns the total object size.
+    async fn try_get_with_size(
+        &self,
+        path: &Path,
+        range: SizedRange,
         strategy: ConcurrencyStrategy,
     ) -> PolarsResult<(Buffer<u8>, usize)> {
         match strategy {
             ConcurrencyStrategy::BytesBased => {
                 let controller = self.get_or_init_concurrency();
-                let _permit = controller.acquire(n as u64).await;
-                self.try_get_suffix_inner(path, n, Some(&**controller))
+                let _permit = controller.acquire(range.len() as u64).await;
+                self.try_get_with_size_inner(path, range, Some(&**controller))
                     .await
             },
             ConcurrencyStrategy::Legacy => {
-                with_concurrency_budget(1, || self.try_get_suffix_inner(path, n, None)).await
+                with_concurrency_budget(1, || self.try_get_with_size_inner(path, range, None)).await
             },
-            ConcurrencyStrategy::Unbounded => self.try_get_suffix_inner(path, n, None).await,
+            ConcurrencyStrategy::Unbounded => self.try_get_with_size_inner(path, range, None).await,
         }
     }
 
-    async fn try_get_suffix_inner(
+    async fn try_get_with_size_inner(
         &self,
         path: &Path,
-        n: usize,
+        range: SizedRange,
         controller: Option<&ConcurrencyController>,
     ) -> PolarsResult<(Buffer<u8>, usize)> {
         let metrics = self.io_metrics();
 
-        metrics.add_bytes_requested(n as u64);
+        // A prefix range is clamped to the object size, so it is accounted for once the response
+        // carries the size, once across retries.
+        if let SizedRange::Suffix(n) = range {
+            metrics.add_bytes_requested(n as u64);
+        }
+        let prefix_requested_recorded = &std::sync::atomic::AtomicBool::new(false);
 
-        let io_session = metrics.start_io_session();
+        let io_session = metrics.start_rx_session();
 
+        let t_start = Instant::now();
         let out = self
             .exec_with_rebuild_retry_on_err(|s| async move {
                 let t0 = Instant::now();
@@ -603,7 +740,7 @@ impl PolarsObjectStore {
                     .get_opts(
                         path,
                         object_store::GetOptions {
-                            range: Some(object_store::GetRange::Suffix(n as u64)),
+                            range: Some(range.into()),
                             ..Default::default()
                         },
                     )
@@ -611,13 +748,23 @@ impl PolarsObjectStore {
                 let ttfb = t0.elapsed();
                 // `get_opts()` rewrites this from `Content-Range`: the full object size.
                 let size = response.meta.size as usize;
+
+                if let SizedRange::Prefix(n) = range
+                    && !prefix_requested_recorded.swap(true, std::sync::atomic::Ordering::Relaxed)
+                {
+                    metrics.add_bytes_requested(n.min(size) as u64);
+                }
+
                 let bytes = response.bytes().await?;
 
                 if let Some(controller) = controller {
+                    controller.record_arrived(bytes.len() as u64);
+                    let completion_time = Instant::now();
                     controller.record_io(IoSample {
                         n_bytes: bytes.len() as u64,
                         ttfb,
-                        completion_time: Instant::now(),
+                        ttlb: completion_time - t_start,
+                        completion_time,
                     });
                 }
 
@@ -629,7 +776,7 @@ impl PolarsObjectStore {
 
         let (bytes, size) = out?;
 
-        // A suffix response is short when the object is smaller than `n`.
+        // The response is short when the object is smaller than the range.
         metrics.add_bytes_received(bytes.len() as u64);
 
         Ok((bytes, size))
@@ -712,6 +859,51 @@ fn is_suffix_range_rejection(err: &PolarsError) -> bool {
     msg.contains("does not support suffix range requests")
         || msg.contains("Received non-partial response")
         || msg.contains("416 Range Not Satisfiable")
+}
+
+/// Range request forms whose response carries the total object size in its `Content-Range`.
+#[derive(Clone, Copy, Debug)]
+enum SizedRange {
+    /// The first `n` bytes.
+    Prefix(usize),
+    /// The last `n` bytes.
+    Suffix(usize),
+}
+
+impl SizedRange {
+    /// Number of bytes requested.
+    fn len(self) -> usize {
+        match self {
+            Self::Prefix(n) | Self::Suffix(n) => n,
+        }
+    }
+}
+
+impl From<SizedRange> for object_store::GetRange {
+    fn from(value: SizedRange) -> Self {
+        match value {
+            SizedRange::Prefix(n) => Self::Bounded(0..n as u64),
+            SizedRange::Suffix(n) => Self::Suffix(n as u64),
+        }
+    }
+}
+
+/// Whether a prefix range request was rejected rather than the object. Empty objects have
+/// no satisfiable range: the backend answers 416, or `object_store` rejects the range against the
+/// size. Backends ignoring the range answer 200 instead of 206, the HEAD fallback then decides
+/// (e.g. an empty object needs no further request).
+///
+/// The rejection can be nested in the source chain, e.g. for the local file system store.
+fn is_prefix_range_rejection(err: &PolarsError) -> bool {
+    std::iter::successors(Some(err as &dyn std::error::Error), |e| e.source()).any(|e| {
+        let msg = e.to_string();
+
+        msg.contains("416 Range Not Satisfiable")
+            || msg.contains("Wanted range starting at")
+            || msg.contains("Received non-partial response")
+            // `object_store` HTTP store.
+            || msg.contains("Range request not supported")
+    })
 }
 
 /// Splits a single range into multiple smaller ranges, which can be downloaded concurrently for

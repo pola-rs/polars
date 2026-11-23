@@ -49,6 +49,11 @@ impl PhysicalExpr for SortExpr {
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.physical_expr.evaluate(df, state)?;
+        if self.options.limit.is_some() {
+            let sorted_idx = series.arg_sort(self.options);
+            // SAFETY: sorted index are within bounds.
+            return Ok(unsafe { series.take_unchecked(&sorted_idx) });
+        }
         series.sort_with(self.options)
     }
 
@@ -66,7 +71,9 @@ impl PhysicalExpr for SortExpr {
                 let out = ca.lst_sort(self.options)?;
                 ac.with_values(out.into_column(), true, Some(&self.expr))?;
             },
-            _ => {
+            // A single value (per group, or a literal) is already sorted.
+            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) => {},
+            AggState::NotAggregated(_) => {
                 let series = ac.flat_naive().into_owned();
 
                 let mut sort_options = self.options;
@@ -89,7 +96,7 @@ impl PhysicalExpr for SortExpr {
                         GroupsType::Slice { groups, .. } => groups
                             .par_iter()
                             .map(|&[first, len]| {
-                                let group = series.slice(first as i64, len as usize);
+                                let group = series.slice((first as usize, len as usize));
                                 let sorted_idx = group.arg_sort(sort_options);
                                 let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
                                 (new_idx.first().copied().unwrap_or(first), new_idx)

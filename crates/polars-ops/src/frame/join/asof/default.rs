@@ -1,4 +1,3 @@
-use num_traits::Zero;
 use polars_arrow::array::Array;
 use polars_arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
@@ -7,6 +6,7 @@ use polars_utils::total_ord::TotalOrd;
 
 use super::{
     AsofJoinBackwardState, AsofJoinForwardState, AsofJoinNearestState, AsofJoinState, AsofStrategy,
+    abs_tolerance,
 };
 
 fn join_asof_impl<'a, T, S, F>(
@@ -125,8 +125,7 @@ pub(crate) fn join_asof_numeric<T: PolarsNumericType>(
     let right = other.downcast_as_array();
 
     let out = if let Some(t) = tolerance {
-        let native_tolerance = t.try_extract::<T::Native>()?;
-        let abs_tolerance = native_tolerance.abs_diff(T::Native::zero());
+        let abs_tolerance = abs_tolerance::<T::Native>(&t)?;
         let filter = |l: T::Native, r: T::Native| l.abs_diff(r) <= abs_tolerance;
         match strategy {
             AsofStrategy::Forward => join_asof_forward::<T, _>(left, right, filter, allow_eq),

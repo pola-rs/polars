@@ -120,11 +120,7 @@ pub fn concat_df_horizontal(
                         // SAFETY: We extend each scalar column length to
                         // `output_height`. Then, we set the height of the resulting dataframe.
                         unsafe { df.columns_mut() }.iter_mut().for_each(|c| {
-                            let Column::Scalar(s) = c else {
-                                panic!("only supported for scalars");
-                            };
-
-                            *c = Column::Scalar(s.resize(output_height));
+                            *c = c.new_from_index(0, output_height);
                         });
                     } else {
                         let diff = output_height - h;

@@ -1,18 +1,26 @@
 //! This module supports mapping SQL datatypes to Polars datatypes.
 //!
 //! It also provides utility functions for working with SQL datatypes.
-use polars_core::datatypes::{DataType, TimeUnit};
-use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "dtype-categorical")]
+use polars_core::datatypes::{CategoricalPhysical, Categories, FrozenCategories};
+use polars_core::datatypes::{DataType, Field, TimeUnit, TimeZone};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_plan::dsl::Expr;
 use polars_plan::dsl::functions::lit;
+use polars_utils::aliases::{InitHashMaps, PlHashSet};
+#[cfg(feature = "dtype-categorical")]
+use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "dtype-categorical")]
+use sqlparser::ast::EnumMember;
 use sqlparser::ast::{
     ArrayElemTypeDef, DataType as SQLDataType, ExactNumberInfo, Ident, ObjectName, ObjectNamePart,
     TimezoneInfo,
 };
 
 polars_utils::regex_cache::cached_regex! {
-    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?$";
+    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?(?:Z|[+-](?:[01][0-9]|2[0-3])(?::?[0-5][0-9])?)?$";
     static DATE_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d$";
+    static UTC_OFFSET_RE = r"[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}(?::?\d{2})?)$";
     static TIME_LITERAL_RE = r"^(?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?$";
 }
 
@@ -36,6 +44,14 @@ pub fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
 
 pub fn is_iso_datetime(value: &str) -> bool {
     DATETIME_LITERAL_RE.is_match(value)
+}
+
+/// `value` without a UTC offset after its time, if it has one.
+pub fn strip_utc_offset(value: &str) -> &str {
+    match UTC_OFFSET_RE.captures(value).and_then(|c| c.get(1)) {
+        Some(offset) => &value[..offset.start()],
+        None => value,
+    }
 }
 
 pub fn is_iso_date(value: &str) -> bool {
@@ -66,6 +82,46 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         SQLDataType::Array(ArrayElemTypeDef::AngleBracket(inner_type))
         | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, _)) => {
             DataType::List(Box::new(map_sql_dtype_to_polars(inner_type)?))
+        },
+
+        // ---------------------------------
+        // struct/map
+        // ---------------------------------
+        SQLDataType::Struct(fields, _) => {
+            let mut names = PlHashSet::with_capacity(fields.len());
+            let fields = fields
+                .iter()
+                .map(|field| {
+                    let Some(name) = &field.field_name else {
+                        polars_bail!(SQLInterface: "STRUCT fields must be named; found: {}", field)
+                    };
+                    polars_ensure!(
+                        field.options.is_none(),
+                        SQLInterface: "STRUCT field OPTIONS are not supported; found: {}", field
+                    );
+                    polars_ensure!(
+                        names.insert(name.value.as_str()),
+                        SQLSyntax: "STRUCT field '{}' is given more than once", name.value
+                    );
+                    let dtype = map_sql_dtype_to_polars(&field.field_type)?;
+                    Ok(Field::new(name.value.as_str().into(), dtype))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
+            polars_ensure!(!fields.is_empty(), SQLSyntax: "STRUCT type requires at least one field");
+            DataType::Struct(fields)
+        },
+        #[cfg(feature = "dtype-map")]
+        SQLDataType::Map(key, value, _) => {
+            let dtype = DataType::Map(
+                Box::new(map_sql_dtype_to_polars(key)?),
+                Box::new(map_sql_dtype_to_polars(value)?),
+            );
+            dtype.ensure_valid_map_dtype()?;
+            dtype
+        },
+        #[cfg(not(feature = "dtype-map"))]
+        SQLDataType::Map(..) => {
+            polars_bail!(SQLInterface: "MAP requires the `dtype-map` feature")
         },
 
         // ---------------------------------
@@ -140,10 +196,21 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         SQLDataType::Dec(info)
         | SQLDataType::Decimal(info)
         | SQLDataType::BigDecimal(info)
-        | SQLDataType::Numeric(info) => match *info {
-            ExactNumberInfo::PrecisionAndScale(p, s) => DataType::Decimal(p as usize, s as usize),
-            ExactNumberInfo::Precision(p) => DataType::Decimal(p as usize, 0),
-            ExactNumberInfo::None => DataType::Decimal(38, 9),
+        | SQLDataType::Numeric(info) => {
+            let (precision, scale) = match *info {
+                ExactNumberInfo::PrecisionAndScale(p, s) => (p, s),
+                ExactNumberInfo::Precision(p) => (p, 0),
+                ExactNumberInfo::None => (38, 9),
+            };
+            polars_ensure!(
+                (1..=38).contains(&precision),
+                SQLSyntax: "invalid DECIMAL precision (expected 1-38, found {})", precision
+            );
+            polars_ensure!(
+                (0..=precision as i64).contains(&scale),
+                SQLSyntax: "invalid DECIMAL scale (expected 0-{}, found {})", precision, scale
+            );
+            DataType::Decimal(precision as usize, scale as usize)
         },
 
         // ---------------------------------
@@ -167,17 +234,23 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
             DataType::Duration(time_unit)
         },
         SQLDataType::Time(_, tz) => match tz {
-            TimezoneInfo::None => DataType::Time,
+            TimezoneInfo::None | TimezoneInfo::WithoutTimeZone => DataType::Time,
             _ => {
                 polars_bail!(SQLInterface: "`time` with timezone is not supported; found tz={}", tz)
             },
         },
         SQLDataType::Datetime(prec) => DataType::Datetime(timeunit_from_precision(prec)?, None),
-        SQLDataType::Timestamp(prec, tz) => match tz {
-            TimezoneInfo::None => DataType::Datetime(timeunit_from_precision(prec)?, None),
-            _ => {
-                polars_bail!(SQLInterface: "`timestamp` with timezone is not (yet) supported")
-            },
+        // eg: "DATETIME64(3, 'Europe/Amsterdam')"
+        SQLDataType::Datetime64(prec, time_zone) => DataType::Datetime(
+            timeunit_from_precision(&Some(*prec))?,
+            TimeZone::opt_try_new(time_zone.as_deref())?,
+        ),
+        SQLDataType::Timestamp(prec, tz) => {
+            let time_zone = match tz {
+                TimezoneInfo::None | TimezoneInfo::WithoutTimeZone => None,
+                TimezoneInfo::WithTimeZone | TimezoneInfo::Tz => Some(TimeZone::UTC),
+            };
+            DataType::Datetime(timeunit_from_precision(prec)?, time_zone)
         },
 
         // ---------------------------------
@@ -194,11 +267,50 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         | SQLDataType::Varchar(_) => DataType::String,
 
         // ---------------------------------
+        // categorical/enum
+        // ---------------------------------
+        #[cfg(feature = "dtype-categorical")]
+        SQLDataType::Enum(members, None) => {
+            let categories = members
+                .iter()
+                .map(|member| match member {
+                    EnumMember::Name(name) => Ok(name.as_str()),
+                    EnumMember::NamedValue(..) => {
+                        polars_bail!(SQLInterface: "ENUM values with a number are not supported; found: {}", dtype)
+                    },
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
+            DataType::from_frozen_categories(FrozenCategories::new(categories)?)
+        },
+        #[cfg(not(feature = "dtype-categorical"))]
+        SQLDataType::Enum(..) => {
+            polars_bail!(SQLInterface: "ENUM requires the `dtype-categorical` feature")
+        },
+
+        // ---------------------------------
         // custom
         // ---------------------------------
-        SQLDataType::Custom(ObjectName(idents), _) => match idents.as_slice() {
+        SQLDataType::Custom(ObjectName(idents), modifiers) => match idents.as_slice() {
             [ObjectNamePart::Identifier(Ident { value, .. })] => {
                 match value.to_lowercase().as_str() {
+                    // "CATEGORICAL", or "CATEGORICAL('name')" for the categories of that name
+                    #[cfg(feature = "dtype-categorical")]
+                    "categorical" => match modifiers.as_slice() {
+                        [] => DataType::from_categories(Categories::global()),
+                        [name] => DataType::from_categories(Categories::new(
+                            name.as_str().into(),
+                            PlSmallStr::EMPTY,
+                            CategoricalPhysical::U32,
+                        )),
+                        _ => {
+                            polars_bail!(SQLSyntax: "CATEGORICAL takes one name at most; found: {}", dtype)
+                        },
+                    },
+                    #[cfg(not(feature = "dtype-categorical"))]
+                    "categorical" => {
+                        let _ = modifiers;
+                        polars_bail!(SQLInterface: "CATEGORICAL requires the `dtype-categorical` feature")
+                    },
                     // these integer types are not supported by the PostgreSQL core distribution,
                     // but they ARE available via `pguint` (https://github.com/petere/pguint), an
                     // extension maintained by one of the PostgreSQL core developers, and/or DuckDB.
@@ -220,4 +332,113 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
             polars_bail!(SQLInterface: "datatype {:?} is not currently supported", dtype)
         },
     })
+}
+
+/// The SQL name of `dtype`: the name that [`map_sql_dtype_to_polars`] reads back as `dtype`.
+/// A type that has no such name is given by its Polars name, also inside a nested type.
+pub(crate) fn sql_type_name(dtype: &DataType) -> String {
+    let precision = |time_unit: &TimeUnit| match time_unit {
+        TimeUnit::Milliseconds => 3,
+        TimeUnit::Microseconds => 6,
+        TimeUnit::Nanoseconds => 9,
+    };
+    // Microseconds are what a name without a precision stands for.
+    let with_precision = |name: &str, time_unit: &TimeUnit| match time_unit {
+        TimeUnit::Microseconds => name.to_string(),
+        _ => format!("{name}({})", precision(time_unit)),
+    };
+    match dtype {
+        DataType::Boolean => "BOOLEAN".to_string(),
+        DataType::Int8 => "TINYINT".to_string(),
+        DataType::Int16 => "SMALLINT".to_string(),
+        DataType::Int32 => "INTEGER".to_string(),
+        DataType::Int64 => "BIGINT".to_string(),
+        DataType::Int128 => "HUGEINT".to_string(),
+        DataType::UInt8 => "UTINYINT".to_string(),
+        DataType::UInt16 => "USMALLINT".to_string(),
+        DataType::UInt32 => "UINTEGER".to_string(),
+        DataType::UInt64 => "UBIGINT".to_string(),
+        DataType::UInt128 => "UHUGEINT".to_string(),
+        DataType::Float32 => "REAL".to_string(),
+        DataType::Float64 => "DOUBLE PRECISION".to_string(),
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => format!("DECIMAL({precision},{scale})"),
+        DataType::String => "VARCHAR".to_string(),
+        DataType::Binary => "BYTEA".to_string(),
+        DataType::Date => "DATE".to_string(),
+        DataType::Time => "TIME".to_string(),
+        DataType::Datetime(time_unit, None) => with_precision("TIMESTAMP", time_unit),
+        DataType::Datetime(time_unit, Some(time_zone)) if *time_zone == TimeZone::UTC => {
+            with_precision("TIMESTAMP", time_unit) + " WITH TIME ZONE"
+        },
+        DataType::Datetime(time_unit, Some(time_zone)) => format!(
+            "DATETIME64({}, {})",
+            precision(time_unit),
+            quoted(time_zone, '\'')
+        ),
+        DataType::Duration(time_unit) => with_precision("INTERVAL", time_unit),
+        DataType::List(inner) => format!("{}[]", sql_type_name(inner)),
+        // `STRUCT<>` does not parse.
+        DataType::Struct(fields) if !fields.is_empty() => {
+            let fields = fields
+                .iter()
+                .map(|field| {
+                    let name = field.name().as_str();
+                    let is_plain = name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                    let name = match is_plain {
+                        true => name.to_string(),
+                        false => quoted(name, '"'),
+                    };
+                    format!("{name} {}", sql_type_name(field.dtype()))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            // The parser reads `>>` as one token where a `[]` follows.
+            match fields.ends_with('>') {
+                true => format!("STRUCT<{fields} >"),
+                false => format!("STRUCT<{fields}>"),
+            }
+        },
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(key, value) => {
+            format!("MAP({}, {})", sql_type_name(key), sql_type_name(value))
+        },
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(categories, _) if categories.is_global() => "CATEGORICAL".to_string(),
+        // Only the categories that `CATEGORICAL('name')` gives.
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(categories, _)
+            if categories.namespace().is_empty()
+                && categories.physical() == CategoricalPhysical::U32 =>
+        {
+            format!("CATEGORICAL({})", quoted(categories.name(), '\''))
+        },
+        // `ENUM()` does not parse.
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(categories, _) if categories.categories().len() > 0 => {
+            let values = categories
+                .categories()
+                .values_iter()
+                .map(|value| quoted(value, '\''))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("ENUM({values})")
+        },
+        _ => dtype.to_string(),
+    }
+}
+
+/// `text` between two `quote`s, with each `quote` inside it doubled.
+fn quoted(text: &str, quote: char) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push(quote);
+    for c in text.chars() {
+        if c == quote {
+            out.push(quote);
+        }
+        out.push(c);
+    }
+    out.push(quote);
+    out
 }

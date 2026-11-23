@@ -1,6 +1,5 @@
 //! Conversion methods for dates and times.
 
-use chrono::format::{Parsed, StrftimeItems, parse};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
 use polars_error::{PolarsResult, polars_err};
 
@@ -50,7 +49,7 @@ pub fn date32_to_date(days: i32) -> NaiveDate {
 /// converts a `i32` representing a `date32` to [`NaiveDate`]
 #[inline]
 pub fn date32_to_date_opt(days: i32) -> Option<NaiveDate> {
-    NaiveDate::from_num_days_from_ce_opt(EPOCH_DAYS_FROM_CE + days)
+    NaiveDate::from_num_days_from_ce_opt(EPOCH_DAYS_FROM_CE.checked_add(days)?)
 }
 
 /// converts a `i64` representing a `date64` to [`NaiveDateTime`]
@@ -240,37 +239,6 @@ pub fn timeunit_scale(a: TimeUnit, b: TimeUnit) -> f64 {
         (TimeUnit::Nanosecond, TimeUnit::Millisecond) => 1_000_000.0,
         (TimeUnit::Nanosecond, TimeUnit::Microsecond) => 1_000.0,
         (TimeUnit::Nanosecond, TimeUnit::Nanosecond) => 1.0,
-    }
-}
-
-/// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
-///
-/// `tz` must be built from `timezone` (either via [`parse_offset`] or `chrono-tz`).
-/// Returns in scale `tz` of `TimeUnit`.
-#[inline]
-pub fn utf8_to_timestamp_scalar<T: chrono::TimeZone>(
-    value: &str,
-    fmt: &str,
-    tz: &T,
-    tu: &TimeUnit,
-) -> Option<i64> {
-    let mut parsed = Parsed::new();
-    let fmt = StrftimeItems::new(fmt);
-    let r = parse(&mut parsed, value, fmt).ok();
-    if r.is_some() {
-        parsed
-            .to_datetime()
-            .map(|x| x.naive_utc())
-            .map(|x| tz.from_utc_datetime(&x))
-            .map(|x| match tu {
-                TimeUnit::Second => x.timestamp(),
-                TimeUnit::Millisecond => x.timestamp_millis(),
-                TimeUnit::Microsecond => x.timestamp_micros(),
-                TimeUnit::Nanosecond => x.timestamp_nanos_opt().unwrap(),
-            })
-            .ok()
-    } else {
-        None
     }
 }
 

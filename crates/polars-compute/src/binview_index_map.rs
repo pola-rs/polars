@@ -79,11 +79,26 @@ impl<V> BinaryViewIndexMap<V> {
         key: &View,
         buffers: &[B],
     ) -> Option<&V> {
+        let idx = unsafe { self.get_index_of_view(hash, key, buffers)? };
+        unsafe { Some(&self.tuples.get_unchecked(idx as usize).1) }
+    }
+
+    /// Gets the index by insertion order of the given key.
+    ///
+    /// # Safety
+    /// The view must be valid in combination with the given buffers.
+    #[inline]
+    pub unsafe fn get_index_of_view<B: AsRef<[u8]>>(
+        &self,
+        hash: u64,
+        key: &View,
+        buffers: &[B],
+    ) -> Option<IdxSize> {
         unsafe {
             if key.length <= View::MAX_INLINE_SIZE {
-                self.get_inline_view(hash, key)
+                self.get_index_of_inline_view(hash, key)
             } else {
-                self.get_long_key(hash, key.get_external_slice_unchecked(buffers))
+                self.get_index_of_long_key(hash, key.get_external_slice_unchecked(buffers))
             }
         }
     }
@@ -91,28 +106,44 @@ impl<V> BinaryViewIndexMap<V> {
     /// # Safety
     /// The view must be inlined.
     pub unsafe fn get_inline_view(&self, hash: u64, key: &View) -> Option<&V> {
+        let idx = unsafe { self.get_index_of_inline_view(hash, key)? };
+        unsafe { Some(&self.tuples.get_unchecked(idx as usize).1) }
+    }
+
+    /// # Safety
+    /// The view must be inlined.
+    pub unsafe fn get_index_of_inline_view(&self, hash: u64, key: &View) -> Option<IdxSize> {
         unsafe {
             debug_assert!(key.length <= View::MAX_INLINE_SIZE);
-            let idx = self.table.find(hash.wrapping_mul(self.seed), |i| {
-                let t = self.tuples.get_unchecked(*i as usize);
-                *key == t.0.view
-            })?;
-            Some(&self.tuples.get_unchecked(*idx as usize).1)
+            self.table
+                .find(hash.wrapping_mul(self.seed), |i| {
+                    let t = self.tuples.get_unchecked(*i as usize);
+                    *key == t.0.view
+                })
+                .copied()
         }
     }
 
     /// # Safety
     /// key.len() > View::MAX_INLINE_SIZE
     pub unsafe fn get_long_key(&self, hash: u64, key: &[u8]) -> Option<&V> {
+        let idx = unsafe { self.get_index_of_long_key(hash, key)? };
+        unsafe { Some(&self.tuples.get_unchecked(idx as usize).1) }
+    }
+
+    /// # Safety
+    /// key.len() > View::MAX_INLINE_SIZE
+    pub unsafe fn get_index_of_long_key(&self, hash: u64, key: &[u8]) -> Option<IdxSize> {
         unsafe {
             debug_assert!(key.len() > View::MAX_INLINE_SIZE as usize);
-            let idx = self.table.find(hash.wrapping_mul(self.seed), |i| {
-                let t = self.tuples.get_unchecked(*i as usize);
-                hash == t.0.hash
-                    && key.len() == t.0.view.length as usize
-                    && key == t.0.view.get_external_slice_unchecked(&self.buffers)
-            })?;
-            Some(&self.tuples.get_unchecked(*idx as usize).1)
+            self.table
+                .find(hash.wrapping_mul(self.seed), |i| {
+                    let t = self.tuples.get_unchecked(*i as usize);
+                    hash == t.0.hash
+                        && key.len() == t.0.view.length as usize
+                        && key == t.0.view.get_external_slice_unchecked(&self.buffers)
+                })
+                .copied()
         }
     }
 

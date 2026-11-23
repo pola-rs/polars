@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::schema::Schema;
 
@@ -19,12 +20,16 @@ pub enum RepeatNode {
 }
 
 impl RepeatNode {
-    pub fn new(value_schema: Arc<Schema>, repeats_schema: Arc<Schema>) -> Self {
+    pub fn new(
+        value_schema: Arc<Schema>,
+        repeats_schema: Arc<Schema>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         assert!(value_schema.len() == 1);
         assert!(repeats_schema.len() == 1);
         Self::GatheringParams {
-            value: InMemorySinkNode::new(value_schema),
-            repeats: InMemorySinkNode::new(repeats_schema),
+            value: InMemorySinkNode::new(value_schema, task_metrics.clone()),
+            repeats: InMemorySinkNode::new(repeats_schema, task_metrics),
         }
     }
 }
@@ -41,6 +46,13 @@ impl ComputeNode for RepeatNode {
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
+
+        // E.g. a join with an empty build side stops reading.
+        if send[0] == PortState::Done {
+            recv[0] = PortState::Done;
+            recv[1] = PortState::Done;
+            return Ok(());
+        }
 
         if recv[0] == PortState::Done && recv[1] == PortState::Done {
             if let Self::GatheringParams { value, repeats } = self {

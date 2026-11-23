@@ -1,4 +1,3 @@
-#[cfg(feature = "dtype-struct")]
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
@@ -98,6 +97,34 @@ pub trait SeriesMethods: SeriesSealed {
     }
 }
 
+/// Lists, arrays, structs and maps have no ordering comparisons, so order them as `sort` does: by
+/// their row encoding. The encoded values are not null, and compare in ascending byte order as the
+/// original values compare under `descending` and `nulls_last`.
+fn row_encode_nested(
+    s: &Series,
+    descending: bool,
+    nulls_last: bool,
+) -> PolarsResult<Option<Series>> {
+    match s.dtype() {
+        DataType::List(_) => {},
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(..) => {},
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(_) => {},
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(..) => {},
+        _ => return Ok(None),
+    }
+    let encoded = _get_rows_encoded_ca(
+        PlSmallStr::EMPTY,
+        &[s.clone().into()],
+        &[descending],
+        &[nulls_last],
+        false,
+    )?;
+    Ok(Some(encoded.into_series()))
+}
+
 fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     let null_count = s.null_count();
 
@@ -111,21 +138,13 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
         return Ok(true);
     }
 
-    #[cfg(feature = "dtype-struct")]
-    if matches!(s.dtype(), DataType::Struct(_)) {
-        let encoded = _get_rows_encoded_ca(
-            PlSmallStr::EMPTY,
-            &[s.clone().into()],
-            &[options.descending],
-            &[options.nulls_last],
-            false,
-        )?;
+    if let Some(encoded) = row_encode_nested(s, options.descending, options.nulls_last)? {
         let options = SortOptions {
             descending: false,
             nulls_last: false,
             ..options
         };
-        return is_sorted_impl(&encoded.into_series(), options);
+        return is_sorted_impl(&encoded, options);
     }
 
     let s_len = s.len();
@@ -136,13 +155,10 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     // Check if nulls are in the right location.
     if null_count > 0 {
         if options.nulls_last {
-            if s.slice((s_len - null_count) as i64, null_count)
-                .null_count()
-                != null_count
-            {
+            if s.slice(Slice::tail(null_count)).null_count() != null_count {
                 return Ok(false);
             }
-        } else if s.slice(0, null_count).null_count() != null_count {
+        } else if s.slice(Slice::head(null_count)).null_count() != null_count {
             return Ok(false);
         }
     }
@@ -169,7 +185,7 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     }
 
     let offset = (!options.nulls_last as i64) * (null_count as i64);
-    let non_null = s.slice(offset, non_null_len);
+    let non_null = s.slice((offset, non_null_len));
     debug_assert_eq!(
         non_null.null_count(),
         0,
@@ -219,8 +235,8 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
         _ => {
             // `non_null` excludes nulls already; compare `non_null[..-1]` with `non_null[1..]`.
             let cmp_len = non_null_len - 1;
-            let s1 = non_null.slice(0, cmp_len);
-            let s2 = non_null.slice(1, cmp_len);
+            let s1 = non_null.slice(Slice::head(cmp_len));
+            let s2 = non_null.slice((1usize, cmp_len));
             let cmp_op = if options.descending {
                 Series::gt_eq
             } else {
@@ -309,12 +325,12 @@ fn is_sorted_ca_bool(ca: &BooleanChunked, descending: bool) -> bool {
         let Some(idx) = ca.first_false_idx() else {
             return true;
         };
-        !ca.slice(idx as i64, ca.len() - idx).any()
+        !ca.slice((idx, ca.len() - idx)).any()
     } else {
         let Some(idx) = ca.first_true_idx() else {
             return true;
         };
-        ca.slice(idx as i64, ca.len() - idx).all()
+        ca.slice((idx, ca.len() - idx)).all()
     }
 }
 
@@ -358,12 +374,9 @@ fn infer_nulls_last(s: &Series) -> Option<bool> {
         return None;
     }
 
-    if s.slice((s_len - null_count) as i64, null_count)
-        .null_count()
-        == null_count
-    {
+    if s.slice(Slice::tail(null_count)).null_count() == null_count {
         Some(true)
-    } else if s.slice(0, null_count).null_count() == null_count {
+    } else if s.slice(Slice::head(null_count)).null_count() == null_count {
         Some(false)
     } else {
         None
@@ -378,10 +391,11 @@ fn infer_descending(s: &Series, nulls_last: bool) -> PolarsResult<Option<bool>> 
     }
 
     let non_null_start = if nulls_last { 0 } else { null_count };
-    let non_null = s.slice(non_null_start as i64, non_null_len);
+    let non_null = s.slice((non_null_start, non_null_len));
+    let non_null = row_encode_nested(&non_null, false, nulls_last)?.unwrap_or(non_null);
 
-    let a = non_null.slice(0, non_null_len - 1);
-    let b = non_null.slice(1, non_null_len - 1);
+    let a = non_null.slice(Slice::head(non_null_len - 1));
+    let b = non_null.slice((1usize, non_null_len - 1));
 
     let lt = a.lt(&b)?;
     let gt = a.gt(&b)?;
@@ -450,10 +464,10 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
 
     let null_count = ca.null_count();
     if options.nulls_last {
-        let ca = ca.slice(0, ca.len() - null_count);
+        let ca = ca.slice(Slice::head(ca.len() - null_count));
         is_sorted_ca_num(&ca, options)
     } else {
-        let ca = ca.slice(null_count as i64, ca.len() - null_count);
+        let ca = ca.slice((null_count, ca.len() - null_count));
         is_sorted_ca_num(&ca, options)
     }
 }

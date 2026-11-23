@@ -13,6 +13,8 @@ from polars.io._utils import null_count_dtype
 from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType, Series
@@ -107,10 +109,45 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
         raise TypeError(msg)
 
 
+def _widen_truncated_timestamp_max(s: Series) -> Series:
+    """
+    Widen the max statistics of timestamp columns (including struct fields) by 1ms.
+
+    The Delta protocol truncates timestamp min/max statistics down to milliseconds,
+    so the real max of a file can lie up to (but excluding) 1ms above the recorded max.
+    """
+    import polars as pl
+
+    dtype = s.dtype
+
+    if isinstance(dtype, pl.Datetime):
+        # Add in physical units to keep the time unit (adding a `timedelta` turns ns
+        # into us) and map overflow to null (unknown) rather than wrapping around.
+        one_ms = {"ms": 1, "us": 1_000, "ns": 1_000_000}[dtype.time_unit]
+        phys = s.to_physical()
+        return pl.select(
+            pl.when(phys <= 2**63 - 1 - one_ms)
+            .then(phys + one_ms)
+            .cast(dtype)
+            .alias(s.name)
+        ).to_series()
+
+    if isinstance(dtype, pl.Struct) and dtype.fields:
+        fields = [
+            _widen_truncated_timestamp_max(f) for f in s.struct.unnest().iter_columns()
+        ]
+        return pl.select(
+            pl.when(s.is_not_null()).then(pl.struct(fields)).alias(s.name)
+        ).to_series()
+
+    return s
+
+
 def _extract_table_statistics_from_delta_add_actions(
     add_actions_df: DataFrame,
     *,
     filter_columns: list[str],
+    best_effort_columns: Sequence[str] = (),
     schema: SchemaDict,
     verbose: bool,
 ) -> DataFrame | None:
@@ -147,7 +184,7 @@ def _extract_table_statistics_from_delta_add_actions(
     def null_col(dt: PolarsDataType) -> Series:
         return pl.Series([None], dtype=dt).new_from_index(0, height)
 
-    for col_name in filter_columns:
+    def column_statistics(col_name: str) -> dict[str, Series]:
         dtype = schema[col_name]
         # The skip-batch predicate expects `<col>_nc` in the index type (a per-field
         # struct of index counts for struct columns), so normalise the counts here.
@@ -156,23 +193,57 @@ def _extract_table_statistics_from_delta_add_actions(
         col_min = min_cols.get(col_name)
         col_max = max_cols.get(col_name)
 
-        out[f"{col_name}_nc"] = (
-            col_nc.cast(nc_dtype) if col_nc is not None else null_col(nc_dtype)
-        )
+        stats: dict[str, Series] = {
+            f"{col_name}_nc": (
+                col_nc.cast(nc_dtype) if col_nc is not None else null_col(nc_dtype)
+            )
+        }
 
         if isinstance(dtype, pl.Struct):
             # Delta records struct min/max field-wise as a struct mirroring the column
             # schema. Cast to the column dtype so every schema field is present and
             # resolvable, letting the skip-batch predicate prune on an individual struct
             # field via `col("<c>_min").struct.field(..)`.
-            out[f"{col_name}_min"] = (
+            stats[f"{col_name}_min"] = (
                 col_min.cast(dtype) if col_min is not None else null_col(dtype)
             )
-            out[f"{col_name}_max"] = (
+            stats[f"{col_name}_max"] = (
                 col_max.cast(dtype) if col_max is not None else null_col(dtype)
             )
         else:
-            out[f"{col_name}_min"] = col_min if col_min is not None else null_col(dtype)
-            out[f"{col_name}_max"] = col_max if col_max is not None else null_col(dtype)
+            stats[f"{col_name}_min"] = (
+                col_min if col_min is not None else null_col(dtype)
+            )
+            stats[f"{col_name}_max"] = (
+                col_max if col_max is not None else null_col(dtype)
+            )
+
+        stats[f"{col_name}_max"] = _widen_truncated_timestamp_max(
+            stats[f"{col_name}_max"]
+        )
+
+        return stats
+
+    def best_effort_column_statistics(col_name: str) -> dict[str, Series]:
+        try:
+            return column_statistics(col_name)
+        except Exception as e:
+            if verbose:
+                eprint(
+                    f"scan_delta: statistics load failed for column {col_name!r}: {e!r}"
+                )
+
+            dtype = schema[col_name]
+            return {
+                f"{col_name}_nc": null_col(null_count_dtype(dtype)),
+                f"{col_name}_min": null_col(dtype),
+                f"{col_name}_max": null_col(dtype),
+            }
+
+    for col_name in filter_columns:
+        out.update(column_statistics(col_name))
+
+    for col_name in best_effort_columns:
+        out.update(best_effort_column_statistics(col_name))
 
     return pl.DataFrame(out, height=height)

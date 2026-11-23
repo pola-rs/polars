@@ -80,8 +80,9 @@ impl DataFrame {
                     }
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
-                    // SAFETY: we are casting back to the supertype
-                    let mut s = unsafe { buf.into_series().cast_unchecked(dtype).unwrap() };
+                    // SAFETY: the buffer holds the physical values of `dtype`.
+                    let mut s =
+                        unsafe { buf.into_series().from_physical_unchecked(dtype).unwrap() };
                     s.rename(name.clone());
                     s.into()
                 }));
@@ -128,7 +129,11 @@ impl DataFrame {
                     new_names.no_null_iter().map(PlSmallStr::from_str).collect()
                 },
                 Either::Right(names) => {
-                    polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");
+                    polars_ensure!(
+                        names.len() == self.height(),
+                        ShapeMismatch: "Length of new column names must be the same as the row count (got {} names for {} rows)",
+                        names.len(), self.height()
+                    );
                     names
                 },
             },

@@ -100,7 +100,6 @@ pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
     options: &JoinOptionsIR,
-    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
     let condition = &options.options;
 
@@ -118,20 +117,12 @@ pub(crate) fn det_join_schema(
         //
         // df(cols=[B, A, B_right])
         JoinType::Right if options.args.should_coalesce() => {
-            // Get join names.
-            let mut join_on_left: PlIndexSet<_> =
-                PlIndexSet::with_capacity(condition.left_on_len());
-            for e in condition.left_on() {
-                let field = e.field(schema_left, expr_arena)?;
-                join_on_left.insert(field.name);
-            }
+            let join_on_left: PlIndexSet<_> = condition
+                .left_on()
+                .map(|e| e.output_name().clone())
+                .collect();
 
-            let mut join_on_right: PlIndexSet<_> =
-                PlIndexSet::with_capacity(condition.right_on_len());
-            for e in condition.right_on() {
-                let field = e.field(schema_right, expr_arena)?;
-                join_on_right.insert(field.name);
-            }
+            let output_names = join_right_output_names(schema_left, schema_right, options)?;
 
             // For the error message
             let mut suffixed = None;
@@ -146,19 +137,13 @@ pub(crate) fn det_join_schema(
                     Some((name.clone(), dtype.clone()))
                 }))?
                 // Columns from right
-                .hstack(schema_right.iter().map(|(name, dtype)| {
-                    suffixed = None;
-
-                    let in_left_schema = schema_left.contains(name.as_str());
-                    let is_coalesced = join_on_left.contains(name.as_str());
-
-                    if in_left_schema && !is_coalesced {
-                        suffixed = Some(format_pl_smallstr!("{}{}", name, options.args.suffix()));
-                        (suffixed.clone().unwrap(), dtype.clone())
-                    } else {
-                        (name.clone(), dtype.clone())
-                    }
-                }))
+                .hstack(schema_right.iter().zip(output_names).map(
+                    |((name, dtype), output_name)| {
+                        let output_name = output_name.unwrap();
+                        suffixed = (output_name != *name).then(|| output_name.clone());
+                        (output_name, dtype.clone())
+                    },
+                ))
                 .map_err(|e| {
                     if let Some(column) = suffixed {
                         join_suffix_duplicate_help_msg(&column)
@@ -173,8 +158,7 @@ pub(crate) fn det_join_schema(
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len())
                 .hstack(schema_left.iter_fields())?;
 
-            let output_names =
-                join_right_output_names(schema_left, schema_right, options, expr_arena)?;
+            let output_names = join_right_output_names(schema_left, schema_right, options)?;
             for ((name, dtype), output_name) in schema_right.iter().zip(output_names) {
                 let Some(output_name) = output_name else {
                     continue;
@@ -199,21 +183,36 @@ pub(crate) fn det_join_schema(
 /// The name each right column of a join comes out under, in the right schema's
 /// order; `None` for one coalesced into the left key column.
 ///
-/// The left columns keep their names, so a right one that collides is suffixed. Not
-/// for a coalescing right join, which drops left columns instead.
+/// The left columns keep their names, so a right one that collides is suffixed. A
+/// coalescing right join drops the left key columns instead, so there a right column
+/// is only suffixed when it collides with a left column that is kept.
 pub(crate) fn join_right_output_names(
     schema_left: &Schema,
     schema_right: &Schema,
     options: &JoinOptionsIR,
-    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let condition = &options.options;
     let is_coalesced = options.args.should_coalesce();
 
+    if is_coalesced && matches!(options.args.how, JoinType::Right) {
+        let join_on_left: PlIndexSet<_> = condition.left_on().map(|e| e.output_name()).collect();
+        return Ok(schema_right
+            .iter_names()
+            .map(|name| {
+                Some(
+                    if schema_left.contains(name) && !join_on_left.contains(name) {
+                        format_pl_smallstr!("{}{}", name, options.args.suffix())
+                    } else {
+                        name.clone()
+                    },
+                )
+            })
+            .collect());
+    }
+
     let mut join_on_right: PlIndexSet<_> = PlIndexSet::with_capacity(condition.right_on_len());
     for e in condition.right_on() {
-        let field = e.field(schema_right, expr_arena)?;
-        join_on_right.insert(field.name);
+        join_on_right.insert(e.output_name().clone());
     }
 
     let mut right_by: PlIndexSet<&PlSmallStr> = PlIndexSet::default();
@@ -244,12 +243,8 @@ pub(crate) fn join_right_output_names(
                 // values so if the right has a different name, it is added to the schema
                 #[cfg(feature = "asof_join")]
                 if matches!(&options.args.how, JoinType::AsOf(_)) {
-                    let field_left = condition
-                        .left_on()
-                        .nth(idx)
-                        .unwrap()
-                        .field(schema_left, expr_arena)?;
-                    need_to_include_column = field_left.name != name;
+                    need_to_include_column =
+                        condition.left_on().nth(idx).unwrap().output_name() != name;
                 }
 
                 !need_to_include_column

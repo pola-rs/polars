@@ -46,6 +46,18 @@ pub fn schema(
     .map_err(Into::into)
 }
 
+pub fn has_tight_statistics(dataset_object: &PythonObject) -> PolarsResult<bool> {
+    Python::attach(|py| {
+        let name = intern!(py, "has_tight_statistics");
+        let object = dataset_object.bind(py);
+        if !object.hasattr(name)? {
+            return Ok(false);
+        }
+        object.call_method0(name)?.extract::<bool>()
+    })
+    .map_err(Into::into)
+}
+
 pub fn extract_schema(py: Python<'_>, schema_obj: Py<PyAny>) -> PolarsResult<SchemaRef> {
     let pyarrow_schema_cls = py
         .import("pyarrow")
@@ -97,6 +109,7 @@ pub fn to_dataset_scan(
     limit: Option<usize>,
     projection: Option<&[PlSmallStr]>,
     filter_columns: Option<&[PlSmallStr]>,
+    statistics_columns: Option<&[PlSmallStr]>,
     pyarrow_predicate: Option<&str>,
     py_scan_resolve_threadpool: &PyScanResolveThreadPool,
 ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
@@ -130,6 +143,16 @@ pub fn to_dataset_scan(
             }
 
             kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
+        }
+
+        if let Some(statistics_columns) = statistics_columns {
+            let statistics_columns_list = PyList::empty(py);
+
+            for name in statistics_columns {
+                statistics_columns_list.append(name.as_str())?;
+            }
+
+            kwargs.set_item(intern!(py, "statistics_columns"), statistics_columns_list)?;
         }
 
         if let Some(pyarrow_predicate) = pyarrow_predicate {

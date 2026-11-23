@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import re
+import struct
 from datetime import date, datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -17,6 +19,9 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_str_slice() -> None:
@@ -214,6 +219,69 @@ def test_str_tail_expr() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.parametrize(
+    ("n", "head", "tail"),
+    [
+        (-(2**63), "", ""),
+        (2**63 - 1, "aü", "aü"),
+        (pl.lit(2**63, pl.UInt64), "aü", "aü"),
+        (pl.lit(2**64 - 1, pl.UInt64), "aü", "aü"),
+    ],
+)
+def test_str_head_tail_extreme_count(n: int | pl.Expr, head: str, tail: str) -> None:
+    df = pl.DataFrame({"s": ["aü", None]})
+    out = df.select(
+        head=pl.col("s").str.head(n),
+        tail=pl.col("s").str.tail(n),
+        head_lit=pl.lit("aü").str.head(pl.repeat(n, 2)),
+        bin_head=pl.col("s").cast(pl.Binary).bin.head(n),
+        bin_tail=pl.col("s").cast(pl.Binary).bin.tail(n),
+    )
+    assert out.to_dict(as_series=False) == {
+        "head": [head, None],
+        "tail": [tail, None],
+        "head_lit": [head, head],
+        "bin_head": [head.encode(), None],
+        "bin_tail": [tail.encode(), None],
+    }
+
+
+def test_str_head_tail_repeated_count() -> None:
+    df = pl.DataFrame({"s": ["abc", "de", None]}).with_columns(n=pl.lit(2))
+    out = df.select(
+        head=pl.col("s").str.head("n"),
+        tail=pl.col("s").str.tail("n"),
+        bin_head=pl.col("s").cast(pl.Binary).bin.head("n"),
+        lit_head=pl.lit("xyz").str.head("n"),
+    )
+    assert out.to_dict(as_series=False) == {
+        "head": ["ab", "de", None],
+        "tail": ["bc", "de", None],
+        "bin_head": [b"ab", b"de", None],
+        "lit_head": ["xy", "xy", "xy"],
+    }
+    s = pl.Series("s", ["aba", "ac"]).sort()
+    out = s.to_frame().with_columns(n=pl.lit(-1)).select(pl.col("s").str.head("n"))
+    assert out["s"].to_list() == ["ab", "a"]
+    assert out["s"].min() == "a"
+
+
+def test_str_slice_min_offset() -> None:
+    df = pl.DataFrame({"s": ["aü", None]})
+    out = df.select(
+        rest=pl.col("s").str.slice(-(2**63)),
+        two=pl.col("s").str.slice(-(2**63), 2),
+        bin_rest=pl.col("s").cast(pl.Binary).bin.slice(-(2**63)),
+        bin_two=pl.col("s").cast(pl.Binary).bin.slice(-(2**63), 2),
+    )
+    assert out.to_dict(as_series=False) == {
+        "rest": ["aü", None],
+        "two": ["", None],
+        "bin_rest": ["aü".encode(), None],
+        "bin_two": [b"", None],
+    }
+
+
 def test_str_tail_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
     with pytest.raises(ShapeError):
@@ -248,6 +316,33 @@ def test_str_len_chars() -> None:
     result = s.str.len_chars()
     expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
     assert_series_equal(result, expected)
+
+
+def test_str_len_chars_inline_and_long_strings() -> None:
+    values = ["", "a", "é", "東", "😀"]
+    for n in [11, 12, 13, 127, 128, 129, 300]:
+        for c in ["é", "東", "😀"]:
+            values.append("a" * (n - len(c.encode())) + c)
+            values.append(c + "a" * (n - len(c.encode())))
+            values.append(c * (n // len(c.encode())))
+    s = pl.Series([*values, None])
+    expected = pl.Series([*(len(v) for v in values), None], dtype=pl.UInt32)
+    assert_series_equal(s.str.len_chars(), expected)
+    assert_series_equal(s[3:].str.len_chars(), expected[3:])
+
+
+def test_str_len_chars_null_view_with_padding() -> None:
+    # A null view of length 0 whose padding bytes look like UTF-8 continuation bytes.
+    null_view = struct.pack("<I", 0) + b"\x80" * 12
+    value_view = struct.pack("<I", 2) + "é".encode() + bytes(10)
+    arr = pa.Array.from_buffers(
+        pa.string_view(),
+        2,
+        [pa.py_buffer(b"\x02"), pa.py_buffer(null_view + value_view)],
+        null_count=1,
+    )
+    s = pl.Series(arr)
+    assert_series_equal(s.str.len_chars(), pl.Series([None, 1], dtype=pl.UInt32))
 
 
 def test_str_contains() -> None:
@@ -446,6 +541,9 @@ def test_str_to_lowercase() -> None:
     s = pl.Series(["Hello", "WORLD"])
     expected = pl.Series(["hello", "world"])
     assert_series_equal(s.str.to_lowercase(), expected)
+
+    vals = ["ΟΔΟΣ", "ABCDEFGHIJKLMNOPΣ", "ABCDEFGHIJKLMNOPΣ ABC", "ABCDEFGHIJKLMNOP ΣA"]
+    assert pl.Series(vals).str.to_lowercase().to_list() == [v.lower() for v in vals]
 
 
 def test_str_to_uppercase() -> None:
@@ -653,7 +751,7 @@ def test_str_strip_chars_expr() -> None:
         pl.col("s").str.strip_chars_end(None).alias("strip_chars_end"),
     )
 
-    # only whitespace are striped.
+    # only whitespace are stripped.
     expected = pl.DataFrame(
         {
             "strip_chars": ["hello", "^^world^^", "&&hi&&", "polars", None],
@@ -1105,6 +1203,58 @@ def test_contains() -> None:
         )
 
 
+def test_contains_dotall_literal_chain() -> None:
+    s = pl.Series(["", "ab", "a\nb", "ba", "aXbXc", None])
+    for pattern in [
+        "(?s)a.*b",
+        "(?s)^.*a.*b.*$",
+        "(?s)^a.*b$",
+        "a.*b",
+        "(?s)a.*b.*c",
+    ]:
+        rx = re.compile(pattern)
+        expected = [None if v is None else rx.search(v) is not None for v in s]
+        assert s.str.contains(pattern).to_list() == expected
+
+
+def test_contains_leading_trailing_repetitions() -> None:
+    values = ["", "foo", "xfoo", "x\nfoo", "foo\nbar", "FOO", "xf", "é", None]
+    patterns = [
+        ".*foo",
+        "foo.*",
+        ".*foo.*",
+        ".*foo.*bar",
+        "a*foo",
+        "(?:x)?foo",
+        ".*?foo",
+        ".*foo|bar.*",
+        "^.*foo",
+        "(?i).*FOO",
+        "(?x) .* f o o",
+        r".*\bfoo",
+        ".+foo",
+        "(.*)foo",
+        ".*x(?:o{2}?)?f.*",
+    ]
+    s = pl.Series(values)
+    for pattern in patterns:
+        rx = re.compile(pattern)
+        expected = [None if v is None else rx.search(v) is not None for v in values]
+        assert s.str.contains(pattern).to_list() == expected
+    # Python rejects flags that are not at the start.
+    expected = [None if v is None else "foo" in v.lower() for v in values]
+    assert s.str.contains(".*(?i)FOO").to_list() == expected
+    s_lit = pl.Series(["xfoo", "x.*foo"])
+    assert s_lit.str.contains(".*foo", literal=True).to_list() == [False, True]
+
+    df = pl.DataFrame({"s": values}).join(pl.DataFrame({"pat": patterns}), how="cross")
+    expected = [
+        None if v is None else re.search(p, v) is not None for v, p in df.iter_rows()
+    ]
+    out = df.select(pl.col("s").str.contains(pl.col("pat"))).to_series()
+    assert out.to_list() == expected
+
+
 def test_contains_expr() -> None:
     df = pl.DataFrame(
         {
@@ -1144,16 +1294,16 @@ def test_contains_expr() -> None:
         (["me"], False, True),
         (["Me"], False, False),
         (["Me"], True, True),
-        (pl.Series([["me", "they"]]), False, True),
-        (pl.Series([["Me", "they"]]), False, False),
-        (pl.Series([["Me", "they"]]), True, True),
+        (pl.lit(pl.Series(["me", "they"])).implode(), False, True),
+        (pl.lit(pl.Series(["Me", "they"])).implode(), False, False),
+        (pl.lit(pl.Series(["Me", "they"])).implode(), True, True),
         (["me", "they"], False, True),
         (["Me", "they"], False, False),
         (["Me", "they"], True, True),
     ],
 )
 def test_contains_any(
-    pattern: pl.Series | list[str],
+    pattern: pl.Expr | list[str],
     case_insensitive: bool,
     expected: bool,
 ) -> None:
@@ -1188,7 +1338,7 @@ def test_contains_any_flat_dtype_invalid() -> None:
     df = pl.DataFrame({"text": ["Tell me what you want"]})
     msg = "`str.contains_any` with a flat string datatype is invalid. Use `implode` to wrap the string value into a list."
     with pytest.raises(InvalidOperationError, match=re.escape(msg)):
-        df.select(pl.col("text").str.contains_any(pl.Series(["me", "they"])))
+        df.select(pl.col("text").str.contains_any(pl.lit("me")))
 
 
 def test_replace() -> None:
@@ -1229,6 +1379,54 @@ def test_replace() -> None:
 
     assert pl.Series(["."]).str.replace(".", "$0", literal=True)[0] == "$0"
     assert pl.Series(["(.)(?)"]).str.replace(".", "$1", literal=True)[0] == "($1)(?)"
+
+
+def test_replace_pattern_matching_to_end() -> None:
+    s = pl.Series(
+        ["http://a.com/x", "say http://b.org/y z", "http://c.net/p\nq", "abc", None]
+    )
+    assert s.str.replace(r"https?://([^/]+)/.*$", "$1").to_list() == [
+        "a.com",
+        "say b.org",
+        "http://c.net/p\nq",
+        "abc",
+        None,
+    ]
+    assert s.str.replace(r"^https?://(?P<host>[^/]+)/.*?$", "[${host}]").to_list() == [
+        "[a.com]",
+        "say http://b.org/y z",
+        "http://c.net/p\nq",
+        "abc",
+        None,
+    ]
+    assert s.str.replace(r"(?s)https?://([^/]+)/.*$", "<$0|$1>").to_list() == [
+        "<http://a.com/x|a.com>",
+        "say <http://b.org/y z|b.org>",
+        "<http://c.net/p\nq|c.net>",
+        "abc",
+        None,
+    ]
+    assert pl.Series(["bTAIL"]).str.replace(r"^(a){0}(b).*$", "$2")[0] == "b"
+    assert s.str.replace(r"^(a)|b.*$", "<$1>").to_list() == [
+        "http://a.com/x",
+        "say http://<>",
+        "http://c.net/p\nq",
+        "<a>bc",
+        None,
+    ]
+    # Nested repetitions before the `.*$`.
+    s = pl.Series(["b-x", "aab-x", "1b-x", "12b-x"])
+    for pattern, expected in [
+        (r"(?:a+)?(b).*$", ["<b>", "<b>", "1<b>", "12<b>"]),
+        (r"(?:a*)?(a*)b.*$", ["<>", "<>", "1<>", "12<>"]),
+        (r"(?:\d{2})?(\d*)b.*$", ["<>", "aa<>", "<1>", "<>"]),
+    ]:
+        assert s.str.replace(pattern, "<$1>").to_list() == expected
+    s = pl.Series(["key: value", "key:value"])
+    assert s.str.replace(r"^(\w+):(?:\s+)?(\w+).*$", "$2").to_list() == [
+        "value",
+        "value",
+    ]
 
 
 def test_replace_all() -> None:
@@ -1287,6 +1485,50 @@ def test_replace_all() -> None:
         pl.Series([r"(.)(\?)(\?)"]).str.replace_all("\\?", "$0", literal=False)[0]
         == "(.)(\\?)(\\?)"
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_column_pattern(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "s": ["abcab", "a1b2", None, "aaa", "a.b"],
+            "p": ["ab", r"(\d)", "a", "b", "."],
+            "v": ["X", "<$1>", "q", "z", "!"],
+        }
+    )
+    out = lf.select(
+        all_lit=pl.col("s").str.replace_all(pl.col("p"), pl.col("v"), literal=True),
+        one_lit=pl.col("s").str.replace(pl.col("p"), pl.col("v"), literal=True),
+        all_re=pl.col("s").str.replace_all(pl.col("p"), pl.col("v")),
+        one_re=pl.col("s").str.replace(pl.col("p"), pl.col("v")),
+        two=pl.col("s").str.replace(pl.col("p"), "_", literal=True, n=2),
+        none=pl.col("s").str.replace(pl.col("p"), "_", n=0),
+        bcast=pl.lit("abab").str.replace_all(pl.col("p"), "_", literal=True),
+    ).collect(engine=engine)
+    assert out.to_dict(as_series=False) == {
+        "all_lit": ["XcX", "a1b2", None, "aaa", "a!b"],
+        "one_lit": ["Xcab", "a1b2", None, "aaa", "a!b"],
+        "all_re": ["XcX", "a<1>b<2>", None, "aaa", "!!!"],
+        "one_re": ["Xcab", "a<1>b2", None, "aaa", "!.b"],
+        "two": ["_c_", "a1b2", None, "aaa", "a_b"],
+        "none": ["abcab", "a1b2", None, "aaa", "a.b"],
+        "bcast": ["__", "abab", "_b_b", "a_a_", "abab"],
+    }
+
+    # The rules for a single pattern hold in every row.
+    lf = pl.LazyFrame({"s": ["aa", "bb"], "p": ["a", None], "r": ["(a)", "(b)"]})
+    with pytest.raises(ComputeError, match="pattern cannot be 'null'"):
+        lf.select(pl.col("s").str.replace_all(pl.col("p"), "x")).collect(engine=engine)
+    with pytest.raises(ComputeError, match="n > 1"):
+        lf.select(pl.col("s").str.replace(pl.col("r"), "x", n=2)).collect(engine=engine)
+    # A null value keeps the source without looking at the pattern.
+    lf = pl.LazyFrame({"s": ["aa", "bb"], "p": ["[", "b"], "v": [None, "x"]})
+    q = lf.select(pl.col("s").str.replace(pl.col("p"), pl.col("v")))
+    assert q.collect(engine=engine)["s"].to_list() == ["aa", "xb"]
+
+
+def test_replace_regex_zero_count() -> None:
+    assert pl.Series(["aaa"]).str.replace("(a)", "b", n=0).to_list() == ["aaa"]
 
 
 def test_replace_all_literal_no_captures() -> None:
@@ -1349,6 +1591,20 @@ def test_replace_literal_no_captures() -> None:
     )
 
 
+def test_replace_plain_pattern_expands_references() -> None:
+    # A pattern without punctuation takes a faster path, which must give the same
+    # result as the same pattern written as a regex.
+    s = pl.Series(["abcb", None])
+    for val in ["[$0]", "[${0}]", "[$$]", "[$1]", "[x]"]:
+        assert_series_equal(s.str.replace("b", val), s.str.replace("(?:b)", val))
+        assert_series_equal(
+            s.str.replace_all("b", val), s.str.replace_all("(?:b)", val)
+        )
+    assert s.str.replace("b", "[$0]").to_list() == ["a[b]cb", None]
+    assert s.str.replace("b", "[$0]", n=2).to_list() == ["a[b]c[b]", None]
+    assert s.str.replace("b", "[$0]", literal=True).to_list() == ["a[$0]cb", None]
+
+
 def test_replace_expressions() -> None:
     df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
     out = df.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
@@ -1378,14 +1634,14 @@ def test_replace_expressions() -> None:
         (["Me", "you"], ["it"], True, False, "Tell it what it want"),
         (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
         (
-            pl.Series([["me", "YOU"]]),
+            pl.lit(pl.Series(["me", "YOU"])).implode(),
             ["you", "me"],
             False,
             False,
             "Tell you what you want",
         ),
         (
-            pl.Series([["me", "YOU"]]),
+            pl.lit(pl.Series(["me", "YOU"])).implode(),
             ["you", "me"],
             True,
             False,
@@ -1408,8 +1664,8 @@ def test_replace_expressions() -> None:
     ],
 )
 def test_replace_many(
-    pattern: pl.Series | list[str],
-    replacement: pl.Series | list[str] | str,
+    pattern: pl.Expr | list[str],
+    replacement: list[str],
     case_insensitive: bool,
     leftmost: bool,
     expected: str,
@@ -1443,18 +1699,10 @@ def test_replace_many_flat_dtype_invalid() -> None:
     df = pl.DataFrame({"text": ["Tell me what you want"]})
     msg = "`str.replace_many` with a flat str datatype as pattern is invalid. Use `implode` to wrap the string value into a list."
     with pytest.raises(InvalidOperationError, match=re.escape(msg)):
-        df.select(
-            pl.col("text").str.replace_many(
-                pl.Series(["me", "they"]), pl.Series([["it"]])
-            )
-        )
+        df.select(pl.col("text").str.replace_many(pl.lit("me"), ["it"]))
     msg = "`str.replace_many` with a flat str datatype as replacement is invalid. Use `implode` to wrap the string value into a list."
     with pytest.raises(InvalidOperationError, match=re.escape(msg)):
-        df.select(
-            pl.col("text").str.replace_many(
-                pl.Series([["me", "they"]]), pl.Series(["it"])
-            )
-        )
+        df.select(pl.col("text").str.replace_many(["me", "they"], pl.lit("it")))
 
 
 def test_replace_many_groupby() -> None:
@@ -1465,7 +1713,7 @@ def test_replace_many_groupby() -> None:
         }
     )
     out = df.group_by("g").agg(
-        pl.col.x.str.replace_many(pl.col.x.head(2).implode(), pl.Series([[""]]))
+        pl.col.x.str.replace_many(pl.col.x.head(2).implode(), [""])
     )
     expected = pl.DataFrame(
         {
@@ -2003,6 +2251,13 @@ def test_titlecase() -> None:
                 "and\ta\t tab",
                 "by jean-paul sartre, 'esq'",
                 "SOMETIMES/life/gives/you/a/2nd/chance",
+                "İstanbul",
+                "İSTANBUL",
+                "ΟΔΟΣ ΣΟΦΙΑΣ",
+                "straße ßa",
+                "ǆungla ǈ",
+                "ﬁne ﬂow",
+                "ᾳ ᾀa",
             ]
         }
     )
@@ -2064,6 +2319,43 @@ def test_string_reverse() -> None:
 
     result = df.select(pl.col("text").str.reverse())
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt16, pl.Int32, pl.Int64, pl.UInt64])
+def test_string_from_code_point(dtype: pl.DataType) -> None:
+    s = pl.Series("n", [65, None, 97, 0, 127], dtype=dtype)
+    expected = pl.Series("n", ["A", None, "a", "\x00", "\x7f"])
+    assert_series_equal(s.str.from_code_point(), expected)
+    for engine in ("in-memory", "streaming"):
+        out = s.to_frame().lazy().select(pl.col("n").str.from_code_point())
+        assert_series_equal(out.collect(engine=engine).to_series(), expected)
+
+
+def test_string_from_code_point_unicode() -> None:
+    s = pl.Series([233, 8364, 128512, 0x10FFFF])
+    assert s.str.from_code_point().to_list() == ["é", "€", "😀", "\U0010ffff"]
+    assert pl.Series([], dtype=pl.Int64).str.from_code_point().dtype == pl.String
+    assert pl.Series([None, None]).str.from_code_point().to_list() == [None, None]
+
+
+@pytest.mark.parametrize("value", [-1, 0x110000, 0xD800, 0xDFFF])
+def test_string_from_code_point_invalid(value: int) -> None:
+    with pytest.raises(ComputeError, match=f"invalid Unicode code point: {value}"):
+        pl.Series([65, value]).str.from_code_point()
+
+
+def test_string_from_code_point_beyond_int64() -> None:
+    s = pl.Series([65, None, 2**63], dtype=pl.UInt64)
+    with pytest.raises(ComputeError, match=f"invalid Unicode code point: {2**63}"):
+        s.str.from_code_point()
+
+
+def test_string_from_code_point_non_integer() -> None:
+    for s in (pl.Series([65.0]), pl.Series(["65"]), pl.Series([True])):
+        with pytest.raises(
+            InvalidOperationError, match="expected an integer code point"
+        ):
+            s.str.from_code_point()
 
 
 @pytest.mark.parametrize(
@@ -2252,6 +2544,20 @@ def test_str_split_self_broadcast() -> None:
     assert_series_equal(
         pl.Series(["a-/c"]).str.split(pl.Series(["-", "/", "+"])),
         pl.Series([["a", "/c"], ["a-", "c"], ["a-/c"]]),
+    )
+    assert_series_equal(
+        pl.Series([None], dtype=pl.String).str.split(pl.Series(["-", "/"])),
+        pl.Series([None, None], dtype=pl.List(pl.String)),
+    )
+
+
+@pytest.mark.parametrize("inclusive", [False, True])
+def test_str_split_self_broadcast_empty_separator(inclusive: bool) -> None:
+    by = pl.Series(["", "b"])
+    expected = pl.Series([["a", "b"], ["ab"] if inclusive else ["a", ""]])
+    assert_series_equal(pl.Series(["ab"]).str.split(by, inclusive=inclusive), expected)
+    assert_series_equal(
+        pl.Series(["ab", "ab"]).str.split(by, inclusive=inclusive), expected
     )
 
 
@@ -2463,3 +2769,47 @@ def test_str_concat_removed() -> None:
         AttributeRemovedError, match=re.escape("use `str.join` instead")
     ):
         s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]
+
+
+def test_contains_any_replace_many_imploded_patterns() -> None:
+    # More rows than threads, so that a streaming morsel holds several rows.
+    df = pl.DataFrame({"s": ["ab", "cd", "xy"] * 100, "p": ["a", "c", "q"] * 100})
+    patterns = pl.col("p").unique(maintain_order=True).implode()
+    out = df.lazy().select(
+        pl.col("s").str.contains_any(patterns),
+        r=pl.col("s").str.replace_many(patterns, pl.lit(["A", "C", "Q"])),
+    )
+    expected = pl.DataFrame(
+        {"s": [True, True, False] * 100, "r": ["Ab", "Cd", "xy"] * 100}
+    )
+    assert_frame_equal(out.collect(), expected)
+
+
+@pytest.mark.parametrize("height", [1, 3])
+def test_contains_any_replace_many_patterns_per_row_raises(height: int) -> None:
+    df = pl.DataFrame({"s": ["ab"] * height, "p": [["a"]] * height})
+    with pytest.raises(ShapeError, match="'patterns' must be a scalar value"):
+        df.lazy().select(pl.col("s").str.contains_any(pl.col("p"))).collect()
+    with pytest.raises(ShapeError, match="'patterns' must be a scalar value"):
+        df.lazy().select(pl.col("s").str.replace_many(pl.col("p"), ["b"])).collect()
+
+
+def test_find_many_null_patterns_broadcast() -> None:
+    null = pl.lit(None, dtype=pl.List(pl.String))
+    df = pl.DataFrame({"s": ["ab", "cd"]}).with_columns(p=null)
+    out = df.lazy().select(
+        e=pl.col("s").str.extract_many("p"),
+        f=pl.col("s").str.find_many("p"),
+        c=pl.col("s").str.contains_any(null),
+        r=pl.col("s").str.replace_many(null, ["x"]),
+    )
+    expected = pl.DataFrame(
+        {"e": [None, None], "f": [None, None], "c": [None, None], "r": [None, None]},
+        schema={
+            "e": pl.List(pl.String),
+            "f": pl.List(pl.UInt32),
+            "c": pl.Boolean,
+            "r": pl.String,
+        },
+    )
+    assert_frame_equal(out.collect(), expected)

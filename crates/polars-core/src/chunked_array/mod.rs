@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use num_traits::Signed;
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::concatenate::concatenate_unchecked;
@@ -539,7 +540,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// Get a single value from this [`ChunkedArray`]. If the return value is `None` this
     /// indicates a NULL value.
     ///
     /// # Panics
@@ -565,7 +566,7 @@ where
         }
     }
 
-    /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this
+    /// Get a single value from this [`ChunkedArray`]. If the return value is `None` this
     /// indicates a NULL value.
     ///
     /// # Safety
@@ -683,7 +684,18 @@ where
     ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]>,
 {
     /// Deposit values into nulls with a certain validity mask.
+    ///
+    /// Panics for structs; use `Series::deposit` for those.
     pub fn deposit(&self, validity: &Bitmap) -> Self {
+        self.deposit_with(validity, Self::set_validity)
+    }
+
+    /// [`Self::deposit`] with a custom setter for the resulting validity.
+    pub(crate) fn deposit_with(
+        &self,
+        validity: &Bitmap,
+        set_validity: impl FnOnce(&mut Self, Option<Bitmap>),
+    ) -> Self {
         let set_bits = validity.set_bits();
 
         assert_eq!(self.len(), set_bits);
@@ -709,10 +721,8 @@ where
         }));
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
-        ca.set_validity(combine_validities_and(
-            Some(validity),
-            ca.rechunk_validity().as_ref(),
-        ));
+        let validity = combine_validities_and(Some(validity), ca.rechunk_validity().as_ref());
+        set_validity(&mut ca, validity);
         ca
     }
 }
@@ -996,17 +1006,6 @@ where
         Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
     }
 
-    /// Returns the values of the array as a contiguous mutable slice.
-    pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
-        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            // SAFETY, we will not swap the PrimitiveArray.
-            let arr = unsafe { self.downcast_iter_mut().next().unwrap() };
-            arr.get_mut_values()
-        } else {
-            None
-        }
-    }
-
     /// Get slices of the underlying arrow data.
     /// NOTE: null values should be taken into account by the user of these slices as they are handled
     /// separately
@@ -1028,6 +1027,22 @@ where
                 .map(|v| *v)
                 .trust_my_length(self.len())
         }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Signed,
+{
+    /// Whether any value is negative. Masked out values are also checked.
+    pub fn has_negative(&self) -> bool {
+        // Check in blocks, so the inner loop can be vectorized and we can still stop early.
+        self.data_views().any(|values| {
+            values
+                .chunks(1024)
+                .any(|block| block.iter().fold(false, |acc, v| acc | v.is_negative()))
+        })
     }
 }
 
@@ -1258,18 +1273,18 @@ pub(crate) mod test {
         let mut first = UInt32Chunked::new(PlSmallStr::from_static("first"), &[0, 1, 2]);
         let second = UInt32Chunked::new(PlSmallStr::from_static("second"), &[3, 4, 5]);
         first.append(&second).unwrap();
-        assert_slice_equal(&first.slice(0, 3), &[0, 1, 2]);
-        assert_slice_equal(&first.slice(0, 4), &[0, 1, 2, 3]);
-        assert_slice_equal(&first.slice(1, 4), &[1, 2, 3, 4]);
-        assert_slice_equal(&first.slice(3, 2), &[3, 4]);
-        assert_slice_equal(&first.slice(3, 3), &[3, 4, 5]);
-        assert_slice_equal(&first.slice(-3, 3), &[3, 4, 5]);
-        assert_slice_equal(&first.slice(-6, 6), &[0, 1, 2, 3, 4, 5]);
+        assert_slice_equal(&first.slice(Slice::head(3)), &[0, 1, 2]);
+        assert_slice_equal(&first.slice(Slice::head(4)), &[0, 1, 2, 3]);
+        assert_slice_equal(&first.slice((1usize, 4)), &[1, 2, 3, 4]);
+        assert_slice_equal(&first.slice((3usize, 2)), &[3, 4]);
+        assert_slice_equal(&first.slice((3usize, 3)), &[3, 4, 5]);
+        assert_slice_equal(&first.slice((-3i64, 3)), &[3, 4, 5]);
+        assert_slice_equal(&first.slice((-6i64, 6)), &[0, 1, 2, 3, 4, 5]);
 
-        assert_eq!(first.slice(-7, 2).len(), 1);
-        assert_eq!(first.slice(-3, 4).len(), 3);
-        assert_eq!(first.slice(3, 4).len(), 3);
-        assert_eq!(first.slice(10, 4).len(), 0);
+        assert_eq!(first.slice((-7i64, 2)).len(), 1);
+        assert_eq!(first.slice((-3i64, 4)).len(), 3);
+        assert_eq!(first.slice((3usize, 4)).len(), 3);
+        assert_eq!(first.slice((10usize, 4)).len(), 0);
     }
 
     #[test]

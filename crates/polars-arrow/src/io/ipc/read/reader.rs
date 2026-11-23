@@ -142,7 +142,7 @@ impl<R: Read + Seek> FileReader<R> {
     }
 
     /// Skip over blocks until we have seen at most `offset` rows, returning how many rows we are
-    /// still too see.  
+    /// still to see.  
     ///
     /// This will never go over the `offset`. Meaning that if the `offset < current_block.len()`,
     /// the block will not be skipped.

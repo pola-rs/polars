@@ -1005,11 +1005,18 @@ class ExprArrayNameSpace:
             Item that will be checked for membership
         nulls_equal : bool, default True
             If True, treat null as a distinct value. Null values will not propagate.
+            Note that :meth:`Expr.is_in` defaults to `False`.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        For supported dtype pairs, lossy conversions do not create matches. Values that
+        would overflow or require rounding match nothing. Cast explicitly to compare
+        integers and floats.
 
         Examples
         --------
@@ -1220,7 +1227,9 @@ class ExprArrayNameSpace:
         Parameters
         ----------
         expr
-            Expression to run. Note that you can select an element with `pl.element()`
+            Expression to run. Note that you can select an element with `pl.element()`.
+            A column of the frame is the value of the row being evaluated: a
+            single value per list.
         as_list
             Collect the resulting data as a list. This allows for expressions which
             output a variable amount of data.
@@ -1257,6 +1266,8 @@ class ExprArrayNameSpace:
         ----------
         expr
             Expression to run. Note that you can select an element with `pl.element()`.
+            A column of the frame is the value of the row being evaluated: a
+            single value per list.
 
         Examples
         --------

@@ -1,3 +1,6 @@
+use num_traits::Bounded;
+
+use crate::float::IsFloat;
 use crate::float16::pf16;
 
 // These min/max operators don't follow our total order strictly. Instead
@@ -136,6 +139,17 @@ pub trait MinMaxPolicy {
     // Is the first argument strictly better than the second, per the policy?
     fn is_better<T: MinMax>(a: &T, b: &T) -> bool;
     fn best<T: MinMax>(a: T, b: T) -> T;
+
+    /// Fold identity, including infinities for floating-point inputs.
+    #[inline]
+    fn identity<T: MinMax + IsFloat + Bounded>() -> T {
+        let (lo, hi) = if T::is_float() {
+            (T::neg_inf_value(), T::pos_inf_value())
+        } else {
+            (T::min_value(), T::max_value())
+        };
+        if Self::is_better(&lo, &hi) { hi } else { lo }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]

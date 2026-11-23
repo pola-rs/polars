@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use polars_utils::with_drop::WithDrop;
 use rayon::{ThreadPool, ThreadPoolBuilder, Yield};
@@ -32,8 +34,18 @@ impl RAYON {
 
         #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
         {
-            self.with(|p| p.install(op))
+            let mut op = Some(op);
+            let mut out = None;
+            self.install_dyn(&mut || out = Some(op.take().unwrap()()));
+            out.unwrap()
         }
+    }
+
+    // Instantiates the rayon install machinery only once instead of for every `install` caller.
+    #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
+    #[inline(never)]
+    fn install_dyn(&self, op: &mut (dyn FnMut() + Send)) {
+        self.with(|p| p.install(op))
     }
 
     pub fn join<A, B, RA, RB>(&self, oper_a: A, oper_b: B) -> (RA, RB)
@@ -155,9 +167,13 @@ impl RAYON {
             // parameters, and whose only limitation is that it isn't 'static.
             let mut opt_f: Option<F> = Some(f);
             let mut out: Option<std::thread::Result<R>> = None;
+            let done = AtomicBool::new(false);
+            let waiter = std::thread::current();
             let mut wrap_f = || {
                 let f = AssertUnwindSafe(opt_f.take().unwrap());
                 out = Some(catch_unwind(f));
+                done.store(true, Ordering::Release);
+                waiter.unpark();
             };
 
             // SAFETY: we always await the future to completion before returning from here, meaning
@@ -172,6 +188,10 @@ impl RAYON {
             while !join_handle.is_finished() {
                 match rayon::yield_now() {
                     Some(Yield::Executed) => {},
+                    // Sleep until `f` is done, but wake up now and then to run new Rayon jobs.
+                    Some(Yield::Idle) if !done.load(Ordering::Acquire) => {
+                        std::thread::park_timeout(Duration::from_millis(1))
+                    },
                     Some(Yield::Idle) => std::thread::yield_now(),
                     None => unreachable!(),
                 }

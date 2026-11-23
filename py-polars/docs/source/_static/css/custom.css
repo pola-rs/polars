@@ -60,7 +60,7 @@ a:visited {
     margin: 0 !important;
 }
 
-/* Polars Cloud announcement banner — hidden by default, shown by JS if not dismissed */
+/* Polars Nanook announcement banner — hidden by default, shown by JS if not dismissed */
 .bd-header-announcement {
     background-color: #0075ff;
     color: #ffffff;

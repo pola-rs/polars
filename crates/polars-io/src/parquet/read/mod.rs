@@ -40,7 +40,7 @@ pub use reader::ParquetReader;
 pub use utils::materialize_empty_df;
 
 pub mod _internal {
-    pub use super::mmap::to_deserializer;
+    pub use super::mmap::{to_deserializer, to_dictionary_codes};
     pub use super::read_impl::calc_prefilter_cost;
     pub use super::utils::{canonicalize_parquet_maps, ensure_matching_dtypes_if_found};
 }

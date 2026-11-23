@@ -18,11 +18,12 @@ use recursive::recursive;
 use crate::plans::aexpr::{ExprPushdownGroup, is_inherently_nondeterministic};
 use crate::plans::optimizer::join_utils::plain_inner_equi_join;
 use crate::plans::schema::join_right_output_names;
+use crate::plans::stats::{SharedKeyColumns, StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, MintermIter, NodeStats, OutputName, ProjectionOptions,
-    aexpr_to_leaf_names_iter, node_stats,
+    aexpr_to_leaf_names_iter,
 };
-use crate::prelude::JoinArgs;
+use crate::prelude::{JoinArgs, Operator};
 use crate::utils::rename_columns;
 
 /// With two leaves there is only one order, so a cluster needs at least three.
@@ -55,8 +56,15 @@ pub(super) struct Edge {
     pub(super) right_name: Option<PlSmallStr>,
 }
 
+/// A plain column in a same-dtype equality class.
+pub(super) struct ColumnKey {
+    pub(super) leaf: usize,
+    pub(super) key: ExprIR,
+}
+
 /// An edge oriented against the leaves joined so far.
 pub(super) struct Bridge<'a> {
+    pub(super) class: Option<usize>,
     /// The already-joined leaf this edge reaches back to.
     pub(super) placed_leaf: usize,
     /// Key belonging to the accumulated (left) side.
@@ -70,7 +78,10 @@ pub(super) struct Bridge<'a> {
 
 pub(super) struct Cluster {
     pub(super) leaves: Vec<Leaf>,
+    /// Keys that cannot participate in transitive equality, such as casts.
     pub(super) edges: Vec<Edge>,
+    pub(super) key_classes: Vec<Vec<ColumnKey>>,
+    pub(super) classes_by_leaf: Vec<Vec<usize>>,
     /// Schema of the cluster root before reordering. The rebuilt plan is projected
     /// back to it.
     pub(super) output_schema: SchemaRef,
@@ -90,10 +101,37 @@ impl Cluster {
     /// Edges bridging `candidate` to anything already placed, oriented so the
     /// accumulated side is `placed_key` and `candidate` is `candidate_key`.
     ///
-    /// An empty iterator means the candidate is unconnected, so joining it now would
-    /// be a cross product. Ordering and key emission both use this, so they agree on
-    /// what "connected" means.
+    /// An empty iterator means joining the candidate would be a cross product.
+    /// Costing considers every implied equality; rebuilding emits a spanning tree
+    /// from the same classes.
     pub(super) fn bridging<'a>(
+        &'a self,
+        is_placed: &'a [bool],
+        candidate: usize,
+    ) -> impl Iterator<Item = Bridge<'a>> + 'a {
+        let classes = self.classes_by_leaf[candidate]
+            .iter()
+            .flat_map(move |&class| {
+                let keys = &self.key_classes[class];
+                keys.iter()
+                    .filter(move |key| key.leaf == candidate)
+                    .flat_map(move |candidate_key| {
+                        keys.iter()
+                            .filter(move |key| is_placed[key.leaf])
+                            .map(move |placed| Bridge {
+                                class: Some(class),
+                                placed_leaf: placed.leaf,
+                                placed_key: &placed.key,
+                                candidate_key: &candidate_key.key,
+                                placed_name: Some(placed.key.output_name()),
+                                candidate_name: Some(candidate_key.key.output_name()),
+                            })
+                    })
+            });
+        classes.chain(self.direct_bridging(is_placed, candidate))
+    }
+
+    pub(super) fn direct_bridging<'a>(
         &'a self,
         is_placed: &'a [bool],
         candidate: usize,
@@ -101,6 +139,7 @@ impl Cluster {
         self.edges.iter().filter_map(move |edge| {
             if edge.right_leaf == candidate && is_placed[edge.left_leaf] {
                 Some(Bridge {
+                    class: None,
                     placed_leaf: edge.left_leaf,
                     placed_key: &edge.left_key,
                     candidate_key: &edge.right_key,
@@ -109,6 +148,7 @@ impl Cluster {
                 })
             } else if edge.left_leaf == candidate && is_placed[edge.right_leaf] {
                 Some(Bridge {
+                    class: None,
                     placed_leaf: edge.right_leaf,
                     placed_key: &edge.right_key,
                     candidate_key: &edge.left_key,
@@ -156,6 +196,8 @@ struct RawKey {
     right_key: ExprIR,
     left_origins: PlIndexMap<PlSmallStr, Origin>,
     right_origins: PlIndexMap<PlSmallStr, Origin>,
+    /// Taken from a filter, so its columns may not be keys elsewhere in the plan.
+    from_filter: bool,
 }
 
 /// Extract the cluster rooted at `root`, or `None` if it cannot be reordered.
@@ -163,6 +205,7 @@ pub(super) fn extract(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    key_columns: &SharedKeyColumns,
 ) -> Option<Cluster> {
     let IR::Join { options, .. } = ir_arena.get(root_join(root, ir_arena, expr_arena)?) else {
         return None;
@@ -190,6 +233,13 @@ pub(super) fn extract(
         leaf_renames.push(raw.renames);
     }
 
+    let filter_key_columns: Vec<PlSmallStr> = raw_keys
+        .iter()
+        .filter(|raw| raw.from_filter)
+        .flat_map(|raw| raw.left_origins.values().chain(raw.right_origins.values()))
+        .map(|(_, name)| name.clone())
+        .collect();
+
     let mut edges = Vec::with_capacity(raw_keys.len());
     for raw in raw_keys {
         let (left_key, left_leaf) =
@@ -213,9 +263,7 @@ pub(super) fn extract(
     }
 
     let coalesced = if options.args.should_coalesce() {
-        let (names, closed) = coalesce_keys(&schemas, &edges, expr_arena)?;
-        edges = closed;
-        names
+        coalesce_keys(&schemas, &edges, expr_arena)?
     } else {
         PlIndexSet::default()
     };
@@ -245,6 +293,8 @@ pub(super) fn extract(
         for edge in &mut edges {
             edge.left_key = rename_expr(&edge.left_key, &renames[edge.left_leaf], expr_arena);
             edge.right_key = rename_expr(&edge.right_key, &renames[edge.right_leaf], expr_arena);
+            edge.left_name = edge.left_key.plain_column(expr_arena).cloned();
+            edge.right_name = edge.right_key.plain_column(expr_arena).cloned();
         }
         // A leaf column already named like a renamed one is still shared afterwards.
         if !column_names_are_unambiguous(&schemas, &coalesced) {
@@ -273,6 +323,17 @@ pub(super) fn extract(
         }
     }
 
+    let key_classes = key_equivalence_classes(&mut edges, &schemas, expr_arena);
+    let mut classes_by_leaf = vec![Vec::new(); schemas.len()];
+    for (class, keys) in key_classes.iter().enumerate() {
+        for key in keys {
+            let classes = &mut classes_by_leaf[key.leaf];
+            if classes.last() != Some(&class) {
+                classes.push(class);
+            }
+        }
+    }
+
     let residuals = raw_residuals
         .iter()
         .map(|raw| {
@@ -289,8 +350,13 @@ pub(super) fn extract(
     // which leaves happened to be measurable. Taken after renaming so that the
     // per-column statistics are keyed on the names the rebuilt joins use.
     let mut leaves = Vec::with_capacity(nodes.len());
+    let mut stats_cache = if filter_key_columns.is_empty() {
+        StatsCache::with_key_columns(key_columns)
+    } else {
+        StatsCache::with_more_key_columns(filter_key_columns, ir_arena, expr_arena)
+    };
     for (node, schema) in nodes.into_iter().zip(schemas) {
-        let stats = node_stats(node, ir_arena, expr_arena)?;
+        let stats = node_stats_with_cache(node, ir_arena, expr_arena, &mut stats_cache)?;
         leaves.push(Leaf {
             node,
             schema,
@@ -301,6 +367,8 @@ pub(super) fn extract(
     Some(Cluster {
         leaves,
         edges,
+        key_classes,
+        classes_by_leaf,
         output_schema,
         restore,
         options,
@@ -464,6 +532,10 @@ impl<'a> Collector<'a> {
 
             let input_schema = self.ir_arena.get(*input).schema(self.ir_arena);
             for conjunct in conjuncts() {
+                if let Some(key) = self.equality_key(conjunct, &input_schema, &origins) {
+                    self.key_pairs.push(key);
+                    continue;
+                }
                 self.residuals.push(RawResidual {
                     predicate: ExprIR::from_node(conjunct, expr_arena),
                     origins: self.origins_read(conjunct, &input_schema, &origins)?,
@@ -498,19 +570,15 @@ impl<'a> Collector<'a> {
                                     &schema_right,
                                     &right_origins,
                                 )?,
+                                from_filter: false,
                             });
                         }
                     }
 
                     // The join emits its left columns, then its right ones minus any
                     // coalesced away.
-                    let right_names = join_right_output_names(
-                        &schema_left,
-                        &schema_right,
-                        options,
-                        self.expr_arena,
-                    )
-                    .ok()?;
+                    let right_names =
+                        join_right_output_names(&schema_left, &schema_right, options).ok()?;
                     origins.extend(
                         right_origins
                             .into_iter()
@@ -527,6 +595,46 @@ impl<'a> Collector<'a> {
         };
 
         Some(self.project_origins(node, peeled, origins))
+    }
+
+    /// A conjunct `a == b` between plain columns of two leaves, as a join key.
+    ///
+    /// The cluster's joins drop null keys and keep both key columns, so the key
+    /// keeps exactly the rows the predicate keeps.
+    fn equality_key(&self, conjunct: Node, schema: &Schema, origins: &[Origin]) -> Option<RawKey> {
+        let args = &self.root_options.args;
+        if args.nulls_equal || args.should_coalesce() {
+            return None;
+        }
+        let AExpr::BinaryExpr {
+            left,
+            op: Operator::Eq,
+            right,
+        } = self.expr_arena.get(conjunct)
+        else {
+            return None;
+        };
+        let (AExpr::Column(left_name), AExpr::Column(right_name)) =
+            (self.expr_arena.get(*left), self.expr_arena.get(*right))
+        else {
+            return None;
+        };
+        if schema.get(left_name)? != schema.get(right_name)? {
+            return None;
+        }
+        let left_origins = self.origins_read(*left, schema, origins)?;
+        let right_origins = self.origins_read(*right, schema, origins)?;
+        let leaf = |origins: &PlIndexMap<PlSmallStr, Origin>| origins.values().next().map(|o| o.0);
+        if leaf(&left_origins)? == leaf(&right_origins)? {
+            return None;
+        }
+        Some(RawKey {
+            left_key: ExprIR::from_node(*left, self.expr_arena),
+            right_key: ExprIR::from_node(*right, self.expr_arena),
+            left_origins,
+            right_origins,
+            from_filter: true,
+        })
     }
 
     /// The origin of every column `expr` reads, resolved against the schema it is
@@ -795,21 +903,19 @@ fn column_names_are_unambiguous(schemas: &[SchemaRef], coalesced: &PlIndexSet<Pl
         .all(|name| coalesced.contains(name.as_str()) || seen.insert(name.as_str()))
 }
 
-/// The names a coalescing cluster folds away, and the edges closed over them, or
-/// `None` if the cluster cannot be reordered.
+/// The names a coalescing cluster folds away, or `None` if it cannot be reordered.
 ///
 /// Coalescing keeps the left key's column and drops the right one, so a pair naming
 /// different columns would rename the output when the inputs swap. Only pairs of
 /// identically named plain columns are accepted.
 ///
-/// Equality is transitive across a run of inner joins, so the edges on a name are
-/// replaced by the clique over every leaf holding it. Without those implied edges an
-/// order could join two holders over some other key and leave both columns behind.
+/// Every holder of a name must belong to the same equality class; otherwise
+/// reordering could fold away a column that the original joins kept.
 fn coalesce_keys(
     schemas: &[SchemaRef],
     edges: &[Edge],
     expr_arena: &Arena<AExpr>,
-) -> Option<(PlIndexSet<PlSmallStr>, Vec<Edge>)> {
+) -> Option<PlIndexSet<PlSmallStr>> {
     let mut by_name: PlIndexMap<PlSmallStr, Vec<&Edge>> = PlIndexMap::default();
     for edge in edges {
         let name = edge.left_key.plain_column(expr_arena)?;
@@ -819,7 +925,6 @@ fn coalesce_keys(
         by_name.entry(name.clone()).or_default().push(edge);
     }
 
-    let mut closed = Vec::with_capacity(edges.len());
     for (name, on_name) in &by_name {
         let holders: Vec<usize> = (0..schemas.len())
             .filter(|&i| schemas[i].contains(name.as_str()))
@@ -827,32 +932,65 @@ fn coalesce_keys(
         if !folds_into_one_column(name, &holders, on_name, schemas) {
             return None;
         }
-
-        // Every edge on `name` reads the same column on both sides, so any of them
-        // supplies the key expressions for the whole clique.
-        let template = on_name[0];
-        for (nth, &left_leaf) in holders.iter().enumerate() {
-            for &right_leaf in &holders[nth + 1..] {
-                closed.push(Edge {
-                    left_leaf,
-                    right_leaf,
-                    left_key: template.left_key.clone(),
-                    right_key: template.right_key.clone(),
-                    left_name: template.left_name.clone(),
-                    right_name: template.right_name.clone(),
-                });
-            }
-        }
     }
 
-    Some((by_name.into_keys().collect(), closed))
+    Some(by_name.into_keys().collect())
+}
+
+/// Keep implied equalities as classes, rather than materializing a quadratic clique.
+/// Casted and computed keys remain direct edges: a lossy cast cannot prove equality
+/// between its input columns.
+fn key_equivalence_classes(
+    edges: &mut Vec<Edge>,
+    schemas: &[SchemaRef],
+    expr_arena: &mut Arena<AExpr>,
+) -> Vec<Vec<ColumnKey>> {
+    let mut columns: PlIndexMap<Origin, usize> = PlIndexMap::default();
+    let mut parent = Vec::new();
+    edges.retain(|edge| {
+        let (Some(left_name), Some(right_name)) = (
+            edge.left_key.plain_column(expr_arena),
+            edge.right_key.plain_column(expr_arena),
+        ) else {
+            return true;
+        };
+        if schemas[edge.left_leaf].get(left_name) != schemas[edge.right_leaf].get(right_name) {
+            return true;
+        }
+        let mut indices = [0; 2];
+        for (slot, origin) in indices.iter_mut().zip([
+            (edge.left_leaf, left_name.clone()),
+            (edge.right_leaf, right_name.clone()),
+        ]) {
+            let next = columns.len();
+            *slot = *columns.entry(origin).or_insert_with(|| {
+                parent.push(next);
+                next
+            });
+        }
+        let left_root = find(&mut parent, indices[0]);
+        let right_root = find(&mut parent, indices[1]);
+        parent[left_root] = right_root;
+        false
+    });
+    let mut groups: PlIndexMap<usize, Vec<ColumnKey>> = PlIndexMap::default();
+    for ((leaf, name), index) in columns {
+        groups
+            .entry(find(&mut parent, index))
+            .or_default()
+            .push(ColumnKey {
+                leaf,
+                key: ExprIR::from_column_name(name, expr_arena),
+            });
+    }
+    groups.into_values().collect()
 }
 
 /// Whether every leaf holding `name` collapses into a single column of that name.
 ///
 /// The dtypes have to agree because coalescing keeps the left column, so the output
 /// dtype would otherwise depend on the order. Reachability over the edges on `name`
-/// is what makes the clique sound: joining two leaves that were not already connected
+/// is what makes transitive equality sound: joining two leaves that were not already connected
 /// by this name would drop rows the original query kept.
 fn folds_into_one_column(
     name: &PlSmallStr,

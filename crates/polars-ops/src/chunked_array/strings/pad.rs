@@ -38,19 +38,19 @@ fn pad_fn<'a>(
 
 fn zfill_fn<'a>(s: Option<&'a str>, length: Option<u64>, buf: &mut String) -> Option<&'a str> {
     if let (Some(s), Some(length)) = (s, length) {
-        let s_len = s.len();
         let length = length as usize;
-        if length <= s_len {
+        let n_chars = s.chars().count();
+        if length <= n_chars {
             return Some(s);
         }
         buf.clear();
-        let length = length - s_len;
+        let padding = length - n_chars;
         if let Some(stripped) = s.strip_prefix('-') {
-            write!(buf, "-{:0length$}{stripped}", 0,).unwrap();
+            write!(buf, "-{:0padding$}{stripped}", 0,).unwrap();
         } else if let Some(stripped) = s.strip_prefix('+') {
-            write!(buf, "+{:0length$}{stripped}", 0,).unwrap();
+            write!(buf, "+{:0padding$}{stripped}", 0,).unwrap();
         } else {
-            write!(buf, "{:0length$}{s}", 0,).unwrap();
+            write!(buf, "{:0padding$}{s}", 0,).unwrap();
         };
         // extend lifetime
         // lifetime is bound to 'a

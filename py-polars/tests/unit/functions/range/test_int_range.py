@@ -166,7 +166,7 @@ def test_int_ranges_schema_dtype_arg() -> None:
 
 
 def test_int_range_input_shape_empty() -> None:
-    empty = pl.Series(dtype=pl.Time)
+    empty = pl.Series(dtype=pl.Int64)
     single = pl.Series([5])
 
     with pytest.raises(ShapeError):
@@ -271,6 +271,12 @@ def test_int_ranges_non_int_dtype() -> None:
         SchemaError, match="non-integer `dtype` passed to `int_ranges`: 'str'"
     ):
         pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
+
+
+def test_int_ranges_zero_step() -> None:
+    df = pl.DataFrame({"step": [1, 0]})
+    with pytest.raises(InvalidOperationError, match="step must not be zero"):
+        df.select(pl.int_ranges(0, 3, "step"))
 
 
 # https://github.com/pola-rs/polars/issues/22640

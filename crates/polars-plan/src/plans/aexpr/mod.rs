@@ -8,6 +8,7 @@ mod function_expr;
 mod hash;
 mod minterm_iter;
 pub(crate) mod or_factoring;
+mod order_keeping;
 pub mod predicates;
 mod scalar;
 mod schema;
@@ -22,11 +23,19 @@ pub use determinism::{
 };
 pub use function_expr::*;
 pub use minterm_iter::MintermIter;
+#[cfg(feature = "round_series")]
+pub(crate) use order_keeping::int_literal;
+pub use order_keeping::{OrderKeeping, order_keeping_column};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae};
+#[cfg(feature = "range")]
+pub use scalar::int_range_over_length_ae;
+pub use scalar::{
+    ensure_scalar_arguments, is_known_length_ae, is_length_preserving_ae, is_order_insensitive_ae,
+    is_scalar_ae, is_single_literal_ae,
+};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 pub mod projection_height;
@@ -35,9 +44,9 @@ pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
 pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
-pub use schema::ToFieldContext;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use schema::get_struct_numeric_dtype;
+pub use schema::{ToFieldContext, eval_schema};
 
 use crate::constants::LEN;
 use crate::prelude::*;
@@ -48,10 +57,14 @@ pub enum IRAggExpr {
     Min {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Max {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Median(Node),
     NUnique(Node),
@@ -69,7 +82,11 @@ pub enum IRAggExpr {
         input: Node,
         maintain_order: bool,
     },
-    Sum(Node),
+    Sum {
+        input: Node,
+        /// Return a missing value if there are no non-null values.
+        null_on_empty: bool,
+    },
     Count {
         input: Node,
         include_nulls: bool,
@@ -85,16 +102,22 @@ impl Hash for IRAggExpr {
             Self::Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls,
             }
             | Self::Max {
                 input: _,
                 propagate_nans,
-            } => propagate_nans.hash(state),
+                propagate_nulls,
+            } => (propagate_nans, propagate_nulls).hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             Self::Count {
                 input: _,
                 include_nulls,
             } => include_nulls.hash(state),
+            Self::Sum {
+                input: _,
+                null_on_empty,
+            } => null_on_empty.hash(state),
             _ => {},
         }
     }
@@ -107,6 +130,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMin
@@ -117,6 +141,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Max {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMax
@@ -133,7 +158,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
             Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
-            Sum(_) => GroupByMethod::Sum,
+            Sum { null_on_empty, .. } => GroupByMethod::Sum { null_on_empty },
             Count {
                 input: _,
                 include_nulls,
@@ -152,6 +177,9 @@ pub enum AExpr {
     ///
     /// Equivalent of `pl.element()`.
     Element,
+    /// A column of the frame read in the `evaluation` of an `Eval`: the output of the one of its
+    /// `columns` with this name, a single value per evaluated list.
+    EvalColumn(PlSmallStr),
     Explode {
         expr: Node,
         options: ExplodeOptions,
@@ -212,26 +240,31 @@ pub enum AExpr {
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///
-    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    /// Consequently, `expr` and `columns` are inputs and `evaluation` is not and needs a
+    /// different schema.
     Eval {
         expr: Node,
 
-        /// An expression that is guaranteed to not contain any column reference beyond
-        /// `pl.element()` which refers to `pl.col("")`.
+        /// An expression on `pl.element()` and on `columns` through `EvalColumn`, without a
+        /// `Column`.
         evaluation: Node,
 
         variant: EvalVariant,
+
+        /// The columns of the frame that `evaluation` reads, named by their output names.
+        columns: Vec<ExprIR>,
     },
     #[cfg(feature = "dtype-struct")]
     StructEval {
         expr: Node,
         evaluation: Vec<ExprIR>,
+        variant: StructEvalVariant,
     },
     Function {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefor we need [`ExprIr`].
+        /// Therefore we need [`ExprIR`].
         input: Vec<ExprIR>,
         /// function to apply
         function: IRFunctionExpr,
@@ -242,6 +275,8 @@ pub enum AExpr {
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
         mapping: WindowMapping,
+        /// See [`Expr::Over`].
+        may_reorder: bool,
     },
     #[cfg(feature = "dynamic_group_by")]
     Rolling {
@@ -286,8 +321,12 @@ impl AExpr {
                 },
                 #[cfg(feature = "replace")]
                 IRFunctionExpr::ReplaceStrict { .. } => true,
-                #[cfg(all(feature = "strings", feature = "temporal"))]
+                #[cfg(feature = "dtype-decimal")]
+                IRFunctionExpr::DecimalArith { .. } => true,
+                IRFunctionExpr::TruncArith(_) => true,
+                #[cfg(feature = "strings")]
                 IRFunctionExpr::StringExpr(f) => match f {
+                    #[cfg(feature = "temporal")]
                     IRStringFunction::Strptime(_, strptime_options) => {
                         debug_assert!(input.len() <= 2);
 
@@ -315,6 +354,20 @@ impl AExpr {
                         !matches!(arena.get(input[0].node()), AExpr::Literal(_))
                             && (strptime_options.strict || ambiguous_is_fallible)
                     },
+                    // A pattern read from a column can be an invalid regex.
+                    #[cfg(feature = "regex")]
+                    IRStringFunction::Contains {
+                        literal: false,
+                        strict: true,
+                    }
+                    | IRStringFunction::Find { literal: false, .. } => {
+                        !matches!(arena.get(input[1].node()), AExpr::Literal(_))
+                    },
+                    IRStringFunction::CountMatches(false) => {
+                        !matches!(arena.get(input[1].node()), AExpr::Literal(_))
+                    },
+                    #[cfg(feature = "string_to_integer")]
+                    IRStringFunction::ToInteger { strict: true, .. } => true,
                     _ => false,
                 },
                 _ => false,
@@ -325,6 +378,23 @@ impl AExpr {
                 options: CastOptions::Strict,
             } => !matches!(arena.get(*expr), AExpr::Literal(_)),
             _ => false,
+        }
+    }
+
+    /// Like `is_fallible_top_level`, but an expression that can only fail on overflow is not
+    /// fallible.
+    pub fn is_fallible_top_level_ignoring_overflow(&self, arena: &Arena<AExpr>) -> bool {
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::DecimalArith {
+                        op: DecimalArithOp::Mul,
+                        ..
+                    },
+                ..
+            } => false,
+            _ => self.is_fallible_top_level(arena),
         }
     }
 }

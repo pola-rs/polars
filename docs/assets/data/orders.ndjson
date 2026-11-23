@@ -1,0 +1,3 @@
+{"id": 1, "date": "2024-03-01", "customer": {"name": "Ann", "city": "Ghent"}, "items": [3, 7]}
+{"id": 2, "date": "2024-03-04", "customer": {"name": "Bo", "city": "Leuven"}, "items": [1]}
+{"id": 3, "date": "2024-03-09", "customer": {"name": "Cy", "city": "Ghent"}, "items": [2, 5, 8]}

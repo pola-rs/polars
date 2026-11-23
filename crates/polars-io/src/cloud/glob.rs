@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use futures::TryStreamExt;
 use object_store::path::Path;
 use polars_error::{PolarsResult, polars_bail, polars_err};
-use polars_utils::pl_path::{CloudScheme, PlRefPath};
+use polars_utils::pl_path::{CloudScheme, PlPath, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 use regex::Regex;
 
@@ -103,12 +103,27 @@ pub struct CloudLocation {
     pub expansion: Option<PlSmallStr>,
 }
 
+/// Splits an HTTP(S) URL into `scheme://authority` and the object path after it, if the object
+/// path round-trips through [`Path`] unchanged. Otherwise the URL gets its own store.
+pub(crate) fn split_http_url(path: &PlPath) -> Option<(&str, &str)> {
+    let (base_url, rest) = path.as_str().split_at(path.authority_end_position());
+    // `authority_end_position` only stops at '/'.
+    if base_url.contains(['?', '#', '\\']) {
+        return None;
+    }
+    let object_path = rest.strip_prefix('/').unwrap_or(rest);
+    Path::parse(object_path)
+        .is_ok_and(|p| p.as_ref() == object_path)
+        .then_some((base_url, object_path))
+}
+
 impl CloudLocation {
     pub fn new(path: PlRefPath, glob: bool) -> PolarsResult<Self> {
         if let Some(scheme @ CloudScheme::Http | scheme @ CloudScheme::Https) = path.scheme() {
-            // Http/s does not use this
+            // Http/s does not glob; the prefix is empty if the store is tied to the URL.
             return Ok(CloudLocation {
                 scheme: scheme.as_str(),
+                prefix: split_http_url(&path).map_or_else(String::new, |(_, p)| p.to_string()),
                 ..Default::default()
             });
         }
@@ -405,10 +420,42 @@ mod test {
             CloudLocation {
                 scheme: "https",
                 bucket: "".into(),
-                prefix: "".into(),
+                prefix: "%25".into(),
                 expansion: None,
             }
         );
+    }
+
+    #[test]
+    fn test_split_http_url() {
+        use super::split_http_url;
+
+        let check = |url: &str, expected: Option<(&str, &str)>| {
+            assert_eq!(split_http_url(&PlRefPath::new(url)), expected, "{url}")
+        };
+
+        check(
+            "https://pola.rs/a/b.parquet",
+            Some(("https://pola.rs", "a/b.parquet")),
+        );
+        check(
+            "http://u:pw@10.0.0.1:9000/b/k.ipc?X-Amz-Signature=a%2Fb#f",
+            Some((
+                "http://u:pw@10.0.0.1:9000",
+                "b/k.ipc?X-Amz-Signature=a%2Fb#f",
+            )),
+        );
+        check("https://pola.rs/%25", Some(("https://pola.rs", "%25")));
+        check("https://pola.rs/", Some(("https://pola.rs", "")));
+        check("https://pola.rs", Some(("https://pola.rs", "")));
+
+        // Not preserved by `Path`, or authority not terminated by '/'.
+        check("https://pola.rs/dir/", None);
+        check("https://pola.rs//a", None);
+        check("https://pola.rs/a//b", None);
+        check("https://pola.rs/a/../b", None);
+        check("https://pola.rs?a=/b", None);
+        check("https://pola.rs\\a/b", None);
     }
 
     #[test]

@@ -12,7 +12,7 @@ use super::{Array, hybrid_rle_iter};
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
     let chunks = values.chunks_exact(size_of::<T>());
     chunks.map(|chunk| {
-        // unwrap is infalible due to the chunk size.
+        // unwrap is infallible due to the chunk size.
         let chunk: T::Bytes = match chunk.try_into() {
             Ok(v) => v,
             Err(_) => panic!(),

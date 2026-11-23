@@ -2,12 +2,13 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use polars_arrow::datatypes::ArrowSchemaRef;
-use polars_async::executor::{self, TaskPriority};
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::prelude::{ParquetWriteOptions, get_encodings};
+use polars_parquet::arrow::geo::{GEO_KEY, validate_geo_schema};
 use polars_parquet::write::{
     CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
 };
@@ -31,10 +32,57 @@ pub struct ParquetWriterStarter {
     pub row_group_size: Option<IdxSize>,
 }
 
+impl ParquetWriterStarter {
+    pub fn try_new(
+        options: Arc<ParquetWriteOptions>,
+        arrow_schema: ArrowSchemaRef,
+    ) -> PolarsResult<Self> {
+        // Metadata that may set its own `geo` key skips the early checks,
+        // as that key replaces the derived one.
+        // A callable's keys are only known when each file ends,
+        // so for a callable any error comes from `FileWriter::end`.
+        if !options
+            .key_value_metadata
+            .as_ref()
+            .is_some_and(|kv| kv.may_contain(GEO_KEY))
+        {
+            validate_geo_schema(&arrow_schema)?;
+        }
+        let initialized_state = match &options.encryption {
+            Some(encryption) => {
+                // Check the encrypted columns exist before any file is opened, rather than
+                // when creating the writer for each file.
+                let state = InitializedState::new(&arrow_schema)?;
+                encryption.validate_encrypted_column_names(&state.schema_descriptor)?;
+                Some(state)
+            },
+            None => None,
+        };
+
+        Ok(Self {
+            row_group_size: options
+                .row_group_size
+                .map(|x| IdxSize::try_from(x).unwrap()),
+            options,
+            arrow_schema,
+            initialized_state: std::sync::Mutex::new(initialized_state),
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct InitializedState {
     encodings: Buffer<Vec<Encoding>>,
     schema_descriptor: Arc<SchemaDescriptor>,
+}
+
+impl InitializedState {
+    fn new(arrow_schema: &ArrowSchemaRef) -> PolarsResult<Self> {
+        Ok(Self {
+            encodings: get_encodings(arrow_schema),
+            schema_descriptor: Arc::new(to_parquet_schema(arrow_schema)?),
+        })
+    }
 }
 
 struct EncodedRowGroup {
@@ -78,6 +126,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let InitializedState {
             encodings,
@@ -86,13 +135,7 @@ impl FileWriterStarter for ParquetWriterStarter {
             let mut initialized_state = self.initialized_state.lock().unwrap();
 
             if initialized_state.is_none() {
-                let schema_descriptor = Arc::new(to_parquet_schema(&self.arrow_schema)?);
-                let encodings = get_encodings(&self.arrow_schema);
-
-                *initialized_state = Some(InitializedState {
-                    encodings,
-                    schema_descriptor,
-                })
+                *initialized_state = Some(InitializedState::new(&self.arrow_schema)?)
             };
 
             initialized_state.clone().unwrap()
@@ -124,6 +167,7 @@ impl FileWriterStarter for ParquetWriterStarter {
                     encodings: Buffer::clone(&encodings),
                     key_value_metadata,
                     num_leaf_columns,
+                    encryption: self.options.encryption.clone(),
                 }
                 .run(),
             ),
@@ -132,6 +176,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         let arrow_schema = Arc::clone(&self.arrow_schema);
         let compute_handle = executor::AbortOnDropHandle::new(executor::spawn(
             TaskPriority::High,
+            task_metrics.as_deref(),
             row_group_encoder::RowGroupEncoder {
                 morsel_rx,
                 encoded_row_group_tx,
@@ -140,11 +185,13 @@ impl FileWriterStarter for ParquetWriterStarter {
                 write_options,
                 encodings,
                 num_leaf_columns,
+                task_metrics: task_metrics.clone(),
             }
             .run(),
         ));
 
-        Ok(executor::spawn(TaskPriority::Low, async move {
+        let metrics = task_metrics.as_deref();
+        Ok(executor::spawn(TaskPriority::Low, metrics, async move {
             compute_handle.await?;
             io_handle.await.unwrap()?;
             Ok(())

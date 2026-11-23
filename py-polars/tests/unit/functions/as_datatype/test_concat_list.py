@@ -1,9 +1,11 @@
 from datetime import datetime
+from decimal import Decimal as D
+from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -130,7 +132,7 @@ def test_list_concat_rolling_window() -> None:
         [9.0, 2.0, 13.0],
     ]
 
-    # this test proper null behavior of concat list
+    # this tests proper null behavior of concat list
     out = (
         df.with_columns(
             pl.col("A").reshape((-1, 1)).arr.to_list()  # first turn into a list
@@ -232,6 +234,136 @@ def test_concat_list_broadcast_empty() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_concat_list_zero_height_list_input() -> None:
+    df = pl.DataFrame(schema={"a": pl.List(pl.Int64)})
+    out = df.select(pl.concat_list("a", pl.lit(1)).alias("out"))
+    expected = pl.DataFrame(schema={"out": pl.List(pl.Int64)})
+    assert_frame_equal(out, expected)
+
+
+def test_concat_list_preserves_inner_nulls() -> None:
+    # Preserve null elements inside valid lists, distinct from whole-list nulls.
+    df = pl.DataFrame({"a": [[1, None], [3]], "b": [[None], [4]]})
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out["c"].to_list() == [[1, None, None], [3, 4]]
+
+
+def test_concat_list_nested_list() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[[1, 2]], [[3]]],
+            "b": [[[4]], [[5, 6]]],
+        },
+        schema={"a": pl.List(pl.List(pl.Int64)), "b": pl.List(pl.List(pl.Int64))},
+    )
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out["c"].to_list() == [[[1, 2], [4]], [[3], [5, 6]]]
+    assert out.schema["c"] == pl.List(pl.List(pl.Int64))
+
+
+def test_concat_list_string_view() -> None:
+    df = pl.DataFrame({"a": [["a", "b"], ["c"]], "b": [["d"], ["e", "f"]]})
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out["c"].to_list() == [["a", "b", "d"], ["c", "e", "f"]]
+
+
+def test_concat_list_struct_with_nulls() -> None:
+    dtype = pl.List(pl.Struct({"x": pl.Int64}))
+    df = pl.DataFrame(
+        {"a": [[{"x": 1}], [{"x": 2}]], "b": [[{"x": None}], [None]]},
+        schema={"a": dtype, "b": dtype},
+    )
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out["c"].to_list() == [
+        [{"x": 1}, {"x": None}],
+        [{"x": 2}, None],
+    ]
+
+
+def test_concat_list_broadcast_rhs() -> None:
+    df = pl.DataFrame({"a": [[1], [2], [3]]})
+    out = df.select(pl.concat_list("a", pl.lit(pl.Series([[9, 9]])).first()).alias("c"))
+    assert out["c"].to_list() == [[1, 9, 9], [2, 9, 9], [3, 9, 9]]
+
+
+def test_concat_list_multiple_chunks() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"a": [[1, 2]], "b": [[3]]}),
+            pl.DataFrame({"a": [[4]], "b": [[5, 6]]}),
+        ],
+        rechunk=False,
+    )
+    assert df.n_chunks() > 1
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out["c"].to_list() == [[1, 2, 3], [4, 5, 6]]
+
+
+def test_concat_list_decimal() -> None:
+    # Exercises restoring a logical inner dtype on the kernel output.
+    df = pl.DataFrame(
+        {"a": [[D("1.5")], [D("2.5")]], "b": [[D("0.1")], [None]]},
+        schema={
+            "a": pl.List(pl.Decimal(scale=1)),
+            "b": pl.List(pl.Decimal(scale=1)),
+        },
+    )
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out.schema["c"] == pl.List(pl.Decimal(scale=1))
+    assert out["c"].to_list() == [
+        [D("1.5"), D("0.1")],
+        [D("2.5"), None],
+    ]
+
+
+def test_concat_list_sliced_and_null_rows() -> None:
+    s = pl.Series("a", [[0], [1, 2], None, [3], [4, 5, 6]])
+    t = pl.Series("b", [[9], None, [7, 8], [], [10]])
+    out = pl.select(pl.concat_list(s.slice(1), t.slice(1)))
+    assert out.to_series().to_list() == [None, None, [3], [4, 5, 6, 10]]
+    # Null rows are output as empty lists.
+    assert out.to_series().list.explode().to_list() == [None, None, 3, 4, 5, 6, 10]
+
+
+def test_concat_list_broadcast_null_scalar() -> None:
+    df = pl.DataFrame({"a": [[1], [2], [3]]})
+    out = df.select(pl.concat_list("a", pl.lit(None, dtype=pl.List(pl.Int64))))
+    assert out.to_series().to_list() == [None, None, None]
+
+
+def test_concat_list_all_scalars() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    out = df.select(pl.concat_list(pl.lit([1, 2]), pl.lit([3])), "x")
+    assert out.to_series().to_list() == [[1, 2, 3]] * 3
+
+
+@pytest.mark.parametrize(
+    ("dtype", "a", "b"),
+    [
+        (pl.Boolean, [[True], [False, None]], [[None], [True]]),
+        (pl.Binary, [[b"a"], [b"bc", None]], [[None], [b"d"]]),
+        (pl.Array(pl.Int64, 2), [[[1, 2]], [[3, 4], None]], [[None], [[5, 6]]]),
+        (pl.Null, [[None], [None, None]], [[None], []]),
+    ],
+)
+def test_concat_list_inner_dtypes(
+    dtype: pl.DataType, a: list[Any], b: list[Any]
+) -> None:
+    df = pl.DataFrame(
+        {"a": a, "b": b}, schema={"a": pl.List(dtype), "b": pl.List(dtype)}
+    )
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out.schema["c"] == pl.List(dtype)
+    assert out["c"].to_list() == [x + y for x, y in zip(a, b, strict=True)]
+
+
+def test_concat_list_height_mismatch_raises() -> None:
+    a = pl.Series("a", [[1], [2]])
+    b = pl.Series("b", [[1], [2], [3]])
+    with pytest.raises(ShapeError):
+        pl.select(pl.concat_list(a, b))
+
+
 def test_list_function() -> None:
     df = pl.LazyFrame(
         {
@@ -280,3 +412,8 @@ def test_list_function_w_scalars() -> None:
         result.collect(), pl.DataFrame(expected, schema={"literals": pl.List(pl.Int32)})
     )
     assert result.collect().schema == result.collect_schema()
+
+
+def test_list_function_single_input_keeps_chunks() -> None:
+    df = pl.concat([pl.DataFrame({"a": [1, 2]})] * 3, rechunk=False)
+    assert df.select(pl.list("a")).n_chunks() == 3

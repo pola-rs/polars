@@ -133,10 +133,12 @@ impl<O: Offset> StaticArrayBuilder for BinaryArrayBuilder<O> {
             })
             .sum();
         self.values.reserve(total_len);
+        self.offsets.reserve(idxs.len());
 
         for idx in idxs {
             let start_offset = other_offsets.get_unchecked(*idx as usize).to_usize();
             let stop_offset = other_offsets.get_unchecked(*idx as usize + 1).to_usize();
+            self.offsets.try_push(stop_offset - start_offset).unwrap();
             self.values
                 .extend_from_slice(other_values.get_unchecked(start_offset..stop_offset));
         }
@@ -169,12 +171,18 @@ impl<O: Offset> StaticArrayBuilder for BinaryArrayBuilder<O> {
                 })
                 .sum();
             self.values.reserve(total_len);
+            self.offsets.reserve(idxs.len());
 
             for idx in idxs {
-                let start_offset = other_offsets.get_unchecked(*idx as usize).to_usize();
-                let stop_offset = other_offsets.get_unchecked(*idx as usize + 1).to_usize();
-                self.values
-                    .extend_from_slice(other_values.get_unchecked(start_offset..stop_offset));
+                if (*idx as usize) < other.len() {
+                    let start_offset = other_offsets.get_unchecked(*idx as usize).to_usize();
+                    let stop_offset = other_offsets.get_unchecked(*idx as usize + 1).to_usize();
+                    self.offsets.try_push(stop_offset - start_offset).unwrap();
+                    self.values
+                        .extend_from_slice(other_values.get_unchecked(start_offset..stop_offset));
+                } else {
+                    self.offsets.try_push(0).unwrap();
+                }
             }
 
             self.validity

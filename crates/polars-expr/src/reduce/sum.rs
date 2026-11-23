@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 
-use num_traits::Zero;
+use num_traits::{NumCast, Zero};
 use polars_arrow::array::PrimitiveArray;
 #[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
+use polars_compute::float_sum::FloatSum;
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -12,20 +13,40 @@ use polars_utils::index::{idxsize_to_u64, idxsize_try_from};
 
 use super::*;
 
-pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+/// With `null_on_empty`, groups without any non-null value give a missing value instead of zero.
+pub fn new_sum_reduction(
+    dtype: DataType,
+    null_on_empty: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
     // TODO: Move the error checks up and make this function infallible
     use DataType::*;
-    use VecGroupedReduction as VGR;
+
+    fn new_reduction<R: Reducer + 'static>(
+        dtype: DataType,
+        reducer: R,
+        null_on_empty: bool,
+    ) -> Box<dyn GroupedReduction> {
+        if null_on_empty {
+            Box::new(VecMaskGroupedReduction::new(dtype, reducer))
+        } else {
+            Box::new(VecGroupedReduction::new(dtype, reducer))
+        }
+    }
+
     Ok(match dtype {
-        Boolean => Box::new(VGR::new(dtype, BoolSumReducer)),
+        Boolean => new_reduction(dtype, BoolSumReducer, null_on_empty),
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, NumSumReducer::<$T>(PhantomData)))
+                new_reduction(dtype, NumSumReducer::<$T>(PhantomData), null_on_empty)
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, DecimalSumReducer)),
-        Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
+        Decimal(_, _) => new_reduction(dtype, DecimalSumReducer, null_on_empty),
+        Duration(_) => new_reduction(
+            dtype,
+            NumSumReducer::<Int64Type>(PhantomData),
+            null_on_empty,
+        ),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),
@@ -50,11 +71,12 @@ impl<T> Clone for NumSumReducer<T> {
 impl<T> Reducer for NumSumReducer<T>
 where
     T: PolarsNumericType,
-    <T as PolarsNumericType>::Native: SumCast,
+    <T as PolarsNumericType>::Native: SumCast + FloatSum<f64>,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     type Dtype = T;
     type Value = <T::Native as SumCast>::Sum;
+    const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
@@ -93,14 +115,30 @@ where
         }
     }
 
+    #[inline(always)]
+    unsafe fn reduce_range(
+        &self,
+        v: &mut Self::Value,
+        arr: &PrimitiveArray<T::Native>,
+        start: usize,
+        len: usize,
+        seq_id: u64,
+    ) -> bool {
+        if !T::Native::is_f64() {
+            return unsafe { reduce_range_per_row(self, v, arr, start, len, seq_id) };
+        }
+        let (sum, num_valid) = unsafe { float_sum_range(arr, start, len) };
+        *v += <Self::Value as NumCast>::from(sum).unwrap();
+        num_valid > 0
+    }
+
     fn finish(
         &self,
         v: Vec<Self::Value>,
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        assert!(m.is_none());
-        let arr = Box::new(PrimitiveArray::from_vec(v));
+        let arr = Box::new(PrimitiveArray::from_vec(v).with_validity(m));
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
@@ -111,20 +149,34 @@ where
     }
 }
 
-/// Sums Decimal128 values with overflow checking. `i128::MIN` marks an
-/// overflowed group (it is never a valid decimal physical value), which
-/// raises a `ComputeError` on `finish()`.
+/// Sums Decimal128 values with overflow checking. `i128::MIN` marks a group
+/// whose sum overflowed i128. Whether a sum fits 38 digits is only checked on
+/// `finish()`, which raises a `ComputeError` if it doesn't.
 #[cfg(feature = "dtype-decimal")]
 const DECIMAL_SUM_OVERFLOW: i128 = i128::MIN;
+
+/// Tests the sentinel on the high word only, which no valid decimal has.
+#[cfg(feature = "dtype-decimal")]
+#[inline(always)]
+fn is_sum_overflow(x: i128) -> bool {
+    (x >> 64) as i64 == i64::MIN
+}
 
 #[cfg(feature = "dtype-decimal")]
 #[derive(Clone)]
 struct DecimalSumReducer;
 
 #[cfg(feature = "dtype-decimal")]
+#[inline(always)]
+fn add(a: i128, b: i128) -> i128 {
+    a.checked_add(b).unwrap_or(DECIMAL_SUM_OVERFLOW)
+}
+
+#[cfg(feature = "dtype-decimal")]
 impl Reducer for DecimalSumReducer {
     type Dtype = Int128Type;
     type Value = i128;
+    const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
@@ -137,27 +189,45 @@ impl Reducer for DecimalSumReducer {
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        *a = if *a == DECIMAL_SUM_OVERFLOW || *b == DECIMAL_SUM_OVERFLOW {
+        *a = if is_sum_overflow(*a) || is_sum_overflow(*b) {
             DECIMAL_SUM_OVERFLOW
         } else {
-            dec128_add(*a, *b, DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW)
+            add(*a, *b)
         };
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
-        if *a != DECIMAL_SUM_OVERFLOW {
-            *a = dec128_add(*a, b.unwrap_or(0), DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW);
+        if !is_sum_overflow(*a) {
+            *a = add(*a, b.unwrap_or(0));
         }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        if *v != DECIMAL_SUM_OVERFLOW {
-            *v = ca
-                .iter()
-                .flatten()
-                .try_fold(*v, |acc, x| dec128_add(acc, x, DEC128_MAX_PREC))
-                .unwrap_or(DECIMAL_SUM_OVERFLOW);
+        if is_sum_overflow(*v) {
+            return;
+        }
+        for arr in ca.downcast_iter() {
+            let sum = match arr.validity().filter(|_| arr.has_nulls()) {
+                Some(validity) => arr
+                    .values()
+                    .iter()
+                    .zip(validity)
+                    .try_fold(*v, |acc, (&x, valid)| {
+                        acc.checked_add(if valid { x } else { 0 })
+                    }),
+                None => arr
+                    .values()
+                    .iter()
+                    .try_fold(*v, |acc, &x| acc.checked_add(x)),
+            };
+            match sum {
+                Some(sum) => *v = sum,
+                None => {
+                    *v = DECIMAL_SUM_OVERFLOW;
+                    return;
+                },
+            }
         }
     }
 
@@ -167,12 +237,11 @@ impl Reducer for DecimalSumReducer {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        assert!(m.is_none());
         polars_ensure!(
-            !v.contains(&DECIMAL_SUM_OVERFLOW),
+            v.iter().all(|x| dec128_fits(*x, DEC128_MAX_PREC)),
             ComputeError: "overflow in decimal addition in sum"
         );
-        let arr = Box::new(PrimitiveArray::from_vec(v));
+        let arr = Box::new(PrimitiveArray::from_vec(v).with_validity(m));
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
@@ -306,8 +375,8 @@ impl Reducer for BoolSumReducer {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        assert!(m.is_none());
         assert!(dtype == &DataType::Boolean);
-        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, v).into_series())
+        let arr = PrimitiveArray::from_vec(v).with_validity(m);
+        Ok(IdxCa::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 }

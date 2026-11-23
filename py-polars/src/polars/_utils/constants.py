@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Final
 
 # Integer ranges
@@ -27,4 +27,4 @@ MS_PER_SECOND: Final = 1_000
 
 EPOCH_DATE: Final = date(1970, 1, 1)
 EPOCH: Final = datetime(1970, 1, 1).replace(tzinfo=None)
-EPOCH_UTC: Final = datetime(1970, 1, 1, tzinfo=timezone.utc)
+EPOCH_UTC: Final = datetime(1970, 1, 1, tzinfo=UTC)

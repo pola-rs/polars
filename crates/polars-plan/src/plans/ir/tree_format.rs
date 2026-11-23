@@ -38,7 +38,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 }
                 return f.write_char(')');
             },
-            AExpr::Column(name) => return write!(f, "col({name})"),
+            AExpr::Column(name) | AExpr::EvalColumn(name) => return write!(f, "col({name})"),
             #[cfg(feature = "dtype-struct")]
             AExpr::StructField(name) => return write!(f, "field({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
@@ -83,7 +83,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Eval { .. } => "list.eval",
             #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { .. } => "struct.with_fields",
+            AExpr::StructEval { variant, .. } => variant.to_name(),
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => "rolling",
@@ -253,8 +253,9 @@ impl<'a> TreeFmtNode<'a> {
                         h,
                         &(if let Some(slice) = options.slice {
                             format!(
-                                "SLICED UNION[maintain_order: {0}]: {slice:?}",
-                                options.maintain_order
+                                "SLICED UNION[maintain_order: {0}]: {1}",
+                                options.maintain_order,
+                                slice.fmt_tuple()
                             )
                         } else {
                             format!("UNION[maintain_order: {0}]", options.maintain_order)
@@ -363,6 +364,31 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(None, *input)])
                         .collect(),
                 ),
+                Window {
+                    input,
+                    partition_by,
+                    order_by,
+                    exprs,
+                    maintain_order,
+                    ordered_eval,
+                    ..
+                } => ND(
+                    wh(
+                        h,
+                        &super::format::WindowHeaderDisplay {
+                            partition_by,
+                            order_by: order_by.as_ref(),
+                            maintain_order: *maintain_order,
+                            ordered_eval: *ordered_eval,
+                        }
+                        .to_string(),
+                    ),
+                    exprs
+                        .iter()
+                        .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                        .chain([self.lp_node(None, *input)])
+                        .collect(),
+                ),
                 Distinct { input, options } => ND(
                     wh(
                         h,
@@ -373,8 +399,8 @@ impl<'a> TreeFmtNode<'a> {
                     ),
                     vec![self.lp_node(None, *input)],
                 ),
-                Slice { input, offset, len } => ND(
-                    wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
+                Slice { input, slice } => ND(
+                    wh(h, &format!("SLICE[{slice}]")),
                     vec![self.lp_node(None, *input)],
                 ),
                 MapFunction { input, function } => ND(
@@ -437,6 +463,14 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                         .collect(),
                 ),
+                Recursive { anchor, step, .. } => ND(
+                    wh(h, "RECURSIVE"),
+                    vec![
+                        self.lp_node(Some("ANCHOR:".to_string()), *anchor),
+                        self.lp_node(Some("STEP:".to_string()), *step),
+                    ],
+                ),
+                WorkingTableScan { .. } => ND(wh(h, "WORKING TABLE"), vec![]),
                 UnoptimizedDispatch {
                     inputs,
                     operation,
@@ -564,7 +598,7 @@ struct TreeViewColumn {
     center: usize,
 }
 
-/// Meta-info of a column in a populated `TreeFmtVisitor` required for the pretty-print of a tree
+/// Meta-info of a row in a populated `TreeFmtVisitor` required for the pretty-print of a tree
 #[derive(Clone, Default, Debug)]
 struct TreeViewRow {
     offset: usize,
@@ -868,7 +902,7 @@ impl From<TreeView<'_>> for Canvas {
             3 + value.rows.iter().map(|r| r.height).sum::<usize>() + 3 * (value.n_rows - 1);
         let mut canvas = Canvas::new(width, height, Glyphs::default());
 
-        // Axles
+        // Axes
         let (x, y) = (value.n_rows_width + 2, 1);
         canvas.draw_symbol(Point(x, y), '┌');
         canvas.draw_line(Point(x + 1, y), Orientation::Horizontal, width - x);

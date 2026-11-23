@@ -1,9 +1,9 @@
-use num_traits::Num;
+use num_traits::{Num, NumCast};
 
 use crate::float16::pf16;
 
 pub trait AbsDiff {
-    type Abs: Num + PartialOrd + Copy + std::fmt::Debug + Send + Sync;
+    type Abs: Num + NumCast + PartialOrd + Copy + std::fmt::Debug + Send + Sync;
 
     fn max_abs_diff() -> Self::Abs;
     fn abs_diff(self, other: Self) -> Self::Abs;

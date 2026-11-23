@@ -48,29 +48,45 @@ pub fn materialize_left_join_from_series(
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let mut s_left = s_left.clone();
     // Eagerly limit left if possible.
-    if let Some((0, len)) = args.slice {
+    if let Some(Slice::Positive { offset: 0, len }) = args.slice {
         if !matches!(
             args.maintain_order,
             MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
         ) {
-            left = left.slice(0, len);
-            s_left = s_left.slice(0, len);
+            left = left.slice(Slice::head(len));
+            s_left = s_left.slice(Slice::head(len));
         }
     }
 
-    // Ensure that the chunks are aligned otherwise we go OOB.
+    // The join ids refer to the chunks of the keys, so the frames must have the same chunk
+    // boundaries as their keys, otherwise we go OOB.
     let requires_ordering = matches!(
         args.maintain_order,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
     );
+    let chunks_match_key = |df: &DataFrame, s: &Series| {
+        // Dictionary columns are ignored by the frame's chunk-alignment checks, but their
+        // code chunks must also match the key before gathering by chunk-local ids (the codes are
+        // what gets gathered, so comparing them avoids materializing the values).
+        df.columns()
+            .iter()
+            .filter(|c| c.as_scalar_column().is_none())
+            .all(|c| match c.as_dictionary_column() {
+                Some(d) => d.codes().chunk_lengths().eq(s.chunk_lengths()),
+                None => c
+                    .as_materialized_series()
+                    .chunk_lengths()
+                    .eq(s.chunk_lengths()),
+            })
+    };
 
     let mut right = Cow::Borrowed(right_);
     let mut s_right = s_right.clone();
-    if left.should_rechunk() || requires_ordering || left.n_chunks() != s_left.n_chunks() {
+    if requires_ordering || !chunks_match_key(&left, &s_left) {
         left.rechunk_mut_par();
         s_left = s_left.rechunk();
     }
-    if right.should_rechunk() || requires_ordering || right.n_chunks() != s_right.n_chunks() {
+    if requires_ordering || !chunks_match_key(right_, &s_right) {
         let mut other = right_.clone();
         other.rechunk_mut_par();
         right = Cow::Owned(other);
@@ -149,7 +165,7 @@ fn maintain_order_idx(
     args: &JoinArgs,
 ) -> (DataFrame, DataFrame) {
     let mut df = {
-        // SAFETY: left_idx and right_idx are continuous memory that outlive the memory mapped slices
+        // SAFETY: left_idx and right_idx are contiguous memory that outlive the memory mapped slices
         let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx) };
         let right = unsafe { IdxCa::mmap_slice("b".into(), bytemuck::cast_slice(right_idx)) };
         unsafe {
@@ -205,8 +221,8 @@ fn materialize_left_join_idx_left(
     left_idx: &[IdxSize],
     args: &JoinArgs,
 ) -> DataFrame {
-    let left_idx = if let Some((offset, len)) = args.slice {
-        slice_slice(left_idx, offset, len)
+    let left_idx = if let Some(slice) = args.slice {
+        &left_idx[slice]
     } else {
         left_idx
     };
@@ -233,8 +249,8 @@ fn materialize_left_join_idx_right(
     right_idx: &[NullableIdxSize],
     args: &JoinArgs,
 ) -> DataFrame {
-    let right_idx = if let Some((offset, len)) = args.slice {
-        slice_slice(right_idx, offset, len)
+    let right_idx = if let Some(slice) = args.slice {
+        &right_idx[slice]
     } else {
         right_idx
     };
@@ -246,8 +262,8 @@ fn materialize_left_join_chunked_left(
     left_idx: &[ChunkId],
     args: &JoinArgs,
 ) -> DataFrame {
-    let left_idx = if let Some((offset, len)) = args.slice {
-        slice_slice(left_idx, offset, len)
+    let left_idx = if let Some(slice) = args.slice {
+        &left_idx[slice]
     } else {
         left_idx
     };
@@ -260,8 +276,8 @@ fn materialize_left_join_chunked_right(
     right_idx: &[ChunkId],
     args: &JoinArgs,
 ) -> DataFrame {
-    let right_idx = if let Some((offset, len)) = args.slice {
-        slice_slice(right_idx, offset, len)
+    let right_idx = if let Some(slice) = args.slice {
+        &right_idx[slice]
     } else {
         right_idx
     };

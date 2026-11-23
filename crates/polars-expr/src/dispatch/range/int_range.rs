@@ -57,6 +57,7 @@ pub(super) fn int_ranges(s: &[Column], dtype: DataType) -> PolarsResult<Column> 
     let range_impl =
         |start, end, step: i64, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
             match step {
+                0 => polars_bail!(InvalidOperation: "step must not be zero"),
                 1 => builder.append_values_iter(start..end),
                 2.. => builder.append_values_iter((start..end).step_by(step as usize)),
                 _ => builder.append_values_iter(

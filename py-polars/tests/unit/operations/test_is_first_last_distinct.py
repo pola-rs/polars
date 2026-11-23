@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -80,13 +79,36 @@ def test_is_first_last_distinct_list(data: list[list[Any] | None]) -> None:
     assert_frame_equal(result, expected)
 
 
-def test_is_first_last_distinct_list_inner_nested() -> None:
-    df = pl.DataFrame({"a": [[[1, 2]], [[1, 2]]]})
-    err_msg = "only allowed if the inner type is not nested"
-    with pytest.raises(InvalidOperationError, match=err_msg):
-        df.select(pl.col("a").is_first_distinct())
-    with pytest.raises(InvalidOperationError, match=err_msg):
-        df.select(pl.col("a").is_last_distinct())
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series([[[1, 2]], [[3]], [[1, 2]], None, [[3]]]),
+        pl.Series([[1, 2], [3, 4], [1, 2], None, [3, 4]], dtype=pl.Array(pl.Int64, 2)),
+    ],
+)
+def test_is_first_last_distinct_nested(s: pl.Series) -> None:
+    lf = pl.LazyFrame({"a": s})
+    result = lf.select(
+        first=pl.col("a").is_first_distinct(), last=pl.col("a").is_last_distinct()
+    )
+    expected = pl.LazyFrame(
+        {
+            "first": [True, True, False, True, False],
+            "last": [False, False, True, True, True],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_is_first_last_distinct_null_dtype() -> None:
+    lf = pl.LazyFrame({"a": [None, None, None]}, schema={"a": pl.Null})
+    result = lf.select(
+        first=pl.col("a").is_first_distinct(), last=pl.col("a").is_last_distinct()
+    )
+    expected = pl.LazyFrame(
+        {"first": [True, False, False], "last": [False, False, True]}
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_is_first_distinct_various() -> None:

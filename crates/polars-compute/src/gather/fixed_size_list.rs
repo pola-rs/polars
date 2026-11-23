@@ -17,14 +17,12 @@
 
 use std::mem::ManuallyDrop;
 
+use polars_arrow::array::builder::{ShareStrategy, make_builder};
 use polars_arrow::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
 use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::compute::utils::combine_validities_and;
-use polars_arrow::datatypes::reshape::{Dimension, ReshapeDimension};
 use polars_arrow::datatypes::{ArrowDataType, IdxArr, PhysicalType};
-use polars_arrow::legacy::prelude::FromData;
 use polars_arrow::with_match_primitive_type;
-use polars_utils::itertools::Itertools;
 
 use super::Index;
 use crate::gather::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
@@ -73,7 +71,7 @@ unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> 
                 cap_units / size_of::<$T>(),
             );
 
-            PrimitiveArray::from_data_default(buf.into(), None).boxed()
+            PrimitiveArray::<$T>::new(dtype.clone(), buf.into(), None).boxed()
 
         }),
         _ => {
@@ -117,10 +115,50 @@ fn arr_no_validities_recursive(arr: &dyn Array) -> bool {
             .is_none_or(|x| arr_no_validities_recursive(x.values().as_ref()))
 }
 
+/// Wraps `leaves` in the `FixedSizeList` levels of `dtype`, the outermost with `len` rows.
+fn nest_leaves(dtype: &ArrowDataType, len: usize, leaves: ArrayRef) -> ArrayRef {
+    let ArrowDataType::FixedSizeList(inner, size) = dtype else {
+        return leaves;
+    };
+    let values = nest_leaves(inner.dtype(), len * size, leaves);
+    FixedSizeListArray::new(dtype.clone(), len, values, None).boxed()
+}
+
+/// Generic path: gathers whole rows with a builder, keeping the dtype. Null indices and null rows
+/// become null rows with null values.
+unsafe fn take_with_builder(values: &FixedSizeListArray, indices: &IdxArr) -> ArrayRef {
+    let mut builder = make_builder(values.dtype());
+    builder.reserve(indices.len());
+    let idx = indices.values().as_slice();
+    let validity = values
+        .validity()
+        .filter(|v| v.unset_bits() > 0)
+        .map(|v| take_bitmap_nulls_unchecked(v, indices));
+    match combine_validities_and(validity.as_ref(), indices.validity())
+        .filter(|v| v.unset_bits() > 0)
+    {
+        None => builder.gather_extend(values, idx, ShareStrategy::Always),
+        Some(mut validity) => {
+            // Only gather the valid runs: null indices may hold garbage, null rows get null values.
+            let mut start = 0;
+            while !validity.is_empty() {
+                let n = validity.take_leading_ones();
+                builder.gather_extend(values, &idx[start..start + n], ShareStrategy::Always);
+                start += n;
+                let n = validity.take_leading_zeros();
+                builder.extend_nulls(n);
+                start += n;
+            }
+        },
+    }
+    builder.freeze_reset()
+}
+
 /// `take` implementation for FixedSizeListArrays
 pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> ArrayRef {
     let (stride, leaf_type) = get_stride_and_leaf_type(values.dtype(), 1);
     if leaf_type.to_physical_type().is_primitive()
+        && super::has_native_take(leaf_type)
         && arr_no_validities_recursive(values.values().as_ref())
     {
         let leaves = get_leaves(values);
@@ -190,16 +228,12 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
         );
 
         let leaves = from_buffer(buf, leaves.dtype());
-        let mut shape = values.get_dims();
-        shape[0] = Dimension::new(indices.len() as _);
-        let shape = shape
-            .into_iter()
-            .map(ReshapeDimension::Specified)
-            .collect_vec();
-
-        FixedSizeListArray::from_shape(leaves.clone(), &shape)
-            .unwrap()
-            .with_validity(outer_validity)
+        nest_leaves(values.dtype(), n_idx, leaves).with_validity(outer_validity)
+    } else if super::has_native_take(values.dtype()) {
+        if values.null_count() == values.len() || indices.null_count() == indices.len() {
+            return FixedSizeListArray::new_null(values.dtype().clone(), indices.len()).boxed();
+        }
+        take_with_builder(values, indices)
     } else {
         super::take_unchecked_impl_generic(values, indices, &FixedSizeListArray::new_null).boxed()
     }
@@ -207,8 +241,9 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
 
 #[cfg(test)]
 mod tests {
-    use polars_arrow::array::StaticArray;
-    use polars_arrow::datatypes::ArrowDataType;
+    use polars_arrow::array::{Array, FixedSizeListArray, Int64Array, StaticArray};
+    use polars_arrow::bitmap::Bitmap;
+    use polars_arrow::datatypes::{ArrowDataType, Field, IdxArr, TimeUnit};
 
     /// Test gather for FixedSizeListArray with outer validity but no inner validities.
     #[test]
@@ -280,6 +315,29 @@ mod tests {
                 take_unchecked(arr, &PrimitiveArray::<IdxSize>::from_slice([0, 1])),
                 dyn_arr
             )
+        }
+    }
+
+    #[test]
+    fn test_arr_gather_keeps_dtype() {
+        // Python only creates the default field and physical leaves, so check both paths here.
+        let fsl = |child: Box<dyn Array>, size: usize| {
+            let field = Field::new("x".into(), child.dtype().clone(), false);
+            let dtype = ArrowDataType::FixedSizeList(Box::new(field), size);
+            FixedSizeListArray::new(dtype, child.len() / size, child, None)
+        };
+        let ts = ArrowDataType::Timestamp(TimeUnit::Millisecond, None);
+        let leaves = Int64Array::from_vec((0..8).collect()).to(ts);
+        let inner_nulls = Bitmap::from_iter((0..8).map(|i| i != 3));
+        let idx = IdxArr::from([Some(1), None, Some(0)]);
+        for leaves in [leaves.clone(), leaves.with_validity(Some(inner_nulls))] {
+            for arr in [
+                fsl(leaves.clone().boxed(), 4),
+                fsl(fsl(leaves.boxed(), 2).boxed(), 2),
+            ] {
+                let out = unsafe { super::take_unchecked(&arr, &idx) };
+                assert_eq!(out.dtype(), arr.dtype());
+            }
         }
     }
 }

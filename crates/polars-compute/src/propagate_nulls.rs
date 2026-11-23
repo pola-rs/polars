@@ -23,9 +23,14 @@ pub fn propagate_nulls(arr: &dyn Array) -> Option<Box<dyn Array>> {
 }
 
 pub fn propagate_nulls_list<O: Offset>(arr: &ListArray<O>) -> Option<ListArray<O>> {
-    let Some(validity) = arr.validity() else {
+    let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) else {
         return propagate_nulls(arr.values().as_ref()).map(|values| {
-            ListArray::new(arr.dtype().clone(), arr.offsets().clone(), values, None)
+            ListArray::new(
+                arr.dtype().clone(),
+                arr.offsets().clone(),
+                values,
+                arr.validity().cloned(),
+            )
         });
     };
 
@@ -85,11 +90,9 @@ pub fn propagate_nulls_list<O: Offset>(arr: &ListArray<O>) -> Option<ListArray<O
         new_values = Some(arr.values().with_validity(Some(new_child_validity)));
     }
 
-    let Some(values) = new_values
-        .as_ref()
-        .and_then(|v| propagate_nulls(v.as_ref()))
-        .or(new_values)
-    else {
+    // Recurse even if this level was already propagated: lower levels may not be.
+    let child = new_values.as_deref().unwrap_or(arr.values().as_ref());
+    let Some(values) = propagate_nulls(child).or(new_values) else {
         // Nothing was changed. Return the original array.
         return None;
     };
@@ -103,12 +106,18 @@ pub fn propagate_nulls_list<O: Offset>(arr: &ListArray<O>) -> Option<ListArray<O
 }
 
 pub fn propagate_nulls_fsl(arr: &FixedSizeListArray) -> Option<FixedSizeListArray> {
-    let Some(validity) = arr.validity() else {
-        return propagate_nulls(arr.values().as_ref())
-            .map(|values| FixedSizeListArray::new(arr.dtype().clone(), arr.len(), values, None));
+    let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) else {
+        return propagate_nulls(arr.values().as_ref()).map(|values| {
+            FixedSizeListArray::new(
+                arr.dtype().clone(),
+                arr.len(),
+                values,
+                arr.validity().cloned(),
+            )
+        });
     };
 
-    if arr.size() == 0 || validity.unset_bits() == 0 {
+    if arr.size() == 0 {
         return None;
     }
 
@@ -170,11 +179,9 @@ pub fn propagate_nulls_fsl(arr: &FixedSizeListArray) -> Option<FixedSizeListArra
         new_values = Some(arr.values().with_validity(Some(new_child_validity)));
     }
 
-    let Some(values) = new_values
-        .as_ref()
-        .and_then(|v| propagate_nulls(v.as_ref()))
-        .or(new_values)
-    else {
+    // Recurse even if this level was already propagated: lower levels may not be.
+    let child = new_values.as_deref().unwrap_or(arr.values().as_ref());
+    let Some(values) = propagate_nulls(child).or(new_values) else {
         // Nothing was changed. Return the original array.
         return None;
     };
@@ -189,7 +196,7 @@ pub fn propagate_nulls_fsl(arr: &FixedSizeListArray) -> Option<FixedSizeListArra
 }
 
 pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
-    let Some(validity) = arr.validity() else {
+    let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) else {
         let mut new_values = Vec::new();
         for (i, field_array) in arr.values().iter().enumerate() {
             if let Some(field_array) = propagate_nulls(field_array.as_ref()) {
@@ -211,11 +218,11 @@ pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
             arr.dtype().clone(),
             arr.len(),
             new_values,
-            None,
+            arr.validity().cloned(),
         ));
     };
 
-    if arr.values().is_empty() || validity.unset_bits() == 0 {
+    if arr.values().is_empty() {
         return None;
     }
 
@@ -248,13 +255,13 @@ pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
     new_values.extend(arr.values()[new_values.len()..].iter().map(|field_array| {
         let new_field_array = match field_array.validity() {
             None => Some(field_array.with_validity(Some(validity.clone()))),
-            Some(v) if v.num_intersections_with(validity) == validity.set_bits() => None,
+            // Already null wherever the struct is null.
+            Some(v) if v.num_intersections_with(validity) == v.set_bits() => None,
             Some(v) => Some(field_array.with_validity(Some(v & validity))),
         };
 
-        new_field_array
-            .as_ref()
-            .and_then(|v| propagate_nulls(v.as_ref()))
+        let field = new_field_array.as_deref().unwrap_or(field_array.as_ref());
+        propagate_nulls(field)
             .or(new_field_array)
             .unwrap_or_else(|| field_array.clone())
     }));

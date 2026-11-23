@@ -13,14 +13,13 @@ bitflags::bitflags! {
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct StatisticsFlags: u32 {
         const IS_SORTED_ANY = 0x03;
-
         const IS_SORTED_ASC = 0x01;
         const IS_SORTED_DSC = 0x02;
         const CAN_FAST_EXPLODE_LIST = 0x04;
 
         /// Recursive version of `CAN_FAST_EXPLODE_LIST`.
         ///
-        /// This can also apply to other nested chunked arrays and signals that there all lists
+        /// This can also apply to other nested chunked arrays and signals that all lists
         /// have been compacted recursively.
         const HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS = 0x08;
         /// All masked out values have their nulls propagated.

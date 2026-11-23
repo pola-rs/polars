@@ -27,7 +27,7 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     dfn: D,
 ) -> ParquetResult<()> {
     let can_filter_on_raw_data =
-        // Floats have different equality that just byte-wise comparison.
+        // Floats have different equality than just byte-wise comparison.
         // @TODO: Maybe be smarter about this, because most predicates should not hit this problem.
         !matches!(T::PRIMITIVE, PrimitiveType::Float16 | PrimitiveType::Float32 | PrimitiveType::Float64) &&
         D::CAN_TRANSMUTE && !D::NEED_TO_DECODE;
@@ -215,7 +215,7 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
 }
 
 #[inline(never)]
-fn decode_optional<B: AlignedBytes>(
+pub(super) fn decode_optional<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
     mut validity: Bitmap,
     target: &mut Vec<B>,
@@ -301,7 +301,7 @@ fn decode_optional<B: AlignedBytes>(
 }
 
 #[inline(never)]
-fn decode_masked_required<B: AlignedBytes>(
+pub(super) fn decode_masked_required<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
     mut mask: Bitmap,
     target: &mut Vec<B>,
@@ -378,7 +378,7 @@ fn decode_masked_required<B: AlignedBytes>(
 }
 
 #[inline(never)]
-fn decode_masked_optional<B: AlignedBytes>(
+pub(super) fn decode_masked_optional<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
     mut validity: Bitmap,
     mut mask: Bitmap,

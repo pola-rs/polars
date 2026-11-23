@@ -27,7 +27,9 @@ impl UniqueScans {
 }
 
 pub(super) struct MemberCollector {
-    pub(crate) has_joins_or_unions: bool,
+    pub(crate) has_joins: bool,
+    /// A `Union` or `HConcat`.
+    pub(crate) has_unions: bool,
     /// A left, semi or anti join.
     pub(crate) has_preserving_join: bool,
     pub(crate) has_sink_multiple: bool,
@@ -36,6 +38,7 @@ pub(super) struct MemberCollector {
     pub(crate) has_sort: bool,
     pub(crate) has_group_by: bool,
     pub(crate) has_hint: bool,
+    pub(crate) has_recursive: bool,
     pub(crate) with_columns_count: u32,
     #[expect(clippy::disallowed_types)]
     pub(crate) seen_dsl_resolvers: Option<polars_utils::aliases::PlHashSet<Arc<DslResolver>>>,
@@ -46,7 +49,8 @@ pub(super) struct MemberCollector {
 impl MemberCollector {
     pub(super) fn new() -> Self {
         Self {
-            has_joins_or_unions: false,
+            has_joins: false,
+            has_unions: false,
             has_preserving_join: false,
             has_sink_multiple: false,
             has_filter_with_join_input: false,
@@ -54,13 +58,21 @@ impl MemberCollector {
             has_sort: false,
             has_group_by: false,
             has_hint: false,
+            has_recursive: false,
             with_columns_count: 0,
             seen_dsl_resolvers: Some(Default::default()),
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
         }
     }
-    pub(super) fn collect(&mut self, root: Node, lp_arena: &Arena<IR>, _expr_arena: &Arena<AExpr>) {
+    /// Only gives an id to the scans, which `has_duplicate_scans` needs, if `_hash_scans` is set.
+    pub(super) fn collect(
+        &mut self,
+        root: Node,
+        lp_arena: &Arena<IR>,
+        _expr_arena: &Arena<AExpr>,
+        _hash_scans: bool,
+    ) {
         #[cfg(feature = "cse")]
         let mut canonical_ir_map = CanonicalIRMap::new();
 
@@ -69,11 +81,11 @@ impl MemberCollector {
             match alp {
                 SinkMultiple { .. } => self.has_sink_multiple = true,
                 Join { options, .. } => {
-                    self.has_joins_or_unions = true;
+                    self.has_joins = true;
                     self.has_preserving_join |= matches!(options.args.how, JoinType::Left)
                         || options.args.how.is_semi_anti();
                 },
-                Union { .. } => self.has_joins_or_unions = true,
+                Union { .. } | HConcat { .. } => self.has_unions = true,
                 Filter { input, .. } => {
                     self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.args.how.is_cross())
                 },
@@ -86,24 +98,22 @@ impl MemberCollector {
                 Sort { .. } => {
                     self.has_sort = true;
                 },
+                Recursive { .. } => self.has_recursive = true,
                 #[cfg(feature = "cse")]
-                Scan { .. } => {
+                Scan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
                 HStack { .. } => {
                     self.with_columns_count += 1;
                 },
-                HConcat { .. } => {
-                    self.has_joins_or_unions = true;
-                },
                 #[cfg(feature = "cse")]
-                DataFrameScan { .. } => {
+                DataFrameScan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
                 #[cfg(all(feature = "cse", feature = "python"))]
-                PythonScan { .. } => {
+                PythonScan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },

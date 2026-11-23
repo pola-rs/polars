@@ -1,4 +1,4 @@
-use chrono::format::{Parsed, StrftimeItems};
+use chrono::format::{Parsed, StrftimeItems, parse, parse_and_remainder};
 use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
 use polars_arrow::datatypes::TimeUnit;
 pub use polars_arrow::temporal_conversions::{
@@ -16,22 +16,31 @@ pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {
     }
 }
 
-/// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp without timezone.
-/// Returns in scale `tz` of `TimeUnit`.
+/// Parses an ISO 8601 datetime (`YYYY-MM-DD`, then `T`, `t` or a space, then `HH:MM`
+/// with optional seconds, fraction and UTC offset) into a timestamp in `tu`. Values
+/// with an offset are converted to UTC. Returns `None` unless the whole value matches.
 #[inline]
-pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> Option<i64> {
-    let fmt = StrftimeItems::new(fmt);
+pub fn utf8_to_timestamp_scalar(value: &str, tu: TimeUnit) -> Option<i64> {
     let mut parsed = Parsed::new();
-    chrono::format::parse(&mut parsed, value, fmt.clone()).ok();
-    parsed
-        .to_naive_datetime_with_offset(0)
-        .map(|x| match tu {
-            TimeUnit::Second => x.and_utc().timestamp(),
-            TimeUnit::Millisecond => x.and_utc().timestamp_millis(),
-            TimeUnit::Microsecond => x.and_utc().timestamp_micros(),
-            TimeUnit::Nanosecond => x.and_utc().timestamp_nanos_opt().unwrap(),
-        })
-        .ok()
+    let rest = parse_and_remainder(&mut parsed, value, StrftimeItems::new("%Y-%m-%d")).ok()?;
+    let rest = rest.strip_prefix(['T', 't', ' '])?;
+    let mut rest = parse_and_remainder(&mut parsed, rest, StrftimeItems::new("%H:%M")).ok()?;
+    if rest.starts_with(':') {
+        rest = parse_and_remainder(&mut parsed, rest, StrftimeItems::new(":%S%.f")).ok()?;
+    }
+    let dt = if rest.is_empty() {
+        parsed.to_naive_datetime_with_offset(0).ok()?
+    } else {
+        parse(&mut parsed, rest, StrftimeItems::new("%#z")).ok()?;
+        parsed.to_datetime().ok()?.naive_utc()
+    };
+    let dt = dt.and_utc();
+    match tu {
+        TimeUnit::Second => Some(dt.timestamp()),
+        TimeUnit::Millisecond => Some(dt.timestamp_millis()),
+        TimeUnit::Microsecond => Some(dt.timestamp_micros()),
+        TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
+    }
 }
 
 /// Parses an ISO-8601 date (`YYYY-MM-DD`) into days since the Unix

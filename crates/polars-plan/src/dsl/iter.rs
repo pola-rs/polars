@@ -19,7 +19,14 @@ impl DslPlan {
                 scratch.extend(inputs)
             },
             PipeWithSchema { input, .. } => scratch.extend(input.iter()),
-            SQL { relations, .. } => scratch.extend(relations.iter().map(|(_, plan)| plan)),
+            SQL {
+                relations,
+                catalog_tables,
+                ..
+            } => {
+                scratch.extend(relations.iter().map(|(_, plan)| plan));
+                scratch.extend(catalog_tables.iter().map(|(_, _, plan)| plan));
+            },
             Join {
                 input_left,
                 input_right,
@@ -47,6 +54,11 @@ impl DslPlan {
                 scratch.push(input_left);
                 scratch.push(input_right);
             },
+            Recursive { anchor, step, .. } => {
+                scratch.push(anchor);
+                scratch.push(step);
+            },
+            WorkingTable { .. } => (),
             Resolver { .. } => {},
         }
     }

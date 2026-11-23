@@ -4,9 +4,10 @@ use object_store::path::Path as ObjectPath;
 use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
+use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::parquet::error::ParquetError;
 use polars_parquet::parquet::read::{deserialize_metadata, deserialize_num_rows};
-use polars_parquet::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
+use polars_parquet::parquet::{ENCRYPTED_PARQUET_MAGIC, FOOTER_SIZE, PARQUET_MAGIC};
 use polars_utils::pl_path::PlRefPath;
 
 use crate::cloud::concurrency_config::FetchConfig;
@@ -14,6 +15,7 @@ use crate::cloud::{
     CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
 use crate::configs::cloud_footer_read_size;
+use crate::parquet::encryption::{ParquetDecryption, file_decryption_properties};
 use crate::parquet::metadata::FileMetadataRef;
 
 pub struct ParquetObjectStore {
@@ -21,6 +23,7 @@ pub struct ParquetObjectStore {
     path: ObjectPath,
     metadata: Option<FileMetadataRef>,
     schema: Option<ArrowSchemaRef>,
+    decryption_properties: Option<Arc<FileDecryptionProperties>>,
 }
 
 impl ParquetObjectStore {
@@ -37,7 +40,14 @@ impl ParquetObjectStore {
             path,
             metadata,
             schema: None,
+            decryption_properties: None,
         })
+    }
+
+    /// Set how to decrypt an encrypted parquet file.
+    pub fn with_decryption(mut self, decryption: Option<&ParquetDecryption>) -> PolarsResult<Self> {
+        self.decryption_properties = file_decryption_properties(decryption)?;
+        Ok(self)
     }
 
     /// Number of rows in the parquet file.
@@ -50,7 +60,10 @@ impl ParquetObjectStore {
     pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             let footer = fetch_footer_bytes(&self.store, &self.path).await?;
-            self.metadata = Some(Arc::new(deserialize_metadata(footer)?));
+            self.metadata = Some(Arc::new(deserialize_metadata(
+                footer,
+                self.decryption_properties.as_ref(),
+            )?));
         }
         Ok(self.metadata.as_ref().unwrap())
     }
@@ -59,7 +72,10 @@ impl ParquetObjectStore {
     /// Not memoized. Used by `RowCounts` resolve mode.
     pub async fn num_rows_only(&mut self) -> PolarsResult<i64> {
         let footer = fetch_footer_bytes(&self.store, &self.path).await?;
-        Ok(deserialize_num_rows(footer)?)
+        Ok(deserialize_num_rows(
+            footer,
+            self.decryption_properties.as_ref(),
+        )?)
     }
 
     pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
@@ -115,7 +131,7 @@ async fn fetch_footer_bytes(
         let footer_byte_size = read_i32le(reader).unwrap();
         let magic = read_n(reader).unwrap();
         debug_assert!(reader.is_empty());
-        if magic != PARQUET_MAGIC {
+        if magic != PARQUET_MAGIC && magic != ENCRYPTED_PARQUET_MAGIC {
             return Err(out_of_spec("incorrect magic in parquet footer").into());
         }
         footer_byte_size

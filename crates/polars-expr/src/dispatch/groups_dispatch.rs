@@ -2,17 +2,20 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::array::PrimitiveArray;
-use polars_arrow::bitmap::Bitmap;
 use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::offset::OffsetsBuffer;
 use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
+use polars_core::frame::group_by::aggregations::GroupQuantile;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
-    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions,
-    GroupsType, IDX_DTYPE, IntoColumn,
+    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
+    Float64Chunked, GroupPositions, GroupsIdx, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries,
+    LargeListArray, ListChunked, explode_with_row_offsets,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -232,7 +235,7 @@ pub fn all<'a>(
     if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
         if ignore_nulls {
             *s = s
-                .equal_missing(&Column::new_scalar(PlSmallStr::EMPTY, true.into(), 1))
+                .not_equal_missing(&Column::new_scalar(PlSmallStr::EMPTY, false.into(), 1))
                 .unwrap()
                 .into_column();
         } else {
@@ -263,7 +266,15 @@ pub fn is_empty<'a>(
     assert_eq!(inputs.len(), 1);
 
     // TODO: dedicated impl.
-    let ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    if let AggState::AggregatedScalar(s) = &mut ac.state {
+        *s = if ignore_nulls {
+            s.is_null().into_column()
+        } else {
+            Column::new_scalar(s.name().clone(), false.into(), s.len())
+        };
+        return Ok(ac);
+    }
     let counts = evaluate_count_on_ac(ac, !ignore_nulls)?;
     let is_empty = counts.equal(&Column::new_scalar(
         PlSmallStr::EMPTY,
@@ -409,7 +420,8 @@ pub fn drop_items<'a>(
     ac.groups();
     let predicate = BitMask::from_bitmap(predicate);
     RAYON.install(|| {
-        let positions = GroupsType::Idx(match &**ac.groups.as_ref() {
+        let sorted_idxs_in_groups = ac.groups.has_sorted_idxs_in_groups();
+        let mut positions: GroupsIdx = match &**ac.groups.as_ref() {
             GroupsType::Idx(idxs) => idxs
                 .into_par_iter()
                 .map(|(fst, idxs)| {
@@ -456,9 +468,9 @@ pub fn drop_items<'a>(
                     }
                 })
                 .collect(),
-        })
-        .into_sliceable();
-        ac.with_groups(positions);
+        };
+        positions.set_sorted_idxs_in_groups(sorted_idxs_in_groups);
+        ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 
     Ok(ac)
@@ -477,7 +489,8 @@ pub fn drop_nans<'a>(
         let values = ac.flat_naive();
         let mut values = values.is_nan().unwrap();
         values.rechunk_mut();
-        values.downcast_as_array().values().clone()
+        // A null slot can hold a NaN value, so mask with the validity.
+        values.downcast_as_array().true_and_valid()
     } else {
         Bitmap::new_with_value(false, 1)
     };
@@ -503,6 +516,165 @@ pub fn drop_nulls<'a>(
     drop_items(ac, &predicate)
 }
 
+pub fn explode<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    options: ExplodeOptions,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 1);
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    ac.set_groups_for_undefined_agg_states();
+
+    if matches!(ac.agg_state(), AggState::NotAggregated(_))
+        && is_nested(ac.agg_state().flat_dtype())
+        && explode_slice_groups(&mut ac, options)?
+    {
+        return Ok(ac);
+    }
+
+    let agg = match ac.agg_state() {
+        AggState::AggregatedScalar(c) => c.as_materialized_series().to_unit_list(),
+        _ => ac.aggregated().list()?.clone(),
+    };
+    let out = explode_within_lists(&agg, options)?;
+
+    ac.with_update_groups(UpdateGroups::WithSeriesLen);
+    ac.with_values_and_args(out.into_column(), true, None, false, false)?;
+    Ok(ac)
+}
+
+fn is_nested(dtype: &DataType) -> bool {
+    #[cfg(feature = "dtype-array")]
+    return dtype.is_list() || dtype.is_array();
+    #[cfg(not(feature = "dtype-array"))]
+    return dtype.is_list();
+}
+
+/// Slice groups of a flat column map to slices of the exploded column, so rolling
+/// windows stay lazy. Returns `false` for other group types.
+fn explode_slice_groups(
+    ac: &mut AggregationContext,
+    options: ExplodeOptions,
+) -> PolarsResult<bool> {
+    ac.groups();
+    let GroupsType::Slice {
+        groups: slices,
+        overlapping,
+        monotonic,
+    } = &**ac.groups.as_ref()
+    else {
+        return Ok(false);
+    };
+    let (values, row_offsets) =
+        explode_with_row_offsets(ac.flat_naive().as_materialized_series(), options)?;
+    let row_offsets = row_offsets.as_slice();
+    let slices = slices
+        .iter()
+        .map(|[start, len]| {
+            let lo = row_offsets[*start as usize];
+            let hi = row_offsets[(*start + *len) as usize];
+            [lo as IdxSize, (hi - lo) as IdxSize]
+        })
+        .collect();
+    let groups = GroupsType::new_slice(slices, *overlapping, *monotonic).into_sliceable();
+
+    ac.state = AggState::NotAggregated(values.into_column());
+    ac.with_groups(groups);
+    Ok(true)
+}
+
+/// Explode each row of a `list[list[T]]` or `list[array[T]]` into a `list[T]` row.
+fn explode_within_lists(ca: &ListChunked, options: ExplodeOptions) -> PolarsResult<ListChunked> {
+    if !is_nested(ca.inner_dtype()) {
+        return Ok(ca.clone());
+    }
+
+    let ca = ca.rechunk();
+    let arr = ca.downcast_as_array();
+    let outer = arr.offsets().as_slice();
+    let (first, last) = (outer[0] as usize, outer[outer.len() - 1] as usize);
+    // SAFETY: the inner dtype matches the child array.
+    let mut rows = unsafe {
+        Series::from_chunks_and_dtype_unchecked(
+            ca.name().clone(),
+            vec![arr.values().sliced(first, last - first)],
+            ca.inner_dtype(),
+        )
+    };
+    if let Ok(inner) = rows.list()
+        && null_rows_are_empty(inner.downcast_as_array())
+    {
+        // Lets explode reuse the values buffer when the options allow it.
+        let mut inner = inner.clone();
+        inner.set_fast_explode();
+        rows = inner.into_series();
+    }
+    let (mut values, row_offsets) = explode_with_row_offsets(&rows, options)?;
+    let row_offsets = row_offsets.as_slice();
+    let mut offsets = outer
+        .iter()
+        .map(|o| row_offsets[*o as usize - first])
+        .collect::<Vec<_>>();
+
+    // Null groups stay null rows; drop any values they span.
+    let validity = arr.validity().filter(|v| v.unset_bits() > 0).cloned();
+    if let Some(validity) = &validity {
+        let hides_values = offsets
+            .windows(2)
+            .zip(validity.iter())
+            .any(|(w, valid)| !valid && w[1] > w[0]);
+        if hides_values {
+            (values, offsets) = drop_null_rows(&values, &offsets, validity)?;
+        }
+    }
+
+    let dtype = DataType::List(Box::new(values.dtype().clone()));
+    // Physical chunk, as List chunks store it; `to_arrow` would convert logical types.
+    let values = values.rechunk().array_ref(0).clone();
+    let arr = LargeListArray::new(
+        LargeListArray::default_datatype(values.dtype().clone()),
+        // SAFETY: monotonically increasing.
+        unsafe { OffsetsBuffer::new_unchecked(offsets.into()) },
+        values,
+        validity,
+    );
+    // SAFETY: the arrow dtype matches the physical `dtype`.
+    Ok(unsafe { ListChunked::from_chunks_and_dtype(ca.name().clone(), vec![arr.boxed()], dtype) })
+}
+
+/// Whether no null row spans values, so the values buffer is the exploded output.
+fn null_rows_are_empty(arr: &LargeListArray) -> bool {
+    arr.validity().is_none_or(|v| {
+        arr.offsets()
+            .lengths()
+            .zip(v.iter())
+            .all(|(len, valid)| valid || len == 0)
+    })
+}
+
+/// Remove the values of null rows, returning the filtered values and new offsets.
+fn drop_null_rows(
+    values: &Series,
+    offsets: &[i64],
+    validity: &Bitmap,
+) -> PolarsResult<(Series, Vec<i64>)> {
+    let mut keep = MutableBitmap::with_capacity(values.len());
+    let mut new_offsets = Vec::with_capacity(offsets.len());
+    let mut length_so_far = 0;
+    new_offsets.push(length_so_far);
+    for (i, w) in offsets.windows(2).enumerate() {
+        let len = w[1] - w[0];
+        let is_valid = validity.get_bit(i);
+        keep.extend_constant(len as usize, is_valid);
+        length_so_far += if is_valid { len } else { 0 };
+        new_offsets.push(length_so_far);
+    }
+    let keep = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, keep.freeze());
+    Ok((values.filter(&keep)?, new_offsets))
+}
+
 pub fn quantile<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -520,29 +692,65 @@ pub fn quantile<'a>(
     // Don't change names by aggregations as is done in polars-core.
     let keep_name = ac.get_values().name().clone();
 
-    let quantile_column = inputs[1].evaluate(df, state)?;
-    polars_ensure!(
-        !quantile_column.is_empty(),
-        ComputeError:
-            "the 'quantile' expression input should produce a single quantile, got an empty input"
-    );
-    polars_ensure!(
-        quantile_column.len() == 1,
-        ComputeError:
-            "polars only supports computing a single quantile in a groupby aggregation context"
-    );
+    let (quantile_column, per_group) = if inputs[1].is_literal() {
+        let c = inputs[1].evaluate(df, state)?;
+        polars_ensure!(
+            !c.is_empty(),
+            ComputeError:
+                "the 'quantile' expression input should produce a single quantile, got an empty input"
+        );
+        polars_ensure!(
+            c.len() == 1,
+            ComputeError:
+                "polars only supports computing a single quantile in a groupby aggregation context"
+        );
+        (c, false)
+    } else {
+        match inputs[1].evaluate_on_groups(df, groups, state)?.state {
+            AggState::LiteralScalar(c) => (c, false),
+            AggState::AggregatedScalar(c) => (c, true),
+            AggState::AggregatedList(_) | AggState::NotAggregated(_) => polars_bail!(
+                ComputeError:
+                    "the 'quantile' expression input should produce a single quantile per group; \
+                    use `.item()` to take the single value of each group"
+            ),
+        }
+    };
     polars_ensure!(
         quantile_column.dtype().is_numeric(),
         SchemaMismatch:
             "expected expression of dtype 'numeric' for quantile, got '{}'",
         quantile_column.dtype()
     );
-    let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
 
-    if let AggState::LiteralScalar(c) = &mut ac.state {
-        *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
-        return Ok(ac);
-    }
+    let per_group_quantiles;
+    let quantile = if per_group {
+        per_group_quantiles = quantile_column.cast(&DataType::Float64)?;
+        let quantiles = per_group_quantiles.f64()?;
+        if let AggState::LiteralScalar(c) = &ac.state {
+            // The quantile of a single value is that value, for any valid quantile.
+            let value = c.quantile_reduce(0.5, method)?;
+            let dtype = value.dtype().clone();
+            let valid: BooleanChunked = quantiles
+                .iter()
+                .map(|q| q.is_some_and(|q| (0.0..=1.0).contains(&q)))
+                .collect();
+            let out = Column::new_scalar(keep_name.clone(), value, groups.len())
+                .zip_with(&valid, &Column::full_null(keep_name, groups.len(), &dtype))?;
+            return Ok(AggregationContext::from_agg_state(
+                AggState::AggregatedScalar(out),
+                Cow::Borrowed(groups),
+            ));
+        }
+        GroupQuantile::PerGroup(quantiles)
+    } else {
+        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
+        if let AggState::LiteralScalar(c) = &mut ac.state {
+            *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
+            return Ok(ac);
+        }
+        GroupQuantile::Scalar(quantile)
+    };
 
     // SAFETY: groups are in bounds.
     let mut agg = unsafe {
@@ -724,7 +932,8 @@ pub fn unique<'a>(
     }
 
     RAYON.install(|| {
-        let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
+        let sorted_idxs_in_groups = ac.groups().has_sorted_idxs_in_groups();
+        let mut positions: GroupsIdx = match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
                 .map_with(CloneWrapper(state), |state, (first, idx)| {
@@ -745,9 +954,9 @@ pub fn unique<'a>(
                     (idx.first().copied().unwrap_or(*start), idx)
                 })
                 .collect(),
-        })
-        .into_sliceable();
-        ac.with_groups(positions);
+        };
+        positions.set_sorted_idxs_in_groups(sorted_idxs_in_groups);
+        ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 
     Ok(ac)
@@ -782,7 +991,8 @@ fn fw_bw_fill_null<'a>(
 
     let validity = BitMask::from_bitmap(&validity);
     RAYON.install(|| {
-        let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
+        let sorted_idxs_in_groups = ac.groups().has_sorted_idxs_in_groups();
+        let mut positions: GroupsIdx = match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
                 .map(|(first, idx)| {
@@ -801,9 +1011,9 @@ fn fw_bw_fill_null<'a>(
                     (idx.first().copied().unwrap_or(*start), idx)
                 })
                 .collect(),
-        })
-        .into_sliceable();
-        ac.with_groups(positions);
+        };
+        positions.set_sorted_idxs_in_groups(sorted_idxs_in_groups);
+        ac.with_groups(GroupsType::Idx(positions).into_sliceable());
     });
 
     Ok(ac)
@@ -915,4 +1125,50 @@ pub fn backward_fill_null<'a>(
         arg_backward_fill!(iter, validity, length),
         arg_backward_fill!(iter, validity, length),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::{Array, Int64Array};
+    use polars_core::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn test_explode_within_lists_null_rows() {
+        // Rows: [1, 2], [3], [], [4, 5].
+        let inner = LargeListArray::new(
+            LargeListArray::default_datatype(ArrowDataType::Int64),
+            vec![0i64, 2, 3, 3, 5].try_into().unwrap(),
+            Int64Array::from_slice([1, 2, 3, 4, 5]).boxed(),
+            None,
+        );
+        // The null group still spans rows `[3]` and `[]`.
+        let outer = LargeListArray::new(
+            LargeListArray::default_datatype(inner.dtype().clone()),
+            vec![0i64, 1, 3, 4].try_into().unwrap(),
+            inner.boxed(),
+            Some(Bitmap::from_iter([true, false, true])),
+        );
+        let ca = ListChunked::with_chunk("a".into(), outer);
+
+        for empty_as_null in [false, true] {
+            for keep_nulls in [false, true] {
+                let options = ExplodeOptions {
+                    empty_as_null,
+                    keep_nulls,
+                };
+                let out = explode_within_lists(&ca, options).unwrap();
+                let expected: ListChunked = ca
+                    .series_iter()
+                    .map(|s| s.map(|s| s.explode(options).unwrap()))
+                    .collect();
+                assert_eq!(
+                    out.rechunk().downcast_as_array().offsets().as_slice(),
+                    &[0, 2, 2, 4]
+                );
+                assert!(out.into_series().equals_missing(&expected.into_series()));
+            }
+        }
+    }
 }

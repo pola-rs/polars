@@ -95,58 +95,61 @@ fn fixed_size_binary_optional(array: &FixedSizeBinaryArray) -> BoxSerializer<'_>
     ))
 }
 
-fn list_required<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) -> BoxSerializer<'a> {
+/// Writes the next `length` items of `inner` as one avro array.
+fn write_list_items(inner: &mut BoxSerializer<'_>, length: usize, buf: &mut Vec<u8>) {
+    if length > 0 {
+        encode::zigzag_encode(length as i64, buf).unwrap();
+        for _ in 0..length {
+            buf.extend_from_slice(inner.next().unwrap());
+        }
+    }
+    encode::zigzag_encode(0, buf).unwrap();
+}
+
+fn skip_list_items(inner: &mut BoxSerializer<'_>, length: usize) {
+    for _ in 0..length {
+        inner.advance();
+    }
+}
+
+/// Returns a serializer over the child values starting at the list array's first offset.
+fn list_values_serializer<'a, O: Offset>(
+    array: &'a ListArray<O>,
+    schema: &AvroSchema,
+) -> BoxSerializer<'a> {
     let mut inner = new_serializer(array.values().as_ref(), schema);
-    let lengths = array
-        .offsets()
-        .buffer()
-        .windows(2)
-        .map(|w| (w[1] - w[0]).to_usize() as i64);
+    skip_list_items(&mut inner, array.offsets().first().to_usize());
+    inner
+}
+
+fn list_required<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) -> BoxSerializer<'a> {
+    let mut inner = list_values_serializer(array, schema);
+    let lengths = array.offsets().lengths();
 
     Box::new(BufStreamingIterator::new(
         lengths,
-        move |length, buf| {
-            encode::zigzag_encode(length, buf).unwrap();
-            let mut rows = 0;
-            while let Some(item) = inner.next() {
-                buf.extend_from_slice(item);
-                rows += 1;
-                if rows == length {
-                    encode::zigzag_encode(0, buf).unwrap();
-                    break;
-                }
-            }
-        },
+        move |length, buf| write_list_items(&mut inner, length, buf),
         vec![],
     ))
 }
 
 fn list_optional<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) -> BoxSerializer<'a> {
-    let mut inner = new_serializer(array.values().as_ref(), schema);
-    let lengths = array
+    let mut inner = list_values_serializer(array, schema);
+    let rows = array
         .offsets()
-        .buffer()
-        .windows(2)
-        .map(|w| (w[1] - w[0]).to_usize() as i64);
-    let lengths = ZipValidity::new_with_validity(lengths, array.validity());
+        .lengths()
+        .enumerate()
+        .map(|(i, length)| (length, array.is_valid(i)));
 
     Box::new(BufStreamingIterator::new(
-        lengths,
-        move |length, buf| {
-            if let Some(length) = length {
+        rows,
+        move |(length, is_valid), buf| {
+            if is_valid {
                 buf.push(IS_VALID);
-                encode::zigzag_encode(length, buf).unwrap();
-                let mut rows = 0;
-                while let Some(item) = inner.next() {
-                    buf.extend_from_slice(item);
-                    rows += 1;
-                    if rows == length {
-                        encode::zigzag_encode(0, buf).unwrap();
-                        break;
-                    }
-                }
+                write_list_items(&mut inner, length, buf);
             } else {
                 buf.push(IS_NULL);
+                skip_list_items(&mut inner, length);
             }
         },
         vec![],

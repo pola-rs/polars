@@ -99,7 +99,7 @@ fn _read_single_column<'a, R>(
 where
     R: Read + Seek,
 {
-    let byte_range = meta.byte_range();
+    let byte_range = meta.byte_range()?;
     let length = byte_range.end - byte_range.start;
     reader.seek(std::io::SeekFrom::Start(byte_range.start))?;
 
@@ -125,12 +125,14 @@ pub fn to_deserializer(
                 column_meta,
                 vec![],
                 len * 2 + 1024,
-            );
-            (
+            )?;
+            PolarsResult::Ok((
                 BasicDecompressor::new(pages, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,
-            )
+            ))
         })
+        .collect::<PolarsResult<Vec<_>>>()?
+        .into_iter()
         .unzip();
 
     column_iter_to_arrays(columns, types, field, filter).map(|v| v.0)

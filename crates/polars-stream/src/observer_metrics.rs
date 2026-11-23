@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use polars_descriptions::NodeMetricsDescription;
+use polars_descriptions::{
+    CustomMetricDescription, MetricsSnapshotDescription, NodeMetricsDescription,
+    QueryMetricsDescription,
+};
 use polars_observer::QueryMetricsSnapshotter;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use crate::graph::GraphNodeKey;
-use crate::metrics::{GraphMetrics, NodeMetrics};
+use crate::metrics::{GraphMetrics, NodeMetrics, QueryMetrics};
 use crate::physical_plan::PhysNodeKey;
 use crate::skeleton::StreamingQuery;
 use crate::{LogicalPipe, LogicalPipeKey};
@@ -29,17 +32,32 @@ impl StreamingQueryMetricsSnapshotter {
 }
 
 impl QueryMetricsSnapshotter for StreamingQueryMetricsSnapshotter {
-    fn snapshot(&self) -> Vec<NodeMetricsDescription> {
+    fn snapshot(&self) -> MetricsSnapshotDescription {
         let mut metrics = { self.metrics.lock().clone() };
         metrics.flush(&self.pipes);
 
-        self.phys_to_graph
+        let nodes = self
+            .phys_to_graph
             .iter()
             .map(|(phys_key, graph_key)| {
                 let node = metrics.get(*graph_key).cloned().unwrap_or_default();
                 metrics_row(phys_key.data().as_ffi(), &node)
             })
-            .collect()
+            .collect();
+
+        MetricsSnapshotDescription {
+            query: query_row(metrics.query()),
+            nodes,
+        }
+    }
+}
+
+fn query_row(m: &QueryMetrics) -> QueryMetricsDescription {
+    QueryMetricsDescription {
+        io_total_active_ns: m.io_total_active_ns,
+        io_rx_active_ns: m.io_rx_active_ns,
+        io_tx_active_ns: m.io_tx_active_ns,
+        num_threads: m.num_threads,
     }
 }
 
@@ -65,5 +83,14 @@ fn metrics_row(phys_node_key: u64, m: &NodeMetrics) -> NodeMetricsDescription {
         io_total_bytes_sent: m.io_total_bytes_sent,
         total_time_ns: m.total_poll_time_ns + m.total_state_update_time_ns,
         done: m.done,
+        custom: m
+            .custom
+            .iter()
+            .map(|metric| CustomMetricDescription {
+                key: metric.key.to_string(),
+                unit: metric.unit,
+                value: metric.value,
+            })
+            .collect(),
     }
 }

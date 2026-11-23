@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import SQLSyntaxError
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -144,3 +145,140 @@ def test_regexp_like_errors() -> None:
             match=r"REGEXP_LIKE expects 2-3 arguments \(found 1\)",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)").collect()
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        r"REGEXP_REPLACE(s, 'b', 'X')",
+        r"REGEXP_REPLACE(s, 'b', 'X', 'g')",
+        r"REGEXP_REPLACE(s, 'B', 'X', 'gi')",
+        r"REGEXP_REPLACE(s, '(\w+)-(\w+)', '\2-\1')",
+        r"REGEXP_REPLACE(s, '^https?://(?:www\.)?([^/]+)/.*$', '\1')",
+        r"REGEXP_REPLACE(s, 'b', '$1 \\', 'g')",
+        r"REGEXP_REPLACE(s, '[ab]', '<\0>', 'g')",
+        r"REGEXP_REPLACE(s, 'x', 'y')",
+    ],
+)
+def test_regexp_replace(func: str) -> None:
+    df = pl.DataFrame(
+        {"s": ["abcb", "ab-cd", "http://www.a.com/x", "https://b.org/", None]}
+    )
+    assert_sql_matches(
+        df,
+        query=f"SELECT {func} AS r FROM self",
+        compare_with="duckdb",
+    )
+
+
+def test_regexp_replace_whole_match_and_null() -> None:
+    df = pl.DataFrame({"s": ["abcb", None]})
+    out = df.sql(
+        r"""
+        SELECT
+          REGEXP_REPLACE(s, 'b', '[\&]', 'g') AS whole,
+          REGEXP_REPLACE(s, 'b', NULL) AS null_replacement,
+          REGEXP_REPLACE(s, NULL, 'x') AS null_pattern,
+          REGEXP_REPLACE(s, 'b', 'x', NULL) AS null_flags,
+          REGEXP_REPLACE(NULL, 'b', 'x') AS null_value
+        FROM self
+        """
+    )
+    assert out.to_dict(as_series=False) == {
+        "whole": ["a[b]c[b]", None],
+        "null_replacement": [None, None],
+        "null_pattern": [None, None],
+        "null_flags": [None, None],
+        "null_value": [None, None],
+    }
+
+
+def test_regexp_replace_errors() -> None:
+    df = pl.DataFrame({"s": ["xyz"], "t": ["a"]})
+    with pytest.raises(SQLSyntaxError, match="REGEXP_REPLACE expects 3-4 arguments"):
+        df.sql("SELECT REGEXP_REPLACE(s, 'x') FROM self")
+    with pytest.raises(SQLSyntaxError, match="string literal replacement"):
+        df.sql("SELECT REGEXP_REPLACE(s, 'x', t) FROM self")
+    with pytest.raises(SQLSyntaxError, match="invalid 'flags' for REGEXP_REPLACE"):
+        df.sql("SELECT REGEXP_REPLACE(s, 'x', 'y', t) FROM self")
+    with pytest.raises(SQLSyntaxError, match="string literal pattern"):
+        df.sql("SELECT REGEXP_REPLACE(s, t, 'y') FROM self")
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        r"REGEXP_EXTRACT(s, '(\d+)-(\d+)', 2)",
+        r"REGEXP_EXTRACT(s, '\d+')",
+        r"REGEXP_EXTRACT(s, '(z)(q)?', 2)",
+        r"REGEXP_EXTRACT(s, NULL)",
+        r"REGEXP_EXTRACT(NULL, 'a')",
+        r"REGEXP_EXTRACT(n, 'a')",
+        r"REGEXP_EXTRACT((SELECT NULL), 'a')",
+    ],
+)
+def test_regexp_extract(func: str) -> None:
+    df = pl.DataFrame({"s": ["ab12-34", "x", None, "zz"], "n": [None] * 4})
+    assert_sql_matches(
+        df,
+        query=f"SELECT {func} AS r FROM self",
+        compare_with="duckdb",
+    )
+
+
+def test_regexp_extract_errors() -> None:
+    df = pl.DataFrame({"s": ["xyz"]})
+    with pytest.raises(SQLSyntaxError, match="REGEXP_EXTRACT expects 2-3 arguments"):
+        df.sql("SELECT REGEXP_EXTRACT(s) FROM self")
+    with pytest.raises(SQLSyntaxError, match="non-negative integer literal"):
+        df.sql("SELECT REGEXP_EXTRACT(s, 'x', -1) FROM self")
+
+
+def test_regexp_matches() -> None:
+    df = pl.DataFrame(
+        {"s": ["ABC", "a.c", "a\nb", None, "abc"], "p": ["b", ".", "a.b", "x", None]}
+    )
+    assert_sql_matches(
+        df,
+        query="""
+        SELECT
+          REGEXP_MATCHES(s, 'b') AS m1,
+          REGEXP_MATCHES(s, 'b', 'i') AS m2,
+          REGEXP_MATCHES(s, 'b', 'ic') AS m3,
+          REGEXP_MATCHES(s, '.', 'l') AS m4,
+          REGEXP_MATCHES(s, 'A.', 'li') AS m5,
+          REGEXP_MATCHES(s, 'a.b', 's') AS m6,
+          REGEXP_MATCHES(s, 'a.b', 'sm') AS m7,
+          REGEXP_MATCHES(s, p) AS m8,
+          REGEXP_MATCHES(s, p, 'i') AS m9,
+          REGEXP_MATCHES(s, p, 'l') AS m10,
+          REGEXP_MATCHES(s, 'B', '') AS m11
+        FROM self
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_regexp_matches_null() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          REGEXP_MATCHES(NULL, 'x') AS a,
+          REGEXP_MATCHES('x', NULL) AS b,
+          REGEXP_MATCHES('x', NULL, 'li') AS c
+        """,
+        eager=True,
+    )
+    assert res.row(0) == (None, None, None)
+
+
+def test_regexp_matches_errors() -> None:
+    df = pl.DataFrame({"s": ["xyz"]})
+    with pytest.raises(SQLSyntaxError, match="does not take the 'g' option"):
+        df.sql("SELECT REGEXP_MATCHES(s, 'x', 'g') FROM self")
+    with pytest.raises(SQLSyntaxError, match="invalid REGEXP_MATCHES option 'x'"):
+        df.sql("SELECT REGEXP_MATCHES(s, 'x', 'x') FROM self")
+    with pytest.raises(SQLSyntaxError, match="string literal as the options"):
+        df.sql("SELECT REGEXP_MATCHES(s, 'x', s) FROM self")
+    with pytest.raises(SQLSyntaxError, match="REGEXP_MATCHES expects 2-3 arguments"):
+        df.sql("SELECT REGEXP_MATCHES(s) FROM self")

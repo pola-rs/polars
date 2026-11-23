@@ -66,6 +66,13 @@ impl ComputeNode for InputIndependentSelectNode {
         }
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self {
+            Self::Source(src) => src.memory_usage(),
+            Self::ToSelect { .. } | Self::Done => NodeMemoryUsage::Bounded,
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,

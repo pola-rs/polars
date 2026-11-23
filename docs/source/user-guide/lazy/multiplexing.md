@@ -24,7 +24,7 @@ order (so that Polars doesn't hit any fast paths for sorted keys).
 
 If you deal with the Polars eager API, making a variable and iterating over that temporary
 `DataFrame` gives the result you expect, as the result of the group-by is stored in `df1`. Even
-though the output order is unstable, it doesn't matter as it is eagerly evaluated. The follow
+though the output order is unstable, it doesn't matter as it is eagerly evaluated. The following
 snippet therefore doesn't raise and the assert passes.
 {{code_block('user-guide/lazy/multiplexing','eager',[])}}
 
@@ -47,7 +47,7 @@ The reason this fails is that `lf1` doesn't contain the materialized result of
 --8<-- "python/user-guide/lazy/multiplexing.py:plan_0"
 ```
 
-This means that every time we branch of this `LazyFrame` and call `collect` we re-evaluate the
+This means that every time we branch off this `LazyFrame` and call `collect` we re-evaluate the
 group-by. Besides being expensive, this also leads to unexpected results if you assume that the
 output is stable (which isn't the case here).
 

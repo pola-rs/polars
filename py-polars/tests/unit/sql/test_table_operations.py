@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import io
 import re
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -199,13 +201,877 @@ def test_cte_shadows_registered_table() -> None:
         assert ctx.execute("SELECT x FROM store").to_series().to_list() == [-1, -2]
 
 
-def test_cte_shadows_derived_table_from_earlier_query() -> None:
-    # a derived table stays registered after its query, but must not shadow a
-    # CTE that a later query defines under the same name
+def test_cte_named_like_derived_table_from_earlier_query() -> None:
     lf = pl.LazyFrame({"x": [1, 2, 3]})
     with pl.SQLContext(tbl=lf, eager=True) as ctx:
         ctx.execute("SELECT SUM(x) AS total FROM (SELECT x FROM tbl) agg")
-        assert "agg" in ctx.tables()
+        assert ctx.tables() == ["tbl"]
 
         res = ctx.execute("WITH agg AS (SELECT x FROM tbl) SELECT a.x FROM agg a")
         assert res.to_series().to_list() == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM range(2) AS lineitem",
+        "SELECT * FROM UNNEST([1, 2]) AS lineitem(z)",
+        "SELECT * FROM (SELECT 5 AS z) AS lineitem",
+        "SELECT * FROM (SELECT 5 AS z) AS foo",
+        "SELECT * FROM (SELECT 5 AS z) AS foo, lineitem",
+    ],
+)
+def test_from_items_last_for_their_query(query: str) -> None:
+    # #30070
+    ctx = pl.SQLContext(lineitem=pl.LazyFrame({"k": [1]}))
+    ctx.execute(query, eager=True)
+    assert ctx.tables() == ["lineitem"]
+    assert ctx.execute("SELECT * FROM lineitem", eager=True).columns == ["k"]
+
+
+FROM_ITEMS_NAMED_LINEITEM = [
+    "range(1, 3) AS lineitem(x)",
+    "UNNEST([1, 2]) AS lineitem(x)",
+    "(SELECT 1 AS x UNION ALL SELECT 2) AS lineitem",
+]
+
+
+@pytest.mark.parametrize("from_item", FROM_ITEMS_NAMED_LINEITEM)
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT lineitem.x FROM {from_item}",
+        "SELECT x FROM {from_item} WHERE EXISTS (SELECT 1 FROM t WHERE t.k = lineitem.x)",
+        "SELECT x FROM {from_item} WHERE x IN (SELECT x FROM lineitem)",
+        "SELECT * FROM {from_item}, lineitem AS l2",
+        "SELECT lineitem.x AS a, l2.x AS b FROM {from_item}, lineitem AS l2",
+        "SELECT l2.x AS a, lineitem.x AS b FROM lineitem AS l2, {from_item}",
+        "WITH lineitem AS (SELECT 7 AS x) SELECT * FROM {from_item}, lineitem AS l2",
+    ],
+)
+def test_from_item_alias_is_not_a_table(from_item: str, query: str) -> None:
+    assert_sql_matches(
+        {"lineitem": pl.DataFrame({"x": [2]}), "t": pl.DataFrame({"k": [2]})},
+        query=query.format(from_item=from_item),
+        compare_with="duckdb",
+        check_row_order=False,
+        check_column_names=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "WITH D AS (SELECT 7 AS c) SELECT d.a, D.c FROM (SELECT 1 AS a) AS d, D",
+        "WITH D AS (SELECT 7 AS c) SELECT D.c, d.a FROM D, (SELECT 1 AS a) AS d",
+        "SELECT t1.a, T1.b FROM (SELECT 1 AS a) AS t1, (SELECT 2 AS b) AS T1",
+        "SELECT r.x, R.b FROM range(1, 2) AS r(x), (SELECT 2 AS b) AS R",
+        "WITH U AS (SELECT 5 AS a) SELECT u.x, U.a FROM UNNEST([1]) AS u(x), U",
+    ],
+)
+def test_from_item_names_differing_in_case(query: str) -> None:
+    assert_sql_matches({}, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize("from_item", FROM_ITEMS_NAMED_LINEITEM)
+def test_from_item_alias_is_not_readable_as_a_table(from_item: str) -> None:
+    ctx = pl.SQLContext()
+    for query in [
+        f"SELECT x FROM {from_item} WHERE x IN (SELECT x FROM lineitem)",
+        f"SELECT * FROM {from_item} JOIN lineitem AS l2 ON lineitem.x = l2.x",
+    ]:
+        with pytest.raises(
+            SQLInterfaceError, match="relation 'lineitem' was not found"
+        ):
+            ctx.execute(query, eager=True)
+
+
+def _execute(ctx: pl.SQLContext[Any], query: str, *, eager_path: bool) -> pl.DataFrame:
+    # `CREATE TABLE ... AS` resolves the query eagerly; a plain query is deferred
+    if eager_path:
+        ctx.execute(f"CREATE TABLE res AS {query}")
+        query = "SELECT * FROM res"
+    return ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT k FROM tpch.lineitem",
+        'SELECT k FROM "tpch.lineitem"',
+        "SELECT k FROM TPCH.LineItem",
+        "SELECT lineitem.k FROM tpch.lineitem",
+        "SELECT tpch.lineitem.k FROM tpch.lineitem",
+        "SELECT li.k FROM tpch.lineitem AS li",
+        "SELECT lineitem.* FROM tpch.lineitem",
+        "SELECT tpch.lineitem.* FROM tpch.lineitem",
+        "SELECT k FROM (SELECT k FROM tpch.lineitem) sub",
+        "WITH c AS (SELECT k FROM tpch.lineitem) SELECT k FROM c",
+        "SELECT k FROM tpch.lineitem WHERE k < 0 UNION ALL TABLE tpch.lineitem",
+    ],
+)
+def test_qualified_table_name(query: str, eager_path: bool) -> None:
+    # a dotted relation name resolves as a whole, and its trailing parts qualify columns
+    lf = pl.LazyFrame({"k": [1, 2]})
+    with pl.SQLContext({"tpch.lineitem": lf}) as ctx:
+        res = _execute(ctx, query, eager_path=eager_path)
+        assert sorted(res.to_series().to_list()) == [1, 2]
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT k FROM onelake.tpch.lineitem",
+        "SELECT lineitem.k FROM onelake.tpch.lineitem",
+        "SELECT tpch.lineitem.k FROM onelake.tpch.lineitem",
+        "SELECT onelake.tpch.lineitem.k FROM onelake.tpch.lineitem",
+        "SELECT onelake.tpch.lineitem.* FROM onelake.tpch.lineitem",
+    ],
+)
+def test_three_part_table_name(query: str, eager_path: bool) -> None:
+    lf = pl.LazyFrame({"k": [1, 2]})
+    with pl.SQLContext({"onelake.tpch.lineitem": lf}) as ctx:
+        res = _execute(ctx, query, eager_path=eager_path)
+        assert res.to_series().to_list() == [1, 2]
+
+
+def test_qualified_table_name_serialized_plan() -> None:
+    lf = pl.LazyFrame({"k": [1, 2]})
+    with pl.SQLContext({"tpch.lineitem": lf}) as ctx:
+        res = ctx.execute("SELECT lineitem.k FROM tpch.lineitem WHERE k > 1")
+    res = pl.LazyFrame.deserialize(io.BytesIO(res.serialize()))
+    assert res.collect().to_series().to_list() == [2]
+
+
+def test_relation_takes_precedence_over_struct_path() -> None:
+    # `a.b.k` reads relation `a.b` when it is in FROM, else field `k` of struct `a.b`
+    frames = {
+        "a": pl.LazyFrame({"b": [{"k": 99}]}),
+        "a.b": pl.LazyFrame({"k": [1]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.execute("SELECT a.b.k FROM a, a.b", eager=True).item() == 1
+        assert ctx.execute("SELECT a.b.k FROM a", eager=True).item() == 99
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+def test_qualified_table_name_not_resolved_by_first_part(eager_path: bool) -> None:
+    frames = {
+        "tpch": pl.LazyFrame({"v": ["tpch"]}),
+        "tpch.lineitem": pl.LazyFrame({"v": ["tpch.lineitem"]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        res = _execute(ctx, "SELECT v FROM tpch.lineitem", eager_path=eager_path)
+        assert res.item() == "tpch.lineitem"
+
+
+def test_qualified_table_name_hidden_by_alias() -> None:
+    lf = pl.LazyFrame({"k": [1, 2]})
+    with (
+        pl.SQLContext({"tpch.lineitem": lf}) as ctx,
+        pytest.raises(
+            SQLInterfaceError, match=r'table "lineitem" is hidden by alias "li"'
+        ),
+    ):
+        ctx.execute("SELECT lineitem.k FROM tpch.lineitem AS li", eager=True)
+
+
+def test_create_table_if_not_exists() -> None:
+    # an existing table (matched ignoring case, as in FROM) is left as it is
+    with pl.SQLContext() as ctx:
+        ctx.execute("CREATE TABLE IF NOT EXISTS frame AS SELECT 1 AS x")
+        ctx.execute("CREATE TABLE IF NOT EXISTS frame AS SELECT 2 AS x")
+        ctx.execute("CREATE TABLE IF NOT EXISTS FRAME AS SELECT 3 AS x")
+        assert ctx.tables() == ["frame"]
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+
+@pytest.mark.parametrize("temp", ["TEMP", "TEMPORARY"])
+def test_create_temp_table(temp: str) -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute(f"CREATE {temp} TABLE frame AS SELECT 1 AS x")
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+        # an existing table (matched ignoring case) is an error, unlike CREATE TABLE
+        for sql in (
+            f"CREATE {temp} TABLE frame AS SELECT 2 AS x",
+            f"CREATE {temp} TABLE FRAME (x INT)",
+        ):
+            with pytest.raises(SQLInterfaceError, match="table 'frame' already exists"):
+                ctx.execute(sql)
+        # the query of a no-op does not run
+        ctx.execute(f"CREATE {temp} TABLE IF NOT EXISTS Frame AS SELECT * FROM nosuch")
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+        ctx.execute(f"CREATE OR REPLACE {temp} TABLE FRAME AS SELECT 4 AS x")
+        assert ctx.tables() == ["frame"]
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 4
+
+        ctx.execute(f"CREATE {temp} TABLE other LIKE frame")
+        assert ctx.execute("SELECT * FROM other", eager=True).columns == ["x"]
+        ctx.execute(f"CREATE OR REPLACE {temp} TABLE new AS SELECT 5 AS x")
+        assert sorted(ctx.tables()) == ["frame", "new", "other"]
+
+
+@pytest.mark.parametrize(
+    ("sql", "error"),
+    [
+        (
+            "CREATE OR REPLACE TABLE t AS SELECT 1 AS x",
+            "`CREATE OR REPLACE TABLE` is not supported",
+        ),
+        (
+            "CREATE OR REPLACE TEMP TABLE IF NOT EXISTS t AS SELECT 1 AS x",
+            "cannot be combined",
+        ),
+        (
+            "CREATE GLOBAL TEMPORARY TABLE t (x INT)",
+            "`CREATE GLOBAL/LOCAL TABLE` is not supported",
+        ),
+    ],
+)
+def test_create_temp_table_errors(sql: str, error: str) -> None:
+    with pytest.raises(SQLInterfaceError, match=error):
+        pl.SQLContext().execute(sql)
+
+
+def test_qualified_table_name_delete() -> None:
+    # the WHERE of a DELETE qualifies by a trailing part, as in SELECT
+    lf = pl.LazyFrame({"k": [1, 2]})
+    for where in ["t.k = 1", "s.t.k = 1", "k = 1"]:
+        with pl.SQLContext({"s.t": lf}) as ctx:
+            res = ctx.execute(f"DELETE FROM s.t WHERE {where}", eager=True)
+            assert res.to_series().to_list() == [2]
+
+
+def test_dotted_name_shared_with_quoted_alias() -> None:
+    # `s.t` and an alias `"s.t"` share a dotted name; a reference to either is ambiguous
+    frames = {"s.t": pl.LazyFrame({"k": [1]}), "u": pl.LazyFrame({"k": [2]})}
+    from_clause = 'FROM s.t CROSS JOIN u AS "s.t"'
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.execute(f"SELECT * {from_clause}", eager=True).rows() == [(1, 2)]
+        for query in [
+            f"SELECT s.t.k {from_clause}",
+            f'SELECT "s.t".k {from_clause}',
+            'SELECT * FROM s.t JOIN u AS "s.t" ON s.t.k < "s.t".k',
+        ]:
+            with pytest.raises(SQLInterfaceError, match="same dotted name"):
+                ctx.execute(query, eager=True)
+
+
+def test_quoted_dotted_name_is_one_part() -> None:
+    # `"tpch.lineitem"` finds the registered table, but as a qualifier it is one part
+    frames = {
+        "tpch.lineitem": pl.LazyFrame({"k": [1]}),
+        "t": pl.LazyFrame({"k": [2]}),
+        "u": pl.LazyFrame({"k": [3]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        for query, expected in [
+            ('SELECT "tpch.lineitem".k FROM "tpch.lineitem"', 1),
+            ("SELECT lineitem.k FROM tpch.lineitem", 1),
+            ('SELECT "a.b".k FROM t AS "a.b"', 2),
+            ('SELECT x.k FROM t AS x CROSS JOIN u AS "a.x"', 2),
+        ]:
+            assert ctx.execute(query, eager=True).item() == expected
+
+        for query, root in [
+            ('SELECT lineitem.k FROM "tpch.lineitem"', "lineitem"),
+            ('SELECT b.k FROM t AS "a.b"', "b"),
+        ]:
+            with pytest.raises(
+                SQLInterfaceError, match=rf"no table or struct column named '{root}'"
+            ):
+                ctx.execute(query, eager=True)
+
+
+def test_qualified_table_name_ddl() -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute("CREATE TABLE tpch.x AS SELECT 1 AS a")
+        assert ctx.tables() == ["tpch.x"]
+        assert ctx.execute("SELECT a FROM tpch.x", eager=True).item() == 1
+
+        ctx.execute("TRUNCATE TABLE tpch.x")
+        assert ctx.execute("SELECT a FROM tpch.x", eager=True).height == 0
+
+        ctx.execute("DROP TABLE tpch.x")
+        assert ctx.tables() == []
+
+
+@pytest.mark.parametrize(
+    ("name", "ddl"),
+    [
+        ("My Table", 'DROP TABLE "My Table"'),
+        ("My Table", 'TRUNCATE TABLE "My Table"'),
+        ("My Table", 'DELETE FROM "My Table"'),
+        ("frame", "DROP TABLE FRAME"),
+    ],
+)
+def test_ddl_table_name_quoting_and_case(name: str, ddl: str) -> None:
+    # quotes are not part of the name, and lookups ignore case as in FROM
+    with pl.SQLContext({name: pl.LazyFrame({"x": [1]})}) as ctx:
+        ctx.execute(ddl)
+        if ddl.startswith("DROP"):
+            assert ctx.tables() == []
+        else:
+            assert ctx.execute(f'SELECT * FROM "{name}"', eager=True).height == 0
+
+
+def test_relation_name_case_insensitive_ambiguity() -> None:
+    # a name matching several tables only when ignoring case is an error
+    frames = {
+        "Foo": pl.LazyFrame({"x": ["Foo"]}),
+        "FOO": pl.LazyFrame({"x": ["FOO"]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.execute("SELECT x FROM Foo", eager=True).item() == "Foo"
+        assert ctx.execute("SELECT x FROM FOO", eager=True).item() == "FOO"
+        # without a FROM, only the eager path sees the registered tables
+        for query, eager_path in (("SELECT x FROM foo", False), ("SELECT foo.x", True)):
+            with pytest.raises(SQLInterfaceError, match=r"foo.*matches more than one"):
+                _execute(ctx, query, eager_path=eager_path)
+
+
+def test_create_table_matching_existing_name_ignoring_case() -> None:
+    # CREATE TABLE finds an existing table as FROM does, ignoring case
+    with pl.SQLContext({"frame": pl.LazyFrame({"x": [1]})}) as ctx:
+        ctx.execute("CREATE TABLE FRAME AS SELECT 2 AS x")
+        assert ctx.tables() == ["frame"]
+        assert ctx.execute("SELECT x FROM Frame", eager=True).item() == 2
+
+        ctx.execute("CREATE TABLE other LIKE FRAME")
+        assert ctx.execute("SELECT * FROM other", eager=True).columns == ["x"]
+
+
+@pytest.mark.parametrize(
+    ("ddl", "error"),
+    [
+        ("TRUNCATE TABLE missing", "table 'missing' does not exist"),
+        ("TRUNCATE TABLE IF EXISTS missing", None),
+    ],
+)
+def test_truncate_missing_table(ddl: str, error: str | None) -> None:
+    with pl.SQLContext({"frame": pl.LazyFrame({"x": [1]})}) as ctx:
+        if error is None:
+            ctx.execute(ddl)
+        else:
+            with pytest.raises(SQLInterfaceError, match=error):
+                ctx.execute(ddl)
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+
+def test_qualifier_resolves_in_innermost_query_first() -> None:
+    # the inner alias `tpch` (struct column `orders`) wins over the outer `tpch.orders`
+    frames = {
+        "tpch.orders": pl.LazyFrame({"o_orderkey": [1]}),
+        "lineitem": pl.LazyFrame({"orders": [{"o_orderkey": 5}]}),
+    }
+    query = """
+        SELECT o_orderkey FROM tpch.orders
+        WHERE EXISTS (
+          SELECT 1 FROM lineitem AS tpch WHERE tpch.orders.o_orderkey > {n}
+        )
+    """
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.execute(query.format(n=2), eager=True).height == 1
+        assert ctx.execute(query.format(n=9), eager=True).height == 0
+
+
+def test_correlated_qualifier_naming_two_inner_relations() -> None:
+    # an inner qualifier naming two relations is ambiguous
+    frames = {
+        "o": pl.LazyFrame({"k": [1, 2]}),
+        "tpch.lineitem": pl.LazyFrame({"k": [1]}),
+        "tpch_sf100.lineitem": pl.LazyFrame({"k": [2]}),
+    }
+    query = """
+        SELECT * FROM o WHERE EXISTS (
+          SELECT 1 FROM tpch.lineitem, tpch_sf100.lineitem WHERE lineitem.k = o.k
+        )
+    """
+    with (
+        pl.SQLContext(frames) as ctx,
+        pytest.raises(
+            SQLInterfaceError, match=r'ambiguous reference to table "lineitem"'
+        ),
+    ):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+def test_from_table_name_is_not_an_earlier_alias(eager_path: bool) -> None:
+    # a table name in FROM is a CTE or registered table, never another FROM item's alias
+    frames = {
+        "u": pl.LazyFrame({"k": [2]}),
+        "t": pl.LazyFrame({"k": [1]}),
+        "s.t": pl.LazyFrame({"k": [1]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        for query in (
+            "SELECT actual.k FROM u AS t CROSS JOIN t AS actual",
+            'SELECT actual.k FROM u AS "s.t" CROSS JOIN s.t AS actual',
+        ):
+            res = _execute(ctx, query, eager_path=eager_path)
+            assert res.to_series().to_list() == [1]
+
+
+def test_ambiguous_column_hint_quotes_dotted_alias() -> None:
+    frames = {"u": pl.LazyFrame({"k": [1]}), "v": pl.LazyFrame({"k": [2]})}
+    with (
+        pl.SQLContext(frames) as ctx,
+        pytest.raises(SQLInterfaceError, match=r'use one of: "a\.b"\.k, z\.k'),
+    ):
+        ctx.execute('SELECT k FROM u AS "a.b" CROSS JOIN v AS z', eager=True)
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+@pytest.mark.parametrize("temp", ["", "TEMP ", "TEMPORARY "])
+def test_create_view(eager_path: bool, temp: str) -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1, 2, 3], "g": ["x", "x", "y"]})) as ctx:
+        ctx.execute(f"CREATE {temp}VIEW v AS SELECT a * 10 AS b, g FROM t WHERE a > 1")
+        ctx.execute(f"CREATE {temp}VIEW w (n, total) AS SELECT COUNT(*), SUM(b) FROM v")
+        ctx.execute(f"CREATE {temp}VIEW u AS TABLE w")
+        assert ctx.tables() == ["t", "u", "v", "w"]
+        for query, expected in (
+            ("SELECT b FROM v ORDER BY b", [20, 30]),
+            ("SELECT v.b FROM v JOIN t ON v.g = t.g WHERE t.a = 3", [30]),
+            ("SELECT a FROM t WHERE a * 10 IN (SELECT b FROM v) ORDER BY a", [2, 3]),
+            ("SELECT x.b + w.total FROM v AS x, w WHERE x.g = 'y'", [80]),
+            ("WITH v AS (SELECT 1 AS b) SELECT b FROM v", [1]),
+            ("SELECT 0, 0 UNION ALL TABLE w", [0, 2]),
+            ("SELECT n FROM u", [2]),
+        ):
+            res = _execute(ctx, query, eager_path=eager_path)
+            assert sorted(res.to_series().to_list()) == expected
+
+        # a view reads the tables as they are when a query is executed
+        lf = ctx.execute("SELECT n FROM w")
+        ctx.register("t", pl.LazyFrame({"a": [4, 5, 6, 7], "g": ["x"] * 4}))
+        assert ctx.execute("SELECT n FROM w", eager=True).item() == 4
+        assert lf.collect().item() == 2
+
+
+def test_create_view_replace() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1, 2]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(SQLInterfaceError, match="view 'v' already exists"):
+            ctx.execute("CREATE VIEW v AS SELECT 1 AS a")
+
+        # an existing view (matched ignoring case) is left as it is, and the query of a
+        # no-op does not run
+        ctx.execute("CREATE VIEW IF NOT EXISTS V AS SELECT * FROM nosuch")
+        assert ctx.execute("SELECT COUNT(*) FROM v", eager=True).item() == 2
+
+        ctx.execute("CREATE OR REPLACE VIEW V AS SELECT a + 1 AS b FROM t")
+        assert ctx.tables() == ["t", "v"]
+        assert ctx.execute("SELECT b FROM v", eager=True).to_series().to_list() == [
+            2,
+            3,
+        ]
+
+        # registering a frame replaces a view of the same name (ignoring case)
+        ctx.register("V", pl.LazyFrame({"c": [0]}))
+        assert ctx.tables() == ["V", "t"]
+        assert ctx.execute("SELECT c FROM v", eager=True).item() == 0
+        ctx.unregister("V")
+        with pytest.raises(SQLInterfaceError, match="relation 'v' was not found"):
+            ctx.execute("SELECT * FROM v", eager=True)
+
+
+def test_view_planned_with_statement() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        ctx.execute("CREATE VIEW clock AS SELECT CURRENT_TIMESTAMP AS ts")
+        ctx.unregister("t")
+
+        # a CTE hides the view of its name, which is then not planned
+        res = ctx.execute("WITH v AS (SELECT 2 AS a) SELECT a FROM v", eager=True)
+        assert res.item() == 2
+        with pytest.raises(SQLInterfaceError, match="relation 't' was not found"):
+            ctx.execute("SELECT a FROM v", eager=True)
+
+        # a view reads the time of the statement that reads it
+        res = ctx.execute("SELECT ts = CURRENT_TIMESTAMP FROM clock", eager=True)
+        assert res.item() is True
+
+        # each read of a view draws its own random values, also through another view
+        ctx.execute("CREATE VIEW r AS SELECT RANDOM() AS x")
+        ctx.execute("CREATE VIEW r2 AS SELECT x FROM r")
+        for view in ("r", "r2"):
+            res = ctx.execute(
+                f"SELECT a.x = b.x AS same FROM {view} a CROSS JOIN {view} b",
+                eager=True,
+            )
+            assert res.item() is False
+
+
+@pytest.mark.parametrize(
+    ("sql", "error"),
+    [
+        ("CREATE VIEW t AS SELECT 1 AS x", "'t' is a table, not a view"),
+        ("CREATE OR REPLACE VIEW T AS SELECT 1 AS x", "'t' is a table, not a view"),
+        ("CREATE TABLE v AS SELECT 1 AS x", "'v' is a view, not a table"),
+        ("CREATE OR REPLACE VIEW v AS SELECT * FROM v", "view 'v' reads itself"),
+        ("CREATE OR REPLACE VIEW v AS SELECT * FROM w", "view 'v' reads itself"),
+        ("CREATE VIEW x AS SELECT * FROM nosuch", "relation 'nosuch' was not found"),
+        ("CREATE VIEW x (p, q) AS SELECT a FROM t", "number of columns"),
+        ("CREATE MATERIALIZED VIEW x AS SELECT 1", "MATERIALIZED VIEW"),
+        ("CREATE VIEW x COMMENT = 'c' AS SELECT 1", "CREATE VIEW supports only"),
+        ("DROP VIEW t", "view 't' does not exist"),
+        ("DROP VIEW v, nosuch", "view 'nosuch' does not exist"),
+    ],
+)
+def test_create_view_errors(sql: str, error: str) -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        ctx.execute("CREATE VIEW w AS SELECT a FROM v")
+        with pytest.raises((SQLInterfaceError, SQLSyntaxError), match=error):
+            ctx.execute(sql)
+        # a failed statement changes nothing
+        assert ctx.tables() == ["t", "v", "w"]
+        assert ctx.execute("SELECT a FROM w", eager=True).item() == 1
+
+
+def test_drop_view() -> None:
+    with pl.SQLContext(t=pl.LazyFrame({"a": [1]})) as ctx:
+        for name in ("u", "v", "w"):
+            ctx.execute(f"CREATE VIEW {name} AS SELECT a FROM t")
+        ctx.execute("DROP VIEW U, v")
+        ctx.execute("DROP VIEW IF EXISTS v, nosuch")
+        assert ctx.tables() == ["t", "w"]
+        ctx.unregister("w")
+        assert ctx.tables() == ["t"]
+        with pytest.raises(SQLInterfaceError, match="relation 'w' was not found"):
+            ctx.execute("SELECT * FROM w", eager=True)
+
+
+@pytest.mark.parametrize("describe", ["DESCRIBE", "DESC"])
+def test_describe(describe: str, test_frame: pl.LazyFrame) -> None:
+    with pl.SQLContext(frame=test_frame) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT x * 2 AS x2, y FROM frame")
+        assert_frame_equal(
+            ctx.execute(f"{describe} frame", eager=True),
+            pl.DataFrame(
+                {
+                    "column_name": ["x", "y", "z"],
+                    "column_type": ["UTINYINT", "VARCHAR", "DATE"],
+                }
+            ),
+        )
+        assert ctx.execute(f"{describe} V", eager=True).rows() == [
+            ("x2", "UTINYINT"),
+            ("y", "VARCHAR"),
+        ]
+        # a query is described by the columns of its result
+        res = ctx.execute(
+            f"{describe} SELECT y, z, x::double precision AS f FROM frame WHERE x > 1",
+            eager=True,
+        )
+        assert res.rows() == [
+            ("y", "VARCHAR"),
+            ("z", "DATE"),
+            ("f", "DOUBLE PRECISION"),
+        ]
+        with pytest.raises(SQLInterfaceError, match="tables and queries only"):
+            ctx.execute(f"{describe} DROP TABLE frame")
+        assert ctx.tables() == ["frame", "v"]
+        with pytest.raises(SQLInterfaceError, match="relation 'nosuch' was not found"):
+            ctx.execute(f"{describe} nosuch")
+
+
+def test_information_schema_columns(test_frame: pl.LazyFrame) -> None:
+    with pl.SQLContext(frame=test_frame, df=pl.DataFrame({"a": [1]})) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT x * 2 AS x2, y FROM frame")
+        assert_frame_equal(
+            ctx.execute("SELECT * FROM information_schema.columns", eager=True),
+            pl.DataFrame(
+                {
+                    "table_name": ["df", "frame", "frame", "frame", "v", "v"],
+                    "column_name": ["a", "x", "y", "z", "x2", "y"],
+                    "ordinal_position": pl.Series([1, 1, 2, 3, 1, 2], dtype=pl.Int32),
+                    "data_type": ["i64", "u8", "str", "date", "u8", "str"],
+                    "is_nullable": ["YES"] * 6,
+                }
+            ),
+        )
+        res = ctx.execute(
+            """
+            SELECT c.column_name, c.data_type
+            FROM INFORMATION_SCHEMA.COLUMNS AS c
+            WHERE c.table_name = 'frame' AND c.ordinal_position > 1
+            """,
+            eager=True,
+        )
+        assert res.rows() == [("y", "str"), ("z", "date")]
+
+        # in a view, the views reading the metadata are not listed
+        ctx.execute("CREATE VIEW meta AS SELECT * FROM information_schema.columns")
+        ctx.execute("CREATE VIEW meta2 AS SELECT * FROM meta")
+        ctx.execute(
+            "CREATE VIEW plain AS WITH meta AS (SELECT 1 AS a) SELECT * FROM meta"
+        )
+        ctx.execute(
+            'CREATE VIEW plain2 AS WITH "information_schema.columns" AS '
+            '(SELECT 1 AS a) SELECT * FROM "information_schema.columns"'
+        )
+        res = ctx.execute(
+            "SELECT DISTINCT table_name FROM meta2 ORDER BY 1", eager=True
+        )
+        assert res.to_series().to_list() == ["df", "frame", "plain", "plain2", "v"]
+        res = ctx.execute(
+            "SELECT table_name, COUNT(*) FROM information_schema.columns "
+            "WHERE table_name LIKE 'meta%' GROUP BY 1 ORDER BY 1",
+            eager=True,
+        )
+        assert res.rows() == [("meta", 5), ("meta2", 5)]
+        ctx.execute("DROP VIEW plain2")
+        ctx.execute("DROP VIEW plain")
+        ctx.execute("DROP VIEW meta2")
+        ctx.execute("DROP VIEW meta")
+
+        # TABLE reads it too
+        ctx.execute("CREATE VIEW meta AS TABLE information_schema.columns")
+        assert ctx.execute("SELECT COUNT(*) FROM meta", eager=True).item() == 6
+        res = ctx.execute(
+            "SELECT COUNT(*) FROM (TABLE information_schema.columns "
+            "UNION ALL TABLE information_schema.columns)",
+            eager=True,
+        )
+        assert res.item() == 22
+        ctx.execute("DROP VIEW meta")
+
+        # the context's tables are read when the query is planned
+        lf = ctx.execute("SELECT column_name FROM information_schema.columns")
+        ctx.unregister("df")
+        assert lf.collect()["column_name"].to_list() == ["a", "x", "y", "z", "x2", "y"]
+
+
+def test_delete_from_registered_table_30714() -> None:
+    # later statements see the deletion, as after TRUNCATE; DELETE returns the rest
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2, 3, 4, 5]})}) as ctx:
+        res = ctx.execute("DELETE FROM t WHERE a = 1", eager=True)
+        assert res["a"].to_list() == [2, 3, 4, 5]
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3, 4, 5]
+
+        # a lazy execute changes the table too
+        ctx.execute("DELETE FROM t WHERE a = 5")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3, 4]
+
+        # an alias names the same table
+        ctx.execute("DELETE FROM t AS x WHERE x.a = 4")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2, 3]
+
+        # a subquery on the table sees it as before the DELETE
+        ctx.execute("DELETE FROM t WHERE a IN (SELECT min(a) FROM t)")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [3]
+        assert ctx.tables() == ["t"]
+
+        # without WHERE, as TRUNCATE
+        ctx.execute("DELETE FROM T")
+        out = ctx.execute("SELECT * FROM t", eager=True)
+        assert out.height == 0
+        assert out.columns == ["a"]
+
+
+@pytest.mark.write_disk
+def test_delete_leaves_sources_unchanged(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    path = tmp_path / "t.parquet"
+    df.write_parquet(path)
+    with pl.SQLContext({"scan": pl.scan_parquet(path), "frame": df}) as ctx:
+        ctx.execute("DELETE FROM scan WHERE a = 1")
+        ctx.execute("DELETE FROM frame WHERE a = 2")
+        assert ctx.execute("SELECT a FROM scan", eager=True)["a"].to_list() == [2, 3]
+        # the condition is pushed into the scan
+        assert "SELECTION" in ctx.execute("SELECT a FROM scan").explain()
+        assert ctx.execute("SELECT a FROM frame", eager=True)["a"].to_list() == [1, 3]
+    assert_frame_equal(pl.read_parquet(path), df)
+    assert df["a"].to_list() == [1, 2, 3]
+
+    # `df.sql` runs in its own context
+    assert df.sql("DELETE FROM self WHERE a = 1")["a"].to_list() == [2, 3]
+    assert df["a"].to_list() == [1, 2, 3]
+
+
+def test_delete_in_scope_persists() -> None:
+    # a table registered before the scope keeps the deletion, as after TRUNCATE
+    ctx = pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2]})})
+    with ctx:
+        ctx.execute("DELETE FROM t WHERE a = 1")
+    assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2]
+
+    # registering it again restores it
+    ctx.register("t", pl.LazyFrame({"a": [1, 2]}))
+    assert ctx.execute("SELECT count(*) FROM t", eager=True).item() == 2
+
+
+def test_delete_table_name_case() -> None:
+    frames = {
+        "Foo": pl.LazyFrame({"x": ["Foo", "Foo"]}),
+        "FOO": pl.LazyFrame({"x": ["FOO"]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        # the exact name wins
+        ctx.execute("DELETE FROM FOO")
+        assert ctx.execute("SELECT count(*) FROM FOO", eager=True).item() == 0
+        assert ctx.execute("SELECT count(*) FROM Foo", eager=True).item() == 2
+        with pytest.raises(SQLInterfaceError, match=r"foo.*matches more than one"):
+            ctx.execute("DELETE FROM foo")
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        (
+            "DELETE FROM (SELECT * FROM t) AS s WHERE a = 1",
+            "DELETE requires a registered table",
+        ),
+        ("DELETE FROM missing", "relation 'missing' was not found"),
+        # refused before its condition is checked
+        ("DELETE FROM v WHERE a = 'x'", "DELETE requires a registered table; 'v'"),
+    ],
+)
+def test_delete_requires_registered_table(query: str, error: str) -> None:
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1]})}) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(SQLInterfaceError, match=error):
+            ctx.execute(query)
+        assert ctx.execute("SELECT count(*) FROM t", eager=True).item() == 1
+
+
+@pytest.mark.parametrize(
+    ("condition", "error"),
+    [
+        ("missing = 1", pl.exceptions.ColumnNotFoundError),
+        ("a IN (SELECT s FROM u)", pl.exceptions.InvalidOperationError),
+    ],
+)
+def test_delete_failure_leaves_table_unchanged(
+    condition: str, error: type[Exception]
+) -> None:
+    frames = {"t": pl.LazyFrame({"a": [1, 2]}), "u": pl.LazyFrame({"s": ["x"]})}
+    with pl.SQLContext(frames) as ctx:
+        with pytest.raises(error):
+            ctx.execute(f"DELETE FROM t WHERE {condition}")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [1, 2]
+        ctx.execute("DELETE FROM t WHERE a = 1")
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [2]
+
+
+@pytest.mark.parametrize(
+    ("condition", "error"),
+    [
+        ("a = 'x'", pl.exceptions.ComputeError),
+        ("CAST(s AS INT) = 1", pl.exceptions.InvalidOperationError),
+    ],
+)
+def test_delete_condition_failing_on_read(
+    condition: str, error: type[Exception]
+) -> None:
+    # other errors show when the rows are read, on every read of the table
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1, 2], "s": ["1", "x"]})}) as ctx:
+        ctx.execute(f"DELETE FROM t WHERE {condition}")
+        with pytest.raises(error):
+            ctx.execute("SELECT * FROM t", eager=True)
+
+
+def test_delete_reads_no_data() -> None:
+    # a lazy DELETE reads no source, also not the tables of its subqueries
+    def fail(df: pl.DataFrame) -> pl.DataFrame:
+        msg = "source was read"
+        raise RuntimeError(msg)
+
+    source = pl.LazyFrame({"a": [1, 2]}).map_batches(fail, schema={"a": pl.Int64})
+    with pl.SQLContext({"t": source, "u": source}) as ctx:
+        ctx.execute("DELETE FROM t WHERE a IN (SELECT a FROM u)")
+
+
+def test_insert_into_registered_table() -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute("CREATE TABLE t (id INT, name VARCHAR, sold DATE)")
+        ctx.execute("CREATE VIEW v AS SELECT count(*) AS n FROM t")
+        res = ctx.execute(
+            "INSERT INTO t VALUES (1, 'a', DATE '2026-01-02')", eager=True
+        )
+        assert res.height == 1
+
+        # the listed columns, others NULL; a fraction going into an integer rounds
+        ctx.execute("INSERT INTO t (name, id) VALUES ('b', 2.5), ('c', 3.4)")
+        # a query on the table reads it as before the INSERT
+        ctx.execute("INSERT INTO t SELECT id + 10, name, sold FROM t WHERE id = 1")
+        expected = pl.DataFrame(
+            {
+                "id": [1, 3, 3, 11],
+                "name": ["a", "b", "c", "a"],
+                "sold": [date(2026, 1, 2), None, None, date(2026, 1, 2)],
+            },
+            schema={"id": pl.Int32, "name": pl.String, "sold": pl.Date},
+        )
+        assert_frame_equal(ctx.execute("SELECT * FROM t", eager=True), expected)
+        assert ctx.execute("SELECT n FROM v", eager=True).item() == 4
+
+        ctx.execute("INSERT OVERWRITE t (id) VALUES (9)")
+        assert ctx.execute("SELECT id FROM t", eager=True)["id"].to_list() == [9]
+
+
+def test_update_registered_table() -> None:
+    with pl.SQLContext(
+        {"t": pl.LazyFrame({"a": [1, 2, 3], "b": [10, 20, None]})}
+    ) as ctx:
+        res = ctx.execute("UPDATE t SET b = b + 1 WHERE a > 1", eager=True)
+        assert res["b"].to_list() == [10, 21, None]
+
+        # values come from the row before the update; a NULL condition updates nothing
+        ctx.execute("UPDATE t SET a = b, b = a WHERE b > 15")
+        # a fraction going into an integer rounds
+        ctx.execute("UPDATE t AS x SET b = 7.5 WHERE x.b IS NULL")
+        expected = pl.DataFrame({"a": [1, 21, 3], "b": [10, 2, 8]})
+        assert_frame_equal(ctx.execute("SELECT * FROM t", eager=True), expected)
+
+
+@pytest.mark.parametrize(
+    ("statement", "error", "match"),
+    [
+        ("INSERT INTO t VALUES (1, 2)", SQLInterfaceError, "the query gives 2"),
+        ("INSERT INTO t (x) VALUES (1)", pl.exceptions.ColumnNotFoundError, "'x'"),
+        ("INSERT INTO t VALUES ('1')", pl.exceptions.SchemaError, "with CAST"),
+        ("UPDATE t SET a = 'x'", pl.exceptions.SchemaError, "with CAST"),
+        # a VALUES list is computed at the INSERT
+        (
+            "INSERT INTO t VALUES (2147483648)",
+            pl.exceptions.InvalidOperationError,
+            "'a'",
+        ),
+        ("INSERT INTO v VALUES (1)", SQLInterfaceError, "requires a registered"),
+        ("UPDATE v SET a = 1", SQLInterfaceError, "requires a registered"),
+    ],
+)
+def test_insert_update_failure_leaves_table_unchanged(
+    statement: str, error: type[Exception], match: str
+) -> None:
+    with pl.SQLContext({"t": pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})}) as ctx:
+        ctx.execute("CREATE VIEW v AS SELECT a FROM t")
+        with pytest.raises(error, match=match):
+            ctx.execute(statement)
+        assert ctx.execute("SELECT a FROM t", eager=True)["a"].to_list() == [1]
+
+
+def test_statements_reading_their_own_table() -> None:
+    # an incremental load and a delete that read their own table, repeated: computed at
+    # the statement, so the table's plan does not grow with each of them
+    with pl.SQLContext({"src": pl.LazyFrame({"id": [1, 2, 3, 3]})}) as ctx:
+        ctx.execute("CREATE TABLE t (id BIGINT)")
+        ctx.execute("CREATE VIEW v AS SELECT id FROM t")
+        for _ in range(20):
+            ctx.execute(
+                "INSERT INTO t SELECT DISTINCT id FROM src "
+                "WHERE id NOT IN (SELECT id FROM t)"
+            )
+            ctx.execute("INSERT INTO t SELECT max(id) + 1 FROM v")
+        for _ in range(20):
+            ctx.execute("DELETE FROM t WHERE id IN (SELECT max(id) FROM v)")
+        assert ctx.execute("SELECT id FROM t ORDER BY id", eager=True)[
+            "id"
+        ].to_list() == [1, 2, 3]

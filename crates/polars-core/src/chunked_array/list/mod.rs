@@ -50,23 +50,24 @@ impl ListChunked {
 
     /// Convert the datatype of the list into the physical datatype.
     pub fn to_physical_repr(&self) -> Cow<'_, ListChunked> {
-        let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
+        let inner_dtype = self.inner_dtype();
+        if inner_dtype.to_physical() == *inner_dtype {
             return Cow::Borrowed(self);
-        };
+        }
 
-        let ca = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
-            // Physical repr got rechunked, rechunk self as well.
-            self.rechunk()
-        } else {
-            Cow::Borrowed(self)
-        };
-
-        assert_eq!(ca.chunks().len(), physical_repr.chunks().len());
-
-        let chunks: Vec<_> = ca
+        // Each chunk is converted on its own, as sliced chunks can share one large values array.
+        let chunks: Vec<_> = self
             .downcast_iter()
-            .zip(physical_repr.into_chunks())
-            .map(|(chunk, values)| {
+            .map(|chunk| {
+                // SAFETY: the values have the inner dtype.
+                let values = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::EMPTY,
+                        vec![chunk.values().clone()],
+                        inner_dtype,
+                    )
+                };
+                let values = values.to_physical_repr().rechunk().chunks()[0].clone();
                 LargeListArray::new(
                     ArrowDataType::LargeList(Box::new(ArrowField::new(
                         LIST_VALUES_NAME,
@@ -82,7 +83,7 @@ impl ListChunked {
             .collect();
 
         let name = self.name().clone();
-        let dtype = DataType::List(Box::new(self.inner_dtype().to_physical()));
+        let dtype = DataType::List(Box::new(inner_dtype.to_physical()));
         Cow::Owned(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
     }
 

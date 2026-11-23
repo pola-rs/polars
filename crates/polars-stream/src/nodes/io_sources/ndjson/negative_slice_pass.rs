@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::executor::{self, AbortOnDropHandle, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::linearizer::Linearizer;
 use polars_async::primitives::oneshot_channel;
 use polars_core::frame::DataFrame;
@@ -11,6 +11,7 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
+use polars_utils::slice_enum::Slice;
 
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -28,6 +29,7 @@ pub struct MorselStreamReverser {
     pub offset_len_rtl: (usize, usize),
     pub row_index: Option<(RowIndex, oneshot_channel::Receiver<usize>)>,
     pub verbose: bool,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl MorselStreamReverser {
@@ -38,6 +40,7 @@ impl MorselStreamReverser {
             offset_len_rtl,
             row_index,
             verbose,
+            task_metrics,
         } = self;
 
         // Accumulated morsels
@@ -88,10 +91,7 @@ impl MorselStreamReverser {
         // The NDJSON workers don't stop at exactly the right number of rows (they stop when they
         // see the channel closed).
         let combined_df = if combined_df.height() > offset_len_rtl.1 {
-            combined_df.slice(
-                i64::try_from(combined_df.height() - offset_len_rtl.1).unwrap(),
-                usize::MAX,
-            )
+            combined_df.slice(Slice::tail(offset_len_rtl.1))
         } else {
             combined_df
         };
@@ -168,6 +168,7 @@ impl MorselStreamReverser {
         // Otherwise we will wrap around on fetch_add
         assert!(usize::MAX - n_chunks >= n_tasks);
 
+        let metrics = task_metrics.as_deref();
         let sender_join_handles = morsel_senders
             .into_iter()
             .take(n_tasks)
@@ -175,7 +176,7 @@ impl MorselStreamReverser {
                 let chunk_idx_arc = chunk_idx_arc.clone();
                 let combined_df = combined_df.clone();
                 let row_index = row_index.clone();
-                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, metrics, async move {
                     loop {
                         let chunk_idx =
                             chunk_idx_arc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -185,7 +186,7 @@ impl MorselStreamReverser {
                         }
 
                         let row_offset = chunk_idx.saturating_mul(chunk_size);
-                        let mut df = combined_df.slice(row_offset.try_into().unwrap(), chunk_size);
+                        let mut df = combined_df.slice((row_offset, chunk_size));
 
                         assert!(df.height() > 0); // If we did our calculations properly
 

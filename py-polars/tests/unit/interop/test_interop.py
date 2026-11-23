@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
@@ -27,6 +27,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -84,6 +86,93 @@ def test_arrow_dict_to_polars() -> None:
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
     assert_series_equal(s, pl.Series("pa_dict", pa_dict))
+
+
+def _arrow_field(dtype: pl.DataType) -> pa.Field:
+    return pl.DataFrame({"x": pl.Series([], dtype=dtype)}).to_arrow().schema.field("x")
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected", "expected_cats", "expected_phys"),
+    [
+        # More rows than dictionary values: each value is looked up once.
+        (
+            [2, None, 0, 2, 3, 0],
+            ["b", None, "a", "b", None, "a"],
+            ["b", "a"],
+            [0, None, 1, 0, None, 1],
+        ),
+        ([3, 0, 3, 2], [None, "a", None, "b"], ["a", "b"], [None, 0, None, 1]),
+        ([2, 0, 2, 0], ["b", "a", "b", "a"], ["b", "a"], [0, 1, 0, 1]),
+        # Fewer rows than dictionary values: each row is looked up.
+        ([2, 3], ["b", None], ["b"], [0, None]),
+    ],
+)
+def test_arrow_dict_to_categorical(
+    keys: list[int | None],
+    expected: list[str | None],
+    expected_cats: list[str],
+    expected_phys: list[int | None],
+) -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    field = _arrow_field(pl.Categorical(cats))
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array(keys, pa.uint8()),
+        pa.array(["a", "unused", "b", None], pa.large_string()),
+    )
+    s = cast("pl.DataFrame", pl.from_arrow(pa.table({"x": arr}, pa.schema([field]))))[
+        "x"
+    ]
+    assert s.dtype == pl.Categorical(cats)
+    assert s.to_list() == expected
+    # Unused dictionary values are not inserted, and ids follow first use.
+    assert cats.to_series().to_list() == expected_cats
+    assert s.to_physical().to_list() == expected_phys
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [([-1, 0, 1, 0], [None, "a", "b", "a"]), ([-1], [None])],
+)
+def test_arrow_dict_negative_keys(keys: list[int], expected: list[str | None]) -> None:
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array(keys, pa.int32()), pa.array(["a", "b"]), safe=False
+    )
+    assert cast("pl.Series", pl.from_arrow(arr)).to_list() == expected
+
+
+def test_arrow_dict_out_of_bounds_keys() -> None:
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array([0, 2, 1], pa.int32()), pa.array(["a", "b"]), safe=False
+    )
+    with pytest.raises(pl.exceptions.PanicException):
+        pl.from_arrow(arr)
+
+
+def test_arrow_dict_to_enum() -> None:
+    dtype = pl.Enum(["b", "c"])
+    field = _arrow_field(dtype)
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array([2, None, 0, 2, 3, 0], pa.uint8()),
+        pa.array(["a", "unused", "b", None], pa.large_string()),
+    )
+    s = cast("pl.DataFrame", pl.from_arrow(pa.table({"x": arr}, pa.schema([field]))))[
+        "x"
+    ]
+    assert s.dtype == dtype
+    assert s.to_list() == ["b", None, None, "b", None, None]
+
+
+def test_arrow_dict_chunks_to_categorical() -> None:
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays([1, 0, 1], ["a", "b"]),
+            pa.DictionaryArray.from_arrays([0, None, 1], ["c", "a"]),
+        ]
+    )
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["b", "a", "b", "c", None, "a"]
 
 
 def test_arrow_list_chunked_array() -> None:
@@ -930,6 +1019,28 @@ def test_from_arrow_invalid_time_zone() -> None:
         pl.from_arrow(arr)
 
 
+@pytest.mark.parametrize("time_zone", ["+05:30", "GMT+8", "Z", "not-a-zone"])
+@pytest.mark.parametrize("n_rows", [0, 1])
+def test_from_arrow_unreadable_time_zone_is_an_error_not_a_panic(
+    time_zone: str, n_rows: int
+) -> None:
+    # an empty batch took a path that unwrapped the time zone (a panic)
+    values = [datetime(2021, 1, 1)] * n_rows
+    ts = pa.array(values, type=pa.timestamp("us", tz=time_zone))
+    nested = pa.array([values] * n_rows, type=pa.list_(ts.type))
+    for table in [
+        pa.table({"ts": ts}),
+        pa.table({"x": nested}),
+        pa.table(
+            {"s": pa.array([{"t": v} for v in values], pa.struct([("t", ts.type)]))}
+        ),
+    ]:
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.from_arrow(table)
+        with pytest.raises(ComputeError, match="unable to parse time zone"):
+            pl.DataFrame(table)
+
+
 @pytest.mark.parametrize(
     ("fixed_offset", "etc_tz"),
     [
@@ -947,13 +1058,13 @@ def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
         type=pa.timestamp("us", tz=fixed_offset),
     )
     result = cast("pl.Series", pl.from_arrow(arr))
-    expected = pl.Series(
-        [datetime(2021, 1, 1, tzinfo=timezone.utc)]
-    ).dt.convert_time_zone(etc_tz)
+    expected = pl.Series([datetime(2021, 1, 1, tzinfo=UTC)]).dt.convert_time_zone(
+        etc_tz
+    )
     assert_series_equal(result, expected)
 
 
-def test_from_avro_valid_time_zone_13032() -> None:
+def test_from_arrow_valid_time_zone_13032() -> None:
     arr = pa.array(
         [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="00:00")
     )
@@ -1016,6 +1127,96 @@ def test_compat_level(plmonkeypatch: PlMonkeyPatch) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "arrow_dtype",
+    [pa.decimal32(9, 7), pa.decimal64(18, 8), pa.decimal128(38, 8)],
+)
+def test_pycapsule_stream_decimal_29651(arrow_dtype: pa.DataType) -> None:
+    values = [Decimal("24.5790000"), Decimal("-1.2345678"), None]
+    table = pa.table({"x": pa.array(values, type=arrow_dtype)})
+    schema = {"x": pl.Decimal(arrow_dtype.precision, arrow_dtype.scale)}
+
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    df = pl.DataFrame(PyCapsuleStreamHolder(reader))
+    assert_frame_equal(df, pl.DataFrame({"x": values}, schema=schema))
+
+    reader = pa.RecordBatchReader.from_batches(
+        table.schema, table.slice(1).to_batches()
+    )
+    df = pl.DataFrame(PyCapsuleStreamHolder(reader))
+    expected = pl.DataFrame({"x": [Decimal("-1.2345678"), None]}, schema=schema)
+    assert_frame_equal(df, expected)
+
+
+def test_from_arrow_nested_decimal_29651() -> None:
+    table = pa.table(
+        {
+            "l": pa.array(
+                [[Decimal("1.5"), None], None, [Decimal("-2.25")], []],
+                pa.list_(pa.decimal64(10, 2)),
+            ),
+            "s": pa.array(
+                [{"d": Decimal("3.125")}, {"d": Decimal("-1.5")}, {"d": None}, None],
+                pa.struct([("d", pa.decimal32(5, 3))]),
+            ),
+        }
+    )
+    df = pl.DataFrame(table)
+    expected = pl.DataFrame(
+        {
+            "l": [[Decimal("1.50"), None], None, [Decimal("-2.25")], []],
+            "s": [
+                {"d": Decimal("3.125")},
+                {"d": Decimal("-1.500")},
+                {"d": None},
+                None,
+            ],
+        },
+        schema={
+            "l": pl.List(pl.Decimal(10, 2)),
+            "s": pl.Struct({"d": pl.Decimal(5, 3)}),
+        },
+    )
+    assert_frame_equal(df, expected)
+
+
+ARRAY_TEST_DATA = [[-250, 125], None, [125, None], [125, -250]]
+
+
+@pytest.mark.parametrize(
+    ("array", "inner_dtype"),
+    [
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.int32(), 2)), pl.Int32),
+        (pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal32(5, 2), 2)), pl.Decimal(5, 2)),
+        (
+            pa.array(ARRAY_TEST_DATA, pa.list_(pa.decimal64(12, 2), 2)),
+            pl.Decimal(12, 2),
+        ),
+        (
+            # child array with its own offset
+            pa.FixedSizeListArray.from_arrays(
+                pa.array([9, 9, -250, 125, 0, 0, 125, None, 125, -250]).slice(2),
+                2,
+                mask=pa.array([False, True, False, False]),
+            ),
+            pl.Int64,
+        ),
+        (pa.array([[], None, [], []], pa.list_(pa.int32(), 0)), pl.Int32),
+    ],
+)
+def test_from_arrow_sliced_fixed_size_list(
+    array: pa.FixedSizeListArray, inner_dtype: pl.DataType
+) -> None:
+    for source in (
+        array.slice(1, 2),
+        array.slice(2, 0),
+        pa.chunked_array([array.slice(0, 2), array.slice(2)]),
+    ):
+        series = pl.Series(source)
+        assert series.dtype == pl.Array(inner_dtype, array.type.list_size)
+        assert series.to_list() == source.to_pylist()
+
+
 def test_df_pycapsule_interface() -> None:
     df = pl.DataFrame(
         {
@@ -1073,7 +1274,7 @@ def test_to_arrow_empty_chunks_20627() -> None:
     assert df.to_arrow().shape == (1, 1)
 
 
-def test_from_arrow_recorbatch() -> None:
+def test_from_arrow_recordbatch() -> None:
     n_legs = pa.array([2, 2, 4, 4, 5, 100])
     animals = pa.array(
         ["Flamingo", "Parrot", "Dog", "Horse", "Brittle stars", "Centipede"]
@@ -1500,6 +1701,94 @@ def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
         pq.write_table(arrow_tbl, f)
 
 
+_MDN = pa.month_day_nano_interval()
+_INTERVALS = [(2, 3, 4001), None, (-1, 0, 1_000)]
+
+
+def _mdn_table(column: pa.Array) -> pa.Table:
+    return pa.table({"c": column})
+
+
+def _mdn_ipc(column: pa.Array) -> bytes:
+    f = io.BytesIO()
+    with pa.ipc.new_file(f, _mdn_table(column).schema) as w:
+        w.write_table(_mdn_table(column))
+    return f.getvalue()
+
+
+@pytest.mark.parametrize(
+    "to_intervals",
+    [
+        lambda: pl.Series(pa.array(_INTERVALS, _MDN)),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.list_(_MDN))).explode(),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.large_list(_MDN))).explode(),
+        lambda: pl.Series(pa.array([_INTERVALS], pa.list_(_MDN, 3))).explode(),
+        lambda: pl.Series(
+            pa.array([[(9, 9, 9)], _INTERVALS], pa.list_(_MDN)).slice(1)
+        ).explode(),
+        lambda: pl.Series(
+            pa.chunked_array([[_INTERVALS[:1]], [_INTERVALS[1:]]], pa.list_(_MDN))
+        ).explode(),
+        lambda: pl.Series(
+            pa.array([[(9, 9, 9)] * 3, _INTERVALS], pa.list_(_MDN, 3)).slice(1)
+        ).explode(),
+        lambda: pl.Series(pa.array([None, _INTERVALS], pa.list_(_MDN))).explode()[1:],
+        lambda: pl.Series(
+            pa.DictionaryArray.from_arrays(
+                pa.array([0], pa.int32()), pa.array([_INTERVALS], pa.list_(_MDN))
+            )
+        ).explode(),
+        lambda: pl.read_ipc(_mdn_ipc(pa.array([_INTERVALS], pa.list_(_MDN))))[
+            "c"
+        ].explode(),
+        lambda: pl.Series(
+            pa.array([{"a": v} for v in _INTERVALS], pa.struct([("a", _MDN)]))
+        ).struct.field("a"),
+        lambda: pl.DataFrame(_mdn_table(pa.array(_INTERVALS, _MDN)).to_reader())["c"],
+        lambda: pl.DataFrame(
+            _mdn_table(pa.array([_INTERVALS], pa.list_(_MDN))).to_reader()
+        )["c"].explode(),
+        lambda: (
+            pl.scan_arrow_c_stream(
+                _mdn_table(pa.array([_INTERVALS], pa.list_(_MDN))).to_reader()
+            )
+            .collect()["c"]
+            .explode()
+        ),
+    ],
+)
+def test_nested_month_day_nano_import_30920(
+    to_intervals: Callable[[], pl.Series], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IMPORT_INTERVAL_AS_STRUCT", "1")
+    s = to_intervals()
+    assert s.dtype == pl.Struct(
+        {"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Duration("ns")}
+    )
+    assert s.is_null().to_list() == [False, True, False]
+    out = s.struct.unnest().with_columns(pl.col("nanoseconds").cast(pl.Int64))
+    expected = pl.DataFrame(
+        {
+            "months": [2, None, -1],
+            "days": [3, None, 0],
+            "nanoseconds": [4001, None, 1000],
+        },
+        schema={"months": pl.Int32, "days": pl.Int32, "nanoseconds": pl.Int64},
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "dtype", [pa.list_(_MDN), pa.large_list(_MDN), pa.list_(_MDN, 3)]
+)
+def test_nested_month_day_nano_import_disabled_30920(dtype: pa.DataType) -> None:
+    arr = pa.array([_INTERVALS], dtype)
+    with pytest.raises(ComputeError, match="POLARS_IMPORT_INTERVAL_AS_STRUCT"):
+        pl.Series(arr)
+    with pytest.raises(ComputeError, match="POLARS_IMPORT_INTERVAL_AS_STRUCT"):
+        pl.DataFrame(_mdn_table(arr).to_reader())
+
+
 def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow() == pa.schema(
         [pa.field("x", pa.string_view())]
@@ -1508,6 +1797,24 @@ def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow(
         compat_level=CompatLevel.oldest()
     ) == pa.schema([pa.field("x", pa.large_string())])
+
+
+def test_0_width_df_arrow_c_stream_is_one_batch() -> None:
+    df = pl.DataFrame(height=1 << 20)
+
+    for stream in [df, df.lazy().collect_batches()]:
+        reader = pa.RecordBatchReader.from_stream(stream)
+        assert [batch.num_rows for batch in reader] == [1 << 20]
+
+
+def test_arrow_c_stream_exports_share_a_scalar_column() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(b=pl.lit(7, dtype=pl.Int64))
+
+    t1, t2 = pa.table(df), pa.table(df)
+
+    assert t1["b"].chunks[0].buffers()[1].address == (
+        t2["b"].chunks[0].buffers()[1].address
+    )
 
 
 def test_0_width_df_roundtrip() -> None:
@@ -1684,3 +1991,41 @@ def test_series_from_arrow_large_list_keeps_fast_explode_28626(
     assert imported.to_list() == values
     assert imported.flags["FAST_EXPLODE"] is fast_explode
     assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", ["x", "y", None, "x"], dtype=pl.Categorical),
+        pl.Series("a", ["x", "y", None, "x"], dtype=pl.Enum(["x", "y"])),
+        pl.Series("a", [["x", "y"], None], dtype=pl.List(pl.Categorical)),
+    ],
+)
+def test_export_arrow_to_c_logical_dtype(s: pl.Series) -> None:
+    import ctypes
+
+    # sizeof(struct ArrowArray) and sizeof(struct ArrowSchema) on 64-bit platforms.
+    c_array = ctypes.create_string_buffer(80)
+    c_schema = ctypes.create_string_buffer(72)
+    s._export_arrow_to_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
+    arr = pa.Array._import_from_c(ctypes.addressof(c_array), ctypes.addressof(c_schema))
+    arr.validate(full=True)
+    assert arr.equals(s.to_arrow(compat_level=CompatLevel.newest()))
+
+
+@pytest.mark.parametrize(
+    "export",
+    [
+        lambda df: pa.table(df),
+        lambda df: pa.RecordBatchReader.from_stream(df.lazy().collect_batches()),
+    ],
+    ids=["DataFrame", "LazyFrame.collect_batches"],
+)
+def test_arrow_c_stream_raises_on_a_nul_in_a_column_name(
+    export: Callable[[pl.DataFrame], Any],
+) -> None:
+    # Exporting the name panics in the stream's `get_schema` callback.
+    df = pl.DataFrame({"a\0b": [1]})
+
+    with pytest.raises(OSError, match="panic in an Arrow C stream callback"):
+        export(df)

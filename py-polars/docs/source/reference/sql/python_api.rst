@@ -188,10 +188,12 @@ Methods
     SQLContext.execute
     SQLContext.execute_global
     SQLContext.register
+    SQLContext.register_catalog
     SQLContext.register_globals
     SQLContext.register_many
     SQLContext.tables
     SQLContext.unregister
+    SQLContext.unregister_catalog
 
 
 **Example:**
@@ -227,3 +229,38 @@ Methods
 .. seealso::
 
   :ref:`pl.sql <global_sql>`
+
+
+.. _sql_params:
+
+Query parameters
+----------------
+
+:meth:`SQLContext.execute`, :func:`polars.sql` and the ``sql`` methods of frames and
+Series take the values of query parameters with ``params``. A list or tuple gives the
+values of the positional parameters ``?`` (in order) or ``$1``, ``$2``, ...; a dict gives
+the values of the named parameters ``$name`` or ``:name``.
+
+A parameter acts as a literal of its value, so it cannot inject SQL, and it can be used
+where a literal can: in ``LIMIT``, as a format string, as the path of a table function,
+and so on. Every parameter needs a value and every value must be used. Parameters are
+not supported in ``CREATE VIEW``, or as an ``ORDER BY`` or ``GROUP BY`` item.
+
+**Example:**
+
+.. code-block:: python
+
+    import polars as pl
+
+    df = pl.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+    df.sql("SELECT name FROM self WHERE id > $min_id", params={"min_id": 1})
+
+    # shape: (2, 1)
+    # ┌──────┐
+    # │ name │
+    # │ ---  │
+    # │ str  │
+    # ╞══════╡
+    # │ b    │
+    # │ c    │
+    # └──────┘

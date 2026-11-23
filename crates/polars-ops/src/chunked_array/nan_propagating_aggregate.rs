@@ -6,7 +6,7 @@ use polars_arrow::legacy::kernels::take_agg::{
 use polars_compute::rolling;
 use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
 use polars_core::frame::group_by::aggregations::{
-    _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
+    _agg_helper_idx, _agg_helper_slice, _idx_in_bounds, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
 };
 use polars_core::prelude::*;
@@ -33,6 +33,8 @@ where
 
 pub fn nan_min_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, _) => nan_min_s(s.to_storage(), name).into_extension(typ.clone()),
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();
@@ -52,6 +54,8 @@ pub fn nan_min_s(s: &Series, name: PlSmallStr) -> Series {
 
 pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, _) => nan_max_s(s.to_storage(), name).into_extension(typ.clone()),
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();
@@ -72,7 +76,7 @@ pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
 unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series {
     match groups {
         GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-            debug_assert!(idx.len() <= ca.len());
+            debug_assert!(_idx_in_bounds(idx, ca.len()));
             if idx.is_empty() {
                 None
             } else if idx.len() == 1 {
@@ -102,7 +106,8 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             monotonic,
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
-                let arr = ca.downcast_iter().next().unwrap();
+                let ca = ca.rechunk();
+                let arr = ca.downcast_as_array();
                 let values = arr.values().as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
@@ -139,7 +144,7 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
 unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series {
     match groups {
         GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
-            debug_assert!(idx.len() <= ca.len());
+            debug_assert!(_idx_in_bounds(idx, ca.len()));
             if idx.is_empty() {
                 None
             } else if idx.len() == 1 {
@@ -169,7 +174,8 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             monotonic,
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
-                let arr = ca.downcast_iter().next().unwrap();
+                let ca = ca.rechunk();
+                let arr = ca.downcast_as_array();
                 let values = arr.values().as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
@@ -207,6 +213,10 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
 /// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, _) => {
+            group_agg_nan_min_s(s.to_storage(), groups).into_extension(typ.clone())
+        },
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();
@@ -228,6 +238,10 @@ pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsType) -> Series {
 /// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, _) => {
+            group_agg_nan_max_s(s.to_storage(), groups).into_extension(typ.clone())
+        },
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();

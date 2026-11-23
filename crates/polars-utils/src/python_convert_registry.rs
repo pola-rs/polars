@@ -16,6 +16,8 @@ pub struct FromPythonConvertRegistry {
     pub df: FromPython,
     pub dsl_plan: FromPython,
     pub schema: FromPython,
+    pub expr: FromPython,
+    pub dtype: FromPython,
 }
 
 #[derive(Clone)]
@@ -24,6 +26,8 @@ pub struct ToPythonConvertRegistry {
     pub series: ToPython,
     pub dsl_plan: ToPython,
     pub schema: ToPython,
+    pub expr: ToPython,
+    pub dtype: ToPython,
 }
 
 impl ToPythonConvertRegistry {
@@ -95,6 +99,18 @@ impl PythonConvertRegistry {
             py.import("polars.io.iceberg._sink")
                 .unwrap()
                 .getattr("IcebergSinkState")
+                .unwrap()
+                .unbind()
+        })
+    }
+
+    pub fn py_delta_sink_state_class(&self, py: Python<'_>) -> &'static Py<PyAny> {
+        static CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+        CLS.get_or_init(py, || {
+            py.import("polars.io.delta._sink")
+                .unwrap()
+                .getattr("DeltaSinkState")
                 .unwrap()
                 .unbind()
         })

@@ -37,6 +37,7 @@ use polars_utils::algebraic_ops::*;
 const CHUNK_SIZE: usize = 128;
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct VarState {
     weight: f64,
@@ -45,6 +46,7 @@ pub struct VarState {
 }
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct CovState {
     weight: f64,
@@ -54,6 +56,7 @@ pub struct CovState {
 }
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct PearsonState {
     weight: f64,
@@ -278,6 +281,7 @@ impl PearsonState {
 }
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct SkewState {
     weight: f64,
@@ -414,6 +418,7 @@ impl SkewState {
 }
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct KurtosisState {
     weight: f64,

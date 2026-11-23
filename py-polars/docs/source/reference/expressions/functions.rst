@@ -35,6 +35,7 @@ These functions are available from the Polars module root and can be used as exp
    cum_sum
    cum_sum_horizontal
    date
+   date_diff
    date_range
    date_ranges
    datetime
@@ -70,6 +71,7 @@ These functions are available from the Polars module root and can be used as exp
    n_unique
    nth
    ones
+   pipe_with_dtype
    quantile
    reduce
    repeat

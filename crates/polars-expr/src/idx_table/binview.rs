@@ -1,24 +1,28 @@
 #![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
 #![allow(unsafe_op_in_unsafe_fn)]
 
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use polars_arrow::array::{Array, View};
-use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unitvec;
 
 use super::*;
-use crate::hash_keys::HashKeys;
+use crate::hash_keys::{BinviewKeys, DictCodeCache, DictCodes, HashKeys, MAX_DICT_CODE_CACHE_LEN};
 
 pub struct BinviewKeyIdxTable {
-    // These AtomicU64s actually are IdxSizes, but we use the top bit of the
-    // first index in each to mark keys during probing.
-    idx_map: BinaryViewIndexMap<UnitVec<RelaxedCell<u64>>>,
+    idx_map: BinaryViewIndexMap<UnitVec<RelaxedCell<IdxSize>>>,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
-    nulls_emitted: RelaxedCell<bool>,
+    nulls_marked: RelaxedCell<bool>,
+    matched: MatchedRows,
+    /// Identifies the table's current contents for per-thread probe caches.
+    uid: u64,
 }
 
 impl BinviewKeyIdxTable {
@@ -27,37 +31,29 @@ impl BinviewKeyIdxTable {
             idx_map: BinaryViewIndexMap::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
-            nulls_emitted: RelaxedCell::from(false),
+            nulls_marked: RelaxedCell::from(false),
+            matched: MatchedRows::default(),
+            uid: next_table_uid(),
         }
     }
 
-    /// # Safety
-    /// The view must be valid for the buffers.
+    /// Pushes the matches of a key whose table entry is `idxs`.
     #[inline(always)]
     unsafe fn probe_one<const MARK_MATCHES: bool>(
         &self,
         key_idx: IdxSize,
-        hash: u64,
-        key: &View,
-        buffers: &[Buffer<u8>],
+        idxs: Option<&UnitVec<RelaxedCell<IdxSize>>>,
         table_match: &mut Vec<IdxSize>,
         probe_match: &mut Vec<IdxSize>,
     ) -> bool {
-        if let Some(idxs) = unsafe { self.idx_map.get_view(hash, key, buffers) } {
+        if let Some(idxs) = idxs {
             for idx in &idxs[..] {
-                // Create matches, making sure to clear top bit.
-                table_match.push((idx.load() & !(1 << 63)) as IdxSize);
+                table_match.push(idx.load() & !MARKED);
                 probe_match.push(key_idx);
             }
 
-            // Mark if necessary. This action is idempotent so doesn't need
-            // atomic fetch_or to do it atomically.
             if MARK_MATCHES {
-                let first_idx = unsafe { idxs.get_unchecked(0) };
-                let first_idx_val = first_idx.load();
-                if first_idx_val >> 63 == 0 {
-                    first_idx.store(first_idx_val | (1 << 63));
-                }
+                unsafe { self.matched.mark_rows(idxs) };
             }
             true
         } else {
@@ -65,39 +61,33 @@ impl BinviewKeyIdxTable {
         }
     }
 
-    /// # Safety
-    /// The views must be valid for the buffers.
+    /// Probes keys given as their table entries; a null key is `None`.
     unsafe fn probe_impl<
         'a,
         const MARK_MATCHES: bool,
         const EMIT_UNMATCHED: bool,
         const NULL_IS_VALID: bool,
     >(
-        &self,
-        keys: impl Iterator<Item = (IdxSize, u64, Option<&'a View>)>,
-        buffers: &[Buffer<u8>],
+        &'a self,
+        keys: impl Iterator<Item = (IdxSize, Option<Option<&'a UnitVec<RelaxedCell<IdxSize>>>>)>,
         table_match: &mut Vec<IdxSize>,
         probe_match: &mut Vec<IdxSize>,
         limit: IdxSize,
     ) -> IdxSize {
         let mut keys_processed = 0;
-        for (key_idx, hash, key) in keys {
-            let found_match = if let Some(key) = key {
-                self.probe_one::<MARK_MATCHES>(
-                    key_idx,
-                    hash,
-                    key,
-                    buffers,
-                    table_match,
-                    probe_match,
-                )
+        for (key_idx, key) in keys {
+            let found_match = if let Some(idxs) = key {
+                self.probe_one::<MARK_MATCHES>(key_idx, idxs, table_match, probe_match)
             } else if NULL_IS_VALID {
                 for idx in &self.null_keys {
                     table_match.push(*idx);
                     probe_match.push(key_idx);
                 }
-                if MARK_MATCHES && !self.nulls_emitted.load() {
-                    self.nulls_emitted.store(true);
+                if MARK_MATCHES && !self.nulls_marked.load() {
+                    self.nulls_marked.store(true);
+                    for idx in &self.null_keys {
+                        self.matched.mark(*idx);
+                    }
                 }
                 !self.null_keys.is_empty()
             } else {
@@ -117,13 +107,10 @@ impl BinviewKeyIdxTable {
         keys_processed
     }
 
-    /// # Safety
-    /// The views must be valid for the buffers.
     #[allow(clippy::too_many_arguments)]
     unsafe fn probe_dispatch<'a>(
-        &self,
-        keys: impl Iterator<Item = (IdxSize, u64, Option<&'a View>)>,
-        buffers: &[Buffer<u8>],
+        &'a self,
+        keys: impl Iterator<Item = (IdxSize, Option<Option<&'a UnitVec<RelaxedCell<IdxSize>>>>)>,
         table_match: &mut Vec<IdxSize>,
         probe_match: &mut Vec<IdxSize>,
         mark_matches: bool,
@@ -132,48 +119,110 @@ impl BinviewKeyIdxTable {
         limit: IdxSize,
     ) -> IdxSize {
         match (mark_matches, emit_unmatched, null_is_valid) {
-            (false, false, false) => self.probe_impl::<false, false, false>(
-                keys,
-                buffers,
-                table_match,
-                probe_match,
-                limit,
-            ),
-            (false, false, true) => self.probe_impl::<false, false, true>(
-                keys,
-                buffers,
-                table_match,
-                probe_match,
-                limit,
-            ),
-            (false, true, false) => self.probe_impl::<false, true, false>(
-                keys,
-                buffers,
-                table_match,
-                probe_match,
-                limit,
-            ),
-            (false, true, true) => {
-                self.probe_impl::<false, true, true>(keys, buffers, table_match, probe_match, limit)
+            (false, false, false) => {
+                self.probe_impl::<false, false, false>(keys, table_match, probe_match, limit)
             },
-            (true, false, false) => self.probe_impl::<true, false, false>(
-                keys,
-                buffers,
-                table_match,
-                probe_match,
-                limit,
-            ),
+            (false, false, true) => {
+                self.probe_impl::<false, false, true>(keys, table_match, probe_match, limit)
+            },
+            (false, true, false) => {
+                self.probe_impl::<false, true, false>(keys, table_match, probe_match, limit)
+            },
+            (false, true, true) => {
+                self.probe_impl::<false, true, true>(keys, table_match, probe_match, limit)
+            },
+            (true, false, false) => {
+                self.probe_impl::<true, false, false>(keys, table_match, probe_match, limit)
+            },
             (true, false, true) => {
-                self.probe_impl::<true, false, true>(keys, buffers, table_match, probe_match, limit)
+                self.probe_impl::<true, false, true>(keys, table_match, probe_match, limit)
             },
             (true, true, false) => {
-                self.probe_impl::<true, true, false>(keys, buffers, table_match, probe_match, limit)
+                self.probe_impl::<true, true, false>(keys, table_match, probe_match, limit)
             },
             (true, true, true) => {
-                self.probe_impl::<true, true, true>(keys, buffers, table_match, probe_match, limit)
+                self.probe_impl::<true, true, true>(keys, table_match, probe_match, limit)
             },
         }
     }
+
+    /// The table entry of each code of the keys' dictionary is looked up once, on its first
+    /// valid key, and kept in a per-thread cache for this table version and dictionary.
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn probe_subset_dict(
+        &self,
+        hash_keys: &BinviewKeys,
+        dc: &DictCodes,
+        subset: &[IdxSize],
+        table_match: &mut Vec<IdxSize>,
+        probe_match: &mut Vec<IdxSize>,
+        mark_matches: bool,
+        emit_unmatched: bool,
+        limit: IdxSize,
+    ) -> Option<IdxSize> {
+        thread_local! {
+            /// A cache per table, as a partitioned join probes a table per partition.
+            static CACHES: RefCell<PlHashMap<u64, DictCodeCache>> = RefCell::new(PlHashMap::new());
+        }
+        /// Past this many tables, or entries in all, a thread's caches are dropped. This bounds the
+        /// memory they keep once the tables are gone (they outlive the query).
+        const MAX_CACHED_TABLES: usize = 64;
+        const MAX_CACHED_ENTRIES: usize = 1 << 20;
+        CACHES.with_borrow_mut(|caches| {
+            let own = caches.get(&self.uid).map(DictCodeCache::capacity);
+            let others =
+                caches.values().map(DictCodeCache::capacity).sum::<usize>() - own.unwrap_or(0);
+            let own_needed = own
+                .unwrap_or(0)
+                .max(dc.dict.len().min(MAX_DICT_CODE_CACHE_LEN));
+            let too_many_tables = own.is_none() && caches.len() >= MAX_CACHED_TABLES;
+            if too_many_tables || others + own_needed > MAX_CACHED_ENTRIES {
+                *caches = PlHashMap::new();
+            }
+            let cache = caches.entry(self.uid).or_default();
+            let entries = cache.entries_for(&dc.dict, subset.len())?;
+            let buffers = hash_keys.keys.data_buffers();
+            let views = hash_keys.keys.views();
+            let validity = hash_keys.keys.validity();
+            let codes = dc.codes.as_slice();
+            let iter = subset.iter().map(|i| {
+                let i = *i as usize;
+                if validity.is_some_and(|v| !v.get_bit_unchecked(i)) {
+                    return (i as IdxSize, None);
+                }
+                let code = *codes.get_unchecked(i) as usize;
+                let entry = entries.get_unchecked_mut(code);
+                if *entry == IdxSize::MAX {
+                    let hash = hash_keys.hashes.value_unchecked(i);
+                    *entry = self
+                        .idx_map
+                        .get_index_of_view(hash, views.get_unchecked(i), buffers)
+                        .unwrap_or(NO_ENTRY);
+                }
+                let idxs =
+                    (*entry != NO_ENTRY).then(|| self.idx_map.get_index_view_unchecked(*entry).2);
+                (i as IdxSize, Some(idxs))
+            });
+            Some(self.probe_dispatch(
+                iter,
+                table_match,
+                probe_match,
+                mark_matches,
+                emit_unmatched,
+                hash_keys.null_is_valid,
+                limit,
+            ))
+        })
+    }
+}
+
+/// A dictionary code's cache entry when its value has no entry in the table.
+const NO_ENTRY: IdxSize = IdxSize::MAX - 1;
+
+static NEXT_TABLE_UID: AtomicU64 = AtomicU64::new(0);
+
+fn next_table_uid() -> u64 {
+    NEXT_TABLE_UID.fetch_add(1, Ordering::Relaxed)
 }
 
 impl IdxTable for BinviewKeyIdxTable {
@@ -207,9 +256,13 @@ impl IdxTable for BinviewKeyIdxTable {
             .checked_add(subset.len())
             .unwrap();
         assert!(
-            new_idx_offset < IdxSize::MAX as usize,
+            new_idx_offset <= MARKED as usize,
             "overly large index in BinviewKeyIdxTable"
         );
+        if track_unmatchable {
+            self.matched.grow(new_idx_offset);
+        }
+        self.uid = next_table_uid();
 
         unsafe {
             let buffers = hash_keys.keys.data_buffers();
@@ -222,10 +275,10 @@ impl IdxTable for BinviewKeyIdxTable {
                     if validity.get_bit_unchecked(*subset_idx as usize) {
                         match self.idx_map.entry_view(hash, *key, buffers) {
                             Entry::Occupied(o) => {
-                                o.into_mut().push(RelaxedCell::from(idx as u64));
+                                o.into_mut().push(RelaxedCell::from(idx));
                             },
                             Entry::Vacant(v) => {
-                                v.insert(unitvec![RelaxedCell::from(idx as u64)]);
+                                v.insert(unitvec![RelaxedCell::from(idx)]);
                             },
                         }
                     } else if track_unmatchable | hash_keys.null_is_valid {
@@ -239,10 +292,10 @@ impl IdxTable for BinviewKeyIdxTable {
                     let idx = self.idx_offset + i;
                     match self.idx_map.entry_view(hash, *key, buffers) {
                         Entry::Occupied(o) => {
-                            o.into_mut().push(RelaxedCell::from(idx as u64));
+                            o.into_mut().push(RelaxedCell::from(idx));
                         },
                         Entry::Vacant(v) => {
-                            v.insert(unitvec![RelaxedCell::from(idx as u64)]);
+                            v.insert(unitvec![RelaxedCell::from(idx)]);
                         },
                     }
                 }
@@ -279,24 +332,46 @@ impl IdxTable for BinviewKeyIdxTable {
             unreachable!()
         };
 
+        if let Some(dc) = &hash_keys.dict_codes
+            && let Some(n) = self.probe_subset_dict(
+                hash_keys,
+                dc,
+                subset,
+                table_match,
+                probe_match,
+                mark_matches,
+                emit_unmatched,
+                limit,
+            )
+        {
+            return n;
+        }
+
         unsafe {
             let buffers = hash_keys.keys.data_buffers();
             let views = hash_keys.keys.views();
+            let mut prev_view = View::default();
+            let mut prev_idxs = None;
+            let mut has_prev = false;
+            let mut lookup = move |i: IdxSize| {
+                let view = views.get_unchecked(i as usize);
+                if !has_prev || *view != prev_view {
+                    prev_view = *view;
+                    has_prev = true;
+                    let hash = hash_keys.hashes.value_unchecked(i as usize);
+                    prev_idxs = self.idx_map.get_view(hash, view, buffers);
+                }
+                prev_idxs
+            };
             if let Some(validity) = hash_keys.keys.validity() {
-                let iter = subset.iter().map(|i| {
+                let iter = subset.iter().map(move |i| {
                     (
                         *i,
-                        hash_keys.hashes.value_unchecked(*i as usize),
-                        if validity.get_bit_unchecked(*i as usize) {
-                            Some(views.get_unchecked(*i as usize))
-                        } else {
-                            None
-                        },
+                        validity.get_bit_unchecked(*i as usize).then(|| lookup(*i)),
                     )
                 });
                 self.probe_dispatch(
                     iter,
-                    buffers,
                     table_match,
                     probe_match,
                     mark_matches,
@@ -305,16 +380,9 @@ impl IdxTable for BinviewKeyIdxTable {
                     limit,
                 )
             } else {
-                let iter = subset.iter().map(|i| {
-                    (
-                        *i,
-                        hash_keys.hashes.value_unchecked(*i as usize),
-                        Some(views.get_unchecked(*i as usize)),
-                    )
-                });
+                let iter = subset.iter().map(move |i| (*i, Some(lookup(*i))));
                 self.probe_dispatch(
                     iter,
-                    buffers,
                     table_match,
                     probe_match,
                     mark_matches,
@@ -326,48 +394,14 @@ impl IdxTable for BinviewKeyIdxTable {
         }
     }
 
-    fn unmarked_keys(
-        &self,
-        out: &mut Vec<IdxSize>,
-        mut offset: IdxSize,
-        limit: IdxSize,
-    ) -> IdxSize {
-        out.clear();
-
-        let mut keys_processed = 0;
-        if !self.nulls_emitted.load() {
-            if (offset as usize) < self.null_keys.len() {
-                out.extend(
-                    self.null_keys[offset as usize..]
-                        .iter()
-                        .copied()
-                        .take(limit as usize),
-                );
-                keys_processed += out.len() as IdxSize;
-                offset += out.len() as IdxSize;
-                if out.len() >= limit as usize {
-                    return keys_processed;
-                }
-            }
-            offset -= self.null_keys.len() as IdxSize;
+    fn mark_rows(&self, rows: &[IdxSize]) {
+        for row in rows {
+            self.matched.mark(*row);
         }
+    }
 
-        while let Some((_, _, idxs)) = self.idx_map.get_index(offset) {
-            let first_idx = unsafe { idxs.get_unchecked(0) };
-            let first_idx_val = first_idx.load();
-            if first_idx_val >> 63 == 0 {
-                for idx in &idxs[..] {
-                    out.push((idx.load() & !(1 << 63)) as IdxSize);
-                }
-            }
-
-            keys_processed += 1;
-            offset += 1;
-            if out.len() >= limit as usize {
-                break;
-            }
-        }
-
-        keys_processed
+    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize {
+        self.matched
+            .unmarked_rows(self.idx_offset, out, offset, limit)
     }
 }

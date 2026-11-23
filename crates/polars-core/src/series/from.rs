@@ -1,12 +1,5 @@
 use polars_arrow::datatypes::{IntervalUnit, Metadata};
 use polars_arrow::offset::OffsetsBuffer;
-#[cfg(any(
-    feature = "dtype-date",
-    feature = "dtype-datetime",
-    feature = "dtype-time",
-    feature = "dtype-duration"
-))]
-use polars_arrow::temporal_conversions::*;
 use polars_arrow::types::months_days_ns;
 use polars_compute::cast::cast_unchecked as cast;
 #[cfg(feature = "dtype-decimal")]
@@ -305,12 +298,7 @@ impl Series {
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_datetime(tu.into(), tz)
                     .into_series();
-                Ok(match tu {
-                    ArrowTimeUnit::Second => &s * MILLISECONDS,
-                    ArrowTimeUnit::Millisecond => s,
-                    ArrowTimeUnit::Microsecond => s,
-                    ArrowTimeUnit::Nanosecond => s,
-                })
+                Ok(scale_arrow_values(s, dtype))
             },
             #[cfg(feature = "dtype-duration")]
             ArrowDataType::Duration(tu) => {
@@ -319,15 +307,10 @@ impl Series {
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_duration(tu.into())
                     .into_series();
-                Ok(match tu {
-                    ArrowTimeUnit::Second => &s * MILLISECONDS,
-                    ArrowTimeUnit::Millisecond => s,
-                    ArrowTimeUnit::Microsecond => s,
-                    ArrowTimeUnit::Nanosecond => s,
-                })
+                Ok(scale_arrow_values(s, dtype))
             },
             #[cfg(feature = "dtype-time")]
-            ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
+            ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => {
                 let mut chunks = chunks;
                 if matches!(dtype, ArrowDataType::Time32(_)) {
                     chunks =
@@ -338,12 +321,7 @@ impl Series {
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_time()
                     .into_series();
-                Ok(match tu {
-                    ArrowTimeUnit::Second => &s * NANOSECONDS,
-                    ArrowTimeUnit::Millisecond => &s * 1_000_000,
-                    ArrowTimeUnit::Microsecond => &s * 1_000,
-                    ArrowTimeUnit::Nanosecond => s,
-                })
+                Ok(scale_arrow_values(s, dtype))
             },
             ArrowDataType::Decimal32(precision, scale) => {
                 feature_gated!("dtype-decimal", {
@@ -531,7 +509,10 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Struct(_) => {
+            ArrowDataType::Struct(fields) => {
+                let names = fields.iter().map(|field| field.name.as_str()).collect_vec();
+                crate::frame::validation::ensure_names_unique(&names)?;
+
                 let (chunks, dtype) = to_physical_and_dtype(chunks, md)?;
 
                 unsafe {
@@ -631,12 +612,13 @@ impl Series {
                         .map(convert_month_day_nano_to_struct)
                         .collect::<PolarsResult<Vec<_>>>()?;
 
-                    Ok(StructChunked::from_chunks_and_dtype_unchecked(
+                    let mut ca = StructChunked::from_chunks_and_dtype_unchecked(
                         name,
                         chunks,
                         DataType::_month_days_ns_struct_type(),
-                    )
-                    .into_series())
+                    );
+                    StructChunked::propagate_nulls_mut(&mut ca);
+                    Ok(ca.into_series())
                 })
             },
 
@@ -675,6 +657,20 @@ impl Series {
         }
 
         Ok(out)
+    }
+}
+
+/// Brings the values of an imported temporal `s` to the unit polars stores its
+/// type in, see [`DataType::arrow_value_scale`].
+#[cfg(any(
+    feature = "dtype-datetime",
+    feature = "dtype-duration",
+    feature = "dtype-time"
+))]
+fn scale_arrow_values(s: Series, dtype: &ArrowDataType) -> Series {
+    match DataType::arrow_value_scale(dtype) {
+        1 => s,
+        factor => &s * factor,
     }
 }
 
@@ -846,9 +842,13 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Time64(_)
         | ArrowDataType::Timestamp(_, _)
         | ArrowDataType::Date32
+        | ArrowDataType::Decimal32(_, _)
+        | ArrowDataType::Decimal64(_, _)
         | ArrowDataType::Decimal(_, _)
+        | ArrowDataType::Decimal256(_, _)
         | ArrowDataType::Date64
-        | ArrowDataType::Map(_, _)) => {
+        | ArrowDataType::Map(_, _)
+        | ArrowDataType::Interval(_)) => {
             let dt = dt.clone();
             let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt)?;
             let dtype = s.dtype().clone();
@@ -859,6 +859,54 @@ unsafe fn to_physical_and_dtype(
             Ok((arrays, dtype))
         },
     }
+}
+
+/// Negative keys become null and keys that don't fit in `O` become its maximum.
+#[cfg(feature = "dtype-categorical")]
+fn unsigned_dictionary_keys<K: DictionaryKey, O: DictionaryKey>(
+    keys: &PrimitiveArray<K>,
+) -> PrimitiveArray<O> {
+    if let Some(keys) = (keys as &dyn std::any::Any).downcast_ref::<PrimitiveArray<O>>() {
+        return keys.clone();
+    }
+    // SAFETY: MAX_USIZE_VALUE fits in O.
+    let max = unsafe { O::from_usize_unchecked(O::MAX_USIZE_VALUE) };
+    let mut has_negative = false;
+    let values: Vec<O> = keys
+        .values()
+        .iter()
+        .map(|k| {
+            let k: Result<usize, _> = (*k).try_into();
+            has_negative |= k.is_err();
+            k.map_or(O::default(), |k| O::try_from(k).unwrap_or(max))
+        })
+        .collect_trusted();
+    let mut validity = keys.validity().cloned();
+    if has_negative {
+        let is_non_negative: polars_arrow::bitmap::Bitmap = keys
+            .values()
+            .iter()
+            .map(|k| TryInto::<usize>::try_into(*k).is_ok())
+            .collect_trusted();
+        validity = polars_arrow::compute::utils::combine_validities_and(
+            validity.as_ref(),
+            Some(&is_non_negative),
+        );
+    }
+    PrimitiveArray::from_vec(values).with_validity(validity)
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn import_str_dictionary<O: DictionaryKey>(
+    name: PlSmallStr,
+    keys: &PrimitiveArray<O>,
+    values: &dyn Array,
+    dtype: &DataType,
+) -> PolarsResult<Series> {
+    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+        let ca = CategoricalChunked::<$C>::from_str_dictionary(name, dtype.clone(), keys, values)?;
+        Ok(ca.into_series())
+    })
 }
 
 #[cfg(feature = "dtype-categorical")]
@@ -877,21 +925,15 @@ unsafe fn import_arrow_dictionary_array(
         macro_rules! unpack_categorical_chunked {
             ($dt:ty) => {{
                 let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
-                let keys = arr.keys();
-                let values = arr.values();
-                let values = cast(&**values, &ArrowDataType::Utf8View)?;
-                let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                with_match_categorical_physical_type!(polars_dtype.cat_physical().unwrap(), |$C| {
-                    let ca = CategoricalChunked::<$C>::from_str_iter(
-                        name,
-                        polars_dtype.clone(),
-                        keys.iter().map(|k| {
-                            let k: usize = (*k?).try_into().ok()?;
-                            values.get(k)
-                        }),
-                    )?;
-                    Ok(ca.into_series())
-                })
+                let values = arr.values().as_ref();
+                // Keys that saturate to u32::MAX must stay out of bounds.
+                if values.len() <= u32::MAX as usize {
+                    let keys = unsigned_dictionary_keys::<$dt, u32>(arr.keys());
+                    import_str_dictionary(name, &keys, values, polars_dtype)
+                } else {
+                    let keys = unsigned_dictionary_keys::<$dt, u64>(arr.keys());
+                    import_str_dictionary(name, &keys, values, polars_dtype)
+                }
             }};
         }
 
@@ -1145,4 +1187,53 @@ unsafe impl IntoSeries for Series {
 fn new_null(name: PlSmallStr, chunks: &[ArrayRef]) -> Series {
     let len = chunks.iter().map(|arr| arr.len()).sum();
     Series::new_null(name, len)
+}
+
+#[cfg(test)]
+#[cfg(all(
+    feature = "dtype-datetime",
+    feature = "dtype-duration",
+    feature = "dtype-time"
+))]
+mod tests {
+    use polars_arrow::array::PrimitiveArray;
+
+    use super::*;
+
+    #[test]
+    fn imported_values_are_scaled_like_the_dtype_says() {
+        let import = |dtype: ArrowDataType, value: i64| {
+            let array = PrimitiveArray::from_vec(vec![value]).to(dtype.clone());
+            let s = Series::from_arrow(PlSmallStr::EMPTY, array.boxed()).unwrap();
+            let physical = s.to_physical_repr().i64().unwrap().get(0).unwrap();
+            assert_eq!(physical, value * DataType::arrow_value_scale(&dtype));
+            (s.dtype().clone(), physical)
+        };
+        let seconds = ArrowDataType::Timestamp(ArrowTimeUnit::Second, None);
+        assert_eq!(
+            import(seconds, -7),
+            (DataType::Datetime(TimeUnit::Milliseconds, None), -7_000)
+        );
+        assert_eq!(
+            import(ArrowDataType::Duration(ArrowTimeUnit::Second), 7),
+            (DataType::Duration(TimeUnit::Milliseconds), 7_000)
+        );
+        assert_eq!(
+            import(ArrowDataType::Duration(ArrowTimeUnit::Microsecond), 7),
+            (DataType::Duration(TimeUnit::Microseconds), 7)
+        );
+        assert_eq!(
+            import(ArrowDataType::Time64(ArrowTimeUnit::Microsecond), 7),
+            (DataType::Time, 7_000)
+        );
+        assert_eq!(
+            import(ArrowDataType::Date64, 86_400_000),
+            (DataType::Datetime(TimeUnit::Milliseconds, None), 86_400_000)
+        );
+        let array = PrimitiveArray::from_vec(vec![7i32])
+            .to(ArrowDataType::Time32(ArrowTimeUnit::Millisecond));
+        let s = Series::from_arrow(PlSmallStr::EMPTY, array.boxed()).unwrap();
+        assert_eq!(s.dtype(), &DataType::Time);
+        assert_eq!(s.to_physical_repr().i64().unwrap().get(0), Some(7_000_000));
+    }
 }

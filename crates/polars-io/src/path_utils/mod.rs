@@ -115,9 +115,8 @@ pub fn resolve_homedir<'a, S: AsRef<Path> + ?Sized>(path: &'a S) -> Cow<'a, Path
 
     fn inner(path: &Path) -> Cow<'_, Path> {
         if path.starts_with("~") {
-            // home crate does not compile on wasm https://github.com/rust-lang/cargo/issues/12297
             #[cfg(not(target_family = "wasm"))]
-            if let Some(homedir) = home::home_dir() {
+            if let Some(homedir) = std::env::home_dir() {
                 return Cow::Owned(homedir.join(path.strip_prefix("~").unwrap()));
             }
         }
@@ -190,6 +189,22 @@ fn decode_file_uri_path(path: &str, glob: bool) -> Option<String> {
         glob::Pattern::escape(path)
     } else {
         path.to_owned()
+    })
+}
+
+/// The local path of a plain path or `file://` URI, without accessing the file system.
+pub fn local_path(path: &PlRefPath) -> Option<Cow<'_, Path>> {
+    let scheme = path.scheme();
+    if scheme.is_some_and(|s| !s.is_file()) {
+        return None;
+    }
+    let ("", local_path) = path.strip_scheme_split_authority()? else {
+        return None;
+    };
+    Some(if scheme.is_some() {
+        Cow::Owned(decode_file_uri_path(local_path, false)?.into())
+    } else {
+        resolve_homedir(local_path)
     })
 }
 

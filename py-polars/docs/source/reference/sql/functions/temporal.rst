@@ -8,13 +8,117 @@ Temporal
    * - Function
      - Description
 
+   * - :ref:`CURRENT_DATE <current_date>`
+     - Returns the local date at the start of the statement.
+   * - :ref:`CURRENT_TIME <current_time>`
+     - Returns the local time at the start of the statement.
+   * - :ref:`CURRENT_TIMESTAMP <current_timestamp>`
+     - Returns the local date and time at the start of the statement.
+   * - :ref:`DATE_DIFF <date_diff>`
+     - Counts the boundaries of a part, such as 'day' or 'month', crossed from a start to an end value.
    * - :ref:`DATE_PART <date_part>`
      - Extracts a part of a date (or datetime) such as 'year', 'month', etc.
+   * - :ref:`DATE_TRUNC <date_trunc>`
+     - Truncates a date (or datetime) to the given part, such as 'hour' or 'month'.
    * - :ref:`EXTRACT <extract>`
      - Offers the same functionality as `DATE_PART` with slightly different syntax.
+   * - :ref:`MAKE_DATE <make_date>`
+     - Builds a date from integer year, month and day parts.
    * - :ref:`STRFTIME <strftime>`
      - Formats a temporal value (Datetime, Date, or Time) as a string.
+   * - :ref:`TO_CHAR <to_char>`
+     - Formats a temporal value (Datetime, Date, or Time) as a string using a PostgreSQL template.
 
+
+.. _current_date:
+
+CURRENT_DATE
+------------
+Returns the local date at the start of the statement, as a Date. All calls in a statement,
+including its subqueries, return the same value. A lazy query reads the clock when its SQL is
+translated, which can be before it is collected (for example, when its schema is read). A
+table that is itself a lazy SQL query reads the clock separately.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"dt": [date(2020, 1, 1), date(2999, 1, 1)]})
+    df.sql("SELECT dt FROM self WHERE dt <= CURRENT_DATE - INTERVAL '1 year'")
+    # shape: (1, 1)
+    # ┌────────────┐
+    # │ dt         │
+    # │ ---        │
+    # │ date       │
+    # ╞════════════╡
+    # │ 2020-01-01 │
+    # └────────────┘
+
+.. _current_time:
+
+CURRENT_TIME
+------------
+Returns the local time at the start of the statement, as a Time. `LOCALTIME` is an alias.
+
+**Example:**
+
+.. code-block:: python
+
+    df.sql("SELECT CURRENT_TIME AS now FROM self")
+
+.. _current_timestamp:
+
+CURRENT_TIMESTAMP
+-----------------
+Returns the local date and time at the start of the statement, as a Datetime with
+microsecond precision and no time zone. `LOCALTIMESTAMP` and `NOW()` are aliases.
+
+**Example:**
+
+.. code-block:: python
+
+    df.sql("SELECT CURRENT_TIMESTAMP AS ts, NOW() AS ts_now FROM self")
+
+.. _date_diff:
+
+DATE_DIFF
+---------
+Counts the boundaries of a part crossed from a start to an end value, as an Int64 that is
+negative if the end is before the start. From 2024-01-31 to 2024-02-01 is 1 month, while from
+2024-01-01 to 2024-01-31 is 0 months. `DATEDIFF` is an alias.
+
+Supported parts are 'year', 'quarter', 'month', 'week' (starts on Monday), 'day', 'hour',
+'minute', 'second', 'millisecond', 'microsecond' and 'nanosecond' (plural forms are also
+accepted). The values can be dates, timestamps or times; times only support parts shorter
+than a day. A string literal is read as a value of the type of the other argument.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {
+            "start_date": [date(2024, 1, 31), date(2024, 12, 31)],
+            "end_ts": [datetime(2024, 2, 1, 10, 30), datetime(2025, 1, 1)],
+        }
+    )
+    df.sql("""
+      SELECT
+        DATE_DIFF('day', start_date, end_ts) AS days,
+        DATE_DIFF('month', start_date, end_ts) AS months,
+        DATE_DIFF('year', start_date, end_ts) AS years,
+        DATE_DIFF('hour', start_date, end_ts) AS hours
+      FROM self
+    """)
+    # shape: (2, 4)
+    # ┌──────┬────────┬───────┬───────┐
+    # │ days ┆ months ┆ years ┆ hours │
+    # │ ---  ┆ ---    ┆ ---   ┆ ---   │
+    # │ i64  ┆ i64    ┆ i64   ┆ i64   │
+    # ╞══════╪════════╪═══════╪═══════╡
+    # │ 1    ┆ 1      ┆ 0     ┆ 34    │
+    # │ 1    ┆ 1      ┆ 1     ┆ 24    │
+    # └──────┴────────┴───────┴───────┘
 
 .. _date_part:
 
@@ -64,7 +168,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
    * - 'isodow'
      - ISO day of the week (1:Monday – 7:Sunday)
      - Int8
-   * - 'day', 'days', 'dayofmonth', d'
+   * - 'day', 'days', 'dayofmonth', 'd'
      - Day of the month (1–31)
      - Int8
    * - 'hour', 'hours', 'h'
@@ -128,6 +232,34 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     # │ 2077-02-10 18:10:15.654321 ┆ 2077 ┆ 2     ┆ 10  ┆ 15654.321 │
     # └────────────────────────────┴──────┴───────┴─────┴───────────┘
 
+.. _date_trunc:
+
+DATE_TRUNC
+----------
+Truncates a date (or datetime) to the given part. Supported parts are 'microsecond',
+'millisecond', 'second', 'minute', 'hour', 'day', 'week' (starts on Monday), 'month',
+'quarter' and 'year' (plural forms are also accepted). A date is returned as a timestamp.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {"dt": [datetime(2024, 5, 17, 13, 45, 30), datetime(2024, 11, 3, 8, 5, 0)]}
+    )
+    df.sql("""
+      SELECT dt, DATE_TRUNC('hour', dt) AS hour, DATE_TRUNC('month', dt) AS month FROM self
+    """)
+    # shape: (2, 3)
+    # ┌─────────────────────┬─────────────────────┬─────────────────────┐
+    # │ dt                  ┆ hour                ┆ month               │
+    # │ ---                 ┆ ---                 ┆ ---                 │
+    # │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        │
+    # ╞═════════════════════╪═════════════════════╪═════════════════════╡
+    # │ 2024-05-17 13:45:30 ┆ 2024-05-17 13:00:00 ┆ 2024-05-01 00:00:00 │
+    # │ 2024-11-03 08:05:00 ┆ 2024-11-03 08:00:00 ┆ 2024-11-01 00:00:00 │
+    # └─────────────────────┴─────────────────────┴─────────────────────┘
+
 .. _extract:
 
 EXTRACT
@@ -177,7 +309,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
    * - 'isodow'
      - ISO day of the week (1:Monday – 7:Sunday)
      - Int8
-   * - 'day', 'days', 'dayofmonth', d'
+   * - 'day', 'days', 'dayofmonth', 'd'
      - Day of the month (1–31)
      - Int8
    * - 'hour', 'hours', 'h'
@@ -240,6 +372,31 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     # │ 2077-02-10 ┆ 207    ┆ 2077 ┆ 1       │
     # └────────────┴────────┴──────┴─────────┘
 
+.. _make_date:
+
+MAKE_DATE
+---------
+Builds a date from year, month and day parts, like :func:`polars.date`. Raises an error if the
+parts do not form a valid date. Years before 1 are counted as in ISO 8601: year 0 is 1 BC.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"y": [2024, 2025], "m": [2, 12], "d": [29, 31]})
+    df.sql("""
+      SELECT y, m, d, MAKE_DATE(y, m, d) AS dt FROM self
+    """)
+    # shape: (2, 4)
+    # ┌──────┬─────┬─────┬────────────┐
+    # │ y    ┆ m   ┆ d   ┆ dt         │
+    # │ ---  ┆ --- ┆ --- ┆ ---        │
+    # │ i64  ┆ i64 ┆ i64 ┆ date       │
+    # ╞══════╪═════╪═════╪════════════╡
+    # │ 2024 ┆ 2   ┆ 29  ┆ 2024-02-29 │
+    # │ 2025 ┆ 12  ┆ 31  ┆ 2025-12-31 │
+    # └──────┴─────┴─────┴────────────┘
+
 .. _strftime:
 
 STRFTIME
@@ -270,3 +427,37 @@ Formats a temporal value (Datetime, Date, or Time) as a string using a `chrono s
     # │ null           ┆ 22.33.55 │
     # │ April 10, 2020 ┆ null     │
     # └────────────────┴──────────┘
+
+.. _to_char:
+
+TO_CHAR
+-------
+Formats a temporal value (Datetime, Date, or Time) as a string using a PostgreSQL template,
+such as 'YYYY-MM-DD HH24:MI:SS'. The supported patterns are `HH`, `HH12`, `HH24`, `MI`, `SS`,
+`MS`, `US`, `FF3`, `FF6`, `AM`/`PM`, `YYYY`, `YY`, `IYYY`, `IY`, `MONTH`, `MON`, `MM`, `DAY`,
+`DY`, `DDD`, `DD`, `ID` and `IW`, each optionally prefixed with `FM` to drop padding. Text in
+double quotes is copied as is. A template that contains `%` is read as a strftime format, as in
+`STRFTIME`.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+      {"dt": [datetime(1978, 7, 5, 10, 30), datetime(2020, 4, 10, 22, 5)]}
+    )
+    df.sql("""
+      SELECT
+        TO_CHAR(dt, 'FMDay, DD Mon YYYY') AS s_dt,
+        TO_CHAR(dt, 'HH12:MI AM') AS s_tm,
+      FROM self
+    """)
+    # shape: (2, 2)
+    # ┌────────────────────────┬──────────┐
+    # │ s_dt                   ┆ s_tm     │
+    # │ ---                    ┆ ---      │
+    # │ str                    ┆ str      │
+    # ╞════════════════════════╪══════════╡
+    # │ Wednesday, 05 Jul 1978 ┆ 10:30 AM │
+    # │ Friday, 10 Apr 2020    ┆ 10:05 PM │
+    # └────────────────────────┴──────────┘

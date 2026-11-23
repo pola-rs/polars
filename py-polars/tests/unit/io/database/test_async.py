@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import gc
+import warnings
 from math import ceil
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, cast, overload
@@ -129,6 +131,27 @@ def test_read_async(tmp_sqlite_db: Path) -> None:
     asyncio.run(_test_impl())
 
 
+def test_read_async_without_async_sessionmaker(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sqlalchemy.ext import asyncio as sa_async
+
+    monkeypatch.delattr(sa_async, "async_sessionmaker", raising=False)
+
+    async def _test_impl() -> None:
+        async_engine = create_async_engine("sqlite+aiosqlite://")
+        try:
+            async with (
+                async_engine.connect() as conn,
+                sa_async.AsyncSession(async_engine) as session,
+            ):
+                for connection in (async_engine, conn, session):
+                    df = pl.read_database("SELECT 1 AS x", connection=connection)
+                    assert_frame_equal(df, pl.DataFrame({"x": [1]}))
+        finally:
+            await async_engine.dispose()
+
+    asyncio.run(_test_impl())
+
+
 @pytest.mark.skipif(
     parse_version(sqlalchemy.__version__) < (2, 0),
     reason="SQLAlchemy 2.0+ required for async tests",
@@ -154,6 +177,41 @@ def test_read_async_nested(tmp_sqlite_db: Path, started: bool) -> None:
     expected_frame = pl.DataFrame({"id": [1, 2], "name": ["misc", "other"]})
     df = asyncio.run(_test_impl())
     assert_frame_equal(expected_frame, df)
+
+
+@pytest.mark.skipif(
+    parse_version(sqlalchemy.__version__) < (2, 0),
+    reason="SQLAlchemy 2.0+ required for async tests",
+)
+def test_read_async_engine_batches_close_before_next(tmp_sqlite_db: Path) -> None:
+    # closing the batches before the first `next` closes the AsyncConnection (no
+    # unawaited `close` coroutine)
+    async def _test_impl() -> None:
+        async_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_sqlite_db}")
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                batches = pl.read_database(
+                    "SELECT id FROM test_data ORDER BY id",
+                    connection=async_engine,
+                    iter_batches=True,
+                    batch_size=1,
+                )
+                batches.close()  # type: ignore[attr-defined]
+                gc.collect()
+            assert not [w for w in caught if "never awaited" in str(w.message)]
+
+            batches = pl.read_database(
+                "SELECT id FROM test_data ORDER BY id",
+                connection=async_engine,
+                iter_batches=True,
+                batch_size=1,
+            )
+            assert [df["id"].to_list() for df in batches] == [[1], [2]]
+        finally:
+            await async_engine.dispose()
+
+    asyncio.run(_test_impl())
 
 
 @overload

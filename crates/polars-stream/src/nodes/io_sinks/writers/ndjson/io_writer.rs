@@ -26,7 +26,7 @@ impl IOWriter {
             options,
         } = self;
 
-        let (mut target, sync_on_close) = file.await?;
+        let (mut target, sync_on_close, finish) = file.await?;
 
         // TODO: Refactor to avoid doing compression work on a tokio async thread here.
         let (mut writer, finish_writer) =
@@ -45,6 +45,8 @@ impl IOWriter {
 
             let _ = reuse_serializer_tx.send(serializer).await;
         }
+
+        finish.wait().await?;
 
         if let Some(finish_writer) = &finish_writer {
             finish_writer(writer)?.flush().await?;

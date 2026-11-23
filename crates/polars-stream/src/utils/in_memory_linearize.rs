@@ -39,7 +39,7 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<Morsel>>) -> Vec<Morsel> {
         let mut stop_idx_per_pipe = vec![0; morsels_per_p.len()];
         for t in 0..n_threads {
             // This thread will handle all morsels with sequence id
-            // [t * seqs_per_thread, (t + 1) * seqs_per_threads).
+            // [t * seqs_per_thread, (t + 1) * seqs_per_thread).
             // Compute per pipe the slice that covers this range, re-using
             // the stop indices from the previous thread as our starting indices.
             let this_thread_out_offset = out_offset;

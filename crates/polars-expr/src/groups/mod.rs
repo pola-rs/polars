@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::{BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::with_match_categorical_physical_type;
@@ -8,9 +8,10 @@ use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 
-use crate::hash_keys::HashKeys;
+use crate::hash_keys::{HashKeys, KeyEncoder, KeyKind};
 
 mod binview;
+mod key_rows;
 mod row_encoded;
 mod single_key;
 
@@ -25,8 +26,9 @@ pub trait Grouper: Any + Send + Sync {
     /// Returns the number of groups in this Grouper.
     fn num_groups(&self) -> IdxSize;
 
-    /// Inserts the given subset of keys into this Grouper. If groups_idxs is
+    /// Inserts the given subset of keys into this Grouper. If group_idxs is
     /// passed it is extended such with the group index of keys[subset[i]].
+    /// New groups get consecutive indices in the order they first occur.
     ///
     /// # Safety
     /// The subset indexes must be in-bounds.
@@ -41,10 +43,17 @@ pub trait Grouper: Any + Send + Sync {
     /// group i is returned in row i.
     fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame;
 
+    /// The keys in group order, as `get_keys_in_group_order`. Afterwards the
+    /// grouper may hold no groups.
+    fn take_keys_in_group_order(&mut self, schema: &Schema) -> DataFrame {
+        self.get_keys_in_group_order(schema)
+    }
+
     /// Returns the (indices of the) keys found in the groupers. If
     /// invert is true it instead returns the keys not found in the groupers.
+    /// A null key whose nulls are not valid is never found.
     /// # Safety
-    /// All groupers must have the same schema.
+    /// All groupers must have the same schema, the schema of `keys`.
     unsafe fn probe_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -55,9 +64,10 @@ pub trait Grouper: Any + Send + Sync {
     );
 
     /// Returns for each key if it is found in the groupers. If invert is true
-    /// it returns true if it isn't found.
+    /// it returns true if it isn't found. A null key whose nulls are not
+    /// valid is never found.
     /// # Safety
-    /// All groupers must have the same schema.
+    /// All groupers must have the same schema, the schema of `keys`.
     unsafe fn contains_key_partitioned_groupers(
         &self,
         groupers: &[Box<dyn Grouper>],
@@ -67,35 +77,55 @@ pub trait Grouper: Any + Send + Sync {
         contains_key: &mut BitmapBuilder,
     );
 
+    /// Marks the group of each key found in the groupers, in the marks of
+    /// that group's partition. A null key whose nulls are not valid marks
+    /// nothing.
+    /// # Safety
+    /// All groupers must have the same schema, the schema of `keys`, and marks[p]
+    /// must have a bit for every group of groupers[p].
+    unsafe fn mark_groups_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        marks: &mut [MutableBitmap],
+    );
+
     fn as_any(&self) -> &dyn Any;
 }
 
-pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
-    if key_schema.len() > 1 {
-        Box::new(row_encoded::RowEncodedHashGrouper::new())
-    } else {
-        let (_name, dt) = key_schema.get_at_index(0).unwrap();
-        match dt {
-            dt if dt.is_primitive_numeric() | dt.is_temporal() => {
-                with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
-                    Box::new(single_key::SingleKeyHashGrouper::<$T>::new())
-                })
-            },
+pub fn new_hash_grouper(encoder: &KeyEncoder) -> Box<dyn Grouper> {
+    match encoder.kind() {
+        KeyKind::Packed(packed) => {
+            with_match_physical_numeric_polars_type!(packed.layout().word_dtype(), |$T| {
+                Box::new(single_key::SingleKeyHashGrouper::<$T>::new())
+            })
+        },
+        KeyKind::KeyRows(layout) => Box::new(key_rows::KeyRowHashGrouper::new(layout.clone())),
+        KeyKind::RowEncoded => Box::new(row_encoded::RowEncodedHashGrouper::new()),
+        KeyKind::Binview => Box::new(binview::BinviewHashGrouper::new()),
+        KeyKind::Single => {
+            let (_name, dt) = encoder.schema().get_at_index(0).unwrap();
+            match dt {
+                dt if dt.is_primitive_numeric() | dt.is_temporal() => {
+                    with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
+                        Box::new(single_key::SingleKeyHashGrouper::<$T>::new())
+                    })
+                },
 
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => {
-                Box::new(single_key::SingleKeyHashGrouper::<Int128Type>::new())
-            },
-            #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                    Box::new(single_key::SingleKeyHashGrouper::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
-                })
-            },
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(_, _) => {
+                    Box::new(single_key::SingleKeyHashGrouper::<Int128Type>::new())
+                },
+                #[cfg(feature = "dtype-categorical")]
+                dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
+                    with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                        Box::new(single_key::SingleKeyHashGrouper::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
+                    })
+                },
 
-            DataType::String | DataType::Binary => Box::new(binview::BinviewHashGrouper::new()),
-
-            _ => Box::new(row_encoded::RowEncodedHashGrouper::new()),
-        }
+                _ => unreachable!(),
+            }
+        },
     }
 }

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 
 
 def test_n_unique() -> None:
@@ -29,6 +30,37 @@ def test_n_unique_subsets() -> None:
         df.n_unique(subset=[(pl.col("a") // 2), (pl.col("c") | (pl.col("b") >= 2))])
         == 3
     )
+
+
+def test_n_unique_multi_output_subset_28903() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "A": [1, 2, 3, 4, 1, 2],
+            "B": [1, 2, 3, 1, 1, 1],
+        }
+    )
+    assert df.n_unique(subset=pl.col("A", "B")) == 5
+    assert df.n_unique(subset=cs.by_name("B", "A")) == 5
+    assert df.n_unique(subset=pl.exclude("id")) == 5
+    assert df.n_unique(subset=[cs.by_name("A", "B")]) == 5
+    assert df.n_unique(subset=["A", pl.col("B", "id")]) == 6
+
+
+def test_n_unique_empty() -> None:
+    assert pl.DataFrame().n_unique() == 0
+    assert pl.DataFrame({"a": []}).n_unique() == 0
+    assert pl.DataFrame({"a": [1, 2, 3, 4, 5]}).drop("a").n_unique() == 1
+
+
+def test_n_unique_empty_subset() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    assert df.n_unique(subset=[]) == 1
+    assert df.n_unique(subset=cs.boolean()) == 1
+
+    empty = df.clear()
+    assert empty.n_unique(subset=[]) == 0
+    assert empty.n_unique(subset=cs.boolean()) == 0
 
 
 def test_n_unique_null() -> None:

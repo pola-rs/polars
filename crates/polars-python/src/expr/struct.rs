@@ -1,3 +1,5 @@
+use polars_plan::dsl::FunctionExpr;
+use polars_plan::dsl::function_expr::StructFunction;
 use pyo3::prelude::*;
 
 use crate::PyExpr;
@@ -11,6 +13,16 @@ impl PyExpr {
 
     fn struct_field_by_name(&self, name: &str) -> Self {
         self.inner.clone().struct_().field_by_name(name).into()
+    }
+
+    /// The field `name`; unlike `struct_field_by_name`, `^a$` or `*` is not a pattern.
+    fn struct_field_exact(&self, name: &str) -> Self {
+        self.inner
+            .clone()
+            .map_unary(FunctionExpr::StructExpr(StructFunction::FieldByName(
+                name.into(),
+            )))
+            .into()
     }
 
     fn struct_multiple_fields(&self, names: Vec<String>) -> Self {
@@ -33,6 +45,12 @@ impl PyExpr {
     fn struct_with_fields(&self, fields: Vec<PyExpr>) -> Self {
         let fields = fields.to_exprs();
         let e = self.inner.clone().struct_().with_fields(fields);
+        e.into()
+    }
+
+    fn struct_eval(&self, fields: Vec<PyExpr>) -> Self {
+        let fields = fields.to_exprs();
+        let e = self.inner.clone().struct_().eval(fields);
         e.into()
     }
 }

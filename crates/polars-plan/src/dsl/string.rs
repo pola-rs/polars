@@ -150,13 +150,13 @@ impl StringNameSpace {
         self.0.map_unary(StringFunction::Base64Decode(strict))
     }
 
-    /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
+    /// Extract a regex pattern from a string value. If `group_index` is out of bounds, null is returned.
     pub fn extract(self, pat: Expr, group_index: usize) -> Expr {
         self.0.map_binary(StringFunction::Extract(group_index), pat)
     }
 
     #[cfg(feature = "extract_groups")]
-    // Extract all captures groups from a regex pattern as a struct
+    // Extract all capture groups from a regex pattern as a struct
     pub fn extract_groups(self, pat: &str) -> PolarsResult<Expr> {
         // regex will be compiled twice, because it doesn't support serde
         // and we need to compile it here to determine the output datatype
@@ -232,7 +232,7 @@ impl StringNameSpace {
         )
     }
 
-    /// Find the index of a substring defined by a regular expressions within another string value.
+    /// Find the index of a substring defined by a regular expression within another string value.
     #[cfg(feature = "regex")]
     pub fn find(self, pat: Expr, strict: bool) -> Expr {
         self.0.map_binary(
@@ -418,6 +418,12 @@ impl StringNameSpace {
     /// Reverse each string
     pub fn reverse(self) -> Expr {
         self.0.map_unary(StringFunction::Reverse)
+    }
+
+    /// The character of each integer Unicode code point. Raises for a negative number, a
+    /// number above `0x10FFFF`, or a UTF-16 surrogate.
+    pub fn from_code_point(self) -> Expr {
+        self.0.map_unary(StringFunction::FromCodePoint)
     }
 
     /// Remove leading and trailing characters, or whitespace if matches is None.

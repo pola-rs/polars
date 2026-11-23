@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import enum
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
@@ -134,7 +134,7 @@ def lit(
                     tz = str(value_tz)
                 else:
                     # fixed offset from UTC (eg: +4:00)
-                    value = value.astimezone(timezone.utc)
+                    value = value.astimezone(UTC)
                     tz = "UTC"
 
             # dtype and value both have same time zone
@@ -154,7 +154,7 @@ def lit(
                 )
                 raise TypeError(msg)
 
-        dt_utc = value.replace(tzinfo=timezone.utc)
+        dt_utc = value.replace(tzinfo=UTC)
         dt_utc_s = pl.Series("literal", [dt_utc]).cast(Datetime(time_unit))
         if tz is not None:
             dt_utc_s = dt_utc_s.dt.replace_time_zone(

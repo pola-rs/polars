@@ -45,7 +45,7 @@ def test_parse_into_dtype(input: Any, expected: PolarsDataType) -> None:
 
 
 def test_parse_into_dtype_enum_19724() -> None:
-    class PythonEnum(str, enum.Enum):
+    class PythonEnum(str, enum.Enum):  # noqa: UP042
         CAT1 = "A"
         CAT2 = "B"
         CAT3 = "C"

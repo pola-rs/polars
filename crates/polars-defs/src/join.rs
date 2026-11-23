@@ -10,6 +10,7 @@ use polars_core::frame::DataFrame;
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -38,7 +39,7 @@ pub struct JoinArgs {
     pub how: JoinType,
     pub validation: JoinValidation,
     pub suffix: Option<PlSmallStr>,
-    pub slice: Option<(i64, usize)>,
+    pub slice: Option<Slice>,
     pub nulls_equal: bool,
     pub coalesce: JoinCoalesce,
     pub maintain_order: MaintainOrderJoin,
@@ -377,7 +378,10 @@ impl JoinType {
 
     /// Joins supported in join where with non-equi conditions
     pub fn supports_non_equi(&self) -> bool {
-        matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
+        matches!(
+            self,
+            JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full
+        )
     }
 }
 
@@ -473,7 +477,7 @@ pub enum AsofStrategy {
     Backward,
     /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
     Forward,
-    /// selects the right in the right DataFrame whose 'on' key is nearest to the left's key.
+    /// selects the row in the right DataFrame whose 'on' key is nearest to the left's key.
     Nearest,
 }
 

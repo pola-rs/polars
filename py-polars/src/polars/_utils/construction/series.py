@@ -106,6 +106,18 @@ def sequence_to_pyseries(
     pl_temporal_types = {Date, Datetime, Duration, Time}
 
     value = get_first_non_none(values)
+    if (
+        _check_for_numpy(value)
+        and isinstance(value, (np.datetime64, np.timedelta64))
+        and dtype != Object
+    ):
+        # The values carry their own time unit, so convert them as-is and only
+        # cast afterwards if another dtype was requested.
+        pyseries = PySeries.new_from_any_values(name, values, strict)
+        if dtype is not None and pyseries.dtype() != (dtype := parse_into_dtype(dtype)):
+            pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
+        return pyseries
+
     if value is not None:
         if (
             is_dataclass_instance(value)
@@ -277,9 +289,10 @@ def sequence_to_pyseries(
         n_elems = len(value)
         if all(len(v) == n_elems for v in values):
             # can take (much) faster path if all lists are the same length
+            masked = any(isinstance(v, np.ma.MaskedArray) for v in values)
             return numpy_to_pyseries(
                 name,
-                np.vstack(values),
+                (np.ma.vstack if masked else np.vstack)(values),
                 strict=strict,
                 nan_to_null=nan_to_null,
             )
@@ -518,13 +531,17 @@ def numpy_to_pyseries(
     values = np.require(values, requirements=["A", "C"])
 
     if values.ndim == 1:
-        values, dtype = numpy_values_and_dtype(values)
+        mask = np.ma.getmask(values)
+        values, dtype = numpy_values_and_dtype(np.ma.getdata(values))
         constructor = numpy_type_to_constructor(values, dtype)
-        return constructor(
+        py_s = constructor(
             name,
             values,
             nan_to_null if dtype in (np.float16, np.float32, np.float64) else strict,
         )
+        if mask is not np.ma.nomask and mask.any():
+            py_s = wrap_s(py_s).set(pl.Series(mask), None)._s
+        return py_s
     else:
         original_shape = values.shape
         values_1d = values.reshape(-1)

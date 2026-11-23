@@ -128,6 +128,9 @@ pub enum Expr {
         partition_by: Vec<Expr>,
         order_by: Option<(Arc<Expr>, SortOptions)>,
         mapping: WindowMapping,
+        /// The rows of the frame the window is evaluated in may come out in any order when only
+        /// the query result observes their order. Set by SQL, where results have no row order.
+        may_reorder: bool,
     },
     #[cfg(feature = "dynamic_group_by")]
     Rolling {
@@ -174,6 +177,7 @@ pub enum Expr {
     StructEval {
         expr: Arc<Expr>,
         evaluation: Vec<Expr>,
+        variant: StructEvalVariant,
     },
     /// SQL SubQueries
     /// Plan,
@@ -182,6 +186,13 @@ pub enum Expr {
     RenameAlias {
         function: RenameAliasFn,
         expr: Arc<Expr>,
+    },
+    /// Call `callback` with the inputs and their resolved dtypes,
+    /// and replace this node with the expression it returns.
+    /// Resolved during expression expansion.
+    PipeWithDtype {
+        input: Vec<Expr>,
+        callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>,
     },
     /// Not a real expression. This is meant
     /// as catch-all for IR expressions that
@@ -361,11 +372,13 @@ impl Hash for Expr {
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder,
             } => {
                 function.hash(state);
                 partition_by.hash(state);
                 order_by.hash(state);
                 mapping.hash(state);
+                may_reorder.hash(state);
             },
             Expr::Slice {
                 input,
@@ -407,10 +420,13 @@ impl Hash for Expr {
             Expr::StructEval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
                 input.hash(state);
                 evaluation.hash(state);
+                variant.hash(state);
             },
+            Expr::PipeWithDtype { input: _, callback } => callback.hash_location(state),
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
             Expr::Field(names) => names.hash(state),
@@ -477,11 +493,9 @@ impl Expr {
     ) -> PolarsResult<Field> {
         let mut ctx = ExprToIRContext::new_with_fields(expr_arena, schema);
         ctx.allow_unknown = true;
-        let expr = to_expr_ir(self.clone(), &mut ctx)?;
-        let (node, output_name) = expr.into_inner();
-        let dtype = expr_arena
-            .get(node)
-            .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+        let expr = to_expr_ir(self, &mut ctx)?;
+        let dtype = expr.dtype(schema, expr_arena)?.clone();
+        let (_, output_name) = expr.into_inner();
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 
@@ -592,6 +606,29 @@ impl Expr {
     pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
         let function = function.into();
         Expr::Function { input, function }
+    }
+}
+
+/// Determines what happens to the fields of the input struct that are not part of the
+/// `evaluation` of an [`Expr::StructEval`].
+#[cfg(feature = "dtype-struct")]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum StructEvalVariant {
+    /// `struct.with_fields`: retain the input fields, overwriting on name collision.
+    WithFields,
+    /// `struct.eval`: drop the input fields that are not selected.
+    Select,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl StructEvalVariant {
+    pub fn to_name(&self) -> &'static str {
+        match self {
+            Self::WithFields => "struct.with_fields",
+            Self::Select => "struct.eval",
+        }
     }
 }
 
@@ -728,6 +765,8 @@ pub enum Operator {
     TrueDivide,
     /// Floor division semantics, this is what python `//` dispatches to
     FloorDivide,
+    /// Division with the quotient rounded toward zero, the counterpart of `FloorDivide`.
+    TruncDivide,
     Modulus,
     And,
     Or,
@@ -754,6 +793,7 @@ impl Display for Operator {
             RustDivide => "rust_div",
             TrueDivide => "/",
             FloorDivide => "//",
+            TruncDivide => "trunc_div",
             Modulus => "%",
             And | LogicalAnd => "&",
             Or | LogicalOr => "|",
@@ -820,6 +860,7 @@ impl Operator {
             | Self::RustDivide
             | Self::TrueDivide
             | Self::FloorDivide
+            | Self::TruncDivide
             | Self::Modulus => return None,
         })
     }
@@ -849,6 +890,7 @@ impl Operator {
             | Self::RustDivide
             | Self::TrueDivide
             | Self::FloorDivide
+            | Self::TruncDivide
             | Self::Modulus => None,
         }
     }

@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use polars_arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
@@ -38,37 +40,38 @@ impl DataFrame {
     pub fn split_chunks(&mut self) -> impl Iterator<Item = DataFrame> + '_ {
         self.align_chunks_par();
 
-        let first_series_col_idx = self
+        // Follows the first column that has chunks (a series, or a dictionary column's codes);
+        // scalar columns have none and are sliced.
+        let chunk_lengths: Vec<usize> = self.first_col_chunk_lengths().collect();
+        let mut offset = 0;
+        (0..chunk_lengths.len()).map(move |i| {
+            let rows = offset..offset + chunk_lengths[i];
+            offset += chunk_lengths[i];
+            self.chunk_frame(i, rows)
+        })
+    }
+
+    /// Chunk `chunk_idx` of this aligned frame, which holds `rows`, as a frame of single chunks.
+    pub(crate) fn chunk_frame(&self, chunk_idx: usize, rows: Range<usize>) -> DataFrame {
+        let columns = self
             .columns()
             .iter()
-            .position(|col| col.as_series().is_some());
-        let df_height = self.height();
-        let mut prev_height = 0;
-        (0..self.first_col_n_chunks()).map(move |i| unsafe {
-            // There might still be scalar/partitioned columns after aligning,
-            // so we follow the size of the chunked column, if any.
-            let chunk_size = first_series_col_idx
-                .map(|c| self.columns()[c].as_series().unwrap().chunks()[i].len())
-                .unwrap_or(df_height);
-            let columns = self
-                .columns()
-                .iter()
-                .map(|col| match col {
-                    Column::Series(s) => Column::from(s.select_chunk(i)),
-                    Column::Scalar(_) => col.slice(prev_height as i64, chunk_size),
-                })
-                .collect::<Vec<_>>();
+            .map(|col| match col {
+                // `Column::from` would turn a one-row chunk into a Scalar, which reads the row.
+                Column::Series(s) => Column::Series(s.select_chunk(chunk_idx).into()),
+                // These are sliced by offset.
+                Column::Scalar(_) | Column::Dictionary(_) => col.slice(rows.clone()),
+            })
+            .collect();
 
-            prev_height += chunk_size;
-
-            DataFrame::new_unchecked(chunk_size, columns)
-        })
+        // SAFETY: each column holds the chunk's rows.
+        unsafe { DataFrame::new_unchecked(rows.len(), columns) }
     }
 
     pub fn split_chunks_by_n(self, n: usize, parallel: bool) -> Vec<DataFrame> {
         let split = _split_offsets(self.height(), n);
 
-        let split_fn = |(offset, len)| self.slice(offset as i64, len);
+        let split_fn = |(offset, len)| self.slice((offset, len));
 
         if parallel {
             // Parallel so that null_counts run in parallel
@@ -78,7 +81,9 @@ impl DataFrame {
         }
     }
 
-    /// Convert the columns of this [DataFrame] to arrow arrays.
+    /// Convert the columns of this [DataFrame] to arrow arrays, one per column.
+    ///
+    /// Use [`DataFrame::try_iter_chunks`] for Map columns that may need several arrays.
     pub fn rechunk_to_arrow(&self, compat_level: CompatLevel) -> Vec<ArrayRef> {
         self.columns()
             .iter()
@@ -86,7 +91,9 @@ impl DataFrame {
             .collect()
     }
 
-    /// Convert the columns of this [DataFrame] to arrow arrays.
+    /// Convert the columns of this [DataFrame] to arrow arrays, one per column.
+    ///
+    /// Use [`DataFrame::try_iter_chunks`] for Map columns that may need several arrays.
     pub fn rechunk_into_arrow(self, compat_level: CompatLevel) -> Vec<ArrayRef> {
         self.into_columns()
             .into_iter()
@@ -99,6 +106,9 @@ impl DataFrame {
 /// maximum number of rows per chunk to ensure reasonable memory efficiency when
 /// reading the resulting file, and a minimum size per chunk to ensure
 /// reasonable performance when writing.
+///
+/// [`DataFrame::iter_chunks`] can still cut a chunk into several record batches, where its
+/// arrow MAP arrays would overflow their `i32` offsets.
 pub fn chunk_df_for_writing(
     df: &mut DataFrame,
     row_group_size: usize,
@@ -109,9 +119,8 @@ pub fn chunk_df_for_writing(
     // Accumulate many small chunks to the row group size.
     // See: #16403
     if !df.columns().is_empty()
-        && df.columns()[0]
-            .as_materialized_series()
-            .chunk_lengths()
+        && df
+            .first_col_chunk_lengths()
             .take(5)
             .all(|len| len < row_group_size)
     {
@@ -151,7 +160,7 @@ pub fn chunk_df_for_writing(
             // leads to slow writing performance, so in that case we
             // merge them.
             let n_chunks = df.first_col_n_chunks();
-            if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
+            if n_chunks > 1 && (df.estimated_size(true) / n_chunks < 128 * 1024) {
                 df.rechunk_mut_par();
             }
         }

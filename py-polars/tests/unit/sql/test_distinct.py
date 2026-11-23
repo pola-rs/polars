@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import pytest
+
 import polars as pl
 from tests.unit.sql import assert_sql_matches
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_distinct_basic_single_column(df_distinct: pl.DataFrame) -> None:
@@ -261,3 +268,13 @@ def test_distinct_with_where_filter(df_distinct: pl.DataFrame) -> None:
             "status": ["active", "inactive", "active", "inactive"],
         },
     )
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_count_distinct_skips_nulls(engine: EngineType) -> None:
+    df = pl.DataFrame({"g": [1, 1, 1, 2, 2, 3, 3], "x": [1, None, 1, None, None, 2, 3]})
+    ctx = pl.SQLContext(df=df)
+    q = ctx.execute("SELECT g, COUNT(DISTINCT x) AS u FROM df GROUP BY g ORDER BY g")
+    assert q.collect(engine=engine).rows() == [(1, 1), (2, 0), (3, 2)]
+    q = ctx.execute("SELECT COUNT(DISTINCT x) AS u FROM df")
+    assert q.collect(engine=engine).item() == 3

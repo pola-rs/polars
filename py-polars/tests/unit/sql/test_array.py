@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.mark.parametrize(
@@ -46,6 +47,37 @@ def test_array_agg(sort_order: str | None, limit: int | None, expected: Any) -> 
     assert res.rows() == expected
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT ARRAY_AGG(x) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(x ORDER BY y DESC) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(1) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(x) FILTER (WHERE y > 100) AS a FROM t",
+        "SELECT g, ARRAY_AGG(x) FILTER (WHERE y > 25) AS a FROM t GROUP BY g ORDER BY g",
+        "SELECT g, ARRAY_AGG(DISTINCT x) FILTER (WHERE y > 25) AS a FROM t GROUP BY g ORDER BY g",
+    ],
+)
+def test_array_agg_no_rows(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [1, 2, None], "y": [10, 20, 30]})
+    assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT ARRAY_AGG(x WHERE y > 10) FROM self",
+        "SELECT ARRAY_AGG(x IGNORE NULLS) FROM self",
+        "SELECT ARRAY_AGG(x HAVING MAX y) FROM self",
+        "SELECT STRING_AGG(CAST(x AS VARCHAR), ',' WHERE y > 10) FROM self",
+    ],
+)
+def test_array_agg_unsupported_clause(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, None], "y": [10, 20, 30]})
+    with pytest.raises(SQLInterfaceError, match="is not supported in"):
+        df.sql(query)
+
+
 def test_array_literals() -> None:
     with pl.SQLContext(df=pl.DataFrame({"x": [0]}), eager=True) as ctx:
         res = ctx.execute(
@@ -66,6 +98,7 @@ def test_array_literals() -> None:
                 ['a','b','c'] AS a2,
               FROM df
             ) tbl
+            GROUP BY a1, a2
             """
         )
         assert_frame_equal(
@@ -83,6 +116,45 @@ def test_array_literals() -> None:
                 }
             ),
         )
+
+
+def test_array_literal_parenthesized_elements() -> None:
+    res = pl.sql("SELECT [-(2), (3), (-1)::INT, -(CAST(4 AS INT))] AS a").collect()
+    assert res.rows() == [([-2, 3, -1, -4],)]
+    df = pl.DataFrame({"x": [-2, 1, 2]})
+    res = pl.sql("SELECT x FROM df WHERE x IN ((-(2)), (1))").collect()
+    assert res.rows() == [(-2,), (1,)]
+
+
+def test_array_literal_cast_elements() -> None:
+    # a cast applies to its own element
+    res = pl.sql("SELECT [CAST(2.7 AS INT), 2.5] AS a").collect()
+    assert res.rows() == [([2.0, 2.5],)]
+    df = pl.DataFrame({"x": [2.0, 2.5, 3.0]})
+    res = pl.sql("SELECT x FROM df WHERE x IN (CAST(2 AS INT), 2.5)").collect()
+    assert res.rows() == [(2.0,), (2.5,)]
+    res = pl.sql("SELECT [CAST(1 AS VARCHAR), CAST(2.5 AS VARCHAR)] AS a").collect()
+    assert res.rows() == [(["1", "2.5"],)]
+    res = pl.sql("SELECT [-CAST('2' AS INT), +CAST('3' AS INT)] AS a").collect()
+    assert res.rows() == [([-2, 3],)]
+    res = pl.sql("SELECT [-(-2), -(+2), +(-2), -(-CAST(2 AS INT))] AS a").collect()
+    assert res.rows() == [([2, -2, -2, 2],)]
+    res = pl.sql("SELECT [-NULL, 1] AS a").collect()
+    assert res.rows() == [([None, 1],)]
+    res = pl.sql("SELECT [CAST(1 AS BIGINT), '2', 3] AS a").collect()
+    assert res.rows() == [([1, 2, 3],)]
+    res = pl.sql("SELECT [DATE '2020-01-01', '2020-01-02'] AS a").collect()
+    assert res.rows() == [([date(2020, 1, 1), date(2020, 1, 2)],)]
+    # a null keeps the type of its cast
+    res = pl.sql("SELECT [CAST(NULL AS DOUBLE), 1] AS a").collect()
+    assert res.schema["a"] == pl.List(pl.Float64)
+    assert res.rows() == [([None, 1.0],)]
+    # a sign of a value that is no number is not dropped
+    df = pl.DataFrame({"flag": [False, True], "x": [-2, 2]})
+    res = pl.sql("SELECT flag FROM df WHERE flag IN (NOT FALSE)").collect()
+    assert res.rows() == [(True,)]
+    res = pl.sql("SELECT x FROM df WHERE x IN (-CAST('2' AS INT))").collect()
+    assert res.rows() == [(-2,)]
 
 
 @pytest.mark.parametrize("function_name", ["ARRAY_INNER_PRODUCT", "ARRAY_DOT_PRODUCT"])
@@ -365,3 +437,42 @@ def test_array_literal_default_name() -> None:
     assert res.columns == [""]
     res = pl.sql('SELECT t."" AS arr FROM (SELECT ARRAY[1, 2]) t', eager=True)
     assert res.to_dict(as_series=False) == {"arr": [[1, 2]]}
+
+
+def test_array_length_and_cardinality() -> None:
+    df = pl.DataFrame({"s": ["a b", "", None, "x y z"]})
+    res = df.sql(
+        """
+        SELECT
+          ARRAY_LENGTH(STRING_TO_ARRAY(s, ' ')) AS n1,
+          ARRAY_LENGTH(STRING_TO_ARRAY(s, ' '), 1) AS n2,
+          CARDINALITY(STRING_TO_ARRAY(s, ' ')) AS n3
+        FROM self
+        """
+    )
+    expected = [2, 1, None, 3]
+    assert res.to_dict(as_series=False) == {
+        "n1": expected,
+        "n2": expected,
+        "n3": expected,
+    }
+
+    res = pl.sql(
+        "SELECT CARDINALITY(NULL) AS a, ARRAY_LENGTH(NULL, 1) AS b", eager=True
+    )
+    assert res.to_dict(as_series=False) == {"a": [None], "b": [None]}
+    nulls = pl.DataFrame({"z": [None, None]})
+    res = nulls.sql(
+        "SELECT CARDINALITY(z) AS a, ARRAY_LENGTH(z, 1) AS b, "
+        "CARDINALITY(COALESCE(NULL, NULL)) AS c FROM self"
+    )
+    assert res.to_dict(as_series=False) == {
+        "a": [None, None],
+        "b": [None, None],
+        "c": [None, None],
+    }
+
+    with pytest.raises(SQLInterfaceError, match="only supports dimension 1"):
+        df.sql("SELECT ARRAY_LENGTH(STRING_TO_ARRAY(s, ' '), 2) FROM self")
+    with pytest.raises(SQLSyntaxError, match="expects 1-2 arguments"):
+        df.sql("SELECT ARRAY_LENGTH(STRING_TO_ARRAY(s, ' '), 1, 2) FROM self")

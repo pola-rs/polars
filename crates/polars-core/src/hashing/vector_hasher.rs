@@ -228,14 +228,20 @@ fn hash_binview_array(
     buf: &mut Vec<u64>,
 ) {
     let null_h = get_null_hash_value(&random_state);
-    if arr.null_count() == 0 {
-        // use the null_hash as seed to get a hash determined by `random_state` that is passed
-        buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
-    } else {
-        buf.extend(arr.into_iter().map(|opt_v| match opt_v {
-            Some(v) => xxh3_64_with_seed(v, null_h),
-            None => null_h,
-        }))
+    let views = arr.views().iter();
+    let buffers = arr.data_buffers();
+    unsafe {
+        if arr.null_count() == 0 {
+            buf.extend(views.map(|v| v.hash_with_buffers_unchecked(buffers, &random_state)))
+        } else {
+            buf.extend(views.zip(arr.validity().unwrap()).map(|(v, is_valid)| {
+                if is_valid {
+                    v.hash_with_buffers_unchecked(buffers, &random_state)
+                } else {
+                    null_h
+                }
+            }))
+        }
     }
 }
 
@@ -261,30 +267,28 @@ impl VecHash for BinaryChunked {
 
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
-            match arr.null_count() {
-                0 => arr
-                    .values_iter()
-                    .zip(&mut hashes[offset..])
-                    .for_each(|(v, h)| {
-                        let l = xxh3_64_with_seed(v, null_h);
+            let views = arr.views().iter();
+            let buffers = arr.data_buffers();
+            let hashes = &mut hashes[offset..];
+            unsafe {
+                if arr.null_count() == 0 {
+                    views.zip(hashes).for_each(|(v, h)| {
+                        let l = v.hash_with_buffers_unchecked(buffers, &random_state);
                         *h = _boost_hash_combine(l, *h)
-                    }),
-                _ => {
-                    let validity = arr.validity().unwrap();
-                    let (slice, byte_offset, _) = validity.as_slice();
-                    (0..validity.len())
-                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
-                        .zip(&mut hashes[offset..])
-                        .zip(arr.values_iter())
-                        .for_each(|((valid, h), l)| {
-                            let l = if valid {
-                                xxh3_64_with_seed(l, null_h)
+                    })
+                } else {
+                    views
+                        .zip(arr.validity().unwrap())
+                        .zip(hashes)
+                        .for_each(|((v, is_valid), h)| {
+                            let l = if is_valid {
+                                v.hash_with_buffers_unchecked(buffers, &random_state)
                             } else {
                                 null_h
                             };
                             *h = _boost_hash_combine(l, *h)
-                        });
-                },
+                        })
+                }
             }
             offset += arr.len();
         });

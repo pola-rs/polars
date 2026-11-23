@@ -5,7 +5,7 @@ import sys
 import typing
 from collections import OrderedDict
 from collections.abc import Iterator, Mapping
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from itertools import chain, repeat
@@ -181,7 +181,7 @@ def test_column_selection() -> None:
     assert_series_equal(df.get_column("b"), b)
 
     with pytest.raises(ColumnNotFoundError, match="x"):
-        df.get_column("x")
+        df.get_column("x")  # pyrefly: ignore[unknown-column]
 
     default_series = pl.Series("x", ["?", "?", "?"])
     assert_series_equal(df.get_column("x", default=default_series), default_series)
@@ -571,10 +571,10 @@ def test_to_series_bad_inputs() -> None:
     df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
 
     with pytest.raises(IndexError, match="index 5 is out of bounds"):
-        df.to_series(5)
+        df.to_series(5)  # pyrefly: ignore[unknown-column]
 
     with pytest.raises(IndexError, match="index -100 is out of bounds"):
-        df.to_series(-100)
+        df.to_series(-100)  # pyrefly: ignore[unknown-column]
 
     with pytest.raises(
         TypeError, match="'str' object cannot be interpreted as an integer"
@@ -899,7 +899,7 @@ def test_df_fold() -> None:
     )
 
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.fold(lambda s1, s2: s1 + s2)
+    out = df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
     assert_series_equal(out, pl.Series("a", ["foo11.0", "bar22.0", "233.0"]))
 
     df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
@@ -2907,14 +2907,14 @@ def test_init_datetimes_with_timezone() -> None:
             "-08:00",
             "UTC",
             "UTC",
-            datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, 8, tzinfo=UTC),
         ),
         (
             timezone(timedelta(hours=-8)),
             "-08:00",
             None,
             "UTC",
-            datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, 8, tzinfo=UTC),
         ),
     ],
 )

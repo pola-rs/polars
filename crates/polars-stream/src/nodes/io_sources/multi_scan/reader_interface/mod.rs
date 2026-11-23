@@ -12,11 +12,11 @@ use polars_async::primitives::oneshot_channel;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
+use crate::nodes::io_sources::multi_scan::components::predicate::Predicate;
 pub use crate::nodes::io_sources::multi_scan::components::projection::Projection;
 
 /// Interface to read a single file
@@ -31,10 +31,16 @@ pub trait FileReader: Send + Sync {
     /// the order in which the files are read.
     ///
     /// This can be used e.g. to synchronize data fetches such that they happen in order.
-    ///
-    /// This is not guaranteed to always to be called.
     fn prepare_read(&mut self) -> PolarsResult<()> {
         Ok(())
+    }
+
+    /// Size in bytes of a local, uncompressed file that this reader splits over all pipelines.
+    /// The multi-file scan limits how many of these bytes are read at the same time.
+    ///
+    /// This FileReader must be initialized before calling this.
+    fn local_read_size(&self) -> Option<usize> {
+        None
     }
 
     /// Begin reading the file into morsels.
@@ -93,6 +99,12 @@ pub trait FileReader: Send + Sync {
         &mut self,
         pre_slice: Option<Slice>,
     ) -> PolarsResult<IdxSize> {
+        // Normalize positive slices, as some row-skipping codepaths are single-threaded (e.g. NDJSON).
+        let pre_slice = match pre_slice {
+            Some(v) if v.is_positive() => v.end_position().map(Slice::head),
+            v => v,
+        };
+
         let Some(pre_slice) = pre_slice else {
             return self.n_rows_in_file().await;
         };
@@ -100,14 +112,7 @@ pub trait FileReader: Send + Sync {
         let (tx, rx) = oneshot_channel::channel();
 
         let (mut morsel_receivers, handle) = self.begin_read(BeginReadArgs {
-            pre_slice: Some(match pre_slice {
-                // Normalize positive slices, as some row-skipping codepaths are single-threaded (e.g. NDJSON).
-                v @ Slice::Positive { .. } => Slice::Positive {
-                    offset: 0,
-                    len: v.end_position(),
-                },
-                v @ Slice::Negative { .. } => v,
-            }),
+            pre_slice: Some(pre_slice),
             callbacks: FileReaderCallbacks {
                 row_position_on_end_tx: Some(tx),
                 ..Default::default()
@@ -139,7 +144,7 @@ pub struct BeginReadArgs {
 
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
-    pub predicate: Option<ScanIOPredicate>,
+    pub predicate: Option<Predicate>,
 
     /// User-configured policy for when datatypes do not match.
     ///
@@ -152,6 +157,8 @@ pub struct BeginReadArgs {
 
     pub num_pipelines: usize,
     pub disable_morsel_split: bool,
+    /// If false, the reader may emit rows in any order.
+    pub maintain_order: bool,
     /// Minimum number of pieces a reader should split a file's last morsel into, to keep
     /// downstream pipelines busy. The multi-scan layer precomputes this so the per-file
     /// budget is shared across files in the same scan. When many files are concurrent,
@@ -178,6 +185,7 @@ impl Default for BeginReadArgs {
             missing_columns_policy: MissingColumnsPolicy::Raise,
             num_pipelines: 1,
             disable_morsel_split: false,
+            maintain_order: true,
             last_morsel_pipelines: 1,
             callbacks: FileReaderCallbacks::default(),
         }
@@ -247,7 +255,7 @@ pub fn calc_row_position_after_slice(n_rows_in_file: IdxSize, pre_slice: Option<
 
     let out = match pre_slice {
         None => n_rows_in_file,
-        Some(v) => v.restrict_to_bounds(n_rows_in_file).end_position(),
+        Some(v) => v.resolve(n_rows_in_file).end,
     };
 
     IdxSize::try_from(out).unwrap_or(IdxSize::MAX)

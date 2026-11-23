@@ -12,7 +12,7 @@ use crate::array::Splitable;
 use crate::bitmap::BitmapBuilder;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
-    FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
+    ExactTrueIdxIter, FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter,
 };
 use crate::bitmap::utils::bytes_for;
 use crate::legacy::utils::FromTrustedLenIterator;
@@ -158,8 +158,8 @@ impl Bitmap {
     }
 
     /// Returns an iterator that only iterates over the set bits.
-    pub fn true_idx_iter(&self) -> TrueIdxIter<'_> {
-        TrueIdxIter::new(self.len(), Some(self))
+    pub fn true_idx_iter(&self) -> ExactTrueIdxIter<'_> {
+        ExactTrueIdxIter::from_validity(self.len(), Some(self))
     }
 
     /// Returns the bits of this [`Bitmap`] as a [`AlignedBitmapSlice`].
@@ -388,6 +388,9 @@ impl Bitmap {
     /// * this [`Bitmap`] has not been cloned (i.e. [`Arc`]`::get_mut` yields [`Some`])
     /// * this [`Bitmap`] was not imported from the c data interface (FFI)
     pub fn into_mut(mut self) -> Either<Self, MutableBitmap> {
+        if self.offset != 0 {
+            return Either::Left(self);
+        }
         match self.storage.try_into_vec() {
             Ok(v) => Either::Right(MutableBitmap::from_vec(v, self.length)),
             Err(storage) => {

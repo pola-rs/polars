@@ -23,11 +23,13 @@ use pyo3::types::PyCFunction;
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
+use crate::expr::PyExpr;
 use crate::lazyframe::PyLazyFrame;
 use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, polars, polars_rs};
 use crate::series::PySeries;
+use crate::utils::{EnterPolarsExt, to_py_err};
 
 fn python_function_caller_series(
     s: &[Column],
@@ -120,6 +122,10 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
 
         WARN_FUNCTION.set(warn_function).unwrap();
         set_polars_allow_extension(true);
+
+        // I/O plugins are found through their Python packages, also in deserialized plans.
+        #[cfg(feature = "io_plugin_ffi")]
+        crate::io::io_plugin::install_locator();
 
         // Stack frames can get really large in debug mode.
         #[cfg(debug_assertions)]
@@ -241,6 +247,12 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                         Ok(Box::new(py_f.extract::<Wrap<polars_core::schema::Schema>>(py)?.0) as _)
                     })
                 }),
+                expr: Arc::new(|py_f| {
+                    Python::attach(|py| Ok(Box::new(py_f.extract::<PyExpr>(py)?.inner) as _))
+                }),
+                dtype: Arc::new(|py_f| {
+                    Python::attach(|py| Ok(Box::new(py_f.extract::<Wrap<DataType>>(py)?.0) as _))
+                }),
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
@@ -277,6 +289,16 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                         .into_py_any(py)
                     })
                 }),
+                expr: Arc::new(|expr| {
+                    Python::attach(|py| {
+                        PyExpr::from(expr.downcast_ref::<Expr>().unwrap().clone()).into_py_any(py)
+                    })
+                }),
+                dtype: Arc::new(|dtype| {
+                    Python::attach(|py| {
+                        (&Wrap(dtype.downcast_ref::<DataType>().unwrap().clone())).into_py_any(py)
+                    })
+                }),
             },
         });
 
@@ -300,9 +322,18 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             }
         });
 
+        polars_stream::nodes::io_sources::external_python::PY_EXTERNAL_READER_VTABLE.get_or_init(
+            || polars_stream::nodes::io_sources::external_python::PyExternalReaderVTable {
+                extract_schema: dataset_provider_funcs::extract_schema,
+                enter_polars_send_df: |py, df, tx: &polars_stream::nodes::io_sources::external_python::ExternalPythonReaderDataFrameTx| py.enter_polars_ok(|| tx.send_df_(df)).unwrap(),
+                extract_df: |py, py_df| python_df_to_rust(py, py_df).map_err(to_py_err),
+            },
+        );
+
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,
             schema: dataset_provider_funcs::schema,
+            has_tight_statistics: dataset_provider_funcs::has_tight_statistics,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });
 

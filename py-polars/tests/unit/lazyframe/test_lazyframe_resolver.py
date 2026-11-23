@@ -17,6 +17,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from polars._typing import SchemaDict
     from polars.lazyframe.resolver._resolver import FilterExpr
@@ -75,7 +76,8 @@ class InMemoryLazyFrameResolver(LazyFrameResolver):  # noqa: D101
 
         return lf
 
-    def cse_eq(self, other: InMemoryLazyFrameResolver) -> bool:
+    def cse_eq(self, other: object) -> bool:
+        assert isinstance(other, InMemoryLazyFrameResolver)
         return self.cse_eq_f(self, other)
 
 
@@ -116,6 +118,22 @@ def test_lazyframe_resolver() -> None:
     q = lf.filter(pl.col("a") == 0).select(pl.len())
 
     assert q.collect().item() == 1
+
+
+@pytest.mark.parametrize("n_columns", [1, 2])
+def test_lazyframe_resolver_count_pushdown(tmp_path: Path, n_columns: int) -> None:
+    source = pl.scan_parquet(
+        tmp_path / "missing.parquet",
+        schema={f"column_{i}": pl.Int64 for i in range(n_columns)},
+        _row_count=(7, 0),
+    )
+    resolver = InMemoryLazyFrameResolver(source)
+    resolver.resolve_lazyframe = Mock(return_value=source)  # type: ignore[method-assign]
+
+    result = resolver.lazy().select(pl.len()).collect()
+
+    assert result.item() == 7
+    assert resolver.resolve_lazyframe.call_args.kwargs["projection"] == []
 
 
 def test_lazyframe_resolver_filter() -> None:
@@ -166,6 +184,16 @@ def test_lazyframe_resolver_slice_with_filter() -> None:
     kwargs = resolver.resolve_lazyframe.call_args.kwargs
     assert kwargs["limit"] is None
     assert kwargs["filters"] == []
+
+
+def test_lazyframe_resolver_open_ended_slice_has_no_limit() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3]})
+
+    resolver = InMemoryLazyFrameResolver(lf)
+    resolver.resolve_lazyframe = Mock(wraps=resolver.resolve_lazyframe)  # type: ignore[method-assign]
+
+    assert_frame_equal(resolver.lazy().slice(1).collect(), lf.collect().slice(1))
+    assert resolver.resolve_lazyframe.call_args.kwargs["limit"] is None
 
 
 def test_lazyframe_resolver_cse_gating(
@@ -533,3 +561,39 @@ def test_lazyframe_versioned_resolver_incorrect_returns() -> None:
     )
 
     assert q.collect().shape == (1, 0)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lazyframe_resolver_returns_sink_29910(engine: Any) -> None:
+    sink = pl.LazyFrame({"a": [1]}).sink_parquet("a.parquet", lazy=True)
+
+    class SinkResolver(LazyFrameResolver):
+        def schema(self) -> SchemaDict:
+            return {}
+
+        def resolve_lazyframe(self, **kwargs: Any) -> pl.LazyFrame:
+            return sink
+
+    for q in [SinkResolver().lazy(), SinkResolver().lazy().select(pl.len())]:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match="resolver cannot return a sink",
+        ):
+            q.collect(engine=engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lazyframe_resolver_row_index_then_projection(engine: Any) -> None:
+    # a node above the unresolved resolver (a row index) cached its full schema, while
+    # the resolved plan outputs only the projected columns, in projection order: the
+    # streaming projection picked columns by stale indices
+    df = pl.DataFrame({"id": [1, 2, 3], "g": [10, 20, 30], "d": ["x", "y", "z"]})
+    lf = InMemoryLazyFrameResolver(df.lazy()).lazy()
+    queries: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
+        lambda lf: lf.with_row_index("ri").select("ri", "d"),
+        lambda lf: lf.with_row_index("ri").select("g", "id", "ri"),
+        lambda lf: lf.with_row_index("ri").filter(pl.col("g") > 10).select("g", "ri"),
+        lambda lf: lf.with_row_index("ri").sort("g", descending=True).select("d", "ri"),
+    ]
+    for q in queries:
+        assert_frame_equal(q(lf).collect(engine=engine), q(df.lazy()).collect())

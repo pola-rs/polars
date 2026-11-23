@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import itertools
 import os
 import sys
 import tempfile
@@ -22,36 +23,67 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--cloud-distributed",
         action="store_true",
         default=False,
-        help="Run all queries by default of the distributed engine",
+        help="Run all queries by default on the distributed engine",
     )
 
 
 _xdist_crash_config: pytest.Config | None = None
 _xdist_crash_log_dir: tempfile.TemporaryDirectory[str] | None = None
 
-# How much of a crashed worker's captured output we echo, in bytes.
+# How much of each captured stream of a crashed worker we echo, in bytes.
 _XDIST_CRASH_OUTPUT_LIMIT = 64 * 1024
 
 
-def _crash_log_path(log_dir: str | Path, worker_id: str, stream: str) -> Path:
-    return Path(log_dir) / f"{worker_id}.{stream}"
-
-
-def _capture_to_file(capman: Any, stream: str, path: Path) -> None:
-    """Redirect pytest's fd-level capture of `stream` to a persistent file."""
-    capture = getattr(capman._global_capturing, stream, None)
-    tmpfile = getattr(capture, "tmpfile", None)
-    targetfd = getattr(capture, "targetfd", None)
-    if tmpfile is None or targetfd is None:
-        return  # Not capturing this stream at fd level (`-s`, `--capture=sys`).
-
+def _persist_capture(capture: Any, path: Path) -> None:
+    """Make an fd-level pytest capture write to `path`, deleted when it ends."""
     # This is rather hacky but the tempfile pytest creates is passed to multiple
     # places before now, so it would be too late to replace that file object
     # with something we control. So we instead change the underlying file
-    # descriptors to point out our path of choice.
+    # descriptors to point at our path of choice.
     with path.open("wb+", buffering=0) as f:
-        os.dup2(f.fileno(), tmpfile.fileno())
-        os.dup2(f.fileno(), targetfd)
+        os.dup2(f.fileno(), capture.tmpfile.fileno())
+        if capture._state == "started":
+            os.dup2(f.fileno(), capture.targetfd)
+    capture._polars_crash_log_path = path
+
+
+def _persist_fd_captures(capman: Any, log_dir: str, worker_id: str) -> None:
+    """Persist the output of all fd-level captures of this xdist worker.
+
+    Files are named `<worker_id>.<n>.<stream>`, where `n` counts up from 0 for
+    the global capture, so a crash report can print them in creation order.
+    """
+    from _pytest.capture import FDCaptureBase
+
+    def path(n: int, targetfd: int) -> Path:
+        stream = "out" if targetfd == 1 else "err"
+        return Path(log_dir) / f"{worker_id}.{n:06}.{stream}"
+
+    # The global capture started before this conftest was loaded.
+    global_capture = getattr(capman, "_global_capturing", None)
+    for stream in ("out", "err"):
+        capture = getattr(global_capture, stream, None)
+        if isinstance(capture, FDCaptureBase):
+            _persist_capture(capture, path(0, capture.targetfd))
+
+    # Captures created later, such as those of `capfd` in each test phase.
+    counter = itertools.count(1)
+    orig_init = FDCaptureBase.__init__
+    orig_done = FDCaptureBase.done
+
+    def init(self: FDCaptureBase[Any], targetfd: int) -> None:
+        orig_init(self, targetfd)
+        if targetfd in (1, 2):
+            _persist_capture(self, path(next(counter), targetfd))
+
+    def done(self: FDCaptureBase[Any]) -> None:
+        orig_done(self)
+        log_path = getattr(self, "_polars_crash_log_path", None)
+        if log_path is not None:
+            log_path.unlink(missing_ok=True)
+
+    FDCaptureBase.__init__ = init  # type: ignore[method-assign]
+    FDCaptureBase.done = done  # type: ignore[method-assign]
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -71,13 +103,10 @@ def pytest_configure(config: pytest.Config) -> None:
         return
 
     try:
-        for stream in ("out", "err"):
-            _capture_to_file(
-                capman, stream, _crash_log_path(log_dir, worker_id, stream)
-            )
+        _persist_fd_captures(capman, log_dir, worker_id)
     except Exception as exc:
         # Never let this break an otherwise fine test run.
-        print(f"failed to redirect fd capture: {exc!r}", file=sys.stderr)
+        print(f"failed to persist fd captures: {exc!r}", file=sys.stderr)
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -98,17 +127,25 @@ def pytest_unconfigure(config: pytest.Config) -> None:
         _xdist_crash_log_dir = None
 
 
-def _read_crash_output(worker_id: str, stream: str) -> str:
+def _read_crash_output(worker_id: str) -> list[str]:
+    """Return a section per capture that was still active when the worker crashed."""
     if _xdist_crash_log_dir is None:
-        return ""
-    path = _crash_log_path(_xdist_crash_log_dir.name, worker_id, stream)
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return ""
-    if len(data) > _XDIST_CRASH_OUTPUT_LIMIT:
-        data = b"<truncated>\n" + data[-_XDIST_CRASH_OUTPUT_LIMIT:]
-    return data.decode("utf-8", errors="replace").strip()
+        return []
+    sections = []
+    for path in sorted(Path(_xdist_crash_log_dir.name).glob(f"{worker_id}.*")):
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        if len(data) > _XDIST_CRASH_OUTPUT_LIMIT:
+            data = b"<truncated>\n" + data[-_XDIST_CRASH_OUTPUT_LIMIT:]
+        output = data.decode("utf-8", errors="replace").strip()
+        if output:
+            n, stream = path.name.split(".")[1:]
+            name = "stdout" if stream == "out" else "stderr"
+            source = "" if int(n) == 0 else " (capfd)"
+            sections.append(f"--- {worker_id} {name}{source} ---\n{output}")
+    return sections
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -120,10 +157,7 @@ def pytest_handlecrashitem(
         worker = getattr(report, "node", None)
         worker_id = getattr(getattr(worker, "gateway", None), "id", "?")
         lines = [f"ERROR: xdist worker {worker_id} crashed while running {crashitem}"]
-        for stream, name in (("out", "stdout"), ("err", "stderr")):
-            output = _read_crash_output(worker_id, stream)
-            if output:
-                lines.append(f"--- {worker_id} {name} ---\n{output}")
+        lines.extend(_read_crash_output(worker_id))
 
         def emit() -> None:
             print("\n".join(lines), file=sys.stderr, flush=True)
@@ -152,7 +186,7 @@ def _patched_cloud(
         import uuid
         from pathlib import Path
 
-        from polars_cloud import ClusterContext, DirectQuery, set_compute_context
+        from polars._dependencies import polars_cloud as pc
 
         TIMEOUT_SECS = 20
 
@@ -168,8 +202,8 @@ def _patched_cloud(
 
             return f()
 
-        ctx = ClusterContext(uri="http://localhost")
-        set_compute_context(ctx)
+        ctx = pc.ClusterContext(uri="http://localhost")
+        pc.set_compute_context(ctx)
 
         prev_collect = pl.LazyFrame.collect
 
@@ -189,7 +223,7 @@ def _patched_cloud(
         class LazyExe:
             def __init__(
                 self,
-                query: DirectQuery,
+                query: pc.DirectQuery,
                 prev_tgt: io.BytesIO | io.StringIO | io.TextIOBase | None,
                 path: str | Path,
             ) -> None:
@@ -325,7 +359,7 @@ def _patched_cloud(
                     lf.remote(plan_type="plain").distributed(), f"sink_{ext}"
                 )
                 q = sink(*args, **kwargs)
-                assert isinstance(q, DirectQuery)
+                assert isinstance(q, pc.DirectQuery)
                 query = LazyExe(
                     q,
                     prev_tgt,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import re
-import sys
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -30,9 +29,6 @@ if TYPE_CHECKING:
 
     from polars._typing import PolarsDataType, PythonDataType
     from polars.expr.expr import Expr
-
-    if not sys.version_info >= (3, 11):
-        from typing import Any
 
 __all__ = ["col"]
 
@@ -116,19 +112,8 @@ def _create_col(
         raise TypeError(msg)
 
 
-if sys.version_info >= (3, 11):
-    # note: using `co_qualname` is more robust; can additionally
-    # detect class scope from inside classmethods and staticmethods...
-    def _get_class_objname(f: FrameType) -> str:
-        return f.f_code.co_qualname.split(".")[-2:][0]
-
-    _have_qualname = True
-else:
-    # ... but it's not available until 3.11
-    def _get_class_objname(f: FrameType) -> str:
-        return type(f.f_locals.get("self")).__name__
-
-    _have_qualname = False
+def _get_class_objname(f: FrameType) -> str:
+    return f.f_code.co_qualname.split(".")[-2:][0]
 
 
 def _python_dtype_match(tp: PythonDataType) -> list[PolarsDataType]:
@@ -401,9 +386,7 @@ class Col:
 
             frame = inspect.currentframe()
             while frame is not None:
-                if (frame := frame.f_back) is not None and (
-                    _have_qualname or "self" in frame.f_locals
-                ):
+                if (frame := frame.f_back) is not None:
                     # if we are inside class scope confirm the col has been mangled
                     # with the *specific* class name associated with that scope
                     if object_name := _get_class_objname(frame):
@@ -413,20 +396,12 @@ class Col:
                             name = name.removeprefix(mangled_prefix)
                             break
 
-        # help autocomplete work with IPython
-        with contextlib.suppress(AttributeError):
-            if name.startswith("__wrapped__"):
-                return getattr(type(self), name)
+        # `inspect.unwrap` (used by IPython/Jupyter autocomplete) probes this
+        if name == "__wrapped__":
+            msg = f"{type(self).__name__!r} object has no attribute {name!r}"
+            raise AttributeError(msg)
 
         return _create_col(name)
-
-    if not sys.version_info >= (3, 11):
-
-        def __getstate__(self) -> Any:
-            return self.__dict__
-
-        def __setstate__(self, state: Any) -> None:
-            self.__dict__ = state
 
 
 col: Col = Col()

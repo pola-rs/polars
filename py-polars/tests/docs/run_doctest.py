@@ -60,6 +60,7 @@ if sys.version_info < (3, 12):
 # run; if the module is not found, their doctests are skipped.
 OPTIONAL_MODULES_AND_METHODS: dict[str, set[str]] = {
     "jax": {"to_jax"},
+    "sqlglot": set(),
     "torch": {"to_torch", "from_torch"},
 }
 OPTIONAL_MODULES: set[str] = set()
@@ -68,7 +69,7 @@ SKIP_METHODS: set[str] = set()
 for mod, methods in OPTIONAL_MODULES_AND_METHODS.items():
     try:
         importlib.import_module(mod)
-    except ImportError:  # noqa: PERF203
+    except ImportError:
         SKIP_METHODS.update(methods)
         OPTIONAL_MODULES.add(mod)
 
@@ -86,7 +87,7 @@ def modules_in_path(p: Path) -> Iterator[ModuleType]:
             file_name_import = ".".join(file.relative_to(p).parts)[:-3]
             temp_module = importlib.import_module(p.name + "." + file_name_import)
             yield temp_module
-        except ImportError as err:  # noqa: PERF203
+        except ImportError as err:
             if not any(re.search(rf"\b{mod}\b", str(err)) for mod in OPTIONAL_MODULES):
                 raise
 

@@ -1,4 +1,4 @@
-use polars_arrow::array::{Array, FixedSizeBinaryArray};
+use polars_arrow::array::FixedSizeBinaryArray;
 use polars_error::PolarsResult;
 
 use super::encode_plain;
@@ -19,16 +19,15 @@ pub fn array_to_page(
     let encode_options = EncodeNullability::new(is_optional);
 
     let mut buffer = vec![];
-    let (repetition_levels_byte_length, definition_levels_byte_length) =
+    let (repetition_levels_byte_length, definition_levels_byte_length, num_values) =
         nested::write_rep_and_def(options.version, nested, &mut buffer)?;
 
     encode_plain(array, encode_options, &mut buffer);
-
     utils::build_plain_page(
         buffer,
-        nested::num_values(nested),
+        num_values,
         nested[0].len(),
-        array.null_count(),
+        nested::num_nulls(num_values, array),
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics.map(|x| x.serialize()),
