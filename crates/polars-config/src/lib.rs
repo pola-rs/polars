@@ -43,6 +43,7 @@ const DEFAULT_ENGINE_AFFINITY: Engine = Engine::Auto;
 const PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH: &str =
     "POLARS_PARQUET_BINARY_STATISTICS_TRUNCATE_LEN";
 const DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH: u64 = 64;
+const PARQUET_BYTE_STREAM_SPLIT_DECIMALS: &str = "POLARS_PARQUET_BYTE_STREAM_SPLIT_DECIMALS";
 
 const PRUNE_PARQUET_METADATA: &str = "POLARS_PRUNE_PARQUET_METADATA";
 const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
@@ -188,6 +189,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     IDEAL_MORSEL_SIZE,
     ENGINE_AFFINITY,
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
+    PARQUET_BYTE_STREAM_SPLIT_DECIMALS,
     PRUNE_PARQUET_METADATA,
     ALLOW_NESTED_CSPE,
     RESOLVE_METADATA_LEVEL,
@@ -261,6 +263,7 @@ pub struct Config {
     ideal_morsel_size: AtomicU64,
     engine_affinity: AtomicU8,
     parquet_binary_statistics_truncate_length: AtomicU64,
+    parquet_byte_stream_split_decimals: AtomicBool,
     prune_parquet_metadata: AtomicBool,
     allow_nested_cspe: AtomicBool,
     resolve_metadata_level: AtomicU8,
@@ -322,6 +325,7 @@ impl Config {
             parquet_binary_statistics_truncate_length: AtomicU64::new(
                 DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
             ),
+            parquet_byte_stream_split_decimals: AtomicBool::new(false),
             prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
             resolve_metadata_level: AtomicU8::new(ResolveMode::default() as u8),
             resolve_sample_limit: AtomicU64::new(DEFAULT_RESOLVE_SAMPLE_LIMIT),
@@ -493,6 +497,10 @@ impl Config {
                     Ordering::Relaxed,
                 )
             },
+            PARQUET_BYTE_STREAM_SPLIT_DECIMALS => self.parquet_byte_stream_split_decimals.store(
+                val.and_then(|x| parse::parse_bool(var, x)).unwrap_or(false),
+                Ordering::Relaxed,
+            ),
             PRUNE_PARQUET_METADATA => self.prune_parquet_metadata.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_PRUNE_PARQUET_METADATA),
@@ -753,6 +761,12 @@ impl Config {
     #[inline(always)]
     pub fn parquet_binary_statistics_truncate_length(&self) -> u64 {
         self.parquet_binary_statistics_truncate_length
+            .load(Ordering::Relaxed)
+    }
+
+    /// Use BYTE_STREAM_SPLIT for flat INT32-backed decimals written with Zstd.
+    pub fn parquet_byte_stream_split_decimals(&self) -> bool {
+        self.parquet_byte_stream_split_decimals
             .load(Ordering::Relaxed)
     }
 

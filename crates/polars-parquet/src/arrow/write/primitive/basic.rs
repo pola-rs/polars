@@ -119,6 +119,36 @@ where
     array_to_page(array, options, type_, Encoding::Plain, encode_plain)
 }
 
+pub(crate) fn i32_to_byte_stream_split_page(
+    array: &PrimitiveArray<i32>,
+    options: WriteOptions,
+    type_: PrimitiveType,
+) -> PolarsResult<Page> {
+    array_to_page::<i32, i32, _>(
+        array,
+        options,
+        type_,
+        Encoding::ByteStreamSplit,
+        |array, nullability, mut out| {
+            let values = array.values().as_slice();
+            let compacted;
+            let values = if nullability.is_optional() && array.has_nulls() {
+                compacted =
+                    polars_compute::filter::filter_values(values, array.validity().unwrap());
+                compacted.as_slice()
+            } else {
+                values
+            };
+            out.reserve(4 * values.len());
+            for byte in 0..4 {
+                out.extend(values.iter().map(|&v| i32::to_le_bytes(v)[byte]));
+            }
+            out
+        },
+    )
+    .map(Page::Data)
+}
+
 pub fn array_to_page_integer<T, P>(
     array: &PrimitiveArray<T>,
     options: WriteOptions,

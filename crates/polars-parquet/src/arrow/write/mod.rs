@@ -509,8 +509,15 @@ pub fn array_to_pages(
             }
         }
 
-        // We didn't succeed, fallback to plain
-        encoding = Encoding::Plain;
+        encoding = if matches!(nested, [Nested::Primitive(_)])
+            && matches!(primitive_array.dtype(), ArrowDataType::Decimal(1..=9, _))
+            && matches!(options.compression, CompressionOptions::Zstd(_))
+            && config().parquet_byte_stream_split_decimals()
+        {
+            Encoding::ByteStreamSplit
+        } else {
+            Encoding::Plain
+        };
     }
 
     let nested = nested.to_vec();
@@ -918,6 +925,9 @@ pub fn array_to_page_simple(
                     values,
                     array.validity().cloned(),
                 );
+                if encoding == Encoding::ByteStreamSplit {
+                    return primitive::i32_to_byte_stream_split_page(&array, options, type_);
+                }
                 return primitive::array_to_page_integer::<i32, i32>(
                     &array, options, type_, encoding,
                 );
@@ -1417,6 +1427,53 @@ fn get_primitive_dtype_encoding(dtype: &ArrowDataType) -> Encoding {
 mod tests {
     use super::*;
     use crate::arrow::write::pages::to_nested;
+
+    #[test]
+    fn byte_stream_split_decimal_values() {
+        use crate::parquet::encoding::byte_stream_split::Decoder;
+        use crate::parquet::page::{split_buffer, split_buffer_v1};
+
+        let array = PrimitiveArray::<i128>::from([
+            Some(99),
+            None,
+            Some(-123456789),
+            Some(0),
+            None,
+            Some(999999999),
+        ])
+        .to(ArrowDataType::Decimal(9, 2));
+        for (offset, len) in [(0, 6), (1, 5), (2, 2), (1, 1)] {
+            let mut slice = array.clone();
+            slice.slice(offset, len);
+            let expected: Vec<_> = slice.iter().flatten().map(|&v| v as i32).collect();
+            for version in [Version::V1, Version::V2] {
+                let options = WriteOptions {
+                    statistics: StatisticsOptions::default(),
+                    compression: CompressionOptions::Uncompressed,
+                    version,
+                    data_page_size: None,
+                };
+                let ty =
+                    ParquetPrimitiveType::from_physical("d".into(), ParquetPhysicalType::Int32);
+                let Page::Data(page) =
+                    array_to_page_simple(&slice, ty, options, Encoding::ByteStreamSplit).unwrap()
+                else {
+                    panic!("expected a data page");
+                };
+                assert_eq!(page.encoding(), Encoding::ByteStreamSplit);
+                let buf = match version {
+                    Version::V1 => split_buffer_v1(page.buffer(), false, true),
+                    Version::V2 => split_buffer(&page),
+                }
+                .unwrap();
+                let values: Vec<_> = Decoder::try_new(buf.values, 4)
+                    .unwrap()
+                    .iter_converted(|v| i32::from_le_bytes(v.try_into().unwrap()))
+                    .collect();
+                assert_eq!(values, expected);
+            }
+        }
+    }
 
     type Ranges = Vec<(usize, usize)>;
 

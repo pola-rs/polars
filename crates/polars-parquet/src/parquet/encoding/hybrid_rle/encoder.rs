@@ -231,10 +231,70 @@ pub fn encode<T: PartialEq + Default + Copy + Encoder<T>, W: Write, I: Iterator<
     Ok(())
 }
 
+pub(crate) fn encode_u32_slice(
+    writer: &mut Vec<u8>,
+    mut values: &[u32],
+    num_bits: u32,
+) -> std::io::Result<()> {
+    while !values.is_empty() {
+        // A non-final literal ends on an eight-value boundary. The ninth equal key starts RLE.
+        let run = values.windows(9).step_by(8).position(|w| w[..8] == w[1..]);
+        let literal_len = run.map_or(values.len(), |group| group * 8);
+        for literal in values[..literal_len].chunks(MAX_VALUES_PER_LITERAL_RUN) {
+            u32::bitpacked_encode(writer, literal.iter().copied(), num_bits as usize)?;
+        }
+        values = &values[literal_len..];
+        if let Some(&key) = values.first() {
+            let run_len = values[9..]
+                .iter()
+                .position(|&v| v != key)
+                .map_or(values.len(), |n| 9 + n);
+            u32::run_length_encode(writer, run_len, key, num_bits)?;
+            values = &values[run_len..];
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::bitmap::BitmapIter;
     use super::*;
+
+    #[test]
+    fn u32_slice_matches_iterator() {
+        let check = |keys: &[u32], width: u32| {
+            let mut expected = vec![123];
+            let mut actual = expected.clone();
+            encode(&mut expected, keys.iter().copied(), width).unwrap();
+            encode_u32_slice(&mut actual, keys, width).unwrap();
+            assert_eq!(actual, expected);
+        };
+        let mixed: Vec<u32> = (0..20_000)
+            .map(|i| match i % 67 {
+                8..=16 => 0,
+                29..=54 => 17,
+                _ => (i * 37) % 127,
+            })
+            .collect();
+        for offset in 0..8 {
+            for len in (0..150).chain([8191, 8192, 8193, 18_000]) {
+                check(&mixed[offset..offset + len], 7);
+            }
+        }
+        for width in [0, 1, 8, 16, 31, 32] {
+            let value = ((1_u64 << width) - 1) as u32;
+            let keys = vec![value; 8193];
+            for len in [0, 1, 7, 8, 9, 8191, 8192, 8193] {
+                check(&keys[..len], width);
+            }
+        }
+        for start in 8175..8200 {
+            let mut keys: Vec<u32> = (0..16_500).map(|x| x % 127).collect();
+            keys[start..start + 40].fill(4);
+            check(&keys, 7);
+        }
+    }
 
     #[test]
     fn bool_basics_1() -> std::io::Result<()> {
