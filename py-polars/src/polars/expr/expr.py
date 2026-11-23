@@ -3979,7 +3979,7 @@ class Expr(metaclass=_Meta):
         quantile
             A single quantile, a list of quantiles, or an expression that
             resolves to one quantile or a list of them. The dtype must be numeric.
-            A string is taken as a column name.
+            A string is taken as a column name. A null quantile gives a null result.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all
@@ -4851,6 +4851,7 @@ class Expr(metaclass=_Meta):
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            A null quantile gives a null result.
 
             - If a single float, returns a single f64 value per row.
             - If a list of floats, returns a list of f64 values per row (one value per quantile).

@@ -62,7 +62,7 @@ pub enum QuantileFractionDtypes {
 }
 
 /// Returns an error if a `quantile` fraction of `dtype` isn't one of `allowed`. The Null dtype
-/// passes, and `check_quantiles` then rejects the null value. An unresolved dtype passes too.
+/// passes, as a null fraction gives a null result. An unresolved dtype passes too.
 pub fn check_quantile_dtype(dtype: &DataType, allowed: QuantileFractionDtypes) -> PolarsResult<()> {
     use QuantileFractionDtypes as A;
     let inner = match dtype {
@@ -79,13 +79,35 @@ pub fn check_quantile_dtype(dtype: &DataType, allowed: QuantileFractionDtypes) -
     Ok(())
 }
 
+/// Checks a column of `quantile` fractions of any length and casts it to Float64, or to
+/// List(Float64) if it holds lists. A null fraction passes.
+pub fn cast_quantile_fractions(
+    fractions: &Series,
+    allowed: QuantileFractionDtypes,
+) -> PolarsResult<Series> {
+    check_quantile_dtype(fractions.dtype(), allowed)?;
+    let fractions = match fractions.dtype() {
+        DataType::List(_) => {
+            let fractions = fractions.strict_cast(&DataType::List(Box::new(DataType::Float64)))?;
+            check_quantiles(fractions.list()?.get_inner().f64()?.iter())?;
+            fractions
+        },
+        _ => {
+            let fractions = fractions.strict_cast(&DataType::Float64)?;
+            check_quantiles(fractions.f64()?.iter())?;
+            fractions
+        },
+    };
+    Ok(fractions)
+}
+
 /// Checks the fraction given to `quantile` and returns its values. `fraction` holds one row: a
-/// number or a list of numbers. `allowed` gives the dtypes it may have.
+/// number or a list of numbers. `allowed` gives the dtypes it may have. Returns `None` if the
+/// fraction is a null list; a null number is a `None` element.
 pub fn extract_quantiles(
     fraction: &Series,
     allowed: QuantileFractionDtypes,
-) -> PolarsResult<Vec<f64>> {
-    check_quantile_dtype(fraction.dtype(), allowed)?;
+) -> PolarsResult<Option<Vec<Option<f64>>>> {
     polars_ensure!(!fraction.is_empty(), ComputeError:
         "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
         got an empty input"
@@ -94,34 +116,82 @@ pub fn extract_quantiles(
         "polars does not support varying quantiles yet, \
         make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
-    // A null list of fractions counts as one null fraction.
-    let values = match fraction.dtype() {
-        DataType::List(_) => fraction.explode(ExplodeOptions {
-            empty_as_null: false,
-            keep_nulls: true,
-        })?,
-        _ => fraction.clone(),
+    let fraction = cast_quantile_fractions(fraction, allowed)?;
+    let quantiles = match fraction.dtype() {
+        DataType::List(_) => fraction
+            .list()?
+            .get_as_series(0)
+            .map(|s| s.f64().unwrap().iter().collect()),
+        _ => Some(vec![fraction.f64()?.get(0)]),
     };
-    let values = values.strict_cast(&DataType::Float64)?;
-    let values = values.f64()?;
-    check_quantiles(values.iter())?;
-    Ok(values.into_no_null_iter().collect())
+    Ok(quantiles)
 }
 
-/// Returns an error if a quantile is null, NaN or outside `0.0..=1.0`.
+/// Like [`extract_quantiles`], for a fraction that is a constant rather than an expression, which
+/// mustn't be null.
+pub fn extract_non_null_quantiles(
+    fraction: &Series,
+    allowed: QuantileFractionDtypes,
+) -> PolarsResult<Vec<f64>> {
+    extract_quantiles(fraction, allowed)?
+        .and_then(|quantiles| quantiles.into_iter().collect())
+        .ok_or_else(
+            || polars_err!(ComputeError: "`quantile` should be between 0.0 and 1.0, got null"),
+        )
+}
+
+/// The quantile of `s` at `fraction`, or a list of quantiles for a list of fractions, as
+/// `extract_quantiles` reads it. A null fraction gives a null quantile.
+pub fn quantile_reduce_fraction(
+    s: &Series,
+    fraction: &Series,
+    method: QuantileMethod,
+) -> PolarsResult<Scalar> {
+    let quantiles = extract_quantiles(fraction, QuantileFractionDtypes::NumberOrList)?;
+    if !fraction.dtype().is_list() {
+        return match quantiles.and_then(|q| q[0]) {
+            Some(quantile) => s.quantile_reduce(quantile, method),
+            // The quantile of no values is a null of the output dtype.
+            None => s.clear().quantile_reduce(0.5, method),
+        };
+    }
+    let Some(quantiles) = quantiles else {
+        let dtype = s.clear().quantiles_reduce(&[], method)?.dtype().clone();
+        return Ok(Scalar::null(dtype));
+    };
+    let non_null: Vec<f64> = quantiles.iter().flatten().copied().collect();
+    let out = s.quantiles_reduce(&non_null, method)?;
+    if non_null.len() == quantiles.len() {
+        return Ok(out);
+    }
+    // Put the null fractions back as nulls at their positions.
+    let AnyValue::List(values) = out.value() else {
+        return Ok(out);
+    };
+    let mut next: IdxSize = 0;
+    let positions: IdxCa = quantiles
+        .iter()
+        .map(|q| {
+            q.map(|_| {
+                next += 1;
+                next - 1
+            })
+        })
+        .collect();
+    let values = values.take(&positions)?;
+    Ok(Scalar::new(out.dtype().clone(), AnyValue::List(values)))
+}
+
+/// Returns an error if a quantile is NaN or outside `0.0..=1.0`. A null quantile passes, as it
+/// gives a null result.
 pub fn check_quantiles(
     quantiles: impl IntoIterator<Item = impl Into<Option<f64>>>,
 ) -> PolarsResult<()> {
-    for q in quantiles {
-        match q.into() {
-            Some(q) => polars_ensure!(
-                (0.0..=1.0).contains(&q),
-                ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
-            ),
-            None => polars_bail!(
-                ComputeError: "`quantile` should be between 0.0 and 1.0, got null"
-            ),
-        }
+    for q in quantiles.into_iter().filter_map(Into::into) {
+        polars_ensure!(
+            (0.0..=1.0).contains(&q),
+            ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
+        );
     }
     Ok(())
 }

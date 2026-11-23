@@ -731,12 +731,6 @@ def test_approx_quantile_bad_error(error: float) -> None:
         s.to_frame().select(pl.col("a").approx_quantile(0.5, error=error))
 
 
-def test_approx_quantile_null_quantile() -> None:
-    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
-    with pytest.raises(ComputeError, match="got null"):
-        df.select(pl.col("a").approx_quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
-
-
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
 def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
@@ -759,10 +753,28 @@ def test_approx_quantile_python_quantile(
     assert out.to_series().to_list() == [expected]
 
 
-def test_quantile_null_quantile() -> None:
-    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
-    with pytest.raises(ComputeError, match="got null"):
-        df.select(pl.col("a").quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+@pytest.mark.parametrize(
+    ("fraction", "expected"),
+    [
+        (None, None),
+        (pl.lit(None, dtype=pl.Float64), None),
+        (pl.lit(None, dtype=pl.List(pl.Float64)), None),
+        ([0.0, None, 1.0], [1.0, None, 3.0]),
+        ([None, None], [None, None]),
+    ],
+)
+def test_quantile_null_fraction(op: str, fraction: Any, expected: Any) -> None:
+    lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0]})
+    q = lf.select(getattr(pl.col("a"), op)(fraction))
+    out = q.collect()
+    assert out.to_series().to_list() == [expected]
+    assert q.collect_schema() == out.schema
+    if not isinstance(fraction, pl.Expr):
+        result = getattr(pl.Series([1.0, 2.0, 3.0]), op)(fraction)
+        if isinstance(result, pl.Series):
+            result = result.to_list()
+        assert result == expected
 
 
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
@@ -835,39 +847,50 @@ def test_quantile_null_fraction_grouped(op: str, engine: EngineType) -> None:
     )
     expr = getattr(pl.col("a"), op)(pl.col("q").first())
     literal = getattr(pl.lit(3), op)(pl.col("q").first())
+    null_literal = getattr(pl.col("a"), op)(pl.lit(None, dtype=pl.Float64))
+    gb = lf.group_by("g", maintain_order=True)
     rolling = lf.with_row_index().rolling("index", period="2i")
     # The last window is empty, so its fraction is null although `q` has no nulls.
     empty_window = (
-        lf.drop_nulls().with_row_index().rolling("index", period="1i", offset="1i")
+        lf.drop_nulls().with_row_index().rolling("index", period="1i", offset="0i")
     )
-    for q in [
-        lf.group_by("g").agg(expr),
-        lf.group_by("g").agg(literal),
-        lf.select(expr.over("g")),
-        rolling.agg(getattr(pl.col("a"), op)(pl.col("q").last())),
-        empty_window.agg(expr),
+    for q, expected in [
+        (gb.agg(expr), [None, 4]),
+        (gb.agg(literal), [None, 3]),
+        (gb.agg(null_literal), [None, None]),
+        (lf.select(expr.over("g")), [None, None, 4, 4]),
+        (rolling.agg(getattr(pl.col("a"), op)(pl.col("q").last())), [None, None, 3, 4]),
+        (empty_window.agg(expr), [4, None]),
     ]:
-        with pytest.raises(ComputeError, match="got null"):
-            q.collect(engine=engine)
+        out = q.collect(engine=engine)
+        assert out.get_columns()[-1].to_list() == expected
+        assert q.collect_schema() == out.schema
 
 
 def test_approx_quantile_null_in_fraction_list_grouped() -> None:
     lf = pl.LazyFrame({"g": [1, 2], "a": [1, 2], "q": [None, 0.5]})
     null_list = pl.when(pl.col("q").is_not_null()).then(pl.concat_list("q", "q"))
-    for q in [null_list, pl.concat_list("q", pl.lit(0.5))]:
-        expr = pl.col("a").approx_quantile(q.first())
-        with pytest.raises(ComputeError, match="got null"):
-            lf.group_by("g").agg(expr).collect()
+    for fraction, expected in [
+        (null_list, [None, [2, 2]]),
+        (pl.concat_list("q", pl.lit(0.5)), [[None, 1], [2, 2]]),
+    ]:
+        expr = pl.col("a").approx_quantile(fraction.first())
+        out = lf.group_by("g", maintain_order=True).agg(expr).collect()
+        assert out["a"].to_list() == expected
 
 
 @pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
-@pytest.mark.parametrize("quantile", [pl.lit(None), pl.lit([None, 0.5])])
-def test_quantile_null_literal_empty(op: str, quantile: pl.Expr) -> None:
+def test_quantile_null_literal_empty(op: str) -> None:
     lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64})
-    expr = getattr(pl.col("a"), op)(quantile)
-    for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
-        with pytest.raises(ComputeError, match="got null"):
-            q.collect_schema()
+    expr = getattr(pl.col("a"), op)(pl.lit(None))
+    list_expr = getattr(pl.col("a"), op)(pl.lit([None, 0.5]))
+    for q in [
+        lf.select(expr),
+        lf.select(expr.over("g")),
+        lf.group_by("g").agg(expr),
+        lf.select(list_expr),
+    ]:
+        assert q.collect_schema() == q.collect().schema
 
 
 @pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
@@ -888,7 +911,7 @@ def test_series_quantile_non_numeric_fraction(quantile: Any) -> None:
         pl.Series([1, 2, 3]).quantile(quantile)
 
 
-@pytest.mark.parametrize("quantile", [None, float("nan"), 1.5, [0.5, None]])
+@pytest.mark.parametrize("quantile", [float("nan"), 1.5, [0.5, 1.5]])
 def test_series_quantile_invalid_fraction(quantile: Any) -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):

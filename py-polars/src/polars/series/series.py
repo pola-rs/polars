@@ -2450,6 +2450,7 @@ class Series(metaclass=_Meta):
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            A null quantile gives a null result.
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
@@ -10068,7 +10069,8 @@ class Series(metaclass=_Meta):
         Parameters
         ----------
         quantile
-            A single quantile or a list of quantiles.
+            A single quantile or a list of quantiles. A null quantile gives a null
+            result.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all
