@@ -43,6 +43,7 @@ use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
 use crate::context::join_idents;
+use crate::copy::with_copy_options;
 use crate::dyn_visit::visit_expressions;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
@@ -91,8 +92,10 @@ impl TakenClauses {
         sql: &str,
         parsed: Result<Vec<Statement>, ParserError>,
     ) -> PolarsResult<Vec<Statement>> {
-        self.attach_to(sql, parsed.map_err(to_sql_interface_err), |parser| {
-            parser.parse_statements().map_err(to_sql_interface_err)
+        let parser_err =
+            |err: ParserError| to_sql_interface_err(with_copy_options(err.to_string()));
+        self.attach_to(sql, parsed.map_err(parser_err), |parser| {
+            parser.parse_statements().map_err(parser_err)
         })
     }
 

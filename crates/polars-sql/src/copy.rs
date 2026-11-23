@@ -121,6 +121,31 @@ pub(crate) fn read_rows(
     Ok((format, None))
 }
 
+/// The options that `COPY` takes, for errors.
+const COPY_OPTIONS: &str = "the options FORMAT, HEADER, DELIMITER, QUOTE and NULL";
+
+/// A parser error's `message`, with the `COPY` options if it stopped at an unknown one.
+pub(crate) fn with_copy_options(message: String) -> String {
+    const EXPECTED: &str = "sql parser error: Expected: option, found: ";
+    if !message.starts_with(EXPECTED) {
+        return message;
+    }
+    let start = EXPECTED.len();
+    let (head, position) = match message.rfind(" at Line: ") {
+        Some(i) if i > start => message.split_at(i),
+        _ => (message.as_str(), ""),
+    };
+    let found = head[start..].split_whitespace().next().unwrap_or_default();
+    let hint = match found.to_ascii_uppercase().as_str() {
+        "SEPARATOR" | "SEP" | "DELIM" | "DELIMETER" => " (DELIMITER sets the separator)",
+        "QUOTE_CHAR" | "QUOTECHAR" | "QUOTE_STYLE" => " (QUOTE sets the quote character)",
+        "NULLSTR" | "NULL_VALUE" | "NULL_VALUES" | "NULLVALUE" => " (NULL sets the text of a NULL)",
+        "HAS_HEADER" | "HEADERS" => " (HEADER says whether there is a header row)",
+        _ => "",
+    };
+    format!("{head}; COPY takes {COPY_OPTIONS}{hint}{position}")
+}
+
 /// The format of a `COPY`: the one that `FORMAT` names, else that of the extension of `path`
 /// (standard output has none). With the options that only the CSV format has, by name.
 fn format_and_csv_options<'a>(
@@ -145,7 +170,7 @@ fn format_and_csv_options<'a>(
                 // an option prints as its name and value
                 let option = option.to_string();
                 let name = option.split([' ', '(']).next().unwrap_or(&option);
-                polars_bail!(SQLInterface: "COPY option {} is not supported", name)
+                polars_bail!(SQLInterface: "COPY option {} is not supported; COPY takes {}", name, COPY_OPTIONS)
             },
         }
     }
