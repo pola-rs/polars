@@ -55,19 +55,27 @@ def _native_deletion_vectors(
     # file:/// paths are local paths and must be decoded, rather than URL-quoted.
     from polars.io.delta._scan_resolver import _dv_path_key
 
-    def path_key(path: str) -> str:
+    def normalize_path(path: str) -> str:
         path = path.removeprefix("file://").replace("lakefs://", "s3://", 1)
         if len(path) > 2 and path[0] == "/" and path[2] == ":" and path[1].isalpha():
             path = path[1:]
-        return _dv_path_key(path, table_root)
+        return path
+
+    # Matching uses delta-rs's escaped cloud file_uris(); the reader uses raw keys.
+    storage_root = unquote(table_root) if "://" in table_root else table_root
 
     indices = {path: i for i, path in enumerate(paths)}
     out: dict[int, tuple[str | bytes, int, int, int]] = {}
     for path, dv in add_actions.select("path", "deletion_vector").iter_rows():
         if dv is None:
             continue
-        source_path = path_key(
-            path if urlsplit(path).scheme or path.startswith("/") else table_root + path
+        source_path = _dv_path_key(
+            normalize_path(
+                path
+                if urlsplit(path).scheme or path.startswith("/")
+                else table_root + path
+            ),
+            table_root,
         )
         if source_path not in indices:
             msg = f"cannot match Delta deletion vector data file: {path}"
@@ -111,16 +119,15 @@ def _native_deletion_vectors(
             ):
                 msg = "invalid Delta deletion vector path prefix"
                 raise ComputeError(msg)
-            value = path_key(
-                table_root
-                + prefix
-                + ("/" if prefix else "")
+            value = (
+                storage_root
+                + (decoded_prefix + "/" if decoded_prefix else "")
                 + f"deletion_vector_{UUID(bytes=_decode_z85(encoded))}.bin"
             )
         else:
             if not urlsplit(location).scheme and not location.startswith("/"):
                 msg = "Delta deletion vector p path must be absolute"
                 raise ComputeError(msg)
-            value = path_key(location)
+            value = unquote(normalize_path(location))
         out[indices[source_path]] = (value, offset or 0, size, cardinality)
     return "delta-deletion-vector-native", out

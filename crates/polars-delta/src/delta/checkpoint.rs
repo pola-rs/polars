@@ -316,6 +316,7 @@ fn project_add(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {
             "path" | "size" | "partitionValues" | "deletionVector" => Some(child.clone()),
             "stats" => (!parsed_counts).then(|| child.clone()),
             "stats_parsed" => project_parsed(child, stats),
+            "partitionValues_parsed" => project_partition_timestamps(child),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -324,6 +325,24 @@ fn project_add(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {
     }
     let mut projected = field.clone();
     projected.dtype = ArrowDataType::Struct(selected);
+    Some(projected)
+}
+/// Legacy zoned timestamp text has no writer offset. Read the typed timestamp leaves when
+/// present to recover the instants. Other partition types still use the string map.
+fn project_partition_timestamps(field: &Field) -> Option<Field> {
+    let ArrowDataType::Struct(children) = &field.dtype else {
+        return None;
+    };
+    let timestamps = children
+        .iter()
+        .filter(|child| matches!(child.dtype, ArrowDataType::Timestamp(..)))
+        .cloned()
+        .collect::<Vec<_>>();
+    if timestamps.is_empty() {
+        return None;
+    }
+    let mut projected = field.clone();
+    projected.dtype = ArrowDataType::Struct(timestamps);
     Some(projected)
 }
 /// `add` reduced to its `stats` text column.

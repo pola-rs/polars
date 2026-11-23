@@ -265,6 +265,8 @@ impl FfiErrorKind {
     /// The user's input to the dataset is invalid (e.g. an unknown snapshot ID). Hosts report it
     /// like other invalid parameter values (Python `ValueError`) and pass the message unchanged.
     pub const INVALID_INPUT: Self = Self(7);
+    /// A ranged object read lost the generation selected by the earlier metadata request.
+    pub const OBJECT_CHANGED: Self = Self(8);
     // Kinds of Polars errors, for plugins that report errors the way Polars does (the host
     // raises the matching Polars exception). Used by `file_reader.v1` and
     // `lazyframe_resolver.v1`.
@@ -287,6 +289,7 @@ impl FfiErrorKind {
             Self::PANIC => "panic",
             Self::INVALID_ARGUMENT => "invalid argument",
             Self::INVALID_INPUT => "invalid input",
+            Self::OBJECT_CHANGED => "object changed",
             Self::COLUMN_NOT_FOUND => "column not found",
             Self::COMPUTE => "compute",
             Self::INVALID_OPERATION => "invalid operation",

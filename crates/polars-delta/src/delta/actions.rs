@@ -65,10 +65,85 @@ pub struct Commit {
     pub protocol: Vec<Value>,
     pub checkpoint_metadata: Vec<Value>,
     pub sidecars: Vec<Value>,
-    /// `commitInfo.inCommitTimestamp` of each `commitInfo` action.
-    pub commit_info: Vec<Option<i64>>,
+    commit_info: Vec<CommitInfo>,
+    transactions: Vec<Box<str>>,
+}
+/// What identifies the writer of this commit's legacy zoned timestamp values.
+#[derive(Debug, Default)]
+pub enum TimestampPartitions {
+    #[default]
+    Unknown,
+    Checkpoint,
+    Utc,
+    PolarsSink(Box<str>),
+}
+impl TimestampPartitions {
+    pub fn is_utc(&self, add: &AddRec) -> bool {
+        if add.dv.is_some() {
+            return false;
+        }
+        match self {
+            Self::Unknown | Self::Checkpoint => false,
+            Self::Utc => true,
+            Self::PolarsSink(uuid) => add.path.split_once('/').is_some_and(|(dir, file)| {
+                dir == &**uuid && !file.contains('/') && file.ends_with(".parquet")
+            }),
+        }
+    }
 }
 impl Commit {
+    pub fn timestamp_partitions(&mut self, version: i64) -> TimestampPartitions {
+        let [info] = self.commit_info.as_mut_slice() else {
+            return TimestampPartitions::Unknown;
+        };
+        if matches!(info.operation.as_deref(), Some("WRITE" | "CREATE TABLE"))
+            && let Some(uuid) = info.sink_uuid.take().filter(|uuid| {
+                uuid.len() == 32
+                    && uuid.bytes().all(|b| b.is_ascii_hexdigit())
+                    && self.transactions.contains(uuid)
+            })
+        {
+            return TimestampPartitions::PolarsSink(uuid);
+        }
+        if info.operation.as_deref() == Some("WRITE")
+            && info.engine.as_deref() == Some("delta-rs:py-1.6.6")
+        {
+            if info.partition_utc {
+                return TimestampPartitions::Utc;
+            }
+            // The Python native writer creates version 0 with WRITE, metrics, and the table
+            // schema. The direct AddAction creation API uses CREATE TABLE. Later WRITE commits
+            // can contain caller-supplied AddActions, and can carry custom operationMetrics.
+            if version == 0
+                && info.client.as_deref() == Some("delta-rs.py-1.6.6")
+                && info.added_files == Some(self.adds.len() as u64)
+                && self.removes.is_empty()
+                && self.protocol.len() == 1
+                && let [metadata] = self.metadata.as_slice()
+                && metadata
+                    .get("schemaString")
+                    .and_then(Value::as_str)
+                    .is_some()
+                && let Some(partitions) = metadata.get("partitionColumns").and_then(Value::as_array)
+                && !partitions.is_empty()
+                && info
+                    .parameters
+                    .get("partitionBy")
+                    .and_then(Value::as_str)
+                    .and_then(|s| serde_json::from_str::<Vec<Value>>(s).ok())
+                    .as_ref()
+                    == Some(partitions)
+                && matches!(
+                    info.parameters.get("mode").and_then(Value::as_str),
+                    Some("Append" | "ErrorIfExists" | "Ignore" | "Overwrite")
+                )
+            {
+                return TimestampPartitions::Utc;
+            }
+        }
+        TimestampPartitions::Unknown
+    }
+
     /// Add and remove actions with the same logical file are contradictory.
     pub fn check_file_keys(&self) -> Result<()> {
         let mut keys = PlHashSet::default();
@@ -340,8 +415,18 @@ impl RawFile<'_> {
         })
     }
 }
-/// The `inCommitTimestamp` of a `commitInfo` action; its other fields are ignored.
-struct CommitInfo(Option<i64>);
+/// The `commitInfo` fields used for time travel and partition timestamp provenance.
+#[derive(Debug, Default)]
+struct CommitInfo {
+    timestamp: Option<i64>,
+    operation: Option<Box<str>>,
+    engine: Option<Box<str>>,
+    client: Option<Box<str>>,
+    sink_uuid: Option<Box<str>>,
+    partition_utc: bool,
+    added_files: Option<u64>,
+    parameters: Value,
+}
 impl<'de> Deserialize<'de> for CommitInfo {
     fn deserialize<D: Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
         struct V;
@@ -354,23 +439,47 @@ impl<'de> Deserialize<'de> for CommitInfo {
                 self,
                 mut map: A,
             ) -> std::result::Result<Self::Value, A::Error> {
-                let mut ict = None;
+                let mut info = CommitInfo::default();
                 while let Some(key) = map.next_key::<BCow>()? {
-                    if &*key.0 == "inCommitTimestamp" {
-                        // Anything but an integer counts as missing.
-                        ict = match map.next_value::<Value>()? {
-                            Value::Number(n) => n.as_i64(),
-                            _ => None,
-                        };
-                    } else {
-                        map.next_value::<IgnoredAny>()?;
+                    match key.0.as_ref() {
+                        "inCommitTimestamp" => info.timestamp = map.next_value::<Value>()?.as_i64(),
+                        "operation" => info.operation = read_optional_string(&mut map)?,
+                        "engineInfo" => info.engine = read_optional_string(&mut map)?,
+                        "clientVersion" => info.client = read_optional_string(&mut map)?,
+                        "polars.sink-uuid" => info.sink_uuid = read_optional_string(&mut map)?,
+                        "polars.partition-timestamp-zone" => {
+                            info.partition_utc = map.next_value::<Value>()?.as_str() == Some("UTC");
+                        },
+                        "operationParameters" => info.parameters = map.next_value()?,
+                        "operationMetrics" => {
+                            let metrics = map.next_value::<Value>()?;
+                            let native = metrics.get("num_removed_files").and_then(Value::as_u64)
+                                == Some(0)
+                                && ["num_added_rows", "num_partitions", "execution_time_ms"]
+                                    .iter()
+                                    .all(|&k| metrics.get(k).and_then(Value::as_u64).is_some());
+                            info.added_files = native
+                                .then(|| metrics.get("num_added_files").and_then(Value::as_u64))
+                                .flatten();
+                        },
+                        _ => {
+                            map.next_value::<IgnoredAny>()?;
+                        },
                     }
                 }
-                Ok(CommitInfo(ict))
+                Ok(info)
             }
         }
         d.deserialize_map(V)
     }
+}
+fn read_optional_string<'de, A: MapAccess<'de>>(
+    map: &mut A,
+) -> std::result::Result<Option<Box<str>>, A::Error> {
+    Ok(match map.next_value::<Value>()? {
+        Value::String(s) => Some(s.into_boxed_str()),
+        _ => None,
+    })
 }
 /// One log line: exactly one populated action.
 struct Line<'a> {
@@ -381,6 +490,7 @@ struct Line<'a> {
     checkpoint_metadata: Option<Value>,
     sidecar: Option<Value>,
     commit_info: Option<CommitInfo>,
+    txn: Option<Value>,
     populated: usize,
 }
 impl<'de> Deserialize<'de> for Line<'de> {
@@ -403,6 +513,7 @@ impl<'de> Deserialize<'de> for Line<'de> {
                     checkpoint_metadata: None,
                     sidecar: None,
                     commit_info: None,
+                    txn: None,
                     populated: 0,
                 };
                 while let Some(key) = map.next_key::<BCow>()? {
@@ -434,6 +545,10 @@ impl<'de> Deserialize<'de> for Line<'de> {
                         "commitInfo" => {
                             line.commit_info = map.next_value()?;
                             line.commit_info.is_some()
+                        },
+                        "txn" => {
+                            line.txn = map.next_value()?;
+                            line.txn.is_some()
                         },
                         _ => map.next_value::<Option<IgnoredAny>>()?.is_some(),
                     };
@@ -488,7 +603,13 @@ pub fn parse_json(bytes: &[u8], skip_files: bool) -> Result<Commit> {
         } else if let Some(v) = parsed.sidecar {
             out.sidecars.push(v)
         } else if let Some(c) = parsed.commit_info {
-            out.commit_info.push(c.0)
+            out.commit_info.push(c)
+        } else if !skip_files
+            && let Some(txn) = parsed.txn
+            && txn.get("version").and_then(Value::as_i64) == Some(0)
+            && let Some(app_id) = txn.get("appId").and_then(Value::as_str)
+        {
+            out.transactions.push(app_id.into());
         }
     }
     Ok(out)
@@ -504,7 +625,7 @@ pub fn in_commit_timestamp(bytes: &[u8]) -> Result<Option<i64>> {
         }
         let commit = parse_json(line, true)?;
         if let Some(ict) = commit.commit_info.first() {
-            return Ok(*ict);
+            return Ok(ict.timestamp);
         }
     }
     Err(invalid("missing inCommitTimestamp"))
@@ -522,6 +643,48 @@ pub fn u64_value(v: &Value, key: &str) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_utc_partitions_require_provenance_for_the_add() {
+        let add = r#"{"add":{"path":"0123456789ab7def0123456789abcdef/a.parquet","size":1,"partitionValues":{"t":"2020-01-01 20:00:00.000000"}}}"#;
+        let metadata = r#"{"metaData":{"schemaString":"{}","partitionColumns":["t"]}}"#;
+        let protocol = r#"{"protocol":{"minReaderVersion":1}}"#;
+        let native = r#"{"commitInfo":{"engineInfo":"delta-rs:py-1.6.6","clientVersion":"delta-rs.py-1.6.6","operation":"WRITE","operationParameters":{"mode":"ErrorIfExists","partitionBy":"[\"t\"]"},"operationMetrics":{"num_added_files":1,"num_removed_files":0,"num_added_rows":1,"num_partitions":0,"execution_time_ms":2}}}"#;
+        let marked = r#"{"commitInfo":{"engineInfo":"delta-rs:py-1.6.6","operation":"WRITE","polars.partition-timestamp-zone":"UTC"}}"#;
+        let sink = r#"{"commitInfo":{"operation":"WRITE","polars.sink-uuid":"0123456789ab7def0123456789abcdef"}}"#;
+        let txn = r#"{"txn":{"appId":"0123456789ab7def0123456789abcdef","version":0}}"#;
+        let has_utc = |version, actions: &[&str]| {
+            let mut commit = parse_json(actions.join("\n").as_bytes(), false).unwrap();
+            commit.timestamp_partitions(version).is_utc(&commit.adds[0])
+        };
+
+        assert!(has_utc(0, &[native, metadata, protocol, add]));
+        assert!(!has_utc(1, &[native, metadata, protocol, add]));
+        assert!(!has_utc(
+            0,
+            &[
+                native.replace("WRITE", "CREATE TABLE").as_str(),
+                metadata,
+                protocol,
+                add
+            ]
+        ));
+        assert!(has_utc(1, &[marked, add]));
+        assert!(!has_utc(
+            1,
+            &[marked.replace("WRITE", "RESTORE").as_str(), add]
+        ));
+        assert!(has_utc(1, &[sink, add, txn]));
+        assert!(!has_utc(1, &[sink, add]));
+        assert!(!has_utc(
+            1,
+            &[sink, add.replace("/a.parquet", "2/a.parquet").as_str(), txn]
+        ));
+        assert!(!has_utc(
+            1,
+            &[sink.replace("WRITE", "RESTORE").as_str(), add, txn]
+        ));
+    }
+
     fn key_of(json: &str) -> (Option<DvId<'static>>, usize) {
         let c = Box::leak(Box::new(parse_json(json.as_bytes(), false).unwrap()));
         (c.adds[0].dv.as_ref().map(DvRec::id), c.adds.len())

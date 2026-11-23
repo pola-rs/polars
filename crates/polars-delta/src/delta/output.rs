@@ -1,10 +1,8 @@
-use std::borrow::Cow;
-
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType as D, Field};
 use polars_arrow::ffi;
-use polars_io_ext_ffi::common::{ArrowArrayStream, ArrowSchema};
+use polars_io_ext_ffi::common::{ArrowArrayStream, ArrowSchema, FfiErrorKind};
 use polars_io_ext_ffi::delta_v1::{Output, OutputHeader, Request};
 use serde_json::Value;
 
@@ -12,7 +10,7 @@ use super::error::{Result, invalid};
 use super::host::Host;
 use super::log;
 use super::schema::Schema;
-use super::values::{Builder, Sv, stat_dtype, stat_value};
+use super::values::{Builder, PartitionValue, Sv, missing_partition_zone, stat_dtype, stat_value};
 fn struct_array(fields: Vec<Field>, arrays: Vec<Box<dyn Array>>, n: usize) -> Result<StructArray> {
     StructArray::try_new(D::Struct(fields), n, arrays, None).map_err(invalid)
 }
@@ -27,7 +25,7 @@ fn push(
     arrays.push(a)
 }
 pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
-    let storage = host.get_storage(&request.table_uri).await?;
+    let mut storage = host.get_storage(&request.table_uri).await?;
     if let Some(fail) = request.testing_fail.as_deref() {
         match fail {
             "panic" => panic!("testing panic requested"),
@@ -42,7 +40,14 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
             _ => return Err(invalid("unknown testing_fail")),
         }
     }
-    let snapshot = log::load(&storage, request).await?;
+    let snapshot = match log::load(&storage, request).await {
+        Err(e) if e.kind() == FfiErrorKind::OBJECT_CHANGED => {
+            drop(storage);
+            storage = host.get_storage(&request.table_uri).await?;
+            log::load(&storage, request).await?
+        },
+        result => result?,
+    };
     let schema = Schema::parse(&snapshot.metadata, &snapshot.protocol)?;
     host.debug(&format!(
         "polars-delta: resolved version {} files {}",
@@ -150,6 +155,7 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
     );
     let mut pf = Vec::new();
     let mut pa = Vec::new();
+    let mut replay = None;
     for name in &schema.partitions {
         let c = schema
             .columns
@@ -158,13 +164,50 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
             .unwrap();
         let mut builder = Builder::new(&c.field.dtype, n);
         for (source, row) in files() {
-            let value = source
-                .partition(row, &c.physical)
-                .ok_or_else(|| invalid(format!("missing partition value {}", c.physical)))?;
-            builder.push(&match value {
-                None | Some("") => Sv::Null,
-                Some(v) => Sv::Str(Cow::Borrowed(v)),
-            })?;
+            let value = match source.partition(row, c)? {
+                PartitionValue::Value(value) => value,
+                PartitionValue::MissingWriterZone { text, utc_micros } => {
+                    if !source.checkpoint_partitions() {
+                        return Err(missing_partition_zone(text));
+                    }
+                    // A checkpoint alone cannot establish the writer zone. Recover it from a
+                    // complete replay at the pinned version, and only for the matching live add.
+                    if replay.is_none() {
+                        let original = log::replay_commits(&storage, request, snapshot.version)
+                            .await
+                            .map_err(|error| {
+                                invalid(format!(
+                                    "cannot recover checkpoint timestamp partition writer zone from Delta commits: {}",
+                                    error.message()
+                                ))
+                            })?;
+                        let table_id = snapshot.metadata.get("id").and_then(Value::as_str);
+                        if table_id.is_none()
+                            || original.metadata.get("id").and_then(Value::as_str) != table_id
+                        {
+                            return Err(invalid(
+                                "checkpoint and Delta commits have different table IDs",
+                            ));
+                        }
+                        replay = Some(original);
+                    }
+                    let (original, original_row) = replay
+                        .as_ref()
+                        .unwrap()
+                        .file_at_path(source.path(row))
+                        .ok_or_else(|| missing_partition_zone(text))?;
+                    if !original.legacy_utc_partitions(original_row)
+                        || source.size(row) != original.size(original_row)
+                        || source.dv(row)?.map(|dv| dv.id)
+                            != original.dv(original_row)?.map(|dv| dv.id)
+                        || original.partition_raw(original_row, &c.physical) != Some(Some(text))
+                    {
+                        return Err(missing_partition_zone(text));
+                    }
+                    Sv::Int(utc_micros)
+                },
+            };
+            builder.push(&value)?;
         }
         push(&mut pf, &mut pa, name, builder.finish(), true)
     }

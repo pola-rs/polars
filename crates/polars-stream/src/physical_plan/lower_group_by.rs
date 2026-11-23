@@ -20,8 +20,8 @@ use polars_plan::plans::{
 use polars_plan::prelude::*;
 use polars_plan::utils::rename_columns;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{IdxSize, format_pl_smallstr};
 use recursive::recursive;
 use slotmap::DenseSlotMap;
 
@@ -1417,6 +1417,7 @@ fn try_build_streaming_group_by_with_key_ranges(
                 runtime_filters: Vec::new(),
                 estimated_rows: None,
                 key_ranges: Vec::new(),
+                pre_drop_schema: None,
             },
         ));
         post_select_input = PhysStream::first(join_key);
@@ -1431,8 +1432,8 @@ fn try_build_streaming_group_by_with_key_ranges(
         ctx,
     )?;
 
-    let out = if let Some((offset, len)) = options.slice {
-        build_slice_stream(post_select, offset, len, phys_sm)
+    let out = if let Some(slice) = options.slice {
+        build_slice_stream(post_select, slice, phys_sm)
     } else {
         post_select
     };
@@ -1539,22 +1540,17 @@ pub fn try_build_sorted_group_by(
         };
         gb_output_schema.insert(field.name, dtype);
     }
-    input = PhysStream::first(
-        phys_sm.insert(PhysNode::new(
-            Arc::new(gb_output_schema.clone()),
-            PhysNodeKind::SortedGroupBy {
-                input,
-                key: input_column.clone(),
-                aggs: aggs.to_vec(),
-                slice: options
-                    .slice
-                    .filter(|(o, _)| *o >= 0)
-                    .map(|(o, l)| (o as IdxSize, l as IdxSize)),
-            },
-        )),
-    );
-    if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-        input = build_slice_stream(input, *offset, *length, phys_sm);
+    input = PhysStream::first(phys_sm.insert(PhysNode::new(
+        Arc::new(gb_output_schema.clone()),
+        PhysNodeKind::SortedGroupBy {
+            input,
+            key: input_column.clone(),
+            aggs: aggs.to_vec(),
+            slice: options.slice.filter(|slice| slice.is_positive()),
+        },
+    )));
+    if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
+        input = build_slice_stream(input, slice, phys_sm);
     }
 
     if projected {
@@ -1679,48 +1675,38 @@ pub fn build_group_by_stream_with_key_ranges(
             && keys.is_empty()
             && apply.is_none()
         {
-            let mut input = PhysStream::first(
-                phys_sm.insert(PhysNode::new(
-                    output_schema.clone(),
-                    PhysNodeKind::RollingGroupBy {
-                        input,
-                        index_column: rolling_options.index_column.clone(),
-                        period: rolling_options.period,
-                        offset: rolling_options.offset,
-                        closed: rolling_options.closed_window,
-                        placement: rolling_options.placement,
-                        slice: options
-                            .slice
-                            .filter(|(o, _)| *o >= 0)
-                            .map(|(o, l)| (o as IdxSize, l as IdxSize)),
-                        aggs: aggs.to_vec(),
-                    },
-                )),
-            );
-            if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-                input = build_slice_stream(input, *offset, *length, phys_sm);
+            let mut input = PhysStream::first(phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::RollingGroupBy {
+                    input,
+                    index_column: rolling_options.index_column.clone(),
+                    period: rolling_options.period,
+                    offset: rolling_options.offset,
+                    closed: rolling_options.closed_window,
+                    placement: rolling_options.placement,
+                    slice: options.slice.filter(|slice| slice.is_positive()),
+                    aggs: aggs.to_vec(),
+                },
+            )));
+            if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
+                input = build_slice_stream(input, slice, phys_sm);
             }
             return Ok(input);
         } else if let Some(dynamic_options) = options.as_ref().dynamic.as_ref()
             && keys.is_empty()
             && apply.is_none()
         {
-            let mut input = PhysStream::first(
-                phys_sm.insert(PhysNode::new(
-                    output_schema.clone(),
-                    PhysNodeKind::DynamicGroupBy {
-                        input,
-                        options: dynamic_options.clone(),
-                        aggs: aggs.to_vec(),
-                        slice: options
-                            .slice
-                            .filter(|(o, _)| *o >= 0)
-                            .map(|(o, l)| (o as IdxSize, l as IdxSize)),
-                    },
-                )),
-            );
-            if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-                input = build_slice_stream(input, *offset, *length, phys_sm);
+            let mut input = PhysStream::first(phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::DynamicGroupBy {
+                    input,
+                    options: dynamic_options.clone(),
+                    aggs: aggs.to_vec(),
+                    slice: options.slice.filter(|slice| slice.is_positive()),
+                },
+            )));
+            if let Some(slice) = options.slice.filter(|slice| slice.is_negative()) {
+                input = build_slice_stream(input, slice, phys_sm);
             }
             return Ok(input);
         }

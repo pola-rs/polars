@@ -10,6 +10,7 @@ use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
+use polars_core::frame::group_by::aggregations::GroupQuantile;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
@@ -691,29 +692,65 @@ pub fn quantile<'a>(
     // Don't change names by aggregations as is done in polars-core.
     let keep_name = ac.get_values().name().clone();
 
-    let quantile_column = inputs[1].evaluate(df, state)?;
-    polars_ensure!(
-        !quantile_column.is_empty(),
-        ComputeError:
-            "the 'quantile' expression input should produce a single quantile, got an empty input"
-    );
-    polars_ensure!(
-        quantile_column.len() == 1,
-        ComputeError:
-            "polars only supports computing a single quantile in a groupby aggregation context"
-    );
+    let (quantile_column, per_group) = if inputs[1].is_literal() {
+        let c = inputs[1].evaluate(df, state)?;
+        polars_ensure!(
+            !c.is_empty(),
+            ComputeError:
+                "the 'quantile' expression input should produce a single quantile, got an empty input"
+        );
+        polars_ensure!(
+            c.len() == 1,
+            ComputeError:
+                "polars only supports computing a single quantile in a groupby aggregation context"
+        );
+        (c, false)
+    } else {
+        match inputs[1].evaluate_on_groups(df, groups, state)?.state {
+            AggState::LiteralScalar(c) => (c, false),
+            AggState::AggregatedScalar(c) => (c, true),
+            AggState::AggregatedList(_) | AggState::NotAggregated(_) => polars_bail!(
+                ComputeError:
+                    "the 'quantile' expression input should produce a single quantile per group; \
+                    use `.item()` to take the single value of each group"
+            ),
+        }
+    };
     polars_ensure!(
         quantile_column.dtype().is_numeric(),
         SchemaMismatch:
             "expected expression of dtype 'numeric' for quantile, got '{}'",
         quantile_column.dtype()
     );
-    let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
 
-    if let AggState::LiteralScalar(c) = &mut ac.state {
-        *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
-        return Ok(ac);
-    }
+    let per_group_quantiles;
+    let quantile = if per_group {
+        per_group_quantiles = quantile_column.cast(&DataType::Float64)?;
+        let quantiles = per_group_quantiles.f64()?;
+        if let AggState::LiteralScalar(c) = &ac.state {
+            // The quantile of a single value is that value, for any valid quantile.
+            let value = c.quantile_reduce(0.5, method)?;
+            let dtype = value.dtype().clone();
+            let valid: BooleanChunked = quantiles
+                .iter()
+                .map(|q| q.is_some_and(|q| (0.0..=1.0).contains(&q)))
+                .collect();
+            let out = Column::new_scalar(keep_name.clone(), value, groups.len())
+                .zip_with(&valid, &Column::full_null(keep_name, groups.len(), &dtype))?;
+            return Ok(AggregationContext::from_agg_state(
+                AggState::AggregatedScalar(out),
+                Cow::Borrowed(groups),
+            ));
+        }
+        GroupQuantile::PerGroup(quantiles)
+    } else {
+        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
+        if let AggState::LiteralScalar(c) = &mut ac.state {
+            *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
+            return Ok(ac);
+        }
+        GroupQuantile::Scalar(quantile)
+    };
 
     // SAFETY: groups are in bounds.
     let mut agg = unsafe {

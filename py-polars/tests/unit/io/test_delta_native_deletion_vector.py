@@ -264,6 +264,36 @@ def test_native_relative_uuid_prefix_decodes_once(root: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("storage", "location", "key"),
+    [
+        (
+            "u",
+            "space%20prefix^-aqEH.-t@S}K{vb[*k^",
+            "space prefix/deletion_vector_d2c639aa-8816-431a-aaf6-d3fe2512ff61.bin",
+        ),
+        ("p", "s3://bucket/table%20root/dv%20x%2520y.bin", "dv x%20y.bin"),
+    ],
+)
+def test_native_descriptor_uses_raw_cloud_key(
+    storage: str, location: str, key: str
+) -> None:
+    root = "s3://bucket/table%20root/"
+    add_actions = actions(
+        {
+            "storageType": storage,
+            "pathOrInlineDv": location,
+            "offset": 1,
+            "sizeInBytes": 44,
+            "cardinality": 6,
+        }
+    )
+    assert _native_deletion_vectors(add_actions, [root + "a%20b.parquet"], root) == (
+        "delta-deletion-vector-native",
+        {0: ("s3://bucket/table root/" + key, 1, 44, 6)},
+    )
+
+
 def _scan_dv(
     tmp_path: Path, dv_file: bytes, offset: int, size: int, n: int = 3
 ) -> pl.LazyFrame:

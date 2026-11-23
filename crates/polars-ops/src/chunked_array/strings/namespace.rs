@@ -291,7 +291,7 @@ where
             let all_failures = ca.filter(&failure_mask)?;
             // `.unique()` does not necessarily preserve the original order.
             let unique_failures_args = all_failures.arg_unique()?;
-            all_failures.take(&unique_failures_args.slice(0, 10))?
+            all_failures.take(&unique_failures_args.slice(Slice::head(10)))?
         };
         let some_error_msg = match base.len() {
             1 => {
@@ -928,7 +928,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// the end of the string.
     fn str_head(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        let n = n.strict_cast(&DataType::Int64)?;
+        let n = crate::chunked_array::count_as_i64(n, ca.len())?;
 
         substring::head(ca, n.i64()?)
     }
@@ -939,7 +939,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// negative, in which case the slice begins `n` characters from the start of the string.
     fn str_tail(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        let n = n.strict_cast(&DataType::Int64)?;
+        let n = crate::chunked_array::count_as_i64(n, ca.len())?;
 
         substring::tail(ca, n.i64()?)
     }

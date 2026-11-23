@@ -143,27 +143,32 @@ fn sql_of_the_python_runtime_is_built_in() {
 #[test]
 fn a_failing_statement_reports_on_stderr() {
     assert_eq!(
-        run(&["-c", "SELECT * FROM missing"]),
+        run(&["-c", "SELECT LEN('x')"]),
         (
             1,
             String::new(),
-            "SQLInterfaceError: relation 'missing' was not found\n".to_string()
+            "SQLInterfaceError: unsupported function 'len'
+ --> <command>:1:8
+  |
+1 | SELECT LEN('x')
+  |        ^^^^^^^^
+  = hint: use LENGTH instead
+"
+            .to_string()
         )
     );
+}
 
-    let (code, out, err) = run(&["-c", "SELECT 1 +"]);
-    assert_eq!((code, out.as_str()), (1, ""));
-    assert!(
-        err.starts_with("SQLInterfaceError: sql parser error: "),
-        "{err}"
-    );
+#[test]
+fn a_syntax_error_is_located_in_the_script() {
+    let (code, _, err) = run(&["-c", "SELECT 1;\nSELECT 1 +* 2"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("\n --> <command>:2:11\n"), "{err}");
 }
 
 #[test]
 fn a_script_file_runs_in_one_session() {
     let expected = "\
-Response
-CREATE TABLE foods
 category,calories
 fruit,410
 meat,540
@@ -179,13 +184,60 @@ n
 
     let (code, out, err) = run(&["-f", "tests/data/session.sql"]);
     assert_eq!((code, err.as_str()), (0, ""));
+    assert_eq!(out.matches("shape: ").count(), 2, "{out}");
+}
+
+#[test]
+fn effect_statements_print_nothing() {
+    // They still take effect.
+    let script = "CREATE TABLE t AS SELECT 1 AS a UNION ALL SELECT 2; \
+                  CREATE VIEW v AS SELECT 3 AS b; DELETE FROM t WHERE a = 2; \
+                  SELECT COUNT(*) AS n FROM t; SELECT b FROM v; \
+                  TRUNCATE TABLE t; SELECT COUNT(*) AS n FROM t; DROP TABLE t";
+    assert_eq!(
+        run(&["--format", "csv", "-c", script]),
+        (0, "n\n1\nb\n3\nn\n0\n".to_string(), String::new())
+    );
+    let (code, out, err) = run(&["-c", script]);
+    assert_eq!((code, err.as_str()), (0, ""));
     assert_eq!(out.matches("shape: ").count(), 3, "{out}");
+    // What the engine answers them with is not computed: here, the rows that `DELETE` leaves.
+    let script = "CREATE TABLE t AS SELECT 'x' AS a; DELETE FROM t WHERE CAST(a AS INT) = 1; \
+                  SELECT 42 AS n";
+    assert_eq!(
+        run(&["--format", "csv", "-c", script]),
+        (0, "n\n42\n".to_string(), String::new())
+    );
+
+    // A format that writes one file takes effect statements before the one result.
+    let script = "CREATE TABLE t AS SELECT 1 AS a; SELECT * FROM t";
+    let output = common::polars()
+        .args(["--format", "parquet", "-c", script])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.starts_with(b"PAR1") && output.stderr.is_empty());
+    // Without a result, nothing runs, so `COPY` writes no file.
+    let dir = temp_dir("effect");
+    for format in ["parquet", "arrow-stream"] {
+        let copy = format!("COPY (SELECT 1 AS a) TO '{dir}/a.csv'");
+        let (code, out, _) = run(&["--format", format, "-c", &copy]);
+        assert_eq!((code, out.as_str()), (2, ""), "{format}");
+    }
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+    std::fs::remove_dir_all(dir).unwrap();
+    // `COPY ... TO STDOUT` has rows, in its own format.
+    let copy = "COPY (SELECT 1 AS a) TO STDOUT (FORMAT csv)";
+    assert_eq!(
+        run(&["--format", "parquet", "-c", copy]),
+        (0, "a\n1\n".to_string(), String::new())
+    );
 }
 
 #[test]
 fn copy_writes_a_file() {
     let dir = temp_dir("copy");
-    // The statement answers with the number of rows, and the file is there for the next one.
+    // The file is there for the next statement.
     let script = format!(
         "COPY (SELECT category, calories FROM read_csv('../../examples/datasets/foods1.csv')) \
          TO '{dir}/foods.parquet'; {}",
@@ -193,11 +245,7 @@ fn copy_writes_a_file() {
     );
     assert_eq!(
         run(&["--format", "csv", "-c", &script]),
-        (
-            0,
-            format!("Response\nCOPY 27\n{BY_CATEGORY}"),
-            String::new()
-        )
+        (0, BY_CATEGORY.to_string(), String::new())
     );
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -209,7 +257,10 @@ fn read_only_refuses_to_write_a_file() {
 
     let (code, out, err) = run(&["--read-only", "-c", &copy]);
     assert_eq!((code, out.as_str()), (1, ""));
-    assert!(err.contains("writing files is disabled"), "{err}");
+    assert!(
+        err.contains("writing files is disabled by --read-only"),
+        "{err}"
+    );
 
     // The environment variable does the same.
     let output = common::polars()
@@ -218,6 +269,11 @@ fn read_only_refuses_to_write_a_file() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
+    let err = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        err.contains("writing files is disabled by POLARS_READ_ONLY"),
+        "{err}"
+    );
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
 
     // The session and reading files are not limited.
@@ -225,11 +281,7 @@ fn read_only_refuses_to_write_a_file() {
                   SELECT COUNT(*) AS n FROM foods";
     assert_eq!(
         run(&["--read-only", "--format", "csv", "-c", script]),
-        (
-            0,
-            "Response\nCREATE TABLE foods\nn\n27\n".to_string(),
-            String::new()
-        )
+        (0, "n\n27\n".to_string(), String::new())
     );
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -255,8 +307,6 @@ fn copy_to_stdout_writes_rows_in_its_own_format() {
          SELECT COUNT(*) AS n FROM foods"
     );
     let expected = "\
-Response
-CREATE TABLE foods
 410|fruit
 540|meat
 1250|seafood
@@ -271,9 +321,12 @@ n
 
     // A binary format is one file, which does not share the output with another result.
     let script = "COPY (SELECT 1 AS a) TO STDOUT (FORMAT parquet); SELECT 2 AS b";
-    let (code, out, err) = run(&["-c", script]);
+    let (code, out, _) = run(&["-c", script]);
     assert_eq!((code, out.as_str()), (1, ""));
-    assert!(err.contains("takes a script of one statement"), "{err}");
+    let script = "CREATE TABLE t AS SELECT 1 AS a; COPY t TO STDOUT (FORMAT parquet)";
+    let output = common::polars().args(["-c", script]).output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.starts_with(b"PAR1"));
 }
 
 #[test]
@@ -288,13 +341,11 @@ fn a_script_is_read_from_standard_input() {
 #[test]
 fn a_script_stops_at_the_first_failure() {
     let script = "SELECT 1 AS a; SELECT * FROM missing; SELECT 2 AS b";
-    assert_eq!(
-        run(&["--format", "csv", "-c", script]),
-        (
-            1,
-            "a\n1\n".to_string(),
-            "statement 2: SQLInterfaceError: relation 'missing' was not found\n".to_string()
-        )
+    let (code, out, err) = run(&["--format", "csv", "-c", script]);
+    assert_eq!((code, out.as_str()), (1, "a\n1\n"));
+    assert!(
+        err.starts_with("statement 2: SQLInterfaceError: relation 'missing' was not found\n"),
+        "{err}"
     );
 }
 
@@ -306,16 +357,31 @@ fn an_unclosed_string_fails_after_the_statements_before_it() {
         err.starts_with("statement 2: SQLInterfaceError: sql parser error: Unterminated string"),
         "{err}"
     );
+    // A format that writes one file runs none of them.
+    let (code, out, err) = run(&["--format", "parquet", "-c", "SELECT 1 AS a; SELECT 'abc"]);
+    assert_eq!((code, out.as_str()), (1, ""));
+    assert!(err.starts_with("statement 2: "), "{err}");
 }
 
 #[test]
 fn usage_errors() {
     // The start of the message; an empty one stands for clap's own wording.
-    let cases: [(&[&str], &str); 5] = [
+    let cases: [(&[&str], &str); 6] = [
         (&[], "no SQL was given\n"),
         (
             &["--format", "parquet", "-c", "SELECT 1 AS a; SELECT 2 AS b"],
-            "format 'parquet' writes one file, so it takes a script of one statement\n",
+            "format 'parquet' writes one file, so the last statement must be the only one that \
+             returns rows\n",
+        ),
+        (
+            &[
+                "--format",
+                "arrow-stream",
+                "-c",
+                "CREATE TABLE t AS SELECT 1 AS a",
+            ],
+            "format 'arrow-stream' writes one file, so the last statement must be the only one \
+             that returns rows\n",
         ),
         (&["-c", "SELECT 1", "-f", "tests/data/session.sql"], ""),
         (&["--format", "xml", "-c", "SELECT 1"], ""),
@@ -349,6 +415,7 @@ fn help() {
         "-f, --file <FILE>",
         "--format <FMT>",
         "--read-only",
+        "read_csv(",
         "Exit codes:",
         "This command is unstable",
     ];

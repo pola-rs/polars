@@ -11,7 +11,7 @@ use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::dynamic_boundary_dtype;
-use polars_error::feature_gated;
+use polars_error::{ErrorAttachment, SqlLocation, feature_gated};
 use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -96,20 +96,23 @@ pub fn to_alp(
             let Some(ir_until_then) = lp_arena.last_node() else {
                 return Err(err);
             };
-            let node_name = if let PolarsError::Context { msg, .. } = &err {
-                msg
+            // Skip the plans of nested conversions.
+            let mut outer = &err;
+            while let PolarsError::Attached { error, .. } = outer {
+                outer = error;
+            }
+            let node = if let PolarsError::Context { msg, .. } = outer {
+                msg.to_string()
             } else {
-                "THIS_NODE"
+                "THIS_NODE".to_string()
             };
             let plan = IRPlan::new(
                 ir_until_then,
                 std::mem::take(lp_arena),
                 std::mem::take(expr_arena),
             );
-            let location = format!("{}", plan.display());
-            Err(err.wrap_msg(|msg| {
-                format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
-            }))
+            let plan = format!("{}", plan.display());
+            Err(err.with_attachment(ErrorAttachment::ResolvedPlan { node, plan }))
         },
     }
 }
@@ -130,7 +133,6 @@ async fn fetch_metadata(
     encryption_sharing: &mut polars_io::parquet::encryption::EncryptionSharing,
     verbose: bool,
 ) -> PolarsResult<()> {
-    use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
         (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
@@ -197,7 +199,10 @@ async fn fetch_metadata(
         .map(|_| ());
     if out.is_err() {
         drop(futures);
-        while resolver_futures.next().await.is_some() {}
+        // bounded: a plugin call that never returns must not hang the error
+        if crate::utils::drain_bounded(&mut resolver_futures).await && verbose {
+            eprintln!("fetch_metadata: gave up waiting for resolvers still running after an error");
+        }
     }
     out
 }
@@ -437,10 +442,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
             return run_conversion(lp, ctxt, "filter");
         },
-        DslPlan::Slice { input, offset, len } => {
+        DslPlan::Slice { input, slice } => {
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(slice))?;
+            polars_ensure!(
+                slice.is_within_i64(),
+                OutOfBounds: "slice {slice:?} runs past row i64::MAX"
+            );
 
-            if len == 0 {
+            if slice.is_empty() {
                 let input_schema = ctxt
                     .lp_arena
                     .get(input)
@@ -454,7 +463,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     output_schema: None,
                 }
             } else {
-                IR::Slice { input, offset, len }
+                IR::Slice { input, slice }
             }
         },
         DslPlan::DataFrameScan { df, schema } => IR::DataFrameScan {
@@ -512,6 +521,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             mut sort_options,
         } => {
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(select))?;
+            polars_ensure!(
+                slice.is_none_or(|slice| slice.is_within_i64()),
+                OutOfBounds: "slice {slice:?} runs past row i64::MAX"
+            );
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
             // note: if given an Expr::Columns, count the individual cols
@@ -601,7 +614,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let lp = IR::Sort {
                 input,
                 by_column,
-                slice: slice.map(|t| (t.0, t.1, None)),
+                slice: slice.map(|slice| (slice, None)),
                 sort_options,
             };
 
@@ -956,7 +969,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt.lp_arena,
                 ctxt.expr_arena,
             )?;
-            return to_alp_impl(resolved, ctxt);
+            // Only the statement is known here.
+            return to_alp_impl(resolved, ctxt).map_err(|e| match e.sql_location() {
+                Some(_) => e,
+                None => {
+                    e.with_attachment(ErrorAttachment::SqlLocation(SqlLocation::statement(&query)))
+                },
+            });
         },
         DslPlan::PipeWithSchema { input, callback } => {
             // Derive the schema from the input
@@ -1168,7 +1187,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     ctxt.conversion_optimizer
                         .fill_scratch(&temp_expr_irs, ctxt.expr_arena);
 
-                    let input_with_exprs = ctxt.lp_arena.add(IR::HStack {
+                    let lp = IR::HStack {
                         input,
                         exprs: temp_expr_irs,
                         schema,
@@ -1178,7 +1197,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             should_broadcast: true,
                             maintain_dataframe_height: false,
                         },
-                    });
+                    };
+                    let input_with_exprs = run_conversion(lp, ctxt, "unique")?;
                     (
                         input_with_exprs,
                         Some(subset_colnames.into_iter().collect()),
@@ -1322,6 +1342,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                                 dt.is_primitive_numeric()
                                     || dt.is_temporal()
                                     || dt == &DataType::Boolean
+                                    || dt.is_decimal()
                             },
                             |name| col(name.clone()).median(),
                             &input_schema,

@@ -1076,7 +1076,8 @@ def test_scan_delta_dv_requires_deltalake_version(
 
     import deltalake
 
-    # The native planner does not depend on deltalake's DV callback version.
+    # Exercise the callback even when the installed delta-rs supplies descriptors.
+    monkeypatch.setattr("polars.io.delta._plugin.dv_decoder_available", lambda: False)
     monkeypatch.setenv("POLARS_DELTA_PLANNER", "deltalake")
     monkeypatch.setattr(deltalake, "__version__", "1.4.1")
 

@@ -461,12 +461,43 @@ def test_http_store_cache_size(cache_size: int, plmonkeypatch: PlMonkeyPatch) ->
 
 @pytest.mark.slow
 def test_cloud_connection_refused_error() -> None:
-    q = _scan_s3_endpoint("http://127.0.0.1:1")
+    # A refused connect takes about 2 s on Windows, longer than the default stall
+    # timeout. The timeout is read once per process, so it is disabled in a new one.
+    out = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """\
+import polars as pl
 
-    with pytest.raises(ConnectionRefusedError, match="Caused by:") as exc:
-        q.collect()
+q = pl.scan_parquet(
+    "s3://bucket/x.parquet",
+    storage_options={
+        "aws_endpoint_url": "http://127.0.0.1:1",
+        "aws_allow_http": "true",
+        "aws_access_key_id": "a",
+        "aws_secret_access_key": "b",
+        "aws_region": "us-east-1",
+        "max_retries": 0,
+    },
+    credential_provider=None,
+)
 
-    assert "tcp connect error" in str(exc.value)
+try:
+    q.collect()
+except ConnectionRefusedError as e:
+    assert "Caused by:" in str(e), e
+    assert "tcp connect error" in str(e), e
+else:
+    raise AssertionError
+""",
+        ],
+        env={**os.environ, "POLARS_HTTP_STALL_TIMEOUT_MS": "0"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert out.returncode == 0, out.stderr
 
 
 @pytest.mark.slow

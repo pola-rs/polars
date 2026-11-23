@@ -50,6 +50,8 @@ pub struct Host {
     pub storage_get:
         unsafe extern "C" fn(storage: StorageHandle, url: FfiStr) -> FfiFuture<FfiResult<FfiBuf>>,
     /// Size of the object in bytes. Errors with kind `NOT_FOUND` if it does not exist.
+    /// For classic checkpoints, subsequent range reads on this handle use this generation
+    /// or fail with `OBJECT_CHANGED`. Reopen storage to restart the read.
     pub storage_head:
         unsafe extern "C" fn(storage: StorageHandle, url: FfiStr) -> FfiFuture<FfiResult<u64>>,
     /// Complete, nonrecursive listing of direct children of prefix, sorted by URL.

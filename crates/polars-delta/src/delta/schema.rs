@@ -147,14 +147,19 @@ fn parse_fields(v: &Value, mode: &str) -> Result<Vec<Column>> {
             if !names.insert(name.to_lowercase()) {
                 return Err(invalid("duplicate case-insensitive field name"));
             }
-            let (dtype, children) = parse_type(
-                v.get("type").ok_or_else(|| invalid("missing field type"))?,
-                mode,
-            )?;
+            let raw_type = v.get("type").ok_or_else(|| invalid("missing field type"))?;
+            let (dtype, children) = parse_type(raw_type, mode)?;
             let mut md = Metadata::new();
             if let Some(metadata) = v.get("metadata").and_then(Value::as_object) {
                 for (k, v) in metadata {
-                    if k == "polars.delta.variant" {
+                    // Arrow C import interprets extension metadata as a logical type.
+                    if matches!(
+                        k.as_str(),
+                        "ARROW:extension:name"
+                            | "ARROW:extension:metadata"
+                            | "PARQUET:field_id"
+                            | "polars.delta.variant"
+                    ) {
                         continue;
                     }
                     md.insert(
@@ -169,7 +174,7 @@ fn parse_fields(v: &Value, mode: &str) -> Result<Vec<Column>> {
             if let Some(changes) = v.get("metadata").and_then(|m| m.get("delta.typeChanges")) {
                 validate_changes(changes)?
             }
-            if v.get("type").and_then(Value::as_str) == Some("variant") {
+            if is_variant(raw_type) {
                 md.insert("polars.delta.variant".into(), "true".into());
             }
             let physical = if mode == "none" {
@@ -215,9 +220,14 @@ fn synthetic(name: &str, dtype: D, nullable: bool) -> Field {
     md.insert("PARQUET:field_id".into(), id.to_string().into());
     Field::new(name.into(), dtype, nullable).with_metadata(md)
 }
-fn synthetic_typed(name: &str, dtype: D, nullable: bool, raw: Option<&Value>) -> Field {
+fn is_variant(raw: &Value) -> bool {
+    raw.as_str()
+        .or_else(|| raw.get("type").and_then(Value::as_str))
+        == Some("variant")
+}
+fn synthetic_typed(name: &str, dtype: D, nullable: bool, raw: &Value) -> Field {
     let mut field = synthetic(name, dtype, nullable);
-    if raw.and_then(Value::as_str) == Some("variant") {
+    if is_variant(raw) {
         let metadata = field.metadata.get_or_insert_default();
         std::sync::Arc::make_mut(metadata).insert("polars.delta.variant".into(), "true".into());
     }
@@ -228,6 +238,7 @@ fn parse_type(v: &Value, mode: &str) -> Result<(D, Vec<Column>)> {
         return Ok((primitive(s)?, vec![]));
     }
     match v.get("type").and_then(Value::as_str) {
+        Some("variant") => Ok((primitive("variant")?, vec![])),
         Some("struct") => {
             let cols = parse_fields(v, mode)?;
             Ok((
@@ -236,11 +247,10 @@ fn parse_type(v: &Value, mode: &str) -> Result<(D, Vec<Column>)> {
             ))
         },
         Some("array") => {
-            let (t, c) = parse_type(
-                v.get("elementType")
-                    .ok_or_else(|| invalid("missing elementType"))?,
-                mode,
-            )?;
+            let element = v
+                .get("elementType")
+                .ok_or_else(|| invalid("missing elementType"))?;
+            let (t, c) = parse_type(element, mode)?;
             Ok((
                 D::LargeList(Box::new(synthetic_typed(
                     "element",
@@ -248,35 +258,32 @@ fn parse_type(v: &Value, mode: &str) -> Result<(D, Vec<Column>)> {
                     v.get("containsNull")
                         .and_then(Value::as_bool)
                         .unwrap_or(true),
-                    v.get("elementType"),
+                    element,
                 ))),
                 c,
             ))
         },
         Some("map") => {
-            let (k, mut cols) = parse_type(
-                v.get("keyType").ok_or_else(|| invalid("missing keyType"))?,
-                mode,
-            )?;
-            let (t, c) = parse_type(
-                v.get("valueType")
-                    .ok_or_else(|| invalid("missing valueType"))?,
-                mode,
-            )?;
+            let key = v.get("keyType").ok_or_else(|| invalid("missing keyType"))?;
+            let value = v
+                .get("valueType")
+                .ok_or_else(|| invalid("missing valueType"))?;
+            let (k, mut cols) = parse_type(key, mode)?;
+            let (t, c) = parse_type(value, mode)?;
             cols.extend(c);
             Ok((
                 D::Map(
                     Box::new(Field::new(
                         "entries".into(),
                         D::Struct(vec![
-                            synthetic_typed("key", k, false, v.get("keyType")),
+                            synthetic_typed("key", k, false, key),
                             synthetic_typed(
                                 "value",
                                 t,
                                 v.get("valueContainsNull")
                                     .and_then(Value::as_bool)
                                     .unwrap_or(true),
-                                v.get("valueType"),
+                                value,
                             ),
                         ]),
                         false,
@@ -379,7 +386,8 @@ mod tests {
         let raw = serde_json::json!({"type":"struct","fields":[
             {"name":"spoof","type":{"type":"struct","fields":[]},"metadata":{"polars.delta.variant":"true"}},
             {"name":"real","type":"variant","metadata":{}},
-            {"name":"nested","type":{"type":"array","elementType":"variant","containsNull":true},"metadata":{}}
+            {"name":"nested","type":{"type":"array","elementType":"variant","containsNull":true},"metadata":{}},
+            {"name":"nested_object","type":{"type":"array","elementType":{"type":"variant"},"containsNull":true},"metadata":{}}
         ]});
         let columns = parse_fields(&raw, "none").unwrap();
         assert!(
@@ -399,18 +407,44 @@ mod tests {
                 .unwrap(),
             "true"
         );
-        let D::LargeList(element) = &columns[2].field.dtype else {
-            panic!()
-        };
-        assert_eq!(
-            element
-                .metadata
-                .as_ref()
-                .unwrap()
-                .get("polars.delta.variant")
-                .unwrap(),
-            "true"
-        );
+        for column in &columns[2..] {
+            let D::LargeList(element) = &column.field.dtype else {
+                panic!()
+            };
+            assert_eq!(
+                element
+                    .metadata
+                    .as_ref()
+                    .unwrap()
+                    .get("polars.delta.variant")
+                    .unwrap(),
+                "true"
+            );
+        }
+    }
+    #[test]
+    fn delta_metadata_cannot_change_the_imported_arrow_type() {
+        use polars_arrow::ffi::{export_field_to_c, import_field_from_c};
+
+        let raw = serde_json::json!({"type":"struct","fields":[
+            {"name":"x","type":"long","metadata":{
+                "ARROW:extension:name":"spoofed",
+                "ARROW:extension:metadata":"spoofed",
+                "PARQUET:field_id":"999",
+                "delta.columnMapping.id":42,
+                "delta.columnMapping.physicalName":"col-id",
+                "comment":"retained"
+            }}
+        ]});
+        let columns = parse_fields(&raw, "name").unwrap();
+        let exported = export_field_to_c(&columns[0].field);
+        let field = unsafe { import_field_from_c(&exported) }.unwrap();
+        assert_eq!(field.dtype, D::Int64);
+        let metadata = field.metadata.unwrap();
+        assert!(!metadata.contains_key("ARROW:extension:name"));
+        assert!(!metadata.contains_key("ARROW:extension:metadata"));
+        assert_eq!(metadata["PARQUET:field_id"], "42");
+        assert_eq!(metadata["comment"], "retained");
     }
     #[test]
     fn future_reader_rejected() {

@@ -87,6 +87,64 @@ def test_delta_sink_append_round_trip(tmp_path: Path) -> None:
     assert table.to_pyarrow_table().num_rows == 6
 
 
+@pytest.mark.parametrize("lazy", [False, True])
+def test_delta_delegated_zoned_timestamp_partition_append(
+    tmp_path: Path, lazy: bool
+) -> None:
+    import deltalake
+    from deltalake.transaction import CommitProperties
+
+    if deltalake.__version__ != "1.6.6":
+        pytest.skip("requires the delta-rs writer that emits naive UTC timestamps")
+
+    df = pl.DataFrame({"x": [1], "t": [datetime(2020, 1, 1, 12, tzinfo=UTC)]})
+    df.write_delta(tmp_path, delta_write_options={"partition_by": ["t"]})
+    props = CommitProperties(custom_metadata={"user-key": "kept"}, max_commit_retries=1)
+    options = {"commit_properties": props}
+    if lazy:
+        df.lazy().sink_delta(tmp_path, mode="append", delta_write_options=options)
+    else:
+        df.write_delta(tmp_path, mode="append", delta_write_options=options)
+
+    history = DeltaTable(tmp_path).history()
+    assert history[0]["polars.partition-timestamp-zone"] == "UTC"
+    assert history[0]["user-key"] == "kept"
+    assert props.custom_metadata == {"user-key": "kept"}
+    assert_frame_equal(_read(tmp_path), pl.concat([df, df]))
+
+
+def test_delta_checkpoint_recovers_legacy_zoned_timestamp_partitions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import deltalake
+
+    if deltalake.__version__ != "1.6.6":
+        pytest.skip("requires the delta-rs writer that emits naive UTC timestamps")
+    pytest.importorskip("polars_delta")
+    monkeypatch.setenv("POLARS_DELTA_PLANNER", "plugin")
+    df = pl.DataFrame({"x": [1], "t": [datetime(2020, 1, 1, 20, tzinfo=UTC)]})
+    df.write_delta(tmp_path, delta_write_options={"partition_by": ["t"]})
+    df.lazy().sink_delta(
+        tmp_path,
+        mode="append",
+        delta_write_options={"writer_properties": deltalake.WriterProperties()},
+    )
+    table = DeltaTable(tmp_path)
+    assert table.version() == 1
+    table.create_checkpoint()
+
+    assert_frame_equal(
+        pl.scan_delta(tmp_path, version=1).collect(), pl.concat([df, df])
+    )
+
+    # Without the contiguous original commits, the copied text cannot establish UTC.
+    (tmp_path / "_delta_log" / f"{0:020}.json").unlink()
+    with pytest.raises(
+        ComputeError, match="cannot recover checkpoint timestamp partition writer zone"
+    ):
+        pl.scan_delta(tmp_path, version=1).collect()
+
+
 def test_delta_sink_append_existing_table(tmp_path: Path) -> None:
     write_deltalake(str(tmp_path), pa.table({"a": [0], "s": ["init"]}))
 
@@ -239,7 +297,7 @@ def test_delta_sink_partitioned_types(tmp_path: Path) -> None:
         (
             datetime(2026, 1, 1, 13, tzinfo=timezone(timedelta(hours=1))),
             pl.Datetime("us", "UTC"),
-            "2026-01-01 12:00:00.000000",
+            "2026-01-01T12:00:00.000000Z",
         ),
         (b"\x00\xff", pl.Binary, "\\u0000\\u00FF"),
         (None, pl.String, None),

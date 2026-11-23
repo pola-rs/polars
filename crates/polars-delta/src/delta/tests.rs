@@ -14,6 +14,7 @@ struct Store(
     BTreeMap<String, (Vec<u8>, Option<i64>)>,
     std::sync::atomic::AtomicUsize,
     std::sync::Mutex<Vec<String>>,
+    std::sync::atomic::AtomicBool,
 );
 impl Store {
     fn put(&mut self, path: &str, actions: &[Value]) {
@@ -111,6 +112,15 @@ unsafe extern "C" fn range(
     start: u64,
     end: u64,
 ) -> FfiFuture<FfiResult<FfiBuf>> {
+    if unsafe { store(s) }
+        .3
+        .swap(false, std::sync::atomic::Ordering::Relaxed)
+    {
+        return ready(Err(FfiError::new(
+            FfiErrorKind::OBJECT_CHANGED,
+            "checkpoint replaced after HEAD",
+        )));
+    }
     unsafe { store(s) }
         .1
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1054,6 +1064,23 @@ fn checkpoint_store(files: &[(&str, Vec<u8>)]) -> Store {
         );
     }
     store
+}
+
+#[test]
+fn checkpoint_generation_mismatch_restarts_planning() {
+    let store = checkpoint_store(&[(
+        "00000000000000000000.checkpoint.parquet",
+        fixture!("rg-spread.checkpoint.parquet"),
+    )]);
+    store.3.store(true, std::sync::atomic::Ordering::Relaxed);
+    let (header, paths) = planned(&store, Request::default()).unwrap();
+    assert_eq!(header.resolved_version, 0);
+    assert_eq!(paths.len(), 6);
+    // `_last_checkpoint` is read again only when the complete plan restarts.
+    assert_eq!(
+        store.2.lock().unwrap().as_slice(),
+        ["/table/_delta_log/_last_checkpoint"; 2]
+    );
 }
 const DAY_MICROS: i128 = 86_400_000_000;
 

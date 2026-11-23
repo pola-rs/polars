@@ -8,7 +8,7 @@ use polars_arrow::legacy::utils::CustomIterTools;
 use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::IdxSize;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 
 use crate::gather::take_unchecked;
 
@@ -151,13 +151,10 @@ pub fn sublist_slice_var(
         let (start, len) = if arr.is_null(i) {
             (list_start, 0)
         } else {
-            let (start, len) = slice_offsets(
-                offsets[i * offset_stride],
-                lengths[i * lengths_stride],
-                list_len,
-            );
-            fast_explode &= len > 0;
-            (list_start + start, len)
+            let slice = Slice::from((offsets[i * offset_stride], lengths[i * lengths_stride]));
+            let range = slice.resolve(list_len);
+            fast_explode &= !range.is_empty();
+            (list_start + range.start, range.len())
         };
 
         unchanged &= start == list_start && len == list_len;

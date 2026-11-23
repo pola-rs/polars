@@ -121,8 +121,8 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0.slice(offset, length).into_series()
+    fn slice(&self, slice: Slice) -> Series {
+        self.0.slice(slice).into_series()
     }
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);

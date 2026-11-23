@@ -2,6 +2,7 @@ mod convert;
 mod host;
 mod schema;
 use std::ffi::CStr;
+use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
 use std::sync::Arc;
 
 use polars::prelude::CloudScheme;
@@ -209,7 +210,9 @@ pub fn _delta_plugin_scan(
     };
     let metadata_cache = ScopedMetadataCache {
         cache: metadata_cache.0.clone(),
-        scope: "delta".into(),
+        scope: BuildHasherDefault::<DefaultHasher>::default()
+            .hash_one(&cloud_options)
+            .to_string(),
         stats: Default::default(),
     };
     let (lf, version) = py.enter_polars(move || {
@@ -261,6 +264,7 @@ fn ffi_to_polars_err(
     }
     let io_kind = match e.kind() {
         FfiErrorKind::NOT_FOUND => Some(std::io::ErrorKind::NotFound),
+        FfiErrorKind::OBJECT_CHANGED => Some(std::io::ErrorKind::Other),
         // Storage errors keep their Python exception type (e.g. `PermissionError`), as with the
         // deltalake planner.
         FfiErrorKind::IO => Some(

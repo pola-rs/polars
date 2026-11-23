@@ -139,6 +139,21 @@ def test_delta_plugin_schema_pins_snapshot(tmp_path: Path) -> None:
     assert_frame_equal(pl.scan_delta(path).collect(), pl.DataFrame({"b": [2]}))
 
 
+def test_delta_plugin_relative_path_pins_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for value in (1, 2):
+        parent = tmp_path / str(value)
+        parent.mkdir()
+        _table(parent / "t", [_field("a", "long")], [pl.DataFrame({"a": [value]})])
+
+    monkeypatch.chdir(tmp_path / "1")
+    scan = pl.scan_delta("t")
+    assert scan.collect_schema() == {"a": pl.Int64}
+    monkeypatch.chdir(tmp_path / "2")
+    assert_frame_equal(scan.collect(), pl.DataFrame({"a": [1]}))
+
+
 @pytest.mark.parametrize("mode", ["name", "id"])
 def test_delta_plugin_column_mapping_with_conflicting_ids(
     tmp_path: Path, mode: str
@@ -472,6 +487,26 @@ def test_delta_plugin_serialization_preserves_snapshot(
     else:
         restored = pl.LazyFrame.deserialize(io.BytesIO(scan.serialize()))
     assert_frame_equal(restored.collect(), pl.DataFrame({"a": [1]}))
+
+
+def test_delta_plugin_deserialization_selects_receiver_planner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pickle
+    import sys
+
+    expected = pl.DataFrame({"a": [1]})
+    expected.write_delta(tmp_path)
+    monkeypatch.delenv("POLARS_DELTA_PLANNER")
+    scan = pl.scan_delta(tmp_path)
+    assert scan.collect_schema() == expected.schema
+    serialized = pickle.dumps(scan)
+    pl.DataFrame({"a": [2]}).write_delta(tmp_path, mode="append")
+
+    monkeypatch.setitem(sys.modules, "polars_delta", None)
+    restored = pickle.loads(serialized)
+    with pytest.warns(pl.exceptions.PerformanceWarning, match="Install polars-delta"):
+        assert_frame_equal(restored.collect(), expected)
 
 
 @pytest.mark.parametrize("error", [NotImplementedError, pl.exceptions.ComputeError])
@@ -988,9 +1023,25 @@ def test_delta_plugin_timestamp_pins_resolved_zero(
     assert calls[0]["timestamp_ms"] is None
 
 
+def test_delta_plugin_time_travel_at_exact_millisecond(tmp_path: Path) -> None:
+    import os
+
+    pl.DataFrame({"a": [1]}).write_delta(tmp_path)
+    expected = pl.DataFrame({"a": [2]})
+    expected.write_delta(tmp_path, mode="overwrite")
+    for version in (0, 1):
+        entry = tmp_path / "_delta_log" / f"{version:020}.json"
+        time_ns = (1_075_593_600_000 + version) * 1_000_000
+        os.utime(entry, ns=(time_ns, time_ns))
+
+    scan = pl.scan_delta(tmp_path, version="2004-02-01T00:00:00.001Z")
+    assert_frame_equal(scan.collect(), expected)
+
+
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_delta_plugin_cloud_table_root_escaping(tmp_path: Path) -> None:
+    import pickle
     import threading
     from urllib.parse import quote
 
@@ -1032,10 +1083,164 @@ def test_delta_plugin_cloud_table_root_escaping(tmp_path: Path) -> None:
             for source in sources:
                 scan = pl.scan_delta(source, storage_options=options)
                 assert_frame_equal(scan.collect().sort("x"), expected)
+                restored = pickle.loads(pickle.dumps(scan))
+                assert_frame_equal(restored.collect().sort("x"), expected)
                 assert scan.select(pl.len()).collect().item() == 3
                 assert_frame_equal(
                     scan.filter(pl.col("p") == "100%").collect(), expected.head(1)
                 )
+    finally:
+        s3.server.shutdown()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("root", "twin"),
+    [
+        ("literal%20space", "literal space"),
+        ("name#fragment", "name"),
+        ("name?query", "name"),
+    ],
+)
+def test_delta_plugin_cloud_root_fallback_preserves_identity(
+    tmp_path: Path, root: str, twin: str
+) -> None:
+    import pickle
+    import subprocess
+    import sys
+    import threading
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    s3.client.create_bucket(Bucket="bucket")
+    try:
+        expected = pl.DataFrame({"a": [101]})
+        other = pl.DataFrame({"a": [202]})
+        for i, (name, data) in enumerate([(root, expected), (twin, other)]):
+            local = _table(tmp_path / str(i), [_field("a", "long")], [data])
+            for file in local.rglob("*"):
+                if file.is_file():
+                    s3.client.put_object(
+                        Bucket="bucket",
+                        Key=f"{name}/{file.relative_to(local).as_posix()}",
+                        Body=file.read_bytes(),
+                    )
+        scan = pl.scan_delta(f"s3://bucket/{root}", storage_options=s3.storage_options)
+        assert scan.collect_schema() == expected.schema
+        serialized = pickle.dumps(scan)
+        assert_frame_equal(scan.collect(), expected)
+        assert_frame_equal(
+            pl.scan_delta(
+                f"s3://bucket/{twin}", storage_options=s3.storage_options
+            ).collect(),
+            other,
+        )
+
+        mark = len(s3.log)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                """
+import os
+import pickle
+import sys
+
+import polars as pl
+
+os.environ.pop("POLARS_DELTA_PLANNER", None)
+sys.modules["polars_delta"] = None
+scan = pickle.loads(sys.stdin.buffer.read())
+try:
+    result = scan.collect()
+except pl.exceptions.ComputeError as exc:
+    assert "deltalake cannot reliably reopen this native Delta cloud path" in str(exc)
+else:
+    raise AssertionError(f"read with an ambiguous cloud path: {result}")
+""",
+            ],
+            input=serialized,
+            capture_output=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr.decode()
+        assert s3.since(mark) == []
+    finally:
+        s3.server.shutdown()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_delta_deltalake_cloud_root_preserves_identity_with_plugin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pickle
+    import subprocess
+    import sys
+    import threading
+
+    from deltalake import write_deltalake
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    s3.client.create_bucket(Bucket="bucket")
+    root, twin = "literal%20space", "literal space"
+    options = {key.upper(): value for key, value in s3.storage_options.items()}
+    expected = pl.DataFrame({"a": [202]})
+    other = pl.DataFrame({"a": [101]})
+    try:
+        for i, (name, data) in enumerate([(root, other), (twin, expected)]):
+            local = tmp_path / str(i)
+            write_deltalake(local, data.to_arrow())
+            for file in local.rglob("*"):
+                if file.is_file():
+                    key = file.relative_to(local).as_posix()
+                    body = file.read_bytes()
+                    s3.client.put_object(
+                        Bucket="bucket", Key=f"{name}/{key}", Body=body
+                    )
+                    if name == twin and file.suffix == ".parquet":
+                        # delta-rs uses the space-root log but returns escaped file
+                        # URIs. Its uniquely named data file is readable either way.
+                        s3.client.put_object(
+                            Bucket="bucket", Key=f"{root}/{key}", Body=body
+                        )
+
+        uri = f"s3://bucket/{root}"
+        assert_frame_equal(pl.scan_delta(uri, storage_options=options).collect(), other)
+        monkeypatch.setenv("POLARS_DELTA_PLANNER", "deltalake")
+        scan = pl.scan_delta(uri, storage_options=options)
+        assert scan.collect_schema() == expected.schema
+        serialized = pickle.dumps(scan)
+        assert_frame_equal(scan.collect(), expected)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                """
+import os
+import pickle
+import sys
+
+from polars.io.delta._plugin import use_plugin_planner
+
+os.environ.pop("POLARS_DELTA_PLANNER")
+assert use_plugin_planner()
+scan = pickle.loads(sys.stdin.buffer.read())
+assert scan.collect().rows() == [(202,)]
+""",
+            ],
+            input=serialized,
+            capture_output=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr.decode()
     finally:
         s3.server.shutdown()
 
@@ -1062,6 +1267,12 @@ def test_delta_plugin_timestamp_partition_offsets(tmp_path: Path, encoded: str) 
     timestamp = datetime(2021, 9, 8, 11, 11, 11, 123456, tzinfo=UTC)
     expected = pl.DataFrame({"p": [timestamp], "x": [1]})
     scan = pl.scan_delta(path)
+    if encoded == "2021-09-08 11:11:11.123456":
+        with pytest.raises(
+            pl.exceptions.ComputeError, match="requires an explicit UTC offset"
+        ):
+            scan.collect()
+        return
     assert_frame_equal(scan.collect(), expected)
     assert_frame_equal(scan.filter(pl.col("p") == timestamp).collect(), expected)
     assert scan.filter(pl.col("p") != timestamp).select(pl.len()).collect().item() == 0
@@ -1230,3 +1441,112 @@ def test_delta_plugin_recreated_table_at_same_path(tmp_path: Path) -> None:
     # The held scan stays pinned to the first table's files: it fails, not mixes.
     with pytest.raises(FileNotFoundError):
         held.collect()
+
+
+def test_delta_plugin_recreated_table_reuses_log_name_and_mtime(tmp_path: Path) -> None:
+    import os
+    import shutil
+
+    import polars._plr as plr
+    from polars._utils.wrap import wrap_ldf
+    from polars.io.delta._plugin import _plugin_capsule
+
+    path = _table(tmp_path / "t", [_field("a", "long")], [pl.DataFrame({"a": [1]})])
+    commit = path / "_delta_log/00000000000000000000.json"
+    old_commit = commit.read_text()
+    st = commit.stat()
+    cache = plr.PyIcebergMetadataFileCache(1 << 20)
+
+    def collect() -> pl.DataFrame:
+        ldf, _ = plr._delta_plugin_scan(
+            _plugin_capsule(plr._IO_PLUGIN_IDS),
+            table_uri=str(path),
+            version=None,
+            timestamp_ms=None,
+            projection=None,
+            filter_columns=None,
+            statistics_columns=None,
+            limit=None,
+            use_metadata_statistics=True,
+            verbose=False,
+            testing_fail=None,
+            storage_options=None,
+            credential_provider=None,
+            metadata_cache=cache,
+        )
+        return wrap_ldf(ldf).collect()
+
+    assert_frame_equal(collect(), pl.DataFrame({"a": [1]}))
+    shutil.rmtree(path)
+    _table(path, [_field("a", "long")], [pl.DataFrame({"a": [2]})])
+    (path / "part-0.parquet").rename(path / "part-1.parquet")
+    commit.write_text(old_commit.replace("part-0.parquet", "part-1.parquet"))
+    os.utime(commit, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert commit.stat().st_size == st.st_size
+    assert commit.stat().st_mtime_ns == st.st_mtime_ns
+    assert_frame_equal(collect(), pl.DataFrame({"a": [2]}))
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_delta_plugin_checkpoint_replaced_between_head_and_range(
+    tmp_path: Path,
+) -> None:
+    import threading
+    from uuid import uuid4
+
+    from deltalake import DeltaTable
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    expected = pl.DataFrame({"a": range(20)})
+    expected.write_delta(tmp_path)
+    DeltaTable(tmp_path).create_checkpoint()
+    pq = pytest.importorskip("pyarrow.parquet")
+    checkpoint = tmp_path / "_delta_log/00000000000000000000.checkpoint.parquet"
+    # Moto shares backend state across servers. Use a fresh bucket for this table.
+    bucket = f"delta-checkpoint-race-{uuid4().hex}"
+    key = checkpoint.relative_to(tmp_path).as_posix()
+    request_path = f"{bucket}/{key}"
+    # Equivalent actions with different physical layout and footer offset.
+    replacement = tmp_path / "replacement.parquet"
+    pq.write_table(pq.read_table(checkpoint), replacement, row_group_size=1)
+    assert checkpoint.stat().st_size != replacement.stat().st_size
+    replacement_bytes = replacement.read_bytes()
+    replacement.unlink()
+
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    replaced = threading.Event()
+
+    def replace_before_range(environ: dict[str, Any]) -> None:
+        if (
+            environ["REQUEST_METHOD"] == "GET"
+            and environ.get("PATH_INFO") == f"/{request_path}"
+            and environ.get("HTTP_RANGE")
+            and not replaced.is_set()
+        ):
+            s3.client.put_object(Bucket=bucket, Key=key, Body=replacement_bytes)
+            replaced.set()
+
+    try:
+        s3.client.create_bucket(Bucket=bucket)
+        for file in tmp_path.rglob("*"):
+            if file.is_file():
+                s3.client.put_object(
+                    Bucket=bucket,
+                    Key=file.relative_to(tmp_path).as_posix(),
+                    Body=file.read_bytes(),
+                )
+        s3.on_request = replace_before_range
+        scan = pl.scan_delta(f"s3://{bucket}/", storage_options=s3.storage_options)
+        assert_frame_equal(scan.collect(), expected)
+        assert replaced.is_set()
+        ranges = [
+            r for method, path, r in s3.log if method == "GET" and path == request_path
+        ]
+        # The checkpoint was read with ranges before and after replacement.
+        assert len(ranges) > 1
+        assert all(ranges)
+    finally:
+        s3.server.shutdown()

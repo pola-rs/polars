@@ -1,4 +1,5 @@
 //! Safe wrappers around the host functions of `delta.v1`.
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_io_ext_ffi::common::{FfiBuf, FfiError, FfiErrorKind, FfiStr};
@@ -79,14 +80,14 @@ impl Storage {
 }
 
 /// PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
-pub fn normalize_path(path: &str) -> String {
+pub fn normalize_path(path: &str) -> Cow<'_, str> {
     // `file://C:/x` (as written by PyIceberg on Windows) has the drive letter as its
     // authority; other authorities (UNC hosts, `localhost`) are kept.
     match path.strip_prefix("file://") {
         Some(rest) if matches!(rest.as_bytes(), [d, b':', ..] if d.is_ascii_alphabetic()) => {
-            format!("file:///{rest}")
+            Cow::Owned(format!("file:///{rest}"))
         },
-        _ => path.to_owned(),
+        _ => Cow::Borrowed(path),
     }
 }
 
@@ -124,8 +125,9 @@ impl Storage {
         if end < start {
             return Err(super::error::invalid("invalid range"));
         }
+        let url = normalize_path(url);
         let bytes = unsafe {
-            (self.0.host.vtable.storage_get_range)(self.0.handle, FfiStr::new(url), start, end)
+            (self.0.host.vtable.storage_get_range)(self.0.handle, FfiStr::new(&url), start, end)
         }
         .await
         .into_result()?;

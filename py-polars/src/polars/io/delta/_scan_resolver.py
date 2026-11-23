@@ -14,7 +14,12 @@ from polars.exceptions import ComputeError, PerformanceWarning, SchemaError
 from polars.io.cloud.credential_provider._providers import (
     _get_credentials_from_provider_expiry_aware,
 )
-from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
+from polars.io.delta._utils import (
+    _delta_cloud_root_is_ambiguous,
+    _extract_table_statistics_from_delta_add_actions,
+    _native_uri_from_delta_table_uri,
+    _resolve_delta_lake_uri,
+)
 from polars.io.parquet.functions import scan_parquet
 from polars.io.scan_options.cast_options import ScanCastOptions
 from polars.lazyframe.resolver import LazyFrameResolver, ResolvedLazyFrameProps
@@ -22,6 +27,7 @@ from polars.schema import Schema
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from typing import Literal
 
     from deltalake import DeltaTable
 
@@ -153,9 +159,13 @@ class DeltaScanResolver(LazyFrameResolver):
     pyarrow_options: dict[str, Any] | None
 
     _table_version_pinned: bool = field(default=False, init=False, repr=False)
+    _table_uri_escaped: bool | None = field(default=None, init=False, repr=False)
     _schema: Schema | None = field(default=None, init=False, repr=False)
     _resolved_version: int | None = field(default=None, init=False)
     _plugin_enabled: bool | None = field(default=None, init=False)
+    _root_planner: Literal["plugin", "deltalake"] | None = field(
+        default=None, init=False, repr=False
+    )
     _plugin_table_schema: str | None = field(default=None, init=False, repr=False)
     _plugin_metadata_cache: Any = field(default=None, init=False, repr=False)
 
@@ -169,6 +179,11 @@ class DeltaScanResolver(LazyFrameResolver):
         )
 
         if self.use_pyarrow:
+            return None
+        if self._root_planner == "deltalake":
+            if plugin_planner_required():
+                msg = "delta: this saved cloud path must be reopened with deltalake"
+                raise ComputeError(msg)
             return None
         if self._plugin_enabled is None:
             self._plugin_enabled = use_plugin_planner()
@@ -472,16 +487,34 @@ class DeltaScanResolver(LazyFrameResolver):
 
     def table_uri(self) -> str:
         """Fetch the table URI."""
-        if self.table_uri_ is None:
-            table = self.table_.get()
-            assert table is not None
-            # Not via table(): pickling must not run the protocol check.
-            self.table_uri_ = table.table_uri
+        if self._table_uri_escaped is None:
+            if self.table_uri_ is None:
+                table = self.table_.get()
+                assert table is not None
+                # Not via table(): pickling must not run the protocol check.
+                self.table_uri_ = table.table_uri
+                self._table_uri_escaped = True
+            else:
+                self.table_uri_ = _resolve_delta_lake_uri(self.table_uri_, strict=False)
+                # Older pickles lack the URI flag. A stored plugin table schema
+                # identifies a scan created from a DeltaTable without time travel.
+                self._table_uri_escaped = self._plugin_table_schema is not None
 
+        assert self.table_uri_ is not None
         return self.table_uri_
+
+    def _native_table_uri(self) -> str:
+        uri = self.table_uri()
+        return _native_uri_from_delta_table_uri(uri) if self._table_uri_escaped else uri
 
     def table(self) -> DeltaTable:
         """Fetch the DeltaTable object."""
+        if self._root_planner == "plugin":
+            msg = (
+                "delta: deltalake cannot reliably reopen this native Delta cloud "
+                "path. Use the polars-delta planner to read this scan."
+            )
+            raise ComputeError(msg)
         table = self.table_.get()
         if (
             table is not None
@@ -494,8 +527,6 @@ class DeltaScanResolver(LazyFrameResolver):
         if table is None:
             from polars.io.delta._utils import _get_delta_lake_table
 
-            assert self.table_uri_ is not None
-
             credential_provider_creds = {}
 
             if self.credential_provider_builder and (
@@ -506,7 +537,7 @@ class DeltaScanResolver(LazyFrameResolver):
                 )
 
             table = _get_delta_lake_table(
-                table_path=self.table_uri_,
+                table_path=self.table_uri(),
                 version=self._resolved_version
                 if self._resolved_version is not None
                 else self.version,
@@ -524,16 +555,66 @@ class DeltaScanResolver(LazyFrameResolver):
 
         # Also checks a user-supplied DeltaTable.
         _check_reader_protocol(table)
+        if not self.use_pyarrow and _delta_cloud_root_is_ambiguous(
+            self._native_table_uri()
+        ):
+            self._root_planner = "deltalake"
         return table
 
     def __getstate__(self) -> dict[str, Any]:
         self.table_uri()
         state = self.__dict__.copy()
         state["_plugin_metadata_cache"] = None
+        state["_plugin_enabled"] = None
+        state["_root_planner"] = self._root_planner
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__ = state
+        if "_root_planner" not in state:
+            native_guard = state.pop("_plugin_root_requires_native", None)
+            if native_guard:
+                self._root_planner = "plugin"
+            elif state.pop("_legacy_root_requires_deltalake", False):
+                self._root_planner = "deltalake"
+            elif (
+                self._resolved_version is not None
+                and (uri := self.table_uri_) is not None
+                and _delta_cloud_root_is_ambiguous(uri)
+            ):
+                self._recover_legacy_cloud_root(uri, native_guard=native_guard)
+        self._plugin_enabled = None
+
+    def _recover_legacy_cloud_root(
+        self, uri: str, *, native_guard: bool | None
+    ) -> None:
+        plugin_enabled = self._plugin_enabled
+        if self.use_pyarrow or plugin_enabled is False or uri.startswith("lakefs://"):
+            self._root_planner = "deltalake"
+            return
+
+        native_uri = _native_uri_from_delta_table_uri(uri)
+        escaped = self._table_uri_escaped
+        if escaped is None and self._plugin_table_schema is not None:
+            escaped = True
+        # Native planning recorded the schema of a DeltaTable with no explicit
+        # version. For time travel, old state may omit any sign of that origin.
+        if escaped is None and plugin_enabled is True and self.version is None:
+            escaped = False
+        if escaped is None and native_uri != uri:
+            msg = "delta: cannot recover the original Delta cloud path from this saved scan. Recreate the scan from its source."
+            raise ComputeError(msg)
+
+        if _delta_cloud_root_is_ambiguous(native_uri if escaped else uri):
+            if native_guard is False:
+                # This state was saved after native planning started recording
+                # ambiguous roots. The absent restriction establishes deltalake use.
+                self._root_planner = "deltalake"
+            elif plugin_enabled is None:
+                msg = "delta: cannot recover the original planner for this saved Delta cloud path. Recreate the scan from its source."
+                raise ComputeError(msg)
+            else:
+                self._root_planner = "plugin"
 
 
 # Characters delta-rs leaves unescaped in cloud file_uris(): printable ASCII except the

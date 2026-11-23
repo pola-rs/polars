@@ -5141,7 +5141,11 @@ class DataFrame:
             else None
         )
 
-        from polars.io.delta._sink import _native_sink_state, _write_native
+        from polars.io.delta._sink import (
+            _deltalake_write_options,
+            _native_sink_state,
+            _write_native,
+        )
 
         if (
             sink_state := _native_sink_state(
@@ -5170,15 +5174,12 @@ class DataFrame:
             return dt.merge(self, **delta_merge_options)
 
         else:
-            if delta_write_options is None:
-                delta_write_options = {}
-
             write_deltalake(
                 table_or_uri=target,
                 data=self,
                 mode=mode,
                 storage_options=storage_options,
-                **delta_write_options,
+                **_deltalake_write_options(delta_write_options),
             )
             return None
 

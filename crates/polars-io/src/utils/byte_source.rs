@@ -245,7 +245,7 @@ fn pread_exact_uninit(
 /// itself; on stable it must be zeroed first, which memsets the whole range
 /// before the kernel overwrites it.
 #[cfg(feature = "nightly")]
-fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
+pub fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
     let mut v: Vec<u8> = Vec::with_capacity(len);
 
     let filled = {
@@ -263,7 +263,7 @@ fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<
 }
 
 #[cfg(not(feature = "nightly"))]
-fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
+pub fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
     let mut buf = vec![0u8; len];
     pread_exact(file, &mut buf, offset)?;
     Ok(Buffer::from(buf))

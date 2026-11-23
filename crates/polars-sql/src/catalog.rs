@@ -5,11 +5,11 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    BinaryOperator, ColumnDef, ColumnOption, CreateTableOptions, DataType as SQLDataType, Expr,
-    Function, FunctionArg, FunctionArgExpr, FunctionArgOperator, FunctionArguments,
-    HiveDistributionStyle, Ident, ObjectName, ObjectNamePart, OrderByExpr, OrderBySort, Query,
-    SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value, ValueWithSpan, Visitor,
-    VisitorMut, With,
+    AccessExpr, BinaryOperator, ColumnDef, ColumnOption, CreateTableOptions,
+    DataType as SQLDataType, Expr, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
+    FunctionArguments, HiveDistributionStyle, Ident, ObjectName, ObjectNamePart, OrderByExpr,
+    OrderBySort, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value,
+    ValueWithSpan, Visitor, VisitorMut, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -18,6 +18,7 @@ use sqlparser::tokenizer::{Location, Span, Token};
 use crate::dyn_visit;
 use crate::sql_expr::order_by_sort_options;
 use crate::sql_visitors::expr_references_any_column;
+use crate::subquery::strip_nested;
 use crate::time_travel::{VersionSpec, is_version_part, split_version, with_version};
 use crate::types::map_sql_dtype_to_polars;
 
@@ -205,6 +206,16 @@ pub enum CallArg {
 
 /// The procedures `CALL` runs, with their arguments in positional order (`table` first).
 pub(crate) const CALL_PROCEDURES: &[(&str, &[&str])] = &[
+    (
+        "add_files",
+        &[
+            "table",
+            "source_table",
+            "partition_filter",
+            "check_duplicate_files",
+            "parallelism",
+        ],
+    ),
     (
         "rewrite_data_files",
         &["table", "strategy", "sort_order", "options", "where"],
@@ -429,7 +440,8 @@ pub struct MergePlan {
     pub not_matched: Vec<MergeClausePlan>,
 }
 
-/// A change to a catalog table's top-level columns, properties or partitioning, by an `ALTER TABLE`.
+/// A change to a catalog table's top-level columns, properties, layout, tags or branches, by an
+/// `ALTER TABLE`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CatalogAlter {
     /// `ADD [COLUMN] [IF NOT EXISTS] <name> <type>`: a nullable column.
@@ -483,6 +495,56 @@ pub enum CatalogAlter {
         /// The sort fields, in the order written.
         fields: Vec<CatalogSortField>,
     },
+    /// `CREATE [OR REPLACE] TAG | BRANCH`, `CREATE TAG | BRANCH IF NOT EXISTS` or
+    /// `REPLACE TAG | BRANCH`: point a tag or branch at a snapshot.
+    SetRef {
+        /// A tag or a branch.
+        kind: CatalogRefKind,
+        /// The name, as written (case kept).
+        name: String,
+        /// What to do when a ref of the name exists, or doesn't.
+        mode: CatalogRefMode,
+        /// `AS OF VERSION <snapshot id>`; none for the current snapshot.
+        snapshot_id: Option<i64>,
+        /// `RETAIN <n> <unit>`: how long the ref is kept, in milliseconds.
+        max_ref_age_ms: Option<i64>,
+        /// `WITH SNAPSHOT RETENTION <n> SNAPSHOTS`: the snapshots a branch keeps, at least.
+        min_snapshots_to_keep: Option<i32>,
+        /// `WITH SNAPSHOT RETENTION <n> <unit>`: how long a branch keeps its snapshots, in
+        /// milliseconds.
+        max_snapshot_age_ms: Option<i64>,
+    },
+    /// `DROP TAG | BRANCH [IF EXISTS] <name>`.
+    DropRef {
+        /// A tag or a branch.
+        kind: CatalogRefKind,
+        /// The name, as written (case kept).
+        name: String,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
+}
+
+/// The kind of a named Iceberg snapshot reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogRefKind {
+    /// A tag: a name for one snapshot.
+    Tag,
+    /// A branch: a line of snapshots that writes can extend.
+    Branch,
+}
+
+/// What a statement that sets a tag or branch does with an existing ref of its name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogRefMode {
+    /// `CREATE`: the name must be free.
+    Create,
+    /// `CREATE ... IF NOT EXISTS`: nothing happens when the name is taken.
+    CreateIfNotExists,
+    /// `REPLACE`: the ref must exist.
+    Replace,
+    /// `CREATE OR REPLACE`: either.
+    CreateOrReplace,
 }
 
 /// A partition field of a catalog table: an Iceberg transform of a column or a struct field.
@@ -1054,7 +1116,7 @@ pub(crate) fn alter_table_column(col: &ColumnDef) -> PolarsResult<(String, DataT
 /// Whether `expr` is the literal `NULL`.
 fn is_null(expr: &Expr) -> bool {
     matches!(
-        expr,
+        strip_nested(expr),
         Expr::Value(ValueWithSpan {
             value: Value::Null,
             ..
@@ -1157,7 +1219,7 @@ pub(crate) fn create_table_partitioning(
             polars_bail!(SQLInterface: "`PARTITION BY` and `PARTITIONED BY` cannot be combined")
         },
         (Some(expr), _) => {
-            let exprs = match unparenthesized(expr) {
+            let exprs = match strip_nested(expr) {
                 Expr::Tuple(exprs) => exprs.as_slice(),
                 expr => std::slice::from_ref(expr),
             };
@@ -1251,6 +1313,26 @@ pub(crate) fn set_sort_order(items: &[OrderByExpr]) -> PolarsResult<Vec<CatalogS
         .collect()
 }
 
+/// The path of a layout source: a column or a struct field (`s.f` or `(s).f`). Checked against
+/// the schema later: a struct field, never a table-qualified column.
+fn layout_source(expr: &Expr) -> Option<Vec<String>> {
+    match strip_nested(expr) {
+        Expr::Identifier(ident) => Some(vec![ident.value.clone()]),
+        Expr::CompoundIdentifier(idents) => Some(idents.iter().map(|i| i.value.clone()).collect()),
+        Expr::CompoundFieldAccess { root, access_chain } => {
+            let mut path = layout_source(root)?;
+            for access in access_chain {
+                let AccessExpr::Dot(Expr::Identifier(field)) = access else {
+                    return None;
+                };
+                path.push(field.value.clone());
+            }
+            Some(path)
+        },
+        _ => None,
+    }
+}
+
 /// The source path and transform of a partition or sort field (`kind`): a source,
 /// `year|month|day|hour(source)` (with Iceberg's aliases), or `bucket|truncate(N, source)`. A
 /// source is a column or a struct field (`s.f`).
@@ -1261,13 +1343,7 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
             kind, expr
         )
     };
-    // Checked against the schema later: a struct field, never a table-qualified column.
-    let source_of = |expr: &Expr| match unparenthesized(expr) {
-        Expr::Identifier(ident) => Some(vec![ident.value.clone()]),
-        Expr::CompoundIdentifier(idents) => Some(idents.iter().map(|i| i.value.clone()).collect()),
-        _ => None,
-    };
-    if let Some(path) = source_of(expr) {
+    if let Some(path) = layout_source(expr) {
         return Ok((path, "identity".to_string()));
     }
     let Expr::Function(Function {
@@ -1279,7 +1355,7 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
         null_treatment: None,
         over: None,
         within_group,
-    }) = unparenthesized(expr)
+    }) = strip_nested(expr)
     else {
         return Err(unsupported());
     };
@@ -1302,7 +1378,7 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(unsupported)?;
-    let positive_int = |expr: &Expr| match unparenthesized(expr) {
+    let positive_int = |expr: &Expr| match strip_nested(expr) {
         Expr::Value(ValueWithSpan {
             value: Value::Number(n, false),
             ..
@@ -1316,7 +1392,7 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
         ("hour" | "hours", [source]) => ("hour".to_string(), source),
         ("bucket" | "truncate", [n, source]) => {
             let Some(n) = positive_int(n) else {
-                if source_of(n).is_some() && positive_int(source).is_some() {
+                if layout_source(n).is_some() && positive_int(source).is_some() {
                     polars_bail!(SQLInterface: "`{}` takes the number first, as in `{}({}, {})`", expr, fname, source, n)
                 }
                 polars_bail!(SQLInterface: "the first argument of `{}` must be an integer from 1 to {}", expr, i32::MAX)
@@ -1325,16 +1401,8 @@ fn layout_field(expr: &Expr, kind: &str) -> PolarsResult<(Vec<String>, String)> 
         },
         _ => return Err(unsupported()),
     };
-    let path = source_of(source).ok_or_else(unsupported)?;
+    let path = layout_source(source).ok_or_else(unsupported)?;
     Ok((path, transform))
-}
-
-/// `expr` without enclosing parentheses.
-fn unparenthesized(mut expr: &Expr) -> &Expr {
-    while let Expr::Nested(inner) = expr {
-        expr = inner;
-    }
-    expr
 }
 
 /// The properties of a catalog namespace, from `WITH (...)`.
@@ -1384,7 +1452,7 @@ fn option_key_value<'a>(
 
 /// A table option value as a property string, if it is a string, number or boolean literal.
 fn option_value(value: &Expr) -> Option<String> {
-    match value {
+    match strip_nested(value) {
         Expr::Value(v) => match &v.value {
             Value::SingleQuotedString(s) => Some(s.clone()),
             Value::Number(n, _) => Some(n.clone()),
@@ -1394,7 +1462,7 @@ fn option_value(value: &Expr) -> Option<String> {
         Expr::UnaryOp {
             op: UnaryOperator::Minus,
             expr,
-        } => match expr.as_ref() {
+        } => match strip_nested(expr) {
             Expr::Value(ValueWithSpan {
                 value: Value::Number(n, _),
                 ..

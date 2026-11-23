@@ -5,17 +5,20 @@
 //! lambda parameters in the body are replaced by placeholders that stand for the list element.
 use std::ops::ControlFlow;
 
-use polars_core::prelude::{PolarsResult, polars_bail, polars_ensure};
+use polars_core::prelude::{PolarsResult, polars_ensure};
 use polars_plan::dsl::Expr;
 use polars_plan::dsl::functions::col;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::{
     AccessExpr, Expr as SQLExpr, FunctionArg, FunctionArgExpr, FunctionArguments, Ident,
-    Value as SQLValue, VisitMut, VisitorMut,
+    Value as SQLValue, ValueWithSpan, VisitMut, VisitorMut,
 };
 use sqlparser::keywords::Keyword;
 use sqlparser::tokenizer::{Token, TokenWithSpan, Whitespace, Word};
+
+use crate::dyn_visit;
+use crate::sql_visitors::is_subquery_expr;
 
 const LAMBDA_MARKER: &str = "\u{0}lambda\u{0}";
 const RESOLVED_LAMBDA_MARKER: &str = "\u{0}lambda resolved\u{0}";
@@ -131,7 +134,7 @@ pub(crate) fn is_lambda_arg(arg: &FunctionArg) -> bool {
 /// Replace the uses of lambda parameters in the lambda bodies of `node` by element
 /// placeholders.
 pub(crate) fn resolve_lambda_params<T: VisitMut>(node: &mut T) {
-    let _ = node.visit(&mut LambdaResolver { scopes: vec![] });
+    let _ = dyn_visit::visit_mut(node, &mut LambdaResolver { scopes: vec![] });
 }
 
 struct LambdaResolver {
@@ -164,14 +167,7 @@ impl VisitorMut for LambdaResolver {
             },
             SQLExpr::CompoundIdentifier(idents) => {
                 if let Some(marker) = self.element_marker(&idents[0].value) {
-                    let access_chain = idents[1..]
-                        .iter()
-                        .map(|ident| AccessExpr::Dot(SQLExpr::Identifier(ident.clone())))
-                        .collect();
-                    *expr = SQLExpr::CompoundFieldAccess {
-                        root: Box::new(marker),
-                        access_chain,
-                    };
+                    *expr = field_access(marker, &idents[1..]);
                 }
             },
             SQLExpr::Function(func) => {
@@ -187,7 +183,7 @@ impl VisitorMut for LambdaResolver {
                     };
                     self.scopes
                         .push(params.into_iter().map(str::to_string).collect());
-                    let _ = arg.visit(self);
+                    let _ = dyn_visit::visit_mut(arg, self);
                     let n_params = self.scopes.pop().unwrap().len();
                     *name = Ident::with_quote('"', format!("{RESOLVED_LAMBDA_MARKER}{n_params}"));
                 }
@@ -196,6 +192,37 @@ impl VisitorMut for LambdaResolver {
         }
         ControlFlow::Continue(())
     }
+}
+
+/// The fields `fields` of `root`, as in `root.a.b`.
+pub(crate) fn field_access(root: SQLExpr, fields: &[Ident]) -> SQLExpr {
+    SQLExpr::CompoundFieldAccess {
+        root: Box::new(root),
+        access_chain: fields
+            .iter()
+            .map(|field| AccessExpr::Dot(SQLExpr::Identifier(field.clone())))
+            .collect(),
+    }
+}
+
+/// Moves the elements of the lambdas deeper than `above` in `expr` `by` lambdas deeper, for
+/// `expr` placed in the bodies of `by` more lambdas.
+pub(crate) fn shift_lambda_elements(expr: &mut SQLExpr, above: usize, by: usize) {
+    if by == 0 {
+        return;
+    }
+    let _ = dyn_visit::visit_expressions_mut(expr, |expr| {
+        if let SQLExpr::Value(ValueWithSpan {
+            value: SQLValue::Placeholder(p),
+            ..
+        }) = expr
+            && let Some(depth) = element_depth(p)
+            && depth > above
+        {
+            *p = format!("{ELEMENT_MARKER}{}", depth + by);
+        }
+        ControlFlow::<()>::Continue(())
+    });
 }
 
 /// The lambda nesting depth of the element that `placeholder` stands for.
@@ -218,10 +245,9 @@ pub(crate) fn lambda_element_name(depth: usize) -> PlSmallStr {
 }
 
 pub(crate) fn check_lambda_body_expr(expr: &SQLExpr) -> PolarsResult<()> {
-    match expr {
-        SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. } => {
-            polars_bail!(SQLInterface: "subqueries are not supported in a lambda")
-        },
-        _ => Ok(()),
-    }
+    polars_ensure!(
+        !is_subquery_expr(expr),
+        SQLInterface: "subqueries are not supported in a lambda"
+    );
+    Ok(())
 }

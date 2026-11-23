@@ -77,6 +77,108 @@ def new_pl_delta_dataset(source: str | DeltaTable) -> DeltaScanResolver:
     )
 
 
+@pytest.mark.parametrize(
+    ("uri", "table_schema"),
+    [
+        ("s3://bucket/literal%20space", None),
+        ("s3://bucket/literal%2520space", "{}"),
+        ("s3://bucket/name?query", None),
+    ],
+)
+def test_delta_legacy_native_state_prevents_ambiguous_fallback(
+    uri: str, table_schema: str | None
+) -> None:
+    dataset = new_pl_delta_dataset(uri)
+    state = dataset.__getstate__()
+    state.pop("_root_planner")
+    state.pop("_table_uri_escaped")
+    state.update(
+        _plugin_enabled=True, _resolved_version=0, _plugin_table_schema=table_schema
+    )
+    dataset.__setstate__(state)
+
+    restored = pickle.loads(pickle.dumps(dataset))
+    with pytest.raises(pl.exceptions.ComputeError, match="cannot reliably reopen"):
+        restored.table()
+
+
+@pytest.mark.parametrize(
+    ("planner", "uri_escaped", "message"),
+    [
+        (True, None, "cannot recover the original Delta cloud path"),
+        (None, False, "cannot recover the original planner"),
+    ],
+)
+def test_delta_rejects_unrecoverable_legacy_pinned_cloud_path(
+    planner: bool | None, uri_escaped: bool | None, message: str
+) -> None:
+    dataset = new_pl_delta_dataset("s3://bucket/literal%20space")
+    state = dataset.__getstate__()
+    state.pop("_root_planner")
+    state.update(
+        version=0,
+        _resolved_version=0,
+        _plugin_enabled=planner,
+        _table_uri_escaped=uri_escaped,
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match=message):
+        dataset.__setstate__(state)
+
+
+@pytest.mark.parametrize("planner_saved", [False, True])
+def test_delta_legacy_deltalake_state_preserves_cloud_path(
+    monkeypatch: pytest.MonkeyPatch, planner_saved: bool
+) -> None:
+    uri = "s3://bucket/literal%20space"
+    dataset = new_pl_delta_dataset(uri)
+    state = dataset.__getstate__()
+    state.pop("_root_planner")
+    if planner_saved:
+        state.pop("_table_uri_escaped")
+        state["_plugin_enabled"] = False
+    else:
+        state["_plugin_root_requires_native"] = False
+    state["_resolved_version"] = 0
+    dataset.__setstate__(state)
+    restored = pickle.loads(pickle.dumps(dataset))
+
+    monkeypatch.delenv("POLARS_DELTA_PLANNER", raising=False)
+    monkeypatch.setattr(
+        "polars.io.delta._plugin.use_plugin_planner",
+        lambda: pytest.fail("must reopen legacy deltalake URI through deltalake"),
+    )
+    assert restored._plugin_scan() is None
+    assert restored.table_uri() == uri
+
+
+@pytest.mark.parametrize(
+    ("uri", "escaped", "root_planner"),
+    [
+        ("s3://bucket/ordinary", False, None),
+        ("s3://bucket/literal%text", False, None),
+        ("s3://bucket/literal%20space", True, None),
+        ("s3://bucket/literal%20space", False, "deltalake"),
+        ("s3://bucket/literal%2520space", True, "deltalake"),
+    ],
+)
+def test_delta_deltalake_root_planner_tracks_native_spelling(
+    monkeypatch: pytest.MonkeyPatch, uri: str, escaped: bool, root_planner: str | None
+) -> None:
+    dataset = new_pl_delta_dataset(uri)
+    dataset._table_uri_escaped = escaped
+    monkeypatch.setattr(
+        "polars.io.delta._utils._get_delta_lake_table", lambda **_: object()
+    )
+    monkeypatch.setattr(
+        "polars.io.delta._scan_resolver._check_reader_protocol", lambda _: None
+    )
+
+    dataset.table()
+    restored = pickle.loads(pickle.dumps(dataset))
+    assert restored._root_planner == root_planner
+
+
 def test_scan_delta(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(delta_table_path, version=0)
 

@@ -145,8 +145,8 @@ where
     }
 
     #[inline(always)]
-    pub fn slice(&self, offset: i64, length: usize) -> Self {
-        unsafe { Self::new_logical(self.phys.slice(offset, length), self.dtype.clone()) }
+    pub fn slice(&self, slice: impl Into<Slice>) -> Self {
+        unsafe { Self::new_logical(self.phys.slice(slice), self.dtype.clone()) }
     }
 
     #[inline(always)]

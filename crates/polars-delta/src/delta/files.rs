@@ -6,9 +6,11 @@ use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::offset::OffsetsBuffer;
 use polars_utils::aliases::PlHashSet;
 
-use super::actions::{AddRec, DvId, DvRec, Key, RemoveRec};
+use super::actions::{AddRec, DvId, DvRec, Key, RemoveRec, TimestampPartitions};
 use super::error::{Result, invalid};
+use super::schema::Column;
 use super::stats::{self, FileStats};
+use super::values::{PartitionValue, Sv, partition_text};
 
 /// A deletion vector descriptor borrowed from its source.
 #[derive(Debug, Clone, Copy)]
@@ -29,6 +31,7 @@ impl<'a> From<&'a DvRec> for DvView<'a> {
 pub struct Rows {
     pub adds: Vec<AddRec>,
     pub removes: Vec<RemoveRec>,
+    pub timestamp_partitions: TimestampPartitions,
 }
 /// A run of rows of one checkpoint file: the `add` struct column of a row group.
 pub struct CheckpointFiles {
@@ -39,6 +42,7 @@ pub struct CheckpointFiles {
     pv_offsets: OffsetsBuffer<i32>,
     pv_keys: Box<dyn Array>,
     pv_values: Box<dyn Array>,
+    pv_timestamps: Option<StructArray>,
     stats: Option<Box<dyn Array>>,
     stats_parsed: Option<StructArray>,
     dv: Option<DvColumns>,
@@ -211,6 +215,9 @@ impl CheckpointFiles {
             pv_offsets,
             pv_keys,
             pv_values,
+            pv_timestamps: child(add, "partitionValues_parsed")
+                .and_then(|a| a.as_any().downcast_ref::<StructArray>())
+                .cloned(),
             stats: text_column(child_box(add, "stats"))?,
             stats_parsed,
             dv,
@@ -305,8 +312,16 @@ impl Source {
             Source::Checkpoint(c) => int_at(c.size.as_ref(), row).unwrap_or(0) as u64,
         }
     }
-    /// The partition value of `physical`: `None` when the file has no entry for it.
-    pub fn partition(&self, row: usize, physical: &str) -> Option<Option<&str>> {
+    pub fn checkpoint_partitions(&self) -> bool {
+        match self {
+            Self::Checkpoint(_) => true,
+            Self::Rows(r) => matches!(r.timestamp_partitions, TimestampPartitions::Checkpoint),
+        }
+    }
+    pub fn legacy_utc_partitions(&self, row: usize) -> bool {
+        matches!(self, Self::Rows(r) if r.timestamp_partitions.is_utc(&r.adds[row]))
+    }
+    pub fn partition_raw(&self, row: usize, physical: &str) -> Option<Option<&str>> {
         match self {
             Source::Rows(r) => r.adds[row]
                 .partition_values
@@ -322,6 +337,37 @@ impl Source {
                     .map(|j| str_at(c.pv_values.as_ref(), j))
             },
         }
+    }
+    /// A file's partition value, preferring a checkpoint's typed instant for zoned timestamps.
+    pub fn partition(&self, row: usize, column: &Column) -> Result<PartitionValue<'_>> {
+        let physical = column.physical.as_str();
+        let zoned = matches!(&column.field.dtype, ArrowDataType::Timestamp(_, Some(_)));
+        if zoned
+            && let Self::Checkpoint(c) = self
+            && let Some(array) = c
+                .pv_timestamps
+                .as_ref()
+                .filter(|p| !p.is_null(row))
+                .and_then(|p| child(p, physical))
+                .filter(|a| !a.is_null(row))
+            && let ArrowDataType::Timestamp(unit, _) = array.dtype()
+        {
+            // INT96 carries no zone annotation. The Delta schema identifies the value as an instant.
+            let micros = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i64>>()
+                .and_then(|a| stats::timestamp_micros(a.value(row), *unit))
+                .ok_or_else(|| {
+                    invalid(format!(
+                        "invalid checkpoint timestamp partition value for {physical}"
+                    ))
+                })?;
+            return Ok(PartitionValue::Value(Sv::Int(micros)));
+        }
+        let text = self
+            .partition_raw(row, physical)
+            .ok_or_else(|| invalid(format!("missing partition value {physical}")))?;
+        partition_text(text, zoned, zoned && self.legacy_utc_partitions(row))
     }
     pub fn dv(&self, row: usize) -> Result<Option<DvView<'_>>> {
         match self {
@@ -379,7 +425,7 @@ impl Source {
                                 // Bounds of a type that holds none are unknown.
                                 *d = s
                                     .and_then(|a| stats::array_value(a, row))
-                                    .unwrap_or(super::values::Sv::Null);
+                                    .unwrap_or(Sv::Null);
                             }
                         }
                         return Some(out);
@@ -449,5 +495,56 @@ pub fn has_adds(source: &Source) -> bool {
     match source {
         Source::Rows(r) => !r.adds.is_empty(),
         Source::Checkpoint(c) => (0..c.len).any(|r| c.is_add(r)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::datatypes::{Field, TimeUnit};
+
+    use super::*;
+
+    #[test]
+    fn checkpoint_prefers_typed_timestamp_by_physical_name() {
+        let dtype = ArrowDataType::Timestamp(TimeUnit::Millisecond, None);
+        let checkpoint = Source::Checkpoint(Box::new(CheckpointFiles {
+            len: 2,
+            add_valid: None,
+            path: new_empty_array(ArrowDataType::Utf8View),
+            size: new_empty_array(ArrowDataType::Int64),
+            pv_offsets: vec![0i32, 1, 2].try_into().unwrap(),
+            pv_keys: Utf8ViewArray::from_slice_values(["col-id", "col-id"]).boxed(),
+            pv_values: Utf8ViewArray::from_slice_values([
+                "1970-01-01 00:00:00",
+                "1970-01-01T00:00:01Z",
+            ])
+            .boxed(),
+            pv_timestamps: Some(StructArray::new(
+                ArrowDataType::Struct(vec![Field::new("col-id".into(), dtype.clone(), true)]),
+                2,
+                vec![PrimitiveArray::from([Some(42_i64), None]).to(dtype).boxed()],
+                None,
+            )),
+            stats: None,
+            stats_parsed: None,
+            dv: None,
+        }));
+        let column = Column {
+            field: Field::new(
+                "logical".into(),
+                ArrowDataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+                true,
+            ),
+            physical: "col-id".into(),
+            children: vec![],
+        };
+        assert_eq!(
+            checkpoint.partition(0, &column).unwrap(),
+            PartitionValue::Value(Sv::Int(42_000))
+        );
+        assert_eq!(
+            checkpoint.partition(1, &column).unwrap(),
+            PartitionValue::Value(Sv::Int(1_000_000))
+        );
     }
 }

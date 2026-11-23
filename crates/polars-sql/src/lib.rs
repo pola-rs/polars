@@ -10,14 +10,16 @@ pub mod function_registry;
 mod functions;
 mod group_context;
 mod grouping_sets;
+mod iceberg_alter;
 mod join_keys;
 #[cfg(feature = "json")]
 mod json_text;
 pub mod keywords;
 mod lambda;
 mod lateral;
-mod layout_alter;
 mod literal_folding;
+mod location;
+mod macros;
 mod params;
 mod pivot;
 mod positional_join;
@@ -41,8 +43,9 @@ mod types;
 mod window_frames;
 
 pub use catalog::{
-    CallArg, CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogSortField,
-    CatalogStatement, CatalogTable, MergeClausePlan, MergePlan, MergeSourcePlan,
+    CallArg, CatalogAlter, CatalogNamespace, CatalogPartitionField, CatalogRead, CatalogRefKind,
+    CatalogRefMode, CatalogSortField, CatalogStatement, CatalogTable, MergeClausePlan, MergePlan,
+    MergeSourcePlan,
 };
 pub use context::{SQLContext, extract_table_identifiers};
 pub use copy::CopyToStdout;

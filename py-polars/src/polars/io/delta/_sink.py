@@ -7,6 +7,7 @@ import os
 import re
 import struct
 import time
+from copy import copy
 from dataclasses import dataclass
 from decimal import Decimal
 from time import perf_counter
@@ -492,8 +493,8 @@ def _format_float(value: float, *, f32: bool) -> str:
 def _partition_value(series: pl.Series) -> str | None:
     """The value of a height-1 partition key, as a Delta partition value string.
 
-    For example `2026-11-05` for a date, `2026-11-05 12:00:00.000000` for a
-    timestamp (in UTC with a time zone), or `true` for a boolean.
+    For example `2026-11-05` for a date, `2026-11-05T12:00:00.000000Z` for a
+    zoned timestamp, or `true` for a boolean.
     """
     import polars as pl
 
@@ -505,7 +506,9 @@ def _partition_value(series: pl.Series) -> str | None:
         return series.dt.to_string("%Y-%m-%d")[0]
     if isinstance(dtype, pl.Datetime):
         if dtype.time_zone is not None:
-            series = series.dt.convert_time_zone("UTC").dt.replace_time_zone(None)
+            return series.dt.convert_time_zone("UTC").dt.to_string(
+                "%Y-%m-%dT%H:%M:%S%.6fZ"
+            )[0]
         return series.dt.to_string("%Y-%m-%d %H:%M:%S%.6f")[0]
 
     value = series[0]
@@ -525,6 +528,26 @@ def _partition_value(series: pl.Series) -> str | None:
 
     msg = f"unsupported Delta partition column type: {dtype}"
     raise TypeError(msg)
+
+
+def _deltalake_write_options(options: dict[str, Any] | None) -> dict[str, Any]:
+    """Declare the writer zone when delegating a write to delta-rs 1.6.6."""
+    import deltalake
+
+    if deltalake.__version__ != "1.6.6":
+        return options or {}
+
+    from deltalake.transaction import CommitProperties
+
+    options = dict(options or {})
+    properties = options.get("commit_properties")
+    properties = CommitProperties() if properties is None else copy(properties)
+    properties.custom_metadata = {
+        **(properties.custom_metadata or {}),
+        "polars.partition-timestamp-zone": "UTC",
+    }
+    options["commit_properties"] = properties
+    return options
 
 
 def _relative_data_path(file_path: str, sink_uuid: str) -> str:

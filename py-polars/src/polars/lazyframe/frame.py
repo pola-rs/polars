@@ -2970,7 +2970,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         from deltalake import DeltaTable, write_deltalake
 
-        from polars.io.delta._sink import _native_sink_state, _write_native
+        from polars.io.delta._sink import (
+            _deltalake_write_options,
+            _native_sink_state,
+            _write_native,
+        )
 
         schema = self.collect_schema()
         _check_for_unsupported_types(schema.dtypes())
@@ -3049,15 +3053,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return dt.merge(stream, **delta_merge_options)  # type: ignore[arg-type]
 
         else:
-            if delta_write_options is None:
-                delta_write_options = {}
-
             write_deltalake(  # pyrefly: ignore[no-matching-overload]
                 table_or_uri=target,
                 data=stream,  # type: ignore[call-overload]
                 mode=mode,
                 storage_options=storage_options,
-                **delta_write_options,
+                **_deltalake_write_options(delta_write_options),
             )
             return None
 

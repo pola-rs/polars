@@ -162,6 +162,48 @@ pub fn timestamp(s: &str, utc: bool) -> Result<i64> {
         .map_err(invalid)?;
     Ok(v.and_utc().timestamp_micros())
 }
+#[derive(Debug, PartialEq)]
+pub enum PartitionValue<'a> {
+    Value(Sv<'a>),
+    MissingWriterZone { text: &'a str, utc_micros: i64 },
+}
+pub fn missing_partition_zone(text: &str) -> polars_io_ext_ffi::common::FfiError {
+    invalid(format!(
+        "timestamp partition value {text:?} requires an explicit UTC offset, known writer zone, or typed checkpoint value"
+    ))
+}
+pub fn partition_text(
+    text: Option<&str>,
+    zoned: bool,
+    legacy_utc: bool,
+) -> Result<PartitionValue<'_>> {
+    use PartitionValue::Value;
+
+    match text {
+        None | Some("") => Ok(Value(Sv::Null)),
+        Some(text) if zoned => {
+            if let Ok(value) = chrono::DateTime::parse_from_rfc3339(text) {
+                return Ok(Value(Sv::Int(value.timestamp_micros())));
+            }
+            if let Some(utc) = text.strip_suffix('Z') {
+                // Chrono's RFC 3339 parser is limited to four-digit years.
+                return chrono::NaiveDateTime::parse_from_str(utc, "%Y-%m-%dT%H:%M:%S%.f")
+                    .map(|value| Value(Sv::Int(value.and_utc().timestamp_micros())))
+                    .map_err(invalid);
+            }
+            let utc_micros = chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%.f")
+                .map_err(|_| missing_partition_zone(text))?
+                .and_utc()
+                .timestamp_micros();
+            if legacy_utc {
+                Ok(Value(Sv::Int(utc_micros)))
+            } else {
+                Ok(PartitionValue::MissingWriterZone { text, utc_micros })
+            }
+        },
+        Some(text) => Ok(Value(Sv::Str(Cow::Borrowed(text)))),
+    }
+}
 /// `value` (unscaled, at `from` scale) as an unscaled decimal of `scale` and `precision`.
 fn rescale(value: i128, from: usize, scale: usize, precision: usize) -> Result<i128> {
     let v = if scale >= from {
@@ -478,6 +520,43 @@ pub fn stat_value<'a>(column: &Column, value: &Sv<'a>, null_count: bool, max: bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn timestamp_partition_text_requires_an_offset_for_zoned_columns() {
+        use PartitionValue::Value;
+        let local = "1970-01-01 00:00:00.123456";
+        assert_eq!(
+            partition_text(Some(local), true, false).unwrap(),
+            PartitionValue::MissingWriterZone {
+                text: local,
+                utc_micros: 123_456
+            }
+        );
+        assert_eq!(
+            partition_text(Some(local), true, true).unwrap(),
+            Value(Sv::Int(123_456))
+        );
+        assert!(partition_text(Some("1970-01-01"), true, true).is_err());
+        let Value(local) = partition_text(Some(local), false, false).unwrap() else {
+            panic!("timestamp without timezone requires no writer offset");
+        };
+        let dtype = D::Timestamp(TimeUnit::Microsecond, None);
+        let a = array(&dtype, [local]).unwrap();
+        let a = a.as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap();
+        assert_eq!(a.value(0), 123_456);
+        assert_eq!(
+            partition_text(Some("1970-01-01T00:00:00.123456Z"), true, false).unwrap(),
+            Value(Sv::Int(123_456))
+        );
+        assert_eq!(
+            partition_text(Some("1970-01-01T01:00:00.123456+01:00"), true, false).unwrap(),
+            Value(Sv::Int(123_456))
+        );
+        assert_eq!(
+            partition_text(Some(""), true, false).unwrap(),
+            Value(Sv::Null)
+        );
+        assert_eq!(partition_text(None, true, false).unwrap(), Value(Sv::Null));
+    }
     #[test]
     fn decimals() {
         assert_eq!(decimal("-1.230", 2, 5).unwrap(), -123);

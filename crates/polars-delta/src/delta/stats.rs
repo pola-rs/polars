@@ -26,6 +26,9 @@ impl<'a> FileStats<'a> {
         }
     }
 }
+// Bound stack use for both skipped values and materialized statistics.
+const MAX_JSON_DEPTH: u8 = 128;
+
 struct Scanner<'a> {
     text: &'a str,
     bytes: &'a [u8],
@@ -36,7 +39,7 @@ impl<'a> Scanner<'a> {
         while self
             .bytes
             .get(self.pos)
-            .is_some_and(u8::is_ascii_whitespace)
+            .is_some_and(|b| matches!(b, b' ' | b'\n' | b'\r' | b'\t'))
         {
             self.pos += 1;
         }
@@ -61,6 +64,7 @@ impl<'a> Scanner<'a> {
                     escaped = true;
                     self.pos += 2
                 },
+                0..=0x1f => return None,
                 _ => self.pos += 1,
             }
         }
@@ -93,36 +97,28 @@ impl<'a> Scanner<'a> {
             .starts_with(word.as_bytes())
             .then(|| self.pos += word.len())
     }
-    fn skip(&mut self) -> Option<()> {
+    fn skip(&mut self, depth: u8) -> Option<()> {
         match self.peek()? {
             b'"' => {
                 self.string()?;
             },
-            b'{' | b'[' => {
-                let mut depth = 0usize;
+            start @ (b'{' | b'[') => {
+                let depth = depth.checked_sub(1)?;
+                let end = if start == b'{' { b'}' } else { b']' };
+                self.pos += 1;
+                if self.eat(end).is_some() {
+                    return Some(());
+                }
                 loop {
-                    match *self.bytes.get(self.pos)? {
-                        b'"' => {
-                            self.pos += 1;
-                            loop {
-                                match *self.bytes.get(self.pos)? {
-                                    b'"' => break,
-                                    b'\\' => self.pos += 2,
-                                    _ => self.pos += 1,
-                                }
-                            }
-                        },
-                        b'{' | b'[' => depth += 1,
-                        b'}' | b']' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                self.pos += 1;
-                                break;
-                            }
-                        },
-                        _ => {},
+                    if start == b'{' {
+                        self.string()?;
+                        self.eat(b':')?;
                     }
-                    self.pos += 1;
+                    self.skip(depth)?;
+                    if self.eat(end).is_some() {
+                        break;
+                    }
+                    self.eat(b',')?;
                 }
             },
             b't' => self.literal("true")?,
@@ -134,10 +130,11 @@ impl<'a> Scanner<'a> {
         }
         Some(())
     }
-    fn value(&mut self) -> Option<Sv<'a>> {
+    fn value(&mut self, depth: u8) -> Option<Sv<'a>> {
         Some(match self.peek()? {
             b'"' => Sv::Str(self.string()?),
             b'{' => {
+                let depth = depth.checked_sub(1)?;
                 self.pos += 1;
                 let mut entries = Vec::new();
                 if self.peek()? == b'}' {
@@ -147,7 +144,7 @@ impl<'a> Scanner<'a> {
                 loop {
                     let key = self.string()?;
                     self.eat(b':')?;
-                    entries.push((key, self.value()?));
+                    entries.push((key, self.value(depth)?));
                     match self.peek()? {
                         b',' => self.pos += 1,
                         b'}' => {
@@ -161,7 +158,7 @@ impl<'a> Scanner<'a> {
             },
             b'[' => {
                 // Lists have no usable bounds.
-                self.skip()?;
+                self.skip(depth)?;
                 Sv::Null
             },
             b't' => {
@@ -183,7 +180,7 @@ impl<'a> Scanner<'a> {
     fn columns(&mut self, wanted: &[&str], out: &mut [Sv<'a>]) -> Option<()> {
         if self.peek()? != b'{' {
             // `null` or another type: no statistics of this kind.
-            return self.skip();
+            return self.skip(MAX_JSON_DEPTH - 1);
         }
         self.pos += 1;
         if self.peek()? == b'}' {
@@ -194,8 +191,8 @@ impl<'a> Scanner<'a> {
             let key = self.string()?;
             self.eat(b':')?;
             match wanted.iter().position(|w| *w == key) {
-                Some(i) => out[i] = self.value()?,
-                None => self.skip()?,
+                Some(i) => out[i] = self.value(MAX_JSON_DEPTH - 2)?,
+                None => self.skip(MAX_JSON_DEPTH - 2)?,
             }
             match self.peek()? {
                 b',' => self.pos += 1,
@@ -219,20 +216,21 @@ pub fn scan<'a>(stats: &'a str, wanted: &[&str]) -> Option<FileStats<'a>> {
     let mut out = FileStats::new(wanted.len());
     s.eat(b'{')?;
     if s.peek()? == b'}' {
-        return Some(out);
+        s.pos += 1;
+        return s.peek().is_none().then_some(out);
     }
     loop {
         let key = s.string()?;
         s.eat(b':')?;
         match &*key {
             "numRecords" => {
-                out.num_records = match s.value()? {
+                out.num_records = match s.value(MAX_JSON_DEPTH - 1)? {
                     Sv::Num(n) => n.parse().ok(),
                     _ => None,
                 }
             },
             "tightBounds" => {
-                out.tight_bounds = match s.value()? {
+                out.tight_bounds = match s.value(MAX_JSON_DEPTH - 1)? {
                     Sv::Bool(b) => Some(b),
                     _ => None,
                 }
@@ -240,11 +238,14 @@ pub fn scan<'a>(stats: &'a str, wanted: &[&str]) -> Option<FileStats<'a>> {
             "minValues" if !wanted.is_empty() => s.columns(wanted, &mut out.min)?,
             "maxValues" if !wanted.is_empty() => s.columns(wanted, &mut out.max)?,
             "nullCount" if !wanted.is_empty() => s.columns(wanted, &mut out.null_count)?,
-            _ => s.skip()?,
+            _ => s.skip(MAX_JSON_DEPTH - 1)?,
         }
         match s.peek()? {
             b',' => s.pos += 1,
-            b'}' => return Some(out),
+            b'}' => {
+                s.pos += 1;
+                return s.peek().is_none().then_some(out);
+            },
             _ => return None,
         }
     }
@@ -386,7 +387,7 @@ mod tests {
         );
         assert!(s.max[0].is_null());
         assert_eq!(num(&s.null_count[0]), "0");
-        // Nothing requested: only the counts are read, whatever the rest looks like.
+        // Nothing requested: validate nested bounds without retaining them.
         let s = scan(r#"{"numRecords":7,"minValues":{"a":{"b":[{}]}}}"#, &[]).unwrap();
         assert_eq!(s.num_records, Some(7));
     }
@@ -416,6 +417,58 @@ mod tests {
             None
         );
     }
+    #[test]
+    fn scan_requires_the_statistics_object_to_consume_the_input() {
+        for bad in [
+            r#"{"numRecords":5}garbage"#,
+            r#"{"numRecords":5} {}"#,
+            "{}[]",
+            "{}\u{000C}",
+        ] {
+            assert!(scan(bad, &[]).is_none(), "{bad}");
+        }
+        assert_eq!(
+            scan("{\"numRecords\":5} \t\r\n", &[]).unwrap().num_records,
+            Some(5)
+        );
+        assert!(scan("{} \t\r\n", &[]).is_some());
+    }
+    #[test]
+    fn scan_validates_skipped_json_and_borrowed_strings() {
+        for ignored in [
+            r#"[oops]"#,
+            r#"{"key":}"#,
+            r#"{"key":[null,]}"#,
+            r#"{"key":[1,2}}"#,
+            r#"{"key":1 "other":2}"#,
+            r#"["\q"]"#,
+            r#"["\uD800"]"#,
+            "\"raw\nnewline\"",
+            "{\"raw\u{0001}control\":0}",
+        ] {
+            let stats = format!(r#"{{"numRecords":5,"ignored":{ignored}}}"#);
+            assert!(scan(&stats, &[]).is_none(), "{stats:?}");
+        }
+        assert!(scan("{\"numRecords\":5,\"bad\u{0000}key\":0}", &[]).is_none());
+        let stats = scan(
+            r#"{"numRecords":5,"ignored":[{"key": [true, {}, [], null, "\uD83D\uDCA1", 1e9999]}]}"#,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(stats.num_records, Some(5));
+    }
+
+    #[test]
+    fn scan_bounds_nesting_for_skipped_and_requested_data() {
+        let depth = 10_000;
+        let malformed = format!(r#"{{"numRecords":5,"ignored":{}oops"#, "[".repeat(depth));
+        assert!(scan(&malformed, &[]).is_none());
+        let level = r#"{"child":"#;
+        let prefix = r#"{"numRecords":5,"minValues":{"wanted":"#;
+        let too_deep = format!("{prefix}{}0{}", level.repeat(depth), "}".repeat(depth + 2));
+        assert!(scan(&too_deep, &["wanted"]).is_none());
+    }
+
     #[test]
     fn nested_structs_are_objects() {
         let s = scan(r#"{"minValues":{"p":{"q":1,"r":{"z":"x"}}}}"#, &["p"]).unwrap();

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars._utils.logging import eprint
@@ -29,6 +31,22 @@ def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> st
     )
 
     return resolved_uri
+
+
+def _native_uri_from_delta_table_uri(uri: str) -> str:
+    """Convert an escaped DeltaTable URI to a native storage path."""
+    if uri.startswith("file://"):
+        return uri
+    parts = urlsplit(uri)
+    return urlunsplit(parts._replace(path=unquote(parts.path)))
+
+
+def _delta_cloud_root_is_ambiguous(uri: str) -> bool:
+    """Whether delta-rs may interpret a raw cloud key as an escape or URL suffix."""
+    scheme, separator, root = uri.partition("://")
+    return bool(
+        separator and scheme != "file" and re.search(r"%[0-9a-fA-F]{2}|[?#]", root)
+    )
 
 
 def _get_delta_lake_table(

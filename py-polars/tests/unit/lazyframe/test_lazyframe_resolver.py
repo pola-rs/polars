@@ -188,6 +188,16 @@ def test_lazyframe_resolver_slice_with_filter() -> None:
     assert kwargs["filters"] == []
 
 
+def test_lazyframe_resolver_open_ended_slice_has_no_limit() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3]})
+
+    resolver = InMemoryLazyFrameResolver(lf)
+    resolver.resolve_lazyframe = Mock(wraps=resolver.resolve_lazyframe)  # type: ignore[method-assign]
+
+    assert_frame_equal(resolver.lazy().slice(1).collect(), lf.collect().slice(1))
+    assert resolver.resolve_lazyframe.call_args.kwargs["limit"] is None
+
+
 def test_lazyframe_resolver_cse_gating(
     capfd: pytest.CaptureFixture[str],
     plmonkeypatch: PlMonkeyPatch,

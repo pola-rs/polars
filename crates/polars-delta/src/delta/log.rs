@@ -5,7 +5,7 @@ use polars_io_ext_ffi::common::FfiError;
 use polars_io_ext_ffi::delta_v1::Request;
 use serde_json::Value;
 
-use super::actions::{self, Commit};
+use super::actions::{self, Commit, TimestampPartitions};
 use super::checkpoint::{self, Checkpoint};
 use super::error::{Result, input, invalid};
 use super::files::{self, Rows, Source};
@@ -18,6 +18,18 @@ pub struct Snapshot {
     pub protocol: Value,
     pub sources: Vec<Source>,
     pub files: Vec<(u32, u32)>,
+}
+impl Snapshot {
+    pub fn file_at_path(&self, path: &str) -> Option<(&Source, usize)> {
+        let index = self
+            .files
+            .binary_search_by(|&(source, row)| {
+                self.sources[source as usize].path(row as usize).cmp(path)
+            })
+            .ok()?;
+        let (source, row) = self.files[index];
+        Some((&self.sources[source as usize], row as usize))
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 enum Name {
@@ -213,6 +225,7 @@ async fn read_checkpoint_file(
             vec![Source::Rows(Rows {
                 adds: commit.adds,
                 removes: Vec::new(),
+                timestamp_partitions: TimestampPartitions::Checkpoint,
             })]
         } else {
             Vec::new()
@@ -381,15 +394,23 @@ async fn snapshot(
             base + 1
         )));
     }
-    let mut commits = futures::stream::iter(commits.into_iter().rev().map(|(_, o)| {
+    let mut commits = futures::stream::iter(commits.into_iter().rev().map(|(version, o)| {
         let storage = storage.clone();
-        async move { read_commit(&storage, &o.url, read_files).await }
+        async move {
+            let mut commit = read_commit(&storage, &o.url, read_files).await?;
+            let timestamp_partitions = if read_files {
+                commit.timestamp_partitions(version)
+            } else {
+                TimestampPartitions::Unknown
+            };
+            Ok::<_, FfiError>((commit, timestamp_partitions))
+        }
     }))
     .buffered(threads);
     let (mut metadata, mut protocol) = (None, None);
     let mut sources = Vec::new();
     while let Some(commit) = commits.next().await {
-        let commit = commit?;
+        let (commit, timestamp_partitions) = commit?;
         // The newest action wins.
         if metadata.is_none() {
             metadata = commit.metadata.into_iter().next();
@@ -401,6 +422,7 @@ async fn snapshot(
             sources.push(Source::Rows(Rows {
                 adds: commit.adds,
                 removes: commit.removes,
+                timestamp_partitions,
             }));
         } else if metadata.is_some() && protocol.is_some() {
             // Without file actions the newest metadata and protocol are all that is needed.
@@ -474,6 +496,16 @@ pub(super) async fn version_at(
         chosen = Some(in_commit[lo - 1].0);
     }
     chosen.ok_or_else(|| input("timestamp precedes available Delta history"))
+}
+/// Exceptional replay for checkpoint partitions whose writer zone was discarded. The ordinary
+/// snapshot validator requires the full commit range 0..=target once checkpoints are excluded.
+pub async fn replay_commits(storage: &Storage, request: &Request, target: i64) -> Result<Snapshot> {
+    let root = &request.table_uri;
+    let log_root = absolute(root, "_delta_log/")?;
+    let mut inv = Inventory::new(storage.list(&log_root).await?)?;
+    inv.checkpoints.clear();
+    let threads = request.max_threads.unwrap_or(8).clamp(1, 16) as usize;
+    snapshot(storage, &inv, root, target, threads, request, true).await
 }
 pub async fn load(storage: &Storage, request: &Request) -> Result<Snapshot> {
     let read_files = !request.schema_only;

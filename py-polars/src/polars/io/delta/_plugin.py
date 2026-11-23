@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import importlib
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote, urlsplit, urlunsplit
 
 from polars._utils.logging import verbose
 from polars._utils.wrap import wrap_ldf
 from polars._warnings import issue_warning
 from polars.exceptions import ComputeError, PerformanceWarning, SchemaError
+from polars.io.delta._utils import _delta_cloud_root_is_ambiguous
 
 if TYPE_CHECKING:
     from polars import LazyFrame
@@ -173,15 +173,12 @@ def plugin_scan(
     if isinstance(version, datetime):
         if version.tzinfo is None:
             version = version.replace(tzinfo=UTC)
-        timestamp_ms = int(version.timestamp() * 1000)
+        timestamp_ms = (version - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(
+            milliseconds=1
+        )
         version = None
-    from polars.io.delta._utils import _resolve_delta_lake_uri
 
-    uri = _resolve_delta_lake_uri(dataset.table_uri(), strict=False)
-    if table is not None and not uri.startswith("file://"):
-        # DeltaTable exposes an escaped URL; native cloud roots are raw object paths.
-        parts = urlsplit(uri)
-        uri = urlunsplit(parts._replace(path=unquote(parts.path)))
+    uri = dataset._native_table_uri()
     if dataset._plugin_metadata_cache is None:
         dataset._plugin_metadata_cache = plr.PyIcebergMetadataFileCache(
             64 * 1024 * 1024
@@ -207,4 +204,6 @@ def plugin_scan(
         metadata_cache=dataset._plugin_metadata_cache,
     )
     dataset._resolved_version = resolved_version
+    if _delta_cloud_root_is_ambiguous(uri):
+        dataset._root_planner = "plugin"
     return wrap_ldf(result), resolved_version

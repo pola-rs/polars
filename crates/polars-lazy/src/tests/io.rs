@@ -402,7 +402,7 @@ fn test_scan_parquet_limit_9001() {
     lp_arena.iter(lp_top).all(|(_, lp)| match lp {
         IR::Union { options, .. } => {
             let sliced = options.slice.unwrap();
-            sliced.1 == 3
+            sliced.len() == Some(3)
         },
         IR::Scan {
             unified_scan_args, ..
@@ -461,15 +461,15 @@ fn test_csv_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/foods*.csv";
     let lf = LazyCsvReader::new(PlRefPath::new(glob))
         .finish()?
-        .slice(0, 100);
+        .slice(Slice::head(100));
 
     let df = lf.clone().collect()?;
-    assert_eq!(df, full_df.slice(0, 100));
+    assert_eq!(df, full_df.slice(Slice::head(100)));
     let df = LazyCsvReader::new(PlRefPath::new(glob))
         .finish()?
-        .slice(20, 60)
+        .slice((20usize, 60))
         .collect()?;
-    assert_eq!(df, full_df.slice(20, 60));
+    assert_eq!(df, full_df.slice((20usize, 60)));
 
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);
@@ -479,7 +479,7 @@ fn test_csv_globbing() -> PolarsResult<()> {
     let lf = LazyCsvReader::new(PlRefPath::new(glob))
         .finish()?
         .filter(col("sugars_g").lt(lit(1i32)))
-        .slice(0, 100);
+        .slice(Slice::head(100));
     let node = lf.optimize(&mut lp_arena, &mut expr_arena)?;
     assert!(slice_at_union(&lp_arena, node));
 
@@ -577,38 +577,38 @@ fn test_slice_filter() -> PolarsResult<()> {
 
     // make sure that the slices are not applied before the predicates.
     let len = 5;
-    let offset = 3;
+    let offset: i64 = 3;
 
     let df1 = scan_foods_csv()
         .filter(col("category").eq(lit("fruit")))
-        .slice(offset, len)
+        .slice((offset, len))
         .collect()?;
     let df2 = scan_foods_parquet(false)
         .filter(col("category").eq(lit("fruit")))
-        .slice(offset, len)
+        .slice((offset, len))
         .collect()?;
     let df3 = scan_foods_ipc()
         .filter(col("category").eq(lit("fruit")))
-        .slice(offset, len)
+        .slice((offset, len))
         .collect()?;
 
     let df1_ = scan_foods_csv()
         .collect()?
         .lazy()
         .filter(col("category").eq(lit("fruit")))
-        .slice(offset, len)
+        .slice((offset, len))
         .collect()?;
     let df2_ = scan_foods_parquet(false)
         .collect()?
         .lazy()
         .filter(col("category").eq(lit("fruit")))
-        .slice(offset, len)
+        .slice((offset, len))
         .collect()?;
     let df3_ = scan_foods_ipc()
         .collect()?
         .lazy()
         .filter(col("category").eq(lit("fruit")))
-        .slice(offset, len)
+        .slice((offset, len))
         .collect()?;
 
     assert_eq!(df1.shape(), df1_.shape());
@@ -716,7 +716,7 @@ fn scan_anonymous_fn_with_options() -> PolarsResult<()> {
             assert_eq!(scan_opts.with_columns.clone().unwrap().len(), 2);
             assert_eq!(scan_opts.n_rows, Some(3));
             let out = fruits_cars().select(scan_opts.with_columns.unwrap().iter().cloned())?;
-            Ok(out.slice(0, scan_opts.n_rows.unwrap()))
+            Ok(out.slice(Slice::head(scan_opts.n_rows.unwrap())))
         }
     }
 

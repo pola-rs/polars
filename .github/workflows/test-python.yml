@@ -34,6 +34,7 @@ on:
         description: >
           Version of polars-database to install from PyPI. If omitted, build polars-database from
           this checkout.
+        type: string
       polars-delta-version:
         description: >
           Version of polars-delta to install from PyPI. If omitted, build polars-delta from this
@@ -66,7 +67,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.11', '3.12', '3.13', '3.14', '3.14t']
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.15t']
         variant: [null]
         ideal_morsel_size: [100000]
         include:
@@ -121,13 +122,13 @@ jobs:
           echo "VENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
 
       - name: Install maturin
-        if: matrix.python-version == '3.14t'
+        if: matrix.python-version == '3.15t'
         run: |
           pip install uv
           uv pip install maturin
 
       - name: Install Python dependencies
-        if: matrix.python-version != '3.14t'
+        if: matrix.python-version != '3.15t'
         run: |
           pip install uv
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
@@ -153,7 +154,7 @@ jobs:
 
       # The plugin is an abi3 extension module, which free-threaded builds cannot load.
       - name: Install polars_iceberg plugin
-        if: matrix.python-version != '3.14t'
+        if: matrix.python-version != '3.15t'
         env:
           POLARS_ICEBERG_VERSION: ${{ inputs.polars-iceberg-version }}
         run: |
@@ -167,7 +168,7 @@ jobs:
 
       # The plugin is an abi3 extension module, which free-threaded builds cannot load.
       - name: Install polars_database plugin
-        if: matrix.python-version != '3.14t'
+        if: matrix.python-version != '3.15t'
         env:
           POLARS_DATABASE_VERSION: ${{ inputs.polars-database-version }}
         run: |
@@ -200,27 +201,27 @@ jobs:
           pytest tests/docs/test_user_guide.py -m docs
 
       - name: Run tests
-        if: github.event_name != 'push' && matrix.python-version != '3.14t' && !matrix.variant
+        if: github.event_name != 'push' && matrix.python-version != '3.15t' && !matrix.variant
         env:
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS"
 
       - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
-        if: github.event_name != 'push' && matrix.python-version != '3.14t' && matrix.variant == 'engine_affinity_in_memory'
+        if: github.event_name != 'push' && matrix.python-version != '3.15t' && matrix.variant == 'engine_affinity_in_memory'
         env:
           POLARS_ENGINE_AFFINITY: in-memory
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS"
 
       - name: Run tests async reader tests
-        if: github.event_name != 'push' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t' && !matrix.variant
+        if: github.event_name != 'push' && matrix.os != 'windows-latest' && matrix.python-version != '3.15t' && !matrix.variant
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/
 
       - name: Run tests multiscan force empty capabilities
-        if: github.event_name != 'push' && matrix.python-version != '3.14t' && !matrix.variant
+        if: github.event_name != 'push' && matrix.python-version != '3.15t' && !matrix.variant
         env:
           POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
           POLARS_TIMEOUT_MS: 60000
@@ -232,7 +233,7 @@ jobs:
           pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_delta*.py
 
       - name: Check import without optional dependencies
-        if: github.event_name != 'push' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.14t')
+        if: github.event_name != 'push' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.15t')
         run: |
           declare -a deps=("pandas"
           "pyarrow"
@@ -250,3 +251,9 @@ jobs:
             pip uninstall "$d" -y
             python -c 'import polars'
           done
+
+      - name: Run free-threaded tests
+        if: github.event_name != 'push' && matrix.python-version == '3.15t'
+        run: |
+          uv pip install $(grep -E '^(numpy|pandas|pyarrow|pydantic|hypothesis|pytest|pytest-xdist)([<>=!~]|$)' requirements-dev.txt)
+          pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/constructors tests/unit/operations/test_comparison.py

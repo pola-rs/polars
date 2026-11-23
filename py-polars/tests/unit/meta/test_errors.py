@@ -853,10 +853,20 @@ def test_invalid_classmethod_error() -> None:
         ),
         # Raised while converting the expression.
         (
+            lambda lf: lf.select(
+                c=(pl.col("a").cumulative_eval(pl.element()) * 2).sum()
+            ),
+            InvalidOperationError,
+            'col("a").cumulative_eval(element(), min_samples=1)',
+            '[(col("a").cumulative_eval(element(), min_samples=1)) * (dyn int: 2)]'
+            '.sum().alias("c")',
+        ),
+        # Raised by the scalar argument check after type coercion.
+        (
             lambda lf: lf.select(c=(pl.col("a").shift(pl.col("b")) * 2).sum()),
             ShapeError,
             'col("a").shift([col("b")])',
-            '[(col("a").shift([col("b")])) * (dyn int: 2)].sum().alias("c")',
+            '(col("a").shift([col("b")]) * 2).sum()',
         ),
     ],
 )
@@ -872,3 +882,18 @@ def test_planning_error_names_expression(
     msg = str(exc.value)
     assert f"This error occurred in the following expression:\n\t{inner}\n" in msg
     assert f"while evaluating this larger expression:\n\t{outer}\n" in msg
+
+
+def test_planning_error_shows_the_plan_until_the_failure() -> None:
+    lf = pl.LazyFrame({"a": [1, 2]}).select(pl.col("nope"))
+    with pytest.raises(ColumnNotFoundError) as exc:
+        lf.collect()
+    msg = str(exc.value)
+    assert msg.startswith('unable to find column "nope"; valid columns: ["a"]\n\n')
+
+    plan = msg.index("Resolved plan until failure:\n\n\t---> FAILED HERE RESOLVING ")
+    expr = msg.index(
+        'This error occurred in the following expression:\n\tcol("nope")\n'
+    )
+    stack = msg.index("This error occurred with the following context stack:\n")
+    assert plan < expr < stack
