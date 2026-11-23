@@ -434,7 +434,7 @@ impl Display for IRStringFunction {
             #[cfg(feature = "find_many")]
             ExtractMany { .. } => "extract_many",
             #[cfg(feature = "find_many")]
-            FindMany { .. } => "extract_many",
+            FindMany { .. } => "find_many",
             #[cfg(feature = "regex")]
             EscapeRegex => "escape_regex",
         };

@@ -4,16 +4,8 @@ use polars_core::prelude::{ChunkFullNull, Int64Chunked, StringChunked, UInt64Chu
 use polars_core::series::IsSorted;
 use polars_error::{PolarsResult, polars_ensure};
 
+use super::utf8::is_utf8_codepoint_start;
 use crate::chunked_array::saturating_usize;
-
-#[inline(always)]
-fn is_utf8_codepoint_start(b: u8) -> bool {
-    // The top two bits of a continuation byte are 10. Any other value is a
-    // starting byte. We can use signed comparison to test for this in one
-    // instruction, as the top bits 11, 00 and 01 are all more positive and thus
-    // larger in signed comparison.
-    (b as i8) >= (0b1100_0000_u8 as i8)
-}
 
 /// Similar to char_to_byte_idx but if `char_idx` would be out-of-bounds the
 /// number of codepoints in s is returned as an error.

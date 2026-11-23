@@ -3050,7 +3050,7 @@ pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
     let found = e
         .clone()
         .str()
-        .find(substring.clone(), true)
+        .find_literal(substring.clone())
         .cast(DataType::Int64)
         + typed_lit(1i64);
     when(e.is_null().or(substring.is_null()))
