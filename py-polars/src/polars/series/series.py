@@ -57,6 +57,7 @@ from polars._utils.expired import (
     removed_parameters,
 )
 from polars._utils.getitem import get_series_item_by_key
+from polars._utils.parse import parse_quantile_fraction
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
@@ -2468,7 +2469,8 @@ class Series(metaclass=_Meta):
         >>> s.quantile([0.25, 0.75], interpolation="linear")
         [1.5, 2.5]
         """  # noqa: W505
-        return self._s.quantile(quantile, interpolation)
+        fraction = parse_quantile_fraction(quantile)
+        return self._s.quantile(fraction._s, interpolation)
 
     def to_dummies(
         self,
@@ -10143,7 +10145,8 @@ class Series(metaclass=_Meta):
             .to_series()
         )
         # A list of quantiles comes back as a single list element.
-        return out.item().to_list() if isinstance(quantile, list) else out.item()
+        item = out.item()
+        return item.to_list() if isinstance(item, pl.Series) else item
 
     def _row_encode(
         self,

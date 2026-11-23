@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_left, bisect_right
 from datetime import date, datetime, time, timedelta
+from fractions import Fraction
 from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
 
@@ -13,6 +14,7 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import (
+    ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
     SchemaError,
@@ -814,6 +816,10 @@ def test_quantile_str_fraction() -> None:
     for q in [lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
         with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
             q.collect()
+    # A Python string names a column, as in every expression.
+    for op in ["quantile", "approx_quantile"]:
+        with pytest.raises(ColumnNotFoundError):
+            lf.select(getattr(pl.col("a"), op)("0.5")).collect_schema()
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -861,15 +867,54 @@ def test_quantile_null_literal_empty(op: str, quantile: pl.Expr) -> None:
 
 @pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
 @pytest.mark.parametrize(
-    "quantile",
-    [pl.lit(True), pl.lit([True, False]), pl.col("b"), pl.lit(date(1970, 1, 1))],
+    "quantile", [True, [True, False], pl.col("b"), date(1970, 1, 1)]
 )
-def test_quantile_non_numeric_fraction(op: str, quantile: pl.Expr) -> None:
+def test_quantile_non_numeric_fraction(op: str, quantile: Any) -> None:
     lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64, "b": pl.Boolean})
     expr = getattr(pl.col("a"), op)(quantile)
     for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
         with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
             q.collect_schema()
+
+
+@pytest.mark.parametrize("quantile", [True, [True, False], date(1970, 1, 1), "0.5"])
+def test_series_quantile_non_numeric_fraction(quantile: Any) -> None:
+    with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
+        pl.Series([1, 2, 3]).quantile(quantile)
+
+
+@pytest.mark.parametrize("quantile", [None, float("nan"), 1.5, [0.5, None]])
+def test_series_quantile_invalid_fraction(quantile: Any) -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+        s.quantile(quantile)
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+        s.approx_quantile(quantile)
+
+
+@pytest.mark.parametrize(
+    "quantile",
+    [[0, 0.5], (0, 0.5), np.array([0, 0.5]), pl.Series([0.0, 0.5]), range(2)],
+)
+def test_quantile_python_fraction_list(quantile: Any) -> None:
+    s = pl.Series("a", [1, 2, 3, 4])
+    expected = [1, 4] if isinstance(quantile, range) else [1, 3]
+    assert s.quantile(quantile) == expected
+    assert s.approx_quantile(quantile) == expected
+    assert s.to_frame().quantile(quantile).item().to_list() == expected
+    for op in ["quantile", "approx_quantile"]:
+        out = s.to_frame().select(getattr(pl.col("a"), op)(quantile))
+        assert out.item().to_list() == expected
+
+
+@pytest.mark.parametrize("quantile", [np.array(0.5), np.float32(0.5), Fraction(1, 2)])
+def test_quantile_python_fraction_scalar(quantile: Any) -> None:
+    s = pl.Series("a", [1, 2, 3, 4])
+    assert s.quantile(quantile) == 3.0
+    assert s.approx_quantile(quantile) == 3
+    assert s.to_frame().quantile(quantile).item() == 3
+    for op in ["quantile", "approx_quantile"]:
+        assert s.to_frame().select(getattr(pl.col("a"), op)(quantile)).item() == 3
 
 
 @pytest.mark.parametrize(

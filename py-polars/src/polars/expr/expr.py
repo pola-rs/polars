@@ -37,6 +37,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
     parse_predicates_constraints_into_expression,
+    parse_quantile_into_expression,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -3976,8 +3977,8 @@ class Expr(metaclass=_Meta):
         ----------
         quantile
             A single quantile, a list of quantiles, or an expression that
-            resolves to a list of quantiles. The dtype of the expression must
-            be a floating point value.
+            resolves to one quantile or a list of them. The dtype must be numeric.
+            A string is taken as a column name.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all
@@ -4073,10 +4074,10 @@ class Expr(metaclass=_Meta):
             msg = f"`error_tightness` must be one of {{'empirical', 'formal'}}, got {error_tightness!r}"
             raise ValueError(msg)
 
-        q = quantile._pyexpr if isinstance(quantile, pl.Expr) else quantile
+        quantile_pyexpr = parse_quantile_into_expression(quantile)
         return wrap_expr(
             self._pyexpr.approx_quantile(
-                q,
+                quantile_pyexpr,
                 method,
                 error,
                 use_formal_bound=error_tightness == "formal",
@@ -4913,7 +4914,7 @@ class Expr(metaclass=_Meta):
         │ [1.25, 3.75] │
         └──────────────┘
         """  # noqa: W505
-        quantile_pyexpr = parse_into_expression(quantile)
+        quantile_pyexpr = parse_quantile_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
 
     @deprecated("`cut` is deprecated; use `bin_intervals` instead")

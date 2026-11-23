@@ -3,6 +3,8 @@ from polars._utils.parse.expr import (
     parse_into_list_of_expressions,
     parse_into_list_of_expressions_require_selectors,
     parse_predicates_constraints_into_expression,
+    parse_quantile_fraction,
+    parse_quantile_into_expression,
 )
 
 __all__ = [
@@ -11,4 +13,6 @@ __all__ = [
     "parse_into_list_of_expressions",
     "parse_into_list_of_expressions_require_selectors",
     "parse_predicates_constraints_into_expression",
+    "parse_quantile_fraction",
+    "parse_quantile_into_expression",
 ]
