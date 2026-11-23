@@ -5123,7 +5123,11 @@ class Expr(metaclass=_Meta):
             )
         else:
             pyexpr = self._pyexpr.qcut(
-                quantiles, labels, left_closed, allow_duplicates, include_breaks
+                parse_quantile_values(quantiles),
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
             )
 
         return wrap_expr(pyexpr)
@@ -5301,7 +5305,10 @@ class Expr(metaclass=_Meta):
             )
         else:
             pyexpr = self._pyexpr.bin_quantiles(
-                list(quantiles), labels_arg, include_intervals, right_closed
+                parse_quantile_values(quantiles),
+                labels_arg,
+                include_intervals,
+                right_closed,
             )
         return wrap_expr(pyexpr)
 
