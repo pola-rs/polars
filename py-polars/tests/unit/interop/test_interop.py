@@ -204,12 +204,70 @@ def test_arrow_dict_chunks_keep_value_type_30729(
             pa.DictionaryArray.from_arrays(pa.array([1, None], index_type), values[1:]),
         ]
     )
-    expected = cast("pl.Series", pl.from_arrow(ca.combine_chunks())).alias("c")
+    decoded = pa.chunked_array([chunk.dictionary_decode() for chunk in ca.chunks])
+    expected = cast("pl.Series", pl.from_arrow(decoded)).alias("c")
     assert expected.dtype != pl.Categorical
 
     assert_series_equal(cast("pl.Series", pl.from_arrow(ca)).alias("c"), expected)
     assert_series_equal(pl.Series("c", ca), expected)
     assert_series_equal(pl.DataFrame({"c": ca})["c"], expected)
+
+
+@pytest.mark.parametrize("value_type", [pa.float32(), pa.float64()])
+def test_arrow_dict_chunks_preserve_signed_zero(value_type: pa.DataType) -> None:
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(
+                pa.array([0, None], pa.int8()), pa.array([zero], value_type)
+            )
+            for zero in (0.0, -0.0)
+        ]
+    )
+    decoded = pa.chunked_array([chunk.dictionary_decode() for chunk in ca.chunks])
+    expected = cast("pl.Series", pl.from_arrow(decoded)).alias("c")
+
+    for s in (
+        cast("pl.Series", pl.from_arrow(ca)).alias("c"),
+        pl.Series("c", ca),
+        pl.DataFrame({"c": ca})["c"],
+        cast("pl.DataFrame", pl.from_arrow(pa.table({"c": ca})))["c"],
+    ):
+        assert_series_equal(s, expected)
+        np.testing.assert_array_equal(
+            np.signbit(s.drop_nulls().to_numpy()),
+            np.signbit(expected.drop_nulls().to_numpy()),
+        )
+
+
+@pytest.mark.parametrize("value_type", [pa.duration("s"), pa.timestamp("s", "UTC")])
+def test_arrow_dict_chunks_temporal_seconds_overflow(value_type: pa.DataType) -> None:
+    items = [
+        pa.DictionaryArray.from_arrays(
+            pa.array([0], pa.int8()), pa.array([value], value_type)
+        )
+        for value in (1, (2**63 - 1) // 1000 + 1)
+    ]
+    ca = pa.chunked_array(items)
+    with pytest.raises(ComputeError, match="overflows when converting seconds"):
+        pl.from_arrow(ca)
+    with pytest.raises(ComputeError, match="overflows when converting seconds"):
+        pl.from_arrow(pa.table({"c": ca}))
+
+
+@pytest.mark.parametrize("keys", [[0, None], [None, None]])
+@pytest.mark.parametrize("value_type", [pa.duration("s"), pa.timestamp("s", "UTC")])
+def test_arrow_dict_ignores_unused_temporal_overflow(
+    keys: list[int | None], value_type: pa.DataType
+) -> None:
+    array = pa.DictionaryArray.from_arrays(
+        pa.array(keys, pa.int8()), pa.array([1, 2**63 - 1], value_type)
+    )
+    expected = cast("pl.Series", pl.from_arrow(array.dictionary_decode())).alias("c")
+    assert_series_equal(cast("pl.Series", pl.from_arrow(array)).alias("c"), expected)
+    assert_series_equal(
+        cast("pl.DataFrame", pl.from_arrow(pa.record_batch({"c": array})))["c"],
+        expected,
+    )
 
 
 def test_arrow_dict_chunks_small_index_overflow_30729() -> None:

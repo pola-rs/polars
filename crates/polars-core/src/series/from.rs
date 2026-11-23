@@ -295,19 +295,15 @@ impl Series {
                 let tz = TimeZone::opt_try_new(tz.clone())?;
                 let chunks =
                     cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
-                let s = Int64Chunked::from_chunks(name, chunks)
-                    .into_datetime(tu.into(), tz)
-                    .into_series();
-                Ok(scale_arrow_values(s, dtype))
+                let ca = scale_arrow_values(Int64Chunked::from_chunks(name, chunks), dtype)?;
+                Ok(ca.into_datetime(tu.into(), tz).into_series())
             },
             #[cfg(feature = "dtype-duration")]
             ArrowDataType::Duration(tu) => {
                 let chunks =
                     cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
-                let s = Int64Chunked::from_chunks(name, chunks)
-                    .into_duration(tu.into())
-                    .into_series();
-                Ok(scale_arrow_values(s, dtype))
+                let ca = scale_arrow_values(Int64Chunked::from_chunks(name, chunks), dtype)?;
+                Ok(ca.into_duration(tu.into()).into_series())
             },
             #[cfg(feature = "dtype-time")]
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => {
@@ -318,10 +314,8 @@ impl Series {
                 }
                 let chunks =
                     cast_chunks(&chunks, &DataType::Int64, CastOptions::NonStrict).unwrap();
-                let s = Int64Chunked::from_chunks(name, chunks)
-                    .into_time()
-                    .into_series();
-                Ok(scale_arrow_values(s, dtype))
+                let ca = scale_arrow_values(Int64Chunked::from_chunks(name, chunks), dtype)?;
+                Ok(ca.into_time().into_series())
             },
             ArrowDataType::Decimal32(precision, scale) => {
                 feature_gated!("dtype-decimal", {
@@ -660,17 +654,23 @@ impl Series {
     }
 }
 
-/// Brings the values of an imported temporal `s` to the unit polars stores its
-/// type in, see [`DataType::arrow_value_scale`].
+/// Converts imported temporal values to the units in [`DataType::arrow_value_scale`].
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-fn scale_arrow_values(s: Series, dtype: &ArrowDataType) -> Series {
+fn scale_arrow_values(ca: Int64Chunked, dtype: &ArrowDataType) -> PolarsResult<Int64Chunked> {
     match DataType::arrow_value_scale(dtype) {
-        1 => s,
-        factor => &s * factor,
+        1 => Ok(ca),
+        factor if matches!(dtype, ArrowDataType::Timestamp(..) | ArrowDataType::Duration(_)) => {
+            ca.try_apply_nonnull_values_generic(|value| {
+                value.checked_mul(factor).ok_or_else(|| {
+                    polars_err!(ComputeError: "Arrow {dtype:?} value {value} overflows when converting seconds to milliseconds")
+                })
+            })
+        },
+        factor => Ok(ca * factor),
     }
 }
 
@@ -977,18 +977,39 @@ unsafe fn import_arrow_dictionary_array(
             ),
         };
 
-        let values = Series::_try_from_arrow_unchecked_with_md(
-            name,
+        let imported = Series::_try_from_arrow_unchecked_with_md(
+            name.clone(),
             vec![values.clone()],
             values.dtype(),
             None,
-        )?;
+        );
+        let indices =
+            IdxCa::from_chunks_and_dtype(PlSmallStr::EMPTY, vec![keys.to_boxed()], IDX_DTYPE);
 
-        values.take(&IdxCa::from_chunks_and_dtype(
-            PlSmallStr::EMPTY,
-            vec![keys.to_boxed()],
-            IDX_DTYPE,
-        ))
+        match imported {
+            Ok(values) => values.take(&indices),
+            #[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
+            Err(_)
+                if matches!(
+                    values.dtype(),
+                    ArrowDataType::Timestamp(ArrowTimeUnit::Second, _)
+                        | ArrowDataType::Duration(ArrowTimeUnit::Second)
+                ) =>
+            {
+                // An overflowing dictionary entry may be unused. Retry with only the
+                // values selected by the keys. Ordinary imports scale each entry once.
+                crate::chunked_array::ops::gather::check_bounds_ca(
+                    &indices,
+                    values.len() as IdxSize,
+                )?;
+                let keys = indices.downcast_iter().next().unwrap();
+                // SAFETY: all non-null indices were bounds-checked above.
+                let taken =
+                    unsafe { polars_compute::gather::take_unchecked(values.as_ref(), keys) };
+                Series::_try_from_arrow_unchecked_with_md(name, vec![taken], values.dtype(), None)
+            },
+            Err(err) => Err(err),
+        }
     }
 }
 
@@ -1235,5 +1256,34 @@ mod tests {
         let s = Series::from_arrow(PlSmallStr::EMPTY, array.boxed()).unwrap();
         assert_eq!(s.dtype(), &DataType::Time);
         assert_eq!(s.to_physical_repr().i64().unwrap().get(0), Some(7_000_000));
+    }
+
+    #[test]
+    fn imported_seconds_reject_overflow_and_preserve_nulls() {
+        let min = i64::MIN / 1000;
+        let max = i64::MAX / 1000;
+        for dtype in [
+            ArrowDataType::Timestamp(ArrowTimeUnit::Second, None),
+            ArrowDataType::Duration(ArrowTimeUnit::Second),
+        ] {
+            let array = PrimitiveArray::new(
+                dtype.clone(),
+                vec![min, i64::MAX, max].into(),
+                Some([true, false, true].into_iter().collect()),
+            );
+            let s = Series::from_arrow(PlSmallStr::EMPTY, array.boxed()).unwrap();
+            let physical = s.to_physical_repr();
+            let values = physical.i64().unwrap();
+            assert_eq!(
+                values.into_iter().collect::<Vec<_>>(),
+                [Some(min * 1000), None, Some(max * 1000)]
+            );
+
+            for value in [min - 1, max + 1] {
+                let array = PrimitiveArray::from_vec(vec![value]).to(dtype.clone());
+                let err = Series::from_arrow(PlSmallStr::EMPTY, array.boxed()).unwrap_err();
+                assert!(matches!(err, PolarsError::ComputeError(_)));
+            }
+        }
     }
 }
