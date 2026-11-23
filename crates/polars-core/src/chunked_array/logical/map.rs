@@ -1515,6 +1515,66 @@ mod test {
         );
     }
 
+    /// A chunk of `Int64` keys and values `0..n`, with rows of `lens` entries.
+    fn int_chunk(lens: &[usize], row_validity: &[bool]) -> LargeListArray {
+        let n = lens.iter().sum::<usize>() as i64;
+        let ints = PrimitiveArray::<i64>::from_vec((0..n).collect());
+        let entries = StructArray::new(
+            map_dtype(DataType::Int64, DataType::Int64)
+                .map_entries_dtype()
+                .unwrap()
+                .to_arrow(CompatLevel::newest()),
+            n as usize,
+            vec![ints.clone().boxed(), ints.boxed()],
+            None,
+        );
+        LargeListArray::new(
+            LargeListArray::default_datatype(entries.dtype().clone()),
+            Offsets::try_from_lengths(lens.iter().copied())
+                .unwrap()
+                .into(),
+            entries.boxed(),
+            Some(Bitmap::from(row_validity)),
+        )
+    }
+
+    fn keys(arr: &LargeListArray) -> &PrimitiveArray<i64> {
+        let entries: &StructArray = arr.values().as_any().downcast_ref().unwrap();
+        entries.values()[0].as_any().downcast_ref().unwrap()
+    }
+
+    #[test]
+    fn compact_null_rows_chunk_slices_a_single_live_run() {
+        let arr = int_chunk(&[2, 3], &[true, false]);
+
+        let compacted = compact_null_rows_chunk(&arr).unwrap();
+
+        assert_eq!(keys(&compacted).values().as_slice(), &[0, 1]);
+        // The live entries are shared, not copied.
+        assert_eq!(
+            keys(&compacted).values().as_ptr(),
+            keys(&arr).values().as_ptr()
+        );
+    }
+
+    #[test]
+    fn compact_null_rows_chunk_keeps_every_live_run() {
+        // Long runs are copied run by run, short ones filtered with a mask.
+        for lens in [[10, 180, 10], [1, 1, 1]] {
+            let arr = int_chunk(&lens, &[true, false, true]);
+
+            let compacted = compact_null_rows_chunk(&arr).unwrap();
+
+            let last = lens.iter().sum::<usize>() as i64;
+            let expected: Vec<i64> = (0..lens[0] as i64)
+                .chain(last - lens[2] as i64..last)
+                .collect();
+            assert_eq!(keys(&compacted).values().as_slice(), expected, "{lens:?}");
+            let (head, len) = (lens[0] as i64, expected.len() as i64);
+            assert_eq!(compacted.offsets().as_slice(), [0, head, head, len]);
+        }
+    }
+
     #[test]
     fn deposit_pads_with_null_rows() {
         let map = three_row_map().into_series();
