@@ -328,7 +328,8 @@ pub(super) fn process_join(
     }
 
     let mut output_to_right_input_map =
-        join_right_output_to_input(&schema_left, &schema_right, &options, false)?;
+        join_right_output_to_input(&schema_left, &schema_right, &options)?;
+    output_to_right_input_map.retain(|output, input| output != input);
     output_to_right_input_map.extend(
         output_key_to_right_input_map
             .iter()
