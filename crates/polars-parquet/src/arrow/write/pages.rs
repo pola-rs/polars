@@ -999,6 +999,127 @@ mod tests {
         }
     }
 
+    fn write_list_pages(
+        array: &dyn Array,
+        data_page_size: usize,
+        mut check_page: impl FnMut(&crate::parquet::page::DataPage, usize),
+    ) {
+        let type_ = to_parquet_type(&Field::new("a".into(), array.dtype().clone(), true)).unwrap();
+        for version in [Version::V1, Version::V2] {
+            let options = WriteOptions {
+                statistics: StatisticsOptions::empty(),
+                version,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: Some(data_page_size),
+            };
+            let mut columns =
+                array_to_columns(array.to_boxed(), type_.clone(), options, &[Encoding::Plain])
+                    .unwrap();
+            let mut rows = 0;
+            for page in columns.remove(0) {
+                let Page::Data(page) = page.unwrap() else {
+                    panic!("expected a data page");
+                };
+                assert!(page.buffer().len() <= data_page_size);
+                check_page(&page, rows);
+                rows += page.num_rows().unwrap();
+            }
+            assert_eq!(rows, array.len());
+        }
+    }
+
+    #[test]
+    fn test_skewed_u8_lists() {
+        // The first and last rows are sliced off, leaving four adjacent rows of 144
+        // UInt8 elements each, followed by empty rows. Each encoded row fits, but two
+        // do not fit because Parquet writes each value as a four-byte INT32.
+        let offsets = [0, 1, 145, 289, 433, 577]
+            .into_iter()
+            .chain(std::iter::repeat_n(577, 2_000))
+            .chain([578])
+            .collect::<Vec<i64>>();
+        let array = ListArray::new(
+            ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::UInt8,
+                false,
+            ))),
+            offsets.try_into().unwrap(),
+            UInt8Array::from_slice([7; 578]).boxed(),
+            None,
+        )
+        .sliced(1, 2_004);
+
+        write_list_pages(&array, 1024, |page, start| {
+            let rows = page.num_rows().unwrap();
+            let nonempty = (start + rows).min(4) - start.min(4);
+            assert!(nonempty <= 1);
+            assert_eq!(page.num_values(), nonempty * 144 + rows - nonempty);
+        });
+    }
+
+    #[test]
+    fn test_empty_and_null_lists() {
+        const ROWS: usize = 1024;
+        let empty_leaves = [
+            BinaryViewArray::from_slice_values::<&[u8], _>([]).boxed(),
+            BinaryArray::<i64>::from_slice::<&[u8], _>([]).boxed(),
+        ];
+        for leaf in empty_leaves {
+            let array = ListArray::new(
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "item".into(),
+                    leaf.dtype().clone(),
+                    false,
+                ))),
+                vec![0i64; ROWS + 1].try_into().unwrap(),
+                leaf,
+                Some((0..ROWS).map(|i| i % 2 == 0).collect()),
+            );
+            write_list_pages(&array, 64, |page, _| {
+                assert_eq!(page.num_values(), page.num_rows().unwrap());
+                assert_eq!(page.num_nulls, Some(page.num_values()));
+            });
+        }
+    }
+
+    #[test]
+    fn test_nested_empty_and_null_lists() {
+        const ROWS: usize = 64;
+        const CHILDREN: usize = 16;
+        let leaves = BinaryViewArray::from_slice_values::<&[u8], _>([]).boxed();
+        let children = ListArray::new(
+            ArrowDataType::List(Box::new(Field::new(
+                "item".into(),
+                leaves.dtype().clone(),
+                false,
+            ))),
+            vec![0i32; ROWS * CHILDREN + 1].try_into().unwrap(),
+            leaves,
+            Some((0..ROWS * CHILDREN).map(|i| i % 2 == 0).collect()),
+        );
+        let array = ListArray::new(
+            ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                children.dtype().clone(),
+                true,
+            ))),
+            (0..=ROWS as i64)
+                .map(|i| i * CHILDREN as i64)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            children.boxed(),
+            Some((0..ROWS).map(|i| i % 2 == 0).collect()),
+        );
+        write_list_pages(&array, 64, |page, start| {
+            let rows = page.num_rows().unwrap();
+            let nonnull = (start..start + rows).filter(|i| i % 2 == 0).count();
+            assert_eq!(page.num_values(), nonnull * CHILDREN + rows - nonnull);
+            assert!(page.num_values() * 2 <= 64);
+        });
+    }
+
     /// Pages are cut by their size in bytes, not by the average value size, so a few large
     /// values among many small ones do not end up in a single oversized page.
     #[test]
