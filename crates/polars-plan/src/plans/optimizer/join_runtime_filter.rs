@@ -27,6 +27,10 @@
 //! without one is left alone, and a join is only given a build side once a key
 //! reached one.
 //!
+//! Reading the build side first costs the overlap of the two sides. Scans that read
+//! fewer than `join_runtime_filter_min_probe_rows` rows save too little by skipping
+//! to make up for it, so their join gets no filter.
+//!
 //! A semi join publishes from either side and an anti join from its left side
 //! only, as the rows of its right side that match no left key change nothing. A
 //! semi join may prefer its right side on an estimate; a left side is only built
@@ -86,8 +90,16 @@ pub(super) fn attach_join_runtime_filters(
     }
     let mut scratch = UnitVec::new();
     let mut stats = StatsCache::default();
+    let min_probe_rows = polars_config::config().join_runtime_filter_min_probe_rows() as f64;
     for node in joins.into_iter().rev() {
-        process_join(node, ir_arena, expr_arena, &mut scratch, &mut stats);
+        process_join(
+            node,
+            ir_arena,
+            expr_arena,
+            &mut scratch,
+            &mut stats,
+            min_probe_rows,
+        );
     }
 }
 
@@ -97,6 +109,7 @@ fn process_join(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
     stats: &mut StatsCache,
+    min_probe_rows: f64,
 ) {
     let IR::Join {
         input_left,
@@ -150,32 +163,43 @@ fn process_join(
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
     // A side is traced once, as a forced and a preferred candidate share the trace.
-    let mut traced: [Option<(Vec<TracedKey>, f64)>; 2] = [None, None];
+    let mut traced: [Option<(Vec<TracedKey>, f64, f64)>; 2] = [None, None];
     let chosen = sides.into_iter().find_map(|side| {
-        let (filters, probe_rows) = traced[side.left as usize].get_or_insert_with(|| {
-            let probe_input = if side.left { input_right } else { input_left };
-            let probe_keys: Vec<Option<PlSmallStr>> = on
-                .iter()
-                .map(|(left_key, right_key)| {
-                    let key = if side.left { right_key } else { left_key };
-                    into_column(key.node(), expr_arena).cloned()
-                })
-                .collect();
-            let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
-            let other = if side.left { &right_stats } else { &left_stats };
-            let probe_rows = filters
-                .iter()
-                .flat_map(|f| &f.origins)
-                .filter_map(|(scan, _)| side_stats(*scan, ir_arena, expr_arena, stats))
-                .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
-            (filters, probe_rows)
-        });
-        (!filters.is_empty() && *probe_rows >= LOPSIDED_FACTOR * side.rows).then_some(side)
+        let (filters, probe_rows, scan_rows) =
+            traced[side.left as usize].get_or_insert_with(|| {
+                let probe_input = if side.left { input_right } else { input_left };
+                let probe_keys: Vec<Option<PlSmallStr>> = on
+                    .iter()
+                    .map(|(left_key, right_key)| {
+                        let key = if side.left { right_key } else { left_key };
+                        into_column(key.node(), expr_arena).cloned()
+                    })
+                    .collect();
+                let filters =
+                    trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
+                let other = if side.left { &right_stats } else { &left_stats };
+                let scans: Vec<NodeStats> = filters
+                    .iter()
+                    .flat_map(|f| &f.origins)
+                    .filter_map(|(scan, _)| side_stats(*scan, ir_arena, expr_arena, stats))
+                    .map(|(scan, _)| scan)
+                    .collect();
+                let probe_rows = scans
+                    .iter()
+                    .fold(other.filtered, |acc, scan| acc.max(scan.filtered));
+                // Skipping saves reading, so what counts is the rows a scan reads.
+                let scan_rows = scans.iter().fold(0.0_f64, |acc, scan| acc.max(scan.unfiltered));
+                (filters, probe_rows, scan_rows)
+            });
+        (!filters.is_empty()
+            && *scan_rows >= min_probe_rows
+            && *probe_rows >= LOPSIDED_FACTOR * side.rows)
+            .then_some(side)
     });
     let Some(BuildCandidate { left, forced, rows }) = chosen else {
         return;
     };
-    let (filters, _) = traced[left as usize].take().unwrap();
+    let (filters, ..) = traced[left as usize].take().unwrap();
     let build_stats = if left { &left_stats } else { &right_stats };
 
     let mut runtime_filters = Vec::with_capacity(filters.len());

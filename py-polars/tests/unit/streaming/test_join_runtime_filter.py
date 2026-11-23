@@ -28,6 +28,12 @@ ROWS_PER_GROUP = 100
 KEY_SET = re.compile(r"(bloom|bitset) of")
 
 
+@pytest.fixture(autouse=True)
+def _filter_small_scans(plmonkeypatch: PlMonkeyPatch) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
+
+
 @pytest.fixture
 def fact(tmp_path: Path) -> pl.LazyFrame:
     # Keys sorted into row groups of a hundred, so a key range maps to row groups.
@@ -98,6 +104,36 @@ def test_range_prunes_row_groups(
     assert groups == "1 / 10 row groups"
     assert out.height == 2
     assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize(
+    ("min_probe_rows", "filtered"), [(None, False), ("1000", True), ("1001", False)]
+)
+def test_no_filter_below_min_probe_rows(
+    fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    min_probe_rows: str | None,
+    filtered: bool,
+) -> None:
+    # Building first would keep the probe scan from overlapping the build side.
+    if min_probe_rows is None:
+        plmonkeypatch.delenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS")
+    else:
+        plmonkeypatch.setenv(
+            "POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", min_probe_rows
+        )
+    plan = fact.join(dim(220, 240), on="k").explain(engine="streaming")
+    assert ("dynamic_predicate" in plan) == filtered
+    assert ("BUILD SIDE: ForceRight" in plan) == filtered
+
+
+def test_min_probe_rows_counts_the_rows_a_scan_reads(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "1000")
+    # The filter keeps about half of the rows, but the scan still reads all of them.
+    q = fact.filter(pl.col("v") < 500).join(dim(220, 240), on="k")
+    assert q.explain(engine="streaming").count("dynamic_predicate") == 1
 
 
 def test_build_side_on_the_left(
