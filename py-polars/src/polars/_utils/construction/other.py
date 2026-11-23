@@ -66,6 +66,22 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
             or pa.types.is_int32(array.type.index_type)
         ):
             value_type = array.type.value_type
+            if (
+                pa.types.is_timestamp(value_type) or pa.types.is_duration(value_type)
+            ) and value_type.unit == "s":
+                target = (
+                    pa.timestamp("ms", value_type.tz)
+                    if pa.types.is_timestamp(value_type)
+                    else pa.duration("ms")
+                )
+                # Decode first so only referenced values are checked for overflow.
+                return pa.chunked_array(
+                    [
+                        pc.cast(chunk.dictionary_decode(), target, safe=True)
+                        for chunk in array.iterchunks()
+                    ],
+                    type=target,
+                )
             if pa.types.is_binary(value_type) or _is_pa_type(value_type, "binary_view"):
                 value_type = pa.large_binary()
             elif not _keeps_dictionary_value_type(value_type):

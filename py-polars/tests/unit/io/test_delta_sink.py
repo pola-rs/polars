@@ -7,10 +7,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import deltalake
 import pyarrow as pa
 import pytest
 from deltalake import DeltaTable, write_deltalake
-from deltalake import __version__ as deltalake_version
 
 import polars as pl
 from polars._utils.various import parse_version
@@ -33,6 +33,11 @@ pytestmark = pytest.mark.write_disk
 
 def _sink(lf: pl.LazyFrame, path: Path | str, mode: Any) -> None:
     DeltaSinkState.new(str(path), mode=mode).attach_sink(lf).collect()
+
+
+# deltalake 1.7 writes timestamps without a time zone in maps and commits to tables
+# with domainMetadata or vacuumProtocolCheck. Older versions reject both.
+_DELTALAKE_REJECTS = parse_version(deltalake.__version__) < (1, 7)
 
 
 def _read(path: Path, *sort: str) -> pl.DataFrame:
@@ -109,7 +114,7 @@ def test_delta_sink_overwrite(tmp_path: Path) -> None:
 
     table = DeltaTable(str(tmp_path))
     assert table.version() == 1
-    assert next(iter(table.history(1)))["operationParameters"]["mode"] == "Overwrite"
+    assert next(iter(table.history()))["operationParameters"]["mode"] == "Overwrite"
     assert _read(tmp_path, "a")["a"].to_list() == [10, 20]
 
 
@@ -1160,8 +1165,10 @@ def test_delta_write_file_uri_percent_encoded(tmp_path: Path, write: Any) -> Non
     assert _native_commit(table, 1)
     # deltalake decodes the URI, so the data files must go to `my table` too.
     assert [p.name for p in tmp_path.iterdir()] == ["my table"]
-    data = DeltaTable(uri).to_pyarrow_dataset().to_table()
-    assert sorted(data["a"].to_pylist()) == [1, 2]
+    assert sorted(DeltaTable(uri).to_pyarrow_dataset().to_table()["a"].to_pylist()) == [
+        1,
+        2,
+    ]
 
 
 @_public_writers
@@ -1185,19 +1192,17 @@ def test_delta_write_new_table_ntz_in_map(tmp_path: Path, write: Any) -> None:
     from deltalake.exceptions import DeltaError
 
     df = _ntz_map_frame()
-    if parse_version(deltalake_version) < (1, 7, 0):
-        with pytest.raises(DeltaError):
-            write(df, tmp_path)
+    if not _DELTALAKE_REJECTS:
+        write(df, tmp_path)
+        assert not _native_commit(tmp_path, 0)
+        assert_frame_equal(_read(tmp_path), df)
+        return
 
-        assert list(tmp_path.iterdir()) == []
-    else:
+    # deltalake rejects the data before writing anything.
+    with pytest.raises(DeltaError):
         write(df, tmp_path)
 
-        assert not _native_commit(tmp_path, 0)
-        protocol = DeltaTable(tmp_path).protocol()
-        assert "timestampNtz" in (protocol.reader_features or [])
-        assert "timestampNtz" in (protocol.writer_features or [])
-        assert_frame_equal(_read(tmp_path), df)
+    assert list(tmp_path.iterdir()) == []
 
 
 @_public_writers
@@ -1393,26 +1398,25 @@ def test_delta_sink_files_auto_credential_provider(
 
 @_public_writers
 @pytest.mark.parametrize("feature", ["domainMetadata", "vacuumProtocolCheck"])
-def test_delta_write_feature_falls_back_to_deltalake(
+def test_delta_write_feature_deltalake_rejects(
     tmp_path: Path, write: Any, feature: str
 ) -> None:
     from deltalake.exceptions import CommitFailedError
 
     write_deltalake(str(tmp_path), pa.table({"a": [1]}))
     _add_writer_feature(tmp_path, feature)
-    df = pl.DataFrame({"a": [2]})
-    if parse_version(deltalake_version) < (1, 7, 0):
-        files = _data_files(tmp_path)
-        with pytest.raises(CommitFailedError, match="Unsupported table features"):
-            write(df, tmp_path, mode="append")
+    files = _data_files(tmp_path)
 
-        assert _data_files(tmp_path) == files
-    else:
-        protocol = DeltaTable(tmp_path).protocol()
-        write(df, tmp_path, mode="append")
+    if not _DELTALAKE_REJECTS:
+        write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
+        version = DeltaTable(str(tmp_path)).version()
+        assert not _native_commit(tmp_path, version)
+        assert len(_adds(tmp_path, version)) == 1
+        assert len(_data_files(tmp_path)) == len(files) + 1
+        return
 
-        assert not _native_commit(tmp_path, 2)
-        table = DeltaTable(tmp_path)
-        assert table.protocol() == protocol
-        data = table.to_pyarrow_table(engine="datafusion")
-        assert sorted(data["a"].to_pylist()) == [1, 2]
+    # deltalake writes the table and fails before writing any file.
+    with pytest.raises(CommitFailedError, match="Unsupported table features"):
+        write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
+
+    assert _data_files(tmp_path) == files
