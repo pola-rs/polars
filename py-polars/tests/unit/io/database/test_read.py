@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
+from collections import UserDict
 from contextlib import closing, nullcontext, suppress
 from datetime import date
 from pathlib import Path
-from types import GeneratorType
+from types import GeneratorType, ModuleType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 from unittest.mock import Mock, patch
 
@@ -22,6 +23,7 @@ from sqlalchemy.sql.expression import cast as alchemy_cast
 import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import DuplicateError, UnsuitableSQLError
+from polars.io.database import _executor
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import OracleCursorProxy
 from polars.io.database._executor import ConnectionExecutor
@@ -1496,6 +1498,7 @@ class _TrinoNamedRowTuple(tuple):  # type: ignore[type-arg]
         self, values: list[Any], names: list[str | None], types: list[str]
     ) -> None:
         self._names = names
+        self.__annotations__ = {"names": names, "types": types}
         for name, value in zip(names, values, strict=True):
             if name is not None and names.count(name) == 1:
                 setattr(self, name, value)
@@ -1531,17 +1534,21 @@ class _TrinoCursor:
         pass
 
 
-@pytest.mark.parametrize("iter_batches", [False, True])
-def test_read_database_trino_row_types(
-    iter_batches: bool, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # https://github.com/pola-rs/polars/issues/19483
-    import types
-
-    trino_types = types.ModuleType("trino.types")
+@pytest.fixture
+def mock_trino(monkeypatch: pytest.MonkeyPatch) -> None:
+    trino_types = ModuleType("trino.types")
     trino_types.NamedRowTuple = _TrinoNamedRowTuple  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "trino.types", trino_types)
+    trino_dbapi = ModuleType("trino.dbapi")
+    trino_dbapi.Cursor = _TrinoCursor  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "trino.dbapi", trino_dbapi)
+    monkeypatch.setattr(_TrinoCursor, "__module__", "trino.dbapi")
 
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_trino_row_types(iter_batches: bool) -> None:
+    # https://github.com/pola-rs/polars/issues/19483
     def row(values: list[Any], names: list[str | None]) -> _TrinoNamedRowTuple:
         return _TrinoNamedRowTuple(values, names, ["unknown"] * len(values))
 
@@ -1590,3 +1597,90 @@ def test_read_database_trino_row_types(
         }
     )
     assert_frame_equal(res, expected)  # type: ignore[arg-type]
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize(
+    ("names", "values", "expected"),
+    [
+        (
+            [None, "field_0", "field_1", None],
+            [1, 2, 3, 4],
+            {"field_2": 1, "field_0": 2, "field_1": 3, "field_3": 4},
+        ),
+        (["field_1", None], [10, 20], {"field_1": 10, "field_2": 20}),
+        (["a", "a"], [10, 20], {"field_0": 10, "field_1": 20}),
+        (["_names"], [7], {"_names": 7}),
+        (["_names"], ["x"], {"_names": "x"}),
+        (
+            ["__annotations__"],
+            [{"names": ["wrong"]}],
+            {"__annotations__": {"names": ["wrong"]}},
+        ),
+    ],
+)
+def test_read_database_trino_row_field_names(
+    names: list[str | None], values: list[Any], expected: dict[str, Any]
+) -> None:
+    row = _TrinoNamedRowTuple(values, names, ["unknown"] * len(values))
+    cursor = _TrinoCursor([("v", "row(a bigint)")], [[row]])
+    assert pl.read_database("SELECT v", cursor).to_dicts() == [{"v": expected}]
+
+
+@pytest.mark.usefixtures("mock_trino")
+def test_read_database_trino_row_shadowed_metadata() -> None:
+    row = _TrinoNamedRowTuple(
+        [["wrong", "names"], {"names": ["also", "wrong"]}],
+        ["_names", "__annotations__"],
+        ["array", "map"],
+    )
+    cursor = _TrinoCursor(
+        [
+            (
+                "v",
+                "row(_names array(varchar), __annotations__ map(varchar, array(varchar)))",
+            )
+        ],
+        [[row]],
+    )
+    with pytest.raises(ValueError, match="missing or shadowed driver metadata"):
+        pl.read_database("SELECT v", cursor)
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_trino_mapping_rows(iter_batches: bool) -> None:
+    class WrappedConnection:
+        def cursor(self) -> _TrinoCursor:
+            return cursor
+
+    payload = list(range(128))
+    row = _TrinoNamedRowTuple([7], ["a"], ["bigint"])
+    cursor = _TrinoCursor(
+        [("v", "row(a bigint)"), ("payload", "array(bigint)")],
+        [UserDict({"payload": payload, "v": row})],
+    )
+    with patch.object(
+        _executor, "_convert_trino_value", wraps=_executor._convert_trino_value
+    ) as convert:
+        res = pl.read_database(
+            "SELECT v, payload",
+            WrappedConnection(),
+            iter_batches=iter_batches,
+            batch_size=1 if iter_batches else None,
+        )
+        if not isinstance(res, pl.DataFrame):
+            res = pl.concat(res)
+        assert all(call.args[0] is not payload for call in convert.call_args_list)
+    assert res.to_dicts() == [{"v": {"a": 7}, "payload": payload}]
+
+
+@pytest.mark.usefixtures("mock_trino")
+def test_read_database_non_trino_mapping_rows() -> None:
+    cursor = Mock(spec=["description", "execute", "fetchall"])
+    cursor.description = [("v", "row(a bigint)", None, None, None, None, None)]
+    cursor.execute.return_value = cursor
+    cursor.fetchall.return_value = [{"v": {"a": 7}}]
+    with patch.object(_executor, "_convert_trino_value") as convert:
+        assert pl.read_database("SELECT v", cursor).to_dicts() == [{"v": {"a": 7}}]
+    convert.assert_not_called()

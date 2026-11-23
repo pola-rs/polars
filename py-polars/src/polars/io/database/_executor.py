@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Coroutine, Iterable, Sequence
+from collections import Counter
+from collections.abc import Coroutine, Iterable, Mapping, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Final, cast
@@ -67,14 +68,44 @@ class CloseAfterFrameIter:
             self._cursor.close()
 
 
+def _trino_field_names(value: tuple[Any, ...]) -> list[str | None]:
+    attrs = vars(value)
+    annotations = attrs.get("__annotations__")
+    names_attr = attrs.get("_names")
+    for metadata, names in (
+        (
+            annotations,
+            annotations.get("names") if isinstance(annotations, dict) else None,
+        ),
+        (names_attr, names_attr),
+    ):
+        # Trino sets named fields as attributes. Both metadata attributes can
+        # therefore hold a field value instead of the driver's own container.
+        if (
+            isinstance(names, list)
+            and len(names) == len(value)
+            and all(name is None or isinstance(name, str) for name in names)
+            and not any(metadata is field_value for field_value in value)
+        ):
+            return names
+    msg = "Cannot determine field names for a Trino ROW: missing or shadowed driver metadata"
+    raise ValueError(msg)
+
+
 def _convert_trino_value(value: Any, row_type: type[tuple[Any, ...]]) -> Any:
     """Recursively convert trino `NamedRowTuple` values to dicts (struct-like)."""
     if isinstance(value, row_type):
-        names = value._names  # type: ignore[attr-defined]
+        names = _trino_field_names(value)
+        counts = Counter(names)
+        reserved = {name for name, count in counts.items() if count == 1}
         fields: dict[str, Any] = {}
+        fallback = 0
         for idx, (name, field_value) in enumerate(zip(names, value, strict=True)):
-            if name is None or name in fields or names.count(name) > 1:
-                name = f"field_{idx}"
+            if name is None or counts[name] > 1:
+                fallback = max(fallback, idx)
+                while (name := f"field_{fallback}") in reserved:
+                    fallback += 1
+                fallback += 1
             fields[name] = _convert_trino_value(field_value, row_type)
         return fields
     elif isinstance(value, list):
@@ -85,10 +116,25 @@ def _convert_trino_value(value: Any, row_type: type[tuple[Any, ...]]) -> Any:
 
 
 def _convert_trino_rows(
-    rows: Iterable[Sequence[Any]], row_type: type[tuple[Any, ...]]
-) -> list[tuple[Any, ...]]:
-    """Convert any trino `NamedRowTuple` values found in the given rows."""
-    return [tuple(_convert_trino_value(v, row_type) for v in row) for row in rows]
+    rows: Iterable[Sequence[Any] | Mapping[str, Any]],
+    row_type: type[tuple[Any, ...]],
+    row_columns: list[tuple[int, str]],
+) -> list[Sequence[Any] | Mapping[str, Any]]:
+    """Convert Trino ROW values in the columns identified by the cursor."""
+    converted: list[Sequence[Any] | Mapping[str, Any]] = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            mapping = dict(row)
+            for _, name in row_columns:
+                if name in mapping:
+                    mapping[name] = _convert_trino_value(mapping[name], row_type)
+            converted.append(mapping)
+        else:
+            values = list(row)
+            for idx, _ in row_columns:
+                values[idx] = _convert_trino_value(values[idx], row_type)
+            converted.append(values)
+    return converted
 
 
 class ConnectionExecutor:
@@ -218,24 +264,26 @@ class ConnectionExecutor:
             yield arrow
 
     @staticmethod
-    def _fetchall_rows(result: Cursor, *, is_alchemy: bool) -> Iterable[Sequence[Any]]:
+    def _fetchall_rows(
+        result: Cursor, *, is_alchemy: bool
+    ) -> Iterable[Sequence[Any] | Mapping[str, Any]]:
         """Fetch row data in a single call, returning the complete result set."""
         rows = result.fetchall()
         return (
             rows
-            if rows and (is_alchemy or isinstance(rows[0], (list, tuple, dict)))
+            if rows and (is_alchemy or isinstance(rows[0], (list, tuple, Mapping)))
             else [tuple(row) for row in rows]
         )
 
     def _fetchmany_rows(
         self, result: Cursor, *, batch_size: int | None, is_alchemy: bool
-    ) -> Iterable[Sequence[Any]]:
+    ) -> Iterable[Iterable[Sequence[Any] | Mapping[str, Any]]]:
         """Fetch row data incrementally, yielding over the complete result set."""
         while True:
             rows = result.fetchmany(batch_size)
             if not rows:
                 break
-            elif is_alchemy or isinstance(rows[0], (list, tuple, dict)):
+            elif is_alchemy or isinstance(rows[0], (list, tuple, Mapping)):
                 yield rows
             else:
                 yield [tuple(row) for row in rows]
@@ -349,7 +397,7 @@ class ConnectionExecutor:
                     schema_overrides=(schema_overrides or {}),
                 )
                 result_columns = [nm for nm, _ in cursor_desc]
-                row_batches: Iterable[Iterable[Sequence[Any]]] = (
+                row_batches: Iterable[Iterable[Sequence[Any] | Mapping[str, Any]]] = (
                     self._fetchmany_rows(
                         self.result,
                         batch_size=batch_size,
@@ -358,11 +406,20 @@ class ConnectionExecutor:
                     if iter_batches
                     else [self._fetchall_rows(self.result, is_alchemy=is_alchemy)]
                 )
-                if trino_row_type := self._trino_row_type(cursor_desc):
-                    row_batches = (
-                        _convert_trino_rows(rows, trino_row_type)
-                        for rows in row_batches
-                    )
+                if trino_row_type := self._trino_row_type():
+                    row_columns = [
+                        (idx, name)
+                        for idx, (name, desc) in enumerate(cursor_desc)
+                        if isinstance(desc, tuple)
+                        and desc
+                        and isinstance(desc[0], str)
+                        and re.search(r"\brow\s*\(", desc[0], flags=re.IGNORECASE)
+                    ]
+                    if row_columns:
+                        row_batches = (
+                            _convert_trino_rows(rows, trino_row_type, row_columns)
+                            for rows in row_batches
+                        )
                 frames = (
                     DataFrame(
                         data=rows,
@@ -379,12 +436,9 @@ class ConnectionExecutor:
             if is_async:
                 original_result.close()
 
-    @staticmethod
-    def _trino_row_type(
-        description: list[tuple[str, Any]],
-    ) -> type[tuple[Any, ...]] | None:
+    def _trino_row_type(self) -> type[tuple[Any, ...]] | None:
         """
-        Return trino's `NamedRowTuple` type if the result contains `ROW` values.
+        Return Trino's `NamedRowTuple` type if this is a Trino result.
 
         The trino driver returns `ROW` values as `NamedRowTuple`, a tuple subclass
         whose `__getattr__` returns `None` for unknown attributes; it therefore looks
@@ -393,14 +447,18 @@ class ConnectionExecutor:
         """
         if (trino_types := sys.modules.get("trino.types")) is None:
             return None
-        has_row_values = any(
-            isinstance(desc, tuple)
-            and desc
-            and isinstance(type_code := desc[0], str)
-            and "row(" in type_code.lower()
-            for _, desc in description
-        )
-        return getattr(trino_types, "NamedRowTuple", None) if has_row_values else None
+        if self.driver_name == "sqlalchemy":
+            dialect = getattr(getattr(self.result, "context", None), "dialect", None)
+            if getattr(dialect, "name", None) != "trino":
+                return None
+        elif self.driver_name != "trino":
+            cursor_type = getattr(sys.modules.get("trino.dbapi"), "Cursor", ())
+            if not (
+                isinstance(self.cursor, cursor_type)
+                or isinstance(self.result, cursor_type)
+            ):
+                return None
+        return getattr(trino_types, "NamedRowTuple", None)
 
     def _inject_type_overrides(
         self,
