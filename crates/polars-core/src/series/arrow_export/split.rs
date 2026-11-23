@@ -26,8 +26,10 @@ pub(crate) fn contains_i32_offsets(dtype: &ArrowDataType) -> bool {
 ///
 /// A span bounds what export keeps, which can be less: a MAP drops the entries of its null rows
 /// (`normalize_map_entries`). An array that `dtype` doesn't describe spans nothing, which leaves
-/// the mismatch for conversion to report. A Union's rows bound the values of each of its variants,
-/// and the arrays in its variants are not followed.
+/// the mismatch for conversion to report. A Union's rows bound the values of each of its variants.
+///
+/// TODO: follow the arrays in a Union's variants; a MAP there that overflows now fails to export
+/// instead of being split. Their spans need a scan of the Union's types and offsets.
 fn max_i32_span(array: &dyn Array, rows: Range<usize>, dtype: &ArrowDataType) -> u64 {
     match dtype {
         ArrowDataType::Map(entries, _) | ArrowDataType::LargeList(entries) => {
