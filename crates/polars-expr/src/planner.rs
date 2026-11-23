@@ -195,6 +195,11 @@ pub fn create_window_expr(
             apply_columns.push(PlSmallStr::from_static("len"))
         } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Element)) {
             apply_columns.push(PlSmallStr::from_static("element"))
+        } else if let Some((_, AExpr::EvalColumn(name))) = expr_arena
+            .iter(function)
+            .find(|(_, e)| matches!(e, AExpr::EvalColumn(_)))
+        {
+            apply_columns.push(name.clone())
         } else {
             let e = node_to_expr(function, expr_arena);
             polars_bail!(
@@ -315,6 +320,10 @@ fn create_physical_expr_inner(
             column.clone(),
             node_to_expr(expression, expr_arena),
             schema.clone(),
+        ))),
+        EvalColumn(column) => Ok(Arc::new(EvalColumnExpr::new(
+            column.clone(),
+            node_to_expr(expression, expr_arena),
         ))),
         Element => {
             let output_field = expr_arena
@@ -596,13 +605,35 @@ fn create_physical_expr_inner(
             expr,
             evaluation,
             variant,
+            columns,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(evaluation, expr_arena);
-            let evaluation_is_elementwise = is_elementwise_rec(evaluation, expr_arena);
+            let inputs_are_elementwise = is_elementwise_rec(expr, expr_arena)
+                && columns
+                    .iter()
+                    .all(|c| is_elementwise_rec(c.node(), expr_arena));
             let evaluation_is_fallible = expr_arena
                 .iter(evaluation)
                 .any(|(_, ae)| ae.is_fallible_top_level(expr_arena));
+            let use_elementwise_path = is_elementwise_rec(evaluation, expr_arena)
+                && !(evaluation_is_scalar && !columns.is_empty());
+            // These make groups of their own, in which the columns are read from the rows of the
+            // frame of the evaluation.
+            let evaluation_has_subgroups = expr_arena.iter(evaluation).any(|(_, ae)| match ae {
+                AExpr::Over { .. } => true,
+                // A value per list is read from the rows if it is broadcast over the rows of a
+                // nested evaluation.
+                AExpr::Eval { expr, columns, .. } => {
+                    !columns.is_empty() && !is_scalar_ae(*expr, expr_arena)
+                },
+                #[cfg(feature = "dynamic_group_by")]
+                AExpr::Rolling { .. } => true,
+                #[cfg(feature = "dtype-struct")]
+                AExpr::StructEval { .. } => true,
+                _ => false,
+            });
+            let reads_frame_rows = use_elementwise_path || evaluation_has_subgroups;
 
             let output_field = expr_arena
                 .get(expression)
@@ -611,23 +642,28 @@ fn create_physical_expr_inner(
                 .get(expr)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
             let expr = create_physical_expr_inner(expr, expr_arena, schema, state)?;
-
             let element_dtype = variant.element_dtype(&input_field.dtype)?;
-            let mut eval_schema = schema.as_ref().clone();
-            eval_schema.insert(get_pl_element_name(), element_dtype.clone());
+            let eval_schema = eval_schema(&columns, element_dtype, schema, expr_arena)?;
+            let columns = columns
+                .iter()
+                .map(|c| create_physical_expr(c, expr_arena, schema, state))
+                .collect::<PolarsResult<Vec<_>>>()?;
             let evaluation =
                 create_physical_expr_inner(evaluation, expr_arena, &Arc::new(eval_schema), state)?;
 
             Ok(Arc::new(EvalExpr::new(
                 expr,
+                columns,
                 evaluation,
                 variant,
                 node_to_expr(expression, expr_arena),
                 output_field,
                 is_scalar,
                 evaluation_is_scalar,
-                evaluation_is_elementwise,
                 evaluation_is_fallible,
+                use_elementwise_path,
+                reads_frame_rows,
+                inputs_are_elementwise,
             )))
         },
         #[cfg(feature = "dtype-struct")]
@@ -807,7 +843,12 @@ fn create_union_match(
         .map(|arm| reads.collect(*arm, expr_arena))
         .collect();
     let reads_element = default.is_some_and(|d| reads.collect(d, expr_arena));
-    let columns: Vec<PlSmallStr> = reads.columns.into_iter().collect();
+    let n_columns = reads.columns.len();
+    let columns: Vec<PlSmallStr> = reads
+        .columns
+        .into_iter()
+        .chain(reads.eval_columns)
+        .collect();
     let struct_fields: Vec<PlSmallStr> = reads.fields.into_iter().collect();
 
     let mut branch_schema = Schema::with_capacity(columns.len() + 2);
@@ -839,11 +880,13 @@ fn create_union_match(
         .transpose()?;
 
     let mut input_nodes = vec![union];
-    input_nodes.extend(
-        columns
-            .iter()
-            .map(|c| expr_arena.add(AExpr::Column(c.clone()))),
-    );
+    input_nodes.extend(columns.iter().enumerate().map(|(i, c)| {
+        expr_arena.add(if i < n_columns {
+            AExpr::Column(c.clone())
+        } else {
+            AExpr::EvalColumn(c.clone())
+        })
+    }));
     #[cfg(feature = "dtype-struct")]
     input_nodes.extend(
         struct_fields
@@ -892,6 +935,8 @@ fn create_union_match(
 #[derive(Default)]
 struct BranchReads {
     columns: PlIndexSet<PlSmallStr>,
+    /// The columns read through the `eval` this `union.match` is in.
+    eval_columns: PlIndexSet<PlSmallStr>,
     fields: PlIndexSet<PlSmallStr>,
 }
 
@@ -910,13 +955,17 @@ impl BranchReads {
                 AExpr::Column(name) => {
                     self.columns.insert(name.clone());
                 },
+                AExpr::EvalColumn(name) => {
+                    self.eval_columns.insert(name.clone());
+                },
                 AExpr::Element => reads_element |= element,
                 #[cfg(feature = "dtype-struct")]
                 AExpr::StructField(name) if field => {
                     self.fields.insert(name.clone());
                 },
-                AExpr::Eval { expr, .. } => {
+                AExpr::Eval { expr, columns, .. } => {
                     stack.push((*expr, element, field));
+                    stack.extend(columns.iter().map(|c| (c.node(), element, field)));
                     continue;
                 },
                 #[cfg(feature = "dtype-struct")]

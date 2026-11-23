@@ -15,7 +15,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
@@ -74,10 +74,12 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
+                columns,
             } => {
                 // We don't use the evaluation here because it does not contain inputs.
                 _ = evaluation;
                 container.extend([*expr]);
+                container.extend(columns.iter().map(ExprIR::node));
             },
             #[cfg(feature = "dtype-struct")]
             StructEval {
@@ -119,7 +121,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
@@ -180,9 +182,11 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
+                columns,
             } => {
                 // We don't use the evaluation here because it does not contain inputs.
                 _ = evaluation;
+                container.extend(columns.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
             #[cfg(feature = "dtype-struct")]
@@ -264,7 +268,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             StructField(_) => {},
             BinaryExpr { left, op: _, right } => {
@@ -325,7 +329,12 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
-            } => container.extend([*evaluation, *expr]),
+                columns,
+            } => {
+                container.extend([*evaluation]);
+                container.extend(columns.iter().rev().map(ExprIR::node));
+                container.extend([*expr]);
+            },
             #[cfg(feature = "dtype-struct")]
             StructEval {
                 expr, evaluation, ..
@@ -357,7 +366,7 @@ impl AExpr {
     pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => return self,
             #[cfg(feature = "dtype-struct")]
             StructField(_) => return self,
             Cast { expr, .. } => expr,
@@ -411,8 +420,13 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
+                columns,
             } => {
+                assert_eq!(inputs.len(), columns.len() + 1);
                 *expr = inputs[0];
+                for (c, node) in columns.iter_mut().zip(&inputs[1..]) {
+                    c.set_node(*node);
+                }
                 _ = evaluation; // Intentional.
                 return self;
             },
@@ -485,7 +499,7 @@ impl AExpr {
     pub fn replace_children(mut self, inputs: &[Node]) -> Self {
         use AExpr::*;
         let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
+            Element | EvalColumn(_) | Column(_) | Literal(_) | Len => return self,
             #[cfg(feature = "dtype-struct")]
             StructField(_) => return self,
             Cast { expr, .. } => expr,
@@ -539,9 +553,14 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant: _,
+                columns,
             } => {
+                assert_eq!(inputs.len(), columns.len() + 2);
                 *expr = inputs[0];
-                *evaluation = inputs[1];
+                for (c, node) in columns.iter_mut().zip(&inputs[1..]) {
+                    c.set_node(*node);
+                }
+                *evaluation = inputs[columns.len() + 1];
                 return self;
             },
             #[cfg(feature = "dtype-struct")]

@@ -608,7 +608,7 @@ impl PredicatePushDown {
                     local_predicates.extend(acc_predicates.drain(..).map(|x| x.1));
                 }
 
-                if let Some((offset, len, None)) = slice
+                if let Some((slice_value, None)) = slice
                     && !by_column.is_empty()
                 {
                     let n = by_column[0].node();
@@ -620,7 +620,7 @@ impl PredicatePushDown {
                         };
                         let (dyn_pred_node, pred) =
                             new_dynamic_pred(n, expr_arena, Some(read_order));
-                        slice = Some((offset, len, Some(pred)));
+                        slice = Some((slice_value, Some(pred)));
 
                         let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);
                         insert_predicate_dedup(

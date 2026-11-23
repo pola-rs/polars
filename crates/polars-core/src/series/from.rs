@@ -615,12 +615,13 @@ impl Series {
                         .map(convert_month_day_nano_to_struct)
                         .collect::<PolarsResult<Vec<_>>>()?;
 
-                    Ok(StructChunked::from_chunks_and_dtype_unchecked(
+                    let mut ca = StructChunked::from_chunks_and_dtype_unchecked(
                         name,
                         chunks,
                         DataType::_month_days_ns_struct_type(),
-                    )
-                    .into_series())
+                    );
+                    StructChunked::propagate_nulls_mut(&mut ca);
+                    Ok(ca.into_series())
                 })
             },
 
@@ -869,7 +870,8 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Decimal256(_, _)
         | ArrowDataType::Date64
         | ArrowDataType::Union(_)
-        | ArrowDataType::Map(_, _)) => {
+        | ArrowDataType::Map(_, _)
+        | ArrowDataType::Interval(_)) => {
             let dt = dt.clone();
             let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt)?;
             let dtype = s.dtype().clone();

@@ -21,8 +21,8 @@ use crate::plans::expr_ir::ExprIR;
 #[cfg(feature = "is_in")]
 use crate::plans::predicates::try_extract_is_in_haystack;
 use crate::plans::{
-    AExprBuilder, OrderKeeping, aexpr_to_leaf_names_iter, is_scalar_ae, order_keeping_column,
-    rename_columns,
+    AExprBuilder, OrderKeeping, aexpr_to_leaf_names_iter, is_scalar_ae, is_single_literal_ae,
+    order_keeping_column, rename_columns,
 };
 
 /// A resolved reference to a (possibly nested) statistics target: a top-level column,
@@ -393,7 +393,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         }
 
         match arena.get(e) {
-            AExpr::Element => None,
+            AExpr::Element | AExpr::EvalColumn(_) => None,
             AExpr::Explode { .. } => None,
             AExpr::Column(_) => None,
             #[cfg(feature = "dtype-struct")]
@@ -594,7 +594,9 @@ fn aexpr_to_skip_batch_predicate_rec(
                 IRFunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
                     IRBooleanFunction::IsIn { nulls_equal, .. } => {
-                        if !is_scalar_ae(input[1].node(), arena) {
+                        if !is_scalar_ae(input[1].node(), arena)
+                            && !is_single_literal_ae(input[1].node(), arena)
+                        {
                             return None;
                         }
 

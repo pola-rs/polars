@@ -1281,18 +1281,18 @@ pub(crate) mod test {
         let mut first = UInt32Chunked::new(PlSmallStr::from_static("first"), &[0, 1, 2]);
         let second = UInt32Chunked::new(PlSmallStr::from_static("second"), &[3, 4, 5]);
         first.append(&second).unwrap();
-        assert_slice_equal(&first.slice(0, 3), &[0, 1, 2]);
-        assert_slice_equal(&first.slice(0, 4), &[0, 1, 2, 3]);
-        assert_slice_equal(&first.slice(1, 4), &[1, 2, 3, 4]);
-        assert_slice_equal(&first.slice(3, 2), &[3, 4]);
-        assert_slice_equal(&first.slice(3, 3), &[3, 4, 5]);
-        assert_slice_equal(&first.slice(-3, 3), &[3, 4, 5]);
-        assert_slice_equal(&first.slice(-6, 6), &[0, 1, 2, 3, 4, 5]);
+        assert_slice_equal(&first.slice(Slice::head(3)), &[0, 1, 2]);
+        assert_slice_equal(&first.slice(Slice::head(4)), &[0, 1, 2, 3]);
+        assert_slice_equal(&first.slice((1usize, 4)), &[1, 2, 3, 4]);
+        assert_slice_equal(&first.slice((3usize, 2)), &[3, 4]);
+        assert_slice_equal(&first.slice((3usize, 3)), &[3, 4, 5]);
+        assert_slice_equal(&first.slice((-3i64, 3)), &[3, 4, 5]);
+        assert_slice_equal(&first.slice((-6i64, 6)), &[0, 1, 2, 3, 4, 5]);
 
-        assert_eq!(first.slice(-7, 2).len(), 1);
-        assert_eq!(first.slice(-3, 4).len(), 3);
-        assert_eq!(first.slice(3, 4).len(), 3);
-        assert_eq!(first.slice(10, 4).len(), 0);
+        assert_eq!(first.slice((-7i64, 2)).len(), 1);
+        assert_eq!(first.slice((-3i64, 4)).len(), 3);
+        assert_eq!(first.slice((3usize, 4)).len(), 3);
+        assert_eq!(first.slice((10usize, 4)).len(), 0);
     }
 
     #[test]

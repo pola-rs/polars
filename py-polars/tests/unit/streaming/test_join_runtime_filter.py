@@ -1599,7 +1599,7 @@ def test_dense_integer_keys_filter_by_their_range(
 def test_bloom_is_sized_from_the_build_keys_seen(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    n = 1_000_000
+    n = 750_000
     # Spread out, so the keys span too wide a range for a bitset.
     spread = 1024
     keys = pl.Series("k", range(0, n * spread, spread)).shuffle(seed=5)
@@ -1608,7 +1608,7 @@ def test_bloom_is_sized_from_the_build_keys_seen(
         path, row_group_size=n // 10, statistics="full"
     )
     # Conjuncts the plan cannot estimate, so it expects far fewer build keys than
-    # the 200k that arrive: more than a bloom filter of the planned size holds,
+    # the 150k that arrive: more than a bloom filter of the planned size holds,
     # yet few enough of the probe keys to be worth probing.
     build = pl.LazyFrame(
         {"k": range(0, n * spread, 5 * spread), "a": range(0, n, 5)}
@@ -1617,7 +1617,7 @@ def test_bloom_is_sized_from_the_build_keys_seen(
     out, err = reader_log(q, plmonkeypatch, capfd)
     planned = re.search(r"runtime filter on k: (\d+) distinct build keys", err)
     assert planned is not None
-    assert int(planned.group(1)) <= 20_000
+    assert int(planned.group(1)) <= n // 50
     assert "dropping bloom filter" not in err
     # Larger than the planned (smallest) bloom filter; the exact size depends on
     # the distinct count estimate.

@@ -9,6 +9,8 @@ String
      - Description
    * - :ref:`BIT_LENGTH <bit_length>`
      - Returns the length of the input string in bits.
+   * - :ref:`CHR <chr>`
+     - Returns the character of an integer Unicode code point.
    * - :ref:`CONCAT <concat>`
      - Returns all input expressions concatenated together as a string.
    * - :ref:`CONCAT_WS <concat_ws>`
@@ -17,8 +19,14 @@ String
      - Converts a formatted date string to an actual Date value.
    * - :ref:`ENDS_WITH <ends_with>`
      - Returns True if the value ends with the second argument.
+   * - :ref:`FORMAT <format>`
+     - Fills the `{}` placeholders of a format string, with an optional Python format specification such as `{:.2f}`.
    * - :ref:`INITCAP <initcap>`
      - Converts the first letter of each word to uppercase, and the rest to lowercase.
+   * - :ref:`JSON_EXTRACT_PATH <json_extract_path>`
+     - Returns the value at a path of keys in JSON text or a struct, as `#>` does.
+   * - :ref:`JSON_EXTRACT_PATH_TEXT <json_extract_path>`
+     - Returns the value at a path of keys in JSON text or a struct as text, as `#>>` does.
    * - :ref:`LEFT <left>`
      - Returns the first (leftmost) `n` characters.
    * - :ref:`LENGTH <length>`
@@ -33,6 +41,8 @@ String
      - Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
    * - :ref:`OCTET_LENGTH <octet_length>`
      - Returns the length of a given string in bytes.
+   * - :ref:`PRINTF <printf>`
+     - Fills the `%` conversions of a format string, as in C's printf.
    * - :ref:`POSITION <position>`
      - Returns the position of a substring within a string.
    * - :ref:`REGEXP_EXTRACT <regexp_extract>`
@@ -43,6 +53,8 @@ String
      - Returns True if `pattern` matches the value (optional: `options`).
    * - :ref:`REGEXP_REPLACE <regexp_replace>`
      - Replaces the first match of `pattern` with `replacement` (optional: `flags`; 'g' replaces all matches).
+   * - :ref:`REGEXP_SUBSTR <regexp_substr>`
+     - Returns the `n`th match of `pattern`, or its capture group, or NULL if there is none.
    * - :ref:`REPEAT <repeat>`
      - Returns the string repeated `n` times.
    * - :ref:`REPLACE <replace>`
@@ -76,6 +88,8 @@ String
      - Converts a string to a Datetime using a PostgreSQL template.
    * - :ref:`TRIM <trim>`
      - Strips characters from the left and/or right of a string.
+   * - :ref:`TRY_STRPTIME <try_strptime>`
+     - Like `STRPTIME`, but returns NULL for a string that does not match the format.
    * - :ref:`UPPER <upper>`
      - Returns an uppercased column.
 
@@ -104,6 +118,32 @@ Returns the length of the input string in bits.
     # │ ccc  ┆ 24     │
     # │ dddd ┆ 32     │
     # └──────┴────────┘
+
+.. _chr:
+
+CHR
+---
+Returns the character of an integer Unicode code point. Raises an error for a negative
+number, a number above 1114111 (``0x10FFFF``), or a UTF-16 surrogate (55296 to 57343).
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"n": [65, 233, 8364]})
+    df.sql("""
+      SELECT n, CHR(n) AS c FROM self
+    """)
+    # shape: (3, 2)
+    # ┌──────┬─────┐
+    # │ n    ┆ c   │
+    # │ ---  ┆ --- │
+    # │ i64  ┆ str │
+    # ╞══════╪═════╡
+    # │ 65   ┆ A   │
+    # │ 233  ┆ é   │
+    # │ 8364 ┆ €   │
+    # └──────┴─────┘
 
 .. _concat:
 
@@ -240,6 +280,33 @@ Returns True if the value ends with the second argument.
     # │ dd  ┆ false  │
     # └─────┴────────┘
 
+.. _format:
+
+FORMAT
+------
+Fills the ``{}`` placeholders of a format string with the other arguments. A placeholder
+can hold an argument index (``{1}``) and a Python format specification after a colon
+(``{:>8}``, ``{:.2f}``, ``{:,}``), as in :func:`polars.format`. Write ``{{`` and ``}}``
+for literal braces. The result is null if any argument is null.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"name": ["apple", "kiwi"], "price": [1.5, 1234.125]})
+    df.sql("""
+      SELECT FORMAT('{:<6}|{:>9,.2f}', name, price) AS fmt FROM self
+    """)
+    # shape: (2, 1)
+    # ┌──────────────────┐
+    # │ fmt              │
+    # │ ---              │
+    # │ str              │
+    # ╞══════════════════╡
+    # │ apple |     1.50 │
+    # │ kiwi  | 1,234.12 │
+    # └──────────────────┘
+
 .. _initcap:
 
 INITCAP
@@ -264,6 +331,36 @@ Converts the first letter of each word to uppercase, and the rest to lowercase.
     # │ HELLO       ┆ Hello       │
     # │ wOrLd       ┆ World       │
     # └─────────────┴─────────────┘
+
+.. _json_extract_path:
+
+JSON_EXTRACT_PATH, JSON_EXTRACT_PATH_TEXT
+-----------------------------------------
+Returns the value at a path of keys, or of array indexes counted from 0, in JSON text or a
+struct: ``JSON_EXTRACT_PATH(j, 'a', 'b')`` is ``j #> '{a,b}'`` and ``JSON_EXTRACT_PATH_TEXT`` is
+``j #>> '{a,b}'``, as in Postgres. The keys are literals. NULL if there is no such value; unlike
+Postgres, ``JSON_EXTRACT_PATH`` of JSON text gives the value's text, as ``#>`` does.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"j": ['{"user": {"name": "Ann", "tags": ["a", "b"]}}', '{"user": {}}']})
+    df.sql("""
+      SELECT
+        JSON_EXTRACT_PATH_TEXT(j, 'user', 'name') AS name,
+        JSON_EXTRACT_PATH_TEXT(j, 'user', 'tags', 1) AS tag
+      FROM self
+    """)
+    # shape: (2, 2)
+    # ┌──────┬──────┐
+    # │ name ┆ tag  │
+    # │ ---  ┆ ---  │
+    # │ str  ┆ str  │
+    # ╞══════╪══════╡
+    # │ Ann  ┆ b    │
+    # │ null ┆ null │
+    # └──────┴──────┘
 
 .. _left:
 
@@ -493,6 +590,39 @@ Returns the length of a given string in bytes.
     # │ es       ┆ amarillo ┆ 8       ┆ 8       │
     # └──────────┴──────────┴─────────┴─────────┘
 
+.. _printf:
+
+PRINTF
+------
+Fills the ``%`` conversions of a format string with the other arguments, as in C's printf.
+Supports the flags ``-``, ``+``, space, ``#``, ``0`` and ``,`` (thousands separator), the
+width, the precision, argument numbers (``%2$s``) and the conversions ``d``, ``i``, ``u``,
+``f``, ``F``, ``e``, ``E``, ``g``, ``G``, ``x``, ``X``, ``o``, ``c`` and ``s``; ``%%`` writes
+a ``%``. ``%s`` converts any value that can be cast to a string, which excludes lists and
+arrays. A precision is not supported with ``d``, ``i``, ``u``, ``o``, ``x``, ``X`` and ``c``, nor
+is ``#`` with ``o``.
+Negative numbers keep their sign with ``u``, ``x``, ``X`` and ``o``, ``%#x`` writes ``0x0`` for
+zero, and ``%c`` writes the character of a Unicode code point. The result is null if any
+argument is null.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"name": ["apple", "kiwi"], "n": [3, 12], "price": [1.5, 0.25]})
+    df.sql("""
+      SELECT PRINTF('%-6s x%03d at %.2f', name, n, price) AS line FROM self
+    """)
+    # shape: (2, 1)
+    # ┌─────────────────────┐
+    # │ line                │
+    # │ ---                 │
+    # │ str                 │
+    # ╞═════════════════════╡
+    # │ apple  x003 at 1.50 │
+    # │ kiwi   x012 at 0.25 │
+    # └─────────────────────┘
+
 .. _position:
 
 POSITION
@@ -634,6 +764,34 @@ to the whole match.
     # │ ab-cd   ┆ cd-ab   │
     # │ x       ┆ x       │
     # └─────────┴─────────┘
+
+.. _regexp_substr:
+
+REGEXP_SUBSTR
+-------------
+Returns the substring of the `n`\ th match of `pattern` (optional, default 1), or of its capture
+group `subexpr` (first match only), as in Postgres; NULL if there is no such match. `flags`
+'i' makes the match case-insensitive and 'c' case-sensitive; the `start` position must be 1.
+The pattern is a Rust regex: an alternation takes the first alternative that matches, where
+Postgres takes the longest.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["user=Ann path=/a", "path=/b"]})
+    df.sql(r"""
+      SELECT REGEXP_SUBSTR(s, 'user=(\w+)', 1, 1, 'c', 1) AS user FROM self
+    """)
+    # shape: (2, 1)
+    # ┌──────┐
+    # │ user │
+    # │ ---  │
+    # │ str  │
+    # ╞══════╡
+    # │ Ann  │
+    # │ null │
+    # └──────┘
 
 .. _repeat:
 
@@ -1123,7 +1281,8 @@ TO_TIMESTAMP
 ------------
 Converts a string to a Datetime using a PostgreSQL template, such as 'YYYY-MM-DD HH24:MI:SS';
 the patterns are those of :ref:`TO_CHAR <to_char>`. A template that contains `%` is read as a
-strftime format, and without a template ISO-8601 format is assumed.
+strftime format, and without a template ISO-8601 format is assumed. A number is read as the
+seconds since the Unix epoch, giving a UTC Datetime.
 
 **Example:**
 
@@ -1140,6 +1299,30 @@ strftime format, and without a template ISO-8601 format is assumed.
     # │ 1978-07-05 10:30 AM ┆ 1978-07-05 10:30:00 │
     # │ 2020-04-10 10:05 PM ┆ 2020-04-10 22:05:00 │
     # └─────────────────────┴─────────────────────┘
+
+.. _try_strptime:
+
+TRY_STRPTIME
+------------
+Like :ref:`STRPTIME <strptime>`, but returns NULL for a string that does not match the format,
+instead of raising an error.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": ["2024-02-29", "2023-02-29", "not a date"]})
+    df.sql("SELECT s, TRY_STRPTIME(s, '%Y-%m-%d') AS dt FROM self")
+    # shape: (3, 2)
+    # ┌────────────┬─────────────────────┐
+    # │ s          ┆ dt                  │
+    # │ ---        ┆ ---                 │
+    # │ str        ┆ datetime[μs]        │
+    # ╞════════════╪═════════════════════╡
+    # │ 2024-02-29 ┆ 2024-02-29 00:00:00 │
+    # │ 2023-02-29 ┆ null                │
+    # │ not a date ┆ null                │
+    # └────────────┴─────────────────────┘
 
 .. _upper:
 

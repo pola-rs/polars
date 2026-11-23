@@ -328,11 +328,19 @@ class TestWriteDatabase:
             df.write_database(connection=True, table_name="misc", engine=engine)  # type: ignore[arg-type]
 
     def test_write_database_adbc_missing_driver_error(
-        self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
+        self,
+        engine: DbWriteEngine,
+        uri_connection: bool,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Skip for sqlalchemy
         if engine == "sqlalchemy":
             return
+        # ignore ADBC drivers installed on this machine (e.g. with `dbc`)
+        monkeypatch.setattr(
+            "polars.io.database._utils._find_installed_adbc_driver", lambda _: None
+        )
         df = pl.DataFrame({"colx": [1, 2, 3]})
         with pytest.raises(
             ModuleNotFoundError, match=r"ADBC 'adbc_driver_mysql' driver not detected."
@@ -457,3 +465,29 @@ def test_write_database_adbc_temporary_table() -> None:
     assert expected_temp_table_create_sql == actual_temp_table_create_sql
 
     close_connections(conn)
+
+
+@pytest.mark.write_disk
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
+def test_write_database_adbc_uri_with_manifest_driver(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a driver that isn't a pip package (e.g. installed with `dbc`) is found by
+    # its manifest; writing must not need the package for the driver version
+    adbc_driver_sqlite = pytest.importorskip("adbc_driver_sqlite")
+
+    def no_package(module_name: str, *args: Any, **kwargs: Any) -> Any:
+        msg = f"no module named {module_name!r}"
+        raise ModuleNotFoundError(msg)
+
+    monkeypatch.setattr(
+        "polars.io.database._utils._import_optional_adbc_driver", no_package
+    )
+    monkeypatch.setattr(
+        "polars.io.database._utils._find_installed_adbc_driver",
+        lambda _: (adbc_driver_sqlite._driver_path(), None),
+    )
+    uri = f"sqlite:///{tmp_path / 'test.db'}"
+    df = pl.DataFrame({"x": [1, 2]})
+    assert df.write_database("t", connection=uri, engine="adbc") == 2
+    assert_frame_equal(_read_via_uri("SELECT * FROM t", uri), df)

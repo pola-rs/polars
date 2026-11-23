@@ -195,14 +195,28 @@ impl ExprOrderSimplifier<'_> {
                 expr,
                 evaluation,
                 variant,
+                columns,
             } => {
                 check_return_cached!();
 
                 let expr = *expr;
                 let evaluation = *evaluation;
                 let variant = *variant;
+                let columns: Vec<Node> = columns.iter().map(|c| c.node()).collect();
 
                 let mut expr_ordering = self.rec(expr, RS::NO_DEORDER);
+                // The columns line up with the rows of `expr`.
+                if !columns.is_empty() {
+                    let mut acc = ExprOrderAcc::default();
+                    acc.add(expr_ordering, expr);
+                    for c in columns {
+                        acc.add(self.rec(c, RS::NO_DEORDER), c);
+                    }
+                    expr_ordering = acc.accumulated_orders();
+                    if acc.saw_mixed_inputs() {
+                        self.internal_observe(expr_ordering);
+                    }
+                }
 
                 match variant {
                     EvalVariant::Array { as_list: _ }
@@ -224,6 +238,7 @@ impl ExprOrderSimplifier<'_> {
                 expr_ordering
             },
             AExpr::Element => self.element_ordering.unwrap_or(O::INDEPENDENT),
+            AExpr::EvalColumn(_) => O::INDEPENDENT,
 
             #[cfg(feature = "dtype-union")]
             AExpr::UnionMatch { .. } => {

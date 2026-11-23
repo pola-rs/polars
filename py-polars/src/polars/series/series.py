@@ -3742,7 +3742,13 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    def sql(self, query: str_, *, table_name: str_ = "self") -> DataFrame:
+    def sql(
+        self,
+        query: str_,
+        *,
+        table_name: str_ = "self",
+        params: Sequence[Any] | Mapping[str_, Any] | None = None,
+    ) -> DataFrame:
         """
         Execute a SQL query against the Series.
 
@@ -3760,6 +3766,8 @@ class Series(metaclass=_Meta):
         table_name
             Optionally provide an explicit name for the table that represents the
             calling frame (defaults to "self").
+        params
+            The values of the query parameters; see :meth:`DataFrame.sql`.
 
         Notes
         -----
@@ -3822,7 +3830,7 @@ class Series(metaclass=_Meta):
         │ 3   ┆ 6   │
         └─────┴─────┘
         """
-        return self.to_frame().sql(query, table_name=table_name)
+        return self.to_frame().sql(query, table_name=table_name, params=params)
 
     def sort(
         self,

@@ -142,25 +142,17 @@ mod inner_mod {
                                 DataType::Float64 => {
                                     let ws = weights_series.f64().unwrap();
                                     if start == 0 {
-                                        ws.slice(
-                                            (ws.len() - series_container.len()) as i64,
-                                            series_container.len(),
-                                        )
-                                        .into_series()
+                                        ws.slice(Slice::tail(series_container.len())).into_series()
                                     } else {
-                                        ws.slice(0, series_container.len()).into_series()
+                                        ws.slice(Slice::head(series_container.len())).into_series()
                                     }
                                 },
                                 _ => {
                                     let ws = weights_series.f32().unwrap();
                                     if start == 0 {
-                                        ws.slice(
-                                            (ws.len() - series_container.len()) as i64,
-                                            series_container.len(),
-                                        )
-                                        .into_series()
+                                        ws.slice(Slice::tail(series_container.len())).into_series()
                                     } else {
-                                        ws.slice(0, series_container.len()).into_series()
+                                        ws.slice(Slice::head(series_container.len())).into_series()
                                     }
                                 },
                             };

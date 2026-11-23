@@ -103,7 +103,7 @@ impl AExpr {
 
                 Ok(field)
             },
-            Column(name) => ctx
+            Column(name) | EvalColumn(name) => ctx
                 .schema
                 .get_field(name)
                 .ok_or_else(|| ctx.schema.column_not_found_err(name)),
@@ -192,24 +192,14 @@ impl AExpr {
                     Item { input: expr, .. } => ctx.arena.get(*expr).to_field_impl(ctx),
                     Sum { input: expr, .. } => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        let dt = match field.dtype() {
-                            dt if matches!(dt, String | Binary | BinaryOffset)
-                                || dt.is_nested()
-                                || dt.is_object() =>
-                            {
-                                polars_bail!(
-                                    InvalidOperation: "`sum` operation not supported for dtype `{dt}`"
-                                )
-                            },
-                            Boolean => Some(IDX_DTYPE),
-                            UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
-                            #[cfg(feature = "dtype-decimal")]
-                            Decimal(_, scale) => Some(Decimal(DEC128_MAX_PREC, *scale)),
-                            _ => None,
-                        };
-                        if let Some(dt) = dt {
-                            field.set_dtype(dt);
-                        }
+                        let dt = field.dtype();
+                        polars_ensure!(
+                            dt.is_primitive_numeric()
+                                || dt.is_decimal()
+                                || matches!(dt, Boolean | Duration(_) | Null | Unknown(_)),
+                            InvalidOperation: "`sum` operation not supported for dtype `{dt}`"
+                        );
+                        field.set_dtype(sum_output_dtype(dt));
                         Ok(field)
                     },
                     Median(expr) | Mean(expr) | Std(expr, _) | Var(expr, _) => {
@@ -349,12 +339,12 @@ impl AExpr {
                 expr,
                 evaluation,
                 variant,
+                columns,
             } => {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx)?;
 
                 let element_dtype = variant.element_dtype(field.dtype())?;
-                let mut evaluation_schema = ctx.schema.clone();
-                evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
+                let evaluation_schema = eval_schema(columns, element_dtype, ctx.schema, ctx.arena)?;
                 let mut output_field = ctx
                     .arena
                     .get(*evaluation)
@@ -526,12 +516,28 @@ impl AExpr {
                 None if input.is_empty() => format_pl_smallstr!("{}", &function),
                 None => input[0].output_name().clone(),
             },
-            Column(name) => name.clone(),
+            Column(name) | EvalColumn(name) => name.clone(),
             #[cfg(feature = "dtype-struct")]
             StructField(name) => name.clone(),
             Literal(lv) => lv.output_column_name().clone(),
         }
     }
+}
+
+/// The schema that the `evaluation` of an `Eval` is resolved against: `schema` with the outputs
+/// of its `columns` and the element.
+pub fn eval_schema(
+    columns: &[ExprIR],
+    element_dtype: &DataType,
+    schema: &Schema,
+    arena: &Arena<AExpr>,
+) -> PolarsResult<Schema> {
+    let mut out = schema.clone();
+    for field in func_args_to_fields(columns, &ToFieldContext::new(arena, schema))? {
+        out.with_column(field.name, field.dtype);
+    }
+    out.insert(get_pl_element_name(), element_dtype.clone());
+    Ok(out)
 }
 
 fn func_args_to_fields(input: &[ExprIR], ctx: &ToFieldContext) -> PolarsResult<Vec<Field>> {

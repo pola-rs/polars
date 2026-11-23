@@ -158,7 +158,7 @@ impl ChunkShift<UnionType> for UnionChunked {
         let len = self.len() as i64;
         let periods = periods.clamp(-len, len);
         let fill_length = periods.unsigned_abs() as usize;
-        let mut slice = self.slice((-periods).max(0), self.len() - fill_length);
+        let mut slice = self.slice(((-periods).max(0), self.len() - fill_length));
         let mut fill = Self::full_null_with_dtype(self.name().clone(), fill_length, self.dtype());
 
         if periods < 0 {

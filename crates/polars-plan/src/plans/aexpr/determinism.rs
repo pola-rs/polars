@@ -25,6 +25,7 @@ pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
         | AExpr::Literal(_)
         | AExpr::Len
         | AExpr::Element
+        | AExpr::EvalColumn(_)
         | AExpr::BinaryExpr { .. }
         | AExpr::Cast { .. }
         | AExpr::Ternary { .. }

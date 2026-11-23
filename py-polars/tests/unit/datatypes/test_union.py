@@ -1606,6 +1606,16 @@ def test_union_match_in_pivot_keeps_its_element() -> None:
     assert out.to_dict(as_series=False) == {"g": [0], "a": [10], "b": [2]}
 
 
+def test_union_match_in_eval_reads_columns() -> None:
+    df = match_frame().with_columns(l=pl.concat_list("u", "u"))
+    out = df.select(
+        pl.col("l").list.eval(
+            pl.element().union.match(i=pl.element() + pl.col("k"), s=pl.col("k"))
+        )
+    )
+    assert out.to_series().to_list() == [[6, 6], [6, 6], [10, 10], [None, None]]
+
+
 @pytest.mark.parametrize("s", messy_layouts())
 def test_union_match_layouts(s: pl.Series) -> None:
     df = pl.DataFrame({"u": s, "k": range(len(s))})

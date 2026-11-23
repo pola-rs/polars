@@ -933,6 +933,18 @@ def format(f_string: str, *args: IntoExpr) -> Expr:
 
         If you wish to use the characters `{}` literally you must escape them
         by doubling, e.g. `'{{"json": 42}}'`.
+
+        A placeholder can end with a colon and a format specification, as in
+        Python's :meth:`str.format`, e.g. `{:.2f}`, `{0:>8}` or `{name:,}`.
+        This supports fill and alignment (`<`, `>`, `^`, `=`), the sign
+        (`+`, `-`, space), `#`, zero padding, the width, a thousands separator
+        (`,` or `_`), the precision and the format codes `s`, `b`, `c`, `d`,
+        `o`, `x`, `X`, `e`, `E`, `f`, `F`, `g`, `G` and `%`. Without a format
+        code, floats are written as when cast to a string. Decimals follow the
+        rules for floats, but are rounded exactly (half to even) for `f`, `F`
+        and `%`, and converted to floats for the other format codes. Other
+        data types, and any value with format code `s`, are cast to a string
+        first.
     args
         Expression(s) that fill the placeholders
 
@@ -976,6 +988,17 @@ def format(f_string: str, *args: IntoExpr) -> Expr:
     │ null │
     │ 3_6  │
     └──────┘
+    >>> df = pl.DataFrame({"name": ["apple", "kiwi"], "price": [1.5, 1234.125]})
+    >>> df.select(pl.format("{:<6}|{:>9,.2f}", "name", "price").alias("fmt"))
+    shape: (2, 1)
+    ┌──────────────────┐
+    │ fmt              │
+    │ ---              │
+    │ str              │
+    ╞══════════════════╡
+    │ apple |     1.50 │
+    │ kiwi  | 1,234.12 │
+    └──────────────────┘
     """
     exprs = [parse_into_expression(arg) for arg in args]
     return wrap_expr(plr.PyExpr.str_format(f_string, exprs))

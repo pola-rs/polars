@@ -1,6 +1,8 @@
 #[cfg(feature = "rank")]
 pub use polars_defs::expr::{RankMethod, RankOptions};
 pub use polars_defs::join::{JoinArgs, JoinType, JoinValidation};
+#[cfg(feature = "temporal")]
+pub use polars_defs::time::date_diff::DateDiffUnit;
 #[cfg(feature = "rolling_window_by")]
 pub use polars_defs::time::duration::Duration;
 #[cfg(feature = "dynamic_group_by")]
@@ -23,6 +25,7 @@ pub use polars_plan::prelude::{PlanCallback, UnionArgs};
 #[cfg(feature = "dynamic_group_by")]
 pub use polars_time::PolarsTemporalGroupby;
 pub(crate) use polars_utils::arena::{Arena, Node};
+pub use polars_utils::slice_enum::Slice;
 
 pub use crate::dsl::*;
 pub use crate::frame::*;

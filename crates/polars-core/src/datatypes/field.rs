@@ -164,6 +164,30 @@ impl DataType {
         Self::from_arrow(dt, None)
     }
 
+    /// Checks that [`Self::from_arrow`] can convert `dt`'s time zones (nested ones
+    /// included), which it otherwise unwraps: an error instead of a panic for data
+    /// from outside (a plugin's schema), as `Series::try_from` gives.
+    pub fn check_arrow_time_zones(dt: &ArrowDataType) -> PolarsResult<()> {
+        match dt {
+            ArrowDataType::Timestamp(_, tz) => {
+                TimeZone::opt_try_new(tz.clone())?;
+            },
+            ArrowDataType::List(f)
+            | ArrowDataType::LargeList(f)
+            | ArrowDataType::FixedSizeList(f, _)
+            | ArrowDataType::Map(f, _) => Self::check_arrow_time_zones(&f.dtype)?,
+            ArrowDataType::Struct(fields) => {
+                for f in fields {
+                    Self::check_arrow_time_zones(&f.dtype)?;
+                }
+            },
+            ArrowDataType::Dictionary(_, value, _) => Self::check_arrow_time_zones(value)?,
+            ArrowDataType::Extension(ext) => Self::check_arrow_time_zones(&ext.inner)?,
+            _ => {},
+        }
+        Ok(())
+    }
+
     /// The factor polars multiplies the values of an Arrow `dtype` by to store
     /// them as [`Self::from_arrow_dtype`]: Arrow seconds become milliseconds and
     /// every time of day nanoseconds, all other values stay as they are.
@@ -361,5 +385,37 @@ impl DataType {
 impl From<&ArrowField> for Field {
     fn from(f: &ArrowField) -> Self {
         Field::new(f.name.clone(), DataType::from_arrow_field(f))
+    }
+}
+
+#[cfg(all(test, feature = "timezones", feature = "dtype-struct"))]
+mod tests {
+    use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField, TimeUnit};
+
+    use super::*;
+
+    #[test]
+    fn test_check_arrow_time_zones() {
+        let ts = |tz: &str| ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(tz.into()));
+        for ok in ["UTC", "Asia/Kathmandu", "Etc/GMT+8", "-08:00"] {
+            DataType::check_arrow_time_zones(&ts(ok)).unwrap();
+        }
+        // fixed offsets that have no IANA name: an error, not a panic (#447)
+        for bad in ["+05:30", "GMT+8", "Z", "not a zone"] {
+            let err = DataType::check_arrow_time_zones(&ts(bad)).unwrap_err();
+            assert!(
+                err.to_string().contains("unable to parse time zone"),
+                "{err}"
+            );
+        }
+        // nested ones too
+        let field = ArrowField::new("x".into(), ts("+05:30"), true);
+        let nested = [
+            ArrowDataType::LargeList(Box::new(field.clone())),
+            ArrowDataType::Struct(vec![field.clone()]),
+        ];
+        for dt in nested {
+            assert!(DataType::check_arrow_time_zones(&dt).is_err());
+        }
     }
 }

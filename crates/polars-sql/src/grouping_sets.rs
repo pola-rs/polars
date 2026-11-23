@@ -20,6 +20,11 @@ pub(crate) const MAX_GROUPING_ARGS: usize = 63;
 
 const PLACEHOLDER_PREFIX: &str = "__POLARS_GROUPING_";
 
+/// Whether `name` is the placeholder column of a `GROUPING()` call.
+pub(crate) fn is_grouping_placeholder(name: &str) -> bool {
+    name.starts_with(PLACEHOLDER_PREFIX)
+}
+
 const GLOBAL_COUNT_COL: &str = "__POLARS_GSET_COUNT";
 
 /// A `GROUPING(...)` call parsed in the current query block.
@@ -220,12 +225,13 @@ impl GroupingSets {
         contains_grouping_placeholder(expr, self.placeholders())
     }
 
-    /// The computed keys, each with the name of the column that holds its grouped values.
+    /// The computed and renamed keys, each with the name of the column that holds its grouped
+    /// values.
     pub(crate) fn stored_keys(&self, key_schema: &Schema) -> Vec<(Expr, PlSmallStr)> {
         self.stripped_keys
             .iter()
             .zip(key_schema.iter_names())
-            .filter(|(key, _)| !matches!(key, Expr::Column(_)))
+            .filter(|(key, name)| !matches!(key, Expr::Column(column) if column == *name))
             .map(|(key, name)| (key.clone(), name.clone()))
             .collect()
     }

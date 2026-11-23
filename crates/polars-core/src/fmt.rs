@@ -1342,7 +1342,7 @@ impl Series {
                 result.push(']');
             },
             _ => {
-                let s = self.slice(0, max_items);
+                let s = self.slice(Slice::head(max_items));
                 for (i, item) in s.iter().enumerate() {
                     if i == max_items.saturating_sub(1) {
                         write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap()).unwrap();

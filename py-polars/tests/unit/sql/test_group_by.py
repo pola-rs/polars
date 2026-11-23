@@ -1708,3 +1708,78 @@ def test_percentile_within_group_errors(clause: str, err: str) -> None:
     t = pl.DataFrame({"g": [1, 2], "x": [1, 2]})
     with pytest.raises(Exception, match=err):
         pl.SQLContext(t=t).execute(f"SELECT {clause} AS p FROM t", eager=True)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g AS k, UPPER(g) AS u, SUM(a) AS s FROM self GROUP BY k ORDER BY k",
+        "SELECT g AS k, g || '!' AS e FROM self GROUP BY 1 ORDER BY k",
+        "SELECT a AS k, COUNT(*) AS n, k * 10 AS k10 FROM self GROUP BY k ORDER BY k",
+        "SELECT a AS b, b AS c, COUNT(*) AS n FROM self GROUP BY 1, 2 ORDER BY 1, 2",
+        "SELECT a AS k, k + 1 AS k1, COUNT(*) AS n FROM self "
+        "GROUP BY ROLLUP(k) ORDER BY 1 NULLS LAST",
+        "SELECT g AS k, UPPER(k) AS u FROM self GROUP BY CUBE(k) ORDER BY 1 NULLS LAST",
+        "SELECT a AS k, k + 1 AS k1 FROM self "
+        "GROUP BY GROUPING SETS ((k), ()) ORDER BY 1 NULLS LAST",
+        "SELECT a AS k, k + 1 AS k1, GROUPING(k) AS gk FROM self GROUP BY k ORDER BY 1",
+    ],
+)
+def test_group_by_renamed_column(query: str) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 3], "b": [1, 1, 2, 3], "g": ["x", "x", "y", "y"]})
+    assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
+def test_group_by_key_expression_without_key_name() -> None:
+    df = pl.DataFrame({"s": ["a", None, "a"], "n": [1, 2, 3]})
+    res = df.sql(
+        """
+        SELECT
+          s,
+          CASE WHEN s IS NULL THEN 'x' ELSE 'y' END,
+          CASE WHEN s IS NULL THEN 1 ELSE 2 END,
+          SUM(n) AS total
+        FROM self
+        GROUP BY s
+        ORDER BY s NULLS FIRST
+        """
+    )
+    assert res.columns == ["s", "literal", "literal:1", "total"]
+    assert res.rows() == [(None, "x", 1, 2), ("a", "y", 2, 4)]
+
+
+def test_group_by_constant_projection_with_literal_key() -> None:
+    df = pl.DataFrame({"n": [1, 2]})
+    res = df.sql(
+        "SELECT 1 AS k, SUBSTRING('abc' FROM 2) FROM self GROUP BY ROLLUP(k) ORDER BY k NULLS LAST"
+    )
+    assert res.rows() == [(1, "bc"), (None, "bc")]
+    res = df.sql("SELECT 42 AS k, 42 + 1 FROM self GROUP BY GROUPING SETS ((k))")
+    assert res.rows() == [(42, 43)]
+
+
+def test_group_by_window_named_like_key() -> None:
+    df = pl.DataFrame({"s": [1, None, 1]})
+    res = df.sql(
+        """
+        SELECT
+          CASE WHEN s IS NULL THEN 'x' ELSE 'y' END AS c,
+          s + 1 AS t,
+          ROW_NUMBER() OVER (ORDER BY s NULLS LAST) AS s
+        FROM self
+        GROUP BY self.s
+        ORDER BY s
+        """
+    )
+    assert res.rows() == [("y", 2, 1), ("x", None, 2)]
+
+
+def test_aggregate_in_where() -> None:
+    # WHERE filters rows before aggregating, as in Postgres
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [4000, 2000, 100]})
+    with pytest.raises(
+        SQLSyntaxError, match="aggregate functions are not allowed in WHERE"
+    ):
+        df.sql("SELECT g FROM self WHERE x > 0 AND SUM(x) > 5000 GROUP BY g")
+    res = df.sql("SELECT g, x FROM self WHERE x > (SELECT AVG(x) FROM self)")
+    assert res.rows() == [(1, 4000)]

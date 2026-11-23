@@ -48,8 +48,11 @@ pub(super) fn lower_union_match(
             arena: ctx.arena,
             allow_unknown: ctx.allow_unknown,
             check_column_names: ctx.check_column_names,
+            eval_columns: ctx.eval_columns.take(),
         };
-        let (node, _) = to_aexpr_impl(e, &mut branch_ctx)?;
+        let node = to_aexpr_impl(e, &mut branch_ctx);
+        ctx.eval_columns = branch_ctx.eval_columns;
+        let (node, _) = node?;
         polars_ensure!(
             is_elementwise_rec(node, ctx.arena),
             InvalidOperation: "the arm for {what} in `union.match` must be elementwise"

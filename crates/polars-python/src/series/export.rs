@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use polars_ffi::version_0::SeriesExport;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
@@ -192,9 +190,10 @@ impl PySeries {
         // holding the GIL) deadlock against us.
         let (array, field) = py.enter_polars(|| {
             let s = self.series.read();
-            let field = s.field().to_arrow(compat_level.0);
-            let array = s.to_arrow_with_field(0, Cow::Borrowed(&field), true)?;
-            PolarsResult::Ok((array, field))
+            PolarsResult::Ok((
+                s.try_to_arrow(0, compat_level.0)?,
+                s.field().to_arrow(compat_level.0),
+            ))
         })?;
 
         interop::arrow::to_py::to_py_array(array, &field, &pyarrow)

@@ -277,7 +277,7 @@ pub fn encode_rows_with_layout_par(
         .map(|(offset, len)| {
             let sliced = by
                 .iter()
-                .map(|c| c.slice(offset as i64, len))
+                .map(|c| c.slice((offset, len)))
                 .collect::<Vec<_>>();
             encode_columns(&sliced, layout, propagate_nulls)
         });

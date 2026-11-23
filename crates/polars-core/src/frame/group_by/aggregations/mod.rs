@@ -36,7 +36,7 @@ use crate::chunked_array::from_iterator_par::{
 };
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
-use crate::chunked_array::ops::aggregate::{quantile_of_nonnull, sorted_quantile};
+use crate::chunked_array::ops::aggregate::{quantile_of_nonnull, quantile_with, sorted_quantile};
 use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
@@ -71,6 +71,12 @@ type ArgMaxWindow<'a, T> = ArgMinMaxWindow<'a, T, MaxIgnoreNan>;
 //
 // if the windows don't overlap, we should not use these kernels as they are single threaded, so
 // we miss out on easy parallelization.
+//
+// The kernels need one chunk, so callers rechunk first. Chunked input only takes the kernels
+// for dense windows.
+//
+// TODO: Single-chunk input takes the kernels at any step, also where the per-window pass is
+// faster. A test for it must handle streaming batches and sliced groups.
 pub fn _use_rolling_kernels(
     groups: &GroupsSlice,
     overlapping: bool,
@@ -79,9 +85,19 @@ pub fn _use_rolling_kernels(
 ) -> bool {
     match groups.len() {
         0 | 1 => false,
-        _ => overlapping && monotonic && chunks.len() == 1,
+        n_windows => {
+            overlapping
+                && monotonic
+                && (chunks.len() == 1 || {
+                    let n_rows: usize = chunks.iter().map(|arr| arr.len()).sum();
+                    n_rows <= n_windows.saturating_mul(ROLLING_KERNEL_MAX_STEP)
+                })
+        },
     }
 }
+
+/// Max average rows between window starts for which chunked input takes the kernels.
+const ROLLING_KERNEL_MAX_STEP: usize = 4;
 
 /// Rolling min_by/max_by for numeric `by` columns using O(n) deque kernel.
 ///
@@ -130,6 +146,8 @@ where
     // This iterators length can be trusted
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
+    // Validity is read unchecked at the indices of the values.
+    assert_eq!(validity.len(), values.len());
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
 
@@ -139,11 +157,12 @@ where
     let out = offsets
         .enumerate()
         .map(|(idx, (start, len))| {
-            let end = start + len;
+            let (start, len) = (start as usize, len as usize);
+            // Windows must lie within the values, so chunked input has to be rechunked first.
+            assert!(start <= values.len() && len <= values.len() - start);
 
-            // SAFETY:
-            // we are in bounds
-            unsafe { agg_window.update(start as usize, end as usize) };
+            // SAFETY: checked above.
+            unsafe { agg_window.update(start, start + len) };
             match agg_window.get_agg(idx) {
                 Some(val) => val,
                 None => {
@@ -177,10 +196,12 @@ where
     offsets
         .enumerate()
         .map(|(idx, (start, len))| {
-            let end = start + len;
+            let (start, len) = (start as usize, len as usize);
+            // Windows must lie within the values, so chunked input has to be rechunked first.
+            assert!(start <= values.len() && len <= values.len() - start);
 
-            // SAFETY: we are in bounds.
-            unsafe { agg_window.update(start as usize, end as usize) };
+            // SAFETY: checked above.
+            unsafe { agg_window.update(start, start + len) };
             agg_window.get_agg(idx)
         })
         .collect::<PrimitiveArray<Out>>()
@@ -190,7 +211,7 @@ pub fn _slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize
 where
     T: PolarsDataType,
 {
-    ca.slice(first as i64, len as usize)
+    ca.slice((first as usize, len as usize))
 }
 
 /// Helper that combines the groups into a parallel iterator over `(first, all): (u32, &Vec<u32>)`.
@@ -224,7 +245,7 @@ where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    agg_helper_idx_on_all_with_scratch::<T, (), _>(groups, |_, idx| f(idx))
+    agg_helper_idx_on_all_with_scratch::<T, (), _>(groups, |_, _, idx| f(idx))
 }
 
 pub fn _agg_helper_slice<T, F>(groups: &[[IdxSize; 2]], f: F) -> Series
@@ -232,7 +253,7 @@ where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    agg_helper_slice_with_scratch::<T, (), _>(groups, |_, g| f(g))
+    agg_helper_slice_with_scratch::<T, (), _>(groups, |_, _, g| f(g))
 }
 
 pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
@@ -263,32 +284,34 @@ where
     ca.into_inner().into_series()
 }
 
-/// [`agg_helper_idx_on_all`] for an `f` that reuses a scratch value across groups.
+/// [`agg_helper_idx_on_all`] for an `f` that reuses a scratch value across groups and receives
+/// the group index.
 fn agg_helper_idx_on_all_with_scratch<T, S, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn(&mut S, &IdxVec) -> Option<T::Native> + Send + Sync,
+    F: Fn(&mut S, usize, &IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     S: Default,
 {
     let ca: ChunkedArray<T> = RAYON.install(|| {
         let all = groups.all();
         collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
-            f(scratch, &all[g])
+            f(scratch, g, &all[g])
         })
     });
     ca.into_series()
 }
 
-/// [`_agg_helper_slice`] for an `f` that reuses a scratch value across groups.
+/// [`_agg_helper_slice`] for an `f` that reuses a scratch value across groups and receives the
+/// group index.
 fn agg_helper_slice_with_scratch<T, S, F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
-    F: Fn(&mut S, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
+    F: Fn(&mut S, usize, [IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     S: Default,
 {
     let ca: ChunkedArray<T> = RAYON.install(|| {
         collect_primitive_opt_par_with_scratch(groups.len(), S::default, |scratch, g| {
-            f(scratch, groups[g])
+            f(scratch, g, groups[g])
         })
     });
     ca.into_series()
@@ -321,10 +344,32 @@ unsafe fn quantile_of_rows<N: NumericNative>(
     quantile_of_nonnull(vals, quantile, method)
 }
 
+/// The `quantile` of `n` values, where `value_at(rank)` reads the value at an ascending rank.
+fn quantile_of_ranked<N: ToPrimitive + Copy + Default>(
+    n: usize,
+    quantile: f64,
+    method: QuantileMethod,
+    value_at: impl Fn(usize) -> N,
+) -> Option<f64> {
+    quantile_with(n, quantile, method, |ranks, out| {
+        for (o, &r) in out.iter_mut().zip(ranks) {
+            *o = value_at(r);
+        }
+    })
+}
+
+/// The quantile to take of each group.
+#[derive(Clone, Copy, Debug)]
+pub enum GroupQuantile<'a> {
+    Scalar(f64),
+    /// One quantile per group; a null quantile gives a null result.
+    PerGroup(&'a Float64Chunked),
+}
+
 unsafe fn agg_quantile_generic<T, K>(
     ca: &ChunkedArray<T>,
     groups: &GroupsType,
-    quantile: f64,
+    quantile: GroupQuantile<'_>,
     method: QuantileMethod,
 ) -> Series
 where
@@ -332,10 +377,19 @@ where
     K: PolarsNumericType,
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
-    let invalid_quantile = !(0.0..=1.0).contains(&quantile);
-    if invalid_quantile {
-        return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
-    }
+    let in_range = |q: &f64| (0.0..=1.0).contains(q);
+    let (scalar, per_group) = match quantile {
+        GroupQuantile::Scalar(q) if !in_range(&q) => {
+            return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
+        },
+        GroupQuantile::Scalar(q) => (Some(q), None),
+        GroupQuantile::PerGroup(qs) => {
+            assert_eq!(qs.len(), groups.len());
+            (None, Some(qs.rechunk()))
+        },
+    };
+    let per_group = per_group.as_deref().map(|qs| qs.downcast_as_array());
+    let quantile_of_group = |g: usize| scalar.or_else(|| per_group?.get(g).filter(in_range));
     let to_out = |v: f64| -> K::Native { NumCast::from(v).unwrap() };
     match groups {
         GroupsType::Idx(groups) => {
@@ -343,8 +397,9 @@ where
             let arr = ca.downcast_as_array();
             let values = arr.values().as_slice();
             let validity = arr.validity();
-            agg_helper_idx_on_all_with_scratch::<K, ScratchVec<_>, _>(groups, |scratch, idx| {
+            agg_helper_idx_on_all_with_scratch::<K, ScratchVec<_>, _>(groups, |scratch, g, idx| {
                 debug_assert!(idx.iter().all(|&i| (i as usize) < values.len()));
+                let quantile = quantile_of_group(g)?;
                 let rows = idx.iter().map(|&i| i as usize);
                 quantile_of_rows(scratch, values, validity, rows, quantile, method).map(to_out)
             })
@@ -360,41 +415,57 @@ where
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
-                let arr = ca.downcast_iter().next().unwrap();
+                let ca = ca.rechunk();
+                let arr = ca.downcast_as_array();
                 let values = arr.values().as_slice();
-                let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _, _>(
-                        values,
-                        offset_iter,
-                        Some(RollingFnParams::Quantile(RollingQuantileParams {
-                            prob: quantile,
-                            method,
-                        })),
-                    ),
+                // The windows only rank the values, so their own probability is unused.
+                let params = Some(RollingFnParams::Quantile(RollingQuantileParams {
+                    prob: 0.5,
+                    method,
+                }));
+                let windows = groups.iter().enumerate();
+                let out: ChunkedArray<K> = match arr.validity() {
+                    None => {
+                        let mut window = QuantileWindow::new(values, 0, 0, params, None);
+                        windows
+                            .map(|(g, [first, len])| {
+                                // SAFETY: the groups are in bounds.
+                                unsafe { window.update(*first as usize, (first + len) as usize) };
+                                let quantile = quantile_of_group(g)?;
+                                quantile_of_ranked(window.n_values(), quantile, method, |r| {
+                                    window.value_at_rank(r)
+                                })
+                                .map(to_out)
+                            })
+                            .collect()
+                    },
                     Some(validity) => {
-                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _, _>(
-                            values,
-                            validity,
-                            offset_iter,
-                            Some(RollingFnParams::Quantile(RollingQuantileParams {
-                                prob: quantile,
-                                method,
-                            })),
-                        )
+                        let mut window = rolling::nulls::QuantileWindow::new(
+                            values, validity, 0, 0, params, None,
+                        );
+                        windows
+                            .map(|(g, [first, len])| {
+                                // SAFETY: the groups are in bounds.
+                                unsafe { window.update(*first as usize, (first + len) as usize) };
+                                let quantile = quantile_of_group(g)?;
+                                quantile_of_ranked(window.n_values(), quantile, method, |r| {
+                                    window.value_at_rank(r)
+                                })
+                                .map(to_out)
+                            })
+                            .collect()
                     },
                 };
-                // The rolling kernels works on the dtype, this is not yet the
-                // float output type we need.
-                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
+                out.into_series()
             } else if let sorted @ (IsSorted::Ascending | IsSorted::Descending) =
                 ca.is_sorted_flag()
             {
                 // A contiguous slice of a sorted column is itself sorted, with its nulls at one end,
                 // so each group reads its order statistics directly.
                 let descending = sorted == IsSorted::Descending;
-                _agg_helper_slice::<K, _>(groups, |[first, len]| {
+                agg_helper_slice_with_scratch::<K, (), _>(groups, |_, g, [first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
+                    let quantile = quantile_of_group(g)?;
                     match len {
                         0 => None,
                         1 => ca.get(first as usize).map(|v| NumCast::from(v).unwrap()),
@@ -411,9 +482,10 @@ where
                 let validity = arr.validity();
                 agg_helper_slice_with_scratch::<K, ScratchVec<_>, _>(
                     groups,
-                    |scratch, [first, len]| {
+                    |scratch, g, [first, len]| {
                         let (first, len) = (first as usize, len as usize);
                         debug_assert!(first + len <= values.len());
+                        let quantile = quantile_of_group(g)?;
                         let rows = first..first + len;
                         quantile_of_rows(scratch, values, validity, rows, quantile, method)
                             .map(to_out)
@@ -590,7 +662,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -691,7 +764,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_as_array();
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
@@ -771,7 +845,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -875,7 +950,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
@@ -950,7 +1026,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1043,7 +1120,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let ca = self.rechunk();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1108,7 +1186,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1185,7 +1263,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = ca.downcast_iter().next().unwrap();
+                    let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1244,39 +1322,54 @@ impl Float16Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float16Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_quantile_generic::<_, Float16Type>(self, groups, 0.5, QuantileMethod::Linear)
+        agg_quantile_generic::<_, Float16Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 impl Float32Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_quantile_generic::<_, Float32Type>(self, groups, 0.5, QuantileMethod::Linear)
+        agg_quantile_generic::<_, Float32Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 impl Float64Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_quantile_generic::<_, Float64Type>(self, groups, 0.5, QuantileMethod::Linear)
+        agg_quantile_generic::<_, Float64Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
     }
 }
 
@@ -1450,12 +1543,54 @@ where
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
-        agg_quantile_generic::<_, Float64Type>(self, groups, 0.5, QuantileMethod::Linear)
+        agg_quantile_generic::<_, Float64Type>(
+            self,
+            groups,
+            GroupQuantile::Scalar(0.5),
+            QuantileMethod::Linear,
+        )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_use_rolling_kernels() {
+        let max_step = ROLLING_KERNEL_MAX_STEP;
+        let n_rows = 10 * max_step;
+        let windows = |step: usize| -> GroupsSlice {
+            (0..n_rows)
+                .step_by(step)
+                .map(|start| [start as IdxSize, (n_rows - start).min(2 * step) as IdxSize])
+                .collect()
+        };
+        let half = Float64Chunked::from_vec(PlSmallStr::EMPTY, vec![0.0; n_rows / 2]);
+        let one = Float64Chunked::from_vec(PlSmallStr::EMPTY, vec![0.0; n_rows]);
+        let one = one.chunks().as_slice();
+        let two = [half.chunks()[0].clone(), half.chunks()[0].clone()];
+        let (dense, sparse) = (windows(max_step), windows(2 * max_step));
+        let single: GroupsSlice = vec![[0, n_rows as IdxSize]];
+
+        // One chunk: always the kernel.
+        assert!(_use_rolling_kernels(&dense, true, true, one));
+        assert!(_use_rolling_kernels(&sparse, true, true, one));
+        // Chunked: the kernel only for dense windows.
+        assert!(_use_rolling_kernels(&dense, true, true, &two));
+        assert!(!_use_rolling_kernels(&sparse, true, true, &two));
+        // Never for disjoint, non-monotonic, single or no windows.
+        for chunks in [one, &two[..]] {
+            assert!(!_use_rolling_kernels(&dense, false, true, chunks));
+            assert!(!_use_rolling_kernels(&dense, true, false, chunks));
+            assert!(!_use_rolling_kernels(&single, true, true, chunks));
+            assert!(!_use_rolling_kernels(&vec![], true, true, chunks));
+        }
     }
 }
