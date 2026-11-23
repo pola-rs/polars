@@ -235,7 +235,7 @@ def test_struct_field_pruning_skips_unselected_leaves(tmp_path: Path) -> None:
 
 def test_struct_field_pruning_ipc_skips_unselected_fields(tmp_path: Path) -> None:
     marker = "QZQZQZQZ"
-    n = 32
+    n = 31
     table = pa.table(
         {"s": [{"a": i, "b": marker * 4, "c": {"x": i, "y": marker}} for i in range(n)]}
     )

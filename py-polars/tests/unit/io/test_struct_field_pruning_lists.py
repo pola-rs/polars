@@ -319,30 +319,38 @@ def test_struct_field_pruning_zero_rows_and_null_fields(
 def test_struct_field_pruning_ipc_views_compression_batches(tmp_path: Path) -> None:
     # String views with variadic buffers before and after the read field, in several
     # record batches, compressed or not.
+    batch_size = 32
+    n = 5 * batch_size - 1
     df = pl.DataFrame(
         {
             "s": [
                 {
-                    "a": f"long string value {i}" * (i % 3),
+                    # The first batch crosses the initial string-view buffer size.
+                    "a": f"long string value {i}" * (24 if i < batch_size else i % 3),
                     "b": i,
                     "c": f"another long string {i}" * 2,
                     "d": ["x" * 20] * (i % 4),
                 }
                 if i % 7
                 else None
-                for i in range(160)
+                for i in range(n)
             ],
             "l": [
                 [{"p": [{"u": i, "v": f"{i}" * 15}], "q": f"q{i}" * 10}, None]
                 if i % 5
                 else None
-                for i in range(160)
+                for i in range(n)
             ],
         }
     )
     for compression in ["uncompressed", "lz4", "zstd"]:
         path = tmp_path / f"{compression}.ipc"
-        df.write_ipc(path, compression=compression, record_batch_size=32)  # type: ignore[call-overload]
+        df.write_ipc(path, compression=compression, record_batch_size=batch_size)  # type: ignore[call-overload]
+        if hasattr(pa, "string_view"):
+            with pa.ipc.open_file(path) as reader:
+                skipped = reader.get_batch(0).column(0).field("a")
+                # After validity and views, each remaining buffer holds string data.
+                assert sum(buf.size > 0 for buf in skipped.buffers()[2:]) > 1
         for lf in [pl.scan_ipc(path), pl.scan_ipc(path, n_rows=48)]:
             for q in [
                 lf.select(s.struct.field("c")),
