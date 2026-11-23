@@ -808,7 +808,7 @@ def test_quantile_out_of_range_grouped(quantile: float, per_group: bool) -> None
 
 
 @pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
-@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1, [0.5, 1.1]])
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1, [0.5, 1.1], [None, 1.1]])
 def test_quantile_out_of_range_literal_empty(
     op: str, quantile: float | list[float] | pl.Expr
 ) -> None:
@@ -843,7 +843,12 @@ def test_quantile_str_fraction(op: str) -> None:
 @pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
 def test_quantile_null_fraction_grouped(op: str, engine: EngineType) -> None:
     lf = pl.LazyFrame(
-        {"g": [1, 1, 2, 2], "a": [1, 2, 3, 4], "q": [None, None, 1.0, 1.0]}
+        {
+            "t": [0, 1, 2, 3],
+            "g": [1, 1, 2, 2],
+            "a": [1, 2, 3, 4],
+            "q": [None, None, 1.0, 1.0],
+        }
     )
     expr = getattr(pl.col("a"), op)(pl.col("q").first())
     literal = getattr(pl.lit(3), op)(pl.col("q").first())
@@ -854,6 +859,8 @@ def test_quantile_null_fraction_grouped(op: str, engine: EngineType) -> None:
     empty_window = (
         lf.drop_nulls().with_row_index().rolling("index", period="1i", offset="0i")
     )
+    lists = pl.LazyFrame({"l": [[None, 1.0], [1.0, 0.0]]})
+    first_element = getattr(pl.element(), op)(pl.element().first())
     for q, expected in [
         (gb.agg(expr), [None, 4]),
         (gb.agg(literal), [None, 3]),
@@ -861,6 +868,8 @@ def test_quantile_null_fraction_grouped(op: str, engine: EngineType) -> None:
         (lf.select(expr.over("g")), [None, None, 4, 4]),
         (rolling.agg(getattr(pl.col("a"), op)(pl.col("q").last())), [None, None, 3, 4]),
         (empty_window.agg(expr), [4, None]),
+        (lf.group_by_dynamic("t", every="2i").agg(expr), [None, 4]),
+        (lists.select(pl.col("l").list.eval(first_element)), [[None], [1.0]]),
     ]:
         out = q.collect(engine=engine)
         assert out.get_columns()[-1].to_list() == expected
