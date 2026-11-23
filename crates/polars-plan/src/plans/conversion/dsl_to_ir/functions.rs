@@ -101,6 +101,17 @@ pub(super) fn convert_functions(
                 B::Contains => IB::Contains,
                 B::StartsWith => IB::StartsWith,
                 B::EndsWith => IB::EndsWith,
+                B::Find => IB::Find,
+                #[cfg(feature = "find_many")]
+                B::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                } => IB::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                },
                 #[cfg(feature = "binary_encoding")]
                 B::HexDecode(v) => IB::HexDecode(v),
                 #[cfg(feature = "binary_encoding")]
