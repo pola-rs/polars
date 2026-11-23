@@ -45,12 +45,18 @@ impl ColumnTransform {
         use ColumnTransform as TF;
 
         let out = match self {
-            TF::Cast { dtype, options, .. } => {
+            TF::Cast {
+                dtype,
+                options,
+                preserves_null_count,
+            } => {
                 // note: strict casts are only sound for non-nested dtypes here;
                 // recursion currently does not propagate NULLs across nesting levels
                 debug_assert!(!matches!(options, CastOptions::Strict) || !dtype.is_nested());
 
-                input.cast_with_options(dtype, *options)?
+                let out = input.cast_with_options(dtype, *options)?;
+                debug_assert!(!preserves_null_count || out.null_count() == input.null_count());
+                out
             },
 
             TF::FullNull { dtype } => Column::full_null(input.name().clone(), input.len(), dtype),
