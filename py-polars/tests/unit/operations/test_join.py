@@ -5170,3 +5170,27 @@ def test_join_suffixed_output_named_like_right_key_30329(engine: EngineType) -> 
         assert_frame_equal(
             op(q).collect(engine=engine), expected, check_row_order=False
         )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_full_join_filter_rewrite_suffix_collision(engine: EngineType) -> None:
+    left = pl.LazyFrame({"k": [1, 2], "x": [0, 1]})
+    right = pl.LazyFrame({"x": [7], "x_right": [1]})
+    q = left.join(right, left_on="k", right_on="x_right", how="full", coalesce=True)
+    q = q.filter(pl.col("x_right") == 7)
+
+    assert_frame_equal(
+        q.collect(engine=engine), pl.DataFrame({"k": [1], "x": [0], "x_right": [7]})
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_right_join_filter_rewrite_suffix_collision(engine: EngineType) -> None:
+    left = pl.LazyFrame({"x": [1], "x_right": [5]})
+    right = pl.LazyFrame({"k": [1, 2], "x": [7, 8]})
+    q = left.join(right, left_on="x", right_on="k", how="right")
+    q = q.filter(pl.col("x_right") == 5)
+
+    assert_frame_equal(
+        q.collect(engine=engine), pl.DataFrame({"x_right": [5], "k": [1], "x": [7]})
+    )
