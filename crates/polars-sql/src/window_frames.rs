@@ -35,6 +35,10 @@ enum FrameShape {
     Peers,
     /// The current row and the given number of rows before it.
     Preceding(usize),
+    /// A frame ending `rows` rows before the current row: from the first row, or `width + 1` wide.
+    Before { rows: usize, width: Option<usize> },
+    /// A frame that starts after it ends, which holds no row.
+    Empty,
     /// The rows whose ORDER BY key is within the bounds of the current row's key. At least
     /// one bound is an offset.
     Range { start: RangeBound, end: RangeBound },
@@ -206,6 +210,32 @@ impl SQLFunctionVisitor<'_> {
                 (expr, Vec::new(), order_keys)
             },
             FrameShape::Preceding(n) => (aggregate.rolling(n)?, Vec::new(), order_keys),
+            FrameShape::Before { rows, width } => {
+                // the frame of the row `rows` rows before, which the first rows don't have
+                let frame = match width {
+                    None => aggregate.running(false),
+                    Some(width) => aggregate.rolling(width)?,
+                };
+                let expr = frame.shift(lit(rows as i64));
+                let expr = match aggregate {
+                    Aggregate::Count(_) | Aggregate::CountRows => expr.fill_null(lit(0i64)),
+                    _ => expr,
+                };
+                (expr, Vec::new(), order_keys)
+            },
+            FrameShape::Empty => {
+                // NULL typed as the aggregate over the partition, which every type supports
+                let empty = match aggregate {
+                    Aggregate::Count(_) | Aggregate::CountRows => lit(0i64),
+                    _ => Expr::Literal(LiteralValue::untyped_null()),
+                };
+                let typed = aggregate.whole(false);
+                (
+                    when(lit(false)).then(typed).otherwise(empty),
+                    Vec::new(),
+                    order_keys,
+                )
+            },
             FrameShape::Range { start, end } => {
                 let expr = self.range_aggregate(&aggregate, start, end, &order_keys)?;
                 (expr, Vec::new(), order_keys)
@@ -246,6 +276,23 @@ impl SQLFunctionVisitor<'_> {
             (WindowFrameUnits::Rows, CurrentRow, CurrentRow) => Some(FrameShape::Preceding(0)),
             (WindowFrameUnits::Rows, Preceding(Some(n)), CurrentRow) => {
                 Some(FrameShape::Preceding(self.window_frame_offset(n)?))
+            },
+            (WindowFrameUnits::Rows, Preceding(None), Preceding(Some(m))) => {
+                match self.window_frame_offset(m)? {
+                    0 => Some(FrameShape::ToCurrentRow { peers: false }),
+                    rows => Some(FrameShape::Before { rows, width: None }),
+                }
+            },
+            (WindowFrameUnits::Rows, Preceding(Some(n)), Preceding(Some(m))) => {
+                let (n, m) = (self.window_frame_offset(n)?, self.window_frame_offset(m)?);
+                match (n.checked_sub(m), m) {
+                    (Some(width), 0) => Some(FrameShape::Preceding(width)),
+                    (Some(width), rows) => Some(FrameShape::Before {
+                        rows,
+                        width: Some(width),
+                    }),
+                    (None, _) => Some(FrameShape::Empty),
+                }
             },
             (WindowFrameUnits::Rows, _, _) => None,
             // In RANGE and GROUPS frames, the current row includes its peers.
