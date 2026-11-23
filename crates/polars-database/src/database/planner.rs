@@ -11,11 +11,14 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::backend::resolve::{detect_dialect, object_info, resolve_backend};
-use super::backend::{BackendKind, DatabaseSession, open_backend, open_session_with_retries};
+use super::backend::{
+    BackendKind, DatabaseSession, collect_batches, open_backend, open_session_with_retries,
+};
 use super::catalog::{self, CatalogInfo};
 use super::config::{
     ColumnMeta, CompiledPartition, CompiledScan, DatabaseScanConfig, TableStats, session_setup_runs,
 };
+use super::connection::ConnectionSpec;
 use super::dialect::DialectName;
 use super::options::{Consistency, DatabaseRelation, DatabaseScanOptions, PartitionSpec};
 use super::partition::{self, Partition};
@@ -37,15 +40,39 @@ fn verbose() -> bool {
 }
 
 /// The `FROM` target of a relation, for the fixed discovery and catalog SQL.
-fn quoted_relation(dialect: DialectName, relation: &DatabaseRelation) -> String {
+fn quoted_relation(
+    dialect: DialectName,
+    relation: &DatabaseRelation,
+    columns: &[PlSmallStr],
+) -> String {
     match relation {
         DatabaseRelation::Table { parts, .. } => parts
             .iter()
             .map(|p| dialect.quote_ident(p))
             .collect::<Vec<_>>()
             .join("."),
-        DatabaseRelation::Query { sql } => format!("({}) pl_q", wrappable(sql)),
+        DatabaseRelation::Query { sql } => {
+            format!(
+                "({}) pl_q{}",
+                wrappable(sql),
+                derived_column_list(dialect, columns)
+            )
+        },
     }
+}
+
+/// The alias's column list (`("a", "b")`) of a derived table over a SQL Server query with a
+/// column of no name (see [`DatabaseScanConfig::unnamed_columns`]); empty without the columns.
+fn derived_column_list(dialect: DialectName, columns: &[PlSmallStr]) -> String {
+    if columns.is_empty() {
+        return String::new();
+    }
+    let names = columns
+        .iter()
+        .map(|c| dialect.quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("({names})")
 }
 
 fn strip_statement_end(sql: &str) -> &str {
@@ -54,7 +81,7 @@ fn strip_statement_end(sql: &str) -> &str {
 
 /// The query as it goes inside `(...)`: a newline ends a trailing `--` (or MySQL `#`)
 /// comment.
-fn wrappable(sql: &str) -> String {
+pub(crate) fn wrappable(sql: &str) -> String {
     let sql = strip_statement_end(sql);
     if sql.contains("--") || sql.contains('#') {
         format!("{sql}\n")
@@ -80,6 +107,7 @@ fn check_read_only(
     sql: &str,
     facts: Option<&QueryFacts>,
     read_only_session: bool,
+    dialect: DialectName,
 ) -> PolarsResult<()> {
     if let Some(facts) = facts.filter(|f| f.parses) {
         polars_ensure!(
@@ -96,7 +124,7 @@ fn check_read_only(
         InvalidOperation: "{first} statements are not valid read queries for scan_database"
     );
     polars_ensure!(
-        read_only_session || plain_select(sql),
+        read_only_session || plain_select(sql, dialect),
         InvalidOperation:
         "scan_database only runs read queries, and this query can't be parsed to check that \
         it is one (a WITH may hold a write); write it as one plain SELECT (no INTO, no `;` \
@@ -106,14 +134,21 @@ fn check_read_only(
 }
 
 /// A query that is one `SELECT` without `INTO` (`SELECT … INTO t` creates a table), as far as
-/// its words show: a statement that can't be parsed is taken as a write otherwise.
-fn plain_select(sql: &str) -> bool {
+/// its words show: a statement that can't be parsed is taken as a write otherwise. SQL Server
+/// runs statements with no `;` between them (`SELECT … FROM c EXEC('…')`): no word of the query
+/// may start a statement there ([`TSQL_STATEMENT_WORDS`]).
+fn plain_select(sql: &str, dialect: DialectName) -> bool {
     let sql = strip_statement_end(sql);
+    let mut words = sql.split(|c: char| !c.is_alphanumeric() && c != '_');
     first_keyword(sql).eq_ignore_ascii_case("SELECT")
         && !sql.contains(';')
-        && !sql
-            .split(|c: char| !c.is_alphanumeric() && c != '_')
-            .any(|w| w.eq_ignore_ascii_case("INTO"))
+        && !words.clone().any(|w| w.eq_ignore_ascii_case("INTO"))
+        && !(dialect == DialectName::Mssql
+            && words.any(|w| {
+                TSQL_STATEMENT_WORDS
+                    .iter()
+                    .any(|k| k.eq_ignore_ascii_case(w))
+            }))
 }
 
 /// Whether every session of a scan is read-only, so that the database refuses a write: the
@@ -127,6 +162,57 @@ fn read_only_session(dialect: DialectName, backend: &BackendKind, live: bool) ->
             .iter()
             .any(|s| s.sql.contains("READ ONLY"))
 }
+
+/// Words that start a Transact-SQL statement, from SQL Server's reserved keywords (it rejects
+/// one as an alias, so one after a table is a statement). Not `FETCH` (`OFFSET … FETCH NEXT`).
+const TSQL_STATEMENT_WORDS: &[&str] = &[
+    "ALTER",
+    "BACKUP",
+    "BREAK",
+    "BULK",
+    "CHECKPOINT",
+    "CLOSE",
+    "COMMIT",
+    "CONTINUE",
+    "CREATE",
+    "DBCC",
+    "DEALLOCATE",
+    "DECLARE",
+    "DELETE",
+    "DENY",
+    "DROP",
+    "DUMP",
+    "EXEC",
+    "EXECUTE",
+    "GOTO",
+    "GRANT",
+    "IF",
+    "INSERT",
+    "KILL",
+    "LOAD",
+    "MERGE",
+    "OPEN",
+    "PRINT",
+    "RAISERROR",
+    "READTEXT",
+    "RECONFIGURE",
+    "RESTORE",
+    "RETURN",
+    "REVERT",
+    "REVOKE",
+    "ROLLBACK",
+    "SAVE",
+    "SET",
+    "SETUSER",
+    "SHUTDOWN",
+    "TRUNCATE",
+    "UPDATE",
+    "UPDATETEXT",
+    "USE",
+    "WAITFOR",
+    "WHILE",
+    "WRITETEXT",
+];
 
 /// The first word of a statement, after comments.
 fn first_keyword(sql: &str) -> &str {
@@ -148,6 +234,26 @@ fn first_keyword(sql: &str) -> &str {
     &s[..end]
 }
 
+/// The output column names given more than once, as the database tells names apart: Trino
+/// folds every name to lower case (`SELECT 1 AS T, 2 AS t` names two columns `t`), and names
+/// each column of no name apart (`_col0`, `_col1`).
+fn duplicated_output_names(dialect: DialectName, cols: &[PlSmallStr]) -> Vec<PlSmallStr> {
+    let trino = dialect == DialectName::Trino;
+    let mut seen = PlHashSet::with_capacity(cols.len());
+    let mut duplicated = vec![];
+    for c in cols.iter().filter(|c| !(trino && c.is_empty())) {
+        let key: PlSmallStr = if trino {
+            c.to_lowercase().into()
+        } else {
+            c.clone()
+        };
+        if !seen.insert(key.clone()) && !duplicated.contains(&key) {
+            duplicated.push(key);
+        }
+    }
+    duplicated
+}
+
 /// Why a user query can't be wrapped as a derived table, if it can't.
 fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str> {
     if !facts.parses {
@@ -162,13 +268,110 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     if dialect == DialectName::Mssql && facts.top_level_order_by_without_limit {
         return Some("SQL Server does not allow ORDER BY without TOP inside a derived table");
     }
-    if let Some(cols) = &facts.output_columns {
-        let mut seen = PlHashSet::with_capacity(cols.len());
-        if !cols.iter().all(|c| seen.insert(c)) {
-            return Some("the query has duplicate output column names");
-        }
+    if let Some(cols) = &facts.output_columns
+        && !duplicated_output_names(dialect, cols).is_empty()
+    {
+        return Some("the query has duplicate output column names");
     }
     None
+}
+
+/// Trino names an output column of no name `_col<position>` (`SELECT count(*)`), and a query
+/// wrapping it can't refer to that name: such a query is refused.
+fn refuse_trino_unnamed(dialect: DialectName, names: &[PlSmallStr]) -> PolarsResult<()> {
+    let unnamed = dialect == DialectName::Trino
+        && names.iter().any(|n| {
+            n.strip_prefix("_col")
+                .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+        });
+    polars_ensure!(
+        !unnamed,
+        InvalidOperation:
+        "the query has a column of no name, which Trino doesn't let a wrapping query refer to; \
+        alias each of its expressions (`SELECT count(*) AS n`)"
+    );
+    Ok(())
+}
+
+/// [`refuse_unwrappable_conversions`] for a scan planned under `schema=` (no I/O then): run
+/// on the first session opened.
+pub fn check_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &config.options.relation else {
+        return Ok(());
+    };
+    if !config.user_schema || config.dialect != DialectName::Trino {
+        return Ok(());
+    }
+    let Some(columns) = sql_renderer()
+        .and_then(|r| r.inspect_query(sql, config.dialect))
+        .ok()
+        .and_then(|f| f.output_columns)
+    else {
+        return Ok(());
+    };
+    refuse_unwrappable_conversions(
+        session,
+        &config.options,
+        config.dialect,
+        &columns,
+        &config.backend.kind,
+        config.session_setup_runs(),
+    )
+}
+
+/// Refuses a query that names two output columns alike and has a column read through a conversion.
+pub(crate) fn refuse_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    options: &DatabaseScanOptions,
+    dialect: DialectName,
+    columns: &[PlSmallStr],
+    backend: &BackendKind,
+    setup_runs: bool,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &options.relation else {
+        return Ok(());
+    };
+    let duplicated = duplicated_output_names(dialect, columns);
+    if duplicated.is_empty() {
+        return Ok(());
+    }
+    let Some(types) = catalog::trino_positional_types(session, sql, columns.len()) else {
+        return Ok(());
+    };
+    let converted = columns
+        .iter()
+        .zip(&types)
+        .enumerate()
+        .filter(|(_, (c, t))| {
+            column_conversion(
+                dialect,
+                backend,
+                setup_runs,
+                options.connection.opened_by_plugin(),
+                t,
+                &dialect.quote_ident(c),
+            )
+            .is_some()
+        })
+        .map(|(i, (c, t))| match c.is_empty() {
+            true => format!("column {} ({t})", i + 1),
+            false => format!("{c} ({t})"),
+        })
+        .collect::<Vec<_>>();
+    if converted.is_empty() {
+        return Ok(());
+    }
+    polars_bail!(
+        InvalidOperation:
+        "the query names its columns {} more than once, so it can't be wrapped to read {} \
+        right (the drivers read such a column wrong or abort); alias the duplicated columns \
+        (`SELECT a.ts AS a_ts, b.ts AS b_ts`)",
+        duplicated.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(", "),
+        converted.join(", ")
+    );
 }
 
 /// What schema discovery may do with a query source.
@@ -202,10 +405,17 @@ struct QueryDiscovery {
     all_columns_volatile: bool,
     /// Every session is read-only ([`read_only_session`]): the database refuses a write.
     read_only_session: bool,
+    /// A SQL Server query with a column of no name: all its output columns, as a derived table
+    /// over it names them (`column_1` for the second; see [`catalog::mssql_unnamed_columns`]).
+    derived: Vec<PlSmallStr>,
     /// The SQL that finds its schema without running it, where the usual probe would
     /// (MySQL: [`mysql_query_probe`]).
     probe: Option<String>,
 }
+
+/// Why a query with a `WITH TIES` is read without pushdown: a `LIMIT` around it is applied
+/// inside it by Trino, past the ties (it is still wrapped, to find its schema and convert).
+const WITH_TIES: &str = "the query has a WITH TIES, which a LIMIT around it may not respect";
 
 const MARIADB_ORDER_BY: &str = "MariaDB ignores the ORDER BY of a query inside a derived table";
 
@@ -362,6 +572,9 @@ pub fn resolve_scan(
     // The server drops the query's top-level `ORDER BY` inside a derived table (MariaDB, or
     // a MySQL dialect server not known to keep it without I/O): a read must not wrap it.
     let mut derived_order_dropped = false;
+    let mut sqlite_floats_exact_found = false;
+    // columns the read refuses, with why (`DatabaseScanConfig::refused_columns`)
+    let mut refused: Vec<(PlSmallStr, PlSmallStr)> = Vec::new();
     if let DatabaseRelation::Query { sql } = &options.relation {
         let sql = sql.clone();
         let facts = sql_renderer().and_then(|r| r.inspect_query(&sql, dialect));
@@ -369,7 +582,7 @@ pub fn resolve_scan(
         query_facts = facts.as_ref().ok().cloned();
         let read_only_session =
             read_only_session(dialect, &backend.kind, options.connection.is_live());
-        check_read_only(&sql, facts.as_ref().ok(), read_only_session)?;
+        check_read_only(&sql, facts.as_ref().ok(), read_only_session, dialect)?;
         // SQLite and DuckDB rename one of two names that differ only in case inside a derived
         // table (`x:1`, `x_1`), and a qualified name picks the first of them.
         if matches!(dialect, DialectName::Sqlite | DialectName::Duckdb)
@@ -461,11 +674,21 @@ pub fn resolve_scan(
             all_columns_volatile: facts.as_ref().is_ok_and(|f| f.all_columns_volatile),
             read_only_session,
             probe: None,
+            derived: vec![],
         };
         if let Some(reason) = blocker
             && pushdown_disabled.is_none()
         {
             pushdown_disabled = Some(reason);
+        }
+        if facts.as_ref().is_ok_and(|f| f.parses && f.with_ties) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(WITH_TIES.into());
+        }
+        if facts.as_ref().is_ok_and(|f| f.positional_join) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(POSITIONAL_REASON.into());
+        }
+        if facts.as_ref().is_ok_and(|f| f.unsafe_settings) && pushdown_disabled.is_none() {
+            pushdown_disabled = Some(SETTINGS_REASON.into());
         }
         if query.derived_order_by {
             if dialect.keeps_derived_table_order().is_none() {
@@ -499,16 +722,22 @@ pub fn resolve_scan(
     // column holds no integers, an INTEGER column no integral reals.
     let mut affinity: PlHashMap<PlSmallStr, DataType> = PlHashMap::new();
     let mut stats = TableStats::default();
+    let mut resolution: Option<Vec<String>> = None;
+    let mut mixed_found: Vec<PlSmallStr> = Vec::new();
+    let mut bigquery_sampled_schema = Schema::default();
     let schema: SchemaRef;
+    // the query columns SQL Server declares `money` or `smallmoney`
+    let mut money_columns: PlHashMap<PlSmallStr, String> = PlHashMap::default();
     let volatility_unchecked = user_schema.is_some();
     let user_typed = user_schema.is_some();
+    let google_bigquery = is_google_bigquery(dialect, &backend.kind);
 
     if let Some(schema_) = user_schema {
         // No I/O: a user schema is authoritative, and column semantics stay conservative:
         // collations are unknown, and so are some types behind the dtypes: SQL Server's
         // legacy `datetime`, a MySQL `YEAR` (see the filter), and a SQLite column's
-        // affinity (a `String` may hold numbers that compare as such). Otherwise the
-        // user's `String` states a text column.
+        // affinity (a `String` may hold numbers that compare as such). BigQuery's native
+        // types are unknown here: even a null check can differ for JSON or arrays.
         columns = schema_
             .iter()
             .map(|(name, dtype)| ColumnMeta {
@@ -518,6 +747,7 @@ pub fn resolve_scan(
                 strings: catalog::unknown_string_semantics(dialect),
                 is_key: false,
                 comparable: match dtype {
+                    _ if dialect == DialectName::Bigquery => false,
                     DataType::String => dialect != DialectName::Sqlite,
                     DataType::Datetime(_, _) => dialect != DialectName::Mssql,
                     // A float or decimal dtype over a column of another numeric type
@@ -529,6 +759,10 @@ pub fn resolve_scan(
                 },
             })
             .collect();
+        if is_query {
+            let names = schema_.iter_names().cloned().collect::<Vec<_>>();
+            refuse_trino_unnamed(dialect, &names)?;
+        }
         // No I/O to ask the database about views and the functions sqlglot doesn't know.
         schema = schema_;
     } else {
@@ -557,17 +791,47 @@ pub fn resolve_scan(
         {
             query.probe = Some(mysql_query_probe(session.as_mut(), sql, &query)?);
         }
+        if is_query
+            && dialect == DialectName::Trino
+            && let Some(columns) = query_facts.as_ref().and_then(|f| f.output_columns.as_ref())
+        {
+            refuse_unwrappable_conversions(
+                session.as_mut(),
+                &options,
+                dialect,
+                columns,
+                &backend.kind,
+                setup_runs,
+            )?;
+        }
         // The catalog first: some declared types are read as text (`text_conversion`), and
         // discovery must select them the same way the scan will.
+        // SQL Server refuses a derived table with an unnamed column: they are named by position.
+        if let DatabaseRelation::Query { sql } = &options.relation
+            && dialect == DialectName::Mssql
+            && query.wrappable
+        {
+            query.derived = catalog::mssql_unnamed_columns(session.as_mut(), &wrappable(sql))
+                .unwrap_or_default();
+        }
         let discover = |session: &mut dyn DatabaseSession, options: &DatabaseScanOptions| {
             let info = match &options.relation {
-                DatabaseRelation::Table { parts, .. } => {
-                    catalog::table_info(session, dialect, parts)
-                },
+                DatabaseRelation::Table { parts, .. } => catalog::table_info(
+                    session,
+                    dialect,
+                    parts,
+                    options.connection.opened_by_plugin(),
+                ),
                 DatabaseRelation::Query { .. } => CatalogInfo::default(),
             };
-            let select_list = converted_select_list(dialect, &backend.kind, setup_runs, &info);
-            let (discovered, sampled) = discover_schema(
+            let select_list = converted_select_list(
+                dialect,
+                &backend.kind,
+                setup_runs,
+                options.connection.opened_by_plugin(),
+                &info,
+            );
+            let discovered = discover_schema(
                 session,
                 options,
                 dialect,
@@ -576,9 +840,9 @@ pub fn resolve_scan(
                 select_list.as_deref(),
                 &info,
             )?;
-            PolarsResult::Ok((info, discovered, sampled))
+            PolarsResult::Ok((info, discovered))
         };
-        let (mut info, mut discovered, sampled) = match discover(session.as_mut(), &options) {
+        let (mut info, discovery) = match discover(session.as_mut(), &options) {
             Ok(found) => found,
             // No table by the folded name: the name as written, on a new session (a failed
             // statement can abort the session's transaction).
@@ -601,8 +865,23 @@ pub fn resolve_scan(
                 None => return Err(e),
             },
         };
-        stats = info.stats;
+        let DiscoveredSchema {
+            schema: mut discovered,
+            sampled,
+            mixed_blobs,
+            bigquery_text_columns,
+            bigquery_sampled_schema: inferred_bigquery,
+        } = discovery;
+        bigquery_sampled_schema = inferred_bigquery;
         let names = discovered.iter_names().cloned().collect::<Vec<_>>();
+        if is_query {
+            refuse_trino_unnamed(dialect, &names)?;
+        }
+        stats = info.stats;
+        mixed_found = mixed_blobs;
+        if !options.connection.opened_by_plugin() && !options.connection.is_live() {
+            resolution = session_resolution(session.as_mut(), dialect, &options);
+        }
         volatility = source_volatility(
             session.as_mut(),
             dialect,
@@ -611,6 +890,13 @@ pub fn resolve_scan(
             &names,
             true,
         );
+        if pushdown_disabled.is_none() {
+            if volatility.positional {
+                pushdown_disabled = Some(POSITIONAL_VIEW_REASON.into());
+            } else if volatility.settings {
+                pushdown_disabled = Some(SETTINGS_VIEW_REASON.into());
+            }
+        }
         // a view's columns hold what its query gives, whatever `pragma_table_info` says
         // (the first branch's type, of a `UNION`)
         if dialect == DialectName::Sqlite && volatility.plain_table {
@@ -626,9 +912,9 @@ pub fn resolve_scan(
         // the query is wrapped to read columns through their conversions; also without
         // pushdown, so that the values don't depend on it. (MariaDB would drop the
         // `ORDER BY` of a wrapped query.)
-        if is_query && read_wrapped(&options, &pushdown_disabled, &query) {
+        if is_query && read_wrapped(&options, &pushdown_disabled, &query, dialect) {
             let names = discovered.iter_names().cloned().collect::<Vec<_>>();
-            let from = quoted_relation(dialect, &options.relation);
+            let from = quoted_relation(dialect, &options.relation, &query.derived);
             // Python drivers refuse DDL, ConnectorX runs each statement on its own connection.
             let temp_tables = matches!(backend.kind, BackendKind::Adbc { .. });
             info = catalog::query_info(
@@ -648,11 +934,76 @@ pub fn resolve_scan(
                     | DialectName::Mssql
                     | DialectName::Oracle
                     | DialectName::Clickhouse
+                    | DialectName::Trino
             ) {
                 info.types = names
                     .iter()
                     .filter_map(|n| Some((n.clone(), info.compare_types.get(n)?.clone())))
                     .collect();
+            }
+        }
+
+        // A ConnectorX ClickHouse query that can't be wrapped has no conversions: it reads a
+        // `DateTime64(7..9)` as microseconds, silently dropping the nanoseconds. ClickHouse
+        // describes the query itself; a Datetime column whose precision is above 6 or unknown is
+        // refused, unless the user typed it.
+        if is_query
+            && dialect == DialectName::Clickhouse
+            && matches!(backend.kind, BackendKind::ConnectorX)
+            && !read_wrapped(&options, &pushdown_disabled, &query, dialect)
+            && discovered
+                .iter()
+                .any(|(_, d)| matches!(d, DataType::Datetime(..)))
+        {
+            let described = match &options.relation {
+                DatabaseRelation::Query { sql } => session
+                    .query(&format!("DESCRIBE TABLE ({})", strip_statement_end(sql)))
+                    .ok()
+                    .map(|df| {
+                        (0..df.height())
+                            .filter_map(|row| {
+                                Some((
+                                    catalog::cell_str(&df, 0, row)?,
+                                    catalog::cell_str(&df, 1, row)?,
+                                ))
+                            })
+                            .collect::<PlHashMap<String, String>>()
+                    }),
+                _ => None,
+            };
+            for (name, dtype) in discovered.iter() {
+                let typed = options
+                    .schema_overrides
+                    .as_ref()
+                    .is_some_and(|o| o.contains(name));
+                if !matches!(dtype, DataType::Datetime(..)) || typed {
+                    continue;
+                }
+                let why = match described.as_ref().and_then(|d| d.get(name.as_str())) {
+                    Some(t) => match declared_dtype(dialect, t) {
+                        Some(DataType::Datetime(TimeUnit::Nanoseconds, _)) => {
+                            format!("it is a {t}, whose nanoseconds ConnectorX drops")
+                        },
+                        _ => continue,
+                    },
+                    None => "its precision can't be looked up, and a DateTime64(7..9) \
+                        loses its nanoseconds in ConnectorX"
+                        .to_string(),
+                };
+                refused.push((
+                    name.clone(),
+                    format!(
+                        "ConnectorX can't read the ClickHouse column '{name}' of this query \
+                        right: {why}, and the query can't be wrapped to convert it ({}); \
+                        pin another driver (driver=\"clickhouse_connect\" or \"adbc\"), \
+                        CAST the column in the query (`toString(c)`), or type it with \
+                        schema_overrides to accept what ConnectorX reads",
+                        pushdown_disabled
+                            .as_deref()
+                            .unwrap_or("it can't be wrapped")
+                    )
+                    .into(),
+                ));
             }
         }
 
@@ -728,12 +1079,14 @@ pub fn resolve_scan(
                                 dialect,
                                 &backend.kind,
                                 setup_runs,
+                                options.connection.opened_by_plugin(),
                                 t,
                                 &dialect.quote_ident(name),
                             )
                             .is_some();
                             (info.types_required && !converted)
-                                || (dialect == DialectName::Duckdb && converted)
+                                || (dialect == DialectName::Duckdb
+                                    && (converted || duckdb_type_holds(t, &["VARIANT"])))
                         })
                         .map(|t| t.as_str().into())
                 }),
@@ -741,6 +1094,13 @@ pub fn resolve_scan(
                 is_key: info.key_column.as_ref() == Some(name),
                 comparable: !info.incomplete
                     && info.compares_like_polars(dialect, name, dtype)
+                    // BigQuery drivers also read GEOGRAPHY, JSON and wide BIGNUMERIC as
+                    // strings. Require evidence of native STRING from result metadata.
+                    && (dialect != DialectName::Bigquery
+                        || *dtype != DataType::String
+                        || bigquery_text_columns.contains(name.as_str()))
+                    // The Google driver also decodes JSON null as a Polars null.
+                    && (!google_bigquery || !sampled.contains(name.as_str()))
                     // read as text, compared as its own type
                     && !(dialect == DialectName::Duckdb
                         && info
@@ -754,6 +1114,7 @@ pub fn resolve_scan(
                                     dialect,
                                     &backend.kind,
                                     setup_runs,
+                                    options.connection.opened_by_plugin(),
                                     t,
                                     &dialect.quote_ident(name),
                                 )
@@ -768,7 +1129,7 @@ pub fn resolve_scan(
         // declared type) is read exactly too, where the query is wrapped.
         if is_query
             && matches!(dialect, DialectName::Mysql | DialectName::Singlestore)
-            && read_wrapped(&options, &pushdown_disabled, &query)
+            && read_wrapped(&options, &pushdown_disabled, &query, dialect)
         {
             for c in columns
                 .iter_mut()
@@ -777,7 +1138,32 @@ pub fn resolve_scan(
                 c.db_type = Some("float".into());
             }
         }
+        if dialect == DialectName::Mssql {
+            for (name, t) in info.compare_types.iter() {
+                if matches!(
+                    t.trim().to_ascii_lowercase().as_str(),
+                    "money" | "smallmoney"
+                ) {
+                    money_columns.insert(name.clone(), t.clone());
+                }
+            }
+        }
+        if dialect == DialectName::Sqlite
+            && !matches!(backend.kind, BackendKind::ConnectorX)
+            && pushdown_disabled.is_none()
+            && columns.iter().any(|c| c.dtype.is_float())
+        {
+            sqlite_floats_exact_found = sqlite_floats_exact(session.as_mut());
+        }
         schema = Arc::new(discovered);
+    }
+
+    // BigQuery emits NULL arrays as empty lists in query results. A SQL null filter runs
+    // before this conversion and would select different rows.
+    if dialect == DialectName::Bigquery {
+        for c in &mut columns {
+            c.comparable &= !matches!(c.dtype, DataType::List(_));
+        }
     }
 
     // ConnectorX writes every decimal as `Decimal(38, 10)`, cutting digits beyond 10
@@ -787,7 +1173,7 @@ pub fn resolve_scan(
     if matches!(backend.kind, BackendKind::ConnectorX)
         && (is_query || dialect == DialectName::Clickhouse)
     {
-        let wrapped = read_wrapped(&options, &pushdown_disabled, &query);
+        let wrapped = read_wrapped(&options, &pushdown_disabled, &query, dialect);
         for c in columns.iter_mut().filter(|c| c.dtype.is_decimal()) {
             polars_ensure!(
                 wrapped,
@@ -797,7 +1183,9 @@ pub fn resolve_scan(
                 column to text in the query",
                 c.name, pushdown_disabled.as_deref().unwrap_or("")
             );
-            c.db_type = Some(CONNECTORX_DECIMAL.into());
+            // SQL Server's `money` as text has 2 places: its own conversion (`column_conversion`)
+            let money = money_columns.get(c.name.as_str());
+            c.db_type = Some(money.map_or(CONNECTORX_DECIMAL, |t| t.as_str()).into());
             c.comparable &= !alias_shadows_column(dialect);
         }
     }
@@ -841,15 +1229,17 @@ pub fn resolve_scan(
     // A filter on a volatile function's column (`random() AS r`) isn't pushed: SQLite merges
     // the wrapped query into the filter's and calls the function again for it, returning
     // rows whose value fails the filter. Postgres and DuckDB push no filter below a
-    // volatile function: it sees the values the query returns.
+    // volatile function: it sees the values the query returns. Nor is one on a redacted
+    // table's columns.
     let refilters = !matches!(dialect, DialectName::Postgresql | DialectName::Duckdb);
     for c in columns.iter_mut().filter(|c| {
-        refilters
-            && (query.all_columns_volatile
-                || query
-                    .volatile_columns
-                    .iter()
-                    .any(|v| v.eq_ignore_ascii_case(&c.name)))
+        volatility.redacted
+            || refilters
+                && (query.all_columns_volatile
+                    || query
+                        .volatile_columns
+                        .iter()
+                        .any(|v| v.eq_ignore_ascii_case(&c.name)))
     }) {
         c.comparable = false;
     }
@@ -883,8 +1273,92 @@ pub fn resolve_scan(
     // read as, but fit an `Int128` / `UInt128`, text or a float: a column retyped to one
     // (`schema_overrides`, or `schema=` naming a 128-bit integer) is read as text, which the
     // cast to its dtype parses.
+    let mut schema = schema;
     if dialect == DialectName::Duckdb {
         for c in columns.iter_mut() {
+            // `TIMETZ` has no Polars dtype that keeps its offset (the drivers return the local time
+            // of day, `'10:00+02'` as `10:00`): it is read as text, `10:00:00+02`, unless the user
+            // types it.
+            if c.db_type.as_deref().is_some_and(|t| {
+                matches!(
+                    t.trim().to_ascii_uppercase().as_str(),
+                    "TIMETZ" | "TIME WITH TIME ZONE"
+                )
+            }) {
+                let overridden = options
+                    .schema_overrides
+                    .as_ref()
+                    .is_some_and(|o| o.contains(&c.name));
+                if !overridden && c.dtype == DataType::Time {
+                    c.dtype = DataType::String;
+                    if let Some(d) = Arc::make_mut(&mut schema).get_mut(&c.name) {
+                        *d = DataType::String;
+                    }
+                }
+                // Typed as a time (or anything but text), the value would lose its offset
+                // (`10:00:00+02` is not a `Time`): refused, not read as another time.
+                if c.dtype != DataType::String {
+                    refused.push((
+                        c.name.clone(),
+                        format!(
+                            "column '{}' is a DuckDB TIMETZ, which has no Polars dtype that keeps \
+                            its offset ({} was asked for): read it as text (the default, or \
+                            schema_overrides={{'{}': pl.String}}), or cast it in a query \
+                            (`CAST({} AS TIME)` drops the offset by your choice)",
+                            c.name, c.dtype, c.name, c.name
+                        )
+                        .into(),
+                    ));
+                    continue;
+                }
+                c.db_type = Some(DUCKDB_TEXT.into());
+                continue;
+            }
+            // A `TIMETZ` inside a list, struct or map reads as a `Time` without its offset
+            // (`'10:00+02'` as `10:00`), and a nested value can't be read as text: refused,
+            // whatever the column is typed as.
+            if c.db_type
+                .as_deref()
+                .is_some_and(|t| duckdb_type_holds(t, &["TIMETZ", "TIME WITH TIME ZONE"]))
+            {
+                refused.push((
+                    c.name.clone(),
+                    format!(
+                        "column '{}' holds a DuckDB TIMETZ inside a nested type ({}), which \
+                        drivers return as the local time of day without its offset: cast it in \
+                        a query (`CAST({} AS VARCHAR)`, or `list_transform` / `struct_pack` \
+                        with a cast of the field), or leave the column out of the read",
+                        c.name,
+                        c.db_type.as_deref().unwrap_or_default(),
+                        c.name
+                    )
+                    .into(),
+                ));
+                continue;
+            }
+            // A `VARIANT` reaches the drivers as a struct of its raw `metadata` / `value` bytes,
+            // not as its value: it is read as text, or refused.
+            if c.db_type
+                .as_deref()
+                .is_some_and(|t| duckdb_type_holds(t, &["VARIANT"]))
+            {
+                if c.dtype != DataType::String {
+                    refused.push((
+                        c.name.clone(),
+                        format!(
+                            "column '{}' is a DuckDB VARIANT, which drivers return as the raw \
+                            bytes of its encoding: read it as text with `CAST({} AS VARCHAR)` in \
+                            a query, or schema_overrides={{'{}': pl.String}}, or leave the \
+                            column out of the read",
+                            c.name, c.name, c.name
+                        )
+                        .into(),
+                    ));
+                    continue;
+                }
+                c.db_type = Some(DUCKDB_TEXT.into());
+                continue;
+            }
             let hugeint = c.db_type.as_deref().is_some_and(|t| {
                 matches!(
                     t.trim().to_ascii_uppercase().as_str(),
@@ -912,6 +1386,7 @@ pub fn resolve_scan(
     // expression has no declared type: its values are read by their class, as the other
     // drivers read them.
     if dialect == DialectName::Sqlite {
+        let opened_by_plugin = options.connection.opened_by_plugin();
         let connectorx = matches!(backend.kind, BackendKind::ConnectorX);
         let overridden = |name: &PlSmallStr| {
             options
@@ -951,7 +1426,15 @@ pub fn resolve_scan(
                     c.db_type = Some(SQLITE_UNTYPED_INTEGER.into())
                 },
                 ref dt if dt.is_integer() && connectorx => c.db_type = Some(SQLITE_INTEGER.into()),
-                DataType::Binary if connectorx => c.db_type = Some(CONNECTORX_SQLITE_VALUE.into()),
+                // Where the user opened the connection (a live object, a factory), its `abs` and
+                // `typeof` may be their own, and the SQL guard can't be trusted: the read checks
+                // each batch's dtype instead (`check_sqlite_blobs`).
+                DataType::Binary if opened_by_plugin => c.db_type = Some(SQLITE_BLOB.into()),
+                // (a blob next to other values, found by the sample: the read fails on it)
+                DataType::Binary if mixed_found.contains(&c.name) => {
+                    c.db_type = Some(SQLITE_BLOB_MIXED.into())
+                },
+                DataType::Binary => c.db_type = Some(SQLITE_BLOB_CLIENT.into()),
                 _ => {},
             }
         }
@@ -978,6 +1461,7 @@ pub fn resolve_scan(
         dialect,
         backend,
         schema,
+        bigquery_sampled_schema,
         columns: columns.into(),
         stats,
         compiled: None,
@@ -987,6 +1471,10 @@ pub fn resolve_scan(
         volatility_unchecked,
         user_schema: user_typed,
         derived_order_dropped,
+        sqlite_floats_exact: sqlite_floats_exact_found,
+        refused_columns: refused,
+        unnamed_columns: !query.derived.is_empty() && !user_typed,
+        resolution,
         bounds_cache: Default::default(),
     })
 }
@@ -998,7 +1486,9 @@ pub fn resolve_scan(
 /// relies on it not being so: several partitions (each reads it again), or a filter
 /// pushed into the database on a column of a volatile function, where the database merges
 /// a view or query into the filter's and calls `random()` again for it (SQLite, MySQL;
-/// others don't push a filter into a query that calls a volatile function).
+/// others don't push a filter into a query that calls a volatile function). Any pushed filter
+/// fails the read of a source that pairs rows by their place or reads a redacted table, and
+/// any pushdown the read of a view whose `SETTINGS` may cut its rows.
 pub fn check_unplanned_volatility(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
@@ -1010,6 +1500,29 @@ pub fn check_unplanned_volatility(
         return Ok(false);
     }
     let volatility = unplanned_volatility(session, config);
+    polars_ensure!(
+        !volatility.settings || config.pushdown_disabled.is_some(),
+        InvalidOperation:
+        "{SETTINGS_VIEW_REASON} (found when reading: schema= skips the check when planning); \
+        pass pushdown=False, or leave out schema="
+    );
+    if let Some(column) = compiled.filter_columns.first() {
+        let why = if volatility.redacted {
+            Some("a table it reads has redacted columns, which the database compares as stored")
+        } else if volatility.positional {
+            Some(POSITIONAL_VIEW_REASON)
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            polars_bail!(
+                InvalidOperation:
+                "a filter on '{column}' was planned to run in the database, but {why} \
+                (found when reading: schema= skips the check when planning); filter after \
+                collecting, or leave out schema="
+            );
+        }
+    }
     let Some(reason) = volatility.volatile else {
         return Ok(false);
     };
@@ -1048,6 +1561,11 @@ pub fn check_mysql_session_zone(
     session: &mut dyn DatabaseSession,
     config: &DatabaseScanConfig,
 ) -> PolarsResult<()> {
+    // A live Python driver's TIMESTAMP columns are converted from the session's zone as they are
+    // read (the bridge's `_mysql_timestamps_to_utc`), by the result's own field types.
+    if session.converts_mysql_timestamps() {
+        return Ok(());
+    }
     // (SingleStore has no session setup either way)
     if !matches!(
         config.dialect,
@@ -1059,7 +1577,7 @@ pub fn check_mysql_session_zone(
     let Some(column) = config.columns.iter().find(|c| {
         matches!(c.dtype, DataType::Datetime(_, Some(_)))
             && config.schema.contains(&c.name)
-            && c.db_type.as_deref().is_none_or(|t| t == MYSQL_DATE)
+            && type_unknown(c)
     }) else {
         return Ok(());
     };
@@ -1093,6 +1611,116 @@ pub fn check_mysql_session_zone(
     Ok(())
 }
 
+/// The relations a source names (a table's name; the tables a query reads, if it parses).
+fn named_relations(options: &DatabaseScanOptions, dialect: DialectName) -> Vec<Vec<PlSmallStr>> {
+    match &options.relation {
+        DatabaseRelation::Table { parts, .. } => vec![parts.to_vec()],
+        DatabaseRelation::Query { sql } => {
+            match sql_renderer().and_then(|r| r.inspect_query(sql, dialect)) {
+                Ok(f) => f.tables,
+                // can't tell which tables it reads
+                Err(_) => vec![],
+            }
+        },
+    }
+}
+
+/// How the session resolves the relations the source names
+/// ([`catalog::resolution_fingerprint`]); `None` where there is nothing to compare.
+pub fn session_resolution(
+    session: &mut dyn DatabaseSession,
+    dialect: DialectName,
+    options: &DatabaseScanOptions,
+) -> Option<Vec<String>> {
+    if !catalog::has_resolution_fingerprint(dialect) {
+        return None;
+    }
+    catalog::resolution_fingerprint(session, dialect, &named_relations(options, dialect))
+}
+
+/// Postgres, MySQL, MariaDB, SingleStore: a read over connections the user made (a factory, an
+/// Engine's pool) must read the relation it planned. Pooled sessions differ in state the plugin
+/// can't list (`search_path`, a temporary table that shadows a permanent one, a temporary child
+/// of an inheritance parent), so planning on one checkout and reading on another can read another
+/// relation. Each session opened for a read resolves the planned names again, and a different
+/// answer is an error. `baseline` holds the first session's answer for a source planned without
+/// I/O (`schema=`), which then has none of its own.
+///
+/// A partitioned read over several connections must not read a temporary table of a session
+/// either: it shadows a permanent one of its name only for the session that made it, so the
+/// partitions that land on other sessions of the pool would read the permanent table, or none.
+pub fn check_resolution(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+    baseline: &std::sync::Mutex<Option<Vec<String>>>,
+) -> PolarsResult<()> {
+    if config.options.connection.opened_by_plugin()
+        || config.options.connection.is_live()
+        || !catalog::has_resolution_fingerprint(config.dialect)
+    {
+        return Ok(());
+    }
+    let names = named_relations(&config.options, config.dialect);
+    if names.is_empty() {
+        return Ok(());
+    }
+    let found = catalog::resolution_fingerprint(session, config.dialect, &names);
+    let mut guard = baseline.lock().unwrap();
+    let Some(found) = found else {
+        // planned with a fingerprint (or another session gave one), but this session can't
+        // give one: not the same state
+        polars_ensure!(
+            config.resolution.is_none() && guard.is_none(),
+            InvalidOperation:
+            "could not check how this connection resolves the table names of the scan, which \
+            the scan was planned on another connection's session for"
+        );
+        return Ok(());
+    };
+    let qualified = |i: usize| {
+        names[i]
+            .iter()
+            .map(|p| p.as_str())
+            .collect::<Vec<_>>()
+            .join(".")
+    };
+    let planned = match &config.resolution {
+        Some(p) => p,
+        None => guard.get_or_insert_with(|| found.clone()),
+    };
+    if let Some(i) = planned.iter().zip(&found).position(|(a, b)| a != b) {
+        polars_bail!(
+            InvalidOperation:
+            "this connection resolves '{}' to {}, but the scan was planned on a session \
+            where it is {}: a pooled connection's session state (search_path, temporary \
+            tables, default database) differs from the one planned on. Read from one \
+            connection (a live connection, or a factory that returns a configured one), or \
+            qualify the name",
+            qualified(i),
+            found[i],
+            planned[i]
+        );
+    }
+    let partitioned = config
+        .compiled
+        .as_deref()
+        .is_some_and(|c| c.partitions.len() > 1);
+    if partitioned
+        && config.max_connections() > 1
+        && let Some(i) = found.iter().position(|f| f.starts_with("temp"))
+    {
+        polars_bail!(
+            InvalidOperation:
+            "the table '{}' is a temporary table of this session, which the other \
+            connections of the pool that the partitions read through don't see (they \
+            would read a permanent table of its name, or none): read it without \
+            partitioning (partition_on=None), or from one connection",
+            qualified(i)
+        );
+    }
+    Ok(())
+}
+
 /// [`source_volatility`] of a `schema=` source, whose planning didn't look it up, on
 /// `session`: its columns are the user's.
 fn unplanned_volatility(
@@ -1114,6 +1742,19 @@ fn unplanned_volatility(
         &names,
         false,
     )
+}
+
+/// Refuses a read of a column the planner found it can't read right (it is raised when the column
+/// is read, so a query that leaves it out still works).
+fn check_refused_columns(config: &DatabaseScanConfig, columns: &[PlSmallStr]) -> PolarsResult<()> {
+    if let Some((_, why)) = config
+        .refused_columns
+        .iter()
+        .find(|(name, _)| columns.contains(name))
+    {
+        polars_bail!(ComputeError: "{why}");
+    }
+    Ok(())
 }
 
 /// ConnectorX reads other row counts than there are from a ClickHouse array of `Nullable(…)`,
@@ -1226,6 +1867,18 @@ fn in_utc(dtype: &DataType) -> DataType {
     }
 }
 
+/// Pushdown is off (a filter changes the rows), but the query is still wrapped for its
+/// conversions, as with `pushdown=False`.
+const POSITIONAL_REASON: &str = "a positional join (PASTE, POSITIONAL) pairs rows by their place, \
+    which a pushed filter changes";
+const POSITIONAL_VIEW_REASON: &str = "a view it reads pairs rows by their place (PASTE, \
+    POSITIONAL), which a pushed filter changes";
+const SETTINGS_VIEW_REASON: &str = "a view it reads has a SETTINGS clause (an overflow mode, a \
+    row limit) that may cut or change its rows, which a pushed filter, projection or limit \
+    changes";
+const SETTINGS_REASON: &str = "a SETTINGS clause (an overflow mode, a row limit) may cut or \
+    change the rows, which a pushed filter changes";
+
 /// Whether the source is read with conversions in its select list: a table, or a query that
 /// is wrapped for them (with pushdown, or without it where it can be: see
 /// `compile_unwrapped`).
@@ -1233,12 +1886,26 @@ fn read_wrapped(
     options: &DatabaseScanOptions,
     pushdown_disabled: &Option<PlSmallStr>,
     query: &QueryDiscovery,
+    dialect: DialectName,
 ) -> bool {
+    // only a derived `ORDER BY` (repeated outside the wrapper, `compile_unwrapped`) keeps the
+    // pushdown off
+    // (and a filter that changes the rows it pairs or keeps, as `pushdown=False` does)
+    let only_derived_order = pushdown_disabled.as_deref().is_some_and(|r| {
+        r == MARIADB_ORDER_BY
+            || r == WITH_TIES
+            || r == derived_order_by_reason(dialect).as_str()
+            || r == POSITIONAL_REASON
+            || r == SETTINGS_REASON
+            || r == POSITIONAL_VIEW_REASON
+            || r == SETTINGS_VIEW_REASON
+    });
+
     match options.relation {
         DatabaseRelation::Table { .. } => true,
         DatabaseRelation::Query { .. } => {
             pushdown_disabled.is_none()
-                || (!options.pushdown && query.wrappable && !query.derived_order_by)
+                || (query.wrappable && (!options.pushdown || only_derived_order))
         },
     }
 }
@@ -1310,31 +1977,120 @@ const DUCKDB_TEXT: &str = "<duckdb text>";
 /// The `db_type` of a MySQL `Date` / `Datetime` column of an unknown type (a query's on a
 /// driver without the type lookup, or under `schema=`): it may be a `DATE` / `DATETIME` /
 /// `TIMESTAMP` holding zero dates (`mysql_zero_date_type`).
-const MYSQL_DATE: &str = "<mysql date>";
-/// The `db_type` of a SQLite Int64 / Binary column read through ConnectorX: its values as
-/// they are, without the column's declared type.
-const CONNECTORX_SQLITE_VALUE: &str = "<connectorx sqlite value>";
+pub(crate) const MYSQL_DATE: &str = "<mysql date>";
+/// The `db_type` of a SQLite Binary column: its blobs as they are, and no other value (a number or
+/// text, which drivers read as text, or as NULL, or lossily: an `%e` real) reads: the read fails on
+/// it (`explain_sqlite_error`). As an expression, it also has no declared type for ConnectorX to
+/// read the column by.
+const SQLITE_BLOB: &str = "<sqlite blob>";
+/// [`SQLITE_BLOB`] on a connection the user opened: read as it is, and each batch's dtype is
+/// checked (`check_sqlite_blobs`).
+const SQLITE_BLOB_CLIENT: &str = "<sqlite blob, checked by the read>";
+/// What SQLite raises for `abs(-9223372036854775808)`: the error [`SQLITE_BLOB`] reads fail with
+/// (an SQL expression has no other way to fail).
+const SQLITE_BLOB_ERROR: &str = "integer overflow";
 
 /// The marker that starts a real's exact value in a [`SQLITE_TEXT`] column, and escapes a
 /// text that starts with it.
 const SQLITE_REAL_MARK: char = '\u{1}';
 
+/// SQL for a SQLite value's storage class, text and marker. On a connection the user made (a live
+/// object, a factory's: `portable`) it calls no function: that connection may have redefined
+/// `typeof`, `char`, `substr`, `abs` (`create_function`) or `BINARY` (`create_collation`).
+/// Operators and `CAST` can't be, and comparing values of different classes (`+x` has no affinity)
+/// or blobs uses neither. Where the plugin opens the connection, the functions are the builtin
+/// ones, and cheaper: a volatile expression (`random()`) is evaluated once by `typeof`, where the
+/// portable form evaluates it for each test.
+#[derive(Clone, Copy)]
+struct SqliteOps {
+    portable: bool,
+}
+
+impl SqliteOps {
+    fn is_real(self, x: &str) -> String {
+        if !self.portable {
+            return format!("typeof({x}) = 'real'");
+        }
+        format!("(+({x}) <= 9e999 AND CAST(CAST({x} AS INTEGER) AS BLOB) <> CAST({x} AS BLOB))")
+    }
+
+    fn is_integer(self, x: &str) -> String {
+        if !self.portable {
+            return format!("typeof({x}) = 'integer'");
+        }
+        format!("(+({x}) <= 9e999 AND CAST(CAST({x} AS INTEGER) AS BLOB) = CAST({x} AS BLOB))")
+    }
+
+    /// Text: above every number, below every blob.
+    fn is_text(self, x: &str) -> String {
+        if !self.portable {
+            return format!("typeof({x}) = 'text'");
+        }
+        format!("(+({x}) > 9e999 AND +({x}) < X'')")
+    }
+
+    /// Text `x` that is an integer's (`as_type` INTEGER) or a real's text, as SQLite writes it
+    /// (compared as bytes where portable: no collation).
+    fn text_is(self, x: &str, as_type: &str) -> String {
+        if !self.portable {
+            return format!("CAST(CAST({x} AS {as_type}) AS TEXT) = {x}");
+        }
+        format!("CAST(CAST({x} AS {as_type}) AS BLOB) = CAST({x} AS BLOB)")
+    }
+
+    /// The storage class of `x` as `typeof` writes it.
+    fn storage_class(self, x: &str) -> String {
+        if !self.portable {
+            return format!("typeof({x})");
+        }
+        format!(
+            "CASE WHEN {x} IS NULL THEN 'null' WHEN {} THEN 'integer' WHEN {} THEN 'real' \
+            WHEN {} THEN 'text' ELSE 'blob' END",
+            self.is_integer(x),
+            self.is_real(x),
+            self.is_text(x)
+        )
+    }
+
+    /// The text `x` starts with the marker.
+    fn starts_with_mark(self, x: &str) -> String {
+        if !self.portable {
+            return format!("substr({x}, 1, 1) = {}", self.mark());
+        }
+        // The first character's bytes, in the database's encoding (`CAST AS BLOB` gives the stored
+        // bytes): one byte in UTF-8, two in UTF-16 with the marker's byte first (be) or last (le).
+        let enc = "(SELECT encoding FROM pragma_encoding)";
+        format!(
+            "(CAST({x} AS BLOB) >= CASE {enc} WHEN 'UTF-16le' THEN X'0100' \
+            WHEN 'UTF-16be' THEN X'0001' ELSE X'01' END \
+            AND CAST({x} AS BLOB) < CASE {enc} WHEN 'UTF-16le' THEN X'0101' \
+            WHEN 'UTF-16be' THEN X'0002' ELSE X'02' END)"
+        )
+    }
+
+    /// The marker as a SQL expression.
+    fn mark(self) -> &'static str {
+        if self.portable { "'\u{1}'" } else { "char(1)" }
+    }
+}
+
 /// A SQLite real `x`, exactly, as `\u{1}[-]m:k` for `m · 2^k` (`\u{1}inf`, `\u{1}-inf`),
 /// which [`decode_sqlite_reals`] writes as Polars writes a Float64. SQLite's own text of a
 /// real (`printf`, `CAST`) depends on its build, some of which round wrongly (to another
 /// real); scaling by powers of two is exact on any. (-0.0 reads as 0.0: SQLite doesn't
-/// tell them apart.)
-fn sqlite_real_exact(column: &str) -> String {
+/// tell them apart.) No `abs()`: a live connection may have redefined it.
+fn sqlite_real_exact(ops: SqliteOps, column: &str) -> String {
     format!(
-        "CASE WHEN {column} = 9e999 THEN char(1) || 'inf' \
-        WHEN {column} = -9e999 THEN char(1) || '-inf' \
-        ELSE char(1) || CASE WHEN {column} < 0 THEN '-' ELSE '' END || (\
-        WITH RECURSIVE __polars_real(v, k) AS (SELECT abs({column}), 0 UNION ALL \
+        "CASE WHEN {column} = 9e999 THEN {m} || 'inf' \
+        WHEN {column} = -9e999 THEN {m} || '-inf' \
+        ELSE {m} || CASE WHEN {column} < 0 THEN '-' ELSE '' END || (\
+        WITH RECURSIVE __polars_real(v, k) AS (SELECT CASE WHEN {column} < 0 THEN -{column} ELSE {column} END, 0 UNION ALL \
         SELECT CASE WHEN v >= 9223372036854775808.0 THEN v / 1024 ELSE v * 1024 END, \
         CASE WHEN v >= 9223372036854775808.0 THEN k + 10 ELSE k - 10 END FROM __polars_real \
         WHERE v >= 9223372036854775808.0 OR v <> CAST(v AS INTEGER)) \
         SELECT CAST(v AS INTEGER) || ':' || k FROM __polars_real \
-        WHERE v < 9223372036854775808.0 AND v = CAST(v AS INTEGER) LIMIT 1) END"
+        WHERE v < 9223372036854775808.0 AND v = CAST(v AS INTEGER) LIMIT 1) END",
+        m = ops.mark()
     )
 }
 
@@ -1350,6 +2106,99 @@ fn ldexp(mut x: f64, mut k: i32) -> f64 {
         k += 1000;
     }
     x * pow2(k)
+}
+
+/// [`SQLITE_BLOB_CLIENT`] of a column whose sampled values were blobs and others: a driver reads it
+/// as one type and the others as NULL, so a read of it is an error (see `check_sqlite_blobs`).
+const SQLITE_BLOB_MIXED: &str = "<sqlite blob next to other values>";
+const SQLITE_BLOB_ADVICE: &str = "Read the column as text or numbers (schema_overrides, or \
+    `schema=`), or cast it in the query (`CAST(x AS BLOB)` for its text)";
+
+/// The columns of a SQLite scan whose batches [`check_sqlite_blobs`] checks.
+pub(crate) fn sqlite_blob_columns(config: &DatabaseScanConfig) -> Vec<(PlSmallStr, bool)> {
+    if config.dialect != DialectName::Sqlite {
+        return vec![];
+    }
+    config
+        .columns
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.db_type.as_deref(),
+                Some(SQLITE_BLOB_CLIENT | SQLITE_BLOB_MIXED)
+            )
+        })
+        .map(|c| {
+            (
+                c.name.clone(),
+                c.db_type.as_deref() == Some(SQLITE_BLOB_MIXED),
+            )
+        })
+        .collect()
+}
+
+/// A batch of a SQLite Binary column on a connection the user opened holds blobs and NULLs only: a
+/// number or text (read as text, NULL or rounded by the driver, or cast to bytes) is an error, as
+/// the SQL guard of [`SQLITE_BLOB`] makes it.
+pub(crate) fn check_sqlite_blobs(df: &DataFrame, names: &[(PlSmallStr, bool)]) -> PolarsResult<()> {
+    for (name, mixed) in names {
+        let Ok(col) = df.column(name) else {
+            continue;
+        };
+        polars_ensure!(
+            !mixed,
+            ComputeError:
+            "the column '{name}' is read as Binary, but a value of it isn't a blob (it holds \
+            blobs and other values, which a driver reads as one type and the others as \
+            NULL): {SQLITE_BLOB_ADVICE}"
+        );
+        polars_ensure!(
+            matches!(col.dtype(), DataType::Binary | DataType::Null),
+            ComputeError:
+            "the column '{name}' is read as Binary, but a value of it isn't a blob (the \
+            driver read {}): {SQLITE_BLOB_ADVICE}",
+            col.dtype()
+        );
+    }
+    Ok(())
+}
+
+/// `err` of reading a SQLite scan, explained where it is the read of a [`SQLITE_BLOB`] column's
+/// non-blob value.
+pub(crate) fn explain_sqlite_error(config: &DatabaseScanConfig, err: PolarsError) -> PolarsError {
+    if config.dialect != DialectName::Sqlite {
+        return err;
+    }
+    let text = err.to_string();
+    // On a connection the user opened, the driver's own frame of a batch holding a blob next to
+    // numbers fails before the batch is checked (`check_sqlite_blobs`).
+    let mixed = text.contains("supertype") && text.contains("binary");
+    let wanted = if text.contains(SQLITE_BLOB_ERROR) {
+        SQLITE_BLOB
+    } else if mixed {
+        SQLITE_BLOB_CLIENT
+    } else {
+        return err;
+    };
+    let blobs = config
+        .columns
+        .iter()
+        .filter(|c| {
+            c.db_type.as_deref() == Some(wanted)
+                || (wanted == SQLITE_BLOB_CLIENT && c.db_type.as_deref() == Some(SQLITE_BLOB_MIXED))
+        })
+        .map(|c| format!("'{}'", c.name))
+        .collect::<Vec<_>>();
+    if blobs.is_empty() {
+        return err;
+    }
+    polars_err!(
+        ComputeError:
+        "{err}\n\nIf the query itself doesn't fail, the column(s) {} are read as Binary, \
+        but hold a value that isn't a blob (a number or text): drivers would read it as \
+        text, as NULL or rounded. {SQLITE_BLOB_ADVICE}",
+        blobs.join(", ")
+    )
 }
 
 /// The columns of a SQLite scan that [`decode_sqlite_reals`] decodes.
@@ -1374,6 +2223,24 @@ pub(crate) fn decode_sqlite_reals(
     for name in names {
         let Ok(col) = df.column(name) else {
             continue;
+        };
+        // A connection with `text_factory=bytes` hands text over as bytes, the marker too.
+        let as_text;
+        let col = if let Ok(bytes) = col.binary() {
+            if let Ok(text) = col.cast(&DataType::String) {
+                as_text = text;
+                &as_text
+            } else {
+                polars_ensure!(
+                    !bytes.iter().flatten().any(|v| v.first() == Some(&1)),
+                    ComputeError:
+                    "database column '{name}' holds text that isn't valid UTF-8 next to a real \
+                    (a connection with `text_factory=bytes`): read it with a str text factory"
+                );
+                continue;
+            }
+        } else {
+            col
         };
         let Ok(ca) = col.str() else {
             // all NULL
@@ -1430,11 +2297,13 @@ pub(crate) fn decode_sqlite_reals(
 }
 
 /// SQL that converts a column of a declared type where the backend can't read it as is, or
-/// `None` to select it as it is. `setup_runs`: the session setup runs (see `resolve_scan`).
+/// `None` to select it as it is. `setup_runs`: the session setup runs (see `resolve_scan`);
+/// `own_connection`: the plugin opened the connection (`ConnectionSpec::opened_by_plugin`).
 fn column_conversion(
     dialect: DialectName,
     backend: &BackendKind,
     setup_runs: bool,
+    own_connection: bool,
     db_type: &str,
     column: &str,
 ) -> Option<String> {
@@ -1447,81 +2316,48 @@ fn column_conversion(
     if db_type == DUCKDB_TEXT {
         return Some(format!("CAST({column} AS VARCHAR)"));
     }
+    let ops = SqliteOps {
+        portable: !own_connection,
+    };
     if db_type == SQLITE_TEXT {
         // a real exactly, which the reader writes as Polars writes a Float64 (as the
         // column read as reals, then cast, would be); a text starting with the marker
         // escaped by another
         let text = format!("CAST({column} AS TEXT)");
         return Some(format!(
-            "CASE WHEN typeof({column}) = 'real' THEN {} \
-            WHEN substr({text}, 1, 1) = char(1) THEN char(1) || {text} ELSE {text} END",
-            sqlite_real_exact(column)
+            "CASE WHEN {} THEN {} WHEN {} THEN {m} || {text} ELSE {text} END",
+            ops.is_real(column),
+            sqlite_real_exact(ops, column),
+            ops.starts_with_mark(&text),
+            m = ops.mark()
         ));
     }
-    if db_type == CONNECTORX_SQLITE_VALUE {
-        // `+x` is `x`, of any class, but an expression
-        return Some(format!("+{column}"));
-    }
-    // Text in a column read as numbers is parsed by the read (`'1'` as 1), while SQLite
-    // compares it as text, above every number: an integer's or a real's text as SQLite
-    // writes it is read as that number, other text marked so that no read parses it (`'+1'`,
-    // `'1e0'`; it fails, as `'abc'` does).
-    let integer_text = format!("CAST(CAST({column} AS INTEGER) AS TEXT) = {column}");
-    let other_text = format!("WHEN typeof({column}) = 'text' THEN char(1) || {column}");
-    if db_type == SQLITE_REAL_CUT {
+    if db_type == SQLITE_BLOB {
+        // `abs` of the smallest integer is documented to fail with an integer overflow
         return Some(format!(
-            "CASE WHEN typeof({column}) = 'integer' THEN CAST({column} AS REAL) \
-            WHEN typeof({column}) = 'text' AND ({integer_text} \
-            OR CAST(CAST({column} AS REAL) AS TEXT) = {column}) THEN CAST({column} AS REAL) \
-            {other_text} ELSE {column} END"
+            "CASE WHEN typeof({column}) IN ('blob', 'null') THEN {column} \
+            ELSE abs(-9223372036854775808) END"
         ));
     }
-    if db_type == SQLITE_REAL {
-        // an integer is a real only if that is exact (`CAST(.. AS INTEGER) = x` compares
-        // integers; 2^63 casts back to the largest integer, so is excluded); another is
-        // marked, so that no read parses it, and fails as other text does (rounding it would
-        // lose digits silently)
-        let exact = |int: &str| {
-            format!(
-                "CAST({int} AS REAL) < 9223372036854775808.0 \
-                AND CAST(CAST({int} AS REAL) AS INTEGER) = {int}"
-            )
-        };
-        let int_exact = exact(column);
-        let text_int = format!("CAST({column} AS INTEGER)");
-        let text_exact = exact(&text_int);
-        return Some(format!(
-            "CASE WHEN typeof({column}) = 'integer' THEN CASE WHEN {int_exact} \
-            THEN CAST({column} AS REAL) ELSE char(1) || {column} END \
-            WHEN typeof({column}) = 'text' AND {integer_text} THEN CASE WHEN {text_exact} \
-            THEN CAST({column} AS REAL) ELSE char(1) || {column} END \
-            WHEN typeof({column}) = 'text' AND CAST(CAST({column} AS REAL) AS TEXT) = {column} \
-            THEN CAST({column} AS REAL) \
-            {other_text} ELSE {column} END"
-        ));
-    }
-    if db_type == SQLITE_INTEGER || db_type == SQLITE_UNTYPED_INTEGER {
-        // another real stays a real, and fails the read (`1.5`, `1e19`): `CAST` would cut
-        // it; `CAST(x AS INTEGER) = x` compares exactly, not as reals
-        return Some(format!(
-            "CASE WHEN typeof({column}) = 'real' AND CAST({column} AS INTEGER) = {column} \
-            THEN CAST({column} AS INTEGER) \
-            WHEN typeof({column}) = 'text' AND {integer_text} THEN CAST({column} AS INTEGER) \
-            {other_text} ELSE {column} END"
-        ));
-    }
-    if db_type == SQLITE_INTEGER_CUT {
-        // a real as the cast to an override cuts it (one out of range stays one, and
-        // fails); text as in [`SQLITE_INTEGER`]
-        return Some(format!(
-            "CASE WHEN typeof({column}) = 'real' AND {column} >= -9223372036854775808.0 \
-            AND {column} < 9223372036854775808.0 THEN CAST({column} AS INTEGER) \
-            WHEN typeof({column}) = 'text' AND {integer_text} THEN CAST({column} AS INTEGER) \
-            {other_text} ELSE {column} END"
-        ));
+    if let Some(sql) = sqlite_number_conversion(ops, db_type, column) {
+        return Some(sql);
     }
     if let Some(sql) = dialect.text_conversion(db_type, column) {
         return Some(sql);
+    }
+    // Trino arrays, maps and rows holding such a value: each as an instant in UTC too
+    if dialect == DialectName::Trino
+        && let Some(sql) = super::dialect::trino_nested_utc(db_type, column)
+    {
+        return Some(sql);
+    }
+    // Trino `timestamp(p) with time zone`: the instant in UTC (a named zone's repeated hour
+    // reads an hour off otherwise: the value holds the zone's name, not its offset)
+    if dialect == DialectName::Trino
+        && declared_dtype(dialect, db_type)
+            .is_some_and(|d| matches!(d, DataType::Datetime(_, Some(_))))
+    {
+        return Some(format!("{column} AT TIME ZONE 'UTC'"));
     }
     // ClickHouse `DateTime` (seconds) reaches Arrow as a plain UInt32; `DateTime64` is a
     // timestamp, and compares like the column. clickhouse_connect and ConnectorX cut a
@@ -1560,12 +2396,52 @@ fn column_conversion(
             return clickhouse_array_nanoseconds(db_type, column, 0);
         }
     }
+    // ConnectorX reads `money` as a double (`922337203685477.5807` as `…477.6`)
+    if dialect == DialectName::Mssql && matches!(backend, BackendKind::ConnectorX) {
+        match db_type.trim().to_ascii_lowercase().as_str() {
+            // as exact text (a decimal reaches ConnectorX as a double too), parsed as the
+            // planned decimal
+            "money" => {
+                return Some(dialect.cast_to_text(&format!("CAST({column} AS DECIMAL(19, 4))")));
+            },
+            "smallmoney" => {
+                return Some(dialect.cast_to_text(&format!("CAST({column} AS DECIMAL(10, 4))")));
+            },
+            _ => {},
+        }
+    }
+    // `datetime2(7)`, `time(7)` and `datetimeoffset(7)` hold 100 ns, which drivers cut to
+    // microseconds (and read differently): read as text, parsed as the planned nanosecond
+    // type (a `datetimeoffset` as its UTC wall-clock time: its own text has the offset)
+    if dialect == DialectName::Mssql
+        && let Some(base) = super::schema::mssql_nanosecond_type(db_type)
+    {
+        let x = if base == "datetimeoffset" {
+            format!("CAST(SWITCHOFFSET({column}, '+00:00') AS DATETIME2(7))")
+        } else {
+            column.to_string()
+        };
+        return Some(format!("CONVERT(VARCHAR(40), {x}, 121)"));
+    }
+    // ConnectorX shifts a `datetimeoffset` of another offset than UTC twice (`01:30 +05:30`
+    // reads as 14:30 UTC, not 20:00): at offset 0 its read is right.
+    if dialect == DialectName::Mssql
+        && matches!(backend, BackendKind::ConnectorX)
+        && db_type
+            .trim()
+            .to_ascii_lowercase()
+            .starts_with("datetimeoffset")
+    {
+        return Some(format!("SWITCHOFFSET({column}, '+00:00')"));
+    }
     // Read as text and parse the exact value; the planned dtype stays the declared decimal.
-    // ConnectorX reads decimals with at most 10 decimal places, dropping digits; an
+    // ConnectorX reads decimals with at most 10 decimal places, dropping digits (and panics on
+    // SQL Server decimals of more than 28 digits); an
     // unconstrained `numeric` / `NUMBER` reaches some drivers as a float (oracledb), and
     // its values may have more digits than the planned scale (an error then, not rounding).
     if let Some(DataType::Decimal(p, scale)) = declared_dtype(dialect, db_type)
-        && ((matches!(backend, BackendKind::ConnectorX) && scale > 10)
+        && ((matches!(backend, BackendKind::ConnectorX)
+            && (scale > 10 || (dialect == DialectName::Mssql && p > 28)))
             || DataType::Decimal(p, scale) == super::schema::UNCONSTRAINED_DECIMAL)
     {
         if dialect == DialectName::Oracle {
@@ -1811,6 +2687,85 @@ fn clickhouse_array_nanoseconds(db_type: &str, x: &str, depth: usize) -> Option<
         .then(|| format!("toUnixTimestamp64Nano({x})"))
 }
 
+/// SQL that reads a SQLite column of a number `db_type` ([`SQLITE_REAL`], [`SQLITE_INTEGER`], ...)
+/// exactly; `None` for another `db_type`.
+fn sqlite_number_conversion(ops: SqliteOps, db_type: &str, column: &str) -> Option<String> {
+    if !matches!(
+        db_type,
+        SQLITE_REAL_CUT
+            | SQLITE_REAL
+            | SQLITE_INTEGER
+            | SQLITE_UNTYPED_INTEGER
+            | SQLITE_INTEGER_CUT
+    ) {
+        return None;
+    }
+    // Text in a column read as numbers is parsed by the read (`'1'` as 1), while SQLite
+    // compares it as text, above every number: an integer's or a real's text as SQLite
+    // writes it is read as that number, other text marked so that no read parses it (`'+1'`,
+    // `'1e0'`; it fails, as `'abc'` does).
+    let m = ops.mark();
+    let is_int = ops.is_integer(column);
+    let is_real = ops.is_real(column);
+    let is_text = ops.is_text(column);
+    let integer_text = ops.text_is(column, "INTEGER");
+    let real_text = ops.text_is(column, "REAL");
+    let other_text = format!("WHEN {is_text} THEN {m} || {column}");
+    if db_type == SQLITE_REAL_CUT {
+        return Some(format!(
+            "CASE WHEN {is_int} THEN CAST({column} AS REAL) \
+            WHEN {is_text} AND ({integer_text} \
+            OR {real_text}) THEN CAST({column} AS REAL) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    if db_type == SQLITE_REAL {
+        // an integer is a real only if that is exact (`CAST(.. AS INTEGER) = x` compares
+        // integers; 2^63 casts back to the largest integer, so is excluded); another is
+        // marked, so that no read parses it, and fails as other text does (rounding it would
+        // lose digits silently)
+        let exact = |int: &str| {
+            format!(
+                "CAST({int} AS REAL) < 9223372036854775808.0 \
+                AND CAST(CAST({int} AS REAL) AS INTEGER) = {int}"
+            )
+        };
+        let int_exact = exact(column);
+        let text_int = format!("CAST({column} AS INTEGER)");
+        let text_exact = exact(&text_int);
+        return Some(format!(
+            "CASE WHEN {is_int} THEN CASE WHEN {int_exact} \
+            THEN CAST({column} AS REAL) ELSE {m} || {column} END \
+            WHEN {is_text} AND {integer_text} THEN CASE WHEN {text_exact} \
+            THEN CAST({column} AS REAL) ELSE {m} || {column} END \
+            WHEN {is_text} AND {real_text} \
+            THEN CAST({column} AS REAL) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    if db_type == SQLITE_INTEGER || db_type == SQLITE_UNTYPED_INTEGER {
+        // another real stays a real, and fails the read (`1.5`, `1e19`): `CAST` would cut
+        // it; `CAST(x AS INTEGER) = x` compares exactly, not as reals
+        return Some(format!(
+            "CASE WHEN {is_real} AND CAST({column} AS INTEGER) = {column} \
+            THEN CAST({column} AS INTEGER) \
+            WHEN {is_text} AND {integer_text} THEN CAST({column} AS INTEGER) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    if db_type == SQLITE_INTEGER_CUT {
+        // a real as the cast to an override cuts it (one out of range stays one, and
+        // fails); text as in [`SQLITE_INTEGER`]
+        return Some(format!(
+            "CASE WHEN {is_real} AND {column} >= -9223372036854775808.0 \
+            AND {column} < 9223372036854775808.0 THEN CAST({column} AS INTEGER) \
+            WHEN {is_text} AND {integer_text} THEN CAST({column} AS INTEGER) \
+            {other_text} ELSE {column} END"
+        ));
+    }
+    None
+}
+
 /// An Oracle `NUMBER` as text, whatever the session's NLS settings (a live connection's
 /// may write a decimal comma). `TM9` writes every digit; no calendar applies.
 fn oracle_number_text(column: &str) -> String {
@@ -1884,6 +2839,7 @@ fn duckdb_bad_value(t: &str, x: &str, depth: usize) -> Option<String> {
     }
     Some(match t.to_ascii_uppercase().as_str() {
         "TIME" => format!("{x} = TIME '24:00:00'"),
+        "TIME_NS" => format!("{x} = CAST('24:00:00' AS TIME_NS)"),
         // read as the local time of day, its offset dropped
         "TIME WITH TIME ZONE" | "TIMETZ" => format!("CAST({x} AS TIME) = TIME '24:00:00'"),
         "DATE"
@@ -1902,14 +2858,18 @@ fn duckdb_bad_value(t: &str, x: &str, depth: usize) -> Option<String> {
 const MAX_DECIMAL_38: &str = "99999999999999999999999999999999999999";
 
 /// The parts of a type's argument list, split at its top-level commas.
-fn split_top_level(s: &str) -> Vec<&str> {
-    let (mut parts, mut depth, mut quoted, mut start) = (vec![], 0usize, false, 0);
+pub(crate) fn split_top_level(s: &str) -> Vec<&str> {
+    // inside `"identifiers"` and `'enum labels'` (where `(`, `"` or `,` are text; a doubled quote
+    // closes and reopens)
+    let (mut parts, mut depth, mut quote, mut start) = (vec![], 0usize, None::<char>, 0);
     for (i, c) in s.char_indices() {
-        match c {
-            '"' => quoted = !quoted,
-            '(' | '[' if !quoted => depth += 1,
-            ')' | ']' if !quoted => depth = depth.saturating_sub(1),
-            ',' if !quoted && depth == 0 => {
+        match (c, quote) {
+            ('"' | '\'', None) => quote = Some(c),
+            (q, Some(open)) if q == open => quote = None,
+            (_, Some(_)) => {},
+            ('(' | '[', None) => depth += 1,
+            (')' | ']', None) => depth = depth.saturating_sub(1),
+            (',', None) if depth == 0 => {
                 parts.push(s[start..i].trim());
                 start = i + 1;
             },
@@ -1921,6 +2881,35 @@ fn split_top_level(s: &str) -> Vec<&str> {
 }
 
 /// A DuckDB struct (or union) field, `name TYPE` or `"a name" TYPE`: its name and type.
+/// Whether the DuckDB type `t` is one of `names`, or holds one in a list, array, struct, union or
+/// map (a field name or an enum label is no type).
+fn duckdb_type_holds(t: &str, names: &[&str]) -> bool {
+    let t = t.trim();
+    let starts = |p: &str| t.get(..p.len()).is_some_and(|s| s.eq_ignore_ascii_case(p));
+    if t.ends_with(']')
+        && let Some(open) = t.rfind('[')
+    {
+        return duckdb_type_holds(&t[..open], names);
+    }
+    for prefix in ["STRUCT(", "UNION("] {
+        if starts(prefix) {
+            return t[prefix.len()..].strip_suffix(')').is_some_and(|fields| {
+                split_top_level(fields)
+                    .into_iter()
+                    .any(|f| duckdb_field(f).is_some_and(|(_, ft)| duckdb_type_holds(ft, names)))
+            });
+        }
+    }
+    if starts("MAP(") {
+        return t["MAP(".len()..].strip_suffix(')').is_some_and(|kv| {
+            split_top_level(kv)
+                .into_iter()
+                .any(|part| duckdb_type_holds(part, names))
+        });
+    }
+    names.iter().any(|n| t.eq_ignore_ascii_case(n))
+}
+
 fn duckdb_field(field: &str) -> Option<(String, &str)> {
     let field = field.trim();
     if let Some(rest) = field.strip_prefix('"') {
@@ -1965,20 +2954,37 @@ fn mysql_zero_date(column: &str) -> String {
 /// leaf sees NULL. The database folds the second branch to a constant (false, except for
 /// `IS NULL`), keeping index ranges on `c` usable. The rewrite is per leaf, so the filter
 /// grows linearly (wrapping the whole filter once per column doubled it each time).
-fn zero_dates_as_null(config: &DatabaseScanConfig, filter: SqlExpr) -> SqlExpr {
+///
+/// `widen`: a test for NULL on a column of unknown type also keeps its zero dates, which makes the
+/// filter a superset: for a user's filter only, not a partition's predicate (the partitions must
+/// not overlap).
+fn zero_dates_as_null(config: &DatabaseScanConfig, filter: SqlExpr, widen: bool) -> SqlExpr {
     match filter {
         SqlExpr::Binary(l, op @ (SqlBinOp::And | SqlBinOp::Or), r) => SqlExpr::Binary(
-            Box::new(zero_dates_as_null(config, *l)),
+            Box::new(zero_dates_as_null(config, *l, widen)),
             op,
-            Box::new(zero_dates_as_null(config, *r)),
+            Box::new(zero_dates_as_null(config, *r, widen)),
         ),
-        SqlExpr::Not(x) => SqlExpr::Not(Box::new(zero_dates_as_null(config, *x))),
+        SqlExpr::Not(x) => SqlExpr::Not(Box::new(zero_dates_as_null(config, *x, widen))),
         mut leaf => {
             for c in config.columns.iter() {
                 if !references(&leaf, &c.name) {
                     continue;
                 }
                 let Some(zero) = zero_date_check(config, &c.name) else {
+                    // A column of unknown type (`schema=`) may be a date column holding zero dates,
+                    // which the read refuses. A test for NULL must not hide such a row (a zero date
+                    // is not NULL): the filter keeps it too (and is a superset, see
+                    // `Translator::translate`), and the read fails on it as it does without a
+                    // filter.
+                    if widen && zero_date_candidate(config, c) && tests_null(&leaf, &c.name) {
+                        let q = config.dialect.quote_ident(&c.name);
+                        leaf = SqlExpr::binary(
+                            leaf,
+                            SqlBinOp::Or,
+                            SqlExpr::Raw(format!("IFNULL({}, FALSE)", mysql_zero_date(&q))),
+                        );
+                    }
                     continue;
                 };
                 let as_null = substitute_null(&leaf, &c.name);
@@ -2042,6 +3048,43 @@ fn references(e: &SqlExpr, column: &str) -> bool {
     }
 }
 
+/// The column's database type isn't known (none, or only that it is a MySQL date of some type,
+/// [`MYSQL_DATE`]).
+pub(crate) fn type_unknown(c: &ColumnMeta) -> bool {
+    c.db_type.as_deref().is_none_or(|t| t == MYSQL_DATE)
+}
+
+/// A MySQL column of unknown type, read as a type a date may be read as (`schema=`): it may be a
+/// date column holding zero dates, which the read refuses.
+pub(crate) fn zero_date_candidate(config: &DatabaseScanConfig, c: &ColumnMeta) -> bool {
+    matches!(
+        config.dialect,
+        DialectName::Mysql | DialectName::Singlestore
+    ) && c.db_type.is_none()
+        && matches!(
+            c.dtype,
+            DataType::String
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt32
+                | DataType::UInt64
+        )
+}
+
+/// Whether `e` tests `column` for NULL (`IS [NOT] NULL`, `<=>`).
+pub(crate) fn tests_null(e: &SqlExpr, column: &str) -> bool {
+    use SqlExpr as E;
+    match e {
+        E::IsNull(x, _) => references(x, column),
+        E::IsNotDistinctFrom(l, r, _) => references(l, column) || references(r, column),
+        E::Binary(l, _, r) => tests_null(l, column) || tests_null(r, column),
+        E::Not(x) | E::InList(x, _, _) => tests_null(x, column),
+        E::Between(x, lo, hi) => [x, lo, hi].iter().any(|x| tests_null(x, column)),
+        E::Like { expr, .. } => tests_null(expr, column),
+        E::Column(_) | E::Literal(_) | E::Raw(_) => false,
+    }
+}
+
 /// `e` with `column` replaced by NULL.
 fn substitute_null(e: &SqlExpr, column: &str) -> SqlExpr {
     use SqlExpr as E;
@@ -2073,6 +3116,7 @@ fn converted_select_list(
     dialect: DialectName,
     backend: &BackendKind,
     setup_runs: bool,
+    own_connection: bool,
     info: &CatalogInfo,
 ) -> Option<Vec<SqlSelectItem>> {
     let mut any = false;
@@ -2094,7 +3138,7 @@ fn converted_select_list(
                 // only what changes the type: the value checks are the read's
                 dialect.text_conversion(t, &quoted)
             } else {
-                column_conversion(dialect, backend, setup_runs, t, &quoted)
+                column_conversion(dialect, backend, setup_runs, own_connection, t, &quoted)
             };
             match conversion {
                 Some(sql) => {
@@ -2121,6 +3165,16 @@ fn converted_select_list(
 /// collation (it holds no numbers: TEXT affinity, see `catalog::compares_as_text`).
 pub(crate) fn compared_column_sql(config: &DatabaseScanConfig, column: &str) -> Option<String> {
     let c = config.column(column)?;
+    // a DuckDB column read as text (`TIMETZ`) is compared as that text
+    if config.dialect == DialectName::Duckdb
+        && c.db_type.as_deref() == Some(DUCKDB_TEXT)
+        && c.dtype == DataType::String
+    {
+        return Some(format!(
+            "CAST({} AS VARCHAR)",
+            config.dialect.quote_ident(column)
+        ));
+    }
     if config.dialect != DialectName::Sqlite {
         return None;
     }
@@ -2144,33 +3198,67 @@ pub(crate) fn compared_column_sql(config: &DatabaseScanConfig, column: &str) -> 
         // is kept when its true value satisfies the filter (and the read then fails on it
         // if a real can't hold it); rounded, it could be dropped silently
         let x = &quoted;
+        let ops = SqliteOps {
+            portable: !config.options.connection.opened_by_plugin(),
+        };
+        let (is_int, is_text) = (ops.is_integer(x), ops.is_text(x));
+        let (int_text, real_text) = (ops.text_is(x, "INTEGER"), ops.text_is(x, "REAL"));
         return Some(format!(
-            "CASE WHEN typeof({x}) = 'integer' THEN {x} \
-            WHEN typeof({x}) = 'text' AND CAST(CAST({x} AS INTEGER) AS TEXT) = {x} \
+            "CASE WHEN {is_int} THEN {x} \
+            WHEN {is_text} AND {int_text} \
             THEN CAST({x} AS INTEGER) \
-            WHEN typeof({x}) = 'text' AND CAST(CAST({x} AS REAL) AS TEXT) = {x} \
+            WHEN {is_text} AND {real_text} \
             THEN CAST({x} AS REAL) \
-            WHEN typeof({x}) = 'text' THEN char(1) || {x} ELSE {x} END"
+            WHEN {is_text} THEN {m} || {x} ELSE {x} END",
+            m = ops.mark()
         ));
     }
     column_conversion(
         config.dialect,
         &config.backend.kind,
         config.session_setup_runs(),
+        config.options.connection.opened_by_plugin(),
         db_type,
         &quoted,
     )
 }
 
-/// Whether the driver %-formats the statements of this scan (`params=`): the SQL the plugin
-/// writes doubles its `%`.
-fn percent_formatted(config: &DatabaseScanConfig) -> bool {
-    crate::filter::percent_formatted(&config.options.connection, &config.backend.kind)
+/// Whether SQL generated by the plugin needs each `%` doubled before execution.
+fn escape_generated_percent(
+    connection: &ConnectionSpec,
+    backend: &BackendKind,
+    dialect: DialectName,
+) -> bool {
+    crate::filter::percent_formatted(connection, backend)
+        || google_unescapes_generated_percent(connection, backend, dialect)
+}
+
+fn google_unescapes_generated_percent(
+    connection: &ConnectionSpec,
+    backend: &BackendKind,
+    dialect: DialectName,
+) -> bool {
+    // Google unescapes %% even without parameters. In SQLAlchemy's binding path,
+    // text() already escapes %, including generated identifiers.
+    is_google_bigquery(dialect, backend)
+        && !(crate::filter::sqlalchemy(backend) && crate::filter::binds_params(connection))
+}
+
+fn escape_generated_percent_for_scan(config: &DatabaseScanConfig) -> bool {
+    escape_generated_percent(
+        &config.options.connection,
+        &config.backend.kind,
+        config.dialect,
+    )
 }
 
 /// `sql`, written by the plugin, with its `%` doubled where the driver %-formats it.
 fn escape_percent(config: &DatabaseScanConfig, sql: String) -> String {
-    if percent_formatted(config) {
+    escape_percent_if(sql, escape_generated_percent_for_scan(config))
+}
+
+fn escape_percent_if(sql: String, escape: bool) -> String {
+    if escape && sql.contains('%') {
         sql.replace('%', "%%")
     } else {
         sql
@@ -2192,8 +3280,83 @@ fn fixed_select_list(dialect: DialectName, items: &[SqlSelectItem]) -> String {
         .join(", ")
 }
 
+pub(crate) fn is_google_bigquery(dialect: DialectName, backend: &BackendKind) -> bool {
+    dialect == DialectName::Bigquery
+        && match backend {
+            BackendKind::Sqlalchemy => true,
+            BackendKind::Python { module } => {
+                module == "sqlalchemy"
+                    || module == "google.cloud.bigquery"
+                    || module.starts_with("google.cloud.bigquery.")
+            },
+            _ => false,
+        }
+}
+
+fn bigquery_has_unknown_leaf(dtype: &DataType) -> bool {
+    match dtype {
+        DataType::Null => true,
+        DataType::List(inner) => bigquery_has_unknown_leaf(inner),
+        DataType::Struct(fields) => fields.iter().any(|f| bigquery_has_unknown_leaf(f.dtype())),
+        _ => false,
+    }
+}
+
+/// Fill unknown leaves and return the inferred JSON dtypes, with Null marking leaves
+/// that use a String fallback. Declared fields require no additional checks at execution.
+fn fill_bigquery_unknown(dtype: &mut DataType, sampled: Option<&DataType>) -> Option<DataType> {
+    match (dtype, sampled) {
+        (dtype @ DataType::Null, sampled) => {
+            let observed = sampled.map_or(DataType::Null, normalize_dtype);
+            *dtype = if observed.is_null() {
+                DataType::String
+            } else {
+                observed.clone()
+            };
+            // An inferred JSON container can itself have empty or all-null leaves.
+            if bigquery_has_unknown_leaf(dtype) {
+                let _ = fill_bigquery_unknown(dtype, None);
+            }
+            Some(observed)
+        },
+        (DataType::List(inner), sampled) => {
+            let sampled = match sampled {
+                Some(DataType::List(inner)) => Some(inner.as_ref()),
+                _ => None,
+            };
+            fill_bigquery_unknown(inner, sampled).map(|inner| DataType::List(Box::new(inner)))
+        },
+        (DataType::Struct(fields), sampled) => {
+            let sampled: PlHashMap<_, _> = match sampled {
+                Some(DataType::Struct(fields)) => {
+                    fields.iter().map(|f| (f.name(), f.dtype())).collect()
+                },
+                _ => PlHashMap::new(),
+            };
+            let observed = fields
+                .iter_mut()
+                .filter_map(|field| {
+                    let inferred = sampled.get(&field.name).copied();
+                    fill_bigquery_unknown(&mut field.dtype, inferred)
+                        .map(|dtype| Field::new(field.name.clone(), dtype))
+                })
+                .collect::<Vec<_>>();
+            (!observed.is_empty()).then_some(DataType::Struct(observed))
+        },
+        _ => None,
+    }
+}
+
 /// The result schema of the relation, without reading rows, and the columns typed from a
 /// sample of their values (not by the result's types).
+struct DiscoveredSchema {
+    schema: Schema,
+    sampled: PlHashSet<PlSmallStr>,
+    mixed_blobs: Vec<PlSmallStr>,
+    bigquery_text_columns: PlHashSet<String>,
+    bigquery_sampled_schema: Schema,
+}
+
 fn discover_schema(
     session: &mut dyn DatabaseSession,
     options: &DatabaseScanOptions,
@@ -2202,15 +3365,22 @@ fn discover_schema(
     query: &QueryDiscovery,
     select_list: Option<&[SqlSelectItem]>,
     info: &CatalogInfo,
-) -> PolarsResult<(Schema, PlHashSet<PlSmallStr>)> {
+) -> PolarsResult<DiscoveredSchema> {
     let is_query = matches!(options.relation, DatabaseRelation::Query { .. });
     let probe = match query.probe.as_ref().filter(|_| is_query) {
         Some(probe) => probe.clone(),
-        None => format!(
-            "SELECT {} FROM {} WHERE 1 = 0",
-            select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s)),
-            quoted_relation(dialect, &options.relation)
-        ),
+        None => {
+            let select =
+                select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s));
+            let google_percent =
+                google_unescapes_generated_percent(&options.connection, backend, dialect);
+            let select = escape_percent_if(select, google_percent);
+            let from = escape_percent_if(
+                quoted_relation(dialect, &options.relation, &query.derived),
+                google_percent && !is_query,
+            );
+            format!("SELECT {select} FROM {from} WHERE 1 = 0")
+        },
     };
     let first_batch = |session: &mut dyn DatabaseSession, sql: &str| {
         if verbose() {
@@ -2248,7 +3418,7 @@ fn discover_schema(
     // all the same if it doesn't parse (the database may take it); else it is run, for
     // its first batch, only if that can't change anything.
     let mut ran_query = false;
-    let first = match &options.relation {
+    let mut first = match &options.relation {
         DatabaseRelation::Query { sql } if !query.wrappable => {
             let probed = match query.parses {
                 false => first_batch(session, &probe),
@@ -2270,6 +3440,33 @@ fn discover_schema(
         },
         _ => first_batch(session, &probe)?,
     };
+    if dialect == DialectName::Bigquery
+        && first.width() == 0
+        && match backend {
+            BackendKind::Adbc { .. } => true,
+            BackendKind::Python { module } => module == "adbc_driver_manager",
+            _ => false,
+        }
+    {
+        // The Apache BigQuery driver drops the Arrow schema of a zero-row result.
+        // A scalar subquery over the empty probe returns a typed NULL struct. Expand it
+        // to get one row with the fields' declared types, without reading source rows.
+        if !ran_query {
+            let typed_probe = format!(
+                "SELECT _pl_record.* FROM (SELECT (SELECT AS STRUCT * FROM ({probe}) AS _pl_empty) AS _pl_record)"
+            );
+            first = first_batch(session, &typed_probe)?;
+        }
+        polars_ensure!(
+            first.width() > 0,
+            InvalidOperation: "the ADBC BigQuery driver returned no fields for the schema query; pass schema=..."
+        );
+    }
+    let bigquery_text_columns = if dialect == DialectName::Bigquery {
+        session.bigquery_text_columns().into_iter().collect()
+    } else {
+        PlHashSet::new()
+    };
 
     let mut schema: Schema = first
         .schema()
@@ -2282,12 +3479,17 @@ fn discover_schema(
     // sample, which runs a query: not one known to be volatile (`nextval`), nor one that
     // may write where the session doesn't refuse it. SQLite's functions can't write.
     let sample_types = dialect == DialectName::Sqlite;
+    let google_bigquery = is_google_bigquery(dialect, backend);
     let sampled = schema
         .iter()
-        .filter(|(_, dt)| sample_types || dt.is_null())
+        .filter(|(_, dt)| {
+            sample_types || dt.is_null() || google_bigquery && bigquery_has_unknown_leaf(dt)
+        })
         .map(|(name, _)| name.clone())
         .collect::<PlHashSet<_>>();
     let untyped = !sampled.is_empty();
+    let mut mixed = Vec::new();
+    let mut bigquery_sample = None;
     let may_sample = !is_query
         || sample_types
         || !(query.volatile || (query.side_effects && !query.read_only_session));
@@ -2295,15 +3497,24 @@ fn discover_schema(
         let renderer = sql_renderer()?;
         // ConnectorX can't read a SQLite column whose values have several storage classes:
         // their classes are sampled instead (see `sqlite_class_dtype`).
-        let classes = sample_types && matches!(backend, BackendKind::ConnectorX);
-        let items = if classes {
+        // A connection of the user's (a row driver) reads a column of a blob and other values as
+        // the first value's type, and the rest as NULL: its classes are sampled too.
+        let mut classes = sample_types && matches!(backend, BackendKind::ConnectorX);
+        // (a connection of the user's may have replaced `typeof`: it calls no function there)
+        let ops = SqliteOps {
+            portable: !options.connection.opened_by_plugin(),
+        };
+        let class_items = || -> Vec<SqlSelectItem> {
             schema
                 .iter_names()
                 .map(|c| SqlSelectItem::Expr {
-                    sql: format!("typeof({})", dialect.quote_ident(c)),
+                    sql: ops.storage_class(&dialect.quote_ident(c)),
                     alias: c.clone(),
                 })
                 .collect()
+        };
+        let items = if classes {
+            class_items()
         } else if sample_types {
             select_list.map_or_else(|| vec![SqlSelectItem::Star], <[_]>::to_vec)
         } else {
@@ -2328,43 +3539,134 @@ fn discover_schema(
                     .collect(),
             }
         };
-        let mut sample_query = SqlQuery::select(items, from_clause(options));
-        sample_query.limit = Some(TYPE_SAMPLE_ROWS);
-        sample_query.escape_percent =
-            crate::filter::percent_formatted(&options.connection, backend);
-        let sample_sql = renderer.render(&sample_query, dialect)?;
+        let render = |items: Vec<SqlSelectItem>| -> PolarsResult<String> {
+            let mut sample_query = SqlQuery::select(items, from_clause(options, &query.derived));
+            sample_query.limit = Some(TYPE_SAMPLE_ROWS);
+            sample_query.escape_percent =
+                escape_generated_percent(&options.connection, backend, dialect);
+            renderer.render(&sample_query, dialect)
+        };
+        let sample_sql = render(items)?;
         if verbose() {
             eprintln!("[scan_database]: typing columns from a sample: {sample_sql}");
         }
-        let sample = session.query(&sample_sql)?;
-        for (name, dtype) in schema.iter_mut() {
-            if (dtype.is_null() || (sample_types && sample.height() > 0))
-                && let Ok(col) = sample.column(name)
-            {
-                *dtype = if classes {
-                    sqlite_class_dtype(col)
-                } else {
-                    normalize_dtype(col.dtype())
-                };
+        let result = if google_bigquery {
+            // Infer across the bounded sample in one batch. Individual batches may
+            // independently infer different dtypes for a JSON leaf.
+            session
+                .execute(&sample_sql, Some(TYPE_SAMPLE_ROWS as usize))
+                .and_then(|batches| collect_batches(batches, &sample_sql))
+        } else {
+            session.query(&sample_sql)
+        };
+        let sample = match result {
+            Ok(sample) => sample,
+            // a row driver can't build a frame of a column of values of several classes (a blob
+            // next to numbers): their classes are sampled instead
+            Err(e) if sample_types && !classes => {
+                let sql = render(class_items())?;
+                if verbose() {
+                    eprintln!("[scan_database]: the sample failed ({e}); typing by classes: {sql}");
+                }
+                classes = true;
+                session.query(&sql)?
+            },
+            Err(e) => return Err(e),
+        };
+        if google_bigquery {
+            bigquery_sample = Some(sample);
+        } else {
+            for (name, dtype) in schema.iter_mut() {
+                if (dtype.is_null() || (sample_types && sample.height() > 0))
+                    && let Ok(col) = sample.column(name)
+                {
+                    *dtype = if classes {
+                        sqlite_class_dtype(col)
+                    } else {
+                        normalize_dtype(col.dtype())
+                    };
+                }
+                // No values to type by (ADBC types an empty result's columns Int64): the
+                // declared type's affinity tells what values the column holds.
+                if sample_types
+                    && (sample.height() == 0 || dtype.is_null())
+                    && let Some(t) = info.compare_types.get(name)
+                {
+                    *dtype = sqlite_affinity_dtype(t);
+                }
             }
-            // No values to type by (ADBC types an empty result's columns Int64): the
-            // declared type's affinity tells what values the column holds.
-            if sample_types
-                && (sample.height() == 0 || dtype.is_null())
-                && let Some(t) = info.compare_types.get(name)
-            {
-                *dtype = sqlite_affinity_dtype(t);
+        }
+    }
+    // A row driver of the user's reads a column of blobs and other values as its first value's
+    // type, and the others as NULL: the classes of the Binary columns are sampled (not of all: a
+    // volatile expression is evaluated once per test there).
+    if sample_types
+        && !options.connection.opened_by_plugin()
+        && !matches!(backend, BackendKind::ConnectorX)
+        && may_sample
+        && dialect.supports_limit()
+    {
+        let ops = SqliteOps { portable: true };
+        let items = schema
+            .iter()
+            .filter(|(_, dt)| matches!(dt, DataType::Binary))
+            .map(|(name, _)| SqlSelectItem::Expr {
+                sql: ops.storage_class(&dialect.quote_ident(name)),
+                alias: name.clone(),
+            })
+            .collect::<Vec<_>>();
+        if !items.is_empty() {
+            let mut sample_query = SqlQuery::select(items, from_clause(options, &query.derived));
+            sample_query.limit = Some(TYPE_SAMPLE_ROWS);
+            sample_query.escape_percent =
+                crate::filter::percent_formatted(&options.connection, backend);
+            let sql = sql_renderer()?.render(&sample_query, dialect)?;
+            if let Ok(classes) = session.query(&sql) {
+                for col in classes.columns() {
+                    if sqlite_blob_with_others(col) {
+                        mixed.push(col.name().clone());
+                    }
+                }
             }
         }
     }
     // Still untyped (every sampled value is NULL, or no rows to sample): a dtype any value
     // can be cast to, not `Null`, which no value read later would fit.
-    for (_, dtype) in schema.iter_mut() {
-        if dtype.is_null() {
+    let mut bigquery_sampled_schema = Schema::default();
+    for (name, dtype) in schema.iter_mut() {
+        if google_bigquery && sampled.contains(name.as_str()) {
+            let inferred = bigquery_sample
+                .as_ref()
+                .and_then(|sample| sample.column(name).ok())
+                .map(Column::dtype);
+            if let Some(observed) = fill_bigquery_unknown(dtype, inferred)
+                && options
+                    .schema_overrides
+                    .as_ref()
+                    .is_none_or(|overrides| !overrides.contains(name))
+            {
+                bigquery_sampled_schema.insert(name.clone(), observed);
+            }
+        } else if dtype.is_null() {
             *dtype = DataType::String;
         }
     }
-    Ok((schema, sampled))
+    Ok(DiscoveredSchema {
+        schema,
+        sampled,
+        mixed_blobs: mixed,
+        bigquery_text_columns,
+        bigquery_sampled_schema,
+    })
+}
+
+/// Whether sampled storage classes hold a blob and a value of another class.
+fn sqlite_blob_with_others(classes: &Column) -> bool {
+    let Ok(ca) = classes.str() else {
+        return false;
+    };
+    let seen: PlHashSet<&str> = ca.iter().flatten().filter(|c| *c != "null").collect();
+    seen.contains("blob") && seen.len() > 1
 }
 
 /// The dtype of a SQLite column by the storage classes (`typeof`) of its sampled values, as
@@ -2379,7 +3681,8 @@ fn sqlite_class_dtype(classes: &Column) -> DataType {
         _ if seen.is_empty() => DataType::Null,
         _ if only(&["integer"]) => DataType::Int64,
         _ if only(&["integer", "real"]) => DataType::Float64,
-        _ if only(&["blob"]) => DataType::Binary,
+        // a blob next to other values is read as one, and fails on those (`SQLITE_BLOB`)
+        _ if seen.contains("blob") => DataType::Binary,
         _ => DataType::String,
     }
 }
@@ -2402,10 +3705,13 @@ fn sqlite_affinity_dtype(t: &str) -> DataType {
     }
 }
 
-fn from_clause(options: &DatabaseScanOptions) -> SqlFrom {
+fn from_clause(options: &DatabaseScanOptions, columns: &[PlSmallStr]) -> SqlFrom {
     match &options.relation {
         DatabaseRelation::Table { parts, .. } => SqlFrom::Table(parts.clone()),
-        DatabaseRelation::Query { sql } => SqlFrom::Subquery(strip_statement_end(sql).into()),
+        DatabaseRelation::Query { sql } => SqlFrom::Subquery {
+            sql: strip_statement_end(sql).into(),
+            columns: columns.to_vec(),
+        },
     }
 }
 
@@ -2449,7 +3755,7 @@ pub fn compile_scan(
     }
 
     let renderer = sql_renderer()?;
-    let from = from_clause(options);
+    let from = from_clause(options, &config.derived_columns());
 
     let mut columns = pushdown
         .columns
@@ -2463,6 +3769,7 @@ pub fn compile_scan(
     }
     columns.dedup();
     check_connectorx_arrays(config, &columns)?;
+    check_refused_columns(config, &columns)?;
 
     let (partitions, partitioning) = resolve_partitions(
         config,
@@ -2510,11 +3817,11 @@ pub fn compile_scan(
     let pushed: Vec<SqlExpr> = pushdown
         .filters
         .iter()
-        .map(|f| zero_dates_as_null(config, f.expr.clone()))
+        .map(|f| zero_dates_as_null(config, f.expr.clone(), true))
         .collect();
     // The partitions differ in their predicate only: the shared filter (an `IN` list of
     // thousands of values) is rendered once, not by each partition.
-    let escape_percent = percent_formatted(config);
+    let escape_percent = escape_generated_percent_for_scan(config);
     let query = SqlQuery {
         columns: select.clone(),
         from: from.clone(),
@@ -2539,7 +3846,7 @@ pub fn compile_scan(
         .map(|part| {
             part.predicate
                 .clone()
-                .map(|p| zero_dates_as_null(config, p))
+                .map(|p| zero_dates_as_null(config, p, false))
         })
         .collect();
     let compiled: Vec<CompiledPartition> = renderer
@@ -2598,6 +3905,7 @@ fn select_item(config: &DatabaseScanConfig, c: &PlSmallStr) -> SqlSelectItem {
                 dialect,
                 &config.backend.kind,
                 config.session_setup_runs(),
+                config.options.connection.opened_by_plugin(),
                 t,
                 &ident,
             )
@@ -2615,41 +3923,274 @@ fn select_item(config: &DatabaseScanConfig, c: &PlSmallStr) -> SqlSelectItem {
     }
 }
 
-/// The columns the plugin reads as epoch nanoseconds, a number, where the database type is
-/// a temporal one (ClickHouse `DateTime64(7..9)` through `toUnixTimestamp64Nano`, see
-/// `column_conversion`): the planned type, also an override of it, says the unit
-/// (`cast_to_user_schema`). Empty without `schema_overrides` (the only case that needs it).
-pub(crate) fn numeric_temporal_conversions(config: &DatabaseScanConfig) -> PlHashSet<PlSmallStr> {
-    let mut out = PlHashSet::new();
-    if config.options.schema_overrides.is_none()
-        || config.dialect != DialectName::Clickhouse
-        || matches!(config.backend.kind, BackendKind::Adbc { .. })
-    {
+/// The columns the plugin reads as numbers where the database type is a temporal one, with the
+/// dtype whose ticks they are: ClickHouse `DateTime64(7..9)` (also in arrays) as epoch nanoseconds
+/// through `toUnixTimestamp64Nano`, and a MySQL `TIME` on an Arrow driver as microseconds (see
+/// `column_conversion`). An override in that unit is no guess (`cast_to_user_schema`). Empty
+/// without `schema_overrides` (the only case that needs it).
+pub(crate) fn numeric_temporal_conversions(
+    config: &DatabaseScanConfig,
+) -> PlHashMap<PlSmallStr, DataType> {
+    let mut out = PlHashMap::new();
+    if config.options.schema_overrides.is_none() {
         return out;
     }
+    let backend = &config.backend.kind;
     for c in config.columns.iter() {
-        let nanoseconds = c.db_type.as_deref().is_some_and(|t| {
-            matches!(
-                declared_dtype(config.dialect, t),
-                Some(DataType::Datetime(TimeUnit::Nanoseconds, _))
-            )
-        });
-        if nanoseconds
-            && matches!(
-                select_item(config, &c.name),
-                SqlSelectItem::Expr { sql, .. } if sql.starts_with("toUnixTimestamp64Nano(")
-            )
-        {
-            out.insert(c.name.clone());
+        let Some(t) = c.db_type.as_deref() else {
+            continue;
+        };
+        let ticks = match config.dialect {
+            DialectName::Clickhouse if !matches!(backend, BackendKind::Adbc { .. }) => {
+                DataType::Datetime(TimeUnit::Nanoseconds, None)
+            },
+            DialectName::Mysql | DialectName::Singlestore
+                if !matches!(backend, BackendKind::Python { .. })
+                    && declared_dtype(config.dialect, t)
+                        == Some(DataType::Duration(TimeUnit::Microseconds)) =>
+            {
+                DataType::Duration(TimeUnit::Microseconds)
+            },
+            _ => continue,
+        };
+        let SqlSelectItem::Expr { sql, .. } = select_item(config, &c.name) else {
+            continue;
+        };
+        let own = match ticks {
+            DataType::Datetime(..) => {
+                sql.starts_with("toUnixTimestamp64Nano(")
+                    || (sql.starts_with("arrayMap(") && sql.contains("toUnixTimestamp64Nano("))
+            },
+            _ => true,
+        };
+        if own {
+            out.insert(c.name.clone(), ticks);
         }
     }
     out
 }
 
+/// Refuses a read on a SQL Server session under `SET TEXTSIZE limit` (a user's: see
+/// `mssql_session_limits`) that may return a value it cuts: a column of a type it cuts
+/// (`(n)varchar(max)`, `varbinary(max)`, `text`, `ntext`, `image`, `xml`, and `sql_variant` or
+/// CLR types, read as text or bytes), any text or binary column (the catalog doesn't tell
+/// `nvarchar(max)` from `nvarchar(n)`, and a query's types may be unknown), or one the SQL
+/// converts to `NVARCHAR(MAX)` / `VARBINARY(MAX)`.
+pub(crate) fn check_mssql_text_size(limit: i64, config: &DatabaseScanConfig) -> PolarsResult<()> {
+    let read: Vec<&ColumnMeta> = match &config.compiled {
+        Some(c) => c.columns.iter().filter_map(|n| config.column(n)).collect(),
+        None => config.columns.iter().collect(),
+    };
+    let sqls: Vec<&str> = config
+        .compiled
+        .iter()
+        .flat_map(|c| c.partitions.iter().map(|p| p.sql.as_str()))
+        .collect();
+    let cut = mssql_text_size_cuts(&read, &sqls);
+    polars_ensure!(
+        cut.is_empty(),
+        InvalidOperation:
+        "this SQL Server session has SET TEXTSIZE {limit} in effect: it cuts each value of \
+        {} longer than {limit} bytes without a sign. Run SET TEXTSIZE -1 on the connection, or \
+        remove it from the connection's setup",
+        cut.join(", ")
+    );
+    Ok(())
+}
+
+/// What [`check_mssql_text_size`] refuses: the columns read, and the SQL that reads them.
+fn mssql_text_size_cuts(read: &[&ColumnMeta], sqls: &[&str]) -> Vec<String> {
+    fn text_or_bytes(d: &DataType) -> bool {
+        match d {
+            DataType::List(inner) | DataType::Array(inner, _) => text_or_bytes(inner),
+            DataType::Struct(fields) => fields.iter().any(|f| text_or_bytes(f.dtype())),
+            DataType::String | DataType::Binary | DataType::BinaryOffset | DataType::Unknown(_) => {
+                true
+            },
+            d => d.is_categorical() || d.is_enum() || d.is_object(),
+        }
+    }
+    let long_type = |t: &str| {
+        let t = t.trim().to_ascii_lowercase();
+        let base = t.split('(').next().unwrap_or("").trim();
+        matches!(
+            base,
+            "varchar"
+                | "nvarchar"
+                | "varbinary"
+                | "text"
+                | "ntext"
+                | "image"
+                | "xml"
+                | "sql_variant"
+                | "geography"
+                | "geometry"
+                | "hierarchyid"
+        )
+    };
+    let mut cut: Vec<String> = read
+        .iter()
+        .filter(|c| text_or_bytes(&c.dtype) || c.db_type.as_deref().is_some_and(long_type))
+        .map(|c| format!("'{}'", c.name))
+        .collect();
+    if cut.is_empty()
+        && sqls.iter().any(|s| {
+            s.as_bytes()
+                .windows(5)
+                .any(|w| w.eq_ignore_ascii_case(b"(MAX)"))
+        })
+    {
+        cut.push("a column read as text".into());
+    }
+    cut
+}
+
+/// The columns whose read may legitimately be another kind of value than the planned dtype
+/// (`cast_columns` doesn't refuse a retyped column there): every column but DuckDB's, whose drivers
+/// return what the type says (as text only where the plugin converts it, a marker `db_type`). Other
+/// drivers read some numbers as text (ADBC's MySQL `YEAR`) and some instants as naive UTC time
+/// (ClickHouse, Postgres), by their own conversions.
+pub(crate) fn converted_columns(config: &DatabaseScanConfig) -> PlHashSet<PlSmallStr> {
+    config
+        .columns
+        .iter()
+        .filter(|c| {
+            config.dialect != DialectName::Duckdb
+                || c.db_type.as_deref().is_some_and(|t| t.starts_with('<'))
+        })
+        .map(|c| c.name.clone())
+        .collect()
+}
+
+/// The MySQL `TIMESTAMP` columns typed as text (`schema_overrides`): their instants are read as UTC
+/// wall-clock time, which is naive where the SQL converts them (see `column_conversion`), and
+/// written with the offset where the bridge converts them (`+00:00`), as the other reads of the
+/// column do.
+pub(crate) fn mysql_timestamp_text_columns(config: &DatabaseScanConfig) -> Vec<PlSmallStr> {
+    if config.dialect != DialectName::Mysql {
+        return vec![];
+    }
+    config
+        .columns
+        .iter()
+        .filter(|c| {
+            c.dtype == DataType::String
+                && c.db_type.as_deref().is_some_and(|t| {
+                    let t = t.trim().to_ascii_lowercase();
+                    t == "timestamp" || t.starts_with("timestamp(")
+                })
+        })
+        .map(|c| c.name.clone())
+        .collect()
+}
+
+/// The columns declared `String` under `schema=` whose read as a time of day can't be told from a
+/// `TIMETZ` (DuckDB, Postgres and Redshift have one; the drivers return its local time without the
+/// offset), mapped to the SQL that reads them as text. Python drivers say by the result's
+/// description (see [`check_time_with_zone`]), the Arrow ones can't.
+pub(crate) fn time_text_risk_columns(config: &DatabaseScanConfig) -> PlHashMap<PlSmallStr, String> {
+    let has_timetz = matches!(
+        config.dialect,
+        DialectName::Duckdb | DialectName::Postgresql | DialectName::Redshift
+    );
+    if !config.user_schema
+        || !has_timetz
+        || !matches!(
+            config.backend.kind,
+            BackendKind::Adbc { .. } | BackendKind::ConnectorX
+        )
+    {
+        return PlHashMap::new();
+    }
+    config
+        .columns
+        .iter()
+        .filter(|c| c.dtype == DataType::String && c.db_type.is_none())
+        .map(|c| {
+            let quoted = config.dialect.quote_ident(&c.name);
+            (
+                c.name.clone(),
+                format!("`{}`", config.dialect.cast_to_text(&quoted)),
+            )
+        })
+        .collect()
+}
+
+/// The SQL Server columns read as text whose digits below the planned unit are cut (toward
+/// the earlier instant): a `datetime2` / `datetimeoffset` of 7 fractional digits the user
+/// typed `Datetime("us")` or `("ms")` (`schema_overrides`): the digits are the
+/// ones the type has beyond the unit asked for, which isn't an error (and is not rounded: the
+/// maximum, `9999-12-31 23:59:59.9999999`, would overflow). Filters on such a column aren't
+/// pushed (it is retyped: not comparable).
+pub(crate) fn truncating_columns(config: &DatabaseScanConfig) -> PlHashSet<PlSmallStr> {
+    if config.dialect != DialectName::Mssql {
+        return PlHashSet::new();
+    }
+    config
+        .columns
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.dtype,
+                DataType::Datetime(TimeUnit::Microseconds | TimeUnit::Milliseconds, _)
+            ) && c.db_type.as_deref().is_some_and(|t| {
+                matches!(
+                    super::schema::mssql_nanosecond_type(t),
+                    Some("datetime2" | "datetimeoffset")
+                )
+            })
+        })
+        .map(|c| c.name.clone())
+        .collect()
+}
+
+/// Refuses a `TIMETZ` column the driver's result description shows under `schema=`, whatever it is
+/// declared as: it is read as the local time of day, its offset dropped.
+pub(crate) fn check_time_with_zone(
+    session: &dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+) -> PolarsResult<()> {
+    if !config.user_schema {
+        return Ok(());
+    }
+    for name in session.time_with_zone_columns() {
+        let Some(column) = config.column(&name) else {
+            continue;
+        };
+        if column.db_type.is_some() {
+            continue;
+        }
+        let quoted = config.dialect.quote_ident(&name);
+        polars_bail!(
+            InvalidOperation:
+            "column '{name}' is a time with a time zone (`TIMETZ`), which the driver returns as \
+            the local time of day, without its offset: {} can't keep it. Read it as text in a \
+            query (`{}`), declared String, or leave the column out",
+            column.dtype,
+            config.dialect.cast_to_text(&quoted)
+        );
+    }
+    Ok(())
+}
+
+/// A batch's naive datetimes of `names` as UTC instants.
+pub(crate) fn as_utc_instants(mut df: DataFrame, names: &[PlSmallStr]) -> PolarsResult<DataFrame> {
+    for name in names {
+        let Ok(col) = df.column(name) else {
+            continue;
+        };
+        if let DataType::Datetime(tu, None) = col.dtype() {
+            let aware = col.cast(&DataType::Datetime(*tu, Some(TimeZone::UTC)))?;
+            df.replace(name, aware)?;
+        }
+    }
+    Ok(df)
+}
+
 /// The quoted relation a scan's columns can be qualified by.
 fn relation_qualifier(config: &DatabaseScanConfig) -> String {
     match &config.options.relation {
-        relation @ DatabaseRelation::Table { .. } => quoted_relation(config.dialect, relation),
+        relation @ DatabaseRelation::Table { .. } => quoted_relation(config.dialect, relation, &[]),
         DatabaseRelation::Query { .. } => config.dialect.quote_ident("_pl"),
     }
 }
@@ -2720,6 +4261,10 @@ fn compile_unwrapped(
         config,
         &config.schema.iter_names().cloned().collect::<Vec<_>>(),
     )?;
+    check_refused_columns(
+        config,
+        &config.schema.iter_names().cloned().collect::<Vec<_>>(),
+    )?;
     let (sql, count_sql) = match &config.options.relation {
         DatabaseRelation::Query { sql } => {
             polars_ensure!(
@@ -2742,19 +4287,26 @@ fn compile_unwrapped(
                 let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
                 items.extend(utf8_checks(config, &names));
             }
-            let needs_wrapper = items
-                .iter()
-                .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
+            // (a SQL Server query with unnamed columns is read with the planned names)
+            let needs_wrapper = config.unnamed_columns
+                || items
+                    .iter()
+                    .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
             // A server that drops a derived table's ORDER BY would return the rows in another
             // order: the wrapper repeats the query's ORDER BY outside, on its output columns
             // (the conversions stay: a TIMESTAMP's instant, a FLOAT's digits). Where a key is
             // no output column, the query can't be both converted and ordered.
             let outer_order = if needs_wrapper && config.derived_order_dropped {
                 let facts = sql_renderer().and_then(|r| r.inspect_query(sql, dialect));
+                // A `SELECT *` has the planned columns; under `schema=` those are the user's, in
+                // the user's order, so the database's `ORDER BY 1` isn't theirs first one.
+                let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
+                let order = sql_renderer()
+                    .and_then(|r| r.outer_order_by(sql, dialect, &names, !config.user_schema))
+                    .ok()
+                    .flatten();
                 match facts {
-                    Ok(f) if wrap_blocker(&f, dialect).is_none() && f.outer_order_by.is_some() => {
-                        f.outer_order_by
-                    },
+                    Ok(f) if wrap_blocker(&f, dialect).is_none() && order.is_some() => order,
                     _ => polars_bail!(
                         InvalidOperation:
                         "the query's ORDER BY can't be kept: columns of this scan need a \
@@ -2770,8 +4322,9 @@ fn compile_unwrapped(
             };
             let read = if needs_wrapper {
                 // the alias the select items are qualified by (SQLite)
+                let derived = derived_column_list(dialect, &config.derived_columns());
                 let mut read = format!(
-                    "SELECT {} FROM ({}) {}",
+                    "SELECT {} FROM ({}) {}{derived}",
                     escape_percent(config, fixed_select_list(dialect, &items)),
                     wrappable(sql),
                     relation_qualifier(config)
@@ -2786,13 +4339,22 @@ fn compile_unwrapped(
             } else {
                 sql.to_string()
             };
+            let count_derived = derived_column_list(dialect, &config.derived_columns());
             (
                 read,
-                format!("SELECT COUNT(*) FROM ({}) pl_q", wrappable(sql)),
+                format!(
+                    "SELECT COUNT(*) FROM ({}) pl_q{count_derived}",
+                    wrappable(sql)
+                ),
             )
         },
         relation => {
-            let from = quoted_relation(dialect, relation);
+            let google_percent = google_unescapes_generated_percent(
+                &config.options.connection,
+                &config.backend.kind,
+                dialect,
+            );
+            let from = escape_percent_if(quoted_relation(dialect, relation, &[]), google_percent);
             // the select list applies the column conversions, as a pushed-down scan does
             let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
             let mut items = names
@@ -2820,8 +4382,11 @@ fn compile_unwrapped(
                 let cols = order_by
                     .iter()
                     .map(|c| match order_by_expr(config, c) {
-                        SqlExpr::Raw(sql) => sql,
-                        _ => format!("{from}.{}", dialect.quote_ident(c)),
+                        SqlExpr::Raw(sql) => escape_percent_if(sql, google_percent),
+                        _ => {
+                            let col = escape_percent_if(dialect.quote_ident(c), google_percent);
+                            format!("{from}.{col}")
+                        },
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -2870,6 +4435,25 @@ struct SourceVolatility {
     all_columns: bool,
     /// The source is a table the catalog says is no view: its declared types hold.
     plain_table: bool,
+    /// A view it reads has a positional join (`PASTE`, `POSITIONAL`), or may (one that
+    /// couldn't be inspected, on a dialect that has them): no filter is pushed.
+    positional: bool,
+    /// A view it reads has a `SETTINGS` clause that may cut its rows (ClickHouse): nothing
+    /// is pushed.
+    settings: bool,
+    /// A table it reads is read redacted (Oracle Data Redaction), and compared as stored, or
+    /// may be (a view that couldn't be inspected): no filter is pushed.
+    redacted: bool,
+}
+
+impl SourceVolatility {
+    /// A view it reads couldn't be inspected: it may join by place, cut its rows, or read
+    /// a redacted table.
+    fn unknown_view(&mut self, dialect: DialectName) {
+        self.positional |= matches!(dialect, DialectName::Duckdb | DialectName::Clickhouse);
+        self.settings |= dialect == DialectName::Clickhouse;
+        self.redacted |= dialect == DialectName::Oracle;
+    }
 }
 
 const UNKNOWN_FUNCTIONS: &str = "a function sqlglot doesn't know (it may be a user's \
@@ -2959,13 +4543,26 @@ fn source_volatility(
             if seen.len() > MAX_VIEW_LOOKUPS {
                 out.volatile = Some("one of the many views it reads".into());
                 out.all_columns = true;
+                out.unknown_view(dialect);
                 break 'inspect;
             }
             let (sql, qualifier) =
                 match catalog::view_definition(session, dialect, &parts, &context) {
-                    catalog::ViewLookup::View { sql, qualifier } => (sql, qualifier),
+                    catalog::ViewLookup::View {
+                        sql,
+                        qualifier,
+                        redacted,
+                    } => {
+                        out.redacted |= redacted;
+                        (sql, qualifier)
+                    },
                     catalog::ViewLookup::NotAView => {
                         out.plain_table |= own_columns;
+                        continue;
+                    },
+                    catalog::ViewLookup::Redacted => {
+                        out.plain_table |= own_columns;
+                        out.redacted = true;
                         continue;
                     },
                     catalog::ViewLookup::Unknown => continue,
@@ -2980,6 +4577,7 @@ fn source_volatility(
                             .into(),
                         );
                         out.all_columns = true;
+                        out.unknown_view(dialect);
                         continue;
                     },
                 };
@@ -2991,12 +4589,15 @@ fn source_volatility(
             let Some(view) = view else {
                 out.volatile = Some(format!("the view '{name}', which can't be inspected,").into());
                 out.all_columns = true;
+                out.unknown_view(dialect);
                 continue;
             };
             if !view.repeatable {
                 // a volatile function, a `LIMIT`, rows picked in no set order
                 out.volatile = Some(format!("the view '{name}'").into());
             }
+            out.positional |= view.positional_join;
+            out.settings |= view.unsafe_settings;
             let any_volatile = view.all_columns_volatile || !view.volatile_columns.is_empty();
             match &view.output_columns {
                 Some(outputs)
@@ -3011,14 +4612,21 @@ fn source_volatility(
                         }
                     }
                 },
-                Some(outputs) if own_columns && !view.all_columns_volatile && !names_in_order => {
+                // (not MySQL's: its definition leaves out a column list that may permute the
+                // query's own aliases)
+                Some(outputs)
+                    if own_columns
+                        && !view.all_columns_volatile
+                        && !names_in_order
+                        && !matches!(dialect, DialectName::Mysql | DialectName::Singlestore) =>
+                {
                     for n in names {
                         let volatile = match outputs.iter().find(|o| o.eq_ignore_ascii_case(n)) {
                             Some(o) => view
                                 .volatile_columns
                                 .iter()
                                 .any(|v| v.eq_ignore_ascii_case(o)),
-                            // not among the query's names (a MySQL view's column list)
+                            // not among the query's names
                             None => any_volatile,
                         };
                         if volatile {
@@ -3095,6 +4703,7 @@ fn source_volatility(
             {
                 Some(f) => {
                     volatile |= !f.repeatable;
+                    out.positional |= f.positional_join;
                     if let (Some(n), false) = (macro_name, f.repeatable) {
                         shadowing.push(n.clone());
                     }
@@ -3105,6 +4714,7 @@ fn source_volatility(
                 },
                 None => {
                     volatile = true;
+                    out.unknown_view(dialect);
                     shadowing.extend(macro_name.clone());
                 },
             }
@@ -3182,6 +4792,69 @@ fn query_repeatable(config: &DatabaseScanConfig) -> bool {
     }
 }
 
+/// Whether running the source may change something (a function that writes: `nextval()`), so that
+/// it must not run twice. Only a query known to call no such function (nor a volatile view), a
+/// database whose functions can't write in a query, or a read-only session is sure not to; a view
+/// may call one (DuckDB's and Postgres' `nextval`). `found_volatile`: the source was found volatile
+/// when read (`schema=`).
+pub(crate) fn source_may_write(config: &DatabaseScanConfig, found_volatile: bool) -> bool {
+    if matches!(
+        config.dialect,
+        DialectName::Sqlite | DialectName::Mssql | DialectName::Clickhouse
+    ) || read_only_session(
+        config.dialect,
+        &config.backend.kind,
+        config.options.connection.is_live(),
+    ) {
+        return false;
+    }
+    match &config.options.relation {
+        DatabaseRelation::Query { sql } => {
+            config.volatile_source
+                || found_volatile
+                || !sql_renderer()
+                    .and_then(|r| r.inspect_query(sql, config.dialect))
+                    .is_ok_and(|f| f.parses && !f.side_effects)
+        },
+        DatabaseRelation::Table { .. } => true,
+    }
+}
+
+/// Whether this SQLite parses float literals exactly, as filters write them (17 significant
+/// digits, `_sqlglot.py`'s `_literal`). One built without `long double` (Python's on Windows,
+/// ConnectorX's, some Linux builds) misses the stored value of many large or small ones. Under
+/// `schema=` (no I/O while planning) it isn't known: no float comparison is pushed then.
+pub(crate) fn sqlite_floats_exact(session: &mut dyn DatabaseSession) -> bool {
+    let values: Vec<f64> = (-15..=15)
+        .flat_map(|e| {
+            ["1.2345678901234567", "9.876543210987654"].map(|m| format!("{m}e{}", e * 20))
+        })
+        .filter_map(|t| t.parse().ok())
+        .collect();
+    let sql = format!(
+        "SELECT {}",
+        values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| format!("{v:.16e} AS v{i}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let Ok(df) = session.catalog_query(&sql) else {
+        return false;
+    };
+    df.height() == 1
+        && df.width() == values.len()
+        && df.columns().iter().zip(&values).all(
+            |(c, v)| matches!(c.get(0), Ok(AnyValue::Float64(x)) if x.to_bits() == v.to_bits()),
+        )
+}
+
+/// Whether a scan may be read in several partitions. Each partition reads the source again,
+/// which is right only where the source returns the same rows each time; until that is
+/// checked, every scan is read with one query.
+const PARTITIONING_SUPPORTED: bool = false;
+
 /// Turns the scan's `PartitionSpec` into partitions, querying bounds where needed.
 fn resolve_partitions(
     config: &DatabaseScanConfig,
@@ -3192,6 +4865,16 @@ fn resolve_partitions(
 ) -> PolarsResult<(Vec<Partition>, PlSmallStr)> {
     let options = &config.options;
     let one = || Ok((vec![Partition { predicate: None }], PlSmallStr::from("1")));
+    if !PARTITIONING_SUPPORTED {
+        return match options.partitioning {
+            PartitionSpec::None | PartitionSpec::Auto { .. } => one(),
+            PartitionSpec::Column { .. } | PartitionSpec::Predicates(_) => polars_bail!(
+                InvalidOperation:
+                "scan_database doesn't support partitioning yet: pass partition_on=None or \
+                'auto' (both read with one query)"
+            ),
+        };
+    }
     let max_connections = config.max_connections();
 
     // A live connection reads partitions one after another on one connection; splitting
@@ -3432,7 +5115,7 @@ fn run_bounds(
         ],
         from.clone(),
     );
-    query.escape_percent = percent_formatted(config);
+    query.escape_percent = escape_generated_percent_for_scan(config);
     query.filter = filters
         .iter()
         .filter(|f| f.exact)
@@ -3476,6 +5159,58 @@ fn run_bounds(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn mssql_text_size_refuses_reads_of_long_values() {
+        let col = |name: &str, dtype: DataType, db_type: Option<&str>| ColumnMeta {
+            name: name.into(),
+            dtype,
+            db_type: db_type.map(Into::into),
+            strings: crate::database::dialect::StringSemantics::UNKNOWN,
+            is_key: false,
+            comparable: true,
+        };
+        let id = col("id", DataType::Int32, Some("int"));
+        let nv = col("nv", DataType::String, Some("nvarchar"));
+        let sv = col("sv", DataType::String, Some("sql_variant"));
+        let img = col("img", DataType::Null, Some("image"));
+        let untyped = col("u", DataType::Binary, None);
+        let money = col("m", DataType::Decimal(19, 4), Some("money"));
+        let plain = ["SELECT [id] FROM [t]"];
+        assert!(mssql_text_size_cuts(&[&id], &plain).is_empty());
+        assert_eq!(mssql_text_size_cuts(&[&id, &nv], &plain), ["'nv'"]);
+        for c in [&sv, &img, &untyped] {
+            assert_eq!(mssql_text_size_cuts(&[c], &plain).len(), 1, "{}", c.name);
+        }
+        // read through a conversion to NVARCHAR(MAX)
+        assert!(mssql_text_size_cuts(&[&money], &plain).is_empty());
+        let converted = ["SELECT CAST(CAST([m] AS DECIMAL(19, 4)) AS NVARCHAR(MAX)) FROM [t]"];
+        assert_eq!(mssql_text_size_cuts(&[&money], &converted).len(), 1);
+    }
+
+    #[test]
+    fn trino_output_names_are_told_apart_without_case() {
+        let facts = |cols: &[&str]| QueryFacts {
+            parses: true,
+            single_select: true,
+            output_columns: Some(cols.iter().map(|c| (*c).into()).collect()),
+            ..Default::default()
+        };
+        // Trino folds every identifier: `T` and `t` name the same column
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Trino).is_some());
+        assert!(wrap_blocker(&facts(&["T", "u"]), DialectName::Trino).is_none());
+        // a database that tells them apart is left as it was
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Clickhouse).is_none());
+        // Trino names each column of no name apart (`_col0`), which is refused once found
+        assert!(wrap_blocker(&facts(&["", ""]), DialectName::Trino).is_none());
+        let names =
+            |cols: &[&str]| -> Vec<PlSmallStr> { cols.iter().map(|c| (*c).into()).collect() };
+        let unnamed = names(&["_col0", "id"]);
+        assert!(refuse_trino_unnamed(DialectName::Trino, &unnamed).is_err());
+        assert!(refuse_trino_unnamed(DialectName::Mssql, &unnamed).is_ok());
+        let named = names(&["_col", "_colx", "col0"]);
+        assert!(refuse_trino_unnamed(DialectName::Trino, &named).is_ok());
+    }
+
+    #[test]
     fn utc_zone_is_decided_by_name() {
         for z in [
             "UTC",
@@ -3498,16 +5233,24 @@ mod tests {
     #[test]
     fn keyword_guard() {
         assert_eq!(first_keyword("  -- x\n /* y */ (SELECT 1)"), "SELECT");
-        assert!(check_read_only("DELETE FROM t", None, true).is_err());
-        assert!(check_read_only("/* c */ insert into t values (1)", None, true).is_err());
-        assert!(check_read_only("SELECT * FROM t", None, false).is_ok());
+        assert!(check_read_only("DELETE FROM t", None, true, DialectName::Generic).is_err());
+        assert!(
+            check_read_only(
+                "/* c */ insert into t values (1)",
+                None,
+                true,
+                DialectName::Generic
+            )
+            .is_err()
+        );
+        assert!(check_read_only("SELECT * FROM t", None, false, DialectName::Generic).is_ok());
         let facts = QueryFacts {
             parses: true,
             read_only: false,
             ..Default::default()
         };
         let cte = "WITH d AS (DELETE FROM t) SELECT 1";
-        assert!(check_read_only(cte, Some(&facts), true).is_err());
+        assert!(check_read_only(cte, Some(&facts), true, DialectName::Generic).is_err());
         // a query that doesn't parse: only plainly a SELECT, unless the session refuses
         // writes itself
         for sql in [
@@ -3516,10 +5259,28 @@ mod tests {
             "SELECT 1; DELETE FROM t",
             "WITH d AS (SELECT 1) SELECT * FROM d",
         ] {
-            assert!(check_read_only(sql, None, false).is_err(), "{sql}");
-            assert!(check_read_only(sql, None, true).is_ok(), "{sql}");
+            assert!(
+                check_read_only(sql, None, false, DialectName::Generic).is_err(),
+                "{sql}"
+            );
+            assert!(
+                check_read_only(sql, None, true, DialectName::Generic).is_ok(),
+                "{sql}"
+            );
         }
-        assert!(check_read_only("(SELECT a FROM t USING <);", None, false).is_ok());
+        assert!(
+            check_read_only(
+                "(SELECT a FROM t USING <);",
+                None,
+                false,
+                DialectName::Generic
+            )
+            .is_ok()
+        );
+        // SQL Server runs a statement after a query with no `;`
+        let exec = "SELECT a FROM c EXEC('DELETE FROM v') USING <";
+        assert!(check_read_only(exec, None, false, DialectName::Mssql).is_err());
+        assert!(check_read_only(exec, None, false, DialectName::Generic).is_ok());
         assert!(read_only_session(
             DialectName::Postgresql,
             &BackendKind::Python {
@@ -3546,6 +5307,20 @@ mod tests {
             },
             false
         ));
+    }
+
+    #[test]
+    fn duckdb_type_holds_looks_at_types_only() {
+        let variant = |t: &str| duckdb_type_holds(t, &["VARIANT"]);
+        assert!(variant("VARIANT"));
+        assert!(variant("STRUCT(a INTEGER, v VARIANT)[]"));
+        assert!(variant("MAP(VARCHAR, VARIANT)"));
+        assert!(!variant("STRUCT(invariant INTEGER)"));
+        assert!(!variant("STRUCT(\"VARIANT\" INTEGER)"));
+        assert!(!variant("ENUM('VARIANT')"));
+        let timetz = |t: &str| duckdb_type_holds(t, &["TIMETZ", "TIME WITH TIME ZONE"]);
+        assert!(timetz("TIME WITH TIME ZONE[]"));
+        assert!(!timetz("STRUCT(timetz INTEGER)"));
     }
 
     #[test]
@@ -3582,7 +5357,25 @@ mod tests {
     }
 
     fn conversion(dialect: DialectName, db_type: &str) -> Option<String> {
-        column_conversion(dialect, &BackendKind::ConnectorX, true, db_type, "\"c\"")
+        column_conversion(
+            dialect,
+            &BackendKind::ConnectorX,
+            true,
+            true,
+            db_type,
+            "\"c\"",
+        )
+    }
+
+    fn portable_conversion(db_type: &str) -> Option<String> {
+        column_conversion(
+            DialectName::Sqlite,
+            &BackendKind::ConnectorX,
+            true,
+            false,
+            db_type,
+            "\"c\"",
+        )
     }
 
     #[test]
@@ -3600,6 +5393,35 @@ mod tests {
         );
         // other text fails the read, as in a column of no override
         assert!(cut.contains("THEN char(1) || \"c\""), "{cut}");
+        // on a connection the user made, with no function to redefine
+        let cut = portable_conversion(SQLITE_INTEGER_CUT).unwrap();
+        assert!(
+            cut.contains(
+                "WHEN (+(\"c\") > 9e999 AND +(\"c\") < X'') AND CAST(CAST(\"c\" AS INTEGER) \
+                AS BLOB) = CAST(\"c\" AS BLOB) THEN CAST(\"c\" AS INTEGER)"
+            ),
+            "{cut}"
+        );
+        assert!(cut.contains("THEN '\u{1}' || \"c\""), "{cut}");
+    }
+
+    #[test]
+    fn sqlite_conversions_on_a_users_connection_call_no_function() {
+        // a live connection or a factory's may redefine any SQL function and collation
+        for t in [
+            SQLITE_TEXT,
+            SQLITE_REAL,
+            SQLITE_REAL_CUT,
+            SQLITE_INTEGER,
+            SQLITE_UNTYPED_INTEGER,
+            SQLITE_INTEGER_CUT,
+        ] {
+            let sql = portable_conversion(t).unwrap();
+            for f in ["typeof(", "char(", "substr(", "abs(", "length(", "instr("] {
+                assert!(!sql.contains(f), "{t} calls {f}: {sql}");
+            }
+            assert!(!sql.contains("AS TEXT) ="), "{t} compares text: {sql}");
+        }
     }
 
     #[test]
@@ -3621,6 +5443,126 @@ mod tests {
             conversion(DialectName::Duckdb, DUCKDB_TEXT).as_deref(),
             Some("CAST(\"c\" AS VARCHAR)")
         );
+    }
+
+    #[test]
+    fn mssql_and_trino_types_drivers_misread_are_converted() {
+        let mssql = |t| conversion(DialectName::Mssql, t);
+        let money = mssql("money").unwrap();
+        assert!(money.contains("CAST(\"c\" AS DECIMAL(19, 4))"), "{money}");
+        let money = mssql("smallmoney").unwrap();
+        assert!(money.contains("CAST(\"c\" AS DECIMAL(10, 4))"), "{money}");
+        assert_eq!(
+            mssql("datetime2(7)").as_deref(),
+            Some("CONVERT(VARCHAR(40), \"c\", 121)")
+        );
+        assert_eq!(
+            mssql("datetimeoffset(7)").as_deref(),
+            Some(
+                "CONVERT(VARCHAR(40), CAST(SWITCHOFFSET(\"c\", '+00:00') AS DATETIME2(7)), \
+                121)"
+            )
+        );
+        assert_eq!(
+            mssql("datetimeoffset(3)").as_deref(),
+            Some("SWITCHOFFSET(\"c\", '+00:00')")
+        );
+        assert!(mssql("decimal(38, 2)").is_some());
+        assert_eq!(mssql("decimal(18, 2)"), None);
+        assert_eq!(mssql("datetime2(6)"), None);
+        assert_eq!(
+            conversion(DialectName::Trino, "timestamp(3) with time zone").as_deref(),
+            Some("\"c\" AT TIME ZONE 'UTC'")
+        );
+        assert_eq!(
+            conversion(DialectName::Trino, "timestamp(9)").as_deref(),
+            Some("CAST(\"c\" AS VARCHAR)")
+        );
+        assert_eq!(conversion(DialectName::Trino, "array(timestamp(9))"), None);
+    }
+
+    #[test]
+    fn mssql_columns_typed_below_their_digits_are_truncated() {
+        use crate::filter::tests::{adbc, config};
+        let us = DataType::Datetime(TimeUnit::Microseconds, None);
+        let ns = DataType::Datetime(TimeUnit::Nanoseconds, None);
+        let c = config(
+            DialectName::Mssql,
+            adbc("mssql"),
+            &[
+                ("a", us.clone(), Some("datetime2(7)")),
+                ("b", us.clone(), Some("datetimeoffset")),
+                ("c", ns, Some("datetime2(7)")),
+                ("d", us.clone(), Some("datetime2(6)")),
+            ],
+        );
+        let mut found: Vec<_> = truncating_columns(&c).into_iter().collect();
+        found.sort();
+        assert_eq!(found, ["a", "b"]);
+        let pg = config(
+            DialectName::Postgresql,
+            adbc("postgresql"),
+            &[("a", us, Some("datetime2(7)"))],
+        );
+        assert!(truncating_columns(&pg).is_empty());
+    }
+
+    struct NoRenderer;
+
+    impl SqlRenderer for NoRenderer {
+        fn id(&self) -> PlSmallStr {
+            "none".into()
+        }
+        fn render(&self, _: &SqlQuery, _: DialectName) -> PolarsResult<String> {
+            unreachable!()
+        }
+        fn inspect_query(&self, _: &str, _: DialectName) -> PolarsResult<QueryFacts> {
+            unreachable!()
+        }
+        fn outer_order_by(
+            &self,
+            _: &str,
+            _: DialectName,
+            _: &[PlSmallStr],
+            _: bool,
+        ) -> PolarsResult<Option<PlSmallStr>> {
+            unreachable!()
+        }
+        fn inspect_view(&self, _: &str, _: DialectName) -> PolarsResult<QueryFacts> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn scans_are_read_in_one_partition() {
+        use crate::database::options::PartitionStrategy;
+        use crate::filter::tests::{adbc, config};
+        let partitions = |spec: PartitionSpec, target: Option<usize>| {
+            let mut c = config(
+                DialectName::Postgresql,
+                adbc("postgresql"),
+                &[("id", DataType::Int64, Some("bigint"))],
+            );
+            Arc::make_mut(&mut c.options).partitioning = spec;
+            let from = SqlFrom::Table(vec!["t".into()]);
+            resolve_partitions(&c, &NoRenderer, &from, &[], target).map(|(p, _)| p.len())
+        };
+        for target in [None, Some(8)] {
+            assert_eq!(partitions(PartitionSpec::None, target).unwrap(), 1);
+            let auto = PartitionSpec::Auto {
+                num_partitions: Some(4),
+            };
+            assert_eq!(partitions(auto, target).unwrap(), 1);
+            let column = PartitionSpec::Column {
+                column: "id".into(),
+                num_partitions: Some(4),
+                range: None,
+                strategy: PartitionStrategy::MinMax,
+            };
+            assert!(partitions(column, target).is_err());
+            let predicates = PartitionSpec::Predicates(vec!["id < 5".into(), "id >= 5".into()]);
+            assert!(partitions(predicates, target).is_err());
+        }
     }
 
     /// Fails every statement, as a catalog lookup given the user's `params=` did.

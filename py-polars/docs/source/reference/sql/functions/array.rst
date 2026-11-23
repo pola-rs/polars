@@ -548,7 +548,9 @@ as a table function, see :ref:`RANGE <range_table_func>`.
 
 UNNEST
 ------
-Unnest/explode an array column into multiple rows.
+Unnest/explode an array column into multiple rows. As in Postgres, an empty or NULL
+array gives no row, and a NULL element gives a row. In the `SELECT` list, `UNNEST` is
+applied before the other expressions, so window functions see the unnested rows.
 
 **Example:**
 
@@ -578,3 +580,11 @@ Unnest/explode an array column into multiple rows.
     # │ d   ┆ 9   │
     # │ e   ┆ 10  │
     # └─────┴─────┘
+
+As a table, ``UNNEST(...) WITH ORDINALITY`` adds the 1-based position of each element in its
+array, as in Postgres. It takes the alias column that follows those of the values, or the name
+``ordinality``:
+
+.. code-block:: sql
+
+    SELECT id, tag, n FROM self CROSS JOIN UNNEST(tags) WITH ORDINALITY AS t(tag, n)

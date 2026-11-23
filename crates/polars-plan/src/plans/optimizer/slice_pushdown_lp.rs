@@ -332,7 +332,15 @@ impl SlicePushDown {
 
                     FileScanIR::ExpandedPaths { .. } => false,
 
-                    FileScanIR::ExternalReaderBuilder { .. } => true,
+                    FileScanIR::ExternalReaderBuilder { external } => {
+                        state.is_positive()
+                            || external.counts_match_reads()
+                            // Only the row count is read.
+                            || output_schema
+                                .as_ref()
+                                .unwrap_or(&file_info.schema)
+                                .is_empty()
+                    },
 
                     // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                     FileScanIR::Anonymous { .. } => {

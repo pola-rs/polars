@@ -97,6 +97,22 @@ fn map_linspace_dtype(mapper: &FieldsMapper) -> PolarsResult<DataType> {
 }
 
 impl IRRangeFunction {
+    /// The inputs that must be scalar, with the names of their arguments.
+    pub(super) fn scalar_inputs(&self) -> &'static [(usize, &'static str)] {
+        use IRRangeFunction::*;
+        match self {
+            IntRange { .. } => &[(0, "start"), (1, "end")],
+            LinearSpace { .. } => &[(0, "start"), (1, "end"), (2, "num_samples")],
+            #[cfg(feature = "dtype-date")]
+            DateRange { arg_type, .. } => date_range_scalar_inputs(arg_type),
+            #[cfg(feature = "dtype-datetime")]
+            DatetimeRange { arg_type, .. } => date_range_scalar_inputs(arg_type),
+            #[cfg(feature = "dtype-time")]
+            TimeRange { .. } => &[(0, "start"), (1, "end")],
+            _ => &[],
+        }
+    }
+
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRRangeFunction::*;
         match self {
@@ -193,6 +209,17 @@ impl IRRangeFunction {
             R::TimeRanges { .. } => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::ALLOW_RENAME | FunctionFlags::RANGE),
         }
+    }
+}
+
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+fn date_range_scalar_inputs(arg_type: &DateRangeArgs) -> &'static [(usize, &'static str)] {
+    use DateRangeArgs::*;
+    match arg_type {
+        StartEndSamples => &[(0, "start"), (1, "end"), (2, "num_samples")],
+        StartEndInterval => &[(0, "start"), (1, "end")],
+        StartIntervalSamples => &[(0, "start"), (1, "num_samples")],
+        EndIntervalSamples => &[(0, "end"), (1, "num_samples")],
     }
 }
 

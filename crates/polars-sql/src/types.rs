@@ -220,7 +220,7 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         SQLDataType::Interval { fields, precision } => {
             if !fields.is_none() {
                 // eg: "YEARS TO MONTH"
-                polars_bail!(SQLInterface: "`interval` definition with fields={:?} is not supported", fields)
+                polars_bail!(SQLInterface: "`{}` is not supported", dtype)
             }
             let time_unit = match precision {
                 Some(p) if (1u64..=3u64).contains(p) => TimeUnit::Milliseconds,
@@ -320,16 +320,16 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
                     "uint4" | "uinteger" | "uint" => DataType::UInt32,
                     "uint8" | "ubigint" => DataType::UInt64,
                     _ => {
-                        polars_bail!(SQLInterface: "datatype {:?} is not currently supported", value)
+                        polars_bail!(SQLInterface: "datatype `{}` is not currently supported", dtype)
                     },
                 }
             },
             _ => {
-                polars_bail!(SQLInterface: "datatype {:?} is not currently supported", idents)
+                polars_bail!(SQLInterface: "datatype `{}` is not currently supported", dtype)
             },
         },
         _ => {
-            polars_bail!(SQLInterface: "datatype {:?} is not currently supported", dtype)
+            polars_bail!(SQLInterface: "datatype `{}` is not currently supported", dtype)
         },
     })
 }
