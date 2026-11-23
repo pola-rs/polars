@@ -119,23 +119,6 @@ pub enum TimeUnitRescale {
 }
 
 impl TimeUnitRescale {
-    /// How each (weeks, days, hours, minutes, seconds, milliseconds, microseconds,
-    /// nanoseconds) duration component is rescaled to `time_unit`: multiplied if coarser,
-    /// or truncated if finer (each component separately).
-    pub fn duration_components(time_unit: TimeUnit) -> [Self; 8] {
-        let per_second = 1_000_000_000 / time_unit.nanoseconds();
-        [
-            Self::Multiply(per_second * 86_400 * 7), // weeks
-            Self::Multiply(per_second * 86_400),     // days
-            Self::Multiply(per_second * 3_600),      // hours
-            Self::Multiply(per_second * 60),         // minutes
-            Self::Multiply(per_second),              // seconds
-            TimeUnit::Milliseconds.rescale_to(time_unit),
-            TimeUnit::Microseconds.rescale_to(time_unit),
-            TimeUnit::Nanoseconds.rescale_to(time_unit),
-        ]
-    }
-
     /// Rescales a datetime timestamp, rounding down; `None` on overflow.
     #[inline]
     pub fn datetime_value(self, v: i64) -> Option<i64> {
@@ -178,6 +161,25 @@ impl TimeUnit {
             TimeUnit::Microseconds => datetime_to_timestamp_us(dt),
             TimeUnit::Milliseconds => datetime_to_timestamp_ms(dt),
         }
+    }
+}
+
+#[cfg(any(feature = "rows", feature = "object"))]
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
+#[inline]
+pub fn convert_time_units<T>(v: T, tu_l: TimeUnit, tu_r: TimeUnit) -> T
+where
+    T: num_traits::Num + num_traits::NumCast,
+{
+    use TimeUnit::*;
+    match (tu_l, tu_r) {
+        (Nanoseconds, Microseconds) => v / T::from(1_000).unwrap(),
+        (Nanoseconds, Milliseconds) => v / T::from(1_000_000).unwrap(),
+        (Microseconds, Nanoseconds) => v * T::from(1_000).unwrap(),
+        (Microseconds, Milliseconds) => v / T::from(1_000).unwrap(),
+        (Milliseconds, Microseconds) => v * T::from(1_000).unwrap(),
+        (Milliseconds, Nanoseconds) => v * T::from(1_000_000).unwrap(),
+        _ => v,
     }
 }
 
