@@ -9,6 +9,7 @@ import sys
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -8570,14 +8571,14 @@ def test_call_add_files_partition_values(lake: CountingCatalog, tmp_path: Path) 
     ctx.execute(add_files_call("tpch.u", tmp_path / "br[1]"))
     assert table_rows(lake, "tpch", "u") == [(1, "x")]
 
-    # empty files: no row to prove a value for
+    # empty files: no row to prove a value for, nor to read
     ctx.execute("CREATE TABLE e (k BIGINT, g VARCHAR) PARTITION BY (g)")
-    empty = pl.DataFrame(schema={"k": pl.Int64})
+    empty = pl.DataFrame(schema={"k": pl.UInt64})
     write_files(tmp_path / "e1", {"a.parquet": empty})
     write_files(tmp_path / "e2", {"g=z/a.parquet": empty})
     for folder in ("e1", "e2"):
         ctx.execute(add_files_call("tpch.e", tmp_path / folder))
-    assert table_rows(lake, "tpch", "e") == []
+    assert ctx.execute("SELECT * FROM e", eager=True).is_empty()
 
     # a transform: several times on one day are one partition
     ctx.execute("CREATE TABLE d (ts TIMESTAMP) PARTITION BY (day(ts))")
@@ -8699,6 +8700,13 @@ def field_id_table(nested: bool) -> Any:
             "SchemaError",
             "do not fit",
         ),
+        (
+            "i",
+            {"a.parquet": {"k": [1], "i": pl.Series([1], dtype=pl.UInt32)}},
+            "SchemaError",
+            "cannot read",
+        ),
+        ("mk", {"decimal_keys": True}, "SchemaError", "cannot read"),
         ("lineitem", {"field_ids": False}, "InvalidOperationError", "field ids"),
         ("lineitem", {"field_ids": True}, "InvalidOperationError", "field ids"),
         ("l", {"legacy_list": True}, "SchemaError", "does not name"),
@@ -8737,10 +8745,19 @@ def test_call_add_files_refused(
     ctx.execute("CREATE TABLE f (k BIGINT, x DOUBLE) PARTITION BY (x)")
     ctx.execute("CREATE TABLE l (k BIGINT, l BIGINT[])")
     ctx.execute("CREATE TABLE ts (k BIGINT, ts TIMESTAMP) PARTITION BY (ts)")
+    ctx.execute("CREATE TABLE mk (m MAP(DECIMAL(10, 2), VARCHAR))")
     folder = tmp_path / "landing"
     folder.mkdir()
     files = dict(files)
     statistics = not files.pop("nostats", False)
+    if files.pop("decimal_keys", False):
+        import pyarrow as pa
+
+        # a scan would round both keys to 1.23
+        keys = [(Decimal("1.231"), "a"), (Decimal("1.232"), "b")]
+        dtype = pa.map_(pa.decimal128(10, 3), pa.string())
+        data = pa.table({"m": pa.array([keys], dtype)})
+        pq.write_table(data, folder / "a.parquet")
     if (nested := files.pop("field_ids", None)) is not None:
         pq.write_table(field_id_table(nested), folder / "a.parquet")
     if files.pop("legacy_list", False):
