@@ -226,7 +226,7 @@ fn decode_optional_plain(
             // Insert a zero at each null position, from low to high bits.
             let mut nulls = !mask;
             while nulls != 0 {
-                let below = (nulls & nulls.wrapping_neg()) - 1;
+                let below = nulls.isolate_lowest_one() - 1;
                 word = (word & below) | ((word & !below) << 1);
                 nulls &= nulls - 1;
             }
