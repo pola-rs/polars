@@ -208,10 +208,12 @@ def test_bigquery_destination_rejected_before_query(
                 }
 
         with pytest.raises(pl.exceptions.ComputeError, match="BigQuery destination"):
-            scan = pl.scan_database(
-                "SELECT 17 AS id", connection, partition_on=None, **options
-            )
-            getattr(scan, operation)()
+            getattr(
+                pl.scan_database(
+                    "SELECT 17 AS id", connection, partition_on=None, **options
+                ),
+                operation,
+            )()
 
 
 def test_bigquery_sqlalchemy_uri_rejects_named_destination(
