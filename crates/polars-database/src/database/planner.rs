@@ -11,11 +11,14 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::backend::resolve::{detect_dialect, object_info, resolve_backend};
-use super::backend::{BackendKind, DatabaseSession, open_backend, open_session_with_retries};
+use super::backend::{
+    BackendKind, DatabaseSession, collect_batches, open_backend, open_session_with_retries,
+};
 use super::catalog::{self, CatalogInfo};
 use super::config::{
     ColumnMeta, CompiledPartition, CompiledScan, DatabaseScanConfig, TableStats, session_setup_runs,
 };
+use super::connection::ConnectionSpec;
 use super::dialect::DialectName;
 use super::options::{Consistency, DatabaseRelation, DatabaseScanOptions, PartitionSpec};
 use super::partition::{self, Partition};
@@ -37,15 +40,39 @@ fn verbose() -> bool {
 }
 
 /// The `FROM` target of a relation, for the fixed discovery and catalog SQL.
-fn quoted_relation(dialect: DialectName, relation: &DatabaseRelation) -> String {
+fn quoted_relation(
+    dialect: DialectName,
+    relation: &DatabaseRelation,
+    columns: &[PlSmallStr],
+) -> String {
     match relation {
         DatabaseRelation::Table { parts, .. } => parts
             .iter()
             .map(|p| dialect.quote_ident(p))
             .collect::<Vec<_>>()
             .join("."),
-        DatabaseRelation::Query { sql } => format!("({}) pl_q", wrappable(sql)),
+        DatabaseRelation::Query { sql } => {
+            format!(
+                "({}) pl_q{}",
+                wrappable(sql),
+                derived_column_list(dialect, columns)
+            )
+        },
     }
+}
+
+/// The alias's column list (`("a", "b")`) of a derived table over a SQL Server query with a
+/// column of no name (see [`DatabaseScanConfig::unnamed_columns`]); empty without the columns.
+fn derived_column_list(dialect: DialectName, columns: &[PlSmallStr]) -> String {
+    if columns.is_empty() {
+        return String::new();
+    }
+    let names = columns
+        .iter()
+        .map(|c| dialect.quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("({names})")
 }
 
 fn strip_statement_end(sql: &str) -> &str {
@@ -207,6 +234,26 @@ fn first_keyword(sql: &str) -> &str {
     &s[..end]
 }
 
+/// The output column names given more than once, as the database tells names apart: Trino
+/// folds every name to lower case (`SELECT 1 AS T, 2 AS t` names two columns `t`), and names
+/// each column of no name apart (`_col0`, `_col1`).
+fn duplicated_output_names(dialect: DialectName, cols: &[PlSmallStr]) -> Vec<PlSmallStr> {
+    let trino = dialect == DialectName::Trino;
+    let mut seen = PlHashSet::with_capacity(cols.len());
+    let mut duplicated = vec![];
+    for c in cols.iter().filter(|c| !(trino && c.is_empty())) {
+        let key: PlSmallStr = if trino {
+            c.to_lowercase().into()
+        } else {
+            c.clone()
+        };
+        if !seen.insert(key.clone()) && !duplicated.contains(&key) {
+            duplicated.push(key);
+        }
+    }
+    duplicated
+}
+
 /// Why a user query can't be wrapped as a derived table, if it can't.
 fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str> {
     if !facts.parses {
@@ -221,13 +268,110 @@ fn wrap_blocker(facts: &QueryFacts, dialect: DialectName) -> Option<&'static str
     if dialect == DialectName::Mssql && facts.top_level_order_by_without_limit {
         return Some("SQL Server does not allow ORDER BY without TOP inside a derived table");
     }
-    if let Some(cols) = &facts.output_columns {
-        let mut seen = PlHashSet::with_capacity(cols.len());
-        if !cols.iter().all(|c| seen.insert(c)) {
-            return Some("the query has duplicate output column names");
-        }
+    if let Some(cols) = &facts.output_columns
+        && !duplicated_output_names(dialect, cols).is_empty()
+    {
+        return Some("the query has duplicate output column names");
     }
     None
+}
+
+/// Trino names an output column of no name `_col<position>` (`SELECT count(*)`), and a query
+/// wrapping it can't refer to that name: such a query is refused.
+fn refuse_trino_unnamed(dialect: DialectName, names: &[PlSmallStr]) -> PolarsResult<()> {
+    let unnamed = dialect == DialectName::Trino
+        && names.iter().any(|n| {
+            n.strip_prefix("_col")
+                .is_some_and(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+        });
+    polars_ensure!(
+        !unnamed,
+        InvalidOperation:
+        "the query has a column of no name, which Trino doesn't let a wrapping query refer to; \
+        alias each of its expressions (`SELECT count(*) AS n`)"
+    );
+    Ok(())
+}
+
+/// [`refuse_unwrappable_conversions`] for a scan planned under `schema=` (no I/O then): run
+/// on the first session opened.
+pub fn check_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    config: &DatabaseScanConfig,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &config.options.relation else {
+        return Ok(());
+    };
+    if !config.user_schema || config.dialect != DialectName::Trino {
+        return Ok(());
+    }
+    let Some(columns) = sql_renderer()
+        .and_then(|r| r.inspect_query(sql, config.dialect))
+        .ok()
+        .and_then(|f| f.output_columns)
+    else {
+        return Ok(());
+    };
+    refuse_unwrappable_conversions(
+        session,
+        &config.options,
+        config.dialect,
+        &columns,
+        &config.backend.kind,
+        config.session_setup_runs(),
+    )
+}
+
+/// Refuses a query that names two output columns alike and has a column read through a conversion.
+pub(crate) fn refuse_unwrappable_conversions(
+    session: &mut dyn DatabaseSession,
+    options: &DatabaseScanOptions,
+    dialect: DialectName,
+    columns: &[PlSmallStr],
+    backend: &BackendKind,
+    setup_runs: bool,
+) -> PolarsResult<()> {
+    let DatabaseRelation::Query { sql } = &options.relation else {
+        return Ok(());
+    };
+    let duplicated = duplicated_output_names(dialect, columns);
+    if duplicated.is_empty() {
+        return Ok(());
+    }
+    let Some(types) = catalog::trino_positional_types(session, sql, columns.len()) else {
+        return Ok(());
+    };
+    let converted = columns
+        .iter()
+        .zip(&types)
+        .enumerate()
+        .filter(|(_, (c, t))| {
+            column_conversion(
+                dialect,
+                backend,
+                setup_runs,
+                options.connection.opened_by_plugin(),
+                t,
+                &dialect.quote_ident(c),
+            )
+            .is_some()
+        })
+        .map(|(i, (c, t))| match c.is_empty() {
+            true => format!("column {} ({t})", i + 1),
+            false => format!("{c} ({t})"),
+        })
+        .collect::<Vec<_>>();
+    if converted.is_empty() {
+        return Ok(());
+    }
+    polars_bail!(
+        InvalidOperation:
+        "the query names its columns {} more than once, so it can't be wrapped to read {} \
+        right (the drivers read such a column wrong or abort); alias the duplicated columns \
+        (`SELECT a.ts AS a_ts, b.ts AS b_ts`)",
+        duplicated.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(", "),
+        converted.join(", ")
+    );
 }
 
 /// What schema discovery may do with a query source.
@@ -261,6 +405,9 @@ struct QueryDiscovery {
     all_columns_volatile: bool,
     /// Every session is read-only ([`read_only_session`]): the database refuses a write.
     read_only_session: bool,
+    /// A SQL Server query with a column of no name: all its output columns, as a derived table
+    /// over it names them (`column_1` for the second; see [`catalog::mssql_unnamed_columns`]).
+    derived: Vec<PlSmallStr>,
     /// The SQL that finds its schema without running it, where the usual probe would
     /// (MySQL: [`mysql_query_probe`]).
     probe: Option<String>,
@@ -527,6 +674,7 @@ pub fn resolve_scan(
             all_columns_volatile: facts.as_ref().is_ok_and(|f| f.all_columns_volatile),
             read_only_session,
             probe: None,
+            derived: vec![],
         };
         if let Some(reason) = blocker
             && pushdown_disabled.is_none()
@@ -576,18 +724,20 @@ pub fn resolve_scan(
     let mut stats = TableStats::default();
     let mut resolution: Option<Vec<String>> = None;
     let mut mixed_found: Vec<PlSmallStr> = Vec::new();
+    let mut bigquery_sampled_schema = Schema::default();
     let schema: SchemaRef;
     // the query columns SQL Server declares `money` or `smallmoney`
     let mut money_columns: PlHashMap<PlSmallStr, String> = PlHashMap::default();
     let volatility_unchecked = user_schema.is_some();
     let user_typed = user_schema.is_some();
+    let google_bigquery = is_google_bigquery(dialect, &backend.kind);
 
     if let Some(schema_) = user_schema {
         // No I/O: a user schema is authoritative, and column semantics stay conservative:
         // collations are unknown, and so are some types behind the dtypes: SQL Server's
         // legacy `datetime`, a MySQL `YEAR` (see the filter), and a SQLite column's
-        // affinity (a `String` may hold numbers that compare as such). Otherwise the
-        // user's `String` states a text column.
+        // affinity (a `String` may hold numbers that compare as such). BigQuery's native
+        // types are unknown here: even a null check can differ for JSON or arrays.
         columns = schema_
             .iter()
             .map(|(name, dtype)| ColumnMeta {
@@ -597,6 +747,7 @@ pub fn resolve_scan(
                 strings: catalog::unknown_string_semantics(dialect),
                 is_key: false,
                 comparable: match dtype {
+                    _ if dialect == DialectName::Bigquery => false,
                     DataType::String => dialect != DialectName::Sqlite,
                     DataType::Datetime(_, _) => dialect != DialectName::Mssql,
                     // A float or decimal dtype over a column of another numeric type
@@ -608,6 +759,10 @@ pub fn resolve_scan(
                 },
             })
             .collect();
+        if is_query {
+            let names = schema_.iter_names().cloned().collect::<Vec<_>>();
+            refuse_trino_unnamed(dialect, &names)?;
+        }
         // No I/O to ask the database about views and the functions sqlglot doesn't know.
         schema = schema_;
     } else {
@@ -636,8 +791,29 @@ pub fn resolve_scan(
         {
             query.probe = Some(mysql_query_probe(session.as_mut(), sql, &query)?);
         }
+        if is_query
+            && dialect == DialectName::Trino
+            && let Some(columns) = query_facts.as_ref().and_then(|f| f.output_columns.as_ref())
+        {
+            refuse_unwrappable_conversions(
+                session.as_mut(),
+                &options,
+                dialect,
+                columns,
+                &backend.kind,
+                setup_runs,
+            )?;
+        }
         // The catalog first: some declared types are read as text (`text_conversion`), and
         // discovery must select them the same way the scan will.
+        // SQL Server refuses a derived table with an unnamed column: they are named by position.
+        if let DatabaseRelation::Query { sql } = &options.relation
+            && dialect == DialectName::Mssql
+            && query.wrappable
+        {
+            query.derived = catalog::mssql_unnamed_columns(session.as_mut(), &wrappable(sql))
+                .unwrap_or_default();
+        }
         let discover = |session: &mut dyn DatabaseSession, options: &DatabaseScanOptions| {
             let info = match &options.relation {
                 DatabaseRelation::Table { parts, .. } => catalog::table_info(
@@ -655,7 +831,7 @@ pub fn resolve_scan(
                 options.connection.opened_by_plugin(),
                 &info,
             );
-            let (discovered, sampled, mixed) = discover_schema(
+            let discovered = discover_schema(
                 session,
                 options,
                 dialect,
@@ -664,38 +840,48 @@ pub fn resolve_scan(
                 select_list.as_deref(),
                 &info,
             )?;
-            PolarsResult::Ok((info, discovered, sampled, mixed))
+            PolarsResult::Ok((info, discovered))
         };
-        let (mut info, mut discovered, sampled, mixed_blobs) =
-            match discover(session.as_mut(), &options) {
-                Ok(found) => found,
-                // No table by the folded name: the name as written, on a new session (a failed
-                // statement can abort the session's transaction).
-                Err(e) => match as_written {
-                    Some(written) => {
-                        // closed first: a pool of one connection would wait for it
-                        drop(session);
-                        session = catalog::with_describe_cache(
-                            open_session_with_retries(
-                                backend_impl.as_ref(),
-                                &written.connection,
-                                dialect,
-                            )?,
+        let (mut info, discovery) = match discover(session.as_mut(), &options) {
+            Ok(found) => found,
+            // No table by the folded name: the name as written, on a new session (a failed
+            // statement can abort the session's transaction).
+            Err(e) => match as_written {
+                Some(written) => {
+                    // closed first: a pool of one connection would wait for it
+                    drop(session);
+                    session = catalog::with_describe_cache(
+                        open_session_with_retries(
+                            backend_impl.as_ref(),
+                            &written.connection,
                             dialect,
-                        );
-                        let found = discover(session.as_mut(), &written).map_err(|_| e)?;
-                        options = written;
-                        found
-                    },
-                    None => return Err(e),
+                        )?,
+                        dialect,
+                    );
+                    let found = discover(session.as_mut(), &written).map_err(|_| e)?;
+                    options = written;
+                    found
                 },
-            };
+                None => return Err(e),
+            },
+        };
+        let DiscoveredSchema {
+            schema: mut discovered,
+            sampled,
+            mixed_blobs,
+            bigquery_text_columns,
+            bigquery_sampled_schema: inferred_bigquery,
+        } = discovery;
+        bigquery_sampled_schema = inferred_bigquery;
+        let names = discovered.iter_names().cloned().collect::<Vec<_>>();
+        if is_query {
+            refuse_trino_unnamed(dialect, &names)?;
+        }
         stats = info.stats;
         mixed_found = mixed_blobs;
         if !options.connection.opened_by_plugin() && !options.connection.is_live() {
             resolution = session_resolution(session.as_mut(), dialect, &options);
         }
-        let names = discovered.iter_names().cloned().collect::<Vec<_>>();
         volatility = source_volatility(
             session.as_mut(),
             dialect,
@@ -728,7 +914,7 @@ pub fn resolve_scan(
         // `ORDER BY` of a wrapped query.)
         if is_query && read_wrapped(&options, &pushdown_disabled, &query, dialect) {
             let names = discovered.iter_names().cloned().collect::<Vec<_>>();
-            let from = quoted_relation(dialect, &options.relation);
+            let from = quoted_relation(dialect, &options.relation, &query.derived);
             // Python drivers refuse DDL, ConnectorX runs each statement on its own connection.
             let temp_tables = matches!(backend.kind, BackendKind::Adbc { .. });
             info = catalog::query_info(
@@ -908,6 +1094,13 @@ pub fn resolve_scan(
                 is_key: info.key_column.as_ref() == Some(name),
                 comparable: !info.incomplete
                     && info.compares_like_polars(dialect, name, dtype)
+                    // BigQuery drivers also read GEOGRAPHY, JSON and wide BIGNUMERIC as
+                    // strings. Require evidence of native STRING from result metadata.
+                    && (dialect != DialectName::Bigquery
+                        || *dtype != DataType::String
+                        || bigquery_text_columns.contains(name.as_str()))
+                    // The Google driver also decodes JSON null as a Polars null.
+                    && (!google_bigquery || !sampled.contains(name.as_str()))
                     // read as text, compared as its own type
                     && !(dialect == DialectName::Duckdb
                         && info
@@ -963,6 +1156,14 @@ pub fn resolve_scan(
             sqlite_floats_exact_found = sqlite_floats_exact(session.as_mut());
         }
         schema = Arc::new(discovered);
+    }
+
+    // BigQuery emits NULL arrays as empty lists in query results. A SQL null filter runs
+    // before this conversion and would select different rows.
+    if dialect == DialectName::Bigquery {
+        for c in &mut columns {
+            c.comparable &= !matches!(c.dtype, DataType::List(_));
+        }
     }
 
     // ConnectorX writes every decimal as `Decimal(38, 10)`, cutting digits beyond 10
@@ -1260,6 +1461,7 @@ pub fn resolve_scan(
         dialect,
         backend,
         schema,
+        bigquery_sampled_schema,
         columns: columns.into(),
         stats,
         compiled: None,
@@ -1271,6 +1473,7 @@ pub fn resolve_scan(
         derived_order_dropped,
         sqlite_floats_exact: sqlite_floats_exact_found,
         refused_columns: refused,
+        unnamed_columns: !query.derived.is_empty() && !user_typed,
         resolution,
         bounds_cache: Default::default(),
     })
@@ -2142,6 +2345,12 @@ fn column_conversion(
     if let Some(sql) = dialect.text_conversion(db_type, column) {
         return Some(sql);
     }
+    // Trino arrays, maps and rows holding such a value: each as an instant in UTC too
+    if dialect == DialectName::Trino
+        && let Some(sql) = super::dialect::trino_nested_utc(db_type, column)
+    {
+        return Some(sql);
+    }
     // Trino `timestamp(p) with time zone`: the instant in UTC (a named zone's repeated hour
     // reads an hour off otherwise: the value holds the zone's name, not its offset)
     if dialect == DialectName::Trino
@@ -2649,7 +2858,7 @@ fn duckdb_bad_value(t: &str, x: &str, depth: usize) -> Option<String> {
 const MAX_DECIMAL_38: &str = "99999999999999999999999999999999999999";
 
 /// The parts of a type's argument list, split at its top-level commas.
-fn split_top_level(s: &str) -> Vec<&str> {
+pub(crate) fn split_top_level(s: &str) -> Vec<&str> {
     // inside `"identifiers"` and `'enum labels'` (where `(`, `"` or `,` are text; a doubled quote
     // closes and reopens)
     let (mut parts, mut depth, mut quote, mut start) = (vec![], 0usize, None::<char>, 0);
@@ -3014,15 +3223,42 @@ pub(crate) fn compared_column_sql(config: &DatabaseScanConfig, column: &str) -> 
     )
 }
 
-/// Whether the driver %-formats the statements of this scan (`params=`): the SQL the plugin
-/// writes doubles its `%`.
-fn percent_formatted(config: &DatabaseScanConfig) -> bool {
-    crate::filter::percent_formatted(&config.options.connection, &config.backend.kind)
+/// Whether SQL generated by the plugin needs each `%` doubled before execution.
+fn escape_generated_percent(
+    connection: &ConnectionSpec,
+    backend: &BackendKind,
+    dialect: DialectName,
+) -> bool {
+    crate::filter::percent_formatted(connection, backend)
+        || google_unescapes_generated_percent(connection, backend, dialect)
+}
+
+fn google_unescapes_generated_percent(
+    connection: &ConnectionSpec,
+    backend: &BackendKind,
+    dialect: DialectName,
+) -> bool {
+    // Google unescapes %% even without parameters. In SQLAlchemy's binding path,
+    // text() already escapes %, including generated identifiers.
+    is_google_bigquery(dialect, backend)
+        && !(crate::filter::sqlalchemy(backend) && crate::filter::binds_params(connection))
+}
+
+fn escape_generated_percent_for_scan(config: &DatabaseScanConfig) -> bool {
+    escape_generated_percent(
+        &config.options.connection,
+        &config.backend.kind,
+        config.dialect,
+    )
 }
 
 /// `sql`, written by the plugin, with its `%` doubled where the driver %-formats it.
 fn escape_percent(config: &DatabaseScanConfig, sql: String) -> String {
-    if percent_formatted(config) {
+    escape_percent_if(sql, escape_generated_percent_for_scan(config))
+}
+
+fn escape_percent_if(sql: String, escape: bool) -> String {
+    if escape && sql.contains('%') {
         sql.replace('%', "%%")
     } else {
         sql
@@ -3044,8 +3280,83 @@ fn fixed_select_list(dialect: DialectName, items: &[SqlSelectItem]) -> String {
         .join(", ")
 }
 
+pub(crate) fn is_google_bigquery(dialect: DialectName, backend: &BackendKind) -> bool {
+    dialect == DialectName::Bigquery
+        && match backend {
+            BackendKind::Sqlalchemy => true,
+            BackendKind::Python { module } => {
+                module == "sqlalchemy"
+                    || module == "google.cloud.bigquery"
+                    || module.starts_with("google.cloud.bigquery.")
+            },
+            _ => false,
+        }
+}
+
+fn bigquery_has_unknown_leaf(dtype: &DataType) -> bool {
+    match dtype {
+        DataType::Null => true,
+        DataType::List(inner) => bigquery_has_unknown_leaf(inner),
+        DataType::Struct(fields) => fields.iter().any(|f| bigquery_has_unknown_leaf(f.dtype())),
+        _ => false,
+    }
+}
+
+/// Fill unknown leaves and return the inferred JSON dtypes, with Null marking leaves
+/// that use a String fallback. Declared fields require no additional checks at execution.
+fn fill_bigquery_unknown(dtype: &mut DataType, sampled: Option<&DataType>) -> Option<DataType> {
+    match (dtype, sampled) {
+        (dtype @ DataType::Null, sampled) => {
+            let observed = sampled.map_or(DataType::Null, normalize_dtype);
+            *dtype = if observed.is_null() {
+                DataType::String
+            } else {
+                observed.clone()
+            };
+            // An inferred JSON container can itself have empty or all-null leaves.
+            if bigquery_has_unknown_leaf(dtype) {
+                let _ = fill_bigquery_unknown(dtype, None);
+            }
+            Some(observed)
+        },
+        (DataType::List(inner), sampled) => {
+            let sampled = match sampled {
+                Some(DataType::List(inner)) => Some(inner.as_ref()),
+                _ => None,
+            };
+            fill_bigquery_unknown(inner, sampled).map(|inner| DataType::List(Box::new(inner)))
+        },
+        (DataType::Struct(fields), sampled) => {
+            let sampled: PlHashMap<_, _> = match sampled {
+                Some(DataType::Struct(fields)) => {
+                    fields.iter().map(|f| (f.name(), f.dtype())).collect()
+                },
+                _ => PlHashMap::new(),
+            };
+            let observed = fields
+                .iter_mut()
+                .filter_map(|field| {
+                    let inferred = sampled.get(&field.name).copied();
+                    fill_bigquery_unknown(&mut field.dtype, inferred)
+                        .map(|dtype| Field::new(field.name.clone(), dtype))
+                })
+                .collect::<Vec<_>>();
+            (!observed.is_empty()).then_some(DataType::Struct(observed))
+        },
+        _ => None,
+    }
+}
+
 /// The result schema of the relation, without reading rows, and the columns typed from a
 /// sample of their values (not by the result's types).
+struct DiscoveredSchema {
+    schema: Schema,
+    sampled: PlHashSet<PlSmallStr>,
+    mixed_blobs: Vec<PlSmallStr>,
+    bigquery_text_columns: PlHashSet<String>,
+    bigquery_sampled_schema: Schema,
+}
+
 fn discover_schema(
     session: &mut dyn DatabaseSession,
     options: &DatabaseScanOptions,
@@ -3054,15 +3365,22 @@ fn discover_schema(
     query: &QueryDiscovery,
     select_list: Option<&[SqlSelectItem]>,
     info: &CatalogInfo,
-) -> PolarsResult<(Schema, PlHashSet<PlSmallStr>, Vec<PlSmallStr>)> {
+) -> PolarsResult<DiscoveredSchema> {
     let is_query = matches!(options.relation, DatabaseRelation::Query { .. });
     let probe = match query.probe.as_ref().filter(|_| is_query) {
         Some(probe) => probe.clone(),
-        None => format!(
-            "SELECT {} FROM {} WHERE 1 = 0",
-            select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s)),
-            quoted_relation(dialect, &options.relation)
-        ),
+        None => {
+            let select =
+                select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s));
+            let google_percent =
+                google_unescapes_generated_percent(&options.connection, backend, dialect);
+            let select = escape_percent_if(select, google_percent);
+            let from = escape_percent_if(
+                quoted_relation(dialect, &options.relation, &query.derived),
+                google_percent && !is_query,
+            );
+            format!("SELECT {select} FROM {from} WHERE 1 = 0")
+        },
     };
     let first_batch = |session: &mut dyn DatabaseSession, sql: &str| {
         if verbose() {
@@ -3100,7 +3418,7 @@ fn discover_schema(
     // all the same if it doesn't parse (the database may take it); else it is run, for
     // its first batch, only if that can't change anything.
     let mut ran_query = false;
-    let first = match &options.relation {
+    let mut first = match &options.relation {
         DatabaseRelation::Query { sql } if !query.wrappable => {
             let probed = match query.parses {
                 false => first_batch(session, &probe),
@@ -3122,6 +3440,33 @@ fn discover_schema(
         },
         _ => first_batch(session, &probe)?,
     };
+    if dialect == DialectName::Bigquery
+        && first.width() == 0
+        && match backend {
+            BackendKind::Adbc { .. } => true,
+            BackendKind::Python { module } => module == "adbc_driver_manager",
+            _ => false,
+        }
+    {
+        // The Apache BigQuery driver drops the Arrow schema of a zero-row result.
+        // A scalar subquery over the empty probe returns a typed NULL struct. Expand it
+        // to get one row with the fields' declared types, without reading source rows.
+        if !ran_query {
+            let typed_probe = format!(
+                "SELECT _pl_record.* FROM (SELECT (SELECT AS STRUCT * FROM ({probe}) AS _pl_empty) AS _pl_record)"
+            );
+            first = first_batch(session, &typed_probe)?;
+        }
+        polars_ensure!(
+            first.width() > 0,
+            InvalidOperation: "the ADBC BigQuery driver returned no fields for the schema query; pass schema=..."
+        );
+    }
+    let bigquery_text_columns = if dialect == DialectName::Bigquery {
+        session.bigquery_text_columns().into_iter().collect()
+    } else {
+        PlHashSet::new()
+    };
 
     let mut schema: Schema = first
         .schema()
@@ -3134,13 +3479,17 @@ fn discover_schema(
     // sample, which runs a query: not one known to be volatile (`nextval`), nor one that
     // may write where the session doesn't refuse it. SQLite's functions can't write.
     let sample_types = dialect == DialectName::Sqlite;
+    let google_bigquery = is_google_bigquery(dialect, backend);
     let sampled = schema
         .iter()
-        .filter(|(_, dt)| sample_types || dt.is_null())
+        .filter(|(_, dt)| {
+            sample_types || dt.is_null() || google_bigquery && bigquery_has_unknown_leaf(dt)
+        })
         .map(|(name, _)| name.clone())
         .collect::<PlHashSet<_>>();
     let untyped = !sampled.is_empty();
     let mut mixed = Vec::new();
+    let mut bigquery_sample = None;
     let may_sample = !is_query
         || sample_types
         || !(query.volatile || (query.side_effects && !query.read_only_session));
@@ -3191,17 +3540,26 @@ fn discover_schema(
             }
         };
         let render = |items: Vec<SqlSelectItem>| -> PolarsResult<String> {
-            let mut sample_query = SqlQuery::select(items, from_clause(options));
+            let mut sample_query = SqlQuery::select(items, from_clause(options, &query.derived));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
-                crate::filter::percent_formatted(&options.connection, backend);
+                escape_generated_percent(&options.connection, backend, dialect);
             renderer.render(&sample_query, dialect)
         };
         let sample_sql = render(items)?;
         if verbose() {
             eprintln!("[scan_database]: typing columns from a sample: {sample_sql}");
         }
-        let sample = match session.query(&sample_sql) {
+        let result = if google_bigquery {
+            // Infer across the bounded sample in one batch. Individual batches may
+            // independently infer different dtypes for a JSON leaf.
+            session
+                .execute(&sample_sql, Some(TYPE_SAMPLE_ROWS as usize))
+                .and_then(|batches| collect_batches(batches, &sample_sql))
+        } else {
+            session.query(&sample_sql)
+        };
+        let sample = match result {
             Ok(sample) => sample,
             // a row driver can't build a frame of a column of values of several classes (a blob
             // next to numbers): their classes are sampled instead
@@ -3215,23 +3573,27 @@ fn discover_schema(
             },
             Err(e) => return Err(e),
         };
-        for (name, dtype) in schema.iter_mut() {
-            if (dtype.is_null() || (sample_types && sample.height() > 0))
-                && let Ok(col) = sample.column(name)
-            {
-                *dtype = if classes {
-                    sqlite_class_dtype(col)
-                } else {
-                    normalize_dtype(col.dtype())
-                };
-            }
-            // No values to type by (ADBC types an empty result's columns Int64): the
-            // declared type's affinity tells what values the column holds.
-            if sample_types
-                && (sample.height() == 0 || dtype.is_null())
-                && let Some(t) = info.compare_types.get(name)
-            {
-                *dtype = sqlite_affinity_dtype(t);
+        if google_bigquery {
+            bigquery_sample = Some(sample);
+        } else {
+            for (name, dtype) in schema.iter_mut() {
+                if (dtype.is_null() || (sample_types && sample.height() > 0))
+                    && let Ok(col) = sample.column(name)
+                {
+                    *dtype = if classes {
+                        sqlite_class_dtype(col)
+                    } else {
+                        normalize_dtype(col.dtype())
+                    };
+                }
+                // No values to type by (ADBC types an empty result's columns Int64): the
+                // declared type's affinity tells what values the column holds.
+                if sample_types
+                    && (sample.height() == 0 || dtype.is_null())
+                    && let Some(t) = info.compare_types.get(name)
+                {
+                    *dtype = sqlite_affinity_dtype(t);
+                }
             }
         }
     }
@@ -3254,7 +3616,7 @@ fn discover_schema(
             })
             .collect::<Vec<_>>();
         if !items.is_empty() {
-            let mut sample_query = SqlQuery::select(items, from_clause(options));
+            let mut sample_query = SqlQuery::select(items, from_clause(options, &query.derived));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
                 crate::filter::percent_formatted(&options.connection, backend);
@@ -3270,12 +3632,32 @@ fn discover_schema(
     }
     // Still untyped (every sampled value is NULL, or no rows to sample): a dtype any value
     // can be cast to, not `Null`, which no value read later would fit.
-    for (_, dtype) in schema.iter_mut() {
-        if dtype.is_null() {
+    let mut bigquery_sampled_schema = Schema::default();
+    for (name, dtype) in schema.iter_mut() {
+        if google_bigquery && sampled.contains(name.as_str()) {
+            let inferred = bigquery_sample
+                .as_ref()
+                .and_then(|sample| sample.column(name).ok())
+                .map(Column::dtype);
+            if let Some(observed) = fill_bigquery_unknown(dtype, inferred)
+                && options
+                    .schema_overrides
+                    .as_ref()
+                    .is_none_or(|overrides| !overrides.contains(name))
+            {
+                bigquery_sampled_schema.insert(name.clone(), observed);
+            }
+        } else if dtype.is_null() {
             *dtype = DataType::String;
         }
     }
-    Ok((schema, sampled, mixed))
+    Ok(DiscoveredSchema {
+        schema,
+        sampled,
+        mixed_blobs: mixed,
+        bigquery_text_columns,
+        bigquery_sampled_schema,
+    })
 }
 
 /// Whether sampled storage classes hold a blob and a value of another class.
@@ -3323,10 +3705,13 @@ fn sqlite_affinity_dtype(t: &str) -> DataType {
     }
 }
 
-fn from_clause(options: &DatabaseScanOptions) -> SqlFrom {
+fn from_clause(options: &DatabaseScanOptions, columns: &[PlSmallStr]) -> SqlFrom {
     match &options.relation {
         DatabaseRelation::Table { parts, .. } => SqlFrom::Table(parts.clone()),
-        DatabaseRelation::Query { sql } => SqlFrom::Subquery(strip_statement_end(sql).into()),
+        DatabaseRelation::Query { sql } => SqlFrom::Subquery {
+            sql: strip_statement_end(sql).into(),
+            columns: columns.to_vec(),
+        },
     }
 }
 
@@ -3370,7 +3755,7 @@ pub fn compile_scan(
     }
 
     let renderer = sql_renderer()?;
-    let from = from_clause(options);
+    let from = from_clause(options, &config.derived_columns());
 
     let mut columns = pushdown
         .columns
@@ -3436,7 +3821,7 @@ pub fn compile_scan(
         .collect();
     // The partitions differ in their predicate only: the shared filter (an `IN` list of
     // thousands of values) is rendered once, not by each partition.
-    let escape_percent = percent_formatted(config);
+    let escape_percent = escape_generated_percent_for_scan(config);
     let query = SqlQuery {
         columns: select.clone(),
         from: from.clone(),
@@ -3585,6 +3970,81 @@ pub(crate) fn numeric_temporal_conversions(
     out
 }
 
+/// Refuses a read on a SQL Server session under `SET TEXTSIZE limit` (a user's: see
+/// `mssql_session_limits`) that may return a value it cuts: a column of a type it cuts
+/// (`(n)varchar(max)`, `varbinary(max)`, `text`, `ntext`, `image`, `xml`, and `sql_variant` or
+/// CLR types, read as text or bytes), any text or binary column (the catalog doesn't tell
+/// `nvarchar(max)` from `nvarchar(n)`, and a query's types may be unknown), or one the SQL
+/// converts to `NVARCHAR(MAX)` / `VARBINARY(MAX)`.
+pub(crate) fn check_mssql_text_size(limit: i64, config: &DatabaseScanConfig) -> PolarsResult<()> {
+    let read: Vec<&ColumnMeta> = match &config.compiled {
+        Some(c) => c.columns.iter().filter_map(|n| config.column(n)).collect(),
+        None => config.columns.iter().collect(),
+    };
+    let sqls: Vec<&str> = config
+        .compiled
+        .iter()
+        .flat_map(|c| c.partitions.iter().map(|p| p.sql.as_str()))
+        .collect();
+    let cut = mssql_text_size_cuts(&read, &sqls);
+    polars_ensure!(
+        cut.is_empty(),
+        InvalidOperation:
+        "this SQL Server session has SET TEXTSIZE {limit} in effect: it cuts each value of \
+        {} longer than {limit} bytes without a sign. Run SET TEXTSIZE -1 on the connection, or \
+        remove it from the connection's setup",
+        cut.join(", ")
+    );
+    Ok(())
+}
+
+/// What [`check_mssql_text_size`] refuses: the columns read, and the SQL that reads them.
+fn mssql_text_size_cuts(read: &[&ColumnMeta], sqls: &[&str]) -> Vec<String> {
+    fn text_or_bytes(d: &DataType) -> bool {
+        match d {
+            DataType::List(inner) | DataType::Array(inner, _) => text_or_bytes(inner),
+            DataType::Struct(fields) => fields.iter().any(|f| text_or_bytes(f.dtype())),
+            DataType::String | DataType::Binary | DataType::BinaryOffset | DataType::Unknown(_) => {
+                true
+            },
+            d => d.is_categorical() || d.is_enum() || d.is_object(),
+        }
+    }
+    let long_type = |t: &str| {
+        let t = t.trim().to_ascii_lowercase();
+        let base = t.split('(').next().unwrap_or("").trim();
+        matches!(
+            base,
+            "varchar"
+                | "nvarchar"
+                | "varbinary"
+                | "text"
+                | "ntext"
+                | "image"
+                | "xml"
+                | "sql_variant"
+                | "geography"
+                | "geometry"
+                | "hierarchyid"
+        )
+    };
+    let mut cut: Vec<String> = read
+        .iter()
+        .filter(|c| text_or_bytes(&c.dtype) || c.db_type.as_deref().is_some_and(long_type))
+        .map(|c| format!("'{}'", c.name))
+        .collect();
+    if cut.is_empty()
+        && sqls.iter().any(|s| {
+            s.as_bytes()
+                .windows(5)
+                .any(|w| w.eq_ignore_ascii_case(b"(MAX)"))
+        })
+    {
+        cut.push("a column read as text".into());
+    }
+    cut
+}
+
 /// The columns whose read may legitimately be another kind of value than the planned dtype
 /// (`cast_columns` doesn't refuse a retyped column there): every column but DuckDB's, whose drivers
 /// return what the type says (as text only where the plugin converts it, a marker `db_type`). Other
@@ -3730,7 +4190,7 @@ pub(crate) fn as_utc_instants(mut df: DataFrame, names: &[PlSmallStr]) -> Polars
 /// The quoted relation a scan's columns can be qualified by.
 fn relation_qualifier(config: &DatabaseScanConfig) -> String {
     match &config.options.relation {
-        relation @ DatabaseRelation::Table { .. } => quoted_relation(config.dialect, relation),
+        relation @ DatabaseRelation::Table { .. } => quoted_relation(config.dialect, relation, &[]),
         DatabaseRelation::Query { .. } => config.dialect.quote_ident("_pl"),
     }
 }
@@ -3827,9 +4287,11 @@ fn compile_unwrapped(
                 let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
                 items.extend(utf8_checks(config, &names));
             }
-            let needs_wrapper = items
-                .iter()
-                .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
+            // (a SQL Server query with unnamed columns is read with the planned names)
+            let needs_wrapper = config.unnamed_columns
+                || items
+                    .iter()
+                    .any(|i| matches!(i, SqlSelectItem::Expr { .. }));
             // A server that drops a derived table's ORDER BY would return the rows in another
             // order: the wrapper repeats the query's ORDER BY outside, on its output columns
             // (the conversions stay: a TIMESTAMP's instant, a FLOAT's digits). Where a key is
@@ -3860,8 +4322,9 @@ fn compile_unwrapped(
             };
             let read = if needs_wrapper {
                 // the alias the select items are qualified by (SQLite)
+                let derived = derived_column_list(dialect, &config.derived_columns());
                 let mut read = format!(
-                    "SELECT {} FROM ({}) {}",
+                    "SELECT {} FROM ({}) {}{derived}",
                     escape_percent(config, fixed_select_list(dialect, &items)),
                     wrappable(sql),
                     relation_qualifier(config)
@@ -3876,13 +4339,22 @@ fn compile_unwrapped(
             } else {
                 sql.to_string()
             };
+            let count_derived = derived_column_list(dialect, &config.derived_columns());
             (
                 read,
-                format!("SELECT COUNT(*) FROM ({}) pl_q", wrappable(sql)),
+                format!(
+                    "SELECT COUNT(*) FROM ({}) pl_q{count_derived}",
+                    wrappable(sql)
+                ),
             )
         },
         relation => {
-            let from = quoted_relation(dialect, relation);
+            let google_percent = google_unescapes_generated_percent(
+                &config.options.connection,
+                &config.backend.kind,
+                dialect,
+            );
+            let from = escape_percent_if(quoted_relation(dialect, relation, &[]), google_percent);
             // the select list applies the column conversions, as a pushed-down scan does
             let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
             let mut items = names
@@ -3910,8 +4382,11 @@ fn compile_unwrapped(
                 let cols = order_by
                     .iter()
                     .map(|c| match order_by_expr(config, c) {
-                        SqlExpr::Raw(sql) => sql,
-                        _ => format!("{from}.{}", dialect.quote_ident(c)),
+                        SqlExpr::Raw(sql) => escape_percent_if(sql, google_percent),
+                        _ => {
+                            let col = escape_percent_if(dialect.quote_ident(c), google_percent);
+                            format!("{from}.{col}")
+                        },
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -4640,7 +5115,7 @@ fn run_bounds(
         ],
         from.clone(),
     );
-    query.escape_percent = percent_formatted(config);
+    query.escape_percent = escape_generated_percent_for_scan(config);
     query.filter = filters
         .iter()
         .filter(|f| f.exact)
@@ -4683,6 +5158,58 @@ fn run_bounds(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mssql_text_size_refuses_reads_of_long_values() {
+        let col = |name: &str, dtype: DataType, db_type: Option<&str>| ColumnMeta {
+            name: name.into(),
+            dtype,
+            db_type: db_type.map(Into::into),
+            strings: crate::database::dialect::StringSemantics::UNKNOWN,
+            is_key: false,
+            comparable: true,
+        };
+        let id = col("id", DataType::Int32, Some("int"));
+        let nv = col("nv", DataType::String, Some("nvarchar"));
+        let sv = col("sv", DataType::String, Some("sql_variant"));
+        let img = col("img", DataType::Null, Some("image"));
+        let untyped = col("u", DataType::Binary, None);
+        let money = col("m", DataType::Decimal(19, 4), Some("money"));
+        let plain = ["SELECT [id] FROM [t]"];
+        assert!(mssql_text_size_cuts(&[&id], &plain).is_empty());
+        assert_eq!(mssql_text_size_cuts(&[&id, &nv], &plain), ["'nv'"]);
+        for c in [&sv, &img, &untyped] {
+            assert_eq!(mssql_text_size_cuts(&[c], &plain).len(), 1, "{}", c.name);
+        }
+        // read through a conversion to NVARCHAR(MAX)
+        assert!(mssql_text_size_cuts(&[&money], &plain).is_empty());
+        let converted = ["SELECT CAST(CAST([m] AS DECIMAL(19, 4)) AS NVARCHAR(MAX)) FROM [t]"];
+        assert_eq!(mssql_text_size_cuts(&[&money], &converted).len(), 1);
+    }
+
+    #[test]
+    fn trino_output_names_are_told_apart_without_case() {
+        let facts = |cols: &[&str]| QueryFacts {
+            parses: true,
+            single_select: true,
+            output_columns: Some(cols.iter().map(|c| (*c).into()).collect()),
+            ..Default::default()
+        };
+        // Trino folds every identifier: `T` and `t` name the same column
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Trino).is_some());
+        assert!(wrap_blocker(&facts(&["T", "u"]), DialectName::Trino).is_none());
+        // a database that tells them apart is left as it was
+        assert!(wrap_blocker(&facts(&["T", "t"]), DialectName::Clickhouse).is_none());
+        // Trino names each column of no name apart (`_col0`), which is refused once found
+        assert!(wrap_blocker(&facts(&["", ""]), DialectName::Trino).is_none());
+        let names =
+            |cols: &[&str]| -> Vec<PlSmallStr> { cols.iter().map(|c| (*c).into()).collect() };
+        let unnamed = names(&["_col0", "id"]);
+        assert!(refuse_trino_unnamed(DialectName::Trino, &unnamed).is_err());
+        assert!(refuse_trino_unnamed(DialectName::Mssql, &unnamed).is_ok());
+        let named = names(&["_col", "_colx", "col0"]);
+        assert!(refuse_trino_unnamed(DialectName::Trino, &named).is_ok());
+    }
+
     #[test]
     fn utc_zone_is_decided_by_name() {
         for z in [

@@ -39,6 +39,8 @@ Table Operations
      - Append rows to a table, or replace its rows.
    * - :ref:`MERGE <merge>`
      - Update, delete and insert rows of a table in an attached catalog from a source.
+   * - :ref:`SHOW FUNCTIONS <show_functions>`
+     - Returns the names of the SQL functions, optionally those that match a pattern.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables and views registered in the given context.
    * - :ref:`INFORMATION_SCHEMA.COLUMNS <information_schema_columns>`
@@ -532,7 +534,8 @@ not changed.
 
 The table keeps the condition, not its result. Each read of the table runs the condition
 again on the table's source. A subquery of the condition keeps its tables as registered at
-the time of the ``DELETE``.
+the time of the ``DELETE``. A condition whose subquery reads the table itself is computed at
+the ``DELETE``, as in Postgres.
 
 - A condition that names a missing column fails at the ``DELETE`` and leaves the table
   unchanged. Other errors in the condition, such as a string compared with an integer or a
@@ -700,7 +703,9 @@ original frame are not changed. The rows of a ``VALUES`` list without subqueries
 at the ``INSERT``. The rows of a query are not: the table keeps the query, and each read of
 the table runs it again, on the tables as they were at the time of the ``INSERT``. A value of
 the query that does not fit shows when the table is read, on each read until the table is
-registered again.
+registered again. A query that reads the table itself, as in an incremental load
+(``INSERT INTO t SELECT ... WHERE id NOT IN (SELECT id FROM t)``), is computed at the
+``INSERT``, as in Postgres.
 
 On a table of a catalog attached with :meth:`SQLContext.register_catalog`, it writes the
 rows in one commit. If another writer commits first, ``INSERT INTO`` retries.
@@ -766,6 +771,20 @@ rewritten, or changed the table's schema or partition spec.
     WHEN MATCHED AND s.cancelled THEN DELETE
     WHEN MATCHED THEN UPDATE SET status = s.status
     WHEN NOT MATCHED THEN INSERT (id, status) VALUES (s.id, s.status)
+
+.. _show_functions:
+
+SHOW FUNCTIONS
+--------------
+Returns the names of the SQL functions, table functions such as ``read_csv`` included, in a
+column ``name``. ``LIKE`` (or ``ILIKE``) keeps those that match a pattern; function names are
+case-insensitive, and so is the pattern.
+
+**Example:**
+
+.. code-block:: sql
+
+    SHOW FUNCTIONS LIKE 'regexp%'
 
 .. _show_tables:
 

@@ -29,9 +29,9 @@ use crate::database::config::CompiledPartition;
 use crate::database::dialect::DialectName;
 use crate::database::planner::{
     check_mysql_session_zone, check_time_with_zone, check_unplanned_volatility,
-    time_text_risk_columns, truncating_columns,
+    check_unwrappable_conversions, time_text_risk_columns, truncating_columns,
 };
-use crate::database::schema::cast_columns;
+use crate::database::schema::{cast_columns, check_bigquery_json};
 use crate::database::{DatabaseScanConfig, catalog};
 use crate::ffi::{
     arrow_fields, borrow_handle, clone_handle, export_schema, ffi_call, ffi_call_infallible,
@@ -232,6 +232,11 @@ pub struct Shared {
     /// The outcome of [`check_unplanned_volatility`], run on the first session opened:
     /// whether the source turned out volatile.
     volatility: OnceLock<Result<bool, String>>,
+    /// The outcome of [`check_unwrappable_conversions`], run on the first session opened.
+    unwrappable: OnceLock<Result<(), String>>,
+    /// The outcome of [`check_mssql_text_size`](crate::database::planner::check_mssql_text_size),
+    /// run on the first session under `SET TEXTSIZE`.
+    text_size: OnceLock<Result<(), String>>,
     /// The outcome of [`check_mysql_session_zone`], run on the first session opened.
     session_zone: OnceLock<Result<(), String>>,
     /// The first session's resolution of the names, for a source planned without one.
@@ -258,6 +263,8 @@ impl Shared {
             backend: OnceLock::new(),
             volatility: OnceLock::new(),
             session_zone: OnceLock::new(),
+            unwrappable: OnceLock::new(),
+            text_size: OnceLock::new(),
             resolution_baseline: Mutex::new(None),
             pool: Mutex::new(Pool::default()),
             pool_changed: std::sync::Condvar::new(),
@@ -272,6 +279,14 @@ impl Shared {
             &self.config.options.connection,
             self.config.dialect,
         )?;
+        if let Some(limit) = session.text_size_limit()
+            && let Err(e) = self.text_size.get_or_init(|| {
+                crate::database::planner::check_mssql_text_size(limit, &self.config)
+                    .map_err(|e| e.to_string())
+            })
+        {
+            polars_bail!(InvalidOperation: "{e}");
+        }
         let checked = self.volatility.get_or_init(|| {
             check_unplanned_volatility(session.as_mut(), &self.config).map_err(|e| match e {
                 PolarsError::InvalidOperation(msg) => msg.to_string(),
@@ -279,6 +294,15 @@ impl Shared {
             })
         });
         if let Err(e) = checked {
+            polars_bail!(InvalidOperation: "{e}");
+        }
+        let unwrappable = self.unwrappable.get_or_init(|| {
+            check_unwrappable_conversions(session.as_mut(), &self.config).map_err(|e| match e {
+                PolarsError::InvalidOperation(msg) => msg.to_string(),
+                e => e.to_string(),
+            })
+        });
+        if let Err(e) = unwrappable {
             polars_bail!(InvalidOperation: "{e}");
         }
         crate::database::planner::check_resolution(
@@ -540,6 +564,7 @@ impl PartitionReader {
         let (mut checked, mut keep_all) = (false, false);
         for batch in batches {
             let batch = batch?;
+            check_bigquery_json(&batch, &config.bigquery_sampled_schema)?;
             // (a Python statement runs at the first batch: its description is known now)
             if !std::mem::replace(&mut checked, true) {
                 check_time_with_zone(&**session, config)?;
@@ -568,6 +593,7 @@ impl PartitionReader {
                 &self.shared.converted,
                 &self.shared.time_text_risk,
                 &self.shared.truncating,
+                config.dialect == DialectName::Bigquery,
             )?;
             rows += batch.height() as u64;
             if dropped {
@@ -757,6 +783,7 @@ impl PartitionStream {
 
     fn cast(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let config = &self.shared.config;
+        check_bigquery_json(&df, &config.bigquery_sampled_schema)?;
         let overrides = config.options.schema_overrides.as_deref();
         crate::database::planner::check_sqlite_blobs(&df, &self.shared.sqlite_blob_columns)?;
         let df =
@@ -771,6 +798,7 @@ impl PartitionStream {
             &self.shared.converted,
             &self.shared.time_text_risk,
             &self.shared.truncating,
+            config.dialect == DialectName::Bigquery,
         )
     }
 
@@ -800,6 +828,7 @@ impl PartitionStream {
                 converted,
                 &self.shared.time_text_risk,
                 &self.shared.truncating,
+                self.shared.config.dialect == DialectName::Bigquery,
             )
             .map(Some);
         }
@@ -1176,3 +1205,53 @@ pub static PLUGIN_V1: Plugin = Plugin {
     reader_cancel,
     reader_take_error,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::backend::BackendKind;
+
+    #[test]
+    fn bigquery_reader_round_trips_json_with_unobserved_leaves() {
+        let json_dtype = |leaf: DataType| {
+            DataType::List(Box::new(DataType::Struct(vec![
+                Field::new("n".into(), DataType::Int64),
+                Field::new("a".into(), leaf),
+            ])))
+        };
+        let mut config = crate::filter::tests::config(
+            DialectName::Bigquery,
+            BackendKind::Python {
+                module: "google.cloud.bigquery".into(),
+            },
+            &[
+                ("j", json_dtype(DataType::String), None),
+                ("empty", DataType::String, None),
+            ],
+        );
+        config
+            .bigquery_sampled_schema
+            .insert("j".into(), json_dtype(DataType::Null));
+        config
+            .bigquery_sampled_schema
+            .insert("empty".into(), DataType::Null);
+
+        let schema = config.schema.clone();
+        let reader = ReaderBuilder::new(Arc::new(config), schema.clone());
+        let restored = ReaderBuilder::deserialize(&reader.serialize().unwrap()).unwrap();
+        assert_eq!(restored.schema, schema);
+        assert_eq!(
+            restored.config.bigquery_sampled_schema,
+            reader.config.bigquery_sampled_schema,
+        );
+    }
+
+    #[test]
+    fn reader_rejects_version_before_unobserved_json_validation() {
+        // The version check must fail before bincode reads the payload.
+        let err = ReaderBuilder::deserialize(b"PLDBRB5invalid payload")
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("plan format 5, this one reads 6"));
+    }
+}

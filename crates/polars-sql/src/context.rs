@@ -86,7 +86,7 @@ use crate::subquery::{
     LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
     is_correlated_subquery, quantified_as_exists, row_indexed_once,
 };
-use crate::subquery_pull_up::{NESTED_PREFIX, select_values};
+use crate::subquery_pull_up::{NESTED_PREFIX, builtin_aggregate_call, select_values};
 use crate::table_functions::{PolarsTableFunctions, expand_home_dir};
 use crate::time_travel::{split_version, unversioned_key, with_version};
 use crate::types::{map_sql_dtype_to_polars, sql_type_name};
@@ -1339,6 +1339,7 @@ impl SQLContext {
         let Some(selection) = selection else {
             return Ok(lit(true));
         };
+        self.reject_aggregate_in_where(selection)?;
         polars_ensure!(
             !expr_contains_subquery(selection),
             SQLInterface: "subqueries are not supported in the WHERE of a catalog {}", statement
@@ -1804,6 +1805,7 @@ impl SQLContext {
                 _ => self.execute_query(query)?,
             },
             stmt @ Statement::ShowTables { .. } => self.execute_show_tables(stmt)?,
+            Statement::ShowFunctions { filter } => self.execute_show_functions(filter.as_ref())?,
             stmt @ Statement::CreateTable { .. } => self.execute_create_table(stmt)?,
             stmt @ Statement::Drop {
                 object_type: ObjectType::Table,
@@ -1844,8 +1846,17 @@ impl SQLContext {
             Statement::Update(update) => self.execute_update(update)?,
             Statement::Merge(merge) => self.execute_merge(merge)?,
             stmt @ Statement::Copy { .. } => self.execute_copy(stmt)?,
+            stmt @ (Statement::StartTransaction { .. }
+            | Statement::Commit { .. }
+            | Statement::Rollback { .. }
+            | Statement::Savepoint { .. }
+            | Statement::ReleaseSavepoint { .. }
+            | Statement::Set(sqlparser::ast::Set::SetTransaction { .. })) => polars_bail!(
+                SQLInterface: "`{}` is not supported: there are no transactions, and each statement applies as it runs",
+                transaction_keywords(stmt)
+            ),
             _ => polars_bail!(
-                SQLInterface: "statement type is not supported:\n{:?}", ast,
+                SQLInterface: "`{}` statements are not supported", kind_of(ast)
             ),
         })
     }
@@ -2711,11 +2722,12 @@ impl SQLContext {
         alias: &Option<TableAlias>,
         array_exprs: &[SQLExpr],
         with_offset: bool,
+        with_ordinality: bool,
     ) -> PolarsResult<LazyFrame> {
         let alias = alias
             .as_ref()
             .ok_or_else(|| polars_err!(SQLSyntax: "UNNEST table must have an alias"))?;
-        polars_ensure!(!with_offset, SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
+        polars_ensure!(!with_offset, SQLInterface: "UNNEST tables do not support WITH OFFSET; use WITH ORDINALITY");
 
         let (mut explode_cols, mut rename_from, mut rename_to) = (
             Vec::with_capacity(array_exprs.len()),
@@ -2734,7 +2746,7 @@ impl SQLContext {
                     SQLInterface: "CROSS JOIN UNNEST with both literal arrays and column references is not supported"
                 ),
                 other => polars_bail!(
-                    SQLSyntax: "UNNEST expects column references or array literals, found {:?}", other
+                    SQLSyntax: "UNNEST expects column references or array literals, found `{}`", other
                 ),
             };
             // alias: column name from "AS t(col)", or table alias
@@ -2750,6 +2762,32 @@ impl SQLContext {
             }
             explode_cols.push(col_name);
         }
+        // WITH ORDINALITY: the 1-based position in the (first) list, as in Postgres.
+        let mut lf = lf;
+        if with_ordinality {
+            let n = array_exprs.len();
+            polars_ensure!(
+                alias.columns.len() <= n + 1,
+                SQLSyntax: "UNNEST table alias takes at most {} column names with the WITH ORDINALITY column, found {}", n + 1, alias.columns.len()
+            );
+            let name = ordinality_name(alias, n);
+            let schema = lf.clone().collect_schema()?;
+            polars_ensure!(
+                !schema.contains(&name) && !rename_to.contains(&name),
+                SQLInterface: "the WITH ORDINALITY column '{}' is a column already; give it another name in the alias", name
+            );
+            let first = col(explode_cols[0].clone());
+            let len = match schema.get(&explode_cols[0]) {
+                Some(DataType::Array(..)) => first.arr().len(),
+                _ => first.list().len(),
+            }
+            .cast(DataType::Int64);
+            lf = lf.with_column(
+                int_ranges(lit(1i64), len + lit(1i64), lit(1i64), DataType::Int64)
+                    .alias(name.clone()),
+            );
+            explode_cols.push(name);
+        }
 
         let mut lf = lf.explode(
             Selector::ByName {
@@ -2757,8 +2795,9 @@ impl SQLContext {
                 strict: true,
             },
             ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
+                // As in Postgres: an empty or NULL list gives no row.
+                empty_as_null: false,
+                keep_nulls: false,
             },
         );
         if !rename_from.is_empty() {
@@ -2891,6 +2930,47 @@ impl SQLContext {
         let tables = Column::new("name".into(), self.get_tables());
         let df = DataFrame::new_infer_height(vec![tables])?;
         Ok(df.lazy())
+    }
+
+    // SHOW FUNCTIONS [LIKE '<pattern>']: the function names, matched ignoring case.
+    fn execute_show_functions(
+        &mut self,
+        filter: Option<&sqlparser::ast::ShowStatementFilter>,
+    ) -> PolarsResult<LazyFrame> {
+        let mut names = crate::keywords::all_functions();
+        names.sort_unstable();
+        names.dedup();
+        let df = DataFrame::new_infer_height(vec![Column::new("name".into(), names)])?;
+        let pattern = match filter {
+            None => return Ok(df.lazy()),
+            Some(
+                sqlparser::ast::ShowStatementFilter::Like(pattern)
+                | sqlparser::ast::ShowStatementFilter::ILike(pattern)
+                | sqlparser::ast::ShowStatementFilter::NoKeyword(pattern),
+            ) => pattern.as_str(),
+            Some(sqlparser::ast::ShowStatementFilter::Where(_)) => {
+                polars_bail!(SQLInterface: "SHOW FUNCTIONS takes LIKE '<pattern>', not WHERE")
+            },
+        };
+        // a backslash escapes the next character, as in Postgres
+        let mut regex = String::from("(?is)^");
+        let mut chars = pattern.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                '%' => regex.push_str(".*"),
+                '_' => regex.push('.'),
+                '\\' => {
+                    if let Some(c) = chars.next() {
+                        regex.push_str(&regex::escape(&c.to_string()));
+                    }
+                },
+                c => regex.push_str(&regex::escape(&c.to_string())),
+            }
+        }
+        regex.push('$');
+        Ok(df
+            .lazy()
+            .filter(col("name").str().contains(lit(regex), true)))
     }
 
     // DROP TABLE <tbl>
@@ -3386,11 +3466,24 @@ impl SQLContext {
             _ => false,
         };
         let columns = insert_columns(insert)?;
-        let rows = self.execute_query(&query)?;
+        // A query that reads the table itself, also through a view, is computed now too, as in
+        // Postgres: its rows join the table as data, so that the table's plan never holds itself,
+        // which would double it with each such INSERT. Its reads of the table share one plan,
+        // computed once. The query is planned with the table in a cache, which tells.
+        let shared = match reads_no_table {
+            true => None,
+            false => self.share_target(&tbl)?,
+        };
+        let rows = self.execute_query(&query);
+        if shared.is_some() {
+            self.set_registered(&tbl, table.clone())?;
+        }
+        let rows = rows?;
+        let reads_target = shared.is_some_and(|id| holds_cache(&rows.logical_plan, id, 1));
         let added = Added {
             statement,
             from: "the query",
-            now: reads_no_table,
+            now: reads_no_table || reads_target,
             overwrite: insert.overwrite,
         };
         self.add_rows(&tbl, table, rows, &columns, added)
@@ -3535,6 +3628,36 @@ impl SQLContext {
         self.add_rows(&tbl, table, rows, &columns, added)
     }
 
+    /// Put the plan of registered table `tbl` in a cache, for a statement that changes the table
+    /// and may also read it, and give the cache's id: a plan that holds it reads the table, and
+    /// all its reads share one plan, computed once. `None` for a table that is not registered,
+    /// which is left for the statement to report. Restore the table with `set_registered`.
+    fn share_target(&self, tbl: &str) -> PolarsResult<Option<UniqueId>> {
+        let mut table_map = self.table_map.write().unwrap();
+        let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() else {
+            return Ok(None);
+        };
+        let table = table_map.get(&key).unwrap();
+        let shared = match table.logical_plan {
+            DslPlan::Cache { .. } => table.clone(),
+            _ => table.clone().cache(),
+        };
+        let DslPlan::Cache { id, .. } = shared.logical_plan else {
+            unreachable!()
+        };
+        table_map.insert(key, shared);
+        Ok(Some(id))
+    }
+
+    /// Register `lf` again as table `tbl`, under the name it has.
+    fn set_registered(&self, tbl: &str, lf: LazyFrame) -> PolarsResult<()> {
+        let mut table_map = self.table_map.write().unwrap();
+        if let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() {
+            table_map.insert(key, lf);
+        }
+        Ok(())
+    }
+
     // DELETE FROM <tbl> [WHERE ...]
     fn execute_delete_from_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         let Statement::Delete(delete) = stmt else {
@@ -3550,13 +3673,48 @@ impl SQLContext {
                 tbl, display_name(&table.full_name())
             );
         }
-        let lf = self.delete_target(from, "DELETE")?;
         let tbl = object_name_to_string(name);
+        let lf = self.delete_target(from, "DELETE")?;
         polars_ensure!(
             key_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.is_some(),
             SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl
         );
-        let remaining = match selection {
+        // A condition whose subquery reads the table itself, also through a view, is computed now,
+        // as in Postgres (see `execute_insert`). The subquery is planned with the table in a
+        // cache, which tells; the rows it filters are `lf`, taken before.
+        let original = match selection.is_some_and(expr_contains_subquery) {
+            true => get_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.cloned(),
+            false => None,
+        };
+        let shared = match original {
+            Some(_) => self.share_target(&tbl)?,
+            None => None,
+        };
+        let remaining = self.delete_remaining(lf, selection);
+        if let Some(original) = original {
+            self.set_registered(&tbl, original)?;
+        }
+        let mut remaining = remaining?;
+        if shared.is_some_and(|id| holds_cache(&remaining.logical_plan, id, 1)) {
+            remaining = remaining.collect()?.lazy();
+        }
+        // Later statements see the remaining rows, as after TRUNCATE. Locked only now:
+        // resolving the table and its WHERE read the table map.
+        let mut table_map = self.table_map.write().unwrap();
+        let Some(key) = key_ignoring_case(&table_map, &tbl)?.cloned() else {
+            polars_bail!(SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl)
+        };
+        table_map.insert(key, remaining.clone());
+        Ok(remaining)
+    }
+
+    /// The rows of `lf`, the table that a `DELETE` changes, that its condition leaves.
+    fn delete_remaining(
+        &mut self,
+        lf: LazyFrame,
+        selection: Option<&SQLExpr>,
+    ) -> PolarsResult<LazyFrame> {
+        Ok(match selection {
             // no WHERE clause; equivalent to TRUNCATE (drop all rows)
             None => lf.clear(),
             // apply constraint as inverted filter (drops rows matching the selection)
@@ -3567,15 +3725,7 @@ impl SQLContext {
                 LazyFrame::from(remaining.logical_plan.clone()).collect_schema()?;
                 remaining
             },
-        };
-        // Later statements see the remaining rows, as after TRUNCATE. Locked only now:
-        // resolving the table and its WHERE read the table map.
-        let mut table_map = self.table_map.write().unwrap();
-        let Some(key) = key_ignoring_case(&table_map, &tbl)?.cloned() else {
-            polars_bail!(SQLInterface: "DELETE requires a registered table; '{}' is not one", tbl)
-        };
-        table_map.insert(key, remaining.clone());
-        Ok(remaining)
+        })
     }
 
     /// The table that a `DELETE` or `UPDATE` (`statement`) changes.
@@ -4161,12 +4311,19 @@ impl SQLContext {
                         alias,
                         array_exprs,
                         with_offset,
+                        with_ordinality,
                         ..
                     },
                 ) = (&join.join_operator, &join.relation)
                 {
                     if array_exprs.iter().any(|e| !matches!(e, SQLExpr::Array(_))) {
-                        lf = self.process_unnest_lateral(lf, alias, array_exprs, *with_offset)?;
+                        lf = self.process_unnest_lateral(
+                            lf,
+                            alias,
+                            array_exprs,
+                            *with_offset,
+                            *with_ordinality,
+                        )?;
                         continue;
                     }
                 }
@@ -4247,8 +4404,8 @@ impl SQLContext {
                                 | JoinOperator::RightSemi(_) => JoinType::Semi,
                                 join_type => polars_bail!(
                                     SQLInterface:
-                                    "join type '{:?}' not currently supported",
-                                    join_type
+                                    "`{}` joins are not supported",
+                                    kind_of(join_type)
                                 ),
                             },
                             keep_right,
@@ -4298,7 +4455,7 @@ impl SQLContext {
                         )
                     },
                     join_type => {
-                        polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type)
+                        polars_bail!(SQLInterface: "`{}` joins are not supported", kind_of(join_type))
                     },
                 };
                 if let Some(keys) = lateral_keys {
@@ -4950,8 +5107,9 @@ impl SQLContext {
                     strict: true,
                 },
                 ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
+                    // As in Postgres: an empty or NULL list gives no row.
+                    empty_as_null: false,
+                    keep_nulls: false,
                 },
             );
             projections = projections
@@ -5429,7 +5587,7 @@ impl SQLContext {
                     items.push(ProjectionItem::Exprs(vec![expr.alias(name)], true));
                 },
                 SelectItem::ExprWithAliases { .. } => {
-                    polars_bail!(SQLSyntax: "multiple aliases per expression are not supported: {:?}", select_item)
+                    polars_bail!(SQLSyntax: "multiple aliases per expression are not supported: `{}`", select_item)
                 },
                 SelectItem::QualifiedWildcard(kind, wildcard_options) => match kind {
                     SelectItemQualifiedWildcardKind::ObjectName(obj_name) => {
@@ -5445,7 +5603,7 @@ impl SQLContext {
                         has_qualified_wildcard = true;
                     },
                     SelectItemQualifiedWildcardKind::Expr(_) => {
-                        polars_bail!(SQLSyntax: "qualified wildcard on expressions not yet supported: {:?}", select_item)
+                        polars_bail!(SQLSyntax: "qualified wildcard on expressions not yet supported: `{}`", select_item)
                     },
                 },
                 SelectItem::Wildcard(wildcard_options) => {
@@ -5476,6 +5634,9 @@ impl SQLContext {
         bindings: &mut SubqueryBindings,
         select_stmt: Option<&Select>,
     ) -> PolarsResult<LazyFrame> {
+        if let Some(where_expr) = where_expr {
+            self.reject_aggregate_in_where(where_expr)?;
+        }
         let quantified = where_expr.and_then(|where_expr| {
             let conjuncts = flatten_and_conditions(where_expr);
             let rewritten: Vec<_> = conjuncts
@@ -5559,6 +5720,7 @@ impl SQLContext {
         schema: Option<SchemaRef>,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
+            self.reject_aggregate_in_where(expr)?;
             let schema = match schema {
                 None => self.get_frame_schema(&mut lf)?,
                 Some(s) => s,
@@ -5653,6 +5815,20 @@ impl SQLContext {
             lf = drop_subquery_placeholders(lf, placeholders);
         }
         Ok(lf)
+    }
+
+    /// Fail on an aggregate in `WHERE`, as Postgres does; a subquery's `WHERE` is not checked.
+    fn reject_aggregate_in_where(&self, expr: &SQLExpr) -> PolarsResult<()> {
+        if self.nesting > 0 {
+            return Ok(());
+        }
+        match builtin_aggregate_call(self, expr) {
+            Some(name) => polars_bail!(
+                SQLSyntax: "aggregate functions are not allowed in WHERE (found `{}`); filter groups with HAVING, or compare with a subquery's aggregate",
+                name
+            ),
+            None => Ok(()),
+        }
     }
 
     /// Fail if parsing since `n_grouping_calls` were registered added a `GROUPING()` call.
@@ -7194,11 +7370,22 @@ impl SQLContext {
                         SQLSyntax:
                         "UNNEST table alias must also declare column names, eg: {} (a,b,c)", alias.name.to_string()
                     );
+                    // WITH ORDINALITY may name its column after those of the values
+                    let column_names =
+                        match *with_ordinality && column_names.len() == column_values.len() + 1 {
+                            true => column_names[..column_values.len()].to_vec(),
+                            false => column_names,
+                        };
                     if column_names.len() != column_values.len() {
-                        let plural = if column_values.len() > 1 { "s" } else { "" };
+                        let n = column_values.len();
+                        let plural = if n > 1 { "s" } else { "" };
+                        let with_ordinality = match *with_ordinality {
+                            true => format!(", or {} with the WITH ORDINALITY column", n + 1),
+                            false => String::new(),
+                        };
                         polars_bail!(
                             SQLSyntax:
-                            "UNNEST table alias requires {} column name{}, found {}", column_values.len(), plural, column_names.len()
+                            "UNNEST table alias requires {} column name{}{}, found {}", n, plural, with_ordinality, column_names.len()
                         );
                     }
                     let column_series: Vec<Column> = column_values
@@ -7214,12 +7401,18 @@ impl SQLContext {
                         .map(Column::from)
                         .collect();
 
-                    let lf = DataFrame::new_infer_height(column_series)?.lazy();
-
-                    if *with_offset || *with_ordinality {
-                        // TODO: support 'WITH ORDINALITY|OFFSET' modifier.
-                        polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
+                    let mut df = DataFrame::new_infer_height(column_series)?;
+                    polars_ensure!(!*with_offset, SQLInterface: "UNNEST tables do not support WITH OFFSET; use WITH ORDINALITY");
+                    if *with_ordinality {
+                        let name = ordinality_name(alias, array_exprs.len());
+                        polars_ensure!(
+                            !df.schema().contains(&name),
+                            SQLInterface: "the WITH ORDINALITY column '{}' is a column already; give it another name in the alias", name
+                        );
+                        let positions: Vec<i64> = (1..=df.height() as i64).collect();
+                        df.with_column(Column::new(name, positions))?;
                     }
+                    let lf = df.lazy();
                     let table_name = alias.name.value.clone();
                     self.from_item_frames.insert(table_name.clone(), lf.clone());
                     Ok((table_name, lf))
@@ -8581,6 +8774,17 @@ fn asof_key_pair(
     Ok((to_ticks(l, l_dtype), to_ticks(r, r_dtype)))
 }
 
+/// The `WITH ORDINALITY` column of an `UNNEST` of `n_values` arrays: its alias or `ordinality`.
+fn ordinality_name(alias: &TableAlias, n_values: usize) -> PlSmallStr {
+    alias
+        .columns
+        .get(n_values)
+        .map(|c| c.name.value.as_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("ordinality")
+        .into()
+}
+
 /// Extract column names from a USING clause in a JoinOperator (if present).
 fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_> {
     use JoinOperator::*;
@@ -9398,7 +9602,9 @@ fn process_join_constraint(
             }
             Ok((on.clone(), on, vec![]))
         },
-        _ => polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint),
+        _ => {
+            polars_bail!(SQLInterface: "`{}` join constraints are not supported", kind_of(constraint))
+        },
     }
 }
 
@@ -9655,6 +9861,50 @@ fn cast_matching_struct_fields(name: &PlSmallStr, dtype: &DataType, to: &DataTyp
         expr
     };
     expr.strict_cast(to.clone())
+}
+
+/// The kind of a parsed statement or clause, from its variant name: `CREATE INDEX` for
+/// `CreateIndex`.
+pub(crate) fn kind_of(node: &impl std::fmt::Debug) -> String {
+    let debug = format!("{node:?}");
+    let name = debug
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .next()
+        .unwrap_or_default();
+    let mut kind = String::new();
+    for (i, c) in name.char_indices() {
+        if i > 0 && c.is_ascii_uppercase() {
+            kind.push(' ');
+        }
+        kind.push(c.to_ascii_uppercase());
+    }
+    kind
+}
+
+/// The leading keywords of transaction statement `statement`: `BEGIN`, `SET TRANSACTION`.
+fn transaction_keywords(statement: &Statement) -> String {
+    const WORDS: &[&str] = &[
+        "ABORT",
+        "BEGIN",
+        "COMMIT",
+        "END",
+        "RELEASE",
+        "ROLLBACK",
+        "SAVEPOINT",
+        "SET",
+        "START",
+        "TRANSACTION",
+        "WORK",
+    ];
+    let text = statement.to_string();
+    let words: Vec<&str> = text
+        .split_whitespace()
+        .take_while(|w| WORDS.contains(w))
+        .collect();
+    match words.is_empty() {
+        true => kind_of(statement),
+        false => words.join(" "),
+    }
 }
 
 /// Whether `stmt` is a query that only reads; `INSERT`/`UPDATE` bodies write to the context.
@@ -10774,6 +11024,15 @@ fn insert_source(insert: &Insert, outer: Option<&Query>) -> PolarsResult<Option<
         }
     }
     Ok(Some(source))
+}
+
+/// Whether `plan` holds the cache `id` at least `times` times.
+fn holds_cache(plan: &DslPlan, id: UniqueId, times: usize) -> bool {
+    plan.into_iter()
+        .filter(|p| matches!(p, DslPlan::Cache { id: cache, .. } if *cache == id))
+        .take(times)
+        .count()
+        == times
 }
 
 /// The columns an `INSERT` lists; empty for all columns.

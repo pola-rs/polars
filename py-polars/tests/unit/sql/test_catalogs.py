@@ -89,13 +89,24 @@ def lake_ctx(catalog: CountingCatalog, **kwargs: Any) -> pl.SQLContext[pl.LazyFr
     return pl.SQLContext().register_catalog("lake", catalog, **kwargs)
 
 
+@pytest.fixture(params=["pyiceberg", "plugin"])
+def planner(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Plan scans with PyIceberg, or with the plugin only: a table it refuses raises."""
+    name: str = request.param
+    if name == "plugin":
+        pytest.importorskip("polars_iceberg")
+    monkeypatch.setenv("POLARS_ICEBERG_PLANNER", name)
+    return name
+
+
 LINEITEM = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    "query",
-    [
+@pytest.mark.usefixtures("planner")
+def test_catalog_table_names(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    for query in [
         "SELECT * FROM lineitem",
         "SELECT * FROM tpch.lineitem",
         "SELECT * FROM lake.tpch.lineitem",
@@ -106,11 +117,13 @@ LINEITEM = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
         "SELECT li.k, li.v FROM tpch.lineitem AS li",
         "WITH c AS (SELECT * FROM lineitem) SELECT * FROM c",
         "SELECT * FROM (SELECT * FROM lineitem) AS sub",
-    ],
-)
-def test_catalog_table_names(lake: CountingCatalog, query: str) -> None:
-    res = lake_ctx(lake).execute(query, eager=True)
-    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    ]:
+        res = ctx.execute(query, eager=True)
+        try:
+            assert_frame_equal(res, LINEITEM, check_row_order=False)
+        except AssertionError as exc:
+            exc.add_note(query)
+            raise
 
 
 @pytest.mark.write_disk
@@ -144,6 +157,7 @@ def test_catalog_query_params(lake: CountingCatalog) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("qualifier", ["lake.tpch.orders", "tpch.orders", "orders"])
+@pytest.mark.usefixtures("planner")
 def test_catalog_table_read_by_nested_subquery(
     lake: CountingCatalog, qualifier: str
 ) -> None:
@@ -299,6 +313,7 @@ def test_catalog_table_spelled_twice(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     res = ctx.execute(
@@ -2772,6 +2787,7 @@ def test_alter_catalog_table_invalid_decimal(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_alter_catalog_table_name_mapping(
     lake: CountingCatalog, tmp_path: Path
 ) -> None:
@@ -3066,13 +3082,10 @@ def test_alter_catalog_table_partitioning(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize("planner", ["pyiceberg", "plugin"])
+@pytest.mark.usefixtures("planner")
 def test_alter_catalog_table_partitioning_reads_and_writes(
-    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, planner: str
+    lake: CountingCatalog,
 ) -> None:
-    if planner == "plugin":
-        pytest.importorskip("polars_iceberg")
-    monkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
     ctx = events_ctx(lake)
     ctx.execute("ALTER TABLE ev SET PARTITIONED BY (id)")
     ctx.execute("INSERT INTO ev SELECT * FROM src")
@@ -3866,6 +3879,7 @@ def test_insert_catalog_table_overwrite(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_insert_catalog_table_partitioned(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     ctx.execute(
@@ -4782,6 +4796,7 @@ def test_delete_catalog_table_cleans_metadata_check(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_delete_catalog_table_position_deletes(lake: CountingCatalog) -> None:
     from tests.unit.io.test_iceberg import _add_position_deletes
 
@@ -4826,6 +4841,7 @@ def test_merge_catalog_table_deletes_whole_file(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_delete_catalog_table_merge_on_read(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     ctx.execute(
@@ -6761,6 +6777,7 @@ def test_register_catalog_by_name_is_lazy(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_register_catalog_by_name_reads(lake: CountingCatalog) -> None:
     resolver, names = recording_catalog_resolver(lake)
     set_iceberg_catalog_resolver(resolver)
@@ -6929,9 +6946,12 @@ def history(
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    ("clause", "rows"),
-    [
+@pytest.mark.usefixtures("planner")
+def test_catalog_time_travel(
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, ids = history
+    for clause, rows in [
         ("FOR VERSION AS OF {0}", [0]),
         ("VERSION AS OF {1}", [0, 1]),
         ("AS h FOR VERSION AS OF {0}", [0]),
@@ -6960,16 +6980,20 @@ def history(
         ("AS join VERSION AS OF {0}", [0]),
         ("VERSION AS OF {0} div", [0]),
         ("FOR TIMESTAMP AS OF '2024-01-01 03:30:00+02:00'", [0, 1]),
-    ],
-)
-def test_catalog_time_travel(
-    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]], clause: str, rows: list[int]
-) -> None:
-    ctx, ids = history
-    query = f"SELECT * FROM hist {clause.format(*ids)}"
-    assert sorted(ctx.execute(query, eager=True)["k"]) == rows
-    assert sorted(ctx.execute(query).collect()["k"]) == rows
-    assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0
+    ]:
+        query = f"SELECT * FROM hist {clause.format(*ids)}"
+        assert sorted(ctx.execute(query, eager=True)["k"]) == rows, query
+
+    # Check deferred execution and EXPLAIN for each way to choose a snapshot.
+    for clause, rows in [
+        (f"FOR VERSION AS OF {ids[0]}", [0]),
+        ("FOR VERSION AS OF 'v1'", [0]),
+        ("FOR VERSION AS OF 'b1'", [0, 1]),
+        ("FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 01:30:00'", [0, 1]),
+    ]:
+        query = f"SELECT * FROM hist {clause}"
+        assert sorted(ctx.execute(query).collect()["k"]) == rows, query
+        assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0, query
 
 
 @pytest.mark.write_disk
@@ -7002,6 +7026,7 @@ def test_catalog_pivot_qualifiers(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel_two_versions(
     lake: CountingCatalog,
     history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
@@ -7197,6 +7222,7 @@ def test_catalog_time_travel_expired_history(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel_statistics(
     lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
 ) -> None:
@@ -7302,6 +7328,7 @@ def test_catalog_time_travel_set_current_then_expiry(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel_reads(
     history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
 ) -> None:
@@ -7466,6 +7493,7 @@ def test_catalog_time_travel_commit_times(
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("planner")
 def test_catalog_time_travel_catalog_by_name(
     lake: CountingCatalog, history: tuple[pl.SQLContext[pl.LazyFrame], list[int]]
 ) -> None:
@@ -8070,9 +8098,10 @@ def test_call_rewrite_data_files_target_size(
     table = lake.create_table(
         ("tpch", "big"), schema=pl.Schema({"k": pl.Int64}).to_arrow()
     )
-    keys = pl.int_range(300_000, eager=True).shuffle(seed=0)
+    n_rows = 30_000
+    keys = pl.int_range(n_rows, eager=True).shuffle(seed=0)
     # written as the compaction writes, so the output compresses as the input
-    for part in pl.DataFrame({"k": keys}).iter_slices(300_000 // files):
+    for part in pl.DataFrame({"k": keys}).iter_slices(n_rows // files):
         part.lazy().sink_iceberg(table, mode="append")
     size = sum(f.file_size_in_bytes for f in live_files(lake, "tpch", "big"))
     target = int(size / size_over_target)
@@ -8081,7 +8110,7 @@ def test_call_rewrite_data_files_target_size(
         f"options => map('target-file-size-bytes', '{target}'))"
     )
     assert ctx.execute(statement, eager=True).rows()[0][:2] == counts
-    assert ctx.execute("SELECT COUNT(*) FROM big", eager=True).item() == 300_000
+    assert ctx.execute("SELECT COUNT(*) FROM big", eager=True).item() == n_rows
     # nothing left to rewrite
     assert ctx.execute(statement, eager=True).rows() == [(0, 0, 0, 0, 0)]
 

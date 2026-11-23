@@ -2101,7 +2101,7 @@ impl SQLContext {
             Some(false) => Ok(false),
             None => polars_bail!(
                 SQLInterface:
-                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+                "EXISTS subquery is not currently supported in this position: `{}`", subquery
             ),
         }
     }

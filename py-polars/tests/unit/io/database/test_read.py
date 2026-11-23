@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
+from collections import UserDict
 from contextlib import closing, nullcontext, suppress
 from datetime import date
 from pathlib import Path
-from types import GeneratorType
+from types import GeneratorType, ModuleType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 from unittest.mock import Mock, patch
 
@@ -22,6 +23,7 @@ from sqlalchemy.sql.expression import cast as alchemy_cast
 import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import DuplicateError, UnsuitableSQLError
+from polars.io.database import _executor
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import OracleCursorProxy
 from polars.io.database._executor import ConnectionExecutor
@@ -29,6 +31,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.io.database.conftest import create_sqlite_engine
 
 if TYPE_CHECKING:
+    from typing import Self
+
     from sqlalchemy.engine import Engine
 
     from polars._typing import (
@@ -1576,6 +1580,211 @@ def test_read_database_struct_schema_overrides_30471() -> None:
                 )
 
 
+class _TrinoNamedRowTuple(tuple):  # type: ignore[type-arg]
+    """Mirrors `trino.types.NamedRowTuple` (returned by trino for `ROW` values)."""
+
+    def __new__(
+        cls, values: list[Any], names: list[str | None], types: list[str]
+    ) -> Self:
+        return super().__new__(cls, values)
+
+    def __init__(
+        self, values: list[Any], names: list[str | None], types: list[str]
+    ) -> None:
+        self._names = names
+        self.__annotations__ = {"names": names, "types": types}
+        for name, value in zip(names, values, strict=True):
+            if name is not None and names.count(name) == 1:
+                setattr(self, name, value)
+
+    def __getattr__(self, name: str) -> Any:
+        # note: implicitly returns None for unknown attributes (eg: `_fields`)
+        if self._names.count(name):
+            msg = f"Ambiguous row field reference: {name}"
+            raise ValueError(msg)
+
+
+class _TrinoCursor:
+    """Minimal DBAPI cursor mimicking the trino driver."""
+
+    def __init__(self, description: list[tuple[str, str]], rows: list[Any]) -> None:
+        self.description = [
+            (nm, tp, None, None, None, None, None) for nm, tp in description
+        ]
+        self._rows = rows
+
+    def execute(self, query: str) -> Any:
+        return self
+
+    def fetchall(self) -> list[Any]:
+        rows, self._rows = self._rows, []
+        return rows
+
+    def fetchmany(self, size: int | None = None) -> list[Any]:
+        rows, self._rows = self._rows[:size], self._rows[size:]
+        return rows
+
+    def close(self) -> None:
+        pass
+
+
+@pytest.fixture
+def mock_trino(monkeypatch: pytest.MonkeyPatch) -> None:
+    trino_types = ModuleType("trino.types")
+    trino_types.NamedRowTuple = _TrinoNamedRowTuple  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "trino.types", trino_types)
+    trino_dbapi = ModuleType("trino.dbapi")
+    trino_dbapi.Cursor = _TrinoCursor  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "trino.dbapi", trino_dbapi)
+    monkeypatch.setattr(_TrinoCursor, "__module__", "trino.dbapi")
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_trino_row_types(iter_batches: bool) -> None:
+    # https://github.com/pola-rs/polars/issues/19483
+    def row(values: list[Any], names: list[str | None]) -> _TrinoNamedRowTuple:
+        return _TrinoNamedRowTuple(values, names, ["unknown"] * len(values))
+
+    assert row([1.0, "x"], ["b1", "b2"])._fields is None  # looks like a namedtuple
+
+    cursor = _TrinoCursor(
+        description=[
+            ("a", "integer"),
+            ("b", "array(row(b1 double, b2 varchar))"),
+            ("c", "row(c1 row(x integer), integer)"),
+        ],
+        rows=[
+            [
+                1,
+                [row([0.543976, "hello"], ["b1", "b2"])],
+                row([row([10], ["x"]), 20], ["c1", None]),
+            ],
+            [
+                2,
+                [row([1.5, "world"], ["b1", "b2"]), row([2.5, None], ["b1", "b2"])],
+                row([row([30], ["x"]), 40], ["c1", None]),
+            ],
+        ],
+    )
+    res = pl.read_database(
+        "SELECT * FROM toto",
+        connection=cursor,
+        iter_batches=iter_batches,
+        batch_size=1 if iter_batches else None,
+    )
+    if iter_batches:
+        assert isinstance(res, GeneratorType)
+        res = pl.concat(res)
+
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [
+                [{"b1": 0.543976, "b2": "hello"}],
+                [{"b1": 1.5, "b2": "world"}, {"b1": 2.5, "b2": None}],
+            ],
+            "c": [
+                {"c1": {"x": 10}, "field_1": 20},
+                {"c1": {"x": 30}, "field_1": 40},
+            ],
+        }
+    )
+    assert_frame_equal(res, expected)  # type: ignore[arg-type]
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize(
+    ("names", "values", "expected"),
+    [
+        (
+            [None, "field_0", "field_1", None],
+            [1, 2, 3, 4],
+            {"field_2": 1, "field_0": 2, "field_1": 3, "field_3": 4},
+        ),
+        (["field_1", None], [10, 20], {"field_1": 10, "field_2": 20}),
+        (["a", "a"], [10, 20], {"field_0": 10, "field_1": 20}),
+        (["_names"], [7], {"_names": 7}),
+        (["_names"], ["x"], {"_names": "x"}),
+        (
+            ["__annotations__"],
+            [{"names": ["wrong"]}],
+            {"__annotations__": {"names": ["wrong"]}},
+        ),
+    ],
+)
+def test_read_database_trino_row_field_names(
+    names: list[str | None], values: list[Any], expected: dict[str, Any]
+) -> None:
+    row = _TrinoNamedRowTuple(values, names, ["unknown"] * len(values))
+    cursor = _TrinoCursor([("v", "row(a bigint)")], [[row]])
+    assert pl.read_database("SELECT v", cursor).to_dicts() == [{"v": expected}]
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize(
+    ("names", "values", "type_code"),
+    [
+        (
+            ["_names", "__annotations__"],
+            [["wrong", "names"], {"names": ["also", "wrong"]}],
+            "row(_names array(varchar), __annotations__ map(varchar, array(varchar)))",
+        ),
+        (
+            ["__dict__"],
+            [{"_names": ["wrong"]}],
+            "row(__dict__ map(varchar, array(varchar)))",
+        ),
+    ],
+)
+def test_read_database_trino_row_shadowed_metadata(
+    names: list[str], values: list[Any], type_code: str
+) -> None:
+    row = _TrinoNamedRowTuple(values, list(names), ["unknown"] * len(names))
+    cursor = _TrinoCursor([("v", type_code)], [[row]])
+    with pytest.raises(ValueError, match="missing or shadowed driver metadata"):
+        pl.read_database("SELECT v", cursor)
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_trino_mapping_rows(iter_batches: bool) -> None:
+    class WrappedConnection:
+        def cursor(self) -> _TrinoCursor:
+            return cursor
+
+    payload = list(range(128))
+    row = _TrinoNamedRowTuple([7], ["a"], ["bigint"])
+    cursor = _TrinoCursor(
+        [("v", "row(a bigint)"), ("payload", "array(bigint)")],
+        [UserDict({"payload": payload, "v": row})],
+    )
+    with patch.object(
+        _executor, "_convert_trino_value", wraps=_executor._convert_trino_value
+    ) as convert:
+        res = pl.read_database(
+            "SELECT v, payload",
+            WrappedConnection(),
+            iter_batches=iter_batches,
+            batch_size=1 if iter_batches else None,
+        )
+        if not isinstance(res, pl.DataFrame):
+            res = pl.concat(res)
+        assert all(call.args[0] is not payload for call in convert.call_args_list)
+    assert res.to_dicts() == [{"v": {"a": 7}, "payload": payload}]
+
+
+@pytest.mark.usefixtures("mock_trino")
+def test_read_database_non_trino_mapping_rows() -> None:
+    cursor = Mock(spec=["description", "execute", "fetchall"])
+    cursor.description = [("v", "row(a bigint)", None, None, None, None, None)]
+    cursor.execute.return_value = cursor
+    cursor.fetchall.return_value = [{"v": {"a": 7}}]
+    with patch.object(_executor, "_convert_trino_value") as convert:
+        assert pl.read_database("SELECT v", cursor).to_dicts() == [{"v": {"a": 7}}]
+    convert.assert_not_called()
+
+
 def _databricks_standin_engine(tmp_path: Any, closed: list[bool] | None = None) -> Any:
     # a SQLite engine standing in for databricks-sqlalchemy
     import sqlite3
@@ -1779,3 +1988,109 @@ def test_databricks_sqlalchemy_close_batches_before_first_next(
         assert closed == [True]
         assert conn.exec_driver_sql("SELECT 1").fetchall() == [(1,)]
     engine.dispose()
+
+
+def _invalid_text_table(shape: str) -> pa.Table:
+    # a STRING made of the byte 0xFF, which an Arrow driver passes on unchecked
+    bad = pa.Array.from_buffers(
+        pa.string(),
+        1,
+        [
+            None,
+            pa.py_buffer(b"\x00\x00\x00\x00\x01\x00\x00\x00"),
+            pa.py_buffer(b"\xff"),
+        ],
+    )
+    good = pa.array(["a"])
+    offsets = pa.array([0, 1], pa.int32())
+    column = {
+        "top": bad,
+        "list": pa.ListArray.from_arrays(offsets, bad),
+        "struct": pa.StructArray.from_arrays([good, bad], names=["a", "b"]),
+        "map_key": pa.MapArray.from_arrays(offsets, bad, good),
+        "map_value": pa.MapArray.from_arrays(offsets, good, bad),
+        "map_in_list": pa.ListArray.from_arrays(
+            offsets, pa.MapArray.from_arrays(offsets, good, bad)
+        ),
+    }[shape]
+    return pa.table({"id": pa.array([1]), "c": column})
+
+
+_INVALID_TEXT_SHAPES = ["top", "list", "struct", "map_key", "map_value", "map_in_list"]
+
+
+@pytest.mark.parametrize("shape", _INVALID_TEXT_SHAPES)
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_databricks_invalid_utf8_is_an_error(
+    shape: str, iter_batches: bool
+) -> None:
+    # the connector passes on the bytes of a STRING (`unhex('FF')`) as they are, and a
+    # Polars String of them breaks string operations
+    mc = MockConnection(
+        "databricks",
+        10 if iter_batches else None,
+        test_data=_invalid_text_table(shape),
+        repeat_batch_calls=True,
+        exact_batch_size=True,
+    )
+
+    def read() -> None:
+        res = pl.read_database(
+            "SELECT 1",
+            mc,
+            iter_batches=iter_batches,
+            batch_size=10 if iter_batches else None,
+        )
+        if iter_batches:
+            list(res)  # type: ignore[arg-type]
+
+    with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+        read()
+
+
+def test_read_database_databricks_valid_text_is_read() -> None:
+    good = pa.array(["a", "�", None])
+    offsets = pa.array([0, 1, 2, 3], pa.int32())
+    table = pa.table(
+        {
+            "s": good,
+            "m": pa.MapArray.from_arrays(offsets, pa.array(["k", "l", "m"]), good),
+        }
+    )
+    mc = MockConnection(
+        "databricks",
+        None,
+        test_data=table,
+        repeat_batch_calls=True,
+        exact_batch_size=True,
+    )
+    out = pl.read_database("SELECT 1", mc)
+    assert out["s"].to_list() == ["a", "�", None]
+    assert out["m"].dtype == pl.Map(pl.String, pl.String)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc_driver_sqlite not available")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_adbc_invalid_utf8_is_an_error(
+    iter_batches: bool, tmp_path: Path
+) -> None:
+    sql = "SELECT 1 AS id, CAST(X'FF' AS TEXT) AS s"
+    with closing(adbc_sqlite_connect(tmp_path / "x.db")) as conn:
+
+        def read() -> None:
+            res = pl.read_database(
+                sql,
+                conn,
+                iter_batches=iter_batches,
+                batch_size=10 if iter_batches else None,
+            )
+            if iter_batches:
+                list(res)  # type: ignore[arg-type]
+
+        with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+            read()
+        ok = pl.read_database("SELECT 1 AS id, CAST(X'FF' AS BLOB) AS b", conn)
+        assert ok["b"].to_list() == [b"\xff"]
+        # column names are taken as they are, not as a wildcard or a pattern
+        ok = pl.read_database("SELECT 'a' AS \"*\", 'b' AS s, 'c' AS \"^s$\"", conn)
+        assert ok.rows() == [("a", "b", "c")]

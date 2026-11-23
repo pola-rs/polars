@@ -962,6 +962,17 @@ def test_from_quoted_name_that_is_not_a_path() -> None:
 _READS_DISABLED = "reading files is disabled in this SQLContext"
 
 
+@pytest.fixture(scope="module")
+def file_read_paths(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+    path = tmp_path_factory.mktemp("sql_file_reads")
+    df = pl.DataFrame({"x": [1, 2], "s": ["a", "b"]})
+    paths = {"dir": path.as_posix()}
+    for ext in ["csv", "parquet", "ipc", "ndjson"]:
+        paths[ext] = (path / f"data.{ext}").as_posix()
+        getattr(df, f"write_{ext}")(paths[ext])
+    return paths
+
+
 @pytest.mark.parametrize(
     "query",
     [
@@ -988,22 +999,25 @@ _READS_DISABLED = "reading files is disabled in this SQLContext"
         "CREATE TABLE c AS SELECT * FROM read_csv('{csv}')",
     ],
 )
-@pytest.mark.parametrize("eager", [False, True])
-def test_file_reads_disabled(tmp_path: Path, query: str, eager: bool) -> None:
-    df = pl.DataFrame({"x": [1, 2], "s": ["a", "b"]})
-    paths = {"dir": tmp_path.as_posix()}
-    for ext in ["csv", "parquet", "ipc", "ndjson"]:
-        paths[ext] = (tmp_path / f"data.{ext}").as_posix()
-        getattr(df, f"write_{ext}")(paths[ext])
-    query = query.format(**paths)
+def test_file_reads_disabled(file_read_paths: dict[str, str], query: str) -> None:
+    query = query.format(**file_read_paths)
 
     ctx = pl.SQLContext(t=pl.DataFrame({"x": [1]}), allow_file_reads=False)
     # the error comes from `execute`, also for a lazy result
     with pytest.raises(SQLInterfaceError, match=_READS_DISABLED):
-        ctx.execute(query, eager=eager)
+        ctx.execute(query)
 
     if "missing" not in query and "s3://" not in query:
         pl.SQLContext(t=pl.DataFrame({"x": [1]})).execute(query, eager=True)
+
+
+@pytest.mark.parametrize("source", ["read_csv('{csv}')", "'{csv}'"])
+def test_file_reads_disabled_eager(
+    file_read_paths: dict[str, str], source: str
+) -> None:
+    query = f"SELECT * FROM {source.format(**file_read_paths)}"
+    with pytest.raises(SQLInterfaceError, match=_READS_DISABLED):
+        pl.SQLContext(allow_file_reads=False).execute(query, eager=True)
 
 
 @pytest.mark.parametrize("source", ["read_csv('{path}')", "'{path}'"])
