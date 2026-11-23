@@ -1279,6 +1279,7 @@ def test_streaming_join_string_key_runs(
         pytest.param("unique_with_null", False, True, id="null-in-build"),
         pytest.param("unique_with_null", True, True, id="nulls-on-both-sides"),
         pytest.param("repeated", False, True, id="duplicate-in-build"),
+        pytest.param("repeated", True, True, id="duplicate-and-missing"),
     ],
 )
 def test_streaming_join_unique_build_keys(
@@ -1289,7 +1290,13 @@ def test_streaming_join_unique_build_keys(
     all_match: bool,
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
+    if build == "repeated" and probe_nulls:
+        # In the first 17 probe rows, the null at 5 cancels the extra match at 9.
+        # Equal input and output sizes alone do not make the probe rows reusable.
+        plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "17")
+    else:
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "16")
     plmonkeypatch.setenv("POLARS_JOIN_NUM_PARTITIONS", "4")
     i = pl.int_range(200)
     k = (i * 7) % (20 if all_match else 30)
