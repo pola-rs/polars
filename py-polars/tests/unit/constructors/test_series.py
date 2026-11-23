@@ -203,6 +203,9 @@ def test_series_init_pandas_timestamp_pytz_time_zones(zone: str) -> None:
         ("Europe/Amsterdam", datetime(2150, 7, 1, 8), False),
         ("Etc/GMT+5", datetime(2020, 1, 1), False),
         ("UTC", datetime(2020, 1, 1), None),
+        # (UTC is outside the `datetime` range)
+        ("Asia/Tokyo", datetime.min, None),
+        ("America/New_York", datetime.max, None),
     ],
 )
 def test_series_init_pytz_datetime(
@@ -223,6 +226,44 @@ def test_series_init_pytz_datetime(
     epoch = datetime(1970, 1, 1, tzinfo=pytz.UTC)
     ts = result.dt.timestamp("us").item()
     assert ts == (value - epoch) // timedelta(microseconds=1)
+
+
+@pytest.mark.parametrize(
+    ("value", "time_zone"),
+    [
+        # (UTC is outside the `datetime` range)
+        (datetime.min.replace(tzinfo=timezone(timedelta(hours=23, minutes=59))), "UTC"),
+        (
+            datetime.max.replace(tzinfo=timezone(-timedelta(hours=23, minutes=59))),
+            "UTC",
+        ),
+        # sub-second offsets
+        (
+            datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=1, microseconds=5))),
+            "UTC",
+        ),
+        (datetime(2020, 1, 1, tzinfo=timezone(-timedelta(microseconds=5))), "UTC"),
+        (
+            datetime(
+                2020,
+                1,
+                1,
+                tzinfo=dateutil.tz.tzoffset(None, -timedelta(microseconds=5)),
+            ),
+            "UTC",
+        ),
+        # fixed offsets without a `key`
+        (datetime(2020, 1, 1, 0, 0, 0, 7, tzinfo=dateutil.tz.tzutc()), "UTC"),
+        (datetime(2020, 1, 1, 12, tzinfo=dateutil.tz.tzoffset(None, -5400)), "UTC"),
+    ],
+)
+def test_series_init_datetime_as_python(value: datetime, time_zone: str) -> None:
+    # timestamps are those that Python itself computes
+    result = pl.Series([value])
+    assert result.dtype == pl.Datetime("us", time_zone)
+
+    expected = (value - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(microseconds=1)
+    assert result.dt.timestamp("us").item() == expected
 
 
 def _zone_file(key: str) -> io.BytesIO:

@@ -1,9 +1,7 @@
 use std::borrow::{Borrow, Cow};
 use std::sync::{Arc, Mutex};
 
-use chrono::{
-    DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike, Utc,
-};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
 use chrono_tz::Tz;
 use hashbrown::HashMap;
 use num_traits::ToPrimitive;
@@ -26,8 +24,9 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    IntoPyDict, PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList,
-    PyMapping, PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
+    IntoPyDict, PyBool, PyBytes, PyDate, PyDateAccess, PyDateTime, PyDelta, PyDict, PyFloat, PyInt,
+    PyList, PyMapping, PyRange, PySequence, PyString, PyTime, PyTimeAccess, PyTuple, PyType,
+    PyTzInfo,
 };
 use pyo3::{IntoPyObjectExt, PyTypeCheck, intern};
 
@@ -374,52 +373,83 @@ pub(crate) fn py_object_to_any_value(
             .map_or(TzKind::Other, TzKind::Named))
     }
 
+    /// The wall time of a `datetime`, ignoring any `tzinfo` (as pyo3's chrono conversions read it).
+    fn naive_datetime(dt: &Bound<'_, PyDateTime>) -> PyResult<NaiveDateTime> {
+        NaiveDate::from_ymd_opt(dt.get_year(), dt.get_month().into(), dt.get_day().into())
+            .and_then(|date| {
+                date.and_hms_micro_opt(
+                    dt.get_hour().into(),
+                    dt.get_minute().into(),
+                    dt.get_second().into(),
+                    dt.get_microsecond(),
+                )
+            })
+            .ok_or_else(|| PyValueError::new_err("invalid or out-of-range datetime"))
+    }
+
+    /// The microseconds since the Unix epoch of an aware `datetime`, as Python computes them:
+    /// `ob - EPOCH_UTC` applies `ob.utcoffset()` exactly (including sub-second offsets) and,
+    /// unlike `ob.astimezone(UTC)`, cannot overflow at either end of the `datetime` range.
+    fn aware_timestamp(ob: &Bound<'_, PyAny>) -> PyResult<i64> {
+        static EPOCH_UTC: PyOnceLock<Py<PyDateTime>> = PyOnceLock::new();
+        let py = ob.py();
+        let epoch = EPOCH_UTC.get_or_try_init(py, || {
+            let utc = PyTzInfo::utc(py)?;
+            PyDateTime::new(py, 1970, 1, 1, 0, 0, 0, 0, Some(&utc)).map(Bound::unbind)
+        })?;
+        let delta = ob.sub(epoch.bind(py))?.extract::<TimeDelta>()?;
+        // (always representable: a `datetime` is within ~10,000 years of the epoch)
+        Ok(delta.num_microseconds().unwrap())
+    }
+
     fn get_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let py = ob.py();
         let tzinfo = ob.getattr(intern!(py, "tzinfo"))?;
+        let unix_epoch = DateTime::UNIX_EPOCH.naive_utc();
 
         if tzinfo.is_none() {
             let datetime = ob.extract::<NaiveDateTime>()?;
-            let delta = datetime - DateTime::UNIX_EPOCH.naive_utc();
+            let delta = datetime - unix_epoch;
             let timestamp = delta.num_microseconds().unwrap();
             return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
         }
 
-        let kind = tz_kind(&tzinfo)?;
-        // For `pytz` time zones, converting to UTC is much cheaper than converting to `zoneinfo`
-        if let TzKind::Pytz(zone) = &kind {
-            let utc = ob
-                .call_method1(intern!(py, "astimezone"), (PyTzInfo::utc(py)?,))?
-                .extract::<DateTime<Utc>>()?;
-            return Ok(AnyValue::DatetimeOwned(
-                utc.timestamp_micros(),
-                TimeUnit::Microseconds,
-                Some(Arc::new(parse_time_zone(zone)?)),
-            ));
-        }
-
-        let (timestamp, tz) = if let TzKind::Named(_) = kind {
-            let datetime = ob.extract::<DateTime<Tz>>()?;
-            let tz = unsafe { TimeZone::from_static(datetime.timezone().name()) };
-            if datetime.year() >= 2100 {
-                // chrono-tz does not support dates after 2100
-                // https://github.com/chronotope/chrono-tz/issues/135
-                (
+        let (timestamp, tz) = match tz_kind(&tzinfo)? {
+            TzKind::Named(_) => {
+                let datetime = ob.extract::<DateTime<Tz>>()?;
+                // SAFETY: chrono-tz names are valid time zones.
+                let tz = unsafe { TimeZone::from_static(datetime.timezone().name()) };
+                let timestamp = if datetime.year() >= 2100 {
+                    // chrono-tz does not support dates after 2100
+                    // https://github.com/chronotope/chrono-tz/issues/135
                     pl_utils(py)
                         .bind(py)
                         .getattr(intern!(py, "datetime_to_int"))?
                         .call1((ob, intern!(py, "us")))?
-                        .extract::<i64>()?,
-                    tz,
-                )
-            } else {
-                let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-                (delta.num_microseconds().unwrap(), tz)
-            }
-        } else {
-            let datetime = ob.extract::<DateTime<FixedOffset>>()?;
-            let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-            (delta.num_microseconds().unwrap(), TimeZone::UTC)
+                        .extract::<i64>()?
+                } else {
+                    let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
+                    delta.num_microseconds().unwrap()
+                };
+                (timestamp, tz)
+            },
+            // (Python applies the offset that the `pytz` zone was localized to)
+            TzKind::Pytz(zone) => (aware_timestamp(ob)?, parse_time_zone(&zone)?),
+            // (fixed offsets become UTC)
+            TzKind::Fixed => (aware_timestamp(ob)?, TimeZone::UTC),
+            TzKind::Other => {
+                // (only fixed offsets are supported, as in pyo3's `FixedOffset` conversion,
+                // but keeping any sub-second part of the offset)
+                let offset = tzinfo.call_method1(intern!(py, "utcoffset"), (py.None(),))?;
+                if offset.is_none() {
+                    return Err(PyTypeError::new_err(format!(
+                        "{tzinfo:?} is not a fixed offset timezone"
+                    )));
+                }
+                let local = naive_datetime(ob.cast::<PyDateTime>()?)? - unix_epoch;
+                let utc = local - offset.extract::<TimeDelta>()?;
+                (utc.num_microseconds().unwrap(), TimeZone::UTC)
+            },
         };
 
         Ok(AnyValue::DatetimeOwned(
