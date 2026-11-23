@@ -431,10 +431,13 @@ def test_bigquery_adbc_wheel_recovers_schema_from_empty_arrow_probe(
 @pytest.mark.parametrize("dialect", [None, "bigquery"])
 @pytest.mark.parametrize("empty", [False, True])
 def test_bigquery_adbc_factory_recovers_schema_from_empty_arrow_probe(
-    dialect: str | None, empty: bool
+    dialect: str | None, empty: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pa = pytest.importorskip("pyarrow")
     pytest.importorskip("sqlglot")
+    monkeypatch.setitem(
+        sys.modules, "adbc_driver_manager", SimpleNamespace(__version__="1.13.0")
+    )
     sqls: list[str] = []
 
     class Cursor:
