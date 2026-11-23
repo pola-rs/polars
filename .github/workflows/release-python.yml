@@ -18,6 +18,10 @@ on:
         description: Allow unreleased polars-database changes
         type: boolean
         default: false
+      allow-unreleased-iceberg-changes:
+        description: Allow unreleased polars-iceberg changes
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,6 +29,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
+  FREE_THREADED_PYTHON_VERSION: '3.15t'
   POLARS_BUILD_COMMIT: ${{ inputs.sha || github.sha }}
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
@@ -94,6 +99,7 @@ jobs:
       - name: Upload base package
         uses: actions/upload-artifact@v7
         with:
+          name: base-package
           path: dist
 
   create-sdist:
@@ -112,8 +118,8 @@ jobs:
       - name: Download base package
         uses: actions/download-artifact@v8
         with:
+          name: base-package
           path: dist
-          merge-multiple: true
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
@@ -160,6 +166,8 @@ jobs:
       matrix:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
         job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
+        # abi3 covers GIL-enabled Python, abi3t covers free-threaded Python 3.15+.
+        abi: [abi3, abi3t]
         include:
           - job_config: linux-x64
             os: ubuntu-latest
@@ -211,8 +219,8 @@ jobs:
       - name: Download base package
         uses: actions/download-artifact@v8
         with:
+          name: base-package
           path: dist
-          merge-multiple: true
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
@@ -220,6 +228,14 @@ jobs:
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 10
+
+      # Set up before the default Python so that `python` stays the default version.
+      - name: Set up free-threaded Python
+        id: setup-free-threaded-python
+        if: matrix.abi == 'abi3t'
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.FREE_THREADED_PYTHON_VERSION }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -233,8 +249,13 @@ jobs:
           python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $GITHUB_PATH
 
       - name: Install yq
+        env:
+          FREE_THREADED_PYTHON: ${{ steps.setup-free-threaded-python.outputs.python-path }}
         run: |
           pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          if [[ -n "$FREE_THREADED_PYTHON" ]]; then
+            "$FREE_THREADED_PYTHON" -m pip install --force-reinstall --no-dependencies dist/polars-*.whl
+          fi
           rm -rf dist/*
           pip install yq
 
@@ -295,19 +316,35 @@ jobs:
           # fixed prefix allowlist into the manylinux/musllinux container, so
           # `POLARS_BUILD_COMMIT` has to be passed through explicitly.
           docker-options: -e POLARS_BUILD_COMMIT
+          # The interpreter decides between the abi3 and abi3t wheel, so always pin it.
           args: >
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
+            --compression-level 9
+            --interpreter python${{ matrix.abi == 'abi3t' && env.FREE_THREADED_PYTHON_VERSION || env.PYTHON_VERSION }}
             --out dist
           manylinux: auto
           maturin-version: 1.15.0
 
+      - name: Check wheel tag
+        env:
+          TAG: ${{ matrix.abi == 'abi3t' && 'cp315-abi3.abi3t' || 'cp311-abi3' }}
+        run: |
+          for wheel in dist/*.whl; do
+            if [[ "$(basename "$wheel")" != *"-$TAG-"* ]]; then
+              echo "::error::$wheel does not have the $TAG tag"
+              exit 1
+            fi
+          done
+
       - name: Test wheel
         # Testing on entire matrix except musl targets, which are missing on all ubuntu-x images.
         if: endsWith(matrix.target, '-musl') == false
+        env:
+          PYTHON: ${{ matrix.abi == 'abi3t' && steps.setup-free-threaded-python.outputs.python-path || 'python' }}
         run: |
-          pip install --force-reinstall --verbose dist/*.whl
-          python -c 'import polars; polars.show_versions()' | tee versions.txt
+          "$PYTHON" -m pip install --force-reinstall --verbose dist/*.whl
+          "$PYTHON" -c 'import polars; polars.show_versions()' | tee versions.txt
 
           if ! grep -qE "^Build: +$POLARS_BUILD_COMMIT\$" versions.txt; then
             echo "::error::show_versions() does not report build commit $POLARS_BUILD_COMMIT"
@@ -317,7 +354,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v7
         with:
-          name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
+          name: wheel-${{ matrix.package }}-${{ matrix.job_config }}-${{ matrix.abi }}
           path: dist/*.whl
 
   plugin-versions:
@@ -349,47 +386,67 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # The tests below run against the released plugin, so its sources here must be the ones
-      # that wheel was built from, or a plugin change (or its test) would be tested against old
-      # code. The wheel records its build commit; 0.1.0 predates that and falls back to its tag.
+      # The tests below run against the released plugins. Compare their wheel build commits with
+      # this checkout so a plugin change (or its test) cannot be tested against old code.
       # Not compared: the statically linked shared crates (polars-core, polars-arrow,
       # polars-utils, polars-config, polars-error, the rest of polars-io-ext-ffi), Cargo.lock and
       # the workspace's Cargo.toml, which would differ at nearly every release.
-      - name: Check polars-database has no unreleased changes
+      - name: Check for unreleased plugin changes
         env:
-          VERSION: ${{ steps.database.outputs.version }}
-          ALLOW: ${{ inputs.allow-unreleased-database-changes }}
+          DATABASE_VERSION: ${{ steps.database.outputs.version }}
+          ICEBERG_VERSION: ${{ steps.iceberg.outputs.version }}
+          ALLOW_DATABASE: ${{ inputs.allow-unreleased-database-changes }}
+          ALLOW_ICEBERG: ${{ inputs.allow-unreleased-iceberg-changes }}
         run: |
-          set -e
-          # A wheel only: a source build would embed nothing, or not the commit it was released from.
-          pip install --only-binary :all: --no-deps "polars-database==$VERSION"
-          # 0.1.0 predates `__build_commit__`: no attribute at all.
-          BASE=$(python -I -c 'import polars_database; print(getattr(polars_database, "__build_commit__", ""))')
-          if [[ -n "$BASE" ]]; then
-            echo "polars-database $VERSION was built from $BASE (its __build_commit__)"
-          else
-            if ! git fetch --no-tags --depth=1 origin "refs/tags/polars-database-$VERSION:refs/tags/polars-database-$VERSION"; then
-              echo "::error::polars-database $VERSION has no build commit and there is no tag polars-database-$VERSION to compare with"
-              exit 1
-            fi
-            BASE=$(git rev-parse "polars-database-$VERSION^{commit}")
-            echo "polars-database $VERSION has no build commit; using the commit of tag polars-database-$VERSION: $BASE"
-          fi
-          git fetch --no-tags --depth=1 origin "$BASE"
-          # Also the plugin's half of its FFI contract, in a crate the plugin otherwise shares.
-          PATHS=(crates/polars-database py-polars/polars-database crates/polars-io-ext-ffi/src/lazyframe_resolver_v1.rs)
-          if git diff --quiet "$BASE" HEAD -- "${PATHS[@]}"; then
-            echo "polars-database sources are unchanged since $VERSION"
-          else
-            git diff --stat "$BASE" HEAD -- "${PATHS[@]}"
-            MSG="Unreleased polars-database changes since $VERSION (built from $BASE): release polars-database and raise the lower bound of the 'database' extra, or rerun with allow-unreleased-database-changes"
-            if [[ "$ALLOW" == "true" ]]; then
-              echo "::warning::$MSG"
+          check_plugin() {
+            local extra=$1 version=$2 allow=$3 ffi_file=$4
+            local package="polars-$extra" module="polars_$extra"
+            local base tag msg
+            local paths=("crates/$package" "py-polars/$package" "crates/polars-io-ext-ffi/src/$ffi_file")
+
+            # A wheel only: a source build would embed nothing, or not the original build commit.
+            pip install --only-binary :all: --no-deps "$package==$version"
+            base=$(python -I -c 'import importlib, sys; print(getattr(importlib.import_module(sys.argv[1]), "__build_commit__", ""))' "$module")
+            if [[ -n "$base" ]]; then
+              if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::$package $version has an invalid __build_commit__"
+                exit 1
+              fi
+              echo "$package $version was built from $base (its __build_commit__)"
+            elif [[ "$package/$version" == polars-iceberg/0.1.0 ]]; then
+              # The wheel used a separate plugin repo. Use its Polars checkout, which provided
+              # the FFI contract. Inlining the plugin appears in the diff as added paths.
+              # https://github.com/pola-rs/polars/actions/runs/38728466535
+              base=bc7ab1054522f1c59356ac3666997eb4d0b50e7d
+              echo "$package $version used Polars checkout $base before the plugin was inlined"
             else
-              echo "::error::$MSG"
+              tag="$package-$version"
+              if ! git fetch --no-tags --depth=1 origin "refs/tags/$tag:refs/tags/$tag"; then
+                echo "::error::$package $version has no build commit and there is no tag $tag to compare with"
+                exit 1
+              fi
+              base=$(git rev-parse "$tag^{commit}")
+              echo "$package $version has no build commit; using the commit of tag $tag: $base"
+            fi
+
+            git fetch --no-tags --depth=1 origin "$base"
+            if git diff --quiet "$base" HEAD -- "${paths[@]}"; then
+              echo "$package sources are unchanged since $version"
+              return
+            fi
+
+            git diff --stat "$base" HEAD -- "${paths[@]}"
+            msg="Unreleased $package changes since $version (Polars checkout $base): release $package and raise the lower bound of the '$extra' extra, or rerun with allow-unreleased-$extra-changes"
+            if [[ "$allow" == "true" ]]; then
+              echo "::warning::$msg"
+            else
+              echo "::error::$msg"
               exit 1
             fi
-          fi
+          }
+
+          check_plugin database "$DATABASE_VERSION" "$ALLOW_DATABASE" lazyframe_resolver_v1.rs
+          check_plugin iceberg "$ICEBERG_VERSION" "$ALLOW_ICEBERG" iceberg_v1.rs
 
   # Full Python test suite, with the polars-iceberg and polars-database plugins installed from PyPI
   # at the versions required in pyproject.toml.

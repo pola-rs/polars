@@ -18,6 +18,7 @@ use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
 use polars_core::utils::{any_values_to_supertype, try_get_supertype};
 use polars_defs::time::duration::Duration;
+use polars_error::SqlLocationKind;
 use polars_lazy::prelude::*;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::functions::{DurationArgs, duration};
@@ -32,9 +33,9 @@ use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, DictionaryField, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentList, FunctionArguments, Ident, Interval, MapEntry,
-    OrderByOptions, OrderBySort, Query as Subquery, SelectItem, Statement, Subscript, TimezoneInfo,
-    TrimWhereField, TypedString, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan,
+    OrderByOptions, OrderBySort, Query as Subquery, SelectItem, Spanned, Statement, Subscript,
+    TimezoneInfo, TrimWhereField, TypedString, UnaryOperator as SQLUnaryOperator,
+    Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords::{self, Keyword};
@@ -42,6 +43,7 @@ use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
 use crate::context::join_idents;
+use crate::copy::with_copy_options;
 use crate::dyn_visit::visit_expressions;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
@@ -52,6 +54,7 @@ use crate::lambda::{
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
+use crate::location::{at_statement, complete_location, locate};
 use crate::positional_join::{attach_positional_aliases, extract_positional_joins};
 use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::{is_correlated_subquery, strip_nested};
@@ -89,8 +92,10 @@ impl TakenClauses {
         sql: &str,
         parsed: Result<Vec<Statement>, ParserError>,
     ) -> PolarsResult<Vec<Statement>> {
-        self.attach_to(sql, parsed.map_err(to_sql_interface_err), |parser| {
-            parser.parse_statements().map_err(to_sql_interface_err)
+        let parser_err =
+            |err: ParserError| to_sql_interface_err(with_copy_options(err.to_string()));
+        self.attach_to(sql, parsed.map_err(parser_err), |parser| {
+            parser.parse_statements().map_err(parser_err)
         })
     }
 
@@ -601,11 +606,11 @@ impl SQLExprVisitor<'_> {
                                 Ok(s.get(0)?.into_static())
                             },
                             _ => Err(
-                                polars_err!(SQLInterface: "array element {:?} is not supported", e),
+                                polars_err!(SQLInterface: "array element `{}` is not supported", e),
                             ),
                         },
                         _ => {
-                            Err(polars_err!(SQLInterface: "array element {:?} is not supported", e))
+                            Err(polars_err!(SQLInterface: "array element `{}` is not supported", e))
                         },
                     },
                 },
@@ -635,11 +640,11 @@ impl SQLExprVisitor<'_> {
                     match extract_literal_with_op(expr, None) {
                         Some((v, op)) => self.visit_any_value(v, op),
                         None => {
-                            Err(polars_err!(SQLInterface: "array element {:?} is not supported", e))
+                            Err(polars_err!(SQLInterface: "array element `{}` is not supported", e))
                         },
                     }
                 },
-                _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
+                _ => Err(polars_err!(SQLInterface: "array element `{}` is not supported", e)),
             }?
             .into_static();
             array_elements.push(val);
@@ -697,6 +702,22 @@ impl SQLExprVisitor<'_> {
     }
 
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        self.visit_unlocated_expr(expr).map_err(|e| match expr {
+            // Their span is the operand's, without the keyword, type or field the error is about.
+            SQLExpr::Cast { .. }
+            | SQLExpr::Convert { .. }
+            | SQLExpr::Extract { .. }
+            | SQLExpr::Ceil { .. }
+            | SQLExpr::Floor { .. }
+            | SQLExpr::Position { .. }
+            | SQLExpr::Substring { .. }
+            | SQLExpr::Trim { .. }
+            | SQLExpr::Overlay { .. } => at_statement(e),
+            _ => locate(e, SqlLocationKind::Exact, expr.span()),
+        })
+    }
+
+    fn visit_unlocated_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         if self.ctx.lambda_depth > 0 {
             check_lambda_body_expr(expr)?;
         }
@@ -747,13 +768,8 @@ impl SQLExprVisitor<'_> {
                         .fold(root, |expr, field| struct_field(expr, field.value.as_str())));
                 }
                 // simple subscript access (eg: "array_col[1]")
-                if access_chain.len() == 1 {
-                    match &access_chain[0] {
-                        AccessExpr::Subscript(subscript) => {
-                            return self.visit_subscript(root, subscript);
-                        },
-                        AccessExpr::Dot(_) => {},
-                    }
+                if let [AccessExpr::Subscript(subscript)] = access_chain.as_slice() {
+                    return self.visit_subscript(root, subscript);
                 }
                 if let SQLExpr::Value(ValueWithSpan {
                     value: SQLValue::Placeholder(p),
@@ -776,10 +792,10 @@ impl SQLExprVisitor<'_> {
                     return Ok(expr);
                 }
                 if let [AccessExpr::Dot(_)] = access_chain.as_slice() {
-                    polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: {:?}", access_chain[0])
+                    polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: `{}`", access_chain[0])
                 }
                 // chained dot/bracket notation (eg: "struct_col.field[2].foo[0].bar")
-                polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
+                polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: `{}`", expr)
             },
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
             SQLExpr::Dictionary(fields) => self.visit_struct_literal(fields),
@@ -941,7 +957,7 @@ impl SQLExprVisitor<'_> {
             SQLExpr::Wildcard(_) => Ok(all().as_expr()),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
-                polars_bail!(SQLInterface: "expression {:?} is not currently supported", other)
+                polars_bail!(SQLInterface: "expression `{}` is not currently supported", other)
             },
         }
     }
@@ -994,7 +1010,7 @@ impl SQLExprVisitor<'_> {
         let unsupported = || {
             polars_err!(
                 SQLInterface:
-                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+                "EXISTS subquery is not currently supported in this position: `{}`", subquery
             )
         };
         if is_correlated_subquery(subquery, self.ctx.catalog_spellings())
@@ -1090,7 +1106,7 @@ impl SQLExprVisitor<'_> {
             polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not currently supported; found '{}'", escape_char.clone().unwrap());
         }
         if let Some((needle, null_as_empty)) = self.substring_like_needle(pattern) {
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let mut needle = self.visit_expr(needle)?.cast(DataType::String);
             if null_as_empty {
                 needle = needle.fill_null(lit(""));
@@ -1117,7 +1133,7 @@ impl SQLExprVisitor<'_> {
                 PlSmallStr::from_str(lv.extract_str().unwrap())
             },
             pattern => {
-                let expr = self.visit_expr(expr)?;
+                let expr = self.visit_string_input(expr)?;
                 let pattern = pattern.cast(DataType::String);
                 let matches = if case_insensitive {
                     expr.str()
@@ -1144,7 +1160,7 @@ impl SQLExprVisitor<'_> {
             };
             self.visit_binary_op(expr, &op, pattern)
         } else if !case_insensitive && let Some((matches, needle)) = literal_like_match(&pat) {
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let matches = matches(expr.str(), lit(needle.to_string()));
             Ok(if negated { matches.not() } else { matches })
         } else {
@@ -1161,7 +1177,7 @@ impl SQLExprVisitor<'_> {
                 end_anchor,
             );
 
-            let expr = self.visit_expr(expr)?;
+            let expr = self.visit_string_input(expr)?;
             let matches = expr.str().contains(lit(rx), true);
             Ok(if negated { matches.not() } else { matches })
         }
@@ -1429,17 +1445,21 @@ impl SQLExprVisitor<'_> {
         // need special handling for interval offsets and comparisons
         let (mut lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
-                let duration = interval_to_duration(v, false)?;
+                let duration = interval_to_duration(v, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 return offset_by(self.visit_expr(left)?, format!("-{duration}"));
             },
             (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
-                let duration = interval_to_duration(v, false)?;
+                let duration = interval_to_duration(v, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 return offset_by(self.visit_expr(left)?, format!("{duration}"));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)
-                let d1 = interval_to_duration(v1, false)?;
-                let d2 = interval_to_duration(v2, false)?;
+                let d1 = interval_to_duration(v1, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, left.span()))?;
+                let d2 = interval_to_duration(v2, false)
+                    .map_err(|e| locate(e, SqlLocationKind::Exact, right.span()))?;
                 // Months have no fixed length: they are ordered as 28 days, but equal intervals
                 // have equal months.
                 let length = |d: &Duration| {
@@ -1665,7 +1685,7 @@ impl SQLExprVisitor<'_> {
                 }
             },
             other => {
-                polars_bail!(SQLInterface: "operator {:?} is not currently supported", other)
+                polars_bail!(SQLInterface: "operator `{}` is not currently supported", other)
             },
         })
     }
@@ -1731,7 +1751,7 @@ impl SQLExprVisitor<'_> {
                 // otherwise SQL "NOT" expects logical, not bitwise, behaviour (eg: on integers)
                 _ => expr.strict_cast(DataType::Boolean).not(),
             },
-            other => polars_bail!(SQLInterface: "unary operator {:?} is not supported", other),
+            other => polars_bail!(SQLInterface: "unary operator `{}` is not supported", other.0),
         })
     }
 
@@ -1759,6 +1779,7 @@ impl SQLExprVisitor<'_> {
             filter: None,
             window,
             reads_rows: false,
+            string_input: false,
         };
         let expr = visitor.visit_function();
         self.ctx.group_scope.in_window = in_window;
@@ -2343,7 +2364,7 @@ impl SQLExprVisitor<'_> {
             },
             SQLValue::Placeholder(p) => param_lit(self.ctx.param(p)?.value().clone().into_static()),
             other => {
-                polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
+                polars_bail!(SQLInterface: "value `{}` is not a supported literal type", other)
             },
         })
     }
@@ -2360,7 +2381,7 @@ impl SQLExprVisitor<'_> {
                     value,
                     SQLValue::Number(..) | SQLValue::Null | SQLValue::Placeholder(_)
                 ),
-            SQLInterface: "unary op {:?} not supported for SQL value {:?}", op.unwrap(), value
+            SQLInterface: "unary operator `{}` is not supported for the value `{}`", op.unwrap(), value
         );
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
@@ -2383,7 +2404,7 @@ impl SQLExprVisitor<'_> {
                     // no op should be taken as plus.
                     Some(SQLUnaryOperator::Plus) | None => false,
                     Some(op) => {
-                        polars_bail!(SQLInterface: "unary op {:?} not supported for numeric SQL value", op)
+                        polars_bail!(SQLInterface: "unary op `{}` not supported for numeric SQL value", op)
                     },
                 };
                 parse_numeric_literal(s, negate)?
@@ -2410,11 +2431,11 @@ impl SQLExprVisitor<'_> {
                     None | Some(SQLUnaryOperator::Plus) => value.value().clone().into_static(),
                     Some(SQLUnaryOperator::Minus) => negate_param(value.value(), p)?,
                     Some(op) => polars_bail!(
-                        SQLInterface: "unary op {:?} not supported for query parameter {}", op, p
+                        SQLInterface: "unary op `{}` not supported for query parameter {}", op, p
                     ),
                 }
             },
-            other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
+            other => polars_bail!(SQLInterface: "value `{}` is not currently supported", other),
         })
     }
 
@@ -2525,6 +2546,11 @@ impl SQLExprVisitor<'_> {
         Ok(if negated { low.or(high) } else { low.and(high) })
     }
 
+    /// The string input of a string operation, where a NULL literal is a NULL string.
+    fn visit_string_input(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        Ok(null_as_string(self.visit_expr(expr)?))
+    }
+
     /// Visit a SQL `TRIM` function.
     /// See [sqlparser::ast::Expr::Trim] for more details
     fn visit_trim(
@@ -2538,14 +2564,16 @@ impl SQLExprVisitor<'_> {
             // TODO: allow compact snowflake/bigquery syntax?
             return Err(polars_err!(SQLSyntax: "unsupported TRIM syntax (custom chars)"));
         };
-        let expr = self.visit_expr(expr)?;
+        let expr = self.visit_string_input(expr)?;
         let trim_what = trim_what.as_ref().map(|e| self.visit_expr(e)).transpose()?;
         let trim_what = match trim_what {
             Some(Expr::Literal(lv)) if lv.extract_str().is_some() => {
                 Some(PlSmallStr::from_str(lv.extract_str().unwrap()))
             },
             None => None,
-            _ => return self.err(&expr),
+            _ => {
+                polars_bail!(SQLInterface: "TRIM characters that are not a string literal are not supported")
+            },
         };
         Ok(match (trim_where, trim_what) {
             (None | Some(TrimWhereField::Both), None) => {
@@ -2569,17 +2597,20 @@ impl SQLExprVisitor<'_> {
         substring_from: Option<&SQLExpr>,
         substring_for: Option<&SQLExpr>,
     ) -> PolarsResult<Expr> {
-        let e = self.visit_expr(expr)?;
+        let e = self.visit_string_input(expr)?;
 
         match (substring_from, substring_for) {
             // SUBSTRING(expr FROM start FOR length)
             (Some(from_expr), Some(for_expr)) => {
                 let start = self.visit_expr(from_expr)?;
-                let length = clip_substring_length(approximate_literal(self.visit_expr(for_expr)?));
+                let raw_length = approximate_literal(self.visit_expr(for_expr)?);
+                let length = clip_substring_length(raw_length.clone());
 
                 // note: SQL is 1-indexed, so we need to adjust the offsets accordingly
-                Ok(match (start.clone(), length.clone()) {
-                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
+                let result = match (start.clone(), length.clone()) {
+                    (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => {
+                        null_reading(Some(DataType::String), &[e, start, length])
+                    },
                     (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                         polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", n)
                     },
@@ -2604,14 +2635,15 @@ impl SQLExprVisitor<'_> {
                             ))
                             .otherwise(e.str().slice(adjusted_start, length))
                     },
-                })
+                };
+                Ok(null_on_null_length(result, &raw_length))
             },
             // SUBSTRING(expr FROM start)
             (Some(from_expr), None) => {
                 let start = self.visit_expr(from_expr)?;
 
                 Ok(match start {
-                    Expr::Literal(lv) if lv.is_null() => lit(lv),
+                    Expr::Literal(lv) if lv.is_null() => null_reading(Some(DataType::String), &[e]),
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                         e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null()))
@@ -2729,10 +2761,6 @@ impl SQLExprVisitor<'_> {
             unreachable!()
         }
     }
-
-    fn err(&self, expr: &Expr) -> PolarsResult<Expr> {
-        polars_bail!(SQLInterface: "expression {:?} is not currently supported", expr);
-    }
 }
 
 /// parse a SQL expression to a polars expression
@@ -2753,8 +2781,11 @@ impl SQLExprVisitor<'_> {
 /// # }
 /// ```
 pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
+    sql_expr_str(s.as_ref())
+}
+
+fn sql_expr_str(s: &str) -> PolarsResult<Expr> {
     let mut ctx = SQLContext::new();
-    let s = s.as_ref();
 
     // `sql_expr` should only translate expressions, not statements or clauses
     let (mut ast, taken) = sql_parser(s)?;
@@ -2784,10 +2815,12 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     }
     let expr = match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
-            let expr = parse_sql_expr(expr, &mut ctx, None)?;
+            let expr = parse_sql_expr(expr, &mut ctx, None).map_err(|e| complete_location(e, s))?;
             expr.alias(alias.value.as_str())
         },
-        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
+        SelectItem::UnnamedExpr(expr) => {
+            parse_sql_expr(expr, &mut ctx, None).map_err(|e| complete_location(e, s))?
+        },
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s),
     };
     // The expression is used in a DataFrame query, whose row order must be kept.
@@ -2849,6 +2882,17 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
     Ok(duration)
 }
 
+/// A NULL literal without a type as a NULL string; other expressions as they are.
+pub(crate) fn null_as_string(expr: Expr) -> Expr {
+    if let Expr::Literal(lv) = &expr
+        && lv.get_datatype().is_null()
+    {
+        expr.cast(DataType::String)
+    } else {
+        expr
+    }
+}
+
 pub(crate) fn parse_sql_expr(
     expr: &SQLExpr,
     ctx: &mut SQLContext,
@@ -2902,7 +2946,7 @@ pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsRes
             AnyValue::List(s) => Ok(s.clone()),
             _ => polars_bail!(SQLSyntax: "Expected array expression, found query parameter {}", p),
         },
-        _ => polars_bail!(SQLSyntax: "Expected array expression, found {:?}", expr),
+        _ => polars_bail!(SQLSyntax: "Expected array expression, found `{}`", expr),
     }
 }
 
@@ -3007,12 +3051,32 @@ pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
     let found = e
         .clone()
         .str()
-        .find(substring.clone(), true)
+        .find_literal(substring.clone())
         .cast(DataType::Int64)
         + typed_lit(1i64);
     when(e.is_null().or(substring.is_null()))
         .then(lit(LiteralValue::untyped_null()))
         .otherwise(found.fill_null(typed_lit(0i64)))
+}
+
+/// A NULL of `dtype`, for a call with a NULL argument. An aggregate in `inputs` is still read,
+/// so that the call stays an aggregate; the first one names the result.
+pub(crate) fn null_reading(dtype: Option<DataType>, inputs: &[Expr]) -> Expr {
+    let null = match &dtype {
+        Some(dtype) => Scalar::null(dtype.clone()).lit(),
+        None => lit(LiteralValue::untyped_null()),
+    };
+    let read = |e: Expr| match &dtype {
+        Some(dtype) => e.cast(dtype.clone()),
+        None => e,
+    };
+    inputs
+        .iter()
+        .rev()
+        .filter(|e| has_marked_aggregate(e))
+        .fold(null, |acc, e| {
+            when(lit(false)).then(read(e.clone())).otherwise(acc)
+        })
 }
 
 /// The 0-indexed offset of a 1-indexed SUBSTRING start.
@@ -3024,7 +3088,25 @@ pub(crate) fn substring_offset(start: Expr) -> Expr {
 pub(crate) fn clip_substring_length(length: Expr) -> Expr {
     match length {
         Expr::Literal(_) => length,
-        _ => length.clip_min(lit(0)),
+        _ => numeric_length(length).clip_min(lit(0)),
+    }
+}
+
+/// A length column as a number. Adding 0 keeps the dtype of a number, and gives a length of the
+/// Null dtype an integer dtype.
+pub(crate) fn numeric_length(length: Expr) -> Expr {
+    length + Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0)))
+}
+
+/// `result`, or NULL where the SUBSTRING `length` is NULL, which `str.slice` reads as the rest
+/// of the string.
+pub(crate) fn null_on_null_length(result: Expr, length: &Expr) -> Expr {
+    match (&result, length) {
+        (Expr::Literal(lv), _) if lv.is_null() => result,
+        (_, Expr::Literal(_)) => result,
+        _ => when(length.clone().is_not_null())
+            .then(result)
+            .otherwise(lit(LiteralValue::untyped_null())),
     }
 }
 

@@ -8,7 +8,7 @@ use hive::rewrite_hive;
 use predicate_pruning::*;
 
 use crate::plans::aexpr::or_factoring::or_implied_predicates;
-use crate::plans::optimizer::join_utils::remove_suffix;
+use crate::plans::optimizer::join_utils::{join_right_output_to_input, remove_suffix};
 
 const IEJOIN_MAX_PREDICATES: usize = 2;
 
@@ -327,6 +327,15 @@ pub(super) fn process_join(
         }
     }
 
+    let mut output_to_right_input_map =
+        join_right_output_to_input(&schema_left, &schema_right, &options)?;
+    output_to_right_input_map.retain(|output, input| output != input);
+    output_to_right_input_map.extend(
+        output_key_to_right_input_map
+            .iter()
+            .map(|(output, input)| (output.clone(), input.clone())),
+    );
+
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
     // A filter on the left key of an as-of join also bounds the right keys it can match.
@@ -490,14 +499,8 @@ pub(super) fn process_join(
             map_column_references_with_casts(
                 &mut predicate,
                 expr_arena,
-                &output_key_to_right_input_map,
+                &output_to_right_input_map,
                 &output_key_to_right_input_casts,
-            );
-            remove_suffix(
-                &mut predicate,
-                expr_arena,
-                &schema_right,
-                options.args.suffix(),
             );
             insert_predicate_dedup(
                 &mut pushdown_right,

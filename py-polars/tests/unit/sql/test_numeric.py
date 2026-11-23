@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ComputeError,
+    SchemaError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -813,8 +818,33 @@ def test_decimal_mod_and_integer_division() -> None:
 
 def test_quantile_rejects_exact_literal_out_of_range() -> None:
     df = pl.DataFrame({"v": [1, 2, 3]})
-    with pytest.raises(SQLSyntaxError, match="must be between 0 and 1"):
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
         df.sql("SELECT APPROX_QUANTILE(v, 1.5) FROM self")
+
+
+@pytest.mark.parametrize(
+    ("quantile", "error", "match"),
+    [
+        ("1.5", ComputeError, r"between 0\.0 and 1\.0"),
+        ("NULL", ComputeError, "got null"),
+        ("TRUE", SchemaError, "dtype 'numeric'"),
+    ],
+)
+@pytest.mark.parametrize(
+    "func",
+    [
+        "QUANTILE_CONT(v, {q})",
+        "QUANTILE_DISC(v, {q})",
+        "APPROX_QUANTILE(v, {q})",
+        "PERCENTILE_CONT({q}) WITHIN GROUP (ORDER BY v)",
+    ],
+)
+def test_quantile_invalid_literal(
+    func: str, quantile: str, error: type[Exception], match: str
+) -> None:
+    df = pl.DataFrame({"v": [1, 2, 3]})
+    with pytest.raises(error, match=match):
+        df.sql(f"SELECT {func.format(q=quantile)} FROM self")
 
 
 def test_mod_and_integer_division_truncate() -> None:

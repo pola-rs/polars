@@ -207,6 +207,16 @@ pub enum CallArg {
 /// The procedures `CALL` runs, with their arguments in positional order (`table` first).
 pub(crate) const CALL_PROCEDURES: &[(&str, &[&str])] = &[
     (
+        "add_files",
+        &[
+            "table",
+            "source_table",
+            "partition_filter",
+            "check_duplicate_files",
+            "parallelism",
+        ],
+    ),
+    (
         "rewrite_data_files",
         &["table", "strategy", "sort_order", "options", "where"],
     ),
@@ -430,7 +440,8 @@ pub struct MergePlan {
     pub not_matched: Vec<MergeClausePlan>,
 }
 
-/// A change to a catalog table's top-level columns, properties or partitioning, by an `ALTER TABLE`.
+/// A change to a catalog table's top-level columns, properties, layout, tags or branches, by an
+/// `ALTER TABLE`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CatalogAlter {
     /// `ADD [COLUMN] [IF NOT EXISTS] <name> <type>`: a nullable column.
@@ -484,6 +495,56 @@ pub enum CatalogAlter {
         /// The sort fields, in the order written.
         fields: Vec<CatalogSortField>,
     },
+    /// `CREATE [OR REPLACE] TAG | BRANCH`, `CREATE TAG | BRANCH IF NOT EXISTS` or
+    /// `REPLACE TAG | BRANCH`: point a tag or branch at a snapshot.
+    SetRef {
+        /// A tag or a branch.
+        kind: CatalogRefKind,
+        /// The name, as written (case kept).
+        name: String,
+        /// What to do when a ref of the name exists, or doesn't.
+        mode: CatalogRefMode,
+        /// `AS OF VERSION <snapshot id>`; none for the current snapshot.
+        snapshot_id: Option<i64>,
+        /// `RETAIN <n> <unit>`: how long the ref is kept, in milliseconds.
+        max_ref_age_ms: Option<i64>,
+        /// `WITH SNAPSHOT RETENTION <n> SNAPSHOTS`: the snapshots a branch keeps, at least.
+        min_snapshots_to_keep: Option<i32>,
+        /// `WITH SNAPSHOT RETENTION <n> <unit>`: how long a branch keeps its snapshots, in
+        /// milliseconds.
+        max_snapshot_age_ms: Option<i64>,
+    },
+    /// `DROP TAG | BRANCH [IF EXISTS] <name>`.
+    DropRef {
+        /// A tag or a branch.
+        kind: CatalogRefKind,
+        /// The name, as written (case kept).
+        name: String,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
+}
+
+/// The kind of a named Iceberg snapshot reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogRefKind {
+    /// A tag: a name for one snapshot.
+    Tag,
+    /// A branch: a line of snapshots that writes can extend.
+    Branch,
+}
+
+/// What a statement that sets a tag or branch does with an existing ref of its name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CatalogRefMode {
+    /// `CREATE`: the name must be free.
+    Create,
+    /// `CREATE ... IF NOT EXISTS`: nothing happens when the name is taken.
+    CreateIfNotExists,
+    /// `REPLACE`: the ref must exist.
+    Replace,
+    /// `CREATE OR REPLACE`: either.
+    CreateOrReplace,
 }
 
 /// A partition field of a catalog table: an Iceberg transform of a column or a struct field.

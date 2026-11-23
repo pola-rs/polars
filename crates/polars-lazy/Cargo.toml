@@ -303,6 +303,7 @@ python = [
   "polars-mem-engine/python",
   "polars-stream?/python",
 ]
+io_plugin_ffi = ["polars-io/io_plugin_ffi", "polars-plan/io_plugin_ffi", "polars-stream?/io_plugin_ffi"]
 row_hash = ["polars-expr/row_hash"]
 reinterpret = ["polars-expr/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-expr/string_pad"]

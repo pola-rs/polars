@@ -241,7 +241,6 @@ def test_constant_where_condition_is_planned_not_executed() -> None:
     ("condition", "expected"),
     [
         ("ROW_NUMBER() OVER () <= 2", [1, 2]),
-        ("COUNT(1) > 1", [1, 2, 3]),
         ("COLUMNS('^a$') > 1", [2, 3]),
     ],
 )

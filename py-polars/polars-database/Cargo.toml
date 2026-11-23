@@ -2,7 +2,7 @@
 name = "polars-database-python"
 # Released independently of Polars: the version of the PyPI package `polars-database`, equal to
 # `project.version` in `pyproject.toml` and the `version` of `crates/polars-database`.
-version = "0.1.0"
+version = "0.1.1"
 edition = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }

@@ -450,7 +450,7 @@ def test_struct_and_map_type_names(sql_type: str, dtype: pl.DataType) -> None:
         (
             "SELECT CAST(NULL AS STRUCT<a NOT_A_TYPE>) AS c",
             SQLInterfaceError,
-            'datatype "NOT_A_TYPE" is not currently supported',
+            "datatype `NOT_A_TYPE` is not currently supported",
         ),
         # only a STRUCT (MAP) value or NULL casts to STRUCT (MAP)
         (

@@ -1,4 +1,3 @@
-use DataType::*;
 use polars::prelude::*;
 use pyo3::prelude::*;
 
@@ -80,29 +79,11 @@ impl PySeries {
     }
 
     fn mean<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let s = self.series.read();
-        match s.dtype() {
-            Boolean => scalar_to_py(
-                py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().mean_reduce()),
-                py,
-            ),
-            // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.mean_reduce()), py),
-            _ => Ok(s.mean().into_pyobject(py)?),
-        }
+        scalar_to_py(py.enter_polars(|| self.series.read().mean_reduce()), py)
     }
 
     fn median<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let s = self.series.read();
-        match s.dtype() {
-            Boolean => scalar_to_py(
-                py.enter_polars(|| s.cast(&DataType::UInt8).unwrap().median_reduce()),
-                py,
-            ),
-            // For non-numeric output types we require median_reduce.
-            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.median_reduce()), py),
-            _ => Ok(s.median().into_pyobject(py)?),
-        }
+        scalar_to_py(py.enter_polars(|| self.series.read().median_reduce()), py)
     }
 
     fn product<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -112,31 +93,14 @@ impl PySeries {
     fn quantile<'py>(
         &self,
         py: Python<'py>,
-        quantile: Bound<'py, PyAny>,
+        quantile: PySeries,
         interpolation: Wrap<QuantileMethod>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        // Accept either a single float or a list of floats
-        if let Ok(q_float) = quantile.extract::<f64>() {
-            // Single quantile: use quantile_reduce
-            scalar_to_py(
-                py.enter_polars(|| self.series.read().quantile_reduce(q_float, interpolation.0)),
-                py,
-            )
-        } else if let Ok(q_list) = quantile.extract::<Vec<f64>>() {
-            // Multiple quantiles: use quantiles_reduce
-            scalar_to_py(
-                py.enter_polars(|| {
-                    self.series
-                        .read()
-                        .quantiles_reduce(&q_list, interpolation.0)
-                }),
-                py,
-            )
-        } else {
-            Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                "quantile must be a float or a list of floats",
-            ))
-        }
+        let fraction = quantile.series.into_inner();
+        let out = py.enter_polars(|| {
+            quantile_reduce_fraction(&self.series.read(), &fraction, interpolation.0)
+        });
+        scalar_to_py(out, py)
     }
 
     fn std<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {

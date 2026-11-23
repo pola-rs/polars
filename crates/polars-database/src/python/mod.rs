@@ -126,6 +126,45 @@ fn range_of(obj: &Bound<'_, PyAny>) -> PyResult<(Scalar, Scalar)> {
     Ok((get(0)?, get(1)?))
 }
 
+/// The key text of a plain value: its `repr` (whole), plus, for a `datetime` or `time`, the UTC
+/// offset the `tzinfo` gives: a custom `tzinfo`'s `repr` may not show it. Containers are
+/// walked, so a value nested in one is keyed too.
+fn key_of(v: &Bound<'_, PyAny>, out: &mut String) -> PyResult<()> {
+    use std::fmt::Write;
+    if v.is_exact_instance_of::<PyList>() || v.is_exact_instance_of::<PyTuple>() {
+        let (open, close) = if v.is_exact_instance_of::<PyList>() {
+            ('[', ']')
+        } else {
+            ('(', ')')
+        };
+        out.push(open);
+        for item in v.try_iter()? {
+            key_of(&item?, out)?;
+            out.push(',');
+        }
+        out.push(close);
+    } else if let Ok(d) = v.cast_exact::<PyDict>() {
+        out.push('{');
+        for (k, item) in d.iter() {
+            key_of(&k, out)?;
+            out.push(':');
+            key_of(&item, out)?;
+            out.push(',');
+        }
+        out.push('}');
+    } else {
+        out.push_str(&v.repr()?.to_string());
+        // only a datetime or a time: a `timezone` has `utcoffset` too, but takes an argument
+        let datetime = v.py().import("datetime")?;
+        if v.is_instance(&datetime.getattr("datetime")?)?
+            || v.is_instance(&datetime.getattr("time")?)?
+        {
+            let _ = write!(out, "@{}", v.call_method0("utcoffset")?.repr()?);
+        }
+    }
+    Ok(())
+}
+
 /// A stable identity of `params=`, for scan deduplication: the `repr` of plain values, which
 /// shows them whole. Any other object's (a NumPy array's elides its middle) is the object
 /// itself, which the scan holds, so two scans merge only if they share it.
@@ -168,7 +207,9 @@ fn params_key<'py>(params: Bound<'py, PyAny>) -> PyResult<(PlSmallStr, Bound<'py
             .py()
             .import("copy")?
             .call_method1("deepcopy", (params,))?;
-        (params.repr()?.to_string().into(), params)
+        let mut key = String::new();
+        key_of(&params, &mut key)?;
+        (key.into(), params)
     } else {
         let key = format!("<object at {:#x}>", params.as_ptr() as usize).into();
         (key, params)
@@ -484,9 +525,9 @@ fn default_max_connections(dialect: &str) -> usize {
 /// driver call would be ended inside Rust frames too), and is given a moment more. Only
 /// then are driver calls stopped: with every query ended, a scan in a user's `atexit` hook
 /// that runs after this one (registered before the first scan imported this module) runs
-/// as usual.
+/// as usual. Returns whether every query ended.
 #[pyfunction]
-fn _at_exit(py: Python<'_>) {
+fn _at_exit(py: Python<'_>) -> bool {
     use std::time::Duration;
     let ended = py.detach(|| {
         crate::reader::wait_for_scans(Duration::from_secs(2)) || {
@@ -501,6 +542,7 @@ fn _at_exit(py: Python<'_>) {
     if !ended {
         bridge::EXITING.store(true, std::sync::atomic::Ordering::Release);
     }
+    ended
 }
 
 #[pymodule]

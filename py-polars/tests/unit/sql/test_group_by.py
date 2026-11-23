@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLSyntaxError
+from polars.exceptions import ComputeError, InvalidOperationError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -1247,9 +1247,7 @@ def test_approx_quantile_method_arg(method: str) -> None:
 @pytest.mark.parametrize("quantile", ["-1", "2", "-0.01", "1.01", "1.5"])
 def test_approx_quantile_out_of_range(quantile: str) -> None:
     df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
-    with pytest.raises(
-        SQLSyntaxError, match="APPROX_QUANTILE value must be between 0 and 1"
-    ):
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
         df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) FROM self")
 
 
@@ -1685,7 +1683,7 @@ def test_percentile_within_group_over(engine: EngineType) -> None:
         ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, g)", "expects one argument"),
         ("PERCENTILE_CONT(0.5)", "expects one argument"),
         ("PERCENTILE_CONT(x, 0.5)", "expects one argument"),
-        ("PERCENTILE_CONT(1.5) WITHIN GROUP (ORDER BY x)", "between 0 and 1"),
+        ("PERCENTILE_CONT(1.5) WITHIN GROUP (ORDER BY x)", r"between 0\.0 and 1\.0"),
         ("QUANTILE_CONT(x, 0.5) WITHIN GROUP (ORDER BY x)", "WITHIN GROUP"),
         (
             "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1) "
@@ -1728,3 +1726,58 @@ def test_percentile_within_group_errors(clause: str, err: str) -> None:
 def test_group_by_renamed_column(query: str) -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3], "b": [1, 1, 2, 3], "g": ["x", "x", "y", "y"]})
     assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
+def test_group_by_key_expression_without_key_name() -> None:
+    df = pl.DataFrame({"s": ["a", None, "a"], "n": [1, 2, 3]})
+    res = df.sql(
+        """
+        SELECT
+          s,
+          CASE WHEN s IS NULL THEN 'x' ELSE 'y' END,
+          CASE WHEN s IS NULL THEN 1 ELSE 2 END,
+          SUM(n) AS total
+        FROM self
+        GROUP BY s
+        ORDER BY s NULLS FIRST
+        """
+    )
+    assert res.columns == ["s", "literal", "literal:1", "total"]
+    assert res.rows() == [(None, "x", 1, 2), ("a", "y", 2, 4)]
+
+
+def test_group_by_constant_projection_with_literal_key() -> None:
+    df = pl.DataFrame({"n": [1, 2]})
+    res = df.sql(
+        "SELECT 1 AS k, SUBSTRING('abc' FROM 2) FROM self GROUP BY ROLLUP(k) ORDER BY k NULLS LAST"
+    )
+    assert res.rows() == [(1, "bc"), (None, "bc")]
+    res = df.sql("SELECT 42 AS k, 42 + 1 FROM self GROUP BY GROUPING SETS ((k))")
+    assert res.rows() == [(42, 43)]
+
+
+def test_group_by_window_named_like_key() -> None:
+    df = pl.DataFrame({"s": [1, None, 1]})
+    res = df.sql(
+        """
+        SELECT
+          CASE WHEN s IS NULL THEN 'x' ELSE 'y' END AS c,
+          s + 1 AS t,
+          ROW_NUMBER() OVER (ORDER BY s NULLS LAST) AS s
+        FROM self
+        GROUP BY self.s
+        ORDER BY s
+        """
+    )
+    assert res.rows() == [("y", 2, 1), ("x", None, 2)]
+
+
+def test_aggregate_in_where() -> None:
+    # WHERE filters rows before aggregating, as in Postgres
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [4000, 2000, 100]})
+    with pytest.raises(
+        SQLSyntaxError, match="aggregate functions are not allowed in WHERE"
+    ):
+        df.sql("SELECT g FROM self WHERE x > 0 AND SUM(x) > 5000 GROUP BY g")
+    res = df.sql("SELECT g, x FROM self WHERE x > (SELECT AVG(x) FROM self)")
+    assert res.rows() == [(1, 4000)]

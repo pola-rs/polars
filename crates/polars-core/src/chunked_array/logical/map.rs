@@ -76,6 +76,26 @@ impl MapChunked {
         Ok(Self { dtype, storage })
     }
 
+    /// One row from its entries, trusting key uniqueness like an Arrow import; `None` if the
+    /// entries do not satisfy the storage safety contract for `dtype`.
+    pub(crate) fn from_row_entries(
+        name: PlSmallStr,
+        dtype: &DataType,
+        entries: &Series,
+    ) -> Option<Self> {
+        // `Categorical`/`Enum` equality ignores the mapping, so `dtype` may not describe the
+        // entries; the storage carries the dtype derived from the entries instead.
+        let own_dtype = entries.dtype().map_from_positional_entries_dtype()?;
+        if own_dtype.map_entries_dtype().as_ref() != Some(entries.dtype()) || &own_dtype != dtype {
+            return None;
+        }
+        let storage = entries.implode().ok()?.with_name(name);
+        ensure_live_entries_non_null(&storage).ok()?;
+        // SAFETY: `own_dtype` is a valid Map dtype built from the entries' own fields, and the
+        // only row has no null entries or keys.
+        Some(unsafe { Self::from_storage_unchecked(own_dtype, storage.into_series()) })
+    }
+
     pub fn name(&self) -> &PlSmallStr {
         self.storage.name()
     }
@@ -469,8 +489,8 @@ pub fn try_unpack_map_entries(entries: &Series) -> PolarsResult<(Series, Series)
 /// Pack equally sized flat key and value fields into map entries.
 ///
 /// The result does not retain Map row boundaries. Rebuilding a Map column must reattach it to
-/// its original [`ListChunked`] storage.
-pub(crate) fn pack_map_entries(keys: &Series, values: &Series) -> Series {
+/// its original [`ListChunked`] storage. Keys are not deduplicated.
+pub fn pack_map_entries(keys: &Series, values: &Series) -> Series {
     // `StructChunked::from_series` broadcasts unit-length fields.
     assert_eq!(
         keys.len(),
@@ -1550,5 +1570,53 @@ mod test {
             unsafe { array.set_inner_dtype(map.dtype().clone()) };
             assert_eq!(array.inner_dtype(), map.dtype());
         }
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn scalar_map_deserialization_deduplicates_keys() {
+        let keys = str_keys(&[Some("a"), Some("b"), Some("a")]);
+        let values = i64_values(&[Some(1), Some(2), Some(3)]);
+        let scalar = Scalar::new(
+            map_dtype(DataType::String, DataType::Int64),
+            AnyValue::Map(pack_map_entries(&keys, &values)),
+        );
+        let json = serde_json::to_string(&scalar).unwrap();
+        let scalar: Scalar = serde_json::from_str(&json).unwrap();
+        let s = scalar.into_series(PlSmallStr::from_static("m"));
+        let map = s.map().unwrap();
+        assert_eq!(
+            str_values(&map.keys()),
+            [Some("a".into()), Some("b".into())]
+        );
+        assert_eq!(map.values().i64().unwrap().to_vec(), [Some(3), Some(2)]);
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    #[test]
+    fn scalar_map_series_keeps_the_entries_categorical_mapping() {
+        use polars_dtype::categorical::{CategoricalMapping, Categories};
+        use polars_utils::aliases::PlSeedableRandomStateQuality;
+
+        let cats = Categories::random(PlSmallStr::EMPTY, CategoricalPhysical::U32);
+        let keys = str_keys(&[Some("a")])
+            .cast(&DataType::from_categories(cats.clone()))
+            .unwrap();
+        let entries = pack_map_entries(&keys, &i64_values(&[Some(1)]));
+        // Equal to the entries' key dtype, since equality ignores the mapping.
+        let other_mapping = Arc::new(CategoricalMapping::with_hasher(
+            cats.physical().max_categories(),
+            PlSeedableRandomStateQuality::default(),
+        ));
+        let dtype = map_dtype(
+            DataType::Categorical(cats.clone(), other_mapping),
+            DataType::Int64,
+        );
+        let s =
+            Scalar::new(dtype, AnyValue::Map(entries)).into_series(PlSmallStr::from_static("m"));
+        let DataType::Categorical(_, mapping) = s.map().unwrap().key_dtype() else {
+            panic!("expected a Categorical key")
+        };
+        assert!(Arc::ptr_eq(mapping, &cats.mapping()));
     }
 }
