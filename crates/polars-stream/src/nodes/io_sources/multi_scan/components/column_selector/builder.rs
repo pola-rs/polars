@@ -74,7 +74,7 @@ impl ColumnSelectorBuilder {
                 Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
-                    // The input is already full-null.
+                    // Input is full-null.
                     preserves_null_count: true,
                 }
                 .into_selector(input_selector))
@@ -198,7 +198,7 @@ impl ColumnSelectorBuilder {
                 return Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
-                    // Conservative, this is not a plain value cast.
+                    // Conservative.
                     preserves_null_count: false,
                 }
                 .into_selector(input_selector));
@@ -262,7 +262,7 @@ impl ColumnSelectorBuilder {
                 return Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
-                    // Conservative, this is not a plain value cast.
+                    // Conservative.
                     preserves_null_count: false,
                 }
                 .into_selector(input_selector));
@@ -293,7 +293,7 @@ impl ColumnSelectorBuilder {
                 selector = ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
-                    // Conservative, this casts the map container.
+                    // Conservative.
                     preserves_null_count: false,
                 }
                 .into_selector(selector);
@@ -395,7 +395,7 @@ impl ColumnSelectorBuilder {
                 _ => unreachable!(),
             };
 
-            // Float-to-float casts saturate to +/-inf instead of producing nulls.
+            // Saturates to +/-inf, never null.
             return attach_cast(CastOptions::NonStrict, true);
         }
 
@@ -699,7 +699,7 @@ impl ColumnSelectorBuilder {
                             selector = ColumnTransform::Cast {
                                 dtype: target_column.type_.to_polars_dtype(),
                                 options: CastOptions::NonStrict,
-                                // Conservative, this casts the map container.
+                                // Conservative.
                                 preserves_null_count: false,
                             }
                             .into_selector(selector);

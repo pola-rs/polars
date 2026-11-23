@@ -187,8 +187,7 @@ async fn static_skip_mask(
             // that it may set the column name.
             statistics.min = projection.apply_transform(statistics.min, 0)?;
             statistics.max = projection.apply_transform(statistics.max, 0)?;
-            // A narrowed struct is decoded with leaves that are not in the output, so its field
-            // null counts do not apply: use unknown null counts.
+            // A narrowed struct's leaf null counts don't apply.
             if projection.pruned().is_some_and(|p| p.narrows())
                 && matches!(projection.arrow_field().dtype(), ArrowDataType::Struct(_))
             {

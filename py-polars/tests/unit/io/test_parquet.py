@@ -4649,7 +4649,7 @@ def test_scan_parquet_skip_row_groups_missing_struct_field(
     filter_expr: pl.Expr,
     expected_value: dict[str, Any],
 ) -> None:
-    # A missing struct field: min/max widen correctly, null_count must too.
+    # Missing struct field.
     f = io.BytesIO()
     pl.DataFrame({"s": [write_value, write_value]}).write_parquet(f)
     f.seek(0)
@@ -4673,11 +4673,7 @@ def test_scan_parquet_skip_row_groups_missing_struct_field(
 def test_scan_parquet_skip_row_groups_missing_struct_field_whole_struct_is_null(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # A row group where the whole struct is null must not get skipped just because it
-    # also has a missing/inserted field: the inserted field's own null_count is unknown,
-    # but a *real* sibling field's null_count (which already counts ancestor-null rows,
-    # since Parquet's definition levels don't distinguish "this leaf is null" from "an
-    # ancestor group is null") must still be the one skip_batches actually prunes on.
+    # Null structs must not be skipped because of an inserted field.
     f = io.BytesIO()
     pl.DataFrame(
         {"s": [{"a": 1}, {"a": 2}, None, None]},
@@ -4705,7 +4701,7 @@ def test_scan_parquet_skip_row_groups_missing_struct_field_whole_struct_is_null(
 def test_scan_parquet_skip_row_groups_struct_cast_keeps_null_count(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # A cast-only struct must keep its real null_count, not fall back to "unknown".
+    # A cast struct field keeps its null count.
     f = io.BytesIO()
     pl.DataFrame(
         {"s": [{"a": 1}, {"a": 2}]}, schema={"s": pl.Struct({"a": pl.Int8})}
@@ -4750,7 +4746,7 @@ def test_scan_parquet_skip_row_groups_struct_insert_keeps_sibling_null_count(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # Inserting a missing field must not blow away a sibling's own null-count pruning.
+    # An inserted field keeps the null count of its siblings.
     f = io.BytesIO()
     pl.DataFrame({"s": write_values}).write_parquet(
         f, row_group_size=2, statistics="full"
@@ -4777,9 +4773,7 @@ def test_scan_parquet_skip_row_groups_struct_insert_keeps_sibling_null_count(
 def test_scan_parquet_skip_row_groups_struct_null_upcast(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # A physically `Null` field null-upcasts into a struct target - no source shape to
-    # derive its own null_count from - but a sibling field's real null_count must still
-    # prune row groups; the unsafe field's unknown-ness must not poison it.
+    # A null-upcast field keeps the null count of its siblings.
     arrow_schema = pa.schema([("s", pa.struct([("a", pa.int64()), ("x", pa.null())]))])
     tbl = pa.table(
         {
@@ -4815,7 +4809,7 @@ def test_scan_parquet_skip_row_groups_struct_null_upcast(
 def test_scan_parquet_skip_row_groups_struct_extra_field_dropped(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # Dropping an extra field narrows the struct - must not keep the wider shape.
+    # Dropped extra struct field.
     f = io.BytesIO()
     pl.DataFrame(
         {

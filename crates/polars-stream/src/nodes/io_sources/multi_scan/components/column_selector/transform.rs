@@ -15,13 +15,12 @@ pub enum ColumnTransform {
     Cast {
         dtype: DataType,
         options: CastOptions,
-        /// Whether the cast never turns a non-null value into a null, so that the null count of
-        /// the input can be used for the output. Set by the builder, which knows the input dtype.
+        /// The cast never turns a non-null value into a null.
         preserves_null_count: bool,
     },
     /// Set the name of the column.
     Rename { name: PlSmallStr },
-    /// Replace the column with a full-null column of `dtype`, keeping the name.
+    /// Replace with a full-null column of `dtype`, keeping the name.
     FullNull { dtype: DataType },
     /// Construct a struct column by applying column selectors onto the field arrays.
     StructFieldsMapping {

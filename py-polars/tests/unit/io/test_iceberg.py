@@ -8398,8 +8398,7 @@ def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
 def test_scan_iceberg_struct_field_initial_default_null_parent(
     tmp_path: Path,
 ) -> None:
-    # The null count of a missing struct field backfilled with a non-null default must not
-    # be 0: the field is still null where the parent struct is null.
+    # A non-null default is still null where the parent struct is null.
     table, catalog = new_iceberg_table(
         tmp_path,
         schema=IcebergSchema(

@@ -659,10 +659,7 @@ impl ArrowFieldProjection {
         }
     }
 
-    /// Like [`Self::apply_transform`], but for the `null_count` statistic of `arrow_field`.
-    ///
-    /// Does not apply the `narrow` of [`PrunedField`]: the caller must not use the null counts
-    /// of a narrowed struct.
+    /// Like [`Self::apply_transform`], for the `null_count` statistic. Does not apply `narrow`.
     pub fn apply_null_count_transform(&self, column: Column) -> PolarsResult<Column> {
         match self {
             Self::Plain(..) => Ok(column),

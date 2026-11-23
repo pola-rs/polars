@@ -71,11 +71,7 @@ impl ColumnSelector {
         *current = input;
     }
 
-    /// Derives a selector that maps the file's `null_count` statistics column to the
-    /// `null_count` shape of this selector's output.
-    ///
-    /// Fields whose null count cannot be derived get an unknown (null) null count, without
-    /// affecting their sibling fields.
+    /// Selector for the `null_count` statistics. Underivable fields get an unknown null count.
     #[recursive]
     pub fn null_count_transform(&self) -> ColumnSelector {
         use ColumnSelector as S;
@@ -84,9 +80,7 @@ impl ColumnSelector {
         match self {
             S::Position(i) => S::Position(*i),
 
-            // A file leaf's null count includes the rows where an ancestor struct is null, which
-            // a backfilled constant cannot know about. Use an unknown null count, even when the
-            // constant itself is non-null.
+            // Unknown: file leaf null counts include rows with a null ancestor.
             S::Constant(parts) => {
                 let (name, scalar) = parts.as_ref();
                 S::Constant(Box::new((
@@ -110,9 +104,7 @@ impl ColumnSelector {
                     }
                     .into_selector(input),
 
-                    // A cast to a struct (null-upcast) has no input null counts of the output
-                    // shape. Use `FullNull` rather than a `Constant` so that the field keeps the
-                    // name of its input column, which `StructFieldsMapping` relies on.
+                    // `FullNull` keeps the input name, which `StructFieldsMapping` needs.
                     TF::Cast {
                         dtype,
                         preserves_null_count,
