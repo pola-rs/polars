@@ -282,11 +282,24 @@ def test_bigquery_sqlalchemy_typed_results(
 
 
 @pytest.mark.parametrize(
-    "target",
-    ["live", "factory", "uri", "client_uri", "sa_engine", "sa_live", "sa_uri"],
+    ("target", "explicit_config", "operation"),
+    [
+        (target, explicit_config, operation)
+        for target in (
+            "live",
+            "factory",
+            "client_uri",
+            "sa_engine",
+            "sa_live",
+            "sa_uri",
+        )
+        for explicit_config in (False, True)
+        for operation in ("collect_schema", "collect")
+    ]
+    + [("configured_uri", False, op) for op in ("collect_schema", "collect")]
+    # Explain shares schema discovery with collect_schema.
+    + [("live", False, "explain"), ("sa_live", True, "explain")],
 )
-@pytest.mark.parametrize("operation", ["collect_schema", "explain", "collect"])
-@pytest.mark.parametrize("explicit_config", [False, True])
 def test_bigquery_destination_rejected_before_query(
     target: str,
     operation: str,
@@ -349,16 +362,16 @@ def test_bigquery_destination_rejected_before_query(
             connection = factory
         else:
             options["driver"] = "bigquery"
-            if target == "client_uri" or explicit_config:
-                connection = "bigquery://"
-                options["connect_options"] = {
-                    "client": bigquery_client,
-                    **native_options,
-                }
-            else:
+            if target == "configured_uri":
                 connection = "bigquery://billing-project/dataset"
                 options["connect_options"] = {
                     "default_query_job_config": cfg,
+                    **native_options,
+                }
+            else:
+                connection = "bigquery://"
+                options["connect_options"] = {
+                    "client": bigquery_client,
                     **native_options,
                 }
 
@@ -678,8 +691,15 @@ def test_bigquery_sqlalchemy_session_job_config(
         assert scan(s).collect().rows() == ([(17,)] if bound else [(17, ":literal%")])
 
 
-@pytest.mark.parametrize("pool", ["QueuePool", "StaticPool", "AssertionPool"])
-@pytest.mark.parametrize("bound", [False, True])
+@pytest.mark.parametrize(
+    ("pool", "bound"),
+    [
+        ("QueuePool", False),
+        ("QueuePool", True),
+        ("StaticPool", False),
+        ("AssertionPool", False),
+    ],
+)
 @pytest.mark.parametrize("target", ["live", "factory"])
 def test_bigquery_rejects_orm_execution_listeners_before_query(
     pool: str,

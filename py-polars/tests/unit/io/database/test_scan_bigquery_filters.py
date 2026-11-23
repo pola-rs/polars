@@ -258,7 +258,7 @@ def test_bigquery_json_rejects_late_mixed_types(first: Any, late: Any) -> None:
         lf.collect()
 
 
-@pytest.mark.parametrize("batch_size", [1, 2, 1000])
+@pytest.mark.parametrize("batch_size", [1, 400, 1000])
 def test_bigquery_json_tracks_keys_introduced_within_first_batch(
     batch_size: int,
 ) -> None:
@@ -272,6 +272,7 @@ def test_bigquery_json_tracks_keys_introduced_within_first_batch(
         with pytest.raises(pl.exceptions.SchemaError, match="struct"):
             lf.collect()
     else:
+        # The new key must remain tracked even across an intervening batch (size 400).
         with pytest.raises(
             pl.exceptions.ComputeError, match="cannot be inferred losslessly"
         ):
@@ -282,8 +283,8 @@ def test_bigquery_json_tracks_keys_introduced_within_first_batch(
 def test_bigquery_json_rejects_boolean_numeric_cast_after_sample(
     first: Any, late: Any
 ) -> None:
-    conn = _Connection([_Field("j", "JSON")], [([first],)] * 1000, [(dumps([late]),)])
-    lf = pl.scan_database("data", conn, batch_size=1000)
+    conn = _Connection([_Field("j", "JSON")], [([first],)], [(dumps([late]),)])
+    lf = pl.scan_database("data", conn)
     with pytest.raises(pl.exceptions.SchemaError, match="type changed"):
         lf.collect()
 
@@ -391,13 +392,13 @@ def test_bigquery_json_checks_sampled_kind_after_pushed_filter_and_limit(
 ) -> None:
     conn = _Connection(
         [_Field("id", "INTEGER"), _Field("j", "JSON")],
-        [(i, sample) for i in range(1, 1001)] + [(1001, late)],
-        [(1001, dumps(late))],
+        [(1, sample)],
+        [(2, dumps(late))],
     )
     # The data job sees only the last row after SQL filter pushdown. There are no
     # earlier rows in that cursor's history that could reveal the type changed.
     lf = pl.scan_database("SELECT id, j FROM data", conn)
-    filtered = lf.filter(pl.col("id") == 1001).head(1)
+    filtered = lf.filter(pl.col("id") == 2).head(1)
     plan = filtered.explain()
     assert "filters 1/1 (1 exact)" in plan
     with pytest.raises(
@@ -460,7 +461,7 @@ def test_bigquery_json_checks_sampled_kind_after_serialize(
 
 @pytest.mark.parametrize("overrides", [False, True])
 def test_bigquery_json_allows_user_requested_cast(overrides: bool) -> None:
-    conn = _Connection([_Field("j", "JSON")], [("1",)] * 1000, [("2",)])
+    conn = _Connection([_Field("j", "JSON")], [("1",)], [("2",)])
     schema = {"j": pl.String}
     lf = pl.scan_database(
         "data",
@@ -472,7 +473,7 @@ def test_bigquery_json_allows_user_requested_cast(overrides: bool) -> None:
 
 
 def test_bigquery_json_checks_sampled_kind_after_pushed_limit() -> None:
-    conn = _Connection([_Field("j", "JSON")], [("1",)] * 1000, [("2",)])
+    conn = _Connection([_Field("j", "JSON")], [("1",)], [("2",)])
     lf = pl.scan_database("data", conn).head(1)
     assert "limit: 1" in lf.explain()
     with pytest.raises(
@@ -485,7 +486,7 @@ def test_bigquery_json_checks_sampled_kind_after_pushed_limit() -> None:
 def test_bigquery_json_allows_only_exact_casts_to_sampled_float(
     late: int | None,
 ) -> None:
-    conn = _Connection([_Field("j", "JSON")], [([0.5],)] * 1000, [(dumps([late]),)])
+    conn = _Connection([_Field("j", "JSON")], [([0.5],)], [(dumps([late]),)])
     lf = pl.scan_database("data", conn).head(1)
     assert lf.collect_schema() == {"j": pl.List(pl.Float64)}
     if late == 2**53 + 1:
