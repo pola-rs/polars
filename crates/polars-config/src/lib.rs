@@ -122,9 +122,9 @@ const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 const JOIN_RUNTIME_FILTERS: &str = "POLARS_JOIN_RUNTIME_FILTERS";
 const DEFAULT_JOIN_RUNTIME_FILTERS: bool = true;
 
-/// The fewest rows a scan under a hash join's probe side must read for the join to publish a
-/// runtime filter to it. A join with one reads its build side before its probe side, which costs
-/// more than skipping parts of a smaller scan saves.
+/// The fewest rows the scans under a hash join's probe side must read, together, for the join to
+/// publish a runtime filter to them. A join with one reads its build side before its probe side,
+/// which costs more than skipping parts of smaller scans saves.
 const JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS: &str = "POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS";
 const DEFAULT_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS: u64 = 1 << 20;
 

@@ -27,9 +27,9 @@
 //! without one is left alone, and a join is only given a build side once a key
 //! reached one.
 //!
-//! Reading the build side first costs the overlap of the two sides. Scans that read
-//! fewer than `join_runtime_filter_min_probe_rows` rows save too little by skipping
-//! to make up for it, so their join gets no filter.
+//! Reading the build side first costs the overlap of the two sides. When the scans a
+//! join's probe keys reach read fewer than `join_runtime_filter_min_probe_rows` rows
+//! together, skipping saves too little to make up for it, so the join gets no filter.
 //!
 //! A semi join publishes from either side and an anti join from its left side
 //! only, as the rows of its right side that match no left key change nothing. A
@@ -40,7 +40,7 @@
 
 use std::sync::Arc;
 
-use polars_core::prelude::PlIndexMap;
+use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_defs::join::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
@@ -55,7 +55,7 @@ use crate::plans::aexpr::predicates::supports_runtime_range;
 use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_dynamic_pred};
 use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
-use crate::plans::stats::StatsCache;
+use crate::plans::stats::{StatsCache, node_stats_with_cache, sliced};
 use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
     is_inherently_nondeterministic,
@@ -90,16 +90,8 @@ pub(super) fn attach_join_runtime_filters(
     }
     let mut scratch = UnitVec::new();
     let mut stats = StatsCache::default();
-    let min_probe_rows = polars_config::config().join_runtime_filter_min_probe_rows() as f64;
     for node in joins.into_iter().rev() {
-        process_join(
-            node,
-            ir_arena,
-            expr_arena,
-            &mut scratch,
-            &mut stats,
-            min_probe_rows,
-        );
+        process_join(node, ir_arena, expr_arena, &mut scratch, &mut stats);
     }
 }
 
@@ -109,7 +101,6 @@ fn process_join(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
     stats: &mut StatsCache,
-    min_probe_rows: f64,
 ) {
     let IR::Join {
         input_left,
@@ -163,43 +154,59 @@ fn process_join(
     sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
     // A side is traced once, as a forced and a preferred candidate share the trace.
-    let mut traced: [Option<(Vec<TracedKey>, f64, f64)>; 2] = [None, None];
+    let mut traced: [Option<(Vec<TracedKey>, f64)>; 2] = [None, None];
     let chosen = sides.into_iter().find_map(|side| {
-        let (filters, probe_rows, scan_rows) =
-            traced[side.left as usize].get_or_insert_with(|| {
-                let probe_input = if side.left { input_right } else { input_left };
-                let probe_keys: Vec<Option<PlSmallStr>> = on
-                    .iter()
-                    .map(|(left_key, right_key)| {
-                        let key = if side.left { right_key } else { left_key };
-                        into_column(key.node(), expr_arena).cloned()
-                    })
-                    .collect();
-                let filters =
-                    trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
-                let other = if side.left { &right_stats } else { &left_stats };
-                let scans: Vec<NodeStats> = filters
-                    .iter()
-                    .flat_map(|f| &f.origins)
-                    .filter_map(|(scan, _)| side_stats(*scan, ir_arena, expr_arena, stats))
-                    .map(|(scan, _)| scan)
-                    .collect();
-                let probe_rows = scans
-                    .iter()
-                    .fold(other.filtered, |acc, scan| acc.max(scan.filtered));
-                // Skipping saves reading, so what counts is the rows a scan reads.
-                let scan_rows = scans.iter().fold(0.0_f64, |acc, scan| acc.max(scan.unfiltered));
-                (filters, probe_rows, scan_rows)
-            });
-        (!filters.is_empty()
-            && *scan_rows >= min_probe_rows
-            && *probe_rows >= LOPSIDED_FACTOR * side.rows)
-            .then_some(side)
+        let (filters, probe_rows) = traced[side.left as usize].get_or_insert_with(|| {
+            let probe_input = if side.left { input_right } else { input_left };
+            let probe_keys: Vec<Option<PlSmallStr>> = on
+                .iter()
+                .map(|(left_key, right_key)| {
+                    let key = if side.left { right_key } else { left_key };
+                    into_column(key.node(), expr_arena).cloned()
+                })
+                .collect();
+            let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
+            let other = if side.left { &right_stats } else { &left_stats };
+            // A scan reached by several keys is read once.
+            let scans: PlIndexSet<Node> = filters
+                .iter()
+                .flat_map(|f| f.origins.keys().copied())
+                .collect();
+            let mut probe_rows = other.filtered;
+            // Skipping saves reading, so what counts is the rows the scans read.
+            let mut scan_rows = 0.0;
+            for scan in scans {
+                let Some(scan_stats) = node_stats_with_cache(scan, ir_arena, expr_arena, stats)
+                else {
+                    continue;
+                };
+                let IR::Scan {
+                    unified_scan_args, ..
+                } = ir_arena.get(scan)
+                else {
+                    unreachable!()
+                };
+                probe_rows = probe_rows.max(scan_stats.filtered);
+                scan_rows += unified_scan_args
+                    .pre_slice
+                    .map_or(scan_stats.unfiltered, |slice| {
+                        sliced(scan_stats.unfiltered, slice)
+                    });
+            }
+            let min_probe_rows = polars_config::config().join_runtime_filter_min_probe_rows();
+            let filters = if scan_rows >= min_probe_rows as f64 {
+                filters
+            } else {
+                Vec::new()
+            };
+            (filters, probe_rows)
+        });
+        (!filters.is_empty() && *probe_rows >= LOPSIDED_FACTOR * side.rows).then_some(side)
     });
     let Some(BuildCandidate { left, forced, rows }) = chosen else {
         return;
     };
-    let (filters, ..) = traced[left as usize].take().unwrap();
+    let (filters, _) = traced[left as usize].take().unwrap();
     let build_stats = if left { &left_stats } else { &right_stats };
 
     let mut runtime_filters = Vec::with_capacity(filters.len());
