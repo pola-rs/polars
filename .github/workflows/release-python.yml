@@ -34,6 +34,7 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
+  RUSTFLAGS: -Z share-generics=y
 
   COMPAT_TUNE_CPU: ''
   COMPAT_FEATURES: '+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b'
@@ -288,10 +289,10 @@ jobs:
           CFG: ${{ matrix.package == 'polars-runtime-compat' && '--cfg allocator="default"' || '' }}
         run: |
           if [[ -z "$TUNE_CPU" ]]; then
-            echo "RUSTFLAGS=-C target-feature=$FEATURES $CFG" >> $GITHUB_ENV
+            echo "RUSTFLAGS=$RUSTFLAGS -C target-feature=$FEATURES $CFG" >> $GITHUB_ENV
             echo "CFLAGS=$CC_FEATURES" >> $GITHUB_ENV
           else
-            echo "RUSTFLAGS=-C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
+            echo "RUSTFLAGS=$RUSTFLAGS -C target-feature=$FEATURES -Z tune-cpu=$TUNE_CPU $CFG" >> $GITHUB_ENV
             echo "CFLAGS=$CC_FEATURES -mtune=$TUNE_CPU" >> $GITHUB_ENV
           fi
 
