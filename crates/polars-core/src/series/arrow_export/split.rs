@@ -205,7 +205,7 @@ mod tests {
             .collect::<PolarsResult<_>>()
             .unwrap();
 
-        // The maps under the null row are exported empty.
+        // The null row is exported without its maps.
         let lists: Vec<&ListArray<i64>> = arrays
             .iter()
             .map(|a| a.as_any().downcast_ref().unwrap())
@@ -216,7 +216,7 @@ mod tests {
             .map(|l| l.values().as_any().downcast_ref().unwrap())
             .collect();
         let offsets: Vec<_> = maps.iter().map(|m| m.offsets().as_slice()).collect();
-        assert_eq!(offsets, [&[0, 0, 0][..], &[0, 1]]);
+        assert_eq!(offsets, [&[0][..], &[0, 1]]);
 
         // A one-row frame holds the row as a Scalar column.
         let df = DataFrame::new_infer_height(vec![Column::from(s.slice(0..1))]).unwrap();
