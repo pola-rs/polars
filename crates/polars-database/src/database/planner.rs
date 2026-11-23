@@ -3249,8 +3249,15 @@ fn fixed_select_list(dialect: DialectName, items: &[SqlSelectItem]) -> String {
 
 fn is_google_bigquery(dialect: DialectName, backend: &BackendKind) -> bool {
     dialect == DialectName::Bigquery
-        && matches!(backend, BackendKind::Python { module }
-            if module == "google.cloud.bigquery" || module.starts_with("google.cloud.bigquery."))
+        && match backend {
+            BackendKind::Sqlalchemy => true,
+            BackendKind::Python { module } => {
+                module == "sqlalchemy"
+                    || module == "google.cloud.bigquery"
+                    || module.starts_with("google.cloud.bigquery.")
+            },
+            _ => false,
+        }
 }
 
 fn bigquery_has_unknown_leaf(dtype: &DataType) -> bool {
@@ -3383,8 +3390,12 @@ fn discover_schema(
         _ => first_batch(session, &probe)?,
     };
     if dialect == DialectName::Bigquery
-        && matches!(backend, BackendKind::Adbc { .. })
         && first.width() == 0
+        && match backend {
+            BackendKind::Adbc { .. } => true,
+            BackendKind::Python { module } => module == "adbc_driver_manager",
+            _ => false,
+        }
     {
         // The Apache BigQuery driver drops the Arrow schema of a zero-row result.
         // A scalar subquery over the empty probe returns a typed NULL struct. Expand it

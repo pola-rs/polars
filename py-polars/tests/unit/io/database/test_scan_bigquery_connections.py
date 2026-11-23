@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import sys
+from contextlib import ExitStack, closing
+from datetime import UTC, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
@@ -10,9 +13,230 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 bridge = pytest.importorskip("polars_database._bridge")
+
+
+class _GoogleRows(list[tuple[Any, ...]]):
+    num_dml_affected_rows = None
+
+    def __init__(self, schema: list[Any], rows: list[tuple[Any, ...]]) -> None:
+        super().__init__(rows)
+        self.schema = schema
+        self.total_rows = len(rows)
+
+    def _should_use_bqstorage(self, *_args: Any, **_kwargs: Any) -> bool:
+        return False
+
+
+@pytest.fixture
+def bigquery_client() -> Iterator[Any]:
+    bigquery = pytest.importorskip("google.cloud.bigquery")
+    auth = pytest.importorskip("google.auth.credentials")
+    with closing(
+        bigquery.Client(
+            project="billing-project",
+            location="US",
+            credentials=auth.AnonymousCredentials(),
+        )
+    ) as client:
+        yield client
+
+
+@pytest.fixture
+def bigquery_engine(bigquery_client: Any) -> Iterator[Any]:
+    sa = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy_bigquery")
+    engine = sa.create_engine(
+        "bigquery:///?user_supplied_client=true",
+        connect_args={"client": bigquery_client, "prefer_bqstorage_client": False},
+    )
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("target", ["uri", "engine", "connection"])
+def test_bigquery_sqlalchemy_typed_results(
+    target: str,
+    empty: bool,
+    bigquery_engine: Any,
+    bigquery_client: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("sqlglot")
+    from google.cloud.bigquery import SchemaField
+
+    fields = [
+        SchemaField("n", "NUMERIC"),
+        SchemaField("ts", "TIMESTAMP"),
+        SchemaField(
+            "nested",
+            "RECORD",
+            mode="REPEATED",
+            fields=(SchemaField("ts", "TIMESTAMP"),),
+        ),
+    ]
+    exact = Decimal("12345678901234567890.123456789")
+    timestamp = datetime(2025, 1, 1, 12, 34, 56, 123456, tzinfo=UTC)
+    rows = [(exact, timestamp, [{"ts": timestamp}])]
+
+    def query(sql: str, **_kwargs: Any) -> _GoogleRows:
+        if sql == "SELECT 1":
+            return _GoogleRows([SchemaField("id", "INTEGER")], [(1,)])
+        return _GoogleRows(fields, [] if empty or "WHERE 1 = 0" in sql else rows)
+
+    monkeypatch.setattr(bigquery_client, "query_and_wait", query)
+    with bigquery_engine.connect() as conn:
+        options: dict[str, Any] = {}
+        if target == "uri":
+            connection = str(bigquery_engine.url)
+            options = {
+                "driver": "sqlalchemy",
+                "connect_options": {
+                    "connect_args": {
+                        "client": bigquery_client,
+                        "prefer_bqstorage_client": False,
+                    }
+                },
+            }
+        else:
+            connection = bigquery_engine if target == "engine" else conn
+        scan = pl.scan_database(
+            "SELECT n, ts, nested FROM a_table",
+            connection,
+            partition_on=None,
+            batch_size=1,
+            **options,
+        )
+        utc = pl.Datetime("us", "UTC")
+        expected = pl.Schema(
+            {
+                "n": pl.Decimal(38, 9),
+                "ts": utc,
+                "nested": pl.List(pl.Struct({"ts": utc})),
+            }
+        )
+        assert scan.collect_schema() == expected
+        df = scan.collect()
+        assert df.schema == expected
+        assert df.rows() == ([] if empty else rows)
+        assert conn.exec_driver_sql("SELECT 1").scalar_one() == 1
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["live", "factory", "uri", "client_uri", "sa_engine", "sa_live", "sa_uri"],
+)
+@pytest.mark.parametrize("operation", ["collect_schema", "explain", "collect"])
+@pytest.mark.parametrize("explicit_config", [False, True])
+def test_bigquery_destination_rejected_before_query(
+    target: str,
+    operation: str,
+    explicit_config: bool,
+    bigquery_client: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("sqlglot")
+    from google.cloud.bigquery import QueryJobConfig, dbapi
+
+    def unexpected_query(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("scan issued a query with a destination table")
+
+    for method in ("query", "query_and_wait"):
+        monkeypatch.setattr(type(bigquery_client), method, unexpected_query)
+    cfg = QueryJobConfig(
+        destination="billing-project.dataset.table", write_disposition="WRITE_TRUNCATE"
+    )
+    native_options: dict[str, Any] = {"prefer_bqstorage_client": False}
+    options: dict[str, Any] = {}
+
+    if explicit_config:
+        options["execute_options"] = (
+            {"execution_options": {"job_config": cfg}}
+            if target.startswith("sa_")
+            else {"job_config": cfg}
+        )
+    else:
+        bigquery_client.default_query_job_config = cfg
+
+    if operation == "collect":
+        options["schema"] = {"id": pl.Int64}
+
+    def factory() -> Any:
+        return dbapi.connect(client=bigquery_client, **native_options)
+
+    with ExitStack() as stack:
+        if target.startswith("sa_"):
+            sa = pytest.importorskip("sqlalchemy")
+            pytest.importorskip("sqlalchemy_bigquery")
+            uri = "bigquery:///?user_supplied_client=true"
+            connect_args = {"client": bigquery_client, **native_options}
+            if target == "sa_uri":
+                connection = uri
+                options["driver"] = "sqlalchemy"
+                options["connect_options"] = {"connect_args": connect_args}
+            else:
+                engine = sa.create_engine(uri, connect_args=connect_args)
+                stack.callback(engine.dispose)
+                connection = (
+                    engine
+                    if target == "sa_engine"
+                    else stack.enter_context(engine.connect())
+                )
+        elif target == "live":
+            connection = stack.enter_context(closing(factory()))
+        elif target == "factory":
+            connection = factory
+        else:
+            options["driver"] = "bigquery"
+            if target == "client_uri" or explicit_config:
+                connection = "bigquery://"
+                options["connect_options"] = {
+                    "client": bigquery_client,
+                    **native_options,
+                }
+            else:
+                connection = "bigquery://billing-project/dataset"
+                options["connect_options"] = {
+                    "default_query_job_config": cfg,
+                    **native_options,
+                }
+
+        with pytest.raises(pl.exceptions.ComputeError, match="BigQuery destination"):
+            getattr(
+                pl.scan_database(
+                    "SELECT 17 AS id", connection, partition_on=None, **options
+                ),
+                operation,
+            )()
+
+
+def test_bigquery_sqlalchemy_uri_rejects_named_destination(
+    bigquery_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlglot")
+    dialect = pytest.importorskip("sqlalchemy_bigquery.base")
+    create_client = Mock(return_value=bigquery_client)
+    monkeypatch.setattr(dialect._helpers, "create_bigquery_client", create_client)
+    query = Mock(side_effect=AssertionError("scan issued a BigQuery query"))
+    monkeypatch.setattr(bigquery_client, "query", query)
+    monkeypatch.setattr(bigquery_client, "query_and_wait", query)
+    scan = pl.scan_database(
+        "SELECT 17 AS id",
+        "bigquery://billing-project?destination=billing-project.dataset.target",
+        driver="sqlalchemy",
+        partition_on=None,
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match="BigQuery destination"):
+        scan.collect_schema()
+    create_client.assert_not_called()
+    query.assert_not_called()
 
 
 def test_bigquery_connection_module() -> None:
@@ -198,6 +422,56 @@ def test_bigquery_adbc_wheel_recovers_schema_from_empty_arrow_probe(
         "bigquery:///project",
         driver=str(library),
         partition_on=None,
+    )
+    assert scan.collect_schema() == pl.Schema({"id": pl.Int64})
+    assert scan.collect().rows() == ([] if empty else [(17,)])
+    assert any("SELECT _pl_record.*" in sql for sql in sqls)
+
+
+@pytest.mark.parametrize("dialect", [None, "bigquery"])
+@pytest.mark.parametrize("empty", [False, True])
+def test_bigquery_adbc_factory_recovers_schema_from_empty_arrow_probe(
+    dialect: str | None, empty: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    pytest.importorskip("sqlglot")
+    monkeypatch.setitem(
+        sys.modules, "adbc_driver_manager", SimpleNamespace(__version__="1.13.0")
+    )
+    sqls: list[str] = []
+
+    class Cursor:
+        def execute(self, sql: str) -> None:
+            sqls.append(sql)
+            if "SELECT _pl_record.*" in sql:
+                self.result = pa.table({"id": pa.array([None], type=pa.int64())})
+            elif "WHERE 1 = 0" in sql:
+                self.result = pa.table({})
+            else:
+                self.result = pa.table(
+                    {"id": pa.array([] if empty else [17], type=pa.int64())}
+                )
+
+        def fetch_record_batch(self) -> Any:
+            return self.result.to_reader()
+
+        def close(self) -> None:
+            pass
+
+    class Connection:
+        __module__ = "adbc_driver_manager.dbapi"
+
+        def adbc_get_info(self) -> dict[str, str]:
+            return {"vendor_name": "BigQuery"}
+
+        def cursor(self) -> Cursor:
+            return Cursor()
+
+        def close(self) -> None:
+            pass
+
+    scan = pl.scan_database(
+        "SELECT 17 AS id", Connection, dialect=dialect, partition_on=None
     )
     assert scan.collect_schema() == pl.Schema({"id": pl.Int64})
     assert scan.collect().rows() == ([] if empty else [(17,)])

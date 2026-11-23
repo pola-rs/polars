@@ -377,6 +377,7 @@ def _duckdb_engine_connection(obj: Any, session: dict[str, Any]) -> Any:
 
 # ADBC's vendor names, as dialect names
 _ADBC_VENDORS = {
+    "bigquery": "bigquery",
     "postgresql": "postgresql",
     "sqlite": "sqlite",
     "duckdb": "duckdb",
@@ -857,6 +858,10 @@ def _connect_bigquery(
         msg = "BigQuery client cannot be combined with URI project, dataset or client options"
         raise ValueError(msg)
 
+    _check_bigquery_destination(client_kw.get("default_query_job_config"))
+    _check_bigquery_destination(
+        getattr(dbapi_kw.get("client"), "default_query_job_config", None)
+    )
     dbapi = importlib.import_module(f"{_BIGQUERY_MODULE}.dbapi")
     if not client_kw and dataset is None:
         return dbapi.connect(**dbapi_kw), None
@@ -890,6 +895,34 @@ def _connect_bigquery(
             client.close()
 
     return conn, close
+
+
+def _check_bigquery_destination(config: Any) -> None:
+    if getattr(config, "destination", None) is not None:
+        raise _bigquery_destination_error()
+
+
+def _bigquery_destination_error() -> ValueError:
+    return ValueError("scan_database cannot run with a BigQuery destination table")
+
+
+def _check_bigquery_execute(conn: Any, options: dict[str, Any]) -> None:
+    """Check both per-statement config and client defaults, which Google merges."""
+    module = _module_of(conn)
+    if module == "sqlalchemy" and _sqlalchemy_dialect(conn) == "bigquery":
+        if _is_orm_session(conn):
+            conn = conn.connection()
+        _check_bigquery_destination(conn.get_execution_options().get("job_config"))
+        _check_bigquery_destination(
+            (options.get("execution_options") or {}).get("job_config")
+        )
+        conn = conn.connection.driver_connection
+    elif module != _BIGQUERY_MODULE:
+        return
+    _check_bigquery_destination(options.get("job_config"))
+    # A live DB-API cursor keeps the connection on its public `connection` attribute.
+    client = getattr(getattr(conn, "connection", conn), "_client", None)
+    _check_bigquery_destination(getattr(client, "default_query_job_config", None))
 
 
 def _tls_context(
@@ -2984,6 +3017,7 @@ class _Session:
                 if not bind:
                     for key in {"parameters", "params", _params_keyword(cx)}:
                         options.pop(key, None)
+                _check_bigquery_execute(self.conn, options)
                 oracle_arrow = (
                     cx.driver_name == "oracledb_proxy"
                     or cx._oracle_arrow_proxy() is not None
@@ -3064,11 +3098,17 @@ class _Session:
                     # psycopg2's named cursors describe the result only after a fetch;
                     # `FETCH FORWARD 0` returns no row
                     cursor.fetchmany(0)
-                if _module_of(cx.result) == "google.cloud.bigquery":
+                result = cx.result
+                raw_result = (
+                    getattr(result, "cursor", None)
+                    if _module_of(result) == "sqlalchemy"
+                    else result
+                )
+                if _module_of(raw_result) == _BIGQUERY_MODULE:
                     from polars_database._bigquery import result_frames
 
                     empty_frame, frames, self.bigquery_text_columns = result_frames(
-                        cx.result, batch_size
+                        raw_result, batch_size, fetchmany=result.fetchmany
                     )
                     frames = _object_columns_as_text(_no_panics(frames))
                 else:
@@ -3994,9 +4034,17 @@ def _open(
     if head == "sqlalchemy":
         _require_sqlalchemy()
         from sqlalchemy import create_engine
+        from sqlalchemy.engine import make_url
 
         if dialect == "sqlite":
             uri = _sqlalchemy_sqlite_uri(uri)
+        elif dialect == "bigquery":
+            if "destination" in make_url(uri).query:
+                raise _bigquery_destination_error()
+            client = (connect_opts.get("connect_args") or {}).get("client")
+            _check_bigquery_destination(
+                getattr(client, "default_query_job_config", None)
+            )
         try:
             engine = create_engine(uri, **connect_opts)
         except Exception as e:
