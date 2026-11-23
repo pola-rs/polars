@@ -308,6 +308,28 @@ impl ProbeOutput {
         rows: &[IdxSize],
         offset: &mut usize,
     ) {
+        self.probe_keys(
+            table,
+            frame,
+            rows,
+            offset,
+            self.mark_matches,
+            self.emit_unmatched,
+        );
+        self.gather_build(table);
+    }
+
+    /// Finds the matches of the rows `rows` of `frame` from `offset` on in `table_match` and
+    /// `probe_match`, and moves `offset` past the probed rows.
+    fn probe_keys(
+        &mut self,
+        table: &ProbeTable,
+        frame: &FrameWithKeys,
+        rows: &[IdxSize],
+        offset: &mut usize,
+        mark_matches: bool,
+        emit_unmatched: bool,
+    ) {
         let limit = self.limit.saturating_sub(self.len()).max(1) as IdxSize;
         self.table_match.clear();
         *offset += unsafe {
@@ -316,12 +338,11 @@ impl ProbeOutput {
                 &rows[*offset..],
                 &mut self.table_match,
                 &mut self.probe_match,
-                self.mark_matches,
-                self.emit_unmatched,
+                mark_matches,
+                emit_unmatched,
                 limit,
             )
         } as usize;
-        self.gather_build(table);
     }
 
     /// Probes `table` with the rows `rows` of `frame` from `offset` on, until all are probed or
@@ -340,23 +361,11 @@ impl ProbeOutput {
             self.probe_unfused(table, frame, rows, offset);
             return Ok(());
         };
-        let limit = self.limit.saturating_sub(self.len()).max(1) as IdxSize;
         let probe_start = self.probe_match.len();
         let probed_start = *offset;
-        self.table_match.clear();
         // With a fused predicate, a pair only matches once the predicate holds, so the matched and
         // unmatched rows are known after evaluating it.
-        *offset += unsafe {
-            table.hash_table.probe_subset(
-                &frame.keys,
-                &rows[*offset..],
-                &mut self.table_match,
-                &mut self.probe_match,
-                false,
-                false,
-                limit,
-            )
-        } as usize;
+        self.probe_keys(table, frame, rows, offset, false, false);
 
         if !self.table_match.is_empty() {
             let kept = fused_predicate
@@ -398,6 +407,9 @@ impl ProbeOutput {
 
     /// Gathers the build rows of the matches in `table_match`.
     fn gather_build(&mut self, table: &ProbeTable) {
+        if self.table_match.is_empty() {
+            return;
+        }
         let build_payload = output_columns(&table.payload, self.build_idx.as_deref());
         if self.emit_unmatched {
             self.build

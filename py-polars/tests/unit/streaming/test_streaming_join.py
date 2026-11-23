@@ -1022,6 +1022,7 @@ def test_streaming_merge_join_send_port_done_27547() -> None:
 
 @pytest.mark.parametrize("threads", ["1", "2", "4"])
 @pytest.mark.parametrize("morsel_size", ["1", "4", "100000"])
+@pytest.mark.parametrize("single_table", [True, False])
 @pytest.mark.parametrize(
     ("how", "maintain_order", "swap"),
     [
@@ -1035,12 +1036,17 @@ def test_streaming_join_unmatched_build_order_29362(
     plmonkeypatch: PlMonkeyPatch,
     threads: str,
     morsel_size: str,
+    single_table: bool,
     how: JoinStrategy,
     maintain_order: MaintainOrderJoin,
     swap: bool,
 ) -> None:
     plmonkeypatch.setenv("POLARS_MAX_THREADS", threads)
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
+    if not single_table:
+        # One table per pipeline, so the unmatched rows are put back in build order
+        # across tables.
+        plmonkeypatch.setenv("POLARS_JOIN_SINGLE_TABLE_MAX_ROWS", "0")
 
     n = 200
     # Interleaved duplicate keys, nulls, and matches so that unmatched rows
