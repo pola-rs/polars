@@ -80,8 +80,8 @@ pub struct DatabaseScanConfig {
     pub backend: BackendChoice,
     /// The planned schema. Every partition is cast to it.
     pub schema: SchemaRef,
-    /// Google BigQuery columns typed from sampled rows, before unknown leaves get a
-    /// String fallback. A Null leaf here has no observed JSON kind.
+    /// Inferred Google BigQuery JSON dtypes for validation before casting. A Null leaf
+    /// marks an unobserved JSON kind with a String fallback.
     pub bigquery_sampled_schema: Schema,
     pub columns: Arc<[ColumnMeta]>,
     pub stats: TableStats,

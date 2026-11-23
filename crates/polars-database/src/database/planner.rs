@@ -3302,18 +3302,22 @@ fn bigquery_has_unknown_leaf(dtype: &DataType) -> bool {
     }
 }
 
-/// Fill unknown leaves and return the observed dtypes before substituting String for null.
-/// Declared fields and unobserved leaves require no additional checks at execution.
+/// Fill unknown leaves and return the inferred JSON dtypes, with Null marking leaves
+/// that use a String fallback. Declared fields require no additional checks at execution.
 fn fill_bigquery_unknown(dtype: &mut DataType, sampled: Option<&DataType>) -> Option<DataType> {
     match (dtype, sampled) {
         (dtype @ DataType::Null, sampled) => {
-            let observed = sampled.filter(|d| !d.is_null()).map(normalize_dtype);
-            *dtype = observed.clone().unwrap_or(DataType::String);
+            let observed = sampled.map_or(DataType::Null, normalize_dtype);
+            *dtype = if observed.is_null() {
+                DataType::String
+            } else {
+                observed.clone()
+            };
             // An inferred JSON container can itself have empty or all-null leaves.
             if bigquery_has_unknown_leaf(dtype) {
                 let _ = fill_bigquery_unknown(dtype, None);
             }
-            observed
+            Some(observed)
         },
         (DataType::List(inner), sampled) => {
             let sampled = match sampled {

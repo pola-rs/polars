@@ -338,8 +338,8 @@ pub fn cast_to_user_schema(
     )
 }
 
-/// Check JSON kinds before a cast can turn a number into a string or a one-field
-/// object. Null marks an unobserved leaf, and the regular cast checks numeric exactness.
+/// Check JSON kinds before casting. An unobserved leaf uses a String fallback for
+/// scalars only, and the regular cast checks numeric exactness.
 pub(crate) fn check_bigquery_json(df: &DataFrame, sampled: &Schema) -> PolarsResult<()> {
     for (name, planned) in sampled.iter() {
         if let Ok(col) = df.column(name) {
@@ -354,6 +354,11 @@ fn check_bigquery_json_kind(actual: &DataType, planned: &DataType, path: &str) -
         return Ok(());
     }
     match (actual, planned) {
+        (DataType::List(_) | DataType::Struct(_), DataType::Null) => polars_bail!(
+            SchemaMismatch:
+            "BigQuery JSON field '{path}' is {actual} but no non-null value was sampled: \
+            the String fallback only accepts scalar JSON values; use TO_JSON_STRING(<json>) in the source query"
+        ),
         (DataType::Null, _) | (_, DataType::Null) => Ok(()),
         (DataType::List(a), DataType::List(b)) => {
             check_bigquery_json_kind(a, b, &format!("{path}[]"))

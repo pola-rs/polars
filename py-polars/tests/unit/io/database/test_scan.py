@@ -3931,7 +3931,119 @@ def _user_rolls_back_to_two_rows(user: Any) -> None:
     assert user.exec_driver_sql("SELECT count(*) FROM t").scalar() == 2
 
 
-@pytest.mark.parametrize("how", ["live_session", "sessionmaker", "session_factory"])
+@pytest.mark.parametrize("pool", ["StaticPool", "SingletonThreadPool", "AssertionPool"])
+@pytest.mark.parametrize("how", ["engine", "connect"])
+@pytest.mark.parametrize("event", ["before_execute", "before_cursor_execute"])
+def test_scan_shared_sqlalchemy_execution_listener(
+    tmp_path: Path, pool: str, how: str, event: str
+) -> None:
+    sa = pytest.importorskip("sqlalchemy")
+    engine, user = _shared_sqlite_engine(tmp_path, pool)
+
+    def route(*args: Any) -> tuple[Any, ...]:
+        if event == "before_execute":
+            return sa.text(str(args[1]).replace("101", "202")), args[2], args[3]
+        return args[2].replace("101", "202"), args[3]
+
+    sa.event.listen(engine, event, route, retval=True)
+    try:
+        sql = "SELECT 101 AS value"
+        assert user.execute(sa.text(sql)).scalar() == 202
+        source = engine if how == "engine" else engine.connect
+        with pytest.raises(TypeError, match="established SQLAlchemy Connection"):
+            pl.scan_database(sql, source, pushdown=False)
+        assert pl.scan_database(sql, user, pushdown=False).collect().rows() == [(202,)]
+        _user_rolls_back_to_two_rows(user)
+        user.close()
+    finally:
+        engine.dispose()
+
+
+def test_scan_sqlite_static_pool_checks_thread_affinity() -> None:
+    sa = pytest.importorskip("sqlalchemy")
+    engine = sa.create_engine("sqlite://", poolclass=sa.pool.StaticPool)
+    try:
+        with pytest.raises(ValueError, match="check_same_thread=False"):
+            pl.scan_database("SELECT 101 AS value", engine)
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("how", ["engine", "connect"])
+def test_scan_shared_sqlalchemy_rejects_isolation_change_before_checkout(
+    tmp_path: Path, how: str
+) -> None:
+    engine, user = _shared_sqlite_engine(tmp_path, "StaticPool")
+    try:
+        configured = engine.execution_options(isolation_level="AUTOCOMMIT")
+        source = configured if how == "engine" else configured.connect
+        with pytest.raises(TypeError, match="established SQLAlchemy Connection"):
+            pl.scan_database("SELECT * FROM t", source)
+        _user_rolls_back_to_two_rows(user)
+        user.close()
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("pool", ["StaticPool", "SingletonThreadPool", "AssertionPool"])
+def test_scan_shared_sqlalchemy_rejects_factory_with_local_listener(
+    tmp_path: Path, pool: str
+) -> None:
+    sa = pytest.importorskip("sqlalchemy")
+    engine, user = _shared_sqlite_engine(tmp_path, pool)
+    try:
+
+        def factory() -> Any:
+            conn = engine.connect()
+            sa.event.listen(
+                conn,
+                "before_cursor_execute",
+                lambda c, cur, sql, params, context, many: (
+                    sql.replace("101", "202"),
+                    params,
+                ),
+                retval=True,
+            )
+            return conn
+
+        with pytest.raises(
+            TypeError, match="may configure a shared SQLAlchemy checkout"
+        ):
+            pl.scan_database("SELECT 101 AS value", factory)
+        _user_rolls_back_to_two_rows(user)
+        user.close()
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("event", ["do_orm_execute", "before_execute"])
+def test_scan_sqlalchemy_session_applies_execution_listener(
+    tmp_path: Path, event: str
+) -> None:
+    sa = pytest.importorskip("sqlalchemy")
+    orm = pytest.importorskip("sqlalchemy.orm")
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'routing.db'}")
+
+    def route(state: Any) -> None:
+        state.statement = sa.text(state.statement.text.replace("101", "202"))
+
+    def route_connection(*args: Any) -> tuple[Any, ...]:
+        return sa.text(args[1].text.replace("101", "202")), args[2], args[3]
+
+    sql = r"SELECT 101 AS value, ':literal% \:already ::cast' AS label"
+    try:
+        with orm.Session(engine) as user:
+            if event == "do_orm_execute":
+                sa.event.listen(user, event, route)
+            else:
+                sa.event.listen(engine, event, route_connection, retval=True)
+            result = pl.scan_database(sql, user, pushdown=False).collect()
+            assert result.rows() == [(202, r":literal% \:already ::cast")]
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("how", ["live_session", "sessionmaker"])
 def test_scan_orm_session_over_a_shared_pool_keeps_the_users_transaction(
     tmp_path: Path, how: str
 ) -> None:
@@ -3943,12 +4055,8 @@ def test_scan_orm_session_over_a_shared_pool_keeps_the_users_transaction(
     try:
         if how == "live_session":
             source: Any = orm.Session(engine)
-        elif how == "sessionmaker":
-            source = orm.sessionmaker(engine)
         else:
-
-            def source() -> Any:
-                return orm.Session(engine)
+            source = orm.sessionmaker(engine)
 
         assert pl.scan_database("SELECT * FROM t", source).collect().height == 3
         _user_rolls_back_to_two_rows(user)
@@ -4015,8 +4123,6 @@ def test_scan_function_over_a_singleton_thread_pool(tmp_path: Path) -> None:
             engine.connect,
             engine.raw_connection,
             orm.sessionmaker(engine),
-            lambda: engine.connect(),
-            lambda: engine.raw_connection(),
             functools.partial(engine.connect),
             functools.partial(orm.Session, engine),
             orm.scoped_session(orm.sessionmaker(engine)),
@@ -4117,10 +4223,10 @@ def test_scan_assertion_pool_function_with_concurrent_connects(
         for _ in range(5):
             lf = pl.scan_database("SELECT * FROM t", _OpaqueFactory(engine.connect))
             assert sorted(lf.collect()["v"].to_list()) == [1, 2]
-        # a function of the Engine that shows it reads the user's checkout
+        # The Engine's direct method reads the user's checkout without a second one.
         user = engine.connect()
         user.exec_driver_sql("INSERT INTO t VALUES (3)")
-        lf = pl.scan_database("SELECT * FROM t", lambda: engine.connect())
+        lf = pl.scan_database("SELECT * FROM t", engine.connect)
         assert sorted(lf.collect()["v"].to_list()) == [1, 2, 3]
         user.rollback()
         user.close()
@@ -4241,15 +4347,15 @@ def test_scan_orm_sessions_keep_their_transaction_and_give_back_their_checkout(
 
 def test_scan_function_engine_lookup_reads_only_its_globals_and_defaults() -> None:
     sqlalchemy = pytest.importorskip("sqlalchemy")
-    from polars.io.database._scan import _factory_singleton_engine
+    from polars.io.database._scan import _factory_shared_engine
 
     engine = sqlalchemy.create_engine("sqlite://")
     try:
         ns: dict[str, Any] = {"engine": engine}
         exec("def attribute():\n    return tenant.engine.connect()", ns)
         exec("def default(e=None, *, k=engine):\n    return k.connect()", ns)
-        assert _factory_singleton_engine(ns["attribute"]) is None
-        assert _factory_singleton_engine(ns["default"]) is engine
+        assert _factory_shared_engine(ns["attribute"]) is None
+        assert _factory_shared_engine(ns["default"]) is engine
     finally:
         engine.dispose()
 

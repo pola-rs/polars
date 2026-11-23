@@ -22,8 +22,9 @@ pub const PACKAGE_NAME: &str = "polars_database";
 /// The version of the serialized plan formats of [`resolver`] and [`reader`]: bincode of
 /// the structs, so positional. Bump it whenever a serialized struct (or one inside it,
 /// [`database::DatabaseScanOptions`] and the like) changes, so that a plan made by another
-/// version fails with a clear error instead of being misread. One decimal digit.
-const SERDE_VERSION: u8 = 5;
+/// version fails with a clear error instead of being misread. Version 6 also requires
+/// validation markers for all unobserved BigQuery JSON leaves. One decimal digit.
+const SERDE_VERSION: u8 = 6;
 const _: () = assert!(SERDE_VERSION < 10);
 
 /// The prefix of a serialized plan of `kind` (`PLDBRS` or `PLDBRB`): the kind and the

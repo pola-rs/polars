@@ -311,7 +311,9 @@ class _BigQuerySharedCheckout:
         _release_without_reset(self.fairy)
 
 
-def shared_pool_connection(obj: Any) -> Any:
+def shared_pool_connection(
+    obj: Any, params: Any = None, execute_options: Mapping[str, Any] | None = None
+) -> Any:
     """
     The DB-API connection of a checkout (`engine.raw_connection()`, `engine.connect()`,
     an ORM Session of the engine) from a pool that shares one connection, released
@@ -320,7 +322,10 @@ def shared_pool_connection(obj: Any) -> Any:
     live one. Raises for a SingletonThreadPool (see `_singleton_pool_error`).
     """
     fairy = obj
-    if _module_of(obj) == "sqlalchemy" and type(obj).__name__ == "Connection":
+    is_connection = (
+        _module_of(obj) == "sqlalchemy" and type(obj).__name__ == "Connection"
+    )
+    if is_connection:
         fairy = getattr(obj, "connection", None)
     elif _is_orm_session(obj):
         _check_bigquery_orm_session(obj)
@@ -334,6 +339,7 @@ def shared_pool_connection(obj: Any) -> Any:
             return None
         if _has_pool(engine, "SingletonThreadPool"):
             raise _singleton_pool_error()
+        _check_shared_sqlalchemy_options(engine, params, execute_options, obj)
         return _engine_shared_connection(engine)
     if type(fairy).__name__ != "_ConnectionFairy":
         return None
@@ -346,8 +352,14 @@ def shared_pool_connection(obj: Any) -> Any:
     if any(c.__name__ == "SingletonThreadPool" for c in type(pool).__mro__):
         _release_without_reset(fairy)
         raise _singleton_pool_error()
-    if _sqlalchemy_dialect(obj) == "bigquery":
-        return _BigQuerySharedCheckout(obj, fairy)
+    if is_connection:
+        try:
+            if _sqlalchemy_dialect(obj) == "bigquery":
+                return _BigQuerySharedCheckout(obj, fairy)
+            _check_shared_sqlalchemy_options(obj, params, execute_options)
+        except BaseException:
+            _release_without_reset(fairy)
+            raise
     _release_without_reset(fairy)
     return driver
 
@@ -974,6 +986,12 @@ def _check_bigquery_pool(engine: Any) -> None:
 
 def _check_bigquery_orm_session(session: Any) -> None:
     if _is_orm_session(session) and _sqlalchemy_dialect(session) == "bigquery":
+        if session.dispatch.do_orm_execute:
+            msg = (
+                "scan_database cannot use a BigQuery ORM Session with do_orm_execute "
+                "listeners; pass an established SQLAlchemy Connection"
+            )
+            raise TypeError(msg)
         # SQLAlchemy 2.1's Session.execute merges these options independently of
         # Connection options. Checking them must not open the session's connection.
         options = getattr(session, "execution_options", None)
@@ -982,35 +1000,54 @@ def _check_bigquery_orm_session(session: Any) -> None:
         _check_bigquery_pool(session.get_bind())
 
 
-def _check_bigquery_shared_options(
-    engine: Any,
+def _has_sqlalchemy_execution_hooks(target: Any) -> bool:
+    dispatch = target.dispatch
+    dialect = target.dialect.dispatch
+    return bool(
+        dispatch.before_execute
+        or any(
+            listener is not _psycopg2_scan_cursor
+            for listener in dispatch.before_cursor_execute
+        )
+        or dialect.do_execute
+        or dialect.do_execute_no_params
+        or dialect.do_executemany
+    )
+
+
+def _check_shared_sqlalchemy_options(
+    target: Any,
     params: Any,
     execute_options: Mapping[str, Any] | None,
     session: Any = None,
 ) -> None:
     _check_bigquery_orm_session(session)
     options = (execute_options or {}).get("execution_options")
-    engine_options = engine.get_execution_options()
+    target_options = target.get_execution_options()
     session_options = getattr(session, "execution_options", None)
-    for execution_options in (options, engine_options, session_options):
-        if isinstance(execution_options, Mapping):
-            _check_bigquery_destination(execution_options.get("job_config"))
+    if _sqlalchemy_dialect(target) == "bigquery":
+        for execution_options in (options, target_options, session_options):
+            if isinstance(execution_options, Mapping):
+                _check_bigquery_destination(execution_options.get("job_config"))
     if (
         params is not None
-        or options
-        or engine_options
-        or session_options
-        or engine.dispatch.engine_connect
-        or engine.dispatch.before_execute
-        or any(
-            listener is not _psycopg2_scan_cursor
-            for listener in engine.dispatch.before_cursor_execute
+        or execute_options
+        or target_options
+        or target.dispatch.engine_connect
+        or target.dispatch.begin
+        or _has_sqlalchemy_execution_hooks(target)
+        or (
+            session is not None
+            and (
+                session_options
+                or session.dispatch.do_orm_execute
+                or session.in_transaction()
+            )
         )
-        or (session is not None and session.in_transaction())
     ):
         msg = (
-            "scan_database cannot preserve SQLAlchemy options or parameters through "
-            "this shared BigQuery pool; pass an established SQLAlchemy Connection"
+            "scan_database cannot preserve SQLAlchemy execution options, listeners "
+            "or parameters through this shared pool; pass an established SQLAlchemy Connection"
         )
         raise TypeError(msg)
 
@@ -1021,6 +1058,12 @@ def _check_bigquery_execute(conn: Any, options: dict[str, Any]) -> None:
     if module == "sqlalchemy" and _sqlalchemy_dialect(conn) == "bigquery":
         if _is_orm_session(conn):
             conn = conn.connection()
+        if conn.dispatch.begin or _has_sqlalchemy_execution_hooks(conn):
+            msg = (
+                "scan_database cannot use BigQuery SQLAlchemy execution or begin "
+                "listeners because they can modify the query job configuration"
+            )
+            raise TypeError(msg)
         _check_bigquery_destination(conn.get_execution_options().get("job_config"))
         _check_bigquery_destination(
             (options.get("execution_options") or {}).get("job_config")
@@ -1760,7 +1803,7 @@ def _sqlalchemy_psycopg2_guard() -> None:
     from sqlalchemy.engine import Engine
 
     # retval=True keeps the listener itself in the dispatch rather than wrapping
-    # it, so the BigQuery shared-pool check can recognize this psycopg2-only hook.
+    # it, so the shared-pool check can recognize this psycopg2-only hook.
     event.listen(Engine, "before_cursor_execute", _psycopg2_scan_cursor, retval=True)
 
 
@@ -2221,6 +2264,16 @@ def _exec_driver_sql(target: Any) -> Callable[..., Any] | None:
         with contextlib.suppress(Exception):
             return cast("Callable[..., Any]", connection().exec_driver_sql)
     return None
+
+
+def _needs_sqlalchemy_statement(target: Any) -> bool:
+    """Whether executing driver SQL would bypass SQLAlchemy listeners or defaults."""
+    if not _is_orm_session(target):
+        return bool(target.dispatch.before_execute)
+    if getattr(target, "execution_options", None) or target.dispatch.do_orm_execute:
+        return True
+    bind = _session_connection(target) or target.get_bind()
+    return bool(bind.dispatch.before_execute)
 
 
 def _sql_str(value: Any, *, dialect: str) -> str:
@@ -3212,9 +3265,16 @@ class _Session:
                         raise RuntimeError(_CANCELLED)
                     self._running = runner
                     self._issuing = True
+                run_through_sqlalchemy = (
+                    raw_sqlalchemy
+                    and cx.driver_name == "sqlalchemy"
+                    and cx._is_alchemy_object(cx.cursor)
+                    and _needs_sqlalchemy_statement(cx.cursor)
+                )
                 exec_driver_sql = (
                     _exec_driver_sql(cx.cursor)
                     if raw_sqlalchemy
+                    and not run_through_sqlalchemy
                     and not oracle_arrow
                     and cx.driver_name in ("sqlalchemy", "duckdb")
                     else None
@@ -3236,6 +3296,15 @@ class _Session:
                     if cx.driver_name == "duckdb" and cx._is_alchemy_result(result):
                         result = result.cursor
                     cx.result = result
+                elif run_through_sqlalchemy:
+                    from sqlalchemy import text
+
+                    # TextClause interprets colons even inside SQL literals. Escape
+                    # them so that a statement without bindings keeps its raw SQL.
+                    cx.execute(
+                        text(re.sub(r"(?<!:):(?!:)", r"\\:", sql)),
+                        options=options or None,
+                    )
                 else:
                     cx.execute(sql, options=options or None)
                 if cursor is not None and cursor.description is None:
@@ -4103,20 +4172,12 @@ def connect(
                         time.sleep(0.002)
         _refuse_bound_session(checkout)
         _check_bigquery_pool(checkout)
-        if _is_orm_session(checkout) and _sqlalchemy_dialect(checkout) == "bigquery":
-            engine = checkout.get_bind()
-            if any(_has_pool(engine, name) for name in SHARED_CONNECTION_POOLS):
-                _check_bigquery_shared_options(engine, params, execute_opts, checkout)
-        if (shared := shared_pool_connection(checkout)) is not None:
-            if isinstance(shared, _BigQuerySharedCheckout):
-                return _Session(
-                    shared.conn,
-                    owned=False,
-                    close=shared.close,
-                    shared_driver=shared.driver,
-                    **session,
-                )
+        if (
+            shared := shared_pool_connection(checkout, params, execute_opts)
+        ) is not None:
             if dialect in _SESSION_SETUP_DIALECTS:
+                if isinstance(shared, _BigQuerySharedCheckout):
+                    shared.close()
                 # the plan relies on the session setup, which the user's connection
                 # must not get
                 msg = (
@@ -4126,6 +4187,14 @@ def connect(
                     "is read as a live connection"
                 )
                 raise TypeError(msg)
+            if isinstance(shared, _BigQuerySharedCheckout):
+                return _Session(
+                    shared.conn,
+                    owned=False,
+                    close=shared.close,
+                    shared_driver=shared.driver,
+                    **session,
+                )
             # one connection that the user's own statements use too (an open
             # transaction): a live connection, never rolled back or closed
             return _Session(shared, owned=False, **session)

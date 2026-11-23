@@ -100,7 +100,7 @@ class _JsonObservations:
 class _JsonBatch:
     def __init__(self) -> None:
         self.kinds: dict[tuple[str | None, ...], _JsonKind] = {}
-        self.object_keys: dict[tuple[str | None, ...], dict[str, None]] = {}
+        self.object_keys: dict[tuple[str | None, ...], set[str]] = {}
         self.wide_integers: set[tuple[str | None, ...]] = set()
         self.dtypes: dict[tuple[str | None, ...], PolarsDataType] = {}
         self.prepare_paths: set[tuple[str | None, ...]] = set()
@@ -125,8 +125,13 @@ class _JsonBatch:
         if kind == _JsonKind.ARRAY:
             return pl.List(self.dtype((*path, None)))
         if kind == _JsonKind.OBJECT:
+            # JSON object keys have no declared order. Use the same order when
+            # inferring a sample and when reading batches from the result.
             return pl.Struct(
-                {key: self.dtype((*path, key)) for key in self.object_keys[path]}
+                {
+                    key: self.dtype((*path, key))
+                    for key in sorted(self.object_keys[path])
+                }
             )
         if kind & _JsonKind.FLOAT:
             return pl.Float64
@@ -177,7 +182,7 @@ def _observe_json(
         for item in value:
             _observe_json(item, item_path, batch, history, in_list=True)
     elif kind == _JsonKind.OBJECT:
-        keys = batch.object_keys.setdefault(path, {})
+        keys = batch.object_keys.setdefault(path, set())
         # Keep all keys observed in the object's first nonempty batch. A result with
         # changing keys may grow only the current batch's observations after that.
         known_keys = None
@@ -189,7 +194,7 @@ def _observe_json(
             elif path in history.new_objects:
                 known_keys.update(value)
         for key, item in value.items():
-            keys[key] = None
+            keys.add(key)
             _observe_json(
                 item,
                 (*path, key),

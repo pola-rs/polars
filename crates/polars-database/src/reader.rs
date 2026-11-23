@@ -1212,7 +1212,7 @@ mod tests {
     use crate::database::backend::BackendKind;
 
     #[test]
-    fn bigquery_reader_round_trips_sampled_json_with_unobserved_leaf() {
+    fn bigquery_reader_round_trips_json_with_unobserved_leaves() {
         let json_dtype = |leaf: DataType| {
             DataType::List(Box::new(DataType::Struct(vec![
                 Field::new("n".into(), DataType::Int64),
@@ -1224,11 +1224,17 @@ mod tests {
             BackendKind::Python {
                 module: "google.cloud.bigquery".into(),
             },
-            &[("j", json_dtype(DataType::String), None)],
+            &[
+                ("j", json_dtype(DataType::String), None),
+                ("empty", DataType::String, None),
+            ],
         );
         config
             .bigquery_sampled_schema
             .insert("j".into(), json_dtype(DataType::Null));
+        config
+            .bigquery_sampled_schema
+            .insert("empty".into(), DataType::Null);
 
         let schema = config.schema.clone();
         let reader = ReaderBuilder::new(Arc::new(config), schema.clone());
@@ -1238,5 +1244,14 @@ mod tests {
             restored.config.bigquery_sampled_schema,
             reader.config.bigquery_sampled_schema,
         );
+    }
+
+    #[test]
+    fn reader_rejects_version_before_unobserved_json_validation() {
+        // The version check must fail before bincode reads the payload.
+        let err = ReaderBuilder::deserialize(b"PLDBRB5invalid payload")
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("plan format 5, this one reads 6"));
     }
 }

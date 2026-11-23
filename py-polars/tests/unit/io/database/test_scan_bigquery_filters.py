@@ -15,6 +15,8 @@ import polars as pl
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from polars._typing import PolarsDataType
+
 bridge = pytest.importorskip("polars_database._bridge")
 pytest.importorskip("sqlglot")
 
@@ -102,6 +104,21 @@ class _Connection:
 
     def cursor(self) -> _Cursor:
         return _Cursor(self.fields, self.rows, self.storage_rows, self.sqls)
+
+
+@pytest.mark.parametrize("batch_size", [1, 2])
+def test_bigquery_json_object_key_order_is_stable(batch_size: int) -> None:
+    rows = [
+        ({"z": 1, "a": [{"y": 2, "x": "first"}]},),
+        ({"a": [{"x": "second", "y": 3}], "z": 4},),
+    ]
+    conn = _Connection([_Field("j", "JSON")], rows)
+    expected = pl.Struct(
+        {"a": pl.List(pl.Struct({"x": pl.String, "y": pl.Int64})), "z": pl.Int64}
+    )
+    scan = pl.scan_database("SELECT j FROM fixture", conn, batch_size=batch_size)
+    assert scan.collect_schema() == {"j": expected}
+    assert scan.collect().rows() == rows
 
 
 def test_bigquery_only_pushes_equality_on_native_string() -> None:
@@ -387,6 +404,38 @@ def test_bigquery_json_checks_sampled_kind_after_pushed_filter_and_limit(
         pl.exceptions.SchemaError, match=rf"field '{path}'.*type changed"
     ):
         filtered.collect()
+
+
+@pytest.mark.parametrize(
+    ("sample", "late", "dtype", "path"),
+    [
+        (None, {"b": 3}, pl.String, "j"),
+        ({"a": None}, {"a": {"b": 3}}, pl.Struct({"a": pl.String}), r"j\.a"),
+        ([], [[1]], pl.List(pl.String), r"j\[\]"),
+    ],
+)
+@pytest.mark.parametrize("push_filter", [False, True])
+def test_bigquery_json_rejects_structure_at_unsampled_leaves(
+    sample: Any,
+    late: Any,
+    dtype: PolarsDataType,
+    path: str,
+    push_filter: bool,
+) -> None:
+    conn = _Connection(
+        [_Field("id", "INTEGER"), _Field("j", "JSON")],
+        [(i, sample) for i in range(1, 1001)] + [(1001, late)],
+        [(1001, dumps(late))] if push_filter else None,
+    )
+    scan = pl.scan_database("SELECT id, j FROM data", conn, batch_size=1000)
+    assert scan.collect_schema() == {"id": pl.Int64, "j": dtype}
+    if push_filter:
+        scan = scan.filter(pl.col("id") == 1001).head(1)
+        assert "filters 1/1 (1 exact)" in scan.explain()
+    with pytest.raises(
+        pl.exceptions.SchemaError, match=rf"field '{path}'.*use TO_JSON_STRING"
+    ):
+        scan.collect()
 
 
 def test_bigquery_json_checks_sampled_kind_after_serialize(

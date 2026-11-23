@@ -84,12 +84,11 @@ def _connection_kind(
             # (a subclass of one shares the connection just the same)
             pool = getattr(connection, "pool", None)
             if _has_shared_pool(connection):
-                if getattr(connection.dialect, "name", None) == "bigquery":
-                    if _has_shared_pool(connection, ("StaticPool",)):
-                        # The bridge retains this checkout's SQLAlchemy execution
-                        # layer and releases the checkout without a pool reset.
-                        return "engine", _in_caller_context(connection.connect)
-                    _check_bigquery_shared_options(connection, params, execute_options)
+                if connection.dialect.name == "bigquery" and _has_shared_pool(
+                    connection, ("StaticPool",)
+                ):
+                    return "engine", _in_caller_context(connection.connect)
+                _check_shared_sqlalchemy_options(connection, params, execute_options)
                 # one connection (per thread) that the user's own statements use too
                 # (temporary tables, session settings, an open transaction): read as
                 # a live connection
@@ -110,21 +109,18 @@ def _connection_kind(
         # an ORM Session over such an Engine: the one connection is the user's too, and
         # the Session's own rollback or release would end the transaction on it
         engine, session = shared
-        _check_bigquery_shared_options(engine, params, execute_options, session)
+        _check_shared_sqlalchemy_options(engine, params, execute_options, session)
         return "live", _shared_dbapi_connection(engine)
     if (
         callable(connection)
         and not hasattr(connection, "cursor")
         and not hasattr(connection, "execute")
     ):
-        if (engine := _factory_singleton_engine(connection)) is not None:
+        if (engine := _factory_shared_engine(connection)) is not None:
             # a SingletonThreadPool opens a connection for each thread that asks and
             # closes others' beyond its `pool_size`: read through the calling thread's
             # one connection, as for the Engine itself
-            if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
-                _check_bigquery_shared_factory(
-                    connection, engine, params, execute_options
-                )
+            _check_shared_factory(connection, engine, params, execute_options)
             return "live", _shared_dbapi_connection(engine)
         return "factory", _in_caller_context(connection)
     if hasattr(connection, "cursor") or hasattr(connection, "execute"):
@@ -163,9 +159,9 @@ def _session_shared_engine(obj: Any) -> tuple[Any, Any] | None:
     return None
 
 
-def _factory_singleton_engine(factory: Any) -> Any:
+def _factory_shared_engine(factory: Any) -> Any:
     """
-    The Engine behind a factory over a pool that must not be asked from other threads.
+    Find a factory's Engine when its pool needs a shared-connection preflight.
 
     A SingletonThreadPool opens a connection for each thread that asks and closes
     others' beyond `pool_size`, and an AssertionPool refuses a second checkout: the
@@ -191,8 +187,12 @@ def _factory_singleton_engine(factory: Any) -> Any:
             for cls in type(obj).__mro__
         ):
             _check_bigquery_pool(obj)
-        if _has_shared_pool(obj, ("SingletonThreadPool", "AssertionPool")):
-            engines.append(obj)
+            # BigQuery StaticPool keeps its SQLAlchemy checkout and job options.
+            if _has_shared_pool(obj) and not (
+                obj.dialect.name == "bigquery"
+                and _has_shared_pool(obj, ("StaticPool",))
+            ):
+                engines.append(obj)
             return
         kw = getattr(obj, "kw", None)  # a sessionmaker's
         if isinstance(kw, dict) and kw.get("bind") is not None:
@@ -226,7 +226,7 @@ def _factory_singleton_engine(factory: Any) -> Any:
     if len(engines) > 1:
         msg = (
             "a connection function that refers to several Engines over a "
-            "SingletonThreadPool or AssertionPool can't be scanned: the scan reads "
+            "shared SQLAlchemy pool can't be scanned: the scan reads "
             "through the Engine's one connection without calling the function, and "
             "can't tell which one it returns. Pass the Engine itself"
         )
@@ -299,41 +299,59 @@ def _check_bigquery_pool(engine: Any) -> None:
         check_pool(engine)
 
 
-def _check_bigquery_shared_options(
+def _check_shared_sqlalchemy_options(
     engine: Any,
     params: Any,
     execute_options: Mapping[str, Any] | None,
     session: Any = None,
 ) -> None:
-    if getattr(getattr(engine, "dialect", None), "name", None) == "bigquery":
-        _plugin()
-        from polars_database._bridge import _check_bigquery_shared_options as check
+    _plugin()
+    from polars_database._bridge import _check_shared_sqlalchemy_options as check
 
-        check(engine, params, execute_options, session)
+    check(engine, params, execute_options, session)
 
 
-def _check_bigquery_shared_factory(
+def _check_shared_factory(
     factory: Any,
     engine: Any,
     params: Any,
     execute_options: Mapping[str, Any] | None,
 ) -> None:
     from sqlalchemy.engine import Engine
+    from sqlalchemy.orm import Session, sessionmaker
 
     while isinstance(factory, functools.partial) and not (
         factory.args or factory.keywords
     ):
         factory = factory.func
-    if getattr(factory, "__self__", None) is engine:
-        method = getattr(factory, "__func__", None)
-        if method is Engine.raw_connection:
-            return
-        if method is Engine.connect:
-            _check_bigquery_shared_options(engine, params, execute_options)
-            return
+    method = (
+        getattr(factory, "__func__", None)
+        if getattr(factory, "__self__", None) is engine
+        else None
+    )
+    if method is Engine.raw_connection:
+        return
+    if method is Engine.connect:
+        _check_shared_sqlalchemy_options(engine, params, execute_options)
+        return
+    if (
+        type(factory) is sessionmaker
+        and factory.class_.__bases__ == (Session,)
+        and factory.kw.get("bind") is engine
+        and not factory.kw.get("binds")
+    ) or (
+        isinstance(factory, functools.partial)
+        and factory.func is Session
+        and factory.args == (engine,)
+        and not factory.keywords
+    ):
+        # A standard Session doesn't check out a connection until first use.
+        with factory() as session:
+            _check_shared_sqlalchemy_options(engine, params, execute_options, session)
+        return
     msg = (
-        "scan_database cannot use a BigQuery factory over a SingletonThreadPool or "
-        "AssertionPool because it may configure a shared checkout; pass an established "
+        "scan_database cannot use a factory that may configure a shared SQLAlchemy "
+        "checkout; pass an established "
         "SQLAlchemy Connection or use engine.connect directly"
     )
     raise TypeError(msg)
@@ -580,21 +598,16 @@ def scan_database(
           (`pool_size` + `max_overflow`) must allow as many as the query has scans
           of it. A transaction a checkout listener left open is
           committed by that setup. An Engine without pooling (`NullPool`) is read
-          as a factory. An
-          Engine with a
-          `StaticPool`, `SingletonThreadPool` or
-          `AssertionPool` shares one DB-API connection: it is used as a live
-          connection (see below), so the scan sees uncommitted changes made on it
-          (so does an ORM `Session` of it). A function over a `SingletonThreadPool`
-          or `AssertionPool` Engine (its `connect`, a `sessionmaker`, a lambda or
-          `partial` of one) reads through that one connection too, without the
-          function being called (one that refers to several such Engines is
-          refused); a function that opens its connections otherwise from a
-          SingletonThreadPool is refused (the pool opens one per thread and closes
-          others' beyond `pool_size`), and so is one that returns the shared
-          connection of a database whose session the scan sets up (MySQL, Oracle).
-          The pool's reset on return (rollback, commit, `reset` listeners) never
-          runs on it;
+          as a factory. `StaticPool`, `SingletonThreadPool` and `AssertionPool`
+          share one DB-API connection, per thread for `SingletonThreadPool`. The
+          scan usually reads that connection directly, including its uncommitted
+          changes, and returns any checkout without the pool's reset. Pass the
+          Engine, its `connect` or `raw_connection` method, or a standard ORM
+          `Session` or `sessionmaker` bound to it. Use an established SQLAlchemy
+          Connection when the scan needs SQLAlchemy listeners, execution options
+          or parameters that the shared path cannot preserve. Functions that may
+          configure a checkout on the shared path are refused. BigQuery scans
+          through a `StaticPool` Engine retain the SQLAlchemy execution layer;
         * a zero-argument callable that returns a DB-API connection (a factory),
           called on the scan's own threads, in a copy of the `contextvars` of the
           caller of `scan_database` (thread-locals are not carried over);
@@ -708,11 +721,10 @@ def scan_database(
     reports a precision of at most 38 digits. Wider or unparameterized BIGNUMERIC
     columns are read as exact fixed-point strings, including in empty results.
 
-    For a BigQuery SQLAlchemy pool that shares a DB-API connection, pass an
-    established SQLAlchemy Connection when the scan needs parameters or job
-    settings that the shared checkout cannot preserve. This also avoids a pool
-    pre-ping during checkout. A named BigQuery destination table is rejected
-    because schema discovery itself executes a query.
+    BigQuery schema discovery executes a query. The scan rejects named BigQuery
+    destination tables and SQLAlchemy execution listeners that can change job
+    settings, including ORM `do_orm_execute` listeners. Pass an established
+    SQLAlchemy Connection to avoid a pool pre-ping during checkout.
 
     See Also
     --------
