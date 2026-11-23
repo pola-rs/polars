@@ -5,17 +5,68 @@ use std::sync::{LazyLock, RwLock};
 
 use libloading::Library;
 use polars_arrow::ffi::{ArrowSchema, import_field_from_c};
+use polars_ffi::version_0::{ColumnExport, SeriesExport};
 use polars_utils::io::PathIoError;
 #[cfg(feature = "python")]
 use pyo3::{Python, types::PyAnyMethods};
 
 use super::*;
 
-type PluginAndVersion = (Library, u16, u16);
-static LOADED: LazyLock<RwLock<PlIndexMap<String, Arc<PluginAndVersion>>>> =
+struct LoadedPlugin {
+    library: Library,
+    // FFI protocol version.
+    ffi_major: u16,
+    ffi_minor: u16,
+    /// Expression functions by symbol name. Libraries are never unloaded, so these stay valid.
+    expr_fns: RwLock<PlHashMap<String, ExprFn>>,
+}
+
+#[derive(Clone, Copy)]
+enum ExprFn {
+    Column(PluginFn<ColumnExport>),
+    Series(PluginFn<SeriesExport>),
+}
+
+impl LoadedPlugin {
+    fn expr_fn(&self, symbol: &str) -> PolarsResult<ExprFn> {
+        if let Some(f) = self.expr_fns.read().unwrap().get(symbol) {
+            return Ok(*f);
+        }
+
+        let f = match self.ffi_major {
+            0 => {
+                // Plugins taking `Column`s export an additional function which preserves scalar
+                // columns.
+                let column_fn = unsafe {
+                    self.library.get::<PluginFn<ColumnExport>>(
+                        format!("_polars_column_plugin_{symbol}").as_bytes(),
+                    )
+                };
+                match column_fn {
+                    Ok(f) => ExprFn::Column(*f),
+                    Err(_) => ExprFn::Series(unsafe {
+                        *self
+                            .library
+                            .get::<PluginFn<SeriesExport>>(
+                                format!("_polars_plugin_{symbol}").as_bytes(),
+                            )
+                            .unwrap()
+                    }),
+                }
+            },
+            major => {
+                polars_bail!(ComputeError: "this polars engine doesn't support plugin version: {}", major)
+            },
+        };
+        self.expr_fns.write().unwrap().insert(symbol.to_string(), f);
+        Ok(f)
+    }
+}
+
+static LOADED: LazyLock<RwLock<PlIndexMap<String, Arc<LoadedPlugin>>>> =
     LazyLock::new(Default::default);
 
-fn get_lib(lib: &str) -> PolarsResult<Arc<PluginAndVersion>> {
+fn get_lib(lib: &str) -> PolarsResult<Arc<LoadedPlugin>> {
     if let Some(library) = LOADED.read().unwrap().get(lib) {
         return Ok(library.clone());
     }
@@ -57,7 +108,12 @@ fn get_lib(lib: &str) -> PolarsResult<Arc<PluginAndVersion>> {
     let major = (version >> 16) as u16;
     let minor = version as u16;
 
-    let ret = Arc::new((library, major, minor));
+    let ret = Arc::new(LoadedPlugin {
+        library,
+        ffi_major: major,
+        ffi_minor: minor,
+        expr_fns: Default::default(),
+    });
     let mut lib_map = LOADED.write().unwrap();
     lib_map.insert(lib.to_string(), ret.clone());
     Ok(ret)
@@ -81,42 +137,32 @@ pub unsafe fn call_plugin(
     symbol: &str,
     kwargs: &[u8],
 ) -> PolarsResult<Column> {
+    use polars_ffi::version_0::*;
+
     let plugin = get_lib(lib)?;
-    let lib = &plugin.0;
-    let major = plugin.1;
-
-    if major == 0 {
-        use polars_ffi::version_0::*;
-
-        // Plugins taking `Column`s export an additional function which preserves scalar columns.
-        let column_fn =
-            lib.get::<PluginFn<ColumnExport>>(format!("_polars_column_plugin_{symbol}").as_bytes());
-        let out = if let Ok(column_fn) = column_fn {
+    let out = match plugin.expr_fn(symbol)? {
+        ExprFn::Column(f) => {
             let inputs = s.iter().map(export_column).collect();
-            let out = call_plugin_fn(*column_fn, inputs, kwargs, ColumnExport::empty());
+            let out = call_plugin_fn(f, inputs, kwargs, ColumnExport::empty());
             (!out.is_null()).then(|| import_column(out))
-        } else {
-            let series_fn = lib
-                .get::<PluginFn<SeriesExport>>(format!("_polars_plugin_{symbol}").as_bytes())
-                .unwrap();
+        },
+        ExprFn::Series(f) => {
             let inputs = s
                 .iter()
                 .map(|c| export_series(c.as_materialized_series()))
                 .collect();
-            let out = call_plugin_fn(*series_fn, inputs, kwargs, SeriesExport::empty());
+            let out = call_plugin_fn(f, inputs, kwargs, SeriesExport::empty());
             (!out.is_null()).then(|| import_series(out).map(Column::from))
-        };
+        },
+    };
 
-        match out {
-            Some(out) => out,
-            None => {
-                let msg = retrieve_error_msg(lib);
-                check_panic(msg.as_ref())?;
-                polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
-            },
-        }
-    } else {
-        polars_bail!(ComputeError: "this polars engine doesn't support plugin version: {}", major)
+    match out {
+        Some(out) => out,
+        None => {
+            let msg = retrieve_error_msg(&plugin.library);
+            check_panic(msg.as_ref())?;
+            polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
+        },
     }
 }
 
@@ -165,9 +211,6 @@ pub(super) unsafe fn plugin_field(
     kwargs: &[u8],
 ) -> PolarsResult<Field> {
     let plugin = get_lib(lib)?;
-    let lib = &plugin.0;
-    let major = plugin.1;
-    let minor = plugin.2;
 
     // we deallocate the fields buffer
     let ffi_fields = fields
@@ -181,8 +224,8 @@ pub(super) unsafe fn plugin_field(
     let mut return_value = ArrowSchema::empty();
     let return_value_ptr = &mut return_value as *mut ArrowSchema;
 
-    if major == 0 {
-        match minor {
+    if plugin.ffi_major == 0 {
+        match plugin.ffi_minor {
             // The bump from 0 -> 1 was a historic mistake, it should've been a major version.
             0 => {
                 let views = fields.iter().any(|field| field.dtype.contains_views());
@@ -193,7 +236,8 @@ pub(super) unsafe fn plugin_field(
                 // *mut ArrowSchema: pointer where the return value can be written
                 let symbol: libloading::Symbol<
                     unsafe extern "C" fn(*const ArrowSchema, usize, *mut ArrowSchema),
-                > = lib
+                > = plugin
+                    .library
                     .get((format!("_polars_plugin_field_{symbol}")).as_bytes())
                     .unwrap();
                 symbol(slice_ptr, n_args, return_value_ptr);
@@ -213,7 +257,8 @@ pub(super) unsafe fn plugin_field(
                         *const u8,
                         usize,
                     ),
-                > = lib
+                > = plugin
+                    .library
                     .get((format!("_polars_plugin_field_{symbol}")).as_bytes())
                     .unwrap();
 
@@ -228,12 +273,12 @@ pub(super) unsafe fn plugin_field(
             let out = Field::from(&arrow_field);
             Ok(out)
         } else {
-            let msg = retrieve_error_msg(lib);
+            let msg = retrieve_error_msg(&plugin.library);
             check_panic(msg.as_ref())?;
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }
     } else {
-        polars_bail!(ComputeError: "this Polars engine doesn't support plugin version: {}", major)
+        polars_bail!(ComputeError: "this Polars engine doesn't support plugin version: {}", plugin.ffi_major)
     }
 }
 
