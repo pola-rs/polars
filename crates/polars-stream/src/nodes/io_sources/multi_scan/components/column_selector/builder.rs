@@ -74,8 +74,7 @@ impl ColumnSelectorBuilder {
                 Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
-                    // The source is already 100% null; there's nothing non-null left for this
-                    // to turn null, regardless of the (non-struct) target type.
+                    // The input is already full-null.
                     preserves_null_count: true,
                 }
                 .into_selector(input_selector))
@@ -199,7 +198,7 @@ impl ColumnSelectorBuilder {
                 return Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
-                    // Not verified; a List<->Map reinterpretation isn't a plain value cast.
+                    // Conservative, this is not a plain value cast.
                     preserves_null_count: false,
                 }
                 .into_selector(input_selector));
@@ -263,7 +262,7 @@ impl ColumnSelectorBuilder {
                 return Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
-                    // Not verified; a List<->Map reinterpretation isn't a plain value cast.
+                    // Conservative, this is not a plain value cast.
                     preserves_null_count: false,
                 }
                 .into_selector(input_selector));
@@ -294,7 +293,7 @@ impl ColumnSelectorBuilder {
                 selector = ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
-                    // Not verified; casts the whole map container, not a plain value cast.
+                    // Conservative, this casts the map container.
                     preserves_null_count: false,
                 }
                 .into_selector(selector);
@@ -326,9 +325,7 @@ impl ColumnSelectorBuilder {
         let incoming_dtype = materialize_unknown(incoming_dtype);
         let target_dtype = materialize_unknown(target_dtype);
 
-        // Attaches a cast to the target dtype. `preserves_null_count`: see `ColumnTransform::
-        // Cast`'s doc-comment - callers must know, from their own local reasoning about this
-        // specific cast, whether it can ever turn a non-null value null.
+        // Attaches a cast to the target dtype.
         let attach_cast =
             |options: CastOptions, preserves_null_count: bool| -> PolarsResult<ColumnSelector> {
                 Ok(ColumnTransform::Cast {
@@ -398,10 +395,7 @@ impl ColumnSelectorBuilder {
                 _ => unreachable!(),
             };
 
-            // Float-to-float narrowing in Rust (`as`) always saturates to +/-infinity on
-            // overflow rather than failing, so the checked numeric cast this `NonStrict`
-            // path uses (`num_traits::cast::cast::<f64, f32>` etc.) never returns `None`:
-            // there's no overflow-to-null case for this pair, in either direction.
+            // Float-to-float casts saturate to +/-inf instead of producing nulls.
             return attach_cast(CastOptions::NonStrict, true);
         }
 
@@ -473,8 +467,7 @@ impl ColumnSelectorBuilder {
 
             // Upcasting to a finer unit (`target_unit < incoming_unit`) multiplies the values
             // and can overflow, so use strict casting to raise if out-of-range. Downcasts and
-            // timezone-only casts only lose precision, so non-strict is fine. Either way, this
-            // never nulls a non-null value: `preserves_null_count: true`.
+            // timezone-only casts only lose precision, so non-strict is fine.
             let cast_options = if target_unit < incoming_unit {
                 CastOptions::Strict
             } else {
@@ -487,7 +480,6 @@ impl ColumnSelectorBuilder {
 
         if target_dtype.is_string() && incoming_dtype.is_categorical() {
             return if self.cast_columns_policy.categorical_to_string {
-                // Every category has a string representation: a total, safe mapping.
                 attach_cast(CastOptions::NonStrict, true)
             } else {
                 mismatch_err(
@@ -707,8 +699,7 @@ impl ColumnSelectorBuilder {
                             selector = ColumnTransform::Cast {
                                 dtype: target_column.type_.to_polars_dtype(),
                                 options: CastOptions::NonStrict,
-                                // Not verified; casts the whole map container, not a plain
-                                // value cast.
+                                // Conservative, this casts the map container.
                                 preserves_null_count: false,
                             }
                             .into_selector(selector);

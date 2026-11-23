@@ -570,9 +570,7 @@ pub enum ArrowFieldProjection {
         output_name: PlSmallStr,
         output_dtype: DataType,
         transform: ColumnSelector,
-        // Derived once from `transform` here rather than on every `apply_null_count_transform`
-        // call: this projection is built once per scan and then re-used across every row-group
-        // batch of statistics computed for it.
+        /// [`ColumnSelector::null_count_transform`] of `transform`.
         null_count_transform: ColumnSelector,
         pruned: Option<Arc<PrunedField>>,
     },
@@ -661,15 +659,10 @@ impl ArrowFieldProjection {
         }
     }
 
-    /// Like [`Self::apply_transform`], but for the `null_count` statistic.
+    /// Like [`Self::apply_transform`], but for the `null_count` statistic of `arrow_field`.
     ///
-    /// Unlike [`Self::apply_transform`], this does not apply [`PrunedField`]'s per-row-group
-    /// `narrow` step. For a struct column, `statistics.rs` only calls this when no decode in
-    /// `self.pruned()` narrows (via `PrunedField::narrows`), so there's never a validity-leaf
-    /// substitution to narrow away. For a non-struct column `narrow`-ing is vacuously
-    /// irrelevant here regardless: a narrowed non-struct leaf's null_count is still unknown
-    /// either way, since list/map elements have no per-element null count (see
-    /// `ColumnSelector::null_count_transform`'s `ListValuesMapping`/`MapValuesMapping` arms).
+    /// Does not apply the `narrow` of [`PrunedField`]: the caller must not use the null counts
+    /// of a narrowed struct.
     pub fn apply_null_count_transform(&self, column: Column) -> PolarsResult<Column> {
         match self {
             Self::Plain(..) => Ok(column),
