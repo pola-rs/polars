@@ -11,11 +11,14 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::backend::resolve::{detect_dialect, object_info, resolve_backend};
-use super::backend::{BackendKind, DatabaseSession, open_backend, open_session_with_retries};
+use super::backend::{
+    BackendKind, DatabaseSession, collect_batches, open_backend, open_session_with_retries,
+};
 use super::catalog::{self, CatalogInfo};
 use super::config::{
     ColumnMeta, CompiledPartition, CompiledScan, DatabaseScanConfig, TableStats, session_setup_runs,
 };
+use super::connection::ConnectionSpec;
 use super::dialect::DialectName;
 use super::options::{Consistency, DatabaseRelation, DatabaseScanOptions, PartitionSpec};
 use super::partition::{self, Partition};
@@ -721,18 +724,20 @@ pub fn resolve_scan(
     let mut stats = TableStats::default();
     let mut resolution: Option<Vec<String>> = None;
     let mut mixed_found: Vec<PlSmallStr> = Vec::new();
+    let mut bigquery_sampled_schema = Schema::default();
     let schema: SchemaRef;
     // the query columns SQL Server declares `money` or `smallmoney`
     let mut money_columns: PlHashMap<PlSmallStr, String> = PlHashMap::default();
     let volatility_unchecked = user_schema.is_some();
     let user_typed = user_schema.is_some();
+    let google_bigquery = is_google_bigquery(dialect, &backend.kind);
 
     if let Some(schema_) = user_schema {
         // No I/O: a user schema is authoritative, and column semantics stay conservative:
         // collations are unknown, and so are some types behind the dtypes: SQL Server's
         // legacy `datetime`, a MySQL `YEAR` (see the filter), and a SQLite column's
-        // affinity (a `String` may hold numbers that compare as such). Otherwise the
-        // user's `String` states a text column.
+        // affinity (a `String` may hold numbers that compare as such). BigQuery's native
+        // types are unknown here: even a null check can differ for JSON or arrays.
         columns = schema_
             .iter()
             .map(|(name, dtype)| ColumnMeta {
@@ -742,6 +747,7 @@ pub fn resolve_scan(
                 strings: catalog::unknown_string_semantics(dialect),
                 is_key: false,
                 comparable: match dtype {
+                    _ if dialect == DialectName::Bigquery => false,
                     DataType::String => dialect != DialectName::Sqlite,
                     DataType::Datetime(_, _) => dialect != DialectName::Mssql,
                     // A float or decimal dtype over a column of another numeric type
@@ -825,7 +831,7 @@ pub fn resolve_scan(
                 options.connection.opened_by_plugin(),
                 &info,
             );
-            let (discovered, sampled, mixed) = discover_schema(
+            let discovered = discover_schema(
                 session,
                 options,
                 dialect,
@@ -834,32 +840,39 @@ pub fn resolve_scan(
                 select_list.as_deref(),
                 &info,
             )?;
-            PolarsResult::Ok((info, discovered, sampled, mixed))
+            PolarsResult::Ok((info, discovered))
         };
-        let (mut info, mut discovered, sampled, mixed_blobs) =
-            match discover(session.as_mut(), &options) {
-                Ok(found) => found,
-                // No table by the folded name: the name as written, on a new session (a failed
-                // statement can abort the session's transaction).
-                Err(e) => match as_written {
-                    Some(written) => {
-                        // closed first: a pool of one connection would wait for it
-                        drop(session);
-                        session = catalog::with_describe_cache(
-                            open_session_with_retries(
-                                backend_impl.as_ref(),
-                                &written.connection,
-                                dialect,
-                            )?,
+        let (mut info, discovery) = match discover(session.as_mut(), &options) {
+            Ok(found) => found,
+            // No table by the folded name: the name as written, on a new session (a failed
+            // statement can abort the session's transaction).
+            Err(e) => match as_written {
+                Some(written) => {
+                    // closed first: a pool of one connection would wait for it
+                    drop(session);
+                    session = catalog::with_describe_cache(
+                        open_session_with_retries(
+                            backend_impl.as_ref(),
+                            &written.connection,
                             dialect,
-                        );
-                        let found = discover(session.as_mut(), &written).map_err(|_| e)?;
-                        options = written;
-                        found
-                    },
-                    None => return Err(e),
+                        )?,
+                        dialect,
+                    );
+                    let found = discover(session.as_mut(), &written).map_err(|_| e)?;
+                    options = written;
+                    found
                 },
-            };
+                None => return Err(e),
+            },
+        };
+        let DiscoveredSchema {
+            schema: mut discovered,
+            sampled,
+            mixed_blobs,
+            bigquery_text_columns,
+            bigquery_sampled_schema: inferred_bigquery,
+        } = discovery;
+        bigquery_sampled_schema = inferred_bigquery;
         let names = discovered.iter_names().cloned().collect::<Vec<_>>();
         if is_query {
             refuse_trino_unnamed(dialect, &names)?;
@@ -1081,6 +1094,13 @@ pub fn resolve_scan(
                 is_key: info.key_column.as_ref() == Some(name),
                 comparable: !info.incomplete
                     && info.compares_like_polars(dialect, name, dtype)
+                    // BigQuery drivers also read GEOGRAPHY, JSON and wide BIGNUMERIC as
+                    // strings. Require evidence of native STRING from result metadata.
+                    && (dialect != DialectName::Bigquery
+                        || *dtype != DataType::String
+                        || bigquery_text_columns.contains(name.as_str()))
+                    // The Google driver also decodes JSON null as a Polars null.
+                    && (!google_bigquery || !sampled.contains(name.as_str()))
                     // read as text, compared as its own type
                     && !(dialect == DialectName::Duckdb
                         && info
@@ -1136,6 +1156,14 @@ pub fn resolve_scan(
             sqlite_floats_exact_found = sqlite_floats_exact(session.as_mut());
         }
         schema = Arc::new(discovered);
+    }
+
+    // BigQuery emits NULL arrays as empty lists in query results. A SQL null filter runs
+    // before this conversion and would select different rows.
+    if dialect == DialectName::Bigquery {
+        for c in &mut columns {
+            c.comparable &= !matches!(c.dtype, DataType::List(_));
+        }
     }
 
     // ConnectorX writes every decimal as `Decimal(38, 10)`, cutting digits beyond 10
@@ -1433,6 +1461,7 @@ pub fn resolve_scan(
         dialect,
         backend,
         schema,
+        bigquery_sampled_schema,
         columns: columns.into(),
         stats,
         compiled: None,
@@ -3194,15 +3223,42 @@ pub(crate) fn compared_column_sql(config: &DatabaseScanConfig, column: &str) -> 
     )
 }
 
-/// Whether the driver %-formats the statements of this scan (`params=`): the SQL the plugin
-/// writes doubles its `%`.
-fn percent_formatted(config: &DatabaseScanConfig) -> bool {
-    crate::filter::percent_formatted(&config.options.connection, &config.backend.kind)
+/// Whether SQL generated by the plugin needs each `%` doubled before execution.
+fn escape_generated_percent(
+    connection: &ConnectionSpec,
+    backend: &BackendKind,
+    dialect: DialectName,
+) -> bool {
+    crate::filter::percent_formatted(connection, backend)
+        || google_unescapes_generated_percent(connection, backend, dialect)
+}
+
+fn google_unescapes_generated_percent(
+    connection: &ConnectionSpec,
+    backend: &BackendKind,
+    dialect: DialectName,
+) -> bool {
+    // Google unescapes %% even without parameters. In SQLAlchemy's binding path,
+    // text() already escapes %, including generated identifiers.
+    is_google_bigquery(dialect, backend)
+        && !(crate::filter::sqlalchemy(backend) && crate::filter::binds_params(connection))
+}
+
+fn escape_generated_percent_for_scan(config: &DatabaseScanConfig) -> bool {
+    escape_generated_percent(
+        &config.options.connection,
+        &config.backend.kind,
+        config.dialect,
+    )
 }
 
 /// `sql`, written by the plugin, with its `%` doubled where the driver %-formats it.
 fn escape_percent(config: &DatabaseScanConfig, sql: String) -> String {
-    if percent_formatted(config) {
+    escape_percent_if(sql, escape_generated_percent_for_scan(config))
+}
+
+fn escape_percent_if(sql: String, escape: bool) -> String {
+    if escape && sql.contains('%') {
         sql.replace('%', "%%")
     } else {
         sql
@@ -3224,8 +3280,83 @@ fn fixed_select_list(dialect: DialectName, items: &[SqlSelectItem]) -> String {
         .join(", ")
 }
 
+pub(crate) fn is_google_bigquery(dialect: DialectName, backend: &BackendKind) -> bool {
+    dialect == DialectName::Bigquery
+        && match backend {
+            BackendKind::Sqlalchemy => true,
+            BackendKind::Python { module } => {
+                module == "sqlalchemy"
+                    || module == "google.cloud.bigquery"
+                    || module.starts_with("google.cloud.bigquery.")
+            },
+            _ => false,
+        }
+}
+
+fn bigquery_has_unknown_leaf(dtype: &DataType) -> bool {
+    match dtype {
+        DataType::Null => true,
+        DataType::List(inner) => bigquery_has_unknown_leaf(inner),
+        DataType::Struct(fields) => fields.iter().any(|f| bigquery_has_unknown_leaf(f.dtype())),
+        _ => false,
+    }
+}
+
+/// Fill unknown leaves and return the inferred JSON dtypes, with Null marking leaves
+/// that use a String fallback. Declared fields require no additional checks at execution.
+fn fill_bigquery_unknown(dtype: &mut DataType, sampled: Option<&DataType>) -> Option<DataType> {
+    match (dtype, sampled) {
+        (dtype @ DataType::Null, sampled) => {
+            let observed = sampled.map_or(DataType::Null, normalize_dtype);
+            *dtype = if observed.is_null() {
+                DataType::String
+            } else {
+                observed.clone()
+            };
+            // An inferred JSON container can itself have empty or all-null leaves.
+            if bigquery_has_unknown_leaf(dtype) {
+                let _ = fill_bigquery_unknown(dtype, None);
+            }
+            Some(observed)
+        },
+        (DataType::List(inner), sampled) => {
+            let sampled = match sampled {
+                Some(DataType::List(inner)) => Some(inner.as_ref()),
+                _ => None,
+            };
+            fill_bigquery_unknown(inner, sampled).map(|inner| DataType::List(Box::new(inner)))
+        },
+        (DataType::Struct(fields), sampled) => {
+            let sampled: PlHashMap<_, _> = match sampled {
+                Some(DataType::Struct(fields)) => {
+                    fields.iter().map(|f| (f.name(), f.dtype())).collect()
+                },
+                _ => PlHashMap::new(),
+            };
+            let observed = fields
+                .iter_mut()
+                .filter_map(|field| {
+                    let inferred = sampled.get(&field.name).copied();
+                    fill_bigquery_unknown(&mut field.dtype, inferred)
+                        .map(|dtype| Field::new(field.name.clone(), dtype))
+                })
+                .collect::<Vec<_>>();
+            (!observed.is_empty()).then_some(DataType::Struct(observed))
+        },
+        _ => None,
+    }
+}
+
 /// The result schema of the relation, without reading rows, and the columns typed from a
 /// sample of their values (not by the result's types).
+struct DiscoveredSchema {
+    schema: Schema,
+    sampled: PlHashSet<PlSmallStr>,
+    mixed_blobs: Vec<PlSmallStr>,
+    bigquery_text_columns: PlHashSet<String>,
+    bigquery_sampled_schema: Schema,
+}
+
 fn discover_schema(
     session: &mut dyn DatabaseSession,
     options: &DatabaseScanOptions,
@@ -3234,15 +3365,22 @@ fn discover_schema(
     query: &QueryDiscovery,
     select_list: Option<&[SqlSelectItem]>,
     info: &CatalogInfo,
-) -> PolarsResult<(Schema, PlHashSet<PlSmallStr>, Vec<PlSmallStr>)> {
+) -> PolarsResult<DiscoveredSchema> {
     let is_query = matches!(options.relation, DatabaseRelation::Query { .. });
     let probe = match query.probe.as_ref().filter(|_| is_query) {
         Some(probe) => probe.clone(),
-        None => format!(
-            "SELECT {} FROM {} WHERE 1 = 0",
-            select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s)),
-            quoted_relation(dialect, &options.relation, &query.derived)
-        ),
+        None => {
+            let select =
+                select_list.map_or_else(|| "*".to_string(), |s| fixed_select_list(dialect, s));
+            let google_percent =
+                google_unescapes_generated_percent(&options.connection, backend, dialect);
+            let select = escape_percent_if(select, google_percent);
+            let from = escape_percent_if(
+                quoted_relation(dialect, &options.relation, &query.derived),
+                google_percent && !is_query,
+            );
+            format!("SELECT {select} FROM {from} WHERE 1 = 0")
+        },
     };
     let first_batch = |session: &mut dyn DatabaseSession, sql: &str| {
         if verbose() {
@@ -3280,7 +3418,7 @@ fn discover_schema(
     // all the same if it doesn't parse (the database may take it); else it is run, for
     // its first batch, only if that can't change anything.
     let mut ran_query = false;
-    let first = match &options.relation {
+    let mut first = match &options.relation {
         DatabaseRelation::Query { sql } if !query.wrappable => {
             let probed = match query.parses {
                 false => first_batch(session, &probe),
@@ -3302,6 +3440,33 @@ fn discover_schema(
         },
         _ => first_batch(session, &probe)?,
     };
+    if dialect == DialectName::Bigquery
+        && first.width() == 0
+        && match backend {
+            BackendKind::Adbc { .. } => true,
+            BackendKind::Python { module } => module == "adbc_driver_manager",
+            _ => false,
+        }
+    {
+        // The Apache BigQuery driver drops the Arrow schema of a zero-row result.
+        // A scalar subquery over the empty probe returns a typed NULL struct. Expand it
+        // to get one row with the fields' declared types, without reading source rows.
+        if !ran_query {
+            let typed_probe = format!(
+                "SELECT _pl_record.* FROM (SELECT (SELECT AS STRUCT * FROM ({probe}) AS _pl_empty) AS _pl_record)"
+            );
+            first = first_batch(session, &typed_probe)?;
+        }
+        polars_ensure!(
+            first.width() > 0,
+            InvalidOperation: "the ADBC BigQuery driver returned no fields for the schema query; pass schema=..."
+        );
+    }
+    let bigquery_text_columns = if dialect == DialectName::Bigquery {
+        session.bigquery_text_columns().into_iter().collect()
+    } else {
+        PlHashSet::new()
+    };
 
     let mut schema: Schema = first
         .schema()
@@ -3314,13 +3479,17 @@ fn discover_schema(
     // sample, which runs a query: not one known to be volatile (`nextval`), nor one that
     // may write where the session doesn't refuse it. SQLite's functions can't write.
     let sample_types = dialect == DialectName::Sqlite;
+    let google_bigquery = is_google_bigquery(dialect, backend);
     let sampled = schema
         .iter()
-        .filter(|(_, dt)| sample_types || dt.is_null())
+        .filter(|(_, dt)| {
+            sample_types || dt.is_null() || google_bigquery && bigquery_has_unknown_leaf(dt)
+        })
         .map(|(name, _)| name.clone())
         .collect::<PlHashSet<_>>();
     let untyped = !sampled.is_empty();
     let mut mixed = Vec::new();
+    let mut bigquery_sample = None;
     let may_sample = !is_query
         || sample_types
         || !(query.volatile || (query.side_effects && !query.read_only_session));
@@ -3374,14 +3543,23 @@ fn discover_schema(
             let mut sample_query = SqlQuery::select(items, from_clause(options, &query.derived));
             sample_query.limit = Some(TYPE_SAMPLE_ROWS);
             sample_query.escape_percent =
-                crate::filter::percent_formatted(&options.connection, backend);
+                escape_generated_percent(&options.connection, backend, dialect);
             renderer.render(&sample_query, dialect)
         };
         let sample_sql = render(items)?;
         if verbose() {
             eprintln!("[scan_database]: typing columns from a sample: {sample_sql}");
         }
-        let sample = match session.query(&sample_sql) {
+        let result = if google_bigquery {
+            // Infer across the bounded sample in one batch. Individual batches may
+            // independently infer different dtypes for a JSON leaf.
+            session
+                .execute(&sample_sql, Some(TYPE_SAMPLE_ROWS as usize))
+                .and_then(|batches| collect_batches(batches, &sample_sql))
+        } else {
+            session.query(&sample_sql)
+        };
+        let sample = match result {
             Ok(sample) => sample,
             // a row driver can't build a frame of a column of values of several classes (a blob
             // next to numbers): their classes are sampled instead
@@ -3395,23 +3573,27 @@ fn discover_schema(
             },
             Err(e) => return Err(e),
         };
-        for (name, dtype) in schema.iter_mut() {
-            if (dtype.is_null() || (sample_types && sample.height() > 0))
-                && let Ok(col) = sample.column(name)
-            {
-                *dtype = if classes {
-                    sqlite_class_dtype(col)
-                } else {
-                    normalize_dtype(col.dtype())
-                };
-            }
-            // No values to type by (ADBC types an empty result's columns Int64): the
-            // declared type's affinity tells what values the column holds.
-            if sample_types
-                && (sample.height() == 0 || dtype.is_null())
-                && let Some(t) = info.compare_types.get(name)
-            {
-                *dtype = sqlite_affinity_dtype(t);
+        if google_bigquery {
+            bigquery_sample = Some(sample);
+        } else {
+            for (name, dtype) in schema.iter_mut() {
+                if (dtype.is_null() || (sample_types && sample.height() > 0))
+                    && let Ok(col) = sample.column(name)
+                {
+                    *dtype = if classes {
+                        sqlite_class_dtype(col)
+                    } else {
+                        normalize_dtype(col.dtype())
+                    };
+                }
+                // No values to type by (ADBC types an empty result's columns Int64): the
+                // declared type's affinity tells what values the column holds.
+                if sample_types
+                    && (sample.height() == 0 || dtype.is_null())
+                    && let Some(t) = info.compare_types.get(name)
+                {
+                    *dtype = sqlite_affinity_dtype(t);
+                }
             }
         }
     }
@@ -3450,12 +3632,32 @@ fn discover_schema(
     }
     // Still untyped (every sampled value is NULL, or no rows to sample): a dtype any value
     // can be cast to, not `Null`, which no value read later would fit.
-    for (_, dtype) in schema.iter_mut() {
-        if dtype.is_null() {
+    let mut bigquery_sampled_schema = Schema::default();
+    for (name, dtype) in schema.iter_mut() {
+        if google_bigquery && sampled.contains(name.as_str()) {
+            let inferred = bigquery_sample
+                .as_ref()
+                .and_then(|sample| sample.column(name).ok())
+                .map(Column::dtype);
+            if let Some(observed) = fill_bigquery_unknown(dtype, inferred)
+                && options
+                    .schema_overrides
+                    .as_ref()
+                    .is_none_or(|overrides| !overrides.contains(name))
+            {
+                bigquery_sampled_schema.insert(name.clone(), observed);
+            }
+        } else if dtype.is_null() {
             *dtype = DataType::String;
         }
     }
-    Ok((schema, sampled, mixed))
+    Ok(DiscoveredSchema {
+        schema,
+        sampled,
+        mixed_blobs: mixed,
+        bigquery_text_columns,
+        bigquery_sampled_schema,
+    })
 }
 
 /// Whether sampled storage classes hold a blob and a value of another class.
@@ -3619,7 +3821,7 @@ pub fn compile_scan(
         .collect();
     // The partitions differ in their predicate only: the shared filter (an `IN` list of
     // thousands of values) is rendered once, not by each partition.
-    let escape_percent = percent_formatted(config);
+    let escape_percent = escape_generated_percent_for_scan(config);
     let query = SqlQuery {
         columns: select.clone(),
         from: from.clone(),
@@ -4147,7 +4349,12 @@ fn compile_unwrapped(
             )
         },
         relation => {
-            let from = quoted_relation(dialect, relation, &[]);
+            let google_percent = google_unescapes_generated_percent(
+                &config.options.connection,
+                &config.backend.kind,
+                dialect,
+            );
+            let from = escape_percent_if(quoted_relation(dialect, relation, &[]), google_percent);
             // the select list applies the column conversions, as a pushed-down scan does
             let names = config.schema.iter_names().cloned().collect::<Vec<_>>();
             let mut items = names
@@ -4175,8 +4382,11 @@ fn compile_unwrapped(
                 let cols = order_by
                     .iter()
                     .map(|c| match order_by_expr(config, c) {
-                        SqlExpr::Raw(sql) => sql,
-                        _ => format!("{from}.{}", dialect.quote_ident(c)),
+                        SqlExpr::Raw(sql) => escape_percent_if(sql, google_percent),
+                        _ => {
+                            let col = escape_percent_if(dialect.quote_ident(c), google_percent);
+                            format!("{from}.{col}")
+                        },
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -4905,7 +5115,7 @@ fn run_bounds(
         ],
         from.clone(),
     );
-    query.escape_percent = percent_formatted(config);
+    query.escape_percent = escape_generated_percent_for_scan(config);
     query.filter = filters
         .iter()
         .filter(|f| f.exact)

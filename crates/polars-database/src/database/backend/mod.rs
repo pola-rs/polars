@@ -165,6 +165,11 @@ pub trait DatabaseSession: Send {
         vec![]
     }
 
+    /// The native top-level STRING columns of the last Google BigQuery DB-API result.
+    fn bigquery_text_columns(&self) -> Vec<String> {
+        vec![]
+    }
+
     /// A SQL Server session's `SET TEXTSIZE`, where it cuts long values (see
     /// [`mssql_session_limits`]).
     fn text_size_limit(&self) -> Option<i64> {
