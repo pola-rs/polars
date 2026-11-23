@@ -116,3 +116,23 @@ def test_series_getitem_col_invalid_inputs(input: Any, match: str) -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(TypeError, match=match):
         s[input]
+
+
+def test_series_getitem_numpy_overflow_31010() -> None:
+    s = pl.Series("a", [10, 11, 12, 13, 14])
+    pos_i64 = np.array([2**32 + 3], dtype=np.int64)
+    pos_u64 = np.array([2**32 + 3], dtype=np.uint64)
+    with pytest.raises(
+        ValueError, match="index positions should be smaller than 2\\^32"
+    ):
+        _ = s[pos_i64]
+    with pytest.raises(
+        ValueError, match="index positions should be smaller than 2\\^32"
+    ):
+        _ = s[pos_u64]
+
+    neg_i64 = np.array([-(2**32) - 1], dtype=np.int64)
+    with pytest.raises(
+        ValueError, match="index positions should be greater than or equal to -2\\^32"
+    ):
+        _ = s[neg_i64]

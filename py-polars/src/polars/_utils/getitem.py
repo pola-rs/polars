@@ -425,10 +425,10 @@ def _convert_np_ndarray_to_indices(arr: np.ndarray[Any, Any], size: int) -> Seri
             raise TypeError(msg)
 
     if idx_type == UInt32:
-        if arr.dtype in {np.int64, np.uint64} and arr.max() >= U32_MAX:
+        if arr.dtype.type in {np.int64, np.uint64} and arr.max() >= U32_MAX:
             msg = "index positions should be smaller than 2^32"
             raise ValueError(msg)
-        if arr.dtype == np.int64 and arr.min() < -U32_MAX:
+        if arr.dtype.type is np.int64 and arr.min() < -U32_MAX:
             msg = "index positions should be greater than or equal to -2^32"
             raise ValueError(msg)
 

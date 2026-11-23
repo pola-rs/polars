@@ -2662,6 +2662,35 @@ def test_setitem_invalid_series_dtype_27110() -> None:
         s[idx] = 99
 
 
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+def test_setitem_numpy_overflow_31010(dtype: np.dtype[Any]) -> None:
+    s = pl.Series("a", [10, 11, 12, 13, 14])
+    pos = np.array([2**32 + 1], dtype=dtype)
+    with pytest.raises(
+        ValueError, match="index positions should be smaller than 2\\^32"
+    ):
+        s[pos] = 999
+    # Verify s is unmodified
+    assert s.to_list() == [10, 11, 12, 13, 14]
+
+    df = pl.DataFrame({"a": [10, 11, 12, 13, 14]})
+    with pytest.raises(
+        ValueError, match="index positions should be smaller than 2\\^32"
+    ):
+        df[pos, "a"] = 999
+    assert df["a"].to_list() == [10, 11, 12, 13, 14]
+
+
+def test_setitem_numpy_negative_index_31010() -> None:
+    s = pl.Series("a", [10, 11, 12, 13, 14])
+    s[np.array([-1])] = 999
+    assert s.to_list() == [10, 11, 12, 13, 999]
+
+    df = pl.DataFrame({"a": [10, 11, 12, 13, 14]})
+    df[np.array([-2]), "a"] = 888
+    assert df["a"].to_list() == [10, 11, 12, 888, 14]
+
+
 def test_full_null_cast_to_empty_struct_23276() -> None:
     s = pl.Series([None])
     assert s.cast(pl.Struct({}))[0] is None

@@ -394,6 +394,26 @@ def test_df_getitem_numpy() -> None:
         df[np.array([[0], [1]])]
 
 
+def test_df_getitem_numpy_overflow_31010() -> None:
+    df = pl.DataFrame({"a": [10, 11, 12, 13, 14]})
+    pos_i64 = np.array([2**32 + 3], dtype=np.int64)
+    pos_u64 = np.array([2**32 + 3], dtype=np.uint64)
+    with pytest.raises(
+        ValueError, match="index positions should be smaller than 2\\^32"
+    ):
+        _ = df[pos_i64]
+    with pytest.raises(
+        ValueError, match="index positions should be smaller than 2\\^32"
+    ):
+        _ = df[pos_u64]
+
+    neg_i64 = np.array([-(2**32) - 1], dtype=np.int64)
+    with pytest.raises(
+        ValueError, match="index positions should be greater than or equal to -2\\^32"
+    ):
+        _ = df[neg_i64]
+
+
 def test_df_getitem_extended() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 

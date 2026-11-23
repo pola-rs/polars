@@ -56,7 +56,7 @@ from polars._utils.expired import (
     raise_for_removed_attributes,
     removed_parameters,
 )
-from polars._utils.getitem import get_series_item_by_key
+from polars._utils.getitem import _convert_np_ndarray_to_indices, get_series_item_by_key
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
@@ -1463,9 +1463,7 @@ class Series(metaclass=_Meta):
                 # boolean numpy mask
                 self._s = self.scatter(np.argwhere(key)[:, 0], value)._s
             else:
-                s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
-                )
+                s = _convert_np_ndarray_to_indices(key, len(self))
                 self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):
             s = self._from_pyseries(sequence_to_pyseries("", key, dtype=UInt32))
