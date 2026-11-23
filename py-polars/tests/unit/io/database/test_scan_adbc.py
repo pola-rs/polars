@@ -39,7 +39,7 @@ def edge_db(tmp_path: Path) -> str:
         (3, 0, 1.5, "it's %_\\", None),
         (4, None, None, None, b"x"),
     ]
-    rows += [(i, i, i / 7, f"s{i}", None) for i in range(5, 20_005)]
+    rows += [(i, i, i / 7, f"s{i}", None) for i in range(5, 405)]
     conn.executemany("INSERT INTO t VALUES (?, ?, ?, ?, ?)", rows)
     conn.commit()
     conn.close()
@@ -67,8 +67,11 @@ def test_adbc_rejects_text_that_isnt_utf8(tmp_path: Path) -> None:
 
 
 def test_adbc_stops_early(edge_db: str) -> None:
-    # an early stop drops the stream before its end: the statement and connection close
-    lf = pl.scan_database("t", edge_db, driver="adbc", batch_size=100).head(3)
+    # Leave several batches beyond the reader's lookahead. Keep the head out of SQL
+    # so the host must drop the stream before the driver reaches its end.
+    lf = pl.scan_database(
+        "t", edge_db, driver="adbc", batch_size=32, pushdown=False
+    ).head(3)
     assert lf.collect(engine="streaming").height == 3
 
 
@@ -92,7 +95,7 @@ def test_adbc_without_driver_manager(
     # unpinned, the next backend reads
     lf = pl.scan_database("t", edge_db)
     assert "adbc:" not in lf.explain()
-    assert lf.select(pl.len()).collect().item() == 20_004
+    assert lf.select(pl.len()).collect().item() == 404
     # nor is it reported as available, and the install hint names the package
     adbc = pl.io.database.show_drivers("sqlite").filter(
         pl.col("backend") == "adbc:sqlite"

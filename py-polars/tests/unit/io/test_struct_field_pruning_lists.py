@@ -330,20 +330,20 @@ def test_struct_field_pruning_ipc_views_compression_batches(tmp_path: Path) -> N
                 }
                 if i % 7
                 else None
-                for i in range(3000)
+                for i in range(160)
             ],
             "l": [
                 [{"p": [{"u": i, "v": f"{i}" * 15}], "q": f"q{i}" * 10}, None]
                 if i % 5
                 else None
-                for i in range(3000)
+                for i in range(160)
             ],
         }
     )
     for compression in ["uncompressed", "lz4", "zstd"]:
         path = tmp_path / f"{compression}.ipc"
-        df.write_ipc(path, compression=compression, record_batch_size=700)  # type: ignore[call-overload]
-        for lf in [pl.scan_ipc(path), pl.scan_ipc(path, n_rows=1000)]:
+        df.write_ipc(path, compression=compression, record_batch_size=32)  # type: ignore[call-overload]
+        for lf in [pl.scan_ipc(path), pl.scan_ipc(path, n_rows=48)]:
             for q in [
                 lf.select(s.struct.field("c")),
                 lf.select(s.struct.field("d")),
@@ -352,7 +352,7 @@ def test_struct_field_pruning_ipc_views_compression_batches(tmp_path: Path) -> N
                     l.list.eval(e.struct.field("p").list.eval(e.struct.field("v")))
                 ),
                 lf.select(l.explode().struct.field("p").explode().struct.field("u")),
-                lf.slice(1500, 800).select(
+                lf.slice(80, 48).select(
                     s.struct.field("c"), l.list.last().struct.field("q")
                 ),
             ]:
@@ -401,7 +401,7 @@ def test_struct_field_pruning_pyarrow_written_lists(fmt: str, tmp_path: Path) ->
 
 
 def test_struct_field_pruning_lists_skip_unselected_leaves(tmp_path: Path) -> None:
-    n = 1000
+    n = 32
     df = pl.DataFrame(
         {
             "l": [
@@ -435,7 +435,7 @@ def test_struct_field_pruning_lists_skip_unselected_leaves(tmp_path: Path) -> No
 
 def _two_row_groups(path: Path, wrap: Callable[[dict[str, Any]], Any]) -> None:
     """Row group 0: leaf `a` is the cheapest of the struct; row group 1: leaf `b`."""
-    n = 2000
+    n = 64
     groups = [[(0, f"{i:>40}") for i in range(n)], [(i * 7919, "x") for i in range(n)]]
     tables = [
         pa.table(
@@ -481,11 +481,11 @@ def test_struct_field_pruning_validity_leaf_per_row_group(tmp_path: Path) -> Non
         lf = pl.scan_parquet(path, parallel=parallel)  # type: ignore[arg-type]
         for q, expected in [
             (lf.select(v.is_null().sum()), 0),
-            (lf.select(pl.len()), 4000),
-            (lf.slice(2005, 10).select(v.is_null().sum()), 0),
+            (lf.select(pl.len()), 128),
+            (lf.slice(69, 10).select(v.is_null().sum()), 0),
             (lf.tail(10).select(v.is_null().sum()), 0),
-            (lf.filter(pl.col("id") >= 2003).select(v.is_null().sum()), 0),
-            (lf.filter(v.is_not_null()).select(pl.len()), 4000),
+            (lf.filter(pl.col("id") >= 67).select(v.is_null().sum()), 0),
+            (lf.filter(v.is_not_null()).select(pl.len()), 128),
         ]:
             for engine in ["in-memory", "streaming"]:
                 assert q.collect(engine=engine).item() == expected  # type: ignore[call-overload]
@@ -503,7 +503,7 @@ def test_struct_field_pruning_validity_leaf_per_row_group_under_list(
         lf.select(v.explode().is_null().sum()).collect(optimizations=NO_PUSHDOWN)
     for q in [
         lf.select(v.explode().is_null().sum()),
-        lf.slice(2001, 3).select(v.list.first().is_null().sum()),
+        lf.slice(65, 3).select(v.list.first().is_null().sum()),
     ]:
         for engine in ["in-memory", "streaming"]:
             assert q.collect(engine=engine).item() == 0  # type: ignore[call-overload]
