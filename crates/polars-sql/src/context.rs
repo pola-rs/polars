@@ -2713,11 +2713,12 @@ impl SQLContext {
         alias: &Option<TableAlias>,
         array_exprs: &[SQLExpr],
         with_offset: bool,
+        with_ordinality: bool,
     ) -> PolarsResult<LazyFrame> {
         let alias = alias
             .as_ref()
             .ok_or_else(|| polars_err!(SQLSyntax: "UNNEST table must have an alias"))?;
-        polars_ensure!(!with_offset, SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
+        polars_ensure!(!with_offset, SQLInterface: "UNNEST tables do not support WITH OFFSET; use WITH ORDINALITY");
 
         let (mut explode_cols, mut rename_from, mut rename_to) = (
             Vec::with_capacity(array_exprs.len()),
@@ -2751,6 +2752,32 @@ impl SQLContext {
                 rename_to.push(PlSmallStr::from_str(name));
             }
             explode_cols.push(col_name);
+        }
+        // WITH ORDINALITY: the 1-based position in the (first) list, as in Postgres.
+        let mut lf = lf;
+        if with_ordinality {
+            let n = array_exprs.len();
+            polars_ensure!(
+                alias.columns.len() <= n + 1,
+                SQLSyntax: "UNNEST table alias takes at most {} column names with the WITH ORDINALITY column, found {}", n + 1, alias.columns.len()
+            );
+            let name = ordinality_name(alias, n);
+            let schema = lf.clone().collect_schema()?;
+            polars_ensure!(
+                !schema.contains(&name) && !rename_to.contains(&name),
+                SQLInterface: "the WITH ORDINALITY column '{}' is a column already; give it another name in the alias", name
+            );
+            let first = col(explode_cols[0].clone());
+            let len = match schema.get(&explode_cols[0]) {
+                Some(DataType::Array(..)) => first.arr().len(),
+                _ => first.list().len(),
+            }
+            .cast(DataType::Int64);
+            lf = lf.with_column(
+                int_ranges(lit(1i64), len + lit(1i64), lit(1i64), DataType::Int64)
+                    .alias(name.clone()),
+            );
+            explode_cols.push(name);
         }
 
         let mut lf = lf.explode(
@@ -4275,12 +4302,19 @@ impl SQLContext {
                         alias,
                         array_exprs,
                         with_offset,
+                        with_ordinality,
                         ..
                     },
                 ) = (&join.join_operator, &join.relation)
                 {
                     if array_exprs.iter().any(|e| !matches!(e, SQLExpr::Array(_))) {
-                        lf = self.process_unnest_lateral(lf, alias, array_exprs, *with_offset)?;
+                        lf = self.process_unnest_lateral(
+                            lf,
+                            alias,
+                            array_exprs,
+                            *with_offset,
+                            *with_ordinality,
+                        )?;
                         continue;
                     }
                 }
@@ -7327,11 +7361,22 @@ impl SQLContext {
                         SQLSyntax:
                         "UNNEST table alias must also declare column names, eg: {} (a,b,c)", alias.name.to_string()
                     );
+                    // WITH ORDINALITY may name its column after those of the values
+                    let column_names =
+                        match *with_ordinality && column_names.len() == column_values.len() + 1 {
+                            true => column_names[..column_values.len()].to_vec(),
+                            false => column_names,
+                        };
                     if column_names.len() != column_values.len() {
-                        let plural = if column_values.len() > 1 { "s" } else { "" };
+                        let n = column_values.len();
+                        let plural = if n > 1 { "s" } else { "" };
+                        let with_ordinality = match *with_ordinality {
+                            true => format!(", or {} with the WITH ORDINALITY column", n + 1),
+                            false => String::new(),
+                        };
                         polars_bail!(
                             SQLSyntax:
-                            "UNNEST table alias requires {} column name{}, found {}", column_values.len(), plural, column_names.len()
+                            "UNNEST table alias requires {} column name{}{}, found {}", n, plural, with_ordinality, column_names.len()
                         );
                     }
                     let column_series: Vec<Column> = column_values
@@ -7347,12 +7392,18 @@ impl SQLContext {
                         .map(Column::from)
                         .collect();
 
-                    let lf = DataFrame::new_infer_height(column_series)?.lazy();
-
-                    if *with_offset || *with_ordinality {
-                        // TODO: support 'WITH ORDINALITY|OFFSET' modifier.
-                        polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
+                    let mut df = DataFrame::new_infer_height(column_series)?;
+                    polars_ensure!(!*with_offset, SQLInterface: "UNNEST tables do not support WITH OFFSET; use WITH ORDINALITY");
+                    if *with_ordinality {
+                        let name = ordinality_name(alias, array_exprs.len());
+                        polars_ensure!(
+                            !df.schema().contains(&name),
+                            SQLInterface: "the WITH ORDINALITY column '{}' is a column already; give it another name in the alias", name
+                        );
+                        let positions: Vec<i64> = (1..=df.height() as i64).collect();
+                        df.with_column(Column::new(name, positions))?;
                     }
+                    let lf = df.lazy();
                     let table_name = alias.name.value.clone();
                     self.from_item_frames.insert(table_name.clone(), lf.clone());
                     Ok((table_name, lf))
@@ -8712,6 +8763,17 @@ fn asof_key_pair(
         e.to_physical().cast(DataType::Int128) * lit(ticks_per_value)
     };
     Ok((to_ticks(l, l_dtype), to_ticks(r, r_dtype)))
+}
+
+/// The `WITH ORDINALITY` column of an `UNNEST` of `n_values` arrays: its alias or `ordinality`.
+fn ordinality_name(alias: &TableAlias, n_values: usize) -> PlSmallStr {
+    alias
+        .columns
+        .get(n_values)
+        .map(|c| c.name.value.as_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("ordinality")
+        .into()
 }
 
 /// Extract column names from a USING clause in a JoinOperator (if present).
