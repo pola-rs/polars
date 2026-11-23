@@ -723,20 +723,11 @@ pub fn quantile<'a>(
     let quantile = if per_group {
         per_group_quantiles = quantile_column.cast(&DataType::Float64)?;
         let quantiles = per_group_quantiles.f64()?;
-        // A null fraction gives a null for its group. Any other fraction must be in range.
-        check_quantiles(
-            quantiles
-                .downcast_iter()
-                .flat_map(|arr| arr.iter().flatten()),
-        )?;
+        check_quantiles(quantiles.iter())?;
         if let AggState::LiteralScalar(c) = &ac.state {
             // The quantile of a single value is that value, for any valid quantile.
             let value = c.quantile_reduce(0.5, method)?;
-            let dtype = value.dtype().clone();
-            let out = Column::new_scalar(keep_name.clone(), value, groups.len()).zip_with(
-                &quantiles.is_not_null(),
-                &Column::full_null(keep_name, groups.len(), &dtype),
-            )?;
+            let out = Column::new_scalar(keep_name, value, groups.len());
             return Ok(AggregationContext::from_agg_state(
                 AggState::AggregatedScalar(out),
                 Cow::Borrowed(groups),

@@ -65,8 +65,8 @@ pub enum QuantileFractionDtypes {
     NumberOrListOrStr,
 }
 
-/// Returns an error if a `quantile` fraction of `dtype` isn't one of `allowed`. The Null dtype and
-/// an unresolved dtype pass.
+/// Returns an error if a `quantile` fraction of `dtype` isn't one of `allowed`. The Null dtype
+/// passes, and `check_quantiles` then rejects the null value. An unresolved dtype passes too.
 pub fn check_quantile_dtype(dtype: &DataType, allowed: QuantileFractionDtypes) -> PolarsResult<()> {
     use QuantileFractionDtypes as A;
     let inner = match dtype {
@@ -99,31 +99,34 @@ pub fn extract_quantiles(
         "polars does not support varying quantiles yet, \
         make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
-    let quantiles = match fraction.dtype() {
-        DataType::List(_) => {
-            let inner = fraction.list()?.get_as_series(0).ok_or_else(
-                || polars_err!(ComputeError: "quantile expression contains null values"),
-            )?;
-            polars_ensure!(!inner.has_nulls(), ComputeError: "quantile expression contains null values");
-            inner
-                .cast(&DataType::Float64)?
-                .f64()?
-                .into_no_null_iter()
-                .collect()
-        },
-        _ => vec![fraction.get(0)?.try_extract()?],
+    // A null list of fractions counts as one null fraction.
+    let values = match fraction.dtype() {
+        DataType::List(_) => fraction.explode(ExplodeOptions {
+            empty_as_null: false,
+            keep_nulls: true,
+        })?,
+        _ => fraction.clone(),
     };
-    check_quantiles(&quantiles)?;
-    Ok(quantiles)
+    let values = values.strict_cast(&DataType::Float64)?;
+    let values = values.f64()?;
+    check_quantiles(values.iter())?;
+    Ok(values.into_no_null_iter().collect())
 }
 
-/// Returns an error if a quantile is NaN or outside `0.0..=1.0`.
-pub fn check_quantiles<'a>(quantiles: impl IntoIterator<Item = &'a f64>) -> PolarsResult<()> {
+/// Returns an error if a quantile is null, NaN or outside `0.0..=1.0`.
+pub fn check_quantiles(
+    quantiles: impl IntoIterator<Item = impl Into<Option<f64>>>,
+) -> PolarsResult<()> {
     for q in quantiles {
-        polars_ensure!(
-            (0.0..=1.0).contains(q),
-            ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
-        );
+        match q.into() {
+            Some(q) => polars_ensure!(
+                (0.0..=1.0).contains(&q),
+                ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
+            ),
+            None => polars_bail!(
+                ComputeError: "`quantile` should be between 0.0 and 1.0, got null"
+            ),
+        }
     }
     Ok(())
 }
@@ -312,7 +315,7 @@ fn ca_quantile<T: PolarsNumericType>(
     quantile: f64,
     method: QuantileMethod,
 ) -> PolarsResult<Option<f64>> {
-    check_quantiles(&[quantile])?;
+    check_quantiles([quantile])?;
     let n_nonnull = ca.len() - ca.null_count();
     Ok(quantile_with(n_nonnull, quantile, method, |ranks, out| {
         order_statistics(ca, ranks, out)
@@ -325,7 +328,7 @@ fn ca_quantiles<T: PolarsNumericType>(
     quantiles: &[f64],
     method: QuantileMethod,
 ) -> PolarsResult<Vec<Option<f64>>> {
-    check_quantiles(quantiles)?;
+    check_quantiles(quantiles.iter().copied())?;
     let n_nonnull = ca.len() - ca.null_count();
     Ok(quantiles_with(
         n_nonnull,
@@ -342,7 +345,7 @@ pub fn quantiles_without_nan(
     quantiles: &[f64],
     method: QuantileMethod,
 ) -> PolarsResult<Option<Vec<f64>>> {
-    check_quantiles(quantiles)?;
+    check_quantiles(quantiles.iter().copied())?;
     let n_nan: usize = ca
         .downcast_iter()
         .map(|arr| arr.non_null_values_iter().filter(|v| v.is_nan()).count())

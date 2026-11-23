@@ -371,12 +371,12 @@ impl SeriesTrait for NullChunked {
     }
 
     fn quantile_reduce(&self, quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
-        check_quantiles(&[quantile])?;
+        check_quantiles([quantile])?;
         Ok(Scalar::null(DataType::Null))
     }
 
     fn quantiles_reduce(&self, quantiles: &[f64], _method: QuantileMethod) -> PolarsResult<Scalar> {
-        check_quantiles(quantiles)?;
+        check_quantiles(quantiles.iter().copied())?;
         let name = PlSmallStr::from_static("quantiles");
         let s = Series::full_null(name, quantiles.len(), &DataType::Null);
         Ok(Scalar::new(

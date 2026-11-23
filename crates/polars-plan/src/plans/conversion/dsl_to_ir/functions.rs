@@ -1416,9 +1416,8 @@ pub(super) fn convert_functions(
 }
 
 /// Checks the fraction given to `quantile` or `approx_quantile`, and returns its values if it is a
-/// literal: one number or a list of numbers. Null elements of a list are left out, since a null
-/// fraction gives a null result. `allowed` gives the dtypes the fraction may have. Checking here
-/// makes every engine raise on a bad fraction, even on empty input.
+/// literal. `allowed` gives the dtypes the fraction may have. Checking here makes every engine
+/// raise on a bad fraction, even on empty input.
 fn check_quantile_fraction(
     fraction: &ExprIR,
     allowed: QuantileFractionDtypes,
@@ -1433,15 +1432,9 @@ fn check_quantile_fraction(
         ) => lv.to_any_value(),
         _ => None,
     };
-    let quantiles = value.and_then(|value| match value {
-        AnyValue::List(s) => s
-            .strict_cast(&DataType::Float64)
-            .ok()
-            .map(|s| s.iter().filter_map(|v| v.extract()).collect()),
-        av => av.extract().map(|q| vec![q]),
-    });
-    if let Some(quantiles) = &quantiles {
-        check_quantiles(quantiles)?;
-    }
-    Ok(quantiles)
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let fraction = Series::from_any_values(PlSmallStr::EMPTY, &[value], true)?;
+    extract_quantiles(&fraction, allowed).map(Some)
 }

@@ -182,18 +182,16 @@ pub fn approx_quantile_estimate(
             .to_unit_list()
             .into_series()
     };
-    let quantiles = quantiles.broadcast_to(sketch.len())?.list()?.to_owned();
-    polars_ensure!(
-        !quantiles.has_nulls(),
-        ComputeError: "`quantile` should not be null",
-    );
+    // A null list of fractions counts as one null fraction.
+    let fractions = quantiles.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
+    check_quantiles(fractions.f64()?.iter())?;
 
+    let quantiles = quantiles.broadcast_to(sketch.len())?.list()?.to_owned();
     let quantiles_inner = quantiles.get_inner();
     let quantiles_inner = quantiles_inner.f64()?;
-    polars_ensure!(
-        !quantiles_inner.has_nulls(),
-        ComputeError: "`quantile` should not contain null values",
-    );
     let estimates = match sketch_dtype(values_dtype) {
         physical if physical.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(physical, |$T| {

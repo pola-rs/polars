@@ -273,7 +273,7 @@ def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -
         {
             "g": [0, 0, 0, 1, 1, 1, 1, 2, 2, 3],
             "v": [None, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-            "q": [0.1, 0.1, 0.1, 0.8, 0.8, 0.8, 0.8, 0.5, 0.5, None],
+            "q": [0.1, 0.1, 0.1, 0.8, 0.8, 0.8, 0.8, 0.5, 0.5, 0.3],
         }
     )
     if layout == "idx":
@@ -284,8 +284,7 @@ def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -
         df = df.with_columns(pl.col("g", "v").set_sorted())
 
     expected = {
-        g: None if part["q"][0] is None else part["v"].quantile(part["q"][0], method)
-        for (g,), part in df.group_by("g")
+        g: part["v"].quantile(part["q"][0], method) for (g,), part in df.group_by("g")
     }
     quantile = pl.col("v").quantile(pl.col("q").first(), method)
 
@@ -296,14 +295,12 @@ def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -
 
 
 def _assert_rolling_quantile_matches_series(
-    v: pl.Series, q: list[float | None], period: int, method: QuantileMethod
+    v: pl.Series, q: list[float], period: int, method: QuantileMethod
 ) -> None:
     df = pl.DataFrame({"t": range(len(v)), "v": v, "q": q})
     windows = [v[max(0, i - period + 1) : i + 1] for i in range(len(v))]
 
-    def oracle(w: pl.Series, p: float | None) -> float | None:
-        if p is None:
-            return None
+    def oracle(w: pl.Series, p: float) -> float | None:
         return w.quantile(p, method)
 
     rolling = df.rolling("t", period=f"{period}i")
@@ -327,8 +324,7 @@ def test_quantile_varying_per_rolling_window_20951(
     v = pl.Series("v", rng.integers(0, 10, n), dtype=pl.Float64)
     if with_nulls:
         v = v.scatter(rng.choice(n, n // 3, replace=False), None)
-    q: list[float | None] = list(rng.random(n))
-    q[5] = None
+    q: list[float] = list(rng.random(n))
     _assert_rolling_quantile_matches_series(v, q, 5, method)
 
 
@@ -364,13 +360,13 @@ def test_quantile_series_literal_of_two_values_in_group_by_raises() -> None:
 
 
 def test_quantile_literal_values_per_group_quantile() -> None:
-    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, None, None, 1.0]})
+    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, 0.0, 0.0, 1.0]})
     lf = df.lazy().group_by("g", maintain_order=True)
     out = lf.agg(pl.lit(3).quantile(pl.col("q").first()))
     assert out.collect_schema()["literal"] == pl.Float64
-    assert out.collect()["literal"].to_list() == [3.0, None, 3.0]
+    assert out.collect()["literal"].to_list() == [3.0, 3.0, 3.0]
     out = lf.agg(pl.lit(True).quantile(pl.col("q").first()))
-    assert out.collect()["literal"].to_list() == [1.0, None, 1.0]
+    assert out.collect()["literal"].to_list() == [1.0, 1.0, 1.0]
 
 
 def test_quantile_series_literal_in_group_by_empty_frame() -> None:
@@ -735,7 +731,7 @@ def test_approx_quantile_bad_error(error: float) -> None:
 
 def test_approx_quantile_null_quantile() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
-    with pytest.raises(ComputeError, match=r"`quantile` should not be null"):
+    with pytest.raises(ComputeError, match="got null"):
         df.select(pl.col("a").approx_quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
 
 
@@ -763,7 +759,7 @@ def test_approx_quantile_python_quantile(
 
 def test_quantile_null_quantile() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
-    with pytest.raises(ComputeError, match="quantile expression contains null values"):
+    with pytest.raises(ComputeError, match="got null"):
         df.select(pl.col("a").quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
 
 
@@ -798,9 +794,7 @@ def test_quantile_out_of_range_grouped(quantile: float, per_group: bool) -> None
 
 
 @pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
-@pytest.mark.parametrize(
-    "quantile", [float("nan"), -0.1, 1.1, [0.5, 1.1], pl.lit([None, 1.1])]
-)
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1, [0.5, 1.1]])
 def test_quantile_out_of_range_literal_empty(
     op: str, quantile: float | list[float] | pl.Expr
 ) -> None:
@@ -820,6 +814,49 @@ def test_quantile_str_fraction() -> None:
     for q in [lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
         with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
             q.collect()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+def test_quantile_null_fraction_grouped(op: str, engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2], "a": [1, 2, 3, 4], "q": [None, None, 1.0, 1.0]}
+    )
+    expr = getattr(pl.col("a"), op)(pl.col("q").first())
+    literal = getattr(pl.lit(3), op)(pl.col("q").first())
+    rolling = lf.with_row_index().rolling("index", period="2i")
+    # The last window is empty, so its fraction is null although `q` has no nulls.
+    empty_window = (
+        lf.drop_nulls().with_row_index().rolling("index", period="1i", offset="1i")
+    )
+    for q in [
+        lf.group_by("g").agg(expr),
+        lf.group_by("g").agg(literal),
+        lf.select(expr.over("g")),
+        rolling.agg(getattr(pl.col("a"), op)(pl.col("q").last())),
+        empty_window.agg(expr),
+    ]:
+        with pytest.raises(ComputeError, match="got null"):
+            q.collect(engine=engine)
+
+
+def test_approx_quantile_null_in_fraction_list_grouped() -> None:
+    lf = pl.LazyFrame({"g": [1, 2], "a": [1, 2], "q": [None, 0.5]})
+    null_list = pl.when(pl.col("q").is_not_null()).then(pl.concat_list("q", "q"))
+    for q in [null_list, pl.concat_list("q", pl.lit(0.5))]:
+        expr = pl.col("a").approx_quantile(q.first())
+        with pytest.raises(ComputeError, match="got null"):
+            lf.group_by("g").agg(expr).collect()
+
+
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+@pytest.mark.parametrize("quantile", [pl.lit(None), pl.lit([None, 0.5])])
+def test_quantile_null_literal_empty(op: str, quantile: pl.Expr) -> None:
+    lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64})
+    expr = getattr(pl.col("a"), op)(quantile)
+    for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(ComputeError, match="got null"):
+            q.collect_schema()
 
 
 @pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
