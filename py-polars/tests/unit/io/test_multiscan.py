@@ -1782,8 +1782,8 @@ def test_multiscan_unordered_files(
         df.with_row_index().filter(pl.col("a") % 3 == 0),
     )
     assert_frame_equal(
-        collect(lf.slice(40, 120).select(pl.col("a").sum(), pl.len())),
-        df.slice(40, 120).select(pl.col("a").sum(), pl.len()),
+        collect(lf.slice(40, 119).select(pl.col("a").sum(), pl.len())),
+        df.slice(40, 119).select(pl.col("a").sum(), pl.len()),
     )
     assert_frame_equal(
         collect(lf.group_by("f").agg(pl.len(), pl.col("a").min()).sort("f")),

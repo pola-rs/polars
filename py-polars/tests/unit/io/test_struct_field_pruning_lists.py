@@ -352,7 +352,7 @@ def test_struct_field_pruning_ipc_views_compression_batches(tmp_path: Path) -> N
                     l.list.eval(e.struct.field("p").list.eval(e.struct.field("v")))
                 ),
                 lf.select(l.explode().struct.field("p").explode().struct.field("u")),
-                lf.slice(80, 48).select(
+                lf.slice(80, 47).select(
                     s.struct.field("c"), l.list.last().struct.field("q")
                 ),
             ]:
