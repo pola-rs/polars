@@ -34,6 +34,7 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
+use crate::context::is_using_left_key;
 use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
 use crate::group_context::{is_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
@@ -2428,7 +2429,7 @@ impl SQLFunctionVisitor<'_> {
                             let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();
                             let col_names = active_schema
                                 .iter_names()
-                                .filter(|name| rx.is_match(name))
+                                .filter(|name| rx.is_match(name) && !is_using_left_key(name))
                                 .cloned()
                                 .collect::<Vec<_>>();
 
@@ -2441,7 +2442,18 @@ impl SQLFunctionVisitor<'_> {
                             Ok(Expr::Selector(Selector::Matches(pat.into())))
                         }
                     },
-                    Expr::Selector(s) => Ok(s.as_expr()),
+                    Expr::Selector(s) => {
+                        let hidden: Vec<PlSmallStr> = active_schema
+                            .iter()
+                            .flat_map(|schema| schema.iter_names())
+                            .filter(|name| is_using_left_key(name))
+                            .cloned()
+                            .collect();
+                        Ok(match hidden.is_empty() {
+                            true => s.as_expr(),
+                            false => s.exclude_cols(hidden).as_expr(),
+                        })
+                    },
                     _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
                 })
             },

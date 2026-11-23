@@ -4293,6 +4293,16 @@ impl SQLContext {
                     std::iter::once(&join.relation),
                     &self.catalog_spellings,
                 ));
+                let merges_using_keys = matches!(
+                    join.join_operator,
+                    JoinOperator::FullOuter(JoinConstraint::Using(_))
+                        | JoinOperator::Right(JoinConstraint::Using(_))
+                        | JoinOperator::RightOuter(JoinConstraint::Using(_))
+                );
+                let using_left_relations = match merges_using_keys {
+                    true => left_relations.clone(),
+                    false => Vec::new(),
+                };
                 let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);
                 if !keep_left {
                     kept.clear();
@@ -4477,9 +4487,58 @@ impl SQLContext {
                     self.join_using_cols
                         .extend(cols.map(|c| (r_name.clone(), c)));
                 }
+                if merges_using_keys && let Some(cols) = get_using_cols(&join.join_operator) {
+                    let full = matches!(join.join_operator, JoinOperator::FullOuter(_));
+                    lf = self.merge_using_keys(lf, cols, &r_name, &using_left_relations, full)?;
+                }
             }
         };
         Ok(lf)
+    }
+
+    /// As in Postgres, the unqualified USING key of a FULL or RIGHT join takes the value of either
+    /// side; the left relations read their own key under a hidden name.
+    fn merge_using_keys(
+        &mut self,
+        mut lf: LazyFrame,
+        keys: impl Iterator<Item = String>,
+        r_name: &str,
+        left_relations: &[String],
+        full: bool,
+    ) -> PolarsResult<LazyFrame> {
+        let schema = self.get_frame_schema(&mut lf)?;
+        let mut exprs = Vec::new();
+        for key in keys {
+            let right = format!("{key}:{r_name}");
+            if !schema.contains(&key) || !schema.contains(&right) {
+                continue;
+            }
+            let left = format!("{USING_LEFT_KEY_PREFIX}{}", unique_column_name());
+            exprs.push(col(&key).alias(&left));
+            // The right key itself where the types match keeps a filter on it pushed down.
+            let merged = match full {
+                true => coalesce(&[col(&key), col(&right)]),
+                false if schema.get(&key) == schema.get(&right) => col(&right),
+                false => coalesce(&[col(&right), col(&key)]),
+            };
+            exprs.push(merged.alias(&key));
+            for relation in left_relations {
+                let Some(mut relation_lf) = self.get_relation_frame(relation)? else {
+                    continue;
+                };
+                if !self.get_frame_schema(&mut relation_lf)?.contains(&key) {
+                    continue;
+                }
+                let aliases = self.joined_aliases.entry(relation.clone()).or_default();
+                if aliases.get(&key).is_none_or(|name| *name == key) {
+                    aliases.insert(key.clone(), left.clone());
+                }
+            }
+        }
+        Ok(match exprs.is_empty() {
+            true => lf,
+            false => lf.with_columns(exprs),
+        })
     }
 
     /// Check that the SELECT statement only contains supported clauses.
@@ -5472,7 +5531,7 @@ impl SQLContext {
             // eg: bare "FROM tbl" is equivalent to "SELECT * FROM tbl".
             return Ok(schema
                 .iter_names()
-                .filter(|name| !is_correlated_result_col(name))
+                .filter(|name| !is_correlated_result_col(name) && !is_using_left_key(name))
                 .map(|name| (col(name.clone()), false))
                 .collect());
         }
@@ -5609,7 +5668,7 @@ impl SQLContext {
                 SelectItem::Wildcard(wildcard_options) => {
                     let cols = schema
                         .iter_names()
-                        .filter(|name| !is_correlated_result_col(name))
+                        .filter(|name| !is_correlated_result_col(name) && !is_using_left_key(name))
                         .map(|name| col(name.clone()))
                         .collect();
                     items.push(ProjectionItem::Exprs(
@@ -7428,8 +7487,21 @@ impl SQLContext {
                 // just group, so their relation aliases stay visible to the enclosing query.
                 match alias {
                     Some(alias) => {
-                        let lf = self
+                        let mut lf = self
                             .execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?;
+                        // The hidden USING keys go out of scope with its relations.
+                        let hidden: Vec<PlSmallStr> = self
+                            .get_frame_schema(&mut lf)?
+                            .iter_names()
+                            .filter(|name| is_using_left_key(name))
+                            .cloned()
+                            .collect();
+                        if !hidden.is_empty() {
+                            lf = lf.drop(Selector::ByName {
+                                names: hidden.into(),
+                                strict: true,
+                            });
+                        }
                         let lf = self.rename_columns_from_table_alias(lf, alias)?;
                         let name = alias.name.value.clone();
                         self.from_item_frames.insert(name.clone(), lf.clone());
@@ -8382,7 +8454,8 @@ impl SQLContext {
             .collect();
         idents_with_wildcard.push(Ident::new("*"));
 
-        let exprs = resolve_compound_identifier(self, &idents_with_wildcard, Some(schema))?;
+        let mut exprs = resolve_compound_identifier(self, &idents_with_wildcard, Some(schema))?;
+        exprs.retain(|e| !matches!(e, Expr::Column(name) if is_using_left_key(name)));
         self.process_wildcard_additional_options(exprs, options, schema)
     }
 
@@ -8853,6 +8926,14 @@ pub(crate) const CORRELATED_COL_PREFIX: &str = "__POLARS_CORR_";
 
 pub(crate) fn is_correlated_result_col(name: &str) -> bool {
     name.starts_with(CORRELATED_COL_PREFIX)
+}
+
+/// The prefix of the left keys that `merge_using_keys` hides.
+const USING_LEFT_KEY_PREFIX: &str = "__POLARS_USING_LEFT_";
+
+/// Whether `name` is a left key that `merge_using_keys` hid.
+pub(crate) fn is_using_left_key(name: &str) -> bool {
+    name.starts_with(USING_LEFT_KEY_PREFIX)
 }
 
 /// The relations of a `FROM` (see `factor_relations`).
