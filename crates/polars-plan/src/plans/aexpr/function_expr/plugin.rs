@@ -18,7 +18,7 @@ struct LoadedPlugin {
     ffi_major: u16,
     ffi_minor: u16,
     /// Expression functions by symbol name. Libraries are never unloaded, so these stay valid.
-    expr_fns: RwLock<PlHashMap<String, ExprFn>>,
+    expr_fns: RwLock<PlIndexMap<String, ExprFn>>,
 }
 
 #[derive(Clone, Copy)]
