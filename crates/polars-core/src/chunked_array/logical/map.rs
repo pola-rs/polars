@@ -532,6 +532,7 @@ fn windowed_entries_array(arr: &LargeListArray) -> ArrayRef {
 #[derive(Clone)]
 struct LiveEntryRuns<'a> {
     offsets: &'a [i64],
+    first: i64,
     rows: BitmapIter<'a>,
     /// The next row of `rows`.
     row: usize,
@@ -546,6 +547,7 @@ impl<'a> LiveEntryRuns<'a> {
         let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
         Some(Self {
             offsets: arr.offsets().as_slice(),
+            first: *arr.offsets().first(),
             rows: validity.iter(),
             row: 0,
             live: 0,
@@ -557,13 +559,13 @@ impl<'a> LiveEntryRuns<'a> {
 impl Iterator for LiveEntryRuns<'_> {
     type Item = Range<usize>;
 
+    #[inline]
     fn next(&mut self) -> Option<Range<usize>> {
-        let first = self.offsets[0];
         while self.rows.num_remaining() > 0 {
             self.row += self.rows.take_leading_ones();
             let end = self.row + self.rows.take_leading_zeros();
-            let start = (self.offsets[self.row] - first) as usize;
-            let stop = (self.offsets[end] - first) as usize;
+            let start = (self.offsets[self.row] - self.first) as usize;
+            let stop = (self.offsets[end] - self.first) as usize;
             self.row = end;
             if stop > start {
                 let run = self.live..start;
