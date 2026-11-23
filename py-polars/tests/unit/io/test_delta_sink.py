@@ -79,7 +79,7 @@ def test_delta_sink_append_round_trip(tmp_path: Path) -> None:
 
     table = DeltaTable(str(tmp_path))
     assert table.version() == 1
-    history = table.history()
+    history = list(table.history())
     assert history[0]["operation"] == "WRITE"
     assert history[1]["operation"] == "CREATE TABLE"
     assert_frame_equal(_read(tmp_path, "a", "s"), pl.concat([df, df]).sort("a", "s"))
@@ -106,9 +106,9 @@ def test_delta_delegated_zoned_timestamp_partition_append(
     else:
         df.write_delta(tmp_path, mode="append", delta_write_options=options)
 
-    history = DeltaTable(tmp_path).history()
-    assert history[0]["polars.partition-timestamp-zone"] == "UTC"
-    assert history[0]["user-key"] == "kept"
+    latest = next(iter(DeltaTable(tmp_path).history()))
+    assert latest["polars.partition-timestamp-zone"] == "UTC"
+    assert latest["user-key"] == "kept"
     assert props.custom_metadata == {"user-key": "kept"}
     assert_frame_equal(_read(tmp_path), pl.concat([df, df]))
 
@@ -165,7 +165,7 @@ def test_delta_sink_overwrite(tmp_path: Path) -> None:
 
     table = DeltaTable(str(tmp_path))
     assert table.version() == 1
-    assert table.history()[0]["operationParameters"]["mode"] == "Overwrite"
+    assert next(iter(table.history()))["operationParameters"]["mode"] == "Overwrite"
     assert _read(tmp_path, "a")["a"].to_list() == [10, 20]
 
 
