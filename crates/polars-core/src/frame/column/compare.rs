@@ -1,5 +1,5 @@
 use polars_arrow::array::{BooleanArray, PrimitiveArray};
-use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::{Bitmap, or_not};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_compute::comparisons::TotalEqKernel;
 use polars_error::{PolarsResult, polars_ensure};
@@ -53,44 +53,82 @@ fn dictionary_lookup_mask(
     let table = table.downcast_as_array();
     let bits: Vec<bool> = table.values().iter().collect();
     let valid: Option<Vec<bool>> = table.validity().map(|v| v.iter().collect());
+    let values = Lookup::new(&bits);
     // Without a null result for a value, the result is only null on the null rows.
-    let valid_values = valid.as_deref().filter(|valid| !valid[..n].iter().all(|v| *v));
+    let valid_values = valid
+        .as_deref()
+        .filter(|valid| !valid[..n].iter().all(|v| *v))
+        .map(Lookup::new);
 
     let chunks = column.codes().downcast_iter().map(|codes| {
         let has_nulls = codes.validity().is_some_and(|v| v.unset_bits() > 0);
-        let values = lookup_bits(codes, &bits);
-        let validity = match (valid_values, valid.as_deref()) {
-            (Some(valid), _) => Some(lookup_bits(codes, valid)),
+        let validity = match (&valid_values, valid.as_deref()) {
+            (Some(valid), _) => Some(valid.bits(codes)),
             (None, Some(valid)) if has_nulls && !valid[n] => codes.validity().cloned(),
             _ => None,
         };
-        BooleanArray::new(ArrowDataType::Boolean, values, validity)
+        BooleanArray::new(ArrowDataType::Boolean, values.bits(codes), validity)
     });
     Ok(BooleanChunked::from_chunk_iter(name, chunks))
 }
 
-/// `table[code]` for every row of `codes`, and `table[n]` (the entry for a null) for its null
-/// rows, where `table` has an entry for each of the `n` dictionary values and one for a null.
-fn lookup_bits(codes: &PrimitiveArray<u32>, table: &[bool]) -> Bitmap {
-    let n = table.len() - 1;
-    let mut matching = table[..n].iter().enumerate().filter(|(_, b)| **b);
-    let first = matching.next();
-    let bits = match (first, matching.next()) {
-        (None, _) => Bitmap::new_zeroed(codes.len()),
-        // Comparing the codes with one code takes a fraction of the time of a lookup per row.
-        (Some((code, _)), None) => codes.tot_eq_kernel_broadcast(&(code as u32)),
-        // The code of a null row can be anything; its result is replaced below.
-        _ => Bitmap::from_trusted_len_iter(
-            codes
-                .values()
-                .iter()
-                .map(|c| unsafe { *table.get_unchecked((*c as usize).min(n)) }),
-        ),
-    };
-    match codes.validity().filter(|v| v.unset_bits() > 0) {
-        Some(validity) if table[n] => &bits | &!validity,
-        Some(validity) => &bits & validity,
-        None => bits,
+/// A table with an entry for each of the `n` values of a dictionary and a last one for a null,
+/// classified once for all chunks of codes.
+struct Lookup<'a> {
+    values: LookupValues<'a>,
+    null: bool,
+}
+
+enum LookupValues<'a> {
+    /// No value's entry is set.
+    None,
+    /// Only this code's entry is set.
+    One(u32),
+    /// Several values' entries are set; the whole table.
+    Table(&'a [bool]),
+}
+
+impl<'a> Lookup<'a> {
+    fn new(table: &'a [bool]) -> Self {
+        let n = table.len() - 1;
+        let mut set = table[..n].iter().enumerate().filter(|(_, b)| **b);
+        let values = match (set.next(), set.next()) {
+            (None, _) => LookupValues::None,
+            // No row has a code above `u32::MAX`.
+            (Some((code, _)), None) => {
+                u32::try_from(code).map_or(LookupValues::None, LookupValues::One)
+            },
+            _ => LookupValues::Table(table),
+        };
+        Self {
+            values,
+            null: table[n],
+        }
+    }
+
+    /// The entry of every row's code, and the entry for a null on the null rows.
+    fn bits(&self, codes: &PrimitiveArray<u32>) -> Bitmap {
+        let bits = match self.values {
+            LookupValues::None => Bitmap::new_zeroed(codes.len()),
+            // Comparing the codes with one code takes a fraction of the time of a lookup per row.
+            LookupValues::One(code) => codes.tot_eq_kernel_broadcast(&code),
+            // The code of a null row can be anything; its result is replaced below.
+            LookupValues::Table(table) => {
+                let n = table.len() - 1;
+                // SAFETY: the index is at most `n`, the table's last entry.
+                Bitmap::from_trusted_len_iter(
+                    codes
+                        .values()
+                        .iter()
+                        .map(|c| unsafe { *table.get_unchecked((*c as usize).min(n)) }),
+                )
+            },
+        };
+        match codes.validity().filter(|v| v.unset_bits() > 0) {
+            Some(validity) if self.null => or_not(&bits, validity),
+            Some(validity) => &bits & validity,
+            None => bits,
+        }
     }
 }
 
