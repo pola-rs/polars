@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use ir_graph::{IRNodeEdgeKeys, build_ir_traversal_graph, unpack_edges_mut};
 use polars_core::frame::UniqueKeepStrategy;
-use polars_core::prelude::{IdxSize, PlIndexMap};
+use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use slotmap::{SlotMap, new_key_type};
@@ -222,15 +222,11 @@ impl SimplifyIRNodeOrder<'_> {
                 {
                     if kept.is_empty() {
                         let input = *input;
-                        let Some((offset, len, _)) = *slice else {
+                        let Some((slice, _)) = *slice else {
                             *in_edge = out_edge.clone();
                             return self.unlink_node(current_ir_node, input);
                         };
-                        *self.ir_arena.get_mut(current_ir_node) = IR::Slice {
-                            input,
-                            offset,
-                            len: len.try_into().unwrap_or(IdxSize::MAX),
-                        };
+                        *self.ir_arena.get_mut(current_ir_node) = IR::Slice { input, slice };
                         return self.simplify_ir_node_orders(current_ir_node);
                     }
                     *by_column = kept.iter().map(|&i| by_column[i].clone()).collect();
@@ -457,7 +453,9 @@ impl SimplifyIRNodeOrder<'_> {
                 #[cfg(feature = "asof_join")]
                 if let JoinType::AsOf(_) = &options.args.how {
                     if in_edge_lhs.is_unordered()
-                        || (out_edge.is_unordered() && in_edge_rhs.is_unordered())
+                        || (out_edge.is_unordered()
+                            && options.args.slice.is_none()
+                            && in_edge_rhs.is_unordered())
                     {
                         *in_edge_lhs = Edge::Unordered;
                         *in_edge_rhs = Edge::Unordered;
@@ -470,7 +468,9 @@ impl SimplifyIRNodeOrder<'_> {
 
                 use polars_defs::join::MaintainOrderJoin as JO;
 
-                if out_edge.is_unordered() || options.args.maintain_order == JO::None {
+                if (out_edge.is_unordered() && options.args.slice.is_none())
+                    || options.args.maintain_order == JO::None
+                {
                     *out_edge = Edge::Unordered;
                     *in_edge_lhs = Edge::Unordered;
                     *in_edge_rhs = Edge::Unordered;

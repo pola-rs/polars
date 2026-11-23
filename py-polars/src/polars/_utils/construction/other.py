@@ -57,8 +57,7 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
     import pyarrow.compute as pc
 
     if hasattr(array, "num_chunks") and array.num_chunks > 1:
-        # small integer keys can often not be combined, so let's already cast
-        # to the uint32 used by polars
+        # Widen keys before combining chunks to avoid dictionary-index overflow.
         if pa.types.is_dictionary(array.type) and (
             pa.types.is_int8(array.type.index_type)
             or pa.types.is_uint8(array.type.index_type)
@@ -66,7 +65,38 @@ def coerce_arrow(array: pa.Array) -> pa.Array:
             or pa.types.is_uint16(array.type.index_type)
             or pa.types.is_int32(array.type.index_type)
         ):
+            value_type = array.type.value_type
+            if pa.types.is_binary(value_type) or _is_pa_type(value_type, "binary_view"):
+                value_type = pa.large_binary()
+            elif not _keeps_dictionary_value_type(value_type):
+                # Strings, and value types Polars can't import as dictionary values
+                # (e.g. nested dictionaries), become a string dictionary.
+                value_type = pa.large_string()
             array = pc.cast(
-                array, pa.dictionary(pa.uint32(), pa.large_string())
+                array, pa.dictionary(pa.uint32(), value_type)
             ).combine_chunks()
     return array
+
+
+def _is_pa_type(dtype: pa.DataType, name: str) -> bool:
+    # Some type checks, e.g. `is_binary_view`, don't exist in older pyarrow versions.
+    check = getattr(pa.types, f"is_{name}", None)
+    return check is not None and check(dtype)
+
+
+def _keeps_dictionary_value_type(dtype: pa.DataType) -> bool:
+    """Whether a dictionary of this value type is combined without a string cast."""
+    return (
+        pa.types.is_integer(dtype)
+        # Arrow corrupts float16 dictionary values when combining chunks.
+        or pa.types.is_float32(dtype)
+        or pa.types.is_float64(dtype)
+        or pa.types.is_boolean(dtype)
+        or (pa.types.is_decimal128(dtype) and 0 <= dtype.scale <= dtype.precision)
+        or pa.types.is_date(dtype)
+        or pa.types.is_time(dtype)
+        or pa.types.is_timestamp(dtype)
+        or pa.types.is_duration(dtype)
+        or pa.types.is_large_binary(dtype)
+        or pa.types.is_fixed_size_binary(dtype)
+    )

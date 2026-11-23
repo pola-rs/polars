@@ -15,7 +15,8 @@ use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldVa
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
 use polars_plan::prelude::{
-    FileScanIR, FunctionIR, JoinTypeOptionsIR, PythonPredicate, UnifiedScanArgs,
+    FileScanIR, FileWriteFormat, FunctionIR, JoinTypeOptionsIR, PythonPredicate, SinkTypeIR,
+    UnifiedScanArgs,
 };
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::IntoPyObjectExt;
@@ -27,6 +28,22 @@ use super::expr_nodes::PyGroupbyOptions;
 use crate::lazyframe::visit::PyExprIR;
 use crate::series::PySeries;
 use crate::{PyDataFrame, Wrap};
+
+/// Reject sink options that can't be passed on to the visitor.
+fn check_sink_supported(payload: &SinkTypeIR) -> PyResult<()> {
+    let file_format = match payload {
+        SinkTypeIR::File(options) => &options.file_format,
+        SinkTypeIR::Partitioned(options) => &options.file_format,
+        SinkTypeIR::Memory | SinkTypeIR::Callback(_) => return Ok(()),
+    };
+    match file_format {
+        #[cfg(feature = "parquet")]
+        FileWriteFormat::Parquet(options) if options.encryption.is_some() => {
+            Err(PyNotImplementedError::new_err("parquet encryption"))
+        },
+        _ => Ok(()),
+    }
+}
 
 fn scan_type_to_pyobject(
     py: Python<'_>,
@@ -44,6 +61,9 @@ fn scan_type_to_pyobject(
         },
         #[cfg(feature = "parquet")]
         FileScanIR::Parquet { options, .. } => {
+            if options.decryption.is_some() {
+                return Err(PyNotImplementedError::new_err("parquet decryption"));
+            }
             let options = serde_json::to_string(options)
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             let cloud_options = serde_json::to_string(cloud_options)
@@ -67,6 +87,8 @@ fn scan_type_to_pyobject(
             ExternalReaderBuilder::Python(object) => {
                 Ok(("external-reader", object).into_py_any(py)?)
             },
+            #[cfg(feature = "io_plugin_ffi")]
+            ExternalReaderBuilder::Ffi(_) => Err(PyNotImplementedError::new_err("I/O plugin scan")),
             ExternalReaderBuilder::Rust(()) => unreachable!(),
         },
         FileScanIR::PythonDataset { .. } => {
@@ -103,7 +125,7 @@ pub struct Filter {
     predicate: PyExprIR,
 }
 
-#[pyclass(frozen, skip_from_py_object)]
+#[pyclass(frozen)]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: UnifiedScanArgs,
@@ -111,12 +133,12 @@ pub struct PyFileOptions {
 
 #[pymethods]
 impl PyFileOptions {
+    // TODO: @3.0: Expose a slice that runs to the end with a `None` length.
     #[getter]
     fn n_rows(&self) -> Option<(i64, IdxSize)> {
         self.inner
             .pre_slice
-            .clone()
-            .map(|slice| slice.to_signed_offset_len())
+            .map(|slice| slice.to_legacy_signed_offset_len())
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {
@@ -579,12 +601,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             }
             .into_py_any(py)
         },
-        IR::Slice { input, offset, len } => Slice {
-            input: input.0,
-            offset: *offset,
-            len: *len,
-        }
-        .into_py_any(py),
+        IR::Slice { input, slice } => {
+            // TODO: @3.0: Expose a slice that runs to the end with a `None` length.
+            let (offset, len) = slice.to_legacy_signed_offset_len();
+            Slice {
+                input: input.0,
+                offset,
+                len,
+            }
+            .into_py_any(py)
+        },
         IR::Filter { input, predicate } => Filter {
             input: input.0,
             predicate: predicate.into(),
@@ -699,9 +725,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: slice
-                .as_ref()
-                .map(|t| (t.0, t.1, t.2.as_ref().map(|p| p.id().as_u128()))),
+            slice: slice.as_ref().map(|(slice, dyn_pred)| {
+                let (offset, len) = slice.to_legacy_signed_offset_len();
+                (
+                    offset,
+                    len as usize,
+                    dyn_pred.as_ref().map(|p| p.id().as_u128()),
+                )
+            }),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {
@@ -832,7 +863,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             },
                         },
                         options.args.nulls_equal,
-                        options.args.slice,
+                        legacy_slice(options.args.slice),
                         options.args.suffix().as_str(),
                         options.args.coalesce.coalesce(how),
                         Into::<&str>::into(options.args.maintain_order),
@@ -883,7 +914,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     },
                 )?,
                 options.maintain_order,
-                options.slice,
+                legacy_slice(options.slice),
             )
                 .into_py_any(py)?,
         }
@@ -977,7 +1008,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
             // Remaining options are implementation detail, not logical
-            slice: options.slice,
+            slice: legacy_slice(options.slice),
             rows: options.rows,
             maintain_order: options.maintain_order,
         }
@@ -996,16 +1027,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 .into_py_any(py)?,
         }
         .into_py_any(py),
-        IR::Sink { input, payload } => Sink {
-            input: input.0,
-            payload: PyString::new(
-                py,
-                &serde_json::to_string(payload)
-                    .map_err(|err| PyValueError::new_err(format!("{err:?}")))?,
-            )
-            .into(),
-        }
-        .into_py_any(py),
+        IR::Sink { input, payload } => {
+            check_sink_supported(payload)?;
+            Sink {
+                input: input.0,
+                payload: PyString::new(
+                    py,
+                    &serde_json::to_string(payload)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?,
+                )
+                .into(),
+            }
+            .into_py_any(py)
+        },
         IR::SinkMultiple { .. } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a SinkMultiple node",
         )),
@@ -1033,4 +1067,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         },
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
+}
+
+// TODO: @3.0: Expose a slice that runs to the end with a `None` length.
+pub(crate) fn legacy_slice(slice: Option<polars_utils::slice_enum::Slice>) -> Option<(i64, usize)> {
+    slice.map(|slice| {
+        let (offset, len) = slice.to_legacy_signed_offset_len();
+        (offset, len as usize)
+    })
 }

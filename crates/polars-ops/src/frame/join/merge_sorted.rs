@@ -117,7 +117,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                         .map(|merged| merged.with_name(lhs.name().clone()))
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
-            StructChunked::from_series(PlSmallStr::EMPTY, new_fields[0].len(), new_fields.iter())
+            StructChunked::from_series(PlSmallStr::EMPTY, merge_indicator.len(), new_fields.iter())
                 .unwrap()
                 .with_outer_validity(validity)
                 .into_series()
@@ -187,8 +187,10 @@ where
 }
 
 fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
+    // A Categorical sorts by its strings. An Enum sorts by category position, so it falls
+    // through to its physical values below.
     #[cfg(feature = "dtype-categorical")]
-    if lhs.dtype().is_categorical() || lhs.dtype().is_enum() {
+    if lhs.dtype().is_categorical() {
         let cat_phys = lhs.dtype().cat_physical().unwrap();
         with_match_categorical_physical_type!(cat_phys, |$C| {
             let lhs = lhs.cat::<$C>().unwrap();

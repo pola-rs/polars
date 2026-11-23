@@ -2,13 +2,15 @@ use std::borrow::Borrow;
 
 use self::type_check::TypeCheckRule;
 use super::*;
-use crate::constants::{get_pl_element_name, get_pl_structfields_name};
+use crate::constants::get_pl_structfields_name;
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
     /// (expression, top-level expression, schema index, is filter predicate if in a filter)
     scratch: Vec<(Node, Node, usize, bool)>,
     schemas: Vec<Schema>,
+    /// The top-level expressions in the scratch space.
+    roots: Vec<Node>,
 
     simplify: Option<SimplifyExprRule>,
     coerce: Option<TypeCoercionRule>,
@@ -75,6 +77,7 @@ impl ConversionOptimizer {
         ConversionOptimizer {
             scratch: Vec::with_capacity(8),
             schemas: Vec::new(),
+            roots: Vec::new(),
             simplify,
             coerce,
             check,
@@ -145,6 +148,13 @@ impl ConversionOptimizer {
         };
 
         self.schemas.clear();
+        self.roots.clear();
+        self.roots.extend(
+            self.scratch
+                .iter()
+                .filter(|(node, root, schema_idx, _)| node == root && *schema_idx == 0)
+                .map(|(_, root, _, _)| *root),
+        );
         while let Some((current_expr_node, root, schema_idx, is_filter_predicate)) =
             self.scratch.pop()
         {
@@ -164,6 +174,7 @@ impl ConversionOptimizer {
                 expr,
                 evaluation,
                 variant,
+                columns,
             } = expr
             {
                 let schema = if schema_idx == 0 {
@@ -178,8 +189,8 @@ impl ConversionOptimizer {
                 let element_dtype = variant
                     .element_dtype(&expr_dtype)
                     .map_err(|e| add_context(e, expr_arena))?;
-                let mut schema = schema.clone();
-                schema.insert(get_pl_element_name(), element_dtype.clone());
+                let schema = eval_schema(columns, element_dtype, schema, expr_arena)
+                    .map_err(|e| add_context(e, expr_arena))?;
                 self.schemas.push(schema);
                 self.scratch
                     .push((*evaluation, root, self.schemas.len(), false));
@@ -242,6 +253,17 @@ impl ConversionOptimizer {
                 schema_idx,
                 is_filter_predicate: is_filter_predicate && passes_on_filter_predicate(expr),
             });
+        }
+
+        // After type coercion, as it can make an argument a scalar.
+        for &root in &self.roots {
+            ensure_scalar_arguments(root, expr_arena).map_err(|e| {
+                e.with_expr_context(
+                    ExprIRDisplay::display_node(root, expr_arena)
+                        .to_string()
+                        .into(),
+                )
+            })?;
         }
 
         Ok(())

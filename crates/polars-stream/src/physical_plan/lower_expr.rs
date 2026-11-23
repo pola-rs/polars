@@ -27,6 +27,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
+use polars_utils::slice_enum::Slice;
 use slotmap::DenseSlotMap;
 
 use super::fmt::fmt_exprs;
@@ -113,7 +114,7 @@ pub fn is_input_independent_rec(
 
     let ret = match arena.get(expr_key) {
         // Handled separately in `Eval`.
-        AExpr::Element => unreachable!(),
+        AExpr::Element | AExpr::EvalColumn(_) => unreachable!(),
         AExpr::StructField(_) => false,
         AExpr::Explode { expr: inner, .. }
         | AExpr::Cast {
@@ -195,16 +196,32 @@ pub fn is_input_independent_rec(
             expr,
             evaluation: _,
             variant: _,
-        } => is_input_independent_rec(*expr, arena, cache),
+            columns,
+        } => {
+            is_input_independent_rec(*expr, arena, cache)
+                && columns
+                    .iter()
+                    .all(|c| is_input_independent_rec(c.node(), arena, cache))
+        },
         AExpr::StructEval {
             expr,
             evaluation,
             variant: _,
         } => {
+            // The `StructField`s of `evaluation` read the struct of `expr`, not the input. The
+            // bodies of `Eval`s are skipped (`inputs_rev`): a `len()` there is a list's length.
             is_input_independent_rec(*expr, arena, cache)
-                && evaluation
-                    .iter()
-                    .all(|expr| is_input_independent_rec(expr.node(), arena, cache))
+                && evaluation.iter().all(|expr| {
+                    let mut stack = vec![expr.node()];
+                    while let Some(node) = stack.pop() {
+                        let ae = arena.get(node);
+                        if matches!(ae, AExpr::Column(_) | AExpr::Len) {
+                            return false;
+                        }
+                        ae.inputs_rev(&mut stack);
+                    }
+                    true
+                })
         },
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
@@ -584,7 +601,7 @@ fn lower_exprs_with_ctx(
 
         match ctx.expr_arena.get(expr).clone() {
             // Handled separately in `Eval` expressions.
-            AExpr::Element => unreachable!(),
+            AExpr::Element | AExpr::EvalColumn(_) => unreachable!(),
             // Mapped to `Column` in `StructEval`.
             AExpr::StructField(_) => unreachable!(),
 
@@ -853,24 +870,26 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function:
                     IRFunctionExpr::ValueCounts {
-                        sort: false,
+                        sort,
                         parallel: _,
                         name: count_name,
-                        normalize: false,
+                        normalize,
                     },
                 options: _,
             } => {
                 // Transform:
                 //    expr.value_counts(
-                //      sort=False,
+                //      sort=sort,
                 //      parallel=_,
                 //      name=count_name,
-                //      normalize=False
+                //      normalize=normalize
                 //    ).alias(name)
                 //      ->
                 //    .select(expr.alias(name))
                 //    .group_by(name)
                 //      .agg(count_name = pl.len())
+                //    [.sort(count_name, descending=True)]
+                //    [.with_columns(count_name / count_name.sum())]
                 //    .select(pl.struct([name, count_name]))
 
                 assert_eq!(inner_exprs.len(), 1);
@@ -911,6 +930,35 @@ fn lower_exprs_with_ctx(
                     },
                     false,
                 )?;
+
+                let stream = if sort {
+                    build_sort_stream_with_ctx(
+                        stream,
+                        vec![
+                            AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena)
+                                .expr_ir(tmp_count_name.clone()),
+                        ],
+                        None,
+                        SortMultipleOptions::default().with_order_descending(true),
+                        ctx,
+                    )?
+                } else {
+                    stream
+                };
+
+                let stream = if normalize {
+                    let count = AExprBuilder::col(tmp_count_name.clone(), ctx.expr_arena);
+                    let total = count.sum(ctx.expr_arena);
+                    let proportion = count
+                        .cast(DataType::Float64, ctx.expr_arena)
+                        .true_divide(total, ctx.expr_arena)
+                        .expr_ir(tmp_count_name.clone());
+                    let value = AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena)
+                        .expr_ir(tmp_value_name.clone());
+                    build_select_stream_with_ctx(stream, &[value, proportion], ctx)?
+                } else {
+                    stream
+                };
 
                 let value = ExprIR::new(
                     ctx.expr_arena.add(AExpr::Column(tmp_value_name)),
@@ -1156,6 +1204,8 @@ fn lower_exprs_with_ctx(
                     output_bool: true,
                     runtime_filters: Vec::new(),
                     estimated_rows: None,
+                    key_ranges: Vec::new(),
+                    pre_drop_schema: None,
                 };
 
                 // SemiAntiJoin with output_bool returns a column with the same name as the first
@@ -1640,16 +1690,24 @@ fn lower_exprs_with_ctx(
                 expr: inner,
                 evaluation,
                 variant,
+                mut columns,
             } => match variant {
                 EvalVariant::List
                 | EvalVariant::ListAgg
                 | EvalVariant::Array { as_list: _ }
                 | EvalVariant::ArrayAgg => {
-                    let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                    let inputs: Vec<Node> = std::iter::once(inner)
+                        .chain(columns.iter().map(|c| c.node()))
+                        .collect();
+                    let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inputs, ctx)?;
+                    for (c, node) in columns.iter_mut().zip(&trans_exprs[1..]) {
+                        c.set_node(*node);
+                    }
                     let eval_expr = AExpr::Eval {
-                        expr: trans_expr[0],
+                        expr: trans_exprs[0],
                         evaluation,
                         variant,
+                        columns,
                     };
                     input_streams.insert(trans_input);
                     transformed_exprs.push(ctx.expr_arena.add(eval_expr));
@@ -2259,17 +2317,24 @@ fn lower_exprs_with_ctx(
                 //   normalize=false: -sum(x * log(x, base))
                 //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
                 //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                let input_schema = input.output_schema(ctx.phys_sm);
+                let to_field_ctx = ToFieldContext::new(ctx.expr_arena, input_schema);
+                let dtype = ctx.expr_arena.get(expr).to_dtype(&to_field_ctx)?;
+                let x_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?.clone();
+
                 let inner = inner_exprs[0].node();
                 let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], ctx)?;
-                let x = AExprBuilder::new_from_node(trans_inner[0]);
-                let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
-                let log_x = AExprBuilder::function(
-                    vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
-                    IRFunctionExpr::Log,
+                let mut x = AExprBuilder::new_from_node(trans_inner[0]);
+                // Compute in the output float dtype, so that `sum(x)` is a float too.
+                if x_dtype != dtype {
+                    x = x.cast(dtype, ctx.expr_arena);
+                }
+                let sum_x_log_x = AExprBuilder::function(
+                    vec![x.expr_ir_unnamed(), x.expr_ir_unnamed()],
+                    IRFunctionExpr::XLogY { base },
                     ctx.expr_arena,
-                );
-                let x_log_x = x.multiply(log_x, ctx.expr_arena);
-                let sum_x_log_x = x_log_x.sum(ctx.expr_arena);
+                )
+                .sum(ctx.expr_arena);
 
                 if !normalize {
                     let entropy = sum_x_log_x.negate(ctx.expr_arena);
@@ -2278,49 +2343,38 @@ fn lower_exprs_with_ctx(
                     input_streams.insert(trans_stream);
                     transformed_exprs.push(trans_expr[0]);
                 } else {
-                    // Compute sum(x) and sum(x*log(x, base)) in a single Reduce node,
-                    // then combine elementwise.
-                    let sum_x_name = unique_column_name();
-                    let sum_x_log_x_name = unique_column_name();
-                    let sum_x_expr = ExprIR::new(
-                        x.sum(ctx.expr_arena).node(),
-                        OutputName::Alias(sum_x_name.clone()),
-                    );
-                    let sum_x_log_x_expr = ExprIR::new(
-                        sum_x_log_x.node(),
-                        OutputName::Alias(sum_x_log_x_name.clone()),
-                    );
-                    let output_schema = schema_for_select(
-                        trans_input,
-                        &[sum_x_expr.clone(), sum_x_log_x_expr.clone()],
-                        ctx,
-                    )?;
+                    // Compute both sums in a single Reduce node, then combine them elementwise.
+                    let reductions = [sum_x_log_x, x.sum(ctx.expr_arena)];
+                    let names = reductions.map(|_| unique_column_name());
+                    let reduce_exprs = reductions
+                        .iter()
+                        .zip(&names)
+                        .map(|(e, name)| ExprIR::new(e.node(), OutputName::Alias(name.clone())))
+                        .collect::<Vec<_>>();
+                    let output_schema = schema_for_select(trans_input, &reduce_exprs, ctx)?;
                     let reduce_key = ctx.phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::Reduce {
                             input: trans_input,
-                            exprs: vec![sum_x_expr, sum_x_log_x_expr],
+                            exprs: reduce_exprs,
                         },
                     ));
-                    let reduce_stream = PhysStream::first(reduce_key);
-
-                    let sum_x = AExprBuilder::col(sum_x_name, ctx.expr_arena);
-                    let sum_x_log_x = AExprBuilder::col(sum_x_log_x_name, ctx.expr_arena);
+                    let [sum_x_log_x, sum_x] =
+                        names.map(|name| AExprBuilder::col(name, ctx.expr_arena));
+                    let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
                     let log_sum_x = AExprBuilder::function(
                         vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
                         IRFunctionExpr::Log,
                         ctx.expr_arena,
                     );
-                    // log(sum(x), base) - sum(x * log(x, base)) / sum(x)
-                    let result = log_sum_x
-                        .minus(
-                            sum_x_log_x.true_divide(sum_x, ctx.expr_arena),
-                            ctx.expr_arena,
-                        )
-                        .node();
+                    // A zero sum(x) gives NaN through `0 / 0`.
+                    let result = log_sum_x.minus(
+                        sum_x_log_x.true_divide(sum_x, ctx.expr_arena),
+                        ctx.expr_arena,
+                    );
 
-                    input_streams.insert(reduce_stream);
-                    transformed_exprs.push(result);
+                    input_streams.insert(PhysStream::first(reduce_key));
+                    transformed_exprs.push(result.node());
                 }
             },
 
@@ -3088,14 +3142,14 @@ fn build_length_preserving_select_stream_with_ctx(
 pub(crate) fn build_sort_stream_with_ctx(
     input: PhysStream,
     by_column: Vec<ExprIR>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     mut sort_options: SortMultipleOptions,
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
     // Any order is sorted by no keys, so the input order is kept.
     if by_column.is_empty() {
         return Ok(match slice {
-            Some((offset, len)) => build_slice_stream(input, offset, len, ctx.phys_sm),
+            Some(slice) => build_slice_stream(input, slice, ctx.phys_sm),
             None => input,
         });
     }
@@ -3176,6 +3230,7 @@ pub(crate) fn build_sort_stream_with_ctx(
         by_column: vec![key],
         slice,
         sort_options,
+        projection: None,
     };
     let mut stream = PhysStream::first(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)));
 
@@ -3234,7 +3289,7 @@ fn build_limited_sort_stream_with_ctx(
 pub fn build_sort_stream(
     input: PhysStream,
     by_column: Vec<ExprIR>,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     sort_options: SortMultipleOptions,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,

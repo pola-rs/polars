@@ -425,6 +425,36 @@ def test_is_in_skip_batch_predicate_floats() -> None:
     )
 
 
+def test_is_in_skip_batch_predicate_imploded_series_30922() -> None:
+    needles = [*range(75), *range(100, 150)]
+    assert_skp_series(
+        "x",
+        pl.Int64(),
+        pl.col("x").is_in(pl.Series(needles).implode()),
+        [
+            {"min": 75, "max": 99, "null_count": 0, "len": 10, "can_skip": True},
+            {"min": 74, "max": 100, "null_count": 0, "len": 10, "can_skip": False},
+            {"min": 150, "max": 199, "null_count": 0, "len": 10, "can_skip": True},
+        ],
+    )
+    assert_skp_series(
+        "x",
+        pl.Float64(),
+        pl.col("x").is_in(pl.Series([1.0, 2.0, 5.0]).implode()),
+        [
+            {"min": 2.5, "max": 4.5, "null_count": 0, "len": 10, "can_skip": True},
+            {"min": 1.5, "max": 2.5, "null_count": 0, "len": 10, "can_skip": False},
+        ],
+    )
+
+    schema = {"x": pl.Float64()}
+    with_nan = pl.Series([1.0, float("nan")]).implode()
+    assert pl.col("x").is_in(with_nan)._skip_batch_predicate(schema) is None
+    # A multi-row List Series is compared row by row.
+    per_row = pl.Series([[1.0], [2.0]])
+    assert pl.col("x").is_in(per_row)._skip_batch_predicate(schema) is None
+
+
 @pytest.mark.parametrize(
     "needles",
     [

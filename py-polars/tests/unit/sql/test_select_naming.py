@@ -77,6 +77,25 @@ def test_verbatim_duplicate_selection_still_errors(df_naming: pl.DataFrame) -> N
             ctx.execute("SELECT *, a FROM t1")
 
 
+def test_repeated_expressions_are_renamed() -> None:
+    df = pl.DataFrame({"s": ["ab", None]})
+    res = df.sql("SELECT LEFT(s, 2), SUBSTR(s, 1, 2), UPPER(s), UPPER(s) FROM self")
+    assert res.columns == ["s", "s:1", "s:2", "s:3"]
+    assert res.rows() == [("ab", "ab", "AB", "AB"), (None, None, None, None)]
+    res = df.sql("SELECT UPPER(MIN(s)), UPPER(MIN(s)) FROM self")
+    assert res.columns == ["s", "s:1"]
+    assert res.rows() == [("AB", "AB")]
+    res = df.sql("SELECT GROUPING(s), GROUPING(s) FROM self GROUP BY ROLLUP(s)")
+    assert res.columns == ["GROUPING(s)", "GROUPING(s):1"]
+
+
+def test_repeated_join_column_still_errors() -> None:
+    left = pl.DataFrame({"id": [1], "s": ["x"]})
+    right = pl.DataFrame({"id": [1], "s": ["y"]})
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.sql("SELECT r.s, r.s FROM left AS l JOIN right AS r USING (id)", eager=True)
+
+
 def test_repeated_constants_are_renamed(df_naming: pl.DataFrame) -> None:
     """A repeated unaliased constant gets a new name, like distinct constants."""
     with pl.SQLContext(frames={"t1": df_naming}, eager=True) as ctx:
@@ -157,3 +176,140 @@ def test_unaliased_scalar_subquery_name_is_stable() -> None:
         assert ctx.execute("SELECT (SELECT MAX(v) FROM t) AS mx FROM t").columns == [
             "mx"
         ]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a * 2 AS x, x + 1 AS y, y * x AS z FROM self ORDER BY a",
+        # an input column comes before an alias of the same name
+        "SELECT a * 2 AS b, b + 1 AS y FROM self ORDER BY a",
+        "SELECT a AS x, x AS a, a + 1 AS c FROM self ORDER BY x",
+        "SELECT a * 2 AS x, CASE WHEN x > 3 THEN 'big' END AS size FROM self ORDER BY a",
+        "SELECT MAX(a) AS m, MIN(a) AS n, m - n AS spread FROM self",
+        "SELECT g, MAX(a) AS m, MIN(a) AS n, m - n AS d FROM self GROUP BY g HAVING d > 0",
+        "SELECT g AS k, k || '!' AS k2, COUNT(*) AS n FROM self GROUP BY k ORDER BY k",
+        "SELECT a % 2 AS x, x * 10 AS y, COUNT(*) AS n FROM self GROUP BY x ORDER BY x",
+        "SELECT g AS p, MAX(b) OVER (PARTITION BY p) AS m FROM self ORDER BY a",
+        "SELECT a, ROW_NUMBER() OVER (ORDER BY a) AS rn, rn * 10 AS r10 FROM self "
+        "QUALIFY r10 > 10 ORDER BY a",
+        "SELECT DISTINCT a % 2 AS x, x + 1 AS y FROM self ORDER BY x",
+        "SELECT 2 AS x, SUM(x) AS s, COUNT(x) AS n FROM self",
+        "SELECT g, 2 AS x, SUM(x) AS s FROM self GROUP BY g ORDER BY g",
+        "SELECT * RENAME (a AS k), k + 1 AS y FROM self ORDER BY k",
+        "SELECT self.* EXCLUDE (g) RENAME (a AS k), k + 1 AS y FROM self ORDER BY k",
+    ],
+)
+def test_select_alias_reuse(query: str) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 5], "g": ["x", "x", "y"]})
+    assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
+def test_select_alias_reuse_random() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql("SELECT RANDOM() AS r, r AS r2, a * 2 AS x, x FROM self")
+    assert res.columns == ["r", "r2", "x", "x:1"]
+    assert res["r"].to_list() == res["r2"].to_list()
+    assert res["x:1"].to_list() == [2, 4, 6]
+    res = df.sql("SELECT a * -1 AS x, (x) FROM self ORDER BY a")
+    assert res.rows() == [(-1, -1), (-2, -2), (-3, -3)]
+
+
+def test_select_alias_reuse_types() -> None:
+    df = pl.DataFrame({"a": [1, 2], "s": [{"b": 1, "c": "p"}, {"b": 2, "c": "q"}]})
+    res = df.sql(
+        """
+        SELECT
+          s AS x, x.b AS xb, x.*,
+          (SELECT 1) AS one, TYPEOF(one) AS t1, TO_TIMESTAMP(one) AS ts,
+          SUM(a) OVER () AS w, TYPEOF(w) AS tw
+        FROM self
+        """
+    )
+    assert res.select("xb", "b", "c", "t1", "w", "tw").rows() == [
+        (1, 1, "p", "INTEGER", 3, "BIGINT"),
+        (2, 2, "q", "INTEGER", 3, "BIGINT"),
+    ]
+    assert res["ts"].dtype == pl.Datetime("us", "UTC")
+
+    res = df.sql(
+        """
+        SELECT
+          FIRST_VALUE(s) OVER () AS x, x.* EXCLUDE (c),
+          (SELECT s FROM self LIMIT 1) AS y, y.* RENAME (c AS yc)
+        FROM self
+        """
+    )
+    assert res.columns == ["x", "b", "y", "b:1", "yc"]
+
+    res = df.sql(
+        """
+        SELECT a, FIRST_VALUE(s) OVER (ORDER BY a DESC) AS x, x.b AS y
+        FROM self
+        QUALIFY y > a
+        """
+    )
+    assert res.select("a", "y").rows() == [(1, 2)]
+
+    # wildcard RENAME names hold the windows of their source
+    res = df.sql(
+        """
+        SELECT * REPLACE (ROW_NUMBER() OVER (ORDER BY a) AS a) RENAME (a AS rn),
+          rn + 1 AS y
+        FROM self
+        QUALIFY y > 2
+        """
+    )
+    assert res.select("rn", "y").rows() == [(2, 3)]
+    with pytest.raises(pl.exceptions.SQLSyntaxError, match="cannot read SELECT alias"):
+        df.sql(
+            """
+            SELECT FIRST_VALUE(s) OVER () AS x, x.* RENAME (b AS y),
+              SUM(y) OVER (PARTITION BY a)
+            FROM self
+            """
+        )
+    res = df.sql(
+        """
+        SELECT FIRST_VALUE(s) OVER () AS x, x.* REPLACE (a AS b) RENAME (b AS y),
+          SUM(y) OVER () AS z
+        FROM self
+        """
+    )
+    assert res.select("y", "z").rows() == [(1, 3), (2, 3)]
+
+
+def test_select_alias_reuse_errors() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    # an alias is read by the items after it only
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match='"x"'):
+        df.sql("SELECT x + 1 AS y, a * 2 AS x FROM self")
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match='"x"'):
+        df.sql("SELECT a * 2 AS x FROM self WHERE x > 2")
+
+    # a window function cannot read an alias holding a window function or RANDOM()
+    for query in [
+        "SELECT SUM(a) OVER () AS s, SUM(s) OVER (PARTITION BY a) FROM self",
+        "SELECT SUM(a) OVER () AS s, s + 1 AS t, SUM(a) OVER (ORDER BY t) FROM self",
+        "SELECT SUM(a) OVER () AS s, SUM(a) OVER w FROM self WINDOW w AS (PARTITION BY s)",
+        "SELECT RANDOM() AS r, FIRST_VALUE(r) OVER (PARTITION BY a) FROM self",
+        "SELECT SUM(a) OVER () AS s, * REPLACE (SUM(s) OVER () AS a) FROM self",
+        "SELECT * REPLACE (SUM(a) OVER () AS a) RENAME (a AS k), SUM(k) OVER () FROM self",
+        "SELECT SUM(a) OVER () AS w, * EXCLUDE (a) RENAME (a AS w), SUM(w) OVER () FROM self",
+    ]:
+        with pytest.raises(
+            pl.exceptions.SQLSyntaxError, match="cannot read SELECT alias"
+        ):
+            df.sql(query)
+    res = df.sql(
+        """
+        SELECT SUM(a) OVER () AS s, s + 1 AS t, a + 1 AS x, SUM(x) OVER () AS u
+        FROM self
+        """
+    )
+    assert res.rows() == [(6, 7, 2, 9), (6, 7, 3, 9), (6, 7, 4, 9)]
+    # a qualifier naming a table reads the table
+    res = pl.SQLContext(t=df).execute(
+        "SELECT SUM(a) OVER () AS t, SUM(t.a) OVER () AS z FROM t", eager=True
+    )
+    assert res.rows() == [(6, 6)] * 3

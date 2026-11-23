@@ -27,6 +27,27 @@ def test_value_counts() -> None:
     }
 
 
+@pytest.mark.parametrize("sort", [False, True])
+@pytest.mark.parametrize("normalize", [False, True])
+def test_value_counts_streaming_group_by(sort: bool, normalize: bool) -> None:
+    i = pl.int_range(0, 300_000)
+    lf = pl.LazyFrame().select(
+        a=pl.when(i % 101 == 0).then(None).otherwise(i * 7919 % 5003)
+    )
+    q = lf.select(pl.col("a").value_counts(sort=sort, normalize=normalize))
+
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "group-by" in dot
+    assert "columnar-function" not in dot
+
+    result = q.collect().unnest("a")
+    count_name = "proportion" if normalize else "count"
+    if sort:
+        assert result[count_name].is_sorted(descending=True)
+    expected = lf.collect().to_series().value_counts(normalize=normalize)
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
 def test_value_counts_logical_type() -> None:
     # test logical type
     df = pl.DataFrame({"a": ["b", "c"]}).with_columns(

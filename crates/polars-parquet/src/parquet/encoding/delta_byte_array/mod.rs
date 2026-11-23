@@ -15,13 +15,11 @@ mod tests {
         let mut buffer = vec![];
         encode(data.clone().into_iter(), &mut buffer);
 
-        let mut decoder = Decoder::try_new(&buffer)?;
-        let prefixes = decoder.by_ref().collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(prefixes, vec![b"Hello".to_vec(), b"Helicopter".to_vec()]);
-
-        // move to the values
-        let values = decoder.values();
-        assert_eq!(values, b"Helloicopter");
+        // "Hello", then "Helicopter" as the first 3 bytes of "Hello" and "icopter".
+        let decoder = Decoder::try_new(&buffer)?;
+        assert_eq!(decoder.values(), b"Helloicopter");
+        assert_eq!(decoder.prefix_lengths.collect::<Vec<i64>>()?, [0, 3]);
+        assert_eq!(decoder.suffix_lengths.collect::<Vec<i64>>()?, [5, 7]);
         Ok(())
     }
 }

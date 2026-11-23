@@ -1078,9 +1078,24 @@ def _supply_query(subquery: str, op: str, extra: str = "") -> str:
 
 
 def _partsupp_scans(query: str) -> int:
+    """Reads of partsupp: its scans, each read through a cache counted once."""
     with pl.SQLContext(frames=_supply_frames()) as ctx:
-        plan = ctx.execute(query).explain()
-    return plan.count('DF ["ps_partkey"')
+        lines = ctx.execute(query).explain().splitlines()
+    scan = 'DF ["ps_partkey"'
+    cache_ids = [re.search(r"CACHE\[id: ([^\]]+)\]", line) for line in lines]
+    partsupp_caches = {
+        cache.group(1)
+        for cache, below in zip(cache_ids, [*lines[1:], ""], strict=True)
+        if cache is not None and scan in below
+    }
+    direct = sum(
+        scan in line and above is None
+        for above, line in zip([None, *cache_ids], lines, strict=False)
+    )
+    cached = sum(
+        cache is not None and cache.group(1) in partsupp_caches for cache in cache_ids
+    )
+    return direct + cached
 
 
 SUPPLY_SUBQUERY = """
@@ -2645,6 +2660,7 @@ def test_correlated_in_subquery_on_its_correlation_key(op: str) -> None:
             SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY j DESC LIMIT 5
         )
         """,
+        "SELECT n.k, (SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.ck LIMIT (1)) AS top FROM n",
     ],
 )
 def test_correlated_subquery_limit(query: str) -> None:

@@ -19,8 +19,9 @@ from __future__ import annotations
 import importlib.metadata
 import os
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
-from polars._utils.logging import verbose
+from polars._utils.logging import eprint, verbose
 from polars._utils.wrap import wrap_ldf
 from polars._warnings import issue_warning
 from polars.exceptions import ComputeError, PerformanceWarning
@@ -129,11 +130,10 @@ def plugin_scan(
     use_metadata_statistics: bool,
     fast_deletion_count: bool,
     user_storage_options: StorageOptionsDict | None,
+    catalog_name: str | None = None,
 ) -> LazyFrame:
     """Plan the scan of `tbl` with the plugin; returns the native parquet scan."""
-    from polars.io.iceberg._dataset import (
-        _convert_iceberg_to_object_store_storage_options,
-    )
+    from polars.io.iceberg._credentials import renewing_credential_provider
     from polars.io.iceberg._utils import name_mapping_by_field_id
 
     plr = _plr()
@@ -152,26 +152,20 @@ def plugin_scan(
         msg = "iceberg: unsupported: table without a metadata location"
         raise NotImplementedError(msg)
 
-    # Catalog-provided IO properties (e.g. vended credentials) with known object store
-    # equivalents, overridden by the user's storage options.
-    storage_options = _catalog_storage_options(tbl.io.properties, metadata_location)
-    if user_storage_options is not None:
-        user_options = _convert_iceberg_to_object_store_storage_options(
-            user_storage_options
-        )
-        # The user's credentials replace the catalog's as a whole: mixing them
-        # (e.g. a profile with vended keys) is ambiguous, and rejected by the
-        # credential provider.
-        if any(_is_credential_key(k) for k in user_options):
-            storage_options = {
-                k: v
-                for k, v in storage_options.items()
-                if k not in _CATALOG_CREDENTIAL_KEYS
-            }
-        storage_options.update(user_options)
-
+    storage_options = _storage_options(
+        tbl.io.properties, metadata_location, user_storage_options
+    )
+    # Renewed for the table's location, which its metadata and data files are under,
+    # rather than for one metadata file.
+    storage_options, renewing_provider = renewing_credential_provider(
+        tbl,
+        storage_options,
+        user_storage_options,
+        _table_location(tbl),
+        catalog_name=catalog_name,
+    )
     credential_provider = _init_credential_provider_builder(
-        "auto", metadata_location, storage_options, "scan_iceberg"
+        renewing_provider, metadata_location, storage_options, "scan_iceberg"
     )
 
     # Immutable metadata files are cached across scans with the same storage
@@ -220,6 +214,7 @@ def plugin_scan(
 
 
 _AZURE_SCHEMES = ("abfs", "abfss", "adl", "az", "azure", "wasb", "wasbs")
+_ADLS_SAS_TOKEN = "adls.sas-token"
 
 # FileIO properties that PyIceberg honours and that have no object store equivalent,
 # by URL scheme.
@@ -254,6 +249,89 @@ _S3_CLIENT_PROPERTIES = {
     "client.region": "s3.region",
 }
 
+# FileIO property prefixes, by the URL schemes they configure.
+_PROPERTY_SCHEMES: dict[str, tuple[str, ...]] = {
+    "s3.": ("s3", "s3a", "s3n"),
+    "client.": ("s3", "s3a", "s3n"),
+    "adls.": _AZURE_SCHEMES,
+    "gcs.": ("gs", "gcs"),
+    "hf.": ("hf",),
+}
+
+
+def _storage_options(
+    properties: Mapping[str, Any],
+    location: str,
+    user_storage_options: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """
+    Object store options of a table at `location`.
+
+    Its FileIO properties (e.g. vended credentials) with known object store
+    equivalents, overridden by the user's storage options. Raises
+    `NotImplementedError` as `_catalog_storage_options`.
+    """
+    storage_options = _catalog_storage_options(properties, location)
+    if user_storage_options is not None:
+        user_options = _user_storage_options(user_storage_options)
+        # The user's credentials replace the catalog's as a whole: mixing them
+        # (e.g. a profile with vended keys) is ambiguous, and rejected by the
+        # credential provider.
+        if any(_is_credential_key(k) for k in user_options):
+            storage_options = {
+                k: v
+                for k, v in storage_options.items()
+                if k not in _CATALOG_CREDENTIAL_KEYS
+            }
+        # User keys last, in their order: of two aliases, the later one wins.
+        storage_options = {
+            k: v for k, v in storage_options.items() if k not in user_options
+        }
+        storage_options.update(user_options)
+    return storage_options
+
+
+def _user_storage_options(user_storage_options: Mapping[str, Any]) -> dict[str, Any]:
+    """The user's storage options as object store options."""
+    from polars.io.iceberg._dataset import (
+        _convert_iceberg_to_object_store_storage_options,
+    )
+
+    # Empty values are unset, as for the catalog's.
+    return {
+        k: v
+        for k, v in _convert_iceberg_to_object_store_storage_options(
+            dict(user_storage_options)
+        ).items()
+        if v not in ("", None)
+    }
+
+
+def _native_storage_options(
+    table: pyiceberg.table.Table,
+    user_storage_options: Mapping[str, Any] | None,
+    source: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Object store options for Polars' own reads and writes of `table`'s files.
+
+    As `_storage_options`, for files at the table's data path, or at `source`
+    (a file to read) if that is on another backend. With FileIO properties that
+    have no object store equivalent, the user's storage options alone.
+    """
+    location = _data_location(table)
+    # Files on another backend (e.g. added from elsewhere) take its properties.
+    if source is not None and _backend(source) != _backend(location):
+        location = source
+    try:
+        return _storage_options(table.io.properties, location, user_storage_options)
+    except NotImplementedError as e:
+        if verbose():
+            eprint(f"{e}; using the user's storage options only")
+        if user_storage_options is None:
+            return None
+        return _user_storage_options(user_storage_options)
+
 
 def _catalog_storage_options(
     properties: Mapping[str, Any], location: str
@@ -269,9 +347,13 @@ def _catalog_storage_options(
         _convert_iceberg_property_value,
     )
 
-    scheme = location.split("://", 1)[0].lower() if "://" in location else ""
+    scheme = _url_scheme(location)
     # Empty values are unset, as in PyIceberg.
-    properties = {k: v for k, v in properties.items() if v not in ("", None)}
+    properties = {
+        k: v
+        for k, v in properties.items()
+        if v not in ("", None) and _configures(k, scheme)
+    }
     for schemes, keys in _UNSUPPORTED_IO_PROPERTIES.items():
         if scheme in schemes and (
             unsupported := sorted(k for k in keys if k in properties)
@@ -290,6 +372,7 @@ def _catalog_storage_options(
             },
             **properties,
         }
+    properties = _account_sas_properties(properties, location)
 
     storage_options = {
         (key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP[k]): (
@@ -306,6 +389,68 @@ def _catalog_storage_options(
         if scheme in schemes and _property_is_true(properties, anonymous_key):
             storage_options[skip_signature_key] = "true"
     return storage_options
+
+
+def _account_sas_properties(
+    properties: Mapping[str, Any], location: str
+) -> Mapping[str, Any]:
+    """
+    `properties` with the SAS token vended for `location`'s storage account.
+
+    That is `adls.sas-token.<account host>`, given with its expiry under
+    `adls.sas-token`. It replaces a token set there: PyIceberg sets one, of any
+    account and without its expiry.
+    """
+    if _url_scheme(location) not in _AZURE_SCHEMES:
+        return properties
+    account = _azure_account(properties, location)
+    for k, v in properties.items():
+        host = k.removeprefix(f"{_ADLS_SAS_TOKEN}.")
+        if host == k or v in ("", None) or host.split(".")[0].lower() != account:
+            continue
+        out = {**properties, _ADLS_SAS_TOKEN: v}
+        if expiry := properties.get(f"{_ADLS_SAS_TOKEN}-expires-at-ms.{host}"):
+            out[f"{_ADLS_SAS_TOKEN}-expires-at-ms"] = expiry
+        return out
+    return properties
+
+
+def _azure_account(properties: Mapping[str, Any], location: str) -> str | None:
+    """Storage account of an Azure `location`; None if it cannot be told."""
+    # The URL's account is the one accessed. `az://container/...` has none.
+    host = urlparse(location).hostname or ""
+    name = host.split(".")[0] if "." in host else properties.get("adls.account-name")
+    return str(name).lower() if name else None
+
+
+def _data_location(table: pyiceberg.table.Table) -> str:
+    """Where the table writes its data files: stable across scans, unlike a file."""
+    path = table.properties.get("write.data.path") or f"{_table_location(table)}data"
+    # Catalogs match credentials by prefix, which usually ends with a slash.
+    return f"{path.rstrip('/')}/"
+
+
+def _table_location(table: pyiceberg.table.Table) -> str:
+    return f"{table.location().rstrip('/')}/"
+
+
+def _url_scheme(location: str) -> str:
+    return location.split("://", 1)[0].lower() if "://" in location else ""
+
+
+def _backend(location: str) -> tuple[str, ...] | None:
+    """The URL schemes of `location`'s backend, as in `_PROPERTY_SCHEMES`."""
+    scheme = _url_scheme(location)
+    return next((s for s in _PROPERTY_SCHEMES.values() if scheme in s), None)
+
+
+def _configures(key: str, scheme: str) -> bool:
+    """Whether FileIO property `key` applies to `scheme` (other backends' don't)."""
+    return all(
+        scheme in schemes
+        for prefix, schemes in _PROPERTY_SCHEMES.items()
+        if key.startswith(prefix)
+    )
 
 
 def _property_is_true(properties: Mapping[str, Any], key: str) -> bool:
@@ -437,6 +582,7 @@ _USER_CREDENTIAL_KEYS = frozenset(
         "web_identity_token_file",
         "container_credentials_relative_uri",
         "container_credentials_full_uri",
+        "container_authorization_token_file",
         "access_key",
         "account_key",
         "master_key",

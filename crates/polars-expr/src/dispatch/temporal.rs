@@ -1,5 +1,10 @@
+use polars_core::chunked_array::ops::arity::{
+    binary_elementwise_values, broadcast_try_binary_elementwise, unary_elementwise_values,
+};
 use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::prelude::*;
+use polars_core::utils::try_get_supertype;
+use polars_defs::time::date_diff::DateDiffUnit;
 use polars_plan::plans::IRTemporalFunction;
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
@@ -92,6 +97,7 @@ pub fn temporal_func_to_udf(func: IRTemporalFunction) -> SpecialEq<Arc<dyn Colum
         } => {
             map_as_slice!(temporal::datetime, &time_unit, time_zone.as_ref())
         },
+        DateDiff(unit) => map_as_slice!(temporal::date_diff, unit),
     }
 }
 
@@ -207,4 +213,136 @@ pub(super) fn combine(s: &[Column], tu: TimeUnit) -> PolarsResult<Column> {
         ),
         _ => result_naive,
     }
+}
+
+pub(super) fn date_diff(s: &[Column], unit: DateDiffUnit) -> PolarsResult<Column> {
+    let start = &s[0];
+    let end = &s[1];
+    polars_ensure!(
+        start.len() == end.len() || start.len() == 1 || end.len() == 1,
+        length_mismatch = "date_diff",
+        start.len(),
+        end.len()
+    );
+    let mut dtype = try_get_supertype(start.dtype(), end.dtype())?;
+    // Use the finest time unit of the inputs, so that no boundaries are lost.
+    if let DataType::Datetime(tu, _) = &mut dtype {
+        for input in [start.dtype(), end.dtype()] {
+            if let DataType::Datetime(input_tu, _) = input
+                && input_tu.nanoseconds() < tu.nanoseconds()
+            {
+                *tu = *input_tu;
+            }
+        }
+    }
+    let (start_index, factor) = date_diff_index(&start.strict_cast(&dtype)?, unit)?;
+    let (end_index, _) = date_diff_index(&end.strict_cast(&dtype)?, unit)?;
+    let out: Int64Chunked = broadcast_try_binary_elementwise(&start_index, &end_index, |s, e| {
+        let (Some(s), Some(e)) = (s, e) else {
+            return Ok(None);
+        };
+        e.checked_sub(s)
+            .and_then(|diff| diff.checked_mul(factor))
+            .map(Some)
+            .ok_or_else(|| polars_err!(ComputeError: "overflow in `date_diff`"))
+    })?;
+    Ok(out.with_name(start.name().clone()).into_column())
+}
+
+/// Number the `unit` boundaries of each value, such that `date_diff` is the difference
+/// of two numbers multiplied by the returned factor.
+fn date_diff_index(c: &Column, unit: DateDiffUnit) -> PolarsResult<(Int64Chunked, i64)> {
+    use polars_arrow::temporal_conversions::NANOSECONDS_IN_DAY;
+
+    let index = match (c.dtype(), unit.nanoseconds()) {
+        (DataType::Null, _) => Int64Chunked::full_null(c.name().clone(), c.len()),
+        (DataType::Date | DataType::Datetime(_, _), None) => calendar_index(c, unit)?,
+        (DataType::Date, Some(ns)) => {
+            let days = unary_elementwise_values(c.date()?.physical(), i64::from);
+            return Ok((days, NANOSECONDS_IN_DAY / ns));
+        },
+        (DataType::Datetime(tu, tz), Some(ns)) => {
+            let ca = c.datetime()?;
+            let tick_ns = tu.nanoseconds();
+            if ns <= tick_ns {
+                return Ok((ca.physical().clone(), tick_ns / ns));
+            }
+            let k = ns / tick_ns;
+            if tz.is_some() {
+                // Truncate in wall-clock time, keeping the UTC offset of the value.
+                binary_elementwise_values(ca.physical(), &wall_clock(ca)?, |t, local| {
+                    t.div_euclid(k) - i64::from(t.rem_euclid(k) < local.rem_euclid(k))
+                })
+            } else {
+                ca.physical().apply_values(|t| t.div_euclid(k))
+            }
+        },
+        (DataType::Time, Some(ns)) => c
+            .as_materialized_series()
+            .time()?
+            .physical()
+            .apply_values(|t| t.div_euclid(ns)),
+        (DataType::Time, None) => polars_bail!(
+            InvalidOperation: "`date_diff` with unit '{}' is not supported for Time",
+            <&str>::from(unit)
+        ),
+        (dtype, _) => polars_bail!(
+            InvalidOperation: "`date_diff` expects Date, Datetime or Time inputs, got {dtype}"
+        ),
+    };
+    Ok((index, 1))
+}
+
+/// Physical values of the wall-clock time; the values themselves without a time zone.
+fn wall_clock(ca: &DatetimeChunked) -> PolarsResult<Int64Chunked> {
+    match ca.time_zone() {
+        #[cfg(feature = "timezones")]
+        Some(_) => Ok(
+            polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                ca,
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .physical()
+            .clone(),
+        ),
+        _ => Ok(ca.physical().clone()),
+    }
+}
+
+/// Number of the day, week, month, quarter or year of each date or wall-clock date.
+fn calendar_index(c: &Column, unit: DateDiffUnit) -> PolarsResult<Int64Chunked> {
+    use polars_arrow::temporal_conversions::NANOSECONDS_IN_DAY;
+    use polars_time::prelude::DateMethods;
+
+    let days = || -> PolarsResult<Int64Chunked> {
+        Ok(match c.dtype() {
+            DataType::Datetime(tu, _) => {
+                let ticks_in_day = NANOSECONDS_IN_DAY / tu.nanoseconds();
+                wall_clock(c.datetime()?)?.apply_values(|t| t.div_euclid(ticks_in_day))
+            },
+            _ => unary_elementwise_values(c.date()?.physical(), i64::from),
+        })
+    };
+    match unit {
+        DateDiffUnit::Day => return days(),
+        // 1970-01-01 is a Thursday; weeks start on Monday.
+        DateDiffUnit::Week => return Ok(days()?.apply_values(|d| (d + 3).div_euclid(7))),
+        _ => {},
+    }
+    let dates = datetime::date(c)?;
+    let dates = dates.date()?;
+    let years = dates.year();
+    Ok(match unit {
+        DateDiffUnit::Year => unary_elementwise_values(&years, i64::from),
+        DateDiffUnit::Quarter => {
+            binary_elementwise_values(&years, &dates.month(), |y: i32, m: i8| {
+                i64::from(y) * 4 + (i64::from(m) - 1) / 3
+            })
+        },
+        _ => binary_elementwise_values(&years, &dates.month(), |y: i32, m: i8| {
+            i64::from(y) * 12 + i64::from(m) - 1
+        }),
+    })
 }

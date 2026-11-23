@@ -88,7 +88,7 @@ enum Step<'a> {
 /// Emits the output units in order. The sender tasks share one emission cursor, so every
 /// execution phase emits a prefix of the output. A task with nothing to emit prepares a unit
 /// ahead, up to `max_ahead_bytes` of units prepared or being prepared, and at least one.
-pub struct Flush {
+pub struct FlushState {
     inner: Mutex<FlushInner>,
     notify: Notify,
     max_ahead_bytes: usize,
@@ -96,7 +96,7 @@ pub struct Flush {
     _spill_ctxs: (LeastRecentSpillContext, MostRecentSpillContext),
 }
 
-impl Flush {
+impl FlushState {
     pub fn new(
         units: Vec<OutputUnit>,
         max_ahead_bytes: usize,
@@ -238,7 +238,7 @@ impl Flush {
     }
 }
 
-impl Drop for Flush {
+impl Drop for FlushState {
     fn drop(&mut self) {
         let units: Vec<_> = self.inner.get_mut().pending.drain(..).collect();
         RAYON.install(|| units.into_par_iter().for_each(drop));
@@ -249,7 +249,7 @@ fn into_morsels(df: DataFrame) -> VecDeque<DataFrame> {
     let morsel_size = get_ideal_morsel_size();
     (0..df.height())
         .step_by(morsel_size)
-        .map(|offset| df.slice(offset as i64, morsel_size))
+        .map(|offset| df.slice((offset, morsel_size)))
         .collect()
 }
 
@@ -302,7 +302,7 @@ async fn prepare(unit: OutputUnit) -> PolarsResult<(VecDeque<DataFrame>, Option<
         if height == 0 {
             continue;
         }
-        let columns = windows.slice(offset as i64, height).into_columns();
+        let columns = windows.slice((offset, height)).into_columns();
         // SAFETY: the window columns have the height of the morsel and new names.
         unsafe { df.hstack_mut_unchecked(&columns) };
         offset += height;
