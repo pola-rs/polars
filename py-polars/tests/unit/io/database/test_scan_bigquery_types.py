@@ -270,6 +270,39 @@ def test_bigquery_nested_json_inference_preserves_declared_siblings() -> None:
     ]
 
 
+def test_bigquery_json_distinguishes_field_paths() -> None:
+    from polars_database._bigquery import result_frames
+
+    fields = (
+        _Field("a.b", "JSON"),
+        _Field("a", "RECORD", fields=(_Field("b", "JSON"),)),
+    )
+    rows = [(True, {"b": 2})]
+    _, batches, _ = result_frames(_Cursor(fields, rows), 1)
+    assert next(batches).rows() == rows
+
+
+@pytest.mark.parametrize(
+    ("field", "name"),
+    [
+        (_Field("i", "INTERVAL"), "i"),
+        (_Field("i", "INTERVAL", "REPEATED"), "i"),
+        (_Field("s", "RECORD", fields=(_Field("i", "INTERVAL"),)), "s.i"),
+    ],
+)
+def test_bigquery_rejects_interval_from_result_schema(field: _Field, name: str) -> None:
+    from polars_database._bigquery import result_frames
+
+    cursor = _Cursor((field,), [])
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="unsupported type INTERVAL"
+    ) as err:
+        result_frames(cursor, 1)
+    assert repr(name) in str(err.value)
+    assert "CAST(<interval> AS STRING)" in str(err.value)
+    assert not cursor.fetches
+
+
 @pytest.mark.parametrize("rows", [[], [("2025-01-02 03:04:05.123456789012+00",)]])
 def test_bigquery_rejects_picosecond_timestamps(rows: list[tuple[str]]) -> None:
     from polars_database._bigquery import result_frames

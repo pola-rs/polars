@@ -592,6 +592,7 @@ impl PartitionReader {
                 &self.shared.converted,
                 &self.shared.time_text_risk,
                 &self.shared.truncating,
+                config.dialect == DialectName::Bigquery,
             )?;
             rows += batch.height() as u64;
             if dropped {
@@ -795,6 +796,7 @@ impl PartitionStream {
             &self.shared.converted,
             &self.shared.time_text_risk,
             &self.shared.truncating,
+            config.dialect == DialectName::Bigquery,
         )
     }
 
@@ -824,6 +826,7 @@ impl PartitionStream {
                 converted,
                 &self.shared.time_text_risk,
                 &self.shared.truncating,
+                self.shared.config.dialect == DialectName::Bigquery,
             )
             .map(Some);
         }

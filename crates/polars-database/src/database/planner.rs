@@ -734,9 +734,8 @@ pub fn resolve_scan(
         // No I/O: a user schema is authoritative, and column semantics stay conservative:
         // collations are unknown, and so are some types behind the dtypes: SQL Server's
         // legacy `datetime`, a MySQL `YEAR` (see the filter), and a SQLite column's
-        // affinity (a `String` may hold numbers that compare as such). BigQuery's Google
-        // driver returns some non-text types as Strings. Otherwise the user's `String`
-        // states a text column.
+        // affinity (a `String` may hold numbers that compare as such). BigQuery's native
+        // types are unknown here: even a null check can differ for JSON or arrays.
         columns = schema_
             .iter()
             .map(|(name, dtype)| ColumnMeta {
@@ -746,7 +745,8 @@ pub fn resolve_scan(
                 strings: catalog::unknown_string_semantics(dialect),
                 is_key: false,
                 comparable: match dtype {
-                    DataType::String => dialect != DialectName::Sqlite && !google_bigquery,
+                    _ if dialect == DialectName::Bigquery => false,
+                    DataType::String => dialect != DialectName::Sqlite,
                     DataType::Datetime(_, _) => dialect != DialectName::Mssql,
                     // A float or decimal dtype over a column of another numeric type
                     // (`real` read as Float64, `numeric` read as a float or at another
@@ -3269,6 +3269,10 @@ fn fill_bigquery_unknown(dtype: &mut DataType, sampled: Option<&DataType>) {
             *dtype = sampled
                 .filter(|d| !d.is_null())
                 .map_or(DataType::String, normalize_dtype);
+            // An inferred JSON container can itself have empty or all-null leaves.
+            if bigquery_has_unknown_leaf(dtype) {
+                fill_bigquery_unknown(dtype, None);
+            }
         },
         (DataType::List(inner), sampled) => {
             let sampled = match sampled {

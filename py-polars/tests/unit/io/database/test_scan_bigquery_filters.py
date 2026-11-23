@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from itertools import islice
+from json import dumps
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -30,18 +31,39 @@ class _Field:
 class _Cursor:
     __module__ = "google.cloud.bigquery.dbapi.cursor"
 
-    def __init__(self, fields: list[_Field], rows: list[tuple[Any, ...]]) -> None:
+    def __init__(
+        self,
+        fields: list[_Field],
+        rows: list[tuple[Any, ...]],
+        storage_rows: list[tuple[Any, ...]] | None = None,
+    ) -> None:
         self._query_rows = SimpleNamespace(schema=fields)
         self.description = [
             (f.name, f.field_type, None, None, None, None, True) for f in fields
         ]
         self._rows = rows
-        self._remaining: Iterator[tuple[Any, ...]] = iter(())
+        self._storage_rows = storage_rows
+        self._remaining: Iterator[tuple[Any, ...]] | None = None
+        self._sql = ""
 
     def execute(self, sql: str) -> None:
-        self._remaining = iter([] if "WHERE 1 = 0" in sql else self._rows)
+        self._sql = sql
+        self._remaining = None
+
+    def _bqstorage_fetch(self) -> Iterator[tuple[Any, ...]]:
+        assert self._storage_rows is not None
+        return iter(self._storage_rows)
 
     def fetchmany(self, size: int) -> list[tuple[Any, ...]]:
+        if self._remaining is None:
+            if "WHERE 1 = 0" in self._sql:
+                self._remaining = iter(())
+            elif "LIMIT 1000" in self._sql:
+                self._remaining = islice(self._rows, 1000)
+            elif self._storage_rows is not None:
+                self._remaining = self._bqstorage_fetch()
+            else:
+                self._remaining = iter(self._rows)
         return list(islice(self._remaining, size))
 
     def close(self) -> None:
@@ -51,12 +73,18 @@ class _Cursor:
 class _Connection:
     __module__ = "google.cloud.bigquery.dbapi.connection"
 
-    def __init__(self, fields: list[_Field], rows: list[tuple[Any, ...]]) -> None:
+    def __init__(
+        self,
+        fields: list[_Field],
+        rows: list[tuple[Any, ...]],
+        storage_rows: list[tuple[Any, ...]] | None = None,
+    ) -> None:
         self.fields = fields
         self.rows = rows
+        self.storage_rows = storage_rows
 
     def cursor(self) -> _Cursor:
-        return _Cursor(self.fields, self.rows)
+        return _Cursor(self.fields, self.rows, self.storage_rows)
 
 
 def test_bigquery_only_pushes_equality_on_native_string() -> None:
@@ -92,6 +120,116 @@ def test_bigquery_sampled_json_filters_stay_local() -> None:
     assert "filters 0/1" in plan
     assert "limit: no" in plan
     assert filtered.collect()["value"].to_list() == [None]
+
+
+@pytest.mark.parametrize("overrides", [False, True])
+def test_bigquery_supplied_json_type_filters_stay_local(overrides: bool) -> None:
+    conn = _Connection([_Field("value", "JSON")], [(1,), (None,)])
+    schema = pl.scan_database("data", conn).collect_schema()
+    lf = pl.scan_database(
+        "data",
+        conn,
+        schema=schema if not overrides else None,
+        schema_overrides=schema if overrides else None,
+    )
+    filtered = lf.filter(pl.col("value").is_null()).head(1)
+    assert "filters 0/1" in filtered.explain()
+    assert filtered.collect()["value"].to_list() == [None]
+
+
+def test_bigquery_json_rest_sample_and_storage_rows_match() -> None:
+    fields = [
+        _Field("j", "JSON"),
+        _Field("s", "JSON"),
+        _Field("label", "STRING"),
+        _Field(
+            "entries",
+            "RECORD",
+            "REPEATED",
+            fields=(_Field("n", "INTEGER"), _Field("j", "JSON", "REPEATED")),
+        ),
+    ]
+    rows = [
+        ({"x": 1}, "null", "null", [{"n": 5, "j": [1, 2]}]),
+        ({"x": 2}, '"123"', '"123"', [{"n": None, "j": []}]),
+    ] * 500 + [(None, None, "[123]", [])]
+    storage_rows = [
+        (
+            dumps(j),
+            dumps(s),
+            label,
+            [{"n": row["n"], "j": [dumps(v) for v in row["j"]]} for row in entries],
+        )
+        for j, s, label, entries in rows
+    ]
+    rest = pl.scan_database("data", _Connection(fields, rows)).collect()
+    conn = _Connection(fields, rows, storage_rows)
+    mixed = pl.scan_database("data", conn, batch_size=1000).collect()
+    assert mixed.equals(rest)
+    assert mixed.rows() == rows
+
+
+def test_bigquery_json_resolves_unsampled_container_leaves() -> None:
+    rows = [([], {"a": None})] * 1000 + [([123], {"a": 456})]
+    conn = _Connection([_Field("j", "JSON"), _Field("obj", "JSON")], rows)
+    lf = pl.scan_database("data", conn, batch_size=1000)
+    assert lf.collect_schema() == {
+        "j": pl.List(pl.String),
+        "obj": pl.Struct({"a": pl.String}),
+    }
+    assert lf.collect().tail(1).rows() == [(["123"], {"a": "456"})]
+
+
+@pytest.mark.parametrize("batch_size", [1, 1000])
+@pytest.mark.parametrize(
+    "values",
+    [
+        [9007199254740993, 0.5],
+        [True, 2],
+        ["2", 2],
+        [{"x": [9007199254740993, 0.5]}],
+    ],
+)
+def test_bigquery_json_rejects_lossy_inference(
+    batch_size: int, values: list[Any]
+) -> None:
+    conn = _Connection([_Field("j", "JSON")], [(value,) for value in values])
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="cannot be inferred losslessly"
+    ):
+        pl.scan_database("data", conn, batch_size=batch_size).collect()
+
+
+@pytest.mark.parametrize(
+    ("first", "late"), [(True, 2), (2, True), ("two", 2), (2, "2")]
+)
+def test_bigquery_json_rejects_late_mixed_types(first: Any, late: Any) -> None:
+    conn = _Connection(
+        [_Field("j", "JSON")], [({"x": [first]},)] * 1000 + [({"x": [late]},)]
+    )
+    lf = pl.scan_database("data", conn, batch_size=1000)
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="cannot be inferred losslessly"
+    ):
+        lf.collect()
+
+
+@pytest.mark.parametrize(("first", "late"), [(True, 2), (2, True)])
+def test_bigquery_json_rejects_boolean_numeric_cast_after_sample(
+    first: Any, late: Any
+) -> None:
+    conn = _Connection([_Field("j", "JSON")], [([first],)] * 1000, [(dumps([late]),)])
+    lf = pl.scan_database("data", conn, batch_size=1000)
+    with pytest.raises(pl.exceptions.SchemaError, match="type changed"):
+        lf.collect()
+
+
+def test_bigquery_json_preserves_exact_integer_promotion() -> None:
+    values = [9007199254740994, 0.5]
+    conn = _Connection([_Field("j", "JSON")], [(value,) for value in values])
+    actual = pl.scan_database("data", conn, batch_size=1).collect()
+    assert actual.schema == {"j": pl.Float64}
+    assert actual["j"].to_list() == values
 
 
 @pytest.mark.parametrize("populated", [True, False])
