@@ -113,6 +113,19 @@ type UpdateParts<'a> = (
     Option<&'a SQLExpr>,
 );
 
+/// The stack kept free for the walks over a query's AST that do not grow the stack, such as
+/// clones. These walks go as deep as the parser's recursion limit allows.
+const QUERY_RED_ZONE: usize = if cfg!(debug_assertions) {
+    8 << 20
+} else {
+    2 << 20
+};
+
+/// Runs `f` with at least [`QUERY_RED_ZONE`] of stack free.
+fn with_query_stack<R>(f: impl FnOnce() -> R) -> R {
+    stacker::maybe_grow(QUERY_RED_ZONE, 4 * QUERY_RED_ZONE, f)
+}
+
 /// Columns of a catalog `MERGE`'s frames; the Python side uses the same names.
 const MERGE_FILE: &str = "__polars_merge_file";
 const MERGE_POS: &str = "__polars_merge_pos";
@@ -579,6 +592,10 @@ impl SQLContext {
 
     /// The catalog tables that `query` reads, once per table and version.
     pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
+        with_query_stack(|| self.catalog_tables_impl(query))
+    }
+
+    fn catalog_tables_impl(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
         // these ALTER TABLE operations read no table
         let Ok(mut stmt) = iceberg_alter::parse_single_statement_or_alter(query)? else {
             return Ok(Vec::new());
@@ -606,6 +623,10 @@ impl SQLContext {
     /// The catalog statement of `query`, if any, for the caller to perform:
     /// [`SQLContext::execute`] rejects it.
     pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
+        with_query_stack(|| self.catalog_statement_impl(query))
+    }
+
+    fn catalog_statement_impl(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
         let mut stmt = match iceberg_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => {
@@ -1466,6 +1487,14 @@ impl SQLContext {
         query: &str,
         params: &QueryParams,
     ) -> PolarsResult<LazyFrame> {
+        with_query_stack(|| self.execute_with_params_impl(query, params))
+    }
+
+    fn execute_with_params_impl(
+        &mut self,
+        query: &str,
+        params: &QueryParams,
+    ) -> PolarsResult<LazyFrame> {
         let mut stmt = match iceberg_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => return Err(self.alter_table_error(&alter.name)),
@@ -1532,7 +1561,7 @@ impl SQLContext {
     /// its output: [`SQLContext::execute`] rejects it. It is not a file that SQL writes, so
     /// [`SQLContext::with_file_writes`] does not limit it.
     pub fn copy_to_stdout(&mut self, query: &str) -> PolarsResult<Option<CopyToStdout>> {
-        self.describe_copy_to_stdout(query)
+        with_query_stack(|| self.describe_copy_to_stdout(query))
             .map_err(|e| complete_location(e, query))
     }
 
@@ -1646,6 +1675,16 @@ impl SQLContext {
     /// resolve into the arenas of the ongoing conversion. `cached` is the desugared statement
     /// the node was built with, and `query` is only parsed when it is absent.
     pub(crate) fn execute_with_arenas(
+        &mut self,
+        query: &str,
+        cached: Option<&Statement>,
+        lp_arena: &mut Arena<IR>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<DslPlan> {
+        with_query_stack(|| self.execute_with_arenas_impl(query, cached, lp_arena, expr_arena))
+    }
+
+    fn execute_with_arenas_impl(
         &mut self,
         query: &str,
         cached: Option<&Statement>,
@@ -1864,11 +1903,13 @@ impl SQLContext {
     }
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
-        // A nested query does not read the SELECT aliases around it.
-        let outer_aliases = std::mem::take(&mut self.select_aliases);
-        let lf = self.execute_query_body(query);
-        self.select_aliases = outer_aliases;
-        lf
+        with_query_stack(|| {
+            // A nested query does not read the SELECT aliases around it.
+            let outer_aliases = std::mem::take(&mut self.select_aliases);
+            let lf = self.execute_query_body(query);
+            self.select_aliases = outer_aliases;
+            lf
+        })
     }
 
     fn execute_query_body(&mut self, query: &Query) -> PolarsResult<LazyFrame> {

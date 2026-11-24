@@ -27,6 +27,7 @@ use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
 use polars_plan::utils::expr_output_name;
 use polars_utils::time::NS_DAY;
+use recursive::recursive;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -94,6 +95,19 @@ impl TakenClauses {
     ) -> PolarsResult<Vec<Statement>> {
         let parser_err =
             |err: ParserError| to_sql_interface_err(with_copy_options(err.to_string()));
+        let parsed = parsed.map_err(|err| {
+            let too_deep = tokenize(sql).is_ok_and(|(tokens, _)| {
+                hit_recursion_limit(&err, tokens, |parser| {
+                    parser.parse_statements()?;
+                    parser.expect_token(&Token::EOF)
+                })
+            });
+            if too_deep {
+                ParserError::RecursionLimitExceeded
+            } else {
+                err
+            }
+        });
         self.attach_to(sql, parsed.map_err(parser_err), |parser| {
             parser.parse_statements().map_err(parser_err)
         })
@@ -136,6 +150,29 @@ impl TakenClauses {
     }
 }
 
+/// How deeply the parser may recurse: a nested expression takes about one level, a nested query
+/// two.
+pub(crate) const RECURSION_LIMIT: usize = 128;
+
+/// Whether `err` from parsing `tokens` with `parse` comes from the recursion limit. sqlparser can
+/// report hitting the limit inside a `CASE` or `NOT` as a syntax error at the outermost one, so a
+/// syntax error counts too when a higher limit parses `tokens`. `parse` must fail unless it reads
+/// all of `tokens`.
+pub(crate) fn hit_recursion_limit<T>(
+    err: &ParserError,
+    tokens: Vec<TokenWithSpan>,
+    parse: impl FnOnce(&mut Parser<'static>) -> Result<T, ParserError>,
+) -> bool {
+    match err {
+        ParserError::RecursionLimitExceeded => true,
+        ParserError::TokenizerError(_) => false,
+        ParserError::ParserError(_) => matches!(
+            parse(&mut parser_of(tokens).with_recursion_limit(4 * RECURSION_LIMIT)),
+            Ok(_) | Err(ParserError::RecursionLimitExceeded)
+        ),
+    }
+}
+
 /// A parser of `sql`. `TOP` is only a keyword in `SELECT TOP n`, so that it can also name a
 /// relation or a column. Time travel clauses (see [`TableVersions`]) are taken out first: the
 /// caller attaches them to its statements or refuses them.
@@ -144,7 +181,7 @@ pub(crate) fn sql_parser(sql: &str) -> PolarsResult<(Parser<'static>, TakenClaus
     Ok((parser_of(tokens), taken))
 }
 
-fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
+pub(crate) fn tokenize(sql: &str) -> PolarsResult<(Vec<TokenWithSpan>, TakenClauses)> {
     let mut tokens = Tokenizer::new(&GenericDialect, sql)
         .with_unescape(ParserOptions::default().unescape)
         .tokenize_with_location()
@@ -168,6 +205,7 @@ pub(crate) fn parser_of(tokens: Vec<TokenWithSpan>) -> Parser<'static> {
     };
     Parser::new(&GenericDialect)
         .with_options(options)
+        .with_recursion_limit(RECURSION_LIMIT)
         .with_tokens_with_locations(tokens)
 }
 
@@ -701,6 +739,7 @@ impl SQLExprVisitor<'_> {
         Ok(s)
     }
 
+    #[recursive]
     fn visit_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         self.visit_unlocated_expr(expr).map_err(|e| match expr {
             // Their span is the operand's, without the keyword, type or field the error is about.
