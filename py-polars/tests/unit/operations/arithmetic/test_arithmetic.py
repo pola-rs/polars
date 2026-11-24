@@ -126,11 +126,9 @@ def test_sqrt_neg_inf() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "value", [timedelta(microseconds=4), date(2024, 1, 1), "4", True]
-)
+@pytest.mark.parametrize("value", [date(2024, 1, 1), "4", True])
 @pytest.mark.parametrize("op", ["sqrt", "cbrt"])
-def test_sqrt_cbrt_of_a_non_number(value: Any, op: str) -> None:
+def test_sqrt_cbrt_of_a_non_quantity(value: Any, op: str) -> None:
     # as in Postgres and DuckDB
     lf = pl.LazyFrame({"x": [value]})
     with pytest.raises(InvalidOperationError):
@@ -139,12 +137,12 @@ def test_sqrt_cbrt_of_a_non_number(value: Any, op: str) -> None:
 
 @pytest.mark.parametrize(
     ("dtype", "float_dtype"),
-    [(pl.Float32, pl.Float32), (pl.Null, pl.Float64)],
+    [(pl.Float32, pl.Float32), (pl.Duration("us"), pl.Float64), (pl.Null, pl.Float64)],
 )
-def test_sqrt_cbrt_of_a_number(
+def test_sqrt_cbrt_of_a_quantity(
     dtype: PolarsDataType, float_dtype: PolarsDataType
 ) -> None:
-    lf = pl.LazyFrame({"x": [None if dtype == pl.Null else 4]}, schema={"x": dtype})
+    lf = pl.LazyFrame({"x": [None if dtype == pl.Null else 4]}).cast({"x": dtype})
     q = lf.select(
         s=pl.col("x").sqrt(), c=pl.col("x").cbrt(), m=pl.col("x").sqrt().mean()
     )

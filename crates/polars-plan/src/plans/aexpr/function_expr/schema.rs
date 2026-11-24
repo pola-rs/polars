@@ -41,12 +41,12 @@ impl IRFunctionExpr {
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
                 IRPowFunction::Generic => mapper.pow_dtype(),
-                // Of a number only, as in Postgres and DuckDB; typed as the kernels compute it.
+                // Quantities only: numbers and durations (in their time unit).
                 IRPowFunction::Sqrt => mapper
-                    .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_null(), "sqrt")?
+                    .ensure_satisfies(|_, dtype| is_quantity(dtype), "sqrt")?
                     .map_to_float_dtype(),
                 IRPowFunction::Cbrt => mapper
-                    .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_null(), "cbrt")?
+                    .ensure_satisfies(|_, dtype| is_quantity(dtype), "cbrt")?
                     .map_to_float_dtype(),
             },
             Coalesce => mapper.map_to_supertype(),
@@ -671,6 +671,10 @@ impl IRFunctionExpr {
             _ => false,
         }
     }
+}
+
+fn is_quantity(dtype: &DataType) -> bool {
+    dtype.is_numeric() || dtype.is_duration() || dtype.is_null()
 }
 
 pub struct FieldsMapper<'a> {
