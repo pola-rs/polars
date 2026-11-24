@@ -2933,6 +2933,59 @@ def test_join_on_constant_true_plans_cross_join() -> None:
     assert "CROSS JOIN" not in plan
 
 
+@pytest.mark.parametrize(
+    ("join_type", "x", "y"),
+    [
+        ("INNER", [1, 3, 4], [10, 20, 20]),
+        ("LEFT", [1, 2, 3, 4], [10, None, 20, 20]),
+        ("FULL", [1, 2, 3, 4, None], [10, None, 20, 20, 30]),
+    ],
+)
+def test_join_on_is_not_distinct_from_plans_equi_join(
+    join_type: str, x: list[int | None], y: list[int | None]
+) -> None:
+    frames = {
+        "a": pl.LazyFrame({"k": [1, 2, None, None], "x": [1, 2, 3, 4]}),
+        "b": pl.LazyFrame({"k": [1, None, 5], "y": [10, 20, 30]}),
+    }
+    lf = pl.SQLContext(frames=frames).execute(
+        f"SELECT a.x, b.y FROM a {join_type} JOIN b "
+        "ON a.k IS NOT DISTINCT FROM b.k ORDER BY a.x NULLS LAST"
+    )
+    assert 'LEFT PLAN ON: [col("k")]' in lf.explain()
+    assert_frame_equal(
+        lf.collect(),
+        pl.DataFrame({"x": x, "y": y}, schema={"x": pl.Int64, "y": pl.Int64}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("join_type", "expected"),
+    [
+        ("SEMI", {"x": [1, 3]}),
+        ("ANTI", {"x": [2, 4]}),
+        ("RIGHT SEMI", {"y": [10, 20]}),
+        ("RIGHT ANTI", {"y": [30]}),
+    ],
+)
+def test_semi_anti_join_on_is_not_distinct_from(
+    join_type: str, expected: dict[str, list[int]]
+) -> None:
+    frames = {
+        "a": pl.LazyFrame(
+            {"k": [1, 2, None, None], "g": [0, 0, 0, None], "x": [1, 2, 3, 4]}
+        ),
+        "b": pl.LazyFrame({"k": [1, None, 5], "g": [0, 0, 0], "y": [10, 20, 30]}),
+    }
+    (column,) = expected
+    result = pl.SQLContext(frames=frames).execute(
+        f"SELECT {column} FROM a {join_type} JOIN b ON a.k IS NOT DISTINCT FROM b.k "
+        f"AND a.g IS NOT DISTINCT FROM b.g ORDER BY {column}",
+        eager=True,
+    )
+    assert_frame_equal(result, pl.DataFrame(expected))
+
+
 def test_join_on_decimal_mul_range_fused() -> None:
     frames = {
         "a": pl.LazyFrame({"x": [10, 11, 13, None]}, schema={"x": pl.Decimal(10, 2)}),
