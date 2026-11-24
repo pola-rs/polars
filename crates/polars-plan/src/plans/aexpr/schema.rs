@@ -783,6 +783,18 @@ fn get_arithmetic_field(
                 try_get_supertype(&left_field.dtype, &right_field.dtype)?,
             );
         },
+        // Boolean with integer is rejected by the arm above.
+        op @ (Operator::Or | Operator::And | Operator::Xor)
+            if ![&left_field.dtype, &right_field.dtype]
+                .into_iter()
+                .all(|dt| {
+                    dt.is_bool()
+                        || dt.is_integer()
+                        || matches!(dt, Null | Unknown(UnknownKind::Any))
+                }) =>
+        {
+            polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
+        },
         _ => {
             match (&left_field.dtype, &right_field.dtype) {
                 #[cfg(feature = "dtype-struct")]

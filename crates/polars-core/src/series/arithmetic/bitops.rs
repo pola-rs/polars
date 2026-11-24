@@ -19,7 +19,10 @@ macro_rules! impl_bitop {
                         Ok(lhs.$f(rhs).into_series())
                     },
                     dt if dt.is_integer() => {
-                        let rhs = if rhs.len() == 1 {
+                        let rhs_dtype = rhs.dtype();
+                        let rhs = if rhs.len() == 1
+                            && (rhs_dtype.is_integer() || rhs_dtype.is_null())
+                        {
                             Cow::Owned(rhs.cast(self.dtype())?)
                         } else {
                             Cow::Borrowed(rhs)

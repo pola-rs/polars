@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import operator
 import typing
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -256,6 +257,68 @@ def test_bit_group_by(dtype: pl.DataType) -> None:
         ),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("op", ["and_", "or_", "xor"])
+@pytest.mark.parametrize(
+    ("lhs", "rhs"),
+    [
+        (pl.col("i"), pl.col("s")),
+        (pl.col("s"), pl.col("i")),
+        (pl.col("i"), pl.lit("4")),
+    ],
+)
+def test_bitwise_integer_string_unsupported_31007(
+    op: str, lhs: pl.Expr, rhs: pl.Expr
+) -> None:
+    q = pl.LazyFrame({"i": [1, 2], "s": ["4", "9"]}).select(getattr(lhs, op)(rhs))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="not allowed"):
+        q.collect_schema()
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="not allowed"):
+        q.collect()
+
+
+@pytest.mark.parametrize("op", ["and_", "or_", "xor"])
+@pytest.mark.parametrize(
+    ("lhs", "rhs"),
+    [
+        (pl.col("i"), pl.col("b")),
+        (pl.col("b"), pl.col("i")),
+        (pl.col("i"), True),
+        (True, pl.col("i")),
+    ],
+)
+def test_bitwise_integer_boolean_unsupported_31007(op: str, lhs: Any, rhs: Any) -> None:
+    q = pl.LazyFrame({"i": [1, 2], "b": [True, False]}).select(
+        getattr(operator, op)(lhs, rhs)
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match="is not supported"):
+        q.collect_schema()
+    with pytest.raises(pl.exceptions.ComputeError, match="is not supported"):
+        q.collect()
+
+
+@pytest.mark.parametrize("op", ["and_", "or_", "xor"])
+@pytest.mark.parametrize(
+    ("lhs", "rhs"),
+    [
+        (pl.Series([1, 2]), pl.Series(["4"])),
+        (pl.Series([1, 2]), pl.Series(["4", "9"])),
+        (pl.Series([1, 2]), "4"),
+        (pl.Series([1, 2]), 1.0),
+        (pl.Series([1, 2]), True),
+        (True, pl.Series([1, 2])),
+        (pl.Series([1, 2]), pl.Series([True])),
+        (pl.Series([True]), pl.Series([1, 2])),
+        (pl.Series([1, 2]), pl.Series([True, False])),
+        (pl.Series([True, False]), pl.Series([1, 2])),
+    ],
+)
+def test_bitwise_integer_non_integer_unsupported_eager_31007(
+    op: str, lhs: Any, rhs: Any
+) -> None:
+    with pytest.raises(pl.exceptions.SchemaError, match="cannot unpack"):
+        getattr(operator, op)(lhs, rhs)
 
 
 def test_scalar_bitwise_xor() -> None:
