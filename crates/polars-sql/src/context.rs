@@ -6039,6 +6039,7 @@ impl SQLContext {
             right_on.push(lit(true));
         }
         let (mut left_frame, mut right_frame) = (tbl_left.frame.clone(), tbl_right.frame.clone());
+        let mut key_columns: Vec<PlSmallStr> = Vec::new();
         if predicates.is_empty() {
             let natural = matches!(constraint, Some(JoinConstraint::Natural));
             let key_dtype = |key: &Expr, schema: &Schema| match key {
@@ -6065,20 +6066,69 @@ impl SQLContext {
                     (*l, *r) = (l_cast, r_cast);
                 }
             }
+            // A join refuses two keys with the same pair of names, as from `r.b = 2 AND r.b = 3`
+            // (`literal` and `b` twice): such a key that is not a column becomes a column of its
+            // own for the join.
+            if left_on.len() > 1 {
+                // A key without one name yet, such as a selector, is not counted.
+                let names: Vec<_> = left_on
+                    .iter()
+                    .zip(&right_on)
+                    .map(|(l, r)| {
+                        Some((
+                            l.clone().meta().output_name().ok()?,
+                            r.clone().meta().output_name().ok()?,
+                        ))
+                    })
+                    .collect();
+                let mut counts: PlHashMap<_, usize> = PlHashMap::with_capacity(names.len());
+                for pair in names.iter().flatten() {
+                    *counts.entry(pair).or_default() += 1;
+                }
+                for ((l, r), pair) in left_on.iter_mut().zip(right_on.iter_mut()).zip(&names) {
+                    if pair.as_ref().is_none_or(|pair| counts[pair] < 2) {
+                        continue;
+                    }
+                    let sides = [
+                        (l, &mut left_frame, &*tbl_left.schema),
+                        (r, &mut right_frame, &*tbl_right.schema),
+                    ];
+                    for (key, frame, schema) in sides {
+                        // A key that is not elementwise stays for the join to reject.
+                        if !matches!(key, Expr::Column(_))
+                            && is_row_wise(key, schema).unwrap_or(false)
+                        {
+                            let name = unique_column_name();
+                            *frame = frame.clone().with_column(key.clone().alias(name.clone()));
+                            *key = col(name.clone());
+                            key_columns.push(name);
+                        }
+                    }
+                }
+            }
         }
+        let drop_key_columns = |lf: LazyFrame| match key_columns.is_empty() {
+            true => lf,
+            false => lf.drop(Selector::ByName {
+                names: key_columns.clone().into(),
+                strict: false,
+            }),
+        };
         if keep_right {
             polars_ensure!(
                 predicates.is_empty(),
                 InvalidOperation: "'{}' join is not supported with non-equi join conditions",
                 join_type
             );
-            return right_frame
-                .join_builder()
-                .with(left_frame)
-                .left_on(right_on)
-                .right_on(left_on)
-                .how(join_type)
-                .finish();
+            return Ok(drop_key_columns(
+                right_frame
+                    .join_builder()
+                    .with(left_frame)
+                    .left_on(right_on)
+                    .right_on(left_on)
+                    .how(join_type)
+                    .finish()?,
+            ));
         }
         let coalesce_type = match constraint {
             // "NATURAL" joins should coalesce; otherwise we disambiguate
@@ -6140,10 +6190,12 @@ impl SQLContext {
         let random_predicates = random_predicates.into_iter().map(|p| {
             sql_join_where_predicate(strip_join_aliases(p), &tbl_left.schema, &joined_schema)
         });
-        Ok(match random_predicates.reduce(Expr::and) {
-            Some(predicate) => joined.filter(predicate),
-            None => joined,
-        })
+        Ok(drop_key_columns(
+            match random_predicates.reduce(Expr::and) {
+                Some(predicate) => joined.filter(predicate),
+                None => joined,
+            },
+        ))
     }
 
     /// Whether the relation `name` is the right input of a join; any other relation in

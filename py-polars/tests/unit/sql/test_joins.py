@@ -3780,6 +3780,32 @@ def test_join_untyped_literal_keys(on: str, how: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "on",
+    [
+        "a.k = b.k AND b.k = 1 AND b.k = 2",
+        "a.k = b.k AND a.k = 1 AND a.k = 2",
+        "a.k = b.k AND b.k = 1 AND 1 = b.k",
+        "a.k = b.k AND a.k * a.k = b.k",
+        "ABS(a.k - 1) = b.k AND a.k = b.k",
+    ],
+)
+@pytest.mark.parametrize("how", ["INNER", "LEFT", "RIGHT", "FULL", "SEMI", "ANTI"])
+def test_join_keys_with_repeated_names(on: str, how: str) -> None:
+    # keys named alike (two constants are both `literal`), as in Postgres
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"k": [1, 2, None]}),
+            "b": pl.DataFrame({"k": [1, 2, None]}),
+        },
+        query=f"SELECT * FROM a {how} JOIN b ON {on}",
+        compare_with="duckdb",
+        check_row_order=False,
+        check_column_names=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
     "query",
     [
         "SELECT * FROM a POSITIONAL JOIN b",
