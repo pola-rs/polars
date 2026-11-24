@@ -6115,8 +6115,8 @@ impl SQLContext {
         let (mut left_frame, mut right_frame) = (tbl_left.frame.clone(), tbl_right.frame.clone());
         let mut key_columns: Vec<PlSmallStr> = Vec::new();
         // Semi and anti joins only keep the left columns, so their key columns stay as they are.
-        let coalesced = matches!(constraint, Some(JoinConstraint::Natural))
-            && !matches!(join_type, JoinType::Semi | JoinType::Anti);
+        let coalesced =
+            matches!(constraint, Some(JoinConstraint::Natural)) && !join_type.is_semi_anti();
         if predicates.is_empty() {
             let key_dtype = |key: &Expr, schema: &Schema| match key {
                 Expr::Column(name) => schema.get(name).cloned(),
