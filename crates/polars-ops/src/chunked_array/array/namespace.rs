@@ -25,17 +25,17 @@ pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
     false
 }
 
-fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> Series {
+fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> PolarsResult<Series> {
     min_max::array_dispatch(ca, agg_type)
 }
 
 pub trait ArrayNameSpace: AsArray {
-    fn array_max(&self) -> Series {
+    fn array_max(&self) -> PolarsResult<Series> {
         let ca = self.as_array();
         get_agg(ca, AggType::Max)
     }
 
-    fn array_min(&self) -> Series {
+    fn array_min(&self) -> PolarsResult<Series> {
         let ca = self.as_array();
         get_agg(ca, AggType::Min)
     }

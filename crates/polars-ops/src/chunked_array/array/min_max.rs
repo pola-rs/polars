@@ -68,8 +68,32 @@ where
     )
 }
 
-pub(super) fn array_dispatch(ca: &ArrayChunked, agg_type: AggType) -> Series {
-    let values = ca.get_inner();
+/// Reduces each row with `min_reduce`/`max_reduce`, for inner dtypes without a numeric kernel.
+fn array_dispatch_generic(ca: &ArrayChunked, agg_type: AggType) -> PolarsResult<Series> {
+    let values = ca
+        .amortized_iter()
+        .map(|opt_s| {
+            let Some(s) = opt_s else {
+                return Ok(AnyValue::Null);
+            };
+            let sc = match agg_type {
+                AggType::Min => s.as_ref().min_reduce()?,
+                AggType::Max => s.as_ref().max_reduce()?,
+            };
+            Ok(sc.into_value())
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+    Series::from_any_values_and_dtype(ca.name().clone(), &values, ca.inner_dtype(), true)
+}
+
+pub(super) fn array_dispatch(ca: &ArrayChunked, agg_type: AggType) -> PolarsResult<Series> {
+    let dtype = ca.inner_dtype();
+    // Categoricals order lexically, not by their physical representation.
+    if dtype.is_categorical() || !dtype.to_physical().is_primitive_numeric() {
+        return array_dispatch_generic(ca, agg_type);
+    }
+
+    let values = ca.get_inner().to_physical_repr().into_owned();
     let width = ca.width();
     let chunks: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(values.dtype(), |$T| {
         let values: &ChunkedArray<$T> = values.as_ref().as_ref().as_ref();
@@ -84,5 +108,7 @@ pub(super) fn array_dispatch(ca: &ArrayChunked, agg_type: AggType) -> Series {
             Box::new(out.with_validity(validity)) as ArrayRef
         }).collect()
     });
-    Series::try_from((ca.name().clone(), chunks)).unwrap()
+    let out = Series::try_from((ca.name().clone(), chunks))?;
+    // SAFETY: The aggregate of the physical values is a valid physical value of `dtype`.
+    unsafe { out.from_physical_unchecked(dtype) }
 }
