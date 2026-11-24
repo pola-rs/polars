@@ -800,23 +800,29 @@ fn any_values_to_list(
                 get_list_builder(inner_type, capacity * 5, capacity, PlSmallStr::EMPTY);
             for av in avs {
                 match av {
-                    AnyValue::List(b) => match b.cast(inner_type) {
-                        Ok(casted) => {
-                            if casted.null_count() != b.null_count() {
-                                // (out-of-range temporal values raise as they do elsewhere)
-                                if strict && inner_type.contains_time_units() {
-                                    let _ = b.strict_cast(inner_type)?;
+                    AnyValue::List(b) => {
+                        // (if strict, values that overflow a time unit raise, at any nesting level)
+                        let rescaled;
+                        let b = if strict && inner_type.contains_time_units() {
+                            rescaled = b.cast_time_units_like(inner_type, true)?;
+                            &rescaled
+                        } else {
+                            b
+                        };
+                        match b.cast(inner_type) {
+                            Ok(casted) => {
+                                if casted.null_count() != b.null_count() {
+                                    valid = !strict;
                                 }
-                                valid = !strict;
-                            }
-                            builder.append_series(&casted)?;
-                        },
-                        Err(_) => {
-                            valid = false;
-                            for _ in 0..b.len() {
-                                builder.append_null();
-                            }
-                        },
+                                builder.append_series(&casted)?;
+                            },
+                            Err(_) => {
+                                valid = false;
+                                for _ in 0..b.len() {
+                                    builder.append_null();
+                                }
+                            },
+                        }
                     },
                     AnyValue::Null => builder.append_null(),
                     _ => {

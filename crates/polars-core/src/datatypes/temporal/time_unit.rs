@@ -2,7 +2,7 @@
 use chrono::NaiveDateTime;
 #[cfg(feature = "temporal")]
 use polars_arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt, timestamp_us_to_datetime_opt,
 };
 use polars_error::{PolarsError, polars_err};
 
@@ -146,10 +146,18 @@ impl TimeUnit {
     /// The naive UTC datetime of the timestamp `t` in this unit.
     #[inline]
     pub fn timestamp_to_datetime(self, t: i64) -> NaiveDateTime {
+        self.timestamp_to_datetime_opt(t)
+            .expect("invalid or out-of-range datetime")
+    }
+
+    /// The naive UTC datetime of the timestamp `t` in this unit, if within chrono's range
+    /// (about ±262,000 years).
+    #[inline]
+    pub fn timestamp_to_datetime_opt(self, t: i64) -> Option<NaiveDateTime> {
         match self {
-            TimeUnit::Nanoseconds => timestamp_ns_to_datetime(t),
-            TimeUnit::Microseconds => timestamp_us_to_datetime(t),
-            TimeUnit::Milliseconds => timestamp_ms_to_datetime(t),
+            TimeUnit::Nanoseconds => timestamp_ns_to_datetime_opt(t),
+            TimeUnit::Microseconds => timestamp_us_to_datetime_opt(t),
+            TimeUnit::Milliseconds => timestamp_ms_to_datetime_opt(t),
         }
     }
 

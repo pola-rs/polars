@@ -111,10 +111,13 @@ def sequence_to_pyseries(
         and isinstance(value, (np.datetime64, np.timedelta64))
         and dtype != Object
     ):
-        # The values carry their own time unit, so convert them as-is and only
-        # cast afterwards if another dtype was requested.
-        pyseries = PySeries.new_from_any_values(name, values, strict)
-        if dtype is not None and pyseries.dtype() != (dtype := parse_into_dtype(dtype)):
+        # The values carry their own time unit, so convert them as-is (or straight to a
+        # requested time unit), and only cast afterwards if another dtype was requested.
+        dtype = None if dtype is None else parse_into_dtype(dtype)
+        pyseries = PySeries.new_from_any_values(
+            name, values, strict, time_unit=getattr(dtype, "time_unit", None)
+        )
+        if dtype is not None and pyseries.dtype() != dtype:
             pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
         return pyseries
 
@@ -233,6 +236,7 @@ def sequence_to_pyseries(
         return plc.sequence_to_pydf(
             data=data,
             schema=struct_schema,
+            strict=strict,
             orient="row",
         ).to_struct(name, invalid)
 
@@ -274,12 +278,9 @@ def sequence_to_pyseries(
         s = wrap_s(py_series)
         if dtype.is_temporal() and values_dtype == String and dtype != Duration:
             s = s.str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
-        elif (
-            time_unit is not None
-            and values_dtype != Date
-            and getattr(s.dtype, "time_unit", None) != time_unit
-        ):
-            s = s.dt.cast_time_unit(time_unit)
+        elif s.dtype == Null:
+            # (all values were null, or overflowed `time_unit` with `strict=False`)
+            s = s.cast(dtype)
 
         if (values_dtype == Date) & (dtype == Datetime):
             s = s.cast(Datetime(time_unit or "us"))

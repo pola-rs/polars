@@ -7,7 +7,6 @@ use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::types::NativeType;
 use polars_buffer::{Buffer, SharedStorage};
-use polars_core::datatypes::time_unit::time_unit_conversion_error;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
@@ -252,7 +251,7 @@ fn convert_to_avs(
     for v in values.try_iter()? {
         let av = py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object, dtype)?;
         avs.push(match time_unit {
-            Some(tu) => to_time_unit(av, tu, strict)?,
+            Some(tu) => av.cast_time_unit(tu, strict).map_err(PyPolarsErr::from)?,
             None => av,
         });
     }
@@ -272,41 +271,6 @@ pub(crate) fn construction_error(err: PolarsError) -> PyErr {
     PyTypeError::new_err(format!(
         "{err}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
     ))
-}
-
-/// Convert a temporal value to the given (explicitly requested) time unit.
-fn to_time_unit(
-    av: AnyValue<'static>,
-    time_unit: TimeUnit,
-    strict: bool,
-) -> PyResult<AnyValue<'static>> {
-    let converted = match &av {
-        AnyValue::Datetime(v, tu, tz) => tu
-            .rescale_to(time_unit)
-            .datetime_value(*v)
-            .map(|v| AnyValue::Datetime(v, time_unit, *tz)),
-        AnyValue::DatetimeOwned(v, tu, tz) => tu
-            .rescale_to(time_unit)
-            .datetime_value(*v)
-            .map(|v| AnyValue::DatetimeOwned(v, time_unit, tz.clone())),
-        AnyValue::Duration(v, tu) => tu
-            .rescale_to(time_unit)
-            .duration_value(*v)
-            .map(|v| AnyValue::Duration(v, time_unit)),
-        _ => return Ok(av),
-    };
-    match converted {
-        Some(av) => Ok(av),
-        None if strict => {
-            let from = av.dtype();
-            let to = match &from {
-                DataType::Datetime(_, tz) => DataType::Datetime(time_unit, tz.clone()),
-                _ => DataType::Duration(time_unit),
-            };
-            Err(PyPolarsErr::from(time_unit_conversion_error(&from, &to, av)).into())
-        },
-        None => Ok(AnyValue::Null),
-    }
 }
 
 #[pymethods]

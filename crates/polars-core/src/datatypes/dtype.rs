@@ -863,21 +863,27 @@ impl DataType {
         while self.any_time_unit(|tu| tu != TimeUnit::Nanoseconds)
             && let Some(other) = others.next()
         {
-            self.merge_finest_time_units(other.borrow());
+            self.merge_time_units(other.borrow(), |tu, other_tu| tu.min(other_tu));
         }
     }
 
-    /// Adopt any finer [`TimeUnit`] found at the same (possibly nested) position in `other`.
-    fn merge_finest_time_units(&mut self, other: &DataType) {
+    /// Adopt the [`TimeUnit`]s found at the same (possibly nested) positions in `other`.
+    pub fn adopt_time_units_from(&mut self, other: &DataType) {
+        self.merge_time_units(other, |_, other_tu| other_tu);
+    }
+
+    /// Set each (possibly nested) [`TimeUnit`] that has a counterpart at the same position in
+    /// `other` to `pick(time_unit, other_time_unit)`.
+    fn merge_time_units(&mut self, other: &DataType, pick: fn(TimeUnit, TimeUnit) -> TimeUnit) {
         use DataType::*;
         match (self, other) {
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(tu, _), Datetime(other_tu, _)) => *tu = (*tu).min(*other_tu),
+            (Datetime(tu, _), Datetime(other_tu, _)) => *tu = pick(*tu, *other_tu),
             #[cfg(feature = "dtype-duration")]
-            (Duration(tu), Duration(other_tu)) => *tu = (*tu).min(*other_tu),
-            (List(inner), List(other_inner)) => inner.merge_finest_time_units(other_inner),
+            (Duration(tu), Duration(other_tu)) => *tu = pick(*tu, *other_tu),
+            (List(inner), List(other_inner)) => inner.merge_time_units(other_inner, pick),
             #[cfg(feature = "dtype-array")]
-            (Array(inner, _), Array(other_inner, _)) => inner.merge_finest_time_units(other_inner),
+            (Array(inner, _), Array(other_inner, _)) => inner.merge_time_units(other_inner, pick),
             #[cfg(feature = "dtype-struct")]
             (Struct(fields), Struct(other_fields)) => {
                 for (i, field) in fields.iter_mut().enumerate() {
@@ -889,14 +895,14 @@ impl DataType {
                         _ => other_fields.iter().find(|f| f.name == field.name),
                     };
                     if let Some(other) = other {
-                        field.dtype.merge_finest_time_units(&other.dtype);
+                        field.dtype.merge_time_units(&other.dtype, pick);
                     }
                 }
             },
             #[cfg(feature = "dtype-map")]
             (Map(key, value), Map(other_key, other_value)) => {
-                key.merge_finest_time_units(other_key);
-                value.merge_finest_time_units(other_value);
+                key.merge_time_units(other_key, pick);
+                value.merge_time_units(other_value, pick);
             },
             _ => {},
         }
