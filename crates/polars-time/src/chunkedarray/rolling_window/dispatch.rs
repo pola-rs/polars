@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_arrow::types::NativeType;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
@@ -34,6 +35,25 @@ fn with_float(s: &Series, f: impl FnOnce(&Series) -> PolarsResult<Series>) -> Po
     match s.dtype() {
         DataType::Float16 => out.cast(&DataType::Float16),
         _ => Ok(out),
+    }
+}
+
+/// Runs `f` on the physical values of a temporal `s`, and casts its float result back to the
+/// temporal dtype. A Date becomes a Datetime, since the result can fall between days.
+fn with_temporal(
+    s: &Series,
+    f: impl FnOnce(&Series) -> PolarsResult<Series>,
+) -> PolarsResult<Series> {
+    let dtype = s.dtype();
+    if !dtype.is_temporal() {
+        return f(s);
+    }
+    let out = f(&s.to_physical_repr())?;
+    match dtype {
+        DataType::Date => (out * MICROSECONDS_IN_DAY as f64)
+            .cast(&DataType::Int64)?
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, None)),
+        dt => out.cast(&DataType::Int64)?.cast(dt),
     }
 }
 
@@ -326,10 +346,12 @@ pub trait SeriesOpsTime: AsSeries {
         by: &Series,
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
-        with_float(self.as_series(), |s| {
-            with_match_physical_float_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                rolling_agg_by::<$T, _, MeanWindow<_>, MeanWindow<_>>(ca, by, options)
+        with_temporal(self.as_series(), |s| {
+            with_float(s, |s| {
+                with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    rolling_agg_by::<$T, _, MeanWindow<_>, MeanWindow<_>>(ca, by, options)
+                })
             })
         })
     }
@@ -338,15 +360,17 @@ pub trait SeriesOpsTime: AsSeries {
     /// See: [`RollingAgg::rolling_mean`]
     #[cfg(feature = "rolling_window")]
     fn rolling_mean(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-        with_float(self.as_series(), |s| {
-            with_match_physical_float_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                rolling_agg(
-                    ca,
-                    options,
-                    &rolling::no_nulls::rolling_mean,
-                    &rolling::nulls::rolling_mean,
-                )
+        with_temporal(self.as_series(), |s| {
+            with_float(s, |s| {
+                with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    rolling_agg(
+                        ca,
+                        options,
+                        &rolling::no_nulls::rolling_mean,
+                        &rolling::nulls::rolling_mean,
+                    )
+                })
             })
         })
     }
@@ -423,15 +447,17 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         check_rolling_quantile(options.fn_params.as_ref())?;
-        with_float(self.as_series(), |s| {
-            with_match_physical_float_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                rolling_agg_by::<
-                    $T,
-                    _,
-                    no_nulls::QuantileWindow<_>,
-                    nulls::QuantileWindow<_>
-                >(ca, by, options)
+        with_temporal(self.as_series(), |s| {
+            with_float(s, |s| {
+                with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    rolling_agg_by::<
+                        $T,
+                        _,
+                        no_nulls::QuantileWindow<_>,
+                        nulls::QuantileWindow<_>
+                    >(ca, by, options)
+                })
             })
         })
     }
@@ -440,15 +466,17 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_quantile(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         check_rolling_quantile(options.fn_params.as_ref())?;
-        with_float(self.as_series(), |s| {
-            with_match_physical_float_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                rolling_agg(
-                    ca,
-                    options,
-                    &rolling::no_nulls::rolling_quantile,
-                    &rolling::nulls::rolling_quantile,
-                )
+        with_temporal(self.as_series(), |s| {
+            with_float(s, |s| {
+                with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    rolling_agg(
+                        ca,
+                        options,
+                        &rolling::no_nulls::rolling_quantile,
+                        &rolling::nulls::rolling_quantile,
+                    )
+                })
             })
         })
     }
