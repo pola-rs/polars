@@ -715,7 +715,7 @@ def alpha(ascii_only: bool = False, *, ignore_spaces: bool = False) -> Selector:
     ----------
     ascii_only
         Indicate whether to consider only ASCII alphabetic characters, or the full
-        Unicode range of valid letters (accented, idiographic, etc).
+        Unicode range of valid letters (accented, ideographic, etc).
     ignore_spaces
         Indicate whether to ignore the presence of spaces in column names; if so,
         only the other (non-space) characters are considered.
@@ -826,7 +826,7 @@ def alphanumeric(
     ----------
     ascii_only
         Indicate whether to consider only ASCII alphabetic characters, or the full
-        Unicode range of valid letters (accented, idiographic, etc).
+        Unicode range of valid letters (accented, ideographic, etc).
     ignore_spaces
         Indicate whether to ignore the presence of spaces in column names; if so,
         only the other (non-space) characters are considered.

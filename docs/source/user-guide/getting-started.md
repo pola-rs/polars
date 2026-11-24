@@ -62,7 +62,7 @@ pl.col("weight") / (pl.col("height") ** 2)
 As you might be able to guess, this expression takes the column named “weight” and divides its
 values by the square of the values in the column “height”, computing a person's BMI. Note that the
 code above expresses an abstract computation: it's only inside a Polars _context_ that the
-expression materalizes into a series with the results.
+expression materializes into a series with the results.
 
 Below, we will show examples of Polars expressions inside different contexts:
 

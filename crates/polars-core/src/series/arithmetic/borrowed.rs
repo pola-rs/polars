@@ -207,7 +207,7 @@ pub mod checked {
     impl NumOpsDispatchCheckedInner for Float16Type {
         fn checked_div(lhs: &Float16Chunked, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:
-            // see check_div for chunkedarray<T>
+            // see checked_div for chunkedarray<T>
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
             let ca: Float16Chunked =
@@ -228,7 +228,7 @@ pub mod checked {
     impl NumOpsDispatchCheckedInner for Float32Type {
         fn checked_div(lhs: &Float32Chunked, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:
-            // see check_div for chunkedarray<T>
+            // see checked_div for chunkedarray<T>
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
             let ca: Float32Chunked =
@@ -249,7 +249,7 @@ pub mod checked {
     impl NumOpsDispatchCheckedInner for Float64Type {
         fn checked_div(lhs: &Float64Chunked, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:
-            // see check_div
+            // see checked_div
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
             let ca: Float64Chunked =
@@ -611,7 +611,7 @@ impl Mul for &Series {
         match (self.dtype(), rhs.dtype()) {
             #[cfg(feature = "dtype-struct")]
             (Struct(_), Struct(_)) => _struct_arithmetic(self, rhs, |a, b| a.mul(b)),
-            // temporal lh
+            // temporal lhs
             (Duration(_), _) | (Date, _) | (Datetime(_, _), _) | (Time, _) => self.multiply(rhs),
             // temporal rhs
             (_, Date) | (_, Datetime(_, _)) | (_, Time) => {

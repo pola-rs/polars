@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::BTreeMap;
 
 use polars_arrow::datatypes::{
@@ -158,47 +158,98 @@ impl Hash for DataType {
 }
 
 impl PartialEq for DataType {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        use DataType::*;
-        {
-            match (self, other) {
-                #[cfg(feature = "dtype-categorical")]
-                (Categorical(cats_l, _), Categorical(cats_r, _)) => Arc::ptr_eq(cats_l, cats_r),
-                #[cfg(feature = "dtype-categorical")]
-                (Enum(fcats_l, _), Enum(fcats_r, _)) => Arc::ptr_eq(fcats_l, fcats_r),
-                (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
-                (List(left_inner), List(right_inner)) => left_inner == right_inner,
-                #[cfg(feature = "dtype-duration")]
-                (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
-                #[cfg(feature = "dtype-decimal")]
-                (Decimal(p1, s1), Decimal(p2, s2)) => (p1, s1) == (p2, s2),
-                #[cfg(feature = "object")]
-                (Object(lhs), Object(rhs)) => lhs == rhs,
-                #[cfg(feature = "dtype-struct")]
-                (Struct(lhs), Struct(rhs)) => {
-                    std::ptr::eq(Vec::as_ptr(lhs), Vec::as_ptr(rhs)) || lhs == rhs
-                },
-                #[cfg(feature = "dtype-array")]
-                (Array(left_inner, left_width), Array(right_inner, right_width)) => {
-                    left_width == right_width && left_inner == right_inner
-                },
-                #[cfg(feature = "dtype-map")]
-                (Map(key_l, value_l), Map(key_r, value_r)) => key_l == key_r && value_l == value_r,
-                #[cfg(feature = "dtype-extension")]
-                (Extension(ext_l, storage_l), Extension(ext_r, storage_r)) => {
-                    ext_l == ext_r && storage_l == storage_r
-                },
-                (Unknown(l), Unknown(r)) => match (l, r) {
-                    (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
-                    _ => l == r,
-                },
-                _ => std::mem::discriminant(self) == std::mem::discriminant(other),
-            }
-        }
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+            && (!self.has_params() || self.eq_params(other))
     }
 }
 
 impl Eq for DataType {}
+
+impl DataType {
+    /// Indicate if this dtype variant has parameters.
+    #[inline]
+    fn has_params(&self) -> bool {
+        use DataType::*;
+        match self {
+            // Types with no parameters
+            UInt8 | UInt16 | UInt32 | UInt64 | UInt128 => false,
+            Int8 | Int16 | Int32 | Int64 | Int128 => false,
+            Float16 | Float32 | Float64 => false,
+            Boolean | String | Binary | BinaryOffset => false,
+            Date | Time => false,
+            Null => false,
+
+            // Types with parameters
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(..) => true,
+            Datetime(..) | Duration(..) => true,
+            #[cfg(feature = "dtype-array")]
+            Array(..) => true,
+            List(..) => true,
+            #[cfg(feature = "dtype-struct")]
+            Struct(..) => true,
+            #[cfg(feature = "dtype-map")]
+            Map(..) => true,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(..) | Enum(..) => true,
+            #[cfg(feature = "object")]
+            Object(..) => true,
+            #[cfg(feature = "dtype-extension")]
+            Extension(..) => true,
+            Unknown(..) => true,
+        }
+    }
+
+    /// Compares the parameters of data types of the same variant (see [`Self::has_params`]).
+    /// Like `has_params`, this matches every variant, so new ones must say how they compare.
+    fn eq_params(&self, other: &Self) -> bool {
+        use DataType::*;
+        debug_assert_eq!(std::mem::discriminant(self), std::mem::discriminant(other));
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(p_l, s_l) => matches!(other, Decimal(p_r, s_r) if p_l == p_r && s_l == s_r),
+            Datetime(tu_l, tz_l) => {
+                matches!(other, Datetime(tu_r, tz_r) if tu_l == tu_r && tz_l == tz_r)
+            },
+            Duration(tu_l) => matches!(other, Duration(tu_r) if tu_l == tu_r),
+            #[cfg(feature = "dtype-array")]
+            Array(inner_l, width_l) => {
+                matches!(other, Array(inner_r, width_r) if width_l == width_r && inner_l == inner_r)
+            },
+            List(inner_l) => matches!(other, List(inner_r) if inner_l == inner_r),
+            #[cfg(feature = "dtype-map")]
+            Map(key_l, value_l) => {
+                matches!(other, Map(key_r, value_r) if key_l == key_r && value_l == value_r)
+            },
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields_l) => matches!(other, Struct(fields_r) if
+                std::ptr::eq(fields_l.as_ptr(), fields_r.as_ptr()) || fields_l == fields_r),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(cats_l, _) => {
+                matches!(other, Categorical(cats_r, _) if Arc::ptr_eq(cats_l, cats_r))
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Enum(fcats_l, _) => matches!(other, Enum(fcats_r, _) if Arc::ptr_eq(fcats_l, fcats_r)),
+            #[cfg(feature = "object")]
+            Object(name_l) => matches!(other, Object(name_r) if name_l == name_r),
+            #[cfg(feature = "dtype-extension")]
+            Extension(ext_l, storage_l) => matches!(other, Extension(ext_r, storage_r) if
+                ext_l == ext_r && storage_l == storage_r),
+            Unknown(l) => matches!(other, Unknown(r) if match (l, r) {
+                (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
+                _ => l == r,
+            }),
+
+            // Types without parameters; `eq_params` is private and `eq` checks the
+            // dtypes before calling it, so we won't reach these cases - can return true
+            UInt8 | UInt16 | UInt32 | UInt64 | UInt128 | Int8 | Int16 | Int32 | Int64 | Int128
+            | Float16 | Float32 | Float64 | Boolean | String | Binary | BinaryOffset | Date
+            | Time | Null => true,
+        }
+    }
+}
 
 impl DataType {
     pub const IDX_DTYPE: Self = {
@@ -519,7 +570,7 @@ impl DataType {
                 true
             },
 
-            // @NOTE: we are being conversative
+            // @NOTE: we are being conservative
             _ => return None,
         })
     }
@@ -775,6 +826,85 @@ impl DataType {
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.contains_categoricals(),
             _ => false,
+        }
+    }
+
+    /// Check if this [`DataType`] is, or contains, a type with a [`TimeUnit`].
+    pub fn contains_time_units(&self) -> bool {
+        self.any_time_unit(|_| true)
+    }
+
+    /// Check if any (possibly nested) [`TimeUnit`] in this [`DataType`] satisfies `f`.
+    fn any_time_unit(&self, f: impl Fn(TimeUnit) -> bool + Copy) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, _) => f(*tu),
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => f(*tu),
+            List(inner) => inner.any_time_unit(f),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.any_time_unit(f),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.any_time_unit(f)),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.any_time_unit(f) || value.any_time_unit(f),
+            _ => false,
+        }
+    }
+
+    /// Adopt any finer [`TimeUnit`]s found at the same (possibly nested) positions in `others`,
+    /// so that values of all these types can be represented without loss of precision.
+    pub fn merge_finest_time_units_from(
+        &mut self,
+        others: impl IntoIterator<Item = impl Borrow<DataType>>,
+    ) {
+        let mut others = others.into_iter();
+        while self.any_time_unit(|tu| tu != TimeUnit::Nanoseconds)
+            && let Some(other) = others.next()
+        {
+            self.merge_time_units(other.borrow(), |tu, other_tu| tu.min(other_tu));
+        }
+    }
+
+    /// Adopt the [`TimeUnit`]s found at the same (possibly nested) positions in `other`.
+    pub fn adopt_time_units_from(&mut self, other: &DataType) {
+        self.merge_time_units(other, |_, other_tu| other_tu);
+    }
+
+    /// Set each (possibly nested) [`TimeUnit`] that has a counterpart at the same position in
+    /// `other` to `pick(time_unit, other_time_unit)`.
+    fn merge_time_units(&mut self, other: &DataType, pick: fn(TimeUnit, TimeUnit) -> TimeUnit) {
+        use DataType::*;
+        match (self, other) {
+            #[cfg(feature = "dtype-datetime")]
+            (Datetime(tu, _), Datetime(other_tu, _)) => *tu = pick(*tu, *other_tu),
+            #[cfg(feature = "dtype-duration")]
+            (Duration(tu), Duration(other_tu)) => *tu = pick(*tu, *other_tu),
+            (List(inner), List(other_inner)) => inner.merge_time_units(other_inner, pick),
+            #[cfg(feature = "dtype-array")]
+            (Array(inner, _), Array(other_inner, _)) => inner.merge_time_units(other_inner, pick),
+            #[cfg(feature = "dtype-struct")]
+            (Struct(fields), Struct(other_fields)) => {
+                for (i, field) in fields.iter_mut().enumerate() {
+                    if !field.dtype.contains_time_units() {
+                        continue;
+                    }
+                    let other = match other_fields.get(i) {
+                        Some(other) if other.name == field.name => Some(other),
+                        _ => other_fields.iter().find(|f| f.name == field.name),
+                    };
+                    if let Some(other) = other {
+                        field.dtype.merge_time_units(&other.dtype, pick);
+                    }
+                }
+            },
+            #[cfg(feature = "dtype-map")]
+            (Map(key, value), Map(other_key, other_value)) => {
+                key.merge_time_units(other_key, pick);
+                value.merge_time_units(other_value, pick);
+            },
+            _ => {},
         }
     }
 
@@ -1707,7 +1837,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         },
         #[cfg(feature = "dtype-array")]
         (Array(inner_l, width_l), Array(inner_r, width_r)) => {
-            polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeWidth Series are not equal");
+            polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeList Series are not equal");
             let merged = merge_dtypes(inner_l, inner_r)?;
             Array(Box::new(merged), *width_l)
         },

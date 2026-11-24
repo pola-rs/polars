@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use ir_graph::{IRNodeEdgeKeys, build_ir_traversal_graph, unpack_edges_mut};
 use polars_core::frame::UniqueKeepStrategy;
-use polars_core::prelude::{IdxSize, PlIndexMap};
+use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use slotmap::{SlotMap, new_key_type};
@@ -23,12 +23,26 @@ use crate::prelude::{AExpr, IR};
 pub enum Edge {
     #[default]
     Ordered,
+    /// Only the query result observes the order. Windows that may reorder their rows (see
+    /// `Expr::Over`) do not keep it, other nodes treat it as ordered.
+    ResultOrdered,
     Unordered,
 }
 
 impl Edge {
     pub fn is_unordered(&self) -> bool {
         matches!(self, Self::Unordered)
+    }
+
+    pub fn is_result_ordered(&self) -> bool {
+        matches!(self, Self::ResultOrdered)
+    }
+
+    /// Marks an ordered input edge as only observed by the result if the output edge is.
+    fn pass_result_order(&mut self, out_edge: &Edge) {
+        if out_edge.is_result_ordered() && matches!(self, Self::Ordered) {
+            *self = Self::ResultOrdered;
+        }
     }
 }
 
@@ -181,6 +195,10 @@ impl SimplifyIRNodeOrder<'_> {
 
                 if !input_order_observe {
                     *in_edge = Edge::Unordered;
+                } else if !((is_hstack && exprs_observable_orders.contains(O::INDEPENDENT))
+                    || eos.internally_observed_orders().contains(O::COLUMN))
+                {
+                    in_edge.pass_result_order(out_edge);
                 }
 
                 if !exprs_observable_orders.contains(O::INDEPENDENT)
@@ -204,15 +222,11 @@ impl SimplifyIRNodeOrder<'_> {
                 {
                     if kept.is_empty() {
                         let input = *input;
-                        let Some((offset, len, _)) = *slice else {
+                        let Some((slice, _)) = *slice else {
                             *in_edge = out_edge.clone();
                             return self.unlink_node(current_ir_node, input);
                         };
-                        *self.ir_arena.get_mut(current_ir_node) = IR::Slice {
-                            input,
-                            offset,
-                            len: len.try_into().unwrap_or(IdxSize::MAX),
-                        };
+                        *self.ir_arena.get_mut(current_ir_node) = IR::Slice { input, slice };
                         return self.simplify_ir_node_orders(current_ir_node);
                     }
                     *by_column = kept.iter().map(|&i| by_column[i].clone()).collect();
@@ -254,11 +268,14 @@ impl SimplifyIRNodeOrder<'_> {
                 let predicate_observable_orders =
                     eos.simplify_projected_exprs(&[predicate.node()], false);
 
-                if out_edge.is_unordered()
-                    && !(eos.internally_observed_orders().contains(O::COLUMN)
-                        || predicate_observable_orders.contains(O::INDEPENDENT))
+                if !(eos.internally_observed_orders().contains(O::COLUMN)
+                    || predicate_observable_orders.contains(O::INDEPENDENT))
                 {
-                    *in_edge = Edge::Unordered;
+                    if out_edge.is_unordered() {
+                        *in_edge = Edge::Unordered;
+                    } else {
+                        in_edge.pass_result_order(out_edge);
+                    }
                 }
 
                 if in_edge.is_unordered() {
@@ -331,6 +348,15 @@ impl SimplifyIRNodeOrder<'_> {
                 ordered_eval,
                 ..
             } => {
+                let may_reorder = exprs.iter().all(|e| {
+                    matches!(
+                        self.expr_arena.get(e.node()),
+                        AExpr::Over {
+                            may_reorder: true,
+                            ..
+                        }
+                    )
+                });
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
                 // Without `maintain_order` on the order key, rows with equal keys may be
@@ -343,13 +369,17 @@ impl SimplifyIRNodeOrder<'_> {
                         .iter()
                         .any(|e| !is_order_insensitive_window(e.node(), self.expr_arena));
 
-                if out_edge.is_unordered() {
+                if out_edge.is_unordered() || (may_reorder && out_edge.is_result_ordered()) {
                     *maintain_order = false;
                 }
                 *ordered_eval = observes;
 
-                if !*maintain_order && !observes {
-                    *in_edge = Edge::Unordered;
+                if !observes {
+                    if *maintain_order {
+                        in_edge.pass_result_order(out_edge);
+                    } else {
+                        *in_edge = Edge::Unordered;
+                    }
                 }
             },
 
@@ -423,7 +453,9 @@ impl SimplifyIRNodeOrder<'_> {
                 #[cfg(feature = "asof_join")]
                 if let JoinType::AsOf(_) = &options.args.how {
                     if in_edge_lhs.is_unordered()
-                        || (out_edge.is_unordered() && in_edge_rhs.is_unordered())
+                        || (out_edge.is_unordered()
+                            && options.args.slice.is_none()
+                            && in_edge_rhs.is_unordered())
                     {
                         *in_edge_lhs = Edge::Unordered;
                         *in_edge_rhs = Edge::Unordered;
@@ -436,7 +468,9 @@ impl SimplifyIRNodeOrder<'_> {
 
                 use polars_defs::join::MaintainOrderJoin as JO;
 
-                if out_edge.is_unordered() || options.args.maintain_order == JO::None {
+                if (out_edge.is_unordered() && options.args.slice.is_none())
+                    || options.args.maintain_order == JO::None
+                {
                     *out_edge = Edge::Unordered;
                     *in_edge_lhs = Edge::Unordered;
                     *in_edge_rhs = Edge::Unordered;
@@ -569,6 +603,8 @@ impl SimplifyIRNodeOrder<'_> {
                 if in_edge.is_unordered() || out_edge.is_unordered() {
                     *in_edge = Edge::Unordered;
                     *out_edge = Edge::Unordered;
+                } else {
+                    in_edge.pass_result_order(out_edge);
                 }
             },
 
@@ -604,6 +640,8 @@ impl SimplifyIRNodeOrder<'_> {
                 if !keys_pin_order && (!payload.maintain_order() || in_edge.is_unordered()) {
                     *in_edge = Edge::Unordered;
                     payload.set_maintain_order(false);
+                } else if !keys_pin_order && matches!(in_edge, Edge::Ordered) {
+                    *in_edge = Edge::ResultOrdered;
                 }
             },
 

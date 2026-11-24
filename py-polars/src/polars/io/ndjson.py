@@ -98,7 +98,7 @@ def read_ndjson(
     low_memory
         Reduce memory pressure at the expense of performance.
     row_index_name
-        If not None, this will insert a row index column with give name into the
+        If not None, this will insert a row index column with given name into the
         DataFrame
     row_index_offset
         Offset to start the row index column (only use if the name is set)
@@ -281,7 +281,7 @@ def scan_ndjson(
     low_memory
         Reduce memory pressure at the expense of performance.
     row_index_name
-        If not None, this will insert a row index column with give name into the
+        If not None, this will insert a row index column with given name into the
         DataFrame
     row_index_offset
         Offset to start the row index column (only use if the name is set)

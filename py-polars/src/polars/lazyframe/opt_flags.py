@@ -91,7 +91,7 @@ class QueryOptFlags:
         join_order: None | bool = None,
         row_estimate: None | bool = None,
     ) -> QueryOptFlags:
-        """Create new empty set off optimizations."""
+        """Create new empty set of optimizations."""
         optflags = QueryOptFlags()
         optflags.no_optimizations()
         return optflags.update(
@@ -167,7 +167,7 @@ class QueryOptFlags:
 
     @staticmethod
     def _eager() -> QueryOptFlags:
-        """Create new empty set off optimizations."""
+        """Create new empty set of optimizations."""
         optflags = QueryOptFlags()
         optflags.no_optimizations()
         optflags._pyoptflags.eager = True

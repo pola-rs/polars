@@ -1,4 +1,4 @@
-//! The PDSH files only got ten rows, so after all the joins filters there is not data
+//! The PDSH files only got ten rows, so after all the joins filters there is no data
 //! Still we can use this to test the schema, operation correctness on empty data, and optimizations
 //! taken.
 use polars_defs::join::JoinType;

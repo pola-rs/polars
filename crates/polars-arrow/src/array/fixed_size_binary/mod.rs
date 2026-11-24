@@ -268,7 +268,7 @@ impl Splitable for FixedSizeBinaryArray {
 }
 
 impl FixedSizeBinaryArray {
-    /// Creates a [`FixedSizeBinaryArray`] from an fallible iterator of optional `[u8]`.
+    /// Creates a [`FixedSizeBinaryArray`] from a fallible iterator of optional `[u8]`.
     pub fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = Option<P>>>(
         iter: I,
         size: usize,

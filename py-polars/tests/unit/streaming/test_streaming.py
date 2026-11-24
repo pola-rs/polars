@@ -13,9 +13,10 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
-    from polars._typing import JoinStrategy
+    from polars._typing import EngineType, JoinStrategy, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -348,6 +349,21 @@ def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
     )
 
 
+def test_replace_literal_mapping_is_elementwise_30404() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "d": [10, 20, 30]}).select(
+        b=pl.col("a").replace({1: 100}),
+        c=pl.col("a").replace_strict({1: 100}, default=pl.col("d")),
+    )
+    plan = lf.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, show=False
+    )
+    assert isinstance(plan, str)
+    assert "columnar-function" not in plan
+
+    expected = pl.DataFrame({"b": [100, 2, 3], "c": [100, 20, 30]})
+    assert_frame_equal(lf.collect(engine="streaming"), expected)
+
+
 def test_streaming_temporal_17669() -> None:
     df = (
         pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.Datetime("us")})
@@ -468,3 +484,74 @@ def test_log_metrics_reports_query_io_time(
     assert " IO active: " in header
     assert " rx, " in header
     assert " tx), detailed breakdown:" in header
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.UInt64, pl.Int128, pl.Int32])
+@pytest.mark.parametrize(
+    ("length", "height"),
+    [(pl.len(), 4), (pl.col("a").count(), 3)],
+    ids=["len", "count"],
+)
+def test_streaming_int_range_over_length(
+    dtype: PolarsIntegerType, length: pl.Expr, height: int
+) -> None:
+    q = pl.LazyFrame({"a": [1, None, 3, 4]}).select(
+        pl.int_range(0, length, dtype=dtype)
+    )
+    plan = q.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, show=False
+    )
+    assert isinstance(plan, str)
+    # A strict cast of the length to a narrower dtype fails on one more row than a
+    # cast of the row index would, so that one keeps evaluating `int_range`.
+    is_row_index = dtype != pl.Int32
+    assert ("with-row-index" in plan) == is_row_index
+    assert ("columnar-function" in plan) != is_row_index
+
+    expected = pl.DataFrame({"literal": range(height)}, schema={"literal": dtype})
+    assert_frame_equal(q.collect(), expected)
+
+
+def test_streaming_error_does_not_panic_on_teardown(tmp_path: Path, capfd: Any) -> None:
+    # Leaving the task scope at the first error used to cancel a task while a
+    # sibling was joining it: "joined on cancelled task", printed by the panic
+    # hook (caught, the right error was still raised).
+    path = tmp_path / "bad.csv"
+    path.write_text("a\n" + "1\n" * 200_000 + "x\n" + "1\n" * 200_000)
+    lf = pl.scan_csv(path, schema={"a": pl.Int64}).select(pl.col("a").sum())
+    for _ in range(50):
+        with pytest.raises(pl.exceptions.PolarsError):
+            lf.collect(engine="streaming")
+    assert "panicked" not in capfd.readouterr().err
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_streaming_row_index_overflow_is_an_error(engine: EngineType) -> None:
+    # panicked in the streaming engine; the in-memory engine raised
+    offset = 2**32 - 2 if pl.get_index_type() == pl.UInt32 else 2**64 - 2
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).with_row_index(offset=offset)
+    with pytest.raises(pl.exceptions.ComputeError, match="overflows"):
+        lf.collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda lf: lf.with_row_index().drop("a"),
+        lambda lf: lf.with_row_index().drop("c"),
+        lambda lf: lf.with_row_index().drop("index"),
+        lambda lf: lf.with_row_index().select("index", "c"),
+        lambda lf: lf.with_row_index().select("c", "index"),
+        lambda lf: lf.with_row_index("i", 5).select("b", "i").slice(2, 3),
+        lambda lf: lf.with_row_index().drop("b").filter(pl.col("a") > 2).tail(3),
+    ],
+)
+def test_streaming_with_row_index_then_projection(
+    build: Callable[[pl.LazyFrame], pl.LazyFrame],
+) -> None:
+    # a projection above `with_row_index` that drops or reorders columns used to panic
+    # in streaming over some sources (scan_database's resolver)
+    lf = pl.LazyFrame({"a": range(10), "b": range(10, 20), "c": range(20, 30)})
+    assert_frame_equal(
+        build(lf).collect(engine="streaming"), build(lf).collect(engine="in-memory")
+    )

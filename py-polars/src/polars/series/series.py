@@ -57,6 +57,7 @@ from polars._utils.expired import (
     removed_parameters,
 )
 from polars._utils.getitem import get_series_item_by_key
+from polars._utils.parse import parse_quantile_fraction
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
@@ -215,7 +216,9 @@ class Series(metaclass=_Meta):
         on the `strict` parameter:
 
         - If `strict` is set to True (default), the inferred data type is equal to the
-          first non-null value, or `Null` if all values are null.
+          first non-null value, or `Null` if all values are null. If that value is a
+          struct (eg: a dict), the inferred :class:`Struct` has the fields of all the
+          struct values (in first-seen order).
         - If `strict` is set to False, the inferred data type is the supertype of the
           values, or :class:`Object` if no supertype can be found. **WARNING**: A full
           pass over the values is required to determine the supertype.
@@ -1126,7 +1129,7 @@ class Series(metaclass=_Meta):
 
     def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
         """
-        Convert leaf dtype the to given primitive datatype.
+        Convert leaf dtype to the given primitive datatype.
 
         This is equivalent to logic in DataType::cast_leaf() in Rust.
         """
@@ -1264,13 +1267,19 @@ class Series(metaclass=_Meta):
             other = float(other)
         if self.dtype != String:
             self = self.cast(Float64)
-        return self.__rfloordiv__(other)
+        return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        return self._arithmetic(other, "div", "div_<>_rhs")
+        if isinstance(other, Series):
+            return other // self
+        return (
+            self.to_frame()
+            .select_seq((F.lit(other) // F.col(self.name)).alias(self.name))
+            .to_series()
+        )
 
     def __rmul__(self, other: Any) -> Series:
         if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
@@ -1396,7 +1405,7 @@ class Series(metaclass=_Meta):
             - ``Series`` (Boolean): a boolean mask.
             - ``Series`` (Integer): an index array.
             - ``ndarray``: a NumPy boolean mask or integer index array.
-            - ``list`` / ``tuple``: an index sequence (cast to UInt32).
+            - ``list`` / ``tuple``: an index sequence.
         value
             Scalar or sequence of values to assign.
 
@@ -1455,13 +1464,9 @@ class Series(metaclass=_Meta):
                 # boolean numpy mask
                 self._s = self.scatter(np.argwhere(key)[:, 0], value)._s
             else:
-                s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
-                )
-                self.__setitem__(s, value)
+                self.__setitem__(Series(key), value)
         elif isinstance(key, (list, tuple)):
-            s = self._from_pyseries(sequence_to_pyseries("", key, dtype=UInt32))
-            self.__setitem__(s, value)
+            self.scatter(key, value)  # pyrefly: ignore[bad-argument-type]
         else:
             msg = f'cannot use "{key!r}" for indexing'
             raise TypeError(msg)
@@ -1878,6 +1883,33 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    def x_log_y(self, y: Series | float, base: float = math.e) -> Series:
+        """
+        Compute `x * log(y)` to a given base, where `x` is this Series.
+
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
+
+        Parameters
+        ----------
+        y
+            The values to take the logarithm of.
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> s = pl.Series([0, 1, 2, 3])
+        >>> s.x_log_y(pl.Series([0, 2, 4, 8]), base=2)
+        shape: (4,)
+        Series: '' [f64]
+        [
+            0.0
+            1.0
+            4.0
+            9.0
+        ]
+        """
+
     def log10(self) -> Series:
         """
         Compute the base 10 logarithm of the input array, element-wise.
@@ -2218,6 +2250,10 @@ class Series(metaclass=_Meta):
         """
         Get the minimal value in this Series.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2230,6 +2266,10 @@ class Series(metaclass=_Meta):
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get the minimum value in this Series, ordered by an expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
@@ -2256,6 +2296,10 @@ class Series(metaclass=_Meta):
         """
         Get the maximum value in this Series.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2268,6 +2312,10 @@ class Series(metaclass=_Meta):
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get the maximum value in this Series, ordered by an expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
@@ -2313,7 +2361,7 @@ class Series(metaclass=_Meta):
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        This differs from numpy's `nanmin` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
         Examples
@@ -2380,17 +2428,19 @@ class Series(metaclass=_Meta):
 
     @overload
     def quantile(
-        self, quantile: list_[float], interpolation: QuantileMethod = ...
-    ) -> list_[float] | list_[None]: ...
+        self, quantile: Sequence[float | None], interpolation: QuantileMethod = ...
+    ) -> list_[float | None]: ...
 
     @overload
     def quantile(
-        self, quantile: float, interpolation: QuantileMethod = ...
+        self, quantile: float | None, interpolation: QuantileMethod = ...
     ) -> float | None: ...
 
     def quantile(
-        self, quantile: float | list_[float], interpolation: QuantileMethod = "nearest"
-    ) -> float | None | list_[float] | list_[None]:
+        self,
+        quantile: float | Sequence[float | None] | None,
+        interpolation: QuantileMethod = "nearest",
+    ) -> float | None | list_[float | None]:
         """
         Get the quantile value of this Series.
 
@@ -2398,12 +2448,13 @@ class Series(metaclass=_Meta):
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            A null quantile gives a null result.
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Returns
         -------
-        float | None | list[float] | list[None]
+        float | None | list[float | None]
             A single quantile value if a float is provided, or a list of quantile values if a list is provided.
 
         Examples
@@ -2417,7 +2468,8 @@ class Series(metaclass=_Meta):
         >>> s.quantile([0.25, 0.75], interpolation="linear")
         [1.5, 2.5]
         """  # noqa: W505
-        return self._s.quantile(quantile, interpolation)
+        fraction = parse_quantile_fraction(quantile)
+        return self._s.quantile(fraction._s, interpolation)
 
     def to_dummies(
         self,
@@ -3092,6 +3144,9 @@ class Series(metaclass=_Meta):
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+        `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
+        NaN. With `normalize=True`, input that sums to zero (including empty,
+        all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
         Parameters
         ----------
@@ -3681,7 +3736,13 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    def sql(self, query: str_, *, table_name: str_ = "self") -> DataFrame:
+    def sql(
+        self,
+        query: str_,
+        *,
+        table_name: str_ = "self",
+        params: Sequence[Any] | Mapping[str_, Any] | None = None,
+    ) -> DataFrame:
         """
         Execute a SQL query against the Series.
 
@@ -3699,6 +3760,8 @@ class Series(metaclass=_Meta):
         table_name
             Optionally provide an explicit name for the table that represents the
             calling frame (defaults to "self").
+        params
+            The values of the query parameters; see :meth:`DataFrame.sql`.
 
         Notes
         -----
@@ -3739,7 +3802,7 @@ class Series(metaclass=_Meta):
         ┌──────┬─────┬─────┐
         │ y    ┆ m   ┆ d   │
         │ ---  ┆ --- ┆ --- │
-        │ i32  ┆ i8  ┆ i8  │
+        │ i64  ┆ i64 ┆ i64 │
         ╞══════╪═════╪═════╡
         │ 2099 ┆ 2   ┆ 14  │
         │ 2026 ┆ 3   ┆ 5   │
@@ -3761,7 +3824,7 @@ class Series(metaclass=_Meta):
         │ 3   ┆ 6   │
         └─────┴─────┘
         """
-        return self.to_frame().sql(query, table_name=table_name)
+        return self.to_frame().sql(query, table_name=table_name, params=params)
 
     def sort(
         self,
@@ -3964,7 +4027,7 @@ class Series(metaclass=_Meta):
         k
             Number of elements to return.
         reverse
-            Consider the `k` largest elements of the `by` column( (instead of the `k`
+            Consider the `k` largest elements of the `by` column (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
 
@@ -4043,6 +4106,10 @@ class Series(metaclass=_Meta):
         """
         Get an index of a minimal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
@@ -4062,6 +4129,10 @@ class Series(metaclass=_Meta):
     def arg_max(self) -> int | None:
         """
         Get an index of a maximal value.
+
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
 
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index
@@ -7203,7 +7274,7 @@ class Series(metaclass=_Meta):
             2001-01-02 00:00:00
         ]
 
-        Compute the rolling mean with the temporal windows
+        Compute the rolling sum with the temporal windows
         from the second series closed on the right:
 
         >>> s.rolling_sum_by(d, "3h")
@@ -9797,7 +9868,7 @@ class Series(metaclass=_Meta):
         """
         Flags the Series as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays.
+        Enables downstream code to use fast paths for sorted arrays.
 
         Parameters
         ----------
@@ -9984,19 +10055,20 @@ class Series(metaclass=_Meta):
     @unstable()
     def approx_quantile(
         self,
-        quantile: float | list_[float],
+        quantile: float | Sequence[float | None] | None,
         *,
         method: ApproxQuantileMethod = "auto",
         error: float = 0.001,
         error_tightness: ApproxQuantileErrorBound = "empirical",
-    ) -> PythonLiteral | list_[PythonLiteral]:
+    ) -> PythonLiteral | list_[PythonLiteral | None] | None:
         """
         Compute approximate quantile(s) of this Series.
 
         Parameters
         ----------
         quantile
-            A single quantile or a list of quantiles.
+            A single quantile or a list of quantiles. A null quantile gives a null
+            result.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all
@@ -10073,7 +10145,8 @@ class Series(metaclass=_Meta):
             .to_series()
         )
         # A list of quantiles comes back as a single list element.
-        return out.item().to_list() if isinstance(quantile, list) else out.item()
+        item = out.item()
+        return item.to_list() if isinstance(item, pl.Series) else item
 
     def _row_encode(
         self,
@@ -10101,6 +10174,8 @@ class Series(metaclass=_Meta):
         unordered: bool = False,
         descending: Sequence[bool] | None = None,
         nulls_last: Sequence[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
     ) -> Series:
         """Decode from the row encoding."""
         return (
@@ -10112,6 +10187,8 @@ class Series(metaclass=_Meta):
                     unordered=unordered,
                     descending=descending,
                     nulls_last=nulls_last,
+                    output=output,
+                    encode_nulls=encode_nulls,
                 )
             )
             .to_series()
@@ -10168,5 +10245,5 @@ def _resolve_temporal_dtype(
         elif time_unit == "ms":
             dtype = PolarsType("ms")
         elif time_unit == "D" and ndtype.type == np.datetime64:
-            dtype = Date
+            dtype = Date if dtype is None else Datetime("us")
     return dtype

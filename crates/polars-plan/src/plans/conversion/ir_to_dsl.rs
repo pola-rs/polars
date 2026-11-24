@@ -13,7 +13,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             input: Arc::new(node_to_expr(expr, expr_arena)),
             options,
         },
-        AExpr::Column(a) => Expr::Column(a),
+        AExpr::Column(a) | AExpr::EvalColumn(a) => Expr::Column(a),
         #[cfg(feature = "dtype-struct")]
         AExpr::StructField(a) => Expr::Field(Arc::new([a])),
         AExpr::Literal(s) => Expr::Literal(s),
@@ -241,10 +241,21 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             expr,
             evaluation,
             variant,
-        } => Expr::Eval {
-            expr: Arc::new(node_to_expr(expr, expr_arena)),
-            evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
-            variant,
+            columns,
+        } => {
+            // The evaluation reads the columns by their output names.
+            let evaluation = node_to_expr(evaluation, expr_arena).map_expr(|e| match e {
+                Expr::Column(name) => match columns.iter().find(|c| c.output_name() == &name) {
+                    Some(c) => c.to_expr(expr_arena),
+                    None => Expr::Column(name),
+                },
+                e => e,
+            });
+            Expr::Eval {
+                expr: Arc::new(node_to_expr(expr, expr_arena)),
+                evaluation: Arc::new(evaluation),
+                variant,
+            }
         },
         #[cfg(feature = "dtype-struct")]
         AExpr::StructEval {
@@ -287,6 +298,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             partition_by,
             order_by,
             mapping,
+            may_reorder,
         } => {
             let function = Arc::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
@@ -297,6 +309,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 partition_by,
                 order_by,
                 mapping,
+                may_reorder,
             }
         },
         AExpr::Slice {
@@ -381,6 +394,17 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Contains => B::Contains,
                 IB::StartsWith => B::StartsWith,
                 IB::EndsWith => B::EndsWith,
+                IB::Find => B::Find,
+                #[cfg(feature = "find_many")]
+                IB::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                } => B::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                },
                 #[cfg(feature = "binary_encoding")]
                 IB::HexDecode(v) => B::HexDecode(v),
                 #[cfg(feature = "binary_encoding")]
@@ -498,7 +522,15 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use IRStringFunction as IB;
             use StringFunction as B;
             F::StringExpr(match f {
-                IB::Format { format, insertions } => B::Format { format, insertions },
+                IB::Format {
+                    format,
+                    insertions,
+                    specs,
+                } => B::Format {
+                    format,
+                    insertions,
+                    specs,
+                },
                 #[cfg(feature = "concat_str")]
                 IB::ConcatHorizontal {
                     delimiter,
@@ -529,6 +561,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::ToInteger { dtype, strict } => B::ToInteger { dtype, strict },
                 IB::LenBytes => B::LenBytes,
                 IB::LenChars => B::LenChars,
+                IB::FromCodePoint => B::FromCodePoint,
                 IB::Lowercase => B::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 IB::JsonDecode(dtype) => B::JsonDecode(dtype.into()),
@@ -696,6 +729,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     B::ReplaceTimeZone(time_zone, non_existent)
                 },
                 IB::Combine(time_unit) => B::Combine(time_unit),
+                IB::DateDiff(unit) => B::DateDiff(unit),
                 IB::DatetimeFunction {
                     time_unit,
                     time_zone,
@@ -1061,6 +1095,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "log")]
         IF::Entropy { base, normalize } => F::Entropy { base, normalize },
         #[cfg(feature = "log")]
+        IF::XLogY { base } => F::XLogY { base },
+        #[cfg(feature = "log")]
         IF::Log => F::Log,
         #[cfg(feature = "log")]
         IF::Log1p => F::Log1p,
@@ -1274,12 +1310,33 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Reinterpret(dtype) => F::Reinterpret(None, Some(dtype)),
         IF::ExtendConstant => F::ExtendConstant,
 
-        IF::RowEncode(_, v) => F::RowEncode(v),
+        IF::RowEncode {
+            dtypes: _,
+            variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => F::RowEncode {
+            variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        },
         #[cfg(feature = "dtype-struct")]
-        IF::RowDecode(fs, v) => F::RowDecode(
-            fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
-            v,
-        ),
+        IF::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => F::RowDecode {
+            fields: fields
+                .into_iter()
+                .map(|f| (f.name, f.dtype.into()))
+                .collect(),
+            variant,
+            output,
+            encode_nulls,
+        },
         IF::DynamicPred { pred, .. } | IF::DynamicSkipBatch { pred } => {
             return Expr::Display {
                 inputs: input,

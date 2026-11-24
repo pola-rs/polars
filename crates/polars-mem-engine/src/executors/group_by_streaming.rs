@@ -11,6 +11,7 @@ use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
 use polars_plan::plans::{AExpr, IR, IRPlan};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::slice_enum::Slice;
 
 use super::{Executor, check_expand_literals, group_by_helper};
 use crate::StreamingExecutorBuilder;
@@ -25,7 +26,7 @@ pub struct GroupByStreamingExec {
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     maintain_order: bool,
     output_schema: SchemaRef,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     from_partitioned_ds: bool,
 }
 
@@ -42,7 +43,7 @@ impl GroupByStreamingExec {
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         maintain_order: bool,
         output_schema: SchemaRef,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         from_partitioned_ds: bool,
     ) -> Self {
         // Create a DataFrame scan for injecting the input result
@@ -149,15 +150,15 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
         }
 
         // we sample as that will work also with sorted data.
-        // not that sampling without replacement is *very* expensive. don't do that.
+        // note that sampling without replacement is *very* expensive. don't do that.
         let s = keys[0].sample_n(sample_size, true, None, None).unwrap();
         // fast multi-threaded way to get unique.
         let groups = s.as_materialized_series().group_tuples(true, false)?;
         Ok(finish(&groups))
     } else {
-        let offset = (keys[0].len() / 2) as i64;
+        let offset = keys[0].len() / 2;
         let df = unsafe { DataFrame::new_unchecked_infer_height(keys.to_vec()) };
-        let df = df.slice(offset, sample_size);
+        let df = df.slice((offset, sample_size));
         let names = df.get_column_names().into_iter().cloned();
         let gb = df.group_by(names).unwrap();
         Ok(finish(gb.get_groups()))

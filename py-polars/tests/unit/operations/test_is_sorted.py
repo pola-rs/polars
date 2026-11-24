@@ -206,6 +206,21 @@ def test_sorted_flag_concat_unit(unit_descending: bool) -> None:
     assert out.flags["SORTED_DESC"]
 
 
+def test_sorted_flag_append_unflagged_unit_to_nulls() -> None:
+    nulls = pl.Series([None, None], dtype=pl.Int32).set_sorted()
+    unit = pl.Series([1], dtype=pl.Int32)
+
+    out = nulls.clone()
+    out.append(unit)
+    assert out.to_list() == [None, None, 1]
+    assert out.flags["SORTED_ASC"]
+
+    out = unit.clone()
+    out.append(nulls)
+    assert out.to_list() == [1, None, None]
+    assert out.flags["SORTED_ASC"]
+
+
 def test_sorted_flag_null() -> None:
     assert pl.DataFrame({"x": [None] * 2})["x"].flags["SORTED_ASC"] is False
 

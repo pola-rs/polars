@@ -16,7 +16,7 @@ Polars. See the repository for installation instructions.
 ## Polars MCP server
 
 The new remote Model Context Protocol (MCP) server for Polars provides access to the official Polars
-and Polars Cloud documentation. The server enables LLMs to query the user guide and API references
+and Polars Nanook documentation. The server enables LLMs to query the user guide and API references
 directly, making it easier to get more accurate answers about DataFrame operations, expressions,
 lazy evaluation, and cloud deployments.
 

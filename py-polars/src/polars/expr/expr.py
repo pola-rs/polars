@@ -37,6 +37,8 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
     parse_predicates_constraints_into_expression,
+    parse_quantile_into_expression,
+    parse_quantile_values,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -1215,7 +1217,7 @@ class Expr(metaclass=_Meta):
         Converts to another expression by calling `function`.
 
         Runs during the plan stage (unlike `pipe_with_schema`),
-        which means that the dytype of this expression is known.
+        which means that the dtype of this expression is known.
         This allows choosing a different expression depending on the dtype of the input,
         including the metadata of extension types. This also means that any
         exceptions raised by `function` will only be emitted during the plan stage.
@@ -2443,7 +2445,7 @@ class Expr(metaclass=_Meta):
 
         .. math:: O(n \log{n})
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed to `reverse`.
@@ -2632,7 +2634,7 @@ class Expr(metaclass=_Meta):
 
         .. math:: O(n \log{n})
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed `reverse`.
@@ -2805,11 +2807,15 @@ class Expr(metaclass=_Meta):
         """
         Get an index of a maximal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -2834,11 +2840,15 @@ class Expr(metaclass=_Meta):
         """
         Get an index of a minimal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -2863,7 +2873,7 @@ class Expr(metaclass=_Meta):
         """
         Get the index of the first occurrence of a value, or ``None`` if it's not found.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3108,7 +3118,7 @@ class Expr(metaclass=_Meta):
         """
         Take values by index.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3238,7 +3248,7 @@ class Expr(metaclass=_Meta):
         """
         Shift values by the given number of indices.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3324,7 +3334,9 @@ class Expr(metaclass=_Meta):
         To interpolate over null values see interpolate.
         See the examples below to fill nulls with an expression.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, partially-distributed
+            :partially-distributed: The "mean", "min" and "max" strategies run on a
+                single node.
 
         Parameters
         ----------
@@ -3432,7 +3444,7 @@ class Expr(metaclass=_Meta):
         """
         Fill floating point NaN value with a fill value.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3477,7 +3489,7 @@ class Expr(metaclass=_Meta):
 
         This is an alias of `.fill_null(strategy="forward")`.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3498,7 +3510,7 @@ class Expr(metaclass=_Meta):
 
         This is an alias of `.fill_null(strategy="backward")`.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3610,6 +3622,10 @@ class Expr(metaclass=_Meta):
         """
         Get maximum value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -3632,10 +3648,14 @@ class Expr(metaclass=_Meta):
         """
         Get maximum value, ordered by another expression.
 
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
+
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3667,6 +3687,10 @@ class Expr(metaclass=_Meta):
         """
         Get minimum value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -3689,10 +3713,14 @@ class Expr(metaclass=_Meta):
         """
         Get minimum value, ordered by another expression.
 
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
+
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3748,7 +3776,7 @@ class Expr(metaclass=_Meta):
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
-        This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
+        This differs from numpy's `nanmin` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
         .. engine-support:: in-memory, streaming, distributed
@@ -3823,10 +3851,7 @@ class Expr(metaclass=_Meta):
         """
         Get median value using linear interpolation.
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: This can map-reduce, but all the data of a single
-                group has to be shuffled to a single partition. Outside a group_by
-                there is only one group, so it runs on a single node.
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Examples
         --------
@@ -3938,7 +3963,7 @@ class Expr(metaclass=_Meta):
     @unstable()
     def approx_quantile(
         self,
-        quantile: float | list_[float] | Expr,
+        quantile: float | Sequence[float | None] | Expr | None,
         *,
         method: ApproxQuantileMethod = "auto",
         error: float = 0.001,
@@ -3947,14 +3972,14 @@ class Expr(metaclass=_Meta):
         """
         Compute approximate quantile(s) of an expression.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
         quantile
             A single quantile, a list of quantiles, or an expression that
-            resolves to a list of quantiles. The dtype of the expression must
-            be a floating point value.
+            resolves to one quantile or a list of them. The dtype must be numeric.
+            A string is taken as a column name. A null quantile gives a null result.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all
@@ -4050,10 +4075,10 @@ class Expr(metaclass=_Meta):
             msg = f"`error_tightness` must be one of {{'empirical', 'formal'}}, got {error_tightness!r}"
             raise ValueError(msg)
 
-        q = quantile._pyexpr if isinstance(quantile, pl.Expr) else quantile
+        quantile_pyexpr = parse_quantile_into_expression(quantile)
         return wrap_expr(
             self._pyexpr.approx_quantile(
-                q,
+                quantile_pyexpr,
                 method,
                 error,
                 use_formal_bound=error_tightness == "formal",
@@ -4159,8 +4184,8 @@ class Expr(metaclass=_Meta):
         `null` is considered to be a unique value for the purposes of this operation.
 
         .. engine-support:: in-memory, streaming, partially-distributed
-            :partially-distributed: De-duplicates per partition for either value of
-                maintain_order, but the result is gathered onto a single node.
+            :partially-distributed: Distributed when maintain_order=False; otherwise it
+                runs on a single node.
 
         Parameters
         ----------
@@ -4327,7 +4352,9 @@ class Expr(metaclass=_Meta):
         <https://www.postgresql.org/docs/current/tutorial-window.html>`_
         work in PostgreSQL.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, partially-distributed
+            :partially-distributed: Distributed for mapping_strategy="group_to_rows"
+                (the default); "join" and "explode" run on a single node.
 
         Parameters
         ----------
@@ -4588,7 +4615,7 @@ class Expr(metaclass=_Meta):
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -4764,7 +4791,7 @@ class Expr(metaclass=_Meta):
         """
         Get a boolean mask of the local maximum peaks.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Examples
         --------
@@ -4789,7 +4816,7 @@ class Expr(metaclass=_Meta):
         """
         Get a boolean mask of the local minimum peaks.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Examples
         --------
@@ -4812,18 +4839,19 @@ class Expr(metaclass=_Meta):
 
     def quantile(
         self,
-        quantile: float | list_[float] | Expr,
+        quantile: float | Sequence[float | None] | Expr | None,
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
         Get quantile value.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            A null quantile gives a null result.
 
             - If a single float, returns a single f64 value per row.
             - If a list of floats, returns a list of f64 values per row (one value per quantile).
@@ -4888,7 +4916,7 @@ class Expr(metaclass=_Meta):
         │ [1.25, 3.75] │
         └──────────────┘
         """  # noqa: W505
-        quantile_pyexpr = parse_into_expression(quantile)
+        quantile_pyexpr = parse_quantile_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
 
     @deprecated("`cut` is deprecated; use `bin_intervals` instead")
@@ -4903,7 +4931,7 @@ class Expr(metaclass=_Meta):
         """
         Bin continuous values into discrete categories.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         .. deprecated:: 2.0.0
             Use :meth:`bin_intervals` instead. It requires `labels` (pass
@@ -5096,7 +5124,11 @@ class Expr(metaclass=_Meta):
             )
         else:
             pyexpr = self._pyexpr.qcut(
-                quantiles, labels, left_closed, allow_duplicates, include_breaks
+                parse_quantile_values(quantiles),
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
             )
 
         return wrap_expr(pyexpr)
@@ -5113,7 +5145,7 @@ class Expr(metaclass=_Meta):
         """
         Bin values into discrete intervals delimited by breakpoints.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **experimental**. It may be removed or
@@ -5274,7 +5306,10 @@ class Expr(metaclass=_Meta):
             )
         else:
             pyexpr = self._pyexpr.bin_quantiles(
-                list(quantiles), labels_arg, include_intervals, right_closed
+                parse_quantile_values(quantiles),
+                labels_arg,
+                include_intervals,
+                right_closed,
             )
         return wrap_expr(pyexpr)
 
@@ -6049,7 +6084,7 @@ class Expr(metaclass=_Meta):
         """
         Take every nth value in the Series and return as a new Series.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7136,7 +7171,7 @@ class Expr(metaclass=_Meta):
         """
         Repeat the elements in this Series as specified in the given expression.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         The repeated elements are expanded into a `List`.
 
@@ -7368,7 +7403,7 @@ class Expr(metaclass=_Meta):
         under any combination of those settings.
 
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7539,7 +7574,7 @@ class Expr(metaclass=_Meta):
         """
         Print the value that this expression evaluates to and pass on the value.
 
-        .. engine-support:: in-memory, streaming, distributed
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -7576,7 +7611,7 @@ class Expr(metaclass=_Meta):
 
         Nulls at the beginning and end of the series remain null.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8899,6 +8934,7 @@ class Expr(metaclass=_Meta):
         """  # noqa: W505
         window_size = _prepare_rolling_by_window_args(window_size)
         by_pyexpr = parse_into_expression(by)
+        quantile = parse_quantile_values(quantile, allow_list=False)[0]
         return wrap_expr(
             self._pyexpr.rolling_quantile_by(
                 by_pyexpr,
@@ -9029,7 +9065,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9141,7 +9177,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9254,7 +9290,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9367,7 +9403,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9481,7 +9517,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9599,7 +9635,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9715,7 +9751,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9829,7 +9865,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9945,6 +9981,7 @@ class Expr(metaclass=_Meta):
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
         """  # noqa: W505
+        quantile = parse_quantile_values(quantile, allow_list=False)[0]
         return wrap_expr(
             self._pyexpr.rolling_quantile(
                 quantile,
@@ -9978,7 +10015,7 @@ class Expr(metaclass=_Meta):
         parameter. The resulting values will be the rank of the value that is
         at the end of the sliding window.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
             :partially-streaming: Falls back to in-memory for
                 ``method="random"`` with a ``seed``.
 
@@ -10062,7 +10099,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10104,7 +10141,7 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(
             self._pyexpr.rolling_skew(
-                window_size, bias=bias, min_periods=min_samples, center=center
+                window_size, bias=bias, min_samples=min_samples, center=center
             )
         )
 
@@ -10128,7 +10165,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10170,7 +10207,7 @@ class Expr(metaclass=_Meta):
                 window_size,
                 fisher=fisher,
                 bias=bias,
-                min_periods=min_samples,
+                min_samples=min_samples,
                 center=center,
             )
         )
@@ -10196,7 +10233,7 @@ class Expr(metaclass=_Meta):
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10405,7 +10442,7 @@ class Expr(metaclass=_Meta):
         """
         Calculate the first discrete difference between shifted items.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10469,7 +10506,7 @@ class Expr(metaclass=_Meta):
 
         Computes the change from the previous row by default.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, distributed
 
         Parameters
         ----------
@@ -10517,7 +10554,7 @@ class Expr(metaclass=_Meta):
 
         See scipy.stats for more information.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -10571,7 +10608,7 @@ class Expr(metaclass=_Meta):
 
         See scipy.stats for more information
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -12026,7 +12063,7 @@ class Expr(metaclass=_Meta):
         """
         Count the occurrence of unique values.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -12280,11 +12317,49 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.log1p())
 
+    def x_log_y(self, y: IntoExpr, base: float = math.e) -> Expr:
+        """
+        Compute `x * log(y)` to a given base, where `x` is this expression.
+
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
+
+        .. engine-support:: in-memory, streaming
+
+        Parameters
+        ----------
+        y
+            The expression to take the logarithm of. Accepts expression input;
+            strings are parsed as column names.
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3], "y": [0, 2, 4, 8]})
+        >>> df.select(pl.col("x").x_log_y("y", base=2))
+        shape: (4, 1)
+        ┌─────┐
+        │ x   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        │ 4.0 │
+        │ 9.0 │
+        └─────┘
+        """
+        y_pyexpr = parse_into_expression(y)
+        return wrap_expr(self._pyexpr.x_log_y(y_pyexpr, base))
+
     def entropy(self, base: float = math.e, *, normalize: bool = True) -> Expr:
         """
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+        `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
+        NaN. With `normalize=True`, input that sums to zero (including empty,
+        all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
         .. engine-support:: in-memory, streaming
 
@@ -12376,7 +12451,7 @@ class Expr(metaclass=_Meta):
         """
         Flags the expression as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays. It is
+        Enables downstream code to use fast paths for sorted arrays. It is
         recommended to also set whether `nulls_last` is `True` or `False`, as
         this enables many internal optimizations.
 
@@ -12998,6 +13073,8 @@ class Expr(metaclass=_Meta):
         unordered: bool = False,
         descending: Sequence[bool] | None = None,
         nulls_last: Sequence[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
     ) -> Expr:
         dtypes_pyexprs = [
             parse_into_datatype_expr(dtype)._pydatatype_expr for dtype in dtypes
@@ -13007,10 +13084,12 @@ class Expr(metaclass=_Meta):
             assert descending is None
             assert nulls_last is None
 
-            result = self._pyexpr.row_decode_unordered(names, dtypes_pyexprs)
+            result = self._pyexpr.row_decode_unordered(
+                names, dtypes_pyexprs, output, encode_nulls
+            )
         else:
             result = self._pyexpr.row_decode_ordered(
-                names, dtypes_pyexprs, descending, nulls_last
+                names, dtypes_pyexprs, descending, nulls_last, output, encode_nulls
             )
 
         return wrap_expr(result)

@@ -3,13 +3,14 @@ use std::hash::BuildHasher;
 
 use polars_arrow::array::builder::ShareStrategy;
 use polars_arrow::array::{
-    Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array,
+    Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array, View,
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::aggregate::estimated_bytes_size;
-use polars_arrow::compute::utils::combine_validities_and_many;
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::frame::builder::DataFrameBuilder;
+use polars_core::frame::column::{DictionaryColumn, SharedDictionary};
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
 use polars_core::series::Series;
@@ -22,8 +23,10 @@ use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
 use polars_utils::vec::PushUnchecked;
 
+use crate::groups::Grouper;
 pub use crate::key_rows::KeyRowKeys;
 use crate::key_rows::KeyRowLayout;
+use crate::packed_keys::{PackedKeys, PackedLayout};
 
 /// Keys are hashed and prefetched in blocks of this many.
 pub(crate) const BLOCK_SIZE: usize = 256;
@@ -119,98 +122,252 @@ pub enum HashKeys {
     Single(SingleKeys),
 }
 
-impl HashKeys {
-    pub fn from_df(
-        df: &DataFrame,
-        random_state: PlRandomState,
-        null_is_valid: bool,
-        force_row_encoding: bool,
-    ) -> Self {
-        if !force_row_encoding
-            && let Some(layout) = KeyRowLayout::new(df.columns().iter().map(|c| c.dtype()))
-        {
-            return Self::KeyRows(KeyRowKeys::from_columns(
-                df.columns(),
-                Arc::new(layout),
-                &random_state,
-                null_is_valid,
-            ));
-        }
+/// An inclusive range of the values of a key column, when it is known.
+pub type KeyRange = Option<(i128, i128)>;
 
-        let first_col_variant = hash_keys_variant_for_dtype(df[0].dtype());
-        let use_row_encoding = force_row_encoding
-            || df.width() > 1
-            || first_col_variant == HashKeysVariant::RowEncoded;
-        if use_row_encoding {
-            let keys = df.columns();
-            let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
+/// How the keys of one operation are stored. Every `HashKeys` and every table of an
+/// operation must come from the same encoder, as it decides the key format.
+#[derive(Clone, Debug)]
+pub struct KeyEncoder {
+    schema: Arc<Schema>,
+    kind: KeyKind,
+}
 
-            if !null_is_valid {
-                let validities = keys
-                    .iter()
-                    .map(|c| c.as_materialized_series().rechunk_validity())
-                    .collect_vec();
-                let combined = combine_validities_and_many(&validities);
-                keys_encoded.set_validity(combined);
-            }
+#[derive(Clone, Debug)]
+pub(crate) enum KeyKind {
+    Packed(Arc<PackedKeys>),
+    KeyRows(Arc<KeyRowLayout>),
+    RowEncoded,
+    Binview,
+    Single,
+}
 
-            // TODO: use vechash? Not supported yet for lists.
-            // let mut hashes = Vec::with_capacity(df.height());
-            // columns_to_hashes(df.columns(), Some(random_state), &mut hashes).unwrap();
-
-            let hashes = keys_encoded
-                .values_iter()
-                .map(|k| random_state.hash_one(k))
-                .collect();
-            Self::RowEncoded(RowEncodedKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
-                keys: keys_encoded,
-            })
-        } else if first_col_variant == HashKeysVariant::Binview {
-            let keys = if let Ok(ca_str) = df[0].str() {
-                ca_str.as_binary()
+impl KeyEncoder {
+    /// An encoder for keys of `schema`.
+    ///
+    /// When `nulls_in_key` is false, the keys of this operation are never made with
+    /// `null_is_valid`. `ranges` holds an inclusive range of the values of each key
+    /// column, or is empty; values outside it are still correct.
+    pub fn new(schema: Arc<Schema>, nulls_in_key: bool, ranges: &[KeyRange]) -> Self {
+        assert!(ranges.is_empty() || ranges.len() == schema.len());
+        let kind =
+            if let Some(layout) = PackedLayout::new(schema.iter_values(), nulls_in_key, ranges) {
+                KeyKind::Packed(Arc::new(PackedKeys::new(layout)))
+            } else if let Some(layout) = KeyRowLayout::new(schema.iter_values()) {
+                KeyKind::KeyRows(Arc::new(layout))
+            } else if schema.len() > 1 {
+                KeyKind::RowEncoded
             } else {
-                df[0].binary().unwrap().clone()
-            };
-            let keys = keys.rechunk().downcast_as_array().clone();
-
-            let views = keys.views();
-            let buffers = keys.data_buffers();
-            let hashes = unsafe {
-                if keys.has_nulls() {
-                    views
-                        .iter()
-                        .zip(keys.validity().unwrap())
-                        .map(|(v, is_valid)| {
-                            if is_valid {
-                                v.hash_with_buffers_unchecked(buffers, &random_state)
-                            } else {
-                                0
-                            }
-                        })
-                        .collect()
-                } else {
-                    views
-                        .iter()
-                        .map(|v| v.hash_with_buffers_unchecked(buffers, &random_state))
-                        .collect()
+                match hash_keys_variant_for_dtype(schema.get_at_index(0).unwrap().1) {
+                    HashKeysVariant::RowEncoded => KeyKind::RowEncoded,
+                    HashKeysVariant::Binview => KeyKind::Binview,
+                    HashKeysVariant::Single => KeyKind::Single,
                 }
             };
+        Self { schema, kind }
+    }
 
-            Self::Binview(BinviewKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
-                keys,
-                null_is_valid,
-            })
-        } else {
-            Self::Single(SingleKeys {
-                random_state,
-                keys: df[0].as_materialized_series().rechunk(),
-                null_is_valid,
-            })
+    pub fn schema(&self) -> &Arc<Schema> {
+        &self.schema
+    }
+
+    /// The packed layout, if the keys are packed.
+    pub fn describe_packed(&self) -> Option<String> {
+        match &self.kind {
+            KeyKind::Packed(packed) => Some(packed.describe()),
+            _ => None,
         }
     }
 
+    pub(crate) fn kind(&self) -> &KeyKind {
+        &self.kind
+    }
+
+    /// The keys of each group of `grouper`, which holds keys of this encoder, in group
+    /// order.
+    pub fn get_keys_in_group_order(&self, grouper: &dyn Grouper) -> DataFrame {
+        self.keys_in_group_order(|schema| grouper.get_keys_in_group_order(schema))
+    }
+
+    /// As `get_keys_in_group_order`, but `grouper` may hold no groups afterwards.
+    pub fn take_keys_in_group_order(&self, grouper: &mut dyn Grouper) -> DataFrame {
+        self.keys_in_group_order(|schema| grouper.take_keys_in_group_order(schema))
+    }
+
+    fn keys_in_group_order(&self, grouper_keys: impl FnOnce(&Schema) -> DataFrame) -> DataFrame {
+        match &self.kind {
+            KeyKind::Packed(packed) => {
+                let word_schema =
+                    Schema::from_iter([(PlSmallStr::EMPTY, packed.layout().word_dtype())]);
+                let words = grouper_keys(&word_schema);
+                packed.decode_words(&self.schema, words[0].as_materialized_series())
+            },
+            _ => grouper_keys(&self.schema),
+        }
+    }
+
+    /// The hash keys of the key columns `df`, for an encoder made without ranges. A
+    /// key with a null is a key of its own if `null_is_valid`, else it matches
+    /// nothing.
+    pub fn hash_keys(
+        &self,
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+    ) -> HashKeys {
+        assert!(
+            !matches!(&self.kind, KeyKind::Packed(packed) if packed.layout().can_escape()),
+            "keys with ranges can fail to encode"
+        );
+        self.try_hash_keys(df, random_state, null_is_valid).unwrap()
+    }
+
+    /// The hash keys of the key columns `df`. Fails when too many keys are out of
+    /// their range. A key with a null is a key of its own if `null_is_valid`, else it
+    /// matches nothing.
+    pub fn try_hash_keys(
+        &self,
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+    ) -> PolarsResult<HashKeys> {
+        self.try_hash_keys_impl(df, random_state, null_is_valid, false)
+    }
+
+    /// As [`Self::try_hash_keys`], for keys inserted into a hot grouper, the only reader of the
+    /// combined codes of dictionary-coded key columns.
+    pub fn try_hash_keys_for_hot_grouper(
+        &self,
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+    ) -> PolarsResult<HashKeys> {
+        self.try_hash_keys_impl(df, random_state, null_is_valid, true)
+    }
+
+    fn try_hash_keys_impl(
+        &self,
+        df: &DataFrame,
+        random_state: PlRandomState,
+        null_is_valid: bool,
+        combined_codes: bool,
+    ) -> PolarsResult<HashKeys> {
+        debug_assert!(
+            df.columns()
+                .iter()
+                .zip(self.schema.iter_values())
+                .all(|(c, dt)| c.dtype() == dt)
+        );
+        Ok(match &self.kind {
+            KeyKind::Packed(packed) => HashKeys::Single(SingleKeys {
+                random_state,
+                keys: packed.encode(df.columns(), null_is_valid)?,
+                null_is_valid,
+            }),
+            KeyKind::KeyRows(layout) => HashKeys::KeyRows(KeyRowKeys::from_columns(
+                df.columns(),
+                layout.clone(),
+                &random_state,
+                null_is_valid,
+                combined_codes,
+            )),
+            KeyKind::RowEncoded => {
+                let keys = df.columns();
+                let keys_encoded = _get_rows_encoded_unordered(keys, !null_is_valid).unwrap();
+
+                // TODO: use vechash? Not supported yet for lists.
+                // let mut hashes = Vec::with_capacity(df.height());
+                // columns_to_hashes(df.columns(), Some(random_state), &mut hashes).unwrap();
+
+                let hashes = keys_encoded
+                    .values_iter()
+                    .map(|k| random_state.hash_one(k))
+                    .collect();
+                HashKeys::RowEncoded(RowEncodedKeys {
+                    hashes: PrimitiveArray::from_vec(hashes),
+                    keys: keys_encoded,
+                })
+            },
+            KeyKind::Binview => {
+                let keys = if let Some(d) = df[0]
+                    .as_dictionary_column()
+                    .filter(|d| d.lazy_as_materialized_series().is_none())
+                {
+                    // The rows' views into the dictionary's buffers, without caching them as the
+                    // column's materialized values (which would keep them alive with the column).
+                    d.to_series().str().unwrap().as_binary()
+                } else if let Ok(ca_str) = df[0].str() {
+                    ca_str.as_binary()
+                } else {
+                    df[0].binary().unwrap().clone()
+                };
+                let keys = keys.rechunk().downcast_as_array().clone();
+
+                let dict_codes = df[0]
+                    .as_dictionary_column()
+                    .and_then(|d| DictCodes::try_new(d, &random_state));
+                let views = keys.views();
+                let buffers = keys.data_buffers();
+                let hashes = unsafe {
+                    if let Some(dc) = &dict_codes {
+                        let hash = |c: &u32| *dc.hashes.get_unchecked(*c as usize);
+                        match keys.validity().filter(|v| v.unset_bits() > 0) {
+                            Some(validity) => dc
+                                .codes
+                                .iter()
+                                .zip(validity)
+                                .map(|(c, is_valid)| if is_valid { hash(c) } else { 0 })
+                                .collect(),
+                            None => dc.codes.iter().map(hash).collect(),
+                        }
+                    } else if keys.has_nulls() {
+                        views
+                            .iter()
+                            .zip(keys.validity().unwrap())
+                            .map(|(v, is_valid)| {
+                                if is_valid {
+                                    v.hash_with_buffers_unchecked(buffers, &random_state)
+                                } else {
+                                    0
+                                }
+                            })
+                            .collect()
+                    } else {
+                        // Sorted or clustered keys have runs of equal views.
+                        let mut prev_view = View::default();
+                        let mut prev_hash =
+                            prev_view.hash_with_buffers_unchecked(buffers, &random_state);
+                        views
+                            .iter()
+                            .map(move |v| {
+                                if *v != prev_view {
+                                    prev_view = *v;
+                                    prev_hash =
+                                        v.hash_with_buffers_unchecked(buffers, &random_state);
+                                }
+                                prev_hash
+                            })
+                            .collect()
+                    }
+                };
+
+                HashKeys::Binview(BinviewKeys {
+                    hashes: PrimitiveArray::from_vec(hashes),
+                    keys,
+                    null_is_valid,
+                    dict_codes,
+                })
+            },
+            KeyKind::Single => HashKeys::Single(SingleKeys {
+                random_state,
+                keys: df[0].as_materialized_series().rechunk(),
+                null_is_valid,
+            }),
+        })
+    }
+}
+
+impl HashKeys {
     pub fn len(&self) -> usize {
         match self {
             HashKeys::RowEncoded(s) => s.keys.len(),
@@ -236,6 +393,9 @@ impl HashKeys {
                 size_of_val(s.hashes.values().as_slice())
                     + size_of_val(s.keys.views().as_slice())
                     + s.keys.total_bytes_len()
+                    + s.dict_codes
+                        .as_ref()
+                        .map_or(0, |dc| size_of_val(dc.codes.as_slice()))
             },
         }
     }
@@ -556,6 +716,7 @@ impl HashKeys {
                 hashes: column_array(df, "hashes"),
                 keys: column_array(df, "keys"),
                 null_is_valid: *null_is_valid,
+                dict_codes: None,
             }),
         }
     }
@@ -667,8 +828,8 @@ impl HashKeysBuilder {
 
 #[derive(Clone, Debug)]
 pub struct RowEncodedKeys {
-    pub hashes: UInt64Array, // Always non-null, we use the validity of keys.
-    pub keys: BinaryArray<i64>,
+    pub(crate) hashes: UInt64Array, // Always non-null, we use the validity of keys.
+    pub(crate) keys: BinaryArray<i64>,
 }
 
 impl RowEncodedKeys {
@@ -743,12 +904,46 @@ impl SingleKeys {
     }
 }
 
+/// The codes of keys that come from a [`DictionaryColumn`], with the hash of each dictionary value.
+#[derive(Clone, Debug)]
+pub struct DictCodes {
+    pub(crate) dict: Arc<SharedDictionary>,
+    /// The code of each key. Invariant: the code of a null key is arbitrary, possibly out of
+    /// bounds, and must never be used to index `hashes` or any cache; readers check the keys'
+    /// validity first.
+    pub(crate) codes: Buffer<u32>,
+    /// The hash of each dictionary value under the keys' hasher.
+    pub(crate) hashes: Buffer<u64>,
+}
+
+impl DictCodes {
+    /// `None` when the dictionary has more values than the column has rows and their hashes
+    /// aren't cached yet: hashing the rows is then cheaper, e.g. after a selective filter.
+    pub fn try_new(column: &DictionaryColumn, random_state: &PlRandomState) -> Option<Self> {
+        let hashes = match column.dict().cached_hashes(random_state) {
+            Some(hashes) => hashes,
+            None if column.dict().len() <= column.len() => column.dict().hashes(random_state),
+            None => return None,
+        };
+        // The buffer is shared, so a null key's code is arbitrary and may be out of bounds.
+        let codes = column.codes().rechunk();
+        let codes = codes.downcast_as_array().values().clone();
+        Some(Self {
+            dict: column.dict().clone(),
+            codes,
+            hashes,
+        })
+    }
+}
+
 /// Pre-hashed binary view keys with prehashing.
 #[derive(Clone, Debug)]
 pub struct BinviewKeys {
-    pub hashes: UInt64Array,
-    pub keys: BinaryViewArray,
-    pub null_is_valid: bool,
+    pub(crate) hashes: UInt64Array,
+    pub(crate) keys: BinaryViewArray,
+    pub(crate) null_is_valid: bool,
+    /// Set when the keys come from a dictionary-coded column.
+    pub(crate) dict_codes: Option<DictCodes>,
 }
 
 impl BinviewKeys {
@@ -782,6 +977,14 @@ impl BinviewKeys {
             ),
             keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
             null_is_valid: self.null_is_valid,
+            dict_codes: self.dict_codes.as_ref().map(|dc| DictCodes {
+                dict: dc.dict.clone(),
+                codes: idxs
+                    .iter()
+                    .map(|i| *dc.codes.get_unchecked(*i as usize))
+                    .collect(),
+                hashes: dc.hashes.clone(),
+            }),
         }
     }
 }
@@ -878,6 +1081,140 @@ unsafe fn for_each_hash_subset_single<T, F>(
         for idx in subset {
             let k = keys_arr.value_unchecked(*idx as usize);
             f(*idx, Some(random_state.tot_hash_one(k)));
+        }
+    }
+}
+
+/// Dictionaries with more values than this are not cached by code.
+pub(crate) const MAX_DICT_CODE_CACHE_LEN: usize = 1 << 16;
+
+/// An operator's cache from the codes of one dictionary (or a combination of dictionaries) to a
+/// result for each code's value, such as its group. Entries are `IdxSize::MAX` until filled.
+#[derive(Default)]
+pub(crate) struct DictCodeCache {
+    /// The ids of the dictionaries the entries are for; empty when there are none.
+    dict_ids: Vec<u64>,
+    entries: Vec<IdxSize>,
+    /// Rows declined since the entries were last emptied, see [`may_refill`].
+    declined_rows: usize,
+}
+
+/// Whether a cache of `len` entries may be emptied for other dictionaries, given `rows` more keys
+/// and the keys `declined_rows` declined before. Emptying is allowed once the keys add up to the
+/// entries, so that it costs no more than the keys do (e.g. after a selective filter, or for many
+/// small partitions of morsels from row groups that alternate).
+fn may_refill(declined_rows: &mut usize, len: usize, rows: usize) -> bool {
+    *declined_rows = declined_rows.saturating_add(rows);
+    if len > *declined_rows {
+        return false;
+    }
+    *declined_rows = 0;
+    true
+}
+
+impl DictCodeCache {
+    /// The entries for `dict` to look up `rows` keys, emptied when it is another dictionary than
+    /// last time. `None` if the dictionary is too large to cache, or if emptying the entries
+    /// would cost more than the keys so far (see [`may_refill`]).
+    pub(crate) fn entries_for(
+        &mut self,
+        dict: &SharedDictionary,
+        rows: usize,
+    ) -> Option<&mut [IdxSize]> {
+        self.entries_for_ids(&[dict.id()], dict.len(), rows)
+    }
+
+    /// The `len` entries for the combined codes of the dictionaries `dict_ids`, emptied when
+    /// these are other dictionaries than last time. `None` as for [`Self::entries_for`].
+    pub(crate) fn entries_for_ids(
+        &mut self,
+        dict_ids: &[u64],
+        len: usize,
+        rows: usize,
+    ) -> Option<&mut [IdxSize]> {
+        if len > MAX_DICT_CODE_CACHE_LEN {
+            return None;
+        }
+        if self.dict_ids != dict_ids {
+            if !may_refill(&mut self.declined_rows, len, rows) {
+                return None;
+            }
+            self.dict_ids.clear();
+            self.dict_ids.extend_from_slice(dict_ids);
+            self.entries.clear();
+            self.entries.reserve_exact(len);
+            self.entries.resize(len, IdxSize::MAX);
+        }
+        Some(&mut self.entries)
+    }
+
+    /// The number of entries the cache holds memory for.
+    pub(crate) fn capacity(&self) -> usize {
+        self.entries.capacity()
+    }
+}
+
+/// A [`DictCodeCache`] for tables that reuse a key slot for another key, such as hot groupers
+/// that evict keys. Each entry holds a slot and the slot's generation when the entry was made;
+/// it is only valid while the slot's generation is unchanged.
+#[derive(Default)]
+pub(crate) struct DictSlotCache {
+    dict_ids: Vec<u64>,
+    entries: Vec<(IdxSize, u64)>,
+    /// The generation of each slot, bumped when the slot gets another key.
+    slot_gens: Vec<u64>,
+    /// Rows declined since the entries were last emptied, see [`may_refill`].
+    declined_rows: usize,
+}
+
+impl DictSlotCache {
+    /// Starts caching the `len` combined codes of the dictionaries `dict_ids` for `rows` keys,
+    /// emptying the cache when these are other dictionaries than last time. False if too large to
+    /// cache, or if emptying it would cost more than the keys so far (see [`may_refill`]).
+    pub(crate) fn prepare(&mut self, dict_ids: &[u64], len: usize, rows: usize) -> bool {
+        if len > MAX_DICT_CODE_CACHE_LEN {
+            return false;
+        }
+        if self.dict_ids != dict_ids {
+            if !may_refill(&mut self.declined_rows, len, rows) {
+                return false;
+            }
+            self.dict_ids.clear();
+            self.dict_ids.extend_from_slice(dict_ids);
+            self.entries.clear();
+            self.entries.resize(len, (IdxSize::MAX, 0));
+        }
+        true
+    }
+
+    /// The slot that `code` was found in, if it still holds that key.
+    ///
+    /// # Safety
+    /// `code` must be in bounds for the prepared dictionaries.
+    #[inline(always)]
+    pub(crate) unsafe fn get(&self, code: usize) -> Option<IdxSize> {
+        let (slot, gen_) = *self.entries.get_unchecked(code);
+        (slot != IdxSize::MAX && self.slot_gens.get(slot as usize) == Some(&gen_)).then_some(slot)
+    }
+
+    /// Records that `code` is in `slot`.
+    ///
+    /// # Safety
+    /// `code` must be in bounds for the prepared dictionaries.
+    #[inline(always)]
+    pub(crate) unsafe fn set(&mut self, code: usize, slot: IdxSize) {
+        if self.slot_gens.len() <= slot as usize {
+            self.slot_gens.resize(slot as usize + 1, 0);
+        }
+        *self.entries.get_unchecked_mut(code) =
+            (slot, *self.slot_gens.get_unchecked(slot as usize));
+    }
+
+    /// Records that `slot` now holds another key.
+    #[inline(always)]
+    pub(crate) fn invalidate_slot(&mut self, slot: IdxSize) {
+        if let Some(g) = self.slot_gens.get_mut(slot as usize) {
+            *g = g.wrapping_add(1);
         }
     }
 }

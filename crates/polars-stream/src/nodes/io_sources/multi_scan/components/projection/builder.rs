@@ -1,18 +1,22 @@
 use std::sync::Arc;
 
 use polars_arrow::bitmap::MutableBitmap;
-use polars_core::prelude::{InitHashMaps, PlHashMap};
+use polars_core::prelude::{InitHashMaps, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
-use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};
+use polars_core::schema::iceberg::{
+    IcebergColumn, IcebergColumnType, IcebergSchema, IcebergSchemaRef,
+};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
-use polars_plan::dsl::{CastColumnsPolicy, ColumnMapping, MissingColumnsPolicy};
+use polars_plan::dsl::{
+    CastColumnsPolicy, ColumnMapping, FieldSelection, MissingColumnsPolicy, ScanFieldSelection,
+};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
 use crate::nodes::io_sources::multi_scan::components::column_selector::builder::{
-    ColumnSelectorBuilder, build_iceberg_default_value,
+    ColumnSelectorBuilder, build_iceberg_default_value, collect_partitioned_structs,
 };
 use crate::nodes::io_sources::multi_scan::components::default_field_values::IcebergDefaultValueProviderRef;
 use crate::nodes::io_sources::multi_scan::components::projection::{
@@ -34,6 +38,10 @@ pub enum ProjectionBuilder {
         table_has_name_mapping: bool,
         /// Used for filling missing fields.
         default_values: Option<Arc<IcebergDefaultFieldValues>>,
+        /// The struct fields read of each projected column, indexed like `projected_schema`;
+        /// `None` if every column is read whole. The output dtypes in `projected_schema` are
+        /// pruned to them, the columns in `projected_iceberg_schema` are not.
+        field_selections: Option<Arc<[FieldSelection]>>,
     },
 }
 
@@ -48,10 +56,13 @@ impl ProjectionBuilder {
         }
     }
 
+    /// `field_selection`: the struct fields read of the columns not read whole (see
+    /// [`ScanFieldSelection`]), keyed by output name; `projected_schema` has their pruned dtypes.
     pub fn new(
         projected_schema: SchemaRef,
         column_mapping: Option<&ColumnMapping>,
         default_values: Option<Arc<IcebergDefaultFieldValues>>,
+        field_selection: Option<&ScanFieldSelection>,
     ) -> Self {
         match column_mapping {
             None => ProjectionBuilder::Plain(projected_schema),
@@ -81,7 +92,12 @@ impl ProjectionBuilder {
 
                             let column = iceberg_schema.get(physical_id).unwrap();
 
-                            assert_eq!(&column.type_.to_polars_dtype(), output_dtype);
+                            let selection = field_selection
+                                .map_or(&FieldSelection::All, |s| s.get(output_name));
+                            assert_eq!(
+                                &selection.prune_dtype(&column.type_.to_polars_dtype()),
+                                output_dtype
+                            );
 
                             (*physical_id, column.clone())
                         })
@@ -90,11 +106,21 @@ impl ProjectionBuilder {
 
                 assert_eq!(projected_iceberg_schema.len(), projected_schema.len());
 
+                let field_selections = field_selection
+                    .filter(|s| projected_schema.iter_names().any(|n| !s.get(n).is_all()))
+                    .map(|s| {
+                        projected_schema
+                            .iter_names()
+                            .map(|n| s.get(n).clone())
+                            .collect()
+                    });
+
                 Self::Iceberg {
                     projected_schema,
                     projected_iceberg_schema,
                     table_has_name_mapping: *has_name_mapping,
                     default_values,
+                    field_selections,
                 }
             },
         }
@@ -183,6 +209,7 @@ impl ProjectionBuilder {
                 projected_iceberg_schema,
                 table_has_name_mapping: _,
                 default_values,
+                field_selections,
             } => (|| {
                 let file_iceberg_schema = file_iceberg_schema.ok_or_else(|| {
                     polars_err!(
@@ -197,9 +224,19 @@ impl ProjectionBuilder {
                 let mut mapping: Option<PlHashMap<usize, ProjectionTransform>> = None;
                 let mut missing_columns_mask: Option<MutableBitmap> = None;
                 let mut missing_column_defaults: Option<PlHashMap<usize, Scalar>> = None;
-                let iceberg_default_value_provider = default_values
-                    .as_deref()
-                    .map(|x| IcebergDefaultValueProviderRef::new(x, scan_source_idx));
+                let mut partitioned_structs = PlHashSet::new();
+                let iceberg_default_value_provider = default_values.as_deref().map(|x| {
+                    let provider = IcebergDefaultValueProviderRef::new(x, scan_source_idx);
+                    if field_selections.is_none() {
+                        return provider;
+                    }
+                    // Defaults are built for pruned columns: whether a missing struct is valid
+                    // depends on partition values of fields that may be pruned away.
+                    for column in projected_iceberg_schema.values() {
+                        collect_partitioned_structs(provider, column, &mut partitioned_structs);
+                    }
+                    provider.with_partitioned_structs(&partitioned_structs)
+                });
 
                 for (index, (physical_id, output_iceberg_column)) in
                     projected_iceberg_schema.iter().enumerate()
@@ -213,9 +250,18 @@ impl ProjectionBuilder {
 
                         if let Some(iceberg_default_value_provider) = iceberg_default_value_provider
                         {
+                            // Of the output dtype: only the selected struct fields.
+                            let pruned;
+                            let output_column = match field_selections.as_deref() {
+                                Some(s) => {
+                                    pruned = prune_iceberg_column(output_iceberg_column, &s[index]);
+                                    &pruned
+                                },
+                                None => output_iceberg_column,
+                            };
                             if let Some(default) = build_iceberg_default_value(
                                 iceberg_default_value_provider,
-                                output_iceberg_column,
+                                output_column,
                             )? {
                                 missing_column_defaults
                                     .get_or_insert_with(|| {
@@ -227,6 +273,48 @@ impl ProjectionBuilder {
 
                         continue;
                     };
+
+                    if let Some(selection) = field_selections
+                        .as_deref()
+                        .map(|s| &s[index])
+                        .filter(|s| !s.is_all())
+                    {
+                        // The cast policies are checked on the whole column, so that they raise
+                        // as when it is read whole.
+                        selector_builder.attach_iceberg_transforms(
+                            ColumnSelector::Position(0),
+                            incoming_iceberg_column,
+                            output_iceberg_column,
+                            iceberg_default_value_provider,
+                        )?;
+
+                        // Only the selected fields are read: map them to the fields of the file
+                        // by physical ID, so that each is read once whatever its name.
+                        let output_column = prune_iceberg_column(output_iceberg_column, selection);
+                        let incoming_column =
+                            prune_iceberg_column_by_id(incoming_iceberg_column, &output_column);
+
+                        let transform = selector_builder.attach_iceberg_transforms(
+                            ColumnSelector::Position(0),
+                            &incoming_column,
+                            &output_column,
+                            iceberg_default_value_provider,
+                        )?;
+
+                        mapping
+                            .get_or_insert_with(|| {
+                                PlHashMap::with_capacity(projected_iceberg_schema.len())
+                            })
+                            .insert(
+                                index,
+                                ProjectionTransform {
+                                    source_name: incoming_column.name.clone(),
+                                    source_dtype: incoming_column.type_.to_polars_dtype(),
+                                    transform,
+                                },
+                            );
+                        continue;
+                    }
 
                     match selector_builder.attach_iceberg_transforms(
                         ColumnSelector::Position(0),
@@ -275,5 +363,64 @@ impl ProjectionBuilder {
 
     pub fn projected_names(&self) -> impl Iterator<Item = &PlSmallStr> {
         self.projected_schema().iter_names()
+    }
+}
+
+/// `column` with only the struct fields in `selection` (by name).
+fn prune_iceberg_column(column: &IcebergColumn, selection: &FieldSelection) -> IcebergColumn {
+    use IcebergColumnType as ICT;
+
+    let type_ = match (&column.type_, selection) {
+        (ICT::Struct(fields), FieldSelection::Fields(selected)) => ICT::Struct(
+            fields
+                .iter()
+                .filter_map(|(id, field)| {
+                    let selection = selected.get(&field.name)?;
+                    Some((*id, prune_iceberg_column(field, selection)))
+                })
+                .collect(),
+        ),
+        (ICT::List(inner), FieldSelection::Element(element)) => {
+            ICT::List(Box::new(prune_iceberg_column(inner, element)))
+        },
+        (ICT::FixedSizeList(inner, width), FieldSelection::Element(element)) => {
+            ICT::FixedSizeList(Box::new(prune_iceberg_column(inner, element)), *width)
+        },
+        (type_, _) => type_.clone(),
+    };
+
+    IcebergColumn {
+        type_,
+        ..column.clone()
+    }
+}
+
+/// `incoming` (a column of the file) with only the struct fields `target` (a pruned column of the
+/// table) has, matched by physical ID.
+fn prune_iceberg_column_by_id(incoming: &IcebergColumn, target: &IcebergColumn) -> IcebergColumn {
+    use IcebergColumnType as ICT;
+
+    let type_ = match (&incoming.type_, &target.type_) {
+        (ICT::Struct(fields), ICT::Struct(target_fields)) => ICT::Struct(
+            fields
+                .iter()
+                .filter_map(|(id, field)| {
+                    let target = target_fields.get(id)?;
+                    Some((*id, prune_iceberg_column_by_id(field, target)))
+                })
+                .collect(),
+        ),
+        (ICT::List(inner), ICT::List(target)) => {
+            ICT::List(Box::new(prune_iceberg_column_by_id(inner, target)))
+        },
+        (ICT::FixedSizeList(inner, width), ICT::FixedSizeList(target, _)) => {
+            ICT::FixedSizeList(Box::new(prune_iceberg_column_by_id(inner, target)), *width)
+        },
+        (type_, _) => type_.clone(),
+    };
+
+    IcebergColumn {
+        type_,
+        ..incoming.clone()
     }
 }

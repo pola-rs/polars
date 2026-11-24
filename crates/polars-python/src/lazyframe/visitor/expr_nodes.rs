@@ -15,7 +15,7 @@ use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
     IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
-    IRStructFunction, IRTemporalFunction, MinMaxByOrder,
+    IRStructFunction, IRTemporalFunction, MinMaxByOrder, RowEncodingOutputType, RowEncodingVariant,
 };
 #[cfg(feature = "cutqcut")]
 use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
@@ -28,6 +28,7 @@ use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyInt, PyList, PyTuple};
 
+use super::nodes::legacy_slice;
 use crate::Wrap;
 use crate::lazyframe::visit::PyExprIR;
 use crate::series::PySeries;
@@ -54,7 +55,7 @@ pub struct Literal {
     dtype: Py<PyAny>,
 }
 
-#[pyclass(name = "Operator", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "Operator", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
@@ -137,7 +138,7 @@ impl<'py> IntoPyObject<'py> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "StringFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
@@ -188,6 +189,8 @@ pub enum PyStringFunction {
     Format,
     ExtractMany,
     FindMany,
+    FromCodePoint,
+    FormatWithSpecs,
 }
 
 #[pymethods]
@@ -197,7 +200,7 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "BooleanFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
@@ -230,7 +233,7 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "TemporalFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
@@ -278,6 +281,7 @@ pub enum PyTemporalFunction {
     ReplaceTimeZone,
     Combine,
     DatetimeFunction,
+    DateDiff,
 }
 
 #[pymethods]
@@ -287,7 +291,7 @@ impl PyTemporalFunction {
     }
 }
 
-#[pyclass(name = "StructFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "StructFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
     FieldByName,
@@ -307,7 +311,7 @@ impl PyStructFunction {
     }
 }
 
-#[pyclass(name = "ListFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "ListFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyListFunction {
     Concat,
@@ -345,7 +349,7 @@ impl PyListFunction {
     }
 }
 
-#[pyclass(name = "ArrayFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "ArrayFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyArrayFunction {
     Length,
@@ -379,7 +383,7 @@ impl PyArrayFunction {
     }
 }
 
-#[pyclass(name = "RollingFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "RollingFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyRollingFunction {
     Min,
@@ -402,7 +406,7 @@ impl PyRollingFunction {
     }
 }
 
-#[pyclass(name = "EwmFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "EwmFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyEwmFunction {
     Mean,
@@ -420,7 +424,7 @@ impl PyEwmFunction {
     }
 }
 
-#[pyclass(name = "RollingFunctionBy", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "RollingFunctionBy", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyRollingFunctionBy {
     MinBy,
@@ -440,7 +444,7 @@ impl PyRollingFunctionBy {
     }
 }
 
-#[pyclass(name = "BitwiseFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "BitwiseFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyBitwiseFunction {
     CountOnes,
@@ -461,7 +465,7 @@ impl PyBitwiseFunction {
     }
 }
 
-#[pyclass(name = "RangeFunction", eq, frozen, skip_from_py_object)]
+#[pyclass(name = "RangeFunction", eq, frozen)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyRangeFunction {
     IntRange,
@@ -775,7 +779,7 @@ impl PyGroupbyOptions {
 impl PyGroupbyOptions {
     #[getter]
     fn slice(&self) -> Option<(i64, usize)> {
-        self.inner.slice
+        legacy_slice(self.inner.slice)
     }
 
     #[getter]
@@ -860,6 +864,7 @@ fn dyn_list_literal_into_py(py: Python<'_>, value: &DynListLiteralValue) -> PyRe
 pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
     match expr {
         AExpr::Element => Err(PyNotImplementedError::new_err("element")),
+        AExpr::EvalColumn(_) => Err(PyNotImplementedError::new_err("eval column")),
         AExpr::Explode { expr, options } => Explode {
             expr: expr.0,
             options: (options.empty_as_null, options.keep_nulls),
@@ -1246,10 +1251,25 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     (py_function,).into_py_any(py)
                 },
                 IRFunctionExpr::StringExpr(strfun) => match strfun {
-                    IRStringFunction::Format { format, insertions } => (
+                    IRStringFunction::Format {
+                        format,
+                        insertions,
+                        specs,
+                    } if specs.is_empty() => (
                         PyStringFunction::Format,
                         format.as_str(),
                         insertions.to_vec(),
+                    )
+                        .into_py_any(py),
+                    IRStringFunction::Format {
+                        format,
+                        insertions,
+                        specs,
+                    } => (
+                        PyStringFunction::FormatWithSpecs,
+                        format.as_str(),
+                        insertions.to_vec(),
+                        specs.iter().map(|s| s.as_deref()).collect::<Vec<_>>(),
                     )
                         .into_py_any(py),
                     IRStringFunction::ConcatHorizontal {
@@ -1298,6 +1318,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRStringFunction::LenBytes => (PyStringFunction::LenBytes,).into_py_any(py),
                     IRStringFunction::LenChars => (PyStringFunction::LenChars,).into_py_any(py),
+                    IRStringFunction::FromCodePoint => {
+                        (PyStringFunction::FromCodePoint,).into_py_any(py)
+                    },
                     IRStringFunction::Lowercase => (PyStringFunction::Lowercase,).into_py_any(py),
                     #[cfg(feature = "extract_jsonpath")]
                     IRStringFunction::JsonDecode(_) => {
@@ -1568,6 +1591,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         time_zone.as_ref().map(|s| s.as_str()),
                     )
                         .into_py_any(py),
+                    IRTemporalFunction::DateDiff(unit) => {
+                        (PyTemporalFunction::DateDiff, Into::<&str>::into(unit)).into_py_any(py)
+                    },
                 },
                 IRFunctionExpr::Boolean(boolfun) => match boolfun {
                     IRBooleanFunction::Any { ignore_nulls } => {
@@ -1780,11 +1806,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         is_corr,
                     } => {
                         // Tuple consumed by external engines (e.g., cudf-polars):
-                        // (RollingFunction, window_size, min_periods, ddof, is_corr)
+                        // (RollingFunction, window_size, min_samples, ddof, is_corr)
                         (
                             PyRollingFunction::CorrCov,
                             corr_cov_options.window_size,
-                            corr_cov_options.min_periods,
+                            corr_cov_options.min_samples,
                             corr_cov_options.ddof,
                             is_corr,
                         )
@@ -1811,11 +1837,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         };
                         let fn_params = rolling_fn_params_into_py(py, &options.fn_params)?;
                         // Tuple consumed by external engines (e.g., cudf-polars):
-                        // (RollingFunction, window_size, min_periods, weights, center, fn_params)
+                        // (RollingFunction, window_size, min_samples, weights, center, fn_params)
                         (
                             py_function,
                             options.window_size,
-                            options.min_periods,
+                            options.min_samples,
                             &options.weights,
                             options.center,
                             fn_params,
@@ -1839,11 +1865,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     };
                     let fn_params = rolling_fn_params_into_py(py, &options.fn_params)?;
                     // Tuple consumed by external engines (e.g., cudf-polars):
-                    // (RollingFunctionBy, window_size, min_periods, closed_window, fn_params)
+                    // (RollingFunctionBy, window_size, min_samples, closed_window, fn_params)
                     (
                         py_function,
                         Wrap(options.window_size),
-                        options.min_periods,
+                        options.min_samples,
                         Wrap(options.closed_window),
                         fn_params,
                     )
@@ -1949,6 +1975,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Entropy { base, normalize } => {
                     ("entropy", base, normalize).into_py_any(py)
                 },
+                IRFunctionExpr::XLogY { base } => ("x_log_y", base).into_py_any(py),
                 IRFunctionExpr::Log => ("log",).into_py_any(py),
                 IRFunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 IRFunctionExpr::Exp => ("exp",).into_py_any(py),
@@ -2130,21 +2157,21 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 IRFunctionExpr::MinHorizontal => ("min_horizontal",).into_py_any(py),
                 // Tuples consumed by external engines (e.g., cudf-polars):
-                // Mean/Std/Var: (EwmFunction, alpha, adjust, bias, min_periods, ignore_nulls)
-                // Sum: (EwmFunction, alpha, min_periods, ignore_nulls)
+                // Mean/Std/Var: (EwmFunction, alpha, adjust, bias, min_samples, ignore_nulls)
+                // Sum: (EwmFunction, alpha, min_samples, ignore_nulls)
                 IRFunctionExpr::EwmMean { options } => (
                     PyEwmFunction::Mean,
                     options.alpha,
                     options.adjust,
                     options.bias,
-                    options.min_periods,
+                    options.min_samples,
                     options.ignore_nulls,
                 )
                     .into_py_any(py),
                 IRFunctionExpr::EwmSum { options } => (
                     PyEwmFunction::Sum,
                     options.alpha,
-                    options.min_periods,
+                    options.min_samples,
                     options.ignore_nulls,
                 )
                     .into_py_any(py),
@@ -2153,7 +2180,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     options.alpha,
                     options.adjust,
                     options.bias,
-                    options.min_periods,
+                    options.min_samples,
                     options.ignore_nulls,
                 )
                     .into_py_any(py),
@@ -2162,7 +2189,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     options.alpha,
                     options.adjust,
                     options.bias,
-                    options.min_periods,
+                    options.min_samples,
                     options.ignore_nulls,
                 )
                     .into_py_any(py),
@@ -2213,10 +2240,41 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::EwmSumBy { half_life } => {
                     (PyEwmFunction::SumBy, Wrap(*half_life)).into_py_any(py)
                 },
-                IRFunctionExpr::RowEncode(..) => {
-                    return Err(PyNotImplementedError::new_err("row_encode"));
+                IRFunctionExpr::RowEncode {
+                    variant,
+                    output,
+                    encode_nulls,
+                    propagate_nulls,
+                    ..
+                } => {
+                    let output = match output {
+                        RowEncodingOutputType::AlwaysBinaryOffset => "always_binary_offset",
+                        RowEncodingOutputType::AlwaysBinary => "always_binary",
+                        RowEncodingOutputType::Optimal => "optimal",
+                    };
+                    match variant {
+                        RowEncodingVariant::Unordered => (
+                            "row_encode_unordered",
+                            output,
+                            encode_nulls,
+                            propagate_nulls,
+                        )
+                            .into_py_any(py),
+                        RowEncodingVariant::Ordered {
+                            descending,
+                            nulls_last,
+                        } => (
+                            "row_encode_ordered",
+                            descending,
+                            nulls_last,
+                            output,
+                            encode_nulls,
+                            propagate_nulls,
+                        )
+                            .into_py_any(py),
+                    }
                 },
-                IRFunctionExpr::RowDecode(..) => {
+                IRFunctionExpr::RowDecode { .. } => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
                 #[cfg(feature = "approx_quantile")]
@@ -2256,6 +2314,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             partition_by,
             order_by,
             mapping,
+            may_reorder: _,
         } => {
             let function = function.0;
             let partition_by = partition_by.iter().map(|n| n.0).collect();

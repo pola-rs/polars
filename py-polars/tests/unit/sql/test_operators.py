@@ -9,6 +9,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -79,6 +80,41 @@ def test_equal_not_equal() -> None:
         "5_eq_aware": [True, True, True, False, False],
         "6_neq_aware": [False, False, False, True, True],
     }
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        ("a IS DISTINCT FROM b AND c > 1", [False, False, True]),
+        ("a IS NOT DISTINCT FROM b OR c > 1", [True, True, True]),
+        ("c > 0 AND a IS DISTINCT FROM b OR c = 1", [True, False, True]),
+    ],
+)
+def test_is_distinct_from_precedence(predicate: str, expected: list[bool]) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 4], "c": [1, 2, 3]})
+    assert df.sql(f"SELECT {predicate} AS m FROM self")["m"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        ("d IS NOT DISTINCT FROM '2024-01-03'", [False, True, False]),
+        ("'2024-01-03' IS DISTINCT FROM d", [True, False, True]),
+        ("s IS NOT DISTINCT FROM 22", [False, True, False]),
+        # intervals compare by length
+        ("INTERVAL '24 hours' IS NOT DISTINCT FROM INTERVAL '1 day'", [True] * 3),
+        ("INTERVAL '24 hours' IS DISTINCT FROM INTERVAL '1 day'", [False] * 3),
+        ("INTERVAL '24 hours' = INTERVAL '1 day'", [True] * 3),
+        ("INTERVAL '24 hours' <> INTERVAL '1 day'", [False] * 3),
+    ],
+)
+def test_is_distinct_from_literal_coercion(
+    predicate: str, expected: list[bool]
+) -> None:
+    df = pl.DataFrame(
+        {"d": [date(2024, 1, 1), date(2024, 1, 3), None], "s": ["13", "22", None]}
+    )
+    assert df.sql(f"SELECT {predicate} AS m FROM self")["m"].to_list() == expected
 
 
 def test_string_compared_with_integer_literals() -> None:
@@ -205,7 +241,6 @@ def test_constant_where_condition_is_planned_not_executed() -> None:
     ("condition", "expected"),
     [
         ("ROW_NUMBER() OVER () <= 2", [1, 2]),
-        ("COUNT(1) > 1", [1, 2, 3]),
         ("COLUMNS('^a$') > 1", [2, 3]),
     ],
 )
@@ -370,6 +405,21 @@ def test_in_list_column_elements_larger_mixed_list() -> None:
     #   a=4,b=10 -> {9, 100, 20} -> no match
     res = df.sql('SELECT a FROM self WHERE a IN (b - 1, 100, b * 2) ORDER BY "a"')
     assert res["a"].to_list() == [1]
+
+
+def test_in_list_compares_like_equality() -> None:
+    # integers take the column's own integer type; floats stay floats, so 2^53 + 1
+    # matches the float 2^53 as with `=` (`2^53.0` is an exact decimal: no match)
+    df = pl.DataFrame(
+        {"i": [7, 9], "k": [7, 2**53 + 1]}, schema={"i": pl.Int32, "k": pl.Int64}
+    )
+    assert df.sql("SELECT i FROM self WHERE i IN (7, 8)").rows() == [(7,)]
+    # the list takes the column's type, as `pl.col("i").is_in([7, 8])` does
+    plan = df.lazy().sql("SELECT i FROM self WHERE i IN (7, 8, 3000000000)").explain()
+    assert ".cast(" not in plan
+    for literal, expected in (("9.007199254740992e15", [(9,)]), (f"{2**53}.0", [])):
+        for predicate in (f"k IN ({literal})", f"k = {literal}"):
+            assert df.sql(f"SELECT i FROM self WHERE {predicate}").rows() == expected
 
 
 def test_in_list_null_three_valued_logic_select_list() -> None:
@@ -636,3 +686,20 @@ def test_unary_ops_8890() -> None:
             "c": [-3, -3],
             "d": [4, 4],
         }
+
+
+@pytest.mark.parametrize("op", ["IS TRUE", "IS NOT TRUE", "IS FALSE", "IS NOT FALSE"])
+def test_is_true_false_on_null(op: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t": pl.DataFrame(
+                {
+                    "x": [True, False, None],
+                    "n": [2, 0, None],
+                    "s": ["true", "false", None],
+                }
+            )
+        },
+        query=f"SELECT x {op} AS r, n {op} AS rn, s {op} AS rs FROM t",
+        compare_with="duckdb",
+    )

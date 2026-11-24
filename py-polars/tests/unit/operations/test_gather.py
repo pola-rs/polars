@@ -811,3 +811,57 @@ def test_gather_array_null_rows_get_null_values(child: pa.Array) -> None:
     out = s.gather(pl.Series([1, 0, None], dtype=pl.get_index_type()))
     assert out.to_list() == [s.to_list()[1], None, None]
     assert out.to_arrow().values.is_null().to_pylist()[2:] == [True] * 4
+
+
+def test_gather_by_column_with_limit_30408() -> None:
+    n = 10_000
+    lf = pl.LazyFrame({"idx": range(n), "x": [float(i) for i in range(n)]})
+    q = lf.with_columns(pl.col("x").gather(pl.col("idx")).alias("y")).limit(1)
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"idx": [0], "x": [0.0], "y": [0.0]}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "descending", "idx", "idx_descending", "idx_nulls_last"),
+    [
+        # Source nulls first, index nulls last.
+        ([None, 1, 2], False, [0, 1, None], False, True),
+        # Source nulls last, index nulls first.
+        ([1, 2, None], False, [None, 1, 2], False, False),
+        # A descending index moves the source nulls to the front.
+        ([1, 2, None], False, [2, 1, None], True, True),
+        # Descending source.
+        ([None, 2, 1], True, [0, 1, None], False, True),
+    ],
+)
+def test_gather_nulls_at_both_ends_drops_sorted_flag_30428(
+    values: list[int | None],
+    descending: bool,
+    idx: list[int | None],
+    idx_descending: bool,
+    idx_nulls_last: bool,
+) -> None:
+    s = pl.Series("s", values).sort(
+        descending=descending, nulls_last=values[-1] is None
+    )
+    i = pl.Series(idx, dtype=pl.UInt32).sort(
+        descending=idx_descending, nulls_last=idx_nulls_last
+    )
+    expected = s.gather(i)
+    for out in [s[i], s.to_frame()[i].to_series()]:
+        assert_series_equal(out, expected)
+        assert out.max() == expected.max()
+        assert out.n_unique() == expected.n_unique()
+
+
+def test_gather_nulls_at_one_end_keeps_sorted_flag_30428() -> None:
+    s = pl.Series([None, 1, 2]).sort()
+    out = s[pl.Series([None, 0, 2], dtype=pl.UInt32).sort()]
+    assert out.to_list() == [None, None, 2]
+    assert out.flags["SORTED_ASC"]
+
+    all_null = s[pl.Series([None, 0], dtype=pl.UInt32).sort()]
+    assert all_null.to_list() == [None, None]
+    assert all_null.max() is None

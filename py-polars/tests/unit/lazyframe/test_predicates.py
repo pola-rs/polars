@@ -17,7 +17,7 @@ from polars.testing.asserts.series import assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from polars._typing import EngineType
+    from polars._typing import EngineType, JoinStrategy
     from tests.conftest import PlMonkeyPatch
 
 
@@ -2215,6 +2215,26 @@ def test_predicate_not_pushed_below_scalar_select(engine: EngineType) -> None:
     assert q.collect(engine=engine).height == 0
 
 
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+def test_filter_constraint_signed_zero_and_nan(dtype: pl.DataType) -> None:
+    # -0.0 == 0.0 and NaN == NaN when filtering: no combination of them is impossible
+    other_nan = np.frombuffer(np.uint64(0x7FF8_0000_0000_0001).tobytes(), "f8")[0]
+    lf = pl.LazyFrame({"f": [0.0, -0.0, 1.5, float("nan"), None]}, schema={"f": dtype})
+    f = pl.col("f")
+    predicates = [
+        f.is_in([-0.0]) & f.is_in([0.0, 1.5]),
+        f.is_in([0.0]) & (f == -0.0),
+        (f >= 0.0) & (f <= -0.0),
+        (f == 0.0) & (f != -0.0),
+        f.is_in([0.0]) & ~f.is_in([-0.0]),
+        f.is_in([float("nan")]) & f.is_in([other_nan]),
+        (f == float("nan")) & ~f.is_in([other_nan]),
+    ]
+    for p in predicates:
+        expected = lf.filter(p).collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(lf.filter(p).collect(), expected)
+
+
 _NOT_NULL_LF = pl.LazyFrame({"a": [1, None, 4, 7], "b": [None, 2, 3, 4]})
 
 
@@ -2259,3 +2279,27 @@ def test_filter_is_null_and_not_is_in(nulls_equal: bool) -> None:
     )
     expected = lf.collect().filter(pl.col("a").is_null() if nulls_equal else False)
     assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize("how", ["left", "inner"])
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("s").str.contains(pl.col("p")),
+        pl.col("s").str.find(pl.col("p")).is_not_null(),
+        pl.col("s").str.find(pl.col("p"), strict=False).is_not_null(),
+        pl.col("s").str.count_matches(pl.col("p")) > 0,
+        pl.col("t").str.to_integer() > 0,
+    ],
+)
+def test_fallible_string_predicate_stays_above_join(
+    how: JoinStrategy, predicate: pl.Expr, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    left = pl.LazyFrame({"k": [1]})
+    # The row for `k == 2` has an invalid regex and a non-integer.
+    right = pl.LazyFrame(
+        {"k": [1, 2], "s": ["A", "B"], "p": ["A", "["], "t": ["1", "x"]}
+    )
+    q = left.join(right, on="k", how=how).filter(predicate)
+    assert q.collect().height == 1

@@ -16,3 +16,4 @@ macro_rules! with_arms {
 pub mod boolean;
 pub mod decimal;
 pub mod numeric;
+pub(crate) mod packed;

@@ -116,7 +116,7 @@ pub(super) trait L1Array {
         op1: InequalityOperator,
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64;
+    ) -> usize;
 
     unsafe fn process_lhs_entry(
         &self,
@@ -125,7 +125,7 @@ pub(super) trait L1Array {
         op1: InequalityOperator,
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64;
+    ) -> usize;
 
     unsafe fn mark_visited(&self, index: usize, bit_array: &mut FilteredBitArray);
 }
@@ -168,7 +168,7 @@ fn find_matches_in_l1<T>(
     op1: InequalityOperator,
     left_row_ids: &mut Vec<IdxSize>,
     right_row_ids: &mut Vec<IdxSize>,
-) -> i64
+) -> usize
 where
     T: NumericNative,
     T: TotalOrd,
@@ -182,17 +182,14 @@ where
     // Because we use a stable sort for l2, we know that we won't find any
     // matches for duplicate y values when traversing forwards in l1.
     let start_index = unsafe { find_search_start_index(l1_array, l1_index, op1) };
-    unsafe {
-        bit_array.on_set_bits_from(start_index, |set_bit: usize| {
-            // SAFETY
-            // set bit is within bounds.
-            let right_row_index = l1_array.get_unchecked(set_bit).row_index;
-            debug_assert!(right_row_index < 0);
-            left_row_ids.push((row_index - 1) as IdxSize);
-            right_row_ids.push((-right_row_index) as IdxSize - 1);
-            match_count += 1;
-        })
-    };
+    bit_array.on_set_bits_from(start_index, |set_bit: usize| {
+        // SAFETY: set bit is within bounds.
+        let right_row_index = unsafe { l1_array.get_unchecked(set_bit).row_index };
+        debug_assert!(right_row_index < 0);
+        left_row_ids.push((row_index - 1) as IdxSize);
+        right_row_ids.push((-right_row_index) as IdxSize - 1);
+        match_count += 1;
+    });
 
     match_count
 }
@@ -208,7 +205,7 @@ where
         op1: InequalityOperator,
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64 {
+    ) -> usize {
         let row_index = self.get_unchecked(l1_index).row_index;
         let from_lhs = row_index > 0;
         if from_lhs {
@@ -234,7 +231,7 @@ where
         op1: InequalityOperator,
         left_row_ids: &mut Vec<IdxSize>,
         right_row_ids: &mut Vec<IdxSize>,
-    ) -> i64 {
+    ) -> usize {
         let row_index = self.get_unchecked(l1_index).row_index;
         let from_lhs = row_index > 0;
         if from_lhs {

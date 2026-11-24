@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ShapeError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1016,6 +1016,43 @@ def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
 
     out = df.select(expr.over(over))
     assert out.shape == (3, 1)
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.lit(5).over(pl.lit(None)), [5, 5, 5]),
+        (pl.lit(5).over(pl.lit(1)), [5, 5, 5]),
+        (pl.lit(5).over(pl.lit(1)).sum(), [15]),
+    ],
+)
+def test_over_literal_function_and_partition_31006(
+    expr: pl.Expr, expected: list[int]
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    out = lf.select(expr).collect()
+    assert_frame_equal(
+        out, pl.DataFrame({"literal": expected}, schema={"literal": pl.Int32})
+    )
+
+
+def test_over_literal_partition_error_31006() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    with pytest.raises(InvalidOperationError, match="cum_sum"):
+        lf.select(pl.lit(5).over(pl.lit(None).cum_sum())).collect()
+
+
+def test_over_multiple_keys_non_numeric_output() -> None:
+    df = pl.DataFrame(
+        {
+            "b": ["x", "y", "z", "w", "v", "u"],
+            "g": [10, 10, 20, 20, 30, 10],
+            "h": [1, 1, 2, 3, 4, 1],
+        }
+    )
+    out = df.select(pl.col.b.first().over(["g", "h"]))
+    expected = pl.DataFrame({"b": ["x", "x", "z", "w", "v", "x"]})
+    assert_frame_equal(out, expected)
 
 
 def test_shape_mismatch_group_by_slice() -> None:

@@ -65,3 +65,43 @@ def test_cumulative_eval_length_preserving_streaming_25293() -> None:
     expected = pl.DataFrame({"a": [1, 1, 1]})
     assert_frame_equal(q.collect(engine="in-memory"), expected)
     assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize("n", range(1, 6))
+def test_cumulative_eval_min_samples_zero_30625(n: int) -> None:
+    df = pl.DataFrame({"a": range(1, n + 1)}, schema={"a": pl.Int64})
+
+    assert_frame_equal(
+        df.with_columns(b=pl.col.a.cumulative_eval(pl.element().sum(), min_samples=0)),
+        df.with_columns(b=pl.col.a.cum_sum()),
+    )
+
+
+def test_cumulative_eval_min_samples_zero_group_by_30625() -> None:
+    assert_frame_equal(
+        pl.DataFrame({"a": [1, 2, 3, 2, 3, 4, 3], "g": [1, 1, 1, 2, 2, 2, 3]})
+        .group_by("g")
+        .agg(b=pl.col.a.cumulative_eval(pl.element().sum(), min_samples=0)),
+        pl.DataFrame({"g": [1, 2, 3], "b": [[1, 3, 6], [2, 5, 9], [3]]}),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("min_samples", [0, 2])
+def test_cumulative_eval_columns(min_samples: int) -> None:
+    df = pl.DataFrame({"v": [1, 2, 3], "x": [10, 20, 30]})
+    out = df.select(
+        pl.col("v").cumulative_eval(
+            pl.element().sum() + pl.col("x"), min_samples=min_samples
+        )
+    )
+    expected = [11, 23, 36] if min_samples == 0 else [None, 23, 36]
+    assert out["v"].to_list() == expected
+
+
+def test_cumulative_eval_nested_eval_columns() -> None:
+    df = pl.DataFrame({"l": [[], [1, 2]], "x": [10, 20]})
+    out = df.select(
+        pl.col("l").cumulative_eval(pl.element().list.agg(pl.col("x")).sum())
+    )
+    assert out["l"].to_list() == [10, 40]

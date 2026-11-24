@@ -497,3 +497,36 @@ def test_scan_row_deletions_force_maintain_order(
     ]
     assert reader_lines
     assert all("maintain_order: true" in x for x in reader_lines)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("row_index", [False, True])
+def test_scan_row_deletions_position_past_end_of_file_30407(
+    tmp_path: Path,
+    write_position_deletes: WritePositionDeletes,
+    row_index: bool,
+) -> None:
+    paths = [tmp_path / "0.parquet", tmp_path / "1.parquet"]
+    pl.DataFrame({"a": [0, 1, 2, 3]}).write_parquet(paths[0])
+    pl.DataFrame({"a": [4, 5, 6, 7]}).write_parquet(paths[1])
+
+    q = pl.scan_parquet(
+        paths,
+        _deletion_files=(
+            "iceberg",
+            ({0: [write_position_deletes(pl.Series([2, 100]))]}, {}),
+        ),
+    )
+
+    expect = pl.DataFrame({"a": [0, 1, 3, 4, 5, 6, 7]})
+
+    if row_index:
+        q = q.with_row_index()
+        expect = expect.with_row_index()
+
+    assert_frame_equal(q.collect(), expect)
+    assert_frame_equal(q.head(5).collect(), expect.head(5))
+    assert_frame_equal(q.slice(3, 2).collect(), expect.slice(3, 2))
+    assert_frame_equal(q.tail(5).collect(), expect.tail(5))
+    assert_frame_equal(q.slice(-6, 2).collect(), expect.slice(-6, 2))
+    assert q.select(pl.len()).collect().item() == 7

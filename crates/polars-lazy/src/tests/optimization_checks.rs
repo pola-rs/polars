@@ -163,7 +163,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
             [col("category")],
             JoinType::Left.into(),
         )?
-        .slice(1, 3)
+        .slice((1usize, 3))
         // this inserts a cache and blocks slice pushdown
         .with_comm_subplan_elim(false);
     // test if optimization continued beyond the join node
@@ -174,7 +174,9 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
     assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
-            Join { options, .. } => options.args.slice == Some((1, 3)),
+            Join { options, .. } => {
+                options.args.slice == Some(polars_utils::slice_enum::Slice::from((1usize, 3)))
+            },
             Slice { .. } => false,
             _ => true,
         }
@@ -194,7 +196,7 @@ pub fn test_slice_pushdown_group_by() -> PolarsResult<()> {
     let q = q
         .group_by([col("category")])
         .agg([col("calories").sum()])
-        .slice(1, 3);
+        .slice((1usize, 3));
 
     // test if optimization continued beyond the group_by node
     assert!(slice_at_scan(q.clone()));
@@ -204,7 +206,9 @@ pub fn test_slice_pushdown_group_by() -> PolarsResult<()> {
     assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
-            GroupBy { options, .. } => options.slice == Some((1, 3)),
+            GroupBy { options, .. } => {
+                options.slice == Some(polars_utils::slice_enum::Slice::from((1usize, 3)))
+            },
             Slice { .. } => false,
             _ => true,
         }
@@ -223,7 +227,7 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
 
     let q = q
         .sort(["category"], SortMultipleOptions::default())
-        .slice(1, 3);
+        .slice((1usize, 3));
 
     // test if optimization continued beyond the sort node
     assert!(slice_at_scan(q.clone()));
@@ -233,7 +237,9 @@ pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     assert!(lp_arena.iter(lp).all(|(_, lp)| {
         use IR::*;
         match lp {
-            Sort { slice, .. } => matches!(slice, Some((1, 3, _))),
+            Sort { slice, .. } => {
+                matches!(slice, Some((s, _)) if *s == polars_utils::slice_enum::Slice::from((1usize, 3)))
+            },
             Slice { .. } => false,
             _ => true,
         }
@@ -295,7 +301,7 @@ fn test_lazy_filter_and_rename() {
     .unwrap();
     assert!(lf.collect().unwrap().equals(&correct));
 
-    // now we check if the column is rename or added when we don't select
+    // now we check if the column is renamed or added when we don't select
     let lf = df.lazy().rename(["a"], ["x"], true).filter(col("x").map(
         |s: Column| Ok(s.as_materialized_series().gt(3)?.into_column()),
         |_, f| Ok(Field::new(f.name().clone(), DataType::Boolean)),
@@ -328,7 +334,7 @@ fn test_with_row_index_opts() -> PolarsResult<()> {
         .clone()
         .lazy()
         .with_row_index("index", None)
-        .slice(1, 2)
+        .slice((1usize, 2))
         .collect()?;
     assert_eq!(
         out.column("index")?
@@ -355,7 +361,7 @@ fn test_with_row_index_opts() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .slice(1, 2)
+        .slice((1usize, 2))
         .with_row_index("index", None)
         .collect()?;
     assert_eq!(
@@ -469,7 +475,7 @@ fn test_slice_at_scan_group_by() -> PolarsResult<()> {
 
     // this tests if slice pushdown restarts aggregation nodes (it did not)
     let q = ldf
-        .slice(0, 5)
+        .slice(Slice::head(5))
         .filter(col("calories").lt(lit(10)))
         .group_by([col("calories")])
         .agg([col("fats_g").first()])

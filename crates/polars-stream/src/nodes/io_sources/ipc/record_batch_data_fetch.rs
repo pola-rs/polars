@@ -17,7 +17,7 @@ use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 use tokio::sync::mpsc::Sender;
 
-use super::super::shared::pipeline_budget::{PipelineBudget, PipelinePermit};
+use super::super::shared::pipeline_budget::{PipelineBudget, PipelinePermit, WindowGrowth};
 use crate::utils::tokio_handle_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
@@ -103,7 +103,10 @@ impl RecordBatchDataFetcher {
             rb_prefetch_current_all_spawned,
         } = self;
 
-        let global_slice = pre_slice.clone().map(Range::<usize>::from);
+        let inflight_budget = byte_source.window_inflight_budget();
+        let window_growth = WindowGrowth::for_source(&byte_source, inflight_budget.as_deref());
+        let global_slice = pre_slice;
+        assert!(global_slice.is_none_or(|s| s.is_positive()));
 
         polars_ensure!(
             global_slice.is_none() || record_batch_cum_len.is_some(),
@@ -146,7 +149,7 @@ impl RecordBatchDataFetcher {
                 num_rows_this_rb =
                     Some(record_batch_cum_len[record_batch_idx] - row_offset.unwrap());
 
-                if let Some(global_slice) = global_slice.clone() {
+                if let Some(global_slice) = global_slice {
                     match SplitSlicePosition::split_slice_at_file(
                         row_offset.unwrap() as usize,
                         num_rows_this_rb.unwrap() as usize,
@@ -230,7 +233,11 @@ impl RecordBatchDataFetcher {
             let fetch_permit = if rb_fetch == RbFetch::None {
                 None
             } else {
-                Some(pipeline_budget.acquire(fetch_length).await)
+                Some(
+                    pipeline_budget
+                        .acquire(fetch_length, window_growth, 1)
+                        .await,
+                )
             };
 
             group_kbytes += permit_kbytes;
@@ -293,11 +300,11 @@ async fn spawn_group(
                 GroupBytes::None
             } else {
                 let byte_source = byte_source.clone();
+                let fetch = async move { byte_source.get_ranges(&mut ranges).await.map(Arc::new) };
+                #[cfg(feature = "cloud")]
+                let fetch = polars_io::cloud::concurrency::in_issue_order(fetch);
                 // In its own task, so body chunks wake only the fetch, not every record batch task.
-                let fetch =
-                    tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
-                        byte_source.get_ranges(&mut ranges).await.map(Arc::new)
-                    }));
+                let fetch = tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(fetch));
                 GroupBytes::Fetched(
                     fetch
                         .map(|r| {

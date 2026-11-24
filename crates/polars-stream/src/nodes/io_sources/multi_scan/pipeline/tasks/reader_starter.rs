@@ -11,12 +11,13 @@ use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
+use tokio::sync::Semaphore;
 
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
@@ -43,6 +44,9 @@ pub struct ReaderStarter {
     pub max_concurrent_scans: usize,
     pub read_bytes_limit: ReadBytesLimit,
     pub unordered_files: Option<UnorderedFiles>,
+    /// In ordered mode, when the reader caps its concurrency: a slot per started reader,
+    /// held until it is joined.
+    pub ordered_reader_slots: Option<Arc<Semaphore>>,
     pub skip_files_mask: Option<SkipFilesMask>,
     pub extra_ops: ExtraOperations,
     pub constant_args: StartReaderArgsConstant,
@@ -67,6 +71,7 @@ impl ReaderStarter {
             max_concurrent_scans,
             read_bytes_limit,
             unordered_files,
+            ordered_reader_slots,
             skip_files_mask,
             extra_ops,
             constant_args,
@@ -87,16 +92,15 @@ impl ReaderStarter {
 
             let pre_slice_this_file = extra_ops
                 .pre_slice
-                .clone()
                 .map(|x| {
-                    PolarsResult::Ok(match x {
-                        Slice::Positive { .. } => {
-                            x.offsetted(current_row_position.unwrap().num_rows()?)
-                        },
-                        Slice::Negative { .. } => x,
+                    PolarsResult::Ok(if x.is_negative() {
+                        Some(x)
+                    } else {
+                        x.offsetted(current_row_position.unwrap().num_rows()?)
                     })
                 })
-                .transpose()?;
+                .transpose()?
+                .flatten();
 
             if current_row_position.is_some() && verbose {
                 eprintln!(
@@ -106,7 +110,7 @@ impl ReaderStarter {
                 )
             }
 
-            if pre_slice_this_file.as_ref().is_some_and(|x| x.len() == 0) {
+            if pre_slice_this_file.as_ref().is_some_and(|x| x.is_empty()) {
                 if verbose {
                     eprintln!("[ReaderStarter]: Stopping (pre_slice)")
                 }
@@ -142,38 +146,35 @@ impl ReaderStarter {
 
             // * This translates the `pre_slice` to physical offsets (i.e. apply before deleting rows).
             //   The slice remains the same if there are no row deletions.
-            let pre_slice_this_file: Option<PhysicalSlice> =
-                pre_slice_this_file.map(|pre_slice| match pre_slice {
-                    Slice::Positive { .. } => {
-                        PhysicalSlice::new(pre_slice, external_filter_mask.as_ref())
-                    },
-
+            let pre_slice_this_file: Option<PhysicalSlice> = pre_slice_this_file.map(|pre_slice| {
+                if pre_slice.is_positive() {
+                    PhysicalSlice::new(pre_slice, external_filter_mask.as_ref())
+                } else {
                     // This is hit here for NDJSON single file negative slice, we just passthrough
                     // in this case.
-                    Slice::Negative { .. } => {
-                        if external_filter_mask.is_some() {
-                            unimplemented!(
-                                "{pre_slice:?} {}",
-                                ExternalFilterMask::log_display(external_filter_mask.as_ref())
-                            )
-                        }
+                    if external_filter_mask.is_some() {
+                        unimplemented!(
+                            "{pre_slice:?} {}",
+                            ExternalFilterMask::log_display(external_filter_mask.as_ref())
+                        )
+                    }
 
-                        assert!(
-                            (extra_ops.row_index.is_none()
-                                || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
-                                && (external_filter_mask.is_none()
-                                    || reader_capabilities
-                                        .contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
-                        );
+                    assert!(
+                        (extra_ops.row_index.is_none()
+                            || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
+                            && (external_filter_mask.is_none()
+                                || reader_capabilities
+                                    .contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
+                    );
 
-                        PhysicalSlice {
-                            slice: pre_slice,
-                            // Note, this is not the correct starting position. The assertion above
-                            // should ensure this value is not used in post-apply.
-                            slice_start_position: RowCounter::default(),
-                        }
-                    },
-                });
+                    PhysicalSlice {
+                        slice: pre_slice,
+                        // Note, this is not the correct starting position. The assertion above
+                        // should ensure this value is not used in post-apply.
+                        slice_start_position: RowCounter::default(),
+                    }
+                }
+            });
 
             let row_index_this_file = {
                 let current_row_position = if let Some(current_row_position) = current_row_position
@@ -193,7 +194,7 @@ impl ReaderStarter {
                 row_index: row_index_this_file,
                 pre_slice: pre_slice_this_file
                     .as_ref()
-                    .map(|phys_slice: &PhysicalSlice| phys_slice.slice.clone()),
+                    .map(|phys_slice: &PhysicalSlice| phys_slice.slice),
                 // Other operations don't need updating per file
                 ..extra_ops.clone()
             };
@@ -209,24 +210,16 @@ impl ReaderStarter {
                 debug_assert!(extra_ops.has_row_index_or_slice())
             }
 
-            if cfg!(debug_assertions)
-                && let Some(n_rows_in_file) = n_rows_in_file
-                && let Some(mask_len) = external_filter_mask.as_ref().map(|fm| fm.len())
-            {
-                // @NOTE: the deletion files / vectors may be truncated
-                polars_ensure!(mask_len <= n_rows_in_file.num_physical_rows(),
-                    ComputeError: "deletion row count: {}, exceeds number of physical rows: {}",
-                    mask_len, n_rows_in_file.num_physical_rows()
-                )
-            }
-
             // `fast_n_rows_in_file()` or negative slice, we know the exact row count here already.
             // After this point, if n_rows_in_file is `Some`, it should contain the exact physical
             // and deleted row counts.
             if let Some(n_rows_in_file) = n_rows_in_file.as_mut() {
                 if let Some(external_filter_mask) = external_filter_mask.as_ref() {
                     unsafe {
-                        n_rows_in_file.set_deleted_rows(external_filter_mask.num_deleted_rows())
+                        n_rows_in_file.set_deleted_rows(
+                            external_filter_mask
+                                .num_deleted_rows(n_rows_in_file.num_physical_rows()),
+                        )
                     }
                 }
 
@@ -235,10 +228,8 @@ impl ReaderStarter {
                 } else if pre_slice_this_file.as_ref().is_some_and(|phys_slice| {
                     phys_slice
                         .slice
-                        .clone()
-                        .restrict_to_bounds(n_rows_in_file.num_physical_rows())
-                        .len()
-                        == 0
+                        .resolve(n_rows_in_file.num_physical_rows())
+                        .is_empty()
                 }) {
                     skip_read_reason = Some("0 rows after slice")
                 }
@@ -276,18 +267,14 @@ impl ReaderStarter {
                         panic!();
                     }
 
-                    let slice_end = pre_slice_this_file.as_ref().map(Slice::end_position);
+                    let slice_end = pre_slice_this_file.as_ref().and_then(Slice::end_position);
 
                     let get_row_count = async {
                         let num_physical_rows =
                             reader.row_position_after_slice(pre_slice_this_file).await?;
 
                         let num_deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
-                            mask.slice(
-                                0,
-                                mask.len().min(usize::try_from(num_physical_rows).unwrap()),
-                            )
-                            .num_deleted_rows()
+                            mask.num_deleted_rows(usize::try_from(num_physical_rows).unwrap())
                         });
 
                         let file_row_count = RowCounter::new(num_physical_rows, num_deleted_rows);
@@ -346,9 +333,10 @@ impl ReaderStarter {
                 ..Default::default()
             };
 
-            let slot = match &unordered_files {
-                Some(u) => Some(u.reader_slots.clone().acquire_owned().await.unwrap()),
-                None => None,
+            let slot = match (&unordered_files, &ordered_reader_slots) {
+                (Some(u), _) => Some(u.reader_slots.clone().acquire_owned().await.unwrap()),
+                (None, Some(slots)) => Some(slots.clone().acquire_owned().await.unwrap()),
+                (None, None) => None,
             };
             let (read_bytes, max_concurrent_scans_this_file) = match reader.local_read_size() {
                 Some(bytes) => {
@@ -429,8 +417,7 @@ impl ReaderStarter {
 
                     let num_deleted_rows = external_filter_mask.map_or(0, |external_filter_mask| {
                         external_filter_mask
-                            .slice(0, usize::try_from(num_physical_rows).unwrap())
-                            .num_deleted_rows()
+                            .num_deleted_rows(usize::try_from(num_physical_rows).unwrap())
                     });
 
                     row_position_this_file = RowCounter::new(num_physical_rows, num_deleted_rows);
@@ -599,7 +586,7 @@ async fn start_reader_impl(
                 ));
                 assert!(matches!(projection_to_post, Projection::Plain(_)));
 
-                ProjectionBuilder::new(projected_schema, None, None).build_projection(
+                ProjectionBuilder::new(projected_schema, None, None, None).build_projection(
                     Some(reader_file_schema.as_ref()),
                     None,
                     cast_columns_policy.clone(),

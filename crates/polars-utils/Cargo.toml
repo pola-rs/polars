@@ -34,6 +34,7 @@ rand = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+regex-syntax = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }

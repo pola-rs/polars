@@ -5,7 +5,7 @@
 //! processing of chunks of data across different CPU cores, transferring
 //! data between different Apache Arrow implementations in other languages and
 //! more. Under the hood Apache Arrow uses [FlatBuffers](https://google.github.io/flatbuffers/)
-//! as its binary protocol, so every Arrow-centered streaming or serialiation
+//! as its binary protocol, so every Arrow-centered streaming or serialization
 //! problem that could be solved using FlatBuffers could probably be solved
 //! using the more integrated approach that is exposed in this module.
 //!
@@ -13,7 +13,7 @@
 //! allows only batch or dictionary columns to be passed
 //! around due to its reliance on a pre-defined data scheme. This constraint
 //! provides a large performance gain because serialized data will always have a
-//! known structutre, i.e. the same fields and datatypes, with the only variance
+//! known structure, i.e. the same fields and datatypes, with the only variance
 //! being the number of rows and the actual data inside the Batch. This dramatically
 //! increases the deserialization rate, as the bytes in the file or stream are already
 //! structured "correctly".

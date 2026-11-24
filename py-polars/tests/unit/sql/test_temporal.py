@@ -16,6 +16,57 @@ from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
 
+def test_make_date() -> None:
+    df = pl.DataFrame(
+        {
+            "y": [2024, None, 2023, -44, 0, 2024, 2024],
+            "m": pl.Series([2, 1, 2, 3, 1, 1, 1], dtype=pl.UInt8),
+            "d": pl.Series([29, 1, 28, 15, 1, 1, 1], dtype=pl.Int16),
+            "f": [1.0, 1.0, 1.0, 1.0, 1.0, 2.7, 1.0],
+            "big": [1, 1, 1, 1, 1, 1, 300],
+        }
+    )
+    ctx = pl.SQLContext(df=df)
+    # MAKE_DATE is `pl.date`
+    res = ctx.execute(
+        """
+        SELECT
+          MAKE_DATE(y, m, d) AS a,
+          MAKE_DATE(y, f, d) AS b,
+          MAKE_DATE(y, m, big) AS c,
+          MAKE_DATE(2024, 2, 29) AS lit,
+          MAKE_DATE('2024', '1', '2') AS s,
+          MAKE_DATE(NULL, 1, 1) AS n
+        FROM df
+        """,
+        eager=True,
+    )
+    expected = df.select(
+        a=pl.date("y", "m", "d"),
+        b=pl.date("y", "f", "d"),
+        c=pl.date("y", "m", "big"),
+        lit=pl.date(2024, 2, 29),
+        s=pl.date(pl.lit("2024"), pl.lit("1"), pl.lit("2")),
+        n=pl.date(pl.lit(None), 1, 1),
+    )
+    assert_frame_equal(res, expected)
+    assert res["a"].cast(pl.Int32).to_list() == [
+        19782,
+        None,
+        19416,
+        -735525,
+        -719528,
+        19723,
+        19723,
+    ]
+
+    for args in ("2023, 2, 29", "2024, 13, 1", "2024, 0, 1", "y, m, d + 1"):
+        with pytest.raises(ComputeError, match="Invalid date components"):
+            ctx.execute(f"SELECT MAKE_DATE({args}) FROM df WHERE y = 2023", eager=True)
+    with pytest.raises(SQLSyntaxError, match="MAKE_DATE expects 3 arguments"):
+        ctx.execute("SELECT MAKE_DATE(2024, 1) FROM df", eager=True)
+
+
 def test_date_func() -> None:
     df = pl.DataFrame(
         {
@@ -82,19 +133,19 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
 @pytest.mark.parametrize(
     ("parts", "dtype", "expected"),
     [
-        (["decade", "decades"], pl.Int32, [202, 202, 200]),
-        (["isoyear"], pl.Int32, [2024, 2020, 2005]),
-        (["year", "y"], pl.Int32, [2024, 2020, 2006]),
-        (["quarter"], pl.Int8, [1, 4, 1]),
-        (["month", "months", "mon", "mons"], pl.Int8, [1, 12, 1]),
-        (["week", "weeks"], pl.Int8, [1, 53, 52]),
-        (["doy"], pl.Int16, [7, 365, 1]),
-        (["isodow"], pl.Int8, [7, 3, 7]),
-        (["dow"], pl.Int8, [0, 3, 0]),
-        (["day", "days", "d"], pl.Int8, [7, 30, 1]),
-        (["hour", "hours", "h"], pl.Int8, [1, 10, 23]),
-        (["minute", "min", "mins", "m"], pl.Int8, [2, 30, 59]),
-        (["second", "seconds", "secs", "sec"], pl.Int8, [3, 45, 59]),
+        (["decade", "decades"], pl.Int64, [202, 202, 200]),
+        (["isoyear"], pl.Int64, [2024, 2020, 2005]),
+        (["year", "y"], pl.Int64, [2024, 2020, 2006]),
+        (["quarter"], pl.Int64, [1, 4, 1]),
+        (["month", "months", "mon", "mons"], pl.Int64, [1, 12, 1]),
+        (["week", "weeks"], pl.Int64, [1, 53, 52]),
+        (["doy"], pl.Int64, [7, 365, 1]),
+        (["isodow"], pl.Int64, [7, 3, 7]),
+        (["dow"], pl.Int64, [0, 3, 0]),
+        (["day", "days", "d"], pl.Int64, [7, 30, 1]),
+        (["hour", "hours", "h"], pl.Int64, [1, 10, 23]),
+        (["minute", "min", "mins", "m"], pl.Int64, [2, 30, 59]),
+        (["second", "seconds", "secs", "sec"], pl.Int64, [3, 45, 59]),
         (
             ["millisecond", "milliseconds", "ms"],
             pl.Float64,
@@ -144,6 +195,46 @@ def test_extract(parts: list[str], dtype: pl.DataType, expected: list[Any]) -> N
                 res = ctx.execute(f"SELECT {fn} AS {part} FROM frame_data").to_series()
                 assert res.dtype == dtype
                 assert res.to_list() == expected
+
+
+def test_extract_arithmetic() -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 12, 31, 23, 59, 58), None]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              EXTRACT(MONTH FROM dt) * 100 AS month,
+              EXTRACT(DAY FROM dt) * EXTRACT(MONTH FROM dt) AS day_month,
+              EXTRACT(HOUR FROM dt) * 3600 AS hour,
+              EXTRACT(MINUTE FROM dt) * 60 AS minute,
+              EXTRACT(SECOND FROM dt) * 60 AS second,
+              EXTRACT(DOY FROM dt) * 1000 AS doy,
+              EXTRACT(DOW FROM dt) - 10 AS dow,
+              EXTRACT(YEAR FROM dt) * 1000000 AS year
+            FROM self
+        """,
+        compare_with="duckdb",
+        check_dtypes=True,
+        expected={
+            "month": [1200, None],
+            "day_month": [372, None],
+            "hour": [82800, None],
+            "minute": [3540, None],
+            "second": [3480, None],
+            "doy": [366000, None],
+            "dow": [-8, None],
+            "year": [2024000000, None],
+        },
+    )
+
+
+def test_extract_year_filter_uses_dates() -> None:
+    lf = pl.LazyFrame({"d": [date(2019, 12, 31), date(2020, 1, 1)]})
+    q = pl.SQLContext(frame=lf).execute(
+        "SELECT d FROM frame WHERE EXTRACT(YEAR FROM d) = 2020"
+    )
+    assert "year" not in q.explain()
+    assert q.collect()["d"].to_list() == [date(2020, 1, 1)]
 
 
 def test_extract_errors() -> None:
@@ -199,7 +290,7 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
                 data=[expected + expected],
                 schema=["c1", "c2", "c3", "c4"],
                 orient="row",
-            ).cast(pl.Int32),
+            ).cast(pl.Int64),
         )
 
 
@@ -384,7 +475,60 @@ def test_strptime() -> None:
         pl.sql_expr("STRPTIME(s,'%Y.%m.%d',false) AS dt")
 
 
-def test_temporal_stings_to_datetime() -> None:
+def test_try_strptime() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["2024-02-29", "2023-02-29", "garbage", None, "2024-01-02 extra"],
+            "g": [1, 1, 2, 2, 2],
+        }
+    )
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
+        """
+        SELECT
+          TRY_STRPTIME(s, '%Y-%m-%d') AS dt,
+          TRY_STRPTIME(s, '%Y-%m-%d')::date AS d,
+          TRY_STRPTIME('10:11:12', '%H:%M:%S')::time AS t,
+          TRY_STRPTIME('2024-01-02 10:11:12+02:00', '%Y-%m-%d %H:%M:%S%z') AS tz
+        FROM df
+        """,
+        eager=True,
+    )
+    assert res.schema == {
+        "dt": pl.Datetime("us"),
+        "d": pl.Date,
+        "t": pl.Time,
+        "tz": pl.Datetime("us", "UTC"),
+    }
+    assert res["dt"].to_list() == [datetime(2024, 2, 29), None, None, None, None]
+    assert res["d"].to_list() == [date(2024, 2, 29), None, None, None, None]
+    assert res["t"].to_list() == [time(10, 11, 12)] * 5
+    assert res["tz"].to_list() == [datetime(2024, 1, 2, 8, 11, 12, tzinfo=UTC)] * 5
+
+    res = ctx.execute(
+        """
+        SELECT g, COUNT(TRY_STRPTIME(s, '%Y-%m-%d')) AS n
+        FROM df GROUP BY g ORDER BY g
+        """,
+        eager=True,
+    )
+    assert res.rows() == [(1, 1), (2, 0)]
+
+    # STRPTIME raises where TRY_STRPTIME gives null
+    with pytest.raises(InvalidOperationError, match="conversion from `str`"):
+        ctx.execute("SELECT STRPTIME(s, '%Y-%m-%d') FROM df", eager=True)
+    with pytest.raises(
+        SQLSyntaxError, match=r"TRY_STRPTIME expects 2 arguments \(found 1\)"
+    ):
+        ctx.execute("SELECT TRY_STRPTIME(s) FROM df", eager=True)
+
+    # an invalid format raises, also for TRY_STRPTIME
+    for func in ["STRPTIME(s, '%Q')", "TRY_STRPTIME(s, '%Y-%')", "DATE(s, '%Q')"]:
+        with pytest.raises(SQLInterfaceError, match="invalid date/time format"):
+            ctx.execute(f"SELECT {func} FROM df", eager=True)
+
+
+def test_temporal_strings_to_datetime() -> None:
     df = pl.DataFrame(
         {
             "s_dt": ["2077-10-10", "1942-01-08", "2000-07-05"],
@@ -889,6 +1033,83 @@ def test_date_trunc_errors() -> None:
         df.sql("SELECT DATE_TRUNC('hour', (SELECT DATE '2024-05-17')) FROM self")
 
 
+def test_date_diff() -> None:
+    df = pl.DataFrame(
+        {
+            "d": [date(2024, 1, 31), date(2024, 12, 31), None],
+            "ts": [
+                datetime(2024, 2, 1, 10, 30),
+                datetime(2025, 1, 1),
+                datetime(2024, 1, 1),
+            ],
+            "t": [time(10), time(12, 30), None],
+        }
+    )
+    out = df.sql(
+        """
+        SELECT
+          DATE_DIFF('month', d, ts) AS months,
+          DATEDIFF('Days', d, ts) AS days,
+          date_diff('hrs', d, ts) AS hours,
+          DATE_DIFF('year', d, ts) AS years,
+          DATE_DIFF('week', d, ts) AS weeks,
+          DATE_DIFF('minute', TIME '09:15:00', t) AS minutes,
+          DATE_DIFF('day', d, '2025-03-01') AS days_to,
+          DATE_DIFF('hour', '2024-01-01 00:00:00', ts) AS hours_from,
+          DATE_DIFF('minute', '09:15:00', t) AS minutes_from,
+          DATE_DIFF(NULL, d, ts) AS null_part
+        FROM self
+        """
+    )
+    assert out.schema == dict.fromkeys(out.columns, pl.Int64)
+    assert out.rows() == [
+        (1, 1, 34, 0, 0, 45, 395, 754, 45, None),
+        (1, 1, 24, 1, 0, 195, 60, 8784, 195, None),
+        (None, None, None, None, None, None, None, 0, None, None),
+    ]
+
+    # a string literal takes the type of a scalar subquery
+    assert (
+        pl.sql(
+            "SELECT DATE_DIFF('day', (SELECT DATE '2024-01-01'), '2024-01-02') AS n",
+            eager=True,
+        ).item()
+        == 1
+    )
+
+    # weeks start on Monday
+    assert (
+        pl.sql(
+            "SELECT DATE_DIFF('week', DATE '2024-01-07', DATE '2024-01-08') AS w",
+            eager=True,
+        ).item()
+        == 1
+    )
+
+    lf = pl.LazyFrame({"g": [1, 1, 2], "d": [date(2024, 1, 1), date(2024, 3, 5), None]})
+    out = lf.sql(
+        """
+        SELECT g, MAX(DATE_DIFF('day', DATE '2024-01-01', d)) AS n
+        FROM self GROUP BY g ORDER BY g
+        """
+    ).collect()
+    assert out.rows() == [(1, 64), (2, None)]
+
+
+def test_date_diff_errors() -> None:
+    df = pl.DataFrame({"d": [date(2024, 1, 1)], "t": [time(1)], "part": ["day"]})
+    with pytest.raises(SQLSyntaxError, match="DATE_DIFF does not support 'decade'"):
+        df.sql("SELECT DATE_DIFF('decade', d, d) FROM self")
+    with pytest.raises(SQLSyntaxError, match="invalid 'part' for DATE_DIFF"):
+        df.sql("SELECT DATE_DIFF(part, d, d) FROM self")
+    with pytest.raises(SQLInterfaceError, match="no function matches"):
+        df.sql("SELECT DATEDIFF(d, d) FROM self")
+    with pytest.raises(InvalidOperationError, match="not supported for Time"):
+        df.sql("SELECT DATE_DIFF('day', t, t) FROM self")
+    with pytest.raises(InvalidOperationError, match="got str"):
+        df.sql("SELECT DATE_DIFF('day', '2024-01-01', '2024-02-01') FROM self")
+
+
 def test_date_part_functions() -> None:
     df = pl.DataFrame(
         {
@@ -1184,3 +1405,180 @@ def test_current_date_arithmetic() -> None:
 def test_current_timestamp_precision_unsupported() -> None:
     with pytest.raises(SQLInterfaceError):
         pl.sql("SELECT CURRENT_TIMESTAMP(3)", eager=True)
+
+
+@pytest.mark.parametrize(
+    ("template", "expected"),
+    [
+        ("YYYY-MM-DD HH24:MI:SS", "2024-01-02 15:04:05"),
+        ("yyyy-mm-dd hh24:mi:ss.us", "2024-01-02 15:04:05.123456"),
+        ("HH12:MI:SS.MS AM", "03:04:05.123 PM"),
+        ("FMHH:MI am", "3:04 pm"),
+        ("Month|MONTH|month|FMMonth", "January  |JANUARY  |january  |January"),
+        ("Mon MON mon Dy DY dy", "Jan JAN jan Tue TUE tue"),
+        ("Day|FMDAY", "Tuesday  |TUESDAY"),
+        ("FMDD/FMMM/YY DDD IYYY-IW-ID", "2/1/24 002 2024-01-2"),
+        ('"Year" YYYY, "MM" MM', "Year 2024, MM 01"),
+        ('"a\\qb\\"" YYYY', 'aqb" 2024'),
+        ("%d.%m.%Y", "02.01.2024"),
+    ],
+)
+def test_to_char(template: str, expected: str) -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 1, 2, 15, 4, 5, 123456), None]})
+    res = df.sql(f"SELECT TO_CHAR(dt, '{template}') AS s FROM self")
+    assert res["s"].to_list() == [expected, None]
+
+
+def test_to_char_date_and_time() -> None:
+    df = pl.DataFrame({"d": [date(2024, 3, 9)], "t": [time(7, 8, 9)]})
+    res = df.sql(
+        """
+        SELECT
+          TO_CHAR(d, 'DD Mon YYYY HH24:MI') AS d,
+          TO_CHAR(t, 'HH12.MI.SS am') AS t,
+          TO_CHAR(NULL, 'YYYY') AS n
+        FROM self
+        """
+    )
+    assert res.row(0) == ("09 Mar 2024 00:00", "07.08.09 am", None)
+
+
+def test_to_char_errors() -> None:
+    df = pl.DataFrame({"dt": [datetime(2024, 1, 2)], "n": [1]})
+    with pytest.raises(SQLInterfaceError, match="template pattern 'Q'"):
+        df.sql("SELECT TO_CHAR(dt, 'YYYY-Q') FROM self")
+    with pytest.raises(SQLInterfaceError, match="template pattern 'TH'"):
+        df.sql("SELECT TO_CHAR(dt, 'DDTH') FROM self")
+    with pytest.raises(SQLInterfaceError, match="TO_CHAR does not support numbers"):
+        df.sql("SELECT TO_CHAR(n, '999') FROM self")
+    with pytest.raises(
+        SQLSyntaxError, match=r"TO_CHAR expects 2 arguments \(found 1\)"
+    ):
+        df.sql("SELECT TO_CHAR(dt) FROM self")
+
+
+@pytest.mark.parametrize(
+    ("func", "expected"),
+    [
+        ("TO_DATE(s, 'DD Mon YYYY')", date(2024, 1, 2)),
+        ("TO_DATE(UPPER(s), 'dd mon yyyy')", date(2024, 1, 2)),
+        ("TO_DATE('January 2, 2024', 'FMMonth DD, YYYY')", date(2024, 1, 2)),
+        ("TO_DATE('2024-002', 'YYYY-DDD')", date(2024, 1, 2)),
+        ("TO_DATE('2024/01/02', '%Y/%m/%d')", date(2024, 1, 2)),
+        ("TO_DATE('2024-01-02')", date(2024, 1, 2)),
+        (
+            "TO_TIMESTAMP('2024-01-02 03:04:05 PM', 'YYYY-MM-DD HH12:MI:SS AM')",
+            datetime(2024, 1, 2, 15, 4, 5),
+        ),
+        (
+            "TO_TIMESTAMP('02.01.2024 15:04:05.123', 'DD.MM.YYYY HH24:MI:SS.MS')",
+            datetime(2024, 1, 2, 15, 4, 5, 123000),
+        ),
+        ("TO_TIMESTAMP('2024-01-02 15:04:05')", datetime(2024, 1, 2, 15, 4, 5)),
+        (
+            "TO_TIMESTAMP('2024-01-02 15:04:05.3', 'YYYY-MM-DD HH24:MI:SS.MS')",
+            datetime(2024, 1, 2, 15, 4, 5, 300000),
+        ),
+        (
+            "TO_TIMESTAMP('2024-01-02 03:04:05', 'YYYY-MM-DD HH:MI:SS')",
+            datetime(2024, 1, 2, 3, 4, 5),
+        ),
+        (
+            "TO_TIMESTAMP('12:30 01/02/2024', 'HH12:MI MM/DD/YYYY')",
+            datetime(2024, 1, 2, 0, 30),
+        ),
+        ("TO_DATE('2024-02', 'IYYY-IW')", date(2024, 1, 8)),
+        ("TO_DATE('2024-01 Tue', 'IYYY-IW Dy')", date(2024, 1, 2)),
+        ("TO_DATE('2024 May', 'YYYY Month')", date(2024, 5, 1)),
+        ("TO_DATE('2024', 'YYYY')", date(2024, 1, 1)),
+        (
+            "TO_TIMESTAMP('2024-05 10:30', 'YYYY-MM HH24:MI')",
+            datetime(2024, 5, 1, 10, 30),
+        ),
+        (
+            "TO_DATE(TO_CHAR(DATE '2024-01-02', 'IYYY-IW DAY'), 'IYYY-IW DAY')",
+            date(2024, 1, 2),
+        ),
+        (
+            "TO_DATE(TO_CHAR(DATE '2024-05-02', 'Month-DD-YYYY'), 'Month-DD-YYYY')",
+            date(2024, 5, 2),
+        ),
+        ("TO_TIMESTAMP('2024-01-02 15', 'YYYY-MM-DD HH24')", datetime(2024, 1, 2, 15)),
+        ("TO_TIMESTAMP('2024-01-02 03', 'YYYY-MM-DD HH')", datetime(2024, 1, 2, 3)),
+        ("TO_TIMESTAMP('2024-01-02 30', 'YYYY-MM-DD MI')", datetime(2024, 1, 2, 0, 30)),
+        (
+            "TO_TIMESTAMP('2024-01-02 15:04.123', 'YYYY-MM-DD HH24:MI.MS')",
+            datetime(2024, 1, 2, 15, 4, 0, 123000),
+        ),
+        ("TO_DATE(NULL, 'YYYY-MM-DD')", None),
+        ("TO_TIMESTAMP(NULL)", None),
+    ],
+)
+def test_to_date_to_timestamp(func: str, expected: date | datetime | None) -> None:
+    df = pl.DataFrame({"s": ["02 Jan 2024", None]})
+    res = df.sql(f"SELECT {func} AS v FROM self")
+    dtype = pl.Date if func.startswith("TO_DATE") else pl.Datetime("us")
+    assert res.schema["v"] == dtype
+    assert res["v"].to_list()[0] == expected
+
+
+def test_to_timestamp_epoch() -> None:
+    df = pl.DataFrame(
+        {
+            "i": [0, -86400, None],
+            "f": [1.5, 1700000000.1234567, -0.25],
+            "d": ["1.5", "1700000000.1234506", "-0.25"],
+            "big": [1, 18446744073710, None],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          TO_TIMESTAMP(i) AS ti,
+          TO_TIMESTAMP(f) AS tf,
+          TO_TIMESTAMP(CAST(d AS DECIMAL(20, 7))) AS td,
+          TO_TIMESTAMP(CAST('0.9999999' AS DECIMAL(38, 38))) AS tone,
+          TO_TIMESTAMP(big) AS tbig
+        FROM self
+        """
+    )
+    utc = pl.Datetime("us", "UTC")
+    assert res.schema == pl.Schema(
+        {"ti": utc, "tf": utc, "td": utc, "tone": utc, "tbig": utc}
+    )
+    assert res["tone"].to_list() == [datetime(1970, 1, 1, 0, 0, 1, tzinfo=UTC)] * 3
+    # out of the range of a datetime
+    assert res["tbig"].to_list()[1:] == [None, None]
+    assert res.drop("tone", "tbig").rows() == [
+        (
+            datetime(1970, 1, 1, tzinfo=UTC),
+            datetime(1970, 1, 1, 0, 0, 1, 500000, tzinfo=UTC),
+            datetime(1970, 1, 1, 0, 0, 1, 500000, tzinfo=UTC),
+        ),
+        (
+            datetime(1969, 12, 31, tzinfo=UTC),
+            datetime(2023, 11, 14, 22, 13, 20, 123457, tzinfo=UTC),
+            datetime(2023, 11, 14, 22, 13, 20, 123451, tzinfo=UTC),
+        ),
+        (
+            None,
+            datetime(1969, 12, 31, 23, 59, 59, 750000, tzinfo=UTC),
+            datetime(1969, 12, 31, 23, 59, 59, 750000, tzinfo=UTC),
+        ),
+    ]
+
+
+def test_to_date_errors() -> None:
+    df = pl.DataFrame({"s": ["2024-01-02"]})
+    with pytest.raises(
+        SQLInterfaceError, match="TO_DATE does not support the template pattern 'J'"
+    ):
+        df.sql("SELECT TO_DATE(s, 'J') FROM self")
+    with pytest.raises(InvalidOperationError):
+        df.sql("SELECT TO_DATE(s, 'DD-MM-YYYY') FROM self")
+    with pytest.raises(SQLInterfaceError, match="TO_DATE needs IW to parse IYYY or IY"):
+        df.sql("SELECT TO_DATE(s, 'IYYY') FROM self")
+    with pytest.raises(SQLInterfaceError, match="more than one fraction of a second"):
+        df.sql("SELECT TO_TIMESTAMP(s, 'SS.MS.US') FROM self")
+    with pytest.raises(SQLSyntaxError, match=r"TO_TIMESTAMP expects 1-2 arguments"):
+        df.sql("SELECT TO_TIMESTAMP(s, 'YYYY', 'x') FROM self")

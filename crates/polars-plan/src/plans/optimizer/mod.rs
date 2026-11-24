@@ -24,6 +24,8 @@ mod join_pushthrough;
 mod join_runtime_filter;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
+#[cfg(feature = "python")]
+mod aggregate_from_statistics;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
 mod extract_window;
@@ -46,6 +48,7 @@ mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod sortedness;
 mod stack_opt;
+mod window_top_one;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
@@ -282,7 +285,7 @@ pub fn optimize(
     }
 
     if opt_flags.projection_pushdown() {
-        projection_pushdown(root, ir_arena, expr_arena, has_recursive);
+        projection_pushdown(root, ir_arena, expr_arena, has_recursive, !opt_flags.gpu());
     }
 
     if opt_flags.fast_projection() {
@@ -325,6 +328,12 @@ pub fn optimize(
         ir_arena.replace(root, ir);
     }
 
+    // Runs after the pushdowns, and before CSE pulls the aggregates out of their select.
+    #[cfg(feature = "python")]
+    if !opt_flags.eager() && opt_flags.projection_pushdown() {
+        aggregate_from_statistics::aggregate_from_statistics(root, ir_arena, expr_arena)?;
+    }
+
     // Needs the final join order and the pushed-down projections.
     if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins {
         join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
@@ -351,9 +360,9 @@ pub fn optimize(
         })?;
     }
 
-    if opt_flags.streaming() && !opt_flags.gpu() {
-        extract_window::extract_windows(root, ir_arena, expr_arena);
-    }
+    let has_windows = opt_flags.streaming()
+        && !opt_flags.gpu()
+        && extract_window::extract_windows(root, ir_arena, expr_arena);
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         match ir_arena.get(root) {
@@ -403,6 +412,15 @@ pub fn optimize(
                 }
             },
         }
+    }
+
+    if has_windows {
+        window_top_one::rewrite_top_one_windows(
+            root,
+            ir_arena,
+            expr_arena,
+            pushdown_maintain_errors,
+        );
     }
 
     expand_datasets::expand_datasets(

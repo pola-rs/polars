@@ -13,6 +13,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
+    ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
@@ -607,6 +608,11 @@ def test_list_gather() -> None:
     ]
 
 
+def test_list_gather_column_name() -> None:
+    df = pl.DataFrame({"a": [[10, 20, 30]], "idx": [[0, 2]]})
+    assert df.select(pl.col("a").list.gather("idx")).item().to_list() == [10, 30]
+
+
 @pytest.mark.parametrize("maintain_order", [False, True])
 def test_list_function_group_awareness(maintain_order: bool) -> None:
     df = pl.DataFrame(
@@ -769,6 +775,25 @@ def test_list_count_matches_wildcard_expansion() -> None:
         "a": [0],
         "b": [1],
     }
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_list_count_matches_scalar_element(engine: EngineType) -> None:
+    # More rows than threads, so that a streaming morsel holds several rows.
+    df = pl.DataFrame({"l": [[1, 2, 1]] * 300, "x": [1] * 300})
+    out = (
+        df.lazy()
+        .select(pl.col("l").list.count_matches(pl.col("x").first()))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [2] * 300
+
+
+@pytest.mark.parametrize("height", [1, 3])
+def test_list_count_matches_element_per_row_raises(height: int) -> None:
+    df = pl.DataFrame({"l": [[1, 2, 1]] * height, "x": [1] * height})
+    with pytest.raises(ShapeError, match="'element' must be a scalar value"):
+        df.select(pl.col("l").list.count_matches(pl.col("x")))
 
 
 def test_list_gather_oob_10079() -> None:
@@ -990,6 +1015,29 @@ def test_list_n_unique() -> None:
         {"n_unique": [2, 1, 1, None, 0]}, schema={"n_unique": pl.get_index_type()}
     )
     assert_frame_equal(out, expected)
+
+
+def test_list_get_null_list_broadcast() -> None:
+    df = pl.DataFrame({"i": [0, 1]})
+    out = df.select(pl.lit(None, dtype=pl.List(pl.String)).list.get(pl.col("i")))
+    assert out.to_series().to_list() == [None, None]
+
+
+@pytest.mark.parametrize("index", [-(2**63), 2**63 - 1])
+def test_list_get_extreme_index(index: int) -> None:
+    df = pl.DataFrame({"a": [[1], None, [], [1, 2]]})
+    out = df.select(
+        scalar=pl.col("a").list.get(index, null_on_oob=True),
+        column=pl.col("a").list.get(pl.repeat(index, 4), null_on_oob=True),
+    )
+    assert out.to_dict(as_series=False) == {
+        "scalar": [None] * 4,
+        "column": [None] * 4,
+    }
+    gets: list[int | pl.Expr] = [index, pl.repeat(index, 4)]
+    for get in gets:
+        with pytest.raises(ComputeError, match="out of bounds"):
+            df.select(pl.col("a").list.get(get))
 
 
 def test_list_get_with_null() -> None:

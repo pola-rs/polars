@@ -14,7 +14,7 @@ use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
 
 pub(super) fn convert_functions(
-    input: Vec<Expr>,
+    input: &[Expr],
     function: FunctionExpr,
     ctx: &mut ExprToIRContext,
 ) -> PolarsResult<(Node, PlSmallStr)> {
@@ -101,6 +101,17 @@ pub(super) fn convert_functions(
                 B::Contains => IB::Contains,
                 B::StartsWith => IB::StartsWith,
                 B::EndsWith => IB::EndsWith,
+                B::Find => IB::Find,
+                #[cfg(feature = "find_many")]
+                B::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                } => IB::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                },
                 #[cfg(feature = "binary_encoding")]
                 B::HexDecode(v) => IB::HexDecode(v),
                 #[cfg(feature = "binary_encoding")]
@@ -240,7 +251,11 @@ pub(super) fn convert_functions(
             use IRStringFunction as IS;
             use StringFunction as S;
             I::StringExpr(match string_function {
-                S::Format { format, insertions } => {
+                S::Format {
+                    format,
+                    insertions,
+                    specs,
+                } => {
                     if input_is_empty {
                         polars_ensure!(
                             insertions.is_empty(),
@@ -254,7 +269,11 @@ pub(super) fn convert_functions(
 
                         return Ok((out, get_literal_name()));
                     } else {
-                        IS::Format { format, insertions }
+                        IS::Format {
+                            format,
+                            insertions,
+                            specs,
+                        }
                     }
                 },
                 #[cfg(feature = "concat_str")]
@@ -287,6 +306,7 @@ pub(super) fn convert_functions(
                 S::ToInteger { dtype, strict } => IS::ToInteger { dtype, strict },
                 S::LenBytes => IS::LenBytes,
                 S::LenChars => IS::LenChars,
+                S::FromCodePoint => IS::FromCodePoint,
                 S::Lowercase => IS::Lowercase,
                 #[cfg(feature = "extract_jsonpath")]
                 S::JsonDecode(dtype) => IS::JsonDecode(dtype.into_datatype(ctx.schema)?),
@@ -396,7 +416,10 @@ pub(super) fn convert_functions(
                 S::Drop(pl_small_strs, strict) => IS::DropFields(pl_small_strs, strict),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
-                S::SelectFields(_) => unreachable!("handled by expression expansion"),
+                // Expression expansion resolves these, but `Expr.meta` converts without it.
+                S::SelectFields(selector) => polars_bail!(
+                    InvalidOperation: "'Expr: struct.field({selector})' not allowed in this context/location"
+                ),
                 #[cfg(feature = "json")]
                 S::JsonEncode => IS::JsonEncode,
                 S::MapFieldNames(f) => IS::MapFieldNames(f),
@@ -466,6 +489,7 @@ pub(super) fn convert_functions(
                     IT::ReplaceTimeZone(time_zone, non_existent)
                 },
                 T::Combine(time_unit) => IT::Combine(time_unit),
+                T::DateDiff(unit) => IT::DateDiff(unit),
                 T::DatetimeFunction {
                     time_unit,
                     time_zone,
@@ -632,18 +656,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
-        F::IndexOf => {
-            polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar value passed to `index_of`");
-            I::IndexOf
-        },
+        F::IndexOf => I::IndexOf,
         #[cfg(feature = "search_sorted")]
         F::SearchSorted { side, descending } => I::SearchSorted { side, descending },
         #[cfg(feature = "range")]
         F::Range(range_function) => I::Range(match range_function {
             RangeFunction::IntRange { step, dtype } => {
                 let dtype = dtype.into_datatype(ctx.schema)?;
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `int_range`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar stop passed to `int_range`");
                 polars_ensure!(dtype.is_integer(), SchemaMismatch: "non-integer `dtype` passed to `int_range`: '{dtype}'");
                 IRRangeFunction::IntRange { step, dtype }
             },
@@ -652,12 +671,7 @@ pub(super) fn convert_functions(
                 polars_ensure!(dtype.is_integer(), SchemaMismatch: "non-integer `dtype` passed to `int_ranges`: '{dtype}'");
                 IRRangeFunction::IntRanges { dtype }
             },
-            RangeFunction::LinearSpace { closed } => {
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `linear_space`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `linear_space`");
-                polars_ensure!(e[2].is_scalar(ctx.arena), ShapeMismatch: "non-scalar num_samples passed to `linear_space`");
-                IRRangeFunction::LinearSpace { closed }
-            },
+            RangeFunction::LinearSpace { closed } => IRRangeFunction::LinearSpace { closed },
             RangeFunction::LinearSpaces {
                 closed,
                 array_width,
@@ -670,22 +684,10 @@ pub(super) fn convert_functions(
                 interval,
                 closed,
                 arg_type,
-            } => {
-                use DateRangeArgs::*;
-                let arg_names = match arg_type {
-                    StartEndSamples => vec!["start", "end", "num_samples"],
-                    StartEndInterval => vec!["start", "end"],
-                    StartIntervalSamples => vec!["start", "num_samples"],
-                    EndIntervalSamples => vec!["end", "num_samples"],
-                };
-                for (idx, &name) in arg_names.iter().enumerate() {
-                    polars_ensure!(e[idx].is_scalar(ctx.arena), ShapeMismatch: "non-scalar {name} passed to `date_range`");
-                }
-                IRRangeFunction::DateRange {
-                    interval,
-                    closed,
-                    arg_type,
-                }
+            } => IRRangeFunction::DateRange {
+                interval,
+                closed,
+                arg_type,
             },
             #[cfg(all(feature = "range", feature = "dtype-date"))]
             RangeFunction::DateRanges {
@@ -704,24 +706,12 @@ pub(super) fn convert_functions(
                 time_unit,
                 time_zone,
                 arg_type,
-            } => {
-                use DateRangeArgs::*;
-                let arg_names = match arg_type {
-                    StartEndSamples => vec!["start", "end", "num_samples"],
-                    StartEndInterval => vec!["start", "end"],
-                    StartIntervalSamples => vec!["start", "num_samples"],
-                    EndIntervalSamples => vec!["end", "num_samples"],
-                };
-                for (idx, &name) in arg_names.iter().enumerate() {
-                    polars_ensure!(e[idx].is_scalar(ctx.arena), ShapeMismatch: "non-scalar {name} passed to `datetime_range`");
-                }
-                IRRangeFunction::DatetimeRange {
-                    interval,
-                    closed,
-                    time_unit,
-                    time_zone,
-                    arg_type,
-                }
+            } => IRRangeFunction::DatetimeRange {
+                interval,
+                closed,
+                time_unit,
+                time_zone,
+                arg_type,
             },
             #[cfg(all(feature = "range", feature = "dtype-datetime"))]
             RangeFunction::DatetimeRanges {
@@ -739,8 +729,6 @@ pub(super) fn convert_functions(
             },
             #[cfg(all(feature = "range", feature = "dtype-time"))]
             RangeFunction::TimeRange { interval, closed } => {
-                polars_ensure!(e[0].is_scalar(ctx.arena), ShapeMismatch: "non-scalar start passed to `time_range`");
-                polars_ensure!(e[1].is_scalar(ctx.arena), ShapeMismatch: "non-scalar end passed to `time_range`");
                 IRRangeFunction::TimeRange { interval, closed }
             },
             #[cfg(all(feature = "range", feature = "dtype-time"))]
@@ -856,18 +844,17 @@ pub(super) fn convert_functions(
             }
             I::ConcatExpr { rechunk: false }
         },
-        F::ShiftAndFill => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'fill_value' must be a scalar value");
-            I::ShiftAndFill
-        },
-        F::Shift => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            I::Shift
-        },
+        F::ShiftAndFill => I::ShiftAndFill,
+        F::Shift => I::Shift,
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
-        F::Quantile { method } => I::Quantile { method },
+        F::Quantile { method } => {
+            // Planning doesn't know whether a group-by uses the fraction, so it allows lists. A
+            // group-by checks for one number per group when it runs.
+            let allowed = QuantileFractionDtypes::NumberOrList;
+            check_quantile_fraction(&e[1], allowed, ctx.schema, ctx.arena)?;
+            I::Quantile { method }
+        },
         #[cfg(feature = "mode")]
         F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]
@@ -897,11 +884,7 @@ pub(super) fn convert_functions(
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
-        F::Repeat => {
-            polars_ensure!(&e[0].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            I::Repeat
-        },
+        F::Repeat => I::Repeat,
         #[cfg(feature = "round_series")]
         F::Clip { has_min, has_max } => I::Clip { has_min, has_max },
         F::AsList => I::AsList,
@@ -956,22 +939,12 @@ pub(super) fn convert_functions(
                 (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
-            let quantile = match ctx.arena.get(e[1].node()) {
-                AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
-                AExpr::Literal(
-                    lv @ (LiteralValue::Scalar(_)
-                    | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
-                ) => lv.to_any_value(),
-                _ => None,
-            };
-            let quantiles: Option<Vec<f64>> = match quantile {
-                Some(AnyValue::List(s)) => s
-                    .strict_cast(&DataType::Float64)
-                    .ok()
-                    .and_then(|s| s.iter().map(|v| v.extract()).collect()),
-                Some(av) => av.extract().map(|q| vec![q]),
-                None => None,
-            };
+            let quantile_input = e.get(1).ok_or_else(
+                || polars_err!(InvalidOperation: "missing argument 'quantile' in `approx_quantile`"),
+            )?;
+            let allowed = QuantileFractionDtypes::NumberOrList;
+            let quantiles =
+                check_quantile_fraction(quantile_input, allowed, ctx.schema, ctx.arena)?;
             let method = method.resolve(quantiles.as_deref());
             let error = match use_formal_bound {
                 true => error,
@@ -984,11 +957,19 @@ pub(super) fn convert_functions(
                 .materialize_unknown(false)?;
             let sketch = AExprBuilder::function(
                 vec![e[0].clone()],
-                I::ApproxQuantileSketch { method, error },
+                I::ApproxQuantileSketch {
+                    method,
+                    error,
+                    failure_probability:
+                        polars_compute::approx_quantile::DEFAULT_FAILURE_PROBABILITY,
+                },
                 ctx.arena,
             );
             let estimate = AExprBuilder::function(
-                vec![sketch.expr_ir_retain_name(ctx.arena), e[1].clone()],
+                vec![
+                    sketch.expr_ir_retain_name(ctx.arena),
+                    quantile_input.clone(),
+                ],
                 I::ApproxQuantileEstimate { values_dtype },
                 ctx.arena,
             );
@@ -996,10 +977,7 @@ pub(super) fn convert_functions(
         },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]
-        F::Diff(n) => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            I::Diff(n)
-        },
+        F::Diff(n) => I::Diff(n),
         #[cfg(feature = "pct_change")]
         F::PctChange => I::PctChange,
         #[cfg(feature = "interpolate")]
@@ -1008,6 +986,8 @@ pub(super) fn convert_functions(
         F::InterpolateBy => I::InterpolateBy,
         #[cfg(feature = "log")]
         F::Entropy { base, normalize } => I::Entropy { base, normalize },
+        #[cfg(feature = "log")]
+        F::XLogY { base } => I::XLogY { base },
         #[cfg(feature = "log")]
         F::Log => I::Log,
         #[cfg(feature = "log")]
@@ -1250,6 +1230,37 @@ pub(super) fn convert_functions(
             return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
             include_init,
         },
+        #[cfg(feature = "dtype-struct")]
+        F::CumSumHorizontal => {
+            let mut dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            for e in &e[1..] {
+                dtype = try_get_supertype(&dtype, e.dtype(ctx.schema, ctx.arena)?)?;
+            }
+            let mut dtype = dtype.materialize_unknown(false)?;
+            if dtype == DataType::Boolean {
+                dtype = IDX_DTYPE;
+            }
+
+            let mut acc = AExprBuilder::lit_scalar(Scalar::from(0i32), ctx.arena)
+                .cast(dtype.clone(), ctx.arena);
+            let fields = e
+                .iter()
+                .map(|e| {
+                    acc = AExprBuilder::new_from_aexpr(
+                        AExpr::Cast {
+                            expr: acc.plus(e.node(), ctx.arena).node(),
+                            dtype: dtype.clone(),
+                            options: CastOptions::NonStrict,
+                        },
+                        ctx.arena,
+                    );
+                    acc.expr_ir(e.output_name().clone())
+                })
+                .collect();
+            let output_name = e[0].output_name().clone();
+            let out = AExprBuilder::function(fields, I::AsStruct, ctx.arena);
+            return Ok((out.node(), output_name));
+        },
 
         F::MaxHorizontal => I::MaxHorizontal,
         F::MinHorizontal => I::MinHorizontal,
@@ -1339,14 +1350,15 @@ pub(super) fn convert_functions(
 
             I::Reinterpret(target_dtype)
         },
-        F::ExtendConstant => {
-            polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'value' must be a scalar value");
-            polars_ensure!(&e[2].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
-            I::ExtendConstant
-        },
+        F::ExtendConstant => I::ExtendConstant,
 
-        F::RowEncode(mut v) => {
-            let dts = e
+        F::RowEncode {
+            mut variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => {
+            let dtypes = e
                 .iter()
                 .map(|e| {
                     e.dtype(ctx.schema, ctx.arena)?
@@ -1358,7 +1370,7 @@ pub(super) fn convert_functions(
                 descending,
                 nulls_last,
                 ..
-            } = &mut v
+            } = &mut variant
             {
                 let options = SortMultipleOptions {
                     descending: descending.take().unwrap_or(vec![false]),
@@ -1369,15 +1381,29 @@ pub(super) fn convert_functions(
                 *descending = Some(options.descending);
                 *nulls_last = Some(options.nulls_last);
             }
-            I::RowEncode(dts, v)
+            I::RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            }
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, v) => I::RowDecode(
-            fs.into_iter()
+        F::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => I::RowDecode {
+            fields: fields
+                .into_iter()
                 .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))
                 .collect::<PolarsResult<Vec<_>>>()?,
-            v,
-        ),
+            variant,
+            output,
+            encode_nulls,
+        },
     };
 
     let mut options = ir_function.function_options();
@@ -1398,4 +1424,24 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
+}
+
+/// Checks the fraction given to `quantile` or `approx_quantile`, and returns its non-null values if
+/// it is a literal. `allowed` gives the dtypes the fraction may have. Checking here makes every
+/// engine raise on a bad fraction, even on empty input.
+fn check_quantile_fraction(
+    fraction: &ExprIR,
+    allowed: QuantileFractionDtypes,
+    schema: &Schema,
+    arena: &Arena<AExpr>,
+) -> PolarsResult<Option<Vec<f64>>> {
+    check_quantile_dtype(fraction.dtype(schema, arena)?, allowed)?;
+    let AExpr::Literal(lv) = arena.get(fraction.node()) else {
+        return Ok(None);
+    };
+    let Some(fraction) = lv.to_quantile_fraction()? else {
+        return Ok(None);
+    };
+    let quantiles = extract_quantiles(&fraction, allowed)?.unwrap_or_default();
+    Ok(Some(quantiles.into_iter().flatten().collect()))
 }

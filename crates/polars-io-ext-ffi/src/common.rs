@@ -265,6 +265,19 @@ impl FfiErrorKind {
     /// The user's input to the dataset is invalid (e.g. an unknown snapshot ID). Hosts report it
     /// like other invalid parameter values (Python `ValueError`) and pass the message unchanged.
     pub const INVALID_INPUT: Self = Self(7);
+    // Kinds of Polars errors, for plugins that report errors the way Polars does (the host
+    // raises the matching Polars exception). Used by `file_reader.v1` and
+    // `lazyframe_resolver.v1`.
+    pub const COLUMN_NOT_FOUND: Self = Self(16);
+    pub const COMPUTE: Self = Self(17);
+    pub const INVALID_OPERATION: Self = Self(18);
+    pub const SCHEMA_MISMATCH: Self = Self(19);
+    pub const SHAPE_MISMATCH: Self = Self(20);
+    pub const NO_DATA: Self = Self(21);
+    pub const OUT_OF_BOUNDS: Self = Self(22);
+    pub const DUPLICATE: Self = Self(23);
+    pub const SQL_INTERFACE: Self = Self(24);
+    pub const SQL_SYNTAX: Self = Self(25);
 
     pub fn name(self) -> &'static str {
         match self {
@@ -274,6 +287,16 @@ impl FfiErrorKind {
             Self::PANIC => "panic",
             Self::INVALID_ARGUMENT => "invalid argument",
             Self::INVALID_INPUT => "invalid input",
+            Self::COLUMN_NOT_FOUND => "column not found",
+            Self::COMPUTE => "compute",
+            Self::INVALID_OPERATION => "invalid operation",
+            Self::SCHEMA_MISMATCH => "schema mismatch",
+            Self::SHAPE_MISMATCH => "shape mismatch",
+            Self::NO_DATA => "no data",
+            Self::OUT_OF_BOUNDS => "out of bounds",
+            Self::DUPLICATE => "duplicate",
+            Self::SQL_INTERFACE => "sql interface",
+            Self::SQL_SYNTAX => "sql syntax",
             _ => "other",
         }
     }

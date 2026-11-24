@@ -137,7 +137,8 @@ fn specialize(
                     let pattern = if *literal {
                         regex::escape(lv)
                     } else {
-                        lv.to_string()
+                        polars_utils::regex_cache::is_match_pattern(lv)
+                            .unwrap_or_else(|| lv.to_string())
                     };
                     // The column kernel raises or returns nulls if it cannot compile the
                     // pattern, e.g. due to `POLARS_REGEX_SIZE_LIMIT`.
@@ -376,7 +377,7 @@ mod tests {
         let mut arena = Arena::new();
         let schema = Schema::from_iter_check_duplicates([(col_name.into(), col_dtype)])?;
         let mut ctx = ExprToIRContext::new(&mut arena, &schema);
-        let expr_ir = to_expr_ir(expr, &mut ctx)?;
+        let expr_ir = to_expr_ir(&expr, &mut ctx)?;
         let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
         assert_eq!(column_predicates.predicates.len(), 1);
         let (col_name2, predicate) = column_predicates.predicates.into_iter().next().unwrap();

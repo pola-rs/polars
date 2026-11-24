@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
 import operator
 import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from decimal import Decimal as PyDecimal
+from fractions import Fraction
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -242,6 +244,30 @@ def test_floor_division_float_int_consistency() -> None:
     assert (pl.Series(a, dtype=pl.Int32) // 5).to_list() == list(
         (a.astype(int) // 5).astype(int)
     )
+
+
+@pytest.mark.parametrize(
+    ("lhs", "values", "dtype"),
+    [
+        (-7, [2, -2, 3, -3], pl.Int64),
+        (7, [2, -2, 3, -3], pl.Int8),
+        (-7, [2, -2, 3, -3], pl.Int128),
+        (-7, [2, 3], pl.UInt8),
+        (-7.5, [2.0, -2.0, 0.5, -4.0], pl.Float64),
+        (7, [2.0, -2.0], pl.Float32),
+        (PyDecimal("-7.25"), [PyDecimal("2"), PyDecimal("-0.5")], pl.Decimal(10, 2)),
+    ],
+)
+def test_series_rfloordiv(lhs: Any, values: list[Any], dtype: PolarsDataType) -> None:
+    s = pl.Series("s", values, dtype=dtype)
+    out = lhs // s
+    assert out.name == "s"
+    assert out.dtype == s.to_frame().select(lhs // pl.col("s")).to_series().dtype
+    expected = [math.floor(Fraction(lhs) / Fraction(v)) for v in values]
+    assert [Fraction(v) for v in out.to_list()] == expected
+
+    # true division is unaffected
+    assert (lhs / s).to_list() == pytest.approx([float(lhs) / float(v) for v in values])
 
 
 def test_truncdiv_int() -> None:
@@ -626,6 +652,32 @@ def test_df_series_division() -> None:
     }
 
 
+def test_df_floordiv() -> None:
+    big = 2**62 + 1
+    df = pl.DataFrame(
+        {
+            "i": [big, -big],
+            "i8": [7, -7],
+            "f": [7.5, -7.5],
+            "d": [PyDecimal("7.5"), PyDecimal("-7.5")],
+        },
+        schema={"i": pl.Int64, "i8": pl.Int8, "f": pl.Float32, "d": pl.Decimal(10, 2)},
+    )
+    expected = {
+        "i": [big // 3, -big // 3],
+        "i8": [2, -3],
+        "f": [2.0, -3.0],
+        "d": [PyDecimal("2"), PyDecimal("-3")],
+    }
+    by_scalar = df // 3
+    by_frame = df // pl.DataFrame({k: [3, 3] for k in "abcd"})
+    for out in (by_scalar, by_frame):
+        assert out.to_dict(as_series=False) == expected
+        assert out.schema["i"] == pl.Int64
+        assert out.schema["i8"] == pl.Int8
+        assert out.schema["d"].is_decimal()
+
+
 @pytest.mark.parametrize(
     "s", [pl.Series([1, 2], dtype=Int64), pl.Series([1, 2], dtype=Float64)]
 )
@@ -648,15 +700,19 @@ def test_arithmetic_series(s: pl.Series) -> None:
 
     # integer division
     assert_series_equal(1 / a, pl.Series([1.0, 0.5]))
-    expected = pl.Series([1, 0]) if s.dtype == Int64 else pl.Series([1.0, 0.5])
+    expected = pl.Series([1, 0]) if s.dtype == Int64 else pl.Series([1.0, 0.0])
     assert_series_equal(1 // a, expected)
+
     # modulo
     assert ((1 % a) == [0, 1]).sum() == 2
     assert ((a % 1) == [0, 0]).sum() == 2
+
     # negate
     assert (-a == [-1, -2]).sum() == 2
+
     # unary plus
     assert (+a == a).all()
+
     # wrong dtypes in rhs operands
     assert ((1.0 - a) == [0.0, -1.0]).sum() == 2
     assert ((1.0 / a) == [1.0, 0.5]).sum() == 2
@@ -842,6 +898,40 @@ def test_literal_subtract_schema_13284() -> None:
         .group_by("a")
         .len()
     ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.get_index_type())])
+
+
+@pytest.mark.parametrize(
+    ("expr", "dtype"),
+    [
+        (pl.lit(-1) * pl.len(), pl.Int64),
+        (pl.lit(-1) * pl.col("u64"), pl.Int64),
+        (pl.lit(-1) // pl.col("u64"), pl.Int64),
+        (pl.lit(-1) % pl.col("u64"), pl.Int64),
+        (pl.lit(-1) * pl.col("u8"), pl.Int16),
+        (pl.lit(300) * pl.col("u8"), pl.UInt16),
+        (pl.lit(2**40) * pl.col("i32"), pl.Int64),
+        (pl.lit(-1) & pl.col("u8"), pl.Int16),
+        (pl.lit(300) | pl.col("u8"), pl.UInt16),
+        (pl.lit(-1) ^ pl.col("u64"), pl.Int64),
+        (pl.col("u64") * pl.lit(-1), pl.Int64),
+        (pl.lit(-1) + pl.col("u64"), pl.Int64),
+        (pl.lit(1) * pl.col("u64"), pl.UInt64),
+        (pl.lit(1) * pl.col("u8"), pl.UInt8),
+        (pl.lit(1.5) * pl.col("f32"), pl.Float32),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_literal_lhs_arithmetic_schema(
+    expr: pl.Expr, dtype: PolarsDataType, engine: EngineType
+) -> None:
+    # When the literal doesn't fit the column dtype, the result has the supertype of
+    # both, e.g. Int16 for -1 * UInt8. The planned schema must say the same.
+    lf = pl.LazyFrame(
+        {"u64": [1, 2], "u8": [1, 2], "i32": [1, 2], "f32": [1.0, 2.0]},
+        schema={"u64": pl.UInt64, "u8": pl.UInt8, "i32": pl.Int32, "f32": pl.Float32},
+    ).select(o=expr)
+    assert lf.collect_schema() == {"o": dtype}
+    assert lf.collect(engine=engine).schema == {"o": dtype}
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
@@ -1304,6 +1394,50 @@ def test_string_add_concatenates(other: Any, expected: list[str]) -> None:
     assert (s + other).to_list() == expected
 
 
+@pytest.mark.parametrize(
+    "left",
+    [
+        "i8",
+        "u8",
+        "i64",
+        "f16",
+        "f32",
+        "f64",
+        "bool",
+        "dec",
+        "lst",
+        "lit_int",
+        "lit_flt",
+    ],
+)
+@pytest.mark.parametrize("right", ["dur", "dt", "d", "t"])
+def test_truediv_numeric_by_temporal_raises(left: str, right: str) -> None:
+    lf = pl.LazyFrame(
+        {
+            "i8": pl.Series([2], dtype=pl.Int8),
+            "u8": pl.Series([2], dtype=pl.UInt8),
+            "i64": pl.Series([2], dtype=pl.Int64),
+            "f16": pl.Series([2.0], dtype=pl.Float16),
+            "f32": pl.Series([2.0], dtype=pl.Float32),
+            "f64": pl.Series([2.0], dtype=pl.Float64),
+            "bool": [True],
+            "dec": pl.Series([2]).cast(pl.Decimal(10, 2)),
+            "lst": pl.Series([[2]], dtype=pl.List(pl.Int64)),
+            "dur": pl.Series([1]).cast(pl.Duration("us")),
+            "dt": pl.Series([1]).cast(pl.Datetime("us")),
+            "d": pl.Series([1], dtype=pl.Int32).cast(pl.Date),
+            "t": pl.Series([1]).cast(pl.Time),
+        }
+    )
+    lefts = {"lit_int": pl.lit(2), "lit_flt": pl.lit(2.0)}
+    q = lf.select(r=lefts.get(left, pl.col(left)) / pl.col(right))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="is not allowed"):
+        q.collect_schema()
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        q.collect()
+
+
 @pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32])
 def test_truediv_int_literal_float_schema(float_dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"f": [4.0]}, schema={"f": float_dtype}).select(
@@ -1344,3 +1478,25 @@ def test_reflected_arithmetic_series_27752() -> None:
     assert_series_equal(lhs.__rmod__(rhs), rhs % lhs)
     assert_series_equal(lhs.__rpow__(rhs), rhs**lhs)
     assert_series_equal(lhs.__rsub__(np.array([5, 7, 9])), pl.Series("lhs", [3, 4, 5]))
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+@pytest.mark.parametrize("value", [2**64, -(2**64), 2**99, -(2**99)])
+def test_add_large_dyn_int_to_typed_int_20829(
+    dtype: PolarsIntegerType, value: int
+) -> None:
+    result = pl.select(pl.lit(1, dtype=dtype) + pl.lit(value))
+    expected_dtype = (
+        pl.UInt128 if dtype in UNSIGNED_INTEGER_DTYPES and value > 0 else pl.Int128
+    )
+    expected = pl.DataFrame(
+        {"literal": [value + 1]}, schema={"literal": expected_dtype}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_add_large_dyn_int_to_uint128_20829() -> None:
+    df = pl.DataFrame({"a": [2**127]}, schema={"a": pl.UInt128})
+    result = df.select(pl.col("a") + 2**70)
+    expected = pl.DataFrame({"a": [2**127 + 2**70]}, schema={"a": pl.UInt128})
+    assert_frame_equal(result, expected)

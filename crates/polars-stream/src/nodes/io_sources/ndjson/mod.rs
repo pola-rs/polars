@@ -3,7 +3,6 @@ pub mod builder;
 use std::cmp::Reverse;
 use std::io::Cursor;
 use std::num::NonZeroUsize;
-use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -126,7 +125,7 @@ impl FileReader for NDJsonFileReader {
             panic!("unsupported args: {:?}", args)
         };
 
-        let is_empty_slice = pre_slice.as_ref().is_some_and(|x| x.len() == 0);
+        let is_empty_slice = pre_slice.as_ref().is_some_and(|x| x.is_empty());
         let is_negative_slice = matches!(pre_slice, Some(Slice::Negative { .. }));
 
         // There are two byte sourcing strategies `ReaderSource`: (a) async parallel prefetch using a
@@ -150,26 +149,23 @@ impl FileReader for NDJsonFileReader {
             _ = tx.send(schema.clone())
         }
 
-        // Convert (offset, len) to Range
-        // Note: This is converted to right-to-left for negative slice (i.e. range.start is position
-        // from end).
-        let global_slice: Option<Range<usize>> = if let Some(slice) = pre_slice.clone() {
-            match slice {
-                Slice::Positive { offset, len } => Some(offset..offset.saturating_add(len)),
-                Slice::Negative {
-                    offset_from_end,
-                    len,
-                } => {
-                    // array: [_ _ _ _ _]
-                    // slice: [    _ _  ]
-                    // in:    offset_from_end: 3, len: 2
-                    // out:   1..3 (right-to-left)
-                    Some(offset_from_end.saturating_sub(len)..offset_from_end)
-                },
-            }
-        } else {
-            None
-        };
+        // Note: This is right-to-left for negative slice (i.e. the offset is the position from
+        // the end where the slice stops).
+        //
+        // array: [_ _ _ _ _]
+        // slice: [    _ _  ]
+        // in:    offset_from_end: 3, len: 2
+        // out:   offset 1, len 2 (right-to-left)
+        let offset_len_rtl = pre_slice.and_then(|slice| match slice {
+            Slice::Negative {
+                offset_from_end,
+                len,
+            } => {
+                let len = usize::min(len, offset_from_end);
+                Some((offset_from_end - len, len))
+            },
+            _ => None,
+        });
 
         let (total_row_count_tx, total_row_count_rx) = if is_negative_slice && row_index.is_some() {
             let (tx, rx) = oneshot_channel::channel();
@@ -187,14 +183,14 @@ impl FileReader for NDJsonFileReader {
             eprintln!(
                 "[NDJsonFileReader]: \
                 project: {}, \
-                global_slice: {:?}, \
+                pre_slice: {:?}, \
                 row_index: {:?}, \
                 is_negative_slice: {}, \
                 use_async_prefetch: {}, \
                 concurrency_strategy: {:?}, \
                 chunk_size: {:?}",
                 schema.len(),
-                global_slice,
+                pre_slice,
                 row_index,
                 is_negative_slice,
                 use_async_prefetch,
@@ -203,25 +199,31 @@ impl FileReader for NDJsonFileReader {
             );
         }
 
-        // Note: This counts from the end of file for negative slice.
-        let n_rows_to_skip = global_slice.as_ref().map_or(0, |x| x.start);
+        // Rows before the offset of a positive slice are skipped by the line batch distributor.
+        let limit = pre_slice.and_then(|x| x.len());
+        let needs_ordered_output = is_negative_slice || limit.is_some() || row_index.is_some();
 
-        let (opt_linearizer, mut linearizer_inserters) =
-            if global_slice.is_some() || row_index.is_some() {
-                let (a, b) =
-                    Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(num_pipelines, 1);
-                (Some(a), b)
-            } else {
-                (None, vec![])
-            };
+        // Note: This counts from the end of file for negative slice.
+        let n_rows_to_skip = match (pre_slice, offset_len_rtl) {
+            (_, Some((offset, _))) => offset,
+            (Some(slice), None) => slice.positive_offset(),
+            (None, None) => 0,
+        };
+
+        let (opt_linearizer, mut linearizer_inserters) = if needs_ordered_output {
+            let (a, b) =
+                Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(num_pipelines, 1);
+            (Some(a), b)
+        } else {
+            (None, vec![])
+        };
 
         let output_to_linearizer = opt_linearizer.is_some();
         let mut output_port = None;
 
         let task_metrics = self.task_metrics.as_deref();
         let opt_post_process_handle = if is_negative_slice {
-            // Note: This is right-to-left
-            let negative_slice = global_slice.unwrap();
+            let offset_len_rtl = offset_len_rtl.unwrap();
 
             if verbose {
                 eprintln!("[NDJsonFileReader]: Initialize morsel stream reverser");
@@ -236,10 +238,7 @@ impl FileReader for NDJsonFileReader {
                 MorselStreamReverser {
                     morsel_receiver: opt_linearizer.unwrap(),
                     morsel_senders,
-                    offset_len_rtl: (
-                        negative_slice.start,
-                        negative_slice.end - negative_slice.start,
-                    ),
+                    offset_len_rtl,
                     // The correct row index offset can only be known after total row count is
                     // available. This is handled by the MorselStreamReverser.
                     row_index: row_index.take().map(|x| (x, total_row_count_rx.unwrap())),
@@ -248,7 +247,7 @@ impl FileReader for NDJsonFileReader {
                 }
                 .run(),
             )))
-        } else if global_slice.is_some() || row_index.is_some() {
+        } else if needs_ordered_output {
             let mut row_index = row_index.take();
 
             if verbose {
@@ -271,8 +270,6 @@ impl FileReader for NDJsonFileReader {
 
             let (morsel_tx, rx) = FileReaderOutputSend::new_serial();
             output_port = Some(rx);
-
-            let limit = global_slice.as_ref().map(|x| x.len());
 
             let task = ApplyRowIndexOrLimit {
                 morsel_receiver: opt_linearizer.unwrap(),
@@ -362,7 +359,7 @@ impl FileReader for NDJsonFileReader {
             reverse: is_negative_slice,
         };
 
-        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with
+        // Unify the two source options (uncompressed local file mmap'ed, or streaming async with
         // transparent decompression), into one unified reader source.
         let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
@@ -481,6 +478,10 @@ impl FileReader for NDJsonFileReader {
                     Some(Slice::Positive { offset, len }) => n_rows_skipped
                         .saturating_add(n_rows_processed)
                         .min(offset.saturating_add(len)),
+
+                    Some(Slice::PositiveUnbounded { .. }) => {
+                        n_rows_skipped.saturating_add(n_rows_processed)
+                    },
 
                     Some(Slice::Negative { .. }) => {
                         total_row_count.unwrap().saturating_sub(n_rows_skipped)

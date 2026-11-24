@@ -213,7 +213,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 fn slice_arg(c: &Column) -> PolarsResult<Int64Chunked> {
     let s = match c {
         Column::Scalar(sc) => sc.as_single_value_series(),
-        Column::Series(_) => c.as_materialized_series().clone(),
+        Column::Series(_) | Column::Dictionary(_) => c.as_materialized_series().clone(),
     };
     Ok(s.cast(&DataType::Int64)?.i64()?.clone())
 }
@@ -298,7 +298,8 @@ pub(super) fn gather_every(args: &[Column]) -> PolarsResult<Column> {
 #[cfg(feature = "list_count")]
 pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
-    let element = &args[1];
+    // A broadcast scalar is one element, not one per row.
+    let element = args[1].as_materialized_series_maintain_scalar();
     polars_ensure!(
         element.len() == 1,
         ComputeError: "argument expression in `list.count_matches` must produce exactly one element, got {}",
@@ -369,26 +370,9 @@ pub(super) fn set_operation(
     let s0 = &s[0];
     let s1 = &s[1];
 
+    // A single row broadcasts to an empty input.
     if s0.is_empty() || s1.is_empty() {
-        use polars_defs::expr::SetOperation;
-
-        return match set_type {
-            SetOperation::Intersection => {
-                if s0.is_empty() {
-                    Ok(s0.clone())
-                } else {
-                    Ok(s1.clone().with_name(s0.name().clone()))
-                }
-            },
-            SetOperation::Difference => Ok(s0.clone()),
-            SetOperation::Union | SetOperation::SymmetricDifference => {
-                if s0.is_empty() {
-                    Ok(s1.clone().with_name(s0.name().clone()))
-                } else {
-                    Ok(s0.clone())
-                }
-            },
-        };
+        return Ok(s0.clear());
     }
 
     polars_ops::prelude::list_set_operation(s0.list()?, s1.list()?, set_type)
@@ -406,7 +390,7 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
     if let DataType::List(inner) = s.dtype() {
         s.cast(&DataType::Array(inner.clone(), width))
     } else {
-        polars_bail!(ComputeError: "expected List dtype")
+        polars_bail!(ComputeError: "expected List dtype, got {}", s.dtype())
     }
 }
 

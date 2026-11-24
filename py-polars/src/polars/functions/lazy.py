@@ -34,6 +34,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
+    from datetime import date, datetime, time
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -41,9 +42,11 @@ if TYPE_CHECKING:
     from polars._typing import (
         AsyncResult,
         CorrelationMethod,
+        DateDiffUnit,
         EngineType,
         EpochTimeUnit,
         IntoExpr,
+        IntoExprColumn,
         PolarsDataType,
         QuantileMethod,
     )
@@ -1120,10 +1123,10 @@ def map_batches(
         to infer the datatype by calling the function with dummy data and looking at
         the output.
     is_elementwise
-        Set to true if the operations is elementwise for better performance
+        Set to true if the operation is elementwise for better performance
         and optimization.
 
-        An elementwise operations has unit or equal length for all inputs
+        An elementwise operation has unit or equal length for all inputs
         and can be ran sequentially on slices without results being affected.
     returns_scalar
         If the function returns a scalar, by default it will be wrapped in
@@ -1219,10 +1222,10 @@ def map_groups(
         to infer the datatype by calling the function with dummy data and looking at
         the output.
     is_elementwise
-        Set to true if the operations is elementwise for better performance
+        Set to true if the operation is elementwise for better performance
         and optimization.
 
-        An elementwise operations has unit or equal length for all inputs
+        An elementwise operation has unit or equal length for all inputs
         and can be ran sequentially on slices without results being affected.
     returns_scalar
         If the function returns a single scalar as output.
@@ -1300,6 +1303,9 @@ def _row_encode(
     unordered: bool = False,
     descending: list[bool] | None = None,
     nulls_last: list[bool] | None = None,
+    output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+    encode_nulls: Sequence[bool] | None = None,
+    propagate_nulls: bool = False,
 ) -> Expr:
     if isinstance(exprs, pl.Selector):
         exprs = [exprs.as_expr()]
@@ -1312,9 +1318,13 @@ def _row_encode(
         assert descending is None
         assert nulls_last is None
 
-        result = plr.PyExpr.row_encode_unordered(pyexprs)
+        result = plr.PyExpr.row_encode_unordered(
+            pyexprs, output, encode_nulls, propagate_nulls
+        )
     else:
-        result = plr.PyExpr.row_encode_ordered(pyexprs, descending, nulls_last)
+        result = plr.PyExpr.row_encode_ordered(
+            pyexprs, descending, nulls_last, output, encode_nulls, propagate_nulls
+        )
 
     return wrap_expr(result)
 
@@ -1335,7 +1345,7 @@ def pipe_with_dtype(
     function: Callable[[list[tuple[Expr, DataType]]], IntoExpr],
 ) -> Expr:
     """
-    Replace `exprs`, at plan time, with the expression returned by `callback`.
+    Replace `exprs`, at plan time, with the expression returned by `function`.
 
     `function` is not executed immediately but only during the plan stage, once
     the dtypes of `exprs` are known. This allows choosing a different expression
@@ -1367,7 +1377,7 @@ def pipe_with_dtype(
 
     See Also
     --------
-    Expr.pipe_with_dtype : Same functionality for a single expressions.
+    Expr.pipe_with_dtype : Same functionality for a single expression.
     LazyFrame.pipe_with_schema
 
     Examples
@@ -1819,6 +1829,95 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
         raise TypeError(msg)
 
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
+
+
+def date_diff(
+    start: date | datetime | time | IntoExprColumn,
+    end: date | datetime | time | IntoExprColumn,
+    unit: DateDiffUnit,
+) -> Expr:
+    """
+    Count the `unit` boundaries crossed from `start` to `end`.
+
+    This counts how often the calendar or clock moves into a new `unit` on the way
+    from `start` to `end`. For example, 2024-01-31 to 2024-02-01 is 1 month, while
+    2024-01-01 to 2024-01-31 is 0 months. The count is negative if `end` is before
+    `start`.
+
+    Weeks start on Monday. For time zone-aware datetimes, the boundaries are those
+    of the wall-clock time in their time zone.
+
+    .. engine-support:: in-memory, streaming, distributed
+
+    Parameters
+    ----------
+    start
+        Start values of type Date, Datetime or Time. Strings are parsed as column
+        names.
+    end
+        End values. A Date combined with a Datetime is taken as midnight, which is
+        midnight UTC for a time zone-aware Datetime, as in other operations.
+    unit
+        The unit to count: one of 'year', 'quarter', 'month', 'week', 'day',
+        'hour', 'minute', 'second', 'millisecond', 'microsecond' or 'nanosecond'.
+        Time values only support units shorter than a day.
+
+    Returns
+    -------
+    Expr
+        Expression of data type :class:`Int64`.
+
+    Examples
+    --------
+    >>> from datetime import date
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [date(2024, 1, 31), date(2024, 12, 31), date(2024, 3, 10)],
+    ...         "end": [date(2024, 2, 1), date(2025, 1, 1), date(2024, 3, 4)],
+    ...     }
+    ... )
+    >>> df.with_columns(
+    ...     days=pl.date_diff("start", "end", "day"),
+    ...     months=pl.date_diff("start", "end", "month"),
+    ...     years=pl.date_diff("start", "end", "year"),
+    ... )
+    shape: (3, 5)
+    ┌────────────┬────────────┬──────┬────────┬───────┐
+    │ start      ┆ end        ┆ days ┆ months ┆ years │
+    │ ---        ┆ ---        ┆ ---  ┆ ---    ┆ ---   │
+    │ date       ┆ date       ┆ i64  ┆ i64    ┆ i64   │
+    ╞════════════╪════════════╪══════╪════════╪═══════╡
+    │ 2024-01-31 ┆ 2024-02-01 ┆ 1    ┆ 1      ┆ 0     │
+    │ 2024-12-31 ┆ 2025-01-01 ┆ 1    ┆ 1      ┆ 1     │
+    │ 2024-03-10 ┆ 2024-03-04 ┆ -6   ┆ 0      ┆ 0     │
+    └────────────┴────────────┴──────┴────────┴───────┘
+
+    Only boundaries count, so 10:59 to 11:01 is one hour.
+
+    >>> from datetime import datetime
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [datetime(2024, 1, 1, 10, 59), datetime(2024, 1, 1, 10, 0)],
+    ...         "end": [datetime(2024, 1, 1, 11, 1), datetime(2024, 1, 1, 10, 59)],
+    ...     }
+    ... )
+    >>> df.with_columns(
+    ...     hours=pl.date_diff("start", "end", "hour"),
+    ...     minutes=pl.date_diff("start", "end", "minute"),
+    ... )
+    shape: (2, 4)
+    ┌─────────────────────┬─────────────────────┬───────┬─────────┐
+    │ start               ┆ end                 ┆ hours ┆ minutes │
+    │ ---                 ┆ ---                 ┆ ---   ┆ ---     │
+    │ datetime[μs]        ┆ datetime[μs]        ┆ i64   ┆ i64     │
+    ╞═════════════════════╪═════════════════════╪═══════╪═════════╡
+    │ 2024-01-01 10:59:00 ┆ 2024-01-01 11:01:00 ┆ 1     ┆ 2       │
+    │ 2024-01-01 10:00:00 ┆ 2024-01-01 10:59:00 ┆ 0     ┆ 59      │
+    └─────────────────────┴─────────────────────┴───────┴─────────┘
+    """
+    start_pyexpr = parse_into_expression(start)
+    end_pyexpr = parse_into_expression(end)
+    return wrap_expr(plr.date_diff(start_pyexpr, end_pyexpr, unit))
 
 
 def exclude(
@@ -2617,7 +2716,7 @@ def rolling_cov(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
-    .. engine-support:: in-memory, streaming
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -2666,7 +2765,7 @@ def rolling_corr(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
-    .. engine-support:: in-memory, streaming
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -2750,7 +2849,7 @@ def row_index(name: str = "index") -> pl.Expr:
     Generates a sequence of integers.
 
     The length of the returned sequence will match the context length, and the
-    datatype will match the one returned by `get_index_dtype()`.
+    datatype will match the one returned by `get_index_type()`.
 
     .. versionadded:: 1.32.0
 

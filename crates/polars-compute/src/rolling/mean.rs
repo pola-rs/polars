@@ -107,8 +107,8 @@ impl<
         }
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.sum.is_valid(min_periods)
+    fn is_valid(&self, min_samples: usize) -> bool {
+        self.sum.is_valid(min_samples)
     }
 
     fn slice_len(&self) -> usize {

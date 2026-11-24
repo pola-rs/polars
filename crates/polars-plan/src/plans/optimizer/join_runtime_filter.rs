@@ -27,6 +27,10 @@
 //! without one is left alone, and a join is only given a build side once a key
 //! reached one.
 //!
+//! Reading the build side first costs the overlap of the two sides. When the scans a
+//! join's probe keys reach read fewer than `join_runtime_filter_min_probe_rows` rows
+//! together, skipping saves too little to make up for it, so the join gets no filter.
+//!
 //! A semi join publishes from either side and an anti join from its left side
 //! only, as the rows of its right side that match no left key change nothing. A
 //! semi join may prefer its right side on an estimate; a left side is only built
@@ -36,7 +40,7 @@
 
 use std::sync::Arc;
 
-use polars_core::prelude::PlIndexMap;
+use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_defs::join::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
@@ -51,7 +55,7 @@ use crate::plans::aexpr::predicates::supports_runtime_range;
 use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_dynamic_pred};
 use crate::plans::options::{MAX_BUILD_PROBE_DISTINCT_RATIO, RuntimeFilter};
 use crate::plans::schema::join_right_output_names;
-use crate::plans::stats::StatsCache;
+use crate::plans::stats::{StatsCache, node_stats_with_cache, sliced};
 use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
     is_inherently_nondeterministic,
@@ -163,11 +167,38 @@ fn process_join(
                 .collect();
             let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
             let other = if side.left { &right_stats } else { &left_stats };
-            let probe_rows = filters
+            // A scan reached by several keys is read once.
+            let scans: PlIndexSet<Node> = filters
                 .iter()
-                .flat_map(|f| &f.origins)
-                .filter_map(|(scan, _)| side_stats(*scan, ir_arena, expr_arena, stats))
-                .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
+                .flat_map(|f| f.origins.keys().copied())
+                .collect();
+            let mut probe_rows = other.filtered;
+            // Skipping saves reading, so what counts is the rows the scans read.
+            let mut scan_rows = 0.0;
+            for scan in scans {
+                let Some(scan_stats) = node_stats_with_cache(scan, ir_arena, expr_arena, stats)
+                else {
+                    continue;
+                };
+                let IR::Scan {
+                    unified_scan_args, ..
+                } = ir_arena.get(scan)
+                else {
+                    unreachable!()
+                };
+                probe_rows = probe_rows.max(scan_stats.filtered);
+                scan_rows += unified_scan_args
+                    .pre_slice
+                    .map_or(scan_stats.unfiltered, |slice| {
+                        sliced(scan_stats.unfiltered, slice)
+                    });
+            }
+            let min_probe_rows = polars_config::config().join_runtime_filter_min_probe_rows();
+            let filters = if scan_rows >= min_probe_rows as f64 {
+                filters
+            } else {
+                Vec::new()
+            };
             (filters, probe_rows)
         });
         (!filters.is_empty() && *probe_rows >= LOPSIDED_FACTOR * side.rows).then_some(side)

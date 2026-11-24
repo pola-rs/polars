@@ -11,6 +11,17 @@ use crate::prelude::row_encode::encode_rows_unordered;
 // O(capacity) `.clear()` storm of polars#27655.
 const N_UNIQUE_SORT_FALLBACK_THRESHOLD: usize = 16384;
 
+/// Whether the nulls of `s`, if any, are all at its start or all at its end.
+pub(crate) fn nulls_at_one_end(s: &Series) -> bool {
+    let null_count = s.null_count();
+    if null_count == 0 {
+        return true;
+    }
+    let validity = s.rechunk_validity().unwrap();
+    let mask = BitMask::from_bitmap(&validity);
+    mask.leading_zeros() == null_count || mask.trailing_zeros() == null_count
+}
+
 // implemented on the series because we don't need types
 impl Series {
     unsafe fn restore_logical(&self, out: Series) -> Series {
@@ -28,7 +39,7 @@ impl Series {
 
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idxs| {
-                debug_assert!(idxs.len() <= self.len());
+                debug_assert!(_idx_in_bounds(idxs, self.len()));
                 if let Some(v) = &valid {
                     let mut count = 0;
                     for idx in idxs.iter() {
@@ -84,7 +95,8 @@ impl Series {
                 s.take_unchecked(&indices)
             },
         };
-        if groups.is_sorted_by_first_idx() {
+        // Empty groups can add nulls mid-column. Keep the flag only if the nulls are at one end.
+        if groups.is_sorted_by_first_idx() && nulls_at_one_end(&out) {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)
@@ -141,7 +153,11 @@ impl Series {
         };
         // SAFETY: groups are always in bounds.
         let mut out = s.take_unchecked(&indices);
-        if matches!(groups, GroupsType::Slice { .. }) && !groups.is_overlapping() {
+        // Empty groups can add nulls mid-column. Keep the flag only if the nulls are at one end.
+        if matches!(groups, GroupsType::Slice { .. })
+            && !groups.is_overlapping()
+            && nulls_at_one_end(&out)
+        {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)
@@ -338,7 +354,7 @@ impl Series {
                     .map_with(CloneWrapper(state), |state, &[start, len]| {
                         let len_us = len as usize;
                         if len_us > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
-                            col.slice(start as i64, len_us).n_unique().unwrap() as IdxSize
+                            col.slice((start as usize, len_us)).n_unique().unwrap() as IdxSize
                         } else {
                             state.0.n_unique_slice(values, start, len)
                         }
@@ -467,7 +483,7 @@ impl Series {
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         // Prevent a rechunk for every individual group.
@@ -479,6 +495,10 @@ impl Series {
 
         use DataType::*;
         match s.dtype() {
+            Boolean => s
+                .cast(&Float64)
+                .unwrap()
+                .agg_quantile(groups, quantile, method),
             #[cfg(feature = "dtype-f16")]
             Float16 => s.f16().unwrap().agg_quantile(groups, quantile, method),
             Float32 => s.f32().unwrap().agg_quantile(groups, quantile, method),
@@ -619,7 +639,8 @@ impl Series {
         };
         // SAFETY: groups are always in bounds.
         let mut out = s.take_unchecked(&indices);
-        if groups.is_monotonic() {
+        // Empty groups can add nulls mid-column. Keep the flag only if the nulls are at one end.
+        if groups.is_monotonic() && nulls_at_one_end(&out) {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)

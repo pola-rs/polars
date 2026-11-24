@@ -352,18 +352,22 @@ pub(super) fn optimize_functions(
                 return Ok(None);
             };
             let value = sc.as_any_value().extract::<i64>();
+            // Values that overflow the new time unit are not folded (so they raise when evaluated).
             let out = match sc.dtype() {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(from, tz) => match value {
-                    Some(v) => {
-                        let v = from.rescale_to(tu).datetime_value(v);
-                        Scalar::new_datetime(v, tu, tz.clone())
+                    Some(v) => match from.rescale_to(tu).datetime_value(v) {
+                        Some(v) => Scalar::new_datetime(v, tu, tz.clone()),
+                        None => return Ok(None),
                     },
                     None => Scalar::null(DataType::Datetime(tu, tz.clone())),
                 },
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(from) => match value {
-                    Some(v) => Scalar::new_duration(from.rescale_to(tu).duration_value(v), tu),
+                    Some(v) => match from.rescale_to(tu).duration_value(v) {
+                        Some(v) => Scalar::new_duration(v, tu),
+                        None => return Ok(None),
+                    },
                     None => Scalar::null(DataType::Duration(tu)),
                 },
                 _ => return Ok(None),
@@ -417,9 +421,10 @@ pub(super) fn optimize_functions(
             let offset_i64: i64 = offset.try_into().unwrap_or(i64::MAX);
             let offset_node =
                 expr_arena.add(AExpr::Literal(LiteralValue::Scalar(offset_i64.into())));
-            let length_node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(
-                (usize::MAX as u64).into(),
-            )));
+            let length_node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::UInt64,
+                AnyValue::Null,
+            ))));
             Some(AExpr::Slice {
                 input: input[0].node(),
                 offset: offset_node,
@@ -435,10 +440,10 @@ pub(super) fn optimize_functions(
 fn is_string_concat(ae: &AExpr, ignore_nulls: bool) -> bool {
     matches!(ae, AExpr::Function {
                 function:IRFunctionExpr::StringExpr(
-                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_inore_nulls},
+                    IRStringFunction::ConcatHorizontal{delimiter: sep, ignore_nulls: func_ignore_nulls},
                 ),
                 ..
-            } if sep.is_empty() && *func_inore_nulls == ignore_nulls)
+            } if sep.is_empty() && *func_ignore_nulls == ignore_nulls)
 }
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]

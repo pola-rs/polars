@@ -141,7 +141,7 @@ impl PageReader {
         }
     }
 
-    /// Returns the reader and this Readers' interval buffer
+    /// Returns the reader and this Reader's internal buffer
     pub fn into_inner(self) -> (Cursor<Buffer<u8>>, Vec<u8>) {
         (self.reader, self.scratch)
     }
@@ -153,6 +153,54 @@ impl PageReader {
 
     pub fn descriptor(&self) -> &Descriptor {
         &self.descriptor
+    }
+
+    /// The number of values and the uncompressed size in bytes of the dictionary page, if the
+    /// column chunk has one and every data page is dictionary-encoded; `None` otherwise, and for
+    /// encrypted columns. Reads only the page headers.
+    pub fn dictionary_only_len(mut self) -> ParquetResult<Option<(usize, usize)>> {
+        use crate::parquet::page::FormatEncoding;
+
+        if self.crypto_context.is_some() {
+            return Ok(None);
+        }
+        let is_dict = |e: FormatEncoding| {
+            matches!(
+                e,
+                FormatEncoding::RLE_DICTIONARY | FormatEncoding::PLAIN_DICTIONARY
+            )
+        };
+
+        let mut dict_len = None;
+        while self.seen_num_values < self.total_num_values {
+            let header = self.read_page_header()?;
+            let size: u64 = header.compressed_page_size.try_into()?;
+            self.reader.set_position(self.reader.position() + size);
+            match header.type_.try_into()? {
+                PageType::DictionaryPage => {
+                    let Some(h) = header.dictionary_page_header.as_ref() else {
+                        return Ok(None);
+                    };
+                    dict_len = Some((
+                        h.num_values.try_into()?,
+                        header.uncompressed_page_size.try_into()?,
+                    ));
+                },
+                PageType::DataPage => match header.data_page_header.as_ref() {
+                    Some(h) if is_dict(h.encoding) => self.seen_num_values += h.num_values as i64,
+                    _ => return Ok(None),
+                },
+                PageType::DataPageV2 => match header.data_page_header_v2.as_ref() {
+                    Some(h) if is_dict(h.encoding) => self.seen_num_values += h.num_values as i64,
+                    _ => return Ok(None),
+                },
+            }
+            if dict_len.is_none() {
+                // The dictionary page comes first.
+                return Ok(None);
+            }
+        }
+        Ok(dict_len)
     }
 
     pub fn read_dict(&mut self) -> ParquetResult<Option<CompressedDictPage>> {
@@ -441,7 +489,7 @@ pub(super) fn get_page_num_values(header: &ParquetPageHeader) -> ParquetResult<i
                 .as_ref()
                 .ok_or_else(|| {
                     ParquetError::oos(
-                        "The page header type is a v1 data page but the v1 header is empty",
+                        "The page header type is a v2 data page but the v2 header is empty",
                     )
                 })?
                 .num_values

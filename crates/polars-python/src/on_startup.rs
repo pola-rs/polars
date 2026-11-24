@@ -123,6 +123,10 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         WARN_FUNCTION.set(warn_function).unwrap();
         set_polars_allow_extension(true);
 
+        // I/O plugins are found through their Python packages, also in deserialized plans.
+        #[cfg(feature = "io_plugin_ffi")]
+        crate::io::io_plugin::install_locator();
+
         // Stack frames can get really large in debug mode.
         #[cfg(debug_assertions)]
         {
@@ -329,6 +333,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,
             schema: dataset_provider_funcs::schema,
+            has_tight_statistics: dataset_provider_funcs::has_tight_statistics,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });
 

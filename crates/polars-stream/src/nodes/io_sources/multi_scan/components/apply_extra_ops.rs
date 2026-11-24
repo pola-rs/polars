@@ -261,17 +261,14 @@ impl ApplyExtraOps {
         // Note, this counts physical rows
         let mut local_slice_offset: usize = 0;
 
-        if let Some(physical_pre_slice) = physical_pre_slice.clone() {
-            let Slice::Positive { offset, len } = physical_pre_slice
-                .offsetted(current_row_position.num_physical_rows())
-                .restrict_to_bounds(df.height())
-            else {
-                unreachable!()
-            };
+        if let Some(slice) =
+            physical_pre_slice.and_then(|s| s.offsetted(current_row_position.num_physical_rows()))
+        {
+            let slice = slice.restrict_to_bounds(df.height());
 
-            local_slice_offset = offset;
+            local_slice_offset = slice.positive_offset();
 
-            *df = df.slice(i64::try_from(offset).unwrap(), len)
+            *df = df.slice(slice)
         }
 
         if let Some(external_filter_mask) = external_filter_mask {
@@ -279,15 +276,9 @@ impl ApplyExtraOps {
                 .num_physical_rows()
                 .saturating_add(local_slice_offset);
 
-            let Slice::Positive { offset, len } = Slice::Positive {
-                offset,
-                len: df.height(),
-            }
-            .restrict_to_bounds(external_filter_mask.len()) else {
-                unreachable!()
-            };
+            let range = Slice::from((offset, df.height())).resolve(external_filter_mask.len());
 
-            let local_filter_mask = external_filter_mask.slice(offset, len);
+            let local_filter_mask = external_filter_mask.slice(range.start, range.len());
             local_filter_mask.filter_df(df)?;
         };
 
@@ -313,7 +304,7 @@ impl ApplyExtraOps {
                         0
                     } else {
                         mask.slice(current_row_position.num_physical_rows(), local_slice_offset)
-                            .num_deleted_rows()
+                            .num_deleted_rows(local_slice_offset)
                     }
                 }),
             );

@@ -71,7 +71,9 @@ impl PhysicalExpr for SortExpr {
                 let out = ca.lst_sort(self.options)?;
                 ac.with_values(out.into_column(), true, Some(&self.expr))?;
             },
-            _ => {
+            // A single value (per group, or a literal) is already sorted.
+            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) => {},
+            AggState::NotAggregated(_) => {
                 let series = ac.flat_naive().into_owned();
 
                 let mut sort_options = self.options;
@@ -94,7 +96,7 @@ impl PhysicalExpr for SortExpr {
                         GroupsType::Slice { groups, .. } => groups
                             .par_iter()
                             .map(|&[first, len]| {
-                                let group = series.slice(first as i64, len as usize);
+                                let group = series.slice((first as usize, len as usize));
                                 let sorted_idx = group.arg_sort(sort_options);
                                 let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
                                 (new_idx.first().copied().unwrap_or(first), new_idx)

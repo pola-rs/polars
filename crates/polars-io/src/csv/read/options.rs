@@ -132,7 +132,7 @@ impl CsvReadOptions {
         self
     }
 
-    /// Whether to makes the columns contiguous in memory.
+    /// Whether to make the columns contiguous in memory.
     pub fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.rechunk = rechunk;
         self

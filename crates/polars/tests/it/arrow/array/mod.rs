@@ -161,7 +161,7 @@ fn test_with_validity() {
     assert_eq!(arr_ref, &expected);
 }
 
-// check that we ca derive stuff
+// check that we can derive stuff
 #[allow(dead_code)]
 #[derive(PartialEq, Clone, Debug)]
 struct A {

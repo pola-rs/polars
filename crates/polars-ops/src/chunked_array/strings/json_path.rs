@@ -71,7 +71,7 @@ pub trait Utf8JsonPathImpl: AsString {
                 })
             },
             (len_ca, len_path) => {
-                polars_bail!(ComputeError: "The length of `ca` and `json_path` should either 1 or the same, but `{}`, `{}` founded", len_ca, len_path)
+                polars_bail!(ComputeError: "The length of `ca` and `json_path` should either be 1 or the same, but `{}`, `{}` found", len_ca, len_path)
             },
         }
     }
@@ -200,7 +200,7 @@ mod tests {
         ]);
 
         assert_eq!(ca.json_infer(None).unwrap(), expected_dtype);
-        // Infereing with the first row will only see None
+        // Inferring with the first row will only see None
         assert_eq!(ca.json_infer(Some(1)).unwrap(), DataType::Null);
         assert_eq!(ca.json_infer(Some(2)).unwrap(), expected_dtype);
     }

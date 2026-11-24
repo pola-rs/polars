@@ -231,10 +231,10 @@ fn check_large_format() -> PolarsResult<()> {
     let write_data = large_format_data();
 
     let data = write_avro(&write_data, &write_schema, None)?;
-    let (result, read_schame) = read_avro(&data, None)?;
+    let (result, read_schema) = read_avro(&data, None)?;
 
     let expected_schema = large_format_expected_schema();
-    assert_eq!(read_schame, expected_schema);
+    assert_eq!(read_schema, expected_schema);
 
     let expected_data = large_format_expected_data();
     for (c1, c2) in result.columns().iter().zip(expected_data.columns().iter()) {

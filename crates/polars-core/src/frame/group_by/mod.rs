@@ -6,6 +6,7 @@ use polars_compute::rolling::QuantileMethod;
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::DirtyHash;
+use polars_utils::slice_enum::Slice;
 use rayon::prelude::*;
 
 use self::hashing::*;
@@ -22,7 +23,7 @@ pub use into_groups::*;
 pub use position::*;
 
 use crate::chunked_array::ops::row_encode::{
-    encode_rows_unordered, encode_rows_vertical_par_unordered,
+    encode_rows_with_layout, encode_rows_with_layout_par, get_optimal_row_encoding_layout,
 };
 
 impl DataFrame {
@@ -85,12 +86,13 @@ impl DataFrame {
 
                 Ok(GroupsType::new_slice(groups, false, true))
             } else {
+                let opts = vec![RowEncodingOptions::new_unsorted(); by.len()];
+                let layout = get_optimal_row_encoding_layout(&by, &[], &opts);
                 let rows = if multithreaded {
-                    encode_rows_vertical_par_unordered(&by)
+                    encode_rows_with_layout_par(&by, &layout, false)?
                 } else {
-                    encode_rows_unordered(&by)
-                }?
-                .into_series();
+                    encode_rows_with_layout(&by, &layout, false)?
+                };
                 rows.group_tuples(multithreaded, sorted)
             }
         };
@@ -227,13 +229,13 @@ impl<'a> GroupBy<'a> {
         self.groups
     }
 
-    pub fn keys_sliced(&self, slice: Option<(i64, usize)>) -> Vec<Column> {
+    pub fn keys_sliced(&self, slice: Option<Slice>) -> Vec<Column> {
         #[allow(unused_assignments)]
         // needed to keep the lifetimes valid for this scope
         let mut groups_owned = None;
 
-        let groups = if let Some((offset, len)) = slice {
-            groups_owned = Some(self.groups.slice(offset, len));
+        let groups = if let Some(slice) = slice {
+            groups_owned = Some(self.groups.slice(slice));
             groups_owned.as_deref().unwrap()
         } else {
             &self.groups
@@ -247,7 +249,7 @@ impl<'a> GroupBy<'a> {
                         GroupsType::Idx(groups) => {
                             // SAFETY: groups are always in bounds.
                             let mut out = unsafe { s.take_slice_unchecked(groups.first()) };
-                            if groups.sorted_by_first_idx {
+                            if groups.groups_sorted_by_first_idx {
                                 out.set_sorted_flag(s.is_sorted_flag());
                             };
                             out
@@ -261,10 +263,10 @@ impl<'a> GroupBy<'a> {
                                 // Groups can be sliced.
                                 let offset = groups[0][0];
                                 let [upper_offset, upper_len] = groups[groups.len() - 1];
-                                return s.slice(
-                                    offset as i64,
+                                return s.slice((
+                                    offset as usize,
                                     ((upper_offset + upper_len) - offset) as usize,
-                                );
+                                ));
                             }
 
                             let indices = groups
@@ -413,7 +415,7 @@ impl<'a> GroupBy<'a> {
 
     pub fn apply_sliced<F>(
         &self,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         mut f: F,
         schema: Option<&SchemaRef>,
     ) -> PolarsResult<DataFrame>
@@ -430,11 +432,7 @@ impl<'a> GroupBy<'a> {
         }
 
         let df = self.prepare_apply()?;
-        let max_height = if let Some((offset, len)) = slice {
-            offset.try_into().unwrap_or(usize::MAX).saturating_add(len)
-        } else {
-            usize::MAX
-        };
+        let max_height = slice.and_then(|s| s.end_position());
         let mut height = 0;
         let mut dfs = Vec::with_capacity(self.get_groups().len());
         for g in self.get_groups().iter() {
@@ -446,34 +444,23 @@ impl<'a> GroupBy<'a> {
 
             // Even if max_height is zero we need at least one df, so check
             // after first push.
-            if height >= max_height {
+            if max_height.is_some_and(|max_height| height >= max_height) {
                 break;
             }
         }
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        if let Some((offset, len)) = slice {
-            df = df.slice(offset, len);
+        if let Some(slice) = slice {
+            df = df.slice(slice);
         }
         Ok(df)
-    }
-
-    pub fn sliced(mut self, slice: Option<(i64, usize)>) -> Self {
-        match slice {
-            None => self,
-            Some((offset, length)) => {
-                self.groups = self.groups.slice(offset, length);
-                self.selected_keys = self.keys_sliced(slice);
-                self
-            },
-        }
     }
 }
 
 unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
     match g {
         GroupsIndicator::Idx(idx) => df.take_slice_unchecked(idx.1),
-        GroupsIndicator::Slice([first, len]) => df.slice(first as i64, len as usize),
+        GroupsIndicator::Slice([first, len]) => df.slice((first as usize, len as usize)),
     }
 }
 

@@ -16,7 +16,11 @@ from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_is_null_followed_by_all() -> None:
@@ -1078,10 +1082,10 @@ def test_slice_pushdown_expr_create_ir_slice_offset_correction_26592() -> None:
         ),
     )
 
-    # NULL length -> IdxSize::MAX
+    # NULL length -> runs to the end
     q = lf.select(a_off2=pl.col("a").slice(2))
     plan = q.explain()
-    assert "SLICE: Positive { offset: 2, len: " in plan
+    assert "SLICE: PositiveUnbounded { offset: 2 }" in plan
     assert_frame_equal(
         q.collect(),
         pl.DataFrame(
@@ -1153,6 +1157,34 @@ def test_slice_pushdown_expr_leaf_ae_without_col_input_27820() -> None:
 @pytest.mark.parametrize(
     ("expr", "expected"),
     [
+        (pl.col("a").slice(1, 2).head(2), [2, 3]),
+        (pl.col("a").slice(1, 2).head(5), [2, 3]),
+        (pl.col("a").slice(1, 3).head(2), [2, 3]),
+        (pl.col("a").slice(1, 2).slice(1, 1), [3]),
+        (pl.col("a").slice(1).tail(2), [4, 5]),
+        (pl.col("a").abs().slice(1).tail(2), [4, 5]),
+        (pl.col("a").abs().slice(1, 3).slice(-2, 1), [3]),
+        (pl.col("a").slice(-3).head(2), [3, 4]),
+        ((pl.col("a").slice(1) + pl.col("b").slice(1)).tail(2), [44, 55]),
+    ],
+)
+def test_slice_pushdown_expr_nested_slices_30673(
+    expr: pl.Expr, expected: list[int]
+) -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [10, 20, 30, 40, 50]}).select(expr)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": expected}))
+
+
+def test_slice_pushdown_expr_nested_slice_multiple_columns_30673() -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [10, 20, 30, 40, 50]}).select(
+        pl.col("a").slice(1, 2).head(2), pl.col("b").slice(1, 2)
+    )
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [2, 3], "b": [20, 30]}))
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
         (pl.col("a").first().over(pl.lit(1)), [1, 1, 1]),
         (pl.col("a").last().over(pl.lit(1)), [3, 3, 3]),
         ((pl.col("a") + 1).last().over(pl.lit(1)), [4, 4, 4]),
@@ -1166,6 +1198,118 @@ def test_slice_pushdown_expr_window_keeps_frame_height(
 ) -> None:
     q = pl.LazyFrame({"a": [1, 2, 3]}).select(expr.alias("out"))
     assert q.collect(engine=engine).to_series().to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.col("l").list.eval(pl.element() + 1).first(), [[2, 3, 4]]),
+        (pl.col("l").list.eval(pl.element() + 1).last(), [[5, 6]]),
+        (pl.col("l").list.agg(pl.element() + 1).first(), [[2, 3, 4]]),
+        (pl.col("l").list.reverse().head(1), [[3, 2, 1]]),
+        (pl.col("l").list.reverse().slice(1, 1), [[5, 4]]),
+    ],
+)
+def test_slice_pushdown_expr_list_eval_30666(
+    expr: pl.Expr, expected: list[list[int]]
+) -> None:
+    lf = pl.LazyFrame({"l": [[1, 2, 3], [4, 5]]})
+    assert_frame_equal(
+        lf.select(expr).collect(),
+        pl.DataFrame({"l": expected}, schema={"l": pl.List(pl.Int64)}),
+    )
+
+
+def test_slice_pushdown_expr_list_eval_group_by_30666() -> None:
+    lf = pl.LazyFrame({"g": [1, 1], "l": [[1, 2, 3], [4, 5]]})
+    q = lf.group_by("g").agg(pl.col("l").list.eval(pl.element() + 1).first())
+    assert_frame_equal(q.collect(), pl.DataFrame({"g": [1], "l": [[2, 3, 4]]}))
+
+
+def test_slice_pushdown_expr_arr_eval_30666() -> None:
+    lf = pl.LazyFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int64, 2)})
+    assert_frame_equal(
+        lf.select(pl.col("a").arr.eval(pl.element() * 2).first()).collect(),
+        pl.DataFrame({"a": [[2, 4]]}, schema={"a": pl.Array(pl.Int64, 2)}),
+    )
+
+
+def test_slice_pushdown_expr_struct_with_fields_outer_column_30666() -> None:
+    lf = pl.LazyFrame({"s": [{"a": 1}, {"a": 2}, {"a": 3}], "x": [10, 20, 30]})
+    q = lf.select(
+        pl.col("s")
+        .struct.with_fields(pl.col("x"), y=pl.field("a") * pl.col("x"))
+        .slice(1, 1)
+    )
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"s": [{"a": 2, "x": 20, "y": 40}]},
+            schema={"s": pl.Struct({"a": pl.Int64, "x": pl.Int64, "y": pl.Int64})},
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("agg", "t", "dtype"),
+    [
+        (pl.field("a").sum(), 6, pl.Int64),
+        (pl.field("a").mean(), 2.0, pl.Float64),
+        (pl.field("a").len(), 3, pl.get_index_type()),
+        (pl.field("a").max(), 3, pl.Int64),
+    ],
+)
+@pytest.mark.parametrize(
+    ("take_rows", "a"),
+    [
+        (lambda e: e.first(), [1]),
+        (lambda e: e.last(), [3]),
+        (lambda e: e.head(2), [1, 2]),
+        (lambda e: e.slice(1, 1), [2]),
+    ],
+)
+def test_slice_pushdown_expr_struct_with_fields_agg(
+    agg: pl.Expr,
+    t: float,
+    dtype: pl.DataType,
+    take_rows: Callable[[pl.Expr], pl.Expr],
+    a: list[int],
+) -> None:
+    lf = pl.LazyFrame({"s": [{"a": 1}, {"a": 2}, {"a": 3}]})
+    q = lf.select(take_rows(pl.col("s").struct.with_fields(t=agg)))
+    expected = pl.DataFrame(
+        {"s": [{"a": x, "t": t} for x in a]},
+        schema={"s": pl.Struct({"a": pl.Int64, "t": dtype})},
+    )
+    assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("other", "is_in"),
+    [
+        ([2, 3], [False, True, True, False]),
+        (pl.lit(pl.Series([[2, 3]])), [False, True, True, False]),
+        (pl.lit(pl.Series([[1], [1], [3], [3]])), [True, False, True, False]),
+        (pl.col("b"), [False, True, False, True]),
+    ],
+)
+@pytest.mark.parametrize(
+    ("take_rows", "rows"),
+    [
+        (lambda e: e.first(), slice(0, 1)),
+        (lambda e: e.head(2), slice(0, 2)),
+        (lambda e: e.slice(1, 2), slice(1, 3)),
+    ],
+)
+def test_slice_pushdown_expr_is_in(
+    other: Any,
+    is_in: list[bool],
+    take_rows: Callable[[pl.Expr], pl.Expr],
+    rows: slice,
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [[0], [2], [0], [4]]})
+    q = lf.select(take_rows(pl.col("a").is_in(other)))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": is_in[rows]}))
 
 
 def test_slice_pushdown_joins_27199() -> None:
@@ -1769,3 +1913,99 @@ def test_simplify_unique_len_to_n_unique() -> None:
     lf = pl.LazyFrame({"g": [1, 1], "a": pl.Series([1, 1], dtype=pl.Object)})
     q = lf.group_by("g").agg(pl.col("a").unique().len())
     assert "n_unique" not in q.explain()
+
+
+_YEAR_OPS = ["__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__"]
+
+
+def _assert_year_filters_match(lf: pl.LazyFrame, year: int) -> None:
+    for op in _YEAR_OPS:
+        for e in [
+            getattr(pl.col("x").dt.year(), op)(year),
+            getattr(pl.lit(year), op)(pl.col("x").dt.year()),
+        ]:
+            q = lf.filter(e)
+            assert_frame_equal(
+                q.collect(),
+                q.collect(optimizations=QueryOptFlags(simplify_expression=False)),
+            )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime("ns"), pl.Datetime("us"), pl.Datetime("ms")],
+)
+@pytest.mark.parametrize("year", [1969, 1970, 2020, 2263, 2**31 - 1])
+def test_simplify_year_comparison(dtype: pl.DataType, year: int) -> None:
+    values = [
+        dt.datetime(1969, 12, 31, 23, 59, 59),
+        dt.datetime(1970, 1, 1),
+        dt.datetime(2019, 12, 31, 23, 59, 59, 999000),
+        dt.datetime(2020, 1, 1),
+        dt.datetime(2020, 12, 31, 23, 59, 59, 999000),
+        dt.datetime(2021, 1, 1),
+        None,
+    ]
+    lf = pl.LazyFrame({"x": values}).with_columns(pl.col("x").cast(dtype))
+    _assert_year_filters_match(lf, year)
+    if year == 2020:
+        assert "year" not in lf.filter(pl.col("x").dt.year() == year).explain()
+    # Outside a filter a null year must stay null, so nothing changes.
+    assert "year" in lf.select(pl.col("x").dt.year() == year).explain()
+
+
+def test_simplify_year_comparison_through_int64_cast() -> None:
+    lf = pl.LazyFrame({"x": [dt.date(2019, 12, 31), dt.date(2020, 1, 1), None]})
+    q = lf.filter(pl.col("x").dt.year().cast(pl.Int64) == 2020)
+    assert "year" not in q.explain()
+    assert q.collect()["x"].to_list() == [dt.date(2020, 1, 1)]
+    q = lf.filter(pl.col("x").dt.year().cast(pl.Int16) == 2020)
+    assert "year" in q.explain()
+
+
+@pytest.mark.parametrize("dtype", [pl.Date, pl.Datetime("ms"), pl.Datetime("us")])
+def test_simplify_year_comparison_keeps_null_years(dtype: pl.DataType) -> None:
+    # `dt.year()` is null for values outside the supported dates.
+    bits = 32 if dtype == pl.Date else 64
+    lf = pl.LazyFrame(
+        {"x": [-(2 ** (bits - 1)), 0, 2 ** (bits - 1) - 1]},
+        schema={"x": pl.Int32 if dtype == pl.Date else pl.Int64},
+    ).select(pl.col("x").cast(dtype))
+    _assert_year_filters_match(lf, 2020)
+    lf.filter(pl.col("x").dt.year() >= 2020).explain()
+
+
+def test_simplify_year_comparison_not_equal_reads_input_once() -> None:
+    lf = pl.LazyFrame({"s": ["2019-06-01", "2020-06-01", None]})
+    d = pl.col("s").str.to_date()
+    # `!=` would read the input twice, so only a column is rewritten.
+    q = lf.filter(d.dt.year() != 2020)
+    assert "dt.year()" in q.explain()
+    assert q.collect()["s"].to_list() == ["2019-06-01"]
+    q = lf.filter(d.dt.year() == 2020)
+    assert "dt.year()" not in q.explain()
+    assert q.collect()["s"].to_list() == ["2020-06-01"]
+
+
+def test_simplify_year_comparison_keeps_time_zone() -> None:
+    lf = pl.LazyFrame(
+        {"x": [dt.datetime(2020, 12, 31, 23)]},
+        schema={"x": pl.Datetime("us", "Asia/Kathmandu")},
+    )
+    # The year is taken in local time, which is already 2021 here.
+    q = lf.filter(pl.col("x").dt.year() == 2020)
+    assert "dt.year()" in q.explain()
+    assert q.collect().height == 0
+
+
+def test_simplify_year_comparison_prunes_row_groups(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "a.parquet"
+    dates = pl.date_range(dt.date(2019, 1, 1), dt.date(2021, 12, 31), eager=True)
+    pl.DataFrame({"d": dates}).write_parquet(path, row_group_size=100)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    out = pl.scan_parquet(path).filter(pl.col("d").dt.year() == 2021).collect()
+    assert out.height == 365
+    assert "reading 4 / 11 row groups" in capfd.readouterr().err

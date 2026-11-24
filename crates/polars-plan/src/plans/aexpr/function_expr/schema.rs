@@ -1,5 +1,6 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
+use polars_core::chunked_array::ops::row_encode::rows_dtype;
 use polars_core::utils::{get_supertype, materialize_dyn_int};
 
 use super::*;
@@ -174,8 +175,23 @@ impl IRFunctionExpr {
             Skew(_) => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
-            ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
-            MinBy { .. } | MaxBy { .. } => mapper.with_same_dtype(),
+            ArgMin | ArgMax => {
+                let dtype = mapper.args()[0].dtype();
+                polars_ensure!(
+                    !dtype.is_object(),
+                    InvalidOperation: "`{self}` operation not supported for dtype `{dtype}`"
+                );
+                mapper.with_dtype(IDX_DTYPE)
+            },
+            ArgUnique | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
+            MinBy { .. } | MaxBy { .. } => {
+                let by_dtype = mapper.args()[1].dtype();
+                polars_ensure!(
+                    !by_dtype.is_object(),
+                    InvalidOperation: "`{self}` operation not supported for by dtype `{by_dtype}`"
+                );
+                mapper.with_same_dtype()
+            },
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
@@ -186,6 +202,8 @@ impl IRFunctionExpr {
                     T::UInt64 => T::UInt64,
                     #[cfg(feature = "dtype-i128")]
                     T::Int128 => T::Int128,
+                    #[cfg(feature = "dtype-u128")]
+                    T::UInt128 => T::UInt128,
                     #[cfg(feature = "dtype-decimal")]
                     T::Decimal(_p, s) => T::Decimal(DEC128_MAX_PREC, *s),
                     _ => T::Int64,
@@ -321,6 +339,16 @@ impl IRFunctionExpr {
             Entropy { .. } => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "entropy")?
                 .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            XLogY { .. } => {
+                let mut field = mapper
+                    .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "x_log_y")?
+                    .map_to_supertype()?;
+                if !field.dtype().is_float() {
+                    field.set_dtype(DataType::Float64);
+                }
+                Ok(field)
+            },
             #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
@@ -564,9 +592,7 @@ impl IRFunctionExpr {
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
-                if f.dtype == DataType::Boolean {
-                    f.dtype = IDX_DTYPE;
-                }
+                f.dtype = sum_output_dtype(&f.dtype);
                 f
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
@@ -602,14 +628,18 @@ impl IRFunctionExpr {
             Reinterpret(dtype) => mapper.with_dtype(dtype.clone()),
             ExtendConstant => mapper.with_same_dtype(),
 
-            RowEncode(..) => mapper.try_map_field(|_| {
-                Ok(Field::new(
-                    PlSmallStr::from_static("row_encoded"),
-                    DataType::BinaryOffset,
-                ))
+            RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls: _,
+            } => mapper.try_map_field(|_| {
+                let dtype = rows_dtype(&output.layout(dtypes, variant, encode_nulls.as_deref())?);
+                Ok(Field::new(PlSmallStr::from_static("row_encoded"), dtype))
             }),
             #[cfg(feature = "dtype-struct")]
-            RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+            RowDecode { fields, .. } => mapper.with_dtype(DataType::Struct(fields.to_vec())),
             DynamicPred { .. } | DynamicSkipBatch { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
@@ -684,6 +714,26 @@ impl<'a> FieldsMapper<'a> {
             polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{leaf_dtype}`");
         }
         self.moment_dtype()
+    }
+
+    /// Returns an error if the operation `op` (e.g. "median") doesn't support the input dtype.
+    /// It supports null, Boolean, numeric and Decimal input, and temporal input if
+    /// `allow_temporal`. An unknown dtype passes, since it can't be checked yet.
+    pub fn ensure_moment_input(&self, op: &str, allow_temporal: bool) -> PolarsResult<()> {
+        let dt = self.fields[0].dtype();
+        let supported = match dt {
+            DataType::Null | DataType::Unknown(_) | DataType::Boolean => true,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => true,
+            dt if dt.is_primitive_numeric() => true,
+            dt if dt.is_temporal() => allow_temporal,
+            _ => false,
+        };
+        polars_ensure!(
+            supported,
+            InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
+        );
+        Ok(())
     }
 
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
@@ -807,7 +857,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     #[cfg(feature = "dtype-array")]
-    /// Map the dtype to the dtype of the array elements, with typo validation.
+    /// Map the dtype to the dtype of the array elements, with type validation.
     pub fn try_map_to_array_inner_dtype(&self) -> PolarsResult<Field> {
         let dt = self.fields[0].dtype();
         match dt {
@@ -931,6 +981,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn quantile_dtype(&self) -> PolarsResult<Field> {
+        self.ensure_moment_input("quantile", true)?;
         let mut out = self.moment_dtype()?;
         if matches!(self.fields[1].dtype(), DataType::List(_)) {
             out.set_dtype(DataType::List(Box::new(out.dtype().clone())));

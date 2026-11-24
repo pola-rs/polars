@@ -614,3 +614,9 @@ def test_concat_horizontal_strict_pruned_input_before_cache(
     q = pl.concat([inner, shared.select("b")], how="horizontal_extend")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1], "b": [2]}))
+
+
+@pytest.mark.parametrize("how", ["horizontal", "horizontal_extend"])
+def test_concat_horizontal_empty_frame_without_columns(how: ConcatMethod) -> None:
+    lf = pl.concat([pl.LazyFrame(height=0), pl.LazyFrame(height=1)], how=how)
+    assert lf.select(pl.len()).collect().item() == 1

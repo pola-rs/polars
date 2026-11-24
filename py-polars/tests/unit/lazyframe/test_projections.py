@@ -1027,6 +1027,49 @@ def test_projection_pushdown_sliced_union_len(
     assert union_fn([empty, one]).select(pl.len() > 0).collect().item()
 
 
+@pytest.mark.parametrize("union_fn", [pl.concat, pl.union])
+@pytest.mark.parametrize("offset", [-7, -3, -1, 0, 1, 2, 3, 5, 7, 100])
+@pytest.mark.parametrize("length", [0, 1, 2, 3, 5, 100, None])
+def test_projection_pushdown_sliced_union_len_offsets(
+    union_fn: Callable[..., pl.LazyFrame],
+    offset: int,
+    length: int | None,
+) -> None:
+    empty = pl.LazyFrame({"a": pl.Series([], dtype=pl.Int64)})
+    two = pl.LazyFrame({"a": [1, 2]})
+    three = pl.LazyFrame({"a": [1, 2, 3]})
+    inputs = [empty, two, empty, three]
+    expected = pl.concat(inputs).collect().slice(offset, length).height
+    q = union_fn(inputs).slice(offset, length).select(pl.len())
+    assert q.collect().item() == expected
+    assert q.collect(engine="in-memory").item() == expected
+
+
+def test_projection_pushdown_sliced_union_len_reads_no_columns_30360(
+    tmp_path: Path,
+) -> None:
+    paths = []
+    for i in range(3):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"a": ["x", "y"], "b": ["z", "w"]}).write_parquet(path)
+        paths.append(path)
+
+    q = pl.concat([pl.scan_parquet(p) for p in paths], how="vertical_relaxed")
+    for sliced, expected in [
+        (q.head(1), 1),
+        (q.head(5), 5),
+        (q.slice(5), 1),
+        (q.slice(2, 3), 3),
+        (q.slice(10, 3), 0),
+    ]:
+        sliced_q = sliced.select(pl.len())
+        plan = sliced_q.explain()
+        assert "PROJECT 0/2 COLUMNS" in plan
+        assert "PROJECT 1/2 COLUMNS" not in plan
+        assert sliced_q.collect().item() == expected
+        assert (sliced.select(pl.len() != 0)).collect().item() == (expected != 0)
+
+
 @pytest.mark.parametrize(
     ("sink", "scan"),
     [

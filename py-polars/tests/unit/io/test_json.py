@@ -423,6 +423,26 @@ def test_write_json_sliced_nested_30178(
     assert df.select(pl.struct("a").struct.json_encode())["a"].to_list() == rows
 
 
+@pytest.mark.parametrize("chunk_lens", [[0, 3, 3], [3, 0, 3], [3, 3, 0], [0, 0, 0]])
+def test_write_json_empty_chunks_30309(chunk_lens: list[int]) -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}),
+            pl.DataFrame({"x": [4, 5, 6], "y": ["d", "e", "f"]}),
+            pl.DataFrame({"x": [7, 8, 9], "y": ["g", "h", "i"]}),
+        ],
+        rechunk=False,
+    )
+    # A boolean Series mask keeps the chunk layout, including empty chunks.
+    mask = pl.Series([n > 0 for n in chunk_lens for _ in range(3)])
+    out = df.filter(mask)
+    for s in out.iter_columns():
+        assert [len(c) for c in s.get_chunks()] == chunk_lens
+
+    assert out.write_json() == out.rechunk().write_json()
+    assert json.loads(out.write_json()) == out.to_dicts()
+
+
 def test_write_ndjson_sliced_masked_nested_list() -> None:
     # Null rows that keep non-empty ranges of masked-out values, at both levels.
     inner = pa.LargeListArray.from_arrays(
@@ -1042,3 +1062,41 @@ def test_ndjson_large_u64_infer_25894() -> None:
         df,
         pl.DataFrame({"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}),
     )
+
+
+def test_read_ndjson_small_integers_16167() -> None:
+    data = b'{"a": 1, "b": 300, "c": -1, "d": -300}\n{"a": 255, "b": 65535, "c": 127, "d": null}\n'
+    schema = {"a": pl.UInt8, "b": pl.UInt16, "c": pl.Int8, "d": pl.Int16}
+    df = pl.read_ndjson(io.BytesIO(data), schema=schema)
+    expected = pl.DataFrame(
+        {"a": [1, 255], "b": [300, 65535], "c": [-1, 127], "d": [-300, None]},
+        schema=schema,
+    )
+    assert_frame_equal(df, expected)
+
+    for dtype in schema.values():
+        with pytest.raises(ComputeError, match="cannot parse '100000'"):
+            pl.read_ndjson(io.BytesIO(b'{"a": 100000}\n'), schema={"a": dtype})
+
+    with pytest.raises(ComputeError, match="cannot parse '-1'"):
+        pl.read_ndjson(io.BytesIO(b'{"a": -1}\n'), schema={"a": pl.UInt8})
+
+
+@pytest.mark.parametrize(
+    ("row", "schema"),
+    [
+        ('{"s": {"b": 1, "b": 2}}', {"s": pl.Struct({"b": pl.Int64})}),
+        (
+            '{"s": {"b": {"c": 1}, "b": 2}}',
+            {"s": pl.Struct({"b": pl.Struct({"c": pl.Int64})})},
+        ),
+        ('{"s": {"b": 1, "b": [2]}}', {"s": pl.Struct({"b": pl.Int64})}),
+        ('{"a": 2.5, "a": 1}', {"a": pl.Float64}),
+        ('{"a": "x", "a": 1}', {"a": pl.String}),
+    ],
+)
+def test_json_repeated_key_infers_first_value(row: str, schema: Any) -> None:
+    # Which value of a repeated key is read is unspecified (#29476).
+    assert pl.read_json(io.StringIO(f"[{row}]")).schema == schema
+    assert pl.scan_ndjson(io.BytesIO(f"{row}\n".encode())).collect_schema() == schema
+    assert pl.Series([row]).str.json_decode().dtype == pl.Struct(schema)

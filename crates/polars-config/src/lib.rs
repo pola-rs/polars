@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{LazyLock, Once};
 use std::time::Duration;
 
+mod cgroup;
 mod engine;
 mod file_advice;
 mod parse;
@@ -59,6 +60,9 @@ const DEFAULT_VERBOSE_SENSITIVE: bool = false;
 const FORCE_ASYNC: &str = "POLARS_FORCE_ASYNC";
 const DEFAULT_FORCE_ASYNC: bool = false;
 
+const LOG_CONCURRENCY: &str = "POLARS_LOG_CONCURRENCY";
+const DEFAULT_LOG_CONCURRENCY: bool = false;
+
 const SCAN_CHUNK_STATISTICS: &str = "POLARS_SCAN_CHUNK_STATISTICS";
 const DEFAULT_SCAN_CHUNK_STATISTICS: bool = false;
 
@@ -84,6 +88,9 @@ const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION";
 const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.5;
 
+const OOC_MEMORY_GRANT_FRACTION: &str = "POLARS_OOC_MEMORY_GRANT_FRACTION";
+const DEFAULT_OOC_MEMORY_GRANT_FRACTION: f64 = 0.75;
+
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
 const DEFAULT_OOC_DISK_BUDGET_MB: u64 = 64 * 1000; // 64 GB
 
@@ -99,11 +106,8 @@ const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
 
-const OOC_PRESSURE_DECAY: &str = "POLARS_OOC_PRESSURE_DECAY";
-const DEFAULT_OOC_PRESSURE_DECAY: bool = true;
-
-const OOC_PRESSURE_DECAY_GRACE_MS: &str = "POLARS_OOC_PRESSURE_DECAY_GRACE_MS";
-const DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS: u64 = 1000;
+const OOC_DIRTY_LIMIT_FRACTION: &str = "POLARS_OOC_DIRTY_LIMIT_FRACTION";
+const DEFAULT_OOC_DIRTY_LIMIT_FRACTION: f64 = 0.8;
 
 const OOMKILL_THRESHOLD_FRACTION: &str = "POLARS_OOMKILL_THRESHOLD_FRACTION";
 const DEFAULT_OOMKILL_THRESHOLD_FRACTION: f64 = f64::INFINITY;
@@ -117,6 +121,12 @@ const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 /// Whether hash joins publish key ranges to the parquet scans below them.
 const JOIN_RUNTIME_FILTERS: &str = "POLARS_JOIN_RUNTIME_FILTERS";
 const DEFAULT_JOIN_RUNTIME_FILTERS: bool = true;
+
+/// The fewest rows the scans under a hash join's probe side must read, together, for the join to
+/// publish a runtime filter to them. A join with one reads its build side before its probe side,
+/// which costs more than skipping parts of smaller scans saves.
+const JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS: &str = "POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS";
+const DEFAULT_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS: u64 = 1 << 20;
 
 /// Allows pruning of strict hconcat inputs in projection pushdown. This can reduce data loading
 /// but may discard shape errors.
@@ -163,7 +173,11 @@ const DEFAULT_FILE_POSIX_FADV: FileAdvice = FileAdvice::Normal;
 const FILE_DEFER_CACHED_READS: &str = "POLARS_FILE_DEFER_CACHED_READS";
 const DEFAULT_FILE_DEFER_CACHED_READS: bool = true;
 
-/// Initial number of slots of each hot table in the streaming group-by.
+/// Number of slots each hot table in the streaming group-by starts with.
+const MIN_HOT_TABLE_SIZE: &str = "POLARS_MIN_HOT_TABLE_SIZE";
+const DEFAULT_MIN_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 2 } else { 16 };
+
+/// Number of slots up to which the hot tables in the streaming group-by double after misses.
 const HOT_TABLE_SIZE: &str = "POLARS_HOT_TABLE_SIZE";
 const DEFAULT_HOT_TABLE_SIZE: u64 = if cfg!(debug_assertions) { 4 } else { 4096 };
 
@@ -208,6 +222,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     // Private.
     VERBOSE_SENSITIVE,
     FORCE_ASYNC,
+    LOG_CONCURRENCY,
     SCAN_CHUNK_STATISTICS,
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
@@ -216,17 +231,18 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
     OOC_MEMORY_PREFETCH_FRACTION,
+    OOC_MEMORY_GRANT_FRACTION,
     OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
     OOC_MAX_PARALLEL_SPILL_TASKS,
     OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
-    OOC_PRESSURE_DECAY,
-    OOC_PRESSURE_DECAY_GRACE_MS,
+    OOC_DIRTY_LIMIT_FRACTION,
     OOMKILL_THRESHOLD_FRACTION,
     OOMKILL_THRESHOLD_MB,
     JOIN_SAMPLE_LIMIT,
     JOIN_RUNTIME_FILTERS,
+    JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
     DNS_LOG_THRESHOLD_MS,
     NUMA_AWARE,
@@ -238,6 +254,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     FILE_READ_CONCURRENCY,
     FILE_POSIX_FADV,
     FILE_DEFER_CACHED_READS,
+    MIN_HOT_TABLE_SIZE,
     HOT_TABLE_SIZE,
     MAX_HOT_TABLE_SIZE,
 ];
@@ -259,6 +276,7 @@ pub struct Config {
     // Private.
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
+    log_concurrency: AtomicBool,
     scan_chunk_statistics: AtomicBool,
     import_interval_as_struct: AtomicBool,
     ooc_spill_format: AtomicU8,
@@ -266,17 +284,18 @@ pub struct Config {
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
     ooc_memory_prefetch_fraction: AtomicU64,
+    ooc_memory_grant_fraction: AtomicU64,
     ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
     ooc_max_parallel_spill_tasks: AtomicU64,
     ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
-    ooc_pressure_decay: AtomicBool,
-    ooc_pressure_decay_grace_ms: AtomicU64,
+    ooc_dirty_limit_fraction: AtomicU64,
     oomkill_threshold_fraction: AtomicU64,
     oomkill_threshold_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
     join_runtime_filters: AtomicBool,
+    join_runtime_filter_min_probe_rows: AtomicU64,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
@@ -288,12 +307,14 @@ pub struct Config {
     file_read_concurrency: AtomicU64,
     file_posix_fadv: AtomicU8,
     file_defer_cached_reads: AtomicBool,
+    min_hot_table_size: AtomicU64,
     hot_table_size: AtomicU64,
     max_hot_table_size: AtomicU64,
 
     // Derived from others.
     ooc_effective_memory_budget_bytes: AtomicU64,
     ooc_memory_prefetch_bytes: AtomicU64,
+    ooc_memory_grant_budget_bytes: AtomicU64,
 }
 
 impl Config {
@@ -316,6 +337,7 @@ impl Config {
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
+            log_concurrency: AtomicBool::new(DEFAULT_LOG_CONCURRENCY),
             scan_chunk_statistics: AtomicBool::new(DEFAULT_SCAN_CHUNK_STATISTICS),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
@@ -329,6 +351,7 @@ impl Config {
             ooc_memory_prefetch_fraction: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_PREFETCH_FRACTION.to_bits(),
             ),
+            ooc_memory_grant_fraction: AtomicU64::new(DEFAULT_OOC_MEMORY_GRANT_FRACTION.to_bits()),
             ooc_disk_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
             ),
@@ -338,8 +361,7 @@ impl Config {
                 DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
             ),
             ooc_log_metrics: AtomicBool::new(false),
-            ooc_pressure_decay: AtomicBool::new(DEFAULT_OOC_PRESSURE_DECAY),
-            ooc_pressure_decay_grace_ms: AtomicU64::new(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
+            ooc_dirty_limit_fraction: AtomicU64::new(DEFAULT_OOC_DIRTY_LIMIT_FRACTION.to_bits()),
             oomkill_threshold_fraction: AtomicU64::new(
                 DEFAULT_OOMKILL_THRESHOLD_FRACTION.to_bits(),
             ),
@@ -348,6 +370,9 @@ impl Config {
             ),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
             join_runtime_filters: AtomicBool::new(DEFAULT_JOIN_RUNTIME_FILTERS),
+            join_runtime_filter_min_probe_rows: AtomicU64::new(
+                DEFAULT_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS,
+            ),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
@@ -362,10 +387,12 @@ impl Config {
             file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
             file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
             file_defer_cached_reads: AtomicBool::new(DEFAULT_FILE_DEFER_CACHED_READS),
+            min_hot_table_size: AtomicU64::new(DEFAULT_MIN_HOT_TABLE_SIZE),
             hot_table_size: AtomicU64::new(DEFAULT_HOT_TABLE_SIZE),
             max_hot_table_size: AtomicU64::new(DEFAULT_MAX_HOT_TABLE_SIZE),
             ooc_effective_memory_budget_bytes: AtomicU64::new(0),
             ooc_memory_prefetch_bytes: AtomicU64::new(0),
+            ooc_memory_grant_budget_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
         cfg
@@ -409,6 +436,20 @@ impl Config {
         let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
+        let grant_frac = f64::from_bits(self.ooc_memory_grant_fraction.load(Ordering::Relaxed));
+        self.ooc_memory_grant_budget_bytes
+            .store((bytes as f64 * grant_frac) as u64, Ordering::Relaxed);
+
+        let dirty_limit_frac =
+            f64::from_bits(self.ooc_dirty_limit_fraction.load(Ordering::Relaxed));
+        OOC_DIRTY_LIMIT_BYTES_ATOMIC.store(
+            if dirty_limit_frac.is_finite() {
+                (total_memory() as f64 * dirty_limit_frac) as u64
+            } else {
+                u64::MAX
+            },
+            Ordering::Relaxed,
+        );
 
         let oomkill_frac = f64::from_bits(self.oomkill_threshold_fraction.load(Ordering::Relaxed));
         let oomkill_frac_bytes = if oomkill_frac.is_finite() {
@@ -495,6 +536,11 @@ impl Config {
                     .unwrap_or(DEFAULT_FORCE_ASYNC),
                 Ordering::Relaxed,
             ),
+            LOG_CONCURRENCY => self.log_concurrency.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_LOG_CONCURRENCY),
+                Ordering::Relaxed,
+            ),
             SCAN_CHUNK_STATISTICS => self.scan_chunk_statistics.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_SCAN_CHUNK_STATISTICS),
@@ -538,6 +584,12 @@ impl Config {
                     .to_bits(),
                 Ordering::Relaxed,
             ),
+            OOC_MEMORY_GRANT_FRACTION => self.ooc_memory_grant_fraction.store(
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 1.0))
+                    .unwrap_or(DEFAULT_OOC_MEMORY_GRANT_FRACTION)
+                    .to_bits(),
+                Ordering::Relaxed,
+            ),
             OOC_DISK_BUDGET_MB => self.ooc_disk_budget_bytes.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_DISK_BUDGET_MB)
@@ -566,14 +618,10 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
                 Ordering::Relaxed,
             ),
-            OOC_PRESSURE_DECAY => self.ooc_pressure_decay.store(
-                val.and_then(|x| parse::parse_bool(var, x))
-                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY),
-                Ordering::Relaxed,
-            ),
-            OOC_PRESSURE_DECAY_GRACE_MS => self.ooc_pressure_decay_grace_ms.store(
-                val.and_then(|x| parse::parse_u64(var, x))
-                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
+            OOC_DIRTY_LIMIT_FRACTION => self.ooc_dirty_limit_fraction.store(
+                val.and_then(|x| parse::parse_f64(var, x))
+                    .unwrap_or(DEFAULT_OOC_DIRTY_LIMIT_FRACTION)
+                    .to_bits(),
                 Ordering::Relaxed,
             ),
             OOMKILL_THRESHOLD_FRACTION => self.oomkill_threshold_fraction.store(
@@ -596,6 +644,11 @@ impl Config {
             JOIN_RUNTIME_FILTERS => self.join_runtime_filters.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_JOIN_RUNTIME_FILTERS),
+                Ordering::Relaxed,
+            ),
+            JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS => self.join_runtime_filter_min_probe_rows.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS),
                 Ordering::Relaxed,
             ),
             PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS => {
@@ -653,6 +706,11 @@ impl Config {
             FILE_DEFER_CACHED_READS => self.file_defer_cached_reads.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_FILE_DEFER_CACHED_READS),
+                Ordering::Relaxed,
+            ),
+            MIN_HOT_TABLE_SIZE => self.min_hot_table_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_MIN_HOT_TABLE_SIZE),
                 Ordering::Relaxed,
             ),
             HOT_TABLE_SIZE => self.hot_table_size.store(
@@ -757,6 +815,12 @@ impl Config {
         self.force_async.load(Ordering::Relaxed)
     }
 
+    /// Whether to log the cloud and scan pipeline concurrency state.
+    #[inline(always)]
+    pub fn log_concurrency(&self) -> bool {
+        self.log_concurrency.load(Ordering::Relaxed)
+    }
+
     /// Whether a parquet scan, besides its per-column totals, keeps the min, max, null count and
     /// sizes that each sampled row group records. Planners use these to estimate how a column's
     /// values are distributed across the files, e.g. how many rows a filter keeps.
@@ -809,6 +873,18 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn ooc_memory_grant_fraction(&self) -> f64 {
+        f64::from_bits(self.ooc_memory_grant_fraction.load(Ordering::Relaxed))
+    }
+
+    /// The size of the memory grant pool: `POLARS_OOC_MEMORY_GRANT_FRACTION` times
+    /// [`Self::ooc_memory_budget_bytes`].
+    #[inline(always)]
+    pub fn ooc_memory_grant_budget_bytes(&self) -> u64 {
+        self.ooc_memory_grant_budget_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn ooc_disk_budget_bytes(&self) -> u64 {
         self.ooc_disk_budget_bytes.load(Ordering::Relaxed)
     }
@@ -833,18 +909,6 @@ impl Config {
         self.ooc_log_metrics.load(Ordering::Relaxed)
     }
 
-    /// Whether the allocator returns freed memory right away while out-of-core
-    /// data is being spilled or is spilled.
-    #[inline(always)]
-    pub fn ooc_pressure_decay(&self) -> bool {
-        self.ooc_pressure_decay.load(Ordering::Relaxed)
-    }
-
-    #[inline(always)]
-    pub fn ooc_pressure_decay_grace_ms(&self) -> u64 {
-        self.ooc_pressure_decay_grace_ms.load(Ordering::Relaxed)
-    }
-
     pub fn ooc_spill_dir(&self) -> std::path::PathBuf {
         if let Ok(dir) = std::env::var("POLARS_OOC_SPILL_DIR") {
             std::path::PathBuf::from(dir)
@@ -866,6 +930,12 @@ impl Config {
     #[inline(always)]
     pub fn join_runtime_filters(&self) -> bool {
         self.join_runtime_filters.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn join_runtime_filter_min_probe_rows(&self) -> u64 {
+        self.join_runtime_filter_min_probe_rows
+            .load(Ordering::Relaxed)
     }
 
     #[inline(always)]
@@ -929,7 +999,13 @@ impl Config {
         self.file_defer_cached_reads.load(Ordering::Relaxed)
     }
 
-    /// Initial number of slots of each hot table in the streaming group-by.
+    /// Number of slots each hot table in the streaming group-by starts with.
+    #[inline(always)]
+    pub fn min_hot_table_size(&self) -> u64 {
+        self.min_hot_table_size.load(Ordering::Relaxed)
+    }
+
+    /// Number of slots up to which the hot tables in the streaming group-by double after misses.
     #[inline(always)]
     pub fn hot_table_size(&self) -> u64 {
         self.hot_table_size.load(Ordering::Relaxed)
@@ -966,7 +1042,7 @@ pub fn total_memory() -> u64 {
         [
             Some(sys.total_memory()),
             system_limit,
-            process_cgroup_memory_limit(),
+            cgroup::process_cgroup_memory_limit(),
         ]
         .into_iter()
         .flatten()
@@ -976,257 +1052,12 @@ pub fn total_memory() -> u64 {
     *TOTAL_MEMORY
 }
 
-/// The memory limit of the cgroup of this process, including the limits of
-/// its parent cgroups.
-///
-/// The root cgroup files only hold this limit if the process has its own cgroup
-/// namespace. We don't use sysinfo's process cgroup limits, as refreshing a
-/// process there raises the soft open file limit of this process.
-#[cfg(target_os = "linux")]
-fn process_cgroup_memory_limit() -> Option<u64> {
-    let cgroups = std::fs::read_to_string("/proc/self/cgroup").ok()?;
-    let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
-    cgroup_memory_limit(&cgroups, &mountinfo)
-}
-
-/// The memory limit for the cgroups in `cgroups` (the format of
-/// /proc/self/cgroup), with the hierarchies mounted as in `mountinfo`.
-#[cfg(target_os = "linux")]
-fn cgroup_memory_limit(cgroups: &str, mountinfo: &str) -> Option<u64> {
-    use std::path::{Path, PathBuf};
-
-    let read_u64 = |path: &Path| {
-        std::fs::read_to_string(path)
-            .ok()?
-            .trim()
-            .parse::<u64>()
-            .ok()
-    };
-
-    // The cgroup mounts as (is cgroup v2, mount root, mount point). A container
-    // may mount only its own part of the hierarchy, so cgroup paths are
-    // resolved against the mount root.
-    let mounts: Vec<(bool, PathBuf, PathBuf)> = mountinfo
-        .lines()
-        .filter_map(|line| {
-            let (mount, fs) = line.split_once(" - ")?;
-            let mut mount = mount.split(' ');
-            let mount_root = mount.nth(3)?;
-            let mount_point = mount.next()?;
-            let mut fs = fs.split(' ');
-            let fs_type = fs.next()?;
-            let super_options = fs.nth(1)?;
-            let is_v2 = match fs_type {
-                "cgroup2" => true,
-                "cgroup" if super_options.split(',').any(|o| o == "memory") => false,
-                _ => return None,
-            };
-            Some((
-                is_v2,
-                unescape_mount_path(mount_root),
-                unescape_mount_path(mount_point),
-            ))
-        })
-        .collect();
-
-    let cgroup_limit = |is_v2: bool, path: &str| {
-        mounts
-            .iter()
-            .filter(|(mount_is_v2, _, _)| *mount_is_v2 == is_v2)
-            .filter_map(|(_, mount_root, mount_point)| {
-                let dir = mount_point.join(Path::new(path).strip_prefix(mount_root).ok()?);
-                if is_v2 {
-                    // The limit of every parent applies. "max" fails to parse
-                    // and means no limit.
-                    dir.ancestors()
-                        .take_while(|dir| dir.starts_with(mount_point))
-                        .filter_map(|dir| read_u64(&dir.join("memory.max")))
-                        .min()
-                } else {
-                    // The kernel reports the limit that applies, taking
-                    // memory.use_hierarchy into account.
-                    std::fs::read_to_string(dir.join("memory.stat"))
-                        .ok()?
-                        .lines()
-                        .find_map(|l| l.strip_prefix("hierarchical_memory_limit "))?
-                        .trim()
-                        .parse::<u64>()
-                        .ok()
-                }
-            })
-            .min()
-    };
-
-    cgroups
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.splitn(3, ':');
-            let hierarchy_id = fields.next()?;
-            let controllers = fields.next()?;
-            let path = fields.next()?;
-
-            if hierarchy_id == "0" && controllers.is_empty() {
-                cgroup_limit(true, path)
-            } else if controllers.split(',').any(|c| c == "memory") {
-                cgroup_limit(false, path)
-            } else {
-                None
-            }
-        })
-        .min()
-}
-
-/// Decodes the octal escapes (such as `\040` for a space) of a path in
-/// /proc/self/mountinfo.
-#[cfg(target_os = "linux")]
-fn unescape_mount_path(path: &str) -> std::path::PathBuf {
-    use std::os::unix::ffi::OsStringExt;
-
-    let bytes = path.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\\'
-            && let Some(code) = bytes
-                .get(i + 1..i + 4)
-                .and_then(|d| u8::from_str_radix(std::str::from_utf8(d).ok()?, 8).ok())
-        {
-            out.push(code);
-            i += 4;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    std::ffi::OsString::from_vec(out).into()
-}
-
-#[cfg(not(target_os = "linux"))]
-fn process_cgroup_memory_limit() -> Option<u64> {
-    None
-}
-
-#[cfg(all(test, target_os = "linux"))]
-mod tests {
-    use std::fs;
-    use std::path::{Path, PathBuf};
-
-    use super::cgroup_memory_limit;
-
-    fn fake_mount(name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("polars-cgroup-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        for (path, content) in files {
-            let path = dir.join(path);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, content).unwrap();
-        }
-        dir
-    }
-
-    fn mountinfo_line(root: &str, mount_point: &Path, fs: &str) -> String {
-        format!(
-            "36 27 0:30 {root} {} rw,relatime shared:9 - {fs}",
-            mount_point.display()
-        )
-    }
-
-    #[test]
-    fn test_cgroup_v2_parent_limit() {
-        let mount = fake_mount(
-            "v2",
-            &[
-                ("memory.max", "max\n"),
-                ("a/memory.max", "2147483648\n"),
-                ("a/b/memory.max", "5368709120\n"),
-            ],
-        );
-        let mountinfo = mountinfo_line("/", &mount, "cgroup2 cgroup2 rw,nsdelegate");
-        assert_eq!(cgroup_memory_limit("0::/a/b\n", &mountinfo), Some(2 << 30));
-        assert_eq!(cgroup_memory_limit("0::/\n", &mountinfo), None);
-        fs::remove_dir_all(mount).unwrap();
-    }
-
-    #[test]
-    fn test_cgroup_v2_subtree_mount() {
-        // Only /docker/abc is mounted, with the process in its child "job".
-        let mount = fake_mount(
-            "v2-subtree",
-            &[
-                ("memory.max", "5368709120\n"),
-                ("job/memory.max", "2147483648\n"),
-            ],
-        );
-        let mountinfo = mountinfo_line("/docker/abc", &mount, "cgroup2 cgroup2 rw");
-        assert_eq!(
-            cgroup_memory_limit("0::/docker/abc/job\n", &mountinfo),
-            Some(2 << 30)
-        );
-        fs::remove_dir_all(mount).unwrap();
-    }
-
-    #[test]
-    fn test_cgroup_v2_skips_unrelated_mount() {
-        let unrelated = fake_mount("v2-unrelated", &[("memory.max", "1073741824\n")]);
-        let mount = fake_mount("v2-full", &[("a/job/memory.max", "2147483648\n")]);
-        let mountinfo = [
-            mountinfo_line("/b", &unrelated, "cgroup2 cgroup2 rw"),
-            mountinfo_line("/", &mount, "cgroup2 cgroup2 rw"),
-        ]
-        .join("\n");
-        assert_eq!(
-            cgroup_memory_limit("0::/a/job\n", &mountinfo),
-            Some(2 << 30)
-        );
-        fs::remove_dir_all(unrelated).unwrap();
-        fs::remove_dir_all(mount).unwrap();
-    }
-
-    #[test]
-    fn test_cgroup_escaped_mount_paths() {
-        let mount = fake_mount("v2 escaped", &[("job/memory.max", "2147483648\n")]);
-        let escaped_mount = mount.display().to_string().replace(' ', "\\040");
-        let mountinfo = mountinfo_line(
-            "/batch\\040jobs",
-            Path::new(&escaped_mount),
-            "cgroup2 cgroup2 rw",
-        );
-        assert_eq!(
-            cgroup_memory_limit("0::/batch jobs/job\n", &mountinfo),
-            Some(2 << 30)
-        );
-        fs::remove_dir_all(mount).unwrap();
-    }
-
-    #[test]
-    fn test_cgroup_v1_subtree_mount() {
-        let mount = fake_mount(
-            "v1-subtree",
-            &[(
-                "job/memory.stat",
-                "cache 0\nhierarchical_memory_limit 2147483648\n",
-            )],
-        );
-        let mountinfo = [
-            mountinfo_line(
-                "/docker/abc",
-                Path::new("/nonexistent/cpu"),
-                "cgroup cgroup rw,cpu",
-            ),
-            mountinfo_line("/docker/abc", &mount, "cgroup cgroup rw,memory"),
-        ]
-        .join("\n");
-        let cgroups = "4:cpu:/docker/abc/job\n7:memory:/docker/abc/job\n";
-        assert_eq!(cgroup_memory_limit(cgroups, &mountinfo), Some(2 << 30));
-        fs::remove_dir_all(mount).unwrap();
-    }
-}
-
 // These have to be standalone because LazyLock may not be called from allocator.
 // Plus, it's faster this way.
 static OOC_DRIFT_THRESHOLD_ATOMIC: AtomicU64 = AtomicU64::new(DEFAULT_OOC_DRIFT_THRESHOLD);
 static OOMKILL_THRESHOLD_BYTES_ATOMIC: AtomicU64 =
     AtomicU64::new(DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000));
+static OOC_DIRTY_LIMIT_BYTES_ATOMIC: AtomicU64 = AtomicU64::new(u64::MAX);
 
 #[inline(always)]
 pub fn get_ooc_drift_threshold() -> u64 {
@@ -1236,4 +1067,11 @@ pub fn get_ooc_drift_threshold() -> u64 {
 #[inline(always)]
 pub fn get_oomkill_threshold_bytes() -> u64 {
     OOMKILL_THRESHOLD_BYTES_ATOMIC.load(Ordering::Relaxed)
+}
+
+/// `POLARS_OOC_DIRTY_LIMIT_FRACTION` times the total memory: the allocator frees
+/// unused pages before the tracked memory plus those pages would exceed it.
+#[inline(always)]
+pub fn get_ooc_dirty_limit_bytes() -> u64 {
+    OOC_DIRTY_LIMIT_BYTES_ATOMIC.load(Ordering::Relaxed)
 }

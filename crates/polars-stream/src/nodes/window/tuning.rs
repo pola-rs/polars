@@ -10,6 +10,10 @@ const RANGES_PER_PIPELINE: usize = 4;
 const DEFAULT_MIN_ROWS_PER_PARTITION: usize = 4096;
 /// The smallest budget the sizes are derived from. Spilling uses the configured budget.
 const MIN_SIZING_BUDGET: usize = 64 << 20;
+/// The fewest partitions rows are split into as they arrive.
+const MIN_SINK_PARTITIONS: usize = 16;
+/// The largest frame a partition buffer grows to before it is stored.
+const MAX_FRAME_BYTES: usize = 64 << 20;
 
 fn env_var<T: FromStr>(name: &str) -> Option<T> {
     let v = std::env::var(name).ok()?;
@@ -49,6 +53,7 @@ pub struct WindowTuning {
     batch_bytes: Option<usize>,
     range_bytes: Option<usize>,
     max_partition_bytes: Option<usize>,
+    max_whole_bytes: Option<usize>,
 }
 
 impl WindowTuning {
@@ -61,6 +66,7 @@ impl WindowTuning {
             batch_bytes: env_var("POLARS_WINDOW_BATCH_BYTES"),
             range_bytes: env_var("POLARS_WINDOW_RANGE_BYTES"),
             max_partition_bytes: env_var("POLARS_WINDOW_MAX_PARTITION_BYTES"),
+            max_whole_bytes: env_var("POLARS_WINDOW_MAX_WHOLE_BYTES"),
         }
     }
 
@@ -87,6 +93,39 @@ impl WindowTuning {
     /// A partition that needs more on its own is split again.
     pub fn max_partition_bytes(&self) -> usize {
         self.max_partition_bytes.unwrap_or_else(|| budget() / 2)
+    }
+
+    /// The size of the morsels stored whole above which rows are partitioned as they arrive.
+    pub fn max_whole_bytes(&self) -> usize {
+        self.max_whole_bytes.unwrap_or_else(|| budget() / 4)
+    }
+
+    /// The number of partitions rows are split into as they arrive, the size at which the rows
+    /// of a partition are stored as a frame, and the smallest frame that is spilled on its own.
+    /// The partitions buffer about a quarter of the budget together.
+    pub fn sink_partitions(&self) -> (usize, usize, usize) {
+        let allowance = budget() / 4;
+        let min_frame_bytes = usize::try_from(polars_config::config().ooc_spill_min_bytes())
+            .unwrap_or(usize::MAX)
+            .saturating_mul(4)
+            .max(1);
+        let num_partitions = self.num_partitions.unwrap_or_else(|| {
+            (allowance / min_frame_bytes).clamp(MIN_SINK_PARTITIONS, MAX_PARTITIONS)
+        });
+        let frame_bytes = (allowance / num_partitions)
+            .min(MAX_FRAME_BYTES)
+            .max(min_frame_bytes);
+        (num_partitions, frame_bytes, min_frame_bytes)
+    }
+
+    pub fn min_rows_per_partition(&self) -> usize {
+        self.min_rows_per_partition
+    }
+
+    /// The most work a unit of partitions evaluated in one task may need, unless a single
+    /// partition needs more.
+    pub fn max_unit_bytes(&self, num_pipelines: usize) -> usize {
+        self.max_partition_bytes() / num_pipelines.max(1)
     }
 
     /// The number of partitions for `num_rows` rows that each need `bytes_per_row` of working

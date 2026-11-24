@@ -27,7 +27,7 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     dfn: D,
 ) -> ParquetResult<()> {
     let can_filter_on_raw_data =
-        // Floats have different equality that just byte-wise comparison.
+        // Floats have different equality than just byte-wise comparison.
         // @TODO: Maybe be smarter about this, because most predicates should not hit this problem.
         !matches!(T::PRIMITIVE, PrimitiveType::Float16 | PrimitiveType::Float32 | PrimitiveType::Float64) &&
         D::CAN_TRANSMUTE && !D::NEED_TO_DECODE;

@@ -11,58 +11,78 @@ use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;
 use crate::fixed::numeric::FixedLengthEncoding;
-use crate::fixed::{boolean, decimal, numeric};
+use crate::fixed::{boolean, decimal, numeric, packed};
+use crate::layout::RowEncodingLayout;
 use crate::variable::{binary, no_order, utf8};
 
 /// Decode `rows` into a arrow format
 /// # Safety
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
-/// encodings.
-pub unsafe fn decode_rows_from_binary<'a>(
-    arr: &'a BinaryArray<i64>,
-    opts: &[RowEncodingOptions],
-    dicts: &[Option<RowEncodingContext>],
-    dtypes: &[ArrowDataType],
-    rows: &mut Vec<&'a [u8]>,
+/// encodings of `layout`.
+pub unsafe fn decode_rows_from_array(
+    rows: &dyn Array,
+    layout: &RowEncodingLayout,
 ) -> Vec<ArrayRef> {
-    assert_eq!(arr.null_count(), 0);
-    rows.clear();
-    let values = arr.values().as_slice();
-    let offsets = arr.offsets();
-    rows.extend(
-        offsets[..offsets.len() - 1]
-            .iter()
-            .map(|&start| values.get_unchecked(start as usize..)),
-    );
-    decode_rows(rows, opts, dicts, dtypes)
+    if layout.is_pass_through() {
+        let rows = match layout.fields()[0].dtype {
+            ArrowDataType::Utf8View => rows
+                .as_any()
+                .downcast_ref::<BinaryViewArray>()
+                .unwrap()
+                .to_utf8view_unchecked()
+                .boxed(),
+            _ => rows.to_boxed(),
+        };
+        return vec![rows];
+    }
+
+    assert_eq!(rows.null_count(), 0);
+    match layout.dtype() {
+        ArrowDataType::LargeBinary => {
+            let arr = rows.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+            let values = arr.values().as_slice();
+            let offsets = arr.offsets();
+            let mut rows: Vec<&[u8]> = offsets[..offsets.len() - 1]
+                .iter()
+                .map(|&start| values.get_unchecked(start as usize..))
+                .collect();
+            decode_rows(&mut rows, layout)
+        },
+        ArrowDataType::BinaryView => {
+            let arr = rows.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            let mut rows: Vec<&[u8]> = arr.values_iter().collect();
+            decode_rows(&mut rows, layout)
+        },
+        _ => packed::decode(rows, layout),
+    }
 }
 
-/// Decode `rows` into a arrow format
+/// Decode `rows` into a arrow format. Only for layouts whose rows are bytes and not the column
+/// itself.
 ///
 /// A row slice may extend past the end of that row.
 ///
 /// # Safety
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
-/// encodings.
+/// encodings of `layout`.
 pub unsafe fn decode_rows(
-    // the rows will be updated while the data is decoded
+    // the rows may be advanced while the data is decoded
     rows: &mut [&[u8]],
-    opts: &[RowEncodingOptions],
-    dicts: &[Option<RowEncodingContext>],
-    dtypes: &[ArrowDataType],
+    layout: &RowEncodingLayout,
 ) -> Vec<ArrayRef> {
-    assert_eq!(opts.len(), dtypes.len());
-    assert_eq!(dicts.len(), dtypes.len());
-
-    dtypes
+    assert!(!layout.is_pass_through() && !layout.is_packed());
+    layout
+        .fields()
         .iter()
-        .zip(opts)
-        .zip(dicts)
-        .map(|((dtype, opt), dict)| decode(rows, *opt, dict.as_ref(), dtype))
+        .map(|f| decode(rows, f.opt, f.ctx.as_ref(), &f.dtype))
         .collect()
 }
 
 unsafe fn decode_validity(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Option<Bitmap> {
+    if !opt.encode_nulls() {
+        return None;
+    }
+
     // 2 loop system to avoid the overhead of allocating the bitmap if all the elements are valid.
 
     let null_sentinel = opt.null_sentinel();
@@ -101,6 +121,15 @@ fn dtype_and_data_to_encoded_item_len(
     }
 
     use ArrowDataType as D;
+
+    // Lexically ordered categoricals are encoded as their string.
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict
+        && !ctx.is_enum
+        && matches!(dtype, D::UInt8 | D::UInt16 | D::UInt32)
+    {
+        return unsafe { utf8::len_from_buffer(data, opt) };
+    }
+
     match dtype {
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
             if opt.contains(RowEncodingOptions::NO_ORDER) =>
@@ -127,8 +156,8 @@ fn dtype_and_data_to_encoded_item_len(
 
         D::FixedSizeBinary(_) => todo!(),
         D::FixedSizeList(fsl_field, width) => {
-            let mut data = &data[1..];
-            let mut item_len = 1; // validity byte
+            let mut item_len = opt.encode_nulls() as usize;
+            let mut data = &data[item_len..];
 
             for _ in 0..*width {
                 let len = dtype_and_data_to_encoded_item_len(
@@ -143,8 +172,8 @@ fn dtype_and_data_to_encoded_item_len(
             item_len
         },
         D::Struct(struct_fields) => {
-            let mut data = &data[1..];
-            let mut item_len = 1; // validity byte
+            let mut item_len = opt.encode_nulls() as usize;
+            let mut data = &data[item_len..];
 
             let field_dict_at = |idx: usize| -> Option<&RowEncodingContext> {
                 match dict {

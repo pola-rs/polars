@@ -49,6 +49,10 @@ fn new_reduction_with_policy<P: Policy + 'static>(
             dtype,
             BinaryFirstLastReducer::<_, BinaryOffsetType>(policy, PhantomData),
         )),
+        #[cfg(feature = "dtype-struct")]
+        Struct(ref fields) if !fields.is_empty() => {
+            Box::new(StructFirstLastGroupedReduction::new(dtype, policy))
+        },
         _ => Box::new(GenericFirstLastGroupedReduction::new(dtype, policy)),
     }
 }
@@ -497,6 +501,179 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         }
         // SAFETY: dtype is valid for series.
         unsafe { buf.into_series().from_physical_unchecked(&self.in_dtype) }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// First or last value of a struct column, reduced per field.
+#[cfg(feature = "dtype-struct")]
+struct StructFirstLastGroupedReduction {
+    in_dtype: DataType,
+    fields: Vec<Box<dyn GroupedReduction>>,
+    /// Whether the picked struct value is not null.
+    validity: Box<dyn GroupedReduction>,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl StructFirstLastGroupedReduction {
+    fn new<P: Policy>(in_dtype: DataType, policy: P) -> Self {
+        let DataType::Struct(fields) = &in_dtype else {
+            unreachable!()
+        };
+        let fields = fields
+            .iter()
+            .map(|f| new_reduction_with_policy(f.dtype().clone(), policy))
+            .collect();
+        Self {
+            fields,
+            validity: new_reduction_with_policy(DataType::Boolean, policy),
+            in_dtype,
+        }
+    }
+
+    /// The field columns and the validity column of `values`.
+    fn split(values: &Column) -> PolarsResult<(Vec<Column>, Column)> {
+        let ca = values.struct_()?;
+        let fields = ca
+            .fields_as_series()
+            .into_iter()
+            .map(Column::from)
+            .collect();
+        Ok((fields, ca.is_not_null().into_column()))
+    }
+
+    fn map_all(
+        &mut self,
+        mut f: impl FnMut(&mut Box<dyn GroupedReduction>, Option<usize>) -> PolarsResult<()>,
+    ) -> PolarsResult<()> {
+        for (i, r) in self.fields.iter_mut().enumerate() {
+            f(r, Some(i))?;
+        }
+        f(&mut self.validity, None)
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl GroupedReduction for StructFirstLastGroupedReduction {
+    fn new_empty(&self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            in_dtype: self.in_dtype.clone(),
+            fields: self.fields.iter().map(|r| r.new_empty()).collect(),
+            validity: self.validity.new_empty(),
+        })
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        let _ = self.map_all(|r, _| {
+            r.reserve(additional);
+            Ok(())
+        });
+    }
+
+    fn resize(&mut self, num_groups: IdxSize) {
+        let _ = self.map_all(|r, _| {
+            r.resize(num_groups);
+            Ok(())
+        });
+    }
+
+    fn update_group(
+        &mut self,
+        values: &[&Column],
+        group_idx: IdxSize,
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        let (fields, validity) = Self::split(values)?;
+        self.map_all(|r, i| {
+            let col = i.map_or(&validity, |i| &fields[i]);
+            r.update_group(&[col], group_idx, seq_id)
+        })
+    }
+
+    unsafe fn update_groups_subset(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        let (fields, validity) = Self::split(values)?;
+        self.map_all(|r, i| {
+            let col = i.map_or(&validity, |i| &fields[i]);
+            r.update_groups_subset(&[col], subset, group_idxs, seq_id)
+        })
+    }
+
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
+        let (fields, validity) = Self::split(values)?;
+        self.map_all(|r, i| {
+            let col = i.map_or(&validity, |i| &fields[i]);
+            r.update_groups_while_evicting(&[col], subset, group_idxs, seq_id)
+        })
+    }
+
+    unsafe fn combine_subset(
+        &mut self,
+        other: &dyn GroupedReduction,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        let other = other.as_any().downcast_ref::<Self>().unwrap();
+        assert!(self.in_dtype == other.in_dtype);
+        self.map_all(|r, i| {
+            let o = i.map_or(&other.validity, |i| &other.fields[i]);
+            r.combine_subset(o.as_ref(), subset, group_idxs)
+        })
+    }
+
+    fn num_fixed_states(&self) -> usize {
+        self.fields
+            .iter()
+            .map(|r| r.num_fixed_states())
+            .sum::<usize>()
+            + self.validity.num_fixed_states()
+    }
+
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            in_dtype: self.in_dtype.clone(),
+            fields: self.fields.iter_mut().map(|r| r.take_evictions()).collect(),
+            validity: self.validity.take_evictions(),
+        })
+    }
+
+    fn finalize(&mut self) -> PolarsResult<Series> {
+        let DataType::Struct(dtype_fields) = &self.in_dtype else {
+            unreachable!()
+        };
+        let fields = self
+            .fields
+            .iter_mut()
+            .zip(dtype_fields)
+            .map(|(r, f)| Ok(r.finalize()?.with_name(f.name().clone())))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let validity = self.validity.finalize()?;
+        let validity = validity.bool()?;
+        let ca = StructChunked::from_series(PlSmallStr::EMPTY, validity.len(), fields.iter())?;
+        let valid = validity
+            .fill_null_with_values(false)?
+            .rechunk()
+            .into_owned();
+        let valid = valid.downcast_as_array().values().clone();
+        let outer_validity = (valid.unset_bits() > 0).then_some(valid);
+        Ok(ca.with_outer_validity(outer_validity).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

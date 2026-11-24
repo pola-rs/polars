@@ -109,19 +109,17 @@ impl IR {
                     && l_validate_schema == r_validate_schema
             },
             IR::Slice {
-                offset: l_offset,
-                len: l_len,
+                slice: l_slice,
                 input: _,
             } => {
                 let IR::Slice {
-                    offset: r_offset,
-                    len: r_len,
+                    slice: r_slice,
                     input: _,
                 } = other
                 else {
                     return false;
                 };
-                l_len == r_len && l_offset == r_offset
+                l_slice == r_slice
             },
             IR::Filter {
                 input: _,

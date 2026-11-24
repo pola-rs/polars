@@ -16,7 +16,7 @@ pub struct ParquetMetadataContext<'a> {
     pub arrow_schema: &'a str,
 }
 
-/// Key/value pairs that can be attached to a Parquet file as file-level metadtaa.
+/// Key/value pairs that can be attached to a Parquet file as file-level metadata.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -97,6 +97,16 @@ impl KeyValueMetadata {
             Self::DynamicRust(func) => Ok(func.0(ctx)),
             #[cfg(feature = "python")]
             Self::DynamicPython(py_func) => py_func.call(ctx),
+        }
+    }
+
+    /// Whether the metadata may set `key`; dynamic metadata is only known when the file is finished.
+    pub fn may_contain(&self, key: &str) -> bool {
+        match self {
+            Self::Static(kv) => kv.iter().any(|kv| kv.key == key),
+            Self::DynamicRust(_) => true,
+            #[cfg(feature = "python")]
+            Self::DynamicPython(_) => true,
         }
     }
 }

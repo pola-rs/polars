@@ -37,7 +37,7 @@ pub use utf8_to::*;
 pub struct CastOptionsImpl {
     /// default to false
     /// whether an overflowing cast should be converted to `None` (default), or be wrapped (i.e. `256i16 as u8 = 0` vectorized).
-    /// Settings this to `true` is 5-6x faster for numeric types.
+    /// Setting this to `true` is 5-6x faster for numeric types.
     pub wrapped: bool,
     /// default to false
     /// whether to cast to an integer at the best-effort
@@ -427,9 +427,29 @@ pub fn cast(
         (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
             dictionary_cast_dyn::<$T>(array, to_type, options)
         }),
-        (_, Dictionary(index_type, value_type, ordered)) => match_integer_type!(index_type, |$T| {
-            cast_to_dictionary::<$T>(array, value_type, *ordered, options)
-        }),
+        (_, Dictionary(index_type, value_type, ordered)) => {
+            let narrow = matches!(
+                index_type,
+                IntegerType::Int8
+                    | IntegerType::Int16
+                    | IntegerType::Int32
+                    | IntegerType::UInt8
+                    | IntegerType::UInt16
+                    | IntegerType::UInt32
+            );
+            let dict = if narrow {
+                cast_to_dictionary::<u32>(array, value_type, *ordered, options)?
+            } else {
+                cast_to_dictionary::<u64>(array, value_type, *ordered, options)?
+            };
+            if dict.dtype() == to_type {
+                Ok(dict)
+            } else if narrow {
+                dictionary_cast_dyn::<u32>(dict.as_ref(), to_type, options)
+            } else {
+                dictionary_cast_dyn::<u64>(dict.as_ref(), to_type, options)
+            }
+        },
         // not supported by polars
         // (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(
         //     array.as_any().downcast_ref().unwrap(),

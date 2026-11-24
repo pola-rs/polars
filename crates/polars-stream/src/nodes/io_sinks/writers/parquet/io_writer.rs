@@ -4,9 +4,9 @@ use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self};
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
+use polars_io::parquet::encryption::ParquetEncryption;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::KeyValueMetadata;
-use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::write::{
     Encoding, FileWriter, SchemaDescriptor, WriteOptions, write_metadata_sidecar,
 };
@@ -24,7 +24,7 @@ pub struct IOWriter {
     pub encodings: Buffer<Vec<Encoding>>,
     pub key_value_metadata: Option<KeyValueMetadata>,
     pub num_leaf_columns: usize,
-    pub encryption_properties: Option<Arc<FileEncryptionProperties>>,
+    pub encryption: Option<ParquetEncryption>,
 }
 
 impl IOWriter {
@@ -38,10 +38,14 @@ impl IOWriter {
             encodings,
             key_value_metadata,
             num_leaf_columns,
-            encryption_properties,
+            encryption,
         } = self;
 
-        let (mut file, sync_on_close) = file.await?;
+        let encryption_properties = encryption
+            .as_ref()
+            .map(ParquetEncryption::file_properties)
+            .transpose()?;
+        let (mut file, sync_on_close, finish) = file.await?;
         let mut buffered_file = file.as_buffered_writable();
 
         let mut parquet_writer = BatchedWriter::new(
@@ -70,6 +74,7 @@ impl IOWriter {
             drop(morsel_permit);
         }
 
+        finish.wait().await?;
         parquet_writer.finish()?;
         // Encrypted files have no plaintext metadata to expose.
         let parquet_metadata = {

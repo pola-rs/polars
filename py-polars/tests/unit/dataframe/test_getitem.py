@@ -345,7 +345,7 @@ def test_df_getitem() -> None:
 
 
 def test_df_getitem_numpy() -> None:
-    # nupmy getitem: assumed to be row indices if integers, or columns if strings
+    # numpy getitem: assumed to be row indices if integers, or columns if strings
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
 
     # numpy array: positive idxs and empty idx
@@ -392,6 +392,13 @@ def test_df_getitem_numpy() -> None:
         match="multi-dimensional NumPy arrays not supported as index",
     ):
         df[np.array([[0], [1]])]
+
+
+@pytest.mark.parametrize("np_dtype", [np.int64, np.uint64])
+def test_df_getitem_numpy_large_index_31010(np_dtype: type) -> None:
+    df = pl.DataFrame({"a": [10, 11, 12, 13, 14]})
+    with pytest.raises((ValueError, pl.exceptions.OutOfBoundsError)):
+        df[np.array([2**32 + 3], dtype=np_dtype)]
 
 
 def test_df_getitem_extended() -> None:

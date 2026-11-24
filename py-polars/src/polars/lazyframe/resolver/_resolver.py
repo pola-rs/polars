@@ -51,6 +51,9 @@ class LazyFrameResolver(abc.ABC):
         projection
             Columns to project. If set to `None`, all columns should be projected.
 
+            An empty list means that only the row count is needed. Preserve the
+            height of the result, for example with `lf.drop("*")`.
+
             In the presence of filters, this may not contain all of the column
             names being referenced by filters. These can be found in `filter_columns`.
         limit

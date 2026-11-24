@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars_core::datatypes::AnyValue;
 #[cfg(feature = "dtype-datetime")]
 use polars_core::prelude::TimeZone;
-use polars_core::prelude::{DataType, ExplodeOptions, Schema, TimeUnit};
+use polars_core::prelude::{ChunkCompareEq, DataType, ExplodeOptions, NamedFrom, Schema, TimeUnit};
 use polars_core::series::Series;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
@@ -30,6 +30,7 @@ pub(crate) fn needle_isin_haystack(
     needle: &DataType,
     lv: &LiteralValue,
     nulls_equal: bool,
+    list_limit: Option<usize>,
 ) -> Option<IsInHaystack> {
     let haystack = lv.get_datatype();
     // Otherwise pyarrow would compare by its own coercion rules.
@@ -37,42 +38,39 @@ pub(crate) fn needle_isin_haystack(
         return None;
     }
 
+    // A null haystack gives null for every row, which `isin` can't express.
     let mut haystack_series = if let LiteralValue::Series(s) = lv
         && s.dtype().is_list()
         && s.len() == 1
+        && s.null_count() == 0
     {
-        if s.null_count() == 0 {
-            s.explode(ExplodeOptions {
-                empty_as_null: false,
-                keep_nulls: false,
-            })
-            .ok()?
-        } else {
-            Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
-        }
+        s.explode(ExplodeOptions {
+            empty_as_null: false,
+            keep_nulls: false,
+        })
+        .ok()?
     } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
         s
-    } else if lv.is_null() {
-        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
     } else {
         return None;
     };
 
-    let converted_len = haystack_series.len()
-        - if nulls_equal {
-            0
-        } else {
-            haystack_series.null_count()
-        };
-
-    if converted_len > LIST_ITEM_LIMIT {
-        return None;
-    }
-    if converted_len == 0 {
-        return Some(IsInHaystack::Empty);
-    }
     if !nulls_equal {
         haystack_series = haystack_series.drop_nulls();
+    }
+    // PyArrow's `isin` distinguishes `-0.0` from `0.0`, Polars does not.
+    if haystack_series.dtype().is_float() && haystack_series.equal(0.0f64).ok()?.any() {
+        let zeros = Series::new(PlSmallStr::EMPTY, [0.0f64, -0.0])
+            .cast(haystack_series.dtype())
+            .ok()?;
+        haystack_series.append(&zeros).ok()?;
+    }
+
+    if list_limit.is_some_and(|limit| haystack_series.len() > limit) {
+        return None;
+    }
+    if haystack_series.is_empty() {
+        return Some(IsInHaystack::Empty);
     }
     Some(IsInHaystack::Series(haystack_series))
 }
@@ -208,13 +206,33 @@ pub fn predicate_to_pa(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
 ) -> Option<String> {
+    to_pa(predicate, expr_arena, schema, Some(LIST_ITEM_LIMIT))
+}
+
+/// [`predicate_to_pa`] with `is_in` lists of up to `list_limit` values (`None`: any length).
+pub fn predicate_to_pa_with_list_limit(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    list_limit: Option<usize>,
+) -> Option<String> {
+    to_pa(predicate, expr_arena, schema, list_limit)
+}
+
+fn to_pa(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    list_limit: Option<usize>,
+) -> Option<String> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => match op {
             Operator::EqValidity | Operator::NotEqValidity => {
-                validity_comparison_to_pa(*left, *right, *op, expr_arena, schema)
+                validity_comparison_to_pa(*left, *right, *op, expr_arena, schema, list_limit)
             },
             Operator::Xor => {
-                let (lhs, rhs) = boolean_operands_to_pa(*left, *right, expr_arena, schema)?;
+                let (lhs, rhs) =
+                    boolean_operands_to_pa(*left, *right, expr_arena, schema, list_limit)?;
 
                 Some(format!("(({lhs} | {rhs}) & ~({lhs} & {rhs}))"))
             },
@@ -222,8 +240,8 @@ pub fn predicate_to_pa(
                 let symbol = binary_op_symbol(op)?;
                 reject_inexact_arithmetic(*left, *right, *op, expr_arena, schema)?;
 
-                let mut lhs = predicate_to_pa(*left, expr_arena, schema)?;
-                let rhs = predicate_to_pa(*right, expr_arena, schema)?;
+                let mut lhs = to_pa(*left, expr_arena, schema, list_limit)?;
+                let rhs = to_pa(*right, expr_arena, schema, list_limit)?;
 
                 if op.is_arithmetic() {
                     // PyArrow expressions define no reflected arithmetic operators, so a
@@ -296,13 +314,13 @@ pub fn predicate_to_pa(
             input,
             ..
         } => {
-            let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+            let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
 
             let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
                 return None;
             };
             let needle = input[0].dtype(schema, expr_arena).ok()?;
-            match needle_isin_haystack(function, needle, lv, *nulls_equal)? {
+            match needle_isin_haystack(function, needle, lv, *nulls_equal, list_limit)? {
                 IsInHaystack::Empty => Some("pa.compute.scalar(False)".to_string()),
                 IsInHaystack::Series(s) => {
                     let values = series_to_pyarrow_list(&s)?;
@@ -319,7 +337,7 @@ pub fn predicate_to_pa(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 None
             } else {
-                let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+                let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
                 let left_cmp_op = match closed {
                     ClosedInterval::None | ClosedInterval::Right => Operator::Gt,
                     ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
@@ -329,8 +347,8 @@ pub fn predicate_to_pa(
                     ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
                 };
 
-                let lower = predicate_to_pa(input.get(1)?.node(), expr_arena, schema)?;
-                let upper = predicate_to_pa(input.get(2)?.node(), expr_arena, schema)?;
+                let lower = to_pa(input.get(1)?.node(), expr_arena, schema, list_limit)?;
+                let upper = to_pa(input.get(2)?.node(), expr_arena, schema, list_limit)?;
 
                 Some(format!(
                     "(({col} {left_cmp_op} {lower}) & ({col} {right_cmp_op} {upper}))"
@@ -343,7 +361,7 @@ pub fn predicate_to_pa(
             input,
             ..
         } => {
-            let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+            let col = to_pa(input.first()?.node(), expr_arena, schema, list_limit)?;
             let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
                 return None;
             };
@@ -375,7 +393,7 @@ pub fn predicate_to_pa(
                     return None;
                 }
             }
-            let input = predicate_to_pa(input.node(), expr_arena, schema)?;
+            let input = to_pa(input.node(), expr_arena, schema, list_limit)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => Some(format!("~({input})")),
@@ -406,6 +424,7 @@ fn validity_comparison_to_pa(
     op: Operator,
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
+    list_limit: Option<usize>,
 ) -> Option<String> {
     // The column is repeated in the output, so restrict this to plain columns.
     let (column, literal, lv) = match (expr_arena.get(left), expr_arena.get(right)) {
@@ -415,7 +434,7 @@ fn validity_comparison_to_pa(
     };
 
     let eq = matches!(op, Operator::EqValidity);
-    let column = predicate_to_pa(column, expr_arena, schema)?;
+    let column = to_pa(column, expr_arena, schema, list_limit)?;
 
     Some(if lv.is_null() {
         if eq {
@@ -424,7 +443,7 @@ fn validity_comparison_to_pa(
             format!("~({column}).is_null()")
         }
     } else {
-        let literal = predicate_to_pa(literal, expr_arena, schema)?;
+        let literal = to_pa(literal, expr_arena, schema, list_limit)?;
 
         // A null column value is not equal to a non-null literal, whereas the
         // plain comparison would evaluate to null.
@@ -443,14 +462,15 @@ fn boolean_operands_to_pa(
     right: Node,
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
+    list_limit: Option<usize>,
 ) -> Option<(String, String)> {
     if !(returns_boolean(left, expr_arena) && returns_boolean(right, expr_arena)) {
         return None;
     }
 
     Some((
-        predicate_to_pa(left, expr_arena, schema)?,
-        predicate_to_pa(right, expr_arena, schema)?,
+        to_pa(left, expr_arena, schema, list_limit)?,
+        to_pa(right, expr_arena, schema, list_limit)?,
     ))
 }
 
@@ -683,15 +703,29 @@ pub fn aexpr_to_pyarrow<'py>(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
 ) -> Option<Bound<'py, PyAny>> {
-    match expr_arena.get(predicate) {
+    aexpr_to_pyarrow_impl(py, pc, predicate, expr_arena, schema, true)
+}
+
+// `null_as_false` is set when a null result filters out the row just like
+// `false` does, so the conversion may give `false` where Polars gives null.
+fn aexpr_to_pyarrow_impl<'py>(
+    py: Python<'py>,
+    pc: &Bound<'py, PyAny>,
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+    null_as_false: bool,
+) -> Option<Bound<'py, PyAny>> {
+    let convert = |node: Node| aexpr_to_pyarrow_impl(py, pc, node, expr_arena, schema, false);
+    match expr_arena.get(node) {
         AExpr::BinaryExpr { left, right, op } => {
             if matches!(op, Operator::Xor) {
                 if !(returns_boolean(*left, expr_arena) && returns_boolean(*right, expr_arena)) {
                     return None;
                 }
 
-                let l = aexpr_to_pyarrow(py, pc, *left, expr_arena, schema)?;
-                let r = aexpr_to_pyarrow(py, pc, *right, expr_arena, schema)?;
+                let l = convert(*left)?;
+                let r = convert(*right)?;
                 let any = l.call_method1("__or__", (&r,)).ok()?;
                 let both = l
                     .call_method1("__and__", (&r,))
@@ -705,8 +739,17 @@ pub fn aexpr_to_pyarrow<'py>(
             let method = binary_op_method(op)?;
             reject_inexact_arithmetic(*left, *right, *op, expr_arena, schema)?;
 
-            let l = aexpr_to_pyarrow(py, pc, *left, expr_arena, schema)?;
-            let r = aexpr_to_pyarrow(py, pc, *right, expr_arena, schema)?;
+            // Under Kleene logic a null operand of `&` or `|` gives the same
+            // filter result as a `false` one.
+            let operand_null_as_false = null_as_false
+                && matches!(
+                    op,
+                    Operator::And | Operator::Or | Operator::LogicalAnd | Operator::LogicalOr
+                );
+            let l =
+                aexpr_to_pyarrow_impl(py, pc, *left, expr_arena, schema, operand_null_as_false)?;
+            let r =
+                aexpr_to_pyarrow_impl(py, pc, *right, expr_arena, schema, operand_null_as_false)?;
             l.call_method1(method, (r,)).ok()
         },
         AExpr::Column(name) => pc.call_method1("field", (name,)).ok(),
@@ -723,19 +766,38 @@ pub fn aexpr_to_pyarrow<'py>(
             input,
             ..
         } => {
-            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena, schema)?;
+            let col = convert(input.first()?.node())?;
             let rhs_node = input.get(1)?.node();
 
             let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
                 return None;
             };
             let needle = input[0].dtype(schema, expr_arena).ok()?;
-            let values_list = match needle_isin_haystack(function, needle, lv, *nulls_equal)? {
-                IsInHaystack::Empty => return pc.call_method1("scalar", (false,)).ok(),
-                IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
+            let isin = match needle_isin_haystack(
+                function,
+                needle,
+                lv,
+                *nulls_equal,
+                Some(LIST_ITEM_LIMIT),
+            )? {
+                IsInHaystack::Empty => pc.call_method1("scalar", (false,)).ok()?,
+                IsInHaystack::Series(s) => col
+                    .call_method1("isin", (series_to_py_list(py, &s)?,))
+                    .ok()?,
             };
+            // PyArrow's `isin` gives `false` for a null needle, Polars gives null.
+            // Plain `isin` is kept where possible, as readers such as Lance only
+            // use their indices for that form.
+            if *nulls_equal || null_as_false {
+                return Some(isin);
+            }
 
-            col.call_method1("isin", (values_list,)).ok()
+            let pa = py.import("pyarrow").ok()?;
+            let null_bool = pa
+                .call_method1("scalar", (py.None(), pa.call_method0("bool_").ok()?))
+                .ok()?;
+            let is_null = col.call_method0("is_null").ok()?;
+            pc.call_method1("if_else", (is_null, null_bool, isin)).ok()
         },
         #[cfg(feature = "is_between")]
         AExpr::Function {
@@ -746,7 +808,7 @@ pub fn aexpr_to_pyarrow<'py>(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 return None;
             }
-            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena, schema)?;
+            let col = convert(input.first()?.node())?;
             let left_method = match closed {
                 ClosedInterval::None | ClosedInterval::Right => "__gt__",
                 ClosedInterval::Both | ClosedInterval::Left => "__ge__",
@@ -756,8 +818,8 @@ pub fn aexpr_to_pyarrow<'py>(
                 ClosedInterval::Both | ClosedInterval::Right => "__le__",
             };
 
-            let lower = aexpr_to_pyarrow(py, pc, input.get(1)?.node(), expr_arena, schema)?;
-            let upper = aexpr_to_pyarrow(py, pc, input.get(2)?.node(), expr_arena, schema)?;
+            let lower = convert(input.get(1)?.node())?;
+            let upper = convert(input.get(2)?.node())?;
 
             let lower_cmp = col.call_method1(left_method, (lower,)).ok()?;
             let upper_cmp = col.call_method1(right_method, (upper,)).ok()?;
@@ -776,7 +838,7 @@ pub fn aexpr_to_pyarrow<'py>(
                     return None;
                 }
             }
-            let input = aexpr_to_pyarrow(py, pc, input.node(), expr_arena, schema)?;
+            let input = convert(input.node())?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {

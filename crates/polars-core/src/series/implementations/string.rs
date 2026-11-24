@@ -123,8 +123,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0.slice(offset, length).into_series()
+    fn slice(&self, slice: Slice) -> Series {
+        self.0.slice(slice).into_series()
     }
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
@@ -146,7 +146,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(
             self.0.dtype() == other.dtype(),
-            SchemaMismatch: "cannot extend Series: data types don't match",
+            SchemaMismatch: "cannot extend Series: data types don't match (expected {}, got {})",
+            self.0.dtype(), other.dtype(),
         );
         self.0.extend(other.as_ref().as_ref())?;
         Ok(())

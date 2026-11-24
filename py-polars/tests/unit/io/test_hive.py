@@ -13,7 +13,11 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SchemaFieldNotFoundError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SchemaFieldNotFoundError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.io.conftest import format_file_uri
 
@@ -1138,6 +1142,18 @@ def test_hive_write_dates(tmp_path: Path) -> None:
         lf.collect(),
         df.with_columns(pl.col("date1", "date2").cast(pl.String)),
     )
+
+
+@pytest.mark.write_disk
+def test_hive_time_invalid_value(tmp_path: Path) -> None:
+    for value in ["12%3A00%3A00", "abc"]:
+        (tmp_path / f"t={value}").mkdir()
+        pl.DataFrame({"x": [0]}).write_parquet(tmp_path / f"t={value}/data.parquet")
+
+    with pytest.raises(
+        InvalidOperationError, match=r"conversion from `str` to `time` failed"
+    ):
+        pl.scan_parquet(tmp_path, hive_schema={"t": pl.Time}).collect()
 
 
 @pytest.mark.write_disk

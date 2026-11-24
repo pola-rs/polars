@@ -24,17 +24,18 @@ use crate::pl_async::{
 
 #[derive(Debug)]
 pub struct PolarsObjectStoreError {
+    /// The URL of the failing object or of the store being built. Empty on a rebuild.
     pub base_url: PlRefPath,
     pub source: object_store::Error,
 }
 
 impl Display for PolarsObjectStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "object-store error: {} (path: {})",
-            self.source, self.base_url
-        )
+        write!(f, "object-store error: {}", self.source)?;
+        if !self.base_url.as_str().is_empty() {
+            write!(f, " (path: {})", self.base_url)?;
+        }
+        Ok(())
     }
 }
 
@@ -111,8 +112,10 @@ mod inner {
     use std::sync::Arc;
 
     use object_store::ObjectStore;
+    use object_store::path::Path;
     use polars_core::config;
     use polars_error::{PolarsError, PolarsResult};
+    use polars_utils::pl_path::PlRefPath;
     use polars_utils::relaxed_cell::RelaxedCell;
 
     use crate::cloud::concurrency::{ConcurrencyController, ControllerConfig};
@@ -131,6 +134,8 @@ mod inner {
     #[derive(Clone, Debug)]
     pub struct PolarsObjectStore {
         inner: Arc<Inner>,
+        /// The URL the store is rooted at, as this caller spelled it.
+        base_url: PlRefPath,
         /// Avoid contending the Mutex `lock()` until the first re-build.
         initial_store: std::sync::Arc<dyn ObjectStore>,
         io_metrics: OptIOMetrics,
@@ -148,6 +153,7 @@ mod inner {
             // suffix range there: https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-the-range-header-for-blob-service-operations
             let suffix_range_supported = RelaxedCell::from(!builder.is_azure());
             Self {
+                base_url: builder.base_url(),
                 inner: Arc::new(Inner {
                     store: tokio::sync::RwLock::new(store),
                     builder,
@@ -158,6 +164,11 @@ mod inner {
                 io_metrics: OptIOMetrics(None),
                 concurrency: Arc::new(std::sync::OnceLock::new()),
             }
+        }
+
+        pub(crate) fn with_base_url(mut self, base_url: PlRefPath) -> Self {
+            self.base_url = base_url;
+            self
         }
 
         pub fn set_io_metrics(&mut self, io_metrics: Option<Arc<IOMetrics>>) -> &mut Self {
@@ -204,7 +215,13 @@ mod inner {
                         .build_impl(true)
                         .await
                         .map_err(|e| {
-                            e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
+                            let url = self.inner.builder.path();
+                            e.wrap_msg(|e| {
+                                format!(
+                                    "attempt to rebuild object store failed: {e} \
+                                     (store built for: {url})"
+                                )
+                            })
                         })?;
             }
 
@@ -213,8 +230,10 @@ mod inner {
             Ok((*current_store).clone())
         }
 
+        /// `path` is the object `func` addresses.
         pub async fn exec_with_rebuild_retry_on_err<'s, 'f, Fn, Fut, O>(
             &'s self,
+            path: &Path,
             mut func: Fn,
         ) -> PolarsResult<O>
         where
@@ -241,17 +260,18 @@ mod inner {
             }
 
             let store = if rebuild {
-                let store = self
-                    .rebuild_inner(&store)
-                    .await
-                    .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
+                let store = self.rebuild_inner(&store).await.map_err(|e| {
+                    // The failing request first, then the rebuild error.
+                    let orig_err = self.error_context(path).attach_err_info(orig_err);
+                    e.wrap_msg(|e| format!("{orig_err}; {e}"))
+                })?;
                 Cow::Owned(store)
             } else {
                 store
             };
 
             func(store).await.map_err(|e| {
-                let e: PolarsError = self.error_context().attach_err_info(e).into();
+                let e: PolarsError = self.error_context(path).attach_err_info(e).into();
 
                 if self.inner.builder.is_azure()
                     && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref()
@@ -280,33 +300,89 @@ and use the storage account keys from Azure CLI to authenticate"
             self.inner.suffix_range_supported.store(false);
         }
 
-        pub fn error_context(&self) -> ObjectStoreErrorContext {
-            ObjectStoreErrorContext::new(self.inner.builder.path().clone())
+        /// Context for an error of a request to `path`.
+        pub fn error_context(&self, path: &Path) -> ObjectStoreErrorContext {
+            ObjectStoreErrorContext::new(self.base_url.clone()).with_path(path.clone())
         }
     }
 }
 
 #[derive(Clone)]
 pub struct ObjectStoreErrorContext {
-    path: PlRefPath,
+    base_url: PlRefPath,
+    path: Option<Path>,
 }
 
 impl ObjectStoreErrorContext {
-    pub fn new(path: PlRefPath) -> Self {
-        Self { path }
+    pub fn new(base_url: PlRefPath) -> Self {
+        Self {
+            base_url,
+            path: None,
+        }
+    }
+
+    /// Context for building a store for `url`. Empty on a rebuild, whose error names `url`.
+    pub fn for_build(url: PlRefPath, rebuild: bool) -> Self {
+        Self::new(if rebuild { PlRefPath::new("") } else { url })
+    }
+
+    pub fn with_path(mut self, path: Path) -> Self {
+        self.path = Some(path);
+        self
     }
 
     pub fn attach_err_info(self, err: object_store::Error) -> PolarsObjectStoreError {
-        let ObjectStoreErrorContext { path } = self;
+        let ObjectStoreErrorContext { base_url, path } = self;
+
+        let base_url = match path {
+            Some(path) if !path.as_ref().is_empty() => {
+                // An empty base URL is a local path, which on Windows starts with its drive.
+                let sep = if base_url.as_str().is_empty() && cfg!(windows) {
+                    ""
+                } else {
+                    "/"
+                };
+                PlRefPath::new(format!("{base_url}{sep}{path}"))
+            },
+            // The root of a local filesystem.
+            Some(_) if base_url.scheme().is_none_or(|s| s.is_file()) => {
+                PlRefPath::new(format!("{base_url}/"))
+            },
+            _ => base_url,
+        };
 
         PolarsObjectStoreError {
-            base_url: path,
+            base_url,
             source: err,
         }
     }
 }
 
 pub use inner::PolarsObjectStore;
+
+/// `GetResult::bytes` for a streamed body of `len` bytes (the returned range) that reports arrived
+/// bytes to the controller as they come in, per `ARRIVAL_FLUSH_BYTES`.
+async fn collect_body(
+    stream: futures::stream::BoxStream<'static, object_store::Result<bytes::Bytes>>,
+    len: u64,
+    controller: &ConcurrencyController,
+) -> object_store::Result<bytes::Bytes> {
+    const ARRIVAL_FLUSH_BYTES: u64 = 64 * 1024;
+
+    let mut pending = 0;
+    let out = object_store::collect_bytes(
+        stream.inspect_ok(|chunk| {
+            pending += chunk.len() as u64;
+            if pending >= ARRIVAL_FLUSH_BYTES {
+                controller.record_arrived(std::mem::take(&mut pending));
+            }
+        }),
+        Some(len),
+    )
+    .await;
+    controller.record_arrived(pending);
+    out
+}
 
 pub type ObjectStorePath = object_store::path::Path;
 
@@ -347,12 +423,14 @@ impl PolarsObjectStore {
                     Some(controller) => Some(controller.acquire(bytes_req).await),
                     None => None,
                 };
+                let t_start = Instant::now();
 
+                let controller_ref = controller.as_deref();
                 let (out, ttfb) = self
                     .io_metrics()
                     .record_io_read(
                         bytes_req,
-                        self.exec_with_rebuild_retry_on_err(|s| async move {
+                        self.exec_with_rebuild_retry_on_err(path, |s| async move {
                             let t0 = Instant::now();
                             let response = s
                                 .get_opts(
@@ -364,7 +442,25 @@ impl PolarsObjectStore {
                                 )
                                 .await?;
                             let ttfb = t0.elapsed();
-                            let out = response.bytes().await?;
+                            let out = match controller_ref {
+                                Some(controller)
+                                    if matches!(
+                                        response.payload,
+                                        object_store::GetResultPayload::Stream(_)
+                                    ) =>
+                                {
+                                    let len = response.range.end - response.range.start;
+                                    collect_body(response.into_stream(), len, controller).await?
+                                },
+                                _ => {
+                                    let out = response.bytes().await?;
+                                    // Not streamed (local files): the bytes arrive at completion.
+                                    if let Some(controller) = controller_ref {
+                                        controller.record_arrived(out.len() as u64);
+                                    }
+                                    out
+                                },
+                            };
 
                             Ok((out, ttfb))
                         }),
@@ -372,10 +468,12 @@ impl PolarsObjectStore {
                     .await?;
 
                 if let Some(controller) = &controller {
+                    let completion_time = Instant::now();
                     controller.record_io(IoSample {
                         n_bytes: out.len() as u64,
                         ttfb,
-                        completion_time: Instant::now(),
+                        ttlb: completion_time - t_start,
+                        completion_time,
                     });
                 }
 
@@ -430,7 +528,7 @@ impl PolarsObjectStore {
                     .io_metrics()
                     .record_io_read(
                         range.len() as u64,
-                        self.exec_with_rebuild_retry_on_err(|s| async move {
+                        self.exec_with_rebuild_retry_on_err(path, |s| async move {
                             s.get_range(path, range.start as u64..range.end as u64)
                                 .await
                         }),
@@ -686,8 +784,9 @@ impl PolarsObjectStore {
 
         let io_session = metrics.start_rx_session();
 
+        let t_start = Instant::now();
         let out = self
-            .exec_with_rebuild_retry_on_err(|s| async move {
+            .exec_with_rebuild_retry_on_err(path, |s| async move {
                 let t0 = Instant::now();
                 let response = s
                     .get_opts(
@@ -711,10 +810,13 @@ impl PolarsObjectStore {
                 let bytes = response.bytes().await?;
 
                 if let Some(controller) = controller {
+                    controller.record_arrived(bytes.len() as u64);
+                    let completion_time = Instant::now();
                     controller.record_io(IoSample {
                         n_bytes: bytes.len() as u64,
                         ttfb,
-                        completion_time: Instant::now(),
+                        ttlb: completion_time - t_start,
+                        completion_time,
                     });
                 }
 
@@ -756,7 +858,7 @@ impl PolarsObjectStore {
         path: &Path,
         controller: Option<&ConcurrencyController>,
     ) -> PolarsResult<ObjectMeta> {
-        self.exec_with_rebuild_retry_on_err(|s| {
+        self.exec_with_rebuild_retry_on_err(path, |s| {
             async move {
                 let t0 = Instant::now();
                 let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;

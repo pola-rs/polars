@@ -1,11 +1,87 @@
 //! Conversion between GeoParquet `geo` file metadata and GeoArrow extension types.
-use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Metadata};
+//!
+//! # Bounding box coverings
+//!
+//! GeoParquet 1.1 lets a geometry column have a bounding box per-row in another column.
+//! This column is stored simply as a struct. We are kind enough to write the `geoarrow.box` datatype,
+//! but that is not required for the GeoParquet spec of course.
+//! Which bbox links to which geometry column lives only in the metadata (they can have any name).
+//! Upon reading, that column becomes a `geoarrow.box` with the extension metadata of its geometry,
+//! if its fields match one of the [`BOX_LAYOUTS`].
+//!
+//! On the GeoArrow side though, there is no 'relating'.
+//! We still have to somehow indicate an intention of this.
+//! In GeoPandas and geoarrow-rs, this is done by naming.
+//! We match per-column bounding boxes based on the names, which is the same way GeoPandas/geoarrow-rs does it.
+//! E.g. a column called `"foo"` will have a bounding box in `"foo_bbox"`.
+//! GeoPandas and `geoarrow-rs` also allow a simplified form if you only have a single column called `"geometry"` or `"geography"`.
+//! For those, you can use `"bbox"` instead of a full `"geometry_bbox"`.
+//! When both `geometry` and `geography` exist and are geometry columns, `bbox` covers neither.
+//! Writing any other box is an error, as a plain struct would silently drop what it means.
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, Metadata};
 use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
+use polars_parquet_format::RowGroup;
+use polars_utils::pl_str::PlSmallStr;
 use serde_json::{Map, Value, json};
 
-use crate::parquet::metadata::KeyValue;
+use crate::parquet::metadata::{ColumnDescriptor, KeyValue};
+use crate::parquet::types::decode;
 
-const GEO_KEY: &str = "geo";
+pub const GEO_KEY: &str = "geo";
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct GeoParquetVersion {
+    major: u32,
+    minor: u32,
+}
+
+impl GeoParquetVersion {
+    const V1_0: Self = Self { major: 1, minor: 0 };
+    const V1_1: Self = Self { major: 1, minor: 1 };
+
+    /// Parses `major.minor[.patch]`.
+    fn parse(version: &str) -> Option<Self> {
+        let parts: Vec<u32> = version
+            .split('.')
+            .map(|part| part.parse().ok())
+            .collect::<Option<_>>()?;
+        match parts[..] {
+            [major, minor] | [major, minor, _] => Some(Self { major, minor }),
+            _ => None,
+        }
+    }
+
+    fn has_native_encodings(self) -> bool {
+        self >= Self::V1_1
+    }
+
+    fn has_coverings(self) -> bool {
+        self >= Self::V1_1
+    }
+}
+
+impl std::fmt::Display for GeoParquetVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.0", self.major, self.minor)
+    }
+}
+
+/// The geoparquet spec states that something that has no `crs` key should be considered "OGC: CRS84".
+const DEFAULT_CRS: &str = "OGC:CRS84";
+
+const BOX_EXTENSION_NAME: &str = "geoarrow.box";
+
+// TODO: accept other kinds of bbox too.
+// These are a little more complicated than just struct relabelling, and would require stuff like:
+// - float32 -> Float64 widening
+// - data re-ordering after decoding
+
+/// The field layouts of a `geoarrow.box`.
+/// GeoParquet also allows a covering's fields in another order or as FLOAT, but those can't be read as a box.
+const BOX_LAYOUTS: [&[&str]; 2] = [
+    &["xmin", "ymin", "xmax", "ymax"],
+    &["xmin", "ymin", "zmin", "xmax", "ymax", "zmax"],
+];
 
 struct Encoding {
     geoparquet: &'static str,
@@ -49,24 +125,30 @@ const ENCODINGS: [Encoding; 7] = [
     native("multipolygon", "geoarrow.multipolygon", "MultiPolygon", 3),
 ];
 
-/// Returns `Some(has_z)` if `dtype` is a valid storage type for `encoding`.
-fn check_storage(encoding: &Encoding, mut dtype: &ArrowDataType) -> Option<bool> {
-    let Some(list_depth) = encoding.list_depth else {
-        return matches!(
-            dtype,
-            ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView
-        )
-        .then_some(false);
-    };
-    for _ in 0..list_depth {
+/// Returns the fields of the coordinate struct inside `dtype`, `None` for WKB.
+fn coordinate_fields<'a>(encoding: &Encoding, mut dtype: &'a ArrowDataType) -> Option<&'a [Field]> {
+    for _ in 0..encoding.list_depth? {
         dtype = match dtype {
             ArrowDataType::List(f) | ArrowDataType::LargeList(f) => &f.dtype,
             _ => return None,
         };
     }
-    let ArrowDataType::Struct(fields) = dtype else {
-        return None;
-    };
+    match dtype {
+        ArrowDataType::Struct(fields) => Some(fields),
+        _ => None,
+    }
+}
+
+/// Returns `Some(has_z)` if `dtype` is a valid storage type for `encoding`.
+fn check_storage(encoding: &Encoding, dtype: &ArrowDataType) -> Option<bool> {
+    if encoding.list_depth.is_none() {
+        return matches!(
+            dtype,
+            ArrowDataType::Binary | ArrowDataType::LargeBinary | ArrowDataType::BinaryView
+        )
+        .then_some(false);
+    }
+    let fields = coordinate_fields(encoding, dtype)?;
     let valid = (2..=3).contains(&fields.len())
         && fields
             .iter()
@@ -89,7 +171,7 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
         return;
     };
     let version = geo["version"].as_str().unwrap_or_default();
-    if version.split('.').next() != Some("1") {
+    if GeoParquetVersion::parse(version).is_none_or(|v| v.major != 1) {
         polars_warn!(
             "ignoring GeoParquet metadata with unsupported version '{}'",
             version
@@ -101,6 +183,7 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
         return;
     };
 
+    let mut covering_columns = Vec::new();
     for (name, column) in columns {
         let Some(field) = schema.get_mut(name) else {
             polars_warn!("ignoring GeoParquet column '{}': column not found", name);
@@ -130,28 +213,145 @@ pub fn apply_geo_metadata(metadata: &Metadata, schema: &mut ArrowSchema) {
         }
 
         let mut ext_metadata = Map::new();
-        for key in ["crs", "edges", "epoch"] {
+        match column.get("crs") {
+            None => {
+                ext_metadata.insert("crs".into(), DEFAULT_CRS.into());
+            },
+            // Geoarrow designates an 'unknown' CRS by leaving `crs` out,
+            // while GeoParquet explicitly writes it as `Null`.
+            Some(Value::Null) => {},
+            Some(crs) => {
+                ext_metadata.insert("crs".into(), crs.clone());
+            },
+        }
+        for key in ["edges", "epoch"] {
             if let Some(value) = column.get(key) {
                 ext_metadata.insert(key.into(), value.clone());
             }
         }
 
+        let metadata: Option<PlSmallStr> =
+            (!ext_metadata.is_empty()).then(|| Value::Object(ext_metadata).to_string().into());
         field.dtype = ArrowDataType::Extension(Box::new(ExtensionType {
             name: encoding.geoarrow.into(),
             inner: storage.clone(),
-            metadata: (!ext_metadata.is_empty())
-                .then(|| Value::Object(ext_metadata).to_string().into()),
+            metadata: metadata.clone(),
         }));
+
+        if let Some(covering) = column.get("covering") {
+            apply_bbox_covering(schema, name, covering, metadata, &mut covering_columns);
+        }
     }
+}
+
+/// Turns the column that a `bbox` covering of `geometry` points to into a `geoarrow.box`,
+/// with the same extension `metadata` as `geometry`.
+fn apply_bbox_covering(
+    schema: &mut ArrowSchema,
+    geometry: &str,
+    covering: &Value,
+    metadata: Option<PlSmallStr>,
+    covering_columns: &mut Vec<String>,
+) {
+    // The spec only defines `bbox`, so other coverings are left for future versions.
+    let Some(bbox) = covering.get("bbox") else {
+        return;
+    };
+    let Some((box_name, layout)) = parse_bbox_paths(bbox) else {
+        polars_warn!(
+            "ignoring GeoParquet covering of '{}': invalid bbox paths",
+            geometry
+        );
+        return;
+    };
+    if covering_columns.iter().any(|c| c == box_name) {
+        polars_warn!(
+            "ignoring GeoParquet covering of '{}': column '{}' already covers another column",
+            geometry,
+            box_name
+        );
+        return;
+    }
+    let Some(field) = schema.get_mut(box_name) else {
+        polars_warn!(
+            "ignoring GeoParquet covering of '{}': column '{}' not found",
+            geometry,
+            box_name
+        );
+        return;
+    };
+    let storage = match &field.dtype {
+        ArrowDataType::Extension(ext) => &ext.inner,
+        dtype => dtype,
+    };
+    if box_layout(storage) != Some(layout) {
+        polars_warn!(
+            "ignoring GeoParquet covering of '{}': type {:?} of column '{}' is not a struct of Float64 fields xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order, as a 'geoarrow.box' needs",
+            geometry,
+            storage,
+            box_name
+        );
+        return;
+    }
+
+    field.dtype = ArrowDataType::Extension(Box::new(ExtensionType {
+        name: BOX_EXTENSION_NAME.into(),
+        inner: storage.clone(),
+        metadata,
+    }));
+    covering_columns.push(box_name.to_string());
+}
+
+/// Returns the column that a GeoParquet `bbox` covering points to, and the layout of its fields.
+fn parse_bbox_paths(bbox: &Value) -> Option<(&str, &'static [&'static str])> {
+    let bbox = bbox.as_object()?;
+    let box_name = bbox.get("xmin")?.get(0)?.as_str()?;
+    let layout = BOX_LAYOUTS.into_iter().find(|layout| {
+        bbox.len() == layout.len()
+            && layout
+                .iter()
+                .all(|key| bbox.get(*key) == Some(&json!([box_name, key])))
+    })?;
+    Some((box_name, layout))
+}
+
+/// Returns the layout of `dtype` if it is a valid `geoarrow.box` storage type.
+fn box_layout(dtype: &ArrowDataType) -> Option<&'static [&'static str]> {
+    let ArrowDataType::Struct(fields) = dtype else {
+        return None;
+    };
+    BOX_LAYOUTS.into_iter().find(|layout| {
+        fields.len() == layout.len()
+            && fields
+                .iter()
+                .zip(*layout)
+                .all(|(f, name)| f.name == *name && f.dtype == ArrowDataType::Float64)
+    })
+}
+
+/// The statistics of a written file, to fill in the `bbox` of each geometry column.
+pub(crate) struct FileStatistics<'a> {
+    pub(crate) columns: &'a [ColumnDescriptor],
+    pub(crate) row_groups: &'a [RowGroup],
+}
+
+/// Checks that `schema` can be written as GeoParquet, so that a write fails before any file is opened.
+pub fn validate_geo_schema(schema: &ArrowSchema) -> PolarsResult<()> {
+    geo_key_value(schema, None).map(|_| ())
 }
 
 /// Builds the GeoParquet `geo` metadata for the GeoArrow columns in `schema` if
 /// `POLARS_GEOPARQUET_WRITE` is set to `1.0` or `1.1`.
-pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
+/// The `bbox` of each geometry column is only filled in if `statistics` are given.
+/// A `geoarrow.box` column that covers no geometry column is an error.
+pub(crate) fn geo_key_value(
+    schema: &ArrowSchema,
+    statistics: Option<&FileStatistics<'_>>,
+) -> PolarsResult<Option<KeyValue>> {
     let version = match std::env::var("POLARS_GEOPARQUET_WRITE").as_deref() {
         Err(_) | Ok("") => return Ok(None),
-        Ok("1.0") => "1.0.0",
-        Ok("1.1") => "1.1.0",
+        Ok("1.0") => GeoParquetVersion::V1_0,
+        Ok("1.1") => GeoParquetVersion::V1_1,
         Ok(v) => polars_bail!(
             InvalidOperation: "invalid POLARS_GEOPARQUET_WRITE value '{}', expected '1.0' or '1.1'", v
         ),
@@ -159,17 +359,20 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
 
     let mut primary_column = None;
     let mut columns = Map::new();
+    let mut covering_columns = Vec::new();
     for field in schema.iter_values() {
         let ArrowDataType::Extension(ext) = &field.dtype else {
             continue;
         };
-        if !ext.name.starts_with("geoarrow.") {
+        if !is_geometry_extension(ext) {
             continue;
         }
         let name = &field.name;
         let encoding = ENCODINGS
             .iter()
-            .find(|e| ext.name == e.geoarrow && (e.list_depth.is_none() || version != "1.0.0"))
+            .find(|e| {
+                ext.name == e.geoarrow && (e.list_depth.is_none() || version.has_native_encodings())
+            })
             .ok_or_else(|| {
                 polars_err!(
                     InvalidOperation: "cannot write column '{}' of type '{}' as GeoParquet {}",
@@ -177,21 +380,21 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
                 )
             })?;
         let has_z = check_storage(encoding, &ext.inner).ok_or_else(|| {
+            let has_m = coordinate_fields(encoding, &ext.inner)
+                .is_some_and(|fields| fields.iter().any(|f| f.name == "m"));
+            if has_m {
+                return polars_err!(
+                    InvalidOperation: "cannot write column '{}' as GeoParquet {}: it cannot store M values",
+                    name, version
+                );
+            }
             polars_err!(
                 InvalidOperation: "cannot write column '{}' as GeoParquet: storage type {:?} does not match '{}'",
                 name, ext.inner, ext.name
             )
         })?;
 
-        let ext_metadata = match ext.metadata.as_deref() {
-            None => Map::new(),
-            Some(md) => match serde_json::from_str(md) {
-                Ok(Value::Object(md)) => md,
-                _ => polars_bail!(
-                    InvalidOperation: "cannot write column '{}' as GeoParquet: invalid extension metadata", name
-                ),
-            },
-        };
+        let ext_metadata = extension_metadata(name, ext)?;
 
         let geometry_types = match encoding.list_depth {
             None => vec![],
@@ -201,14 +404,9 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
         let mut column = Map::new();
         column.insert("encoding".into(), encoding.geoparquet.into());
         column.insert("geometry_types".into(), geometry_types.into());
-        match ext_metadata.get("crs") {
-            None => {},
-            Some(crs @ (Value::Null | Value::Object(_))) => {
-                column.insert("crs".into(), crs.clone());
-            },
-            Some(_) => polars_bail!(
-                InvalidOperation: "cannot write column '{}' as GeoParquet: CRS must be a PROJJSON object or null", name
-            ),
+        let crs = geoparquet_crs(name, &ext_metadata)?;
+        if let Some(crs) = &crs {
+            column.insert("crs".into(), crs.clone());
         }
         match ext_metadata.get("edges") {
             None => {},
@@ -224,20 +422,243 @@ pub fn geo_key_value(schema: &ArrowSchema) -> PolarsResult<Option<KeyValue>> {
             column.insert("epoch".into(), epoch.clone());
         }
 
+        if version.has_coverings()
+            && let Some((box_name, covering)) =
+                bbox_covering_col_of_geometry(schema, name, crs.as_ref())?
+        {
+            column.insert("covering".into(), covering);
+            covering_columns.push(box_name);
+        }
+        // WKB has no statistics of its coordinates, so it gets no `bbox`.
+        // Its covering's statistics can't stand in for them:
+        // a box that crosses the antimeridian has `xmin > xmax`,
+        // and the smallest `xmin` and largest `xmax` would leave it out.
+        let is_native = encoding.list_depth.is_some();
+        // A spherical edge can bulge beyond its vertices.
+        let spherical = ext_metadata.get("edges").is_some_and(|e| e == "spherical");
+        let axes = &["x", "y", "z"][..2 + has_z as usize];
+        if let Some(statistics) = statistics
+            && is_native
+            && !spherical
+            && let Some(bbox) = bbox_from_leaf_statistics(statistics, name, axes)
+        {
+            column.insert("bbox".into(), bbox.into());
+        }
+
         primary_column.get_or_insert(name.as_str());
         columns.insert(name.to_string(), Value::Object(column));
     }
+    check_boxes_are_coverings(schema, version, &covering_columns)?;
 
-    let Some(primary_column) = primary_column else {
+    Ok(primary_column.map(|primary_column| {
+        let geo = json!({
+            "version": version.to_string(),
+            "primary_column": primary_column,
+            "columns": columns,
+        });
+        KeyValue {
+            key: GEO_KEY.to_string(),
+            value: Some(geo.to_string()),
+        }
+    }))
+}
+
+fn check_boxes_are_coverings(
+    schema: &ArrowSchema,
+    version: GeoParquetVersion,
+    covering_columns: &[String],
+) -> PolarsResult<()> {
+    for field in schema.iter_values() {
+        let ArrowDataType::Extension(ext) = &field.dtype else {
+            continue;
+        };
+        if ext.name != BOX_EXTENSION_NAME
+            || covering_columns.iter().any(|c| c == field.name.as_str())
+        {
+            continue;
+        }
+        // A box that can't be a covering under any name should not be told to rename.
+        let reason = if !version.has_coverings() {
+            "GeoParquet 1.0 has no coverings; write GeoParquet 1.1 instead"
+        } else if box_layout(&ext.inner).is_none() {
+            "a covering's fields must be Float64 xmin, ymin, [zmin,] xmax, ymax, [zmax] in that order"
+        } else if field.name == "bbox" && bbox_is_ambiguous(schema) {
+            "it could cover both 'geometry' and 'geography'; rename one of them"
+        } else {
+            "no geometry column has it as its covering name; \
+            name it '<geometry>_bbox', or 'bbox' for a column named 'geometry' or 'geography'"
+        };
+        // Writing it as a plain struct would silently drop what it means, so the user has to opt in.
+        polars_bail!(
+            InvalidOperation: "cannot write box column '{}' as GeoParquet: {}; \
+            to write it as a plain struct, convert it with `.ext.storage()`",
+            field.name, reason
+        );
+    }
+    Ok(())
+}
+
+fn extension_metadata(name: &str, ext: &ExtensionType) -> PolarsResult<Map<String, Value>> {
+    match ext.metadata.as_deref() {
+        None => Ok(Map::new()),
+        Some(md) => match serde_json::from_str(md) {
+            Ok(Value::Object(md)) => Ok(md),
+            _ => polars_bail!(
+                InvalidOperation: "cannot write column '{}' as GeoParquet: invalid extension metadata", name
+            ),
+        },
+    }
+}
+
+/// Returns the GeoParquet `crs` of column `name`.
+/// None -> the key is left out meaning OGC:CRS84.
+fn geoparquet_crs(name: &str, ext_metadata: &Map<String, Value>) -> PolarsResult<Option<Value>> {
+    let crs_type = ext_metadata.get("crs_type").and_then(Value::as_str);
+    match ext_metadata.get("crs") {
+        // Geoarrow designates an 'unknown' CRS by leaving `crs` out,
+        // while GeoParquet explicitly writes it as `Null`.
+        // Leaving the key out would claim the data is in OGC:CRS84.
+        None | Some(Value::Null) => Ok(Some(Value::Null)),
+        // The default is left out, as it is the only string CRS we can write without PROJ.
+        // An SRID that reads "OGC:CRS84" means whatever its producer says, so it is refused.
+        Some(Value::String(crs))
+            if crs == DEFAULT_CRS && matches!(crs_type, None | Some("authority_code")) =>
+        {
+            Ok(None)
+        },
+        Some(Value::Object(projjson)) if is_crs84(projjson) => Ok(None),
+        Some(crs @ Value::Object(_)) => Ok(Some(crs.clone())),
+        Some(crs) => {
+            let of_type = crs_type
+                .map(|t| format!(" of type '{t}'"))
+                .unwrap_or_default();
+            polars_bail!(
+                InvalidOperation: "cannot write column '{}' as GeoParquet: CRS {}{} must be a PROJJSON object, null, or the authority code '{}'; \
+                convert it to PROJJSON, or pass your own '{}' key in the file metadata",
+                name, crs, of_type, DEFAULT_CRS, GEO_KEY
+            )
+        },
+    }
+}
+
+fn is_geometry_extension(ext: &ExtensionType) -> bool {
+    // GeoParquet has no box encoding, so a box is written as a plain struct column.
+    ext.name.starts_with("geoarrow.") && ext.name != BOX_EXTENSION_NAME
+}
+
+fn is_geometry_column(schema: &ArrowSchema, name: &str) -> bool {
+    matches!(
+        schema.get(name).map(|f| &f.dtype),
+        Some(ArrowDataType::Extension(ext)) if is_geometry_extension(ext)
+    )
+}
+
+fn bbox_is_ambiguous(schema: &ArrowSchema) -> bool {
+    is_geometry_column(schema, "geometry") && is_geometry_column(schema, "geography")
+}
+
+fn covering_name(geometry: &str) -> String {
+    match geometry {
+        "geometry" | "geography" => "bbox".into(),
+        _ => format!("{geometry}_bbox"),
+    }
+}
+
+/// Returns the name of the box column that covers `geometry`, and its `covering` metadata.
+/// Returns `None` if there is no `geoarrow.box` column named after [`covering_name`],
+/// or if its fields can't form a covering.
+fn bbox_covering_col_of_geometry(
+    schema: &ArrowSchema,
+    geometry: &str,
+    geometry_crs: Option<&Value>,
+) -> PolarsResult<Option<(String, Value)>> {
+    let box_name = covering_name(geometry);
+    // [`check_boxes_are_coverings`] errors on a box that covers nothing.
+    if box_name == "bbox" && bbox_is_ambiguous(schema) {
+        return Ok(None);
+    }
+    let Some(ArrowDataType::Extension(ext)) = schema.get(box_name.as_str()).map(|f| &f.dtype)
+    else {
         return Ok(None);
     };
-    let geo = json!({
-        "version": version,
-        "primary_column": primary_column,
-        "columns": columns,
-    });
-    Ok(Some(KeyValue {
-        key: GEO_KEY.to_string(),
-        value: Some(geo.to_string()),
-    }))
+    if ext.name != BOX_EXTENSION_NAME {
+        return Ok(None);
+    }
+
+    let Some(layout) = box_layout(&ext.inner) else {
+        return Ok(None);
+    };
+
+    // A box without a CRS takes its geometry's
+    let box_metadata = extension_metadata(&box_name, ext)?;
+    if let Some(crs) = box_metadata.get("crs").filter(|crs| !crs.is_null())
+        && geoparquet_crs(&box_name, &box_metadata)?.as_ref() != geometry_crs
+    {
+        polars_bail!(
+            InvalidOperation: "cannot write column '{}' as GeoParquet covering of '{}': its CRS {} differs from the geometry's",
+            box_name, geometry, crs
+        );
+    }
+
+    let bbox: Map<String, Value> = layout
+        .iter()
+        .map(|field| (field.to_string(), json!([box_name, field])))
+        .collect();
+    Ok(Some((box_name, json!({ "bbox": bbox }))))
+}
+
+fn bbox_from_leaf_statistics(
+    statistics: &FileStatistics,
+    column: &str,
+    axes: &[&str],
+) -> Option<Vec<f64>> {
+    let mut mins = Vec::with_capacity(axes.len());
+    let mut maxs = Vec::with_capacity(axes.len());
+    for axis in axes {
+        let (min, max) = leaf_min_max_over_row_groups(statistics, column, axis)?;
+        mins.push(min);
+        maxs.push(max);
+    }
+    mins.extend(maxs);
+    // JSON can't hold infinities.
+    mins.iter().all(|v| v.is_finite()).then_some(mins)
+}
+
+/// Returns `None` if the statistics are missing or encrypted, or the leaf only holds nulls and NaNs.
+fn leaf_min_max_over_row_groups(
+    statistics: &FileStatistics,
+    column: &str,
+    leaf: &str,
+) -> Option<(f64, f64)> {
+    let leaf_index = statistics.columns.iter().position(|c| {
+        let path = &c.path_in_schema;
+        path.first().is_some_and(|p| p.as_str() == column)
+            && path.last().is_some_and(|p| p.as_str() == leaf)
+    })?;
+    let mut bounds: Option<(f64, f64)> = None;
+    for row_group in statistics.row_groups {
+        let chunk = &row_group.columns[leaf_index];
+        // Hidden statistics must not leak through the `bbox`.
+        if chunk.crypto_metadata.is_some() {
+            return None;
+        }
+        let stats = chunk.meta_data.as_ref()?.statistics.as_ref()?;
+        // Row groups of only nulls and NaNs have no minimum and maximum.
+        let (Some(min), Some(max)) = (&stats.min_value, &stats.max_value) else {
+            continue;
+        };
+        let (min, max) = (decode::<f64>(min), decode::<f64>(max));
+        bounds = Some(match bounds {
+            None => (min, max),
+            Some((lo, hi)) => (lo.min(min), hi.max(max)),
+        });
+    }
+    bounds
+}
+
+/// Whether a PROJJSON CRS is OGC:CRS84, by its `id` as the GeoParquet spec suggests.
+fn is_crs84(projjson: &Map<String, Value>) -> bool {
+    projjson
+        .get("id")
+        .is_some_and(|id| id["authority"] == "OGC" && id["code"] == "CRS84")
 }

@@ -176,6 +176,7 @@ fn execute_projection_cached_window_fns(
                         partition_by,
                         order_by,
                         mapping,
+                        may_reorder: _,
                     } => {
                         let mapping: &str = mapping.into();
                         let mut key = format!("{:?}_{mapping}", partition_by.as_slice());

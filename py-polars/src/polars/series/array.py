@@ -624,7 +624,7 @@ class ArrayNameSpace:
         Returns
         -------
         Series
-            Series of innter data type.
+            Series of inner data type.
 
         Examples
         --------

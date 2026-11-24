@@ -23,7 +23,7 @@
 //! Examples of features that unlock specialized expression include `string`, `temporal`, and `dtype-categorical`.
 //! These specialized expressions provide implementations of functions that you'd otherwise have to implement by hand.
 //!
-//! Because of how abstract and flexible the [`Expr`] type is, care must be take to ensure you only attempt to perform
+//! Because of how abstract and flexible the [`Expr`] type is, care must be taken to ensure you only attempt to perform
 //! sensible operations with them.
 //! For instance, as mentioned above, you have to make sure any columns you reference already exist in the LazyFrame.
 //! Furthermore, there is nothing stopping you from calling, for example, [`any`](`Expr::any`) with an expression

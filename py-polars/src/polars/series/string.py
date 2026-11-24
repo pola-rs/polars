@@ -537,7 +537,9 @@ class StringNameSpace(_NamespaceSuggestMixin):
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
-        Return the bytes offset of the first substring matching a pattern.
+        Return the character offset of the first substring matching a pattern.
+
+        The offset is in Unicode code points, the same unit as :meth:`slice`.
 
         If the pattern is not found, returns None.
 
@@ -1713,6 +1715,32 @@ class StringNameSpace(_NamespaceSuggestMixin):
         ]
         """
 
+    def from_code_point(self) -> Series:
+        """
+        Convert integer Unicode code points to strings of one character.
+
+        The input must be an integer Series; the output is a string Series.
+
+        Raises
+        ------
+        ComputeError
+            If a value is negative, above 1114111 (``0x10FFFF``), or a UTF-16
+            surrogate (55296 to 57343).
+
+        Examples
+        --------
+        >>> s = pl.Series("code", [65, 233, 8364, None])
+        >>> s.str.from_code_point()
+        shape: (4,)
+        Series: 'code' [str]
+        [
+            "A"
+            "é"
+            "€"
+            null
+        ]
+        """
+
     def slice(
         self, offset: int | IntoExprColumn, length: int | IntoExprColumn | None = None
     ) -> Series:
@@ -1941,7 +1969,7 @@ class StringNameSpace(_NamespaceSuggestMixin):
         """
 
     def contains_any(
-        self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
+        self, patterns: list[str] | Expr, *, ascii_case_insensitive: bool = False
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to find matches.
@@ -1951,7 +1979,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         patterns
-            String patterns to search.
+            String patterns to search: one list for the whole Series, as a Python
+            list or an expression that returns a single list.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
@@ -1985,8 +2014,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
 
     def replace_many(
         self,
-        patterns: Series | list[str] | Mapping[str, str],
-        replace_with: Series | list[str] | str | NoDefault = NO_DEFAULT,
+        patterns: list[str] | Expr | Mapping[str, str],
+        replace_with: list[str] | Expr | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
         leftmost: bool = False,
@@ -1997,13 +2026,14 @@ class StringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         patterns
-            String patterns to search and replace.
+            String patterns to search and replace: one list for the whole Series, as a
+            Python list or an expression that returns a single list.
             Also accepts a mapping of patterns to their replacement as syntactic sugar
-            for `replace_many(pl.Series(mapping.keys()), pl.Series(mapping.values()))`.
+            for `replace_many(list(mapping.keys()), list(mapping.values()))`.
         replace_with
-            Strings to replace where a pattern was a match.
-            Length must match the length of `patterns` or have length 1. This can be
-            broadcasted, so it supports many:one and many:many.
+            Strings to replace where a pattern was a match: one list, like
+            `patterns`. Its length must match the length of `patterns` or be 1. This
+            can be broadcasted, so it supports many:one and many:many.
         ascii_case_insensitive
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
@@ -2180,7 +2210,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
         """
         Use the Aho-Corasick algorithm to find all matches.
 
-        The function returns the byte offset of the start of each match.
+        The function returns the character offset (in Unicode code points) of the
+        start of each match.
         The return type will be `List<UInt32>`
 
         Parameters
@@ -2211,20 +2242,20 @@ class StringNameSpace(_NamespaceSuggestMixin):
         >>> patterns = ["winter", "disco", "onte", "discontent"]
         >>> df.with_columns(
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=False)
+        ...     .str.find_many(patterns, overlapping=False)
         ...     .alias("matches"),
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=True)
+        ...     .str.find_many(patterns, overlapping=True)
         ...     .alias("matches_overlapping"),
         ... )
         shape: (1, 3)
-        ┌────────────┬───────────┬─────────────────────────────────┐
-        │ values     ┆ matches   ┆ matches_overlapping             │
-        │ ---        ┆ ---       ┆ ---                             │
-        │ str        ┆ list[str] ┆ list[str]                       │
-        ╞════════════╪═══════════╪═════════════════════════════════╡
-        │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
-        └────────────┴───────────┴─────────────────────────────────┘
+        ┌────────────┬───────────┬─────────────────────┐
+        │ values     ┆ matches   ┆ matches_overlapping │
+        │ ---        ┆ ---       ┆ ---                 │
+        │ str        ┆ list[u32] ┆ list[u32]           │
+        ╞════════════╪═══════════╪═════════════════════╡
+        │ discontent ┆ [0]       ┆ [0, 4, 0]           │
+        └────────────┴───────────┴─────────────────────┘
         >>> df = pl.DataFrame(
         ...     {
         ...         "values": ["discontent", "rhapsody"],

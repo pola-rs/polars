@@ -643,27 +643,15 @@ impl PhysicalExpr for WindowExpr {
 
                                 let (left, right) = if left.dtype().is_nested() {
                                     (
-                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
-                                            "".into(),
-                                            row_encode::_get_rows_encoded_unordered(&[
-                                                left.clone()
-                                            ])?
-                                            .into_array(),
-                                        )
-                                        .into_series(),
-                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
-                                            "".into(),
-                                            row_encode::_get_rows_encoded_unordered(&[
-                                                right.clone()
-                                            ])?
-                                            .into_array(),
-                                        )
-                                        .into_series(),
+                                        encode_rows_unordered(&[left.clone()])?.into_series(),
+                                        encode_rows_unordered(&[right.clone()])?.into_series(),
                                     )
                                 } else {
+                                    // A single-chunk right key gives join ids that are valid
+                                    // for any chunk layout of the aggregated output.
                                     (
                                         left.into_materialized_series().clone(),
-                                        right.into_materialized_series().clone(),
+                                        right.into_materialized_series().rechunk(),
                                     )
                                 };
 
@@ -1002,7 +990,9 @@ impl PhysicalExpr for WindowExpr {
             },
         }
 
-        let mut subgroups = GroupsType::Idx(subgroups.into());
+        let mut subgroups: GroupsIdx = subgroups.into();
+        subgroups.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
+        let mut subgroups = GroupsType::Idx(subgroups);
         if let Some((order_by, _, options)) = order_by {
             subgroups =
                 update_groups_sort_by(&subgroups, order_by.as_materialized_series(), &options)?;
@@ -1200,7 +1190,7 @@ fn set_numeric<T: PolarsNumericType>(
             GroupsType::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
                 let offset = *offset;
                 let offset_len = *offset_len;
-                let ca = ca.slice(offset as i64, offset_len);
+                let ca = ca.slice((offset, offset_len));
                 let groups = &groups.all()[offset..offset + offset_len];
                 let values_ptr = sync_ptr_values.get();
                 let validity_ptr = sync_ptr_validity.get();
@@ -1228,7 +1218,7 @@ fn set_numeric<T: PolarsNumericType>(
                 offsets.par_iter().for_each(|(offset, offset_len)| {
                     let offset = *offset;
                     let offset_len = *offset_len;
-                    let ca = ca.slice(offset as i64, offset_len);
+                    let ca = ca.slice((offset, offset_len));
                     let groups = &groups[offset..offset + offset_len];
                     let values_ptr = sync_ptr_values.get();
                     let validity_ptr = sync_ptr_validity.get();

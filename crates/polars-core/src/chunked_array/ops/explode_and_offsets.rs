@@ -138,7 +138,7 @@ impl ChunkExplode for ListChunked {
                 }
                 (indices, new_offsets)
             } else {
-                // we have already ensure that validity is not none.
+                // we have already ensured that validity is not none.
                 let validity = listarr.validity().unwrap();
 
                 let mut indices =
@@ -213,7 +213,7 @@ impl ChunkExplode for ArrayChunked {
 
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
-        // we have already ensure that validity is not none.
+        // we have already ensured that validity is not none.
         let validity = arr.validity().unwrap();
         let width = arr.size();
 
@@ -283,7 +283,7 @@ impl ChunkExplode for ArrayChunked {
             return Ok((s, offsets));
         }
 
-        // we have already ensure that validity is not none.
+        // we have already ensured that validity is not none.
         let validity = arr.validity().unwrap();
         let values = arr.values();
         let width = arr.size();

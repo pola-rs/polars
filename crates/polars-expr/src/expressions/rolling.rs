@@ -85,6 +85,13 @@ impl PhysicalExpr for RollingExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut index_column = self.index_column.evaluate_on_groups(df, groups, state)?;
+        polars_ensure!(
+            !matches!(
+                index_column.agg_state(),
+                AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
+            ),
+            InvalidOperation: "the index column of `rolling` must have a value per row, not per group"
+        );
 
         index_column.groups();
 
@@ -116,7 +123,7 @@ impl PhysicalExpr for RollingExpr {
         //
         // This is not strictly necessary but allows us to reuse the existing `RollingWindower`
         // struct.
-        let (slice_groups, overlapping, monotonic) = match &**index_column.groups {
+        let slice_groups = match &**index_column.groups {
             GroupsType::Idx(idx) => {
                 let mut data = Vec::with_capacity(num_elements);
                 let mut slices = Vec::with_capacity(groups.len());
@@ -125,13 +132,13 @@ impl PhysicalExpr for RollingExpr {
                     data.extend(i.iter().map(|i| index_column_data[*i as usize]));
                 }
                 index_column_data = Cow::Owned(data);
-                (Cow::Owned(slices), false, true)
+                Cow::Owned(slices)
             },
             GroupsType::Slice {
                 groups,
-                overlapping,
-                monotonic,
-            } => (Cow::Borrowed(groups), *overlapping, *monotonic),
+                overlapping: _,
+                monotonic: _,
+            } => Cow::Borrowed(groups),
         };
 
         // We need to make sure there are no length mismatches, otherwise we will have problems
@@ -191,11 +198,13 @@ impl PhysicalExpr for RollingExpr {
                     }));
                     i += idx.len();
                 }
-                GroupsType::Idx(nested_groups.into())
+                let mut nested_groups: GroupsIdx = nested_groups.into();
+                nested_groups.set_sorted_idxs_in_groups(idx.has_sorted_idxs_in_groups());
+                GroupsType::Idx(nested_groups)
             },
             GroupsType::Slice {
                 groups,
-                overlapping: _,
+                overlapping,
                 monotonic,
             } => {
                 let mut nested_groups = Vec::with_capacity(num_elements);
@@ -208,7 +217,10 @@ impl PhysicalExpr for RollingExpr {
                     );
                     i += *length as usize;
                 }
-                GroupsType::new_slice(nested_groups, true, *monotonic)
+                // Windows of overlapping outer groups can step back.
+                let monotonic =
+                    (*monotonic && !*overlapping) || slice_groups_are_monotonic(&nested_groups);
+                GroupsType::new_slice(nested_groups, true, monotonic)
             },
         };
 
@@ -223,12 +235,19 @@ impl PhysicalExpr for RollingExpr {
             nested_groups.len()
         );
 
+        // `out` holds the values of each group back to back.
+        let mut start = 0;
+        let out_groups = slice_groups
+            .iter()
+            .map(|&[_, len]| {
+                let group = [start, len];
+                start += len;
+                group
+            })
+            .collect();
         let out = AggregationContext {
             state: AggState::NotAggregated(out.into_column()),
-            groups: Cow::Owned(
-                GroupsType::new_slice(slice_groups.into_owned(), overlapping, monotonic)
-                    .into_sliceable(),
-            ),
+            groups: Cow::Owned(GroupsType::new_slice(out_groups, false, true).into_sliceable()),
             update_groups: UpdateGroups::No,
             original_groups: false,
         };

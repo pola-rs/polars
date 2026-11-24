@@ -20,7 +20,7 @@ import polars.selectors as cs
 from polars._dependencies import dataclasses, pydantic
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
-from polars.exceptions import DuplicateError, ShapeError
+from polars.exceptions import DuplicateError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
@@ -1751,6 +1751,94 @@ def test_datetime_date_subclasses() -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    ("time_unit", "expected"),
+    [
+        ("us", datetime(1969, 12, 31, 23, 59, 59, 999999)),
+        ("ms", datetime(1969, 12, 31, 23, 59, 59, 999000)),
+    ],
+)
+def test_init_rows_timestamp_floors_to_time_unit_28869(
+    time_unit: Literal["us", "ms"], expected: datetime
+) -> None:
+    value = pd.Timestamp(-1, unit="ns")
+    schema = {"t": pl.Datetime(time_unit)}
+
+    for df in (
+        pl.from_dicts([{"t": value}], schema=schema),
+        pl.from_records([(value,)], schema=schema, orient="row"),
+        pl.Series([{"t": value}], dtype=pl.Struct(schema)).struct.unnest(),
+    ):
+        assert df.schema == schema
+        assert df.item() == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "finer", "dtype"),
+    [
+        (datetime(3000, 1, 1), pd.Timestamp(1, unit="ns"), pl.Datetime("ns")),
+        (timedelta(days=300 * 365), pd.Timedelta(1, unit="ns"), pl.Duration("ns")),
+    ],
+)
+@pytest.mark.parametrize(
+    ("wrap", "wrap_dtype", "unwrap"),
+    [
+        (lambda v: v, lambda dt: dt, lambda x: x),
+        (lambda v: [v], pl.List, lambda x: x[0]),
+        (lambda v: [v], lambda dt: pl.Array(dt, 1), lambda x: x[0]),
+        (lambda v: {"x": v}, lambda dt: pl.Struct({"x": dt}), lambda x: x["x"]),
+        (
+            lambda v: [{"x": v}],
+            lambda dt: pl.List(pl.Struct({"x": dt})),
+            lambda x: x[0]["x"],
+        ),
+        (
+            lambda v: {"x": [v]},
+            lambda dt: pl.Struct({"x": pl.List(dt)}),
+            lambda x: x["x"][0],
+        ),
+    ],
+)
+def test_init_rows_temporal_out_of_range(
+    value: Any,
+    finer: Any,
+    dtype: pl.DataType,
+    wrap: Callable[[Any], Any],
+    wrap_dtype: Callable[[pl.DataType], pl.DataType],
+    unwrap: Callable[[Any], Any],
+) -> None:
+    # values overflowing a (possibly nested) time unit raise if strict, else are null
+    msg = r"conversion from .* failed"
+    v = wrap(value)
+    schema = {"t": wrap_dtype(dtype)}
+    constructors: list[Callable[[bool], pl.DataFrame]] = [
+        lambda strict: pl.from_dicts([{"t": v}], schema=schema, strict=strict),
+        lambda strict: pl.from_records(
+            [(v,)], schema=schema, orient="row", strict=strict
+        ),
+        lambda strict: pl.Series(
+            [{"t": v}], dtype=pl.Struct(schema), strict=strict
+        ).struct.unnest(),
+    ]
+    for construct in constructors:
+        with pytest.raises(InvalidOperationError, match=msg):
+            construct(True)
+        df = construct(False)
+        assert df.schema == schema
+        assert unwrap(df.item()) is None
+
+    # (also with an inferred schema, which adopts the finer time unit of another row)
+    rows = [(v,), (wrap(finer),)]
+    inferred: list[Callable[[bool], pl.DataFrame]] = [
+        lambda strict: pl.from_dicts([{"t": r[0]} for r in rows], strict=strict),
+        lambda strict: pl.from_records(rows, schema=["t"], orient="row", strict=strict),
+    ]
+    for construct in inferred:
+        with pytest.raises(InvalidOperationError, match=msg):
+            construct(True)
+        assert unwrap(construct(False).item(0, 0)) is None
+
+
 def test_list_null_constructor() -> None:
     s = pl.Series("a", [[None], [None]], dtype=pl.List(pl.Null))
     assert s.dtype == pl.List(pl.Null)
@@ -1942,6 +2030,45 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
     assert df.equals(round_trip_df)
 
 
+class _DictionaryExtensionType(pa.ExtensionType):  # type: ignore[misc]
+    def __init__(self, storage_type: pa.DataType) -> None:
+        super().__init__(storage_type, "test.dictionary")
+
+    def __arrow_ext_serialize__(self) -> bytes:
+        return b""
+
+    @classmethod
+    def __arrow_ext_deserialize__(
+        cls, storage_type: pa.DataType, serialized: bytes
+    ) -> Any:
+        return cls(storage_type)
+
+
+@pytest.mark.parametrize("via_pycapsule", [True, False])
+def test_extension_dictionary_29442(via_pycapsule: bool) -> None:
+    values = ["a", None, "b", "a"]
+    storage = pa.array(values).dictionary_encode()
+    arr = pa.ExtensionArray.from_storage(
+        _DictionaryExtensionType(storage.type), storage
+    )
+    s = pl.Series(PyCapsuleArrayHolder(arr) if via_pycapsule else arr)
+    assert s.to_list() == values
+
+    # The export keeps the dictionary values.
+    out = s.to_arrow()
+    assert pa.types.is_dictionary(out.type)
+    assert out.to_pylist() == values
+
+    # Nested inside a list and a struct.
+    list_arr = pa.ListArray.from_arrays(pa.array([0, 1, 4], pa.int32()), arr)
+    s = pl.Series(PyCapsuleArrayHolder(list_arr) if via_pycapsule else list_arr)
+    assert s.to_list() == [["a"], [None, "b", "a"]]
+
+    struct_arr = pa.StructArray.from_arrays([arr], names=["f"])
+    s = pl.Series(PyCapsuleArrayHolder(struct_arr) if via_pycapsule else struct_arr)
+    assert s.to_list() == [{"f": v} for v in values]
+
+
 @pytest.mark.parametrize(
     "tz",
     [
@@ -2072,3 +2199,51 @@ def test_dataframe_height() -> None:
 
     with pytest.raises(AssertionError):
         assert_frame_equal(pl.DataFrame(), pl.DataFrame(height=10))
+
+
+@dataclasses.dataclass
+class _Inner30471:
+    a: int
+    b: int
+
+
+@dataclasses.dataclass
+class _Row30471:
+    s: _Inner30471
+
+
+def test_struct_schema_overrides_match_fields_by_name_30471() -> None:
+    rows = [_Row30471(_Inner30471(1, 2))]
+    table = pa.table({"s": [{"a": 1, "b": 2}], "l": [[{"a": 1, "b": 2}]]})
+    reordered = pl.Struct({"b": pl.Int64, "a": pl.Int64})
+    added = pl.Struct({"a": pl.Int64, "b": pl.Int64, "c": pl.Int64})
+
+    # Struct fields are reordered and added by name.
+    assert pl.DataFrame(rows, schema_overrides={"s": reordered}).rows() == [
+        ({"b": 2, "a": 1},)
+    ]
+    assert pl.DataFrame(rows, schema_overrides={"s": added}).rows() == [
+        ({"a": 1, "b": 2, "c": None},)
+    ]
+    out = pl.DataFrame(table, schema_overrides={"s": reordered, "l": pl.List(added)})
+    assert out.rows() == [({"b": 2, "a": 1}, [{"a": 1, "b": 2, "c": None}])]
+
+    # Dropping a field and out-of-range values still raise.
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame(rows, schema_overrides={"s": pl.Struct({"a": pl.Int64})})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame(
+            [_Row30471(_Inner30471(1, 300))],
+            schema_overrides={"s": pl.Struct({"b": pl.Int8, "a": pl.Int64})},
+        )
+
+
+def test_init_rows_int_to_bool_nonstrict_30541() -> None:
+    result = pl.DataFrame(
+        [[1], [2], [0], [3], [-1], [1000]],
+        schema={"b": pl.Boolean},
+        orient="row",
+        strict=False,
+    )
+    expected = pl.DataFrame({"b": [True, True, False, True, True, True]})
+    assert_frame_equal(result, expected)

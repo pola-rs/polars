@@ -30,9 +30,11 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+#[cfg(feature = "range")]
+pub use scalar::int_range_over_length_ae;
 pub use scalar::{
-    is_known_length_ae, is_length_preserving_ae, is_order_insensitive_ae, is_scalar_ae,
-    is_single_literal_ae,
+    ensure_scalar_arguments, is_known_length_ae, is_length_preserving_ae, is_order_insensitive_ae,
+    is_scalar_ae, is_single_literal_ae,
 };
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
@@ -42,9 +44,9 @@ pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
 pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
-pub use schema::ToFieldContext;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use schema::get_struct_numeric_dtype;
+pub use schema::{ToFieldContext, eval_schema};
 
 use crate::constants::LEN;
 use crate::prelude::*;
@@ -175,6 +177,9 @@ pub enum AExpr {
     ///
     /// Equivalent of `pl.element()`.
     Element,
+    /// A column of the frame read in the `evaluation` of an `Eval`: the output of the one of its
+    /// `columns` with this name, a single value per evaluated list.
+    EvalColumn(PlSmallStr),
     Explode {
         expr: Node,
         options: ExplodeOptions,
@@ -235,15 +240,19 @@ pub enum AExpr {
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///
-    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    /// Consequently, `expr` and `columns` are inputs and `evaluation` is not and needs a
+    /// different schema.
     Eval {
         expr: Node,
 
-        /// An expression that is guaranteed to not contain any column reference beyond
-        /// `pl.element()` which refers to `pl.col("")`.
+        /// An expression on `pl.element()` and on `columns` through `EvalColumn`, without a
+        /// `Column`.
         evaluation: Node,
 
         variant: EvalVariant,
+
+        /// The columns of the frame that `evaluation` reads, named by their output names.
+        columns: Vec<ExprIR>,
     },
     #[cfg(feature = "dtype-struct")]
     StructEval {
@@ -255,7 +264,7 @@ pub enum AExpr {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefor we need [`ExprIr`].
+        /// Therefore we need [`ExprIR`].
         input: Vec<ExprIR>,
         /// function to apply
         function: IRFunctionExpr,
@@ -266,6 +275,8 @@ pub enum AExpr {
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
         mapping: WindowMapping,
+        /// See [`Expr::Over`].
+        may_reorder: bool,
     },
     #[cfg(feature = "dynamic_group_by")]
     Rolling {
@@ -313,8 +324,9 @@ impl AExpr {
                 #[cfg(feature = "dtype-decimal")]
                 IRFunctionExpr::DecimalArith { .. } => true,
                 IRFunctionExpr::TruncArith(_) => true,
-                #[cfg(all(feature = "strings", feature = "temporal"))]
+                #[cfg(feature = "strings")]
                 IRFunctionExpr::StringExpr(f) => match f {
+                    #[cfg(feature = "temporal")]
                     IRStringFunction::Strptime(_, strptime_options) => {
                         debug_assert!(input.len() <= 2);
 
@@ -342,6 +354,20 @@ impl AExpr {
                         !matches!(arena.get(input[0].node()), AExpr::Literal(_))
                             && (strptime_options.strict || ambiguous_is_fallible)
                     },
+                    // A pattern read from a column can be an invalid regex.
+                    #[cfg(feature = "regex")]
+                    IRStringFunction::Contains {
+                        literal: false,
+                        strict: true,
+                    }
+                    | IRStringFunction::Find { literal: false, .. } => {
+                        !matches!(arena.get(input[1].node()), AExpr::Literal(_))
+                    },
+                    IRStringFunction::CountMatches(false) => {
+                        !matches!(arena.get(input[1].node()), AExpr::Literal(_))
+                    },
+                    #[cfg(feature = "string_to_integer")]
+                    IRStringFunction::ToInteger { strict: true, .. } => true,
                     _ => false,
                 },
                 _ => false,
@@ -352,6 +378,23 @@ impl AExpr {
                 options: CastOptions::Strict,
             } => !matches!(arena.get(*expr), AExpr::Literal(_)),
             _ => false,
+        }
+    }
+
+    /// Like `is_fallible_top_level`, but an expression that can only fail on overflow is not
+    /// fallible.
+    pub fn is_fallible_top_level_ignoring_overflow(&self, arena: &Arena<AExpr>) -> bool {
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::DecimalArith {
+                        op: DecimalArithOp::Mul,
+                        ..
+                    },
+                ..
+            } => false,
+            _ => self.is_fallible_top_level(arena),
         }
     }
 }

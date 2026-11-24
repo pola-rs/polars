@@ -1212,16 +1212,24 @@ def test_scan_parquet_filter_index_panic_23849(plmonkeypatch: PlMonkeyPatch) -> 
 
     f = io.BytesIO()
 
-    pl.select(
-        pl.int_range(0, num_rows).alias(f"col_{i}") for i in range(num_cols)
-    ).write_parquet(f)
+    df = pl.select(
+        (pl.int_range(0, num_rows) + 10 * i).alias(f"col_{i}") for i in range(num_cols)
+    )
+    df.write_parquet(f)
 
-    f.seek(0)
-
+    predicates = [
+        pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1),
+        pl.col("col_0") < 2,
+    ]
     for parallel in ["auto", "columns", "row_groups", "prefiltered", "none"]:
-        pl.scan_parquet(f, parallel=parallel).filter(  # type: ignore[arg-type]
-            pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1)
-        ).collect()
+        for predicate in predicates:
+            f.seek(0)
+            out = (
+                pl.scan_parquet(f, parallel=parallel)  # type: ignore[arg-type]
+                .filter(predicate)
+                .collect()
+            )
+            assert_frame_equal(out, df.filter(predicate))
 
 
 @pytest.mark.write_disk
@@ -2179,3 +2187,22 @@ def test_scan_parquet_predicate_on_truncated_statistics_29447(
     assert_frame_equal(
         pl.scan_parquet(path).filter(expr).collect(engine=engine), df[2:3]
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scan_parquet_is_in_imploded_series_skips_row_groups_30922(
+    tmp_path: Path,
+    engine: EngineType,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"x": range(1000)}).write_parquet(path, row_group_size=100)
+    ids = pl.Series([305, 350, 312])
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    q = pl.scan_parquet(path).filter(pl.col("x").is_in(ids.implode()))
+    out = q.collect(engine=engine)
+    assert "reading 1 / 10 row groups" in capfd.readouterr().err
+    assert out["x"].to_list() == [305, 312, 350]

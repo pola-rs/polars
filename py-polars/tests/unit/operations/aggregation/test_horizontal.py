@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 from collections import OrderedDict
+from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -378,6 +379,38 @@ def test_cum_sum_horizontal() -> None:
     assert q.collect_schema() == q.collect().schema
 
 
+def test_cum_sum_horizontal_literal_and_agg() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, None], "b": [3.0, None, 5.0]})
+
+    result = lf.select(pl.cum_sum_horizontal(pl.lit(1), "a")).collect()
+    expected = pl.DataFrame(
+        {
+            "cum_sum": [
+                {"literal": 1, "a": 2},
+                {"literal": 1, "a": 3},
+                {"literal": 1, "a": None},
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    result = (
+        lf.group_by("g", maintain_order=True)
+        .agg(pl.cum_sum_horizontal("a", "b"))
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "cum_sum": [
+                [{"a": 1.0, "b": 4.0}, {"a": 2.0, "b": None}],
+                [{"a": None, "b": None}],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_sum_dtype_12028() -> None:
     result = pl.select(
         pl.sum_horizontal([pl.duration(seconds=10)]).alias("sum_duration")
@@ -450,6 +483,16 @@ def test_mean_horizontal() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_mean_horizontal_small_int_21515() -> None:
+    lf = pl.LazyFrame(
+        {"a": [100, 1], "b": [100, None]}, schema={"a": pl.Int8, "b": pl.Int8}
+    )
+    result = lf.select(pl.mean_horizontal("a", "b").alias("mean"))
+
+    expected = pl.LazyFrame({"mean": [100.0, 1.0]}, schema={"mean": pl.Float64})
+    assert_frame_equal(result, expected)
+
+
 def test_horizontal_untyped_literal_cast_regression_26723() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [1, 2]}, schema={"a": pl.Int8, "b": pl.Int16})
 
@@ -465,10 +508,10 @@ def test_horizontal_untyped_literal_cast_regression_26723() -> None:
         schema={
             "a": pl.Int8,
             "b": pl.Int16,
-            "sum_a": pl.Int8,
+            "sum_a": pl.Int64,
             "max_a": pl.Int8,
             "min_a": pl.Int8,
-            "sum_b": pl.Int16,
+            "sum_b": pl.Int64,
         },
     )
 
@@ -603,6 +646,60 @@ def test_schema_boolean_sum_horizontal() -> None:
     assert lf.collect_schema() == OrderedDict([("a", pl.get_index_type())])
 
 
+@pytest.mark.parametrize(
+    ("dtype", "max_value"),
+    [(pl.Int8, 127), (pl.Int16, 32767), (pl.UInt8, 255), (pl.UInt16, 65535)],
+)
+def test_sum_horizontal_small_int_upcast_21515(
+    dtype: pl.DataType, max_value: int
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([1, 2], dtype=dtype),
+            "b": pl.Series([max_value, None], dtype=dtype),
+        }
+    )
+    out = df.lazy().select(
+        pl.sum_horizontal("a", "b").alias("ab"),
+        pl.sum_horizontal("b", "b", "b").alias("bbb"),
+        pl.sum_horizontal("b").alias("b"),
+    )
+    expected = pl.DataFrame(
+        {"ab": [max_value + 1, 2], "bbb": [3 * max_value, 0], "b": [max_value, 0]},
+        schema={"ab": pl.Int64, "bbb": pl.Int64, "b": pl.Int64},
+    )
+    assert_frame_equal(out.collect(), expected)
+
+
+def test_sum_horizontal_decimal_21515() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [D("1.25"), D("99999999.99"), None],
+            "b": [D("2.50"), D("0.01"), D("3.00")],
+            "c": [D("0.125"), D("1.000"), D("2.001")],
+        },
+        schema={"a": pl.Decimal(10, 2), "b": pl.Decimal(10, 2), "c": pl.Decimal(12, 3)},
+    )
+    out = lf.select(
+        pl.sum_horizontal("a").alias("a"),
+        pl.sum_horizontal("a", "b").alias("ab"),
+        pl.sum_horizontal("a", "c").alias("ac"),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [D("1.25"), D("99999999.99"), D("0.00")],
+            "ab": [D("3.75"), D("100000000.00"), D("3.00")],
+            "ac": [D("1.375"), D("100000000.990"), D("2.001")],
+        },
+        schema={
+            "a": pl.Decimal(38, 2),
+            "ab": pl.Decimal(38, 2),
+            "ac": pl.Decimal(38, 3),
+        },
+    )
+    assert_frame_equal(out.collect(), expected)
+
+
 def test_fold_all_schema() -> None:
     df = pl.DataFrame(
         {
@@ -695,7 +792,7 @@ def test_horizontal_sum_boolean_with_null() -> None:
     [
         (pl.Null, pl.Null),
         (pl.Boolean, pl.get_index_type()),
-        (pl.UInt8, pl.UInt8),
+        (pl.UInt8, pl.Int64),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
         (pl.Decimal(None, 5), pl.Decimal(None, 5)),

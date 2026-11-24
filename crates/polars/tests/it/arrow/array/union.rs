@@ -330,7 +330,7 @@ fn offsets_must_be_in_bounds() {
     ];
 
     let types = vec![0, 0, 1].into();
-    // it must be equal to length og types
+    // it must be equal to length of types
     let offsets = vec![0, 1].into();
 
     assert!(UnionArray::try_new(dtype, types, fields.clone(), Some(offsets)).is_err());

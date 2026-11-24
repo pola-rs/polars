@@ -27,7 +27,7 @@ mod test {
         Ok(())
     }
 
-    /// test using the `DeserializedOwned` trait
+    /// test using the `DeserializeOwned` trait
     #[test]
     fn test_serde_owned() {
         let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(2)]);
@@ -69,7 +69,7 @@ mod test {
         assert!(df.equals_missing(&out));
     }
 
-    /// test using the `DeserializedOwned` trait
+    /// test using the `DeserializeOwned` trait
     #[test]
     fn test_serde_df_owned_json() {
         let df = sample_dataframe();

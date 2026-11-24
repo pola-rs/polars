@@ -184,6 +184,22 @@ impl ColumnChunkMetadata {
         Ok(self.compact_metadata()?.dictionary_page_offset)
     }
 
+    /// Whether some data pages are not dictionary-encoded although the chunk has a
+    /// dictionary page. Writers such as Arrow and parquet-mr switch to plain encoding
+    /// once the dictionary grows too large. `None` when the writer doesn't record page
+    /// encoding stats; Polars doesn't.
+    pub fn dictionary_fallback(&self) -> ParquetResult<Option<bool>> {
+        Ok(self.compact_metadata()?.dictionary_fallback)
+    }
+
+    /// Combined length in bytes of all byte array values (strings, binary) in this
+    /// chunk, before encoding. Every occurrence counts, but nulls and the 4-byte
+    /// length prefixes don't. Returns `None` for columns that aren't byte arrays,
+    /// or when the writer didn't write size statistics.
+    pub fn unencoded_byte_array_data_bytes(&self) -> ParquetResult<Option<i64>> {
+        Ok(self.compact_metadata()?.unencoded_byte_array_data_bytes)
+    }
+
     /// Bloom filter byte offset, if present.
     pub fn bloom_filter_offset(&self) -> ParquetResult<Option<i64>> {
         Ok(self.compact_metadata()?.bloom_filter_offset)

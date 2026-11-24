@@ -37,7 +37,7 @@ impl AmortSeries {
     /// Swaps inner state with the `array`. Prefer `AmortSeries::with_array` as this
     /// restores the state.
     /// # Safety
-    /// This swaps an underlying pointer that might be hold by other cloned series.
+    /// This swaps an underlying pointer that might be held by other cloned series.
     pub unsafe fn swap(&mut self, array: &mut ArrayRef) {
         let inner = self.container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
         let inner = inner.as_mut().unwrap();
@@ -50,7 +50,7 @@ impl AmortSeries {
         }
     }
 
-    /// Temporary swaps out the array, and restores the original state
+    /// Temporarily swaps out the array, and restores the original state
     /// when application of the function `f` is done.
     ///
     /// # Safety

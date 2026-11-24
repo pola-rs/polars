@@ -27,6 +27,7 @@ pub fn create_file_writer_starter(
     Ok(match file_format {
         #[cfg(feature = "parquet")]
         FileWriteFormat::Parquet(options) => {
+            use polars_core::prelude::CompatLevel;
             use polars_io::schema_to_arrow_checked;
 
             use crate::nodes::io_sinks::writers::parquet::ParquetWriterStarter;
@@ -41,9 +42,23 @@ pub fn create_file_writer_starter(
                 )?)
             };
 
+            // Encode Polars views directly while keeping the requested Arrow schema in the footer.
+            let mut row_group_schema = Arc::clone(&arrow_schema);
+            if options.arrow_schema.is_none() && options.compat_level() != CompatLevel::newest() {
+                for (name, dtype) in file_schema.iter() {
+                    if dtype.contains_views() {
+                        Arc::make_mut(&mut row_group_schema)
+                            .get_mut(name)
+                            .unwrap()
+                            .dtype = dtype.to_arrow(CompatLevel::newest());
+                    }
+                }
+            }
+
             Arc::new(ParquetWriterStarter::try_new(
                 Arc::clone(options),
                 arrow_schema,
+                row_group_schema,
             )?) as _
         },
         #[cfg(feature = "ipc")]

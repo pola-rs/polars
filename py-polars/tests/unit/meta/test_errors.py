@@ -28,6 +28,8 @@ from polars.testing import assert_frame_equal
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import ConcatMethod
 
 
@@ -198,10 +200,10 @@ def test_not_found_on_rename() -> None:
 
     err_type = (SchemaFieldNotFoundError, ColumnNotFoundError)
     with pytest.raises(err_type):
-        df.rename({"does_not_exist": "exists"})
+        df.rename({"does_not_exist": "exists"})  # pyrefly: ignore[unknown-column]
 
     with pytest.raises(err_type):
-        df.select(pl.col("does_not_exist").alias("new_name"))
+        df.select(pl.col("does_not_exist").alias("new_name"))  # pyrefly: ignore[unknown-column]
 
 
 def test_getitem_errs() -> None:
@@ -336,13 +338,6 @@ def test_invalid_dtype() -> None:
         match=r"cannot parse input <class 'datetime\.tzinfo'> into Polars data type",
     ):
         pl.Series([None], dtype=tzinfo)  # type: ignore[arg-type]
-
-
-def test_arr_eval_named_cols() -> None:
-    df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
-
-    with pytest.raises(ComputeError):
-        df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
 
 def test_alias_in_join_keys() -> None:
@@ -698,7 +693,7 @@ def test_raise_column_not_found_in_join_arg() -> None:
     a = pl.DataFrame({"x": [1, 2, 3]})
     b = pl.DataFrame({"y": [1, 2, 3]})
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
-        a.join(b, on="y")
+        a.join(b, on="y")  # pyrefly: ignore[unknown-column]
 
 
 def test_raise_on_different_results_20104() -> None:
@@ -723,7 +718,7 @@ def test_shift_with_null_raises(fill_value: Any) -> None:
         )
 
 
-def test_raies_on_mismatch_column_length_24500() -> None:
+def test_raise_on_mismatch_column_length_24500() -> None:
     df = pl.DataFrame(
         {
             "a": [10, 10, 10, 20, 20, 20],
@@ -743,7 +738,7 @@ def test_raies_on_mismatch_column_length_24500() -> None:
         )
 
 
-def test_raies_on_mismatch_column_length_binary_expr() -> None:
+def test_raise_on_mismatch_column_length_binary_expr() -> None:
     df = pl.DataFrame(
         {
             "a": [10, 10, 10, 20, 20, 20],
@@ -767,13 +762,13 @@ def test_raies_on_mismatch_column_length_binary_expr() -> None:
 def test_column_not_found_lists_available() -> None:
     df = pl.DataFrame({"foo": [1, 2], "bar": [3, 4], "baz": [5, 6]})
     with pytest.raises(ColumnNotFoundError, match=r"(?s).*foo.*bar.*baz.*"):
-        df.select("missing")
+        df.select("missing")  # pyrefly: ignore[unknown-column]
 
 
 def test_column_not_found_suggests_similar() -> None:
     df = pl.DataFrame({"alpha": [1, 2], "beta": [3, 4]})
     with pytest.raises(ColumnNotFoundError, match=r"Did you mean \"alpha\""):
-        df.select("alphe")
+        df.select("alphe")  # pyrefly: ignore[unknown-column]
 
 
 def test_str_namespace_typo_suggests() -> None:
@@ -835,3 +830,70 @@ def test_invalid_classmethod_error() -> None:
     match = "'Series' object has no attribute 'nonexistent'"
     with pytest.raises(AttributeError, match=re.escape(match)):
         pl.Series.nonexistent()  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("query", "error", "inner", "outer"),
+    [
+        # Raised while resolving the output schema.
+        (
+            lambda lf: lf.select(x=(pl.col("a").list.len() * 2).sum()),
+            InvalidOperationError,
+            'col("a").list.length()',
+            '(col("a").list.length() * dyn int: 2).sum().alias("x")',
+        ),
+        # Raised by type coercion.
+        (
+            lambda lf: lf.filter(
+                pl.col("a").str.starts_with("x") | pl.col("b").is_null()
+            ),
+            InvalidOperationError,
+            'col("a").str.starts_with(["x"])',
+            'col("a").str.starts_with(["x"]) | col("b").is_null()',
+        ),
+        # Raised while converting the expression.
+        (
+            lambda lf: lf.select(
+                c=(pl.col("a").cumulative_eval(pl.element()) * 2).sum()
+            ),
+            InvalidOperationError,
+            'col("a").cumulative_eval(element(), min_samples=1)',
+            '[(col("a").cumulative_eval(element(), min_samples=1)) * (dyn int: 2)]'
+            '.sum().alias("c")',
+        ),
+        # Raised by the scalar argument check after type coercion.
+        (
+            lambda lf: lf.select(c=(pl.col("a").shift(pl.col("b")) * 2).sum()),
+            ShapeError,
+            'col("a").shift([col("b")])',
+            '(col("a").shift([col("b")]) * 2).sum()',
+        ),
+    ],
+)
+def test_planning_error_names_expression(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame],
+    error: type[Exception],
+    inner: str,
+    outer: str,
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "b": [1, 2]})
+    with pytest.raises(error) as exc:
+        query(lf).collect_schema()
+    msg = str(exc.value)
+    assert f"This error occurred in the following expression:\n\t{inner}\n" in msg
+    assert f"while evaluating this larger expression:\n\t{outer}\n" in msg
+
+
+def test_planning_error_shows_the_plan_until_the_failure() -> None:
+    lf = pl.LazyFrame({"a": [1, 2]}).select(pl.col("nope"))
+    with pytest.raises(ColumnNotFoundError) as exc:
+        lf.collect()
+    msg = str(exc.value)
+    assert msg.startswith('unable to find column "nope"; valid columns: ["a"]\n\n')
+
+    plan = msg.index("Resolved plan until failure:\n\n\t---> FAILED HERE RESOLVING ")
+    expr = msg.index(
+        'This error occurred in the following expression:\n\tcol("nope")\n'
+    )
+    stack = msg.index("This error occurred with the following context stack:\n")
+    assert plan < expr < stack

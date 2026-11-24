@@ -886,7 +886,7 @@ fn fmt_float_string_custom(
         num.to_string()
     } else {
         // Take existing numeric string and apply digit grouping & separator/decimal chars
-        // e.g. "1000000" → "1_000_000", "-123456.798" → "-123,456.789", etc
+        // e.g. "1000000" → "1_000_000", "-123456.789" → "-123,456.789", etc
         let (idx, has_fractional) = match num.find('.') {
             Some(i) => (i, true),
             None => (num.len(), false),
@@ -995,7 +995,10 @@ fn fmt_datetime(
     tu: TimeUnit,
     tz: Option<&self::datatypes::TimeZone>,
 ) -> fmt::Result {
-    let ndt = tu.timestamp_to_datetime(v);
+    // (timestamps beyond chrono's range have no calendar form, so show the raw value)
+    let Some(ndt) = tu.timestamp_to_datetime_opt(v) else {
+        return write!(f, "{v}{}", tu.to_ascii());
+    };
     match tz {
         None => std::fmt::Display::fmt(&ndt, f),
         Some(tz) => PlTzAware::new(ndt, tz).fmt(f),
@@ -1333,7 +1336,7 @@ impl Series {
                 result.push(']');
             },
             _ => {
-                let s = self.slice(0, max_items);
+                let s = self.slice(Slice::head(max_items));
                 for (i, item) in s.iter().enumerate() {
                     if i == max_items.saturating_sub(1) {
                         write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap()).unwrap();

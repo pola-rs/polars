@@ -17,10 +17,14 @@ Query Clauses
      - Specify the table(s) from which to retrieve or delete data. Can also be used as the leading clause.
    * - :ref:`JOIN <join>`
      - Combine rows from two or more tables based on a related column.
+   * - :ref:`PIVOT <pivot>`
+     - Turn the values of a column into columns, aggregating the rows of each.
+   * - :ref:`UNPIVOT <unpivot>`
+     - Turn columns into rows of a name column and a value column.
    * - :ref:`WHERE <where>`
      - Filter rows returned from the query based on the given conditions.
    * - :ref:`GROUP BY <group_by>`
-     - Aggregate row values based based on one or more key columns.
+     - Aggregate row values based on one or more key columns.
    * - :ref:`GROUP BY ALL <group_by_all>`
      - Automatically group by all non-aggregate columns in the projection.
    * - :ref:`HAVING <having>`
@@ -69,6 +73,26 @@ Select the columns to be returned by the query.
     # │ 1   ┆ zz  │
     # │ 2   ┆ yy  │
     # │ 3   ┆ xx  │
+    # └─────┴─────┘
+
+A SELECT item can read the alias of an item before it. An input column of the same name
+comes before the alias. A window function cannot read an alias that holds a window
+function or ``RANDOM()``.
+
+.. code-block:: python
+
+    df.sql("""
+      SELECT a * 2 AS x, x + 1 AS y FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────┬─────┐
+    # │ x   ┆ y   │
+    # │ --- ┆ --- │
+    # │ i64 ┆ i64 │
+    # ╞═════╪═════╡
+    # │ 2   ┆ 3   │
+    # │ 4   ┆ 5   │
+    # │ 6   ┆ 7   │
     # └─────┴─────┘
 
 .. note::
@@ -203,6 +227,46 @@ Using ``FROM`` as the leading clause, with ``SELECT``:
     # │ xx  ┆ 3   │
     # └─────┴─────┘
 
+**Files:** a path in single quotes is read as a file when it ends in the extension of a file
+format: ``.csv``, ``.parquet``, ``.ipc`` / ``.arrow`` / ``.feather``, or ``.ndjson`` /
+``.jsonl``. The path can be a glob or a cloud URL, and a leading ``~`` is the home directory.
+The file is read with the defaults of the ``read_csv``, ``read_parquet``, ``read_ipc`` or
+``read_ndjson`` table function; call that function to pass options, or to read a path that
+does not end in such an extension. A table of the same name comes first, and any other name
+in quotes is looked up as a table. To run untrusted SQL, turn off reading and writing files
+and URLs with ``SQLContext(allow_file_reads=False, allow_file_writes=False)``.
+
+.. code-block:: sql
+
+    SELECT * FROM 'data/events.parquet'
+    SELECT region, COUNT(*) FROM 'data/sales_*.csv' GROUP BY region
+
+.. _time_travel:
+
+**Time travel:** a table of an attached catalog (see
+:meth:`SQLContext.register_catalog`) can be read as of a snapshot, a branch or tag, or
+a time. The clause follows the table name or its alias, and takes a literal. Tags and
+branches are made with :ref:`ALTER TABLE <alter_table>`.
+
+* ``[FOR] VERSION AS OF <version>`` or ``AT (VERSION => <version>)``: an integer is a
+  snapshot id, a string a branch or tag.
+* ``[FOR] TIMESTAMP AS OF <ts>``, ``FOR SYSTEM_TIME AS OF <ts>`` or
+  ``AT (TIMESTAMP => <ts>)``: the snapshot current on the main branch at that time, by
+  the commit times in the table's metadata log. A time without a time zone is UTC. For
+  a UTC offset, use ``TIMESTAMPTZ '...'`` or a string.
+
+Every spelling means the same. The snapshot's schema is used. A time is refused when
+its snapshot has expired, or when it is older than the metadata log
+(``write.metadata.previous-versions-max``). Only reads can travel: a ``MERGE`` that
+reads its own table as of a version uses those rows as they were, so it can bring back
+deleted rows or overwrite newer values.
+
+.. code-block:: sql
+
+    SELECT * FROM lake.sales.orders FOR VERSION AS OF 4348393417211393838
+    SELECT * FROM lake.sales.orders FOR VERSION AS OF 'end-of-quarter'
+    SELECT * FROM lake.sales.orders o AT (TIMESTAMP => TIMESTAMP '2026-01-01 00:00:00')
+
 .. _join:
 
 JOIN
@@ -219,6 +283,7 @@ Combines rows from two or more tables based on a related column.
 * `[LEFT | RIGHT] ANTI JOIN`
 * `[LEFT | RIGHT] SEMI JOIN`
 * `ASOF JOIN ... MATCH_CONDITION (...)` (see :ref:`ASOF joins <asof_join>`)
+* `POSITIONAL JOIN` (see :ref:`positional joins <positional_join>`)
 
 **Example:**
 
@@ -322,6 +387,36 @@ be freely combined with equi-conditions using ``AND``.
     # │ 45    ┆ 20  ┆ 50  │
     # └───────┴─────┴─────┘
 
+**LATERAL derived tables**
+
+A derived table in a join, or in a comma-separated ``FROM``, can read the columns of the
+tables before it. The ``LATERAL`` keyword is optional. Some shapes are not supported yet,
+such as a derived table with ``LIMIT`` or a window function.
+
+.. code-block:: python
+
+    customers = pl.DataFrame({"name": ["a", "b", "c"]})
+    orders = pl.DataFrame({"customer": ["a", "a", "b"], "amount": [10, 20, 5]})
+    pl.sql("""
+      SELECT name, s.total, s.n
+      FROM customers, LATERAL (
+        SELECT SUM(amount) AS total, COUNT(*) AS n
+        FROM orders
+        WHERE orders.customer = customers.name
+      ) s
+      ORDER BY name
+    """).collect()
+    # shape: (3, 3)
+    # ┌──────┬───────┬─────┐
+    # │ name ┆ total ┆ n   │
+    # │ ---  ┆ ---   ┆ --- │
+    # │ str  ┆ i64   ┆ i64 │
+    # ╞══════╪═══════╪═════╡
+    # │ a    ┆ 30    ┆ 2   │
+    # │ b    ┆ 5     ┆ 1   │
+    # │ c    ┆ null  ┆ 0   │
+    # └──────┴───────┴─────┘
+
 .. _asof_join:
 
 **ASOF joins**
@@ -362,6 +457,106 @@ is no matching right row, the right columns are null.
     # │ 2018-08-01 ┆ 82.66      ┆ 4566 │
     # │ 2019-01-01 ┆ 83.12      ┆ 4696 │
     # └────────────┴────────────┴──────┘
+
+.. _positional_join:
+
+**Positional joins**
+
+A ``POSITIONAL JOIN`` pairs the rows of two tables by their position: the first row with the
+first row, and so on. It takes no join condition. If one table has fewer rows, its columns
+are null for the remaining rows. The result depends on the order of the rows, so join tables
+whose order is known, such as tables that were not joined or grouped first.
+
+.. code-block:: python
+
+    df1 = pl.DataFrame({"foo": [1, 2, 3]})
+    df2 = pl.DataFrame({"bar": ["a", "b"]})
+    pl.sql("SELECT * FROM df1 POSITIONAL JOIN df2").collect()
+    # shape: (3, 2)
+    # ┌─────┬──────┐
+    # │ foo ┆ bar  │
+    # │ --- ┆ ---  │
+    # │ i64 ┆ str  │
+    # ╞═════╪══════╡
+    # │ 1   ┆ a    │
+    # │ 2   ┆ b    │
+    # │ 3   ┆ null │
+    # └─────┴──────┘
+
+.. _pivot:
+
+PIVOT
+-----
+Turns the values of a column into columns. ``<table> PIVOT (<aggregates> FOR <column> IN
+(<values>))`` groups the rows by the columns of the table that the ``PIVOT`` doesn't read,
+and gives a column per value with the aggregate over the rows of the group whose
+``<column>`` has that value (a ``NULL`` value matches ``NULL``).
+
+A column is named by its value, or by the value's alias. With an aliased aggregate, or more
+than one aggregate, it is named ``<value>_<aggregate alias>`` (or ``<value>_<aggregate>``
+for an aggregate without an alias). The values must be given as a list.
+
+**Example:**
+
+.. code-block:: python
+
+    sales = pl.DataFrame(
+      {
+        "region": ["north", "north", "south", "south"],
+        "quarter": ["q1", "q2", "q1", "q2"],
+        "amount": [10, 20, 30, 40],
+      }
+    )
+    pl.sql("""
+      SELECT * FROM sales
+      PIVOT (SUM(amount) FOR quarter IN ('q1', 'q2'))
+      ORDER BY region
+    """).collect()
+    # shape: (2, 3)
+    # ┌────────┬─────┬─────┐
+    # │ region ┆ q1  ┆ q2  │
+    # │ ---    ┆ --- ┆ --- │
+    # │ str    ┆ i64 ┆ i64 │
+    # ╞════════╪═════╪═════╡
+    # │ north  ┆ 10  ┆ 20  │
+    # │ south  ┆ 30  ┆ 40  │
+    # └────────┴─────┴─────┘
+
+.. _unpivot:
+
+UNPIVOT
+-------
+Turns columns into rows. ``<table> UNPIVOT (<value> FOR <name> IN (<columns>))`` gives, for
+each row and listed column, a row with the other columns, the column's name (or its alias)
+in ``<name>``, and its value in ``<value>``. Rows whose value is null are left out, unless
+``UNPIVOT INCLUDE NULLS`` is used.
+
+**Example:**
+
+.. code-block:: python
+
+    wide = pl.DataFrame(
+      {
+        "region": ["north", "south"],
+        "q1": [10, 30],
+        "q2": [20, None],
+      }
+    )
+    pl.sql("""
+      SELECT * FROM wide
+      UNPIVOT (amount FOR quarter IN (q1, q2))
+      ORDER BY region, quarter
+    """).collect()
+    # shape: (3, 3)
+    # ┌────────┬─────────┬────────┐
+    # │ region ┆ quarter ┆ amount │
+    # │ ---    ┆ ---     ┆ ---    │
+    # │ str    ┆ str     ┆ i64    │
+    # ╞════════╪═════════╪════════╡
+    # │ north  ┆ q1      ┆ 10     │
+    # │ north  ┆ q2      ┆ 20     │
+    # │ south  ┆ q1      ┆ 30     │
+    # └────────┴─────────┴────────┘
 
 .. _where:
 

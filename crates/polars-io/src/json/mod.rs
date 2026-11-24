@@ -154,8 +154,8 @@ where
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let batches = df
-            .iter_chunks(CompatLevel::newest(), false)
-            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+            .try_iter_chunks(CompatLevel::newest(), false)
+            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk?, fields.clone())) as ArrayRef));
 
         match self.json_format {
             JsonFormat::JsonLines => {
@@ -198,9 +198,9 @@ where
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let chunks = df.iter_chunks(CompatLevel::newest(), false);
+        let chunks = df.try_iter_chunks(CompatLevel::newest(), false);
         let batches =
-            chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+            chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk?, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
         while let Some(block) = serializer.next()? {
             self.writer.write_all(block)?;
@@ -263,7 +263,7 @@ where
     /// Take the SerReader and return a parsed DataFrame.
     ///
     /// Because JSON values specify their types (number, string, etc), no upcasting or conversion is performed between
-    /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
+    /// incompatible types in the input. In the event that a column contains mixed dtypes, it is unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let pre_rb: ReaderBytes = (&mut self.reader).into();

@@ -346,6 +346,58 @@ def test_join_on_cast() -> None:
     }
 
 
+def test_join_multiple_keys_right_chunks_differ_from_key() -> None:
+    n = pl.thread_pool_size()
+    parts = [pl.DataFrame({"g": [i], "h": [i], "v": [f"v{i}"]}) for i in range(n - 1)]
+    rest = range(n - 1, 2 * n)
+    parts.append(
+        pl.DataFrame({"g": list(rest), "h": list(rest), "v": [f"v{i}" for i in rest]})
+    )
+    right = pl.concat(parts, rechunk=False)
+    left = pl.DataFrame({"g": range(2 * n), "h": range(2 * n)})
+
+    out = left.join(right, on=["g", "h"], how="left")
+    expected = left.with_columns(v=pl.format("v{}", "g"))
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("how", ["left", "right"])
+def test_join_struct_null_count_multi_chunk_side_30672(how: JoinStrategy) -> None:
+    structs = pl.concat(
+        [
+            pl.DataFrame({"k": [0], "s": [{"a": 1}]}),
+            pl.DataFrame({"k": [2], "s": [{"a": 2}]}),
+        ],
+        rechunk=False,
+    )
+    keys = pl.DataFrame({"k": [0, 1]})
+    if how == "left":
+        out = keys.join(structs, on="k", how="left", maintain_order="left")
+    else:
+        out = structs.join(keys, on="k", how="right", maintain_order="right")
+    s = out["s"]
+
+    assert s.null_count() == 1
+    assert s.fill_null(strategy="forward").to_list() == [{"a": 1}, {"a": 1}]
+
+
+def test_left_join_struct_null_count_multi_chunk_left_30672() -> None:
+    dtype = pl.Struct({"a": pl.Int64})
+    left = pl.concat(
+        [
+            pl.DataFrame({"k": [0], "s": pl.Series([None], dtype=dtype)}),
+            pl.DataFrame({"k": [1], "s": pl.Series([{"a": 2}], dtype=dtype)}),
+        ],
+        rechunk=False,
+    )
+    # A duplicate match, so the left side is gathered too.
+    right = pl.DataFrame({"k": [0, 0, 1]})
+    s = left.join(right, on="k", how="left", maintain_order="left_right")["s"]
+
+    assert s.null_count() == 2
+    assert s.drop_nulls().to_list() == [{"a": 2}]
+
+
 def test_join_chunks_alignment_4720() -> None:
     # https://github.com/pola-rs/polars/issues/4720
 
@@ -672,6 +724,36 @@ def test_join_concat_projection_pd_case_7071() -> None:
 
     expected = pl.DataFrame({"id": [1, 1, 3]}).lazy()
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_join_sorted_fast_paths_nan_30076(dtype: PolarsDataType) -> None:
+    nan = float("nan")
+    schema = {"k": dtype}
+    left = pl.DataFrame(
+        {"k": [1.0, 2.0, nan], "id": [1, 2, 3]}, schema_overrides=schema
+    ).sort("k")
+    right = pl.DataFrame({"k": [nan, 2.0], "rid": [10, 11]}, schema_overrides=schema)
+    expected_inner = pl.DataFrame(
+        {"k": [2.0, nan], "id": [2, 3], "rid": [11, 10]}, schema_overrides=schema
+    )
+    expected_left = pl.DataFrame(
+        {"k": [1.0, 2.0, nan], "id": [1, 2, 3], "rid": [None, 11, 10]},
+        schema_overrides=schema,
+    )
+    for r in [right, right.sort("k")]:
+        assert_frame_equal(
+            left.join(r, on="k", how="inner"), expected_inner, check_row_order=False
+        )
+        assert_frame_equal(
+            left.join(r, on="k", how="left"), expected_left, check_row_order=False
+        )
+    # Only the larger right side is sorted, so the left side gets arg-sorted.
+    assert_frame_equal(
+        right.join(left, on="k", how="inner"),
+        expected_inner.select("k", "rid", "id"),
+        check_row_order=False,
+    )
 
 
 def test_join_sorted_fast_paths_null_8269() -> None:
@@ -1649,13 +1731,10 @@ def test_join_preserve_order_left() -> None:
     assert left_left.get_column("a").equals(left_left_right.get_column("a"))
 
     left_right = left.join(right, on="a", how="left", maintain_order="right").collect()
-    assert left_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [
-        1,
-        1,
-        2,
-        None,
-        5,
-    ]
+    left_right_a = left_right.get_column("a").cast(pl.UInt32).to_list()
+    assert left_right_a[:3] == [1, 1, 2]
+    # The unmatched left rows come last, in any order.
+    assert set(left_right_a[3:]) == {None, 5}
 
     left_right_left = left.join(
         right, on="a", how="left", maintain_order="right_left"
@@ -4706,6 +4785,18 @@ def test_join_slice_maintain_order_negative_offset_overshoot_28538() -> None:
     )
 
 
+def test_join_slice_maintain_order_unordered_consumer_30668() -> None:
+    left = pl.LazyFrame({"k": [1, 0]})
+    right = pl.LazyFrame({"k": [0, 1], "w": [1, 2]})
+    q = left.join(right, on="k", maintain_order="left").head(1)
+
+    expected = pl.DataFrame({"k": [1], "w": [2]})
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.sort("w").collect(), expected)
+    assert_frame_equal(q.unique().collect(), expected)
+    assert_frame_equal(q.select(pl.col("w").sum()).collect(), pl.DataFrame({"w": [2]}))
+
+
 @pytest.mark.parametrize(
     ("dtype", "present", "missing", "inner_null"),
     [
@@ -4896,6 +4987,30 @@ def test_join_key_downgrades_outer_join_below(
     assert_frame_equal(q.collect(), expect, check_row_order=False)
 
 
+@pytest.mark.parametrize(
+    ("predicate", "downgraded"),
+    [
+        (pl.col("name").str.starts_with("A"), True),
+        (pl.col("name").str.ends_with("X"), True),
+        (pl.col("name").str.contains("X", literal=True), True),
+        (pl.col("name").str.contains("A.$"), True),
+        (pl.col("name").str.len_bytes() > 1, True),
+        (pl.col("name").str.to_uppercase() == "AX", True),
+        (pl.col("name").str.slice(0, 1) == "A", True),
+        (pl.col("name").fill_null("A").str.starts_with("A"), False),
+    ],
+)
+def test_null_rejecting_string_filter_downgrades_left_join(
+    predicate: pl.Expr, downgraded: bool
+) -> None:
+    sales = pl.LazyFrame({"k": [1, 2, 3], "amount": [10, 20, 30]})
+    lookup = pl.LazyFrame({"k": [1, 2], "name": ["AX", "BY"]})
+    q = sales.join(lookup, on="k", how="left").filter(predicate)
+    assert ("LEFT JOIN:" in q.explain()) != downgraded
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
 def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
     sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
     returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
@@ -5037,3 +5152,45 @@ def test_join_asof_by_key_predicate_other_time_unit(engine: EngineType) -> None:
     ).filter(pl.col("x").cast(pl.Int64) == 1000)
 
     assert q.collect(engine=engine)["v"].to_list() == [42]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_suffixed_output_named_like_right_key_30329(engine: EngineType) -> None:
+    left = pl.LazyFrame({"id": [1, 2, 3], "name": ["ann", "bob", "cy"]})
+    right = pl.LazyFrame({"id": [7, 8, 9], "id_right": [1, 2, 7], "score": [5, 6, 0]})
+    q = left.join(right, left_on="id", right_on="id_right")
+
+    ops: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
+        lambda q: q,
+        lambda q: q.select("id_right"),
+        lambda q: q.filter(pl.col("id_right") == 7),
+    ]
+    for op in ops:
+        expected = op(q).collect(engine=engine, optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(
+            op(q).collect(engine=engine), expected, check_row_order=False
+        )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_full_join_filter_rewrite_suffix_collision(engine: EngineType) -> None:
+    left = pl.LazyFrame({"k": [1, 2], "x": [0, 1]})
+    right = pl.LazyFrame({"x": [7], "x_right": [1]})
+    q = left.join(right, left_on="k", right_on="x_right", how="full", coalesce=True)
+    q = q.filter(pl.col("x_right") == 7)
+
+    assert_frame_equal(
+        q.collect(engine=engine), pl.DataFrame({"k": [1], "x": [0], "x_right": [7]})
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_right_join_filter_rewrite_suffix_collision(engine: EngineType) -> None:
+    left = pl.LazyFrame({"x": [1], "x_right": [5]})
+    right = pl.LazyFrame({"k": [1, 2], "x": [7, 8]})
+    q = left.join(right, left_on="x", right_on="k", how="right")
+    q = q.filter(pl.col("x_right") == 5)
+
+    assert_frame_equal(
+        q.collect(engine=engine), pl.DataFrame({"x_right": [5], "k": [1], "x": [7]})
+    )

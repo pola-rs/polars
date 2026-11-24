@@ -165,7 +165,7 @@ impl IpcReaderAsync {
                 let metadata = if let Some(metadata) = metadata {
                     metadata
                 } else {
-                    // This branch is  happens when _metadata is None, which can happen if we Deserialize the execution plan.
+                    // This branch happens when _metadata is None, which can happen if we Deserialize the execution plan.
                     fetched_metadata = self.metadata().await?;
                     &fetched_metadata
                 };

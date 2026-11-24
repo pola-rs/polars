@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
@@ -470,6 +470,39 @@ def test_values_clause_derived_table() -> None:
             ctx.execute("SELECT x, y FROM tbl")
 
 
+def test_values_clause_expressions() -> None:
+    ctx = pl.SQLContext(t=pl.DataFrame({"x": [1, 2]}), eager=True)
+    res = ctx.execute(
+        """
+        SELECT * FROM (
+          VALUES (1 + 1, UPPER('a'), (SELECT MAX(x) FROM t)), (3, 'b', NULL)
+        ) AS v(a, b, m)
+        ORDER BY a DESC
+        """
+    )
+    assert res.rows() == [(3, "b", None), (2, "A", 2)]
+
+    res = ctx.execute(
+        "VALUES (CAST(1 AS DOUBLE), DATE '2020-01-01' + INTERVAL '1 day'), (2, NULL)"
+    )
+    assert res.rows() == [(1.0, date(2020, 1, 2)), (2.0, None)]
+    assert res.schema == {"column_0": pl.Float64, "column_1": pl.Date}
+
+    # a column of literals is typed as when all cells are literals
+    res = ctx.execute(
+        """
+        SELECT COUNT(DISTINCT x) AS n FROM (
+          VALUES (TIME '12:34:56.789123', 0 + 0), ('12:34:56.789123', 0)
+        ) AS v(x, y)
+        """
+    )
+    assert res.item() == 1
+
+    for query in ["VALUES (x + 1)", "VALUES (1 + 1, column_0)"]:
+        with pytest.raises(ColumnNotFoundError):
+            ctx.execute(query)
+
+
 def test_read_csv(tmp_path: Path) -> None:
     # check empty string vs null, parsing of dates, etc
     df = pl.DataFrame(
@@ -604,6 +637,67 @@ def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) ->
     )
 
 
+@pytest.mark.parametrize(
+    ("where", "order_by", "n_rows"),
+    [
+        ("WHERE FALSE", "", 0),
+        ("WHERE NULL", "", 0),
+        ("WHERE 1 = 2", "ORDER BY a", 0),
+        ("WHERE TRUE", "", 1),
+        ("WHERE 1 = 1", "ORDER BY 1", 1),
+    ],
+)
+def test_select_without_from_where(where: str, order_by: str, n_rows: int) -> None:
+    res = pl.sql(f"SELECT 1 AS a, 'x' AS b {where} {order_by}", eager=True)
+    assert res.rows() == [(1, "x")] * n_rows
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        'SELECT x AS "^x$", x + 10 AS y FROM t ORDER BY x',
+        'SELECT x AS "*", x + 10 AS y FROM t ORDER BY "*"',
+        'SELECT g AS "^x$", COUNT(*) AS y FROM t GROUP BY g ORDER BY y',
+        'SELECT DISTINCT g AS "*", 1 AS y FROM t ORDER BY 1',
+        'SELECT * FROM (SELECT x AS "^x$", x + 10 AS y FROM t) AS s ORDER BY y',
+        'SELECT s."^x$", s.y FROM (SELECT x AS "^x$", x + 10 AS y FROM t) AS s',
+        'WITH c AS (SELECT x AS "*", x + 10 AS y FROM t) SELECT * FROM c ORDER BY y',
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_select_regex_like_column_names(
+    query: str, engine: Literal["in-memory", "streaming"]
+) -> None:
+    t = pl.DataFrame({"x": [2, 1, 3], "g": [1, 1, 2]})
+    res = pl.SQLContext(t=t).execute(query).collect(engine=engine)
+    assert len(res.columns) == 2
+    assert res.columns[1] == "y"
+    assert res.columns[0] in ("^x$", "*")
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT COLUMNS('x') FROM t", {"x": [7], "^x$": [8]}),
+        ("SELECT COLUMNS('[*^]') FROM t", {"*": [9], "^x$": [8]}),
+        ('SELECT t."*" AS v FROM t', {"v": [9]}),
+        ('SELECT t."^x$" AS v FROM t', {"v": [8]}),
+        ('SELECT st."^x$" AS v FROM s', {"v": [2]}),
+        ('SELECT s.st."*" AS v FROM s', {"v": [3]}),
+        ("SELECT st.* FROM s", {"a": [1], "^x$": [2], "*": [3]}),
+        ("SELECT st->'^x$' AS v FROM s", {"v": [2]}),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_regex_like_column_and_field_names(
+    query: str, expected: dict[str, Any], engine: Literal["in-memory", "streaming"]
+) -> None:
+    t = pl.DataFrame({"x": [7], "*": [9], "^x$": [8], "other": [1]})
+    s = pl.DataFrame({"st": [{"a": 1, "^x$": 2, "*": 3}]})
+    res = pl.SQLContext(t=t, s=s).execute(query).collect(engine=engine)
+    assert res.to_dict(as_series=False) == expected
+
+
 def test_select_explode_height_filter_order_by() -> None:
     # Note: `UNNEST()` in SQL equates to `pl.DataFrame.explode()`.
     # The ordering is applied after the explode/unnest, at the dataframe level.
@@ -731,3 +825,104 @@ def test_sql_context_eager_execution_removed() -> None:
     msg = "It was renamed to 'eager'."
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.SQLContext(eager_execution=True)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT top FROM t ORDER BY top", [(1,), (2,), (3,)]),
+        ("SELECT top.x FROM t top ORDER BY 1", [(1,), (2,), (3,)]),
+        ("SELECT x, top FROM t AS top WHERE top.top > 1 ORDER BY x", [(1, 3), (3, 2)]),
+        (
+            "WITH top AS (SELECT * FROM t) "
+            "SELECT CONCAT_WS(',', top.x, TOP.top) AS s FROM top ORDER BY s",
+            [("1,3",), ("2,1",), ("3,2",)],
+        ),
+    ],
+)
+def test_top_as_identifier(query: str, expected: list[tuple[Any, ...]]) -> None:
+    t = pl.DataFrame({"top": [3, 1, 2], "x": [1, 2, 3]})
+    assert pl.SQLContext(t=t).execute(query, eager=True).rows() == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT TOP 2 x FROM t",
+        "SELECT TOP (1) x FROM t",
+        "SELECT DISTINCT TOP 1 x FROM t",
+    ],
+)
+def test_top_clause_unsupported(query: str) -> None:
+    t = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(SQLInterfaceError, match="`TOP` clause is not supported"):
+        pl.SQLContext(t=t).execute(query, eager=True)
+
+
+def test_typeof() -> None:
+    df = pl.DataFrame(
+        {"i": [1, 2], "s": ["a", "b"], "d": [date(2024, 1, 1), None], "l": [[1], []]}
+    )
+    res = df.sql(
+        """
+        SELECT
+          TYPEOF(i) AS i,
+          TYPEOF(s) AS s,
+          TYPEOF(d) AS d,
+          TYPEOF(l) AS l,
+          TYPEOF(i * CAST(1.5 AS DOUBLE)) AS f,
+          TYPEOF(1) AS lit,
+          TYPEOF(NULL) AS n,
+          TYPEOF((SELECT MAX(s) FROM self)) AS sub
+        FROM self
+        """
+    )
+    # The SQL names, which `CAST` reads back; a type without one keeps its Polars name.
+    names = (
+        "BIGINT",
+        "VARCHAR",
+        "DATE",
+        "BIGINT[]",
+        "DOUBLE PRECISION",
+        "INTEGER",
+        "null",
+        "VARCHAR",
+    )
+    assert res.rows() == [names] * 2
+    assert df.sql("SELECT TYPEOF(SUM(i)) AS t FROM self").rows() == [("BIGINT",)]
+    # The aggregate is not computed, so a value that would fail does not matter.
+    assert df.sql("SELECT TYPEOF(SUM(CAST(s AS INT))) AS t FROM self").rows() == [
+        ("INTEGER",)
+    ]
+    assert df.sql(
+        "SELECT s, TYPEOF(s) AS t FROM self GROUP BY s ORDER BY s"
+    ).rows() == [
+        ("a", "VARCHAR"),
+        ("b", "VARCHAR"),
+    ]
+    assert df.sql("SELECT TYPEOF(SUM(i) + i) AS t FROM self GROUP BY i").rows() == [
+        ("BIGINT",),
+        ("BIGINT",),
+    ]
+    with pytest.raises(SQLSyntaxError, match="'i' should participate in the GROUP BY"):
+        df.sql("SELECT TYPEOF(SUM(i) + i) FROM self")
+    with pytest.raises(SQLSyntaxError, match="'i' should participate in the GROUP BY"):
+        df.sql("SELECT SUM(i), TYPEOF(i) FROM self")
+    assert pl.sql("SELECT TYPEOF(UNNEST([1, 2, 3])) AS t", eager=True).height == 3
+    assert df.sql("SELECT TYPEOF(UNNEST(ARRAY_AGG(i))) AS t FROM self").height == 2
+    with pytest.raises(SQLSyntaxError, match=r"TYPEOF expects 1 argument \(found 2\)"):
+        df.sql("SELECT TYPEOF(i, s) FROM self")
+
+
+def test_show_functions() -> None:
+    with pl.SQLContext() as ctx:
+        names = ctx.execute("SHOW FUNCTIONS", eager=True)["name"].to_list()
+        assert {"abs", "array_agg", "read_csv", "regexp_replace", "string_agg"} <= set(
+            names
+        )
+        assert names == sorted(names)
+        res = ctx.execute("SHOW FUNCTIONS LIKE 'REGEXP_R%'", eager=True)
+        assert res["name"].to_list() == ["regexp_replace"]
+        # a backslash escapes, as in Postgres
+        res = ctx.execute(r"SHOW FUNCTIONS LIKE 'read\_csv%'", eager=True)
+        assert res["name"].to_list() == ["read_csv"]

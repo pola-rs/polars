@@ -158,8 +158,8 @@ html_theme_options = {
             "url": f"{web_root}/",
         },
         {
-            "name": "Polars Cloud API reference",
-            "url": "https://docs.cloud.pola.rs/api/python/stable/reference/index.html",
+            "name": "Polars Nanook API reference",
+            "url": "https://docs.nanook.pola.rs/api/python/stable/reference/index.html",
         },
     ],
     "icon_links": [
@@ -192,7 +192,7 @@ html_theme_options = {
         "json_url": f"{web_root}/api/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
-    "announcement": "Try distributed Polars on Kubernetes or AWS for free. <a href='https://cloud.pola.rs' target='_blank' rel='noopener noreferrer'>Get started now</a>",
+    "announcement": "Try distributed Polars on Kubernetes or AWS for free. <a href='https://pola.rs/nanook/' target='_blank' rel='noopener noreferrer'>Get started now</a>",
     "show_version_warning_banner": False,
     "navbar_end": ["theme-switcher", "version-switcher", "navbar-icon-links"],
     "check_switcher": False,

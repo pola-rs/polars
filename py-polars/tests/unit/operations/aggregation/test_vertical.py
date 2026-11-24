@@ -20,7 +20,7 @@ def assert_expr_equal(
     left
         The expression to compare.
     right
-        The other expression the compare.
+        The other expression to compare.
     context
         The context in which the expressions will be evaluated. Defaults to an empty
         context.

@@ -20,7 +20,7 @@ impl BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -38,7 +38,7 @@ impl BinaryChunked {
                 let arr = ca_self.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_bin(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= ca_self.len());
+                    debug_assert!(_idx_in_bounds(idx, ca_self.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -84,7 +84,7 @@ impl BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -100,7 +100,7 @@ impl BinaryChunked {
                 let arr = ca_self.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_bin(groups, |(first, idx)| {
-                    debug_assert!(idx.len() <= self.len());
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
@@ -145,7 +145,7 @@ impl BinaryChunked {
 
     pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
         // fast paths, consistent with other impls
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -162,7 +162,7 @@ impl BinaryChunked {
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_idx(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= ca_self.len());
+                debug_assert!(_idx_in_bounds(idx, ca_self.len()));
 
                 if idx.is_empty() {
                     None
@@ -200,7 +200,7 @@ impl BinaryChunked {
 
     pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
         // fast paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        if groups.has_sorted_idxs_in_groups() {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);
@@ -218,7 +218,7 @@ impl BinaryChunked {
 
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_idx(groups, |(first, idx)| {
-                debug_assert!(idx.len() <= ca_self.len());
+                debug_assert!(_idx_in_bounds(idx, ca_self.len()));
 
                 if idx.is_empty() {
                     None

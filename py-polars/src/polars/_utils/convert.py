@@ -75,7 +75,7 @@ def negate_duration_string(duration: str) -> str:
 
 
 def date_to_int(d: date) -> int:
-    """Convert a Python time object to an integer."""
+    """Convert a Python date object to an integer."""
     return (d - EPOCH_DATE).days
 
 
@@ -95,7 +95,7 @@ def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
 
     td = dt - EPOCH_UTC
     seconds = td.days * SECONDS_PER_DAY + td.seconds
-    microseconds = dt.microsecond
+    microseconds = td.microseconds
 
     if time_unit == "us":
         return seconds * US_PER_SECOND + microseconds

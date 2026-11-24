@@ -159,6 +159,42 @@ def test_in_subquery() -> None:
         ).collect()
 
 
+def test_row_value_in_subquery() -> None:
+    frames = {
+        "a": pl.DataFrame(
+            {
+                "x": [1, 2, 3, None, 1, 1],
+                "y": [1, 2, 3, 4, None, 1],
+                "z": [0, 1, 2, 3, 4, 5],
+            }
+        ),
+        "b": pl.DataFrame(
+            {"p": [1.0, 3.0, None, 1.0], "q": [1, 9, 4, 1], "g": [0, 0, 1, 1]}
+        ),
+    }
+    for query in [
+        "SELECT z FROM a WHERE (x, y) IN (SELECT p, q FROM b) ORDER BY z",
+        "SELECT z FROM a WHERE ((x, y)) IN (SELECT p, q FROM b)",
+        "SELECT z FROM a WHERE (y, x) IN (SELECT q, p FROM b WHERE q < 5) AND z > 0",
+        "SELECT z FROM a WHERE (x, y) IN (SELECT MAX(p), MIN(q) FROM b GROUP BY g)",
+    ]:
+        assert_sql_matches(
+            frames=frames,
+            query=query,
+            compare_with="duckdb",
+            check_row_order=False,
+            engines=["in-memory", "streaming"],
+        )
+    res = pl.SQLContext(frames=frames).execute(
+        "DELETE FROM a WHERE (x, y) IN (SELECT p, q FROM b)", eager=True
+    )
+    assert res["z"].to_list() == [1, 2, 3, 4]
+    with pytest.raises(SQLSyntaxError, match="returns 3 columns for a row value of 2"):
+        pl.SQLContext(frames=frames).execute(
+            "SELECT z FROM a WHERE (x, y) IN (SELECT p, q, g FROM b)", eager=True
+        )
+
+
 def test_subquery_20732() -> None:
     lf = pl.concat(
         [
@@ -760,7 +796,7 @@ def test_subquery_unsupported_positions_report_sql_errors() -> None:
 
     with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
         pl.sql(
-            "SELECT * FROM df1 JOIN df2 ON df1.a + df2.b > (SELECT MAX(b) FROM df2)",
+            "SELECT * FROM df1 JOIN df2 ON df1.a + df2.b = ANY (SELECT b FROM df2)",
             eager=True,
         )
 
@@ -787,6 +823,10 @@ def correlated_in_frames() -> dict[str, pl.DataFrame]:
         # for every outer row.
         "b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a AND x.b > 999)",
         "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a AND x.b > 999)",
+        # A constant value
+        "1 IN (SELECT 1 FROM t1 AS x WHERE x.a = o.a)",
+        "b NOT IN (SELECT 10 FROM t1 AS x WHERE x.a = o.a)",
+        "b IN (SELECT 10 FROM t1 AS x WHERE x.a < o.a)",
     ],
 )
 def test_correlated_in_subquery(
@@ -799,13 +839,32 @@ def test_correlated_in_subquery(
     )
 
 
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "a IN (SELECT x.a - x.b FROM t AS x WHERE x.a = o.a)",
+        "a NOT IN (SELECT x.a - x.b FROM t AS x WHERE x.a = o.a)",
+        "a NOT IN (SELECT x.a - x.b FROM t AS x WHERE x.a = o.a AND x.a = o.b)",
+    ],
+)
+def test_correlated_in_subquery_keys_named_alike(predicate: str) -> None:
+    # value and correlation keys both named `a`
+    assert_sql_matches(
+        frames={"t": pl.DataFrame({"a": [1, 2, 3, 4, None], "b": [1, None, 0, 2, 0]})},
+        query=f"SELECT a FROM t o WHERE {predicate} ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("value", ["x.b", "10", "NULL"])
 def test_correlated_in_subquery_in_select_list(
-    correlated_in_frames: dict[str, pl.DataFrame],
+    value: str, correlated_in_frames: dict[str, pl.DataFrame]
 ) -> None:
     assert_sql_matches(
         frames=correlated_in_frames,
         query=(
-            "SELECT a, b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a) AS m"
+            f"SELECT a, b IN (SELECT {value} FROM t1 AS x WHERE x.a < o.a) AS m"
             " FROM t1 o ORDER BY a"
         ),
         compare_with="duckdb",
@@ -833,18 +892,60 @@ def test_quantified_subquery_matches_in(
     )
 
 
-@pytest.mark.parametrize("projection", ["x.b", "MAX(x.b)"])
-@pytest.mark.parametrize("op", [">", "<", ">=", "<="])
+@pytest.mark.parametrize("op", [">", "<", ">=", "<=", "=", "<>"])
 @pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
-def test_quantified_subquery_correlated_ordering_rejected(
-    projection: str, op: str, quantifier: str
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT x.b FROM t1 AS x WHERE x.a < o.a",
+        "SELECT x.b FROM t1 AS x WHERE x.a = o.a",
+        "SELECT DISTINCT x.b + 5 FROM t1 AS x WHERE x.a > o.a AND x.b IS NOT NULL",
+    ],
+)
+def test_quantified_subquery_correlated(
+    op: str,
+    quantifier: str,
+    subquery: str,
+    correlated_in_frames: dict[str, pl.DataFrame],
 ) -> None:
+    assert_sql_matches(
+        frames=correlated_in_frames,
+        query=(
+            f"SELECT a FROM t1 o WHERE o.a > 1 AND o.b {op} {quantifier} ({subquery})"
+            " ORDER BY a"
+        ),
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # `b` would read the subquery's own column
+        "SELECT a FROM t1 WHERE b > ALL (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE t1.b > ALL (SELECT MAX(x.b) FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE NOT t1.b > ALL (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT t1.b > ANY (SELECT x.b FROM t1 AS x WHERE x.a < t1.a) FROM t1",
+        # the aggregate gives one row, also when no row matches
+        "SELECT a FROM t1 WHERE t1.b > ANY "
+        "(SELECT 1 FROM t1 AS x WHERE x.a < t1.a ORDER BY COUNT(*))",
+        # these would read the subquery's rows, or draw once per pair of rows
+        "SELECT a FROM t1 WHERE COLUMNS('^b$') > ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE RANDOM() < ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        # a row number depends on the rows of the query it is in
+        "SELECT a FROM t1 WHERE 2 > ANY "
+        "(SELECT ROW_NUMBER() FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE ROW_NUMBER() > ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+    ],
+)
+def test_quantified_subquery_correlated_ordering_rejected(query: str) -> None:
     ctx = pl.SQLContext(t1=pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     with pytest.raises(SQLInterfaceError, match="correlated subquery"):
-        ctx.execute(
-            f"SELECT a FROM t1 WHERE b {op} {quantifier}"
-            f" (SELECT {projection} FROM t1 AS x WHERE x.a < t1.a)"
-        ).collect()
+        ctx.execute(query).collect()
 
 
 @pytest.mark.parametrize("op", [">", "<", ">=", "<="])
@@ -1187,7 +1288,7 @@ def test_quantified_subquery_nested_values(
         "SELECT t1.a FROM t1 AS f",
         # Shapes no lowering claims, which reach qualifier resolution.
         "SELECT a FROM t1 WHERE b IN"
-        " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a LIMIT 5)",
+        " (SELECT DISTINCT x.b FROM t1 AS x WHERE x.a < t1.a LIMIT 5)",
         "SELECT a FROM t1 WHERE b IN"
         " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a GROUP BY x.b)",
     ],
@@ -1239,6 +1340,26 @@ def test_correlated_scalar_subquery_aggregate(aggregate: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT k, (SELECT COUNT(*) FROM t2 x WHERE x.b = t1.k AND x.b = t1.j) AS s "
+        "FROM t1 ORDER BY k",
+        "SELECT k FROM t1 WHERE k IN (SELECT x.b FROM t2 x WHERE x.b = t1.k "
+        "AND x.b = t1.j) ORDER BY k",
+    ],
+)
+def test_correlated_subquery_inner_column_repeated(query: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame({"k": [1, 2, None], "j": [1, 3, None]}),
+            "t2": pl.DataFrame({"b": [1, 1, 2]}),
+        },
+        query=query,
+        compare_with="duckdb",
+    )
+
+
 def test_correlated_scalar_subquery_rejects_foreign_qualifier() -> None:
     # `foo` is registered but is not a relation of the subquery, so its column
     # must not be read as one of the subquery's own.
@@ -1247,6 +1368,53 @@ def test_correlated_scalar_subquery_rejects_foreign_qualifier() -> None:
         ctx.execute(
             "SELECT k, (SELECT SUM(foo.a) FROM t2 x WHERE x.b = t1.k) AS s FROM t1"
         ).collect()
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id, (SELECT AVG(x) FROM t2 WHERE t2.d < t1.d) AS r FROM t1",
+        "SELECT id, (SELECT COUNT(*) FROM t2 WHERE t2.d <> t1.d) AS r FROM t1",
+        "SELECT id, (SELECT MAX(x) FROM t2 WHERE t2.f > t1.f) AS r FROM t1",
+        "SELECT id FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.d > t1.d)",
+        "SELECT id FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE t2.d > t1.d)",
+        "SELECT id, EXISTS (SELECT 1 FROM t2 WHERE t2.d > t1.d) AS r FROM t1",
+        "SELECT id FROM t1 WHERE id * 10 IN (SELECT x FROM t2 WHERE t2.d >= t1.d)",
+    ],
+)
+def test_non_equi_correlated_subquery_repeated_outer_values(query: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {
+                    "id": [1, 2, 3, 4, 5, 6, 7],
+                    "d": [1, 1, 2, None, 3, 3, 2],
+                    "f": [0.0, -0.0, 1.5, None, 1.5, 2.0, 0.0],
+                }
+            ),
+            "t2": pl.DataFrame(
+                {
+                    "d": [1, 2, 2, 3, None],
+                    "x": [10, 20, 30, 40, 50],
+                    "f": [-4.0, 0.0, 1.5, 4.0, None],
+                }
+            ),
+        },
+        query=f"{query} ORDER BY id",
+        compare_with="duckdb",
+    )
+
+
+def test_non_equi_correlated_subquery_signed_zero() -> None:
+    df = pl.DataFrame({"id": [1, 2, 3], "f": [0.0, -0.0, 0.0]})
+    t2 = pl.DataFrame({"f": [-4.0, 0.0, 1.5]})
+    res = pl.SQLContext(t1=df, t2=t2).execute(
+        """
+        SELECT id, (SELECT COUNT(*) FROM t2 WHERE t2.f < ATAN2(t1.f, -1.0)) AS r
+        FROM t1 ORDER BY id
+        """
+    )
+    assert res.collect()["r"].to_list() == [3, 1, 3]
 
 
 @pytest.mark.parametrize(
@@ -1341,3 +1509,11 @@ def test_scalar_subquery_as_aggregate_parameter(
         expected=expected,
         engines=["in-memory", "streaming"],
     )
+
+
+def test_scalar_subquery_from_table_without_columns() -> None:
+    empty = pl.LazyFrame({"x": [1]}).filter(False).select([])
+    other = pl.LazyFrame({"y": [10, 20]})
+    with pl.SQLContext(t1=empty, t2=other) as ctx:
+        result = ctx.execute("SELECT (SELECT max(y) FROM t2) AS m FROM t1").collect()
+    assert_frame_equal(result, pl.DataFrame(schema={"m": pl.Int64}))

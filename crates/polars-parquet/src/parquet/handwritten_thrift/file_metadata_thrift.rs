@@ -417,8 +417,10 @@ fn read_encryption_with_column_key(
 /// Decode a `ColumnMetaData` into a [`CompactColumnMetaData`].
 ///
 /// Skip-decode: `type_`, `encodings`, `path_in_schema`, `key_value_metadata`,
-/// `encoding_stats`, `size_statistics`, `geospatial_statistics`. These have no
-/// in-tree readers. See `metadata/compact.rs` for the audit.
+/// `geospatial_statistics`. These have no in-tree readers. See
+/// `metadata/compact.rs` for the audit. `encoding_stats` is reduced to whether
+/// some data pages fall back from dictionary encoding, and `size_statistics` to
+/// the size of the byte array values.
 fn read_column_meta_data(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,
@@ -433,12 +435,14 @@ fn read_column_meta_data(
     let mut statistics: Option<CompactStatistics> = None;
     let mut bloom_filter_offset: Option<i64> = None;
     let mut bloom_filter_length: Option<i32> = None;
+    let mut dictionary_fallback: Option<bool> = None;
+    let mut unencoded_byte_array_data_bytes: Option<i64> = None;
 
     // Inlined skips at ids 1/2/3 (type_, encodings, path_in_schema): universally
     // present, no in-tree consumer; bypass the generic recursive skip.
-    // Ids 8 (key_value_metadata), 13 (encoding_stats), 16 (size_statistics),
-    // 17 (geospatial): fall through to the generic skip arm. Dedicated
-    // skip_simple_struct helpers tried for 13/16/17, no measurable win.
+    // Ids 8 (key_value_metadata), 17 (geospatial): fall through to the generic
+    // skip arm. A dedicated skip_simple_struct helper was tried for 17, no
+    // measurable win.
     read_struct_fields!(prot, |f| {
         1 => prot.skip_vlq()?,
         2 => prot.skip_list_of_varint()?,
@@ -451,8 +455,10 @@ fn read_column_meta_data(
         10 => index_page_offset = Some(prot.read_i64()?),
         11 => dictionary_page_offset = Some(prot.read_i64()?),
         12 => statistics = Some(read_statistics(prot, origin_ptr)?),
+        13 => dictionary_fallback = Some(read_dictionary_fallback(prot)?),
         14 => bloom_filter_offset = Some(prot.read_i64()?),
         15 => bloom_filter_length = Some(prot.read_i32()?),
+        16 => unencoded_byte_array_data_bytes = read_unencoded_byte_array_data_bytes(prot)?,
     });
 
     let codec_i32 = codec.require("ColumnMetaData.codec")?;
@@ -471,7 +477,50 @@ fn read_column_meta_data(
         statistics,
         bloom_filter_offset,
         bloom_filter_length,
+        dictionary_fallback,
+        unencoded_byte_array_data_bytes,
     })
+}
+
+/// Decode a `SizeStatistics` into its `unencoded_byte_array_data_bytes`,
+/// skipping the level histograms.
+fn read_unencoded_byte_array_data_bytes(
+    prot: &mut ThriftSliceInputProtocol<'_>,
+) -> ParquetResult<Option<i64>> {
+    let mut bytes: Option<i64> = None;
+    read_struct_fields!(prot, |f| {
+        1 => bytes = Some(prot.read_i64()?),
+    });
+    Ok(bytes)
+}
+
+/// Decode a list of `PageEncodingStats` into whether some data pages with
+/// rows are not dictionary-encoded. Writers such as Arrow and parquet-mr
+/// switch to plain encoding once the dictionary grows too large.
+fn read_dictionary_fallback(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<bool> {
+    use polars_parquet_format::{Encoding, PageType};
+
+    let list = prot.read_list_begin()?;
+    let mut fallback = false;
+    for _ in 0..list.size {
+        let mut page_type: Option<i32> = None;
+        let mut encoding: Option<i32> = None;
+        let mut count: Option<i32> = None;
+        read_struct_fields!(prot, |f| {
+            1 => page_type = Some(prot.read_i32()?),
+            2 => encoding = Some(prot.read_i32()?),
+            3 => count = Some(prot.read_i32()?),
+        });
+        let page_type = PageType(page_type.require("PageEncodingStats.page_type")?);
+        let encoding = Encoding(encoding.require("PageEncodingStats.encoding")?);
+        let is_data = matches!(page_type, PageType::DATA_PAGE | PageType::DATA_PAGE_V2);
+        let is_dictionary = matches!(
+            encoding,
+            Encoding::PLAIN_DICTIONARY | Encoding::RLE_DICTIONARY
+        );
+        fallback |= is_data && !is_dictionary && count.require("PageEncodingStats.count")? > 0;
+    }
+    Ok(fallback)
 }
 
 /// Decode a `Statistics` into a [`CompactStatistics`].
@@ -763,6 +812,59 @@ mod tests {
     fn decode_column_order(bytes: &[u8]) -> ParquetResult<ColumnOrderTag> {
         let mut prot = ThriftSliceInputProtocol::new(bytes);
         read_column_order(&mut prot)
+    }
+
+    fn decode_dictionary_fallback(bytes: &[u8]) -> ParquetResult<bool> {
+        let mut prot = ThriftSliceInputProtocol::new(bytes);
+        read_dictionary_fallback(&mut prot)
+    }
+
+    // Each element holds page_type, encoding and count as zigzag-encoded i32 fields.
+    const DICTIONARY_PAGE: [u8; 7] = [0x15, 0x04, 0x15, 0x00, 0x15, 0x02, 0x00];
+    const RLE_DICTIONARY_DATA: [u8; 7] = [0x15, 0x00, 0x15, 0x10, 0x15, 0x06, 0x00];
+    const PLAIN_DATA: [u8; 7] = [0x15, 0x00, 0x15, 0x00, 0x15, 0x04, 0x00];
+
+    fn decode_unencoded_byte_array_data_bytes(bytes: &[u8]) -> ParquetResult<Option<i64>> {
+        let mut prot = ThriftSliceInputProtocol::new(bytes);
+        read_unencoded_byte_array_data_bytes(&mut prot)
+    }
+
+    #[test]
+    fn size_statistics_unencoded_bytes() {
+        // Field 1 (i64 1000, zigzag-encoded), then field 3, a definition level
+        // histogram of [2, 5], which is skipped.
+        let bytes = [0x16, 0xD0, 0x0F, 0x29, 0x26, 0x04, 0x0A, 0x00];
+        assert_eq!(
+            decode_unencoded_byte_array_data_bytes(&bytes).unwrap(),
+            Some(1000)
+        );
+    }
+
+    #[test]
+    fn size_statistics_histograms_only() {
+        let bytes = [0x39, 0x26, 0x04, 0x0A, 0x00];
+        assert_eq!(
+            decode_unencoded_byte_array_data_bytes(&bytes).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn dictionary_data_no_fallback() {
+        let bytes = [&[0x2C][..], &DICTIONARY_PAGE, &RLE_DICTIONARY_DATA].concat();
+        assert!(!decode_dictionary_fallback(&bytes).unwrap());
+    }
+
+    #[test]
+    fn plain_data_fallback() {
+        let bytes = [
+            &[0x3C][..],
+            &DICTIONARY_PAGE,
+            &RLE_DICTIONARY_DATA,
+            &PLAIN_DATA,
+        ]
+        .concat();
+        assert!(decode_dictionary_fallback(&bytes).unwrap());
     }
 
     #[test]

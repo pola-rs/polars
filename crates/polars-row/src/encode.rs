@@ -6,81 +6,96 @@ use polars_arrow::array::{
     PrimitiveArray, StructArray, UInt8Array, UInt16Array, UInt32Array, Utf8Array, Utf8ViewArray,
 };
 use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and_many;
 use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::offset::Offsets;
 use polars_arrow::types::{NativeType, Offset};
+use polars_compute::cast::binary_to_binview;
 use polars_dtype::categorical::CatNative;
 use polars_utils::float16::pf16;
 
 use crate::fixed::numeric::FixedLengthEncoding;
-use crate::fixed::{boolean, decimal, numeric};
-use crate::row::{RowEncodingOptions, RowsEncoded};
+use crate::fixed::{boolean, decimal, numeric, packed};
+use crate::layout::{RowEncodingField, RowEncodingLayout};
+use crate::row::RowEncodingOptions;
 use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
 use crate::{
     ArrayRef, RowEncodingCategoricalContext, RowEncodingContext, with_match_arrow_primitive_type,
 };
 
+/// Encodes the columns into rows of the type chosen by `layout`. With `propagate_nulls` a row is
+/// null if any of its values is null.
 pub fn convert_columns(
     num_rows: usize,
     columns: &[ArrayRef],
-    opts: &[RowEncodingOptions],
-    dicts: &[Option<RowEncodingContext>],
-) -> RowsEncoded {
-    let mut rows = RowsEncoded::new(vec![], vec![]);
-    convert_columns_amortized(
-        num_rows,
-        columns,
-        opts.iter().copied().zip(dicts.iter().map(|v| v.as_ref())),
-        &mut rows,
-    );
-    rows
+    layout: &RowEncodingLayout,
+    propagate_nulls: bool,
+) -> ArrayRef {
+    assert_eq!(columns.len(), layout.fields().len());
+    for (column, field) in columns.iter().zip(layout.fields()) {
+        assert_eq!(column.len(), num_rows);
+        assert!(
+            field.opt.encode_nulls() || propagate_nulls || column.null_count() == 0,
+            "row encoding got a null in a column that does not encode nulls"
+        );
+    }
+
+    let rows = convert_columns_no_propagate(num_rows, columns, layout);
+    if propagate_nulls {
+        let validities = columns.iter().map(|c| c.validity()).collect::<Vec<_>>();
+        rows.with_validity(combine_validities_and_many(&validities))
+    } else {
+        rows
+    }
 }
 
-pub fn convert_columns_no_order(
+fn convert_columns_no_propagate(
     num_rows: usize,
     columns: &[ArrayRef],
-    dicts: &[Option<RowEncodingContext>],
-) -> RowsEncoded {
-    let mut rows = RowsEncoded::new(vec![], vec![]);
-    convert_columns_amortized_no_order(num_rows, columns, dicts, &mut rows);
-    rows
-}
+    layout: &RowEncodingLayout,
+) -> ArrayRef {
+    if layout.is_pass_through() {
+        let column = &columns[0];
+        return match column.dtype() {
+            ArrowDataType::Utf8View => column
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .to_binview()
+                .boxed(),
+            _ => column.clone(),
+        };
+    }
+    if layout.is_packed() {
+        return packed::encode(num_rows, columns, layout);
+    }
 
-pub fn convert_columns_amortized_no_order(
-    num_rows: usize,
-    columns: &[ArrayRef],
-    dicts: &[Option<RowEncodingContext>],
-    rows: &mut RowsEncoded,
-) {
-    convert_columns_amortized(
-        num_rows,
-        columns,
-        std::iter::repeat_n(RowEncodingOptions::default(), columns.len())
-            .zip(dicts.iter().map(|v| v.as_ref())),
-        rows,
-    );
+    let rows = encode_bytes(num_rows, columns, layout.fields());
+    match layout.dtype() {
+        ArrowDataType::BinaryView => binary_to_binview(&rows).boxed(),
+        _ => rows.boxed(),
+    }
 }
 
 /// Number of rows encoded across all columns at a time.
 const ENCODE_ROW_TILE: usize = 1024;
 
-pub fn convert_columns_amortized<'a>(
+fn encode_bytes(
     num_rows: usize,
     columns: &[ArrayRef],
-    fields: impl IntoIterator<Item = (RowEncodingOptions, Option<&'a RowEncodingContext>)> + Clone,
-    rows: &mut RowsEncoded,
-) {
+    fields: &[RowEncodingField],
+) -> BinaryArray<i64> {
     let mut masked_out_max_length = 0;
     let mut row_widths = RowWidths::new(num_rows);
     let mut encoders = columns
         .iter()
-        .zip(fields.clone())
-        .map(|(column, (opt, dicts))| {
-            assert_eq!(column.len(), num_rows);
+        .zip(fields)
+        .map(|(column, field)| {
             get_encoder(
                 column.as_ref(),
-                opt,
-                dicts,
+                field.opt,
+                field.ctx.as_ref(),
                 &mut row_widths,
                 &mut masked_out_max_length,
             )
@@ -104,14 +119,14 @@ pub fn convert_columns_amortized<'a>(
         let mut start = 0;
         while start < num_rows {
             let len = ENCODE_ROW_TILE.min(num_rows - start);
-            for (encoder, (opt, dict)) in encoders.iter().zip(fields.clone()) {
+            for (encoder, field) in encoders.iter().zip(fields) {
                 let array = encoder.array.sliced(start, len);
                 unsafe {
                     encode_flat_array(
                         buffer,
                         array.as_ref(),
-                        opt,
-                        dict,
+                        field.opt,
+                        field.ctx.as_ref(),
                         &mut offsets[1 + start..1 + start + len],
                     )
                 };
@@ -119,13 +134,13 @@ pub fn convert_columns_amortized<'a>(
             start += len;
         }
     } else {
-        for (encoder, (opt, dict)) in encoders.iter_mut().zip(fields) {
+        for (encoder, field) in encoders.iter_mut().zip(fields) {
             unsafe {
                 encode_array(
                     buffer,
                     encoder,
-                    opt,
-                    dict,
+                    field.opt,
+                    field.ctx.as_ref(),
                     &mut offsets[1..],
                     masked_out_write_offset,
                     &mut scratches,
@@ -138,10 +153,22 @@ pub fn convert_columns_amortized<'a>(
         out.set_len(total_num_bytes);
     }
 
-    *rows = RowsEncoded {
-        values: out,
-        offsets,
+    let offsets = if size_of::<usize>() == size_of::<i64>() {
+        assert!(
+            (*offsets.last().unwrap() as u64) < i64::MAX as u64,
+            "row encoding output overflowed"
+        );
+
+        // SAFETY: we checked overflow and size
+        bytemuck::cast_vec::<usize, i64>(offsets)
+    } else {
+        offsets.into_iter().map(|v| v as i64).collect()
     };
+
+    // SAFETY: monotonically increasing
+    let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+    BinaryArray::new(ArrowDataType::LargeBinary, offsets.into(), out.into(), None)
 }
 
 fn list_num_column_bytes<O: Offset>(
@@ -329,7 +356,7 @@ fn get_encoder(
                         .map(|(array, dict)| {
                             get_encoder(
                                 array.as_ref(),
-                                opt,
+                                opt.into_nested(),
                                 dict.as_ref(),
                                 &mut RowWidths::new(row_widths.num_rows()),
                                 masked_out_max_width,
@@ -422,7 +449,9 @@ fn get_encoder(
             );
 
             let mut fsl_row_widths = nested_row_widths.collapse_chunks(*width, array.len());
-            fsl_row_widths.push_constant(1); // validity byte
+            if opt.encode_nulls() {
+                fsl_row_widths.push_constant(1);
+            }
 
             row_widths.push(&fsl_row_widths);
             Encoder {
@@ -438,7 +467,9 @@ fn get_encoder(
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
 
             let mut nested_encoders = Vec::with_capacity(array.values().len());
-            row_widths.push_constant(1); // validity byte
+            if opt.encode_nulls() {
+                row_widths.push_constant(1);
+            }
             match dict {
                 None => {
                     for array in array.values() {
@@ -935,6 +966,9 @@ unsafe fn encode_validity(
     opt: RowEncodingOptions,
     row_starts: &mut [usize],
 ) {
+    if !opt.encode_nulls() {
+        return;
+    }
     let null_sentinel = opt.null_sentinel();
     match validity {
         None => {
@@ -963,7 +997,6 @@ pub fn fixed_size(
     dict: Option<&RowEncodingContext>,
 ) -> Option<usize> {
     use ArrowDataType as D;
-    use numeric::FixedLengthEncoding;
 
     if let Some(RowEncodingContext::Categorical(ctx)) = dict {
         // If ordered categorical (non-enum) we encode strings, otherwise physical.
@@ -972,44 +1005,50 @@ pub fn fixed_size(
         }
     }
 
+    let validity_len = opt.encode_nulls() as usize;
+    let nested_opt = opt.into_nested();
     Some(match dtype {
         D::Null => 0,
         D::Boolean => 1,
 
-        D::UInt8 => u8::ENCODED_LEN,
-        D::UInt16 => u16::ENCODED_LEN,
-        D::UInt32 => u32::ENCODED_LEN,
-        D::UInt64 => u64::ENCODED_LEN,
-        D::UInt128 => u128::ENCODED_LEN,
+        D::UInt8 => numeric::encoded_len::<u8>(opt),
+        D::UInt16 => numeric::encoded_len::<u16>(opt),
+        D::UInt32 => numeric::encoded_len::<u32>(opt),
+        D::UInt64 => numeric::encoded_len::<u64>(opt),
+        D::UInt128 => numeric::encoded_len::<u128>(opt),
 
-        D::Int8 => i8::ENCODED_LEN,
-        D::Int16 => i16::ENCODED_LEN,
-        D::Int32 => i32::ENCODED_LEN,
-        D::Int64 => i64::ENCODED_LEN,
+        D::Int8 => numeric::encoded_len::<i8>(opt),
+        D::Int16 => numeric::encoded_len::<i16>(opt),
+        D::Int32 => numeric::encoded_len::<i32>(opt),
+        D::Int64 => numeric::encoded_len::<i64>(opt),
         D::Int128 => match dict {
-            None => i128::ENCODED_LEN,
-            Some(RowEncodingContext::Decimal(precision)) => decimal::len_from_precision(*precision),
+            None => numeric::encoded_len::<i128>(opt),
+            Some(RowEncodingContext::Decimal(precision)) => {
+                decimal::len_from_precision(*precision, opt)
+            },
             _ => unreachable!(),
         },
 
-        D::Float16 => pf16::ENCODED_LEN,
-        D::Float32 => f32::ENCODED_LEN,
-        D::Float64 => f64::ENCODED_LEN,
-        D::FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), opt, dict)?,
+        D::Float16 => numeric::encoded_len::<pf16>(opt),
+        D::Float32 => numeric::encoded_len::<f32>(opt),
+        D::Float64 => numeric::encoded_len::<f64>(opt),
+        D::FixedSizeList(f, width) => {
+            validity_len + width * fixed_size(f.dtype(), nested_opt, dict)?
+        },
         D::Struct(fs) => match dict {
             None => {
                 let mut sum = 0;
                 for f in fs {
-                    sum += fixed_size(f.dtype(), opt, None)?;
+                    sum += fixed_size(f.dtype(), nested_opt, None)?;
                 }
-                1 + sum
+                validity_len + sum
             },
             Some(RowEncodingContext::Struct(dicts)) => {
                 let mut sum = 0;
                 for (f, dict) in fs.iter().zip(dicts) {
-                    sum += fixed_size(f.dtype(), opt, dict.as_ref())?;
+                    sum += fixed_size(f.dtype(), nested_opt, dict.as_ref())?;
                 }
-                1 + sum
+                validity_len + sum
             },
             _ => unreachable!(),
         },
@@ -1025,7 +1064,21 @@ mod tests {
     };
 
     use super::*;
-    use crate::decode::decode_rows_from_binary;
+    use crate::decode::decode_rows_from_array;
+    use crate::layout::RowEncodingOutput;
+
+    fn binary_offset_layout(arrays: &[ArrayRef], opts: &[RowEncodingOptions]) -> RowEncodingLayout {
+        let fields = arrays
+            .iter()
+            .zip(opts)
+            .map(|(a, opt)| RowEncodingField {
+                dtype: a.dtype().clone(),
+                opt: *opt,
+                ctx: None,
+            })
+            .collect();
+        RowEncodingLayout::new(fields, RowEncodingOutput::AlwaysBinaryOffset)
+    }
 
     fn contains_float(dtype: &ArrowDataType) -> bool {
         use ArrowDataType as D;
@@ -1041,14 +1094,10 @@ mod tests {
     /// their encoding since the encoding canonicalizes them.
     fn check_round_trip(arrays: &[ArrayRef], opts: &[RowEncodingOptions]) {
         let num_rows = arrays[0].len();
-        let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
-        let dtypes: Vec<ArrowDataType> = arrays.iter().map(|a| a.dtype().clone()).collect();
+        let layout = binary_offset_layout(arrays, opts);
 
-        let rows = convert_columns(num_rows, arrays, opts, &dicts);
-        let encoded = rows.into_array();
-        let mut scratch = Vec::new();
-        let decoded =
-            unsafe { decode_rows_from_binary(&encoded, opts, &dicts, &dtypes, &mut scratch) };
+        let encoded = convert_columns(num_rows, arrays, &layout, false);
+        let decoded = unsafe { decode_rows_from_array(encoded.as_ref(), &layout) };
 
         for (array, decoded) in arrays.iter().zip(&decoded) {
             assert_eq!(array.len(), decoded.len());
@@ -1057,8 +1106,7 @@ mod tests {
             }
         }
 
-        let rows = convert_columns(num_rows, &decoded, opts, &dicts);
-        let reencoded = rows.into_array();
+        let reencoded = convert_columns(num_rows, &decoded, &layout, false);
         assert_eq!(encoded, reencoded);
     }
 
@@ -1132,19 +1180,10 @@ mod tests {
             RowEncodingOptions::new_sorted(false, false),
             RowEncodingOptions::new_unsorted(),
         ] {
-            let dicts = [None];
-            let rows = convert_columns(strs.len(), std::slice::from_ref(&strs), &[opt], &dicts);
-            let encoded = rows.into_array();
-            let mut scratch = Vec::new();
-            let decoded = unsafe {
-                decode_rows_from_binary(
-                    &encoded,
-                    &[opt],
-                    &dicts,
-                    &[strs.dtype().clone()],
-                    &mut scratch,
-                )
-            };
+            let columns = std::slice::from_ref(&strs);
+            let layout = binary_offset_layout(columns, &[opt]);
+            let encoded = convert_columns(strs.len(), columns, &layout, false);
+            let decoded = unsafe { decode_rows_from_array(encoded.as_ref(), &layout) };
             assert_eq!(&strs, &decoded[0]);
         }
     }
@@ -1169,8 +1208,8 @@ mod tests {
         fn test_encode_arrays
             (arrays in arrays())
          {
-            let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
-            convert_columns_no_order(arrays[0].len(), &arrays, &dicts);
+            let opts = vec![RowEncodingOptions::default(); arrays.len()];
+            convert_columns(arrays[0].len(), &arrays, &binary_offset_layout(&arrays, &opts), false);
         }
     }
 }

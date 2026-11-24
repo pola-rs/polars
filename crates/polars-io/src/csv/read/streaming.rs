@@ -22,7 +22,7 @@ pub type InspectContentFn<'a> = Box<dyn FnMut(&[u8]) + 'a>;
 ///
 /// `inspect_first_content_row_fn` allows looking at the first content row, this is where parsing
 /// will start. Beware even if the function is provided it's *not* guaranteed that the returned
-/// value will be `Some`, since it the CSV may be incomplete.
+/// value will be `Some`, since the CSV may be incomplete.
 ///
 /// The reading is done in an iterative streaming fashion
 ///
@@ -204,7 +204,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
 ///
 /// `inspect_first_content_row_fn` allows looking at the first content row, this is where parsing
 /// will start. Beware even if the function is provided it's *not* guaranteed that the returned
-/// value will be `Some`, since it the CSV may be incomplete.
+/// value will be `Some`, since the CSV may be incomplete.
 ///
 /// The reading is done in an iterative streaming fashion
 ///
