@@ -692,6 +692,53 @@ def test_rolling_unsupported_dtype_raises_at_planning(
         lf.collect()
 
 
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").rolling_mean(2),
+        pl.col("x").rolling_median(2),
+        pl.col("x").rolling_var(2),
+        pl.col("x").rolling_std(2),
+        pl.col("x").rolling_mean_by("t", window_size="2i"),
+        pl.col("x").rolling_quantile_by("t", window_size="2i", quantile=0.5),
+        pl.col("x").rolling_var_by("t", window_size="2i"),
+        pl.col("x").rolling_std_by("t", window_size="2i"),
+        pl.col("x").rolling_mean(2, weights=[1.0, 2.0]),
+        pl.col("x").rolling_std(2, weights=[1.0, 2.0]),
+        pl.col("x").rolling_sum(2, weights=[1.0, 2.0]),
+        pl.col("x").rolling_min(2, weights=[1.0, 2.0]),
+        pl.col("x").rolling_max(2, weights=[1.0, 2.0]),
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype", [pl.Float16, pl.Float32, pl.Int64, pl.Boolean, pl.Decimal(10, 2)]
+)
+def test_rolling_dtype_matches_schema(expr: pl.Expr, dtype: pl.DataType) -> None:
+    values = [True, False, True] if dtype == pl.Boolean else [1, 2, 4]
+    lf = pl.LazyFrame({"x": pl.Series(values, dtype=dtype), "t": [0, 1, 2]})
+    lf = lf.select(expr)
+    out = lf.collect()
+    assert lf.collect_schema() == out.schema
+    expected = dtype if dtype in (pl.Float16, pl.Float32) else pl.Float64
+    assert out.schema["x"] == expected
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").rolling_std(2, ddof=0),
+        pl.col("x").rolling_std(2, ddof=0, weights=[1.0, 1.0]),
+        pl.col("x").rolling_std_by("t", window_size="2i", ddof=0),
+    ],
+)
+def test_rolling_std_float16_beyond_variance_range(expr: pl.Expr) -> None:
+    # The variance 65536 is out of Float16 range, the standard deviation isn't.
+    lf = pl.LazyFrame({"x": pl.Series([0, 512], dtype=pl.Float16), "t": [0, 1]})
+    out = lf.select(expr).collect().to_series()
+    assert out.dtype == pl.Float16
+    assert out[-1] == 256.0
+
+
 def test_rolling_mean_f32_22936() -> None:
     arr = np.array(
         [
