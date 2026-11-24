@@ -1465,7 +1465,7 @@ class Series(metaclass=_Meta):
             else:
                 self.__setitem__(Series(key), value)
         elif isinstance(key, (list, tuple)):
-            self.scatter(key, value)
+            self.scatter(key, value)  # pyrefly: ignore[bad-argument-type]
         else:
             msg = f'cannot use "{key!r}" for indexing'
             raise TypeError(msg)
