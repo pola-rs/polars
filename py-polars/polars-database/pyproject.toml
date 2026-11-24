@@ -21,3 +21,5 @@ Repository = "https://github.com/pola-rs/polars"
 [tool.maturin]
 module-name = "polars_database._lib"
 python-source = "."
+# Keep the license at the sdist root for Python package metadata.
+include = [{ path = "LICENSE", format = "sdist" }]
