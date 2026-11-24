@@ -1,10 +1,9 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, Match, MatchKind};
 use polars_arrow::array::{BinaryViewArray, Utf8ViewArray};
+use polars_compute::utf8::{byte_to_char_idx, is_utf8_codepoint_start};
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
-
-use super::utf8::{byte_to_char_idx, is_utf8_codepoint_start};
 
 fn build_ac<P: AsRef<[u8]>>(
     patterns: impl IntoIterator<Item = P>,

@@ -4,7 +4,8 @@ use std::sync::Arc;
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
 use polars_arrow::array::ValueSize;
-use polars_arrow::legacy::kernels::string::*;
+use polars_compute::size::binary_size_bytes;
+use polars_compute::utf8::{byte_to_char_idx, utf8view_len_chars};
 use polars_core::prelude::arity::*;
 #[cfg(feature = "string_normalize")]
 use polars_defs::expr::UnicodeForm;
@@ -14,7 +15,6 @@ use regex::{Regex, Replacer};
 use regex_syntax::hir::{Class, Hir, HirKind, Look};
 
 use super::literal_chain::LiteralChain;
-use super::utf8::byte_to_char_idx;
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
@@ -498,13 +498,14 @@ pub trait StringNameSpaceImpl: AsString {
     /// Get the length of the string values as number of chars.
     fn str_len_chars(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        ca.apply_kernel_cast(&string_len_chars)
+        ca.apply_kernel_cast(&|arr| Box::new(utf8view_len_chars(arr)))
     }
 
     /// Get the length of the string values as number of bytes.
     fn str_len_bytes(&self) -> UInt32Chunked {
-        let ca = self.as_string();
-        ca.apply_kernel_cast(&utf8view_len_bytes)
+        self.as_string()
+            .as_binary()
+            .apply_kernel_cast(&binary_size_bytes)
     }
 
     /// Pad the start of the string until it reaches the given length.

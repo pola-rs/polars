@@ -80,7 +80,7 @@ lazy = []
 performant = ["polars-arrow/performant", "reinterpret"]
 
 # extra utilities for StringChunked
-strings = ["regex", "polars-arrow/strings", "polars-error/regex"]
+strings = ["regex", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json", "algorithm_group_by"]
 

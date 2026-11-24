@@ -130,7 +130,6 @@ dtype-decimal = ["itoa"]
 bigidx = ["polars-utils/bigidx"]
 nightly = []
 performant = []
-strings = []
 temporal = []
 
 [package.metadata.docs.rs]

@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use polars_compute::utf8::utf8_len;
 use polars_core::prelude::arity::broadcast_binary_elementwise;
 use polars_core::prelude::{StringChunked, UInt64Chunked};
 
@@ -12,7 +13,7 @@ fn pad_fn<'a>(
 ) -> Option<&'a str> {
     if let (Some(s), Some(length)) = (s, length) {
         let length = length as usize;
-        let n_chars = s.chars().count();
+        let n_chars = utf8_len(s.as_bytes());
         if length <= n_chars {
             return Some(s);
         }
@@ -39,7 +40,7 @@ fn pad_fn<'a>(
 fn zfill_fn<'a>(s: Option<&'a str>, length: Option<u64>, buf: &mut String) -> Option<&'a str> {
     if let (Some(s), Some(length)) = (s, length) {
         let length = length as usize;
-        let n_chars = s.chars().count();
+        let n_chars = utf8_len(s.as_bytes());
         if length <= n_chars {
             return Some(s);
         }
