@@ -522,7 +522,9 @@ class PySeries:
     @staticmethod
     def new_opt_f64(name: str, obj: Any, strict: bool) -> PySeries: ...
     @staticmethod
-    def new_from_any_values(name: str, values: Any, strict: bool) -> PySeries: ...
+    def new_from_any_values(
+        name: str, values: Any, strict: bool, time_unit: TimeUnit | None = None
+    ) -> PySeries: ...
     @staticmethod
     def new_from_any_values_and_dtype(
         name: str, values: Any, dtype: DataType, strict: bool
@@ -721,6 +723,7 @@ class PyDataFrame:
     def from_rows(
         data: Sequence[PySeries],
         schema: Any | None,
+        strict: bool,
         infer_schema_length: int | None,
     ) -> PyDataFrame: ...
     @staticmethod
