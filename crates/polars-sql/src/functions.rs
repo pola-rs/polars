@@ -10,6 +10,7 @@ use polars_core::utils::try_get_supertype;
 use polars_defs::expr::{RankMethod, RankOptions};
 use polars_defs::expr::{RoundMode, UnicodeForm};
 use polars_defs::time::date_diff::DateDiffUnit;
+use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::ClosedWindow;
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
@@ -39,6 +40,7 @@ use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
 use crate::group_context::{is_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::lambda::{is_lambda_arg, lambda_arg, lambda_element_name};
+use crate::literal_folding::fold_scalar;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
     decimal_literal_to_f64, interval_to_duration, null_as_string, null_on_null_length,
@@ -3076,8 +3078,10 @@ impl SQLFunctionVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let fname = self.func.name.to_string();
-        series_expr(&fname, &args, include_end, |e| self.parse_sql_arg(e))
-            .and_then(|e| self.apply_window_spec(e))
+        series_expr(&fname, &args, include_end, self.active_schema, |e| {
+            self.parse_sql_arg(e)
+        })
+        .and_then(|e| self.apply_window_spec(e))
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
@@ -4464,6 +4468,7 @@ pub(crate) fn series_expr(
     fname: &str,
     args: &[&SQLExpr],
     include_end: bool,
+    schema: Option<&Schema>,
     mut parse: impl FnMut(&SQLExpr) -> PolarsResult<Expr>,
 ) -> PolarsResult<Expr> {
     let int_series = |start: Expr, stop: Expr, step: Expr| {
@@ -4474,29 +4479,70 @@ pub(crate) fn series_expr(
         };
         int_ranges(start, stop, step, DataType::Int64)
     };
+    let temporal_series = |start: Expr, stop: Expr, interval: Duration| {
+        polars_ensure!(
+            !interval.negative(),
+            SQLInterface: "{} does not support negative INTERVAL steps", fname
+        );
+        let closed = if include_end {
+            ClosedWindow::Both
+        } else {
+            ClosedWindow::Left
+        };
+        datetime_ranges(
+            Some(start),
+            Some(stop),
+            Some(interval),
+            None,
+            closed,
+            None,
+            None,
+        )
+    };
     match args {
-        [start, stop, SQLExpr::Interval(interval)] => {
-            let closed = if include_end {
-                ClosedWindow::Both
-            } else {
-                ClosedWindow::Left
-            };
-            datetime_ranges(
-                Some(parse(start)?),
-                Some(parse(stop)?),
-                Some(interval_to_duration(interval, false)?),
-                None,
-                closed,
-                None,
-                None,
-            )
-        },
+        [start, stop, SQLExpr::Interval(interval)] => temporal_series(
+            parse(start)?,
+            parse(stop)?,
+            interval_to_duration(interval, false)?,
+        ),
         [_, _, SQLExpr::UnaryOp { expr, .. }] if matches!(**expr, SQLExpr::Interval(_)) => {
             polars_bail!(SQLInterface: "{} does not support negative INTERVAL steps", fname)
         },
         [stop] => Ok(int_series(lit(0i64), parse(stop)?, lit(1i64))),
         [start, stop] => Ok(int_series(parse(start)?, parse(stop)?, lit(1i64))),
-        [start, stop, step] => Ok(int_series(parse(start)?, parse(stop)?, parse(step)?)),
+        [start, stop, step] => {
+            let (start, stop, step) = (parse(start)?, parse(stop)?, parse(step)?);
+            if !matches!(
+                resolve_expr_dtype(&step, schema),
+                Some(DataType::Duration(_))
+            ) {
+                return Ok(int_series(start, stop, step));
+            }
+            polars_ensure!(
+                is_constant_key(&step),
+                SQLInterface: "{} takes only a constant INTERVAL step", fname
+            );
+            let step = fold_scalar(step.strict_cast(DataType::Duration(TimeUnit::Nanoseconds)))?;
+            let Expr::Literal(step) = step else {
+                unreachable!()
+            };
+            match step.to_any_value() {
+                Some(AnyValue::Duration(ns, _)) => {
+                    polars_ensure!(
+                        ns >= 0,
+                        SQLInterface: "{} does not support negative INTERVAL steps", fname
+                    );
+                    temporal_series(start, stop, Duration::from_nsecs(ns))
+                },
+                // A NULL step gives a NULL series.
+                _ => {
+                    let null_stop = when(lit(false))
+                        .then(stop)
+                        .otherwise(lit(LiteralValue::untyped_null()));
+                    temporal_series(start, null_stop, Duration::new_days(1))
+                },
+            }
+        },
         _ => polars_bail!(SQLSyntax: "{} expects 1 to 3 arguments; found {}", fname, args.len()),
     }
 }
