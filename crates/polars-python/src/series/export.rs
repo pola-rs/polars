@@ -171,6 +171,7 @@ impl PySeries {
                 DataType::Extension(_, _) => {
                     return to_list_recursive(py, series.ext().unwrap().storage());
                 },
+                DataType::Union(_) => PyList::new(py, series.iter().map(Wrap))?,
             };
             Ok(pylist.into_any())
         }

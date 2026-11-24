@@ -151,6 +151,7 @@ pub fn write(
                 compression
             )
         }),
+        LargeUnion => panic!("LargeUnion is not an Arrow type; convert it to a Union first"),
         Union => {
             write_union(
                 array.as_any().downcast_ref().unwrap(),

@@ -30,6 +30,8 @@ mod serde;
 mod string;
 #[cfg(feature = "pymethods")]
 mod r#struct;
+#[cfg(all(feature = "dtype-union", feature = "pymethods"))]
+mod union_;
 
 use std::mem::ManuallyDrop;
 

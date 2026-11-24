@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 
 use self::type_check::TypeCheckRule;
 use super::*;
-use crate::constants::get_pl_structfields_name;
+use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
@@ -219,6 +219,33 @@ impl ConversionOptimizer {
                 for e in evaluation {
                     self.scratch
                         .push((e.node(), root, self.schemas.len(), false))
+                }
+            }
+
+            // The arms of a `union.match` see their variant as `pl.element()`.
+            #[cfg(feature = "dtype-union")]
+            if let AExpr::UnionMatch {
+                expr, names, arms, ..
+            } = expr
+            {
+                let schema: Schema = if schema_idx == 0 {
+                    schema.as_ref().as_ref().clone()
+                } else {
+                    self.schemas[schema_idx - 1].clone()
+                };
+                let dtype = expr_arena
+                    .get(*expr)
+                    .to_dtype(&ToFieldContext::new(expr_arena, &schema))
+                    .map_err(|e| add_context(e, expr_arena))?;
+                let DataType::Union(fields) = &dtype else {
+                    unreachable!("checked when lowering `union.match`")
+                };
+                for (name, arm) in names.iter().zip(arms) {
+                    let mut schema = schema.clone();
+                    let variant = fields[fields.try_index_of(name)?].dtype().clone();
+                    schema.insert(get_pl_element_name(), variant);
+                    self.schemas.push(schema);
+                    self.scratch.push((*arm, root, self.schemas.len(), false));
                 }
             }
 

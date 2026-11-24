@@ -260,6 +260,19 @@ pub enum AExpr {
         evaluation: Vec<ExprIR>,
         variant: StructEvalVariant,
     },
+    /// `union.match`: each arm runs on the rows of its variant, with `pl.element()` bound to the
+    /// variant's value, and `default` on the other non-null rows.
+    ///
+    /// The arms and `default` are inputs that may read other columns, so they are traversed like
+    /// those of `StructEval`; the arms need the schema extended with the variant as `pl.element()`.
+    #[cfg(feature = "dtype-union")]
+    UnionMatch {
+        expr: Node,
+        /// The variant of each arm.
+        names: Vec<PlSmallStr>,
+        arms: Vec<Node>,
+        default: Option<Node>,
+    },
     Function {
         /// Function arguments
         /// Some functions rely on aliases,

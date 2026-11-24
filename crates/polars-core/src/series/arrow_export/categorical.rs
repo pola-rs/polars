@@ -141,6 +141,12 @@ impl CategoricalToArrowConverter {
                 self.initialize(key);
                 self.initialize(value);
             },
+            #[cfg(feature = "dtype-union")]
+            Union(fields) => {
+                for field in fields {
+                    self.initialize(field.dtype())
+                }
+            },
             #[cfg(feature = "dtype-extension")]
             Extension(_, inner) => self.initialize(inner),
             _ => assert!(!dtype.is_nested()),

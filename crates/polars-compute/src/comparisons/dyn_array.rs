@@ -67,6 +67,10 @@ macro_rules! compare {
             PH::LargeList => call_binary!(ListArray<i64>, lhs, rhs, $op),
             PH::Struct => call_binary!(StructArray, lhs, rhs, $op),
             PH::Union => todo!("Comparison of UnionArrays is not yet supported"),
+            #[cfg(feature = "gather")]
+            PH::LargeUnion => call_binary!(polars_arrow::array::LargeUnionArray, lhs, rhs, $op),
+            #[cfg(not(feature = "gather"))]
+            PH::LargeUnion => todo!("Comparison of unions needs the gather feature"),
             PH::Map => todo!("Comparison of MapArrays is not yet supported"),
             PH::Dictionary(I::Int8) => call_binary!(DictionaryArray<i8>, lhs, rhs, $op),
             PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>, lhs, rhs, $op),

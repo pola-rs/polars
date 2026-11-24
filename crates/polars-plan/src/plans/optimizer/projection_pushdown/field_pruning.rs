@@ -698,6 +698,46 @@ impl<'a> SelectionWalker<'a> {
                 })
             },
 
+            #[cfg(feature = "dtype-union")]
+            AExpr::UnionMatch {
+                expr,
+                names,
+                arms,
+                default,
+            } => {
+                let mut children = vec![self.walk_rec(
+                    expr,
+                    &FieldSelection::All,
+                    out,
+                    struct_fields.as_deref_mut(),
+                )];
+                // In an arm, `pl.element()` is the variant, not the element of an enclosing
+                // `eval`, and dtypes need the variant in the schema.
+                let rewrite_schema = self.rewrite_schema.take();
+                self.element_selections.push(None);
+                for arm in &arms {
+                    let new_arm = self.walk_rec(
+                        *arm,
+                        &FieldSelection::All,
+                        out,
+                        struct_fields.as_deref_mut(),
+                    );
+                    children.push(new_arm);
+                }
+                self.element_selections.pop();
+                self.rewrite_schema = rewrite_schema;
+                if let Some(default) = default {
+                    children.push(self.walk_rec(default, &FieldSelection::All, out, struct_fields));
+                }
+                let ae = AExpr::UnionMatch {
+                    expr,
+                    names,
+                    arms,
+                    default,
+                };
+                self.with_new_inputs(node, ae, &children)
+            },
+
             _ => self.walk_default(node, out, struct_fields),
         }
     }

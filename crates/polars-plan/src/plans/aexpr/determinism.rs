@@ -42,6 +42,9 @@ pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
         #[cfg(feature = "dtype-struct")]
         AExpr::StructField(_) | AExpr::StructEval { .. } => false,
 
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch { .. } => false,
+
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => false,
     }
@@ -98,6 +101,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Extension(_) => false,
         #[cfg(feature = "dtype-map")]
         F::MapExpr(_) => false,
+        #[cfg(feature = "dtype-union")]
+        F::UnionExpr(_) => false,
         F::ListExpr(l) => is_inherently_nondeterministic_list_fn(l),
         #[cfg(feature = "strings")]
         F::StringExpr(_) => false,

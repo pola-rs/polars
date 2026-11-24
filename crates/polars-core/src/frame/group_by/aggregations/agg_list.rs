@@ -205,6 +205,13 @@ impl AggList for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-union")]
+impl AggList for UnionChunked {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
+        agg_list_by_gather_and_offsets(self, groups)
+    }
+}
+
 #[cfg(feature = "dtype-array")]
 impl AggList for ArrayChunked {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {

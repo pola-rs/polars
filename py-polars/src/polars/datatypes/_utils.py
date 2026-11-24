@@ -1,7 +1,7 @@
 """Utility functions for handling and processing of datatypes."""
 
 from polars._typing import PolarsDataType
-from polars.datatypes.classes import Array, List, Struct
+from polars.datatypes.classes import Array, List, Struct, Union
 
 
 def dtype_to_init_repr(dtype: PolarsDataType, prefix: str = "pl.") -> str:
@@ -10,7 +10,7 @@ def dtype_to_init_repr(dtype: PolarsDataType, prefix: str = "pl.") -> str:
         init_repr = _dtype_to_init_repr_list(dtype, prefix)
     elif isinstance(dtype, Array):
         init_repr = _dtype_to_init_repr_array(dtype, prefix)
-    elif isinstance(dtype, Struct):
+    elif isinstance(dtype, (Struct, Union)):
         init_repr = _dtype_to_init_repr_struct(dtype, prefix)
     else:
         init_repr = f"{prefix}{dtype!r}"
@@ -37,7 +37,7 @@ def _dtype_to_init_repr_array(dtype: Array, prefix: str) -> str:
     return init_repr
 
 
-def _dtype_to_init_repr_struct(dtype: Struct, prefix: str) -> str:
+def _dtype_to_init_repr_struct(dtype: Struct | Union, prefix: str) -> str:
     class_name = dtype.__class__.__name__
     inner_list = [
         f"{field_name!r}: {dtype_to_init_repr(inner_dtype, prefix)}"

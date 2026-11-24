@@ -3,8 +3,9 @@ use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder, make_build
 use polars_arrow::array::{
     Array, BinaryArray, BinaryArrayBuilder, BinaryViewArray, BinaryViewArrayBuilder, BooleanArray,
     BooleanArrayBuilder, FixedSizeBinaryArray, FixedSizeBinaryArrayBuilder, FixedSizeListArray,
-    FixedSizeListArrayBuilder, ListArray, ListArrayBuilder, NullArray, PrimitiveArray,
-    PrimitiveArrayBuilder, StructArray, StructArrayBuilder, Utf8ViewArray, Utf8ViewArrayBuilder,
+    FixedSizeListArrayBuilder, LargeUnionArray, LargeUnionArrayBuilder, ListArray,
+    ListArrayBuilder, NullArray, PrimitiveArray, PrimitiveArrayBuilder, StructArray,
+    StructArrayBuilder, Utf8ViewArray, Utf8ViewArrayBuilder,
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
@@ -153,6 +154,12 @@ pub unsafe fn horizontal_concat_list_unchecked(
             Utf8ViewArrayBuilder::new(dtype.clone()),
             arrays,
             &downcast_values::<Utf8ViewArray>(arrays),
+            &out_offsets,
+        ),
+        LargeUnion => horizontal_concat_list_unchecked_impl_generic(
+            LargeUnionArrayBuilder::new(dtype.clone()),
+            arrays,
+            &downcast_values::<LargeUnionArray>(arrays),
             &out_offsets,
         ),
         t => unimplemented!("horizontal_concat_list not supported for data type {:?}", t),

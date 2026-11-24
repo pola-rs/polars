@@ -36,6 +36,8 @@ pub enum PhysicalType {
     Struct,
     /// A nested type that represents slots of differing types.
     Union,
+    /// A dense union with `i64` offsets and a validity (Polars-only).
+    LargeUnion,
     /// A nested type.
     Map,
     /// A dictionary encoded array by `IntegerType`.

@@ -109,6 +109,14 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         .and_then(|m| m.get(PARQUET_FIELD_ID_KEY))
         .and_then(|v| v.parse().ok());
 
+    if let ArrowDataType::Union(u) = field.dtype().to_storage() {
+        return to_parquet_type(
+            &field
+                .clone()
+                .with_dtype(crate::arrow::union::union_storage_dtype(u)),
+        );
+    }
+
     // create type from field
     let (physical_type, primitive_converted_type, primitive_logical_type) = match field
         .dtype()

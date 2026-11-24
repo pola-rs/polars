@@ -108,7 +108,7 @@ impl DataFrame {
 /// reasonable performance when writing.
 ///
 /// [`DataFrame::iter_chunks`] can still cut a chunk into several record batches, where its
-/// arrow MAP arrays would overflow their `i32` offsets.
+/// arrow MAP or dense Union arrays would overflow their `i32` offsets.
 pub fn chunk_df_for_writing(
     df: &mut DataFrame,
     row_group_size: usize,

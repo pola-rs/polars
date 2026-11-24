@@ -28,6 +28,8 @@ mod string;
 mod struct_;
 #[cfg(feature = "dtype-time")]
 mod time;
+#[cfg(feature = "dtype-union")]
+mod union_;
 
 use std::any::Any;
 use std::borrow::Cow;

@@ -46,6 +46,9 @@ impl AExpr {
             #[cfg(feature = "dtype-struct")]
             StructEval { .. } | StructField(_) => true,
 
+            #[cfg(feature = "dtype-union")]
+            UnionMatch { .. } => true,
+
             #[cfg(feature = "dynamic_group_by")]
             Rolling { .. } => false,
 
@@ -202,6 +205,9 @@ pub fn is_splittable(ae: &AExpr, inputs_rev: &[Node], expr_arena: &Arena<AExpr>)
         AExpr::Column(_) | AExpr::Element | AExpr::EvalColumn(_) => return false,
         #[cfg(feature = "dtype-struct")]
         AExpr::StructEval { .. } => return false,
+        // The arms read their variant as `pl.element()`, which only this node binds.
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch { .. } => return false,
         _ => {},
     }
 

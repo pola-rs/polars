@@ -192,6 +192,13 @@ impl Series {
         self.try_cat::<Categorical32Type>()
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Union`]
+    #[cfg(feature = "dtype-union")]
+    pub fn union(&self) -> PolarsResult<&UnionChunked> {
+        self.try_union()
+            .ok_or_else(|| unpack_chunked_err!(self => "Union"))
+    }
+
     /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
     #[cfg(feature = "dtype-extension")]
     pub fn try_ext(&self) -> Option<&ExtensionChunked> {
@@ -215,6 +222,12 @@ impl Series {
             }
         }
         try_unpack_chunked!(self, DataType::Struct(_) => StructChunked)
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Union`]
+    #[cfg(feature = "dtype-union")]
+    pub fn try_union(&self) -> Option<&UnionChunked> {
+        try_unpack_chunked!(self, DataType::Union(_) => UnionChunked)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Null`]

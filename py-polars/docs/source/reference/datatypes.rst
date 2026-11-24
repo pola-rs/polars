@@ -53,6 +53,7 @@ Nested
     Map
     Field
     Struct
+    Union
 
 String
 ~~~~~~

@@ -118,7 +118,7 @@ pub fn estimate_cardinality(array: &dyn Array) -> usize {
         PT::FixedSizeList => unimplemented!(),
         PT::LargeList => unimplemented!(),
         PT::Struct => unimplemented!(),
-        PT::Union => unimplemented!(),
+        PT::Union | PT::LargeUnion => unimplemented!(),
         PT::Map => unimplemented!(),
         PT::Dictionary(_) => unimplemented!(),
     }

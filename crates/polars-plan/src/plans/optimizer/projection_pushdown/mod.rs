@@ -2784,6 +2784,8 @@ fn extract_len_nodes(
             AExpr::Eval { .. } | AExpr::Over { .. } => return false,
             #[cfg(feature = "dtype-struct")]
             AExpr::StructEval { .. } => return false,
+            #[cfg(feature = "dtype-union")]
+            AExpr::UnionMatch { .. } => return false,
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => return false,
 

@@ -181,6 +181,17 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
                 array.value(index),
             ))
         },
+        LargeUnion => {
+            let array = array.as_any().downcast_ref::<LargeUnionArray>().unwrap();
+            let (t, offset) = array.index(index);
+            let child = &array.fields()[t];
+            let value = if array.is_valid(index) {
+                new_scalar(child.as_ref(), offset)
+            } else {
+                new_scalar(new_null_array(child.dtype().clone(), 1).as_ref(), 0)
+            };
+            Box::new(UnionScalar::new(array.dtype().clone(), t as i8, value))
+        },
         Map => {
             let array = array.as_any().downcast_ref::<MapArray>().unwrap();
             let value = if array.is_valid(index) {

@@ -666,6 +666,52 @@ fn expand_expression_rec_inner(
                             );
                         }
                     },
+                    #[cfg(feature = "dtype-union")]
+                    FunctionExpr::UnionExpr(UnionFunction::Match { names, .. }) => {
+                        let mut unions = Vec::new();
+                        expand_expression_rec(
+                            &input[0],
+                            ignored_selector_columns,
+                            schema,
+                            &mut unions,
+                            opt_flags,
+                        )?;
+                        for union in unions {
+                            let dtype = union.to_field(schema)?.dtype;
+                            let mut expanded = vec![union];
+                            for (i, arm) in input[1..].iter().enumerate() {
+                                // In an arm, `element()` is the value of its variant.
+                                let variant = match (&dtype, names.get(i)) {
+                                    (DataType::Union(fields), Some(name)) => {
+                                        fields.iter().find(|f| f.name() == name)
+                                    },
+                                    _ => None,
+                                };
+                                let arm_schema = variant.map(|f| {
+                                    let mut s = schema.clone();
+                                    s.insert(get_pl_element_name(), f.dtype().clone());
+                                    s
+                                });
+                                let mut arm_out = Vec::with_capacity(1);
+                                expand_expression_rec(
+                                    arm,
+                                    &Default::default(),
+                                    arm_schema.as_ref().unwrap_or(schema),
+                                    &mut arm_out,
+                                    opt_flags,
+                                )?;
+                                polars_ensure!(
+                                    arm_out.len() == 1,
+                                    InvalidOperation: "each arm of `union.match` must be a single expression"
+                                );
+                                expanded.extend(arm_out);
+                            }
+                            out.push(Expr::Function {
+                                input: expanded,
+                                function: function.clone(),
+                            });
+                        }
+                    },
                     _ => {
                         _ = expand_expression_by_combination(
                             input,

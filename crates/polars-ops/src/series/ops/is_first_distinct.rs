@@ -139,6 +139,8 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_distinct_by_groups(&s),
+        #[cfg(feature = "dtype-union")]
+        Union(_) => return is_first_distinct_by_groups(&s),
         #[cfg(feature = "dtype-array")]
         Array(..) => return is_first_distinct_by_groups(&s),
         List(_) | Null => return is_first_distinct_by_groups(&s),

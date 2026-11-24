@@ -88,6 +88,14 @@ pub fn get_value_display<'a, F: Write + 'a>(
         Union => Box::new(move |f, index| {
             super::union::fmt::write_value(array.as_any().downcast_ref().unwrap(), index, null, f)
         }),
+        LargeUnion => Box::new(move |f, index| {
+            super::large_union::fmt::write_value(
+                array.as_any().downcast_ref().unwrap(),
+                index,
+                null,
+                f,
+            )
+        }),
         Map => Box::new(move |f, index| {
             super::map::fmt::write_value(array.as_any().downcast_ref().unwrap(), index, null, f)
         }),

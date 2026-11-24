@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use polars_arrow::array::{
     Array, ArrayCollectIterExt, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray,
-    ListArray, NullArray, PrimitiveArray, StaticArray, StructArray, Utf8ViewArray,
+    LargeUnionArray, ListArray, NullArray, PrimitiveArray, StaticArray, StructArray, Utf8ViewArray,
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
@@ -122,8 +122,37 @@ pub unsafe fn horizontal_flatten_unchecked(
             output_height,
             dtype,
         )),
+        LargeUnion => Box::new(horizontal_flatten_unchecked_union(
+            &arrays
+                .iter()
+                .map(|x| x.as_any().downcast_ref::<LargeUnionArray>().unwrap())
+                .collect::<Vec<_>>(),
+            widths,
+            output_height,
+        )),
         t => unimplemented!("horizontal_flatten not supported for data type {:?}", t),
     }
+}
+
+/// Unions have no per-value accessor, so each row's segment of every array is copied in turn.
+unsafe fn horizontal_flatten_unchecked_union(
+    arrays: &[&LargeUnionArray],
+    widths: &[usize],
+    output_height: usize,
+) -> LargeUnionArray {
+    use polars_arrow::array::LargeUnionArrayBuilder;
+    use polars_arrow::array::builder::{ShareStrategy, StaticArrayBuilder};
+
+    let mut builder = LargeUnionArrayBuilder::new(arrays[0].dtype().clone());
+    builder.reserve(output_height * widths.iter().sum::<usize>());
+    for row in 0..output_height {
+        for (arr, &width) in arrays.iter().zip(widths) {
+            // An array of length `width` is broadcast to every row.
+            let start = if arr.len() == width { 0 } else { row * width };
+            builder.subslice_extend(arr, start, width, ShareStrategy::Always);
+        }
+    }
+    builder.freeze()
 }
 
 unsafe fn horizontal_flatten_unchecked_impl_generic<T>(

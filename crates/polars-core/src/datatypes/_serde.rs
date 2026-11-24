@@ -104,6 +104,8 @@ enum SerializableDataType {
         metadata: Option<String>,
         storage: Box<SerializableDataType>,
     },
+    #[cfg(feature = "dtype-union")]
+    Union(#[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<Field>"))] UnionFields),
 }
 
 impl From<&DataType> for SerializableDataType {
@@ -138,6 +140,8 @@ impl From<&DataType> for SerializableDataType {
             Unknown(kind) => Self::Unknown(*kind),
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
+            #[cfg(feature = "dtype-union")]
+            Union(flds) => Self::Union(flds.clone()),
             #[cfg(feature = "dtype-map")]
             Map(key, value) => Self::Map(
                 Box::new(key.as_ref().into()),
@@ -202,6 +206,8 @@ impl From<SerializableDataType> for DataType {
             Unknown(kind) => Self::Unknown(kind),
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
+            #[cfg(feature = "dtype-union")]
+            Union(flds) => Self::Union(flds),
             #[cfg(feature = "dtype-map")]
             Map(key, value) => Self::Map(Box::new((*key).into()), Box::new((*value).into())),
             #[cfg(feature = "dtype-categorical")]

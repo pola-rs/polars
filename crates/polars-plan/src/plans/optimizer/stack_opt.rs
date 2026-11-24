@@ -136,6 +136,32 @@ impl StackOptimizer {
                                 exprs.push((node, eval_schema_idx, false));
                             }
                         },
+                        #[cfg(feature = "dtype-union")]
+                        AExpr::UnionMatch {
+                            expr,
+                            names,
+                            arms,
+                            default,
+                        } => {
+                            // The arms see their variant as `pl.element()`.
+                            let dtype = expr_arena
+                                .get(*expr)
+                                .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+                            let (expr, names, arms, default) =
+                                (*expr, names.clone(), arms.clone(), *default);
+                            let polars_core::prelude::DataType::Union(fields) = &dtype else {
+                                unreachable!("checked when lowering `union.match`")
+                            };
+                            exprs.push((expr, schema_idx, false));
+                            exprs.extend(default.map(|d| (d, schema_idx, false)));
+                            for (name, arm) in names.iter().zip(arms).rev() {
+                                let mut arm_schema = (*schema_stack[schema_idx]).clone();
+                                let variant = fields[fields.try_index_of(name)?].dtype().clone();
+                                arm_schema.insert(crate::constants::get_pl_element_name(), variant);
+                                exprs.push((arm, schema_stack.len(), false));
+                                schema_stack.push(Arc::new(arm_schema));
+                            }
+                        },
                         expr => {
                             let is_filter_predicate =
                                 is_filter_predicate && passes_on_filter_predicate(expr);

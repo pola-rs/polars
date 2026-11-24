@@ -110,6 +110,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     UInt128,
+    Union,
     Unknown,
     Utf8,
 )
@@ -209,6 +210,7 @@ from polars.functions import (
     time_range,
     time_ranges,
     union,
+    union_value,
     var,
     when,
     zeros,
@@ -344,6 +346,7 @@ __all__ = [
     "UInt32",
     "UInt64",
     "UInt128",
+    "Union",
     "Unknown",
     "Utf8",
     # datatypes.extension
@@ -492,6 +495,7 @@ __all__ = [
     "select",
     "std",
     "struct",
+    "union_value",
     "tail",
     "time",
     "var",

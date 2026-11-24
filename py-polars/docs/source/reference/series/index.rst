@@ -27,6 +27,7 @@ This page gives an overview of all public Series methods.
    string
    struct
    temporal
+   union
 
 .. _series:
 

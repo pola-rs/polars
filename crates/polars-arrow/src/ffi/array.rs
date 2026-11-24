@@ -43,6 +43,7 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
             })
         },
         Union => Box::new(UnionArray::try_from_ffi(array)?),
+        LargeUnion => polars_bail!(ComputeError: "LargeUnion is not an Arrow type"),
         Map => Box::new(MapArray::try_from_ffi(array)?),
         BinaryView => Box::new(BinaryViewArray::try_from_ffi(array)?),
         Utf8View => Box::new(Utf8ViewArray::try_from_ffi(array)?),

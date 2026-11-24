@@ -102,6 +102,16 @@ pub(crate) fn is_elementwise_rec_cached(
         .or_insert_with(|| is_elementwise_rec(expr_key, arena))
 }
 
+/// Whether the arms of a `union.match` read anything of the frame besides their variant.
+#[cfg(feature = "dtype-union")]
+pub(crate) fn arms_read_frame(arms: &[Node], arena: &Arena<AExpr>) -> bool {
+    arms.iter().any(|arm| {
+        polars_plan::utils::has_aexpr(*arm, arena, |ae| {
+            matches!(ae, AExpr::Column(_) | AExpr::StructField(_) | AExpr::Len)
+        })
+    })
+}
+
 #[recursive::recursive]
 pub fn is_input_independent_rec(
     expr_key: ExprNodeKey,
@@ -222,6 +232,18 @@ pub fn is_input_independent_rec(
                     }
                     true
                 })
+        },
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch {
+            expr,
+            names: _,
+            arms,
+            default,
+        } => {
+            // The arms read their variant as `pl.element()`.
+            is_input_independent_rec(*expr, arena, cache)
+                && default.is_none_or(|d| is_input_independent_rec(d, arena, cache))
+                && !arms_read_frame(arms, arena)
         },
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling {
@@ -1718,6 +1740,32 @@ fn lower_exprs_with_ctx(
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
+            },
+            #[cfg(feature = "dtype-union")]
+            AExpr::UnionMatch {
+                expr: inner,
+                names,
+                arms,
+                default,
+            } if !arms_read_frame(&arms, ctx.expr_arena) => {
+                let mut inner_exprs = vec![inner];
+                inner_exprs.extend(default);
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_exprs, ctx)?;
+                let union_match = AExpr::UnionMatch {
+                    expr: trans_exprs[0],
+                    names,
+                    arms,
+                    default: default.map(|_| trans_exprs[1]),
+                };
+                input_streams.insert(trans_input);
+                transformed_exprs.push(ctx.expr_arena.add(union_match));
+            },
+            // The arms would need the columns they read lowered along with the union.
+            #[cfg(feature = "dtype-union")]
+            AExpr::UnionMatch { .. } => {
+                let out_name = unique_column_name();
+                fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
             AExpr::StructEval {
                 expr: inner,

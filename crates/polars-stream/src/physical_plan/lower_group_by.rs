@@ -417,6 +417,31 @@ fn try_lower_elementwise_scalar_agg_expr(
             }))
         },
 
+        // The arms read their variant as `pl.element()`, and are evaluated after the union.
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch {
+            expr,
+            names,
+            arms,
+            default,
+        } => {
+            if crate::physical_plan::lower_expr::arms_read_frame(arms, expr_arena) {
+                return None;
+            }
+            let (expr, names, arms, default) = (*expr, names.clone(), arms.clone(), *default);
+            let expr = lower_rec!(expr)?;
+            let default = match default {
+                Some(default) => Some(lower_rec!(default)?),
+                None => None,
+            };
+            Some(expr_arena.add(AExpr::UnionMatch {
+                expr,
+                names,
+                arms,
+                default,
+            }))
+        },
+
         AExpr::StructEval {
             expr,
             evaluation,

@@ -536,7 +536,8 @@ def test_arrow_type_polars_cannot_read_is_an_error(tmp_path: Path) -> None:
     with duckdb.connect(path) as conn:
         conn.execute("CREATE TABLE t AS SELECT union_value(a := 1) AS u")
     lf = pl.scan_database("SELECT u FROM t", f"duckdb:///{path}")
-    with pytest.raises(pl.exceptions.ComputeError, match="can't read"):
+    # The plugin is built without `dtype-union`.
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="can't read"):
         lf.collect()
 
 

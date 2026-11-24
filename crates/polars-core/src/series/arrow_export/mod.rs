@@ -21,7 +21,7 @@ use polars_arrow::array::new_null_array;
 use polars_compute::cast::cast_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
-pub(crate) use split::{arrow_export_cut, contains_arrow_map, map_spans_fit};
+pub(crate) use split::{arrow_export_cut, contains_i32_offsets, i32_spans_fit};
 
 use crate::prelude::{
     Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType, ListArray,
@@ -112,19 +112,19 @@ impl Series {
     }
 
     /// Export a chunk of this Series as one or more arrow arrays, split at rows so that each
-    /// arrow MAP array fits in `i32` offsets; the pieces are converted as the iterator reaches them.
+    /// arrow MAP and dense Union array fits in `i32` offsets; the pieces are converted as the iterator reaches them.
     pub fn try_to_arrow_split(
         &self,
         chunk_idx: usize,
         compat_level: CompatLevel,
     ) -> impl Iterator<Item = PolarsResult<ArrayRef>> + Send + use<> {
-        if !self.dtype().contains_map() {
+        if !self.dtype().contains_map() && !self.dtype().contains_union() {
             return Either::Left(std::iter::once(self.try_to_arrow(chunk_idx, compat_level)));
         }
         let arrow_dtype = self.dtype().to_arrow(compat_level);
         let chunk = self.chunks()[chunk_idx].as_ref();
-        if !contains_arrow_map(&arrow_dtype)
-            || map_spans_fit(chunk, &arrow_dtype, 0..chunk.len(), 1)
+        if !contains_i32_offsets(&arrow_dtype)
+            || i32_spans_fit(chunk, &arrow_dtype, 0..chunk.len(), 1)
         {
             return Either::Left(std::iter::once(self.try_to_arrow(chunk_idx, compat_level)));
         }
@@ -137,7 +137,7 @@ impl Series {
             if rows.is_empty() {
                 return None;
             }
-            let end = arrow_export_cut(rows, |r| map_spans_fit(arr, &arrow_dtype, r, 1));
+            let end = arrow_export_cut(rows, |r| i32_spans_fit(arr, &arrow_dtype, r, 1));
             let piece = chunk
                 .slice(start..end)
                 .try_piece_to_arrow(&arrow_dtype, compat_level);
@@ -156,7 +156,7 @@ impl Series {
         arrow_dtype: &ArrowDataType,
         compat_level: CompatLevel,
     ) -> PolarsResult<ArrayRef> {
-        if self.len() == 1 && !map_spans_fit(self.chunks()[0].as_ref(), arrow_dtype, 0..1, 1) {
+        if self.len() == 1 && !i32_spans_fit(self.chunks()[0].as_ref(), arrow_dtype, 0..1, 1) {
             if self.null_count() == 1 {
                 return Ok(new_null_array(arrow_dtype.clone(), 1));
             }
@@ -287,13 +287,50 @@ impl ToArrowConverter {
 
                 Box::new(arr)
             },
+            #[cfg(feature = "dtype-union")]
+            (DataType::Union(union_fields), ArrowDataType::Union(u))
+                if u.mode.is_dense()
+                    && u.ids.is_none()
+                    && u.fields.len() == union_fields.len()
+                    && u.fields
+                        .iter()
+                        .zip(union_fields)
+                        .all(|(a, p)| a.name == *p.name()) =>
+            {
+                use polars_arrow::array::LargeUnionArray;
+                let arr: &LargeUnionArray = array.as_any().downcast_ref().unwrap();
+
+                let mut arrow_dtype = to_owned_dtype(arrow_field);
+                let ArrowDataType::Union(u) = &mut arrow_dtype else {
+                    unreachable!()
+                };
+                self.attach_pl_field_metadata(
+                    union_fields
+                        .iter()
+                        .map(|f| f.dtype())
+                        .zip(u.fields.iter_mut()),
+                );
+                let arrow_fields = u.fields.clone();
+
+                Box::new(crate::chunked_array::union_::union_array_to_arrow(
+                    arr,
+                    arrow_dtype,
+                    |t, child| {
+                        self.array_to_arrow(
+                            child,
+                            union_fields[t].dtype(),
+                            Cow::Borrowed(&arrow_fields[t]),
+                        )
+                    },
+                )?)
+            },
             (DataType::List(item_dtype), ArrowDataType::LargeList(arrow_item_field)) => {
                 let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
-                // A split piece of a list of maps must export only the child it spans, as its
-                // whole child may overflow the `i32` offsets of an arrow MAP.
+                // A split piece of a list of maps or unions must export only the child it spans,
+                // as its whole child may overflow the `i32` offsets of an arrow MAP or Union.
                 let item_dtype_arrow = arrow_item_field.dtype();
-                let trimmed = (contains_arrow_map(item_dtype_arrow)
-                    && !map_spans_fit(
+                let trimmed = (contains_i32_offsets(item_dtype_arrow)
+                    && !i32_spans_fit(
                         arr.values().as_ref(),
                         item_dtype_arrow,
                         0..arr.values().len(),

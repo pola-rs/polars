@@ -92,6 +92,8 @@ impl RecursionState {
 
 pub(crate) struct ExprOrderSimplifier<'a> {
     struct_field_ordering: Option<ObservableOrders>,
+    /// The ordering of `pl.element()` in an arm of a `union.match`, which is that of the union.
+    element_ordering: Option<ObservableOrders>,
 
     /// Entries for nodes whose subtrees will no longer change when revisited with a de-ordering
     /// recursion state.
@@ -108,6 +110,7 @@ impl<'a> ExprOrderSimplifier<'a> {
     ) -> Self {
         Self {
             struct_field_ordering: None,
+            element_ordering: None,
 
             revisit_cache,
             internally_observed: ObservableOrders::empty(),
@@ -226,13 +229,57 @@ impl ExprOrderSimplifier<'_> {
                     },
                 };
 
+                let prev_element_ordering = self.element_ordering.take();
                 self.rec(evaluation, RS::NO_DEORDER);
+                self.element_ordering = prev_element_ordering;
 
                 cache_output!(expr_ordering);
 
                 expr_ordering
             },
-            AExpr::Element | AExpr::EvalColumn(_) => O::INDEPENDENT,
+            AExpr::Element => self.element_ordering.unwrap_or(O::INDEPENDENT),
+            AExpr::EvalColumn(_) => O::INDEPENDENT,
+
+            #[cfg(feature = "dtype-union")]
+            AExpr::UnionMatch { .. } => {
+                check_return_cached!();
+
+                let AExpr::UnionMatch {
+                    expr,
+                    arms,
+                    default,
+                    ..
+                } = self.expr_arena.get(current_ae_node)
+                else {
+                    unreachable!()
+                };
+                let (union, n_arms, default) = (*expr, arms.len(), *default);
+
+                let union_ordering = self.rec(union, RS::NO_DEORDER);
+                let mut acc = ExprOrderAcc::default();
+                acc.add(union_ordering, union);
+
+                let prev_element_ordering = self.element_ordering.replace(union_ordering);
+                for i in 0..n_arms {
+                    let AExpr::UnionMatch { arms, .. } = self.expr_arena.get(current_ae_node)
+                    else {
+                        unreachable!()
+                    };
+                    let node = arms[i];
+                    acc.add(self.rec(node, RS::NO_DEORDER), node);
+                }
+                self.element_ordering = prev_element_ordering;
+                if let Some(node) = default {
+                    acc.add(self.rec(node, RS::NO_DEORDER), node);
+                }
+
+                let output_observable = acc.accumulated_orders();
+                if acc.saw_mixed_inputs() {
+                    self.internal_observe(output_observable);
+                }
+                cache_output!(output_observable);
+                output_observable
+            },
 
             #[cfg(feature = "dtype-struct")]
             AExpr::StructEval {

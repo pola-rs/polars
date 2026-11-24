@@ -936,6 +936,8 @@ fn classify_into_constraints(
         AExpr::StructField(_) => Classification::Opaque,
         #[cfg(feature = "dtype-struct")]
         AExpr::StructEval { .. } => Classification::Opaque,
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch { .. } => Classification::Opaque,
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => Classification::Opaque,
     }
@@ -1148,6 +1150,8 @@ fn classify_negation(
         AExpr::StructField(_) => Classification::Opaque,
         #[cfg(feature = "dtype-struct")]
         AExpr::StructEval { .. } => Classification::Opaque,
+        #[cfg(feature = "dtype-union")]
+        AExpr::UnionMatch { .. } => Classification::Opaque,
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => Classification::Opaque,
     }

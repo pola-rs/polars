@@ -308,6 +308,7 @@ fn serialize_type(dtype: &ArrowDataType) -> polars_arrow_format::ipc::Type {
         Utf8View => ipc::Type::Utf8View(Box::new(ipc::Utf8View {})),
         BinaryView => ipc::Type::BinaryView(Box::new(ipc::BinaryView {})),
         Unknown => unimplemented!(),
+        LargeUnion(_) => panic!("LargeUnion is not an Arrow type; convert it to a Union first"),
     }
 }
 
@@ -367,6 +368,7 @@ fn serialize_children(
         Dictionary(_, inner, _) => serialize_children(inner, ipc_field),
         Extension(ext) => serialize_children(&ext.inner, ipc_field),
         Unknown => unimplemented!(),
+        LargeUnion(_) => panic!("LargeUnion is not an Arrow type; convert it to a Union first"),
     }
 }
 

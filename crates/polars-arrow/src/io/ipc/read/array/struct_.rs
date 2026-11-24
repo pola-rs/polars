@@ -129,7 +129,13 @@ pub fn read_struct_pruned(
                 scratch,
                 checked,
             )?),
-            None => skip(field_nodes, child.dtype(), buffers, variadic_buffer_counts)?,
+            None => skip(
+                field_nodes,
+                child.dtype(),
+                buffers,
+                variadic_buffer_counts,
+                version,
+            )?,
         }
     }
 
@@ -147,6 +153,7 @@ pub fn skip_struct(
     dtype: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     variadic_buffer_counts: &mut VecDeque<usize>,
+    version: Version,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
@@ -160,7 +167,13 @@ pub fn skip_struct(
 
     let fields = StructArray::get_fields(dtype);
 
-    fields
-        .iter()
-        .try_for_each(|field| skip(field_nodes, field.dtype(), buffers, variadic_buffer_counts))
+    fields.iter().try_for_each(|field| {
+        skip(
+            field_nodes,
+            field.dtype(),
+            buffers,
+            variadic_buffer_counts,
+            version,
+        )
+    })
 }

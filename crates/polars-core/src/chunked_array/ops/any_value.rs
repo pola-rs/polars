@@ -104,6 +104,14 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let arr = &*(arr as *const dyn Array as *const StructArray);
             AnyValue::Struct(idx, arr, flds)
         },
+        #[cfg(feature = "dtype-union")]
+        DataType::Union(flds) => {
+            let arr = &*(arr as *const dyn Array as *const LargeUnionArray);
+            let (t, offset) = arr.index_unchecked(idx);
+            let child = arr.fields().get_unchecked(t).as_ref();
+            let value = arr_to_any_value(child, offset, flds.get_unchecked(t).dtype());
+            AnyValue::Union(t, Box::new(value), flds)
+        },
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => {
             let arr = &*(arr as *const dyn Array as *const Int64Array);
@@ -318,6 +326,18 @@ impl ChunkAnyValue for NullChunked {
 
     fn get_any_value(&self, _index: usize) -> PolarsResult<AnyValue<'_>> {
         Ok(AnyValue::Null)
+    }
+}
+
+#[cfg(feature = "dtype-union")]
+impl ChunkAnyValue for UnionChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue<'_> {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
+        get_any_value!(self, index)
     }
 }
 

@@ -117,7 +117,7 @@ where
     ChunkedArray<T>: ChunkExpandAtIndex<T>,
 {
     let (ca, by) = broadcast_args(ca, by)?;
-    let mut builder = make_builder(&ca.dtype().to_arrow(CompatLevel::newest()));
+    let mut builder = make_builder(&ca.dtype().to_physical_arrow(CompatLevel::newest()));
     Ok(arity::binary(&ca, &by, |arr, by| {
         let arr_length = by.iter().flatten().map(|x| *x as usize).sum();
         builder.reserve(arr_length);

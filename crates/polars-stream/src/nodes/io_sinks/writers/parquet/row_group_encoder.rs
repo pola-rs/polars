@@ -12,6 +12,8 @@ use polars_core::prelude::Column;
 use polars_error::PolarsResult;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
+#[cfg(feature = "dtype-union")]
+use polars_parquet::write::dtype_unions_to_structs;
 use polars_parquet::write::{
     CompressedPage, Compressor, Encoding, SchemaDescriptor, WriteOptions, array_to_columns,
 };
@@ -272,10 +274,26 @@ impl RowGroupEncoder {
                                 let field = arrow_schema.get_at_index(i).unwrap().1;
                                 let array = match dictionary_array(&c, field, encodings) {
                                     Some(array) => array,
-                                    None => c
-                                        .as_materialized_series()
-                                        .rechunk()
-                                        .to_arrow_with_field(0, Cow::Borrowed(field), true)?,
+                                    None => {
+                                        let series = c.as_materialized_series().rechunk();
+                                        // Parquet has no union type; the file's Arrow schema
+                                        // keeps the unions so they are restored on read.
+                                        let field = Cow::Borrowed(field);
+                                        #[cfg(feature = "dtype-union")]
+                                        let (series, field) = match series.unions_to_structs()? {
+                                            Some(series) => {
+                                                let dtype = dtype_unions_to_structs(&field.dtype);
+                                                (
+                                                    series,
+                                                    Cow::Owned(
+                                                        field.into_owned().with_dtype(dtype),
+                                                    ),
+                                                )
+                                            },
+                                            None => (series, field),
+                                        };
+                                        series.to_arrow_with_field(0, field, true)?
+                                    },
                                 };
 
                                 let encode_page_iters = array_to_columns(

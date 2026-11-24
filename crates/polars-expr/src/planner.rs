@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_plan::constants::{get_literal_name, get_pl_structfields_name};
+use polars_plan::constants::{get_literal_name, get_pl_element_name, get_pl_structfields_name};
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -701,6 +701,15 @@ fn create_physical_expr_inner(
                 state.allow_threading,
             )))
         },
+        #[cfg(feature = "dtype-union")]
+        UnionMatch {
+            expr,
+            names,
+            arms,
+            default,
+        } => create_union_match(
+            expression, expr, &names, &arms, default, expr_arena, schema, state,
+        ),
         Function {
             input,
             function,
@@ -805,5 +814,184 @@ fn inputs_are_row_wise(function: &IRFunctionExpr) -> bool {
         #[cfg(feature = "concat_str")]
         F::StringExpr(IRStringFunction::ConcatHorizontal { .. }) => true,
         _ => false,
+    }
+}
+
+/// Plans `union.match` as an elementwise function of the union and of what its arms and default
+/// read: columns, struct fields (`pl.field`) and the enclosing `pl.element()`.
+#[cfg(feature = "dtype-union")]
+#[allow(clippy::too_many_arguments)]
+fn create_union_match(
+    expression: Node,
+    union: Node,
+    names: &[PlSmallStr],
+    arms: &[Node],
+    default: Option<Node>,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &SchemaRef,
+    state: &mut ExpressionConversionState,
+) -> PolarsResult<Arc<dyn PhysicalExpr>> {
+    let ctx = ToFieldContext::new(expr_arena, schema);
+    let output_field = expr_arena.get(expression).to_field(&ctx)?;
+    let DataType::Union(fields) = expr_arena.get(union).to_dtype(&ctx)? else {
+        polars_bail!(InvalidOperation: "`union.match` requires a Union dtype");
+    };
+
+    let mut reads = BranchReads::default();
+    let arm_reads_values: Vec<bool> = arms
+        .iter()
+        .map(|arm| reads.collect(*arm, expr_arena))
+        .collect();
+    let reads_element = default.is_some_and(|d| reads.collect(d, expr_arena));
+    let n_columns = reads.columns.len();
+    let columns: Vec<PlSmallStr> = reads
+        .columns
+        .into_iter()
+        .chain(reads.eval_columns)
+        .collect();
+    let struct_fields: Vec<PlSmallStr> = reads.fields.into_iter().collect();
+
+    let mut branch_schema = Schema::with_capacity(columns.len() + 2);
+    for name in &columns {
+        branch_schema.insert(name.clone(), schema.try_get(name)?.clone());
+    }
+    if let Some(dtype) = schema.get(&get_pl_structfields_name()) {
+        branch_schema.insert(get_pl_structfields_name(), dtype.clone());
+    }
+    let mut branch = |node: Node, element: Option<&DataType>, variant| {
+        let mut schema = branch_schema.clone();
+        if let Some(dtype) = element {
+            schema.insert(get_pl_element_name(), dtype.clone());
+        }
+        let expr = create_physical_expr_inner(node, expr_arena, &Arc::new(schema), state)?;
+        PolarsResult::Ok(MatchBranch { expr, variant })
+    };
+    let arm_branches = names
+        .iter()
+        .zip(arms)
+        .zip(arm_reads_values)
+        .map(|((name, arm), reads_values)| {
+            let t = fields.try_index_of(name)?;
+            branch(*arm, Some(fields[t].dtype()), Some((t, reads_values)))
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+    let default_branch = default
+        .map(|d| branch(d, schema.get(&get_pl_element_name()), None))
+        .transpose()?;
+
+    let mut input_nodes = vec![union];
+    input_nodes.extend(columns.iter().enumerate().map(|(i, c)| {
+        expr_arena.add(if i < n_columns {
+            AExpr::Column(c.clone())
+        } else {
+            AExpr::EvalColumn(c.clone())
+        })
+    }));
+    #[cfg(feature = "dtype-struct")]
+    input_nodes.extend(
+        struct_fields
+            .iter()
+            .map(|f| expr_arena.add(AExpr::StructField(f.clone()))),
+    );
+    if reads_element {
+        input_nodes.push(expr_arena.add(AExpr::Element));
+    }
+    let inputs = input_nodes
+        .into_iter()
+        .map(|n| create_physical_expr_inner(n, expr_arena, schema, state))
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    let is_fallible = arms.iter().chain(&default).any(|node| {
+        expr_arena
+            .iter(*node)
+            .any(|(_, ae)| ae.is_fallible_top_level(expr_arena))
+    });
+    let kernel = UnionMatchKernel {
+        arms: arm_branches,
+        default: default_branch,
+        columns,
+        fields: struct_fields,
+        reads_element,
+        dtype: output_field.dtype().clone(),
+        allow_threading: state.allow_threading,
+    };
+    Ok(Arc::new(ApplyExpr::new(
+        inputs,
+        SpecialEq::new(Arc::new(kernel) as Arc<dyn ColumnsUdf>),
+        None,
+        node_to_expr(expression, expr_arena),
+        FunctionOptions::elementwise(),
+        state.allow_threading,
+        schema.clone(),
+        output_field,
+        is_scalar_ae(expression, expr_arena),
+        is_fallible,
+        false,
+    )))
+}
+
+/// What the arms and default of a `union.match` read of the frame it runs on.
+#[cfg(feature = "dtype-union")]
+#[derive(Default)]
+struct BranchReads {
+    columns: PlIndexSet<PlSmallStr>,
+    /// The columns read through the `eval` this `union.match` is in.
+    eval_columns: PlIndexSet<PlSmallStr>,
+    fields: PlIndexSet<PlSmallStr>,
+}
+
+#[cfg(feature = "dtype-union")]
+impl BranchReads {
+    /// Records what `node` reads, and returns whether it reads the `pl.element()` of the scope it
+    /// is in, skipping the scopes nested in it that rebind `pl.element()` or `pl.field`.
+    fn collect(&mut self, node: Node, arena: &Arena<AExpr>) -> bool {
+        let mut reads_element = false;
+        // A node, and whether `pl.element()` and `pl.field` there are those of the scope.
+        let mut stack = vec![(node, true, true)];
+        let mut children = Vec::new();
+        while let Some((node, element, field)) = stack.pop() {
+            let ae = arena.get(node);
+            match ae {
+                AExpr::Column(name) => {
+                    self.columns.insert(name.clone());
+                },
+                AExpr::EvalColumn(name) => {
+                    self.eval_columns.insert(name.clone());
+                },
+                AExpr::Element => reads_element |= element,
+                #[cfg(feature = "dtype-struct")]
+                AExpr::StructField(name) if field => {
+                    self.fields.insert(name.clone());
+                },
+                AExpr::Eval { expr, columns, .. } => {
+                    stack.push((*expr, element, field));
+                    stack.extend(columns.iter().map(|c| (c.node(), element, field)));
+                    continue;
+                },
+                #[cfg(feature = "dtype-struct")]
+                AExpr::StructEval {
+                    expr, evaluation, ..
+                } => {
+                    stack.push((*expr, element, field));
+                    stack.extend(evaluation.iter().map(|e| (e.node(), element, false)));
+                    continue;
+                },
+                AExpr::UnionMatch {
+                    expr,
+                    arms,
+                    default,
+                    ..
+                } => {
+                    stack.push((*expr, element, field));
+                    stack.extend(default.map(|d| (d, element, field)));
+                    stack.extend(arms.iter().map(|a| (*a, false, field)));
+                    continue;
+                },
+                _ => {},
+            }
+            ae.children_rev(&mut children);
+            stack.extend(children.drain(..).map(|c| (c, element, field)));
+        }
+        reads_element
     }
 }

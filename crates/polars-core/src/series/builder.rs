@@ -21,7 +21,7 @@ impl SeriesBuilder {
             return Self { dtype, builder };
         }
 
-        let builder = make_builder(&dtype.to_physical().to_arrow(CompatLevel::newest()));
+        let builder = make_builder(&dtype.to_physical_arrow(CompatLevel::newest()));
         Self { dtype, builder }
     }
 

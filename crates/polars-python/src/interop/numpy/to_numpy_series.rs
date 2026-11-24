@@ -381,6 +381,14 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyRe
                 .collect::<PyResult<Vec<_>>>()?;
             PyArray1::from_iter(py, values).into_py_any(py)?
         },
+        Union(_) => {
+            // No numpy dtype for a union, so fall back to an object array of the values.
+            let values = s
+                .iter()
+                .map(|av| Wrap(av).into_py_any(py))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyArray1::from_iter(py, values).into_py_any(py)?
+        },
         Extension(_, _) => series_to_numpy_with_copy(py, s.ext().unwrap().storage(), writable)?,
         Unknown(_) | BinaryOffset => unreachable!(),
     })

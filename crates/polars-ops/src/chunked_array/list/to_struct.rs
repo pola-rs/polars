@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_arrow::array::{Array, StructArray};
-use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::datatypes::{ArrowDataType, Field as ArrowField};
 use polars_core::chunked_array::StructChunked;
 use polars_core::datatypes::{CompatLevel, DataType, Field, ListChunked};
 use polars_core::runtime::RAYON;
@@ -45,7 +45,11 @@ pub trait ToStruct: AsList {
                         fields
                             .iter()
                             .map(|name| {
-                                field_phys_dtype.to_arrow_field(name.clone(), CompatLevel::newest())
+                                ArrowField::new(
+                                    name.clone(),
+                                    field_phys_dtype.to_physical_arrow(CompatLevel::newest()),
+                                    true,
+                                )
                             })
                             .collect(),
                     ),

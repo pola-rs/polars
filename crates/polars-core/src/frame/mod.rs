@@ -55,7 +55,7 @@ use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::arg_sort;
 use crate::runtime::RAYON;
 use crate::series::IsSorted;
-use crate::series::arrow_export::{arrow_export_cut, contains_arrow_map, map_spans_fit};
+use crate::series::arrow_export::{arrow_export_cut, contains_i32_offsets, i32_spans_fit};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -2158,8 +2158,8 @@ impl DataFrame {
 
     /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches.
     ///
-    /// A chunk is split into several batches where its arrow MAP arrays would overflow
-    /// their `i32` offsets.
+    /// A chunk is split into several batches where its arrow MAP or dense Union arrays would
+    /// overflow their `i32` offsets.
     ///
     /// The columns' chunks must be aligned ([`DataFrame::should_rechunk`] is false); only debug
     /// builds check this. Aligning is left to the caller, which can reuse the aligned frame.
@@ -2755,16 +2755,16 @@ pub struct RecordBatchIter<'a> {
     cursor: ChunkCursor,
     compat_level: CompatLevel,
     parallel: bool,
-    /// The columns that export to an arrow MAP, whose `i32` offsets may make a chunk need several
-    /// batches; sorted by index.
-    map_columns: Vec<MapColumn>,
+    /// The columns that export to an arrow MAP or dense Union, whose `i32` offsets may make a
+    /// chunk need several batches; sorted by index.
+    split_columns: Vec<SplitColumn>,
     split: Option<SplitChunk>,
     /// The first row of the next chunk, to slice columns without chunks of their own.
     offset: usize,
 }
 
-/// A column that exports to an arrow MAP.
-struct MapColumn {
+/// A column that exports to an arrow MAP or dense Union.
+struct SplitColumn {
     idx: usize,
     /// The one row a Scalar column repeats, so it is planned without materializing the column;
     /// `None` for a Series column.
@@ -2774,8 +2774,8 @@ struct MapColumn {
 /// A chunk exported as one batch per piece, cut as the iterator reaches it.
 struct SplitChunk {
     chunk: DataFrame,
-    /// The columns without an arrow MAP, converted once for the whole chunk so that their pieces
-    /// share one dictionary; `None` for the columns converted per piece.
+    /// The other columns, converted once for the whole chunk so that their pieces share one
+    /// dictionary; `None` for the columns converted per piece.
     converted: Vec<Option<ArrayRef>>,
     /// The first row of the next piece.
     start: usize,
@@ -2817,20 +2817,20 @@ impl<'a> RecordBatchIter<'a> {
                 .map(|c| c.field().to_arrow(compat_level))
                 .collect(),
         );
-        let map_columns = df
+        let split_columns = df
             .columns()
             .iter()
             .zip(schema.iter_values())
             .enumerate()
-            .filter(|(_, (_, f))| contains_arrow_map(f.dtype()))
+            .filter(|(_, (_, f))| contains_i32_offsets(f.dtype()))
             .filter_map(|(idx, (c, _))| {
                 let Some(sc) = c.as_scalar_column() else {
-                    return Some(MapColumn { idx, row: None });
+                    return Some(SplitColumn { idx, row: None });
                 };
                 let row = sc.as_single_value_series().rechunk();
                 // An empty Scalar column has no row, and the frame then has none either.
                 let row = row.chunks().first().filter(|row| row.len() == 1)?.clone();
-                Some(MapColumn {
+                Some(SplitColumn {
                     idx,
                     row: Some(row),
                 })
@@ -2843,7 +2843,7 @@ impl<'a> RecordBatchIter<'a> {
             schema,
             compat_level,
             parallel,
-            map_columns,
+            split_columns,
             split: None,
             offset: 0,
         }
@@ -2919,14 +2919,15 @@ impl<'a> RecordBatchIter<'a> {
     }
 
     /// Whether `rows` of chunk `idx` of `df` export without overflowing the `i32` offsets of an
-    /// arrow MAP; a chunk too short for `rows` doesn't, which leaves it to [`Self::split`] to report.
+    /// arrow MAP or dense Union; a chunk too short for `rows` doesn't, which leaves it to
+    /// [`Self::split`] to report.
     pub(crate) fn fits(&self, df: &DataFrame, idx: usize, rows: std::ops::Range<usize>) -> bool {
-        self.map_columns.iter().all(|m| {
+        self.split_columns.iter().all(|m| {
             let dtype = self.schema.get_at_index(m.idx).unwrap().1.dtype();
             match (&m.row, df.columns()[m.idx].as_series()) {
-                (Some(row), _) => map_spans_fit(row.as_ref(), dtype, 0..1, rows.len()),
+                (Some(row), _) => i32_spans_fit(row.as_ref(), dtype, 0..1, rows.len()),
                 (None, Some(s)) => s.chunks().get(idx).is_some_and(|c| {
-                    rows.end <= c.len() && map_spans_fit(c.as_ref(), dtype, rows.clone(), 1)
+                    rows.end <= c.len() && i32_spans_fit(c.as_ref(), dtype, rows.clone(), 1)
                 }),
                 (None, None) => true,
             }
@@ -2947,7 +2948,11 @@ impl<'a> RecordBatchIter<'a> {
         let chunk = self.df.chunk_frame(idx, rows);
         let length = chunk.height();
         let converted = self.per_column(chunk.width(), |i| {
-            if self.map_columns.binary_search_by_key(&i, |m| m.idx).is_ok() {
+            if self
+                .split_columns
+                .binary_search_by_key(&i, |m| m.idx)
+                .is_ok()
+            {
                 return Ok(None);
             }
             column_to_arrow(&chunk.columns()[i], 0, 0..length, self.compat_level).map(Some)
@@ -2997,7 +3002,7 @@ impl Iterator for RecordBatchIter<'_> {
             .as_ref()
             .is_some_and(|split| split.start < split.chunk.height());
         let lower = chunks + piece as usize;
-        (lower, self.map_columns.is_empty().then_some(lower))
+        (lower, self.split_columns.is_empty().then_some(lower))
     }
 }
 
