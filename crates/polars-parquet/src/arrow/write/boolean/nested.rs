@@ -22,7 +22,7 @@ pub fn array_to_page(
     let (repetition_levels_byte_length, definition_levels_byte_length, num_values) =
         nested::write_rep_and_def(options.version, nested, &mut buffer)?;
 
-    encode_plain(array, encode_options, &mut buffer)?;
+    encode_plain(array, encode_options, &mut buffer);
 
     let statistics = if options.has_statistics() {
         Some(build_statistics(array, &options.statistics))

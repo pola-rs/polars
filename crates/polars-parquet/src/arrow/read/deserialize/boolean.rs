@@ -12,7 +12,7 @@ use super::utils::{
 };
 use crate::parquet::encoding::Encoding;
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
-use crate::parquet::error::ParquetResult;
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
@@ -195,26 +195,45 @@ fn decode_required_plain(values: BitMask<'_>, target: &mut BitmapBuilder) -> Par
 }
 
 fn decode_optional_plain(
-    mut values: BitMask<'_>,
+    values: BitMask<'_>,
     target: &mut BitmapBuilder,
-    mut page_validity: Bitmap,
+    page_validity: Bitmap,
 ) -> ParquetResult<()> {
-    debug_assert!(page_validity.set_bits() <= values.len());
-
-    if page_validity.unset_bits() == 0 {
-        return decode_required_plain(values.sliced(0, page_validity.len()), target);
+    let len = page_validity.len();
+    let valid_count = page_validity.set_bits();
+    if valid_count > values.len() {
+        return Err(ParquetError::oos(
+            "not enough PLAIN boolean values for the definition levels",
+        ));
+    }
+    if valid_count == 0 {
+        target.extend_constant(len, false);
+        return Ok(());
+    }
+    if valid_count == len {
+        return decode_required_plain(values.sliced(0, len), target);
     }
 
-    target.reserve(page_validity.len());
-
-    while !page_validity.is_empty() {
-        let num_valid = page_validity.take_leading_ones();
-        let iv;
-        (iv, values) = values.split_at(num_valid);
-        target.extend_from_bitmask(iv);
-
-        let num_invalid = page_validity.take_leading_zeros();
-        target.extend_constant(num_invalid, false);
+    target.reserve(len);
+    let validity = BitMask::from_bitmap(&page_validity);
+    let mut value_offset = 0;
+    for offset in (0..len).step_by(32) {
+        let mask = validity.get_u32(offset);
+        let mut word = 0;
+        if mask != 0 {
+            word = values.get_u32(value_offset);
+            value_offset += mask.count_ones() as usize;
+            // Insert a zero at each null position, from low to high bits.
+            let mut nulls = !mask;
+            while nulls != 0 {
+                let below = nulls.isolate_lowest_one() - 1;
+                word = (word & below) | ((word & !below) << 1);
+                nulls &= nulls - 1;
+            }
+        }
+        let n = (len - offset).min(32);
+        // SAFETY: space for all rows was reserved; bits beyond n are zero in mask and word.
+        unsafe { target.push_word_with_len_unchecked(word as u64, n) };
     }
 
     Ok(())
@@ -479,5 +498,41 @@ impl Decoder for BooleanDecoder {
         decoded.1.extend_constant(length, true);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optional_plain_sliced_bitmaps() {
+        for period in [1, 2, 3, 11, 67] {
+            let validity: Bitmap = (0..150).map(|i| i % period != 0).collect();
+            let packed: Bitmap = (0..160).map(|i| i % 5 < 2).collect();
+            for start in 0..8 {
+                for len in 0..=130 {
+                    let mask = validity.clone().sliced(start, len);
+                    let vals = BitMask::from_bitmap(&packed).sliced(7 - start, mask.set_bits());
+                    let mut values = vals.iter();
+                    let expected: Bitmap = std::iter::once(true)
+                        .chain(mask.iter().map(|valid| valid && values.next().unwrap()))
+                        .collect();
+                    let mut target = BitmapBuilder::new();
+                    target.push(true);
+                    decode_optional_plain(vals, &mut target, mask).unwrap();
+                    assert_eq!(target.freeze(), expected);
+                }
+            }
+        }
+        let mut target = BitmapBuilder::new();
+        assert!(
+            decode_optional_plain(
+                BitMask::new(&[], 0, 0),
+                &mut target,
+                Bitmap::new_with_value(true, 1)
+            )
+            .is_err()
+        );
     }
 }

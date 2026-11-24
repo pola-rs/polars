@@ -5,6 +5,8 @@ mod encoder;
 pub mod proptest;
 
 pub use bitmap::{BitmapIter, encode_bool as bitpacked_encode};
+pub(crate) use bitmap::{append_packed_bits, encode_bitmap};
+pub(crate) use encoder::encode_u32_slice;
 pub use encoder::{Encoder, encode};
 
 use super::{bitpacked, uleb128};

@@ -31,7 +31,7 @@ use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::utils;
 use crate::parquet::CowBuffer;
 use crate::parquet::encoding::Encoding;
-use crate::parquet::encoding::hybrid_rle::encode;
+use crate::parquet::encoding::hybrid_rle::{encode, encode_u32_slice};
 use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
@@ -294,6 +294,21 @@ fn serialize_keys_values<K: DictionaryKey>(
     value_lengths: Option<&[u32]>,
     buffer: &mut Vec<u8>,
 ) -> PolarsResult<Option<i64>> {
+    if let Some(keys) = array.keys().as_any().downcast_ref::<PrimitiveArray<u32>>() {
+        let values = keys.values().as_slice();
+        let compacted;
+        let values = if let Some(validity) = validity.filter(|v| v.unset_bits() != 0) {
+            compacted = polars_compute::filter::filter_values(values, validity);
+            &compacted[..]
+        } else {
+            values
+        };
+        let (max_key, data_bytes) = max_key_and_data_bytes(values.iter().copied(), value_lengths);
+        let num_bits = utils::get_bit_width(max_key as u64);
+        buffer.push(num_bits as u8);
+        encode_u32_slice(buffer, values, num_bits)?;
+        return Ok(data_bytes);
+    }
     let keys = array.keys_values_iter().map(|x| x as u32);
     if let Some(validity) = validity {
         // discard indices whose values are null.
