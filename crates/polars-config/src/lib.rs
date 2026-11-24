@@ -1048,7 +1048,7 @@ pub fn get_oomkill_threshold_bytes() -> u64 {
 }
 
 /// `POLARS_OOC_DIRTY_LIMIT_FRACTION` times the total memory: the allocator frees
-/// unused pages before the tracked memory plus those pages would exceed it.
+/// unused pages before the memory it holds would exceed it.
 #[inline(always)]
 pub fn get_ooc_dirty_limit_bytes() -> u64 {
     OOC_DIRTY_LIMIT_BYTES_ATOMIC.load(Ordering::Relaxed)
