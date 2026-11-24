@@ -341,6 +341,22 @@ def test_hist_all_null() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.parametrize("descending", [None, False, True])
+def test_hist_bin_count_ignores_nan(descending: bool | None) -> None:
+    s = pl.Series([3.0, float("nan"), None, 1.0])
+    if descending is not None:
+        # The sorted fast paths of the min and max skip the NaN as well.
+        s = s.sort(descending=descending)
+    out = s.hist(bin_count=2, include_category=False, include_breakpoint=True)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": [2.0, 3.0],
+            "count": pl.Series([1, 1], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
 @pytest.mark.parametrize("n_null", [0, 5])
 @pytest.mark.parametrize("n_values", [3, 10, 250])
 def test_hist_rand(n_values: int, n_null: int) -> None:
