@@ -25,7 +25,8 @@ use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
 };
 use super::{
-    EncodeNullability, Nested, WriteOptions, binview, nested, row_slice_ranges, slice_parquet_array,
+    EncodeNullability, LeafSizes, Nested, WriteOptions, binview, max_page_size, nested,
+    row_slice_ranges, slice_parquet_array,
 };
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::utils;
@@ -391,26 +392,35 @@ fn serialize_keys<K: DictionaryKey>(
     options: WriteOptions,
 ) -> DynIter<'static, PolarsResult<Page>> {
     let number_of_rows = nested[0].len();
-    let byte_size = estimated_bytes_size(array.keys());
+    let level_bytes = nested::level_bytes_per_value(nested);
+    let ranges = if level_bytes > 0 {
+        LeafSizes::FixedWidth(size_of::<u32>()).slice_ranges(
+            nested,
+            number_of_rows,
+            max_page_size(options),
+            level_bytes,
+        )
+    } else {
+        row_slice_ranges(number_of_rows, estimated_bytes_size(array.keys()), options).collect()
+    };
 
     let array = array.clone();
     let nested = nested.to_vec();
 
-    let pages =
-        row_slice_ranges(number_of_rows, byte_size, options).map(move |(offset, length)| {
-            let mut sliced_array = array.clone();
-            let mut sliced_nested = nested.clone();
-            slice_parquet_array(&mut sliced_array, &mut sliced_nested, offset, length);
+    let pages = ranges.into_iter().map(move |(offset, length)| {
+        let mut sliced_array = array.clone();
+        let mut sliced_nested = nested.clone();
+        slice_parquet_array(&mut sliced_array, &mut sliced_nested, offset, length);
 
-            serialize_keys_range(
-                &sliced_array,
-                &type_,
-                &sliced_nested,
-                statistics.clone(),
-                value_lengths.as_deref(),
-                options,
-            )
-        });
+        serialize_keys_range(
+            &sliced_array,
+            &type_,
+            &sliced_nested,
+            statistics.clone(),
+            value_lengths.as_deref(),
+            options,
+        )
+    });
 
     DynIter::new(pages)
 }

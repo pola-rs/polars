@@ -669,6 +669,250 @@ mod tests {
     }
 
     #[test]
+    fn nested_dictionary_uses_one_dictionary_and_splits_skewed_rows() {
+        let values = Utf8ViewArray::from_slice_values(vec!["repeat"; 132]);
+        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Utf8View);
+        let array = ListArray::<i64>::new(
+            dtype,
+            vec![0, 1, 2, 130, 131, 132].try_into().unwrap(),
+            values.boxed(),
+            None,
+        );
+        for version in [Version::V1, Version::V2] {
+            let field = Field::new("s".into(), array.dtype().clone(), true);
+            let options = WriteOptions {
+                statistics: StatisticsOptions::default(),
+                version,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: Some(32),
+            };
+            let mut columns = array_to_columns(
+                array.clone().boxed(),
+                to_parquet_type(&field).unwrap(),
+                options,
+                &[Encoding::RleDictionary],
+            )
+            .unwrap();
+            let pages = columns
+                .pop()
+                .unwrap()
+                .collect::<PolarsResult<Vec<_>>>()
+                .unwrap();
+            assert_eq!(
+                pages.iter().filter(|p| matches!(p, Page::Dict(_))).count(),
+                1
+            );
+            let rows = pages
+                .iter()
+                .filter_map(|page| match page {
+                    Page::Data(page) => {
+                        assert_eq!(page.encoding(), Encoding::RleDictionary);
+                        Some(page.num_rows().unwrap())
+                    },
+                    Page::Dict(_) => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(rows, [2, 1, 2]);
+        }
+    }
+
+    #[test]
+    fn nested_dictionary_falls_back_for_unique_values() {
+        let values = (0..1024).map(|i| format!("unique-{i}")).collect::<Vec<_>>();
+        let values = Utf8ViewArray::from_slice_values(values);
+        let array = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(ArrowDataType::Utf8View),
+            vec![0, 512, 1024].try_into().unwrap(),
+            values.boxed(),
+            None,
+        );
+        let field = Field::new("s".into(), array.dtype().clone(), true);
+        let options = WriteOptions {
+            statistics: StatisticsOptions::default(),
+            version: Version::V1,
+            compression: CompressionOptions::Uncompressed,
+            data_page_size: Some(1024),
+        };
+        let mut columns = array_to_columns(
+            array.boxed(),
+            to_parquet_type(&field).unwrap(),
+            options,
+            &[Encoding::RleDictionary],
+        )
+        .unwrap();
+        for page in columns.pop().unwrap() {
+            let Page::Data(page) = page.unwrap() else {
+                panic!("expected plain page")
+            };
+            assert_eq!(page.encoding(), Encoding::Plain);
+        }
+    }
+
+    fn round_trip_nested_dictionary(array: Box<dyn Array>, version: Version, page_size: usize) {
+        use std::io::Cursor;
+        use std::sync::Arc;
+
+        use polars_arrow::record_batch::RecordBatchT;
+        use polars_buffer::Buffer;
+
+        use crate::parquet::read::{BasicDecompressor, PageReader};
+        use crate::read::{column_iter_to_arrays, read_metadata};
+        use crate::write::{FileWriter, RowGroupIterator, get_dtype_encoding};
+
+        let field = Field::new("nested".into(), array.dtype().clone(), true);
+        let schema = ArrowSchema::from_iter([field.clone()]);
+        let options = WriteOptions {
+            statistics: StatisticsOptions::default(),
+            version,
+            compression: CompressionOptions::Uncompressed,
+            data_page_size: Some(page_size),
+        };
+        let batch = RecordBatchT::new(array.len(), Arc::new(schema.clone()), vec![array.clone()]);
+        let groups = RowGroupIterator::try_new(
+            std::iter::once(Ok(batch)),
+            &schema,
+            options,
+            Buffer::from_iter([get_dtype_encoding(array.dtype())]),
+        )
+        .unwrap();
+        let mut writer = FileWriter::try_new(Vec::new(), schema, options, None).unwrap();
+        for group in groups {
+            writer.write(array.len() as u64, group.unwrap()).unwrap();
+        }
+        writer.end(None).unwrap();
+        let bytes = writer.into_inner();
+        let metadata = read_metadata(&mut Cursor::new(&bytes)).unwrap();
+        let columns = metadata.row_groups[0]
+            .columns_under_root_iter("nested")
+            .unwrap();
+        let (columns, types): (Vec<_>, Vec<_>) = columns
+            .map(|column| {
+                let range = column.byte_range().unwrap();
+                let chunk = bytes[range.start as usize..range.end as usize].to_vec();
+                let size = chunk.len();
+                let pages = PageReader::new(
+                    Cursor::new(Buffer::from_vec(chunk)),
+                    column,
+                    Vec::new(),
+                    size * 2 + 1024,
+                )
+                .unwrap();
+                (
+                    BasicDecompressor::new(pages, Vec::new()),
+                    &column.descriptor().descriptor.primitive_type,
+                )
+            })
+            .unzip();
+        let (actual, _) = column_iter_to_arrays(columns, types, field, None).unwrap();
+        let actual = polars_arrow::compute::concatenate::concatenate(
+            &actual.iter().map(|a| a.as_ref()).collect::<Vec<_>>(),
+        )
+        .unwrap();
+        assert_eq!(actual.as_ref(), array.as_ref());
+    }
+
+    #[test]
+    fn nested_dictionary_round_trips_nulls_slices_and_multiple_pages() {
+        let mut values = vec![
+            Some("x"),
+            Some(""),
+            Some("hidden"),
+            None,
+            Some("é"),
+            Some("x"),
+        ];
+        values.extend(std::iter::repeat_n(Some("long repeated value"), 100));
+        let values = Utf8ViewArray::from_slice(values);
+        let offsets = vec![0i64, 2, 2, 3, 5, 6, 106];
+        let validity = Some(Bitmap::from([true, true, false, true, true, true]));
+        let strings = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(ArrowDataType::Utf8View),
+            offsets.clone().try_into().unwrap(),
+            values.clone().boxed(),
+            validity.clone(),
+        )
+        .boxed();
+        let binary = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(ArrowDataType::BinaryView),
+            offsets.clone().try_into().unwrap(),
+            values.to_binview().boxed(),
+            validity.clone(),
+        )
+        .boxed();
+        let lists = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(strings.dtype().clone()),
+            vec![0i64, 2, 2, 4, 6].try_into().unwrap(),
+            strings.clone(),
+            None,
+        )
+        .boxed();
+        let fields = vec![
+            Field::new("s".into(), strings.dtype().clone(), true),
+            Field::new("b".into(), binary.dtype().clone(), true),
+        ];
+        let structs = StructArray::new(
+            ArrowDataType::Struct(fields),
+            6,
+            vec![strings.clone(), binary.clone()],
+            Some(Bitmap::from([true, true, true, false, true, true])),
+        )
+        .boxed();
+        let keys = Utf8ViewArray::from_slice_values(
+            (0..106)
+                .map(|i| format!("key-{}", i % 100))
+                .collect::<Vec<_>>(),
+        );
+        let entries = StructArray::new(
+            ArrowDataType::Struct(vec![
+                Field::new("key".into(), ArrowDataType::Utf8View, false),
+                Field::new("value".into(), ArrowDataType::Utf8View, true),
+            ]),
+            106,
+            vec![keys.boxed(), values.boxed()],
+            None,
+        );
+        let map = MapArray::new(
+            ArrowDataType::Map(
+                Box::new(Field::new("entries".into(), entries.dtype().clone(), false)),
+                false,
+            ),
+            offsets
+                .into_iter()
+                .map(|v| v as i32)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            entries.boxed(),
+            validity,
+        )
+        .boxed();
+        let empty = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(ArrowDataType::Utf8View),
+            vec![0i64; 4].try_into().unwrap(),
+            Utf8ViewArray::new_empty(ArrowDataType::Utf8View).boxed(),
+            Some(Bitmap::from([true, false, true])),
+        )
+        .boxed();
+        let nulls = ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(ArrowDataType::Utf8View),
+            vec![0i64, 2, 3, 4].try_into().unwrap(),
+            Utf8ViewArray::new_null(ArrowDataType::Utf8View, 4).boxed(),
+            None,
+        )
+        .boxed();
+        for array in [strings, binary, lists, structs, map, empty, nulls] {
+            let sliced = array.sliced(1, array.len() - 1);
+            for array in [array, sliced] {
+                for version in [Version::V1, Version::V2] {
+                    for page_size in [16, 128] {
+                        round_trip_nested_dictionary(array.clone(), version, page_size);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_struct() {
         let boolean = BooleanArray::from_slice([false, false, true, true]).boxed();
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();

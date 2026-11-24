@@ -115,14 +115,28 @@ pub(crate) fn build_statistics(
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
 ) -> ParquetStatistics {
-    let mut min_value = options
-        .min_value
-        .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
-        .flatten();
-    let mut max_value = options
-        .max_value
-        .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
-        .flatten();
+    let (mut min_value, mut max_value) = if options.min_value && options.max_value {
+        let min_max = if array.null_count() == 0 {
+            min_max_binary(array.values_iter())
+        } else {
+            min_max_binary(array.non_null_values_iter())
+        };
+        match min_max {
+            Some((min, max)) => (Some(min.to_vec()), Some(max.to_vec())),
+            None => (None, None),
+        }
+    } else {
+        (
+            options
+                .min_value
+                .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
+                .flatten(),
+            options
+                .max_value
+                .then(|| array.max_propagate_nan_kernel().map(<[u8]>::to_vec))
+                .flatten(),
+        )
+    };
 
     if let Some(len) = options.binary_statistics_truncate_length_usize() {
         let is_utf8 = is_utf8_type(&primitive_type);
@@ -138,4 +152,98 @@ pub(crate) fn build_statistics(
         min_value,
     }
     .serialize()
+}
+
+fn min_max_binary<'a>(mut values: impl Iterator<Item = &'a [u8]>) -> Option<(&'a [u8], &'a [u8])> {
+    let first = values.next()?;
+    let (mut min, mut max) = (first, first);
+    while let Some(a) = values.next() {
+        let Some(b) = values.next() else {
+            min = min.min(a);
+            max = max.max(a);
+            break;
+        };
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        min = min.min(lo);
+        max = max.max(hi);
+    }
+    Some((min, max))
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::datatypes::Field;
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::write::{ParquetType, to_parquet_type};
+
+    fn check_statistics(array: &BinaryViewArray) {
+        let ParquetType::PrimitiveType(type_) =
+            to_parquet_type(&Field::new("s".into(), array.dtype().clone(), true)).unwrap()
+        else {
+            unreachable!()
+        };
+        for truncate in [0, 1, 4, 64] {
+            for null_count in [false, true] {
+                let options = StatisticsOptions {
+                    null_count,
+                    binary_statistics_truncate_length: Some(truncate),
+                    ..StatisticsOptions::default()
+                };
+                let both = build_statistics(array, type_.clone(), &options);
+                let min = build_statistics(
+                    array,
+                    type_.clone(),
+                    &StatisticsOptions {
+                        max_value: false,
+                        ..options
+                    },
+                );
+                let max = build_statistics(
+                    array,
+                    type_.clone(),
+                    &StatisticsOptions {
+                        min_value: false,
+                        ..options
+                    },
+                );
+                assert_eq!(both.min_value, min.min_value);
+                assert_eq!(both.max_value, max.max_value);
+                assert_eq!(both.null_count, min.null_count);
+                assert_eq!(both.null_count, max.null_count);
+            }
+        }
+    }
+
+    #[test]
+    fn paired_statistics_edge_cases() {
+        let values = [
+            Some(""),
+            None,
+            Some("prefix"),
+            Some("prefix-long"),
+            Some("é"),
+            Some("🙂"),
+            Some("prefix"),
+            None,
+        ];
+        let array = BinaryViewArray::from_slice(values);
+        for offset in 0..=array.len() {
+            for length in 0..=array.len() - offset {
+                check_statistics(&array.clone().sliced(offset, length));
+            }
+        }
+        check_statistics(&BinaryViewArray::from_slice([None::<&[u8]>; 9]));
+    }
+
+    proptest! {
+        #[test]
+        fn paired_statistics_match_separate_kernels(
+            values in prop::collection::vec(
+                prop::option::of(prop::collection::vec(any::<u8>(), 0..96)), 0..128),
+        ) {
+            check_statistics(&BinaryViewArray::from_slice(values));
+        }
+    }
 }

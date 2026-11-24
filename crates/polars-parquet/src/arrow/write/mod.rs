@@ -500,8 +500,12 @@ pub fn array_to_pages(
         });
     };
     if let Encoding::RleDictionary = encoding {
-        // Only take this path for primitive columns
-        if matches!(nested.first(), Some(Nested::Primitive(_))) {
+        if matches!(nested.first(), Some(Nested::Primitive(_)))
+            || matches!(
+                primitive_array.dtype(),
+                ArrowDataType::Utf8View | ArrowDataType::BinaryView
+            )
+        {
             if let Some(result) =
                 encode_as_dictionary_optional(primitive_array, nested, type_.clone(), options)
             {
