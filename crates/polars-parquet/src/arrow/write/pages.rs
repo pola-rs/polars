@@ -670,49 +670,51 @@ mod tests {
 
     #[test]
     fn nested_dictionary_uses_one_dictionary_and_splits_skewed_rows() {
-        let values = Utf8ViewArray::from_slice_values(vec!["repeat"; 132]);
-        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Utf8View);
-        let array = ListArray::<i64>::new(
-            dtype,
-            vec![0, 1, 2, 130, 131, 132].try_into().unwrap(),
-            values.boxed(),
-            None,
-        );
-        for version in [Version::V1, Version::V2] {
-            let field = Field::new("s".into(), array.dtype().clone(), true);
-            let options = WriteOptions {
-                statistics: StatisticsOptions::default(),
-                version,
-                compression: CompressionOptions::Uncompressed,
-                data_page_size: Some(32),
-            };
-            let mut columns = array_to_columns(
-                array.clone().boxed(),
-                to_parquet_type(&field).unwrap(),
-                options,
-                &[Encoding::RleDictionary],
-            )
-            .unwrap();
-            let pages = columns
-                .pop()
-                .unwrap()
-                .collect::<PolarsResult<Vec<_>>>()
+        for (offsets, page_size, expected_rows) in [
+            (vec![0, 1, 2, 130, 131, 132], 32, vec![2, 1, 2]),
+            (vec![0, 2, 3, 6, 6, 7], 20, vec![1, 1, 1, 2]),
+        ] {
+            let values =
+                Utf8ViewArray::from_slice_values(vec!["repeat"; *offsets.last().unwrap() as usize]);
+            let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Utf8View);
+            let array =
+                ListArray::<i64>::new(dtype, offsets.try_into().unwrap(), values.boxed(), None);
+            for version in [Version::V1, Version::V2] {
+                let field = Field::new("s".into(), array.dtype().clone(), true);
+                let options = WriteOptions {
+                    statistics: StatisticsOptions::default(),
+                    version,
+                    compression: CompressionOptions::Uncompressed,
+                    data_page_size: Some(page_size),
+                };
+                let mut columns = array_to_columns(
+                    array.clone().boxed(),
+                    to_parquet_type(&field).unwrap(),
+                    options,
+                    &[Encoding::RleDictionary],
+                )
                 .unwrap();
-            assert_eq!(
-                pages.iter().filter(|p| matches!(p, Page::Dict(_))).count(),
-                1
-            );
-            let rows = pages
-                .iter()
-                .filter_map(|page| match page {
-                    Page::Data(page) => {
-                        assert_eq!(page.encoding(), Encoding::RleDictionary);
-                        Some(page.num_rows().unwrap())
-                    },
-                    Page::Dict(_) => None,
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(rows, [2, 1, 2]);
+                let pages = columns
+                    .pop()
+                    .unwrap()
+                    .collect::<PolarsResult<Vec<_>>>()
+                    .unwrap();
+                assert_eq!(
+                    pages.iter().filter(|p| matches!(p, Page::Dict(_))).count(),
+                    1
+                );
+                let rows = pages
+                    .iter()
+                    .filter_map(|page| match page {
+                        Page::Data(page) => {
+                            assert_eq!(page.encoding(), Encoding::RleDictionary);
+                            Some(page.num_rows().unwrap())
+                        },
+                        Page::Dict(_) => None,
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(rows, expected_rows);
+            }
         }
     }
 

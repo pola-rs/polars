@@ -5227,12 +5227,8 @@ def test_parquet_data_page_size_dictionary_encoding_20141(tmp_path: Path) -> Non
 
 
 def test_parquet_nested_dictionary_multipage(tmp_path: Path) -> None:
-    # Math
-    # 5 rows, 28 bytes
-    # bytes_per_row = ceil(28/5) = 6
-    # data_page_size = 20
-    # rows_per_page = ceil(20/6) = 4
-    # 5 rows / 4 rows per page = 2 pages
+    # Index and nesting-level budgets are 14, 8, 20, 2 and 8 bytes per row.
+    # A 20-byte target gives pages containing 1, 1, 1 and 2 rows.
     df = pl.DataFrame(
         {"a": [["A", "B"], ["C"], ["A", "C", "B"], [], ["B"]]},
         schema={"a": pl.List(pl.Categorical)},
@@ -5255,7 +5251,7 @@ def test_parquet_nested_dictionary_multipage(tmp_path: Path) -> None:
     dict_pages = result.stderr.count("DictPage")
 
     assert dict_pages == 1, f"Expected 1 dict page, got {dict_pages}"
-    assert data_pages == 2, f"Expected 2 data pages, got {data_pages}"
+    assert data_pages == 4, f"Expected 4 data pages, got {data_pages}"
 
 
 def test_parquet_dict_and_data_page_offset_26531(tmp_path: Path) -> None:
