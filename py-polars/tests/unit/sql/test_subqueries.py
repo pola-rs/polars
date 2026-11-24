@@ -823,6 +823,10 @@ def correlated_in_frames() -> dict[str, pl.DataFrame]:
         # for every outer row.
         "b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a AND x.b > 999)",
         "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a AND x.b > 999)",
+        # A constant value
+        "1 IN (SELECT 1 FROM t1 AS x WHERE x.a = o.a)",
+        "b NOT IN (SELECT 10 FROM t1 AS x WHERE x.a = o.a)",
+        "b IN (SELECT 10 FROM t1 AS x WHERE x.a < o.a)",
     ],
 )
 def test_correlated_in_subquery(
@@ -835,13 +839,32 @@ def test_correlated_in_subquery(
     )
 
 
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "a IN (SELECT x.a - x.b FROM t AS x WHERE x.a = o.a)",
+        "a NOT IN (SELECT x.a - x.b FROM t AS x WHERE x.a = o.a)",
+        "a NOT IN (SELECT x.a - x.b FROM t AS x WHERE x.a = o.a AND x.a = o.b)",
+    ],
+)
+def test_correlated_in_subquery_keys_named_alike(predicate: str) -> None:
+    # value and correlation keys both named `a`
+    assert_sql_matches(
+        frames={"t": pl.DataFrame({"a": [1, 2, 3, 4, None], "b": [1, None, 0, 2, 0]})},
+        query=f"SELECT a FROM t o WHERE {predicate} ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("value", ["x.b", "10", "NULL"])
 def test_correlated_in_subquery_in_select_list(
-    correlated_in_frames: dict[str, pl.DataFrame],
+    value: str, correlated_in_frames: dict[str, pl.DataFrame]
 ) -> None:
     assert_sql_matches(
         frames=correlated_in_frames,
         query=(
-            "SELECT a, b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a) AS m"
+            f"SELECT a, b IN (SELECT {value} FROM t1 AS x WHERE x.a < o.a) AS m"
             " FROM t1 o ORDER BY a"
         ),
         compare_with="duckdb",

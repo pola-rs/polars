@@ -9421,6 +9421,8 @@ def test_scan_iceberg_runtime_join_filter(
     capfd: pytest.CaptureFixture[str],
     renamed: bool,
 ) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
     tbl, _ = new_iceberg_table(
         tmp_path,
         schema=IcebergSchema(

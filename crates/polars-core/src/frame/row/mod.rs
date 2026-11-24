@@ -17,7 +17,7 @@ use rayon::prelude::*;
 
 use crate::prelude::*;
 use crate::runtime::RAYON;
-use crate::utils::{dtypes_to_schema, dtypes_to_supertype, try_get_supertype};
+use crate::utils::{dtypes_to_schema, try_get_supertype, values_dtypes_to_supertype};
 
 #[cfg(feature = "object")]
 pub(crate) struct AnyValueRows<'a> {
@@ -171,7 +171,7 @@ pub fn rows_to_supertypes(
 
     dtypes
         .into_iter()
-        .map(|dtypes_set| dtypes_to_supertype(&dtypes_set))
+        .map(|dtypes_set| values_dtypes_to_supertype(&dtypes_set))
         .collect()
 }
 
@@ -208,14 +208,22 @@ pub fn rows_to_schema_first_non_null(
             break;
         } else {
             for i in nulls {
-                let val = &row.0[i];
-
-                if !val.is_nested_null() {
+                if let Some(val) = row.0.get(i)
+                    && !val.is_nested_null()
+                {
                     let dtype = val.into();
                     schema.set_dtype_at_index(i, dtype).unwrap();
                 }
             }
         }
+    }
+
+    // Use the finest time unit(s) found in the inferred rows, so that mixed-unit values
+    // can be represented without loss of precision
+    for (i, dtype) in schema.iter_values_mut().enumerate() {
+        // (ragged rows are reported when the rows are converted)
+        let values = rows.iter().take(max_infer).filter_map(|row| row.0.get(i));
+        dtype.merge_finest_time_units_from(values.filter(|v| !v.is_null()).map(|v| v.dtype()));
     }
     Ok(schema)
 }

@@ -13,6 +13,30 @@ impl PyExpr {
             .into()
     }
 
+    fn bin_find(&self, lit: PyExpr) -> Self {
+        self.inner.clone().binary().find(lit.inner).into()
+    }
+
+    #[cfg(feature = "find_many")]
+    fn bin_find_many(
+        &self,
+        patterns: PyExpr,
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+        leftmost: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .binary()
+            .find_many(
+                patterns.inner,
+                ascii_case_insensitive,
+                overlapping,
+                leftmost,
+            )
+            .into()
+    }
+
     fn bin_ends_with(&self, sub: PyExpr) -> Self {
         self.inner.clone().binary().ends_with(sub.inner).into()
     }
