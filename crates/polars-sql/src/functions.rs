@@ -1,8 +1,9 @@
 use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
-    TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
+    AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileFractionDtypes, QuantileMethod,
+    Scalar, Schema, TimeUnit, TimeZone, UnknownKind, datetime_to_timestamp_us,
+    extract_non_null_quantiles, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rank")]
@@ -33,6 +34,7 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
+use crate::context::is_using_left_key;
 use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
 use crate::group_context::{is_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
@@ -2427,7 +2429,7 @@ impl SQLFunctionVisitor<'_> {
                             let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();
                             let col_names = active_schema
                                 .iter_names()
-                                .filter(|name| rx.is_match(name))
+                                .filter(|name| rx.is_match(name) && !is_using_left_key(name))
                                 .cloned()
                                 .collect::<Vec<_>>();
 
@@ -2440,7 +2442,18 @@ impl SQLFunctionVisitor<'_> {
                             Ok(Expr::Selector(Selector::Matches(pat.into())))
                         }
                     },
-                    Expr::Selector(s) => Ok(s.as_expr()),
+                    Expr::Selector(s) => {
+                        let hidden: Vec<PlSmallStr> = active_schema
+                            .iter()
+                            .flat_map(|schema| schema.iter_names())
+                            .filter(|name| is_using_left_key(name))
+                            .cloned()
+                            .collect();
+                        Ok(match hidden.is_empty() {
+                            true => s.as_expr(),
+                            false => s.exclude_cols(hidden).as_expr(),
+                        })
+                    },
                     _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
                 })
             },
@@ -3886,7 +3899,9 @@ impl SQLFunctionVisitor<'_> {
         let total = if is_distinct {
             sum
         } else {
-            (sum.clone() * rows.clone()).cast(DataTypeExpr::OfExpr(Box::new(sum)))
+            // Signed: an integer constant takes the other operand's type.
+            let rows = rows.clone().cast(DataType::Int64);
+            (sum.clone() * rows).cast(DataTypeExpr::OfExpr(Box::new(sum)))
         };
         when(rows.gt(lit(0)).and(c.is_not_null()))
             .then(total)
@@ -4321,30 +4336,22 @@ fn literal_sum(arg: &Expr) -> Option<Expr> {
     }
 }
 
-/// Parse a literal quantile argument, validating that it lies in [0, 1].
+/// Parses a quantile argument, which must be a literal, and checks it like any `quantile`
+/// fraction.
 fn parse_quantile_literal(
     quantile: Expr,
     fname: &str,
     arg: &FunctionArgExpr,
 ) -> PolarsResult<Expr> {
-    match quantile {
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) if (0.0..=1.0).contains(&f) => {
-            Ok(Expr::from(f))
-        },
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if (0..=1).contains(&n) => {
-            Ok(Expr::from(n as f64))
-        },
-        ref e if let Some(f) = decimal_literal_to_f64(e) => {
-            if !(0.0..=1.0).contains(&f) {
-                polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
-            }
-            Ok(Expr::from(f))
-        },
-        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_) | DynLiteralValue::Int(_))) => {
-            polars_bail!(SQLSyntax: "{} value must be between 0 and 1 ({})", fname, arg)
-        },
-        _ => polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg),
-    }
+    let fraction = match &quantile {
+        Expr::Literal(lv) => lv.to_quantile_fraction()?,
+        _ => None,
+    };
+    let Some(fraction) = fraction else {
+        polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg)
+    };
+    let quantiles = extract_non_null_quantiles(&fraction, QuantileFractionDtypes::Number)?;
+    Ok(Expr::from(quantiles[0]))
 }
 
 /// SQL `REGEXP_REPLACE(e, pattern, replacement [, flags])`. The 'g' flag replaces every

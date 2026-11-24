@@ -284,8 +284,9 @@ mod tests {
         assert_eq!(maps[1].null_count(), 1);
     }
 
+    /// A valid row reaches its maps through a null list, whose nulls must be pushed down to them.
     #[test]
-    fn a_null_list_row_over_too_many_map_entries_exports() {
+    fn a_valid_row_over_a_null_list_of_too_many_map_entries_exports() {
         let half = 1i64 << 30;
         let maps = map_chunk(&[half, half, 1], None);
         let list = ListArray::<i64>::new(
@@ -296,12 +297,18 @@ mod tests {
             maps,
             Some(Bitmap::from([false, true])),
         );
+        let dtype = DataType::Struct(vec![Field::new(
+            "l".into(),
+            DataType::List(Box::new(map_dtype())),
+        )]);
+        let rows = StructArray::new(
+            dtype.to_physical().to_arrow(CompatLevel::newest()),
+            2,
+            vec![list.boxed()],
+            None,
+        );
         let s = unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                "l".into(),
-                vec![list.boxed()],
-                &DataType::List(Box::new(map_dtype())),
-            )
+            Series::from_chunks_and_dtype_unchecked("s".into(), vec![rows.boxed()], &dtype)
         };
 
         let arrays: Vec<_> = s
@@ -309,10 +316,13 @@ mod tests {
             .collect::<PolarsResult<_>>()
             .unwrap();
 
-        // The maps under the null row are exported empty.
+        // The maps under the null list are exported empty.
         let lists: Vec<&ListArray<i64>> = arrays
             .iter()
-            .map(|a| a.as_any().downcast_ref().unwrap())
+            .map(|a| {
+                let rows: &StructArray = a.as_any().downcast_ref().unwrap();
+                rows.values()[0].as_any().downcast_ref().unwrap()
+            })
             .collect();
         assert_eq!(lists[0].null_count(), 1);
         let maps: Vec<&MapArray> = lists
@@ -330,7 +340,8 @@ mod tests {
             .collect::<PolarsResult<_>>()
             .unwrap();
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches[0].arrays()[0].null_count(), 1);
+        let rows: &StructArray = batches[0].arrays()[0].as_any().downcast_ref().unwrap();
+        assert_eq!(rows.values()[0].null_count(), 1);
     }
 
     #[cfg(feature = "dtype-array")]

@@ -13,7 +13,11 @@ use polars_compute::sum::{WrappingAdd, WrappingSum, wrapping_sum_arr, wrapping_s
 use polars_utils::float::IsFloat;
 use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
-pub use quantile::{QuantileAggSeries, extract_quantiles, quantile_indices};
+pub use quantile::{
+    QuantileAggSeries, QuantileFractionDtypes, cast_quantile_fractions, check_quantile_dtype,
+    check_quantiles, extract_non_null_quantiles, extract_quantiles, quantile_indices,
+    quantile_reduce_fraction,
+};
 pub(crate) use quantile::{quantile_of_nonnull, quantile_with, sorted_quantile};
 pub use var::*;
 

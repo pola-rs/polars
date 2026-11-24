@@ -37,6 +37,8 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
     parse_predicates_constraints_into_expression,
+    parse_quantile_into_expression,
+    parse_quantile_values,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -3972,7 +3974,7 @@ class Expr(metaclass=_Meta):
     @unstable()
     def approx_quantile(
         self,
-        quantile: float | list_[float] | Expr,
+        quantile: float | Sequence[float | None] | Expr | None,
         *,
         method: ApproxQuantileMethod = "auto",
         error: float = 0.001,
@@ -3987,8 +3989,8 @@ class Expr(metaclass=_Meta):
         ----------
         quantile
             A single quantile, a list of quantiles, or an expression that
-            resolves to a list of quantiles. The dtype of the expression must
-            be a floating point value.
+            resolves to one quantile or a list of them. The dtype must be numeric.
+            A string is taken as a column name. A null quantile gives a null result.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all
@@ -4084,10 +4086,10 @@ class Expr(metaclass=_Meta):
             msg = f"`error_tightness` must be one of {{'empirical', 'formal'}}, got {error_tightness!r}"
             raise ValueError(msg)
 
-        q = quantile._pyexpr if isinstance(quantile, pl.Expr) else quantile
+        quantile_pyexpr = parse_quantile_into_expression(quantile)
         return wrap_expr(
             self._pyexpr.approx_quantile(
-                q,
+                quantile_pyexpr,
                 method,
                 error,
                 use_formal_bound=error_tightness == "formal",
@@ -4848,7 +4850,7 @@ class Expr(metaclass=_Meta):
 
     def quantile(
         self,
-        quantile: float | list_[float] | Expr,
+        quantile: float | Sequence[float | None] | Expr | None,
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
@@ -4860,6 +4862,7 @@ class Expr(metaclass=_Meta):
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            A null quantile gives a null result.
 
             - If a single float, returns a single f64 value per row.
             - If a list of floats, returns a list of f64 values per row (one value per quantile).
@@ -4924,7 +4927,7 @@ class Expr(metaclass=_Meta):
         │ [1.25, 3.75] │
         └──────────────┘
         """  # noqa: W505
-        quantile_pyexpr = parse_into_expression(quantile)
+        quantile_pyexpr = parse_quantile_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
 
     @deprecated("`cut` is deprecated; use `bin_intervals` instead")
@@ -5132,7 +5135,11 @@ class Expr(metaclass=_Meta):
             )
         else:
             pyexpr = self._pyexpr.qcut(
-                quantiles, labels, left_closed, allow_duplicates, include_breaks
+                parse_quantile_values(quantiles),
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
             )
 
         return wrap_expr(pyexpr)
@@ -5310,7 +5317,10 @@ class Expr(metaclass=_Meta):
             )
         else:
             pyexpr = self._pyexpr.bin_quantiles(
-                list(quantiles), labels_arg, include_intervals, right_closed
+                parse_quantile_values(quantiles),
+                labels_arg,
+                include_intervals,
+                right_closed,
             )
         return wrap_expr(pyexpr)
 
@@ -8935,6 +8945,7 @@ class Expr(metaclass=_Meta):
         """  # noqa: W505
         window_size = _prepare_rolling_by_window_args(window_size)
         by_pyexpr = parse_into_expression(by)
+        quantile = parse_quantile_values(quantile, allow_list=False)[0]
         return wrap_expr(
             self._pyexpr.rolling_quantile_by(
                 by_pyexpr,
@@ -9981,6 +9992,7 @@ class Expr(metaclass=_Meta):
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
         """  # noqa: W505
+        quantile = parse_quantile_values(quantile, allow_list=False)[0]
         return wrap_expr(
             self._pyexpr.rolling_quantile(
                 quantile,

@@ -308,11 +308,14 @@ fn is_inherently_nondeterministic_binary_fn(f: &IRBinaryFunction) -> bool {
         B::Contains
         | B::StartsWith
         | B::EndsWith
+        | B::Find
         | B::Size
         | B::Slice
         | B::Head
         | B::Tail
         | B::Get(_) => false,
+        #[cfg(feature = "find_many")]
+        B::FindMany { .. } => false,
         #[cfg(feature = "binary_encoding")]
         B::HexDecode(_)
         | B::HexEncode

@@ -25,6 +25,7 @@ from polars._utils.various import (
     parse_percentiles,
     parse_version,
 )
+from polars.exceptions import ComputeError, SchemaError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -264,9 +265,20 @@ def test_parse_percentiles(
     assert parse_percentiles(percentiles, inject_median=inject_median) == expected
 
 
-@pytest.mark.parametrize(("percentiles"), [(1.1), ([-0.1])])
-def test_parse_percentiles_errors(percentiles: Sequence[float] | float | None) -> None:
-    with pytest.raises(ValueError):
+@pytest.mark.parametrize(
+    ("percentiles", "error", "match"),
+    [
+        *[
+            (p, ComputeError, r"between 0\.0 and 1\.0")
+            for p in [1.1, [-0.1], float("nan"), [0.5, None]]
+        ],
+        *[(p, SchemaError, "dtype 'numeric'") for p in [True, [True], "0.5"]],
+    ],
+)
+def test_parse_percentiles_errors(
+    percentiles: Any, error: type[Exception], match: str
+) -> None:
+    with pytest.raises(error, match=match):
         parse_percentiles(percentiles)
 
 

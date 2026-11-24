@@ -17,6 +17,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use either::Either;
+use polars_arrow::array::new_null_array;
 use polars_compute::cast::cast_unchecked;
 use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
@@ -147,14 +148,18 @@ impl Series {
 
     /// Export this single-chunk Series, a piece cut by [`arrow_export_cut`], as `arrow_dtype`.
     ///
-    /// A one-row piece can still span more map entries than an arrow MAP holds. Its nulls are
-    /// then pushed down to its maps, which drop the entries of their null rows.
+    /// A one-row piece can still span more map entries than an arrow MAP holds. A null row is
+    /// then exported without its entries; otherwise its nulls are pushed down to its maps, which
+    /// drop the entries of their null rows.
     pub(crate) fn try_piece_to_arrow(
         &self,
         arrow_dtype: &ArrowDataType,
         compat_level: CompatLevel,
     ) -> PolarsResult<ArrayRef> {
         if self.len() == 1 && !i32_spans_fit(self.chunks()[0].as_ref(), arrow_dtype, 0..1, 1) {
+            if self.null_count() == 1 {
+                return Ok(new_null_array(arrow_dtype.clone(), 1));
+            }
             if let Some(s) = self.propagate_nulls() {
                 return s.try_to_arrow(0, compat_level);
             }

@@ -380,7 +380,7 @@ where
     let in_range = |q: &f64| (0.0..=1.0).contains(q);
     let (scalar, per_group) = match quantile {
         GroupQuantile::Scalar(q) if !in_range(&q) => {
-            return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
+            return Series::full_null(ca.name().clone(), groups.len(), &K::get_static_dtype());
         },
         GroupQuantile::Scalar(q) => (Some(q), None),
         GroupQuantile::PerGroup(qs) => {

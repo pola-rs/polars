@@ -238,8 +238,18 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
+    /// The URL of the request that built the store.
     pub(super) fn path(&self) -> &PlRefPath {
         &self.path
+    }
+
+    /// The URL the store is rooted at.
+    pub(super) fn base_url(&self) -> PlRefPath {
+        match self.cloud_type {
+            // The origin, or the full URL for a store tied to one URL.
+            CloudType::Http => self.path.clone(),
+            _ => self.path.sliced(0..self.path.authority_end_position()),
+        }
     }
 
     pub(crate) fn rate_limit_signal(&self) -> Option<PacingBudget> {
@@ -248,8 +258,8 @@ impl PolarsObjectStoreBuilder {
 
     pub(super) async fn build_impl(
         &self,
-        // Whether to clear cached credentials for Python credential providers.
-        clear_cached_credentials: bool,
+        // On a rebuild, clear cached Python credentials and leave the URL out of build errors.
+        rebuild: bool,
     ) -> PolarsResult<Arc<dyn ObjectStore>> {
         let options = self
             .options
@@ -296,7 +306,8 @@ impl PolarsObjectStoreBuilder {
                     let store = options
                         .build_aws(
                             self.path.clone(),
-                            clear_cached_credentials,
+                            super::ObjectStoreErrorContext::for_build(self.path.clone(), rebuild),
+                            rebuild,
                             self.rate_limiter.as_deref(),
                         )
                         .await?;
@@ -310,7 +321,8 @@ impl PolarsObjectStoreBuilder {
                 {
                     let store = options.build_gcp(
                         self.path.clone(),
-                        clear_cached_credentials,
+                        super::ObjectStoreErrorContext::for_build(self.path.clone(), rebuild),
+                        rebuild,
                         self.rate_limiter.as_deref(),
                     )?;
 
@@ -325,7 +337,8 @@ impl PolarsObjectStoreBuilder {
                     {
                         let store = options.build_azure(
                             self.path.clone(),
-                            clear_cached_credentials,
+                            super::ObjectStoreErrorContext::for_build(self.path.clone(), rebuild),
+                            rebuild,
                             self.rate_limiter.as_deref(),
                         )?;
                         Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
@@ -427,7 +440,7 @@ impl PolarsObjectStoreBuilder {
             let cache = OBJECT_STORE_CACHE.read().await;
 
             if let Some(store) = cache.get(cache_key) {
-                return Ok(store.clone());
+                return Ok(store.clone().with_base_url(self.base_url()));
             }
 
             drop(cache);
@@ -435,7 +448,7 @@ impl PolarsObjectStoreBuilder {
             let cache = OBJECT_STORE_CACHE.write().await;
 
             if let Some(store) = cache.get(cache_key) {
-                return Ok(store.clone());
+                return Ok(store.clone().with_base_url(self.base_url()));
             }
 
             Some(cache)
@@ -491,12 +504,14 @@ impl PolarsObjectStoreBuilder {
             cell
         };
 
+        let base_url = self.base_url();
+
         cell.get_or_try_init(|| async {
             let store = self.build_impl(false).await?;
             PolarsResult::Ok(PolarsObjectStore::new_from_inner(store, self))
         })
         .await
-        .cloned()
+        .map(|store| store.clone().with_base_url(base_url))
     }
 
     pub(crate) fn is_azure(&self) -> bool {
