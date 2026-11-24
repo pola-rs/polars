@@ -74,7 +74,7 @@ database = [
   "polars[adbc,connectorx,sqlalchemy]",
   "connectorx >= 0.4.6",
   "sqlalchemy >= 2.0",
-  "polars-database >= 0.1.1, < 1.0.0",
+  "polars-database >= 0.1.2, < 1.0.0",
 ]
 
 # Cloud
