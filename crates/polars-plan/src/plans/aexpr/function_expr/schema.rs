@@ -41,7 +41,13 @@ impl IRFunctionExpr {
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
                 IRPowFunction::Generic => mapper.pow_dtype(),
-                _ => mapper.map_numeric_to_float_dtype(true),
+                // Of a number only, as in Postgres and DuckDB; typed as the kernels compute it.
+                IRPowFunction::Sqrt => mapper
+                    .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_null(), "sqrt")?
+                    .map_to_float_dtype(),
+                IRPowFunction::Cbrt => mapper
+                    .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_null(), "cbrt")?
+                    .map_to_float_dtype(),
             },
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
