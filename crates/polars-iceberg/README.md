@@ -28,9 +28,10 @@ make -C py-polars test                  # also builds the plugin
 The released version is the `version` of `py-polars/polars-iceberg/Cargo.toml` (the PyPI package's
 version), which must equal the `version` of this crate's `Cargo.toml` (the module's `__version__`).
 
-1. Bump both versions and merge, then push the tag `polars-iceberg-<version>` for that commit.
-2. Run the `release-polars-iceberg` workflow with that tag. It builds the sdist and abi3 wheels (one
-   per target) and publishes them to PyPI.
+1. Bump both versions and merge.
+2. Run the `release-polars-iceberg` workflow, with the commit to release (default: the latest
+   commit of the branch it runs on). It builds the sdist and abi3 wheels (one per target) from that
+   commit, publishes them to PyPI and tags the commit `polars-iceberg-<version>`.
 3. To make Polars require the release, update the
    `polars-iceberg >= <version>, < <next major version>` requirement in the `iceberg` extra of
    `py-polars/pyproject.toml`. Polars' Python release workflow runs its test suite against that
