@@ -5236,6 +5236,12 @@ impl SQLContext {
                 }
             }
         }
+        // Unnamed constant keys would all be called `literal`.
+        for key in group_by_keys.iter_mut() {
+            if !matches!(key, Expr::Alias(..)) && is_constant(key) {
+                *key = key.clone().alias(unique_column_name());
+            }
+        }
 
         let has_group_by = !group_by_keys.is_empty() || grouping_sets.is_some();
         if !has_group_by {
