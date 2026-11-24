@@ -3133,3 +3133,16 @@ def test_rolling_by_keys_matches_each_key_28597() -> None:
     )
     env = {**os.environ, "POLARS_MAX_THREADS": "8"}
     subprocess.run([sys.executable, "-c", script], env=env, check=True)
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.lit(5), pl.Series("literal", [5, 5, 5], dtype=pl.Int32)),
+        (pl.len(), pl.Series("len", [3, 3, 3], dtype=get_index_type())),
+    ],
+)
+def test_rolling_literal_index_31006(expr: pl.Expr, expected: pl.Series) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    out = lf.select(expr.rolling(pl.lit(1).cast(pl.Int64), period="1i")).collect()
+    assert_frame_equal(out, expected.to_frame())
