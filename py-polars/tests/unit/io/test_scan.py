@@ -589,6 +589,20 @@ def test_scan_single_dir_differing_file_extensions_raises_17436(tmp_path: Path) 
         pl.scan_parquet(tmp_path / "*").collect()
 
 
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "metadata",
+    ["_delta_log/00000000000000000000.json", "metadata/00000-1.metadata.json"],
+)
+def test_scan_dir_of_table_format_raises(tmp_path: Path, metadata: str) -> None:
+    pl.DataFrame({"x": 1}).write_parquet(tmp_path / "part-0.parquet")
+    (tmp_path / metadata).parent.mkdir()
+    (tmp_path / metadata).write_text("{}")
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="Python Polars"):
+        pl.scan_parquet(tmp_path).collect()
+
+
 @pytest.mark.parametrize("format", ["parquet", "csv", "ndjson", "ipc"])
 def test_scan_nonexistent_path(format: str) -> None:
     path_str = f"my-nonexistent-data.{format}"

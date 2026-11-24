@@ -98,6 +98,14 @@ impl FromStr for PolarsTableFunctions {
             "read_ndjson" => PolarsTableFunctions::ReadNdjson,
             "generate_series" => PolarsTableFunctions::GenerateSeries,
             "range" => PolarsTableFunctions::Range,
+            "read_delta" | "delta_scan" | "scan_delta" => polars_bail!(
+                SQLInterface: "'{}' is not supported; read Delta Lake tables with \
+                `pl.scan_delta` in Python Polars", s
+            ),
+            "read_iceberg" | "iceberg_scan" | "scan_iceberg" => polars_bail!(
+                SQLInterface: "'{}' is not supported; read Iceberg tables with \
+                `pl.scan_iceberg` in Python Polars", s
+            ),
             _ => polars_bail!(SQLInterface: "'{}' is not a supported table function", s),
         })
     }

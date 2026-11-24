@@ -1051,3 +1051,19 @@ def test_file_reads_disabled_keeps_tables_and_series() -> None:
     with pytest.raises(SQLInterfaceError, match="was not found") as exc:
         ctx.execute("SELECT * FROM 'data.txt'")
     assert "read_csv" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("function", "scan"),
+    [
+        ("read_delta", "scan_delta"),
+        ("delta_scan", "scan_delta"),
+        ("scan_delta", "scan_delta"),
+        ("read_iceberg", "scan_iceberg"),
+        ("iceberg_scan", "scan_iceberg"),
+        ("scan_iceberg", "scan_iceberg"),
+    ],
+)
+def test_table_formats_point_to_python(function: str, scan: str) -> None:
+    with pytest.raises(SQLInterfaceError, match=rf"pl\.{scan}"):
+        pl.sql(f"SELECT * FROM {function}('t')", eager=True)

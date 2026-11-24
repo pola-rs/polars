@@ -626,6 +626,19 @@ pub async fn expand_paths_hive(
 
     if expanded_from_single_directory(paths, out_paths.paths.as_slice()) {
         if let [Some((_, p1)), Some((_, p2))] = out_paths.exts {
+            // A Delta Lake or Iceberg table: its files can include removed data.
+            if out_paths.paths.iter().any(|p| {
+                let p = p.as_str();
+                p.contains("/_delta_log/")
+                    || p.contains("/metadata/") && p.ends_with(".metadata.json")
+            }) {
+                polars_bail!(
+                    InvalidOperation: "directory '{}' holds a Delta Lake or Iceberg table, whose \
+                    files can include removed data; read it with `pl.scan_delta` or \
+                    `pl.scan_iceberg` in Python Polars",
+                    &paths[0]
+                )
+            }
             polars_bail!(
                 InvalidOperation: "directory contained paths with different file extensions: \
                 first path: {}, second path: {}. Please use a glob pattern to explicitly specify \
