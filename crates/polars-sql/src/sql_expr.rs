@@ -3044,16 +3044,19 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
     })
 }
 
-/// The 1-indexed position of `substring` in `e`, or 0 if it is not found.
+/// The 1-indexed character position of the plain text `substring` in `e`, or 0.
 pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
     let e = e.cast(DataType::String);
     let substring = substring.cast(DataType::String);
-    let found = e
+    // `find` gives a byte offset.
+    let offset = e.clone().str().find_literal(substring.clone());
+    let before = e
         .clone()
-        .str()
-        .find(substring.clone(), true)
-        .cast(DataType::Int64)
-        + typed_lit(1i64);
+        .cast(DataType::Binary)
+        .binary()
+        .head(offset)
+        .cast(DataType::String);
+    let found = before.str().len_chars().cast(DataType::Int64) + typed_lit(1i64);
     when(e.is_null().or(substring.is_null()))
         .then(lit(LiteralValue::untyped_null()))
         .otherwise(found.fill_null(typed_lit(0i64)))

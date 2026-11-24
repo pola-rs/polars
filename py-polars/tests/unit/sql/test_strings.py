@@ -1094,6 +1094,21 @@ def test_string_length_arithmetic() -> None:
     ).to_dict(as_series=False) == {"a": [None], "b": [None]}
 
 
+def test_strpos_characters_and_plain_text() -> None:
+    # as in Postgres
+    df = pl.DataFrame({"s": ["über", "a.c", "abc", "a+b"], "p": ["b", ".", None, "+"]})
+    res = df.sql(
+        "SELECT STRPOS(s, 'b') AS b, STRPOS(s, '.') AS dot, POSITION('+' IN s) AS plus,"
+        " STRPOS(s, '') AS empty, STRPOS(s, p) AS sp, STRPOS('über a.c', p) AS tp FROM self"
+    )
+    assert res.rows() == [
+        (2, 0, 0, 1, 2, 2),
+        (0, 2, 0, 1, 2, 7),
+        (2, 0, 0, 1, None, None),
+        (3, 0, 2, 1, 2, 0),
+    ]
+
+
 def test_string_substr_unsigned_start() -> None:
     df = pl.DataFrame(
         {"s": ["abc", "abc"], "n": [0, 2]}, schema_overrides={"n": pl.UInt32}
