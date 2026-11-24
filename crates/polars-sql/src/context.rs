@@ -6023,7 +6023,7 @@ impl SQLContext {
             // nulls compare equal (`IS NOT DISTINCT FROM`) become keys here; other joins leave
             // this to the optimizer. Extra keys would also get nulls equal, so there must be none.
             Some(JoinConstraint::On(expr))
-                if matches!(join_type, JoinType::Semi | JoinType::Anti)
+                if join_type.is_semi_anti()
                     && extra_keys.0.is_empty()
                     && let Some((left_on, right_on)) =
                         self.nulls_equal_join_keys(expr, tbl_left, tbl_right) =>
