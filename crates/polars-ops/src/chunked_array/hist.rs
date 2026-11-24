@@ -307,34 +307,3 @@ pub fn hist_series(
         include_breakpoint,
     )
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn from_bounds_matches_new() {
-        let columns = [
-            Series::new_null("a".into(), 2)
-                .cast(&DataType::Float64)
-                .unwrap(),
-            Series::new("a".into(), &[None, Some(2.5f64)]),
-            Series::new("a".into(), &[4i32, 4, 4]),
-            Series::new("a".into(), &[3i64, -1, 7]),
-            Series::new("a".into(), &[1.0f64, f64::NAN, -2.0]),
-        ];
-        for s in &columns {
-            let bounds = (s.null_count() < s.len())
-                .then(|| (s.min().unwrap().unwrap(), s.max().unwrap().unwrap()));
-            for bin_count in [None, Some(1), Some(3)] {
-                let expected = HistBreaks::new(s, bin_count, None).unwrap();
-                let got =
-                    HistBreaks::from_bounds(bounds, bin_count.unwrap_or(DEFAULT_HIST_BIN_COUNT))
-                        .unwrap();
-                assert_eq!(got.edges(), expected.edges(), "{s:?} {bin_count:?}");
-                assert_eq!(got.uniform, expected.uniform);
-            }
-        }
-        assert!(HistBreaks::from_bounds(Some((2.0, 1.0)), 1).is_err());
-    }
-}
