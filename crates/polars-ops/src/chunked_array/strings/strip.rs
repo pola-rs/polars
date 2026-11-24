@@ -2,11 +2,16 @@ use polars_core::prelude::arity::{broadcast_binary_elementwise, unary_elementwis
 
 use super::*;
 
+fn as_single_char(s: &str) -> Option<char> {
+    let c = s.chars().next()?;
+    (c.len_utf8() == s.len()).then_some(c)
+}
+
 fn strip_chars_binary<'a>(opt_s: Option<&'a str>, opt_pat: Option<&str>) -> Option<&'a str> {
     match (opt_s, opt_pat) {
         (Some(s), Some(pat)) => {
-            if pat.chars().count() == 1 {
-                Some(s.trim_matches(pat.chars().next().unwrap()))
+            if let Some(c) = as_single_char(pat) {
+                Some(s.trim_matches(c))
             } else {
                 Some(s.trim_matches(|c| pat.contains(c)))
             }
@@ -19,8 +24,8 @@ fn strip_chars_binary<'a>(opt_s: Option<&'a str>, opt_pat: Option<&str>) -> Opti
 fn strip_chars_start_binary<'a>(opt_s: Option<&'a str>, opt_pat: Option<&str>) -> Option<&'a str> {
     match (opt_s, opt_pat) {
         (Some(s), Some(pat)) => {
-            if pat.chars().count() == 1 {
-                Some(s.trim_start_matches(pat.chars().next().unwrap()))
+            if let Some(c) = as_single_char(pat) {
+                Some(s.trim_start_matches(c))
             } else {
                 Some(s.trim_start_matches(|c| pat.contains(c)))
             }
@@ -33,8 +38,8 @@ fn strip_chars_start_binary<'a>(opt_s: Option<&'a str>, opt_pat: Option<&str>) -
 fn strip_chars_end_binary<'a>(opt_s: Option<&'a str>, opt_pat: Option<&str>) -> Option<&'a str> {
     match (opt_s, opt_pat) {
         (Some(s), Some(pat)) => {
-            if pat.chars().count() == 1 {
-                Some(s.trim_end_matches(pat.chars().next().unwrap()))
+            if let Some(c) = as_single_char(pat) {
+                Some(s.trim_end_matches(c))
             } else {
                 Some(s.trim_end_matches(|c| pat.contains(c)))
             }
@@ -56,11 +61,9 @@ pub fn strip_chars(ca: &StringChunked, pat: &StringChunked) -> StringChunked {
     match pat.len() {
         1 => {
             if let Some(pat) = pat.get(0) {
-                if pat.chars().count() == 1 {
+                if let Some(c) = as_single_char(pat) {
                     // Fast path for when a single character is passed
-                    unary_elementwise(ca, |opt_s| {
-                        opt_s.map(|s| s.trim_matches(pat.chars().next().unwrap()))
-                    })
+                    unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_matches(c)))
                 } else {
                     unary_elementwise(ca, |opt_s| {
                         opt_s.map(|s| s.trim_matches(|c| pat.contains(c)))
@@ -78,11 +81,9 @@ pub fn strip_chars_start(ca: &StringChunked, pat: &StringChunked) -> StringChunk
     match pat.len() {
         1 => {
             if let Some(pat) = pat.get(0) {
-                if pat.chars().count() == 1 {
+                if let Some(c) = as_single_char(pat) {
                     // Fast path for when a single character is passed
-                    unary_elementwise(ca, |opt_s| {
-                        opt_s.map(|s| s.trim_start_matches(pat.chars().next().unwrap()))
-                    })
+                    unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start_matches(c)))
                 } else {
                     unary_elementwise(ca, |opt_s| {
                         opt_s.map(|s| s.trim_start_matches(|c| pat.contains(c)))
@@ -100,11 +101,9 @@ pub fn strip_chars_end(ca: &StringChunked, pat: &StringChunked) -> StringChunked
     match pat.len() {
         1 => {
             if let Some(pat) = pat.get(0) {
-                if pat.chars().count() == 1 {
+                if let Some(c) = as_single_char(pat) {
                     // Fast path for when a single character is passed
-                    unary_elementwise(ca, |opt_s| {
-                        opt_s.map(|s| s.trim_end_matches(pat.chars().next().unwrap()))
-                    })
+                    unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end_matches(c)))
                 } else {
                     unary_elementwise(ca, |opt_s| {
                         opt_s.map(|s| s.trim_end_matches(|c| pat.contains(c)))
