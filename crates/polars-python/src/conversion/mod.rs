@@ -14,7 +14,6 @@ pub use categorical::PyCategories;
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "pivot")]
 use polars::frame::PivotColumnNaming;
-use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 use polars::prelude::ColumnMapping;
@@ -59,35 +58,6 @@ use crate::py_modules::{pl_series, polars};
 use crate::series::{PySeries, import_schema_pycapsule};
 use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame, interned};
-
-/// # Safety
-/// Should only be implemented for transparent types
-pub(crate) unsafe trait Transparent {
-    type Target;
-}
-
-unsafe impl Transparent for PySeries {
-    type Target = Series;
-}
-
-unsafe impl<T> Transparent for Wrap<T> {
-    type Target = T;
-}
-
-unsafe impl<T: Transparent> Transparent for Option<T> {
-    type Target = Option<T::Target>;
-}
-
-pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
-    assert_eq!(size_of::<T>(), size_of::<T::Target>());
-    assert_eq!(align_of::<T>(), align_of::<T::Target>());
-    let len = input.len();
-    let cap = input.capacity();
-    let mut manual_drop_vec = std::mem::ManuallyDrop::new(input);
-    let vec_ptr: *mut T = manual_drop_vec.as_mut_ptr();
-    let ptr: *mut T::Target = vec_ptr as *mut T::Target;
-    unsafe { Vec::from_raw_parts(ptr, len, cap) }
-}
 
 #[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -662,16 +632,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<StatisticsOptions> {
         }
 
         Ok(Wrap(statistics))
-    }
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Row<'static>> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let vals = ob.extract::<Vec<Wrap<AnyValue<'static>>>>()?;
-        let vals = reinterpret_vec(vals);
-        Ok(Wrap(Row(vals)))
     }
 }
 

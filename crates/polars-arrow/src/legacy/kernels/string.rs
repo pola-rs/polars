@@ -19,12 +19,9 @@ fn num_continuation_bytes_in_word(word: u64) -> u32 {
     (word & !(word << 1) & CONTINUATION_BITS).count_ones()
 }
 
-/// Number of UTF-8 continuation bytes (`0b10xx_xxxx`) in `bytes`, which must be at least 8
-/// bytes long.
+/// Number of UTF-8 continuation bytes (`0b10xx_xxxx`) in `bytes`.
 #[inline]
-fn num_continuation_bytes(bytes: &[u8]) -> u32 {
-    debug_assert!(bytes.len() >= 8);
-
+pub fn num_continuation_bytes(bytes: &[u8]) -> u32 {
     // Sum in u8 lanes per block so that this vectorizes well; a block has fewer than 256 bytes.
     let blocks = bytes.chunks_exact(128);
     let rest = blocks.remainder();
@@ -38,14 +35,22 @@ fn num_continuation_bytes(bytes: &[u8]) -> u32 {
         .sum::<u32>();
 
     let words = rest.chunks_exact(8);
-    let num_tail_bytes = words.remainder().len();
+    let tail = words.remainder();
+    let num_tail_bytes = tail.len();
     for word in words {
         count += num_continuation_bytes_in_word(u64::from_le_bytes(word.try_into().unwrap()));
     }
     if num_tail_bytes > 0 {
-        // Read the last 8 bytes and drop the ones that were already counted.
-        let last = u64::from_le_bytes(bytes[bytes.len() - 8..].try_into().unwrap());
-        count += num_continuation_bytes_in_word(last >> (8 * (8 - num_tail_bytes)));
+        let last = if bytes.len() >= 8 {
+            // Read the last 8 bytes and drop the ones that were already counted.
+            u64::from_le_bytes(bytes[bytes.len() - 8..].try_into().unwrap())
+                >> (8 * (8 - num_tail_bytes))
+        } else {
+            let mut buf = [0u8; 8];
+            buf[..num_tail_bytes].copy_from_slice(tail);
+            u64::from_le_bytes(buf)
+        };
+        count += num_continuation_bytes_in_word(last);
     }
     count
 }

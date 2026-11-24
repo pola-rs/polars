@@ -537,7 +537,9 @@ class StringNameSpace(_NamespaceSuggestMixin):
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
-        Return the bytes offset of the first substring matching a pattern.
+        Return the character offset of the first substring matching a pattern.
+
+        The offset is in Unicode code points, the same unit as :meth:`slice`.
 
         If the pattern is not found, returns None.
 
@@ -2208,7 +2210,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
         """
         Use the Aho-Corasick algorithm to find all matches.
 
-        The function returns the byte offset of the start of each match.
+        The function returns the character offset (in Unicode code points) of the
+        start of each match.
         The return type will be `List<UInt32>`
 
         Parameters
@@ -2239,20 +2242,20 @@ class StringNameSpace(_NamespaceSuggestMixin):
         >>> patterns = ["winter", "disco", "onte", "discontent"]
         >>> df.with_columns(
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=False)
+        ...     .str.find_many(patterns, overlapping=False)
         ...     .alias("matches"),
         ...     pl.col("values")
-        ...     .str.extract_many(patterns, overlapping=True)
+        ...     .str.find_many(patterns, overlapping=True)
         ...     .alias("matches_overlapping"),
         ... )
         shape: (1, 3)
-        ┌────────────┬───────────┬─────────────────────────────────┐
-        │ values     ┆ matches   ┆ matches_overlapping             │
-        │ ---        ┆ ---       ┆ ---                             │
-        │ str        ┆ list[str] ┆ list[str]                       │
-        ╞════════════╪═══════════╪═════════════════════════════════╡
-        │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
-        └────────────┴───────────┴─────────────────────────────────┘
+        ┌────────────┬───────────┬─────────────────────┐
+        │ values     ┆ matches   ┆ matches_overlapping │
+        │ ---        ┆ ---       ┆ ---                 │
+        │ str        ┆ list[u32] ┆ list[u32]           │
+        ╞════════════╪═══════════╪═════════════════════╡
+        │ discontent ┆ [0]       ┆ [0, 4, 0]           │
+        └────────────┴───────────┴─────────────────────┘
         >>> df = pl.DataFrame(
         ...     {
         ...         "values": ["discontent", "rhapsody"],

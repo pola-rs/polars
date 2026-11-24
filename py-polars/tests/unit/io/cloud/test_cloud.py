@@ -519,6 +519,28 @@ def test_cloud_timeout_error() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("op", ["scan", "sink"])
+def test_cloud_error_names_failing_path_29446(s3: CountingS3, op: str) -> None:
+    storage_options = {**s3.storage_options, "max_retries": 0}
+
+    # Builds the bucket's cached store, then removes the object for later tests.
+    df = pl.DataFrame({"x": range(10)})
+    df.lazy().sink_parquet("s3://bucket/a.parquet", storage_options=storage_options)
+    s3.client.delete_object(Bucket="bucket", Key="a.parquet")
+
+    s3.on_request = lambda environ: environ["PATH_INFO"].endswith("/b.parquet") or None
+    url = "s3://bucket/query=B/b.parquet"
+    run = (
+        pl.scan_parquet(url, storage_options=storage_options).collect
+        if op == "scan"
+        else partial(df.lazy().sink_parquet, url, storage_options=storage_options)
+    )
+
+    with pytest.raises(OSError, match=re.escape(f"(path: {url})")):
+        run()
+
+
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "sink",
     [

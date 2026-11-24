@@ -2,14 +2,15 @@ use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileFractionDtypes, QuantileMethod,
-    Scalar, Schema, TimeUnit, TimeZone, UnknownKind, datetime_to_timestamp_us, polars_bail,
-    polars_ensure, polars_err,
+    Scalar, Schema, TimeUnit, TimeZone, UnknownKind, datetime_to_timestamp_us,
+    extract_non_null_quantiles, polars_bail, polars_ensure, polars_err,
 };
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
 use polars_defs::expr::{RoundMode, UnicodeForm};
 use polars_defs::time::date_diff::DateDiffUnit;
+use polars_defs::time::duration::Duration;
 use polars_defs::time::group_by::ClosedWindow;
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
@@ -34,10 +35,12 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
+use crate::context::is_using_left_key;
 use crate::datetime_template::{ParseFormat, format_with_template, parse_format};
 use crate::group_context::{is_marked_aggregate, mark_aggregate};
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::lambda::{is_lambda_arg, lambda_arg, lambda_element_name};
+use crate::literal_folding::fold_scalar;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, clip_substring_length, decimal_literal,
     decimal_literal_to_f64, interval_to_duration, null_as_string, null_on_null_length,
@@ -1139,6 +1142,37 @@ pub(crate) enum PolarsSQLFunctions {
     Udf(String),
 }
 
+/// A literal key of `JSON_EXTRACT_PATH` as an element of a Postgres text array.
+fn json_path_element(key: &FunctionArgExpr) -> Option<String> {
+    let FunctionArgExpr::Expr(SQLExpr::Value(ValueWithSpan { value, .. })) = key else {
+        return None;
+    };
+    Some(match value {
+        // quoted only when needed: a struct's path does not read quotes
+        SQLValue::SingleQuotedString(s) if !needs_quotes(s) => s.clone(),
+        SQLValue::SingleQuotedString(s) => {
+            format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+        },
+        SQLValue::Number(n, _) => n.to_string(),
+        SQLValue::Null => "NULL".to_string(),
+        _ => return None,
+    })
+}
+
+/// Whether a Postgres text array element must be quoted to be read as written.
+fn needs_quotes(key: &str) -> bool {
+    key.is_empty()
+        || key.eq_ignore_ascii_case("NULL")
+        || key.contains([',', '{', '}', '"', '\\'])
+        || key.contains(char::is_whitespace)
+}
+
+/// How `UNNEST` and `EXPLODE` explode a list: as in Postgres, an empty or NULL list gives no row.
+pub(crate) const UNNEST_OPTIONS: ExplodeOptions = ExplodeOptions {
+    empty_as_null: false,
+    keep_nulls: false,
+};
+
 /// Whether `name` is a SQL function or a registered user-defined function.
 pub(crate) fn is_builtin_function(name: &Ident, ctx: &SQLContext) -> bool {
     let function = SQLFunction {
@@ -2127,6 +2161,16 @@ impl SQLFunctionVisitor<'_> {
                                 .when(lit(false))
                                 .then(read(new))
                                 .otherwise(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                        } else if matches!(&old, Expr::Literal(lv) if lv.extract_str() == Some("")) {
+                            // As in Postgres; the folded branch keeps the string type check.
+                            let replaced = e.clone().str().replace_all(old, new.clone(), true);
+                            let kept = when(lit(true)).then(e).otherwise(replaced);
+                            match new {
+                                Expr::Literal(_) => kept,
+                                new => when(new.is_not_null())
+                                    .then(kept)
+                                    .otherwise(lit(LiteralValue::untyped_null())),
+                            }
                         } else if matches!((&old, &new), (Expr::Literal(_), Expr::Literal(_))) {
                             e.str().replace_all(old, new, true)
                         } else {
@@ -2139,15 +2183,22 @@ impl SQLFunctionVisitor<'_> {
                                 .map(|e| e.clone().is_not_null())
                                 .reduce(Expr::and)
                                 .unwrap();
-                            when(has_args)
+                            let e = when(has_args)
                                 .then(e)
-                                .otherwise(lit(LiteralValue::untyped_null()))
-                                .str()
-                                .replace_all(
-                                    old.cast(DataType::String).fill_null(lit("_")),
-                                    new.cast(DataType::String).fill_null(lit("")),
-                                    true,
-                                )
+                                .otherwise(lit(LiteralValue::untyped_null()));
+                            let pattern_is_literal = matches!(old, Expr::Literal(_));
+                            let old = old.cast(DataType::String);
+                            let replaced = e.clone().str().replace_all(
+                                old.clone().fill_null(lit("_")),
+                                new.cast(DataType::String).fill_null(lit("")),
+                                true,
+                            );
+                            match pattern_is_literal {
+                                true => replaced,
+                                false => when(old.str().len_bytes().eq(lit(0)))
+                                    .then(e)
+                                    .otherwise(replaced),
+                            }
                         })
                     }),
                     _ => {
@@ -2390,11 +2441,7 @@ impl SQLFunctionVisitor<'_> {
             ListTransform => self.visit_list_lambda(false),
             ListFilter => self.visit_list_lambda(true),
             Explode => self.visit_unary(|e| {
-                e.explode(ExplodeOptions {
-                    // As in Postgres: an empty or NULL list gives no row.
-                    empty_as_null: false,
-                    keep_nulls: false,
-                })
+                e.explode(UNNEST_OPTIONS)
             }),
             GenerateSeries => self.visit_series(true),
             Range => self.visit_series(false),
@@ -2428,7 +2475,7 @@ impl SQLFunctionVisitor<'_> {
                             let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();
                             let col_names = active_schema
                                 .iter_names()
-                                .filter(|name| rx.is_match(name))
+                                .filter(|name| rx.is_match(name) && !is_using_left_key(name))
                                 .cloned()
                                 .collect::<Vec<_>>();
 
@@ -2441,7 +2488,18 @@ impl SQLFunctionVisitor<'_> {
                             Ok(Expr::Selector(Selector::Matches(pat.into())))
                         }
                     },
-                    Expr::Selector(s) => Ok(s.as_expr()),
+                    Expr::Selector(s) => {
+                        let hidden: Vec<PlSmallStr> = active_schema
+                            .iter()
+                            .flat_map(|schema| schema.iter_names())
+                            .filter(|name| is_using_left_key(name))
+                            .cloned()
+                            .collect();
+                        Ok(match hidden.is_empty() {
+                            true => s.as_expr(),
+                            false => s.exclude_cols(hidden).as_expr(),
+                        })
+                    },
                     _ => polars_bail!(SQLSyntax: "COLUMNS expects a regex; found {:?}", e),
                 })
             },
@@ -3020,8 +3078,10 @@ impl SQLFunctionVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let fname = self.func.name.to_string();
-        series_expr(&fname, &args, include_end, |e| self.parse_sql_arg(e))
-            .and_then(|e| self.apply_window_spec(e))
+        series_expr(&fname, &args, include_end, self.active_schema, |e| {
+            self.parse_sql_arg(e)
+        })
+        .and_then(|e| self.apply_window_spec(e))
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
@@ -3539,16 +3599,16 @@ impl SQLFunctionVisitor<'_> {
                 _ => polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects expressions; found {}", arg),
             })
             .collect::<PolarsResult<_>>()?;
-        let [value, pattern, rest @ ..] = exprs.as_slice() else {
-            polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len())
+        let (value, pattern, rest) = match exprs.as_slice() {
+            [value, pattern, rest @ ..] if rest.len() <= 4 => (value, pattern, rest),
+            _ => {
+                polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len())
+            },
         };
-        polars_ensure!(
-            rest.len() <= 4,
-            SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len()
-        );
+        // An argument left out is `min`.
         let int_arg = |this: &mut Self, i: usize, name: &str, min: i64| -> PolarsResult<i64> {
             let Some(arg) = rest.get(i) else {
-                return Ok(if name == "subexpr" { 0 } else { 1 });
+                return Ok(min);
             };
             match parse_sql_expr(arg, this.ctx, this.active_schema)? {
                 Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= min as i128 => {
@@ -3632,34 +3692,15 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLSyntax: "{} expects a JSON value and a path of keys", name)
         };
         polars_ensure!(!keys.is_empty(), SQLSyntax: "{} expects at least one key", name);
-        let mut path = String::from("{");
-        for (i, key) in keys.iter().enumerate() {
-            if i > 0 {
-                path.push(',');
-            }
-            match key {
-                FunctionArgExpr::Expr(SQLExpr::Value(ValueWithSpan { value, .. })) => match value {
-                    // quoted only when needed: a struct's path does not read quotes
-                    SQLValue::SingleQuotedString(s) if !needs_quotes(s) => path.push_str(s),
-                    SQLValue::SingleQuotedString(s) => {
-                        let s = s.replace('\\', "\\\\").replace('"', "\\\"");
-                        path.push_str(&format!("\"{s}\""));
-                    },
-                    SQLValue::Number(n, _) => path.push_str(n),
-                    SQLValue::Null => path.push_str("NULL"),
-                    _ => polars_bail!(SQLSyntax: "{} expects literal keys; found {}", name, key),
-                },
-                _ => polars_bail!(SQLSyntax: "{} expects literal keys; found {}", name, key),
-            }
-        }
-        path.push('}');
-        // A Postgres text array element that is read as written.
-        fn needs_quotes(key: &str) -> bool {
-            key.is_empty()
-                || key.eq_ignore_ascii_case("NULL")
-                || key.contains([',', '{', '}', '"', '\\'])
-                || key.contains(char::is_whitespace)
-        }
+        let elements = keys
+            .iter()
+            .map(|key| {
+                json_path_element(key).ok_or_else(
+                    || polars_err!(SQLSyntax: "{} expects literal keys; found {}", name, key),
+                )
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let path = format!("{{{}}}", elements.join(","));
         let access = SQLExpr::BinaryOp {
             left: Box::new(json.clone()),
             op: match text {
@@ -3887,7 +3928,9 @@ impl SQLFunctionVisitor<'_> {
         let total = if is_distinct {
             sum
         } else {
-            (sum.clone() * rows.clone()).cast(DataTypeExpr::OfExpr(Box::new(sum)))
+            // Signed: an integer constant takes the other operand's type.
+            let rows = rows.clone().cast(DataType::Int64);
+            (sum.clone() * rows).cast(DataTypeExpr::OfExpr(Box::new(sum)))
         };
         when(rows.gt(lit(0)).and(c.is_not_null()))
             .then(total)
@@ -4329,13 +4372,14 @@ fn parse_quantile_literal(
     fname: &str,
     arg: &FunctionArgExpr,
 ) -> PolarsResult<Expr> {
-    let quantiles = match &quantile {
-        Expr::Literal(lv) => lv.extract_quantiles(QuantileFractionDtypes::Number)?,
+    let fraction = match &quantile {
+        Expr::Literal(lv) => lv.to_quantile_fraction()?,
         _ => None,
     };
-    let Some(quantiles) = quantiles else {
+    let Some(fraction) = fraction else {
         polars_bail!(SQLSyntax: "invalid value for {} ({})", fname, arg)
     };
+    let quantiles = extract_non_null_quantiles(&fraction, QuantileFractionDtypes::Number)?;
     Ok(Expr::from(quantiles[0]))
 }
 
@@ -4424,6 +4468,7 @@ pub(crate) fn series_expr(
     fname: &str,
     args: &[&SQLExpr],
     include_end: bool,
+    schema: Option<&Schema>,
     mut parse: impl FnMut(&SQLExpr) -> PolarsResult<Expr>,
 ) -> PolarsResult<Expr> {
     let int_series = |start: Expr, stop: Expr, step: Expr| {
@@ -4434,29 +4479,70 @@ pub(crate) fn series_expr(
         };
         int_ranges(start, stop, step, DataType::Int64)
     };
+    let temporal_series = |start: Expr, stop: Expr, interval: Duration| {
+        polars_ensure!(
+            !interval.negative(),
+            SQLInterface: "{} does not support negative INTERVAL steps", fname
+        );
+        let closed = if include_end {
+            ClosedWindow::Both
+        } else {
+            ClosedWindow::Left
+        };
+        datetime_ranges(
+            Some(start),
+            Some(stop),
+            Some(interval),
+            None,
+            closed,
+            None,
+            None,
+        )
+    };
     match args {
-        [start, stop, SQLExpr::Interval(interval)] => {
-            let closed = if include_end {
-                ClosedWindow::Both
-            } else {
-                ClosedWindow::Left
-            };
-            datetime_ranges(
-                Some(parse(start)?),
-                Some(parse(stop)?),
-                Some(interval_to_duration(interval, false)?),
-                None,
-                closed,
-                None,
-                None,
-            )
-        },
+        [start, stop, SQLExpr::Interval(interval)] => temporal_series(
+            parse(start)?,
+            parse(stop)?,
+            interval_to_duration(interval, false)?,
+        ),
         [_, _, SQLExpr::UnaryOp { expr, .. }] if matches!(**expr, SQLExpr::Interval(_)) => {
             polars_bail!(SQLInterface: "{} does not support negative INTERVAL steps", fname)
         },
         [stop] => Ok(int_series(lit(0i64), parse(stop)?, lit(1i64))),
         [start, stop] => Ok(int_series(parse(start)?, parse(stop)?, lit(1i64))),
-        [start, stop, step] => Ok(int_series(parse(start)?, parse(stop)?, parse(step)?)),
+        [start, stop, step] => {
+            let (start, stop, step) = (parse(start)?, parse(stop)?, parse(step)?);
+            if !matches!(
+                resolve_expr_dtype(&step, schema),
+                Some(DataType::Duration(_))
+            ) {
+                return Ok(int_series(start, stop, step));
+            }
+            polars_ensure!(
+                is_constant_key(&step),
+                SQLInterface: "{} takes only a constant INTERVAL step", fname
+            );
+            let step = fold_scalar(step.strict_cast(DataType::Duration(TimeUnit::Nanoseconds)))?;
+            let Expr::Literal(step) = step else {
+                unreachable!()
+            };
+            match step.to_any_value() {
+                Some(AnyValue::Duration(ns, _)) => {
+                    polars_ensure!(
+                        ns >= 0,
+                        SQLInterface: "{} does not support negative INTERVAL steps", fname
+                    );
+                    temporal_series(start, stop, Duration::from_nsecs(ns))
+                },
+                // A NULL step gives a NULL series.
+                _ => {
+                    let null_stop = when(lit(false))
+                        .then(stop)
+                        .otherwise(lit(LiteralValue::untyped_null()));
+                    temporal_series(start, null_stop, Duration::new_days(1))
+                },
+            }
+        },
         _ => polars_bail!(SQLSyntax: "{} expects 1 to 3 arguments; found {}", fname, args.len()),
     }
 }

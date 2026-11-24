@@ -98,12 +98,7 @@ impl PySeries {
     ) -> PyResult<Bound<'py, PyAny>> {
         let fraction = quantile.series.into_inner();
         let out = py.enter_polars(|| {
-            let quantiles = extract_quantiles(&fraction, QuantileFractionDtypes::NumberOrList)?;
-            let series = self.series.read();
-            match fraction.dtype() {
-                DataType::List(_) => series.quantiles_reduce(&quantiles, interpolation.0),
-                _ => series.quantile_reduce(quantiles[0], interpolation.0),
-            }
+            quantile_reduce_fraction(&self.series.read(), &fraction, interpolation.0)
         });
         scalar_to_py(out, py)
     }
