@@ -924,6 +924,26 @@ impl Series {
         self.cast_with_options(dtype, CastOptions::Strict)
     }
 
+    /// Cast just the (possibly nested) time units to those at the same positions in `dtype`,
+    /// leaving any other differences to the caller; values that overflow raise if `strict`,
+    /// else become null.
+    pub fn cast_time_units_like(&self, dtype: &DataType, strict: bool) -> PolarsResult<Series> {
+        if !self.dtype().contains_time_units() {
+            return Ok(self.clone());
+        }
+        let mut target = self.dtype().clone();
+        target.adopt_time_units_from(dtype);
+        if &target == self.dtype() {
+            return Ok(self.clone());
+        }
+        let options = if strict {
+            CastOptions::Strict
+        } else {
+            CastOptions::NonStrict
+        };
+        self.cast_with_options(&target, options)
+    }
+
     /// Cast non-strictly, also returning the rows the cast did not represent exactly.
     ///
     /// A row is inexact if it became null or does not survive the cast back unchanged. The mask

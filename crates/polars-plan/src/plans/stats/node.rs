@@ -907,7 +907,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
 }
 
 /// Rows left after applying `slice` to a relation of `rows` rows.
-fn sliced(rows: f64, slice: impl Into<Slice>) -> f64 {
+pub(crate) fn sliced(rows: f64, slice: impl Into<Slice>) -> f64 {
     let bounded = slice.into().resolve(rows as usize);
     (bounded.len() as f64).max(MIN_CARDINALITY)
 }

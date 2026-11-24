@@ -136,6 +136,13 @@ def test_replace_null_pattern_aggregate() -> None:
         assert pl.sql(query, eager=True).rows() == [(None,)]
 
 
+def test_replace_empty_pattern() -> None:
+    # as in Postgres
+    df = pl.DataFrame({"s": ["ab", "cd", None], "p": ["", "c", "a"]})
+    res = df.sql("SELECT REPLACE(s, '', 'x') AS a, REPLACE(s, p, 'x') AS b FROM self")
+    assert res.rows() == [("ab", "ab"), ("cd", "xd"), (None, None)]
+
+
 def test_string_chr() -> None:
     df = pl.DataFrame(
         {
@@ -898,6 +905,24 @@ def test_string_position() -> None:
                 },
             ),
         )
+
+    res = pl.sql(
+        """
+        SELECT
+          STRPOS('héllo', 'l') AS a,
+          POSITION('テ' IN '日本語テキスト') AS b,
+          POSITION('.' IN 'abc') AS c,
+          STRPOS('a(b', '(') AS d
+        """,
+        eager=True,
+    )
+    assert_frame_equal(
+        res,
+        pl.DataFrame(
+            {"a": [3], "b": [4], "c": [0], "d": [2]},
+            schema=dict.fromkeys("abcd", pl.Int64),
+        ),
+    )
 
 
 def test_string_replace() -> None:

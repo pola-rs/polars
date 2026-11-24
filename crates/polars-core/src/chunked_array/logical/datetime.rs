@@ -38,35 +38,11 @@ impl LogicalType for DatetimeChunked {
         use crate::datatypes::time_unit::TimeUnit::*;
 
         let out = match dtype {
-            Datetime(to_unit, tz) => {
-                let from_unit = self.time_unit();
-                let (multiplier, divisor) = match (from_unit, to_unit) {
-                    // scaling from lower precision to higher precision
-                    (Milliseconds, Nanoseconds) => (Some(1_000_000i64), None),
-                    (Milliseconds, Microseconds) => (Some(1_000i64), None),
-                    (Microseconds, Nanoseconds) => (Some(1_000i64), None),
-                    // scaling from higher precision to lower precision
-                    (Nanoseconds, Milliseconds) => (None, Some(1_000_000i64)),
-                    (Nanoseconds, Microseconds) => (None, Some(1_000i64)),
-                    (Microseconds, Milliseconds) => (None, Some(1_000i64)),
-                    _ => return self.phys.cast_with_options(dtype, cast_options),
-                };
-                match multiplier {
-                    // scale to higher precision (eg: ms → us, ms → ns, us → ns)
-                    Some(m) => Ok((self.phys.as_ref().checked_mul_scalar(m))
-                        .into_datetime(*to_unit, tz.clone())
-                        .into_series()),
-                    // scale to lower precision (eg: ns → us, ns → ms, us → ms)
-                    None => match divisor {
-                        Some(d) => Ok(self
-                            .phys
-                            .apply_values(|v| v.div_euclid(d))
-                            .into_datetime(*to_unit, tz.clone())
-                            .into_series()),
-                        None => unreachable!("must always have a time unit divisor here"),
-                    },
-                }
-            },
+            Datetime(to_unit, tz) => Ok(self
+                .cast_time_unit(*to_unit)
+                .phys
+                .into_datetime(*to_unit, tz.clone())
+                .into_series()),
             #[cfg(feature = "dtype-date")]
             Date => {
                 let cast_to_date = |tu_in_day: i64| {

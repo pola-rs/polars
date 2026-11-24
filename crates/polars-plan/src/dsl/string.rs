@@ -95,7 +95,7 @@ impl StringNameSpace {
         )
     }
 
-    /// Uses aho-corasick to find many patterns.
+    /// Uses aho-corasick to find the character offsets of many patterns.
     /// # Arguments
     /// - `patterns`: an expression that evaluates to a String column
     /// - `ascii_case_insensitive`: Enable ASCII-aware case-insensitive matching.
@@ -220,7 +220,7 @@ impl StringNameSpace {
         self.0.map_binary(StringFunction::ZFill, length)
     }
 
-    /// Find the index of a literal substring within another string value.
+    /// Find the character offset of a literal substring within another string value.
     #[cfg(feature = "regex")]
     pub fn find_literal(self, pat: Expr) -> Expr {
         self.0.map_binary(
@@ -232,7 +232,8 @@ impl StringNameSpace {
         )
     }
 
-    /// Find the index of a substring defined by a regular expression within another string value.
+    /// Find the character offset of a substring defined by a regular expression within another
+    /// string value.
     #[cfg(feature = "regex")]
     pub fn find(self, pat: Expr, strict: bool) -> Expr {
         self.0.map_binary(

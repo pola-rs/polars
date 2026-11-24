@@ -6,6 +6,13 @@ pub enum IRBinaryFunction {
     Contains,
     StartsWith,
     EndsWith,
+    Find,
+    #[cfg(feature = "find_many")]
+    FindMany {
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+        leftmost: bool,
+    },
     #[cfg(feature = "binary_encoding")]
     HexDecode(bool),
     #[cfg(feature = "binary_encoding")]
@@ -29,6 +36,9 @@ impl IRBinaryFunction {
         match self {
             Contains => mapper.with_dtype(DataType::Boolean),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
+            Find => mapper.with_dtype(DataType::UInt32),
+            #[cfg(feature = "find_many")]
+            FindMany { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::UInt32))),
             #[cfg(feature = "binary_encoding")]
             HexDecode(_) | Base64Decode(_) => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
@@ -47,6 +57,11 @@ impl IRBinaryFunction {
             B::Contains | B::StartsWith | B::EndsWith => {
                 FunctionOptions::elementwise().with_supertyping(Default::default())
             },
+            B::Find => FunctionOptions::elementwise()
+                .with_supertyping(Default::default())
+                .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_FIRST_INPUT),
+            #[cfg(feature = "find_many")]
+            B::FindMany { .. } => FunctionOptions::elementwise(),
             B::Size => FunctionOptions::elementwise(),
             #[cfg(feature = "binary_encoding")]
             B::HexDecode(_)
@@ -66,6 +81,9 @@ impl Display for IRBinaryFunction {
             Contains => "contains",
             StartsWith => "starts_with",
             EndsWith => "ends_with",
+            Find => "find",
+            #[cfg(feature = "find_many")]
+            FindMany { .. } => "find_many",
             #[cfg(feature = "binary_encoding")]
             HexDecode(_) => "hex_decode",
             #[cfg(feature = "binary_encoding")]

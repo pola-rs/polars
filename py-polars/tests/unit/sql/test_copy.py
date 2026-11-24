@@ -83,7 +83,14 @@ def test_copy_frame_in_scope(tmp_path: Path, df: pl.DataFrame) -> None:
         ("COPY t TO STDOUT", "COPY TO STDOUT is not supported"),
         ("COPY t TO '{}/out.txt'", r"cannot tell the format of .*out\.txt.*csv"),
         ("COPY t TO '{}/out.json'", "cannot tell the format"),
-        ("COPY t TO '{}/out.csv' (ESCAPE '!')", "COPY option ESCAPE is not supported"),
+        (
+            "COPY t TO '{}/out.csv' (ESCAPE '!')",
+            "COPY option ESCAPE is not supported; COPY takes the options FORMAT",
+        ),
+        (
+            "COPY t TO '{}/out.csv' (SEPARATOR ';')",
+            r"COPY takes the options .* \(DELIMITER sets the separator\)",
+        ),
         ("COPY t TO '{}/out.parquet' (HEADER)", "HEADER applies to the CSV format"),
     ],
 )

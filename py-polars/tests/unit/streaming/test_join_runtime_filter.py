@@ -28,6 +28,12 @@ ROWS_PER_GROUP = 100
 KEY_SET = re.compile(r"(bloom|bitset) of")
 
 
+@pytest.fixture(autouse=True)
+def _filter_small_scans(plmonkeypatch: PlMonkeyPatch) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
+
+
 @pytest.fixture
 def fact(tmp_path: Path) -> pl.LazyFrame:
     # Keys sorted into row groups of a hundred, so a key range maps to row groups.
@@ -98,6 +104,73 @@ def test_range_prunes_row_groups(
     assert groups == "1 / 10 row groups"
     assert out.height == 2
     assert_matches_in_memory(q, out)
+
+
+def test_no_filter_on_small_scans_by_default(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Building first would keep the probe scan from overlapping the build side.
+    plmonkeypatch.delenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS")
+    plan = fact.join(dim(220, 240), on="k").explain(engine="streaming")
+    assert "dynamic_predicate" not in plan
+    assert "BUILD SIDE: ForceRight" not in plan
+
+
+@pytest.mark.parametrize(
+    ("query", "rows_read", "n_filters"),
+    [
+        (lambda fact, path: fact.join(dim(220, 240), on="k"), 1000, 1),
+        # Every row group holds every `k2`, so the scan reads the rows the filter drops.
+        (
+            lambda fact, path: fact.filter(pl.col("k2") < 4).join(
+                dim(220, 240), on="k"
+            ),
+            1000,
+            1,
+        ),
+        (
+            lambda fact, path: pl.scan_parquet(path, n_rows=500).join(
+                dim(220, 240), on="k"
+            ),
+            500,
+            1,
+        ),
+        # The slice, of every row, keeps the two scans of the file apart.
+        (
+            lambda fact, path: pl.concat(
+                [fact, pl.scan_parquet(path, n_rows=1000)]
+            ).join(dim(220, 240), on="k"),
+            2000,
+            2,
+        ),
+        # A scan reached by two keys is read once.
+        (
+            lambda fact, path: fact.join(
+                pl.LazyFrame({"k": [230, 231], "k2": [6, 6], "d": [1, 2]}).filter(
+                    pl.col("d") > 0
+                ),
+                on=["k", "k2"],
+            ),
+            1000,
+            2,
+        ),
+    ],
+    ids=["scan", "filtered_scan", "sliced_scan", "two_scans", "two_keys"],
+)
+def test_min_probe_rows_counts_the_rows_the_scans_read(
+    fact: pl.LazyFrame,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    query: Callable[[pl.LazyFrame, Path], pl.LazyFrame],
+    rows_read: int,
+    n_filters: int,
+) -> None:
+    q = query(fact, tmp_path / "fact.parquet")
+    for min_probe_rows, expected in [(rows_read, n_filters), (rows_read + 1, 0)]:
+        plmonkeypatch.setenv(
+            "POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", str(min_probe_rows)
+        )
+        assert q.explain(engine="streaming").count("dynamic_predicate") == expected
 
 
 def test_build_side_on_the_left(

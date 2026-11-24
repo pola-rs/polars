@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLSyntaxError
+from polars.exceptions import ComputeError, InvalidOperationError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -1247,9 +1247,7 @@ def test_approx_quantile_method_arg(method: str) -> None:
 @pytest.mark.parametrize("quantile", ["-1", "2", "-0.01", "1.01", "1.5"])
 def test_approx_quantile_out_of_range(quantile: str) -> None:
     df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
-    with pytest.raises(
-        SQLSyntaxError, match="APPROX_QUANTILE value must be between 0 and 1"
-    ):
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
         df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) FROM self")
 
 
@@ -1479,7 +1477,9 @@ def test_group_by_constants_empty_and_having(grouped: pl.DataFrame) -> None:
     )
 
 
-@pytest.mark.parametrize("key", ["'all'", "NULL", "'a', UPPER('b')", "1 + 1"])
+@pytest.mark.parametrize(
+    "key", ["'all'", "NULL", "'a', UPPER('b')", "1 + 1", "1 + 1, UPPER('b')"]
+)
 def test_group_by_constant_keys(grouped: pl.DataFrame, key: str) -> None:
     # one group, and no group over no rows
     query = f"SELECT 'all' AS k, SUM(b) AS s, COUNT(*) AS n FROM t GROUP BY {key}"
@@ -1509,6 +1509,8 @@ def test_group_by_constant_keys(grouped: pl.DataFrame, key: str) -> None:
         "SELECT a, GROUPING(1 + 1) AS g FROM t GROUP BY a, 1 + 1 ORDER BY a",
         "SELECT a, GROUPING_ID(a, 'x') AS g FROM t GROUP BY a, 'x' ORDER BY a",
         "SELECT a FROM t GROUP BY a, 1 + 1 HAVING GROUPING(1 + 1) = 0 ORDER BY a",
+        "SELECT GROUPING(1 + 1, UPPER('b')) AS g FROM t GROUP BY 1 + 1, UPPER('b')",
+        "SELECT COUNT(*) AS n FROM t GROUP BY ROLLUP (1 + 1, UPPER('b')) ORDER BY n",
     ],
 )
 def test_group_by_constant_key_in_grouping(grouped: pl.DataFrame, query: str) -> None:
@@ -1685,7 +1687,7 @@ def test_percentile_within_group_over(engine: EngineType) -> None:
         ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, g)", "expects one argument"),
         ("PERCENTILE_CONT(0.5)", "expects one argument"),
         ("PERCENTILE_CONT(x, 0.5)", "expects one argument"),
-        ("PERCENTILE_CONT(1.5) WITHIN GROUP (ORDER BY x)", "between 0 and 1"),
+        ("PERCENTILE_CONT(1.5) WITHIN GROUP (ORDER BY x)", r"between 0\.0 and 1\.0"),
         ("QUANTILE_CONT(x, 0.5) WITHIN GROUP (ORDER BY x)", "WITHIN GROUP"),
         (
             "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1) "

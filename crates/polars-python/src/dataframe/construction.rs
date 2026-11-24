@@ -16,16 +16,23 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
-    #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
+    #[pyo3(signature = (data, schema=None, strict=true, infer_schema_length=None))]
     pub fn from_rows(
         py: Python<'_>,
         data: &Bound<PyAny>,
         schema: Option<Wrap<Schema>>,
+        strict: bool,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         let data = data.cast::<PySequence>()?;
         let schema = schema.map(|wrap| wrap.0);
-        let extract = |record: &Bound<PyAny>| PyResult::Ok(record.extract::<Wrap<Row>>()?.0);
+        let extract = |record: &Bound<PyAny>| {
+            let values = record.extract::<Vec<Bound<PyAny>>>()?;
+            let values = values
+                .iter()
+                .map(|v| py_object_to_any_value(v, strict, true, None));
+            values.collect::<PyResult<Vec<_>>>().map(Row)
+        };
 
         // the leading records infer the schema (none are needed if it is complete)
         let schema_is_complete = schema
@@ -58,15 +65,16 @@ impl PyDataFrame {
             .iter_values()
             .map(|dtype| AnyValueBufferBatched::new(dtype, capacity))
             .collect();
+        let temporal = temporal_dtypes(&schema);
         let read = |record: &Bound<PyAny>, i: usize| {
-            PyResult::Ok(record.get_item(i)?.extract::<Wrap<AnyValue>>()?.0)
+            py_object_to_any_value(&record.get_item(i)?, strict, true, None)
         };
         let mut width = None;
         let mut height = 0;
         let mut push_row = |record: &Bound<PyAny>, row: Row<'static>| {
             check_row_width(&row, &mut width, buffers.len(), height).map_err(PyPolarsErr::from)?;
             for (i, (buffer, value)) in buffers.iter_mut().zip(row.0).enumerate() {
-                push(py, buffer, value, || read(record, i))?;
+                push(py, buffer, value, temporal[i], strict, || read(record, i))?;
             }
             height += 1;
             PyResult::Ok(())
@@ -167,10 +175,11 @@ impl PyDataFrame {
             .iter_values()
             .map(|dtype| AnyValueBufferBatched::new(dtype, capacity))
             .collect();
+        let temporal = temporal_dtypes(&schema);
         let mut height = leading.len();
         for (record, row) in leading.iter().zip(rows) {
             for (i, (buffer, value)) in buffers.iter_mut().zip(row.0).enumerate() {
-                push(py, buffer, value, || read(record, i))?;
+                push(py, buffer, value, temporal[i], strict, || read(record, i))?;
             }
         }
         for record in records {
@@ -180,7 +189,7 @@ impl PyDataFrame {
                 let value = record.get(&keys[i])?;
                 n_present += value.is_some() as usize;
                 let value = to_any_value(value, hints[i].as_ref(), strict)?;
-                push(py, buffer, value, || read(&record, i))?;
+                push(py, buffer, value, temporal[i], strict, || read(&record, i))?;
             }
             if check_extra_keys && record.len()? > n_present {
                 let mut all_names: PlIndexSet<String> = names.iter().cloned().collect();
@@ -219,14 +228,32 @@ impl PyDataFrame {
     }
 }
 
+/// The dtype of each column that has (possibly nested) time units.
+fn temporal_dtypes(schema: &Schema) -> Vec<Option<&DataType>> {
+    schema
+        .iter_values()
+        .map(|dtype| dtype.contains_time_units().then_some(dtype))
+        .collect()
+}
+
 /// Add a value, or else `reread` it (owned) for the error; full batches convert without the GIL.
+/// Time units first convert to those of the column's `temporal_dtype` (also when nested), so
+/// values that overflow them raise if `strict`, and otherwise become null.
 #[inline]
 fn push(
     py: Python<'_>,
     buffer: &mut AnyValueBufferBatched<'static>,
     value: AnyValue<'static>,
+    temporal_dtype: Option<&DataType>,
+    strict: bool,
     reread: impl FnOnce() -> PyResult<AnyValue<'static>>,
 ) -> PyResult<()> {
+    let value = match temporal_dtype {
+        Some(dtype) => value
+            .cast_time_units_like(dtype, strict)
+            .map_err(PyPolarsErr::from)?,
+        None => value,
+    };
     if buffer.add(value).is_none() {
         buffer.add_fallible(&reread()?).map_err(PyPolarsErr::from)?;
     }

@@ -22,6 +22,7 @@ from polars.exceptions import (
     ArgumentRemovedError,
     ComputeError,
     InvalidOperationError,
+    SchemaError,
 )
 from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -1838,6 +1839,23 @@ def test_rolling_quantile_nearest_23392() -> None:
         assert_series_equal(out, expected)
 
 
+@pytest.mark.parametrize(
+    ("quantile", "error", "match"),
+    [
+        *[(q, ComputeError, r"between 0\.0 and 1\.0") for q in [1.5, -0.5, nan, None]],
+        *[(q, SchemaError, "dtype 'numeric'") for q in [True, [0.5], "0.5"]],
+    ],
+)
+def test_rolling_quantile_invalid_fraction(
+    quantile: Any, error: type[Exception], match: str
+) -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+    with pytest.raises(error, match=match):
+        s.rolling_quantile(quantile, window_size=2)
+    with pytest.raises(error, match=match):
+        pl.col("a").rolling_quantile_by("a", "2i", quantile=quantile)
+
+
 def test_rolling_quantile_temporals() -> None:
     tz = ZoneInfo("Asia/Tokyo")
     dt = pl.Datetime("ms", "Asia/Tokyo")
@@ -3133,3 +3151,16 @@ def test_rolling_by_keys_matches_each_key_28597() -> None:
     )
     env = {**os.environ, "POLARS_MAX_THREADS": "8"}
     subprocess.run([sys.executable, "-c", script], env=env, check=True)
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected"),
+    [
+        (pl.lit(5), pl.Series("literal", [5, 5, 5], dtype=pl.Int32)),
+        (pl.len(), pl.Series("len", [3, 3, 3], dtype=get_index_type())),
+    ],
+)
+def test_rolling_literal_index_31006(expr: pl.Expr, expected: pl.Series) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    out = lf.select(expr.rolling(pl.lit(1).cast(pl.Int64), period="1i")).collect()
+    assert_frame_equal(out, expected.to_frame())
