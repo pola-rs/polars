@@ -41,11 +41,9 @@ where
             }
         },
         (bin_count, None) => {
-            let bounds = (ca.null_count() < ca.len()).then(|| {
-                let min = ca.min().unwrap().to_f64().unwrap();
-                let max = ca.max().unwrap().to_f64().unwrap();
-                (min, max)
-            });
+            let bounds = ca
+                .min_max()
+                .map(|(min, max)| (min.to_f64().unwrap(), max.to_f64().unwrap()));
             let bin_count = bin_count.unwrap_or(DEFAULT_HIST_BIN_COUNT);
             (uniform_breaks(bounds, bin_count), true)
         },
