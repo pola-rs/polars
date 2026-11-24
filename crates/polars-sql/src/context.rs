@@ -64,7 +64,7 @@ use crate::grouping_sets::{
     expand_grouping_sets, is_grouping_placeholder, new_placeholder,
 };
 use crate::iceberg_alter::{self, IcebergAlter, IcebergAlterOp, OtherStatement};
-use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
+use crate::join_keys::{distinct_key_names, sql_join_key_pair, sql_join_where_predicate};
 use crate::location::{
     complete_location, locate, locate_in_statement, without_macro_positions, without_positions,
 };
@@ -6066,46 +6066,14 @@ impl SQLContext {
                     (*l, *r) = (l_cast, r_cast);
                 }
             }
-            // A join refuses two keys with the same pair of names, as from `r.b = 2 AND r.b = 3`
-            // (`literal` and `b` twice): such a key that is not a column becomes a column of its
-            // own for the join.
-            if left_on.len() > 1 {
-                // A key without one name yet, such as a selector, is not counted.
-                let names: Vec<_> = left_on
-                    .iter()
-                    .zip(&right_on)
-                    .map(|(l, r)| {
-                        Some((
-                            l.clone().meta().output_name().ok()?,
-                            r.clone().meta().output_name().ok()?,
-                        ))
-                    })
-                    .collect();
-                let mut counts: PlHashMap<_, usize> = PlHashMap::with_capacity(names.len());
-                for pair in names.iter().flatten() {
-                    *counts.entry(pair).or_default() += 1;
-                }
-                for ((l, r), pair) in left_on.iter_mut().zip(right_on.iter_mut()).zip(&names) {
-                    if pair.as_ref().is_none_or(|pair| counts[pair] < 2) {
-                        continue;
-                    }
-                    let sides = [
-                        (l, &mut left_frame, &*tbl_left.schema),
-                        (r, &mut right_frame, &*tbl_right.schema),
-                    ];
-                    for (key, frame, schema) in sides {
-                        // A key that is not elementwise stays for the join to reject.
-                        if !matches!(key, Expr::Column(_))
-                            && is_row_wise(key, schema).unwrap_or(false)
-                        {
-                            let name = unique_column_name();
-                            *frame = frame.clone().with_column(key.clone().alias(name.clone()));
-                            *key = col(name.clone());
-                            key_columns.push(name);
-                        }
-                    }
-                }
-            }
+            key_columns = distinct_key_names(
+                &mut left_frame,
+                &mut right_frame,
+                &mut left_on,
+                &mut right_on,
+                &tbl_left.schema,
+                &tbl_right.schema,
+            );
         }
         let drop_key_columns = |lf: LazyFrame| match key_columns.is_empty() {
             true => lf,
@@ -10904,7 +10872,7 @@ fn tuple_values(value: &SQLExpr) -> Option<Vec<SQLExpr>> {
 }
 
 /// Whether `expr` gives each row a value from that row alone, `RANDOM()` included.
-fn is_row_wise(expr: &Expr, schema: &Schema) -> PolarsResult<bool> {
+pub(crate) fn is_row_wise(expr: &Expr, schema: &Schema) -> PolarsResult<bool> {
     let probe = expr
         .clone()
         .map_expr(|e| if is_random(&e) { lit(0u64) } else { e });
