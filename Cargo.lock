@@ -3812,7 +3812,7 @@ dependencies = [
 
 [[package]]
 name = "polars-database"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bitflags",
  "chrono",
@@ -3833,7 +3833,7 @@ dependencies = [
 
 [[package]]
 name = "polars-database-python"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "polars-database",
  "pyo3",
@@ -4410,7 +4410,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "either",
  "libc",
@@ -4421,7 +4421,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "either",
  "libc",
@@ -4432,7 +4432,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "either",
  "libc",
