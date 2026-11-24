@@ -26,6 +26,7 @@ use polars_plan::plans::{
 };
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::version::get_polars_lib_version;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, DateTimeField, DuplicateTreatment, Expr as SQLExpr,
@@ -1132,6 +1133,18 @@ pub(crate) enum PolarsSQLFunctions {
     Typeof,
 
     // ----
+    // System functions
+    // ----
+    /// SQL 'version' function.
+    /// Returns the version that the program using Polars sets when it starts (see
+    /// `polars_utils::version`): Python Polars', the CLI's, or else the Rust crates'. It is
+    /// read when the query is planned.
+    /// ```sql
+    /// SELECT VERSION();
+    /// ```
+    Version,
+
+    // ----
     // Column selection
     // ----
     Columns,
@@ -1409,6 +1422,7 @@ impl PolarsSQLFunctions {
             "var",
             "var_samp",
             "variance",
+            "version",
             "week",
             "xor",
             "year",
@@ -1637,6 +1651,11 @@ impl PolarsSQLFunctions {
             // Type functions
             // ----
             "typeof" => Self::Typeof,
+
+            // ----
+            // System functions
+            // ----
+            "version" => Self::Version,
 
             // ----
             // Column selection
@@ -2450,6 +2469,20 @@ impl SQLFunctionVisitor<'_> {
             // Type functions
             // ----
             Typeof => self.visit_typeof(),
+
+            // ----
+            // System functions
+            // ----
+            Version => {
+                if self.func.over.is_some() {
+                    polars_bail!(SQLSyntax: "VERSION() cannot be used as a window function");
+                }
+                if self.func.filter.is_some() {
+                    polars_bail!(SQLSyntax: "VERSION() does not support a FILTER clause");
+                }
+                let version = get_polars_lib_version();
+                self.visit_nullary(|| lit(version.as_str()).alias("version"))
+            },
 
             // ----
             // Column selection

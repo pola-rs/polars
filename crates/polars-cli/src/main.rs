@@ -4,7 +4,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, FromArgMatches};
+use polars::polars_utils::version::{
+    set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version,
+};
 use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
 
 // The allocator of the Python runtime, so that both perform alike.
@@ -12,6 +15,12 @@ use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
 static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
 
 fn main() -> ExitCode {
+    // For SQL `version()` and file metadata.
+    set_polars_lib_name("Polars (cli)");
+    set_polars_lib_version(env!("CARGO_PKG_VERSION"));
+    if let Some(commit) = option_env!("POLARS_BUILD_COMMIT") {
+        set_polars_lib_build_commit(commit);
+    }
     // Debug frames are large, as in the Python package.
     #[cfg(debug_assertions)]
     {
@@ -34,7 +43,11 @@ fn main() -> ExitCode {
 }
 
 fn run_command() -> ExitCode {
-    let args = match Args::try_parse() {
+    let parsed = Args::command()
+        .version(version())
+        .try_get_matches()
+        .and_then(|matches| Args::from_arg_matches(&matches));
+    let args = match parsed {
         Ok(args) => args,
         // Help and version requests arrive here too, with exit code 0.
         Err(error) => return report(error),
@@ -113,6 +126,17 @@ fn read_script(input: Input) -> Result<Script, clap::Error> {
             }
             Ok(script)
         },
+    }
+}
+
+/// The version `--version` prints: the CLI's, with the commit it was built from when known.
+fn version() -> &'static str {
+    match option_env!("POLARS_BUILD_COMMIT") {
+        Some(commit) => {
+            let commit = commit.get(..10).unwrap_or(commit);
+            Box::leak(format!("{} ({commit})", env!("CARGO_PKG_VERSION")).into_boxed_str())
+        },
+        None => env!("CARGO_PKG_VERSION"),
     }
 }
 
