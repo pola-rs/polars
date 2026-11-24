@@ -1774,20 +1774,69 @@ def test_init_rows_timestamp_floors_to_time_unit_28869(
 
 
 @pytest.mark.parametrize(
-    ("value", "dtype"),
+    ("value", "finer", "dtype"),
     [
-        (datetime(3000, 1, 1), pl.Datetime("ns")),
-        (timedelta(days=300 * 365), pl.Duration("ns")),
+        (datetime(3000, 1, 1), pd.Timestamp(1, unit="ns"), pl.Datetime("ns")),
+        (timedelta(days=300 * 365), pd.Timedelta(1, unit="ns"), pl.Duration("ns")),
+    ],
+)
+@pytest.mark.parametrize(
+    ("wrap", "wrap_dtype", "unwrap"),
+    [
+        (lambda v: v, lambda dt: dt, lambda x: x),
+        (lambda v: [v], pl.List, lambda x: x[0]),
+        (lambda v: [v], lambda dt: pl.Array(dt, 1), lambda x: x[0]),
+        (lambda v: {"x": v}, lambda dt: pl.Struct({"x": dt}), lambda x: x["x"]),
+        (
+            lambda v: [{"x": v}],
+            lambda dt: pl.List(pl.Struct({"x": dt})),
+            lambda x: x[0]["x"],
+        ),
+        (
+            lambda v: {"x": [v]},
+            lambda dt: pl.Struct({"x": pl.List(dt)}),
+            lambda x: x["x"][0],
+        ),
     ],
 )
 def test_init_rows_temporal_out_of_range(
-    value: datetime | timedelta, dtype: pl.DataType
+    value: Any,
+    finer: Any,
+    dtype: pl.DataType,
+    wrap: Callable[[Any], Any],
+    wrap_dtype: Callable[[pl.DataType], pl.DataType],
+    unwrap: Callable[[Any], Any],
 ) -> None:
-    schema = {"t": dtype}
-    with pytest.raises(InvalidOperationError, match=r"conversion from .* failed"):
-        pl.from_dicts([{"t": value}], schema=schema)
-    with pytest.raises(InvalidOperationError, match=r"conversion from .* failed"):
-        pl.Series([{"t": value}], dtype=pl.Struct(schema))
+    # values overflowing a (possibly nested) time unit raise if strict, else are null
+    msg = r"conversion from .* failed"
+    v = wrap(value)
+    schema = {"t": wrap_dtype(dtype)}
+    constructors: list[Callable[[bool], pl.DataFrame]] = [
+        lambda strict: pl.from_dicts([{"t": v}], schema=schema, strict=strict),
+        lambda strict: pl.from_records(
+            [(v,)], schema=schema, orient="row", strict=strict
+        ),
+        lambda strict: pl.Series(
+            [{"t": v}], dtype=pl.Struct(schema), strict=strict
+        ).struct.unnest(),
+    ]
+    for construct in constructors:
+        with pytest.raises(InvalidOperationError, match=msg):
+            construct(True)
+        df = construct(False)
+        assert df.schema == schema
+        assert unwrap(df.item()) is None
+
+    # (also with an inferred schema, which adopts the finer time unit of another row)
+    rows = [(v,), (wrap(finer),)]
+    inferred: list[Callable[[bool], pl.DataFrame]] = [
+        lambda strict: pl.from_dicts([{"t": r[0]} for r in rows], strict=strict),
+        lambda strict: pl.from_records(rows, schema=["t"], orient="row", strict=strict),
+    ]
+    for construct in inferred:
+        with pytest.raises(InvalidOperationError, match=msg):
+            construct(True)
+        assert unwrap(construct(False).item(0, 0)) is None
 
 
 def test_list_null_constructor() -> None:

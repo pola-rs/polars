@@ -419,7 +419,13 @@ def test_series_init_mixed_units_out_of_range_28869(
 
     # (reversed, it only overflows once the finer unit restarts strict inference)
     for ordered in (values, values[::-1]):
-        for vals in (ordered, [ordered], [[v] for v in ordered]):
+        nested = (
+            [ordered],
+            [[v] for v in ordered],
+            [[[v]] for v in ordered],
+            [[{"a": v}] for v in ordered],
+        )
+        for vals in (ordered, *nested):
             with pytest.raises(InvalidOperationError, match=msg):
                 pl.Series(vals)
 
@@ -433,6 +439,12 @@ def test_series_init_mixed_units_out_of_range_28869(
     ):
         assert result.cast(pl.Int64).to_list() == [values[0].value, None]
 
+    # (also if no value can be represented)
+    result = pl.Series(values[1:], dtype=dtype("ns"), strict=False)
+    assert_series_equal(result, pl.Series([None], dtype=dtype("ns")))
+    result = pl.Series([values[1:]], dtype=pl.List(dtype("ns")), strict=False)
+    assert_series_equal(result, pl.Series([[None]], dtype=pl.List(dtype("ns"))))
+
     # an explicit (coarser) time unit is used directly
     for strict in (True, False):
         result = pl.Series(values, dtype=dtype("us"), strict=strict)
@@ -445,6 +457,14 @@ def test_series_init_pandas_timestamp_out_of_datetime_range() -> None:
     assert result.dtype == pl.Datetime("ms")
     assert result.dt.year().item() == 10000
     assert result.dt.epoch("s").item() == 253402300800
+
+    # beyond the calendar range (~146 million years), shown (and reported) as its value
+    ts = pd.Timestamp(np.datetime64(2**62, "ms"))
+    assert "4611686018427387904ms" in repr(pl.Series([ts]))
+    with pytest.raises(InvalidOperationError, match="value: 4611686018427387904ms"):
+        pl.Series([ts], dtype=pl.Datetime("ns"))
+    result = pl.Series([ts], dtype=pl.Datetime("ns"), strict=False)
+    assert_series_equal(result, pl.Series([None], dtype=pl.Datetime("ns")))
 
 
 def test_series_init_pandas_timestamp_out_of_datetime_range_time_zone() -> None:
@@ -715,6 +735,27 @@ def test_series_from_numpy_temporal_scalars_mixed_units() -> None:
                 pl.Series(vals, strict=strict),
                 pl.Series(expected).cast(pl.Datetime("ns")),
             )
+
+
+@pytest.mark.parametrize(("unit", "per_ms"), [("ms", 1), ("us", 1_000)])
+def test_series_from_numpy_temporal_scalars_mixed_units_explicit(
+    unit: TimeUnit, per_ms: int
+) -> None:
+    # values convert directly to an explicit unit, so they are kept even if the
+    # finest unit ("ns") cannot represent them
+    for values, dtype, ms in (
+        (
+            [np.datetime64("3000-01-01", "ms"), np.datetime64(1, "ns")],
+            pl.Datetime,
+            32_503_680_000_000,
+        ),
+        ([np.timedelta64(2**53, "ms"), np.timedelta64(1, "ns")], pl.Duration, 2**53),
+    ):
+        expected = [ms * per_ms, 0]
+        for strict in (True, False):
+            result = pl.Series(values, dtype=dtype(unit), strict=strict)
+            assert result.dtype == dtype(unit)
+            assert result.cast(pl.Int64).to_list() == expected
 
 
 @pytest.mark.parametrize(
