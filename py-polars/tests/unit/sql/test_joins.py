@@ -2933,6 +2933,59 @@ def test_join_on_constant_true_plans_cross_join() -> None:
     assert "CROSS JOIN" not in plan
 
 
+@pytest.mark.parametrize(
+    ("join_type", "x", "y"),
+    [
+        ("INNER", [1, 3, 4], [10, 20, 20]),
+        ("LEFT", [1, 2, 3, 4], [10, None, 20, 20]),
+        ("FULL", [1, 2, 3, 4, None], [10, None, 20, 20, 30]),
+    ],
+)
+def test_join_on_is_not_distinct_from_plans_equi_join(
+    join_type: str, x: list[int | None], y: list[int | None]
+) -> None:
+    frames = {
+        "a": pl.LazyFrame({"k": [1, 2, None, None], "x": [1, 2, 3, 4]}),
+        "b": pl.LazyFrame({"k": [1, None, 5], "y": [10, 20, 30]}),
+    }
+    lf = pl.SQLContext(frames=frames).execute(
+        f"SELECT a.x, b.y FROM a {join_type} JOIN b "
+        "ON a.k IS NOT DISTINCT FROM b.k ORDER BY a.x NULLS LAST"
+    )
+    assert 'LEFT PLAN ON: [col("k")]' in lf.explain()
+    assert_frame_equal(
+        lf.collect(),
+        pl.DataFrame({"x": x, "y": y}, schema={"x": pl.Int64, "y": pl.Int64}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("join_type", "expected"),
+    [
+        ("SEMI", {"x": [1, 3]}),
+        ("ANTI", {"x": [2, 4]}),
+        ("RIGHT SEMI", {"y": [10, 20]}),
+        ("RIGHT ANTI", {"y": [30]}),
+    ],
+)
+def test_semi_anti_join_on_is_not_distinct_from(
+    join_type: str, expected: dict[str, list[int]]
+) -> None:
+    frames = {
+        "a": pl.LazyFrame(
+            {"k": [1, 2, None, None], "g": [0, 0, 0, None], "x": [1, 2, 3, 4]}
+        ),
+        "b": pl.LazyFrame({"k": [1, None, 5], "g": [0, 0, 0], "y": [10, 20, 30]}),
+    }
+    (column,) = expected
+    result = pl.SQLContext(frames=frames).execute(
+        f"SELECT {column} FROM a {join_type} JOIN b ON a.k IS NOT DISTINCT FROM b.k "
+        f"AND a.g IS NOT DISTINCT FROM b.g ORDER BY {column}",
+        eager=True,
+    )
+    assert_frame_equal(result, pl.DataFrame(expected))
+
+
 def test_join_on_decimal_mul_range_fused() -> None:
     frames = {
         "a": pl.LazyFrame({"x": [10, 11, 13, None]}, schema={"x": pl.Decimal(10, 2)}),
@@ -3420,6 +3473,19 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
         "f": pl.DataFrame({"x": [1.0, 2.5, 3.0, None], "w": [1, 2, 3, 4]}),
         "f32": pl.DataFrame({"f": pl.Series([0.1, 0.5], dtype=pl.Float32)}),
         "n": pl.DataFrame({"k": [1, 2], "nk": [None, None]}),
+        "dt": pl.DataFrame({"d": [date(2024, 1, 1), date(2024, 1, 2)], "i": [1, 2]}),
+        "ts": pl.DataFrame(
+            {"ts": [datetime(2024, 1, 1), datetime(2024, 1, 2, 12)], "j": [1, 2]}
+        ),
+        "ms": pl.DataFrame(
+            {
+                "tm": pl.Series(
+                    [datetime(2024, 1, 1), datetime(2024, 1, 2, 12)],
+                    dtype=pl.Datetime("ms"),
+                ),
+                "m": [1, 2],
+            }
+        ),
     }
 
 
@@ -3450,6 +3516,14 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
             "SELECT a.k FROM f32 JOIN a ON f32.f = 0.1 ORDER BY a.k",
             [(1,), (2,), (3,), (None,)],
         ),
+        (
+            "SELECT dt.i, ts.j FROM dt LEFT JOIN ts ON dt.d = ts.ts ORDER BY dt.i",
+            [(1, 1), (2, None)],
+        ),
+        (
+            "SELECT ts.j, ms.m FROM ts JOIN ms ON ts.ts = ms.tm ORDER BY ts.j",
+            [(1, 1), (2, 2)],
+        ),
         # `join_where` conditions
         (
             "SELECT a.k, f.w FROM a LEFT JOIN f ON a.k > f.x / 2 AND f.w < 3 ORDER BY a.k, f.w",
@@ -3471,6 +3545,10 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
         (
             "SELECT a.k, (SELECT COUNT(*) FROM b WHERE b.d = a.k) AS m FROM a ORDER BY a.k",
             [(1, 1), (2, 0), (3, 1), (None, 0)],
+        ),
+        (
+            "SELECT dt.i, (SELECT COUNT(*) FROM ts WHERE ts.ts = dt.d) AS n FROM dt ORDER BY dt.i",
+            [(1, 1), (2, 0)],
         ),
         (
             "SELECT a.k FROM a WHERE a.x IN (SELECT b.y / 10 FROM b WHERE b.d = a.k) ORDER BY a.k",
@@ -3508,6 +3586,23 @@ def test_natural_join_decimal_scales(key_dtype_frames: dict[str, pl.DataFrame]) 
             "z": [7, 8],
         }
     )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("join", "expected"),
+    [
+        ("NATURAL JOIN", pl.DataFrame({"k": [datetime(2024, 1, 1)]})),
+        ("NATURAL SEMI JOIN", pl.DataFrame({"k": [date(2024, 1, 1)]})),
+        ("NATURAL ANTI JOIN", pl.DataFrame({"k": [date(2024, 1, 2)]})),
+    ],
+)
+def test_natural_join_date_timestamp_31041(join: str, expected: pl.DataFrame) -> None:
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"k": [date(2024, 1, 1), date(2024, 1, 2)]}),
+        b=pl.DataFrame({"k": [datetime(2024, 1, 1)]}),
+    )
+    result = ctx.execute(f"SELECT * FROM a {join} b", eager=True)
     assert_frame_equal(result, expected)
 
 
