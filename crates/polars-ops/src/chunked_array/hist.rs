@@ -40,44 +40,32 @@ where
             }
         },
         (bin_count, None) => {
-            // User-supplied bin count, or 10 by default. Compute edges from the data.
-            let bin_count = bin_count.unwrap_or(DEFAULT_BIN_COUNT);
-            let n = ca.len() - ca.null_count();
-            let (offset, width, upper_limit) = if n == 0 {
-                // No non-null items; supply unit interval.
-                (0.0, 1.0 / bin_count as f64, 1.0)
-            } else if n == 1 {
-                // Unit interval around single point
-                let idx = ca.first_non_null().unwrap();
-                // SAFETY: idx is guaranteed to contain an element.
-                let center = unsafe { ca.get_unchecked(idx) }.unwrap().to_f64().unwrap();
-                (center - 0.5, 1.0 / bin_count as f64, center + 0.5)
-            } else {
-                // Determine outer bin edges from the data itself
-                let min_value = ca.min().unwrap().to_f64().unwrap();
-                let max_value = ca.max().unwrap().to_f64().unwrap();
-
-                // All data points are identical--use unit interval.
-                if min_value == max_value {
-                    (min_value - 0.5, 1.0 / bin_count as f64, max_value + 0.5)
-                } else {
-                    (
-                        min_value,
-                        (max_value - min_value) / bin_count as f64,
-                        max_value,
-                    )
-                }
-            };
-            // Manually set the final value to the maximum value to ensure the final value isn't
-            // missed due to floating-point precision.
-            let out = (0..bin_count)
-                .map(|x| (x as f64 * width) + offset)
-                .chain(std::iter::once(upper_limit))
-                .collect::<Vec<f64>>();
-            (out, true)
+            let bounds = (ca.null_count() < ca.len()).then(|| {
+                let min = ca.min().unwrap().to_f64().unwrap();
+                let max = ca.max().unwrap().to_f64().unwrap();
+                (min, max)
+            });
+            (uniform_breaks(bounds, bin_count), true)
         },
     };
     Ok((bins, uniform))
+}
+
+fn uniform_breaks(bounds: Option<(f64, f64)>, bin_count: Option<usize>) -> Vec<f64> {
+    let bin_count = bin_count.unwrap_or(DEFAULT_BIN_COUNT);
+    let (offset, width, upper_limit) = match bounds {
+        // No non-null items; supply unit interval.
+        None => (0.0, 1.0 / bin_count as f64, 1.0),
+        // All data points are identical--use unit interval.
+        Some((min, max)) if min == max => (min - 0.5, 1.0 / bin_count as f64, max + 0.5),
+        Some((min, max)) => (min, (max - min) / bin_count as f64, max),
+    };
+    // Manually set the final value to the maximum value to ensure the final value isn't
+    // missed due to floating-point precision.
+    (0..bin_count)
+        .map(|x| (x as f64 * width) + offset)
+        .chain(std::iter::once(upper_limit))
+        .collect()
 }
 
 // O(n) implementation when buckets are fixed-size.
@@ -200,6 +188,21 @@ impl HistBreaks {
         Ok(Self { edges, uniform })
     }
 
+    /// The edges `new` gives for `bin_count` bins over a column with (min, max) `bounds`, `None` if all null.
+    pub fn from_bounds(bounds: Option<(f64, f64)>, bin_count: Option<usize>) -> PolarsResult<Self> {
+        if let Some((min, max)) = bounds {
+            // NaN bounds pass, as `new` gives them for an all-NaN column.
+            polars_ensure!(
+                min <= max || min.is_nan() || max.is_nan(),
+                InvalidOperation: "`hist` bounds must have min <= max, got min={} and max={}", min, max
+            );
+        }
+        Ok(Self {
+            edges: uniform_breaks(bounds, bin_count),
+            uniform: true,
+        })
+    }
+
     pub fn edges(&self) -> &[f64] {
         &self.edges
     }
@@ -304,4 +307,33 @@ pub fn hist_series(
         include_category,
         include_breakpoint,
     )
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn from_bounds_matches_new() {
+        let columns = [
+            Series::new_null("a".into(), 2)
+                .cast(&DataType::Float64)
+                .unwrap(),
+            Series::new("a".into(), &[None, Some(2.5f64)]),
+            Series::new("a".into(), &[4i32, 4, 4]),
+            Series::new("a".into(), &[3i64, -1, 7]),
+            Series::new("a".into(), &[1.0f64, f64::NAN, -2.0]),
+        ];
+        for s in &columns {
+            let bounds = (s.null_count() < s.len())
+                .then(|| (s.min().unwrap().unwrap(), s.max().unwrap().unwrap()));
+            for bin_count in [None, Some(1), Some(3)] {
+                let expected = HistBreaks::new(s, bin_count, None).unwrap();
+                let got = HistBreaks::from_bounds(bounds, bin_count).unwrap();
+                assert_eq!(got.edges(), expected.edges(), "{s:?} {bin_count:?}");
+                assert_eq!(got.uniform, expected.uniform);
+            }
+        }
+        assert!(HistBreaks::from_bounds(Some((2.0, 1.0)), None).is_err());
+    }
 }
