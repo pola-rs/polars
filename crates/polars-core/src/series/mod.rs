@@ -647,11 +647,14 @@ impl Series {
         ext.into_series()
     }
 
-    /// Cast numerical types to f64, and keep floats as is.
+    /// Cast numeric, Boolean, Decimal and null Series to f64, and keep f32 and f64 as is.
     pub fn to_float(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Float32 | DataType::Float64 => Ok(self.clone()),
-            _ => self.cast_with_options(&DataType::Float64, CastOptions::Overflowing),
+            dt if dt.is_primitive_numeric() || dt.is_bool() || dt.is_decimal() || dt.is_null() => {
+                self.cast_with_options(&DataType::Float64, CastOptions::Overflowing)
+            },
+            dt => polars_bail!(InvalidOperation: "cannot convert dtype `{dt}` to a float"),
         }
     }
 

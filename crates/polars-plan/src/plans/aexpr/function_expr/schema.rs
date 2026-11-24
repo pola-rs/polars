@@ -85,12 +85,30 @@ impl IRFunctionExpr {
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
                 use IRRollingFunction::*;
+                let op = function.to_string();
+                let is_numeric = |dt: &DataType| dt.is_primitive_numeric() || dt.is_bool();
                 match function {
-                    Min | Max => mapper.with_same_dtype(),
-                    Mean | Quantile => mapper.moment_dtype(),
-                    Std => mapper.var_dtype("std"),
-                    Var => mapper.var_dtype("var"),
-                    Sum => mapper.sum_dtype(),
+                    // Weighted windows compute in floats.
+                    Min | Max | Sum if options.weights.is_some() => {
+                        mapper.ensure_input(&op, |dt| is_numeric(dt) || dt.is_decimal())?;
+                        mapper.map_to_float_dtype()
+                    },
+                    Min | Max => {
+                        mapper.ensure_input(&op, |dt| is_numeric(dt) || dt.is_temporal())?;
+                        mapper.with_same_dtype()
+                    },
+                    Sum => {
+                        mapper.ensure_input(&op, is_numeric)?;
+                        mapper.sum_dtype()
+                    },
+                    Mean | Quantile => {
+                        mapper.ensure_moment_input(&op, true)?;
+                        mapper.moment_dtype()
+                    },
+                    Std | Var => {
+                        mapper.ensure_moment_input(&op, false)?;
+                        mapper.moment_dtype()
+                    },
                     Rank => match options.fn_params {
                         Some(RollingFnParams::Rank {
                             method: RollingRankMethod::Average,
@@ -107,20 +125,12 @@ impl IRFunctionExpr {
                         })
                     }),
                     #[cfg(feature = "moment")]
-                    Skew | Kurtosis => mapper.map_to_float_dtype(),
-                    Map(_) => mapper.try_map_field(|field| {
-                        if options.weights.is_some() {
-                            let dtype = match field.dtype() {
-                                #[cfg(feature = "dtype-f16")]
-                                DataType::Float16 => DataType::Float16,
-                                DataType::Float32 => DataType::Float32,
-                                _ => DataType::Float64,
-                            };
-                            Ok(Field::new(field.name().clone(), dtype))
-                        } else {
-                            Ok(field.clone())
-                        }
-                    }),
+                    Skew | Kurtosis => {
+                        mapper.ensure_input(&op, |dt| dt.is_primitive_numeric())?;
+                        mapper.map_to_float_dtype()
+                    },
+                    Map(_) if options.weights.is_some() => mapper.map_to_float_dtype(),
+                    Map(_) => mapper.with_same_dtype(),
                 }
             },
             #[cfg(feature = "rolling_window_by")]
@@ -130,12 +140,25 @@ impl IRFunctionExpr {
                 ..
             } => {
                 use IRRollingFunctionBy::*;
+                let op = function_by.to_string();
+                let is_numeric = |dt: &DataType| dt.is_primitive_numeric() || dt.is_bool();
                 match function_by {
-                    MinBy | MaxBy => mapper.with_same_dtype(),
-                    MeanBy | QuantileBy => mapper.moment_dtype(),
-                    StdBy => mapper.var_dtype("std"),
-                    VarBy => mapper.var_dtype("var"),
-                    SumBy => mapper.sum_dtype(),
+                    MinBy | MaxBy => {
+                        mapper.ensure_input(&op, |dt| is_numeric(dt) || dt.is_temporal())?;
+                        mapper.with_same_dtype()
+                    },
+                    MeanBy | QuantileBy => {
+                        mapper.ensure_moment_input(&op, true)?;
+                        mapper.moment_dtype()
+                    },
+                    StdBy | VarBy => {
+                        mapper.ensure_moment_input(&op, false)?;
+                        mapper.moment_dtype()
+                    },
+                    SumBy => {
+                        mapper.ensure_input(&op, is_numeric)?;
+                        mapper.sum_dtype()
+                    },
                     RankBy => match options.fn_params {
                         Some(RollingFnParams::Rank {
                             method: RollingRankMethod::Average,
@@ -720,17 +743,26 @@ impl<'a> FieldsMapper<'a> {
     /// It supports null, Boolean, numeric and Decimal input, and temporal input if
     /// `allow_temporal`. An unknown dtype passes, since it can't be checked yet.
     pub fn ensure_moment_input(&self, op: &str, allow_temporal: bool) -> PolarsResult<()> {
-        let dt = self.fields[0].dtype();
-        let supported = match dt {
-            DataType::Null | DataType::Unknown(_) | DataType::Boolean => true,
+        self.ensure_input(op, |dt| match dt {
+            DataType::Null | DataType::Boolean => true,
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => true,
             dt if dt.is_primitive_numeric() => true,
             dt if dt.is_temporal() => allow_temporal,
             _ => false,
-        };
+        })
+    }
+
+    /// Returns an error if the operation `op` doesn't support the input dtype according to
+    /// `supported`. An unknown dtype passes, since it can't be checked yet.
+    pub fn ensure_input(
+        &self,
+        op: &str,
+        supported: impl FnOnce(&DataType) -> bool,
+    ) -> PolarsResult<()> {
+        let dt = self.fields[0].dtype();
         polars_ensure!(
-            supported,
+            dt.is_unknown() || supported(dt),
             InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
         );
         Ok(())

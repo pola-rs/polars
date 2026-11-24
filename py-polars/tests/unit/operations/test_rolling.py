@@ -653,6 +653,45 @@ def test_rolling_unsupported_22065() -> None:
         pl.Series("a", [[None]], pl.List(pl.Null)).rolling_sum(10)
 
 
+@pytest.mark.parametrize(
+    ("values", "expr"),
+    [
+        (["1", "2"], pl.col("x").rolling_mean(2)),
+        (["1", "2"], pl.col("x").rolling_quantile(0.5, window_size=2)),
+        (["1", "2"], pl.col("x").rolling_std(2)),
+        (["1", "2"], pl.col("x").rolling_mean_by("t", window_size="2i")),
+        (["1", "2"], pl.col("x").rolling_sum(2, weights=[1.0, 1.0])),
+        ([[1], [2]], pl.col("x").rolling_std(2)),
+        ([[1], [2]], pl.col("x").rolling_mean(2)),
+        ([date(2020, 1, 1), date(2020, 1, 2)], pl.col("x").rolling_var(2)),
+        ([date(2020, 1, 1), date(2020, 1, 2)], pl.col("x").rolling_std(2)),
+        (
+            [datetime(2020, 1, 1), datetime(2020, 1, 2)],
+            pl.col("x").rolling_std_by("t", window_size="2i"),
+        ),
+        (
+            [date(2020, 1, 1), date(2020, 1, 2)],
+            pl.col("x").rolling_min(2, weights=[1.0, 1.0]),
+        ),
+        (
+            [timedelta(1), timedelta(2)],
+            pl.col("x").rolling_sum(2, weights=[1.0, 1.0]),
+        ),
+        (pl.Series([1, 2], dtype=pl.Decimal(10, 2)), pl.col("x").rolling_sum(2)),
+        (pl.Series([1, 2], dtype=pl.Decimal(10, 2)), pl.col("x").rolling_max(2)),
+        ([True, False], pl.col("x").rolling_skew(2)),
+    ],
+)
+def test_rolling_unsupported_dtype_raises_at_planning(
+    values: Any, expr: pl.Expr
+) -> None:
+    lf = pl.LazyFrame({"x": values, "t": [0, 1]}).select(expr)
+    with pytest.raises(InvalidOperationError, match="operation not supported"):
+        lf.collect_schema()
+    with pytest.raises(InvalidOperationError, match="operation not supported"):
+        lf.collect()
+
+
 def test_rolling_mean_f32_22936() -> None:
     arr = np.array(
         [
