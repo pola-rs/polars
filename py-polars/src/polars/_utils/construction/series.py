@@ -117,6 +117,16 @@ def sequence_to_pyseries(
         pyseries = PySeries.new_from_any_values(
             name, values, strict, time_unit=getattr(dtype, "time_unit", None)
         )
+        if (
+            dtype is None
+            and not strict
+            and pyseries.dtype() == Null
+            and any(v is not None and not np.isnat(v) for v in values)
+        ):
+            # (all values were out of range, with `strict=False`; use the dtype that
+            # their NumPy unit maps to, as NaT values alone are just nulls)
+            zero = np.zeros(1, dtype=value.dtype)[0]
+            dtype = PySeries.new_from_any_values(name, [zero], True).dtype()
         if dtype is not None and pyseries.dtype() != dtype:
             pyseries = pyseries.cast(dtype, strict=strict, wrap_numerical=False)
         return pyseries
@@ -294,6 +304,13 @@ def sequence_to_pyseries(
                     dtype.time_unit, getattr(source.dtype(), "time_zone", None)
                 )
             s = s.cast(dtype)
+        elif (
+            time_unit is not None
+            and values_dtype != Date
+            and getattr(s.dtype, "time_unit", None) != time_unit
+        ):
+            # (values without a time unit, eg: `time`, raise here)
+            s = s.dt.cast_time_unit(time_unit)
 
         if (values_dtype == Date) & (dtype == Datetime):
             s = s.cast(Datetime(time_unit or "us"))

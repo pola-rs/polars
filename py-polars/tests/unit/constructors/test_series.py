@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import zoneinfo
 from datetime import UTC, date, datetime, time, timedelta, timezone, tzinfo
+from decimal import Decimal
 from importlib import resources
 from itertools import permutations
 from pathlib import Path
@@ -342,7 +343,7 @@ def test_series_init_pandas_outside_nanosecond_range() -> None:
     # ...unless they cannot be expressed as milliseconds either
     with pytest.raises(
         InvalidOperationError,
-        match=r"conversion from `Timestamp\[s\]` to `datetime\[ms\]` failed",
+        match=r"conversion from `datetime64\[s\]` to `datetime\[ms\]` failed",
     ):
         pl.Series([pd.Timestamp(np.datetime64(2**63 - 1, "s"))])
 
@@ -502,13 +503,36 @@ def test_series_init_pandas_timestamp_out_of_datetime_range() -> None:
     assert result.dt.year().item() == 10000
     assert result.dt.epoch("s").item() == 253402300800
 
-    # beyond the calendar range (~146 million years), shown (and reported) as its value
+    # timestamps beyond the calendar range (~±262,000 years) are rejected...
     ts = pd.Timestamp(np.datetime64(2**62, "ms"))
-    assert "4611686018427387904ms" in repr(pl.Series([ts]))
-    with pytest.raises(InvalidOperationError, match="value: 4611686018427387904ms"):
-        pl.Series([ts], dtype=pl.Datetime("ns"))
-    result = pl.Series([ts], dtype=pl.Datetime("ns"), strict=False)
-    assert_series_equal(result, pl.Series([None], dtype=pl.Datetime("ns")))
+    with pytest.raises(InvalidOperationError, match="beyond the supported calendar"):
+        pl.Series([ts])
+    result = pl.Series([ts], dtype=pl.Datetime("ms"), strict=False)
+    assert_series_equal(result, pl.Series([None], dtype=pl.Datetime("ms")))
+
+    # ...and others are shown (and reported) as their value
+    s = pl.Series([2**62]).cast(pl.Datetime("ms"))
+    assert "4611686018427387904ms" in repr(s)
+    with pytest.raises(InvalidOperationError, match=r"\[4611686018427387904ms\]"):
+        s.dt.cast_time_unit("ns")
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        ([time(1)], pl.Datetime("ns")),
+        (["1d"], pl.Duration("ns")),
+        ([Decimal("1.5")], pl.Datetime("ns")),
+    ],
+)
+def test_series_init_time_unit_dtype_values_without_unit(
+    values: list[Any], dtype: pl.DataType
+) -> None:
+    # values without a time unit are not silently returned as another dtype
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="expected duration or datetime"
+    ):
+        pl.Series(values, dtype=dtype)
 
 
 def test_series_init_pandas_timestamp_out_of_datetime_range_time_zone() -> None:
@@ -730,20 +754,48 @@ def test_series_from_numpy_temporal_scalars_other_units() -> None:
 
 
 @pytest.mark.parametrize(
-    ("value", "msg"),
+    ("value", "msg", "dtype"),
     [
-        (np.datetime64(2**62, "s"), r"`datetime64\[s\]` to `datetime\[ms\]`"),
-        (np.datetime64(2**40, "D"), r"`datetime64\[D\]` to `date`"),
-        (np.datetime64(2**62, ("ms", 10)), r"`datetime64\[10ms\]` to `datetime\[ms\]`"),
-        (np.timedelta64(2**62, "s"), r"`timedelta64\[s\]` to `duration\[ms\]`"),
+        (
+            np.datetime64(2**62, "s"),
+            r"`datetime64\[s\]` to `datetime\[ms\]` failed",
+            pl.Datetime("ms"),
+        ),
+        (np.datetime64(2**40, "D"), r"`datetime64\[D\]` to `date` failed", pl.Date),
+        (
+            np.datetime64(2**62, ("ms", 10)),
+            r"`datetime64\[10ms\]` to `datetime\[ms\]` failed",
+            pl.Datetime("ms"),
+        ),
+        (
+            np.timedelta64(2**62, "s"),
+            r"`timedelta64\[s\]` to `duration\[ms\]` failed",
+            pl.Duration("ms"),
+        ),
+        # (beyond the calendar range, ~±262,000 years)
+        (
+            np.datetime64(2**62, "ms"),
+            "beyond the supported calendar",
+            pl.Datetime("ms"),
+        ),
+        (np.datetime64(2**30, "D"), "beyond the supported calendar", pl.Date),
     ],
 )
 def test_series_from_numpy_temporal_scalars_out_of_range(
-    value: np.datetime64 | np.timedelta64, msg: str
+    value: np.datetime64 | np.timedelta64, msg: str, dtype: PolarsDataType
 ) -> None:
     # (consistent with pandas `Timestamp`/`Timedelta` values that are out of range)
-    with pytest.raises(InvalidOperationError, match=rf"conversion from {msg} failed"):
+    with pytest.raises(InvalidOperationError, match=msg):
         pl.Series([value])
+
+    # (non-strict construction makes them null, with the dtype of their unit)
+    result = pl.Series([value], strict=False)
+    assert_series_equal(result, pl.Series([None], dtype=dtype))
+
+    # (whereas NaT values alone are just nulls, whatever `strict` is)
+    nat = np.array(["NaT"], dtype=value.dtype)[0]
+    for strict in (True, False):
+        assert pl.Series([nat], strict=strict).dtype == pl.Null
 
 
 # Newer NumPy versions deprecate values without a unit.

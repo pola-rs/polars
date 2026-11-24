@@ -223,7 +223,7 @@ pub fn rows_to_schema_first_non_null(
     for (i, dtype) in schema.iter_values_mut().enumerate() {
         // (ragged rows are reported when the rows are converted)
         let values = rows.iter().take(max_infer).filter_map(|row| row.0.get(i));
-        dtype.merge_finest_time_units_from(values.filter(|v| !v.is_null()).map(|v| v.dtype()));
+        dtype.merge_finest_time_units_from(values.map(|v| v.dtype()));
     }
     Ok(schema)
 }

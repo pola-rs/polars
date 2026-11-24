@@ -1786,6 +1786,7 @@ def test_init_rows_timestamp_floors_to_time_unit_28869(
         (lambda v: v, lambda dt: dt, lambda x: x),
         (lambda v: [v], pl.List, lambda x: x[0]),
         (lambda v: [v], lambda dt: pl.Array(dt, 1), lambda x: x[0]),
+        (lambda v: [[v]], lambda dt: pl.List(pl.Array(dt, 1)), lambda x: x[0][0]),
         (lambda v: {"x": v}, lambda dt: pl.Struct({"x": dt}), lambda x: x["x"]),
         (
             lambda v: [{"x": v}],

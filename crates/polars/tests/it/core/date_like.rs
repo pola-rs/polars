@@ -246,3 +246,30 @@ fn test_series_from_any_values_finest_map_time_units() -> PolarsResult<()> {
     }
     Ok(())
 }
+
+#[test]
+#[cfg(all(feature = "dtype-struct", feature = "dtype-array"))]
+fn test_any_value_cast_time_units_like_array_field_with_list_target() -> PolarsResult<()> {
+    // an array value adopts the time unit of a list target, as its field dtype does
+    let us = DataType::Datetime(TimeUnit::Microseconds, None);
+    let ns = DataType::Datetime(TimeUnit::Nanoseconds, None);
+    let values = Series::new(PlSmallStr::EMPTY, [1i64]).cast(&us)?;
+    let field = Field::new("x".into(), DataType::Array(Box::new(us), 1));
+    let av = AnyValue::StructOwned(Box::new((vec![AnyValue::Array(values, 1)], vec![field])));
+
+    let target = DataType::Struct(vec![Field::new(
+        "x".into(),
+        DataType::List(Box::new(ns.clone())),
+    )]);
+    let AnyValue::StructOwned(payload) = av.cast_time_units_like(&target, true)? else {
+        panic!("expected a struct value");
+    };
+    let (values, fields) = *payload;
+    assert_eq!(fields[0].dtype, DataType::Array(Box::new(ns.clone()), 1));
+    let AnyValue::Array(s, 1) = &values[0] else {
+        panic!("expected an array value");
+    };
+    assert_eq!(s.dtype(), &ns);
+    assert_eq!(s.cast(&DataType::Int64)?.i64()?.get(0), Some(1_000));
+    Ok(())
+}

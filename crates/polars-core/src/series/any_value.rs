@@ -94,9 +94,7 @@ impl Series {
                 // represented without loss of precision (top-level datetimes and
                 // durations resolve this while building, avoiding a separate pass).
                 mut dt if dt.is_nested() && dt.contains_time_units() => {
-                    dt.merge_finest_time_units_from(
-                        values.iter().filter(|v| !v.is_null()).map(|v| v.dtype()),
-                    );
+                    dt.merge_finest_time_units_from(values.iter().map(|v| v.dtype()));
                     dt
                 },
                 dt => dt,
@@ -798,12 +796,13 @@ fn any_values_to_list(
         _ => {
             let mut builder =
                 get_list_builder(inner_type, capacity * 5, capacity, PlSmallStr::EMPTY);
+            // (if strict, values that overflow a time unit raise, at any nesting level)
+            let rescale = strict && inner_type.contains_time_units();
             for av in avs {
                 match av {
                     AnyValue::List(b) => {
-                        // (if strict, values that overflow a time unit raise, at any nesting level)
                         let rescaled;
-                        let b = if strict && inner_type.contains_time_units() {
+                        let b = if rescale {
                             rescaled = b.cast_time_units_like(inner_type, true)?;
                             &rescaled
                         } else {
@@ -878,26 +877,37 @@ fn any_values_to_array(
     }
     // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
+        // (if strict, values that overflow a time unit raise, at any nesting level)
+        let rescale = strict && inner_type.contains_time_units();
         avs.iter()
-            .map(|av| match av {
-                AnyValue::List(b) | AnyValue::Array(b, _) => {
-                    if b.dtype() == inner_type {
-                        to_arr(b)
-                    } else {
-                        let s = match b.cast(inner_type) {
-                            Ok(out) => out,
-                            Err(_) => Series::full_null(b.name().clone(), b.len(), inner_type),
+            .map(|av| -> PolarsResult<_> {
+                Ok(match av {
+                    AnyValue::List(b) | AnyValue::Array(b, _) => {
+                        let rescaled;
+                        let b = if rescale {
+                            rescaled = b.cast_time_units_like(inner_type, true)?;
+                            &rescaled
+                        } else {
+                            b
                         };
-                        to_arr(&s)
-                    }
-                },
-                AnyValue::Null => None,
-                _ => {
-                    valid = false;
-                    None
-                },
+                        if b.dtype() == inner_type {
+                            to_arr(b)
+                        } else {
+                            let s = match b.cast(inner_type) {
+                                Ok(out) => out,
+                                Err(_) => Series::full_null(b.name().clone(), b.len(), inner_type),
+                            };
+                            to_arr(&s)
+                        }
+                    },
+                    AnyValue::Null => None,
+                    _ => {
+                        valid = false;
+                        None
+                    },
+                })
             })
-            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+            .try_collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())?
     };
 
     if strict && !valid {

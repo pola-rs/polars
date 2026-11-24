@@ -928,7 +928,7 @@ impl Series {
     /// leaving any other differences to the caller; values that overflow raise if `strict`,
     /// else become null.
     pub fn cast_time_units_like(&self, dtype: &DataType, strict: bool) -> PolarsResult<Series> {
-        if !self.dtype().contains_time_units() {
+        if self.dtype() == dtype || !self.dtype().contains_time_units() {
             return Ok(self.clone());
         }
         let mut target = self.dtype().clone();

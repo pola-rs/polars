@@ -275,27 +275,23 @@ impl AnyValue<'static> {
                 Ok(AnyValue::List(s.cast_time_units_like(inner, strict)?))
             },
             #[cfg(feature = "dtype-array")]
-            (AnyValue::Array(s, width), DataType::Array(inner, _)) => Ok(AnyValue::Array(
-                s.cast_time_units_like(inner, strict)?,
-                width,
-            )),
+            (AnyValue::Array(s, width), DataType::Array(inner, _) | DataType::List(inner)) => Ok(
+                AnyValue::Array(s.cast_time_units_like(inner, strict)?, width),
+            ),
             #[cfg(feature = "dtype-struct")]
-            (AnyValue::StructOwned(payload), DataType::Struct(targets)) => {
-                let (values, mut fields) = *payload;
-                let values = values
-                    .into_iter()
-                    .zip(&mut fields)
-                    .map(
-                        |(value, field)| match targets.iter().find(|t| t.name == field.name) {
-                            Some(target) => {
-                                field.dtype.adopt_time_units_from(&target.dtype);
-                                value.cast_time_units_like(&target.dtype, strict)
-                            },
-                            None => Ok(value),
-                        },
-                    )
-                    .collect::<PolarsResult<Vec<_>>>()?;
-                Ok(AnyValue::StructOwned(Box::new((values, fields))))
+            (AnyValue::StructOwned(mut payload), DataType::Struct(targets)) => {
+                let (values, fields) = &mut *payload;
+                for (i, (value, field)) in values.iter_mut().zip(fields.iter_mut()).enumerate() {
+                    let Some(target) = find_field(targets, i, &field.name) else {
+                        continue;
+                    };
+                    if target.dtype.contains_time_units() {
+                        field.dtype.adopt_time_units_from(&target.dtype);
+                        let v = std::mem::replace(value, AnyValue::Null);
+                        *value = v.cast_time_units_like(&target.dtype, strict)?;
+                    }
+                }
+                Ok(AnyValue::StructOwned(payload))
             },
             (av, _) => Ok(av),
         }
