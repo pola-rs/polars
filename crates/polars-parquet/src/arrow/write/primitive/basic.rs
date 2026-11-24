@@ -6,7 +6,6 @@ use polars_error::{PolarsResult, polars_bail};
 use super::super::{WriteOptions, utils};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::utils::ExactSizedIter;
-use crate::parquet::compression::{CompressionOptions, compress};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::encoding::delta_bitpacked::encode;
 use crate::parquet::page::DataPage;
@@ -118,49 +117,6 @@ where
     T: num_traits::AsPrimitive<P>,
 {
     array_to_page(array, options, type_, Encoding::Plain, encode_plain)
-}
-
-pub(crate) fn select_i32_decimal_encoding(
-    array: &PrimitiveArray<i128>,
-    compression: CompressionOptions,
-) -> PolarsResult<Encoding> {
-    const WINDOWS: usize = 4;
-    const WINDOW_LEN: usize = 256;
-    const SAMPLE_LEN: usize = WINDOWS * WINDOW_LEN;
-
-    if array.len() - array.null_count() < 16 * SAMPLE_LEN {
-        return Ok(Encoding::Plain);
-    }
-
-    let mut sample = Vec::with_capacity(SAMPLE_LEN);
-    for window in 0..WINDOWS {
-        let start = window * (array.len() / WINDOWS);
-        for i in start..start + WINDOW_LEN {
-            if array.is_valid(i) {
-                sample.push(array.value(i) as i32);
-            }
-        }
-    }
-    if sample.len() < WINDOW_LEN {
-        return Ok(Encoding::Plain);
-    }
-
-    let mut bytes: Vec<u8> = sample.iter().copied().flat_map(i32::to_le_bytes).collect();
-    let mut compressed = Vec::new();
-    compress(compression, &bytes, &mut compressed)?;
-    let plain_size = compressed.len();
-    let min_saving = bytes.len().div_ceil(32);
-    bytes.clear();
-    compressed.clear();
-    encode(sample.into_iter().map(i64::from), &mut bytes, 1);
-    compress(compression, &bytes, &mut compressed)?;
-
-    // Delta decoding costs extra work on read. Require a saving of 1/32 of the raw sample.
-    Ok(if compressed.len() + min_saving <= plain_size {
-        Encoding::DeltaBinaryPacked
-    } else {
-        Encoding::Plain
-    })
 }
 
 pub fn array_to_page_integer<T, P>(

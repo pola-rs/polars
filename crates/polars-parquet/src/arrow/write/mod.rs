@@ -509,15 +509,8 @@ pub fn array_to_pages(
             }
         }
 
-        encoding = if matches!(nested, [Nested::Primitive(_)])
-            && matches!(primitive_array.dtype(), ArrowDataType::Decimal(1..=9, _))
-            && matches!(options.compression, CompressionOptions::Zstd(_))
-        {
-            let decimals = primitive_array.as_any().downcast_ref().unwrap();
-            primitive::select_i32_decimal_encoding(decimals, options.compression)?
-        } else {
-            Encoding::Plain
-        };
+        // We didn't succeed, fallback to plain
+        encoding = Encoding::Plain;
     }
 
     let nested = nested.to_vec();
@@ -1424,62 +1417,6 @@ fn get_primitive_dtype_encoding(dtype: &ArrowDataType) -> Encoding {
 mod tests {
     use super::*;
     use crate::arrow::write::pages::to_nested;
-
-    #[cfg(feature = "zstd")]
-    #[test]
-    fn automatic_decimal_encoding() {
-        fn check(
-            array: &PrimitiveArray<i128>,
-            codec: CompressionOptions,
-            requested: Encoding,
-            expected: Encoding,
-        ) {
-            let ty = to_parquet_type(&Field::new("d".into(), array.dtype().clone(), true)).unwrap();
-            let nested = to_nested(array, &ty).unwrap().remove(0);
-            let ParquetType::PrimitiveType(ty) = ty else {
-                unreachable!()
-            };
-            let options = WriteOptions {
-                statistics: StatisticsOptions::default(),
-                compression: codec,
-                version: Version::V1,
-                data_page_size: None,
-            };
-            let mut pages = array_to_pages(array, ty, &nested, options, requested).unwrap();
-            let Page::Data(page) = pages.next().unwrap().unwrap() else {
-                panic!("expected a data page")
-            };
-            assert_eq!(page.encoding(), expected);
-        }
-
-        let zstd = CompressionOptions::Zstd(Some(ZstdLevel::try_new(3).unwrap()));
-        let default = Encoding::RleDictionary;
-        let decimal = ArrowDataType::Decimal(9, 2);
-        let values = PrimitiveArray::from_iter((0..32768).map(|i| (i % 11 != 0).then_some(i)))
-            .to(decimal.clone());
-        check(&values, zstd, default, Encoding::DeltaBinaryPacked);
-        check(&values, zstd, Encoding::Plain, Encoding::Plain);
-        check(
-            &values,
-            CompressionOptions::Uncompressed,
-            default,
-            Encoding::Plain,
-        );
-        check(
-            &values.clone().sliced(100, 256),
-            zstd,
-            default,
-            Encoding::Plain,
-        );
-        check(
-            &values.clone().to(ArrowDataType::Decimal(10, 2)),
-            zstd,
-            default,
-            Encoding::Plain,
-        );
-        let constant = PrimitiveArray::from_vec(vec![0; values.len()]).to(decimal);
-        check(&constant, zstd, default, Encoding::Plain);
-    }
 
     type Ranges = Vec<(usize, usize)>;
 
