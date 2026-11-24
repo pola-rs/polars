@@ -6073,8 +6073,10 @@ impl SQLContext {
         }
         let (mut left_frame, mut right_frame) = (tbl_left.frame.clone(), tbl_right.frame.clone());
         let mut key_columns: Vec<PlSmallStr> = Vec::new();
+        // Semi and anti joins only keep the left columns, so their key columns stay as they are.
+        let coalesced = matches!(constraint, Some(JoinConstraint::Natural))
+            && !matches!(join_type, JoinType::Semi | JoinType::Anti);
         if predicates.is_empty() {
-            let natural = matches!(constraint, Some(JoinConstraint::Natural));
             let key_dtype = |key: &Expr, schema: &Schema| match key {
                 Expr::Column(name) => schema.get(name).cloned(),
                 key => key.to_field(schema).ok().map(|f| f.dtype),
@@ -6092,7 +6094,7 @@ impl SQLContext {
                     continue;
                 };
                 // A coalesced key column takes the common type.
-                if natural && let (Expr::Column(l_name), Expr::Column(r_name)) = (&*l, &*r) {
+                if coalesced && let (Expr::Column(l_name), Expr::Column(r_name)) = (&*l, &*r) {
                     left_frame = left_frame.with_column(l_cast.alias(l_name.clone()));
                     right_frame = right_frame.with_column(r_cast.alias(r_name.clone()));
                 } else {
@@ -6164,10 +6166,10 @@ impl SQLContext {
                     .finish()?,
             ));
         }
-        let coalesce_type = match constraint {
-            // "NATURAL" joins should coalesce; otherwise we disambiguate
-            Some(JoinConstraint::Natural) => JoinCoalesce::CoalesceColumns,
-            _ => JoinCoalesce::KeepColumns,
+        let coalesce_type = if coalesced {
+            JoinCoalesce::CoalesceColumns
+        } else {
+            JoinCoalesce::KeepColumns
         };
         // `join_where` and the filter on the joined rows resolve the right columns that the
         // left input also has under their suffixed names.
