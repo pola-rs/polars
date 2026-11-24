@@ -263,7 +263,7 @@ impl PolarsTableFunctions {
                 _ => polars_bail!(SQLSyntax: "`{}` expects positional arguments; found {}", fname, arg),
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let mut expr = series_expr(fname, &args, include_end, |e| {
+        let mut expr = series_expr(fname, &args, include_end, None, |e| {
             let expr = parse_sql_expr(e, ctx, None)?;
             polars_ensure!(
                 expr_to_leaf_column_names_iter(&expr).next().is_none(),
