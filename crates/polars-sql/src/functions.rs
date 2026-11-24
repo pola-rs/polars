@@ -2127,6 +2127,16 @@ impl SQLFunctionVisitor<'_> {
                                 .when(lit(false))
                                 .then(read(new))
                                 .otherwise(lit(LiteralValue::untyped_null()).cast(DataType::String))
+                        } else if matches!(&old, Expr::Literal(lv) if lv.extract_str() == Some("")) {
+                            // As in Postgres; the folded branch keeps the string type check.
+                            let replaced = e.clone().str().replace_all(old, new.clone(), true);
+                            let kept = when(lit(true)).then(e).otherwise(replaced);
+                            match new {
+                                Expr::Literal(_) => kept,
+                                new => when(new.is_not_null())
+                                    .then(kept)
+                                    .otherwise(lit(LiteralValue::untyped_null())),
+                            }
                         } else if matches!((&old, &new), (Expr::Literal(_), Expr::Literal(_))) {
                             e.str().replace_all(old, new, true)
                         } else {
@@ -2139,15 +2149,22 @@ impl SQLFunctionVisitor<'_> {
                                 .map(|e| e.clone().is_not_null())
                                 .reduce(Expr::and)
                                 .unwrap();
-                            when(has_args)
+                            let e = when(has_args)
                                 .then(e)
-                                .otherwise(lit(LiteralValue::untyped_null()))
-                                .str()
-                                .replace_all(
-                                    old.cast(DataType::String).fill_null(lit("_")),
-                                    new.cast(DataType::String).fill_null(lit("")),
-                                    true,
-                                )
+                                .otherwise(lit(LiteralValue::untyped_null()));
+                            let pattern_is_literal = matches!(old, Expr::Literal(_));
+                            let old = old.cast(DataType::String);
+                            let replaced = e.clone().str().replace_all(
+                                old.clone().fill_null(lit("_")),
+                                new.cast(DataType::String).fill_null(lit("")),
+                                true,
+                            );
+                            match pattern_is_literal {
+                                true => replaced,
+                                false => when(old.str().len_bytes().eq(lit(0)))
+                                    .then(e)
+                                    .otherwise(replaced),
+                            }
                         })
                     }),
                     _ => {
