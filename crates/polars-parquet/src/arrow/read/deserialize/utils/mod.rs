@@ -206,7 +206,10 @@ pub(crate) fn unspecialized_decode<T: Default>(
                 target.push(v);
             }
 
-            validity.extend_from_bitmap(&page_validity);
+            // A required leaf only has page validity from a null ancestor, which holds the nulls.
+            if is_optional {
+                validity.extend_from_bitmap(&page_validity);
+            }
         },
         (Some(Filter::Range(_)), _) => unreachable!(),
         (Some(Filter::Mask(mut mask)), None) => {
@@ -275,7 +278,9 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             iter(f, v)?;
 
-            validity.extend_from_bitmap(&filter_boolean_kernel(&page_validity, &mask));
+            if is_optional {
+                validity.extend_from_bitmap(&filter_boolean_kernel(&page_validity, &mask));
+            }
         },
         (Some(Filter::Predicate(_)), _) => todo!(),
     }

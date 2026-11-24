@@ -321,15 +321,24 @@ pub(super) fn decode_masked_required<B: AlignedBytes>(
 
     assert_eq!(mask.len(), values.len());
     let start_length = target.len();
+    target.reserve(num_rows);
 
-    // One more, as the kernel may write past the selected values.
-    target.reserve(num_rows + 1);
+    // The kernel may write one value past those it selects. The mask ends in a selected value,
+    // so the kernel filters the values before it, and that value is written over the extra one.
+    let last = mask.len() - 1;
+    let head_mask = mask.sliced(0, last);
 
-    // SAFETY: room is reserved, `B::Unaligned` is `B` without its alignment, and the kernel
-    // initializes the `num_rows` values.
+    // SAFETY: `num_rows` values are reserved. The kernel selects `num_rows - 1` values and may
+    // write one more, `B::Unaligned` is `B` without its alignment, and the last write
+    // initializes the final value. `last` is in bounds, as `values` has the mask's length.
     unsafe {
-        let out = target.as_mut_ptr().add(start_length).cast::<B::Unaligned>();
-        filter_values_into(values.bytes, &mask, out);
+        let out = target.as_mut_ptr().add(start_length);
+        filter_values_into(
+            &values.bytes[..last],
+            &head_mask,
+            out.cast::<B::Unaligned>(),
+        );
+        out.add(num_rows - 1).write(values.get_unchecked(last));
         target.set_len(start_length + num_rows);
     }
 

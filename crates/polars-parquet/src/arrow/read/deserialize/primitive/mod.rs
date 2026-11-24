@@ -59,7 +59,7 @@ where
         };
 
         decoded.0.extend(std::iter::repeat_n(value, length));
-        decoded.1.extend_constant(length, false);
+        decoded.1.extend_constant(length, true);
 
         Ok(())
     }

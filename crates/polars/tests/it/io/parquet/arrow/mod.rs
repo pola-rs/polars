@@ -7,15 +7,17 @@ use std::sync::Arc;
 use ethnum::AsI256;
 use polars::prelude::{PlSmallStr, get_encodings};
 use polars_arrow::array::*;
-use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::datatypes::*;
 use polars_arrow::record_batch::RecordBatchT;
 use polars_arrow::types::{NativeType, i256};
 use polars_error::PolarsResult;
+use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
 use polars_parquet::read::{self as p_read};
 use polars_parquet::write::*;
 
 use super::read::file::FileReader;
+use super::read::row_group::read_columns_many;
 
 fn new_struct(
     arrays: Vec<Box<dyn Array>>,
@@ -944,5 +946,160 @@ fn filter_chunk() -> PolarsResult<()> {
     let new_chunks = reader.collect::<PolarsResult<Vec<_>>>()?;
 
     assert_eq!(new_chunks, vec![chunk1]);
+    Ok(())
+}
+
+/// Writes `columns` as a row group and reads it back with `filter`, as the chunks of each column.
+fn filtered_roundtrip(
+    columns: Vec<(Field, Box<dyn Array>)>,
+    filter: p_read::Filter,
+) -> PolarsResult<Vec<Vec<Box<dyn Array>>>> {
+    let (fields, arrays): (Vec<_>, Vec<_>) = columns.into_iter().unzip();
+    let schema = ArrowSchema::from_iter(fields);
+    let chunk = RecordBatchT::try_new(arrays[0].len(), Arc::new(schema.clone()), arrays)?;
+    let mut reader = Cursor::new(integration_write(&schema, &[chunk])?);
+    let metadata = p_read::read_metadata(&mut reader)?;
+    read_columns_many(&mut reader, &metadata.row_groups[0], &schema, Some(filter))
+}
+
+/// Checks that `array` holds `expected` in an allocation of exactly that many values.
+fn assert_exactly_allocated(mut array: Box<dyn Array>, expected: &[i64]) {
+    let array = std::mem::take(array.as_any_mut().downcast_mut::<Int64Array>().unwrap());
+    assert_eq!(array, Int64Array::from_slice(expected));
+    let values = array.into_inner().1.into_mut().right().unwrap();
+    assert_eq!(values.capacity(), expected.len());
+}
+
+#[test]
+fn masked_read_allocates_only_kept_values() -> PolarsResult<()> {
+    // A masked read allocates the kept values of a flat column and of a struct field, and
+    // decoding them must not grow that allocation.
+    let values = Int64Array::from_vec((0..1000).collect());
+    let keep = |v: &i64| v % 3 != 1;
+    let mask = Bitmap::from_iter(values.values_iter().map(keep));
+    let expected = values
+        .values_iter()
+        .copied()
+        .filter(keep)
+        .collect::<Vec<_>>();
+
+    let field = Field::new("a".into(), ArrowDataType::Int64, false);
+    let struct_dtype = ArrowDataType::Struct(vec![field.clone()]);
+    let structs = StructArray::new(
+        struct_dtype.clone(),
+        values.len(),
+        vec![values.clone().boxed()],
+        None,
+    );
+    let struct_field = Field::new("s".into(), struct_dtype, false);
+    let mut columns = filtered_roundtrip(
+        vec![(field, values.boxed()), (struct_field, structs.boxed())],
+        p_read::Filter::Mask(mask),
+    )?;
+    assert_exactly_allocated(columns[0].pop().unwrap(), &expected);
+
+    let structs = columns[1][0]
+        .as_any_mut()
+        .downcast_mut::<StructArray>()
+        .unwrap();
+    let empty = StructArray::new_empty(structs.dtype().clone());
+    let (_, _, mut fields, _) = std::mem::replace(structs, empty).into_data();
+    assert_exactly_allocated(fields.pop().unwrap(), &expected);
+
+    Ok(())
+}
+
+#[test]
+fn masked_list_read_allocates_kept_share_of_values() -> PolarsResult<()> {
+    // A masked read of a list column reserves the kept rows' share of its values. Each row
+    // has 3 values, so that share is exact and decoding must not grow it.
+    let keep = |i: &i64| i % 3 != 1;
+    let mut lists = MutableListArray::<i64, _>::new_with_field(
+        MutablePrimitiveArray::<i64>::new(),
+        "item".into(),
+        false,
+    );
+    let rows = (0..1000i64).map(|i| Some((3 * i..3 * i + 3).map(Some).collect::<Vec<_>>()));
+    lists.try_extend(rows)?;
+    let lists: ListArray<i64> = lists.into();
+    let mask = Bitmap::from_iter((0..1000).map(|i| keep(&i)));
+    let expected = (0..1000i64)
+        .filter(keep)
+        .flat_map(|i| 3 * i..3 * i + 3)
+        .collect::<Vec<_>>();
+
+    let field = Field::new("l".into(), lists.dtype().clone(), false);
+    let mut columns = filtered_roundtrip(vec![(field, lists.boxed())], p_read::Filter::Mask(mask))?;
+    let lists = columns[0][0]
+        .as_any_mut()
+        .downcast_mut::<ListArray<i64>>()
+        .unwrap();
+    let empty = ListArray::new_empty(lists.dtype().clone());
+    let (_, values, _, _) = std::mem::replace(lists, empty).into_inner();
+    assert_exactly_allocated(values, &expected);
+
+    Ok(())
+}
+
+#[test]
+fn masked_read_refuses_chunk_with_more_rows_than_mask() -> PolarsResult<()> {
+    let values = Int64Array::from_vec((0..1000).collect());
+    let dtype = ArrowDataType::Struct(vec![Field::new("a".into(), ArrowDataType::Int64, false)]);
+    let structs = StructArray::new(dtype.clone(), values.len(), vec![values.boxed()], None);
+    let field = Field::new("s".into(), dtype, false);
+
+    let mask = Bitmap::new_with_value(true, 999);
+    let err =
+        filtered_roundtrip(vec![(field, structs.boxed())], p_read::Filter::Mask(mask)).unwrap_err();
+    assert!(
+        err.to_string().contains("more rows than the filter mask"),
+        "{err}"
+    );
+
+    Ok(())
+}
+
+/// `column == needle` on an `Int64` column. As it is specialized, the decoders evaluate it on
+/// the encoded values.
+struct Int64Equals(SpecializedParquetColumnExpr);
+
+impl ParquetColumnExpr for Int64Equals {
+    fn try_evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) -> PolarsResult<()> {
+        let SpecializedParquetColumnExpr::Equal(ParquetScalar::Int64(needle)) = &self.0 else {
+            unreachable!()
+        };
+        let values = values.as_any().downcast_ref::<Int64Array>().unwrap();
+        bm.extend_trusted_len_iter(values.values_iter().map(|v| v == needle));
+        Ok(())
+    }
+
+    fn evaluate_null(&self) -> PolarsResult<bool> {
+        Ok(false)
+    }
+
+    fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {
+        Some(&self.0)
+    }
+}
+
+#[test]
+fn equality_predicate_read_returns_valid_needles() -> PolarsResult<()> {
+    // A read that keeps the values matching `column == 2` writes the needle for each match,
+    // which must be valid, for a required and an optional column.
+    let predicate = p_read::PredicateFilter {
+        predicate: Arc::new(Int64Equals(SpecializedParquetColumnExpr::Equal(
+            ParquetScalar::Int64(2),
+        ))),
+        include_values: true,
+    };
+    for is_nullable in [false, true] {
+        let array = Int64Array::from_vec((0..1000).map(|i| i % 4).collect());
+        let field = Field::new("a".into(), ArrowDataType::Int64, is_nullable);
+        let filter = p_read::Filter::Predicate(predicate.clone());
+        let columns = filtered_roundtrip(vec![(field, array.boxed())], filter)?;
+        let column = columns[0][0].as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(column, &Int64Array::from_vec(vec![2; 250]));
+    }
+
     Ok(())
 }

@@ -529,8 +529,8 @@ fn collect_rows_without_list(
     Ok(n)
 }
 
-/// Collects the rows `mask` keeps of a page without a list, where each value is a row, and returns
-/// the leaf validity if any value is null.
+/// Collects the rows `mask` keeps of a page without a list, where each value is a row. If any
+/// value is null, returns the validity of all the page's values, for the decoder to filter.
 fn collect_masked_rows_without_list(
     defs: &[u16],
     mask: &Bitmap,
@@ -745,7 +745,9 @@ fn collect_level_values(
     target: &mut Vec<u16>,
     hybrid_rle: HybridRleDecoder<'_>,
 ) -> ParquetResult<()> {
-    target.reserve(hybrid_rle.len());
+    let num_levels = hybrid_rle.len();
+    let end_length = target.len() + num_levels;
+    target.reserve(num_levels);
 
     for chunk in hybrid_rle.into_chunk_iter() {
         let chunk = chunk?;
@@ -760,6 +762,11 @@ fn collect_level_values(
         }
     }
 
+    if target.len() != end_length {
+        return Err(ParquetError::oos(
+            "the page has fewer definition or repetition levels than values",
+        ));
+    }
     Ok(())
 }
 
@@ -879,8 +886,8 @@ fn decode_nested<const HAS_FIXED_SIZE_LIST: bool>(
                 remaining -= usize::from(rep_levels[i] == 0);
 
                 // @NOTE:
-                // We don't need to account for higher def-levels that imply extra
-                // values, since we don't have those higher levels either.
+                // We don't need to account for higher def-levels that imply extra values, since we
+                // don't have those higher levels either.
                 num_skipped_values += usize::from(current_def_levels[i] == leaf_def_level);
                 i += 1;
             }
@@ -992,12 +999,16 @@ impl<D: utils::Decoder> PageDecoder<D> {
         };
         let mut num_page_rows = 0;
 
-        // Without a list, the kept rows are the values to decode; a list reserves every value.
+        // Without a list, the kept rows are the values to decode. A list under a mask reserves
+        // the kept rows' share of the values, and grows if those rows hold more.
         let num_values = self.iter.total_num_values();
-        let capacity = if max_rep_level == 0 {
-            Filter::opt_num_rows(&filter, num_values)
-        } else {
-            num_values
+        let capacity = match &filter {
+            _ if max_rep_level == 0 => Filter::opt_num_rows(&filter, num_values),
+            Some(Filter::Mask(mask)) if !mask.is_empty() => {
+                let kept = num_values as u128 * mask.set_bits() as u128;
+                kept.div_ceil(mask.len() as u128) as usize
+            },
+            _ => num_values,
         };
         let mut target = self.decoder.with_capacity(capacity);
         if let Some(dict) = self.dict.as_ref() {

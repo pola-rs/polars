@@ -2130,7 +2130,7 @@ def test_read_parquet_fixed_size_list_mismatch_in_long_run_raises(
 def _assert_nested_reads(
     path: Path, expected: pl.DataFrame, *, offset: int = 1234, length: int = 1500
 ) -> None:
-    """Check a full read, a slice, and a prefiltered read with a fragmented mask."""
+    """Check a full read, a slice, and prefiltered reads with and without statistics."""
     assert_frame_equal(pl.read_parquet(path), expected)
     assert_frame_equal(
         pl.scan_parquet(path).slice(offset, length).collect(),
@@ -2144,15 +2144,22 @@ def _assert_nested_reads(
         idx.is_between(offset, offset + length),
         idx < 0,
     ):
-        assert_frame_equal(
-            pl.scan_parquet(path, parallel="prefiltered", use_statistics=False)
-            .filter(predicate)
-            .collect(),
-            expected.filter(predicate),
-        )
+        for use_statistics in (False, True):
+            res = (
+                pl.scan_parquet(
+                    path,
+                    parallel="prefiltered",
+                    use_statistics=use_statistics,
+                )
+                .filter(predicate)
+                .collect()
+            )
+            assert_frame_equal(res, expected.filter(predicate))
 
 
-def _write_small_pages(path: Path, columns: dict[str, Any], schema: pa.Schema) -> None:
+def _write_small_pages(
+    path: Path, columns: dict[str, Any], schema: pa.Schema, **options: Any
+) -> None:
     """Write pages of a few dozen values, so slice and mask edges fall inside pages."""
     pq.write_table(
         pa.table(columns, schema=schema),
@@ -2160,6 +2167,7 @@ def _write_small_pages(path: Path, columns: dict[str, Any], schema: pa.Schema) -
         data_page_size=512,
         write_batch_size=64,
         row_group_size=1000,
+        **options,
     )
 
 
@@ -2243,6 +2251,116 @@ def test_read_parquet_struct_leaf_types(use_dictionary: bool, tmp_path: Path) ->
         use_dictionary=use_dictionary,
     )
     _assert_nested_reads(path, expected)
+
+
+def test_read_parquet_nullable_struct_required_delta_and_bss_leaves(
+    tmp_path: Path,
+) -> None:
+    # Note: only the second half of each row group has null structs, so some
+    # pages, and some masked pages, have no nulls while later ones do.
+    n = 3000
+    rows = [
+        None
+        if i % 1000 >= 500 and i % 7 == 3
+        else {"d": i - 1500, "f": i / 4, "j": i % 50}
+        for i in range(n)
+    ]
+    struct_type = pa.struct(
+        [
+            pa.field("d", pa.int64(), nullable=False),
+            pa.field("f", pa.float64(), nullable=False),
+            pa.field("j", pa.int32(), nullable=False),
+        ]
+    )
+    schema = pa.schema([pa.field("idx", pa.int32()), pa.field("s", struct_type)])
+    path = tmp_path / "required_leaves.parquet"
+    _write_small_pages(
+        path,
+        {"idx": range(n), "s": rows},
+        schema,
+        use_dictionary=False,
+        column_encoding={
+            "idx": "PLAIN",
+            "s.d": "DELTA_BINARY_PACKED",
+            "s.f": "BYTE_STREAM_SPLIT",
+            "s.j": "BYTE_STREAM_SPLIT",
+        },
+    )
+    dtype = pl.Struct({"d": pl.Int64, "f": pl.Float64, "j": pl.Int32})
+    expected = pl.DataFrame(
+        {"idx": range(n), "s": rows}, schema={"idx": pl.Int32, "s": dtype}
+    )
+    _assert_nested_reads(path, expected)
+
+
+def _write_half_null_struct(path: Path) -> bytearray:
+    """Write a struct that is null in the first 500 of 1000 rows, as uncompressed V1."""
+    struct_type = pa.struct([pa.field("a", pa.int64())])
+    pq.write_table(
+        pa.table(
+            {
+                "idx": pa.array(range(1000), pa.int32()),
+                "s": pa.array(
+                    [None] * 500 + [{"a": i} for i in range(500)], struct_type
+                ),
+            },
+            schema=pa.schema(
+                [
+                    pa.field("idx", pa.int32(), nullable=False),
+                    pa.field("s", struct_type),
+                ]
+            ),
+        ),
+        path,
+        compression="none",
+        data_page_version="1.0",
+        use_dictionary=False,
+        write_statistics=False,
+    )
+    return bytearray(path.read_bytes())
+
+
+def _assert_reads_raise(path: Path, match: str) -> None:
+    """Check that a full and a prefiltered read raise, keeping the last row."""
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        pl.read_parquet(path)
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        pl.scan_parquet(path, parallel="prefiltered", use_statistics=False).filter(
+            pl.col("idx") % 2 == 1
+        ).collect()
+
+
+def test_read_parquet_struct_with_missing_levels_raises(tmp_path: Path) -> None:
+    # The definition levels of `s.a` are RLE runs of 500 zeros and 500 twos. Shortening
+    # the second run to 484 leaves the page 16 levels short.
+    path = tmp_path / "missing_levels.parquet"
+    data = _write_half_null_struct(path)
+    runs = b"\xe8\x07\x00\xe8\x07\x02"
+    assert data.count(runs) == 1
+
+    data[data.index(runs) + 3] = 0xC8
+    path.write_bytes(data)
+    _assert_reads_raise(path, "fewer definition or repetition levels than values")
+
+
+def test_read_parquet_struct_chunk_shorter_than_row_group_raises(
+    tmp_path: Path,
+) -> None:
+    # Make `s.a` hold 999 values in a row group of 1000 rows: in its page header (the
+    # i32 `num_values`) and its column metadata (the third i64 1000, after the file's
+    # `num_rows` and the `num_values` of `idx`).
+    path = tmp_path / "short_chunk.parquet"
+    data = _write_half_null_struct(path)
+    page_num_values, i64_1000 = b"\x15\xd0\x0f", b"\x16\xd0\x0f"
+    assert data.count(page_num_values) == 2
+    assert data.count(i64_1000) == 4
+
+    data[data.rindex(page_num_values) + 1] = 0xCE
+    i64_offsets = [m.start() for m in re.finditer(re.escape(i64_1000), data)]
+    data[i64_offsets[2] + 1] = 0xCE
+    path.write_bytes(data)
+    assert pq.ParquetFile(path).metadata.row_group(0).column(1).num_values == 999
+    _assert_reads_raise(path, r"has \d+ rows where \d+ were expected")
 
 
 @pytest.mark.slow
@@ -7180,6 +7298,7 @@ def test_delta_strings_keep_only_selected_values(
     code = """\
 import resource
 import sys
+
 import polars as pl
 
 lf = pl.scan_parquet(sys.argv[1], parallel="prefiltered")

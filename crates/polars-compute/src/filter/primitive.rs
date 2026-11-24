@@ -31,13 +31,14 @@ pub fn filter_values<T: Pod>(values: &[T], mask: &Bitmap) -> Vec<T> {
 /// Writes the values that `mask` selects to `out`.
 ///
 /// # Safety
-/// `out` must have room for `mask.set_bits() + 1` values: the last write may be speculative.
+/// `out` must be valid for writes of `mask.set_bits() + 1` values (the last write may be
+/// speculative), and must not overlap `values`.
+///
+/// # Panics
+/// If `values` and `mask` differ in length.
 pub unsafe fn filter_values_into<T: Pod>(values: &[T], mask: &Bitmap, out: *mut T) {
     // SAFETY: guaranteed by the caller.
-    unsafe {
-        let (values, mask_bytes, out) = scalar_filter_offset(values, mask, out);
-        scalar_filter(values, mask_bytes, out);
-    }
+    unsafe { filter_values_generic_into(values, mask, out, nop_filter) }
 }
 
 fn filter_values_u8(values: &[u8], mask: &Bitmap) -> Vec<u8> {
@@ -82,16 +83,34 @@ fn filter_values_generic<T: Pod>(
     pad: usize,
     bulk_filter: FilterFn<T>,
 ) -> Vec<T> {
-    assert_eq!(values.len(), mask.len());
     let mask_bits_set = mask.set_bits();
     let mut out = Vec::with_capacity(mask_bits_set + pad);
+    // SAFETY: `out` has room for the selected values and the `pad` that `bulk_filter` may
+    // write past them, and it does not overlap `values`.
     unsafe {
-        let (values, mask_bytes, out_ptr) = scalar_filter_offset(values, mask, out.as_mut_ptr());
-        let (values, mask_bytes, out_ptr) = bulk_filter(values, mask_bytes, out_ptr);
-        scalar_filter(values, mask_bytes, out_ptr);
+        filter_values_generic_into(values, mask, out.as_mut_ptr(), bulk_filter);
         out.set_len(mask_bits_set);
     }
     out
+}
+
+/// # Safety
+/// `out` must be valid for writes of `mask.set_bits()` values plus what `bulk_filter` and the
+/// scalar kernel may write past them, and must not overlap `values`.
+#[inline(always)]
+unsafe fn filter_values_generic_into<T: Pod>(
+    values: &[T],
+    mask: &Bitmap,
+    out: *mut T,
+    bulk_filter: FilterFn<T>,
+) {
+    assert_eq!(values.len(), mask.len());
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let (values, mask_bytes, out) = scalar_filter_offset(values, mask, out);
+        let (values, mask_bytes, out) = bulk_filter(values, mask_bytes, out);
+        scalar_filter(values, mask_bytes, out);
+    }
 }
 
 pub fn filter_values_and_validity<T: Pod>(
