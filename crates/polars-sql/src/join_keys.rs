@@ -100,7 +100,15 @@ pub(crate) fn sql_join_key_pair(
         },
         (Null, dtype) => Some((l.cast(dtype.clone()), r)),
         (dtype, Null) => Some((l, r.cast(dtype.clone()))),
+        // A date compares as a timestamp at midnight.
+        (Date, Datetime(..)) | (Datetime(..), Date) => {
+            both(try_get_supertype(l_dtype, r_dtype).ok()?)
+        },
         _ if !merging => None,
+        // Temporal values of different time units compare in the coarser unit.
+        (Datetime(..), Datetime(..)) | (Duration(_), Duration(_)) => {
+            both(try_get_supertype(l_dtype, r_dtype).ok()?)
+        },
         // A decimal literal takes the float's type, as in a SQL comparison.
         (Decimal(..), dtype) if dtype.is_float() && is_decimal_literal_valued(&l) => {
             Some((l.cast(dtype.clone()), r))

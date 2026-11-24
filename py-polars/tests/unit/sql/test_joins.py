@@ -3473,6 +3473,19 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
         "f": pl.DataFrame({"x": [1.0, 2.5, 3.0, None], "w": [1, 2, 3, 4]}),
         "f32": pl.DataFrame({"f": pl.Series([0.1, 0.5], dtype=pl.Float32)}),
         "n": pl.DataFrame({"k": [1, 2], "nk": [None, None]}),
+        "dt": pl.DataFrame({"d": [date(2024, 1, 1), date(2024, 1, 2)], "i": [1, 2]}),
+        "ts": pl.DataFrame(
+            {"ts": [datetime(2024, 1, 1), datetime(2024, 1, 2, 12)], "j": [1, 2]}
+        ),
+        "ms": pl.DataFrame(
+            {
+                "tm": pl.Series(
+                    [datetime(2024, 1, 1), datetime(2024, 1, 2, 12)],
+                    dtype=pl.Datetime("ms"),
+                ),
+                "m": [1, 2],
+            }
+        ),
     }
 
 
@@ -3503,6 +3516,14 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
             "SELECT a.k FROM f32 JOIN a ON f32.f = 0.1 ORDER BY a.k",
             [(1,), (2,), (3,), (None,)],
         ),
+        (
+            "SELECT dt.i, ts.j FROM dt LEFT JOIN ts ON dt.d = ts.ts ORDER BY dt.i",
+            [(1, 1), (2, None)],
+        ),
+        (
+            "SELECT ts.j, ms.m FROM ts JOIN ms ON ts.ts = ms.tm ORDER BY ts.j",
+            [(1, 1), (2, 2)],
+        ),
         # `join_where` conditions
         (
             "SELECT a.k, f.w FROM a LEFT JOIN f ON a.k > f.x / 2 AND f.w < 3 ORDER BY a.k, f.w",
@@ -3524,6 +3545,10 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
         (
             "SELECT a.k, (SELECT COUNT(*) FROM b WHERE b.d = a.k) AS m FROM a ORDER BY a.k",
             [(1, 1), (2, 0), (3, 1), (None, 0)],
+        ),
+        (
+            "SELECT dt.i, (SELECT COUNT(*) FROM ts WHERE ts.ts = dt.d) AS n FROM dt ORDER BY dt.i",
+            [(1, 1), (2, 0)],
         ),
         (
             "SELECT a.k FROM a WHERE a.x IN (SELECT b.y / 10 FROM b WHERE b.d = a.k) ORDER BY a.k",
@@ -3561,6 +3586,23 @@ def test_natural_join_decimal_scales(key_dtype_frames: dict[str, pl.DataFrame]) 
             "z": [7, 8],
         }
     )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("join", "expected"),
+    [
+        ("NATURAL JOIN", pl.DataFrame({"k": [datetime(2024, 1, 1)]})),
+        ("NATURAL SEMI JOIN", pl.DataFrame({"k": [date(2024, 1, 1)]})),
+        ("NATURAL ANTI JOIN", pl.DataFrame({"k": [date(2024, 1, 2)]})),
+    ],
+)
+def test_natural_join_date_timestamp_31041(join: str, expected: pl.DataFrame) -> None:
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"k": [date(2024, 1, 1), date(2024, 1, 2)]}),
+        b=pl.DataFrame({"k": [datetime(2024, 1, 1)]}),
+    )
+    result = ctx.execute(f"SELECT * FROM a {join} b", eager=True)
     assert_frame_equal(result, expected)
 
 
