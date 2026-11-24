@@ -393,21 +393,24 @@ fn serialize_keys<K: DictionaryKey>(
 ) -> DynIter<'static, PolarsResult<Page>> {
     let number_of_rows = nested[0].len();
     let level_bytes = nested::level_bytes_per_value(nested);
-    let ranges = if level_bytes > 0 {
+    let ranges = (level_bytes > 0).then(|| {
         LeafSizes::FixedWidth(size_of::<u32>()).slice_ranges(
             nested,
             number_of_rows,
             max_page_size(options),
             level_bytes,
         )
+    });
+    let byte_size = if ranges.is_none() {
+        estimated_bytes_size(array.keys())
     } else {
-        row_slice_ranges(number_of_rows, estimated_bytes_size(array.keys()), options).collect()
+        0
     };
 
     let array = array.clone();
     let nested = nested.to_vec();
 
-    let pages = ranges.into_iter().map(move |(offset, length)| {
+    let to_page = move |(offset, length)| {
         let mut sliced_array = array.clone();
         let mut sliced_nested = nested.clone();
         slice_parquet_array(&mut sliced_array, &mut sliced_nested, offset, length);
@@ -420,9 +423,12 @@ fn serialize_keys<K: DictionaryKey>(
             value_lengths.as_deref(),
             options,
         )
-    });
+    };
 
-    DynIter::new(pages)
+    match ranges {
+        Some(ranges) => DynIter::new(ranges.into_iter().map(to_page)),
+        None => DynIter::new(row_slice_ranges(number_of_rows, byte_size, options).map(to_page)),
+    }
 }
 
 fn serialize_keys_range<K: DictionaryKey>(
