@@ -1,0 +1,285 @@
+//! `POSITIONAL JOIN`, which sqlparser does not parse. After a table without an alias it parses
+//! as a plain `JOIN` after the alias `positional`, which [`attach_positional_aliases`] turns into
+//! a [`positional_join`]. After another alias it does not parse; then [`extract_positional_joins`]
+//! takes the word `POSITIONAL` out before a `JOIN`, and [`PositionalJoins::attach`] marks the
+//! joins it was taken from, found by position.
+use std::ops::ControlFlow;
+
+use polars_core::prelude::*;
+use sqlparser::ast::{
+    JoinConstraint, JoinOperator, Select, Spanned, TableFactor, TableWithJoins, Visit, VisitMut,
+    Visitor, VisitorMut,
+};
+use sqlparser::keywords::Keyword;
+use sqlparser::tokenizer::{Location, Token, TokenWithSpan};
+
+use crate::dyn_visit;
+
+/// The positions of the `POSITIONAL` words taken out of a query. Each must be attached to a
+/// join, or refused.
+#[must_use]
+pub(crate) struct PositionalJoins(Vec<Location>);
+
+/// The operator of a positional join. The parser never gives a `CROSS JOIN` a `NATURAL`
+/// constraint.
+pub(crate) fn positional_join() -> JoinOperator {
+    JoinOperator::CrossJoin(JoinConstraint::Natural)
+}
+
+pub(crate) fn is_positional_join(op: &JoinOperator) -> bool {
+    matches!(op, JoinOperator::CrossJoin(JoinConstraint::Natural))
+}
+
+/// Whether `node` holds a positional join.
+pub(crate) fn has_positional_join(node: &(impl Visit + ?Sized)) -> bool {
+    struct Find;
+
+    impl Visitor for Find {
+        type Break = ();
+
+        fn pre_visit_select(&mut self, select: &Select) -> ControlFlow<()> {
+            find_in(&select.from)
+        }
+
+        fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
+            match factor {
+                TableFactor::NestedJoin {
+                    table_with_joins, ..
+                } => find_in(std::slice::from_ref(table_with_joins)),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    fn find_in(items: &[TableWithJoins]) -> ControlFlow<()> {
+        match items
+            .iter()
+            .flat_map(|item| &item.joins)
+            .any(|join| is_positional_join(&join.join_operator))
+        {
+            true => ControlFlow::Break(()),
+            false => ControlFlow::Continue(()),
+        }
+    }
+
+    dyn_visit::visit(node, &mut Find).is_break()
+}
+
+impl PositionalJoins {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Mark each plain `JOIN` without a condition that a `POSITIONAL` word was taken from.
+    pub(crate) fn attach<T: VisitMut>(mut self, stmts: &mut [T]) -> PolarsResult<()> {
+        for stmt in stmts {
+            let _ = dyn_visit::visit_mut(stmt, &mut self);
+        }
+        polars_ensure!(self.0.is_empty(), SQLInterface: "{}", JOIN_CONDITION);
+        Ok(())
+    }
+
+    fn mark(&mut self, item: &mut TableWithJoins) {
+        let mut before = item.relation.span().end;
+        for join in &mut item.joins {
+            let after = join.relation.span().start;
+            if join.join_operator == JoinOperator::Join(JoinConstraint::None)
+                && let Some(i) = self.0.iter().position(|at| before < *at && *at < after)
+            {
+                self.0.swap_remove(i);
+                join.join_operator = positional_join();
+            }
+            before = join.span().end;
+        }
+    }
+}
+
+impl VisitorMut for PositionalJoins {
+    type Break = ();
+
+    fn pre_visit_select(&mut self, select: &mut Select) -> ControlFlow<()> {
+        for item in &mut select.from {
+            self.mark(item);
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<()> {
+        if let TableFactor::NestedJoin {
+            table_with_joins, ..
+        } = factor
+        {
+            self.mark(table_with_joins);
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+const JOIN_CONDITION: &str = "POSITIONAL JOIN does not take a join condition";
+
+/// Mark each plain `JOIN` after an alias `positional`, written without `AS` or quotes, as a
+/// positional join, and drop the alias.
+pub(crate) fn attach_positional_aliases<T: VisitMut>(stmts: &mut [T]) -> PolarsResult<()> {
+    struct Attach;
+
+    impl VisitorMut for Attach {
+        type Break = PolarsError;
+
+        fn pre_visit_select(&mut self, select: &mut Select) -> ControlFlow<PolarsError> {
+            for item in &mut select.from {
+                if let Err(err) = mark_aliased(item) {
+                    return ControlFlow::Break(err);
+                }
+            }
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<PolarsError> {
+            if let TableFactor::NestedJoin {
+                table_with_joins, ..
+            } = factor
+                && let Err(err) = mark_aliased(table_with_joins)
+            {
+                return ControlFlow::Break(err);
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    for stmt in stmts {
+        if let ControlFlow::Break(err) = dyn_visit::visit_mut(stmt, &mut Attach) {
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
+fn mark_aliased(item: &mut TableWithJoins) -> PolarsResult<()> {
+    for i in 0..item.joins.len() {
+        let has_condition = match &item.joins[i].join_operator {
+            JoinOperator::Join(JoinConstraint::None) => false,
+            JoinOperator::Join(JoinConstraint::On(_) | JoinConstraint::Using(_)) => true,
+            _ => continue,
+        };
+        let left = match i {
+            0 => &mut item.relation,
+            _ if ends_with_relation(&item.joins[i - 1].join_operator) => {
+                &mut item.joins[i - 1].relation
+            },
+            _ => continue,
+        };
+        if take_positional_alias(left) {
+            polars_ensure!(!has_condition, SQLInterface: "{}", JOIN_CONDITION);
+            item.joins[i].join_operator = positional_join();
+        }
+    }
+    Ok(())
+}
+
+/// Whether nothing is written after the relation of a join with operator `op`.
+fn ends_with_relation(op: &JoinOperator) -> bool {
+    use JoinOperator::*;
+    let (Join(constraint)
+    | Inner(constraint)
+    | Left(constraint)
+    | LeftOuter(constraint)
+    | Right(constraint)
+    | RightOuter(constraint)
+    | FullOuter(constraint)
+    | CrossJoin(constraint)
+    | Semi(constraint)
+    | LeftSemi(constraint)
+    | RightSemi(constraint)
+    | Anti(constraint)
+    | LeftAnti(constraint)
+    | RightAnti(constraint)
+    | StraightJoin(constraint)) = op
+    else {
+        return matches!(op, CrossApply | OuterApply);
+    };
+    matches!(constraint, JoinConstraint::None | JoinConstraint::Natural)
+}
+
+/// Take an alias `positional`, written without `AS` or quotes, off `factor`.
+fn take_positional_alias(factor: &mut TableFactor) -> bool {
+    let (TableFactor::Table { alias, .. }
+    | TableFactor::Derived { alias, .. }
+    | TableFactor::NestedJoin { alias, .. }
+    | TableFactor::TableFunction { alias, .. }
+    | TableFactor::UNNEST { alias, .. }
+    | TableFactor::Pivot { alias, .. }
+    | TableFactor::Unpivot { alias, .. }) = factor
+    else {
+        return false;
+    };
+    let is_positional = alias.as_ref().is_some_and(|alias| {
+        !alias.explicit
+            && alias.columns.is_empty()
+            && alias.name.quote_style.is_none()
+            && alias.name.value.eq_ignore_ascii_case("POSITIONAL")
+    });
+    if is_positional {
+        *alias = None;
+    }
+    is_positional
+}
+
+/// Take each unquoted `POSITIONAL` that comes right before `JOIN` out of `tokens`, unless it
+/// stands where a name goes.
+pub(crate) fn extract_positional_joins(tokens: &mut Vec<TokenWithSpan>) -> PositionalJoins {
+    let mut found = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        let is_positional = matches!(
+            &tokens[i].token,
+            Token::Word(w) if w.quote_style.is_none() && w.value.eq_ignore_ascii_case("POSITIONAL")
+        );
+        if is_positional
+            && tokens[i + 1..]
+                .iter()
+                .find(|t| significant(t))
+                .is_some_and(|t| is_keyword(t, Keyword::JOIN))
+            && !name_follows(&tokens[..i])
+        {
+            found.push(tokens.remove(i).span.start);
+        } else {
+            i += 1;
+        }
+    }
+    PositionalJoins(found)
+}
+
+fn significant(token: &TokenWithSpan) -> bool {
+    !matches!(token.token, Token::Whitespace(_))
+}
+
+fn is_keyword(token: &TokenWithSpan, keyword: Keyword) -> bool {
+    matches!(&token.token, Token::Word(w) if w.keyword == keyword && w.quote_style.is_none())
+}
+
+/// Whether a name goes right after `tokens` in a FROM: after `.`, `,`, `(`, `AS`, `FROM`,
+/// `JOIN`, `LATERAL` or `USING`. In a run of these keywords, like `FROM using`, every other one
+/// is a name.
+fn name_follows(tokens: &[TokenWithSpan]) -> bool {
+    let mut keywords = 0;
+    for token in tokens.iter().rev().filter(|t| significant(t)) {
+        match &token.token {
+            Token::Word(w)
+                if w.quote_style.is_none()
+                    && matches!(
+                        w.keyword,
+                        Keyword::AS
+                            | Keyword::FROM
+                            | Keyword::JOIN
+                            | Keyword::LATERAL
+                            | Keyword::USING
+                    ) =>
+            {
+                keywords += 1
+            },
+            Token::Period | Token::Comma | Token::LParen => return keywords % 2 == 0,
+            _ => break,
+        }
+    }
+    keywords % 2 == 1
+}

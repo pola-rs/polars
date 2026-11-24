@@ -10,7 +10,7 @@ use polars_core::prelude::*;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_defs::join::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::{HashKeys, KeyEncoder};
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::MostRecentSpillContext;
 use polars_plan::plans::options::RuntimeFilter;
@@ -37,6 +37,7 @@ use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
 struct EquiJoinParams {
+    key_encoder: KeyEncoder,
     left_is_build: Option<bool>,
     preserve_order_build: bool,
     preserve_order_probe: bool,
@@ -47,6 +48,13 @@ struct EquiJoinParams {
     right_payload_select: Vec<Option<PlSmallStr>>,
     left_payload_schema: Arc<Schema>,
     right_payload_schema: Arc<Schema>,
+    /// The payload columns that are output, as indices into the payload, if only some are: the
+    /// others are only read by the fused predicate and are never gathered into the output.
+    left_output_idx: Option<Arc<[usize]>>,
+    right_output_idx: Option<Arc<[usize]>>,
+    /// The schema of the output columns of each side.
+    left_output_schema: Arc<Schema>,
+    right_output_schema: Arc<Schema>,
     args: JoinArgs,
     fused_predicate: Option<FusedPredicate>,
     // Key filters for the scans below the planned probe side, set once from a
@@ -91,6 +99,25 @@ impl EquiJoinParams {
         self.emit_unmatched(!self.left_is_build.unwrap())
     }
 
+    /// The output schema of the left side, or else the right side.
+    fn output_side_schema(&self, left: bool) -> &Arc<Schema> {
+        if left {
+            &self.left_output_schema
+        } else {
+            &self.right_output_schema
+        }
+    }
+
+    /// The payload columns of the left side, or else the right side, that are output, if only
+    /// some are.
+    fn output_idx(&self, left: bool) -> &Option<Arc<[usize]>> {
+        if left {
+            &self.left_output_idx
+        } else {
+            &self.right_output_idx
+        }
+    }
+
     /// The payload schema of the left side, or else the right side.
     fn payload_schema(&self, left: bool) -> &Arc<Schema> {
         if left {
@@ -131,6 +158,7 @@ impl JoinPartition {
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
+#[allow(clippy::too_many_arguments)]
 fn compute_payload_selector(
     this: &Schema,
     other: &Schema,
@@ -139,6 +167,7 @@ fn compute_payload_selector(
     output_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
+    can_drop_coalesce_keys: bool,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let should_coalesce = args.should_coalesce();
 
@@ -165,9 +194,15 @@ fn compute_payload_selector(
                         Some(c.clone())
                     } else if args.how == JoinType::Full {
                         // We must keep the right-hand side keycols around for
-                        // coalescing. Note that this bypasses the filter below because of the
-                        // early return.
+                        // coalescing, whenever the paired left key is kept. Note that this
+                        // bypasses the filter below because of the early return.
                         let key_idx = this_key_schema.index_of(c).unwrap();
+                        if can_drop_coalesce_keys {
+                            let (left_key, _) = other_key_schema.get_at_index(key_idx).unwrap();
+                            if !output_schema.contains(left_key.as_str()) {
+                                return Ok(None);
+                            }
+                        }
                         let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
                         return Ok(Some(name));
                     } else {
@@ -196,7 +231,8 @@ fn compute_payload_selector(
                 )
             }
 
-            Ok(Some(suffixed))
+            // A column that collides is suffixed, so it is only output where the plan kept it.
+            Ok(Some(suffixed).filter(|name| output_schema.contains(name.as_str())))
         })
         .collect()
 }
@@ -227,12 +263,11 @@ async fn select_keys_with_columns(
     state: &ExecutionState,
 ) -> PolarsResult<(HashKeys, DataFrame)> {
     let keys = select_key_columns(df, key_selectors, state).await?;
-    let hash_keys = HashKeys::from_df(
+    let hash_keys = params.key_encoder.try_hash_keys(
         &keys,
         params.random_state.clone(),
         params.args.nulls_equal,
-        false,
-    );
+    )?;
     Ok((hash_keys, keys))
 }
 
@@ -386,6 +421,7 @@ impl SampleState {
                             &params.left_key_selectors,
                             Some(&params.left_payload_select),
                             true,
+                            &params.key_encoder,
                             params.args.nulls_equal,
                             &params.random_state,
                             params.sample_limit,
@@ -396,6 +432,7 @@ impl SampleState {
                             &params.right_key_selectors,
                             Some(&params.right_payload_select),
                             true,
+                            &params.key_encoder,
                             params.args.nulls_equal,
                             &params.random_state,
                             params.sample_limit,
@@ -566,8 +603,11 @@ impl EquiJoinNode {
         right_input_schema: Arc<Schema>,
         left_key_schema: Arc<Schema>,
         right_key_schema: Arc<Schema>,
-        unique_key_schema: Arc<Schema>,
+        key_encoder: KeyEncoder,
         output_schema: Arc<Schema>,
+        // The output schema before a fused drop: what the fused predicate is compiled against.
+        // Columns missing from `output_schema` are only used for the predicate.
+        candidate_schema: Option<Arc<Schema>>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         fused_predicate: Option<(StreamExpr, Arc<Schema>)>,
@@ -613,32 +653,70 @@ impl EquiJoinNode {
             MaintainOrderJoin::LeftRight | MaintainOrderJoin::RightLeft
         );
 
+        // Only a fused predicate reads columns the output does not have.
+        debug_assert!(candidate_schema.is_none() || fused_predicate.is_some());
+        let payload_output_schema = candidate_schema.as_ref().unwrap_or(&output_schema);
+        // Key schemas deduplicate names. Their column indices correspond to the join key
+        // positions only when both sides have distinct keys.
+        let can_drop_coalesce_keys = left_key_schema.len() == left_key_selectors.len()
+            && right_key_schema.len() == right_key_selectors.len();
         let left_payload_select = compute_payload_selector(
             &left_input_schema,
             &right_input_schema,
             &left_key_schema,
             &right_key_schema,
-            &output_schema,
+            payload_output_schema,
             true,
             &args,
+            can_drop_coalesce_keys,
         )?;
         let right_payload_select = compute_payload_selector(
             &right_input_schema,
             &left_input_schema,
             &right_key_schema,
             &left_key_schema,
-            &output_schema,
+            payload_output_schema,
             false,
             &args,
+            can_drop_coalesce_keys,
         )?;
 
         // A filter is only published for the side the plan named.
         debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
-        let runtime_filters = RuntimeFilters::new(runtime_filters, &unique_key_schema);
+        let runtime_filters = RuntimeFilters::new(runtime_filters, key_encoder.schema());
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
         let right_payload_schema =
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
+
+        let output_idx = |payload_schema: &Schema| {
+            let idx: Vec<usize> = payload_schema
+                .iter_names()
+                .enumerate()
+                .filter(|(_, name)| output_schema.contains(name.as_str()))
+                .map(|(i, _)| i)
+                .collect();
+            (idx.len() != payload_schema.len()).then(|| Arc::from(idx))
+        };
+        let (left_output_idx, right_output_idx) = if candidate_schema.is_some() {
+            (
+                output_idx(&left_payload_schema),
+                output_idx(&right_payload_schema),
+            )
+        } else {
+            (None, None)
+        };
+        let output_side_schema = |schema: &Arc<Schema>, idx: &Option<Arc<[usize]>>| match idx {
+            Some(idx) => Arc::new(
+                idx.iter()
+                    .map(|i| schema.get_at_index(*i).unwrap())
+                    .map(|(name, dtype)| Field::new(name.clone(), dtype.clone()))
+                    .collect::<Schema>(),
+            ),
+            None => schema.clone(),
+        };
+        let left_output_schema = output_side_schema(&left_payload_schema, &left_output_idx);
+        let right_output_schema = output_side_schema(&right_payload_schema, &right_output_idx);
 
         // The ordered probe would evaluate the fused predicate a partition group at a time.
         assert!(fused_predicate.is_none() || args.maintain_order == MaintainOrderJoin::None);
@@ -648,7 +726,9 @@ impl EquiJoinNode {
             })
             .transpose()?;
 
+        let table = new_idx_table(&key_encoder);
         let params = EquiJoinParams {
+            key_encoder,
             left_is_build,
             preserve_order_build,
             preserve_order_probe,
@@ -659,6 +739,10 @@ impl EquiJoinNode {
             right_payload_select,
             left_payload_schema,
             right_payload_schema,
+            left_output_idx,
+            right_output_idx,
+            left_output_schema,
+            right_output_schema,
             args,
             fused_predicate,
             runtime_filters,
@@ -688,7 +772,7 @@ impl EquiJoinNode {
         Ok(Self {
             state,
             params,
-            table: new_idx_table(unique_key_schema),
+            table,
             spill_ctx: MostRecentSpillContext::new("equi-join".into(), task_metrics),
             tuning: JoinTuning::from_env(),
         })
@@ -735,18 +819,25 @@ impl ComputeNode for EquiJoinNode {
         // If we are building and the build input is done, transition to probing.
         // An inner join with nothing to probe against is done without reading
         // the probe side.
+        let mut skip_probe = false;
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
                 build_state.publish_runtime_filters(&mut self.params);
                 self.state = if self.params.args.how == JoinType::Inner && build_state.is_empty() {
                     EquiJoinState::Done
                 } else {
-                    EquiJoinState::Probe(build_state.finalize(
-                        &self.params,
-                        &*self.table,
-                        &self.tuning,
-                        state,
-                    )?)
+                    let probe_state =
+                        build_state.finalize(&self.params, &*self.table, &self.tuning, state)?;
+                    // Without a non-null build key no probe row matches, so the probe
+                    // side is only read when its unmatched rows are emitted.
+                    skip_probe = !self.params.emit_unmatched_probe()
+                        && !self.params.args.nulls_equal
+                        && probe_state.partitions.partitions.iter().all(|p| {
+                            p.table
+                                .as_ref()
+                                .is_some_and(|t| t.hash_table.num_keys() == 0)
+                        });
+                    EquiJoinState::Probe(probe_state)
                 };
             }
         }
@@ -755,7 +846,7 @@ impl ComputeNode for EquiJoinNode {
         // if needed, otherwise flush the partitions.
         if let EquiJoinState::Probe(probe_state) = &mut self.state {
             let samples_consumed = probe_state.sampled_probe_morsels.is_empty();
-            if samples_consumed && recv[probe_idx] == PortState::Done {
+            if skip_probe || (samples_consumed && recv[probe_idx] == PortState::Done) {
                 if self.params.preserve_order_build && self.params.emit_unmatched_build() {
                     let unmatched = probe_state.ordered_unmatched(&self.params);
                     let src = InMemorySourceNode::new(

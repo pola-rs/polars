@@ -35,6 +35,10 @@ Array
      - Returns the number of elements in the array.
    * - :ref:`GENERATE_SERIES <generate_series>`
      - Returns an array of values from start to stop, stop included.
+   * - :ref:`LIST_FILTER <list_filter>`
+     - Returns the array with the elements for which a lambda is true.
+   * - :ref:`LIST_TRANSFORM <list_transform>`
+     - Returns the array with a lambda applied to each element.
    * - :ref:`RANGE <range>`
      - Returns an array of values from start to stop, stop not included.
    * - :ref:`UNNEST <unnest>`
@@ -462,6 +466,59 @@ return timestamps. Also available as a table function, see
     # │ 2026-01-03 00:00:00 │
     # └─────────────────────┘
 
+.. _list_filter:
+
+LIST_FILTER
+-----------
+Returns the array with the elements for which a lambda is true. The lambda takes one
+parameter, the element, and can also read the columns of the row. A null result drops the
+element.
+Aliases: ``ARRAY_FILTER``, ``FILTER``.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [[1, 2, 3], [4, 5]]})
+    df.sql("""
+      SELECT LIST_FILTER(foo, lambda x: x % 2 = 1) AS foo_odd FROM self
+    """)
+    # shape: (2, 1)
+    # ┌───────────┐
+    # │ foo_odd   │
+    # │ ---       │
+    # │ list[i64] │
+    # ╞═══════════╡
+    # │ [1, 3]    │
+    # │ [5]       │
+    # └───────────┘
+
+.. _list_transform:
+
+LIST_TRANSFORM
+--------------
+Returns the array with a lambda applied to each element. The lambda takes one parameter,
+the element, and can also read the columns of the row. Aliases: ``ARRAY_TRANSFORM``, ``APPLY``,
+``LIST_APPLY``, ``ARRAY_APPLY``.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [[1, 2, 3], [4, 5]]})
+    df.sql("""
+      SELECT LIST_TRANSFORM(foo, lambda x: x * 10) AS foo_x10 FROM self
+    """)
+    # shape: (2, 1)
+    # ┌──────────────┐
+    # │ foo_x10      │
+    # │ ---          │
+    # │ list[i64]    │
+    # ╞══════════════╡
+    # │ [10, 20, 30] │
+    # │ [40, 50]     │
+    # └──────────────┘
+
 .. _range:
 
 RANGE
@@ -491,7 +548,9 @@ as a table function, see :ref:`RANGE <range_table_func>`.
 
 UNNEST
 ------
-Unnest/explode an array column into multiple rows.
+Unnest/explode an array column into multiple rows. As in Postgres, an empty or NULL
+array gives no row, and a NULL element gives a row. In the `SELECT` list, `UNNEST` is
+applied before the other expressions, so window functions see the unnested rows.
 
 **Example:**
 
@@ -521,3 +580,11 @@ Unnest/explode an array column into multiple rows.
     # │ d   ┆ 9   │
     # │ e   ┆ 10  │
     # └─────┴─────┘
+
+As a table, ``UNNEST(...) WITH ORDINALITY`` adds the 1-based position of each element in its
+array, as in Postgres. It takes the alias column that follows those of the values, or the name
+``ordinality``:
+
+.. code-block:: sql
+
+    SELECT id, tag, n FROM self CROSS JOIN UNNEST(tags) WITH ORDINALITY AS t(tag, n)

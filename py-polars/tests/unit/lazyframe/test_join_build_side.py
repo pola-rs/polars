@@ -180,24 +180,26 @@ def test_cross_join_estimate_uses_the_range_of_sampled_row_groups(
 
 
 @pytest.mark.parametrize(
-    ("n_columns", "n_row_groups", "expected"),
+    ("n_columns", "n_row_groups"),
     [
-        # The planner reads row groups 0, 4 and 8; the filter keeps only the last.
-        (2_049, 12, "PreferRight"),
-        # It reads only row group 0, which says nothing about the others.
-        (4_097, 2, None),
+        # The planner samples row groups 0, 4 and 8; the filter keeps only the last.
+        (2_049, 12),
+        # It samples only row group 0.
+        (4_097, 2),
     ],
 )
 def test_filter_past_the_sampled_row_groups_is_not_estimated_empty(
-    tmp_path: Path, n_columns: int, n_row_groups: int, expected: str | None
+    tmp_path: Path, n_columns: int, n_row_groups: int
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     # `k` is the index of its row group; the many columns make the planner sample.
-    n = 100 * n_row_groups
-    pl.DataFrame({"k": [i // 100 for i in range(n)], "v": range(n)}).with_columns(
+    rows_per_group = 32
+    n = rows_per_group * n_row_groups
+    keys = [i // rows_per_group for i in range(n)]
+    pl.DataFrame({"k": keys, "v": range(n)}).with_columns(
         pl.lit(0).alias(f"c{i}") for i in range(n_columns - 2)
-    ).write_parquet(tmp_path / "wide.parquet", row_group_size=100)
-    pl.DataFrame({"k": range(10), "w": range(10)}).write_parquet(
+    ).write_parquet(tmp_path / "wide.parquet", row_group_size=rows_per_group)
+    pl.DataFrame({"k": range(3), "w": range(3)}).write_parquet(
         tmp_path / "small.parquet"
     )
     last = pl.col("k") >= n_row_groups - 1
@@ -206,8 +208,9 @@ def test_filter_past_the_sampled_row_groups_is_not_estimated_empty(
     joined = small.join(small, on="k", suffix="_r").select("w")
 
     q = wide.join(joined, how="cross")
-    assert cross_join_build_side(q.explain()) == expected
-    assert q.select(pl.len()).collect(engine="streaming").item() == 1_000
+    # The range of `k` is read from every row group.
+    assert cross_join_build_side(q.explain()) == "PreferRight"
+    assert q.select(pl.len()).collect(engine="streaming").item() == rows_per_group * 3
 
 
 def test_no_cross_join_build_side_for_similar_sizes(tmp_path: Path) -> None:

@@ -28,6 +28,12 @@ ROWS_PER_GROUP = 100
 KEY_SET = re.compile(r"(bloom|bitset) of")
 
 
+@pytest.fixture(autouse=True)
+def _filter_small_scans(plmonkeypatch: PlMonkeyPatch) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
+
+
 @pytest.fixture
 def fact(tmp_path: Path) -> pl.LazyFrame:
     # Keys sorted into row groups of a hundred, so a key range maps to row groups.
@@ -98,6 +104,73 @@ def test_range_prunes_row_groups(
     assert groups == "1 / 10 row groups"
     assert out.height == 2
     assert_matches_in_memory(q, out)
+
+
+def test_no_filter_on_small_scans_by_default(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Building first would keep the probe scan from overlapping the build side.
+    plmonkeypatch.delenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS")
+    plan = fact.join(dim(220, 240), on="k").explain(engine="streaming")
+    assert "dynamic_predicate" not in plan
+    assert "BUILD SIDE: ForceRight" not in plan
+
+
+@pytest.mark.parametrize(
+    ("query", "rows_read", "n_filters"),
+    [
+        (lambda fact, path: fact.join(dim(220, 240), on="k"), 1000, 1),
+        # Every row group holds every `k2`, so the scan reads the rows the filter drops.
+        (
+            lambda fact, path: fact.filter(pl.col("k2") < 4).join(
+                dim(220, 240), on="k"
+            ),
+            1000,
+            1,
+        ),
+        (
+            lambda fact, path: pl.scan_parquet(path, n_rows=500).join(
+                dim(220, 240), on="k"
+            ),
+            500,
+            1,
+        ),
+        # The slice, of every row, keeps the two scans of the file apart.
+        (
+            lambda fact, path: pl.concat(
+                [fact, pl.scan_parquet(path, n_rows=1000)]
+            ).join(dim(220, 240), on="k"),
+            2000,
+            2,
+        ),
+        # A scan reached by two keys is read once.
+        (
+            lambda fact, path: fact.join(
+                pl.LazyFrame({"k": [230, 231], "k2": [6, 6], "d": [1, 2]}).filter(
+                    pl.col("d") > 0
+                ),
+                on=["k", "k2"],
+            ),
+            1000,
+            2,
+        ),
+    ],
+    ids=["scan", "filtered_scan", "sliced_scan", "two_scans", "two_keys"],
+)
+def test_min_probe_rows_counts_the_rows_the_scans_read(
+    fact: pl.LazyFrame,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    query: Callable[[pl.LazyFrame, Path], pl.LazyFrame],
+    rows_read: int,
+    n_filters: int,
+) -> None:
+    q = query(fact, tmp_path / "fact.parquet")
+    for min_probe_rows, expected in [(rows_read, n_filters), (rows_read + 1, 0)]:
+        plmonkeypatch.setenv(
+            "POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", str(min_probe_rows)
+        )
+        assert q.explain(engine="streaming").count("dynamic_predicate") == expected
 
 
 def test_build_side_on_the_left(
@@ -422,16 +495,23 @@ def test_empty_build_side_reads_nothing(
     assert_matches_in_memory(q, out)
 
 
+@pytest.mark.parametrize(("how", "height"), [("inner", 0), ("semi", 0), ("right", 2)])
 def test_all_null_build_keys_read_nothing(
-    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+    fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    how: JoinStrategy,
+    height: int,
 ) -> None:
+    # No build key can match, so the fact side is never read.
     nulls = pl.LazyFrame(
         {"k": [None, None], "d": [1, 2]}, schema={"k": pl.Int64, "d": pl.Int64}
     ).filter(pl.col("d") > 0)
-    q = fact.join(nulls, on="k")
+    q = fact.join(nulls, on="k", how=how)
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
-    assert groups == "0 / 10 row groups"
-    assert out.height == 0
+    assert groups is None
+    assert out.height == height
+    assert_matches_in_memory(q, out)
 
 
 def test_probe_nulls_are_dropped(
@@ -1592,7 +1672,7 @@ def test_dense_integer_keys_filter_by_their_range(
 def test_bloom_is_sized_from_the_build_keys_seen(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    n = 1_000_000
+    n = 750_000
     # Spread out, so the keys span too wide a range for a bitset.
     spread = 1024
     keys = pl.Series("k", range(0, n * spread, spread)).shuffle(seed=5)
@@ -1601,7 +1681,7 @@ def test_bloom_is_sized_from_the_build_keys_seen(
         path, row_group_size=n // 10, statistics="full"
     )
     # Conjuncts the plan cannot estimate, so it expects far fewer build keys than
-    # the 200k that arrive: more than a bloom filter of the planned size holds,
+    # the 150k that arrive: more than a bloom filter of the planned size holds,
     # yet few enough of the probe keys to be worth probing.
     build = pl.LazyFrame(
         {"k": range(0, n * spread, 5 * spread), "a": range(0, n, 5)}
@@ -1610,7 +1690,7 @@ def test_bloom_is_sized_from_the_build_keys_seen(
     out, err = reader_log(q, plmonkeypatch, capfd)
     planned = re.search(r"runtime filter on k: (\d+) distinct build keys", err)
     assert planned is not None
-    assert int(planned.group(1)) <= 20_000
+    assert int(planned.group(1)) <= n // 50
     assert "dropping bloom filter" not in err
     # Larger than the planned (smallest) bloom filter; the exact size depends on
     # the distinct count estimate.

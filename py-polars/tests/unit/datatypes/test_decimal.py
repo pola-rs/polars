@@ -1063,6 +1063,13 @@ def test_decimal_agg() -> None:
     )
 
 
+def test_decimal_frame_median() -> None:
+    df = pl.DataFrame({"x": [D("1.5"), D("2.5")]})
+    expected = pl.DataFrame({"x": [2.0]})
+    assert_frame_equal(df.median(), expected)
+    assert_frame_equal(df.lazy().median().collect(), expected)
+
+
 def test_string_to_decimal_combined_prec_scale_24801() -> None:
     values = ["0.01", "10.0"]
     s = pl.Series(values).str.to_decimal()

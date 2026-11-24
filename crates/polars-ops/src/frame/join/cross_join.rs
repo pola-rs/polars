@@ -12,19 +12,19 @@ use super::*;
 fn slice_take(
     total_rows: IdxSize,
     n_rows_right: IdxSize,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     inner: fn(IdxSize, IdxSize, IdxSize) -> IdxCa,
 ) -> IdxCa {
     match slice {
         None => inner(0, total_rows, n_rows_right),
-        Some((offset, len)) => {
-            let (offset, len) = slice_offsets(offset, len, total_rows as usize);
-            inner(offset as IdxSize, (len + offset) as IdxSize, n_rows_right)
+        Some(slice) => {
+            let range = slice.resolve(total_rows as usize);
+            inner(range.start as IdxSize, range.end as IdxSize, n_rows_right)
         },
     }
 }
 
-fn take_left(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, usize)>) -> IdxCa {
+fn take_left(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<Slice>) -> IdxCa {
     fn inner(offset: IdxSize, total_rows: IdxSize, n_rows_right: IdxSize) -> IdxCa {
         let mut take: NoNull<IdxCa> = (offset..total_rows)
             .map(|i| i / n_rows_right)
@@ -35,7 +35,7 @@ fn take_left(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, usi
     slice_take(total_rows, n_rows_right, slice, inner)
 }
 
-fn take_right(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, usize)>) -> IdxCa {
+fn take_right(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<Slice>) -> IdxCa {
     fn inner(offset: IdxSize, total_rows: IdxSize, n_rows_right: IdxSize) -> IdxCa {
         let take: NoNull<IdxCa> = (offset..total_rows)
             .map(|i| i % n_rows_right)
@@ -51,7 +51,7 @@ pub trait CrossJoin: IntoDf {
         &self,
         other: &DataFrame,
         suffix: Option<PlSmallStr>,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
         maintain_order: MaintainOrderJoin,
     ) -> PolarsResult<DataFrame> {
         let (l_df, r_df) = cross_join_dfs(self.to_df(), other, slice, true, maintain_order)?;
@@ -65,7 +65,7 @@ impl CrossJoin for DataFrame {}
 fn cross_join_dfs<'a>(
     mut df_self: &'a DataFrame,
     mut other: &'a DataFrame,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
     parallel: bool,
     maintain_order: MaintainOrderJoin,
 ) -> PolarsResult<(DataFrame, DataFrame)> {

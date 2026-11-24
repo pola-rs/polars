@@ -34,18 +34,21 @@ pub trait DatetimeMethods: AsDatetime {
     /// Extract year from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::year)
+        let ca = self.as_datetime();
+        if ca.time_zone().is_some() {
+            return cast_and_apply(ca, temporal::year);
+        }
+        let time_unit = ca.time_unit();
+        ca.physical()
+            .apply_kernel_cast::<Int32Type>(&|arr| datetime_to_year(arr, time_unit))
     }
 
     /// Extract year from underlying NaiveDate representation.
     /// Returns whether the year is a leap year.
     fn is_leap_year(&self) -> BooleanChunked {
         let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_is_leap_year_ns,
-            TimeUnit::Microseconds => datetime_to_is_leap_year_us,
-            TimeUnit::Milliseconds => datetime_to_is_leap_year_ms,
-        };
+        let time_unit = ca.time_unit();
+        let f = |arr: &PrimitiveArray<i64>| datetime_to_is_leap_year(arr, time_unit);
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
             DataType::Datetime(_, Some(_)) => &replace_time_zone(
@@ -93,18 +96,21 @@ pub trait DatetimeMethods: AsDatetime {
     ///
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::month)
+        let ca = self.as_datetime();
+        if ca.time_zone().is_some() {
+            return cast_and_apply(ca, temporal::month);
+        }
+        let time_unit = ca.time_unit();
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&|arr| datetime_to_month(arr, time_unit))
     }
 
     /// Returns the number of days in the month of the underlying NaiveDateTime
     /// representation.
     fn days_in_month(&self) -> Int8Chunked {
         let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_days_in_month_ns,
-            TimeUnit::Microseconds => datetime_to_days_in_month_us,
-            TimeUnit::Milliseconds => datetime_to_days_in_month_ms,
-        };
+        let time_unit = ca.time_unit();
+        let f = |arr: &PrimitiveArray<i64>| datetime_to_days_in_month(arr, time_unit);
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
             DataType::Datetime(_, Some(_)) => &replace_time_zone(
@@ -136,7 +142,13 @@ pub trait DatetimeMethods: AsDatetime {
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::day)
+        let ca = self.as_datetime();
+        if ca.time_zone().is_some() {
+            return cast_and_apply(ca, temporal::day);
+        }
+        let time_unit = ca.time_unit();
+        ca.physical()
+            .apply_kernel_cast::<Int8Type>(&|arr| datetime_to_day(arr, time_unit))
     }
 
     /// Extract hour from underlying NaiveDateTime representation.
@@ -169,11 +181,8 @@ pub trait DatetimeMethods: AsDatetime {
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> Int16Chunked {
         let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_ordinal_ns,
-            TimeUnit::Microseconds => datetime_to_ordinal_us,
-            TimeUnit::Milliseconds => datetime_to_ordinal_ms,
-        };
+        let time_unit = ca.time_unit();
+        let f = |arr: &PrimitiveArray<i64>| datetime_to_ordinal(arr, time_unit);
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
             DataType::Datetime(_, Some(_)) => &replace_time_zone(

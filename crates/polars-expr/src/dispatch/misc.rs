@@ -205,12 +205,8 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
 pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
-    let quantile = s[1].as_materialized_series();
-    let quantiles = extract_quantiles(quantile)?;
-    let out = match quantile.dtype() {
-        DataType::List(_) => input.quantiles_reduce(&quantiles, method)?,
-        _ => input.quantile_reduce(quantiles[0], method)?,
-    };
+    let fraction = s[1].as_materialized_series();
+    let out = quantile_reduce_fraction(input.as_materialized_series(), fraction, method)?;
     Ok(out.into_column(input.name().clone()))
 }
 
@@ -875,6 +871,16 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
 
     assert_eq!(columns.len(), 2);
     Column::try_apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
+}
+
+#[cfg(feature = "log")]
+pub(super) fn x_log_y(columns: &[Column], base: f64) -> PolarsResult<Column> {
+    use polars_ops::series::LogSeries;
+
+    assert_eq!(columns.len(), 2);
+    Column::try_apply_broadcasting_binary_elementwise(&columns[0], &columns[1], |x, y| {
+        x.x_log_y(y, base)
+    })
 }
 
 #[cfg(feature = "log")]

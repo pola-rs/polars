@@ -2454,6 +2454,31 @@ def test_using_column_in_later_from_entry(query: str) -> None:
         pl.SQLContext(a=a, s=s, d=d, e=e).execute(query, eager=True)
 
 
+@pytest.mark.parametrize("join", ["FULL JOIN", "RIGHT JOIN"])
+def test_using_key_of_outer_join(join: str) -> None:
+    # as in Postgres: `k` from either side, `l.k` and `r.k` from their own
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2], "lv": ["l1", "l2"]}),
+        "r": pl.DataFrame({"k": [2, 3], "rv": ["r2", "r3"]}),
+        "m": pl.DataFrame({"k": [3, 4], "mv": ["m3", "m4"]}),
+    }
+    for query in [
+        f"SELECT k, l.k AS lk, r.k AS rk, lv, rv FROM l {join} r USING (k) ORDER BY k",
+        f"SELECT l.*, rv FROM l {join} r USING (k) WHERE k = 3",
+        f"SELECT k, lv, rv, mv FROM l {join} r USING (k) JOIN m USING (k) ORDER BY k",
+    ]:
+        assert_sql_matches(frames, query=query, compare_with="duckdb")
+    for query in [
+        f"SELECT * FROM l {join} r USING (k)",
+        f"SELECT j.* FROM (l {join} r USING (k)) AS j",
+        f"SELECT COLUMNS('.*') FROM l {join} r USING (k)",
+        f"SELECT COLUMNS(*) FROM l {join} r USING (k)",
+        f"SELECT * FROM (l {join} r USING (k)) AS j(a, b, c, d)",
+    ]:
+        res = pl.SQLContext(frames).execute(query)
+        assert not any(name.startswith("__POLARS") for name in res.collect_schema())
+
+
 def test_duplicate_column_detection_via_wildcard() -> None:
     # selecting a column explicitly that is already included in a qualified
     # wildcard from the same table should raise a duplicate column error
@@ -2906,6 +2931,59 @@ def test_join_on_constant_true_plans_cross_join() -> None:
     # an always-true outer join is not a cross join: it must keep unmatched rows
     plan = ctx.execute("SELECT * FROM a LEFT JOIN b ON TRUE").explain()
     assert "CROSS JOIN" not in plan
+
+
+@pytest.mark.parametrize(
+    ("join_type", "x", "y"),
+    [
+        ("INNER", [1, 3, 4], [10, 20, 20]),
+        ("LEFT", [1, 2, 3, 4], [10, None, 20, 20]),
+        ("FULL", [1, 2, 3, 4, None], [10, None, 20, 20, 30]),
+    ],
+)
+def test_join_on_is_not_distinct_from_plans_equi_join(
+    join_type: str, x: list[int | None], y: list[int | None]
+) -> None:
+    frames = {
+        "a": pl.LazyFrame({"k": [1, 2, None, None], "x": [1, 2, 3, 4]}),
+        "b": pl.LazyFrame({"k": [1, None, 5], "y": [10, 20, 30]}),
+    }
+    lf = pl.SQLContext(frames=frames).execute(
+        f"SELECT a.x, b.y FROM a {join_type} JOIN b "
+        "ON a.k IS NOT DISTINCT FROM b.k ORDER BY a.x NULLS LAST"
+    )
+    assert 'LEFT PLAN ON: [col("k")]' in lf.explain()
+    assert_frame_equal(
+        lf.collect(),
+        pl.DataFrame({"x": x, "y": y}, schema={"x": pl.Int64, "y": pl.Int64}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("join_type", "expected"),
+    [
+        ("SEMI", {"x": [1, 3]}),
+        ("ANTI", {"x": [2, 4]}),
+        ("RIGHT SEMI", {"y": [10, 20]}),
+        ("RIGHT ANTI", {"y": [30]}),
+    ],
+)
+def test_semi_anti_join_on_is_not_distinct_from(
+    join_type: str, expected: dict[str, list[int]]
+) -> None:
+    frames = {
+        "a": pl.LazyFrame(
+            {"k": [1, 2, None, None], "g": [0, 0, 0, None], "x": [1, 2, 3, 4]}
+        ),
+        "b": pl.LazyFrame({"k": [1, None, 5], "g": [0, 0, 0], "y": [10, 20, 30]}),
+    }
+    (column,) = expected
+    result = pl.SQLContext(frames=frames).execute(
+        f"SELECT {column} FROM a {join_type} JOIN b ON a.k IS NOT DISTINCT FROM b.k "
+        f"AND a.g IS NOT DISTINCT FROM b.g ORDER BY {column}",
+        eager=True,
+    )
+    assert_frame_equal(result, pl.DataFrame(expected))
 
 
 def test_join_on_decimal_mul_range_fused() -> None:
@@ -3395,6 +3473,19 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
         "f": pl.DataFrame({"x": [1.0, 2.5, 3.0, None], "w": [1, 2, 3, 4]}),
         "f32": pl.DataFrame({"f": pl.Series([0.1, 0.5], dtype=pl.Float32)}),
         "n": pl.DataFrame({"k": [1, 2], "nk": [None, None]}),
+        "dt": pl.DataFrame({"d": [date(2024, 1, 1), date(2024, 1, 2)], "i": [1, 2]}),
+        "ts": pl.DataFrame(
+            {"ts": [datetime(2024, 1, 1), datetime(2024, 1, 2, 12)], "j": [1, 2]}
+        ),
+        "ms": pl.DataFrame(
+            {
+                "tm": pl.Series(
+                    [datetime(2024, 1, 1), datetime(2024, 1, 2, 12)],
+                    dtype=pl.Datetime("ms"),
+                ),
+                "m": [1, 2],
+            }
+        ),
     }
 
 
@@ -3425,6 +3516,14 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
             "SELECT a.k FROM f32 JOIN a ON f32.f = 0.1 ORDER BY a.k",
             [(1,), (2,), (3,), (None,)],
         ),
+        (
+            "SELECT dt.i, ts.j FROM dt LEFT JOIN ts ON dt.d = ts.ts ORDER BY dt.i",
+            [(1, 1), (2, None)],
+        ),
+        (
+            "SELECT ts.j, ms.m FROM ts JOIN ms ON ts.ts = ms.tm ORDER BY ts.j",
+            [(1, 1), (2, 2)],
+        ),
         # `join_where` conditions
         (
             "SELECT a.k, f.w FROM a LEFT JOIN f ON a.k > f.x / 2 AND f.w < 3 ORDER BY a.k, f.w",
@@ -3446,6 +3545,10 @@ def key_dtype_frames() -> dict[str, pl.DataFrame]:
         (
             "SELECT a.k, (SELECT COUNT(*) FROM b WHERE b.d = a.k) AS m FROM a ORDER BY a.k",
             [(1, 1), (2, 0), (3, 1), (None, 0)],
+        ),
+        (
+            "SELECT dt.i, (SELECT COUNT(*) FROM ts WHERE ts.ts = dt.d) AS n FROM dt ORDER BY dt.i",
+            [(1, 1), (2, 0)],
         ),
         (
             "SELECT a.k FROM a WHERE a.x IN (SELECT b.y / 10 FROM b WHERE b.d = a.k) ORDER BY a.k",
@@ -3483,6 +3586,23 @@ def test_natural_join_decimal_scales(key_dtype_frames: dict[str, pl.DataFrame]) 
             "z": [7, 8],
         }
     )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("join", "expected"),
+    [
+        ("NATURAL JOIN", pl.DataFrame({"k": [datetime(2024, 1, 1)]})),
+        ("NATURAL SEMI JOIN", pl.DataFrame({"k": [date(2024, 1, 1)]})),
+        ("NATURAL ANTI JOIN", pl.DataFrame({"k": [date(2024, 1, 2)]})),
+    ],
+)
+def test_natural_join_date_timestamp_31041(join: str, expected: pl.DataFrame) -> None:
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"k": [date(2024, 1, 1), date(2024, 1, 2)]}),
+        b=pl.DataFrame({"k": [datetime(2024, 1, 1)]}),
+    )
+    result = ctx.execute(f"SELECT * FROM a {join} b", eager=True)
     assert_frame_equal(result, expected)
 
 
@@ -3561,6 +3681,56 @@ def test_join_where_number_with_string_raises(condition: str) -> None:
             "GROUP BY k) d ON d.k = a.k ORDER BY a.x",
             [(10, 12), (20, 21)],
         ),
+        (
+            "SELECT a.x, d.v FROM a, LATERAL (SELECT b.v FROM b WHERE b.k = a.k) d "
+            "ORDER BY a.x, d.v",
+            [(10, 100), (10, 101), (20, 200)],
+        ),
+        (
+            "SELECT a.x, d.v, e.w FROM a, (SELECT b.v FROM b WHERE b.k = a.k) d, "
+            "LATERAL (SELECT d.v + a.x AS w) e WHERE e.w > 120 ORDER BY a.x, d.v",
+            [(20, 200, 220)],
+        ),
+        (
+            "SELECT a.x, d.m, d.n FROM a, LATERAL (SELECT MAX(b.v) AS m, "
+            "COUNT(*) AS n FROM b WHERE b.k = a.k) d ORDER BY a.x",
+            [(10, 101, 2), (20, 200, 1), (30, None, 0)],
+        ),
+        (
+            "SELECT a.x, d.m FROM a CROSS JOIN LATERAL (SELECT "
+            "COALESCE(MAX(b.v), 0) + a.x AS m FROM b WHERE b.k = a.k) d ORDER BY a.x",
+            [(10, 111), (20, 220), (30, 30)],
+        ),
+        (
+            "SELECT a.x, d.m FROM a LEFT JOIN LATERAL (SELECT MAX(b.v) AS m FROM b "
+            "WHERE b.k = a.k HAVING COUNT(*) > 1) d ON TRUE ORDER BY a.x",
+            [(10, 101), (20, None), (30, None)],
+        ),
+        (
+            "SELECT a.x, d.n FROM a, LATERAL (SELECT COUNT(*) AS n FROM b "
+            "WHERE b.k = a.k HAVING n > 1) d ORDER BY a.x",
+            [(10, 2)],
+        ),
+        (
+            "SELECT a.x, d.v FROM a, LATERAL (SELECT 0 AS v FROM b "
+            "WHERE b.k = a.k HAVING MAX(v) > 100) d ORDER BY a.x",
+            [(10, 0), (20, 0)],
+        ),
+        (
+            "SELECT a.x, d.s FROM a, LATERAL (SELECT SUM(b.v * a.x) AS s FROM b "
+            "WHERE b.k = a.k) d ORDER BY a.x",
+            [(10, 2010), (20, 4000), (30, None)],
+        ),
+        (
+            "SELECT a.x, d.n FROM a, LATERAL (SELECT COUNT(*) AS n WHERE a.k > 1) d "
+            "ORDER BY a.x",
+            [(10, 0), (20, 1), (30, 0)],
+        ),
+        (
+            "SELECT a.x, d.n FROM a, LATERAL (SELECT COUNT(*) AS n FROM b) d "
+            "ORDER BY a.x",
+            [(10, 4), (20, 4), (30, 4)],
+        ),
     ],
 )
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -3608,6 +3778,7 @@ def test_lateral_derived_table_reads_left_input_once(
     [
         "SELECT a.x, c.v FROM b RIGHT JOIN c ON b.v = c.v",
         "SELECT COUNT(*) AS n FROM b WHERE b.v = a.k GROUP BY ()",
+        "SELECT MAX(b.v) FROM b WHERE b.v > a.k",
         "SELECT a.k AS z FROM b ORDER BY SUM(b.v)",
         "SELECT SUM(a.x) AS s FROM b GROUP BY b.v",
         "SELECT a.k FROM b GROUP BY 2",
@@ -3624,6 +3795,44 @@ def test_lateral_derived_table_unsupported(derived: str) -> None:
         pl.SQLContext(a=a, b=b, c=c).execute(
             f"SELECT a.k FROM a CROSS JOIN ({derived}) d", eager=True
         )
+
+
+def test_lateral_comma_form_reads_earlier_tables_only() -> None:
+    a = pl.DataFrame({"k": [1, 2]})
+    c = pl.DataFrame({"k": [9]})
+    with pytest.raises(ColumnNotFoundError):
+        pl.SQLContext(a=a, c=c).execute(
+            "SELECT a.k FROM a, LATERAL (SELECT c.k AS v) d, c", eager=True
+        )
+
+
+@pytest.mark.parametrize(
+    ("derived", "check"),
+    [
+        (
+            "SELECT MIN(r.v) AS x, MAX(r.w) AS y FROM "
+            "(SELECT v, w FROM b GROUP BY v, w LIMIT 1) r WHERE r.v > a.k",
+            "d.x = d.y",
+        ),
+        (
+            "SELECT COUNT(*) AS x, SUM(1) AS y FROM b "
+            "WHERE b.v > a.k AND RANDOM() > 0.5 HAVING COUNT(*) > 0",
+            "d.x = d.y AND d.x > 0",
+        ),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lateral_aggregates_read_the_same_rows(
+    derived: str, check: str, engine: Literal["in-memory", "streaming"]
+) -> None:
+    a = pl.DataFrame({"k": [-1]})
+    b = pl.DataFrame({"v": range(2000), "w": range(2000)})
+    result = (
+        pl.SQLContext(a=a, b=b)
+        .execute(f"SELECT {check} AS ok FROM a, LATERAL ({derived}) d")
+        .collect(engine=engine)
+    )
+    assert result["ok"].to_list() == [True]
 
 
 def test_lateral_derived_table_ambiguous_outer_column() -> None:
@@ -3663,3 +3872,123 @@ def test_join_untyped_literal_keys(on: str, how: str) -> None:
         check_dtypes=False,
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize(
+    "on",
+    [
+        "a.k = b.k AND b.k = 1 AND b.k = 2",
+        "a.k = b.k AND a.k = 1 AND a.k = 2",
+        "a.k = b.k AND b.k = 1 AND 1 = b.k",
+        "a.k = b.k AND a.k * a.k = b.k",
+        "ABS(a.k - 1) = b.k AND a.k = b.k",
+    ],
+)
+@pytest.mark.parametrize("how", ["INNER", "LEFT", "RIGHT", "FULL", "SEMI", "ANTI"])
+def test_join_keys_with_repeated_names(on: str, how: str) -> None:
+    # keys named alike (two constants are both `literal`), as in Postgres
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"k": [1, 2, None]}),
+            "b": pl.DataFrame({"k": [1, 2, None]}),
+        },
+        query=f"SELECT * FROM a {how} JOIN b ON {on}",
+        compare_with="duckdb",
+        check_row_order=False,
+        check_column_names=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM a POSITIONAL JOIN b",
+        "SELECT * FROM b POSITIONAL JOIN a",
+        "SELECT x.k, y.k AS k2 FROM a AS x POSITIONAL JOIN a y",
+        "SELECT * FROM a POSITIONAL JOIN (SELECT v FROM b WHERE v > 7) AS c",
+        "SELECT a.k, b.v, c.s FROM a POSITIONAL JOIN b JOIN a AS c ON c.k = b.v - 7",
+        "SELECT o.k, p.v FROM a AS o CROSS JOIN LATERAL (SELECT b.v FROM a POSITIONAL JOIN b) AS p",
+    ],
+)
+def test_positional_join(query: str) -> None:
+    assert_sql_matches(
+        {
+            "a": pl.LazyFrame({"k": [1, 2], "s": ["x", "y"]}),
+            "b": pl.LazyFrame({"v": [7, 8, 9]}),
+        },
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_positional_join_names_and_errors() -> None:
+    a = pl.DataFrame({"k": [1, 2]})
+    b = pl.DataFrame({"k": [7, 8, 9]})
+    tables = {
+        "a": a,
+        "b": b,
+        "positional": a,
+        "update": a,
+        "ns.positional": a,
+        "ns.table": a,
+    }
+    with pl.SQLContext(tables) as ctx:
+        # names that are keywords
+        for left in [
+            "a",
+            "a AS x",
+            "a x",
+            "(SELECT * FROM a) AS s",
+            "a AS update",
+            "a update",
+            "ns.table",
+            "update",
+            "a AS using",
+        ]:
+            assert_frame_equal(
+                ctx.execute(f"SELECT * FROM {left} POSITIONAL JOIN b", eager=True),
+                pl.DataFrame({"k": [1, 2, None], "k:b": [7, 8, 9]}),
+            )
+        assert_frame_equal(
+            ctx.execute(
+                "SELECT * FROM b POSITIONAL JOIN update POSITIONAL JOIN a", eager=True
+            ),
+            pl.DataFrame(
+                {"k": [7, 8, 9], "k:update": [1, 2, None], "k:a": [1, 2, None]}
+            ),
+        )
+        # where a name or a column goes, the word is a name
+        assert ctx.execute(
+            "SELECT b.k FROM b JOIN (SELECT 8 AS positional) AS p ON b.k = positional "
+            "JOIN a ON a.k = 1",
+            eager=True,
+        ).rows() == [(8,)]
+        for query in [
+            # an alias followed by its join condition
+            "SELECT positional.k FROM b JOIN a positional ON positional.k = b.k - 6 "
+            "JOIN a ON a.k = positional.k",
+            "SELECT positional.k FROM a JOIN a positional USING (k) "
+            "JOIN b ON b.k - 6 = positional.k",
+            "SELECT positional.k FROM a AS positional JOIN b ON positional.k = b.k - 6",
+            "SELECT positional.k FROM positional JOIN b ON positional.k = b.k - 6",
+            "SELECT p.k FROM (positional AS p JOIN b ON p.k = b.k - 6)",
+            "SELECT ns.positional.k FROM ns.positional JOIN b ON ns.positional.k = b.k - 6",
+        ]:
+            assert sorted(ctx.execute(query, eager=True).rows()) == [(1,), (2,)]
+        ctx.execute("CREATE VIEW v AS SELECT * FROM a POSITIONAL JOIN b")
+        assert ctx.execute("SELECT count(*) AS n FROM v", eager=True).item() == 3
+        # a correlated LATERAL would pair the rows of the outer values
+        with pytest.raises(SQLInterfaceError):
+            ctx.execute(
+                "SELECT o.k, p.k FROM a AS o CROSS JOIN LATERAL "
+                "(SELECT b.k FROM a POSITIONAL JOIN b WHERE a.k = o.k) AS p",
+                eager=True,
+            )
+        for constraint in ["ON a.k = b.k", "USING (k)"]:
+            with pytest.raises(
+                SQLInterfaceError, match="does not take a join condition"
+            ):
+                ctx.execute(f"SELECT * FROM a POSITIONAL JOIN b {constraint}")

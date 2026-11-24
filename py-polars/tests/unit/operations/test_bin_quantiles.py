@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import math
+import random
+from bisect import bisect_left, bisect_right
+from typing import Any
+
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, SchemaError
 from polars.testing import assert_series_equal
 
 
@@ -69,9 +74,80 @@ def test_bin_quantiles_include_intervals() -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.parametrize("quantiles", [[-0.1], [1.5]])
-def test_bin_quantiles_out_of_range_raises(quantiles: list[float]) -> None:
+@pytest.mark.parametrize("quantiles", [[-0.1], [1.5], [float("nan")], [None]])
+def test_bin_quantiles_out_of_range_raises(quantiles: Any) -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]})
 
     with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
         lf.select(pl.col("a").bin_quantiles(quantiles, labels=False)).collect_schema()
+
+
+def test_bin_quantiles_bool_raises() -> None:
+    with pytest.raises(SchemaError, match="dtype 'numeric'"):
+        pl.col("a").bin_quantiles([True], labels=False)
+
+
+@pytest.mark.parametrize("n_bins", [1, 2, 4, 7, 100, 300])
+@pytest.mark.parametrize("right_closed", [False, True])
+def test_bin_quantiles_matches_sorted_oracle(n_bins: int, right_closed: bool) -> None:
+    rng = random.Random(n_bins)
+    values = [None if rng.random() < 0.1 else rng.randint(-5, 5) for _ in range(200)]
+    s = pl.concat(
+        [pl.Series("a", values[i : i + 40]) for i in range(0, 200, 40)], rechunk=False
+    )
+    ordered = sorted(v for v in values if v is not None)
+    span = len(ordered) - 1
+    breaks = [ordered[i * span // n_bins] for i in range(1, n_bins)]
+    find = bisect_left if right_closed else bisect_right
+    expected = [None if v is None else find(breaks, v) for v in values]
+
+    result = s.bin_quantiles(
+        n_bins, labels=False, include_intervals=True, right_closed=right_closed
+    )
+
+    assert_series_equal(result.struct["bin"], pl.Series("bin", expected, pl.UInt32))
+    right = [None if b is None else (breaks + [None])[b] for b in expected]
+    assert_series_equal(result.struct["right"], pl.Series("right", right, pl.Int64))
+
+
+def test_bin_quantiles_decimal_matches_physical() -> None:
+    s = pl.Series("a", [3, None, 1, 4, 1, 5, 9, 2, 6], dtype=pl.Int64)
+    expected = s.bin_quantiles([0.3, 0.6], labels=False)
+    assert_series_equal(
+        s.cast(pl.Decimal(10, 1)).bin_quantiles([0.3, 0.6], labels=False), expected
+    )
+
+
+@pytest.mark.parametrize("right_closed", [False, True])
+def test_bin_quantiles_floats_explicit_matches_sorted_oracle(
+    right_closed: bool,
+) -> None:
+    rng = random.Random(7)
+    specials = [math.nan, -0.0, 0.0, math.inf, -math.inf]
+    values = [
+        None
+        if rng.random() < 0.1
+        else rng.choice(specials)
+        if rng.random() < 0.3
+        else rng.uniform(-5, 5)
+        for _ in range(300)
+    ]
+    s = pl.concat(
+        [pl.Series("a", values[i : i + 50]) for i in range(0, 300, 50)], rechunk=False
+    )
+    probs = [0.0, 0.1, 0.5, 0.9, 0.97, 1.0]
+
+    def key(v: float) -> tuple[bool, float]:
+        # Polars' total order: NaN is the largest value and equal to itself.
+        return (True, 0.0) if math.isnan(v) else (False, v)
+
+    ordered = sorted((v for v in values if v is not None), key=key)
+    span = len(ordered) - 1
+    breaks = [ordered[math.floor(span * q)] for q in probs]
+    find = bisect_left if right_closed else bisect_right
+    keys = [key(b) for b in breaks]
+    expected = [None if v is None else find(keys, key(v)) for v in values]
+
+    result = s.bin_quantiles(probs, labels=False, right_closed=right_closed)
+
+    assert_series_equal(result, pl.Series("a", expected, pl.UInt32))

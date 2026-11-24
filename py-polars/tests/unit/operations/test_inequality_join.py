@@ -1449,18 +1449,21 @@ def test_outer_join_where_key_with_one_input_condition(
     assert "NESTED LOOP JOIN" not in query.explain()
 
 
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("how", ["left", "right", "full"])
 @pytest.mark.parametrize("sorted_keys", [False, True])
-@pytest.mark.parametrize("morsel_size", [2, 100_000])
+@pytest.mark.parametrize(
+    ("engine", "morsel_size"),
+    [("in-memory", None), ("streaming", 2), ("streaming", 100_000)],
+)
 def test_outer_join_where_key_with_both_inputs_condition(
     engine: EngineType,
     how: Literal["left", "right", "full"],
     sorted_keys: bool,
-    morsel_size: int,
+    morsel_size: int | None,
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(morsel_size))
+    if morsel_size is not None:
+        plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(morsel_size))
     left = pl.LazyFrame({"k": [1, 1, 1, 2, 2, 3, None], "v": [1, 5, 4, 2, None, 9, 1]})
     right = pl.LazyFrame({"k": [1, 1, 2, 3, 4, None], "v": [3, 0, None, 1, 0, 2]})
     if sorted_keys:
@@ -1536,6 +1539,20 @@ def test_outer_join_where_key_kinds(
     )
     plan = query.explain(engine="streaming")
     assert ("NESTED LOOP JOIN" in plan) == (how in nested_loop_hows)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_inner_join_where_eq_missing_plans_equi_join(engine: EngineType) -> None:
+    left = pl.LazyFrame({"k": [1, 2, None, None], "v": [1, 2, 3, 40]})
+    right = pl.LazyFrame({"k": [1, None, 5], "w": [10, 20, 30]})
+    query = left.join_where(
+        right, pl.col("k").eq_missing(pl.col("k_right")), pl.col("v") < pl.col("w")
+    )
+    assert 'LEFT PLAN ON: [col("k")]' in query.explain(engine=engine)
+    expected = pl.DataFrame(
+        {"k": [1, None], "v": [1, 3], "k_right": [1, None], "w": [10, 20]}
+    )
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

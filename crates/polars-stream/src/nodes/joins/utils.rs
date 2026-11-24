@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
-use polars_expr::hash_keys::HashKeys;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_ooc::{ParameterFreeSpillContext, RandomSpillContext, SpillFrame};
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlRandomState;
@@ -163,7 +163,7 @@ impl SpillFrameSearchBuffer {
         for (_, frame) in self.sfs_at_offsets.range(first_offset..live_end) {
             acc.vstack_mut(&*frame.get().await).unwrap();
         }
-        acc.slice((live_start - first_offset) as i64, self.total_rows)
+        acc.slice((live_start - first_offset, self.total_rows))
     }
 
     fn gc(&mut self) {
@@ -323,6 +323,7 @@ impl JoinSampleStats {
         key_selectors: &[StreamExpr],
         payload_select: Option<&[Option<PlSmallStr>]>,
         with_min_hash: bool,
+        key_encoder: &KeyEncoder,
         null_is_valid: bool,
         random_state: &PlRandomState,
         sample_limit: usize,
@@ -364,7 +365,7 @@ impl JoinSampleStats {
                  df| {
                     let keys = ASYNC.block_on(select_key_columns(df, key_selectors, state))?;
                     let hash_keys =
-                        HashKeys::from_df(&keys, random_state.clone(), null_is_valid, false);
+                        key_encoder.try_hash_keys(&keys, random_state.clone(), null_is_valid)?;
                     match &mut min_hash {
                         Some(min_hash) => hash_keys.for_each_hash(|_, opt_h| {
                             sketch.insert(opt_h.unwrap_or(0));

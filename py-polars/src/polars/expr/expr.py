@@ -37,6 +37,8 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
     parse_predicates_constraints_into_expression,
+    parse_quantile_into_expression,
+    parse_quantile_values,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -2805,6 +2807,10 @@ class Expr(metaclass=_Meta):
         """
         Get an index of a maximal value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
@@ -2833,6 +2839,10 @@ class Expr(metaclass=_Meta):
     def arg_min(self) -> Expr:
         """
         Get an index of a minimal value.
+
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
 
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
@@ -3612,6 +3622,10 @@ class Expr(metaclass=_Meta):
         """
         Get maximum value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -3633,6 +3647,10 @@ class Expr(metaclass=_Meta):
     def max_by(self, by: IntoExpr) -> Expr:
         """
         Get maximum value, ordered by another expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
@@ -3669,6 +3687,10 @@ class Expr(metaclass=_Meta):
         """
         Get minimum value.
 
+        Null values are ignored, and so are NaN values of a float column. Values of
+        a nested dtype (List, Array, Struct and Map) compare in the order
+        :meth:`sort` puts them in, where NaN is larger than any other number.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -3690,6 +3712,10 @@ class Expr(metaclass=_Meta):
     def min_by(self, by: IntoExpr) -> Expr:
         """
         Get minimum value, ordered by another expression.
+
+        Null values of `by` are ignored, and so are NaN values of a float `by`. A `by`
+        of a nested dtype (List, Array, Struct and Map) compares in the order
+        :meth:`sort` puts it in, where NaN is larger than any other number.
 
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
@@ -3937,7 +3963,7 @@ class Expr(metaclass=_Meta):
     @unstable()
     def approx_quantile(
         self,
-        quantile: float | list_[float] | Expr,
+        quantile: float | Sequence[float | None] | Expr | None,
         *,
         method: ApproxQuantileMethod = "auto",
         error: float = 0.001,
@@ -3952,8 +3978,8 @@ class Expr(metaclass=_Meta):
         ----------
         quantile
             A single quantile, a list of quantiles, or an expression that
-            resolves to a list of quantiles. The dtype of the expression must
-            be a floating point value.
+            resolves to one quantile or a list of them. The dtype must be numeric.
+            A string is taken as a column name. A null quantile gives a null result.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all
@@ -4049,10 +4075,10 @@ class Expr(metaclass=_Meta):
             msg = f"`error_tightness` must be one of {{'empirical', 'formal'}}, got {error_tightness!r}"
             raise ValueError(msg)
 
-        q = quantile._pyexpr if isinstance(quantile, pl.Expr) else quantile
+        quantile_pyexpr = parse_quantile_into_expression(quantile)
         return wrap_expr(
             self._pyexpr.approx_quantile(
-                q,
+                quantile_pyexpr,
                 method,
                 error,
                 use_formal_bound=error_tightness == "formal",
@@ -4813,7 +4839,7 @@ class Expr(metaclass=_Meta):
 
     def quantile(
         self,
-        quantile: float | list_[float] | Expr,
+        quantile: float | Sequence[float | None] | Expr | None,
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
@@ -4825,6 +4851,7 @@ class Expr(metaclass=_Meta):
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            A null quantile gives a null result.
 
             - If a single float, returns a single f64 value per row.
             - If a list of floats, returns a list of f64 values per row (one value per quantile).
@@ -4889,7 +4916,7 @@ class Expr(metaclass=_Meta):
         │ [1.25, 3.75] │
         └──────────────┘
         """  # noqa: W505
-        quantile_pyexpr = parse_into_expression(quantile)
+        quantile_pyexpr = parse_quantile_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
 
     @deprecated("`cut` is deprecated; use `bin_intervals` instead")
@@ -5097,7 +5124,11 @@ class Expr(metaclass=_Meta):
             )
         else:
             pyexpr = self._pyexpr.qcut(
-                quantiles, labels, left_closed, allow_duplicates, include_breaks
+                parse_quantile_values(quantiles),
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
             )
 
         return wrap_expr(pyexpr)
@@ -5275,7 +5306,10 @@ class Expr(metaclass=_Meta):
             )
         else:
             pyexpr = self._pyexpr.bin_quantiles(
-                list(quantiles), labels_arg, include_intervals, right_closed
+                parse_quantile_values(quantiles),
+                labels_arg,
+                include_intervals,
+                right_closed,
             )
         return wrap_expr(pyexpr)
 
@@ -8900,6 +8934,7 @@ class Expr(metaclass=_Meta):
         """  # noqa: W505
         window_size = _prepare_rolling_by_window_args(window_size)
         by_pyexpr = parse_into_expression(by)
+        quantile = parse_quantile_values(quantile, allow_list=False)[0]
         return wrap_expr(
             self._pyexpr.rolling_quantile_by(
                 by_pyexpr,
@@ -9946,6 +9981,7 @@ class Expr(metaclass=_Meta):
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
         """  # noqa: W505
+        quantile = parse_quantile_values(quantile, allow_list=False)[0]
         return wrap_expr(
             self._pyexpr.rolling_quantile(
                 quantile,
@@ -12281,11 +12317,49 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.log1p())
 
+    def x_log_y(self, y: IntoExpr, base: float = math.e) -> Expr:
+        """
+        Compute `x * log(y)` to a given base, where `x` is this expression.
+
+        The result is 0 where `x` is 0, unless `y` is NaN, so `0 * log(0)` is 0.
+
+        .. engine-support:: in-memory, streaming
+
+        Parameters
+        ----------
+        y
+            The expression to take the logarithm of. Accepts expression input;
+            strings are parsed as column names.
+        base
+            Given base, defaults to `e`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3], "y": [0, 2, 4, 8]})
+        >>> df.select(pl.col("x").x_log_y("y", base=2))
+        shape: (4, 1)
+        ┌─────┐
+        │ x   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        │ 4.0 │
+        │ 9.0 │
+        └─────┘
+        """
+        y_pyexpr = parse_into_expression(y)
+        return wrap_expr(self._pyexpr.x_log_y(y_pyexpr, base))
+
     def entropy(self, base: float = math.e, *, normalize: bool = True) -> Expr:
         """
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+        `0 * log(0)` is taken as 0 and null values are ignored. Negative values give
+        NaN. With `normalize=True`, input that sums to zero (including empty,
+        all-null and all-zero input) gives NaN; with `normalize=False` it gives 0.
 
         .. engine-support:: in-memory, streaming
 

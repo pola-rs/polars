@@ -785,7 +785,7 @@ def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
     df.write_delta(root)
 
     # Manually overwrite the file with one that has nanosecond timestamps.
-    parquet_files = [x for x in root.iterdir() if x.suffix == ".parquet"]
+    parquet_files = [x for x in root.rglob("*.parquet") if "_delta_log" not in x.parts]
     assert len(parquet_files) == 1
     parquet_file_path = parquet_files[0]
 
@@ -1913,6 +1913,8 @@ def test_scan_delta_runtime_join_filter(
     capfd: pytest.CaptureFixture[str],
     renamed: bool,
 ) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
     # One file per append.
     for i in range(3):
         pl.DataFrame({"x": range(100 * i, 100 * i + 100), "f": range(100)}).write_delta(
@@ -1952,6 +1954,8 @@ def test_scan_delta_runtime_join_filter_with_partition_predicate(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
     for p in range(3):
         pl.DataFrame({"x": range(100 * p, 100 * p + 100), "p": p}).write_delta(
             tmp_path, mode="append", delta_write_options={"partition_by": "p"}

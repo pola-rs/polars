@@ -24,6 +24,7 @@ use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
+use polars_utils::slice_enum::Slice;
 use slotmap::{DenseSlotMap, Key, SecondaryMap};
 
 use crate::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -119,26 +120,21 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
-        PhysNodeKind::StreamingSlice {
-            input,
-            offset,
-            length,
-            ..
-        } => (
+        PhysNodeKind::StreamingSlice { input, slice } => (
             PhysicalPropsDescription::Slice {
-                offset: *offset as i64,
-                length: *length,
+                offset: slice.positive_offset(),
+                length: slice.len(),
             },
             vec![input.node],
         ),
         PhysNodeKind::NegativeSlice {
             input,
-            offset,
+            offset_from_end,
             length,
             ..
         } => (
             PhysicalPropsDescription::NegativeSlice {
-                offset: *offset,
+                offset: Slice::tail(*offset_from_end).to_signed_offset_len().0,
                 length: *length,
             },
             vec![input.node],
@@ -334,7 +330,7 @@ pub fn phys_props(
             PhysicalPropsDescription::SortedGroupBy {
                 key: key.to_string(),
                 aggs: fmt_exprs(aggs, expr_arena),
-                slice: slice.map(|(o, l)| (idxsize_to_u64(o), idxsize_to_u64(l))),
+                slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
             },
             vec![input.node],
         ),
@@ -364,7 +360,7 @@ pub fn phys_props(
                         nulls_last,
                     })
                     .collect(),
-                slice: *slice,
+                slice: slice.map(|s| s.to_signed_offset_len()),
                 multithreaded: *multithreaded,
                 maintain_order: *maintain_order,
                 limit: limit.map(idxsize_to_u64),
@@ -521,7 +517,7 @@ pub fn phys_props(
                         .collect(),
                     row_index_name: row_index.as_ref().map(|ri| ri.name.to_string()),
                     row_index_offset: row_index.as_ref().map(|ri| idxsize_to_u64(ri.offset)),
-                    pre_slice: pre_slice.map(|(o, l)| (o, idxsize_to_u64(l))),
+                    pre_slice,
                     predicate: predicate
                         .as_ref()
                         .map(|e| e.display(expr_arena).to_string()),
@@ -550,6 +546,7 @@ pub fn phys_props(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges: _,
         } => (
             PhysicalPropsDescription::GroupBy {
                 num_inputs: inputs.len(),
@@ -577,6 +574,8 @@ pub fn phys_props(
             fused_predicate,
             runtime_filters: _,
             estimated_rows: _,
+            key_ranges: _,
+            pre_drop_schema: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),
@@ -699,7 +698,7 @@ pub fn phys_props(
                             ]
                         }),
                         suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice,
+                        slice: args.slice.map(|s| s.to_signed_offset_len()),
                         coalesce: fmt_from_static_str(args.coalesce),
                         allow_eq: *allow_eq,
                         check_sortedness: *check_sortedness,
@@ -723,7 +722,7 @@ pub fn phys_props(
                 left_on: left_on.iter().map(ToString::to_string).collect(),
                 right_on: right_on.iter().map(ToString::to_string).collect(),
                 suffix: args.suffix.as_ref().map(ToString::to_string),
-                slice: args.slice,
+                slice: args.slice.map(|s| s.to_signed_offset_len()),
                 coalesce: fmt_from_static_str(args.coalesce),
                 descending: *descending,
             },
@@ -746,7 +745,7 @@ pub fn phys_props(
                 maintain_order: fmt_from_static_str(args.maintain_order),
                 validation: fmt_from_static_str(args.validation),
                 suffix: args.suffix.as_ref().map(ToString::to_string),
-                slice: args.slice,
+                slice: args.slice.map(|s| s.to_signed_offset_len()),
             };
 
             let props = match &args.how {
@@ -781,7 +780,7 @@ pub fn phys_props(
                             ]
                         }),
                         suffix: args.suffix.as_ref().map(ToString::to_string),
-                        slice: args.slice,
+                        slice: args.slice.map(|s| s.to_signed_offset_len()),
                         coalesce: fmt_from_static_str(args.coalesce),
                         allow_eq: *allow_eq,
                         check_sortedness: *check_sortedness,
@@ -815,7 +814,7 @@ pub fn phys_props(
                                 vec![to_description(operator1)]
                             },
                             suffix: args.suffix.as_ref().map(ToString::to_string),
-                            slice: args.slice,
+                            slice: args.slice.map(|s| s.to_signed_offset_len()),
                         }
                     },
                     _ => generic_join(),
@@ -865,7 +864,7 @@ pub fn phys_props(
                     include_boundaries: *include_boundaries,
                     closed_window: fmt_from_static_str(closed_window),
                     aggs: fmt_exprs(aggs, expr_arena),
-                    slice: slice.map(|(o, l)| (idxsize_to_u64(o), idxsize_to_u64(l))),
+                    slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
                 },
                 vec![input.node],
             )
@@ -886,7 +885,7 @@ pub fn phys_props(
                 period: period.to_string(),
                 offset: offset.to_string(),
                 closed_window: fmt_from_static_str(closed),
-                slice: slice.map(|(o, l)| (idxsize_to_u64(o), idxsize_to_u64(l))),
+                slice: slice.map(|s| (s.positive_offset() as u64, s.len())),
                 aggs: fmt_exprs(aggs, expr_arena),
             },
             vec![input.node],

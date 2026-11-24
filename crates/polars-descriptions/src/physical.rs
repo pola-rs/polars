@@ -50,20 +50,20 @@ pub enum PhysicalPropsDescription {
         include_boundaries: bool,
         closed_window: String,
         aggs: Vec<String>,
-        slice: Option<(u64, u64)>,
+        slice: Option<(u64, Option<usize>)>,
     },
     RollingGroupBy {
         index_column: String,
         period: String,
         offset: String,
         closed_window: String,
-        slice: Option<(u64, u64)>,
+        slice: Option<(u64, Option<usize>)>,
         aggs: Vec<String>,
     },
     SortedGroupBy {
         key: String,
         aggs: Vec<String>,
-        slice: Option<(u64, u64)>,
+        slice: Option<(u64, Option<usize>)>,
     },
     InMemoryMap {
         format_str: String,
@@ -93,7 +93,7 @@ pub enum PhysicalPropsDescription {
         /// [value, dtype_str]
         tolerance: Option<[String; 2]>,
         suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
         coalesce: String,
         allow_eq: bool,
         check_sortedness: bool,
@@ -102,7 +102,7 @@ pub enum PhysicalPropsDescription {
         left_on: Vec<String>,
         right_on: Vec<String>,
         suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
         coalesce: String,
         descending: bool,
     },
@@ -143,7 +143,7 @@ pub enum PhysicalPropsDescription {
         maintain_order: String,
         validation: String,
         suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
     },
     InMemoryAsOfJoin {
         left_on: Vec<String>,
@@ -154,7 +154,7 @@ pub enum PhysicalPropsDescription {
         /// [value, dtype_str]
         tolerance: Option<[String; 2]>,
         suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
         coalesce: String,
         allow_eq: bool,
         check_sortedness: bool,
@@ -164,7 +164,7 @@ pub enum PhysicalPropsDescription {
         right_on: Vec<String>,
         inequality_operators: Vec<InequalityOperatorDescription>,
         suffix: Option<String>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
     },
     Map,
     MultiScan {
@@ -174,7 +174,7 @@ pub enum PhysicalPropsDescription {
         projected_file_columns: Vec<String>,
         row_index_name: Option<String>,
         row_index_offset: Option<u64>,
-        pre_slice: Option<(i64, u64)>,
+        pre_slice: Option<(i64, Option<usize>)>,
         predicate: Option<String>,
         predicate_file_skip_applied: Option<PredicateFileSkipDescription>,
         has_table_statistics: bool,
@@ -236,7 +236,7 @@ pub enum PhysicalPropsDescription {
     },
     Sort {
         sort_columns: Vec<SortColumnDescription>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, Option<usize>)>,
         multithreaded: bool,
         maintain_order: bool,
         limit: Option<u64>,
@@ -248,8 +248,8 @@ pub enum PhysicalPropsDescription {
         keys: Vec<String>,
     },
     Slice {
-        offset: i64,
-        length: usize,
+        offset: usize,
+        length: Option<usize>,
     },
     TopK {
         by_exprs: Vec<String>,

@@ -22,7 +22,8 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, PlRandomState};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
-use polars_expr::groups::Grouper;
+use polars_expr::groups::new_hash_grouper;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::reduce::GroupedReduction;
 use polars_expr::state::ExecutionState;
 use polars_ooc::{MemoryGrant, MostRecentSpillContext, memory_manager};
@@ -167,12 +168,11 @@ pub struct GroupByNode {
 impl GroupByNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        key_schema: Arc<Schema>,
+        key_encoder: KeyEncoder,
         // Input stream i selects keys with key_selectors_per_input[i].
         key_selectors_per_input: Vec<Vec<StreamExpr>>,
         // Input stream i feeds grouped_reductions[k] for each k in reductions_per_input[i].
         reductions_per_input: Vec<Vec<usize>>,
-        grouper: Box<dyn Grouper>,
         // grouped_reductions[k] is passed input cols grouped_reduction_cols[k].
         grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
         payload_per_input: Vec<InputPayload>,
@@ -198,8 +198,9 @@ impl GroupByNode {
             max_hot_table_size,
             num_pipelines,
         );
+        let grouper = new_hash_grouper(&key_encoder);
         let params = GroupByParams {
-            key_schema,
+            key_encoder,
             output_schema,
             reductions_per_input,
             grouped_reduction_cols,

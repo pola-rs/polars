@@ -265,7 +265,7 @@ pub fn encode_rows_with_layout_par(
         .map(|(offset, len)| {
             let sliced = by
                 .iter()
-                .map(|c| c.slice(offset as i64, len))
+                .map(|c| c.slice((offset, len)))
                 .collect::<Vec<_>>();
             encode_columns(&sliced, layout, propagate_nulls)
         });
@@ -327,6 +327,19 @@ pub fn _get_rows_encoded_ca(
 ) -> PolarsResult<BinaryOffsetChunked> {
     let rows_arr = _get_rows_encoded_arr(by, descending, nulls_last, propagate_nulls)?;
     Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
+}
+
+/// The ascending row encoding of `s`, null where `s` is null.
+pub fn row_encode_ordered_propagate_nulls(s: &Series) -> BinaryOffsetChunked {
+    // With `propagate_nulls` the encoding cannot fail.
+    _get_rows_encoded_ca(
+        s.name().clone(),
+        &[s.clone().into_column()],
+        &[false],
+        &[false],
+        true,
+    )
+    .unwrap()
 }
 
 pub fn _get_rows_encoded_arr(

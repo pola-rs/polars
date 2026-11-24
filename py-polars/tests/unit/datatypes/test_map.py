@@ -624,6 +624,20 @@ def test_map_arrow_export_is_a_map_type() -> None:
     assert not field.type.key_field.nullable
 
 
+def test_sliced_list_of_maps_shares_its_list_child_on_export() -> None:
+    pa = pytest.importorskip("pyarrow")
+    s = pl.Series(
+        [[{"a": 1}], [{"b": 2}, {"c": 3}], [{"d": 4}]],
+        dtype=pl.List(MAP),
+    ).slice(1, 1)
+
+    exported = pa.table(s.to_frame()).column(0).chunk(0)
+
+    assert exported.to_pylist() == [[[("b", 2)], [("c", 3)]]]
+    # Trimming the child would copy the offsets.
+    assert len(exported.values) == 4
+
+
 def test_map_arrow_import_matches_entries_positionally() -> None:
     pa = pytest.importorskip("pyarrow")
     # Only Arrow and Parquet do this. The names carry no meaning there, so they are
@@ -651,6 +665,32 @@ def test_map_arrow_import_keeps_duplicate_keys() -> None:
     ]
     # Eventually, we build a Python dict, which keeps only the last value
     assert s.to_list() == [{"a": 2}]
+
+
+def test_map_scalar_materialization_keeps_entries() -> None:
+    pa = pytest.importorskip("pyarrow")
+    tbl = pa.table(
+        {"m": pa.array([[("a", 1), ("a", 2)]], type=pa.map_(pa.string(), pa.int64()))}
+    )
+    s = pl.from_arrow(tbl)["m"]  # type: ignore[index]
+    out = pl.DataFrame({"i": range(3)}).with_columns(m=pl.lit(s).first())
+    # A broadcast row materializes with the same entries as the column it came from.
+    expected = [[{"key": "a", "value": 1}, {"key": "a", "value": 2}]] * 3
+    assert out["m"].cast(ENTRIES).to_list() == expected
+
+
+def test_map_python_dict_keys_colliding_after_cast_are_deduplicated() -> None:
+    d = {1: 10, "1": 20, "b": 2}
+    for s in (
+        pl.DataFrame([{"m": d}], schema={"m": MAP}, strict=False)["m"],
+        pl.Series("m", [d], dtype=MAP, strict=False),
+    ):
+        assert s.to_arrow().to_pylist() == [[("1", 20), ("b", 2)]]
+        assert s.map.get("1").to_list() == [20]
+
+        out = pl.DataFrame({"x": [1, 2]}).with_columns(m=pl.lit(s).first())
+        assert out["m"].to_arrow().to_pylist() == [[("1", 20), ("b", 2)]] * 2
+        assert out["m"].map.get("1").to_list() == [20, 20]
 
 
 def _ipc_buffer(s: pl.Series) -> IO[bytes]:

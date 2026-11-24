@@ -2,9 +2,7 @@ use std::str::FromStr;
 
 #[cfg(feature = "csv")]
 use polars_core::prelude::PlSmallStr;
-use polars_core::prelude::{
-    DataFrame, ExplodeOptions, PolarsError, PolarsResult, polars_bail, polars_ensure,
-};
+use polars_core::prelude::{DataFrame, PolarsError, PolarsResult, polars_bail, polars_ensure};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
 use polars_lazy::prelude::{IntoLazy, LazyFrame};
@@ -17,8 +15,9 @@ use sqlparser::ast::{
 
 use crate::SQLContext;
 use crate::context::SubqueryShape;
-use crate::functions::series_expr;
+use crate::functions::{UNNEST_OPTIONS, series_expr};
 use crate::sql_expr::parse_sql_expr;
+use crate::subquery::strip_nested;
 #[cfg(any(
     feature = "csv",
     feature = "json",
@@ -104,13 +103,131 @@ impl FromStr for PolarsTableFunctions {
     }
 }
 
+/// A file format that SQL reads and writes by name: a file extension, or `FORMAT` in `COPY`.
+pub(crate) enum FileFormat {
+    #[cfg(feature = "csv")]
+    Csv,
+    #[cfg(feature = "parquet")]
+    Parquet,
+    #[cfg(feature = "ipc")]
+    Ipc,
+    #[cfg(feature = "json")]
+    Ndjson,
+}
+
+impl FileFormat {
+    /// The names of the formats, as extensions.
+    pub(crate) const NAMES: &[&str] = &[
+        #[cfg(feature = "csv")]
+        "csv",
+        #[cfg(feature = "parquet")]
+        "parquet",
+        #[cfg(feature = "ipc")]
+        "ipc",
+        #[cfg(feature = "ipc")]
+        "arrow",
+        #[cfg(feature = "ipc")]
+        "feather",
+        #[cfg(feature = "json")]
+        "ndjson",
+        #[cfg(feature = "json")]
+        "jsonl",
+    ];
+
+    /// The format that `name` gives, in any case.
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            #[cfg(feature = "csv")]
+            "csv" => Some(FileFormat::Csv),
+            #[cfg(feature = "parquet")]
+            "parquet" => Some(FileFormat::Parquet),
+            #[cfg(feature = "ipc")]
+            "ipc" | "arrow" | "feather" => Some(FileFormat::Ipc),
+            // Not `json`: `read_json` reads newline-delimited JSON only.
+            #[cfg(feature = "json")]
+            "ndjson" | "jsonl" => Some(FileFormat::Ndjson),
+            _ => None,
+        }
+    }
+
+    /// The format of `path`, by its extension as written.
+    pub(crate) fn of_path(path: &str) -> Option<Self> {
+        let file_name = path.rsplit('/').next()?;
+        let (_, extension) = file_name.rsplit_once('.')?;
+        Self::from_name(extension)
+    }
+}
+
 impl PolarsTableFunctions {
+    /// The function that reads `path`, by its extension as written.
+    #[allow(unreachable_code)]
+    fn for_path(path: &str) -> Option<Self> {
+        FileFormat::of_path(path).map(Self::for_format)
+    }
+
+    /// The table function that reads `format`.
+    fn for_format(format: FileFormat) -> Self {
+        match format {
+            #[cfg(feature = "csv")]
+            FileFormat::Csv => PolarsTableFunctions::ReadCsv,
+            #[cfg(feature = "parquet")]
+            FileFormat::Parquet => PolarsTableFunctions::ReadParquet,
+            #[cfg(feature = "ipc")]
+            FileFormat::Ipc => PolarsTableFunctions::ReadIpc,
+            #[cfg(feature = "json")]
+            FileFormat::Ndjson => PolarsTableFunctions::ReadNdjson,
+        }
+    }
+
+    /// Whether `path` has the extension of a file format.
+    pub(crate) fn reads_path(path: &str) -> bool {
+        Self::for_path(path).is_some()
+    }
+
+    /// The file at `path`, read with defaults. `None` when its extension names no reader.
+    pub(crate) fn read_path(
+        path: &str,
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<Option<(String, LazyFrame)>> {
+        let Some(read_fn) = Self::for_path(path) else {
+            return Ok(None);
+        };
+        read_fn.read_with_defaults(path, ctx).map(Some)
+    }
+
+    /// The file at `path`, read with defaults as `format`, whatever its extension.
+    pub(crate) fn read_as(
+        format: FileFormat,
+        path: &str,
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<LazyFrame> {
+        Ok(Self::for_format(format).read_with_defaults(path, ctx)?.1)
+    }
+
+    fn read_with_defaults(
+        &self,
+        path: &str,
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        let path = SQLValue::SingleQuotedString(path.to_string()).with_empty_span();
+        let arg = SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(SQLExpr::Value(path)));
+        self.execute(&[arg], ctx)
+    }
+
     #[allow(unreachable_code)]
     pub(crate) fn execute(
         &self,
         args: &[SQLFunctionArg],
         ctx: &mut SQLContext,
     ) -> PolarsResult<(String, LazyFrame)> {
+        let reads_file = !matches!(
+            self,
+            PolarsTableFunctions::GenerateSeries | PolarsTableFunctions::Range
+        );
+        polars_ensure!(
+            !reads_file || ctx.allow_file_reads,
+            SQLInterface: "reading files is disabled in this SQLContext"
+        );
         let (name, lf): (String, LazyFrame) = match self {
             #[cfg(feature = "csv")]
             PolarsTableFunctions::ReadCsv => self.read_csv(args)?,
@@ -146,7 +263,7 @@ impl PolarsTableFunctions {
                 _ => polars_bail!(SQLSyntax: "`{}` expects positional arguments; found {}", fname, arg),
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let mut expr = series_expr(fname, &args, include_end, |e| {
+        let mut expr = series_expr(fname, &args, include_end, None, |e| {
             let expr = parse_sql_expr(e, ctx, None)?;
             polars_ensure!(
                 expr_to_leaf_column_names_iter(&expr).next().is_none(),
@@ -159,12 +276,7 @@ impl PolarsTableFunctions {
             vec![&mut expr],
             SubqueryShape::Scalar,
         )?;
-        let lf = lf.select([expr
-            .explode(ExplodeOptions {
-                empty_as_null: false,
-                keep_nulls: false,
-            })
-            .alias(fname)]);
+        let lf = lf.select([expr.explode(UNNEST_OPTIONS).alias(fname)]);
         Ok((fname.to_string(), lf))
     }
 
@@ -261,6 +373,9 @@ impl PolarsTableFunctions {
                 ),
             });
         reader = reader.with_null_values(null_values);
+        if let Some(empty_string_is_null) = options.bool("empty_string_is_null")? {
+            reader = reader.with_missing_is_null(empty_string_is_null);
+        }
         if let Some(ignore_errors) = options.bool("ignore_errors")? {
             reader = reader.with_ignore_errors(ignore_errors);
         }
@@ -458,7 +573,7 @@ impl PolarsTableFunctions {
         function: &str,
         arg: &SQLFunctionArg,
     ) -> PolarsResult<(String, Vec<PlRefPath>)> {
-        let path = |expr: &SQLExpr| match expr {
+        let path = |expr: &SQLExpr| match strip_nested(expr) {
             SQLExpr::Value(SQLValueWithSpan {
                 value: SQLValue::SingleQuotedString(s) | SQLValue::EscapedStringLiteral(s),
                 ..
@@ -472,10 +587,14 @@ impl PolarsTableFunctions {
             );
         };
         if let Some(path) = path(expr) {
-            return Ok((path.to_string(), vec![path]));
+            return Ok((path.to_string(), vec![expand_home_dir(path)?]));
         }
-        if let SQLExpr::Array(SQLArray { elem, .. }) = expr {
+        if let SQLExpr::Array(SQLArray { elem, .. }) = strip_nested(expr) {
             if let Some(paths) = elem.iter().map(path).collect::<Option<Vec<_>>>() {
+                let paths = paths
+                    .into_iter()
+                    .map(expand_home_dir)
+                    .collect::<PolarsResult<_>>()?;
                 return Ok((function.to_string(), paths));
             }
         }
@@ -483,6 +602,15 @@ impl PolarsTableFunctions {
             SQLSyntax:
             "expected a valid file path as a single-quoted string, or a list of them; found: {}", arg,
         )
+    }
+}
+
+/// The path with a leading `~` replaced by the home directory. The Python API does this before
+/// a path reaches Rust; a path in SQL text does not pass through there.
+pub(crate) fn expand_home_dir(path: PlRefPath) -> PolarsResult<PlRefPath> {
+    match polars_io::resolve_homedir(path.as_str()) {
+        std::borrow::Cow::Owned(expanded) => PlRefPath::try_from_path(&expanded),
+        std::borrow::Cow::Borrowed(_) => Ok(path),
     }
 }
 
@@ -520,6 +648,7 @@ const READ_CSV_OPTIONS: &[&str] = &[
     "try_parse_dates",
     "decimal_comma",
     "null_values",
+    "empty_string_is_null",
     "ignore_errors",
     "truncate_ragged_lines",
     "missing_columns",
@@ -549,7 +678,6 @@ const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ("eol_char", ""),
     ("raise_if_empty", ""),
     ("glob", ""),
-    ("empty_string_is_null", ""),
     ("row_index_name", ""),
     ("row_index_offset", ""),
 ];
@@ -675,5 +803,50 @@ impl PolarsTableFunctions {
             "generate_series",
             "range",
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn string(path: &str) -> SQLExpr {
+        SQLExpr::Value(SQLValue::SingleQuotedString(path.to_string()).with_empty_span())
+    }
+
+    fn paths(expr: SQLExpr) -> (String, Vec<PlRefPath>) {
+        let arg = SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(expr));
+        PolarsTableFunctions::Range
+            .get_file_paths_from_arg("read_csv", &arg)
+            .unwrap()
+    }
+
+    #[test]
+    fn home_dir_is_expanded_in_file_paths() {
+        let Some(home) = std::env::home_dir() else {
+            return;
+        };
+        let in_home = |path: &str| PlRefPath::try_from_path(&home.join(path)).unwrap();
+
+        // The table keeps the name it was given.
+        assert_eq!(
+            paths(string("~/data/x.csv")),
+            ("~/data/x.csv".to_string(), vec![in_home("data/x.csv")])
+        );
+
+        let list = SQLExpr::Array(SQLArray {
+            elem: vec![string("~/a.csv"), string("~/data/*.csv")],
+            named: false,
+        });
+        assert_eq!(paths(list).1, [in_home("a.csv"), in_home("data/*.csv")]);
+
+        for path in [
+            "data/x.csv",
+            "/data/~/x.csv",
+            "~user/x.csv",
+            "s3://bucket/~/x.csv",
+        ] {
+            assert_eq!(paths(string(path)).1, [PlRefPath::new(path)]);
+        }
     }
 }

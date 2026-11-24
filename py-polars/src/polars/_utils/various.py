@@ -588,16 +588,14 @@ def parse_percentiles(
     """
     Transforms raw percentiles into our preferred format, adding the 50th percentile.
 
-    Raises a ValueError if the percentile sequence is invalid
-    (e.g. outside the range [0, 1])
+    The percentiles get the checks that polars runs on any `quantile` fraction.
     """
-    if isinstance(percentiles, float):
-        percentiles = [percentiles]
-    elif percentiles is None:
+    from polars._utils.parse import parse_quantile_values
+
+    if percentiles is None:
         percentiles = []
-    if not all((0 <= p <= 1) for p in percentiles):
-        msg = "`percentiles` must all be in the range [0, 1]"
-        raise ValueError(msg)
+    else:
+        percentiles = parse_quantile_values(percentiles)
 
     sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
     at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)
@@ -618,7 +616,7 @@ def re_escape(s: str) -> str:
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
 
 
-# Don't rename or move. This is used by polars cloud
+# Don't rename or move. This is used by polars nanook
 def display_dot_graph(
     *,
     dot: str,

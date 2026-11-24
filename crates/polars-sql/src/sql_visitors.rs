@@ -7,13 +7,13 @@ use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
 use sqlparser::ast::{
-    Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
-    FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visit, Visitor as SQLVisitor,
-    VisitorMut, With,
+    AccessExpr, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
+    FunctionArgumentList, FunctionArguments, Ident, ObjectName, Query, SetExpr, TableFactor, Visit,
+    Visitor as SQLVisitor, VisitorMut, WindowSpec, WindowType, With,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
-use crate::context::{RelationName, match_qualifier, object_name_to_string};
+use crate::context::{RelationName, is_using_left_key, match_qualifier, object_name_to_string};
 use crate::dyn_visit::{self, visit_expressions};
 
 // ---------------------------------------------------------------------------
@@ -149,9 +149,10 @@ impl SQLVisitor for QualifyExpression {
             SQLExpr::Identifier(ident) => {
                 self.column_refs.insert(ident.value.clone());
             },
-            SQLExpr::CompoundIdentifier(idents) if !idents.is_empty() => {
+            SQLExpr::CompoundIdentifier(idents) => {
+                // The first name can be a SELECT alias holding a struct.
                 self.column_refs
-                    .insert(idents.last().unwrap().value.clone());
+                    .extend(idents.iter().map(|ident| ident.value.clone()));
             },
             _ => {},
         }
@@ -273,7 +274,9 @@ pub(crate) fn check_ambiguous_column(
     let mut tables: Vec<_> = joined_aliases
         .iter()
         .filter(|(t, cols)| {
-            cols.contains_key(col) && !using_cols.iter().any(|(ut, uc)| ut == *t && uc == col)
+            // A hidden USING key is the relation's own column.
+            cols.get(col).is_some_and(|name| !is_using_left_key(name))
+                && !using_cols.iter().any(|(ut, uc)| ut == *t && uc == col)
         })
         .map(|(t, _)| t.as_str())
         .collect();
@@ -563,6 +566,96 @@ pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
     dyn_visit::visit(expr, &mut WindowFunctionFinder).is_break()
 }
 
+// ---------------------------------------------------------------------------
+// AliasReads
+// ---------------------------------------------------------------------------
+
+/// The aliases an expression reads outside its subqueries.
+#[derive(Default)]
+pub(crate) struct AliasReads {
+    /// The first alias read in a window function, including its window.
+    pub(crate) in_window: Option<String>,
+    pub(crate) any: bool,
+    pub(crate) has_window_functions: bool,
+}
+
+struct AliasReadsVisitor<'a> {
+    /// Whether a name, given by its parts, reads an alias.
+    is_alias: &'a dyn Fn(&[Ident]) -> bool,
+    resolve_window: &'a dyn Fn(&WindowType) -> Option<WindowSpec>,
+    query_depth: usize,
+    window_depth: usize,
+    reads: AliasReads,
+}
+
+impl SQLVisitor for AliasReadsVisitor<'_> {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if self.query_depth > 0 {
+            return ControlFlow::Continue(());
+        }
+        let idents = match expr {
+            SQLExpr::Identifier(ident) => std::slice::from_ref(ident),
+            SQLExpr::CompoundIdentifier(idents) if !idents.is_empty() => idents.as_slice(),
+            SQLExpr::Function(SQLFunction {
+                over: Some(over), ..
+            }) => {
+                self.reads.has_window_functions = true;
+                self.window_depth += 1;
+                // The window can come from the WINDOW clause.
+                if let Some(spec) = (self.resolve_window)(over) {
+                    let _ = dyn_visit::visit(&spec, self);
+                }
+                return ControlFlow::Continue(());
+            },
+            _ => return ControlFlow::Continue(()),
+        };
+        if (self.is_alias)(idents) {
+            self.reads.any = true;
+            if self.window_depth > 0 && self.reads.in_window.is_none() {
+                self.reads.in_window = Some(idents[0].value.clone());
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if self.query_depth == 0 && matches!(expr, SQLExpr::Function(f) if f.over.is_some()) {
+            self.window_depth -= 1;
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// The aliases `expr` reads, where `is_alias` tells whether a name reads an alias and
+/// `resolve_window` gives the window of an `OVER` clause.
+pub(crate) fn alias_reads(
+    expr: &SQLExpr,
+    is_alias: &dyn Fn(&[Ident]) -> bool,
+    resolve_window: &dyn Fn(&WindowType) -> Option<WindowSpec>,
+) -> AliasReads {
+    let mut visitor = AliasReadsVisitor {
+        is_alias,
+        resolve_window,
+        query_depth: 0,
+        window_depth: 0,
+        reads: AliasReads::default(),
+    };
+    let _ = dyn_visit::visit(expr, &mut visitor);
+    visitor.reads
+}
+
 /// Check if a SQL expression selects columns by the schema it is parsed against: a
 /// wildcard, as an expression or a function argument, or a `COLUMNS(...)` call.
 pub(crate) fn has_column_selector(expr: &SQLExpr) -> bool {
@@ -606,7 +699,59 @@ pub(crate) fn is_column_selector(expr: &SQLExpr) -> bool {
 // ColumnRefFinder
 // ---------------------------------------------------------------------------
 
+/// The identifiers that do not name a column or parameter: the field names in field accesses
+/// (`(expr).name`) and the form of `NORMALIZE(s, NFKC)`.
+#[derive(Default)]
+pub(crate) struct FieldNames(PlHashSet<*const SQLExpr>);
+
+impl FieldNames {
+    /// Records the names in `expr`, a parent of the expressions `take` is called on.
+    pub(crate) fn record(&mut self, expr: &SQLExpr) {
+        match expr {
+            SQLExpr::CompoundFieldAccess { access_chain, .. } => {
+                for access in access_chain {
+                    if let AccessExpr::Dot(
+                        name @ (SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)),
+                    ) = access
+                    {
+                        self.0.insert(name);
+                    }
+                }
+            },
+            SQLExpr::Function(SQLFunction {
+                name,
+                args: FunctionArguments::List(list),
+                ..
+            }) if name.0.len() == 1
+                && name.0[0]
+                    .as_ident()
+                    .is_some_and(|ident| ident.value.eq_ignore_ascii_case("normalize")) =>
+            {
+                if let [
+                    _,
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(form @ SQLExpr::Identifier(_))),
+                ] = list.args.as_slice()
+                {
+                    self.0.insert(form);
+                }
+            },
+            _ => {},
+        }
+    }
+
+    /// Whether `expr` is a recorded field name.
+    pub(crate) fn contains(&self, expr: &SQLExpr) -> bool {
+        !self.0.is_empty() && self.0.contains(&(expr as *const SQLExpr))
+    }
+
+    /// Whether `expr` is a recorded field name, which is then no longer recorded.
+    pub(crate) fn take(&mut self, expr: &SQLExpr) -> bool {
+        !self.0.is_empty() && self.0.remove(&(expr as *const SQLExpr))
+    }
+}
+
 /// Visitor that checks if a SQL expression contains any column reference at all.
+#[derive(Default)]
 struct ColumnRefFinder;
 
 impl SQLVisitor for ColumnRefFinder {
@@ -618,6 +763,15 @@ impl SQLVisitor for ColumnRefFinder {
             | SQLExpr::CompoundIdentifier(_)
             | SQLExpr::Wildcard(_)
             | SQLExpr::QualifiedWildcard(..) => true,
+            // a column selector, eg: COLUMNS('^x$')
+            SQLExpr::Function(func)
+                if func.name.0.len() == 1
+                    && func.name.0[0]
+                        .as_ident()
+                        .is_some_and(|ident| ident.value.eq_ignore_ascii_case("columns")) =>
+            {
+                true
+            },
             // wildcard arguments, eg: COUNT(*) / COLUMNS(*)
             SQLExpr::Function(func) => match &func.args {
                 FunctionArguments::List(args) => args.args.iter().any(|arg| {

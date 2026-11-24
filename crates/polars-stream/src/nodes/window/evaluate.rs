@@ -7,7 +7,6 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::hash_keys::HashKeys;
 use polars_expr::state::ExecutionState;
 use polars_ooc::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame,
@@ -445,7 +444,11 @@ impl Shuffle<'_> {
                             None
                         } else {
                             let keys = df.select(self.params.partition_by.iter().cloned())?;
-                            let keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+                            let keys = self.params.key_encoder.hash_keys(
+                                &keys,
+                                random_state.clone(),
+                                true,
+                            );
                             split(&keys, None, &partitioner, NullRows::FirstPartition)
                         };
                         PolarsResult::Ok(LoadedFrame {
@@ -767,8 +770,10 @@ fn evaluate_partition(
 
     // Dense partition ids, in order of first occurrence.
     let keys = df.select(params.partition_by.iter().cloned())?;
-    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
-    let mut grouper = new_hash_grouper(keys.schema().clone());
+    let hash_keys = params
+        .key_encoder
+        .hash_keys(&keys, random_state.clone(), true);
+    let mut grouper = new_hash_grouper(&params.key_encoder);
     let all_rows = (0..height as IdxSize).collect::<Vec<_>>();
     let mut group_idxs = Vec::with_capacity(height);
     // SAFETY: all indices are in-bounds.

@@ -175,8 +175,23 @@ impl IRFunctionExpr {
             Skew(_) => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
-            ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
-            MinBy { .. } | MaxBy { .. } => mapper.with_same_dtype(),
+            ArgMin | ArgMax => {
+                let dtype = mapper.args()[0].dtype();
+                polars_ensure!(
+                    !dtype.is_object(),
+                    InvalidOperation: "`{self}` operation not supported for dtype `{dtype}`"
+                );
+                mapper.with_dtype(IDX_DTYPE)
+            },
+            ArgUnique | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
+            MinBy { .. } | MaxBy { .. } => {
+                let by_dtype = mapper.args()[1].dtype();
+                polars_ensure!(
+                    !by_dtype.is_object(),
+                    InvalidOperation: "`{self}` operation not supported for by dtype `{by_dtype}`"
+                );
+                mapper.with_same_dtype()
+            },
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
@@ -324,6 +339,16 @@ impl IRFunctionExpr {
             Entropy { .. } => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "entropy")?
                 .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            XLogY { .. } => {
+                let mut field = mapper
+                    .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "x_log_y")?
+                    .map_to_supertype()?;
+                if !field.dtype().is_float() {
+                    field.set_dtype(DataType::Float64);
+                }
+                Ok(field)
+            },
             #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
@@ -691,6 +716,26 @@ impl<'a> FieldsMapper<'a> {
         self.moment_dtype()
     }
 
+    /// Returns an error if the operation `op` (e.g. "median") doesn't support the input dtype.
+    /// It supports null, Boolean, numeric and Decimal input, and temporal input if
+    /// `allow_temporal`. An unknown dtype passes, since it can't be checked yet.
+    pub fn ensure_moment_input(&self, op: &str, allow_temporal: bool) -> PolarsResult<()> {
+        let dt = self.fields[0].dtype();
+        let supported = match dt {
+            DataType::Null | DataType::Unknown(_) | DataType::Boolean => true,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => true,
+            dt if dt.is_primitive_numeric() => true,
+            dt if dt.is_temporal() => allow_temporal,
+            _ => false,
+        };
+        polars_ensure!(
+            supported,
+            InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
+        );
+        Ok(())
+    }
+
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
         let map_inner = |dt: &DataType| match dt {
             DataType::Boolean => DataType::Float64,
@@ -936,6 +981,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn quantile_dtype(&self) -> PolarsResult<Field> {
+        self.ensure_moment_input("quantile", true)?;
         let mut out = self.moment_dtype()?;
         if matches!(self.fields[1].dtype(), DataType::List(_)) {
             out.set_dtype(DataType::List(Box::new(out.dtype().clone())));

@@ -1,8 +1,19 @@
+use std::ops::Range;
+
+use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::compute::concatenate::concatenate_validities;
-use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec};
+use polars_arrow::types::NativeType;
+use polars_core::chunked_array::ops::binning::{
+    FractionSpec, IntervalSpec, order_statistics_physical,
+};
 use polars_core::prelude::gather::check_bounds_ca;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::runtime::RAYON;
+use polars_core::series::IsSorted;
+use polars_core::{
+    with_match_physical_integer_polars_type, with_match_physical_numeric_polars_type,
+};
+use rayon::prelude::*;
 
 use crate::series::{SearchSortedSide, search_sorted};
 
@@ -69,6 +80,360 @@ fn gather_at_sorted_positions(
     s.take(&phys_idx)
 }
 
+/// The value at each position within the sorted non-null values of `ca`, or `None` past them as a
+/// trailing empty bin requires.
+fn select_at_sorted_positions<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    positions: &[IdxSize],
+) -> Vec<Option<T::Native>> {
+    let n_nonnull = ca.len() - ca.null_count();
+    let mut ranks: Vec<usize> = positions
+        .iter()
+        .map(|&p| p as usize)
+        .filter(|&p| p < n_nonnull)
+        .collect();
+    ranks.sort_unstable();
+    ranks.dedup();
+    let vals = order_statistics_physical(&ca.clone().into_series(), &ranks);
+    let vals: &ChunkedArray<T> = vals.as_ref().as_ref();
+    let vals = vals.cont_slice().unwrap();
+    positions
+        .iter()
+        .map(|&p| ranks.binary_search(&(p as usize)).ok().map(|i| vals[i]))
+        .collect()
+}
+
+/// The non-null breakpoints of rank binning, ascending with nulls last, grouped by value.
+struct RankBreaks<N> {
+    distinct: Vec<N>,
+    /// The index of the first breakpoint equal to each distinct value, then the number of non-null
+    /// breakpoints.
+    first_cut: Vec<usize>,
+}
+
+impl<N: NumericNative> RankBreaks<N> {
+    fn new(breaks: &[Option<N>]) -> PolarsResult<Self> {
+        let n_valid = breaks.iter().take_while(|b| b.is_some()).count();
+        // `bins_from_rank_ties_impl` packs a distinct index and a flag into one `IdxSize`.
+        polars_ensure!(
+            breaks[n_valid..].iter().all(Option::is_none) && n_valid < IdxSize::MAX as usize / 2,
+            ComputeError: "rank binning expects at most {} breakpoints with nulls last",
+            IdxSize::MAX / 2 - 1
+        );
+        let mut distinct: Vec<N> = Vec::new();
+        let mut first_cut = Vec::new();
+        for (j, b) in breaks[..n_valid].iter().map(|b| b.unwrap()).enumerate() {
+            match distinct.last() {
+                Some(d) if d.tot_eq(&b) => {},
+                Some(d) if b.tot_lt(d) => {
+                    polars_bail!(ComputeError: "rank binning expects ascending breakpoints")
+                },
+                _ => {
+                    distinct.push(b);
+                    first_cut.push(j);
+                },
+            }
+        }
+        first_cut.push(n_valid);
+        Ok(Self {
+            distinct,
+            first_cut,
+        })
+    }
+
+    fn n_valid(&self) -> usize {
+        *self.first_cut.last().unwrap()
+    }
+
+    /// Rows per parallel range. All ranges but the last hold at least `k` rows, so their 3k + 1
+    /// counters take at most about three times the memory of one `IdxSize` per row.
+    fn range_len(&self) -> usize {
+        (1 << 16).max(self.distinct.len())
+    }
+
+    /// Index of the first distinct breakpoint not less than `v`, and whether it equals `v`.
+    fn locate(&self, v: &N) -> (usize, bool) {
+        let m = self.distinct.partition_point(|d| d.tot_lt(v));
+        (m, m < self.distinct.len() && self.distinct[m].tot_eq(v))
+    }
+
+    /// Locates every non-null row in `rows` of the column, passing `(row, m, equal)` to `f`, and
+    /// counts how many values lie below each distinct breakpoint (and above the one before) and
+    /// how many equal it.
+    fn count(
+        &self,
+        chunks: &ChunkIndex<'_, N>,
+        rows: Range<usize>,
+        mut f: impl FnMut(usize, usize, bool),
+    ) -> (Vec<IdxSize>, Vec<IdxSize>) {
+        let k = self.distinct.len();
+        let mut n_between = vec![0 as IdxSize; k + 1];
+        let mut n_equal = vec![0 as IdxSize; k];
+        chunks.for_each_valid(rows, |row, v| {
+            let (m, equal) = self.locate(v);
+            f(row, m, equal);
+            if equal {
+                n_equal[m] += 1;
+            } else {
+                n_between[m] += 1;
+            }
+        });
+        (n_between, n_equal)
+    }
+
+    /// [`Self::count`] over all of `ca`, in parallel.
+    fn count_all<T: PolarsNumericType<Native = N>>(
+        &self,
+        ca: &ChunkedArray<T>,
+    ) -> (Vec<IdxSize>, Vec<IdxSize>) {
+        let range_len = self.range_len();
+        let chunks = ChunkIndex::new(ca);
+        let counts: Vec<_> = RAYON.install(|| {
+            (0..ca.len().div_ceil(range_len))
+                .into_par_iter()
+                .map(|r| {
+                    let rows = r * range_len..ca.len().min((r + 1) * range_len);
+                    self.count(&chunks, rows, |_, _, _| {})
+                })
+                .collect()
+        });
+        let k = self.distinct.len();
+        let (mut n_between, mut n_equal) = (vec![0 as IdxSize; k + 1], vec![0 as IdxSize; k]);
+        for (b, e) in &counts {
+            n_between.iter_mut().zip(b).for_each(|(t, n)| *t += n);
+            n_equal.iter_mut().zip(e).for_each(|(t, n)| *t += n);
+        }
+        (n_between, n_equal)
+    }
+}
+
+/// The chunks of a column and the row each starts at, which locate a range of rows without walking
+/// the chunks before it.
+struct ChunkIndex<'a, N: NativeType> {
+    arrs: Vec<&'a PrimitiveArray<N>>,
+    starts: Vec<usize>,
+}
+
+impl<'a, N: NativeType> ChunkIndex<'a, N> {
+    fn new<T: PolarsNumericType<Native = N>>(ca: &'a ChunkedArray<T>) -> Self {
+        let arrs: Vec<_> = ca.downcast_iter().collect();
+        let mut starts = Vec::with_capacity(arrs.len() + 1);
+        starts.push(0);
+        for arr in &arrs {
+            starts.push(starts.last().unwrap() + arr.len());
+        }
+        Self { arrs, starts }
+    }
+
+    /// Calls `f(row, value)` for every non-null row in `rows`.
+    fn for_each_valid(&self, rows: Range<usize>, mut f: impl FnMut(usize, &N)) {
+        let mut c = self.starts.partition_point(|&start| start <= rows.start) - 1;
+        let mut row = rows.start;
+        while row < rows.end {
+            let (arr, start) = (self.arrs[c], self.starts[c]);
+            let end = rows.end.min(self.starts[c + 1]);
+            for i in row - start..end - start {
+                if arr.is_valid(i) {
+                    f(start + i, &arr.values()[i]);
+                }
+            }
+            row = end;
+            c += 1;
+        }
+    }
+}
+
+/// The bin of each row of `ca` whose `m`-th distinct breakpoint has the ranks `cuts`, given
+/// `first_rank`, which turns the per-range counts of [`RankBreaks::count`] into the rank of the
+/// first value of `ca` equal to each distinct breakpoint.
+///
+/// A value that equals no breakpoint lands in the bin after every breakpoint below it. The values
+/// equal to a breakpoint occupy a contiguous run of ranks, which a stable sort hands out in input
+/// order; counting them gives each its rank, and so its bin.
+fn bins_from_rank_ties_impl<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    rb: &RankBreaks<T::Native>,
+    cuts: &[IdxSize],
+    first_rank: impl FnOnce(&[(Vec<IdxSize>, Vec<IdxSize>)]) -> Vec<IdxSize>,
+) -> PolarsResult<IdxCa> {
+    // Pass 1 stores each row's located breakpoint as `2 * m + equal` in `out`, and counts per
+    // range. Prefix sums of the counts then give, per range and breakpoint, the rank of the range's
+    // first value equal to it.
+    let range_len = rb.range_len();
+    let mut out = vec![0 as IdxSize; ca.len()];
+    let mut parts: Vec<&mut [IdxSize]> = out.chunks_mut(range_len).collect();
+    let chunks = ChunkIndex::new(ca);
+    let counts: Vec<(Vec<IdxSize>, Vec<IdxSize>)> = RAYON.install(|| {
+        parts
+            .par_iter_mut()
+            .enumerate()
+            .map(|(r, part)| {
+                let lo = r * range_len;
+                rb.count(&chunks, lo..lo + part.len(), |row, m, equal| {
+                    part[row - lo] = (2 * m + equal as usize) as IdxSize
+                })
+            })
+            .collect()
+    });
+
+    let mut next_rank = first_rank(&counts);
+    let mut starts: Vec<Vec<IdxSize>> = Vec::with_capacity(counts.len());
+    for (_, n_equal) in &counts {
+        starts.push(next_rank.clone());
+        for (r, n) in next_rank.iter_mut().zip(n_equal) {
+            // A caller's tie rank can be anything; past this check, pass 2 stays in range.
+            *r = r.checked_add(*n).ok_or_else(
+                || polars_err!(ComputeError: "rank binning tie ranks overflow `IdxSize`"),
+            )?;
+        }
+    }
+
+    // Null rows still hold 0, which decodes as "below breakpoint 0, not equal": it takes no tie
+    // rank, and the validity masks the bin.
+    let first_cut = &rb.first_cut;
+    RAYON.install(|| {
+        parts
+            .into_par_iter()
+            .zip(starts.into_par_iter())
+            .for_each(|(part, mut next_rank)| {
+                for o in part.iter_mut() {
+                    let (m, equal) = (*o as usize / 2, *o % 2 == 1);
+                    let bin = if equal {
+                        let rank = next_rank[m];
+                        next_rank[m] += 1;
+                        let tied_cuts = &cuts[first_cut[m]..first_cut[m + 1]];
+                        first_cut[m] + tied_cuts.partition_point(|&c| c <= rank)
+                    } else {
+                        first_cut[m]
+                    };
+                    *o = bin as IdxSize;
+                }
+            })
+    });
+    Ok(IdxCa::from_vec_validity(
+        ca.name().clone(),
+        out,
+        concatenate_validities(ca.chunks()),
+    ))
+}
+
+/// [`bins_from_rank_cuts`] without a sort, given the cumulative bin sizes `cuts` and the value at
+/// each cut rank as `boundaries` (`None` past the non-null values).
+fn bins_from_rank_cuts_select<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    cuts: &[IdxSize],
+    boundaries: &[Option<T::Native>],
+) -> PolarsResult<IdxCa> {
+    let rb = RankBreaks::new(boundaries)?;
+    bins_from_rank_ties_impl(ca, &rb, cuts, |counts| {
+        let mut next_rank = vec![0 as IdxSize; rb.distinct.len()];
+        let mut below: IdxSize = 0;
+        for (m, r) in next_rank.iter_mut().enumerate() {
+            below += counts.iter().map(|(b, _)| b[m]).sum::<IdxSize>();
+            *r = below;
+            below += counts.iter().map(|(_, e)| e[m]).sum::<IdxSize>();
+        }
+        next_rank
+    })
+}
+
+/// The physical values of `s` and `breaks`, which rank binning on parts of a column compares.
+fn rank_break_physicals(s: &Series, breaks: &Series) -> PolarsResult<(Series, Series)> {
+    polars_ensure!(
+        s.dtype() == breaks.dtype(),
+        ComputeError: "binning expects the breakpoints to be of the input dtype `{}`, got `{}`",
+        s.dtype(), breaks.dtype()
+    );
+    polars_ensure!(
+        s.dtype().is_numeric() || s.dtype().is_temporal(),
+        InvalidOperation: "rank binning of parts of a column is not supported for dtype `{}`",
+        s.dtype()
+    );
+    Ok((
+        s.to_physical_repr().into_owned(),
+        breaks.to_physical_repr().into_owned(),
+    ))
+}
+
+/// For each of the `bin_ranks` breakpoints `breaks`, ascending with nulls last, the number of
+/// non-null values of `s` less than it and equal to it (zero for a null breakpoint).
+///
+/// Summing these over the parts of a column gives the global ranks [`bins_from_rank_ties`] needs.
+pub fn bin_rank_break_counts(
+    s: &Series,
+    breaks: &Series,
+) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)> {
+    let (s, breaks) = rank_break_physicals(s, breaks)?;
+    with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+        let b: &ChunkedArray<$T> = breaks.as_ref().as_ref().as_ref();
+        let rb = RankBreaks::new(&b.iter().collect::<Vec<_>>())?;
+        let (n_between, n_equal) = rb.count_all(ca);
+        let mut lt = vec![0 as IdxSize; b.len()];
+        let mut eq = vec![0 as IdxSize; b.len()];
+        let mut below: IdxSize = 0;
+        for (m, w) in rb.first_cut.windows(2).enumerate() {
+            below += n_between[m];
+            lt[w[0]..w[1]].fill(below);
+            eq[w[0]..w[1]].fill(n_equal[m]);
+            below += n_equal[m];
+        }
+        Ok((lt, eq))
+    })
+}
+
+/// The `bin_ranks` bins of the part `s` of a column whose breakpoints `breaks`, ascending with
+/// nulls last, sit at the ranks `cuts`, where `tie_ranks[i]` is the rank within the column of
+/// the first value of `s` equal to `breaks[i]`.
+///
+/// Entries of `cuts` and `tie_ranks` at null breakpoints are ignored.
+pub fn bins_from_rank_ties(
+    s: &Series,
+    breaks: &Series,
+    cuts: &[IdxSize],
+    tie_ranks: &[IdxSize],
+) -> PolarsResult<IdxCa> {
+    polars_ensure!(
+        cuts.len() == breaks.len() && tie_ranks.len() == breaks.len(),
+        ComputeError: "rank binning expects one cut and tie rank per breakpoint, got {} breakpoints, {} cuts and {} tie ranks",
+        breaks.len(), cuts.len(), tie_ranks.len()
+    );
+    let (phys, breaks) = rank_break_physicals(s, breaks)?;
+    with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
+        let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
+        let b: &ChunkedArray<$T> = breaks.as_ref().as_ref().as_ref();
+        let rb = RankBreaks::new(&b.iter().collect::<Vec<_>>())?;
+        let cuts = &cuts[..rb.n_valid()];
+        polars_ensure!(
+            cuts.is_sorted(),
+            ComputeError: "rank binning expects ascending cuts"
+        );
+        let bins = bins_from_rank_ties_impl(ca, &rb, cuts, |_| {
+            rb.first_cut[..rb.distinct.len()].iter().map(|&j| tie_ranks[j]).collect()
+        })?;
+        Ok(bins.with_name(s.name().clone()))
+    })
+}
+
+/// [`bins_from_rank_cuts`] for `ca` flagged sorted ascending, whose non-null rows are already in
+/// rank order, so each run of rows between two cuts fills one bin.
+fn bins_from_rank_cuts_sorted<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    cuts: &[IdxSize],
+) -> IdxCa {
+    let n_nonnull = ca.len() - ca.null_count();
+    let start = ca.first_non_null().unwrap_or(0);
+    let mut out = vec![0 as IdxSize; ca.len()];
+    let ranked = &mut out[start..start + n_nonnull];
+    let ends = cuts.iter().map(|&c| (c as usize).min(n_nonnull));
+    let mut lo = 0;
+    for (bin, hi) in ends.chain([n_nonnull]).enumerate() {
+        ranked[lo..hi].fill(bin as IdxSize);
+        lo = hi;
+    }
+    IdxCa::from_vec_validity(ca.name().clone(), out, concatenate_validities(ca.chunks()))
+}
+
 /// Offsets from `min` of the `n_bins - 1` thresholds of equal-width bins over a span.
 ///
 /// The exact breakpoint `i * span / n_bins` need not be an integer. For left-closed bins
@@ -104,6 +469,48 @@ fn uniform_threshold_offsets(
 //
 // Floats go through `f64` and are narrowed back afterwards; integers and `Decimal` (via
 // its `Int128` physical) derive representable thresholds in their own width.
+/// Makes `breaks` non-decreasing and within `[min, max)` when right-closed or `(min, max]` when
+/// left-closed, so that `min` and `max` land in the first and last bin.
+///
+/// The bounds are the neighbors of `max` and `min` in the float dtype `dtype`, so a break that
+/// rounds onto an endpoint moves as little as possible. A NaN break, which the interpolation over
+/// `[-inf, inf]` produces, repeats the break before it.
+fn fix_float_breaks(breaks: &mut [f64], min: f64, max: f64, dtype: &DataType, right_closed: bool) {
+    let (mut lo, hi) = if right_closed {
+        (min, float_step(max, dtype, false))
+    } else {
+        (float_step(min, dtype, true), max)
+    };
+    for b in breaks.iter_mut() {
+        *b = b.max(lo).min(hi);
+        lo = *b;
+    }
+}
+
+/// The neighbor of `x` toward `+inf` if `up`, else toward `-inf`, among the values of the float
+/// dtype `dtype`, which holds `x`.
+fn float_step(x: f64, dtype: &DataType, up: bool) -> f64 {
+    match dtype {
+        DataType::Float32 => {
+            let x = x as f32;
+            (if up { x.next_up() } else { x.next_down() }) as f64
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            use polars_utils::float16::pf16;
+            let x = pf16::from(x);
+            f64::from(if up { x.next_up() } else { x.next_down() })
+        },
+        _ => {
+            if up {
+                x.next_up()
+            } else {
+                x.next_down()
+            }
+        },
+    }
+}
+
 pub fn bin_interval_breaks(
     s: &Series,
     n_bins: usize,
@@ -122,17 +529,26 @@ pub fn bin_interval_breaks(
         let Some((min, max)) = f.f64()?.min_max() else {
             return Ok(None);
         };
-        let breaks: Vec<f64> = if min == max {
-            // Special case so that we match the integer path -- we would round otherwise
-            vec![min; n_breaks]
-        } else {
-            (1..=n_breaks)
-                .map(|i| {
-                    let t = i as f64 / n_bins as f64;
-                    min * (1.0 - t) + max * t
-                })
-                .collect()
-        };
+        if min == max {
+            // The bounds of `fix_float_breaks` cross without a span. This matches the integer path.
+            return Ok(Some(
+                Series::new(s.name().clone(), vec![min; n_breaks]).cast(dtype)?,
+            ));
+        }
+        let lerp: Vec<f64> = (1..=n_breaks)
+            .map(|i| {
+                let t = i as f64 / n_bins as f64;
+                min * (1.0 - t) + max * t
+            })
+            .collect();
+        // Fix the breaks up after rounding them to the input dtype, which can undo a fixup in
+        // `f64`. `min` and `max` come from the column, so they and the fixed breaks round-trip.
+        let narrowed = Float64Chunked::from_vec(s.name().clone(), lerp)
+            .into_series()
+            .cast(dtype)?
+            .cast(&DataType::Float64)?;
+        let mut breaks: Vec<f64> = narrowed.f64()?.into_no_null_iter().collect();
+        fix_float_breaks(&mut breaks, min, max, dtype, right_closed);
         return Float64Chunked::from_vec(s.name().clone(), breaks)
             .into_series()
             .cast(dtype)
@@ -381,8 +797,7 @@ pub fn bin_ranks(
 /// `right_closed` is `Some` for quantile binning, which assigns bins by comparing values
 /// against the gathered breakpoints, and `None` for rank binning, which instead compares
 /// each row's ordinal rank against the cut positions. The rank form therefore splits ties
-/// across adjacent bins, which is the whole point of it -- and never needs the boundary
-/// values unless they are actually reported.
+/// across adjacent bins, which is the whole point of it.
 ///
 /// Either way `positions` indexes into the non-null values in sorted order, but the two
 /// forms arrive at it differently: for quantile binning it is the breakpoint's own sorted
@@ -401,6 +816,31 @@ fn bin_at_positions(
         return empty_bins(s, n_bins, labels, include_intervals);
     }
 
+    // Numeric and temporal values sort like their physical values, so their boundaries can be
+    // selected on those. `bins_from_rank_cuts_select` packs a boundary index and a flag into one
+    // `IdxSize`.
+    let dtype = s.dtype();
+    if (dtype.is_numeric() || dtype.is_temporal()) && positions.len() < IdxSize::MAX as usize / 2 {
+        let phys = s.to_physical_repr();
+        let (breaks, bin_idx) = with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
+            let values = select_at_sorted_positions(ca, positions);
+            let breaks: ChunkedArray<$T> = values.iter().copied().collect_ca(s.name().clone());
+            // SAFETY: the values came out of the column's own physical values.
+            let breaks = unsafe { breaks.into_series().from_physical_unchecked(dtype) }?;
+            let bin_idx = match right_closed {
+                Some(right_closed) => bins_from_breaks(s, &breaks, right_closed)?,
+                None if ca.is_sorted_flag() == IsSorted::Ascending => {
+                    bins_from_rank_cuts_sorted(ca, positions)
+                },
+                None => bins_from_rank_cuts_select(ca, positions, &values)?,
+            };
+            (breaks, bin_idx)
+        });
+        let breaks = include_intervals.then_some(breaks);
+        return finish_bins(s.name().clone(), &bin_idx, n_bins, breaks.as_ref(), labels);
+    }
+
     // Rank binning may split ties, so the stable sort preserves their input order.
     let sort_idx = s
         .arg_sort(SortOptions {
@@ -409,7 +849,7 @@ fn bin_at_positions(
             maintain_order: true,
             ..Default::default()
         })
-        .slice(0, non_null_len);
+        .slice(Slice::head(non_null_len));
 
     // `finish_bins` reads `Some` as "emit the struct", so each arm keeps the boundaries
     // only when they are actually reported -- the value-based path needs them to bin at

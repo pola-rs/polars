@@ -165,6 +165,10 @@ impl PyExpr {
         self.inner.clone().str().reverse().into()
     }
 
+    fn str_from_code_point(&self) -> Self {
+        self.inner.clone().str().from_code_point().into()
+    }
+
     fn str_pad_start(&self, length: PyExpr, fill_char: char) -> Self {
         self.inner
             .clone()

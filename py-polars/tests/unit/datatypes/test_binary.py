@@ -81,3 +81,21 @@ def test_binary_add_binary_schema_30621() -> None:
     lf = pl.LazyFrame({"b": [b"x"]}).select(pl.col("b") + pl.col("b"))
     assert lf.collect_schema()["b"] == pl.Binary
     assert lf.collect()["b"].to_list() == [b"xx"]
+
+
+def test_binary_to_string_ignores_bytes_under_nulls() -> None:
+    pa = pytest.importorskip("pyarrow")
+    offsets = pa.array([0, 1, 2], pa.int32()).buffers()[1]
+    validity = pa.py_buffer(bytes([0b01]))
+    arr = pa.Array.from_buffers(
+        pa.binary(), 2, [validity, offsets, pa.py_buffer(b"a\xff")]
+    )
+    df = pl.from_arrow(pa.table({"b": arr}))
+    assert isinstance(df, pl.DataFrame)
+    lf = df.lazy()
+    q = lf.select(pl.col("b").cast(pl.String), f=pl.format("{:s}", "b"))
+    for engine in ("in-memory", "streaming"):
+        assert q.collect(engine=engine).rows() == [("a", "a"), (None, None)]
+
+    with pytest.raises(pl.exceptions.ComputeError, match="invalid utf8"):
+        pl.Series([b"\xff", None]).cast(pl.String)
