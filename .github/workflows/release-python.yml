@@ -167,7 +167,8 @@ jobs:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
         job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
         # abi3 covers GIL-enabled Python, abi3t covers free-threaded Python 3.15+.
-        abi: [abi3, abi3t]
+        # abi3t is disabled for now.
+        abi: [abi3]
         include:
           - job_config: linux-x64
             os: ubuntu-latest
