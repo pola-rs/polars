@@ -32,7 +32,6 @@ fn check_rolling_quantile(params: Option<&RollingFnParams>) -> PolarsResult<()> 
 fn with_float(s: &Series, f: impl FnOnce(&Series) -> PolarsResult<Series>) -> PolarsResult<Series> {
     let out = f(&s.to_float()?)?;
     match s.dtype() {
-        #[cfg(feature = "dtype-f16")]
         DataType::Float16 => out.cast(&DataType::Float16),
         _ => Ok(out),
     }

@@ -724,20 +724,24 @@ def test_rolling_dtype_matches_schema(expr: pl.Expr, dtype: pl.DataType) -> None
 
 
 @pytest.mark.parametrize(
-    "expr",
+    ("values", "expr", "expected"),
     [
-        pl.col("x").rolling_std(2, ddof=0),
-        pl.col("x").rolling_std(2, ddof=0, weights=[1.0, 1.0]),
-        pl.col("x").rolling_std_by("t", window_size="2i", ddof=0),
+        # The variance 65536 is out of Float16 range, the standard deviation isn't.
+        ([0, 512], pl.col("x").rolling_std(2, ddof=0), 256.0),
+        ([0, 512], pl.col("x").rolling_std(2, ddof=0, weights=[1.0, 1.0]), 256.0),
+        ([0, 512], pl.col("x").rolling_std_by("t", window_size="2i", ddof=0), 256.0),
+        # The sum 120000 is out of Float16 range, the mean isn't.
+        ([60000, 60000], pl.col("x").rolling_mean(2), 60000.0),
+        ([60000, 60000], pl.col("x").rolling_mean_by("t", window_size="2i"), 60000.0),
     ],
 )
-def test_rolling_std_float16_beyond_variance_range(expr: pl.Expr) -> None:
-    # The variance 65536 is out of Float16 range, the standard deviation isn't.
-    lf = pl.LazyFrame({"x": pl.Series([0, 512], dtype=pl.Float16), "t": [0, 1]})
+def test_rolling_float16_intermediate_out_of_range(
+    values: list[int], expr: pl.Expr, expected: float
+) -> None:
+    lf = pl.LazyFrame({"x": pl.Series(values, dtype=pl.Float16), "t": [0, 1]})
     out = lf.select(expr).collect().to_series()
     assert out.dtype == pl.Float16
-    assert out[-1] == 256.0
-
+    assert out[-1] == expected
 
 def test_rolling_mean_f32_22936() -> None:
     arr = np.array(
