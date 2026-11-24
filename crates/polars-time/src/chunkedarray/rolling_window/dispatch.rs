@@ -44,36 +44,6 @@ fn needs_weighted_float(s: &Series, options: &RollingOptionsFixedWindow) -> bool
     options.weights.is_some() && !matches!(s.dtype(), DataType::Float32 | DataType::Float64)
 }
 
-#[cfg(feature = "rolling_window")]
-fn rolling_var_float(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-    with_match_physical_float_polars_type!(s.dtype(), |$T| {
-        let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-        rolling_agg(
-            ca,
-            options,
-            &rolling::no_nulls::rolling_var,
-            &rolling::nulls::rolling_var,
-        )
-    })
-}
-
-#[cfg(feature = "rolling_window_by")]
-fn rolling_var_by_float(
-    s: &Series,
-    by: &Series,
-    options: RollingOptionsDynamicWindow,
-) -> PolarsResult<Series> {
-    with_match_physical_float_polars_type!(s.dtype(), |$T| {
-        let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-        rolling_agg_by::<
-            $T,
-            _,
-            no_nulls::MomentWindow<_, no_nulls::VarianceMoment>,
-            nulls::MomentWindow<_, nulls::VarianceMoment>
-        >(ca, by, options)
-    })
-}
-
 fn sqrt_float(mut s: Series) -> Series {
     with_match_physical_float_polars_type!(s.dtype(), |$T| {
         let ca: &mut ChunkedArray<$T> = s._get_inner_mut().as_mut();
@@ -420,15 +390,13 @@ pub trait SeriesOpsTime: AsSeries {
             return with_float(self.as_series(), |s| s.rolling_sum(options));
         }
         let mut s = self.as_series().clone();
-        if options.weights.is_none() {
-            if s.dtype() == &DataType::Boolean {
-                s = s.cast(&DataType::IDX_DTYPE).unwrap();
-            } else if matches!(
-                s.dtype(),
-                DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
-            ) {
-                s = s.cast(&DataType::Int64).unwrap();
-            }
+        if s.dtype() == &DataType::Boolean {
+            s = s.cast(&DataType::IDX_DTYPE).unwrap();
+        } else if matches!(
+            s.dtype(),
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
+        ) {
+            s = s.cast(&DataType::Int64).unwrap();
         }
 
         polars_ensure!(
@@ -533,7 +501,7 @@ pub trait SeriesOpsTime: AsSeries {
         if needs_weighted_float(self.as_series(), &options) {
             return with_float(self.as_series(), |s| s.rolling_min(options));
         }
-        let s = self.as_series().clone();
+        let s = self.as_series();
 
         let dt = s.dtype();
         match dt {
@@ -614,7 +582,7 @@ pub trait SeriesOpsTime: AsSeries {
         if needs_weighted_float(self.as_series(), &options) {
             return with_float(self.as_series(), |s| s.rolling_max(options));
         }
-        let s = self.as_series().clone();
+        let s = self.as_series();
 
         let dt = s.dtype();
         match dt {
@@ -655,13 +623,33 @@ pub trait SeriesOpsTime: AsSeries {
         by: &Series,
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
-        with_float(self.as_series(), |s| rolling_var_by_float(s, by, options))
+        with_float(self.as_series(), |s| {
+            with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                rolling_agg_by::<
+                    $T,
+                    _,
+                    no_nulls::MomentWindow<_, no_nulls::VarianceMoment>,
+                    nulls::MomentWindow<_, nulls::VarianceMoment>
+                >(ca, by, options)
+            })
+        })
     }
 
     /// Apply a rolling variance to a Series.
     #[cfg(feature = "rolling_window")]
     fn rolling_var(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-        with_float(self.as_series(), |s| rolling_var_float(s, options))
+        with_float(self.as_series(), |s| {
+            with_match_physical_float_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                rolling_agg(
+                    ca,
+                    options,
+                    &rolling::no_nulls::rolling_var,
+                    &rolling::nulls::rolling_var,
+                )
+            })
+        })
     }
 
     /// Apply a rolling std_dev to a Series based on another Series.
@@ -672,16 +660,14 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         with_float(self.as_series(), |s| {
-            rolling_var_by_float(s, by, options).map(sqrt_float)
+            s.rolling_var_by(by, options).map(sqrt_float)
         })
     }
 
     /// Apply a rolling std_dev to a Series.
     #[cfg(feature = "rolling_window")]
     fn rolling_std(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
-        with_float(self.as_series(), |s| {
-            rolling_var_float(s, options).map(sqrt_float)
-        })
+        with_float(self.as_series(), |s| s.rolling_var(options).map(sqrt_float))
     }
 
     /// Apply a rolling rank to a Series based on another Series.

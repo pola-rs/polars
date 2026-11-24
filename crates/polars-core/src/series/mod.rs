@@ -651,7 +651,7 @@ impl Series {
     pub fn to_float(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Float32 | DataType::Float64 => Ok(self.clone()),
-            dt if dt.is_primitive_numeric() || dt.is_bool() || dt.is_decimal() || dt.is_null() => {
+            dt if dt.is_numeric() || dt.is_bool() || dt.is_null() => {
                 self.cast_with_options(&DataType::Float64, CastOptions::Overflowing)
             },
             dt => polars_bail!(InvalidOperation: "cannot convert dtype `{dt}` to a float"),

@@ -85,28 +85,29 @@ impl IRFunctionExpr {
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
                 use IRRollingFunction::*;
-                let op = function.to_string();
-                let is_numeric = |dt: &DataType| dt.is_primitive_numeric() || dt.is_bool();
+                let op = function;
                 match function {
                     // Weighted windows compute in floats.
                     Min | Max | Sum if options.weights.is_some() => {
-                        mapper.ensure_input(&op, |dt| is_numeric(dt) || dt.is_decimal())?;
+                        mapper.ensure_input(op, |dt| dt.is_numeric() || dt.is_bool())?;
                         mapper.map_to_float_dtype()
                     },
                     Min | Max => {
-                        mapper.ensure_input(&op, |dt| is_numeric(dt) || dt.is_temporal())?;
+                        mapper.ensure_input(op, |dt| {
+                            dt.is_primitive_numeric() || dt.is_bool() || dt.is_temporal()
+                        })?;
                         mapper.with_same_dtype()
                     },
                     Sum => {
-                        mapper.ensure_input(&op, is_numeric)?;
+                        mapper.ensure_input(op, |dt| dt.is_primitive_numeric() || dt.is_bool())?;
                         mapper.sum_dtype()
                     },
                     Mean | Quantile => {
-                        mapper.ensure_moment_input(&op, true)?;
+                        mapper.ensure_moment_input(op, true)?;
                         mapper.moment_dtype()
                     },
                     Std | Var => {
-                        mapper.ensure_moment_input(&op, false)?;
+                        mapper.ensure_moment_input(op, false)?;
                         mapper.moment_dtype()
                     },
                     Rank => match options.fn_params {
@@ -126,7 +127,7 @@ impl IRFunctionExpr {
                     }),
                     #[cfg(feature = "moment")]
                     Skew | Kurtosis => {
-                        mapper.ensure_input(&op, |dt| dt.is_primitive_numeric())?;
+                        mapper.ensure_input(op, |dt| dt.is_primitive_numeric())?;
                         mapper.map_to_float_dtype()
                     },
                     Map(_) if options.weights.is_some() => mapper.map_to_float_dtype(),
@@ -140,23 +141,24 @@ impl IRFunctionExpr {
                 ..
             } => {
                 use IRRollingFunctionBy::*;
-                let op = function_by.to_string();
-                let is_numeric = |dt: &DataType| dt.is_primitive_numeric() || dt.is_bool();
+                let op = function_by;
                 match function_by {
                     MinBy | MaxBy => {
-                        mapper.ensure_input(&op, |dt| is_numeric(dt) || dt.is_temporal())?;
+                        mapper.ensure_input(op, |dt| {
+                            dt.is_primitive_numeric() || dt.is_bool() || dt.is_temporal()
+                        })?;
                         mapper.with_same_dtype()
                     },
                     MeanBy | QuantileBy => {
-                        mapper.ensure_moment_input(&op, true)?;
+                        mapper.ensure_moment_input(op, true)?;
                         mapper.moment_dtype()
                     },
                     StdBy | VarBy => {
-                        mapper.ensure_moment_input(&op, false)?;
+                        mapper.ensure_moment_input(op, false)?;
                         mapper.moment_dtype()
                     },
                     SumBy => {
-                        mapper.ensure_input(&op, is_numeric)?;
+                        mapper.ensure_input(op, |dt| dt.is_primitive_numeric() || dt.is_bool())?;
                         mapper.sum_dtype()
                     },
                     RankBy => match options.fn_params {
@@ -742,14 +744,9 @@ impl<'a> FieldsMapper<'a> {
     /// Returns an error if the operation `op` (e.g. "median") doesn't support the input dtype.
     /// It supports null, Boolean, numeric and Decimal input, and temporal input if
     /// `allow_temporal`. An unknown dtype passes, since it can't be checked yet.
-    pub fn ensure_moment_input(&self, op: &str, allow_temporal: bool) -> PolarsResult<()> {
-        self.ensure_input(op, |dt| match dt {
-            DataType::Null | DataType::Boolean => true,
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => true,
-            dt if dt.is_primitive_numeric() => true,
-            dt if dt.is_temporal() => allow_temporal,
-            _ => false,
+    pub fn ensure_moment_input(&self, op: impl Display, allow_temporal: bool) -> PolarsResult<()> {
+        self.ensure_input(op, |dt| {
+            dt.is_null() || dt.is_bool() || dt.is_numeric() || (allow_temporal && dt.is_temporal())
         })
     }
 
@@ -757,7 +754,7 @@ impl<'a> FieldsMapper<'a> {
     /// `supported`. An unknown dtype passes, since it can't be checked yet.
     pub fn ensure_input(
         &self,
-        op: &str,
+        op: impl Display,
         supported: impl FnOnce(&DataType) -> bool,
     ) -> PolarsResult<()> {
         let dt = self.fields[0].dtype();
