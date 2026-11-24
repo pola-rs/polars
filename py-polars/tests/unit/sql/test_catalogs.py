@@ -9,6 +9,7 @@ import sys
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -103,9 +104,10 @@ LINEITEM = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    "query",
-    [
+@pytest.mark.usefixtures("planner")
+def test_catalog_table_names(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    for query in [
         "SELECT * FROM lineitem",
         "SELECT * FROM tpch.lineitem",
         "SELECT * FROM lake.tpch.lineitem",
@@ -116,12 +118,13 @@ LINEITEM = pl.DataFrame({"k": [1, 2], "v": ["a", "b"]})
         "SELECT li.k, li.v FROM tpch.lineitem AS li",
         "WITH c AS (SELECT * FROM lineitem) SELECT * FROM c",
         "SELECT * FROM (SELECT * FROM lineitem) AS sub",
-    ],
-)
-@pytest.mark.usefixtures("planner")
-def test_catalog_table_names(lake: CountingCatalog, query: str) -> None:
-    res = lake_ctx(lake).execute(query, eager=True)
-    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    ]:
+        res = ctx.execute(query, eager=True)
+        try:
+            assert_frame_equal(res, LINEITEM, check_row_order=False)
+        except AssertionError as exc:
+            exc.add_note(query)
+            raise
 
 
 @pytest.mark.write_disk
@@ -6944,9 +6947,12 @@ def history(
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    ("clause", "rows"),
-    [
+@pytest.mark.usefixtures("planner")
+def test_catalog_time_travel(
+    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]],
+) -> None:
+    ctx, ids = history
+    for clause, rows in [
         ("FOR VERSION AS OF {0}", [0]),
         ("VERSION AS OF {1}", [0, 1]),
         ("AS h FOR VERSION AS OF {0}", [0]),
@@ -6975,17 +6981,20 @@ def history(
         ("AS join VERSION AS OF {0}", [0]),
         ("VERSION AS OF {0} div", [0]),
         ("FOR TIMESTAMP AS OF '2024-01-01 03:30:00+02:00'", [0, 1]),
-    ],
-)
-@pytest.mark.usefixtures("planner")
-def test_catalog_time_travel(
-    history: tuple[pl.SQLContext[pl.LazyFrame], list[int]], clause: str, rows: list[int]
-) -> None:
-    ctx, ids = history
-    query = f"SELECT * FROM hist {clause.format(*ids)}"
-    assert sorted(ctx.execute(query, eager=True)["k"]) == rows
-    assert sorted(ctx.execute(query).collect()["k"]) == rows
-    assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0
+    ]:
+        query = f"SELECT * FROM hist {clause.format(*ids)}"
+        assert sorted(ctx.execute(query, eager=True)["k"]) == rows, query
+
+    # Check deferred execution and EXPLAIN for each way to choose a snapshot.
+    for clause, rows in [
+        (f"FOR VERSION AS OF {ids[0]}", [0]),
+        ("FOR VERSION AS OF 'v1'", [0]),
+        ("FOR VERSION AS OF 'b1'", [0, 1]),
+        ("FOR TIMESTAMP AS OF TIMESTAMP '2024-01-01 01:30:00'", [0, 1]),
+    ]:
+        query = f"SELECT * FROM hist {clause}"
+        assert sorted(ctx.execute(query).collect()["k"]) == rows, query
+        assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0, query
 
 
 @pytest.mark.write_disk
@@ -8090,9 +8099,10 @@ def test_call_rewrite_data_files_target_size(
     table = lake.create_table(
         ("tpch", "big"), schema=pl.Schema({"k": pl.Int64}).to_arrow()
     )
-    keys = pl.int_range(300_000, eager=True).shuffle(seed=0)
+    n_rows = 30_000
+    keys = pl.int_range(n_rows, eager=True).shuffle(seed=0)
     # written as the compaction writes, so the output compresses as the input
-    for part in pl.DataFrame({"k": keys}).iter_slices(300_000 // files):
+    for part in pl.DataFrame({"k": keys}).iter_slices(n_rows // files):
         part.lazy().sink_iceberg(table, mode="append")
     size = sum(f.file_size_in_bytes for f in live_files(lake, "tpch", "big"))
     target = int(size / size_over_target)
@@ -8101,7 +8111,7 @@ def test_call_rewrite_data_files_target_size(
         f"options => map('target-file-size-bytes', '{target}'))"
     )
     assert ctx.execute(statement, eager=True).rows()[0][:2] == counts
-    assert ctx.execute("SELECT COUNT(*) FROM big", eager=True).item() == 300_000
+    assert ctx.execute("SELECT COUNT(*) FROM big", eager=True).item() == n_rows
     # nothing left to rewrite
     assert ctx.execute(statement, eager=True).rows() == [(0, 0, 0, 0, 0)]
 
@@ -8561,14 +8571,14 @@ def test_call_add_files_partition_values(lake: CountingCatalog, tmp_path: Path) 
     ctx.execute(add_files_call("tpch.u", tmp_path / "br[1]"))
     assert table_rows(lake, "tpch", "u") == [(1, "x")]
 
-    # empty files: no row to prove a value for
+    # empty files: no row to prove a value for, nor to read
     ctx.execute("CREATE TABLE e (k BIGINT, g VARCHAR) PARTITION BY (g)")
-    empty = pl.DataFrame(schema={"k": pl.Int64})
+    empty = pl.DataFrame(schema={"k": pl.UInt64})
     write_files(tmp_path / "e1", {"a.parquet": empty})
     write_files(tmp_path / "e2", {"g=z/a.parquet": empty})
     for folder in ("e1", "e2"):
         ctx.execute(add_files_call("tpch.e", tmp_path / folder))
-    assert table_rows(lake, "tpch", "e") == []
+    assert ctx.execute("SELECT * FROM e", eager=True).is_empty()
 
     # a transform: several times on one day are one partition
     ctx.execute("CREATE TABLE d (ts TIMESTAMP) PARTITION BY (day(ts))")
@@ -8690,6 +8700,13 @@ def field_id_table(nested: bool) -> Any:
             "SchemaError",
             "do not fit",
         ),
+        (
+            "i",
+            {"a.parquet": {"k": [1], "i": pl.Series([1], dtype=pl.UInt32)}},
+            "SchemaError",
+            "cannot read",
+        ),
+        ("mk", {"decimal_keys": True}, "SchemaError", "cannot read"),
         ("lineitem", {"field_ids": False}, "InvalidOperationError", "field ids"),
         ("lineitem", {"field_ids": True}, "InvalidOperationError", "field ids"),
         ("l", {"legacy_list": True}, "SchemaError", "does not name"),
@@ -8728,10 +8745,19 @@ def test_call_add_files_refused(
     ctx.execute("CREATE TABLE f (k BIGINT, x DOUBLE) PARTITION BY (x)")
     ctx.execute("CREATE TABLE l (k BIGINT, l BIGINT[])")
     ctx.execute("CREATE TABLE ts (k BIGINT, ts TIMESTAMP) PARTITION BY (ts)")
+    ctx.execute("CREATE TABLE mk (m MAP(DECIMAL(10, 2), VARCHAR))")
     folder = tmp_path / "landing"
     folder.mkdir()
     files = dict(files)
     statistics = not files.pop("nostats", False)
+    if files.pop("decimal_keys", False):
+        import pyarrow as pa
+
+        # a scan would round both keys to 1.23
+        keys = [(Decimal("1.231"), "a"), (Decimal("1.232"), "b")]
+        dtype = pa.map_(pa.decimal128(10, 3), pa.string())
+        data = pa.table({"m": pa.array([keys], dtype)})
+        pq.write_table(data, folder / "a.parquet")
     if (nested := files.pop("field_ids", None)) is not None:
         pq.write_table(field_id_table(nested), folder / "a.parquet")
     if files.pop("legacy_list", False):

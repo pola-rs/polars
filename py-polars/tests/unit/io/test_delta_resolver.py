@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import DeletionFiles
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture(params=["plugin", "deltalake", "pyarrow"])
@@ -130,8 +131,10 @@ def test_independent_plugin_capsule_ids(
 
 
 def test_resolver_runtime_filter_mixed_scan_and_repeated_collect(
-    tmp_path: Path,
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
+    # Exercise runtime-filter attachment even though the probe scans are small.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
     frame = pl.DataFrame({"x": range(300)})
     frame.write_delta(tmp_path / "delta")
     frame.write_parquet(tmp_path / "data.parquet")

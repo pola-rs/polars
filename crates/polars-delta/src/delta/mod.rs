@@ -5,10 +5,14 @@ mod checkpoint;
 mod error;
 mod files;
 mod host;
+mod kernel_engine;
+mod kernel_files;
+mod kernel_snapshot;
 mod log;
 mod output;
 mod runtime;
 mod schema;
+mod snapshot;
 mod stats;
 mod values;
 pub static PLUGIN_V1: delta_v1::Plugin = delta_v1::Plugin {
@@ -34,7 +38,7 @@ unsafe extern "C" fn plan(
             return Err(error::input("negative Delta version"));
         }
         let host = unsafe { host::Host::from_raw(host, request.verbose)? };
-        runtime::block_on(request.max_threads, output::resolve(host, &request))
+        output::resolve(host, &request)
     })
     .into()
 }

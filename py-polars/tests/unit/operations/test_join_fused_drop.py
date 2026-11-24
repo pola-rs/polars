@@ -104,14 +104,14 @@ def test_semi_anti_drop_fused(how: str) -> None:
     check(q)
 
 
-@pytest.mark.slow
-def test_fused_predicate_drop_many_morsels() -> None:
-    n = 300_000
+def test_fused_predicate_drop_many_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "32")
+    n = 3000
     left = pl.LazyFrame(
-        {"k": [i % 1000 for i in range(n)], "a": list(range(n)), "x": list(range(n))}
+        {"k": [i % 50 for i in range(n)], "a": list(range(n)), "x": list(range(n))}
     )
     right = pl.LazyFrame(
-        {"k": [i % 1000 for i in range(5000)], "b": [i * 7 for i in range(5000)]}
+        {"k": [i % 50 for i in range(250)], "b": [i * 7 for i in range(250)]}
     )
     q = left.join(right, on="k").filter(pl.col("b") < pl.col("a")).select("k", "x")
     assert "project 2 / " in physical_plan(q)

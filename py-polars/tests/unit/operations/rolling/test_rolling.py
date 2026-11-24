@@ -22,6 +22,7 @@ from polars.exceptions import (
     ArgumentRemovedError,
     ComputeError,
     InvalidOperationError,
+    SchemaError,
 )
 from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -1836,6 +1837,23 @@ def test_rolling_quantile_nearest_23392() -> None:
         # shuffled:
         out = s_shuffled.rolling_quantile(q, interpolation="nearest", window_size=11)
         assert_series_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("quantile", "error", "match"),
+    [
+        *[(q, ComputeError, r"between 0\.0 and 1\.0") for q in [1.5, -0.5, nan, None]],
+        *[(q, SchemaError, "dtype 'numeric'") for q in [True, [0.5], "0.5"]],
+    ],
+)
+def test_rolling_quantile_invalid_fraction(
+    quantile: Any, error: type[Exception], match: str
+) -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+    with pytest.raises(error, match=match):
+        s.rolling_quantile(quantile, window_size=2)
+    with pytest.raises(error, match=match):
+        pl.col("a").rolling_quantile_by("a", "2i", quantile=quantile)
 
 
 def test_rolling_quantile_temporals() -> None:

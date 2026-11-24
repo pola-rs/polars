@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLSyntaxError
+from polars.exceptions import ComputeError, InvalidOperationError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -1247,9 +1247,7 @@ def test_approx_quantile_method_arg(method: str) -> None:
 @pytest.mark.parametrize("quantile", ["-1", "2", "-0.01", "1.01", "1.5"])
 def test_approx_quantile_out_of_range(quantile: str) -> None:
     df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
-    with pytest.raises(
-        SQLSyntaxError, match="APPROX_QUANTILE value must be between 0 and 1"
-    ):
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
         df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) FROM self")
 
 
@@ -1685,7 +1683,7 @@ def test_percentile_within_group_over(engine: EngineType) -> None:
         ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, g)", "expects one argument"),
         ("PERCENTILE_CONT(0.5)", "expects one argument"),
         ("PERCENTILE_CONT(x, 0.5)", "expects one argument"),
-        ("PERCENTILE_CONT(1.5) WITHIN GROUP (ORDER BY x)", "between 0 and 1"),
+        ("PERCENTILE_CONT(1.5) WITHIN GROUP (ORDER BY x)", r"between 0\.0 and 1\.0"),
         ("QUANTILE_CONT(x, 0.5) WITHIN GROUP (ORDER BY x)", "WITHIN GROUP"),
         (
             "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1) "
@@ -1772,3 +1770,14 @@ def test_group_by_window_named_like_key() -> None:
         """
     )
     assert res.rows() == [("y", 2, 1), ("x", None, 2)]
+
+
+def test_aggregate_in_where() -> None:
+    # WHERE filters rows before aggregating, as in Postgres
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [4000, 2000, 100]})
+    with pytest.raises(
+        SQLSyntaxError, match="aggregate functions are not allowed in WHERE"
+    ):
+        df.sql("SELECT g FROM self WHERE x > 0 AND SUM(x) > 5000 GROUP BY g")
+    res = df.sql("SELECT g, x FROM self WHERE x > (SELECT AVG(x) FROM self)")
+    assert res.rows() == [(1, 4000)]

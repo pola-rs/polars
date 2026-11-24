@@ -1,4 +1,4 @@
-//! Range-read projected Parquet roots one row group at a time.
+//! Read small checkpoint actions for timestamp travel past a malformed schema.
 use std::io::Cursor;
 
 use futures::{StreamExt, TryStreamExt};
@@ -6,42 +6,24 @@ use polars_arrow::array::*;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_arrow::datatypes::{ArrowDataType, Field, TimeUnit};
 use polars_buffer::Buffer;
-use polars_io_ext_ffi::delta_v1::Request;
 use polars_parquet::arrow::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use polars_parquet::arrow::read::{BasicDecompressor, PageReader, column_iter_to_arrays};
-use polars_utils::aliases::PlHashSet;
 use serde_json::{Map, Value};
 
 use super::error::{Result, invalid};
-use super::files::{CheckpointFiles, Source};
 use super::host::Storage;
 use super::stats::timestamp_micros;
 use super::values::format_decimal;
 
-/// What a checkpoint file holds. File actions stay columnar in `sources`; the few other
-/// actions are JSON values.
+/// Checkpoint actions needed to find the table's history configuration.
 #[derive(Default)]
 pub struct Checkpoint {
     pub metadata: Vec<Value>,
     pub protocol: Vec<Value>,
     pub checkpoint_metadata: Vec<Value>,
     pub sidecars: Vec<Value>,
-    pub sources: Vec<Source>,
-    /// Whether the file embeds remove actions. Only looked for when it lists sidecars, which
-    /// the V2 spec allows only if all file actions are in them.
-    pub has_removes: bool,
 }
-/// Read a checkpoint file. `files` false reads no file actions (protocol and metadata only).
-///
-/// Remove actions of a checkpoint are tombstones for files older than the checkpoint, which a
-/// snapshot never reads, so the `remove` column is not read.
-pub async fn read(
-    storage: &Storage,
-    path: &str,
-    request: &Request,
-    inherited_metadata: Option<&Value>,
-    files: bool,
-) -> Result<Checkpoint> {
+pub async fn read_actions(storage: &Storage, path: &str) -> Result<Checkpoint> {
     let size = storage.head(path).await?;
     if size < 12 {
         return Err(invalid("short parquet checkpoint"));
@@ -71,14 +53,12 @@ pub async fn read(
     )
     .map_err(invalid)?;
     let mut out = Checkpoint::default();
-    // Preserve row identity across the passes without retaining decoded arrays.
+    // Keep row identity across projected action columns.
     let mut occupied = metadata
         .row_groups
         .iter()
         .map(|rg| MutableBitmap::from_len_zeroed(rg.num_rows()))
         .collect::<Vec<_>>();
-    // Small actions first: the table metadata translates the requested logical statistics to
-    // physical names, even when the metadata row follows the adds.
     let small = schema
         .iter_values()
         .filter(|f| {
@@ -120,63 +100,6 @@ pub async fn read(
             }
         }
     }
-    if !files {
-        return Ok(out);
-    }
-    let stats = requested_stats(request, out.metadata.first().or(inherited_metadata))?;
-    let add = schema.iter_values().find(|f| f.name == "add");
-    let remove_path = (!out.sidecars.is_empty())
-        .then(|| {
-            schema
-                .iter_values()
-                .find(|f| f.name == "remove")
-                .and_then(|f| {
-                    let ArrowDataType::Struct(children) = &f.dtype else {
-                        return None;
-                    };
-                    let path = children.iter().find(|c| c.name == "path")?.clone();
-                    let mut f = f.clone();
-                    f.dtype = ArrowDataType::Struct(vec![path]);
-                    Some(f)
-                })
-        })
-        .flatten();
-    let add_field = add;
-    for (rg_index, rg) in metadata.row_groups.iter().enumerate() {
-        if let Some(field) = add.and_then(|f| project_add(f, &stats)) {
-            let array = read_root(storage, path, rg, &field).await?;
-            let add = array
-                .as_any()
-                .downcast_ref::<StructArray>()
-                .ok_or_else(|| invalid("checkpoint add column is not a struct"))?;
-            for row in (0..rg.num_rows()).filter(|r| !add.is_null(*r)) {
-                if occupied[rg_index].get(row) {
-                    return Err(invalid("multiple actions in one row"));
-                }
-                occupied[rg_index].set(row, true);
-            }
-            let mut files = CheckpointFiles::new(add)?;
-            // `stats` is skipped when `stats_parsed` serves; a file without typed statistics
-            // (a writer that wrote them for some files only) falls back to its text, which is
-            // read for the row group only when such a file exists, so that the common case
-            // never reads the bulk of the checkpoint.
-            if files.needs_stats_text() {
-                if let Some(field) = add_field.and_then(stats_text_field) {
-                    let array = read_root(storage, path, rg, &field).await?;
-                    let text = array
-                        .as_any()
-                        .downcast_ref::<StructArray>()
-                        .ok_or_else(|| invalid("checkpoint add column is not a struct"))?;
-                    files.set_stats_text(text)?;
-                }
-            }
-            out.sources.push(Source::Checkpoint(Box::new(files)));
-        }
-        if let Some(field) = &remove_path {
-            let array = read_root(storage, path, rg, field).await?;
-            out.has_removes |= array.null_count() < array.len();
-        }
-    }
     Ok(out)
 }
 /// Whether the row group's statistics show every value under the root column null (no action
@@ -205,7 +128,6 @@ async fn read_root(
     let selected = rg
         .columns_under_root_iter(&field.name)
         .ok_or_else(|| invalid("missing checkpoint column"))?
-        .filter(|column| selected_leaf(field, &column.descriptor().path_in_schema[1..]))
         .collect::<Vec<_>>();
     let ranges = selected
         .iter()
@@ -261,145 +183,6 @@ async fn read_root(
             &chunks.iter().map(|a| a.as_ref()).collect::<Vec<_>>(),
         )
         .map_err(invalid)
-    }
-}
-fn requested_stats(request: &Request, metadata: Option<&Value>) -> Result<PlHashSet<String>> {
-    let names = request
-        .filter_columns
-        .iter()
-        .chain(request.statistics_columns.iter())
-        .flatten()
-        .map(String::as_str)
-        .collect::<PlHashSet<_>>();
-    if !request.use_metadata_statistics || names.is_empty() {
-        return Ok(PlHashSet::default());
-    }
-    let schema = metadata
-        .and_then(|m| m.get("schemaString"))
-        .and_then(Value::as_str)
-        .map(serde_json::from_str::<Value>)
-        .transpose()
-        .map_err(invalid)?;
-    Ok(schema
-        .as_ref()
-        .and_then(|s| s.get("fields"))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|f| {
-            f.get("name")
-                .and_then(Value::as_str)
-                .is_some_and(|n| names.contains(n))
-        })
-        .filter_map(|f| {
-            f.get("metadata")
-                .and_then(|m| m.get("delta.columnMapping.physicalName"))
-                .and_then(Value::as_str)
-                .or_else(|| f.get("name").and_then(Value::as_str))
-        })
-        .map(str::to_owned)
-        .collect())
-}
-/// The columns of `add` the planner reads. The `stats` text is only read when there is no typed
-/// `stats_parsed` with counts (which takes precedence for every file that has it).
-fn project_add(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {
-    let ArrowDataType::Struct(children) = &field.dtype else {
-        return Some(field.clone());
-    };
-    let parsed_counts = children.iter().any(|c| {
-        c.name == "stats_parsed"
-            && matches!(&c.dtype, ArrowDataType::Struct(p) if p.iter().any(|p| p.name == "numRecords"))
-    });
-    let selected = children
-        .iter()
-        .filter_map(|child| match child.name.as_str() {
-            "path" | "size" | "partitionValues" | "deletionVector" => Some(child.clone()),
-            "stats" => (!parsed_counts).then(|| child.clone()),
-            "stats_parsed" => project_parsed(child, stats),
-            "partitionValues_parsed" => project_partition_timestamps(child),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if selected.is_empty() {
-        return None;
-    }
-    let mut projected = field.clone();
-    projected.dtype = ArrowDataType::Struct(selected);
-    Some(projected)
-}
-/// Legacy zoned timestamp text has no writer offset. Read the typed timestamp leaves when
-/// present to recover the instants. Other partition types still use the string map.
-fn project_partition_timestamps(field: &Field) -> Option<Field> {
-    let ArrowDataType::Struct(children) = &field.dtype else {
-        return None;
-    };
-    let timestamps = children
-        .iter()
-        .filter(|child| matches!(child.dtype, ArrowDataType::Timestamp(..)))
-        .cloned()
-        .collect::<Vec<_>>();
-    if timestamps.is_empty() {
-        return None;
-    }
-    let mut projected = field.clone();
-    projected.dtype = ArrowDataType::Struct(timestamps);
-    Some(projected)
-}
-/// `add` reduced to its `stats` text column.
-fn stats_text_field(field: &Field) -> Option<Field> {
-    let ArrowDataType::Struct(children) = &field.dtype else {
-        return None;
-    };
-    let stats = children.iter().find(|c| c.name == "stats")?.clone();
-    let mut projected = field.clone();
-    projected.dtype = ArrowDataType::Struct(vec![stats]);
-    Some(projected)
-}
-fn project_parsed(field: &Field, stats: &PlHashSet<String>) -> Option<Field> {
-    let ArrowDataType::Struct(children) = &field.dtype else {
-        return None;
-    };
-    let selected = children
-        .iter()
-        .filter_map(|child| match child.name.as_str() {
-            "numRecords" | "tightBounds" => Some(child.clone()),
-            "minValues" | "maxValues" | "nullCount" => {
-                let ArrowDataType::Struct(columns) = &child.dtype else {
-                    return None;
-                };
-                let columns = columns
-                    .iter()
-                    .filter(|c| stats.contains(c.name.as_str()))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if columns.is_empty() {
-                    return None;
-                }
-                let mut projected = child.clone();
-                projected.dtype = ArrowDataType::Struct(columns);
-                Some(projected)
-            },
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if selected.is_empty() {
-        return None;
-    }
-    let mut projected = field.clone();
-    projected.dtype = ArrowDataType::Struct(selected);
-    Some(projected)
-}
-fn selected_leaf(field: &Field, path: &[polars_utils::pl_str::PlSmallStr]) -> bool {
-    let Some(name) = path.first() else {
-        return true;
-    };
-    // Struct children preserve their names. Lists/maps are retained whole.
-    match &field.dtype {
-        ArrowDataType::Struct(children) => children
-            .iter()
-            .find(|f| f.name == *name)
-            .is_some_and(|f| selected_leaf(f, &path[1..])),
-        _ => true,
     }
 }
 fn json_value(a: &dyn Array, i: usize) -> Result<Value> {

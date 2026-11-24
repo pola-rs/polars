@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::future::Future;
+use std::io::{Read, Seek, SeekFrom};
 use std::ops::Range;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,10 +26,11 @@ use polars_io_ext_ffi::common::{
 use polars_io_ext_ffi::delta_v1::{Host, ObjectMeta, StorageHandle};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
-use tokio::io::AsyncWriteExt;
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, OwnedMutexGuard, Semaphore};
 
 use crate::io::iceberg_plugin::metadata_cache::ScopedMetadataCache;
+
+const PINNED_LOCAL_CHECKPOINTS: usize = 32;
 
 /// State shared with the plugin for the duration of one `plan` call; [`Host::ctx`] points to it.
 pub(super) struct HostCtx {
@@ -176,6 +178,9 @@ unsafe extern "C" fn host_get_storage(
                 resolution: NEXT_RESOLUTION.fetch_add(1, Ordering::Relaxed),
                 listed: Default::default(),
                 checkpoints: Default::default(),
+                local_file_slots: Semaphore::new(PINNED_LOCAL_CHECKPOINTS),
+                stage_lock: Default::default(),
+                checkpoint_spool: Default::default(),
             });
             Ok(StorageHandle(Arc::into_raw(storage) as *const c_void))
         })())
@@ -194,10 +199,13 @@ struct HostStorage {
     metadata_cache: Option<ScopedMetadataCache>,
     io_error_kinds: IoErrorKinds,
     resolution: u64,
-    /// Strong cloud validators from LIST, for whole-object reads of commit and checkpoint JSON.
+    /// Strong cloud validators from LIST, for whole-object reads and subsequent checkpoint HEADs.
     listed: Mutex<HashMap<String, Generation>>,
     /// The generation to keep for each HEAD followed by range reads, including multipart passes.
     checkpoints: Mutex<HashMap<String, Arc<OnceCell<CheckpointRead>>>>,
+    local_file_slots: Semaphore,
+    stage_lock: Arc<tokio::sync::Mutex<()>>,
+    checkpoint_spool: OnceCell<Arc<CheckpointSpool>>,
 }
 
 struct ResolvedLocation {
@@ -216,12 +224,8 @@ impl Generation {
     fn from_meta(meta: &object_store::ObjectMeta) -> Option<Self> {
         // Prefer a strong ETag so that S3 readers with GetObject but no GetObjectVersion can
         // still read checkpoints on versioned buckets. S3's null version can be overwritten.
-        if let Some(etag) = &meta.e_tag
-            && !etag.is_empty()
-            && etag != "*"
-            && !etag.starts_with("W/")
-        {
-            Some(Self::ETag(etag.clone()))
+        if let Some(tag) = meta.e_tag.as_deref().and_then(strong_etag) {
+            Some(Self::ETag(tag.to_owned()))
         } else {
             meta.version
                 .as_ref()
@@ -232,10 +236,29 @@ impl Generation {
 
     fn matches(&self, meta: &object_store::ObjectMeta) -> bool {
         match self {
-            Self::ETag(tag) => meta.e_tag.as_ref() == Some(tag),
+            Self::ETag(tag) => meta.e_tag.as_deref().and_then(strong_etag) == Some(tag.as_str()),
             Self::Version(version) => meta.version.as_ref() == Some(version),
         }
     }
+}
+
+/// Providers can leave the quotes off the opaque tag in LIST metadata.
+fn strong_etag(tag: &str) -> Option<&str> {
+    let tag = if let Some(tag) = tag.strip_prefix('"') {
+        tag.strip_suffix('"')?
+    } else if tag.is_empty()
+        || tag == "*"
+        || tag.starts_with("W/")
+        || tag.starts_with("w/")
+        || tag.contains(',')
+    {
+        return None;
+    } else {
+        tag
+    };
+    tag.bytes()
+        .all(|b| matches!(b, b'!' | b'#'..=b'~'))
+        .then_some(tag)
 }
 
 struct CheckpointRead {
@@ -244,9 +267,23 @@ struct CheckpointRead {
 }
 
 enum CheckpointSource {
-    // An open local file or an anonymous temporary copy of one cloud response.
-    File(Arc<std::fs::File>),
-    Ranges(ResolvedLocation, Option<Generation>),
+    File(CheckpointFile),
+    Ranges(ResolvedLocation, Generation),
+}
+
+#[derive(Clone)]
+enum CheckpointFile {
+    Local(Arc<std::fs::File>),
+    Staged(Arc<CheckpointSpool>, u64),
+}
+
+impl CheckpointFile {
+    fn read_at(&self, offset: u64, len: usize) -> PolarsResult<Bytes> {
+        match self {
+            Self::Local(file) => read_buffered(file, offset, len).map(Bytes::from_owner),
+            Self::Staged(spool, base) => spool.read_at(base + offset, len),
+        }
+    }
 }
 
 impl HostStorage {
@@ -288,82 +325,198 @@ impl HostStorage {
         })
     }
 
-    async fn open_checkpoint(&self, url: &str) -> PolarsResult<CheckpointRead> {
-        let loc = self.resolve(url).await?;
-        let classic = url
-            .rsplit('/')
-            .next()
-            .and_then(|name| name.strip_suffix(".checkpoint.parquet"))
-            .is_some_and(|version| {
-                version.len() == 20 && version.bytes().all(|b| b.is_ascii_digit())
-            });
-        if classic && loc.is_local {
-            return open_checkpoint_file(&loc).await;
+    async fn open_checkpoint(&self, url: &str) -> Result<CheckpointRead, FfiError> {
+        let loc = self
+            .resolve(url)
+            .await
+            .map_err(|e| self.io_error_kinds.to_ffi_err(e))?;
+        if loc.is_local {
+            return self
+                .open_checkpoint_file(&loc, None)
+                .await
+                .map_err(|e| self.io_error_kinds.to_ffi_err(e));
         }
 
+        let listed = self.listed.lock().unwrap().get(url).cloned();
         let meta = loc
             .store
             .head(&loc.path, ConcurrencyStrategy::BytesBased)
-            .await?;
-        let generation = Generation::from_meta(&meta);
-        if classic && generation.is_none() {
-            return open_checkpoint_file(&loc).await;
+            .await
+            .map_err(|e| read_error(&self.io_error_kinds, e, listed.is_some()))?;
+        if listed.is_some_and(|generation| !generation.matches(&meta)) {
+            return Err(FfiError::new(
+                FfiErrorKind::OBJECT_CHANGED,
+                format!("object generation differs between LIST and HEAD: {url}"),
+            ));
         }
+        let Some(generation) = Generation::from_meta(&meta) else {
+            return self
+                .open_checkpoint_file(&loc, Some(meta.size))
+                .await
+                .map_err(|e| read_error(&self.io_error_kinds, e, true));
+        };
         Ok(CheckpointRead {
             size: meta.size,
             source: CheckpointSource::Ranges(loc, generation),
         })
     }
-}
 
-async fn open_checkpoint_file(loc: &ResolvedLocation) -> PolarsResult<CheckpointRead> {
-    let path = &loc.path;
-    loc.store
-        .exec_with_rebuild_retry_on_err(|s| async move {
-            let result = s.get(path).await?;
-            let size = result.meta.size;
-            let file = match result.payload {
-                GetResultPayload::File(file, _) => file,
-                _ => stage_checkpoint(result).await?,
-            };
-            Ok(CheckpointRead {
-                size,
-                source: CheckpointSource::File(Arc::new(file)),
+    async fn open_checkpoint_file(
+        &self,
+        loc: &ResolvedLocation,
+        expected_size: Option<u64>,
+    ) -> PolarsResult<CheckpointRead> {
+        let slot = if loc.is_local {
+            self.local_file_slots.try_acquire().ok()
+        } else {
+            None
+        };
+        let keep_open = slot.is_some();
+        let path = &loc.path;
+        let read = loc
+            .store
+            .exec_with_rebuild_retry_on_err(path, |s| async move {
+                // Acquire before GET so concurrent spill reads do not accumulate open files.
+                let stage_lock = if keep_open {
+                    None
+                } else {
+                    Some(self.stage_lock.clone().lock_owned().await)
+                };
+                let result = s.get(path).await?;
+                let size = result.meta.size;
+                if expected_size.is_some_and(|expected| size != expected) {
+                    return Err(object_store::Error::Precondition {
+                        path: path.to_string(),
+                        source: "object size differs between HEAD and GET".into(),
+                    });
+                }
+                let source = match result.payload {
+                    GetResultPayload::File(file, _) if keep_open => {
+                        CheckpointSource::File(CheckpointFile::Local(Arc::new(file)))
+                    },
+                    _ => {
+                        let spool = self
+                            .checkpoint_spool
+                            .get_or_try_init(CheckpointSpool::new)
+                            .await?;
+                        let offset = spool.stage(result, stage_lock).await?;
+                        CheckpointSource::File(CheckpointFile::Staged(spool.clone(), offset))
+                    },
+                };
+                Ok(CheckpointRead { size, source })
             })
-        })
-        .await
+            .await?;
+        if let Some(slot) = slot
+            && matches!(
+                read.source,
+                CheckpointSource::File(CheckpointFile::Local(_))
+            )
+        {
+            // The file lives in the checkpoint map for this entire storage handle.
+            slot.forget();
+        }
+        Ok(read)
+    }
 }
 
-async fn stage_checkpoint(result: GetResult) -> object_store::Result<std::fs::File> {
-    fn io_error(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> object_store::Error {
-        object_store::Error::Generic {
-            store: "staging Delta checkpoint",
-            source: error.into(),
-        }
+/// One anonymous file for all staged checkpoints on a storage handle.
+struct CheckpointSpool {
+    file: std::fs::File,
+    cursor: Mutex<()>,
+    end: AtomicU64,
+}
+
+fn spool_error(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> object_store::Error {
+    object_store::Error::Generic {
+        store: "staging Delta checkpoint",
+        source: error.into(),
+    }
+}
+
+impl CheckpointSpool {
+    async fn new() -> object_store::Result<Arc<Self>> {
+        let file = ASYNC
+            .spawn_blocking(|| tempfile::tempfile_in(&*POLARS_TEMP_DIR_BASE_PATH))
+            .await
+            .map_err(spool_error)?
+            .map_err(spool_error)?;
+        Ok(Arc::new(Self {
+            file,
+            cursor: Default::default(),
+            end: AtomicU64::new(0),
+        }))
     }
 
-    // A response without a validator can still provide one generation. Keep its body on disk
-    // so a projected or schema-only read never needs to buffer an entire checkpoint.
-    let size = result.meta.size;
-    let file = ASYNC
-        .spawn_blocking(|| tempfile::tempfile_in(&*POLARS_TEMP_DIR_BASE_PATH))
-        .await
-        .map_err(io_error)?
-        .map_err(io_error)?;
-    let mut file = tokio::fs::File::from_std(file);
-    let mut stream = result.into_stream();
-    let mut written = 0;
-    while let Some(chunk) = stream.try_next().await? {
-        file.write_all(&chunk).await.map_err(io_error)?;
-        written += chunk.len() as u64;
+    fn copy_at(&self, offset: u64, source: &mut impl Read) -> std::io::Result<u64> {
+        let _cursor = self.cursor.lock().unwrap();
+        let mut file = &self.file;
+        file.seek(SeekFrom::Start(offset))?;
+        std::io::copy(source, &mut file)
     }
-    if written != size {
-        return Err(io_error(
-            "checkpoint response length did not match its size",
-        ));
+
+    fn read_at(&self, offset: u64, len: usize) -> PolarsResult<Bytes> {
+        // Windows positional reads move the file cursor.
+        #[cfg(windows)]
+        let _cursor = self.cursor.lock().unwrap();
+        read_buffered(&self.file, offset, len).map(Bytes::from_owner)
     }
-    file.flush().await.map_err(io_error)?;
-    Ok(file.into_std().await)
+
+    async fn stage(
+        self: &Arc<Self>,
+        result: GetResult,
+        stage_lock: Option<OwnedMutexGuard<()>>,
+    ) -> object_store::Result<u64> {
+        let size = result.meta.size;
+        // Reserve a disjoint interval even if copying is cancelled while a blocking write runs.
+        let offset = self
+            .end
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |end| {
+                end.checked_add(size)
+            })
+            .map_err(|_| spool_error("checkpoint spool size overflow"))?;
+        let written = match result.payload {
+            GetResultPayload::File(file, _) => {
+                let spool = self.clone();
+                ASYNC
+                    .spawn_blocking(move || {
+                        // Keep the slot until the input file closes, even if the future is dropped.
+                        let _stage_lock = stage_lock;
+                        let mut source = file.take(size);
+                        spool.copy_at(offset, &mut source)
+                    })
+                    .await
+                    .map_err(spool_error)?
+                    .map_err(spool_error)?
+            },
+            _ => {
+                let _stage_lock = stage_lock;
+                let mut stream = result.into_stream();
+                let mut written = 0;
+                while let Some(chunk) = stream.try_next().await? {
+                    let len = chunk.len() as u64;
+                    if len > size - written {
+                        return Err(spool_error("checkpoint response exceeded its size"));
+                    }
+                    let spool = self.clone();
+                    ASYNC
+                        .spawn_blocking(move || {
+                            spool.copy_at(offset + written, &mut chunk.as_ref())
+                        })
+                        .await
+                        .map_err(spool_error)?
+                        .map_err(spool_error)?;
+                    written += len;
+                }
+                written
+            },
+        };
+        if written != size {
+            return Err(spool_error(
+                "checkpoint response length did not match its size",
+            ));
+        }
+        Ok(offset)
+    }
 }
 
 async fn fetch_bytes(
@@ -373,13 +526,13 @@ async fn fetch_bytes(
 ) -> PolarsResult<Bytes> {
     let path = &loc.path;
     loc.store
-        .exec_with_rebuild_retry_on_err(|s| {
+        .exec_with_rebuild_retry_on_err(path, |s| {
             let mut options = GetOptions {
                 range: range.clone().map(Into::into),
                 ..Default::default()
             };
             match generation {
-                Some(Generation::ETag(tag)) => options.if_match = Some(tag.clone()),
+                Some(Generation::ETag(tag)) => options.if_match = Some(format!("\"{tag}\"")),
                 Some(Generation::Version(version)) => options.version = Some(version.clone()),
                 None => {},
             }
@@ -531,8 +684,7 @@ unsafe extern "C" fn storage_head(
                 .clone();
             let read = checkpoint
                 .get_or_try_init(|| storage.open_checkpoint(&url))
-                .await
-                .map_err(|e| storage.io_error_kinds.to_ffi_err(e))?;
+                .await?;
             Ok(read.size)
         })
     })
@@ -568,9 +720,7 @@ unsafe extern "C" fn storage_get_range(
             }
             let source = read.map(|read| &read.source);
             let generation = match source {
-                Some(CheckpointSource::Ranges(loc, generation)) if !loc.is_local => {
-                    generation.as_ref()
-                },
+                Some(CheckpointSource::Ranges(_, generation)) => Some(generation),
                 _ => None,
             };
             let range = start..end;
@@ -579,19 +729,15 @@ unsafe extern "C" fn storage_get_range(
                     Some(CheckpointSource::File(file)) => {
                         let file = file.clone();
                         ASYNC
-                            .spawn_blocking(move || {
-                                read_buffered(&file, start, len).map(Bytes::from_owner)
-                            })
+                            .spawn_blocking(move || file.read_at(start, len))
                             .await
                             .map_err(|e| FfiError::new(FfiErrorKind::OTHER, e.to_string()))?
                             .map_err(|e| storage.io_error_kinds.to_ffi_err(e))
                     },
                     Some(CheckpointSource::Ranges(loc, generation)) => {
-                        fetch_bytes(loc, generation.as_ref(), Some(range.clone()))
+                        fetch_bytes(loc, Some(generation), Some(range.clone()))
                             .await
-                            .map_err(|e| {
-                                read_error(&storage.io_error_kinds, e, generation.is_some())
-                            })
+                            .map_err(|e| read_error(&storage.io_error_kinds, e, true))
                     },
                     None => {
                         let to_ffi_err = |e| storage.io_error_kinds.to_ffi_err(e);
@@ -603,7 +749,8 @@ unsafe extern "C" fn storage_get_range(
                 }
             };
             let bytes = match &storage.metadata_cache {
-                Some(c) if is_cacheable(&url) => {
+                // A range read without HEAD has no pin and must not populate its cache.
+                Some(c) if is_cacheable(&url) && source.is_some() => {
                     let key = storage.cache_key(&c.scope, &url, generation, Some(&range));
                     c.cache.get_or_fetch(&key, &c.stats, fetch).await?
                 },
@@ -639,7 +786,7 @@ unsafe extern "C" fn storage_list(
                 Some(start) if !loc.is_local => {
                     let offset = prefix_offset(&loc.path, &prefix, start);
                     loc.store
-                        .exec_with_rebuild_retry_on_err(|s| {
+                        .exec_with_rebuild_retry_on_err(path, |s| {
                             let offset = offset.clone();
                             async move {
                                 s.list_with_offset(Some(path), &offset)
@@ -659,7 +806,7 @@ unsafe extern "C" fn storage_list(
                 },
                 _ => {
                     loc.store
-                        .exec_with_rebuild_retry_on_err(|s| async move {
+                        .exec_with_rebuild_retry_on_err(path, |s| async move {
                             s.list_with_delimiter(Some(path)).await
                         })
                         .await
@@ -719,6 +866,108 @@ mod tests {
     use super::*;
 
     #[test]
+    fn checkpoint_etag_accepts_list_quoting_and_rejects_weak_or_malformed_tags() {
+        let mut meta = object_store::ObjectMeta {
+            location: "checkpoint.parquet".into(),
+            last_modified: chrono::DateTime::UNIX_EPOCH,
+            size: 8,
+            e_tag: Some("old".into()),
+            version: None,
+        };
+        let listed = Generation::from_meta(&meta).unwrap();
+        meta.e_tag = Some("\"old\"".into());
+        assert!(listed.matches(&meta));
+        let head = Generation::from_meta(&meta).unwrap();
+        meta.e_tag = Some("old".into());
+        assert!(head.matches(&meta));
+        meta.e_tag = Some("\"new\"".into());
+        assert!(!head.matches(&meta));
+        meta.e_tag = None;
+        assert!(!head.matches(&meta));
+
+        for malformed in ["W/\"old\"", "\"old", "old\"", "old tag", "", "*", "old,new"] {
+            meta.e_tag = Some(malformed.into());
+            assert!(Generation::from_meta(&meta).is_none(), "{malformed:?}");
+            assert!(!listed.matches(&meta), "{malformed:?}");
+        }
+        meta.e_tag = Some("W/\"old\"".into());
+        meta.version = Some("version".into());
+        assert!(matches!(
+            Generation::from_meta(&meta),
+            Some(Generation::Version(version)) if version == "version"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_checkpoints_share_a_spool_after_the_open_file_budget() {
+        let table = tempfile::tempdir().unwrap();
+        let sidecars = table.path().join("_delta_log").join("_sidecars");
+        std::fs::create_dir_all(&sidecars).unwrap();
+        let files = [
+            ("first.parquet", b"abcdefgh"),
+            ("second.parquet", b"ijklmnop"),
+            ("third.parquet", b"qrstuvwx"),
+        ];
+        let ctx = HostCtx {
+            cloud_options: None,
+            metadata_cache: None,
+            io_error_kinds: Default::default(),
+        };
+        ASYNC.block_on(async {
+            let handle = unsafe {
+                host_get_storage(ctx.host().ctx, FfiStr::new(table.path().to_str().unwrap()))
+            }
+            .await
+            .into_result()
+            .unwrap();
+            let mut storage = unsafe { Arc::from_raw(handle.0.cast::<HostStorage>()) };
+            Arc::get_mut(&mut storage).unwrap().local_file_slots = Semaphore::new(1);
+
+            for (index, (name, data)) in files.iter().enumerate() {
+                let path = sidecars.join(name);
+                std::fs::write(&path, data).unwrap();
+                let url = FfiStr::new(path.to_str().unwrap());
+                let size = unsafe { storage_head(handle, url) }
+                    .await
+                    .into_result()
+                    .unwrap();
+                assert_eq!(size, 8);
+
+                let checkpoints = storage.checkpoints.lock().unwrap();
+                let read = checkpoints[path.to_str().unwrap()].get().unwrap();
+                if index == 0 {
+                    assert!(matches!(
+                        read.source,
+                        CheckpointSource::File(CheckpointFile::Local(_))
+                    ));
+                } else {
+                    let CheckpointSource::File(CheckpointFile::Staged(spool, offset)) =
+                        &read.source
+                    else {
+                        panic!("overflow checkpoint retained a separate file descriptor");
+                    };
+                    assert!(Arc::ptr_eq(spool, storage.checkpoint_spool.get().unwrap()));
+                    assert_eq!(*offset, (index as u64 - 1) * size);
+                }
+            }
+
+            for (name, data) in files {
+                let path = sidecars.join(name);
+                let replacement = sidecars.join("replacement");
+                std::fs::write(&replacement, b"12345678").unwrap();
+                std::fs::rename(&replacement, &path).unwrap();
+                let url = FfiStr::new(path.to_str().unwrap());
+                let range = unsafe { storage_get_range(handle, url, 2, 6) }
+                    .await
+                    .into_result()
+                    .unwrap();
+                assert_eq!(range.as_slice(), &data[2..6]);
+            }
+        });
+    }
+
+    #[test]
     fn pinned_read_converts_wrapped_precondition_to_object_changed() {
         let path = "s3://bucket/checkpoint.parquet";
         let error = ObjectStoreErrorContext::new(PlRefPath::new(path)).attach_err_info(
@@ -754,7 +1003,10 @@ mod tests {
             attributes: Default::default(),
             extensions: Default::default(),
         };
-        let file = ASYNC.block_on(stage_checkpoint(result)).unwrap();
-        assert_eq!(read_buffered(&file, 2, 4).unwrap().as_ref(), b"cdef");
+        ASYNC.block_on(async {
+            let spool = CheckpointSpool::new().await.unwrap();
+            let offset = spool.stage(result, None).await.unwrap();
+            assert_eq!(spool.read_at(offset + 2, 4).unwrap().as_ref(), b"cdef");
+        });
     }
 }

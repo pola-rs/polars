@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pytest
 
@@ -1215,8 +1216,8 @@ def test_window_last_value_frame_ends_at_current_row(
         ),
         ("AVG(DISTINCT x) OVER w", r"AVG\(DISTINCT ...\) is not supported"),
         (
-            "COUNT(x) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)",
-            "COUNT with window frame 'ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING' "
+            "COUNT(x) OVER (ORDER BY id ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING)",
+            "COUNT with window frame 'ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING' "
             "is not supported",
         ),
         (
@@ -1721,3 +1722,53 @@ def test_window_rolling_min_of_strings_unsupported(df_frames: pl.DataFrame) -> N
     query = "SELECT MIN(s) OVER (ORDER BY id ROWS 2 PRECEDING) FROM t"
     with pytest.raises(InvalidOperationError, match="rolling_min"):
         pl.SQLContext(t=df_frames).execute(query, eager=True)
+
+
+EMPTY_FRAME = (None, 0, 0, None, None)
+
+
+@pytest.mark.parametrize(
+    ("frame", "expected"),
+    [
+        (
+            "ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING",
+            [
+                EMPTY_FRAME,
+                (10, 1, 1, 10, 10.0),
+                (10, 1, 2, 10, 10.0),
+                (40, 2, 3, 30, 20.0),
+                EMPTY_FRAME,
+                (5, 1, 1, 5, 5.0),
+            ],
+        ),
+        (
+            "ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING",
+            [
+                EMPTY_FRAME,
+                (10, 1, 1, 10, 10.0),
+                (10, 1, 2, 10, 10.0),
+                (30, 1, 2, 30, 30.0),
+                EMPTY_FRAME,
+                (5, 1, 1, 5, 5.0),
+            ],
+        ),
+        # a frame that starts after it ends holds no row
+        ("ROWS BETWEEN 1 PRECEDING AND 2 PRECEDING", [EMPTY_FRAME] * 6),
+    ],
+)
+def test_window_frame_ending_before_the_row(
+    frame: str, expected: list[tuple[Any, ...]]
+) -> None:
+    # the rows before the current one, with the values Postgres gives
+    df = pl.DataFrame(
+        {"g": [1, 1, 1, 1, 2, 2], "t": [1, 2, 3, 4, 1, 2], "v": [10, None, 30, 4, 5, 7]}
+    )
+    over = f"OVER (PARTITION BY g ORDER BY t {frame})"
+    res = df.sql(
+        f"""
+        SELECT SUM(v) {over} AS s, COUNT(v) {over} AS c, COUNT(*) {over} AS n,
+          MAX(v) {over} AS m, AVG(v) {over} AS a
+        FROM self ORDER BY g, t
+        """
+    )
+    assert res.rows() == expected

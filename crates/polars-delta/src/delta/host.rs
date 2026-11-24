@@ -98,9 +98,19 @@ pub struct Object {
 }
 impl Storage {
     pub async fn list(&self, prefix: &str) -> PluginResult<Vec<Object>> {
-        self.list_after(prefix, None).await
+        Ok(self
+            .list_with_sizes(prefix, None)
+            .await?
+            .into_iter()
+            .map(|(object, _)| object)
+            .collect())
     }
-    pub async fn list_after(&self, prefix: &str, start: Option<&str>) -> PluginResult<Vec<Object>> {
+
+    pub async fn list_with_sizes(
+        &self,
+        prefix: &str,
+        start: Option<&str>,
+    ) -> PluginResult<Vec<(Object, u64)>> {
         let entries = unsafe {
             (self.0.host.vtable.storage_list)(
                 self.0.handle,
@@ -114,10 +124,13 @@ impl Storage {
             .as_slice()
             .iter()
             .map(|e| {
-                Ok(Object {
-                    url: e.url.as_slice().pipe_str()?,
-                    modified_ms: e.modified_ms.into_option(),
-                })
+                Ok((
+                    Object {
+                        url: e.url.as_slice().pipe_str()?,
+                        modified_ms: e.modified_ms.into_option(),
+                    },
+                    e.size,
+                ))
             })
             .collect()
     }

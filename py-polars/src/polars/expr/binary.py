@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_expression
+from polars._utils.unstable import unstable
 from polars._utils.various import scale_bytes
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import parse_into_datatype_expr
@@ -74,6 +75,132 @@ class ExprBinaryNameSpace:
         """
         literal_pyexpr = parse_into_expression(literal, str_as_lit=True)
         return wrap_expr(self._pyexpr.bin_contains(literal_pyexpr))
+
+    @unstable()
+    def find(self, literal: IntoExpr) -> Expr:
+        r"""
+        Return the byte offset of the first occurrence of a binary substring.
+
+        If the substring is not found, returns None.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        literal
+            The binary substring to look for.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        contains : Check if the binary substring exists anywhere.
+        polars.Expr.str.find : Return the character offset of a substring in a string.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"txt": ["hello", "héllo", "world", None]})
+        >>> df.with_columns(
+        ...     str_find=pl.col("txt").str.find("l", literal=True),
+        ...     bin_find=pl.col("txt").cast(pl.Binary).bin.find(b"l"),
+        ... )
+        shape: (4, 3)
+        ┌───────┬──────────┬──────────┐
+        │ txt   ┆ str_find ┆ bin_find │
+        │ ---   ┆ ---      ┆ ---      │
+        │ str   ┆ u32      ┆ u32      │
+        ╞═══════╪══════════╪══════════╡
+        │ hello ┆ 2        ┆ 2        │
+        │ héllo ┆ 2        ┆ 3        │
+        │ world ┆ 3        ┆ 3        │
+        │ null  ┆ null     ┆ null     │
+        └───────┴──────────┴──────────┘
+        """
+        literal_pyexpr = parse_into_expression(literal, str_as_lit=True)
+        return wrap_expr(self._pyexpr.bin_find(literal_pyexpr))
+
+    @unstable()
+    def find_many(
+        self,
+        patterns: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
+        overlapping: bool = False,
+        leftmost: bool = False,
+    ) -> Expr:
+        r"""
+        Use the Aho-Corasick algorithm to find many matches.
+
+        Returns the byte offset of the start of each match.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        .. warning::
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        patterns
+            Binary patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case-insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+        overlapping
+            Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`List` with inner data type
+            :class:`UInt32`.
+
+        See Also
+        --------
+        polars.Expr.str.find_many : Return the character offsets of many matches.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [b"discontent", b"rhapsody"]})
+        >>> patterns = [b"winter", b"disco", b"onte", b"discontent"]
+        >>> df.with_columns(
+        ...     matches=pl.col("values").bin.find_many(patterns),
+        ...     matches_overlapping=pl.col("values").bin.find_many(
+        ...         patterns, overlapping=True
+        ...     ),
+        ... )
+        shape: (2, 3)
+        ┌───────────────┬───────────┬─────────────────────┐
+        │ values        ┆ matches   ┆ matches_overlapping │
+        │ ---           ┆ ---       ┆ ---                 │
+        │ binary        ┆ list[u32] ┆ list[u32]           │
+        ╞═══════════════╪═══════════╪═════════════════════╡
+        │ b"discontent" ┆ [0]       ┆ [0, 4, 0]           │
+        │ b"rhapsody"   ┆ []        ┆ []                  │
+        └───────────────┴───────────┴─────────────────────┘
+        """
+        if overlapping and leftmost:
+            msg = "can not match overlapping patterns when leftmost == True"
+            raise ValueError(msg)
+        patterns_pyexpr = parse_into_expression(patterns, str_as_lit=False)
+        return wrap_expr(
+            self._pyexpr.bin_find_many(
+                patterns_pyexpr, ascii_case_insensitive, overlapping, leftmost
+            )
+        )
 
     def ends_with(self, suffix: IntoExpr) -> Expr:
         r"""

@@ -212,6 +212,60 @@ def test_arrow_dict_chunks_keep_value_type_30729(
     assert_series_equal(pl.DataFrame({"c": ca})["c"], expected)
 
 
+@pytest.mark.parametrize("value_type", [pa.duration("s"), pa.timestamp("s", "UTC")])
+@pytest.mark.parametrize("overflow", [-(2**63 // 1000) - 1, (2**63 - 1) // 1000 + 1])
+def test_arrow_dict_chunks_temporal_seconds_overflow(
+    value_type: pa.DataType, overflow: int
+) -> None:
+    ca = _two_dict_chunks(pa.int8(), pa.array([1, 2, overflow], value_type))
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.from_arrow(ca)
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.Series("c", ca)
+    with pytest.raises(pa.ArrowInvalid, match="out of bounds"):
+        pl.DataFrame({"c": ca})
+
+
+@pytest.mark.parametrize(
+    ("value_type", "dtype"),
+    [
+        (pa.duration("s"), pl.Duration("ms")),
+        (pa.timestamp("s", "Europe/Amsterdam"), pl.Datetime("ms", "Europe/Amsterdam")),
+    ],
+)
+def test_arrow_dict_chunks_temporal_seconds_bounds(
+    value_type: pa.DataType, dtype: pl.DataType
+) -> None:
+    min_seconds = -(2**63 // 1000)
+    max_seconds = (2**63 - 1) // 1000
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays(
+                pa.array([0, 1, None], pa.int8()),
+                pa.array([min_seconds, None, max_seconds + 1], value_type),
+            ),
+            pa.DictionaryArray.from_arrays(
+                pa.array([None], pa.int8()), pa.array([min_seconds - 1], value_type)
+            ),
+            pa.DictionaryArray.from_arrays(
+                pa.array([0, 1], pa.int8()),
+                pa.array([max_seconds, min_seconds], value_type),
+            ),
+        ]
+    )
+    expected = pl.Series(
+        "c",
+        [min_seconds * 1000, None, None, None, max_seconds * 1000, min_seconds * 1000],
+    )
+    for s in (
+        cast("pl.Series", pl.from_arrow(ca)).alias("c"),
+        pl.Series("c", ca),
+        pl.DataFrame({"c": ca})["c"],
+    ):
+        assert s.dtype == dtype
+        assert_series_equal(s.to_physical(), expected)
+
+
 def test_arrow_dict_chunks_small_index_overflow_30729() -> None:
     # The combined dictionary has more entries than an int8 index can address.
     ca = pa.chunked_array(

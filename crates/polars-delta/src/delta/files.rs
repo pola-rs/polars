@@ -35,8 +35,6 @@ pub struct Rows {
 }
 /// A run of rows of one checkpoint file: the `add` struct column of a row group.
 pub struct CheckpointFiles {
-    len: usize,
-    add_valid: Option<Bitmap>,
     path: Box<dyn Array>,
     size: Box<dyn Array>,
     pv_offsets: OffsetsBuffer<i32>,
@@ -59,7 +57,7 @@ pub enum Source {
     Rows(Rows),
     Checkpoint(Box<CheckpointFiles>),
 }
-fn child<'a>(s: &'a StructArray, name: &str) -> Option<&'a dyn Array> {
+pub(super) fn child<'a>(s: &'a StructArray, name: &str) -> Option<&'a dyn Array> {
     s.fields()
         .iter()
         .position(|f| f.name == name)
@@ -208,8 +206,6 @@ impl CheckpointFiles {
             })
             .transpose()?;
         Ok(Self {
-            len,
-            add_valid,
             path,
             size,
             pv_offsets,
@@ -222,23 +218,6 @@ impl CheckpointFiles {
             stats_parsed,
             dv,
         })
-    }
-    /// Whether an add row has no typed statistics, so that its `stats` text is needed and was
-    /// not read.
-    pub fn needs_stats_text(&self) -> bool {
-        self.stats.is_none()
-            && self
-                .stats_parsed
-                .as_ref()
-                .is_some_and(|p| (0..self.len).any(|r| self.is_add(r) && p.is_null(r)))
-    }
-    /// The `stats` text column of the same rows, read for rows without typed statistics.
-    pub fn set_stats_text(&mut self, add: &StructArray) -> Result<()> {
-        self.stats = text_column(child_box(add, "stats"))?;
-        Ok(())
-    }
-    fn is_add(&self, row: usize) -> bool {
-        self.add_valid.as_ref().is_none_or(|v| v.get_bit(row))
     }
     fn dv(&self, row: usize) -> Result<Option<DvView<'_>>> {
         let Some(dv) = &self.dv else {
@@ -313,10 +292,7 @@ impl Source {
         }
     }
     pub fn checkpoint_partitions(&self) -> bool {
-        match self {
-            Self::Checkpoint(_) => true,
-            Self::Rows(r) => matches!(r.timestamp_partitions, TimestampPartitions::Checkpoint),
-        }
+        matches!(self, Self::Checkpoint(_))
     }
     pub fn legacy_utc_partitions(&self, row: usize) -> bool {
         matches!(self, Self::Rows(r) if r.timestamp_partitions.is_utc(&r.adds[row]))
@@ -375,12 +351,6 @@ impl Source {
             Source::Checkpoint(c) => c.dv(row),
         }
     }
-    fn key(&self, row: usize) -> Result<Key<'_>> {
-        Ok(Key {
-            path: self.path(row),
-            dv: self.dv(row)?.map(|d| d.id),
-        })
-    }
     pub fn stats_lookup<'a>(&'a self, wanted: &[&str]) -> StatsLookup<'a> {
         StatsLookup {
             parsed: match self {
@@ -436,66 +406,32 @@ impl Source {
         }
     }
 }
-/// Reconcile file actions: `sources` newest first, the checkpoint's last. Returns the surviving
-/// adds as `(source, row)`, sorted by path.
-///
-/// An add survives unless a newer action holds its logical key (path and deletion vector) or a
-/// newer add holds its path. Removes of a checkpoint are tombstones for files the snapshot
-/// never reads, so they are not part of the sources.
-pub fn reconcile(sources: &[Source]) -> Result<Vec<(u32, u32)>> {
+/// Find the live add actions, in path order, for checkpoint writer provenance.
+pub fn reconcile_commits(commits: &[Rows]) -> Vec<(u32, u32)> {
     let mut seen: PlHashSet<Key<'_>> = PlHashSet::default();
     let mut seen_paths: PlHashSet<&str> = PlHashSet::default();
-    let mut checkpoint_keys: PlHashSet<Key<'_>> = PlHashSet::default();
     let mut survivors = Vec::new();
-    for (s, source) in sources.iter().enumerate() {
-        match source {
-            Source::Rows(rows) => {
-                for r in &rows.removes {
-                    seen.insert(Key {
-                        path: &r.path,
-                        dv: r.dv.as_ref().map(DvRec::id),
-                    });
-                }
-                for (row, a) in rows.adds.iter().enumerate() {
-                    let key = Key {
-                        path: &a.path,
-                        dv: a.dv.as_ref().map(DvRec::id),
-                    };
-                    // Mark every newest add even when a later remove already suppressed it.
-                    let newest = seen_paths.insert(&a.path);
-                    if seen.insert(key) && newest {
-                        survivors.push((s as u32, row as u32));
-                    }
-                }
-            },
-            Source::Checkpoint(c) => {
-                for row in (0..c.len).filter(|r| c.is_add(*r)) {
-                    let key = source.key(row)?;
-                    if !checkpoint_keys.insert(key) {
-                        return Err(invalid("duplicate checkpoint logical file"));
-                    }
-                    let newest = seen_paths.insert(key.path);
-                    if newest && !seen.contains(&key) {
-                        survivors.push((s as u32, row as u32));
-                    }
-                }
-            },
+    for (source, rows) in commits.iter().enumerate() {
+        for remove in &rows.removes {
+            seen.insert(Key {
+                path: &remove.path,
+                dv: remove.dv.as_ref().map(DvRec::id),
+            });
+        }
+        for (row, add) in rows.adds.iter().enumerate() {
+            let key = Key {
+                path: &add.path,
+                dv: add.dv.as_ref().map(DvRec::id),
+            };
+            // Mark every newest add even when a later remove already suppressed it.
+            let newest = seen_paths.insert(&add.path);
+            if seen.insert(key) && newest {
+                survivors.push((&add.path, source as u32, row as u32));
+            }
         }
     }
-    // Resolve each path once: sorting by it through the source enum costs a lookup per compare.
-    let mut keyed = survivors
-        .iter()
-        .map(|&(s, r)| (sources[s as usize].path(r as usize), s, r))
-        .collect::<Vec<_>>();
-    keyed.sort_unstable_by(|a, b| a.0.cmp(b.0));
-    Ok(keyed.into_iter().map(|(_, s, r)| (s, r)).collect())
-}
-/// Whether any row of the batch is an add (for checks on embedded file actions).
-pub fn has_adds(source: &Source) -> bool {
-    match source {
-        Source::Rows(r) => !r.adds.is_empty(),
-        Source::Checkpoint(c) => (0..c.len).any(|r| c.is_add(r)),
-    }
+    survivors.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    survivors.into_iter().map(|(_, s, r)| (s, r)).collect()
 }
 
 #[cfg(test)]
@@ -508,8 +444,6 @@ mod tests {
     fn checkpoint_prefers_typed_timestamp_by_physical_name() {
         let dtype = ArrowDataType::Timestamp(TimeUnit::Millisecond, None);
         let checkpoint = Source::Checkpoint(Box::new(CheckpointFiles {
-            len: 2,
-            add_valid: None,
             path: new_empty_array(ArrowDataType::Utf8View),
             size: new_empty_array(ArrowDataType::Int64),
             pv_offsets: vec![0i32, 1, 2].try_into().unwrap(),

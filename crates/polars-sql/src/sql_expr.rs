@@ -43,6 +43,7 @@ use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 
 use crate::context::join_idents;
+use crate::copy::with_copy_options;
 use crate::dyn_visit::visit_expressions;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
@@ -91,8 +92,10 @@ impl TakenClauses {
         sql: &str,
         parsed: Result<Vec<Statement>, ParserError>,
     ) -> PolarsResult<Vec<Statement>> {
-        self.attach_to(sql, parsed.map_err(to_sql_interface_err), |parser| {
-            parser.parse_statements().map_err(to_sql_interface_err)
+        let parser_err =
+            |err: ParserError| to_sql_interface_err(with_copy_options(err.to_string()));
+        self.attach_to(sql, parsed.map_err(parser_err), |parser| {
+            parser.parse_statements().map_err(parser_err)
         })
     }
 
@@ -603,11 +606,11 @@ impl SQLExprVisitor<'_> {
                                 Ok(s.get(0)?.into_static())
                             },
                             _ => Err(
-                                polars_err!(SQLInterface: "array element {:?} is not supported", e),
+                                polars_err!(SQLInterface: "array element `{}` is not supported", e),
                             ),
                         },
                         _ => {
-                            Err(polars_err!(SQLInterface: "array element {:?} is not supported", e))
+                            Err(polars_err!(SQLInterface: "array element `{}` is not supported", e))
                         },
                     },
                 },
@@ -637,11 +640,11 @@ impl SQLExprVisitor<'_> {
                     match extract_literal_with_op(expr, None) {
                         Some((v, op)) => self.visit_any_value(v, op),
                         None => {
-                            Err(polars_err!(SQLInterface: "array element {:?} is not supported", e))
+                            Err(polars_err!(SQLInterface: "array element `{}` is not supported", e))
                         },
                     }
                 },
-                _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
+                _ => Err(polars_err!(SQLInterface: "array element `{}` is not supported", e)),
             }?
             .into_static();
             array_elements.push(val);
@@ -789,10 +792,10 @@ impl SQLExprVisitor<'_> {
                     return Ok(expr);
                 }
                 if let [AccessExpr::Dot(_)] = access_chain.as_slice() {
-                    polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: {:?}", access_chain[0])
+                    polars_bail!(SQLSyntax: "dot-notation field access is currently unsupported: `{}`", access_chain[0])
                 }
                 // chained dot/bracket notation (eg: "struct_col.field[2].foo[0].bar")
-                polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
+                polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: `{}`", expr)
             },
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
             SQLExpr::Dictionary(fields) => self.visit_struct_literal(fields),
@@ -954,7 +957,7 @@ impl SQLExprVisitor<'_> {
             SQLExpr::Wildcard(_) => Ok(all().as_expr()),
             e @ SQLExpr::Case { .. } => self.visit_case_when_then(e),
             other => {
-                polars_bail!(SQLInterface: "expression {:?} is not currently supported", other)
+                polars_bail!(SQLInterface: "expression `{}` is not currently supported", other)
             },
         }
     }
@@ -1007,7 +1010,7 @@ impl SQLExprVisitor<'_> {
         let unsupported = || {
             polars_err!(
                 SQLInterface:
-                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+                "EXISTS subquery is not currently supported in this position: `{}`", subquery
             )
         };
         if is_correlated_subquery(subquery, self.ctx.catalog_spellings())
@@ -1682,7 +1685,7 @@ impl SQLExprVisitor<'_> {
                 }
             },
             other => {
-                polars_bail!(SQLInterface: "operator {:?} is not currently supported", other)
+                polars_bail!(SQLInterface: "operator `{}` is not currently supported", other)
             },
         })
     }
@@ -1748,7 +1751,7 @@ impl SQLExprVisitor<'_> {
                 // otherwise SQL "NOT" expects logical, not bitwise, behaviour (eg: on integers)
                 _ => expr.strict_cast(DataType::Boolean).not(),
             },
-            other => polars_bail!(SQLInterface: "unary operator {:?} is not supported", other),
+            other => polars_bail!(SQLInterface: "unary operator `{}` is not supported", other.0),
         })
     }
 
@@ -2361,7 +2364,7 @@ impl SQLExprVisitor<'_> {
             },
             SQLValue::Placeholder(p) => param_lit(self.ctx.param(p)?.value().clone().into_static()),
             other => {
-                polars_bail!(SQLInterface: "value {:?} is not a supported literal type", other)
+                polars_bail!(SQLInterface: "value `{}` is not a supported literal type", other)
             },
         })
     }
@@ -2378,7 +2381,7 @@ impl SQLExprVisitor<'_> {
                     value,
                     SQLValue::Number(..) | SQLValue::Null | SQLValue::Placeholder(_)
                 ),
-            SQLInterface: "unary op {:?} not supported for SQL value {:?}", op.unwrap(), value
+            SQLInterface: "unary operator `{}` is not supported for the value `{}`", op.unwrap(), value
         );
         Ok(match value {
             SQLValue::Boolean(b) => AnyValue::Boolean(*b),
@@ -2401,7 +2404,7 @@ impl SQLExprVisitor<'_> {
                     // no op should be taken as plus.
                     Some(SQLUnaryOperator::Plus) | None => false,
                     Some(op) => {
-                        polars_bail!(SQLInterface: "unary op {:?} not supported for numeric SQL value", op)
+                        polars_bail!(SQLInterface: "unary op `{}` not supported for numeric SQL value", op)
                     },
                 };
                 parse_numeric_literal(s, negate)?
@@ -2428,11 +2431,11 @@ impl SQLExprVisitor<'_> {
                     None | Some(SQLUnaryOperator::Plus) => value.value().clone().into_static(),
                     Some(SQLUnaryOperator::Minus) => negate_param(value.value(), p)?,
                     Some(op) => polars_bail!(
-                        SQLInterface: "unary op {:?} not supported for query parameter {}", op, p
+                        SQLInterface: "unary op `{}` not supported for query parameter {}", op, p
                     ),
                 }
             },
-            other => polars_bail!(SQLInterface: "value {:?} is not currently supported", other),
+            other => polars_bail!(SQLInterface: "value `{}` is not currently supported", other),
         })
     }
 
@@ -2568,7 +2571,9 @@ impl SQLExprVisitor<'_> {
                 Some(PlSmallStr::from_str(lv.extract_str().unwrap()))
             },
             None => None,
-            _ => return self.err(&expr),
+            _ => {
+                polars_bail!(SQLInterface: "TRIM characters that are not a string literal are not supported")
+            },
         };
         Ok(match (trim_where, trim_what) {
             (None | Some(TrimWhereField::Both), None) => {
@@ -2756,10 +2761,6 @@ impl SQLExprVisitor<'_> {
             unreachable!()
         }
     }
-
-    fn err(&self, expr: &Expr) -> PolarsResult<Expr> {
-        polars_bail!(SQLInterface: "expression {:?} is not currently supported", expr);
-    }
 }
 
 /// parse a SQL expression to a polars expression
@@ -2945,7 +2946,7 @@ pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsRes
             AnyValue::List(s) => Ok(s.clone()),
             _ => polars_bail!(SQLSyntax: "Expected array expression, found query parameter {}", p),
         },
-        _ => polars_bail!(SQLSyntax: "Expected array expression, found {:?}", expr),
+        _ => polars_bail!(SQLSyntax: "Expected array expression, found `{}`", expr),
     }
 }
 
@@ -3050,7 +3051,7 @@ pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
     let found = e
         .clone()
         .str()
-        .find(substring.clone(), true)
+        .find_literal(substring.clone())
         .cast(DataType::Int64)
         + typed_lit(1i64);
     when(e.is_null().or(substring.is_null()))

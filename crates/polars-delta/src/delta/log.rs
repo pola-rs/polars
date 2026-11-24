@@ -1,36 +1,16 @@
 use std::collections::BTreeMap;
 
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use polars_io_ext_ffi::common::FfiError;
 use polars_io_ext_ffi::delta_v1::Request;
 use serde_json::Value;
 
-use super::actions::{self, Commit, TimestampPartitions};
+use super::actions::{self, Commit};
 use super::checkpoint::{self, Checkpoint};
 use super::error::{Result, input, invalid};
 use super::files::{self, Rows, Source};
 use super::host::{Object, Storage};
-/// One version of the table. File actions are left where they were read: `files` lists the
-/// surviving adds as `(source, row)`, sorted by path. A snapshot read without files has none.
-pub struct Snapshot {
-    pub version: i64,
-    pub metadata: Value,
-    pub protocol: Value,
-    pub sources: Vec<Source>,
-    pub files: Vec<(u32, u32)>,
-}
-impl Snapshot {
-    pub fn file_at_path(&self, path: &str) -> Option<(&Source, usize)> {
-        let index = self
-            .files
-            .binary_search_by(|&(source, row)| {
-                self.sources[source as usize].path(row as usize).cmp(path)
-            })
-            .ok()?;
-        let (source, row) = self.files[index];
-        Some((&self.sources[source as usize], row as usize))
-    }
-}
+use super::snapshot::Snapshot;
 #[derive(Debug, Clone, PartialEq)]
 enum Name {
     Commit(i64),
@@ -199,37 +179,16 @@ async fn read_commit(storage: &Storage, url: &str, files: bool) -> Result<Commit
     commit.validate_commit(files)?;
     Ok(commit)
 }
-/// One file of a checkpoint (Parquet or JSON).
-async fn read_checkpoint_file(
-    storage: &Storage,
-    url: &str,
-    request: &Request,
-    inherited_metadata: Option<&Value>,
-    files: bool,
-) -> Result<Checkpoint> {
+async fn read_checkpoint_file(storage: &Storage, url: &str) -> Result<Checkpoint> {
     if url.ends_with(".parquet") {
-        return checkpoint::read(storage, url, request, inherited_metadata, files).await;
+        return checkpoint::read_actions(storage, url).await;
     }
-    let commit = read_json(storage, url, files).await?;
-    if files {
-        commit.check_file_keys()?;
-    }
+    let commit = read_json(storage, url, false).await?;
     Ok(Checkpoint {
         metadata: commit.metadata,
         protocol: commit.protocol,
         checkpoint_metadata: commit.checkpoint_metadata,
         sidecars: commit.sidecars,
-        has_removes: !commit.removes.is_empty(),
-        // The removes are tombstones: see `checkpoint::read`.
-        sources: if files {
-            vec![Source::Rows(Rows {
-                adds: commit.adds,
-                removes: Vec::new(),
-                timestamp_partitions: TimestampPartitions::Checkpoint,
-            })]
-        } else {
-            Vec::new()
-        },
     })
 }
 fn merge(into: &mut Checkpoint, from: Checkpoint) {
@@ -237,11 +196,9 @@ fn merge(into: &mut Checkpoint, from: Checkpoint) {
     into.protocol.extend(from.protocol);
     into.checkpoint_metadata.extend(from.checkpoint_metadata);
     into.sidecars.extend(from.sidecars);
-    into.sources.extend(from.sources);
-    into.has_removes |= from.has_removes;
 }
 /// The checks of a checkpoint file set (the parts of one checkpoint, without sidecars).
-fn validate_checkpoint(cp: &Checkpoint, files: bool, version: i64) -> Result<()> {
+fn validate_checkpoint(cp: &Checkpoint, version: i64) -> Result<()> {
     if cp.metadata.len() > 1 || cp.protocol.len() > 1 || cp.checkpoint_metadata.len() > 1 {
         return Err(invalid("duplicate metadata/protocol/checkpointMetadata"));
     }
@@ -259,68 +216,28 @@ fn validate_checkpoint(cp: &Checkpoint, files: bool, version: i64) -> Result<()>
         actions::string(s, "path")?;
         actions::u64_value(s, "sizeInBytes")?;
     }
-    // A V2 checkpoint holds all its file actions inline or all in sidecars (PROTOCOL.md,
-    // "V2 Spec"): a mix is invalid, so only a manifest without them may list sidecars.
-    if !cp.sidecars.is_empty()
-        && (cp.checkpoint_metadata.len() != 1
-            || (files && (cp.has_removes || cp.sources.iter().any(files::has_adds))))
-    {
-        return Err(invalid(
-            "sidecar checkpoint has embedded file actions or no checkpointMetadata",
-        ));
+    if !cp.sidecars.is_empty() && cp.checkpoint_metadata.is_empty() {
+        return Err(invalid("sidecar checkpoint has no checkpointMetadata"));
     }
     Ok(())
 }
-async fn snapshot(
+/// Read the latest raw metadata when a newer schema prevents Kernel from selecting an
+/// older timestamp. File actions and the schema string do not need to be decoded here.
+async fn latest_raw_metadata(
     storage: &Storage,
     inv: &Inventory,
-    root: &str,
     target: i64,
     threads: usize,
-    request: &Request,
-    read_files: bool,
-) -> Result<Snapshot> {
+) -> Result<Value> {
     let checkpoint = inv.checkpoints.range(..=target).next_back();
     let base = checkpoint.map_or(-1, |(v, _)| *v);
     let mut cp = Checkpoint::default();
     if let Some((v, groups)) = checkpoint {
         let group = &groups[0];
-        if group.len() > 1 && read_files {
-            // The table metadata is in one part only and tells which statistics columns every
-            // part's adds need: read the small actions of all parts first, then the files.
-            let heads = futures::future::try_join_all(
-                group
-                    .iter()
-                    .map(|o| read_checkpoint_file(storage, &o.url, request, None, false)),
-            )
-            .await?;
-            let inherited = heads.iter().find_map(|h| h.metadata.first()).cloned();
-            let inherited = inherited.as_ref();
-            let full = futures::future::try_join_all(
-                group
-                    .iter()
-                    .map(|o| read_checkpoint_file(storage, &o.url, request, inherited, true)),
-            )
-            .await?;
-            for (head, full) in heads.into_iter().zip(full) {
-                merge(
-                    &mut cp,
-                    Checkpoint {
-                        sources: full.sources,
-                        has_removes: full.has_removes,
-                        ..head
-                    },
-                );
-            }
-        } else {
-            for o in group {
-                merge(
-                    &mut cp,
-                    read_checkpoint_file(storage, &o.url, request, None, read_files).await?,
-                )
-            }
+        for o in group {
+            merge(&mut cp, read_checkpoint_file(storage, &o.url).await?);
         }
-        validate_checkpoint(&cp, read_files, *v)?;
+        validate_checkpoint(&cp, *v)?;
         let uuid = matches!(
             name(group[0].url.rsplit('/').next().unwrap()),
             Some(Name::Single(_, true))
@@ -340,39 +257,41 @@ async fn snapshot(
         if group.len() > 1 && cp_count > 0 {
             return Err(invalid("multipart checkpoint cannot use V2 spec"));
         }
-        if read_files {
-            let sidecars = cp
-                .sidecars
-                .iter()
-                .map(|s| actions::string(s, "path").map(str::to_owned))
-                .collect::<Result<Vec<_>>>()?;
-            let inherited_metadata = cp.metadata[0].clone();
-            let sidecar_root = absolute(root, "_delta_log/_sidecars/")?;
-            let decoded = futures::stream::iter(sidecars.into_iter().map(|s| {
-                let storage = storage.clone();
-                let root = sidecar_root.clone();
-                let inherited_metadata = &inherited_metadata;
-                async move {
-                    let path = absolute(&root, &s)?;
-                    let sidecar =
-                        checkpoint::read(&storage, &path, request, Some(inherited_metadata), true)
-                            .await?;
-                    if !sidecar.metadata.is_empty()
-                        || !sidecar.protocol.is_empty()
-                        || !sidecar.checkpoint_metadata.is_empty()
-                        || !sidecar.sidecars.is_empty()
-                    {
-                        return Err(invalid("non-file action in sidecar"));
-                    }
-                    Ok::<_, FfiError>(sidecar.sources)
-                }
-            }))
-            .buffered(threads)
-            .try_collect::<Vec<_>>()
-            .await?;
-            cp.sources.extend(decoded.into_iter().flatten());
+    }
+    let commits = commit_range(&inv.commits, base, target)?;
+    let mut commits = futures::stream::iter(
+        commits
+            .into_iter()
+            .rev()
+            .map(|(_, o)| read_commit(storage, &o.url, false)),
+    )
+    .buffered(threads);
+    let (mut metadata, mut protocol) = (None, None);
+    while let Some(commit) = commits.next().await {
+        let commit = commit?;
+        if metadata.is_none() {
+            metadata = commit.metadata.into_iter().next();
+        }
+        if protocol.is_none() {
+            protocol = commit.protocol.into_iter().next();
+        }
+        if metadata.is_some() && protocol.is_some() {
+            break;
         }
     }
+    let metadata = metadata
+        .or_else(|| cp.metadata.into_iter().next())
+        .ok_or_else(|| invalid("snapshot missing metadata"))?;
+    protocol
+        .or_else(|| cp.protocol.into_iter().next())
+        .ok_or_else(|| invalid("snapshot missing protocol"))?;
+    Ok(metadata)
+}
+fn commit_range(
+    commits: &BTreeMap<i64, Object>,
+    base: i64,
+    target: i64,
+) -> Result<Vec<(i64, &Object)>> {
     let count = target
         .checked_sub(base)
         .ok_or_else(|| invalid("version overflow"))?;
@@ -383,9 +302,9 @@ async fn snapshot(
     let commits = if base == target {
         Vec::new()
     } else {
-        inv.commits
+        commits
             .range((base + 1)..=target)
-            .map(|(v, o)| (*v, o.clone()))
+            .map(|(v, o)| (*v, o))
             .collect::<Vec<_>>()
     };
     if commits.len() as i64 != count {
@@ -394,59 +313,7 @@ async fn snapshot(
             base + 1
         )));
     }
-    let mut commits = futures::stream::iter(commits.into_iter().rev().map(|(version, o)| {
-        let storage = storage.clone();
-        async move {
-            let mut commit = read_commit(&storage, &o.url, read_files).await?;
-            let timestamp_partitions = if read_files {
-                commit.timestamp_partitions(version)
-            } else {
-                TimestampPartitions::Unknown
-            };
-            Ok::<_, FfiError>((commit, timestamp_partitions))
-        }
-    }))
-    .buffered(threads);
-    let (mut metadata, mut protocol) = (None, None);
-    let mut sources = Vec::new();
-    while let Some(commit) = commits.next().await {
-        let (commit, timestamp_partitions) = commit?;
-        // The newest action wins.
-        if metadata.is_none() {
-            metadata = commit.metadata.into_iter().next();
-        }
-        if protocol.is_none() {
-            protocol = commit.protocol.into_iter().next();
-        }
-        if read_files {
-            sources.push(Source::Rows(Rows {
-                adds: commit.adds,
-                removes: commit.removes,
-                timestamp_partitions,
-            }));
-        } else if metadata.is_some() && protocol.is_some() {
-            // Without file actions the newest metadata and protocol are all that is needed.
-            break;
-        }
-    }
-    drop(commits);
-    let metadata = metadata
-        .or_else(|| cp.metadata.first().cloned())
-        .ok_or_else(|| invalid("snapshot missing metadata"))?;
-    let protocol = protocol
-        .or_else(|| cp.protocol.first().cloned())
-        .ok_or_else(|| invalid("snapshot missing protocol"))?;
-    // Checkpoint files come after every commit: older than all of them.
-    sources.extend(cp.sources);
-    // A deterministic order independent of concurrent listing and decoding.
-    let files = files::reconcile(&sources)?;
-    Ok(Snapshot {
-        version: target,
-        metadata,
-        protocol,
-        sources,
-        files,
-    })
+    Ok(commits)
 }
 /// The version a timestamp selects: the newest commit whose timestamp is at or before it.
 ///
@@ -497,73 +364,14 @@ pub(super) async fn version_at(
     }
     chosen.ok_or_else(|| input("timestamp precedes available Delta history"))
 }
-/// Exceptional replay for checkpoint partitions whose writer zone was discarded. The ordinary
-/// snapshot validator requires the full commit range 0..=target once checkpoints are excluded.
-pub async fn replay_commits(storage: &Storage, request: &Request, target: i64) -> Result<Snapshot> {
-    let root = &request.table_uri;
-    let log_root = absolute(root, "_delta_log/")?;
-    let mut inv = Inventory::new(storage.list(&log_root).await?)?;
-    inv.checkpoints.clear();
-    let threads = request.max_threads.unwrap_or(8).clamp(1, 16) as usize;
-    snapshot(storage, &inv, root, target, threads, request, true).await
-}
-pub async fn load(storage: &Storage, request: &Request) -> Result<Snapshot> {
-    let read_files = !request.schema_only;
-    let log_root = absolute(&request.table_uri, "_delta_log/")?;
-    // The mutable hint only narrows listing; validate it against a complete
-    // checkpoint and fall back to a full inventory for stale/corrupt hints.
-    // A timestamp request needs the whole history, and a version before the hint's earlier
-    // history.
-    let hint = if request.timestamp_ms.is_none() {
-        match storage
-            .get(&absolute(
-                &request.table_uri,
-                "_delta_log/_last_checkpoint",
-            )?)
-            .await
-        {
-            Ok(bytes) => serde_json::from_slice::<Value>(bytes.as_slice())
-                .ok()
-                .and_then(|v| v.get("version").and_then(Value::as_i64))
-                .filter(|v| *v >= 0 && request.version.is_none_or(|target| *v <= target)),
-            Err(_) => None,
-        }
-    } else {
-        None
-    };
-    let inv = if let Some(hint) = hint {
-        let start = format!("{log_root}{hint:020}");
-        let inv = Inventory::new(storage.list_after(&log_root, Some(&start)).await?)?;
-        if inv.checkpoints.contains_key(&hint) {
-            inv
-        } else {
-            Inventory::new(storage.list(&log_root).await?)?
-        }
-    } else {
-        Inventory::new(storage.list(&log_root).await?)?
-    };
-    let latest = inv
-        .latest()
-        .ok_or_else(|| input("not a Delta table: no commits or complete checkpoints"))?;
-    let threads = request.max_threads.unwrap_or(8).clamp(1, 16) as usize;
-    let root = &request.table_uri;
-    if let Some(target) = request.version {
-        if target > latest {
-            return Err(input(format!(
-                "Delta version {target} exceeds latest version {latest}"
-            )));
-        }
-        return snapshot(storage, &inv, root, target, threads, request, read_files).await;
-    }
-    let Some(timestamp) = request.timestamp_ms else {
-        return snapshot(storage, &inv, root, latest, threads, request, read_files).await;
-    };
-    // The newest metadata says whether and from when commits carry timestamps.
-    let current = snapshot(storage, &inv, root, latest, threads, request, false).await?;
-    let config = current
-        .metadata
-        .get("configuration")
-        .and_then(Value::as_object);
+
+async fn version_at_with_metadata(
+    storage: &Storage,
+    commits: &BTreeMap<i64, Object>,
+    timestamp: i64,
+    metadata: &Value,
+) -> Result<i64> {
+    let config = metadata.get("configuration").and_then(Value::as_object);
     let ict_from = if config
         .and_then(|c| c.get("delta.enableInCommitTimestamps"))
         .and_then(Value::as_str)
@@ -581,11 +389,70 @@ pub async fn load(storage: &Storage, request: &Request) -> Result<Snapshot> {
     } else {
         None
     };
-    let target = version_at(storage, &inv.commits, timestamp, ict_from).await?;
-    if target == latest && !read_files {
-        return Ok(current);
+    version_at(storage, commits, timestamp, ict_from).await
+}
+
+pub(super) async fn time_travel_version(
+    storage: &Storage,
+    request: &Request,
+    timestamp: i64,
+    latest: Option<(i64, &Value)>,
+) -> Result<i64> {
+    let root = &request.table_uri;
+    let log_root = absolute(root, "_delta_log/")?;
+    let mut inventory = Inventory::new(storage.list(&log_root).await?)?;
+    if let Some((version, metadata)) = latest {
+        // Ignore commits published after the latest snapshot supplied its time-travel properties.
+        inventory.commits.retain(|v, _| *v <= version);
+        return version_at_with_metadata(storage, &inventory.commits, timestamp, metadata).await;
     }
-    snapshot(storage, &inv, root, target, threads, request, read_files).await
+    let latest = inventory
+        .latest()
+        .ok_or_else(|| input("not a Delta table: no commits or complete checkpoints"))?;
+    let threads = request.max_threads.unwrap_or(8).clamp(1, 16) as usize;
+    let metadata = latest_raw_metadata(storage, &inventory, latest, threads).await?;
+    version_at_with_metadata(storage, &inventory.commits, timestamp, &metadata).await
+}
+
+/// Recover writer provenance for a checkpoint partition from the complete commit history.
+pub async fn replay_commits(storage: &Storage, request: &Request, target: i64) -> Result<Snapshot> {
+    let log_root = absolute(&request.table_uri, "_delta_log/")?;
+    let inv = Inventory::new(storage.list(&log_root).await?)?;
+    let threads = request.max_threads.unwrap_or(8).clamp(1, 16) as usize;
+    let commits = commit_range(&inv.commits, -1, target)?;
+    let mut commits =
+        futures::stream::iter(commits.into_iter().rev().map(|(version, o)| async move {
+            let mut commit = read_commit(storage, &o.url, true).await?;
+            let timestamp_partitions = commit.timestamp_partitions(version);
+            Ok::<_, FfiError>((commit, timestamp_partitions))
+        }))
+        .buffered(threads);
+    let (mut metadata, mut protocol) = (None, None);
+    let mut rows = Vec::new();
+    while let Some(commit) = commits.next().await {
+        let (commit, timestamp_partitions) = commit?;
+        if metadata.is_none() {
+            metadata = commit.metadata.into_iter().next();
+        }
+        if protocol.is_none() {
+            protocol = commit.protocol.into_iter().next();
+        }
+        rows.push(Rows {
+            adds: commit.adds,
+            removes: commit.removes,
+            timestamp_partitions,
+        });
+    }
+    let metadata = metadata.ok_or_else(|| invalid("snapshot missing metadata"))?;
+    let protocol = protocol.ok_or_else(|| invalid("snapshot missing protocol"))?;
+    let files = files::reconcile_commits(&rows);
+    Ok(Snapshot {
+        version: target,
+        metadata,
+        protocol,
+        sources: rows.into_iter().map(Source::Rows).collect(),
+        files,
+    })
 }
 #[cfg(test)]
 mod tests {

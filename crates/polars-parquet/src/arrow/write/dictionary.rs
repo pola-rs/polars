@@ -206,6 +206,17 @@ pub(crate) fn encode_as_dictionary_optional(
     type_: PrimitiveType,
     options: WriteOptions,
 ) -> Option<PolarsResult<DynIter<'static, PolarsResult<Page>>>> {
+    // A dictionary built from this column contains only referenced values.
+    let packed_pages = |array: &DictionaryArray<u32>| {
+        dictionary_pages(
+            array,
+            array.values().as_ref(),
+            type_,
+            nested,
+            options,
+            Encoding::RleDictionary,
+        )
+    };
     if array.is_empty() {
         let array = DictionaryArray::<u32>::new_empty(ArrowDataType::Dictionary(
             IntegerType::UInt32,
@@ -213,13 +224,7 @@ pub(crate) fn encode_as_dictionary_optional(
             false, // @TODO: This might be able to be set to true?
         ));
 
-        return Some(array_to_pages(
-            &array,
-            type_,
-            nested,
-            options,
-            Encoding::RleDictionary,
-        ));
+        return Some(packed_pages(&array));
     }
 
     use polars_arrow::types::PrimitiveType as PT;
@@ -233,7 +238,8 @@ pub(crate) fn encode_as_dictionary_optional(
             PT::UInt16 => min_max_integer_encode_as_dictionary_optional::<_, u16>(array),
             PT::UInt32 => min_max_integer_encode_as_dictionary_optional::<_, u32>(array),
             PT::UInt64 => min_max_integer_encode_as_dictionary_optional::<_, u64>(array),
-            _ => DictionaryDecision::TryAgain,
+            // Dictionary packing only supports these integer physical types for primitives.
+            _ => DictionaryDecision::NotWorth,
         },
         _ => DictionaryDecision::TryAgain,
     };
@@ -241,13 +247,7 @@ pub(crate) fn encode_as_dictionary_optional(
     match fast_dictionary {
         DictionaryDecision::NotWorth => return None,
         DictionaryDecision::Found(dictionary_array) => {
-            return Some(array_to_pages(
-                &dictionary_array,
-                type_,
-                nested,
-                options,
-                Encoding::RleDictionary,
-            ));
+            return Some(packed_pages(&dictionary_array));
         },
         DictionaryDecision::TryAgain => {},
     }
@@ -273,13 +273,7 @@ pub(crate) fn encode_as_dictionary_optional(
         .downcast_ref::<DictionaryArray<u32>>()
         .unwrap();
 
-    Some(array_to_pages(
-        array,
-        type_,
-        nested,
-        options,
-        Encoding::RleDictionary,
-    ))
+    Some(packed_pages(array))
 }
 
 fn serialize_def_levels_simple(
@@ -515,6 +509,17 @@ pub fn array_to_pages<K: DictionaryKey>(
         values
     };
 
+    dictionary_pages(array, values, type_, nested, options, encoding)
+}
+
+fn dictionary_pages<K: DictionaryKey>(
+    array: &DictionaryArray<K>,
+    values: &dyn Array,
+    type_: PrimitiveType,
+    nested: &[Nested],
+    options: WriteOptions,
+    encoding: Encoding,
+) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage

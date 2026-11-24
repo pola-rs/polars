@@ -101,6 +101,17 @@ pub(super) fn convert_functions(
                 B::Contains => IB::Contains,
                 B::StartsWith => IB::StartsWith,
                 B::EndsWith => IB::EndsWith,
+                B::Find => IB::Find,
+                #[cfg(feature = "find_many")]
+                B::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                } => IB::FindMany {
+                    ascii_case_insensitive,
+                    overlapping,
+                    leftmost,
+                },
                 #[cfg(feature = "binary_encoding")]
                 B::HexDecode(v) => IB::HexDecode(v),
                 #[cfg(feature = "binary_encoding")]
@@ -837,7 +848,13 @@ pub(super) fn convert_functions(
         F::Shift => I::Shift,
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
-        F::Quantile { method } => I::Quantile { method },
+        F::Quantile { method } => {
+            // Planning doesn't know whether a group-by uses the fraction, so it allows lists. A
+            // group-by checks for one number per group when it runs.
+            let allowed = QuantileFractionDtypes::NumberOrList;
+            check_quantile_fraction(&e[1], allowed, ctx.schema, ctx.arena)?;
+            I::Quantile { method }
+        },
         #[cfg(feature = "mode")]
         F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]
@@ -925,21 +942,9 @@ pub(super) fn convert_functions(
             let quantile_input = e.get(1).ok_or_else(
                 || polars_err!(InvalidOperation: "missing argument 'quantile' in `approx_quantile`"),
             )?;
-            let quantile = match ctx.arena.get(quantile_input.node()) {
-                AExpr::Literal(
-                    lv @ (LiteralValue::Scalar(_)
-                    | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
-                ) => lv.to_any_value(),
-                _ => None,
-            };
-            let quantiles: Option<Vec<f64>> = match quantile {
-                Some(AnyValue::List(s)) => s
-                    .strict_cast(&DataType::Float64)
-                    .ok()
-                    .and_then(|s| s.iter().map(|v| v.extract()).collect()),
-                Some(av) => av.extract().map(|q| vec![q]),
-                None => None,
-            };
+            let allowed = QuantileFractionDtypes::NumberOrList;
+            let quantiles =
+                check_quantile_fraction(quantile_input, allowed, ctx.schema, ctx.arena)?;
             let method = method.resolve(quantiles.as_deref());
             let error = match use_formal_bound {
                 true => error,
@@ -1419,4 +1424,24 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
+}
+
+/// Checks the fraction given to `quantile` or `approx_quantile`, and returns its non-null values if
+/// it is a literal. `allowed` gives the dtypes the fraction may have. Checking here makes every
+/// engine raise on a bad fraction, even on empty input.
+fn check_quantile_fraction(
+    fraction: &ExprIR,
+    allowed: QuantileFractionDtypes,
+    schema: &Schema,
+    arena: &Arena<AExpr>,
+) -> PolarsResult<Option<Vec<f64>>> {
+    check_quantile_dtype(fraction.dtype(schema, arena)?, allowed)?;
+    let AExpr::Literal(lv) = arena.get(fraction.node()) else {
+        return Ok(None);
+    };
+    let Some(fraction) = lv.to_quantile_fraction()? else {
+        return Ok(None);
+    };
+    let quantiles = extract_quantiles(&fraction, allowed)?.unwrap_or_default();
+    Ok(Some(quantiles.into_iter().flatten().collect()))
 }

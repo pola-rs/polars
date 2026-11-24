@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_left, bisect_right
 from datetime import date, datetime, time, timedelta
+from fractions import Fraction
 from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo
 
@@ -12,7 +13,13 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ComputeError,
+    InvalidOperationError,
+    SchemaError,
+    ShapeError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
@@ -268,7 +275,7 @@ def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -
         {
             "g": [0, 0, 0, 1, 1, 1, 1, 2, 2, 3],
             "v": [None, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-            "q": [0.1, 0.1, 0.1, 0.8, 0.8, 0.8, 0.8, 0.5, 0.5, None],
+            "q": [0.1, 0.1, 0.1, 0.8, 0.8, 0.8, 0.8, 0.5, 0.5, 0.3],
         }
     )
     if layout == "idx":
@@ -279,8 +286,7 @@ def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -
         df = df.with_columns(pl.col("g", "v").set_sorted())
 
     expected = {
-        g: None if part["q"][0] is None else part["v"].quantile(part["q"][0], method)
-        for (g,), part in df.group_by("g")
+        g: part["v"].quantile(part["q"][0], method) for (g,), part in df.group_by("g")
     }
     quantile = pl.col("v").quantile(pl.col("q").first(), method)
 
@@ -291,14 +297,12 @@ def test_quantile_varying_per_group_20951(method: QuantileMethod, layout: str) -
 
 
 def _assert_rolling_quantile_matches_series(
-    v: pl.Series, q: list[float | None], period: int, method: QuantileMethod
+    v: pl.Series, q: list[float], period: int, method: QuantileMethod
 ) -> None:
     df = pl.DataFrame({"t": range(len(v)), "v": v, "q": q})
     windows = [v[max(0, i - period + 1) : i + 1] for i in range(len(v))]
 
-    def oracle(w: pl.Series, p: float | None) -> float | None:
-        if p is None or not 0.0 <= p <= 1.0:
-            return None
+    def oracle(w: pl.Series, p: float) -> float | None:
         return w.quantile(p, method)
 
     rolling = df.rolling("t", period=f"{period}i")
@@ -322,8 +326,7 @@ def test_quantile_varying_per_rolling_window_20951(
     v = pl.Series("v", rng.integers(0, 10, n), dtype=pl.Float64)
     if with_nulls:
         v = v.scatter(rng.choice(n, n // 3, replace=False), None)
-    q: list[float | None] = list(rng.random(n))
-    q[5], q[17], q[40] = None, 1.5, -0.5
+    q: list[float] = list(rng.random(n))
     _assert_rolling_quantile_matches_series(v, q, 5, method)
 
 
@@ -359,13 +362,13 @@ def test_quantile_series_literal_of_two_values_in_group_by_raises() -> None:
 
 
 def test_quantile_literal_values_per_group_quantile() -> None:
-    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, None, None, 1.5]})
+    df = pl.DataFrame({"g": [0, 0, 1, 1, 2], "q": [0.5, 0.5, 0.0, 0.0, 1.0]})
     lf = df.lazy().group_by("g", maintain_order=True)
     out = lf.agg(pl.lit(3).quantile(pl.col("q").first()))
     assert out.collect_schema()["literal"] == pl.Float64
-    assert out.collect()["literal"].to_list() == [3.0, None, None]
-    with pytest.raises(InvalidOperationError, match="not supported for dtype `bool`"):
-        lf.agg(pl.lit(True).quantile(pl.col("q").first())).collect()
+    assert out.collect()["literal"].to_list() == [3.0, 3.0, 3.0]
+    out = lf.agg(pl.lit(True).quantile(pl.col("q").first()))
+    assert out.collect()["literal"].to_list() == [1.0, 1.0, 1.0]
 
 
 def test_quantile_series_literal_in_group_by_empty_frame() -> None:
@@ -728,12 +731,6 @@ def test_approx_quantile_bad_error(error: float) -> None:
         s.to_frame().select(pl.col("a").approx_quantile(0.5, error=error))
 
 
-def test_approx_quantile_null_quantile() -> None:
-    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
-    with pytest.raises(ComputeError, match=r"`quantile` should not be null"):
-        df.select(pl.col("a").approx_quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
-
-
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
 def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
@@ -756,10 +753,28 @@ def test_approx_quantile_python_quantile(
     assert out.to_series().to_list() == [expected]
 
 
-def test_quantile_null_quantile() -> None:
-    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
-    with pytest.raises(ComputeError, match="quantile expression contains null values"):
-        df.select(pl.col("a").quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+@pytest.mark.parametrize(
+    ("fraction", "expected"),
+    [
+        (None, None),
+        (pl.lit(None, dtype=pl.Float64), None),
+        (pl.lit(None, dtype=pl.List(pl.Float64)), None),
+        ([0.0, None, 1.0], [1.0, None, 3.0]),
+        ([None, None], [None, None]),
+    ],
+)
+def test_quantile_null_fraction(op: str, fraction: Any, expected: Any) -> None:
+    lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0]})
+    q = lf.select(getattr(pl.col("a"), op)(fraction))
+    out = q.collect()
+    assert out.to_series().to_list() == [expected]
+    assert q.collect_schema() == out.schema
+    if not isinstance(fraction, pl.Expr):
+        result = getattr(pl.Series([1.0, 2.0, 3.0]), op)(fraction)
+        if isinstance(result, pl.Series):
+            result = result.to_list()
+        assert result == expected
 
 
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
@@ -773,6 +788,186 @@ def test_quantile_empty_quantile_group_by() -> None:
     df = pl.DataFrame(schema={"g": pl.Int64, "a": pl.Float64, "q": pl.Float64})
     with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
+
+
+@pytest.mark.parametrize("per_group", [False, True])
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1])
+def test_quantile_out_of_range_grouped(quantile: float, per_group: bool) -> None:
+    # Read per group, only the last group or window gets the bad fraction.
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3], "q": [0.5, 0.5, quantile]})
+    fraction = pl.col("q").last() if per_group else pl.lit(quantile)
+    expr = pl.col("a").quantile(fraction, "nearest")
+    for q in [
+        lf.select(expr.over("g")),
+        lf.group_by("g").agg(expr),
+        lf.group_by("g").agg(pl.lit(3).quantile(fraction)),
+        lf.with_row_index("t").rolling("t", period="2i").agg(expr),
+    ]:
+        with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+            q.collect()
+
+
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+@pytest.mark.parametrize("quantile", [float("nan"), -0.1, 1.1, [0.5, 1.1], [None, 1.1]])
+def test_quantile_out_of_range_literal_empty(
+    op: str, quantile: float | list[float] | pl.Expr
+) -> None:
+    # Planning checks a literal fraction, so every engine raises without any rows.
+    lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64})
+    expr = getattr(pl.col("a"), op)(quantile)
+    for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+            q.collect_schema()
+
+
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+def test_quantile_str_fraction(op: str) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3], "s": ["0.5", "0.5", "0.5"]})
+    for fraction in [pl.lit("0.5"), pl.lit(["0.5"]), pl.col("s").first()]:
+        expr = getattr(pl.col("a"), op)(fraction)
+        for q in [
+            lf.select(expr),
+            lf.select(expr.over("g")),
+            lf.group_by("g").agg(expr),
+        ]:
+            with pytest.raises(
+                SchemaError, match="expected expression of dtype 'numeric'"
+            ):
+                q.collect_schema()
+    # A Python string names a column, as in every expression.
+    with pytest.raises(ColumnNotFoundError):
+        lf.select(getattr(pl.col("a"), op)("0.5")).collect_schema()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+def test_quantile_null_fraction_grouped(op: str, engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "t": [0, 1, 2, 3],
+            "g": [1, 1, 2, 2],
+            "a": [1, 2, 3, 4],
+            "q": [None, None, 1.0, 1.0],
+        }
+    )
+    expr = getattr(pl.col("a"), op)(pl.col("q").first())
+    literal = getattr(pl.lit(3), op)(pl.col("q").first())
+    null_literal = getattr(pl.col("a"), op)(pl.lit(None, dtype=pl.Float64))
+    gb = lf.group_by("g", maintain_order=True)
+    rolling = lf.with_row_index().rolling("index", period="2i")
+    # The last window is empty, so its fraction is null although `q` has no nulls.
+    empty_window = (
+        lf.drop_nulls().with_row_index().rolling("index", period="1i", offset="0i")
+    )
+    lists = pl.LazyFrame({"l": [[None, 1.0], [1.0, 0.0]]})
+    first_element = getattr(pl.element(), op)(pl.element().first())
+    for q, expected in [
+        (gb.agg(expr), [None, 4]),
+        (gb.agg(literal), [None, 3]),
+        (gb.agg(null_literal), [None, None]),
+        (lf.select(expr.over("g")), [None, None, 4, 4]),
+        (rolling.agg(getattr(pl.col("a"), op)(pl.col("q").last())), [None, None, 3, 4]),
+        (empty_window.agg(expr), [4, None]),
+        (lf.group_by_dynamic("t", every="2i").agg(expr), [None, 4]),
+        (lists.select(pl.col("l").list.eval(first_element)), [[None], [1.0]]),
+    ]:
+        out = q.collect(engine=engine)
+        assert out.get_columns()[-1].to_list() == expected
+        assert q.collect_schema() == out.schema
+
+
+def test_approx_quantile_null_in_fraction_list_grouped() -> None:
+    lf = pl.LazyFrame({"g": [1, 2], "a": [1, 2], "q": [None, 0.5]})
+    null_list = pl.when(pl.col("q").is_not_null()).then(pl.concat_list("q", "q"))
+    for fraction, expected in [
+        (null_list, [None, [2, 2]]),
+        (pl.concat_list("q", pl.lit(0.5)), [[None, 1], [2, 2]]),
+    ]:
+        expr = pl.col("a").approx_quantile(fraction.first())
+        out = lf.group_by("g", maintain_order=True).agg(expr).collect()
+        assert out["a"].to_list() == expected
+
+
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+def test_quantile_null_literal_empty(op: str) -> None:
+    lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64})
+    expr = getattr(pl.col("a"), op)(pl.lit(None))
+    list_expr = getattr(pl.col("a"), op)(pl.lit([None, 0.5]))
+    for q in [
+        lf.select(expr),
+        lf.select(expr.over("g")),
+        lf.group_by("g").agg(expr),
+        lf.select(list_expr),
+    ]:
+        assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("op", ["quantile", "approx_quantile"])
+@pytest.mark.parametrize(
+    "quantile", [True, [True, False], pl.col("b"), date(1970, 1, 1)]
+)
+def test_quantile_non_numeric_fraction(op: str, quantile: Any) -> None:
+    lf = pl.LazyFrame(schema={"g": pl.Int64, "a": pl.Int64, "b": pl.Boolean})
+    expr = getattr(pl.col("a"), op)(quantile)
+    for q in [lf.select(expr), lf.select(expr.over("g")), lf.group_by("g").agg(expr)]:
+        with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
+            q.collect_schema()
+
+
+@pytest.mark.parametrize("quantile", [True, [True, False], date(1970, 1, 1), "0.5"])
+def test_series_quantile_non_numeric_fraction(quantile: Any) -> None:
+    with pytest.raises(SchemaError, match="expected expression of dtype 'numeric'"):
+        pl.Series([1, 2, 3]).quantile(quantile)
+
+
+@pytest.mark.parametrize("quantile", [float("nan"), 1.5, [0.5, 1.5]])
+def test_series_quantile_invalid_fraction(quantile: Any) -> None:
+    s = pl.Series([1, 2, 3])
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+        s.quantile(quantile)
+    with pytest.raises(ComputeError, match=r"between 0\.0 and 1\.0"):
+        s.approx_quantile(quantile)
+
+
+@pytest.mark.parametrize(
+    "quantile",
+    [[0, 0.5], (0, 0.5), np.array([0, 0.5]), pl.Series([0.0, 0.5]), range(2)],
+)
+def test_quantile_python_fraction_list(quantile: Any) -> None:
+    s = pl.Series("a", [1, 2, 3, 4])
+    expected = [1, 4] if isinstance(quantile, range) else [1, 3]
+    assert s.quantile(quantile) == expected
+    assert s.approx_quantile(quantile) == expected
+    assert s.to_frame().quantile(quantile).item().to_list() == expected
+    for op in ["quantile", "approx_quantile"]:
+        out = s.to_frame().select(getattr(pl.col("a"), op)(quantile))
+        assert out.item().to_list() == expected
+
+
+@pytest.mark.parametrize("quantile", [np.array(0.5), np.float32(0.5), Fraction(1, 2)])
+def test_quantile_python_fraction_scalar(quantile: Any) -> None:
+    s = pl.Series("a", [1, 2, 3, 4])
+    assert s.quantile(quantile) == 3.0
+    assert s.approx_quantile(quantile) == 3
+    assert s.to_frame().quantile(quantile).item() == 3
+    for op in ["quantile", "approx_quantile"]:
+        assert s.to_frame().select(getattr(pl.col("a"), op)(quantile)).item() == 3
+
+
+@pytest.mark.parametrize(
+    "values", [pl.Series([True, False, True, None]), pl.Series([None] * 4)]
+)
+def test_quantile_bool_null_like_median(values: pl.Series) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2], "b": values})
+    contexts: list[Callable[[pl.Expr], pl.LazyFrame]] = [
+        lambda e: lf.select(e),
+        lambda e: lf.select(e.over("g")),
+        lambda e: lf.group_by("g", maintain_order=True).agg(e),
+    ]
+    for f in contexts:
+        q = f(pl.col("b").quantile(0.5, "linear"))
+        assert_frame_equal(q.collect(), f(pl.col("b").median()).collect())
+        assert q.collect_schema() == q.collect().schema
 
 
 @pytest.mark.parametrize("quantile", [-0.1, 1.1])

@@ -7,10 +7,11 @@ use polars_io_ext_ffi::delta_v1::{Output, OutputHeader, Request};
 use serde_json::Value;
 
 use super::error::{Result, invalid};
-use super::host::Host;
-use super::log;
+use super::host::{Host, Storage};
 use super::schema::Schema;
+use super::snapshot::Snapshot;
 use super::values::{Builder, PartitionValue, Sv, missing_partition_zone, stat_dtype, stat_value};
+use super::{log, runtime};
 fn struct_array(fields: Vec<Field>, arrays: Vec<Box<dyn Array>>, n: usize) -> Result<StructArray> {
     StructArray::try_new(D::Struct(fields), n, arrays, None).map_err(invalid)
 }
@@ -24,8 +25,37 @@ fn push(
     fields.push(Field::new(name.into(), a.dtype().clone(), nullable));
     arrays.push(a)
 }
-pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
-    let mut storage = host.get_storage(&request.table_uri).await?;
+pub fn resolve(host: Host, request: &Request) -> Result<Output> {
+    let storage_for_plan =
+        || runtime::block_on(request.max_threads, host.get_storage(&request.table_uri));
+    let mut storage = storage_for_plan()?;
+    runtime::block_on(request.max_threads, check_request(&storage, request))?;
+    let snapshot = match load_snapshot(&storage, request) {
+        Err(e) if e.kind() == FfiErrorKind::OBJECT_CHANGED => {
+            drop(storage);
+            storage = storage_for_plan()?;
+            load_snapshot(&storage, request)?
+        },
+        result => result?,
+    };
+    host.debug(&format!(
+        "polars-delta: resolved version {} files {}",
+        snapshot.version,
+        snapshot.files.len()
+    ));
+    runtime::block_on(request.max_threads, export(&storage, request, snapshot))
+}
+
+fn load_snapshot(storage: &Storage, request: &Request) -> Result<Snapshot> {
+    super::kernel_engine::with_engine(
+        storage,
+        &request.table_uri,
+        request.schema_only,
+        |engine, root| super::kernel_snapshot::load(engine, storage, root, request),
+    )
+}
+
+async fn check_request(storage: &Storage, request: &Request) -> Result<()> {
     if let Some(fail) = request.testing_fail.as_deref() {
         match fail {
             "panic" => panic!("testing panic requested"),
@@ -40,20 +70,11 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
             _ => return Err(invalid("unknown testing_fail")),
         }
     }
-    let snapshot = match log::load(&storage, request).await {
-        Err(e) if e.kind() == FfiErrorKind::OBJECT_CHANGED => {
-            drop(storage);
-            storage = host.get_storage(&request.table_uri).await?;
-            log::load(&storage, request).await?
-        },
-        result => result?,
-    };
+    Ok(())
+}
+
+async fn export(storage: &Storage, request: &Request, snapshot: Snapshot) -> Result<Output> {
     let schema = Schema::parse(&snapshot.metadata, &snapshot.protocol)?;
-    host.debug(&format!(
-        "polars-delta: resolved version {} files {}",
-        snapshot.version,
-        snapshot.files.len()
-    ));
     let n = snapshot.files.len();
     let sources = &snapshot.sources;
     let files = || {
@@ -173,7 +194,7 @@ pub async fn resolve(host: Host, request: &Request) -> Result<Output> {
                     // A checkpoint alone cannot establish the writer zone. Recover it from a
                     // complete replay at the pinned version, and only for the matching live add.
                     if replay.is_none() {
-                        let original = log::replay_commits(&storage, request, snapshot.version)
+                        let original = log::replay_commits(storage, request, snapshot.version)
                             .await
                             .map_err(|error| {
                                 invalid(format!(

@@ -73,7 +73,6 @@ pub struct Commit {
 pub enum TimestampPartitions {
     #[default]
     Unknown,
-    Checkpoint,
     Utc,
     PolarsSink(Box<str>),
 }
@@ -83,7 +82,7 @@ impl TimestampPartitions {
             return false;
         }
         match self {
-            Self::Unknown | Self::Checkpoint => false,
+            Self::Unknown => false,
             Self::Utc => true,
             Self::PolarsSink(uuid) => add.path.split_once('/').is_some_and(|(dir, file)| {
                 dir == &**uuid && !file.contains('/') && file.ends_with(".parquet")
@@ -568,7 +567,7 @@ pub fn parse_json(bytes: &[u8], skip_files: bool) -> Result<Commit> {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        if skip_files && (line.starts_with(b"{\"add\":") || line.starts_with(b"{\"remove\":")) {
+        if skip_files && is_file_action_line(line) {
             continue;
         }
         let mut de = serde_json::Deserializer::from_slice(line);
@@ -614,13 +613,27 @@ pub fn parse_json(bytes: &[u8], skip_files: bool) -> Result<Commit> {
     }
     Ok(out)
 }
+
+fn is_file_action_line(line: &[u8]) -> bool {
+    line.starts_with(b"{\"add\":") || line.starts_with(b"{\"remove\":")
+}
+
+pub fn schema_only_json(bytes: &[u8]) -> impl Iterator<Item = std::ops::Range<usize>> + '_ {
+    let mut offset = 0;
+    bytes
+        .split_inclusive(|&b| b == b'\n')
+        .filter_map(move |line| {
+            let start = offset;
+            offset += line.len();
+            (!is_file_action_line(line) && !line.iter().all(u8::is_ascii_whitespace))
+                .then_some(start..offset)
+        })
+}
+
 /// The `inCommitTimestamp` of the commit's `commitInfo`, reading lines up to it.
 pub fn in_commit_timestamp(bytes: &[u8]) -> Result<Option<i64>> {
     for line in bytes.split(|b| *b == b'\n') {
-        if line.iter().all(u8::is_ascii_whitespace)
-            || line.starts_with(b"{\"add\":")
-            || line.starts_with(b"{\"remove\":")
-        {
+        if line.iter().all(u8::is_ascii_whitespace) || is_file_action_line(line) {
             continue;
         }
         let commit = parse_json(line, true)?;

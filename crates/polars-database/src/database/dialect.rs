@@ -314,7 +314,9 @@ impl DialectName {
             "adbc_driver_flightsql" => Self::Flightsql,
             "pyexasol" => Self::Exasol,
             "teradatasql" => Self::Teradata,
-            _ if m.starts_with("google.cloud.bigquery") => Self::Bigquery,
+            _ if m == "google.cloud.bigquery" || m.starts_with("google.cloud.bigquery.") => {
+                Self::Bigquery
+            },
             _ => Self::Generic,
         }
     }

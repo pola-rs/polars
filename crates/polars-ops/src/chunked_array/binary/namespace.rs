@@ -132,6 +132,18 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         })
     }
 
+    /// Return the byte offset of the first occurrence of a literal in each binary value.
+    fn bin_find(&self, pat: &BinaryChunked) -> PolarsResult<UInt32Chunked> {
+        let ca = self.as_binary();
+        polars_ensure!(
+            pat.len() == 1 || ca.len() == pat.len() || ca.len() == 1,
+            length_mismatch = "bin.find",
+            ca.len(),
+            pat.len()
+        );
+        Ok(super::find::find_literal_offsets(ca, pat, |_, i| i))
+    }
+
     /// Check if strings ends with a substring
     fn ends_with(&self, sub: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();

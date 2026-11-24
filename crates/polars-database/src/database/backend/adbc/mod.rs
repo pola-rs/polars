@@ -50,7 +50,11 @@ impl AdbcBackend {
     ) -> PolarsResult<Self> {
         let found = location_hint
             .and_then(find_driver)
-            .or_else(|| find_driver(driver));
+            .or_else(|| find_driver(driver))
+            .or_else(|| {
+                let probe = super::python_bridge()?.probe(&choice.kind)?;
+                find_driver(probe.location.as_deref()?)
+            });
         let Some(found) = found else {
             let dirs = manifest_search_dirs()
                 .iter()
@@ -768,13 +772,15 @@ pub trait StreamOwner: Send + 'static {}
 pub unsafe fn import_stream(
     stream: Box<ArrowArrayStream>,
     owner: impl StreamOwner,
+    dialect: DialectName,
 ) -> PolarsResult<BatchIter> {
     let reader = unsafe { ArrowArrayStreamReader::try_new(stream) }?;
     // Before any array is imported or built: those of these types would panic.
-    check_arrow_types(&reader.field().dtype)?;
+    check_arrow_types(&reader.field().dtype, dialect)?;
     Ok(Box::new(AdbcBatches {
         reader: Some(reader),
         _owner: owner,
+        dialect,
         yielded: false,
     }))
 }
@@ -785,6 +791,7 @@ struct AdbcBatches<O> {
     reader: Option<ArrowArrayStreamReader<Box<ArrowArrayStream>>>,
     /// Only kept alive.
     _owner: O,
+    dialect: DialectName,
     yielded: bool,
 }
 
@@ -804,7 +811,7 @@ impl<O: StreamOwner> Iterator for AdbcBatches<O> {
                         continue;
                     }
                     self.yielded = true;
-                    return Some(batch_to_df(array));
+                    return Some(batch_to_df(array, self.dialect));
                 },
                 Some(Err(e)) => {
                     self.reader = None;
@@ -818,7 +825,10 @@ impl<O: StreamOwner> Iterator for AdbcBatches<O> {
                     // Empty result: one empty frame with the result's columns.
                     self.yielded = true;
                     let dtype = reader.field().dtype.clone();
-                    return Some(batch_to_df(Box::new(StructArray::new_empty(dtype))));
+                    return Some(batch_to_df(
+                        Box::new(StructArray::new_empty(dtype)),
+                        self.dialect,
+                    ));
                 },
             }
         }
@@ -976,23 +986,36 @@ fn unsupported_arrow_type(dtype: &ArrowDataType) -> bool {
 }
 
 /// An error for a result column of a type Polars has no dtype for.
-fn check_arrow_types(dtype: &ArrowDataType) -> PolarsResult<()> {
+fn check_arrow_types(dtype: &ArrowDataType, dialect: DialectName) -> PolarsResult<()> {
     let ArrowDataType::Struct(fields) = dtype else {
         polars_bail!(ComputeError: "ADBC driver returned a non-struct batch: {dtype:?}");
     };
     if let Some(f) = fields.iter().find(|f| unsupported_arrow_type(f.dtype())) {
+        let (ident, text_type) = if dialect == DialectName::Bigquery {
+            if !matches!(f.dtype(), ArrowDataType::Decimal256(_, _)) {
+                polars_bail!(
+                    InvalidOperation:
+                    "column '{}' has Arrow type {:?}, which Polars can't read; convert the unsupported fields in the source query",
+                    f.name, f.dtype()
+                );
+            }
+            let escaped = f.name.replace('\\', "\\\\").replace('`', "\\`");
+            (format!("`{escaped}`"), "STRING")
+        } else {
+            (DialectName::Generic.quote_ident(&f.name), "TEXT")
+        };
         polars_bail!(
             InvalidOperation:
             "column '{}' has Arrow type {:?}, which Polars can't read; convert it in a query, \
-            e.g. CAST(\"{}\" AS TEXT)",
-            f.name, f.dtype(), f.name
+            e.g. CAST({ident} AS {text_type})",
+            f.name, f.dtype()
         );
     }
     Ok(())
 }
 
-fn batch_to_df(array: Box<dyn Array>) -> PolarsResult<DataFrame> {
-    check_arrow_types(array.dtype())?;
+fn batch_to_df(array: Box<dyn Array>, dialect: DialectName) -> PolarsResult<DataFrame> {
+    check_arrow_types(array.dtype(), dialect)?;
     // A record batch has no top-level nulls; drop a validity some drivers still attach.
     let array = array.with_validity(None);
     let array = array

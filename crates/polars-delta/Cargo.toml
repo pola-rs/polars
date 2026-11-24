@@ -16,8 +16,13 @@ name = "polars_delta"
 crate-type = ["rlib"]
 
 [dependencies]
+async-trait = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 crc32fast = "1"
+# Both releases correspond to delta-kernel-rs 89bb0848322b2ccf868954ab2f9446e5f2ddfe22.
+delta_kernel = { version = "=0.30.1", features = ["arrow-60", "internal-api"], optional = true }
+delta_kernel_default_engine = { version = "=0.30.1", default-features = false, features = ["arrow-60"], optional = true }
 futures = { workspace = true, optional = true }
 percent-encoding = { workspace = true, optional = true }
 polars-arrow = { workspace = true, optional = true }
@@ -36,7 +41,11 @@ pyo3 = { workspace = true, optional = true, features = ["abi3-py310", "extension
 [features]
 default = []
 planner = [
+  "dep:async-trait",
+  "dep:bytes",
   "dep:chrono",
+  "dep:delta_kernel",
+  "dep:delta_kernel_default_engine",
   "dep:futures",
   "dep:polars-arrow",
   "dep:polars-buffer",
