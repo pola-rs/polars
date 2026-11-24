@@ -7,7 +7,55 @@ use polars_lazy::prelude::*;
 use polars_plan::plans::{AExpr, ExprToIRContext, ToFieldContext, node_to_expr, to_expr_ir};
 use polars_utils::arena::{Arena, Node};
 
+use crate::context::is_row_wise;
 use crate::sql_expr::is_decimal_literal_valued;
+use crate::unique_column_name;
+
+/// Computes the non-column keys of each pair whose names repeat (`literal`, `b` twice from
+/// `r.b = 2 AND r.b = 3`), which a join refuses, as columns. Returns the added columns.
+pub(crate) fn distinct_key_names(
+    left: &mut LazyFrame,
+    right: &mut LazyFrame,
+    left_on: &mut [Expr],
+    right_on: &mut [Expr],
+    left_schema: &Schema,
+    right_schema: &Schema,
+) -> Vec<PlSmallStr> {
+    let mut added = Vec::new();
+    if left_on.len() < 2 {
+        return added;
+    }
+    // Selectors have no name yet.
+    let names: Vec<_> = left_on
+        .iter()
+        .zip(right_on.iter())
+        .map(|(l, r)| {
+            Some((
+                l.clone().meta().output_name().ok()?,
+                r.clone().meta().output_name().ok()?,
+            ))
+        })
+        .collect();
+    let mut counts: PlHashMap<_, usize> = PlHashMap::with_capacity(names.len());
+    for pair in names.iter().flatten() {
+        *counts.entry(pair).or_default() += 1;
+    }
+    for ((l, r), pair) in left_on.iter_mut().zip(right_on.iter_mut()).zip(&names) {
+        if pair.as_ref().is_none_or(|pair| counts[pair] < 2) {
+            continue;
+        }
+        for (key, frame, schema) in [(l, &mut *left, left_schema), (r, &mut *right, right_schema)] {
+            // The join rejects a key that is not elementwise.
+            if !matches!(key, Expr::Column(_)) && is_row_wise(key, schema).unwrap_or(false) {
+                let name = unique_column_name();
+                *frame = frame.clone().with_column(key.clone().alias(name.clone()));
+                *key = col(name.clone());
+                added.push(name);
+            }
+        }
+    }
+    added
+}
 
 /// `l` and `r` cast to the type a SQL comparison of them uses, for a key pair that the
 /// engine join doesn't cast itself. `merging` allows casts that map distinct values to one
