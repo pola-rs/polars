@@ -280,6 +280,19 @@ def sequence_to_pyseries(
             s = s.str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
         elif s.dtype == Null:
             # (all values were null, or overflowed `time_unit` with `strict=False`)
+            if (
+                isinstance(dtype, Datetime)
+                and time_zone is None
+                and isinstance(value, datetime)
+                and value.tzinfo is not None
+            ):
+                # Infer the common zone using the widest timestamp range.
+                source = PySeries.new_from_any_values(
+                    name, values, strict=False, time_unit="ms"
+                )
+                dtype = Datetime(
+                    dtype.time_unit, getattr(source.dtype(), "time_zone", None)
+                )
             s = s.cast(dtype)
 
         if (values_dtype == Date) & (dtype == Datetime):

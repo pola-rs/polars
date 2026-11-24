@@ -452,6 +452,50 @@ def test_series_init_mixed_units_out_of_range_28869(
         assert result.to_list()[1] == values[1]
 
 
+@pytest.mark.parametrize(
+    ("tz", "expected_tz"),
+    [
+        (zoneinfo.ZoneInfo("Asia/Tokyo"), "Asia/Tokyo"),
+        (timezone(timedelta(hours=5, minutes=30)), "UTC"),
+        (UTC, "UTC"),
+        (None, None),
+    ],
+)
+def test_series_init_out_of_range_keeps_time_zone(
+    tz: tzinfo | None, expected_tz: str | None
+) -> None:
+    in_range = [None, datetime(2000, 1, 1, tzinfo=tz), None]
+    overflow = [None, datetime(3000, 1, 1, tzinfo=tz), None]
+    dtype = pl.Datetime("ns")
+    expected = pl.Datetime("ns", expected_tz)
+    assert pl.Series(in_range, dtype=dtype, strict=False).dtype == expected
+
+    result = pl.Series(overflow, dtype=dtype, strict=False)
+    assert_series_equal(result, pl.Series([None] * 3, dtype=expected))
+
+    # an explicitly requested time zone takes precedence
+    result = pl.Series(overflow, dtype=pl.Datetime("ns", "Europe/Paris"), strict=False)
+    assert result.dtype == pl.Datetime("ns", "Europe/Paris")
+    assert result.null_count() == 3
+
+
+def test_series_init_out_of_range_mixed_time_zones() -> None:
+    values = [
+        datetime(3000, 1, 1, tzinfo=zoneinfo.ZoneInfo("Asia/Tokyo")),
+        datetime(3000, 1, 1, tzinfo=zoneinfo.ZoneInfo("Europe/Paris")),
+    ]
+    result = pl.Series(values, dtype=pl.Datetime("ns"), strict=False)
+    assert result.dtype == pl.Datetime("ns")
+    assert result.null_count() == 2
+
+    values = [
+        datetime(3000, 1, 1, tzinfo=timezone(timedelta(hours=1))),
+        datetime(3000, 1, 1, tzinfo=timezone(timedelta(hours=-2))),
+    ]
+    result = pl.Series(values, dtype=pl.Datetime("ns"), strict=False)
+    assert_series_equal(result, pl.Series([None, None], dtype=pl.Datetime("ns", "UTC")))
+
+
 def test_series_init_pandas_timestamp_out_of_datetime_range() -> None:
     result = pl.Series([pd.Timestamp(np.datetime64("10000-01-01", "s"))])
     assert result.dtype == pl.Datetime("ms")
