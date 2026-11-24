@@ -223,6 +223,7 @@ def test_cast_errors(
     ("sql_type", "dtype", "value", "expected"),
     [
         ("date", pl.Date, "2000-02-01", date(2000, 2, 1)),
+        ("date", pl.Date, "2000/2/1", date(2000, 2, 1)),
         (
             "timestamp",
             pl.Datetime("us"),
@@ -255,22 +256,49 @@ def test_cast_string_to_temporal(
 
 
 @pytest.mark.parametrize(
-    ("sql_type", "dtype"),
+    ("sql_type", "dtype", "error", "match"),
     [
-        ("date", pl.Date),
-        ("timestamp", pl.Datetime("us")),
-        ("time", pl.Time),
+        ("date", pl.Date, InvalidOperationError, r"conversion .* failed|year first"),
+        (
+            "timestamp",
+            pl.Datetime("us"),
+            InvalidOperationError,
+            r"conversion .* failed|year first",
+        ),
+        ("time", pl.Time, ComputeError, "could not find an appropriate format"),
     ],
 )
-def test_try_cast_string_to_temporal_nulls(sql_type: str, dtype: pl.DataType) -> None:
+def test_try_cast_string_to_temporal_nulls(
+    sql_type: str, dtype: pl.DataType, error: type[Exception], match: str
+) -> None:
     df = pl.DataFrame({"s": ["not a temporal value"]})
 
     for operand in ("s", "'not a temporal value'"):
         res = df.sql(f"SELECT TRY_CAST({operand} AS {sql_type}) AS x FROM self")
         assert_frame_equal(res, pl.DataFrame({"x": [None]}, schema={"x": dtype}))
 
-        with pytest.raises(ComputeError, match="could not find an appropriate format"):
+        with pytest.raises(error, match=match):
             df.sql(f"SELECT CAST({operand} AS {sql_type}) AS x FROM self")
+
+
+@pytest.mark.parametrize("value", ["3/5/2024", "13/05/2024", "05.03.2024", "24-03-05"])
+def test_cast_string_to_temporal_year_first_31034(value: str) -> None:
+    # 3/5/2024 could be 3 May or 5 March, so casts do not guess
+    df = pl.DataFrame({"s": [value, "2024-01-01"]})
+    for sql_type in ("DATE", "TIMESTAMP"):
+        res = df.sql(
+            f"SELECT TRY_CAST(s AS {sql_type}) AS x, TRY_CAST('{value}' AS {sql_type}) AS y FROM self"
+        )
+        assert res["x"].dt.year().to_list() == [None, 2024]
+        assert res["y"].null_count() == 2
+        array = df.sql(f"SELECT [TRY_CAST('{value}' AS {sql_type})] AS a FROM self")
+        assert array["a"].to_list() == [[None], [None]]
+        func = "TO_DATE" if sql_type == "DATE" else "TO_TIMESTAMP"
+        for parse in (f"CAST(s AS {sql_type})", f"{sql_type}('{value}')", f"{func}(s)"):
+            with pytest.raises(InvalidOperationError, match=r"conversion .* failed"):
+                df.sql(f"SELECT {parse} AS x FROM self")
+        with pytest.raises(InvalidOperationError, match=r"year first.*STRPTIME"):
+            df.sql(f"SELECT CAST('{value}' AS {sql_type}) AS x FROM self")
 
 
 def test_cast_temporal_to_temporal_is_not_parsed() -> None:
@@ -308,6 +336,10 @@ def test_temporal_in_string_list() -> None:
     )
     res = df.sql("SELECT * FROM self WHERE d IN ('1999-03-01', '2000-01-01')")
     assert_frame_equal(res, pl.DataFrame({"d": [date(1999, 3, 1), date(2000, 1, 1)]}))
+
+    # day-first strings are not inferred
+    with pytest.raises(ComputeError, match="could not find an appropriate format"):
+        df.sql("SELECT * FROM self WHERE d IN ('01/03/1999')")
 
 
 def test_try_cast_string_to_temporal_partial() -> None:

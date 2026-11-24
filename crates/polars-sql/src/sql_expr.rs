@@ -322,11 +322,50 @@ pub(crate) struct SQLExprVisitor<'a> {
     active_schema: Option<&'a Schema>,
 }
 
+/// Casts only infer year-first dates, as in `2024-03-05`, `2024/3/5` or `2024.03.05`.
+/// `3/5/2024` could be 3 May or 5 March, so it is not guessed.
+macro_rules! year_first_date {
+    () => {
+        concat!(
+            r"^\s*[+-]?[0-9]{4,}(?:",
+            r"\s*-\s*[0-9]{1,2}\s*-\s*[0-9]{1,2}|",
+            r"\s*/\s*[0-9]{1,2}\s*/\s*[0-9]{1,2}|",
+            r"\s*\.\s*[0-9]{1,2}\s*\.\s*[0-9]{1,2})",
+        )
+    };
+}
+const YEAR_FIRST_DATE: &str = concat!(year_first_date!(), r"\s*$");
+const YEAR_FIRST_DATETIME: &str = concat!(year_first_date!(), r"(?:[T ](?s:.*))?$");
+
+polars_utils::regex_cache::cached_regex! {
+    static YEAR_FIRST_DATE_RE = YEAR_FIRST_DATE;
+    static YEAR_FIRST_DATETIME_RE = YEAR_FIRST_DATETIME;
+}
+
+/// Whether a cast to `dtype` may infer a date from `value`.
+fn cast_reads(value: &str, dtype: &DataType) -> bool {
+    match dtype {
+        DataType::Date => YEAR_FIRST_DATE_RE.is_match(value),
+        DataType::Datetime(_, _) => YEAR_FIRST_DATETIME_RE.is_match(value),
+        _ => true,
+    }
+}
+
 /// Cast a literal series to the target dtype; uses dedicated ops for
 /// `string → date/time/datetime` and `strict_cast` for everything else.
 fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
     if s.dtype() == &DataType::String {
-        let ca = s.str()?;
+        // refused values become '', so they fail like any unparsable string
+        let year_first;
+        let ca = match dtype {
+            DataType::Date | DataType::Datetime(_, _) => {
+                year_first = s
+                    .str()?
+                    .apply_values(|v| Cow::Borrowed(if cast_reads(v, dtype) { v } else { "" }));
+                &year_first
+            },
+            _ => s.str()?,
+        };
         match dtype {
             DataType::Date => return Ok(ca.as_date(None, false)?.into_series()),
             DataType::Time => return Ok(ca.as_time(None, false)?.into_series()),
@@ -373,14 +412,55 @@ fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Optio
         ..Default::default()
     };
     Some(match dtype {
-        DataType::Date => expr.str().to_date(options),
-        DataType::Time => expr.str().to_time(options),
-        DataType::Datetime(tu, tz) => {
-            expr.str()
-                .to_datetime(Some(*tu), tz.clone(), options, lit("latest"))
+        DataType::Date => {
+            read_year_first(expr, true, strict, |e, options| e.str().to_date(options))
         },
+        DataType::Time => expr.str().to_time(options),
+        DataType::Datetime(tu, tz) => read_year_first(expr, false, strict, |e, options| {
+            e.str()
+                .to_datetime(Some(*tu), tz.clone(), options, lit("latest"))
+        }),
         _ => return None,
     })
+}
+
+/// Parse `expr` where it is a year-first date (plus a time unless `date_only`).
+/// Other values become null, or raise when `strict`.
+pub(crate) fn read_year_first(
+    expr: Expr,
+    date_only: bool,
+    strict: bool,
+    parse: impl Fn(Expr, StrptimeOptions) -> Expr,
+) -> Expr {
+    let pattern = if date_only {
+        YEAR_FIRST_DATE
+    } else {
+        YEAR_FIRST_DATETIME
+    };
+    let read = expr.clone().str().contains(lit(pattern), true);
+    let only = |cond: Expr| {
+        when(cond)
+            .then(expr.clone())
+            .otherwise(lit(NULL).cast(DataType::String))
+    };
+    let options = StrptimeOptions {
+        strict,
+        ..Default::default()
+    };
+    let parsed = parse(only(read.clone()), options);
+    if !strict {
+        return parsed;
+    }
+    // format `%%` never matches, so the strict parse raises
+    let fail = StrptimeOptions {
+        format: Some("%%".into()),
+        strict: true,
+        ..Default::default()
+    };
+    // not `coalesce`: it would merge the columns of a wildcard
+    when(read.clone())
+        .then(parsed)
+        .otherwise(parse(only(read.not()), fail))
 }
 
 /// `value` parsed as a literal of `dtype`, or `None` if it does not parse.
@@ -669,13 +749,27 @@ impl SQLExprVisitor<'_> {
                     Ok(AnyValue::StringOwned(v.as_str().into()))
                 },
                 SQLExpr::Cast {
+                    kind,
                     data_type,
                     expr,
                     format: None,
                     ..
                 } => {
-                    cast = Some(map_sql_dtype_to_polars(data_type)?);
+                    let dtype = map_sql_dtype_to_polars(data_type)?;
+                    cast = Some(dtype.clone());
                     match extract_literal_with_op(expr, None) {
+                        // TRY_CAST of a string that is not year-first gives null
+                        Some((v, op))
+                            if matches!(kind, CastKind::TryCast | CastKind::SafeCast)
+                                && matches!(dtype, DataType::Date | DataType::Datetime(_, _)) =>
+                        {
+                            let v = self.visit_any_value(v, op)?.into_static();
+                            let s =
+                                series_from_literals(PlSmallStr::EMPTY, std::slice::from_ref(&v))?;
+                            let reads = cast_literal_series(&s, &dtype)
+                                .is_ok_and(|c| c.null_count() == s.null_count());
+                            Ok(if reads { v } else { AnyValue::Null })
+                        },
                         Some((v, op)) => self.visit_any_value(v, op),
                         None => {
                             Err(polars_err!(SQLInterface: "array element `{}` is not supported", e))
@@ -2342,6 +2436,20 @@ impl SQLExprVisitor<'_> {
             }
         }
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
+
+        if strict
+            && let Expr::Literal(lv) = &expr
+            && let Some(value) = lv.extract_str()
+            && !cast_reads(value, &polars_type)
+        {
+            polars_bail!(
+                InvalidOperation:
+                "cannot cast '{}' to {}: a cast reads a date with the year first, as in \
+                '2024-03-05'. Read another layout with a format, as in STRPTIME(s, '%d/%m/%Y').",
+                value,
+                sql_type_name(&polars_type)
+            );
+        }
 
         // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
         if matches!(

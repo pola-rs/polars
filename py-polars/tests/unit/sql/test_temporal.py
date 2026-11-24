@@ -84,6 +84,13 @@ def test_date_func() -> None:
     expected = pl.DataFrame({"date": [True, False, False]})
     assert_frame_equal(result, expected)
 
+    df = pl.DataFrame({"a": ["2021-03-20", None], "b": ["2021-03-21", "2021-03-22"]})
+    result = df.select(pl.sql_expr("DATE(*)"))
+    assert result.rows() == [
+        (date(2021, 3, 20), date(2021, 3, 21)),
+        (None, date(2021, 3, 22)),
+    ]
+
     result = pl.select(pl.sql_expr("CAST(DATE('2023-03', '%Y-%m') as STRING)"))
     expected = pl.DataFrame({"literal": ["2023-03-01"]})
     assert_frame_equal(result, expected)
