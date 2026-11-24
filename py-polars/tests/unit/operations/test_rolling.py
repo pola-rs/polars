@@ -743,6 +743,7 @@ def test_rolling_float16_intermediate_out_of_range(
     assert out.dtype == pl.Float16
     assert out[-1] == expected
 
+
 def test_rolling_mean_f32_22936() -> None:
     arr = np.array(
         [
