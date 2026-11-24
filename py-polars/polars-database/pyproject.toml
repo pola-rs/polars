@@ -8,7 +8,7 @@ description = "Native database scan plugin for Polars (dependency of the polars 
 readme = "README.pypi.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-version = "0.1.1"
+version = "0.1.2"
 # The lowest sqlglot the tests pass with (2026-11-04): before 28.6, Oracle's SYSTIMESTAMP isn't
 # parsed as a volatile function, and 25.0 lacks `exp.Alter`.
 dependencies = ["sqlglot >= 28.6"]
@@ -21,3 +21,5 @@ Repository = "https://github.com/pola-rs/polars"
 [tool.maturin]
 module-name = "polars_database._lib"
 python-source = "."
+# Keep the license at the sdist root for Python package metadata.
+include = [{ path = "LICENSE", format = "sdist" }]
