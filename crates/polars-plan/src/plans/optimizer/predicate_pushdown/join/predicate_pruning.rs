@@ -717,30 +717,32 @@ pub fn try_rewrite_join_type(
         // We are in a cross join + filter
         // Try converting to inner join
         assert!(matches!(options.args.how, JoinType::Cross));
-        let equality_conditions = take_equi_join_keys(
-            acc_predicates,
-            expr_arena,
-            schema_left,
-            schema_right,
-            output_schema,
-            &suffix,
-            Operator::Eq,
-        )?;
-
-        if !equality_conditions.is_empty() {
-            let join_options = Arc::make_mut(options);
-            join_options.args.how = JoinType::Inner;
-            join_options.args.coalesce = JoinCoalesce::KeepColumns;
-            join_options.args.nulls_equal = false;
-            push_equi_join_keys(
-                equality_conditions,
+        for key_op in [Operator::Eq, Operator::EqValidity] {
+            let equality_conditions = take_equi_join_keys(
+                acc_predicates,
                 expr_arena,
+                schema_left,
                 schema_right,
+                output_schema,
                 &suffix,
-                left_on,
-                right_on,
-            );
-            return Ok(());
+                key_op,
+            )?;
+
+            if !equality_conditions.is_empty() {
+                let join_options = Arc::make_mut(options);
+                join_options.args.how = JoinType::Inner;
+                join_options.args.coalesce = JoinCoalesce::KeepColumns;
+                join_options.args.nulls_equal = key_op == Operator::EqValidity;
+                push_equi_join_keys(
+                    equality_conditions,
+                    expr_arena,
+                    schema_right,
+                    &suffix,
+                    left_on,
+                    right_on,
+                );
+                return Ok(());
+            }
         }
 
         // Try converting cross join to double-bounded RangeJoin.

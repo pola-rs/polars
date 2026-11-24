@@ -3,22 +3,20 @@ name: Release polars-iceberg
 # Releases the `polars-iceberg` I/O plugin (`py-polars/polars-iceberg` in this repository) to PyPI.
 #
 # The version is the `version` of the wrapper crate `py-polars/polars-iceberg/Cargo.toml`, which
-# must be the one in `crates/polars-iceberg/Cargo.toml` (the module's `__version__`), and the tag
-# must be `polars-iceberg-<version>`. The plugin is an abi3 wheel, so one wheel per target covers
-# every supported Python version.
+# must be the one in `crates/polars-iceberg/Cargo.toml` (the module's `__version__`). The plugin
+# is an abi3 wheel, so one wheel per target covers every supported Python version.
 #
-# The `version` job resolves the tag to a commit once; the other jobs build that commit, so a tag
-# that moves during the run can't mix two revisions in one release.
+# The `version` job resolves the commit once; the other jobs build that commit. After publishing,
+# the release tags it `polars-iceberg-<version>`.
 
 on:
   workflow_dispatch:
     inputs:
-      # Tag `polars-iceberg-<version>` of this repository to release.
-      tag:
-        description: Tag polars-iceberg-<version>
+      # Commit to release. If omitted, use the latest commit of the branch the workflow runs on.
+      sha:
+        description: Commit SHA
         type: string
-        required: true
-      # Create the sdist and build the wheels, but do not publish to PyPI.
+      # Create the sdist and build the wheels, but do not publish to PyPI or tag the commit.
       dry-run:
         description: Dry run
         type: boolean
@@ -46,27 +44,18 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      # The commit every job builds: the tag's.
+      # The commit every job builds.
       sha: ${{ steps.commits.outputs.sha }}
+      tag: ${{ steps.tag.outputs.tag }}
+      # Whether the tag exists already, on this commit (a rerun).
+      tagged: ${{ steps.tag.outputs.tagged }}
     steps:
-      # A branch name would be accepted as a ref too, so make sure the release is built from a tag.
-      - name: Check the tag exists
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          if ! git ls-remote --exit-code --tags "https://github.com/${{ github.repository }}" "refs/tags/$TAG"; then
-            echo "::error::${{ github.repository }} has no tag $TAG"
-            exit 1
-          fi
-
       - uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ inputs.tag }}
+          ref: ${{ inputs.sha }}
 
       - name: Read polars-iceberg version
         id: version
-        env:
-          TAG: ${{ inputs.tag }}
         run: |
           VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("py-polars/polars-iceberg/Cargo.toml", "rb"))["package"]["version"])')
           echo "polars-iceberg version: $VERSION"
@@ -74,10 +63,6 @@ jobs:
           LIB_VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-iceberg/Cargo.toml", "rb"))["package"]["version"])')
           if [[ "$LIB_VERSION" != "$VERSION" ]]; then
             echo "::error::crates/polars-iceberg version $LIB_VERSION does not match $VERSION"
-            exit 1
-          fi
-          if [[ "$TAG" != "polars-iceberg-$VERSION" ]]; then
-            echo "::error::tag $TAG does not match polars-iceberg version $VERSION (expected polars-iceberg-$VERSION)"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -88,6 +73,22 @@ jobs:
           SHA=$(git rev-parse HEAD)
           echo "commit: $SHA"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # A tag on another commit means the version was released before: bump it.
+      - name: Check the tag
+        id: tag
+        env:
+          TAG: polars-iceberg-${{ steps.version.outputs.version }}
+          SHA: ${{ steps.commits.outputs.sha }}
+        run: |
+          # The last line is the commit, also for an annotated tag (`<tag>^{}`).
+          TAGGED=$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -n 1 | cut -f 1)
+          if [[ -n "$TAGGED" && "$TAGGED" != "$SHA" ]]; then
+            echo "::error::$TAG already tags $TAGGED: bump the polars-iceberg version to release $SHA"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tagged=$([[ -n "$TAGGED" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   create-sdist:
     needs: [version]
@@ -243,3 +244,17 @@ jobs:
         with:
           skip-existing: true
           verbose: true
+
+  tag:
+    needs: [version, publish-to-pypi]
+    if: inputs.dry-run == false && needs.version.outputs.tagged == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the released commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SHA: ${{ needs.version.outputs.sha }}
+        run: gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA"
