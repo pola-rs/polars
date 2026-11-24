@@ -5,7 +5,8 @@ use num_traits::ToPrimitive;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
-const DEFAULT_BIN_COUNT: usize = 10;
+/// The number of bins of a `hist` given neither `bin_count` nor `bins`.
+pub const DEFAULT_HIST_BIN_COUNT: usize = 10;
 
 fn get_breaks<T>(
     ca: &ChunkedArray<T>,
@@ -45,14 +46,14 @@ where
                 let max = ca.max().unwrap().to_f64().unwrap();
                 (min, max)
             });
+            let bin_count = bin_count.unwrap_or(DEFAULT_HIST_BIN_COUNT);
             (uniform_breaks(bounds, bin_count), true)
         },
     };
     Ok((bins, uniform))
 }
 
-fn uniform_breaks(bounds: Option<(f64, f64)>, bin_count: Option<usize>) -> Vec<f64> {
-    let bin_count = bin_count.unwrap_or(DEFAULT_BIN_COUNT);
+fn uniform_breaks(bounds: Option<(f64, f64)>, bin_count: usize) -> Vec<f64> {
     let (offset, width, upper_limit) = match bounds {
         // No non-null items; supply unit interval.
         None => (0.0, 1.0 / bin_count as f64, 1.0),
@@ -188,8 +189,8 @@ impl HistBreaks {
         Ok(Self { edges, uniform })
     }
 
-    /// The edges `new` gives for `bin_count` bins over a column with (min, max) `bounds`, `None` if all null.
-    pub fn from_bounds(bounds: Option<(f64, f64)>, bin_count: Option<usize>) -> PolarsResult<Self> {
+    /// The edges `new` gives for `bin_count` bins over values in `bounds`, `None` if all are null.
+    pub fn from_bounds(bounds: Option<(f64, f64)>, bin_count: usize) -> PolarsResult<Self> {
         if let Some((min, max)) = bounds {
             // NaN bounds pass, as `new` gives them for an all-NaN column.
             polars_ensure!(
@@ -329,11 +330,13 @@ mod test {
                 .then(|| (s.min().unwrap().unwrap(), s.max().unwrap().unwrap()));
             for bin_count in [None, Some(1), Some(3)] {
                 let expected = HistBreaks::new(s, bin_count, None).unwrap();
-                let got = HistBreaks::from_bounds(bounds, bin_count).unwrap();
+                let got =
+                    HistBreaks::from_bounds(bounds, bin_count.unwrap_or(DEFAULT_HIST_BIN_COUNT))
+                        .unwrap();
                 assert_eq!(got.edges(), expected.edges(), "{s:?} {bin_count:?}");
                 assert_eq!(got.uniform, expected.uniform);
             }
         }
-        assert!(HistBreaks::from_bounds(Some((2.0, 1.0)), None).is_err());
+        assert!(HistBreaks::from_bounds(Some((2.0, 1.0)), 1).is_err());
     }
 }
