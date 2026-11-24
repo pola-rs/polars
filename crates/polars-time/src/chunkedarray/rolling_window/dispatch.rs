@@ -53,6 +53,10 @@ fn with_temporal(
         DataType::Date => (out * MICROSECONDS_IN_DAY as f64)
             .cast(&DataType::Int64)?
             .cast(&DataType::Datetime(TimeUnit::Microseconds, None)),
+        // Not `cast`, which drops the time zone without the `timezones` feature.
+        DataType::Datetime(tu, tz) => {
+            Ok(out.cast(&DataType::Int64)?.into_datetime(*tu, tz.clone()))
+        },
         dt => out.cast(&DataType::Int64)?.cast(dt),
     }
 }
