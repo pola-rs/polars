@@ -3871,9 +3871,11 @@ dependencies = [
  "polars-plan",
  "polars-testing",
  "polars-utils",
+ "recursive",
  "regex",
  "serde",
  "sqlparser",
+ "stacker",
 ]
 
 [[package]]
