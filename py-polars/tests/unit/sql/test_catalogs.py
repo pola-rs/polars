@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -30,6 +30,9 @@ from tests.unit.io.conftest import (
     recording_catalog_resolver,
     reset_iceberg_catalog_resolver,  # noqa: F401
 )
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 # No test leaves a catalog resolver installed for the next one.
 pytestmark = pytest.mark.usefixtures("reset_iceberg_catalog_resolver")
@@ -91,12 +94,12 @@ def lake_ctx(catalog: CountingCatalog, **kwargs: Any) -> pl.SQLContext[pl.LazyFr
 
 
 @pytest.fixture(params=["pyiceberg", "plugin"])
-def planner(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+def planner(request: pytest.FixtureRequest, plmonkeypatch: PlMonkeyPatch) -> str:
     """Plan scans with PyIceberg, or with the plugin only: a table it refuses raises."""
     name: str = request.param
     if name == "plugin":
         pytest.importorskip("polars_iceberg")
-    monkeypatch.setenv("POLARS_ICEBERG_PLANNER", name)
+    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", name)
     return name
 
 

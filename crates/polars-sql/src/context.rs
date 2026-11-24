@@ -52,7 +52,9 @@ use crate::catalog::{
 use crate::copy::{self, CopyToStdout};
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::functions::{PolarsSQLFunctions, is_builtin_function, is_random, random_once};
+use crate::functions::{
+    PolarsSQLFunctions, UNNEST_OPTIONS, is_builtin_function, is_random, random_once,
+};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
     check_columns_in_aggregates, has_marked_aggregate, has_random_outside_aggregates,
@@ -2794,11 +2796,7 @@ impl SQLContext {
                 names: Arc::from(explode_cols),
                 strict: true,
             },
-            ExplodeOptions {
-                // As in Postgres: an empty or NULL list gives no row.
-                empty_as_null: false,
-                keep_nulls: false,
-            },
+            UNNEST_OPTIONS,
         );
         if !rename_from.is_empty() {
             lf = lf.rename(rename_from, rename_to, true);
@@ -3470,16 +3468,10 @@ impl SQLContext {
         // Postgres: its rows join the table as data, so that the table's plan never holds itself,
         // which would double it with each such INSERT. Its reads of the table share one plan,
         // computed once. The query is planned with the table in a cache, which tells.
-        let shared = match reads_no_table {
-            true => None,
-            false => self.share_target(&tbl)?,
+        let (rows, reads_target) = match reads_no_table {
+            true => (self.execute_query(&query)?, false),
+            false => self.plan_sharing_target(&tbl, |ctx| ctx.execute_query(&query))?,
         };
-        let rows = self.execute_query(&query);
-        if shared.is_some() {
-            self.set_registered(&tbl, table.clone())?;
-        }
-        let rows = rows?;
-        let reads_target = shared.is_some_and(|id| holds_cache(&rows.logical_plan, id, 1));
         let added = Added {
             statement,
             from: "the query",
@@ -3597,23 +3589,13 @@ impl SQLContext {
         // The types of the columns that the file fills, in order: a CSV field is read as the
         // type of its column.
         let target = self.get_frame_schema(&mut table)?;
-        let mut schema = Schema::with_capacity(target.len());
-        let names: Vec<&str> = match columns.is_empty() {
-            true => target.iter_names().map(|c| c.as_str()).collect(),
-            false => columns.iter().map(|c| c.as_str()).collect(),
-        };
-        for (i, name) in names.iter().enumerate() {
-            let Some(dtype) = target.get(name) else {
-                polars_bail!(
-                    ColumnNotFound: "column '{}' not found in table '{}'; column names are case-sensitive", name, tbl
-                )
-            };
-            polars_ensure!(
-                !names[..i].contains(name),
-                Duplicate: "column '{}' is listed more than once in COPY FROM", name
-            );
-            schema.with_column((*name).into(), dtype.clone());
-        }
+        let schema: Schema = listed_columns(&target, &columns, &tbl, "COPY FROM")?
+            .into_iter()
+            .map(|name| {
+                let dtype = target.get(&name).unwrap().clone();
+                (name, dtype)
+            })
+            .collect();
         // Another format keeps the columns of the file, by position.
         let rows = match copy::read_rows(path, &schema, options, legacy_options)? {
             (_, Some(rows)) => rows,
@@ -3628,34 +3610,49 @@ impl SQLContext {
         self.add_rows(&tbl, table, rows, &columns, added)
     }
 
-    /// Put the plan of registered table `tbl` in a cache, for a statement that changes the table
-    /// and may also read it, and give the cache's id: a plan that holds it reads the table, and
-    /// all its reads share one plan, computed once. `None` for a table that is not registered,
-    /// which is left for the statement to report. Restore the table with `set_registered`.
-    fn share_target(&self, tbl: &str) -> PolarsResult<Option<UniqueId>> {
-        let mut table_map = self.table_map.write().unwrap();
-        let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() else {
-            return Ok(None);
+    /// The frame that `plan` gives, planned with the plan of registered table `tbl` in a cache,
+    /// for a statement that changes the table and may also read it; and whether the frame
+    /// reads the table, through the cache. All its reads share one plan, computed once.
+    fn plan_sharing_target(
+        &mut self,
+        tbl: &str,
+        plan: impl FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
+    ) -> PolarsResult<(LazyFrame, bool)> {
+        let shared = {
+            let mut table_map = self.table_map.write().unwrap();
+            match key_ignoring_case(&table_map, tbl)?.cloned() {
+                Some(key) => {
+                    let original = table_map[&key].clone();
+                    let cached = match original.logical_plan {
+                        DslPlan::Cache { .. } => original.clone(),
+                        _ => original.clone().cache(),
+                    };
+                    let DslPlan::Cache { id, .. } = cached.logical_plan else {
+                        unreachable!()
+                    };
+                    table_map.insert(key, cached);
+                    Some((id, original))
+                },
+                // Not registered: left for the statement to report.
+                None => None,
+            }
         };
-        let table = table_map.get(&key).unwrap();
-        let shared = match table.logical_plan {
-            DslPlan::Cache { .. } => table.clone(),
-            _ => table.clone().cache(),
+        let lf = plan(self);
+        let Some((id, original)) = shared else {
+            return Ok((lf?, false));
         };
-        let DslPlan::Cache { id, .. } = shared.logical_plan else {
-            unreachable!()
-        };
-        table_map.insert(key, shared);
-        Ok(Some(id))
-    }
-
-    /// Register `lf` again as table `tbl`, under the name it has.
-    fn set_registered(&self, tbl: &str, lf: LazyFrame) -> PolarsResult<()> {
+        // Looked up again: planning may have changed the table map.
         let mut table_map = self.table_map.write().unwrap();
         if let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() {
-            table_map.insert(key, lf);
+            table_map.insert(key, original);
         }
-        Ok(())
+        drop(table_map);
+        let lf = lf?;
+        let reads_target = lf
+            .logical_plan
+            .into_iter()
+            .any(|p| matches!(p, DslPlan::Cache { id: cache, .. } if *cache == id));
+        Ok((lf, reads_target))
     }
 
     // DELETE FROM <tbl> [WHERE ...]
@@ -3682,20 +3679,11 @@ impl SQLContext {
         // A condition whose subquery reads the table itself, also through a view, is computed now,
         // as in Postgres (see `execute_insert`). The subquery is planned with the table in a
         // cache, which tells; the rows it filters are `lf`, taken before.
-        let original = match selection.is_some_and(expr_contains_subquery) {
-            true => get_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.cloned(),
-            false => None,
+        let (mut remaining, reads_target) = match selection.is_some_and(expr_contains_subquery) {
+            true => self.plan_sharing_target(&tbl, |ctx| ctx.delete_remaining(lf, selection))?,
+            false => (self.delete_remaining(lf, selection)?, false),
         };
-        let shared = match original {
-            Some(_) => self.share_target(&tbl)?,
-            None => None,
-        };
-        let remaining = self.delete_remaining(lf, selection);
-        if let Some(original) = original {
-            self.set_registered(&tbl, original)?;
-        }
-        let mut remaining = remaining?;
-        if shared.is_some_and(|id| holds_cache(&remaining.logical_plan, id, 1)) {
+        if reads_target {
             remaining = remaining.collect()?.lazy();
         }
         // Later statements see the remaining rows, as after TRUNCATE. Locked only now:
@@ -5165,11 +5153,7 @@ impl SQLContext {
                     names: Arc::from(explode_names),
                     strict: true,
                 },
-                ExplodeOptions {
-                    // As in Postgres: an empty or NULL list gives no row.
-                    empty_as_null: false,
-                    keep_nulls: false,
-                },
+                UNNEST_OPTIONS,
             );
             projections = projections
                 .into_iter()
@@ -11165,15 +11149,6 @@ fn insert_source(insert: &Insert, outer: Option<&Query>) -> PolarsResult<Option<
     Ok(Some(source))
 }
 
-/// Whether `plan` holds the cache `id` at least `times` times.
-fn holds_cache(plan: &DslPlan, id: UniqueId, times: usize) -> bool {
-    plan.into_iter()
-        .filter(|p| matches!(p, DslPlan::Cache { id: cache, .. } if *cache == id))
-        .take(times)
-        .count()
-        == times
-}
-
 /// The columns an `INSERT` lists; empty for all columns.
 fn insert_columns(insert: &Insert) -> PolarsResult<Vec<String>> {
     insert
@@ -11198,18 +11173,14 @@ struct Added<'a> {
     overwrite: bool,
 }
 
-/// The rows that a statement (`added`) adds to table `tbl` of schema `target`: the columns of
-/// `rows`, of schema `source`, go by position into `columns` (every column if empty),
-/// converted to the column types. Other columns are NULL.
-fn rows_to_insert(
-    rows: LazyFrame,
-    source: &Schema,
+/// The columns of table `tbl` of schema `target` that `statement` writes: `columns`, or every
+/// column if empty.
+fn listed_columns(
     target: &Schema,
     columns: &[String],
     tbl: &str,
-    added: &Added<'_>,
-) -> PolarsResult<LazyFrame> {
-    let statement = added.statement;
+    statement: &str,
+) -> PolarsResult<Vec<PlSmallStr>> {
     let columns: Vec<PlSmallStr> = match columns.is_empty() {
         true => target.iter_names().cloned().collect(),
         false => columns.iter().map(|c| c.as_str().into()).collect(),
@@ -11224,6 +11195,22 @@ fn rows_to_insert(
             Duplicate: "column '{}' is listed more than once in {}", column, statement
         );
     }
+    Ok(columns)
+}
+
+/// The rows that a statement (`added`) adds to table `tbl` of schema `target`: the columns of
+/// `rows`, of schema `source`, go by position into `columns` (every column if empty),
+/// converted to the column types. Other columns are NULL.
+fn rows_to_insert(
+    rows: LazyFrame,
+    source: &Schema,
+    target: &Schema,
+    columns: &[String],
+    tbl: &str,
+    added: &Added<'_>,
+) -> PolarsResult<LazyFrame> {
+    let statement = added.statement;
+    let columns = listed_columns(target, columns, tbl, statement)?;
     polars_ensure!(
         source.len() == columns.len(),
         SQLInterface: "{} writes {} columns of table '{}', but {} gives {}",

@@ -1140,6 +1140,37 @@ pub(crate) enum PolarsSQLFunctions {
     Udf(String),
 }
 
+/// A literal key of `JSON_EXTRACT_PATH` as an element of a Postgres text array.
+fn json_path_element(key: &FunctionArgExpr) -> Option<String> {
+    let FunctionArgExpr::Expr(SQLExpr::Value(ValueWithSpan { value, .. })) = key else {
+        return None;
+    };
+    Some(match value {
+        // quoted only when needed: a struct's path does not read quotes
+        SQLValue::SingleQuotedString(s) if !needs_quotes(s) => s.clone(),
+        SQLValue::SingleQuotedString(s) => {
+            format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+        },
+        SQLValue::Number(n, _) => n.to_string(),
+        SQLValue::Null => "NULL".to_string(),
+        _ => return None,
+    })
+}
+
+/// Whether a Postgres text array element must be quoted to be read as written.
+fn needs_quotes(key: &str) -> bool {
+    key.is_empty()
+        || key.eq_ignore_ascii_case("NULL")
+        || key.contains([',', '{', '}', '"', '\\'])
+        || key.contains(char::is_whitespace)
+}
+
+/// How `UNNEST` and `EXPLODE` explode a list: as in Postgres, an empty or NULL list gives no row.
+pub(crate) const UNNEST_OPTIONS: ExplodeOptions = ExplodeOptions {
+    empty_as_null: false,
+    keep_nulls: false,
+};
+
 /// Whether `name` is a SQL function or a registered user-defined function.
 pub(crate) fn is_builtin_function(name: &Ident, ctx: &SQLContext) -> bool {
     let function = SQLFunction {
@@ -2408,11 +2439,7 @@ impl SQLFunctionVisitor<'_> {
             ListTransform => self.visit_list_lambda(false),
             ListFilter => self.visit_list_lambda(true),
             Explode => self.visit_unary(|e| {
-                e.explode(ExplodeOptions {
-                    // As in Postgres: an empty or NULL list gives no row.
-                    empty_as_null: false,
-                    keep_nulls: false,
-                })
+                e.explode(UNNEST_OPTIONS)
             }),
             GenerateSeries => self.visit_series(true),
             Range => self.visit_series(false),
@@ -3568,16 +3595,16 @@ impl SQLFunctionVisitor<'_> {
                 _ => polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects expressions; found {}", arg),
             })
             .collect::<PolarsResult<_>>()?;
-        let [value, pattern, rest @ ..] = exprs.as_slice() else {
-            polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len())
+        let (value, pattern, rest) = match exprs.as_slice() {
+            [value, pattern, rest @ ..] if rest.len() <= 4 => (value, pattern, rest),
+            _ => {
+                polars_bail!(SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len())
+            },
         };
-        polars_ensure!(
-            rest.len() <= 4,
-            SQLSyntax: "REGEXP_SUBSTR expects 2-6 arguments (found {})", args.len()
-        );
+        // An argument left out is `min`.
         let int_arg = |this: &mut Self, i: usize, name: &str, min: i64| -> PolarsResult<i64> {
             let Some(arg) = rest.get(i) else {
-                return Ok(if name == "subexpr" { 0 } else { 1 });
+                return Ok(min);
             };
             match parse_sql_expr(arg, this.ctx, this.active_schema)? {
                 Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= min as i128 => {
@@ -3661,34 +3688,15 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLSyntax: "{} expects a JSON value and a path of keys", name)
         };
         polars_ensure!(!keys.is_empty(), SQLSyntax: "{} expects at least one key", name);
-        let mut path = String::from("{");
-        for (i, key) in keys.iter().enumerate() {
-            if i > 0 {
-                path.push(',');
-            }
-            match key {
-                FunctionArgExpr::Expr(SQLExpr::Value(ValueWithSpan { value, .. })) => match value {
-                    // quoted only when needed: a struct's path does not read quotes
-                    SQLValue::SingleQuotedString(s) if !needs_quotes(s) => path.push_str(s),
-                    SQLValue::SingleQuotedString(s) => {
-                        let s = s.replace('\\', "\\\\").replace('"', "\\\"");
-                        path.push_str(&format!("\"{s}\""));
-                    },
-                    SQLValue::Number(n, _) => path.push_str(n),
-                    SQLValue::Null => path.push_str("NULL"),
-                    _ => polars_bail!(SQLSyntax: "{} expects literal keys; found {}", name, key),
-                },
-                _ => polars_bail!(SQLSyntax: "{} expects literal keys; found {}", name, key),
-            }
-        }
-        path.push('}');
-        // A Postgres text array element that is read as written.
-        fn needs_quotes(key: &str) -> bool {
-            key.is_empty()
-                || key.eq_ignore_ascii_case("NULL")
-                || key.contains([',', '{', '}', '"', '\\'])
-                || key.contains(char::is_whitespace)
-        }
+        let elements = keys
+            .iter()
+            .map(|key| {
+                json_path_element(key).ok_or_else(
+                    || polars_err!(SQLSyntax: "{} expects literal keys; found {}", name, key),
+                )
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let path = format!("{{{}}}", elements.join(","));
         let access = SQLExpr::BinaryOp {
             left: Box::new(json.clone()),
             op: match text {
