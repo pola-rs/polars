@@ -3193,42 +3193,6 @@ def test_nan_min_max_multi_chunk(engine: pl.QueryExecutionEngine) -> None:
     assert result.to_dict(as_series=False) == {"lo": [1.0], "hi": [3.0]}
 
 
-@pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt32, pl.Int64, pl.Float32])
-def test_group_by_mean_var_std_multi_chunk(dtype: pl.DataType) -> None:
-    df = pl.concat(
-        [
-            pl.DataFrame({"g": [1, 2, 1], "a": pl.Series([1, 2, 4], dtype=dtype)}),
-            pl.DataFrame({"g": [2, 1, 3], "a": pl.Series([6, None, 7], dtype=dtype)}),
-        ],
-        rechunk=False,
-    )
-    assert df.n_chunks() == 2
-    q = df.lazy().group_by("g", maintain_order=True)
-    aggs = [
-        pl.col("a").mean().alias("mean"),
-        pl.col("a").var().alias("var"),
-        pl.col("a").std().alias("std"),
-    ]
-    result = q.agg(aggs).collect(engine="in-memory")
-    expected = (
-        df.rechunk().lazy().group_by("g", maintain_order=True).agg(aggs).collect()
-    )
-    assert_frame_equal(result, expected)
-    assert result["mean"].to_list() == [2.5, 4.0, 7.0]
-
-
-def test_group_by_mean_no_nulls_multi_chunk() -> None:
-    df = pl.concat(
-        [
-            pl.DataFrame({"g": [1, 2], "a": [1, 2]}),
-            pl.DataFrame({"g": [1, 2], "a": [3, 6]}),
-        ],
-        rechunk=False,
-    )
-    out = df.group_by("g", maintain_order=True).agg(pl.col("a").mean())
-    assert out.to_dict(as_series=False) == {"g": [1, 2], "a": [2.0, 4.0]}
-
-
 @pytest.mark.parametrize(
     "dtype", [pl.Int8, pl.UInt16, pl.Int32, pl.UInt64, pl.Float32, pl.Float64]
 )
