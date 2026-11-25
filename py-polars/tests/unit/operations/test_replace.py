@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ArgumentRemovedError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars._typing import EngineType
 
 
 @pytest.fixture(scope="module")
@@ -66,6 +72,78 @@ def test_replace_cat_to_cat(str_mapping: dict[str | None, str]) -> None:
         schema_overrides={"replaced": pl.Categorical},
     )
     assert_frame_equal(result, expected)
+
+
+CATEGORIES = [
+    pytest.param(pl.Categories.random, id="own"),
+    pytest.param(lambda: pl.Categories(f"named-{uuid4()}"), id="named"),
+    pytest.param(pl.Categories, id="global"),
+    pytest.param(lambda: pl.Categories.random(physical=pl.UInt8), id="uint8"),
+]
+
+
+@pytest.mark.parametrize("make_categories", CATEGORIES)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_categorical_absent_old_adds_no_categories(
+    make_categories: Callable[[], pl.Categories], engine: EngineType
+) -> None:
+    cats = make_categories()
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
+    # A `new` value paired with an absent `old` value can't be output either.
+    absent, unused = f"absent-{uuid4()}", f"unused-{uuid4()}"
+    for expr, expected in [
+        (pl.col("s").replace(absent, "a"), ["a", "b"]),
+        (pl.col("s").replace(absent, unused), ["a", "b"]),
+        (pl.col("s").replace([absent, "b"], "a"), ["a", "a"]),
+        (pl.col("s").replace([absent, "a"], [unused, "b"]), ["b", "b"]),
+        (pl.col("s").replace({absent: unused, "b": "a"}), ["a", "a"]),
+        (pl.col("s").replace({absent: unused, f"{absent}-2": "a"}), ["a", "b"]),
+    ]:
+        result = lf.select(expr).collect(engine=engine)
+        assert_frame_equal(result, pl.DataFrame({"s": expected}, schema={"s": dtype}))
+    s = lf.collect()["s"]
+    assert_series_equal(s.replace(absent, unused), s)
+    with pytest.raises(InvalidOperationError, match="must have the same length"):
+        lf.select(pl.col("s").replace([absent, "a"], ["x", "y", "z"])).collect(
+            engine=engine
+        )
+    assert absent not in cats
+    assert unused not in cats
+
+
+def test_replace_categorical_absent_old_does_not_fill_categories() -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    s = pl.Series([f"c{i}" for i in range(250)], dtype=pl.Categorical(cats))
+    # Each call used to add both values, so the 3rd call overflowed the 255 allowed.
+    for i in range(10):
+        assert_series_equal(s.replace(f"absent-{i}", f"new-{i}"), s)
+    assert cats.to_series().len() == 250
+
+
+@pytest.mark.parametrize("make_categories", CATEGORIES)
+def test_replace_categorical_adds_new_values(
+    make_categories: Callable[[], pl.Categories],
+) -> None:
+    cats = make_categories()
+    s = pl.Series(["a", "b"], dtype=pl.Categorical(cats))
+    new = f"new-{uuid4()}"
+    assert s.replace("a", new).to_list() == [new, "b"]
+    assert new in cats
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_enum_absent_old_raises(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": pl.Enum(["a", "b", "c"])})
+    for expr in [
+        pl.col("s").replace("absent", "a"),
+        pl.col("s").replace(["absent", "b"], "a"),
+        pl.col("s").replace({"absent": "a", "b": "a"}),
+    ]:
+        with pytest.raises(
+            InvalidOperationError, match="conversion from `str` to `enum` failed"
+        ):
+            lf.select(expr).collect(engine=engine)
 
 
 def test_replace_invalid_old_dtype() -> None:

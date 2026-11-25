@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType, PolarsDataType
 
 
 def test_replace_strict_incomplete_mapping() -> None:
@@ -56,6 +59,26 @@ def test_replace_strict_mapping_null_with_default() -> None:
 
     expected = pl.Series("a", [10, 0, 0, 0, 0])
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value", "absent"),
+    [
+        (pl.Int64, 1, 7),
+        (pl.String, "a", "z"),
+        (pl.Categorical(pl.Categories.random()), "a", "z"),
+    ],
+    ids=["int", "str", "cat"],
+)
+def test_replace_strict_null_in_old_single_new(
+    dtype: PolarsDataType, value: Any, absent: Any
+) -> None:
+    s = pl.Series([value, None], dtype=dtype)
+    expected = pl.Series(["x", "x"])
+    assert_series_equal(s.replace_strict([value, None], "x"), expected)
+    assert_series_equal(s.replace_strict([value, absent, None], "x"), expected)
+    s_null = pl.Series([None, None], dtype=dtype)
+    assert_series_equal(s_null.replace_strict([absent, None], "x"), expected)
 
 
 def test_replace_strict_empty() -> None:
@@ -145,6 +168,90 @@ def test_replace_strict_enum_to_new_enum() -> None:
 
     expected = pl.Series(["c", "e", None], dtype=new_dtype)
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_strict_categorical_absent_old_adds_no_categories(
+    engine: EngineType,
+) -> None:
+    cats = pl.Categories.random()
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": ["a", "b", None]}, schema={"s": dtype})
+    lf_null = pl.LazyFrame({"s": [None, None]}, schema={"s": dtype})
+    # With `return_dtype=dtype`, the `new` value "y" of the absent "x" is not added.
+    cases: list[tuple[pl.LazyFrame, pl.Expr, list[str | None], PolarsDataType]] = [
+        (
+            lf,
+            pl.col("s").replace_strict({"x": "1", "a": "2", "b": "3"}),
+            ["2", "3", None],
+            pl.String,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict({"x": "1", "a": "2"}, default="0"),
+            ["2", "0", "0"],
+            pl.String,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict({"x": "1", "y": "2"}, default="0"),
+            ["0", "0", "0"],
+            pl.String,
+        ),
+        (lf_null, pl.col("s").replace_strict({"x": "1"}), [None, None], pl.String),
+        (
+            lf_null,
+            pl.col("s").replace_strict({"x": "1", "y": "2"}),
+            [None, None],
+            pl.String,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict(
+                {"x": "y", "a": "b", "b": "a"}, return_dtype=dtype
+            ),
+            ["b", "a", None],
+            dtype,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict(
+                {"x": "y", "a": "b"}, default="a", return_dtype=dtype
+            ),
+            ["b", "a", "a"],
+            dtype,
+        ),
+        (
+            lf,
+            pl.col("s").replace_strict("x", "y", default="a", return_dtype=dtype),
+            ["a", "a", "a"],
+            dtype,
+        ),
+        (
+            lf_null,
+            pl.col("s").replace_strict("x", "y", return_dtype=dtype),
+            [None, None],
+            dtype,
+        ),
+    ]
+    for frame, expr, expected, out_dtype in cases:
+        result = frame.select(expr).collect(engine=engine)
+        assert_frame_equal(
+            result, pl.DataFrame({"s": expected}, schema={"s": out_dtype})
+        )
+    with pytest.raises(InvalidOperationError, match="incomplete mapping"):
+        lf.select(pl.col("s").replace_strict({"x": "1"})).collect(engine=engine)
+    assert cats.to_series().to_list() == ["a", "b"]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_replace_strict_enum_absent_old_raises(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": pl.Enum(["a", "b", "c"])})
+    expr = pl.col("s").replace_strict({"absent": "x", "a": "y", "b": "z"}, default="d")
+    with pytest.raises(
+        InvalidOperationError, match="conversion from `str` to `enum` failed"
+    ):
+        lf.select(expr).collect(engine=engine)
 
 
 def test_replace_strict_int_to_int_null() -> None:

@@ -55,7 +55,11 @@ pub fn replace(s: &Series, old: &ListChunked, new: &ListChunked) -> PolarsResult
     validate_old(&old)?;
 
     let dtype = s.dtype();
-    let old = old.strict_cast(dtype)?;
+    let (old, kept) = cast_to_match(&old, dtype)?;
+    let new = filter_new(new, kept.as_ref())?;
+    if old.is_empty() {
+        return Ok(s.clone());
+    }
     let new = new.strict_cast(dtype)?;
 
     if new.len() == 1 {
@@ -115,7 +119,11 @@ pub fn replace_or_default(
         return default.broadcast_owned_to(s.len());
     }
 
-    let old = old.strict_cast(s.dtype())?;
+    let (old, kept) = cast_to_match(&old, s.dtype())?;
+    let new = filter_new(new, kept.as_ref())?;
+    if old.is_empty() {
+        return default.broadcast_owned_to(s.len());
+    }
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
@@ -171,7 +179,15 @@ pub fn replace_strict(
         )
     }
 
-    let old = old.strict_cast(s.dtype())?;
+    let (old, kept) = cast_to_match(&old, s.dtype())?;
+    let new = filter_new(new, kept.as_ref())?;
+    if old.is_empty() {
+        // No `old` value can match, so all values are unmatched (a null mask): only nulls pass.
+        let mask = BooleanChunked::full_null(PlSmallStr::EMPTY, s.len());
+        ensure_all_replaced(&mask, s, false, false)?;
+        let dtype = return_dtype.unwrap_or_else(|| new.dtype().clone());
+        return Ok(Series::full_null(s.name().clone(), s.len(), &dtype));
+    }
 
     let new = match return_dtype {
         Some(dtype) => new.strict_cast(&dtype)?,
@@ -201,10 +217,7 @@ fn replace_by_single(
     new: &Series,
     default: &Series,
 ) -> PolarsResult<Series> {
-    let mut mask = get_replacement_mask(s, old)?;
-    if old.null_count() > 0 {
-        mask = mask.fill_null_with_values(true)?;
-    }
+    let mask = get_replacement_mask(s, old)?;
     new.zip_with(&mask, default)
 }
 
@@ -224,7 +237,7 @@ fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsRes
 
 /// Get a boolean mask of which values in the original Series will be replaced.
 ///
-/// Null values are propagated to the mask.
+/// Null values are propagated to the mask, unless `old` contains a null.
 fn get_replacement_mask(s: &Series, old: &Series) -> PolarsResult<BooleanChunked> {
     if old.null_count() == old.len() {
         // Fast path for when users are using `replace(None, ...)` instead of `fill_null`.
@@ -232,8 +245,9 @@ fn get_replacement_mask(s: &Series, old: &Series) -> PolarsResult<BooleanChunked
     } else if old.len() == 1 {
         Ok(s.equal(old)?)
     } else {
+        let nulls_equal = old.null_count() > 0;
         let old = old.implode()?;
-        is_in(s, &old.into_series(), false)
+        is_in(s, &old.into_series(), nulls_equal)
     }
 }
 
@@ -244,7 +258,7 @@ fn replace_by_multiple(
     new: Series,
     default: &Series,
 ) -> PolarsResult<Series> {
-    validate_new(&new, &old)?;
+    validate_new(&new, old.len())?;
 
     let df = s.clone().into_frame();
     let add_replacer_mask = new.null_count() > 0;
@@ -286,7 +300,7 @@ fn replace_by_multiple(
 
 /// General case for replacing by multiple values in strict mode
 fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsResult<Series> {
-    validate_new(&new, &old)?;
+    validate_new(&new, old.len())?;
 
     let df = s.clone().into_frame();
     let old_has_null = old.null_count() > 0;
@@ -337,10 +351,22 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
     Ok(out)
 }
 
+/// Drops the `new` values paired with the `old` values [`cast_to_match`] dropped, before `new`
+/// is cast: they can't be output, and casting to a Categorical adds them to its categories.
+fn filter_new(new: Series, kept: Option<&BooleanChunked>) -> PolarsResult<Series> {
+    match kept {
+        Some(kept) if new.len() != 1 => {
+            validate_new(&new, kept.len())?;
+            new.filter(kept)
+        },
+        _ => Ok(new),
+    }
+}
+
 /// Validate the `new` input.
-fn validate_new(new: &Series, old: &Series) -> PolarsResult<()> {
+fn validate_new(new: &Series, old_len: usize) -> PolarsResult<()> {
     polars_ensure!(
-        new.len() == old.len(),
+        new.len() == old_len,
         InvalidOperation: "`new` input for `replace` must have the same length as `old` or have length 1"
     );
     Ok(())

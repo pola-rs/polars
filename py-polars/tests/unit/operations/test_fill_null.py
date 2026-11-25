@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
+from uuid import uuid4
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars._typing import EngineType
 
 
 def test_fill_null_minimal_upcast_4056() -> None:
@@ -27,6 +35,70 @@ def test_fill_enum_upcast() -> None:
     expected = pl.Series(["a", "b", "b"], dtype=dtype)
     assert s_filled.dtype == dtype
     assert_series_equal(s_filled, expected)
+
+
+def test_fill_null_enum_values() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    cases: list[tuple[list[str | None], str, list[str | None]]] = [
+        (["a", None], "c", ["a", "c"]),
+        (["a", None], "absent", ["a", None]),
+        (["a", "b"], "absent", ["a", "b"]),
+    ]
+    for values, fill, expected in cases:
+        s = pl.Series("s", values, dtype=dtype)
+        assert_series_equal(s.fill_null(fill), pl.Series("s", expected, dtype=dtype))
+
+
+@pytest.mark.parametrize(
+    "make_categories",
+    [
+        pytest.param(pl.Categories.random, id="own"),
+        pytest.param(lambda: pl.Categories(f"named-{uuid4()}"), id="named"),
+        pytest.param(pl.Categories, id="global"),
+        pytest.param(lambda: pl.Categories.random(physical=pl.UInt8), id="uint8"),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_fill_null_categorical_adds_only_used_values(
+    make_categories: Callable[[], pl.Categories], engine: EngineType
+) -> None:
+    cats = make_categories()
+    dtype = pl.Categorical(cats)
+    lf = pl.LazyFrame({"s": ["a", "b"]}, schema={"s": dtype})
+    lf_null = pl.LazyFrame({"s": ["a", None]}, schema={"s": dtype})
+    unused, used, other = (f"{name}-{uuid4()}" for name in ("unused", "used", "other"))
+
+    result = lf.select(pl.col("s").fill_null(unused)).collect(engine=engine)
+    assert_frame_equal(result, lf.collect())
+    assert_series_equal(lf.collect()["s"].fill_null(unused), lf.collect()["s"])
+    assert unused not in cats
+
+    # Values in the output are added.
+    result = lf_null.select(pl.col("s").fill_null(used)).collect(engine=engine)
+    assert_frame_equal(result, pl.DataFrame({"s": ["a", used]}, schema={"s": dtype}))
+    assert used in cats
+    expr = pl.when(pl.col("s") == "a").then(pl.col("s")).otherwise(pl.lit(other))
+    result = lf.select(expr).collect(engine=engine)
+    assert_frame_equal(result, pl.DataFrame({"s": ["a", other]}, schema={"s": dtype}))
+    assert other in cats
+
+
+def test_fill_null_categorical_scalar_with_string_series() -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    result = pl.select(
+        pl.lit(None, dtype=dtype).fill_null(pl.lit(pl.Series(["x", "y"])))
+    )
+    assert_series_equal(
+        result.to_series(), pl.Series("literal", ["x", "y"], dtype=dtype)
+    )
+
+
+def test_fill_null_categorical_full_categories_raises() -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    s = pl.Series([f"c{i}" for i in range(255)] + [None], dtype=pl.Categorical(cats))
+    with pytest.raises(ComputeError, match="more categories than the maximum"):
+        s.fill_null("new")
+    assert s.fill_null("c0")[-1] == "c0"
 
 
 def test_fill_null_static_schema_4843() -> None:

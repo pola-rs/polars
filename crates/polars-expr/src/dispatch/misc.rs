@@ -483,6 +483,17 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         InvalidOperation: "needle of `index_of` can only contain a single value, found {} values",
         needle_s.len()
     );
+    // Type coercion leaves a string needle of a Categorical as is, to be looked up here.
+    let needle_s = &if series.dtype().is_categorical() && needle_s.dtype().is_string() {
+        let (needle_s, _) =
+            polars_ops::series::cast_to_match(needle_s.as_materialized_series(), series.dtype())?;
+        if needle_s.is_empty() {
+            return Ok(Column::full_null(series.name().clone(), 1, &IDX_DTYPE));
+        }
+        needle_s.into_column()
+    } else {
+        needle_s.clone()
+    };
     let needle = Scalar::new(
         needle_s.dtype().clone(),
         needle_s.get(0).unwrap().into_static(),
@@ -598,6 +609,15 @@ pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
 }
 
 pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
+    // Type coercion leaves a string fill value of a Categorical as is (casting
+    // adds it to the categories); that is only done here, when it fills nulls.
+    let fill_value = || {
+        if s[0].dtype().is_categorical() && s[1].dtype().is_string() {
+            s[1].cast(s[0].dtype())
+        } else {
+            Ok(s[1].clone())
+        }
+    };
     match (s[0].len(), s[1].len()) {
         (a, b) if a == b || b == 1 => {
             let series = s[0].clone();
@@ -608,7 +628,7 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
                 return Ok(series);
             }
 
-            let fill_value = s[1].clone();
+            let fill_value = fill_value()?;
 
             // Handle Null dtype columns: fill with the fill value (changes dtype)
             if series.dtype() == &DataType::Null {
@@ -621,16 +641,11 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
                 series.zip_with_same_type(&mask, &fill_value)
             }
 
-            let fill_value = if series.dtype().is_categorical() && fill_value.dtype().is_string() {
-                fill_value.cast(series.dtype()).unwrap()
-            } else {
-                fill_value
-            };
             default(series, fill_value)
         },
         (1, other_len) => {
             if s[0].has_nulls() {
-                Ok(s[1].clone())
+                fill_value()
             } else {
                 Ok(s[0].new_from_index(0, other_len))
             }

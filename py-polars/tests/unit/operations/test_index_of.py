@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -15,7 +16,9 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from polars._typing import IntoExpr, PolarsDataType
+    from collections.abc import Callable
+
+    from polars._typing import EngineType, IntoExpr, PolarsDataType
     from polars.datatypes import IntegerType
 
 
@@ -362,6 +365,44 @@ def test_categorical(convert_to_literal: bool) -> None:
     ]:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
+
+
+@pytest.mark.parametrize(
+    "make_categories",
+    [
+        pytest.param(pl.Categories.random, id="own"),
+        pytest.param(lambda: pl.Categories(f"named-{uuid4()}"), id="named"),
+        pytest.param(pl.Categories, id="global"),
+        pytest.param(lambda: pl.Categories.random(physical=pl.UInt8), id="uint8"),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_index_of_categorical_absent_adds_no_categories(
+    make_categories: Callable[[], pl.Categories], engine: EngineType
+) -> None:
+    cats = make_categories()
+    s = pl.Series("s", ["b", None, "a"], dtype=pl.Categorical(cats))
+    absent = f"absent-{uuid4()}"
+    lf = s.to_frame().with_columns(needle=pl.lit(absent)).lazy()
+    cases: list[tuple[IntoExpr, int | None]] = [
+        (absent, None),
+        (pl.col("needle").first(), None),
+        ("a", 2),
+        (pl.lit(None, dtype=pl.String), 1),
+    ]
+    for needle, expected in cases:
+        result = lf.select(pl.col("s").index_of(needle)).collect(engine=engine)
+        assert result.item() == expected
+    assert s.index_of(absent) is None
+    assert absent not in cats
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_index_of_enum_absent(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"s": ["b", "a"]}, schema={"s": pl.Enum(["a", "b", "c"])})
+    for needle in ["absent", "c"]:
+        result = lf.select(pl.col("s").index_of(needle)).collect(engine=engine)
+        assert result.item() is None
 
 
 @pytest.mark.parametrize("value", [0, 0.1])

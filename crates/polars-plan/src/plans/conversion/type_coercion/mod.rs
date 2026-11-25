@@ -798,8 +798,23 @@ impl OptimizationRule for TypeCoercionRule {
                     } else {
                         CastOptions::NonStrict
                     };
-                    for (e, dtype) in input.iter_mut().zip(dtypes) {
-                        cast_expr_ir(e, &dtype, &super_type, expr_arena, literal_options)?;
+                    // Casting strings to a Categorical adds them to its categories, so
+                    // these kernels take a string argument as is: `index_of` looks it
+                    // up, and `fill_null` casts it only if there are nulls to fill.
+                    let keep_strings = super_type.is_categorical()
+                        && match function {
+                            #[cfg(feature = "index_of")]
+                            IRFunctionExpr::IndexOf => true,
+                            IRFunctionExpr::FillNull => true,
+                            _ => false,
+                        };
+                    for (i, (e, dtype)) in input.iter_mut().zip(dtypes).enumerate() {
+                        let to_dtype = if keep_strings && i > 0 && dtype.is_string() {
+                            &DataType::String
+                        } else {
+                            &super_type
+                        };
+                        cast_expr_ir(e, &dtype, to_dtype, expr_arena, literal_options)?;
                     }
                 }
 
