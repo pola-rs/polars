@@ -318,23 +318,22 @@ pub fn mean_horizontal(
             _ => columns[0].clone(),
         })),
         _ => {
-            if columns.iter().all(|c| c.null_count() == 0) {
-                let sum = sum_horizontal(columns.as_slice(), null_strategy)?;
+            let fast_path = columns.iter().all(|c| {
+                c.null_count() == 0
+                    && c.dtype().is_primitive_numeric()
+                    && !matches!(c.dtype(), DataType::Float16)
+            });
+            if fast_path {
+                let sum = sum_horizontal(columns.as_slice(), null_strategy)?.unwrap();
                 let n = num_rows as f64;
-                match sum.as_ref().map(Column::dtype) {
-                    Some(DataType::Float64) => {
-                        let sum = sum.unwrap();
-                        let out = sum.f64()?.apply_values(|v| v / n);
-                        return Ok(Some(out.into_column()));
-                    },
-                    Some(DataType::Float32) => {
-                        let sum = sum.unwrap();
-                        let n = n as f32;
-                        let out = sum.f32()?.apply_values(|v| v / n);
-                        return Ok(Some(out.into_column()));
-                    },
-                    _ => {},
-                }
+                let out = if sum.dtype() == &DataType::Float32 {
+                    let n = n as f32;
+                    sum.f32()?.apply_values(|v| v / n).into_column()
+                } else {
+                    let sum = sum.cast(&DataType::Float64)?;
+                    sum.f64()?.apply_values(|v| v / n).into_column()
+                };
+                return Ok(Some(out));
             }
 
             let sum = || sum_horizontal(columns.as_slice(), null_strategy);

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
-def multi_chunk(values: list[object], dtype: pl.DataType) -> pl.Series:
+
+def multi_chunk(values: list[object], dtype: PolarsDataType) -> pl.Series:
     mid = len(values) // 2
     return pl.concat(
         [pl.Series("a", values[:mid], dtype), pl.Series("a", values[mid:], dtype)],
@@ -39,6 +44,8 @@ def test_gather_every_one() -> None:
     assert s.gather_every(1, 10).to_list() == []
     assert s.gather_every(2, 1).to_list() == [2, 4]
     assert s.slice(1).gather_every(1, 1).to_list() == [3, 4]
+    lists = pl.Series([[1, 2, 3], [4], []])
+    assert lists.list.gather_every(1, 1).to_list() == [[2, 3], [], []]
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
@@ -126,8 +133,15 @@ def test_mean_horizontal_no_nulls_divides_exactly() -> None:
     df = pl.DataFrame({"a": [1.0, 5.0], "b": [1.0, 0.0], "c": [3.0, 0.0]})
     out = df.select(pl.mean_horizontal("a", "b", "c"))["a"].to_list()
     assert out == [5.0 / 3.0, 5.0 / 3.0]
-    out = df.select(pl.mean_horizontal(pl.lit(None), "a", ignore_nulls=False))
-    assert out.to_series().to_list() == [None, None]
+    frame = df.select(pl.mean_horizontal(pl.lit(None), "a", ignore_nulls=False))
+    assert frame.to_series().to_list() == [None, None]
+    empty = pl.DataFrame(schema={"x": pl.Null})
+    assert empty.select(pl.mean_horizontal("x", pl.lit(2.0))).height == 0
+    ints = pl.DataFrame({"a": [1, 5], "b": [1, 0], "c": [3, 0]})
+    assert ints.select(pl.mean_horizontal("a", "b", "c")).to_series().to_list() == [
+        5 / 3,
+        5 / 3,
+    ]
 
 
 def test_hist_nan_bins_raise() -> None:
