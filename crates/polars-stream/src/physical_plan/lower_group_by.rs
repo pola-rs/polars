@@ -909,31 +909,19 @@ fn try_lower_agg_input_expr(
                 x.is_not_nan(expr_arena).or(is_null, expr_arena)
             };
 
-            let output_name = unique_column_name();
-            let predicate_name = unique_column_name();
-            let mut select_exprs = keys.to_vec();
-            select_exprs.push(ExprIR::new(input, OutputName::Alias(output_name.clone())));
-            select_exprs.push(predicate.expr_ir(predicate_name.clone()));
-
-            let mut stream = build_select_stream(
+            let filter = expr_arena.add(AExpr::Filter {
+                input,
+                by: predicate.node(),
+            });
+            try_lower_agg_input_expr(
                 input_stream,
-                &select_exprs,
+                keys,
+                filter,
                 expr_arena,
                 phys_sm,
                 expr_props,
                 ctx,
-            )?;
-            stream = build_filter_stream(
-                stream,
-                ExprIR::from_column_name(predicate_name, expr_arena),
-                expr_arena,
-                phys_sm,
-                expr_props,
-                ctx,
-            )?;
-
-            let trans_output = expr_arena.add(AExpr::Column(output_name));
-            Ok(Some((stream, trans_output, false)))
+            )
         },
         _ => Ok(None),
     }
