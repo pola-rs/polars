@@ -2909,8 +2909,10 @@ def test_str_extract_and_split_per_row_pattern() -> None:
     s = pl.Series(["a1b22", "xx", None, "c333d", "e4"])
     pat = pl.Series([r"(\d+)", r"(\d)", r"(\d)", None, r"([a-z])"])
     expected = [
-        None if v is None or p is None else (m.group(1) if (m := re.search(p, v)) else None)
-        for v, p in zip(s, pat)
+        None
+        if v is None or p is None
+        else (m.group(1) if (m := re.search(p, v)) else None)
+        for v, p in zip(s, pat, strict=True)
     ]
     assert s.str.extract(pat).to_list() == expected
     assert pl.Series(["a1b22"]).str.extract(pat).to_list() == ["1", "1", "1", None, "a"]
