@@ -260,7 +260,7 @@ impl ExprProperties {
 
     /// Return whether the expression at `node` reads a column or the frame's length.
     #[recursive::recursive]
-    pub fn is_frame_dependent(&mut self, node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    fn is_frame_dependent(&mut self, node: Node, expr_arena: &Arena<AExpr>) -> bool {
         if let Some(&ret) = self.is_frame_dependent.get(&node) {
             return ret;
         }
