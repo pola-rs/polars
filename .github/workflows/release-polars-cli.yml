@@ -76,7 +76,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           TAG=polars-cli-$VERSION
-          if [[ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]]; then
+          TAGGED=$(git ls-remote --tags origin "refs/tags/$TAG")
+          if [[ -n "$TAGGED" ]]; then
             echo "::error::$TAG exists: bump the polars-cli version"
             exit 1
           fi
@@ -192,8 +193,9 @@ jobs:
             --manifest-path ${{ env.CLI_DIR }}/Cargo.toml
             --compression-level 9
             --out dist
-          # For an executable, maturin gives a musl build a manylinux tag unless told otherwise.
-          manylinux: ${{ endsWith(matrix.target, '-musl') && 'musllinux_1_2' || 'auto' }}
+          # maturin fails the build if the executable needs more. Without a policy, it gives a musl
+          # build a manylinux tag.
+          manylinux: ${{ endsWith(matrix.target, '-musl') && 'musllinux_1_2' || '2_17' }}
           maturin-version: 1.15.0
 
       - name: Make the archive
@@ -380,6 +382,11 @@ jobs:
           SHA: ${{ needs.version.outputs.sha }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          # A stale rerun must not change the draft of a version already on PyPI.
+          if [[ "$(curl -s --retry 3 -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/polars-cli/$VERSION/json")" != 404 ]]; then
+            echo "::error::polars-cli $VERSION is on PyPI, or PyPI did not answer"
+            exit 1
+          fi
           if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2> /dev/null)" == true ]]; then
             gh release edit "$TAG" --target "$SHA"
             gh release upload "$TAG" archives/* --clobber
