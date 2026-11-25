@@ -5,6 +5,7 @@ import pickle
 import re
 import subprocess
 import sys
+import uuid
 
 import pytest
 
@@ -85,13 +86,17 @@ def test_categories_lookup(cats: pl.Categories) -> None:
 def test_categories_lookup_raises(cats: pl.Categories) -> None:
     pl.DataFrame({"x": ["foo"]}, schema={"x": pl.Categorical(cats)})
 
-    msg = "'not-a-category'"
-    with pytest.raises(KeyError, match=re.escape(msg)):
-        cats["not-a-category"]
+    # Note: default Categories is shared by the whole process, so we look up a key
+    # and index that no other test can have added (no Categories holds id u32::MAX)
+    key = f"not-a-category-{uuid.uuid4()}"
+    idx = 2**32 - 1
 
-    msg = "category index out of range: 9999"
+    with pytest.raises(KeyError, match=re.escape(repr(key))):
+        cats[key]
+
+    msg = f"category index out of range: {idx}"
     with pytest.raises(IndexError, match=re.escape(msg)):
-        cats[9999]
+        cats[idx]
 
     msg = "invalid key type <class 'NoneType'>; expected str or int"
     with pytest.raises(TypeError, match=re.escape(msg)):
