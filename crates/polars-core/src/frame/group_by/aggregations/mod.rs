@@ -1161,9 +1161,10 @@ where
     where
         <T as datatypes::PolarsNumericType>::Native: num_traits::Float,
     {
+        let ca = &self.0.rechunk();
         match groups {
             GroupsType::Idx(groups) => {
-                let ca = self.0.rechunk();
+                let ca = ca.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
@@ -1185,7 +1186,6 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let ca = self.0.rechunk();
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -1239,9 +1239,9 @@ where
     where
         <T as datatypes::PolarsNumericType>::Native: num_traits::Float,
     {
+        let ca = &self.0.rechunk();
         match groups {
             GroupsType::Idx(groups) => {
-                let ca = self.0.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
@@ -1263,7 +1263,6 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let ca = self.0.rechunk();
                     let arr = ca.downcast_as_array();
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
@@ -1385,34 +1384,42 @@ where
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 let arr = ca.downcast_get(0).unwrap();
-                let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<Float64Type, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
                     // here users can create filters in aggregations
                     // and thereby creating shorter columns than the original group tuples.
                     // the group tuples are modified, but if that's done incorrect there can be out of bounds
                     // access
-                    debug_assert!(_idx_in_bounds(idx, ca.len()));
+                    debug_assert!(_idx_in_bounds(idx, self.len()));
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        ca.get(first as usize).map(|sum| sum.to_f64().unwrap())
-                    } else if no_nulls {
-                        Some(
-                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
-                                .fold(KahanSum::default(), |a, b| a + b.to_f64().unwrap())
-                                .sum()
-                                / idx.len() as f64,
-                        )
+                        self.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else {
-                        take_agg_primitive_iter_unchecked_count_nulls(
-                            arr,
-                            idx2usize(idx),
-                            KahanSum::default(),
-                            |a, b| a + b.to_f64().unwrap(),
-                            idx.len() as IdxSize,
-                        )
-                        .map(|(sum, null_count)| sum.sum() / (idx.len() as f64 - null_count as f64))
+                        match (self.has_nulls(), self.chunks.len()) {
+                            (false, 1) => Some(
+                                take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                    .fold(KahanSum::default(), |a, b| a + b.to_f64().unwrap())
+                                    .sum()
+                                    / idx.len() as f64,
+                            ),
+                            (_, 1) => {
+                                take_agg_primitive_iter_unchecked_count_nulls(
+                                    arr,
+                                    idx2usize(idx),
+                                    KahanSum::default(),
+                                    |a, b| a + b.to_f64().unwrap(),
+                                    idx.len() as IdxSize,
+                                )
+                            }
+                            .map(|(sum, null_count)| {
+                                sum.sum() / (idx.len() as f64 - null_count as f64)
+                            }),
+                            _ => {
+                                let take = { self.take_unchecked(idx) };
+                                take.mean()
+                            },
+                        }
                     }
                 })
             },
