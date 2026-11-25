@@ -98,13 +98,13 @@ where
         .as_any()
         .downcast_ref::<PrimitiveArray<T>>()
         .unwrap();
-    let out: PrimitiveArray<IdxSize> = values
+    let out: Vec<IdxSize> = values
         .values()
         .as_slice()
         .chunks_exact(width)
-        .map(|row| Some((if is_max { row.argmax() } else { row.argmin() }) as IdxSize))
+        .map(|row| (if is_max { row.argmax() } else { row.argmin() }) as IdxSize)
         .collect();
-    out.with_validity(arr.validity().cloned())
+    PrimitiveArray::from_vec(out).with_validity(arr.validity().cloned())
 }
 
 /// The arg min or arg max of every array, or `None` if the inner dtype has no flat kernel.

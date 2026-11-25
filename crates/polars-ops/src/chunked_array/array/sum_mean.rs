@@ -1,10 +1,9 @@
-use std::ops::Div;
-
 use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::legacy::utils::CustomIterTools;
 use polars_arrow::types::NativeType;
+use polars_compute::float_sum::FloatSum;
 use polars_core::prelude::*;
 use polars_utils::float16::pf16;
 
@@ -62,18 +61,23 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
     Series::try_from((ca.name().clone(), chunks)).unwrap()
 }
 
-fn dispatch_mean<T, S>(arr: &dyn Array, width: usize, validity: Option<&Bitmap>) -> ArrayRef
+fn dispatch_mean<T, O>(
+    arr: &dyn Array,
+    width: usize,
+    validity: Option<&Bitmap>,
+    to_out: impl Fn(f64) -> O,
+) -> ArrayRef
 where
-    T: NativeType + ToPrimitive,
-    S: NativeType + NumCast + std::iter::Sum + Div<Output = S>,
+    T: NativeType + FloatSum<f64>,
+    O: NativeType,
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-    let width_s: S = NumCast::from(width).unwrap();
-    let mean: Vec<S> = values
+    let width_f64 = width as f64;
+    let mean: Vec<O> = values
         .values()
         .as_slice()
         .chunks_exact(width)
-        .map(|row| sum_slice::<T, S>(row) / width_s)
+        .map(|row| to_out(FloatSum::<f64>::sum(row) / width_f64))
         .collect();
 
     Box::new(PrimitiveArray::from_data_default(
@@ -111,18 +115,18 @@ pub(super) fn mean_array_numerical(ca: &ArrayChunked) -> Option<Series> {
         .map(|arr| {
             let values = arr.values().as_ref();
             match inner_type {
-                Int8 => dispatch_mean::<i8, f64>(values, width, arr.validity()),
-                Int16 => dispatch_mean::<i16, f64>(values, width, arr.validity()),
-                Int32 => dispatch_mean::<i32, f64>(values, width, arr.validity()),
-                Int64 => dispatch_mean::<i64, f64>(values, width, arr.validity()),
-                Int128 => dispatch_mean::<i128, f64>(values, width, arr.validity()),
-                UInt8 => dispatch_mean::<u8, f64>(values, width, arr.validity()),
-                UInt16 => dispatch_mean::<u16, f64>(values, width, arr.validity()),
-                UInt32 => dispatch_mean::<u32, f64>(values, width, arr.validity()),
-                UInt64 => dispatch_mean::<u64, f64>(values, width, arr.validity()),
-                UInt128 => dispatch_mean::<u128, f64>(values, width, arr.validity()),
-                Float32 => dispatch_mean::<f32, f32>(values, width, arr.validity()),
-                Float64 => dispatch_mean::<f64, f64>(values, width, arr.validity()),
+                Int8 => dispatch_mean::<i8, f64>(values, width, arr.validity(), |v| v),
+                Int16 => dispatch_mean::<i16, f64>(values, width, arr.validity(), |v| v),
+                Int32 => dispatch_mean::<i32, f64>(values, width, arr.validity(), |v| v),
+                Int64 => dispatch_mean::<i64, f64>(values, width, arr.validity(), |v| v),
+                Int128 => dispatch_mean::<i128, f64>(values, width, arr.validity(), |v| v),
+                UInt8 => dispatch_mean::<u8, f64>(values, width, arr.validity(), |v| v),
+                UInt16 => dispatch_mean::<u16, f64>(values, width, arr.validity(), |v| v),
+                UInt32 => dispatch_mean::<u32, f64>(values, width, arr.validity(), |v| v),
+                UInt64 => dispatch_mean::<u64, f64>(values, width, arr.validity(), |v| v),
+                UInt128 => dispatch_mean::<u128, f64>(values, width, arr.validity(), |v| v),
+                Float32 => dispatch_mean::<f32, f32>(values, width, arr.validity(), |v| v as f32),
+                Float64 => dispatch_mean::<f64, f64>(values, width, arr.validity(), |v| v),
                 _ => unreachable!(),
             }
         })
