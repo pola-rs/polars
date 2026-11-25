@@ -1,5 +1,6 @@
 use polars_compute::moment::{KurtosisState, SkewState, kurtosis, skew};
 use polars_core::prelude::*;
+use polars_core::with_match_physical_numeric_polars_type;
 
 use crate::prelude::SeriesSealed;
 
@@ -15,12 +16,19 @@ pub trait MomentSeries: SeriesSealed {
     /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024)
     fn skew(&self, bias: bool) -> PolarsResult<Option<f64>> {
         let s = self.as_series();
-        let s = s.cast(&DataType::Float64)?;
-        let ca = s.f64().unwrap();
-
         let mut state = SkewState::default();
-        for arr in ca.downcast_iter() {
-            state.combine(&skew(arr));
+        if s.dtype().is_primitive_numeric() {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+                for arr in ca.downcast_iter() {
+                    state.combine(&skew(arr));
+                }
+            });
+        } else {
+            let s = s.cast(&DataType::Float64)?;
+            for arr in s.f64().unwrap().downcast_iter() {
+                state.combine(&skew(arr));
+            }
         }
         Ok(state.finalize(bias))
     }
@@ -36,12 +44,19 @@ pub trait MomentSeries: SeriesSealed {
     /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1027)
     fn kurtosis(&self, fisher: bool, bias: bool) -> PolarsResult<Option<f64>> {
         let s = self.as_series();
-        let s = s.cast(&DataType::Float64)?;
-        let ca = s.f64().unwrap();
-
         let mut state = KurtosisState::default();
-        for arr in ca.downcast_iter() {
-            state.combine(&kurtosis(arr));
+        if s.dtype().is_primitive_numeric() {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+                for arr in ca.downcast_iter() {
+                    state.combine(&kurtosis(arr));
+                }
+            });
+        } else {
+            let s = s.cast(&DataType::Float64)?;
+            for arr in s.f64().unwrap().downcast_iter() {
+                state.combine(&kurtosis(arr));
+            }
         }
         Ok(state.finalize(fisher, bias))
     }
