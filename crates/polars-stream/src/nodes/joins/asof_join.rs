@@ -862,7 +862,11 @@ async fn compute_asof_join(
 
     select_payloads(&mut left_df, &mut right_df, params)?;
 
-    let mut out_right = Vec::with_capacity(left_groups.run_lengths.len());
+    let gather_right = right_df.width() > 0;
+    let mut out_right = Vec::new();
+    if gather_right {
+        out_right.reserve_exact(left_groups.run_lengths.len());
+    }
     for (left_start, left_group_len) in left_groups_iter {
         let right_chunk_len =
             // SAFETY: the iterator results will be in-bounds.
@@ -894,6 +898,7 @@ async fn compute_asof_join(
         let group_left_key = left_key.slice((left_start, left_group_len));
         let group_right_key = right_key.slice((right_start, right_chunk_len));
 
+        // Dispatch also validates the matching strategy and tolerance.
         let take_idx = _join_asof_dispatch(
             group_left_key.as_materialized_series(),
             group_right_key.as_materialized_series(),
@@ -902,13 +907,19 @@ async fn compute_asof_join(
             options.allow_eq,
         )?;
 
-        out_right.push(
-            right_df
-                .slice((right_start, right_chunk_len))
-                .take(&take_idx)?,
-        );
+        if gather_right {
+            out_right.push(
+                right_df
+                    .slice((right_start, right_chunk_len))
+                    .take(&take_idx)?,
+            );
+        }
     }
 
+    if !gather_right {
+        let out_right = DataFrame::empty_with_height(left_df.height());
+        return finish_join(left_df, out_right, params);
+    }
     let initial = DataFrame::empty_with_arc_schema(right_df.schema().clone());
     let out_right =
         accumulate_dataframes_vertical_unchecked([initial].into_iter().chain(out_right));

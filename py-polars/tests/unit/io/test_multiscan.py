@@ -2069,22 +2069,24 @@ def test_multiscan_predicate_only_columns_not_emitted(
     def check(q: pl.LazyFrame, expected: pl.DataFrame) -> None:
         assert_frame_equal(q.collect(engine="streaming"), expected)
 
-    check(lf.filter(pred).select("a", "c"), df.filter(pred).select("a", "c"))
-    # Reordered
-    check(lf.filter(pred).select("c", "a"), df.filter(pred).select("c", "a"))
-    check(lf.filter(pred).select("c"), df.filter(pred).select("c"))
-    # Predicate on several columns, some of them selected.
-    p2 = (pl.col("b") == 1) & (pl.col("a") > 5)
-    check(lf.filter(p2).select("c"), df.filter(p2).select("c"))
-    # Predicate that is not a conjunction of single-column predicates.
-    p4 = (pl.col("b") == 1) | (pl.col("a") > 25)
-    check(lf.filter(p4).select("c"), df.filter(p4).select("c"))
-    p5 = pl.col("a") % 2 == pl.col("b")
-    check(lf.filter(p5).select("c"), df.filter(p5).select("c"))
-    check(lf.filter(pred).select("a"), df.filter(pred).select("a"))
-    # Predicate that no row passes
-    p3 = pl.col("b") > 5
-    check(lf.filter(p3).select("a"), df.filter(p3).select("a"))
+    # CSV, IPC and NDJSON already apply these predicates after reading.
+    if not force_post_apply or scan is pl.scan_parquet:
+        check(lf.filter(pred).select("a", "c"), df.filter(pred).select("a", "c"))
+        # Reordered
+        check(lf.filter(pred).select("c", "a"), df.filter(pred).select("c", "a"))
+        check(lf.filter(pred).select("c"), df.filter(pred).select("c"))
+        # Predicate on several columns, some of them selected.
+        p2 = (pl.col("b") == 1) & (pl.col("a") > 5)
+        check(lf.filter(p2).select("c"), df.filter(p2).select("c"))
+        # Predicate that is not a conjunction of single-column predicates.
+        p4 = (pl.col("b") == 1) | (pl.col("a") > 25)
+        check(lf.filter(p4).select("c"), df.filter(p4).select("c"))
+        p5 = pl.col("a") % 2 == pl.col("b")
+        check(lf.filter(p5).select("c"), df.filter(p5).select("c"))
+        check(lf.filter(pred).select("a"), df.filter(pred).select("a"))
+        # Predicate that no row passes
+        p3 = pl.col("b") > 5
+        check(lf.filter(p3).select("a"), df.filter(p3).select("a"))
 
     # Slices after the filter, and before.
     check(
@@ -2299,9 +2301,13 @@ def test_multiscan_predicate_only_columns_parquet_rest_predicate(
 
 
 @pytest.mark.write_disk
-def test_multiscan_predicate_only_int64_is_null(tmp_path: Path) -> None:
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64])
+def test_multiscan_predicate_only_integer_is_null(
+    tmp_path: Path, dtype: pl.DataType
+) -> None:
     df = pl.DataFrame(
-        {"a": range(12), "b": [1, None, 2, None, 3, 4, 5, 6, None, None, None, None]}
+        {"a": range(12), "b": [1, None, 2, None, 3, 4, 5, 6, None, None, None, None]},
+        schema_overrides={"b": dtype},
     )
     path = tmp_path / "data.parquet"
     df.write_parquet(path, row_group_size=4)
@@ -2325,6 +2331,29 @@ def test_multiscan_predicate_only_int64_is_null(tmp_path: Path) -> None:
     assert_frame_equal(
         lf.head(2).filter(predicate).select("a").collect(engine="streaming"),
         df.head(2).filter(predicate).select("a"),
+    )
+
+
+@pytest.mark.write_disk
+def test_multiscan_predicate_only_parquet_select_file_path(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"b": [0, 1, 0, 0, 1, 1]}).write_parquet(path, row_group_size=2)
+    out = (
+        pl.scan_parquet(
+            path,
+            include_file_paths="path",
+            parallel="prefiltered",
+            use_statistics=False,
+        )
+        .filter(pl.col("b") == 1)
+        .select("path")
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"path": [str(path)] * 3}).with_columns(
+            normalize_path_separator_pl(pl.col("path"))
+        ),
     )
 
 

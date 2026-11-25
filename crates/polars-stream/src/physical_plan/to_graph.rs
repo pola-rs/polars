@@ -1791,10 +1791,24 @@ fn to_graph_rec<'a>(
                     Arc::new(joined_schema.try_project(operand_names)?)
                 };
                 let expr = create_stream_expr(predicate, ctx, &predicate_schema)?;
+                let mut output_only = Vec::new();
+                let output_operand_indices = node
+                    .output_schema(0)
+                    .iter_names()
+                    .map(|name| {
+                        let operand = predicate_schema.index_of(name);
+                        if operand.is_none() {
+                            output_only.push(column(name));
+                        }
+                        operand
+                    })
+                    .collect();
                 Some(CrossJoinPredicate {
                     expr,
                     operands: predicate_schema.iter_names().map(column).collect(),
                     output: node.output_schema(0).iter_names().map(column).collect(),
+                    output_operand_indices,
+                    output_only,
                 })
             } else {
                 None

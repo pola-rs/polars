@@ -640,11 +640,14 @@ pub fn phys_props(
             input_left,
             input_right,
             args,
-            ..
+            fused_predicate,
         } => (
             PhysicalPropsDescription::CrossJoin {
                 maintain_order: fmt_from_static_str(args.maintain_order),
                 suffix: args.suffix.as_ref().map(ToString::to_string),
+                fused_predicate: fused_predicate
+                    .as_ref()
+                    .map(|(expr, _)| fmt_exprs(std::slice::from_ref(expr), expr_arena)),
             },
             vec![input_left.node, input_right.node],
         ),

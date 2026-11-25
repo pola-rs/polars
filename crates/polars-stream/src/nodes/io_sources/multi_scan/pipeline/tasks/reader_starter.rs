@@ -522,8 +522,8 @@ async fn start_reader_impl(
     //
     // * If the reader got the predicate and it is not evaluated in post, the reader (which
     //   evaluates it, and has checked the predicate columns exist) need not emit them, and the
-    //   post-applied operations produce the narrowed schema directly. This needs the row index
-    //   and file path columns, if any, to still be in the narrow schema.
+    //   post-applied operations produce the narrowed schema directly. The reader can still
+    //   use the row index and file path to evaluate its predicate.
     // * Otherwise the post-applied operations keep the wide schema (so that a post-applied
     //   predicate has its columns, and missing columns are still reported), and narrow it after.
     let mut final_output_schema = final_output_schema;
@@ -531,32 +531,33 @@ async fn start_reader_impl(
     let mut drop_columns_after_predicate = Default::default();
 
     if extra_ops_post.predicate.is_none()
+        && extra_ops_post.row_index.is_none()
         && predicate.is_some()
         && let Some(narrow) = output_schema_after_predicate.as_ref()
     {
-        // `usize::MAX` means the column does not exist.
+        // The path name is still needed below for the predicate's external constants.
+        drop_columns_after_predicate = final_output_schema
+            .iter_names()
+            .enumerate()
+            .filter(|(idx, name)| {
+                *idx != extra_ops_post.row_index_col_idx
+                    && *idx != extra_ops_post.file_path_col_idx
+                    && !narrow.contains(name)
+            })
+            .map(|(_, name)| name.clone())
+            .collect();
+
+        // A synthetic column may be absent from either schema.
         let remap_idx = |idx: usize| {
-            if idx == usize::MAX {
-                return Some(usize::MAX);
-            }
-            let (name, _) = final_output_schema.get_at_index(idx)?;
-            narrow.index_of(name)
+            final_output_schema
+                .get_at_index(idx)
+                .and_then(|(name, _)| narrow.index_of(name))
+                .unwrap_or(usize::MAX)
         };
+        extra_ops_post.row_index_col_idx = remap_idx(extra_ops_post.row_index_col_idx);
+        extra_ops_post.file_path_col_idx = remap_idx(extra_ops_post.file_path_col_idx);
 
-        if let Some(row_index_col_idx) = remap_idx(extra_ops_post.row_index_col_idx)
-            && let Some(file_path_col_idx) = remap_idx(extra_ops_post.file_path_col_idx)
-        {
-            extra_ops_post.row_index_col_idx = row_index_col_idx;
-            extra_ops_post.file_path_col_idx = file_path_col_idx;
-
-            drop_columns_after_predicate = final_output_schema
-                .iter_names()
-                .filter(|name| !narrow.contains(name))
-                .cloned()
-                .collect();
-
-            final_output_schema = output_schema_after_predicate.take().unwrap();
-        }
+        final_output_schema = output_schema_after_predicate.take().unwrap();
     }
 
     // Position of the first morsel sent by the reader.
