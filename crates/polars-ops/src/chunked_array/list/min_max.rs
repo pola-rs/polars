@@ -1,10 +1,11 @@
-use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::array::{Array, ListArray, PrimitiveArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_arrow::types::NativeType;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float16::pf16;
 
 use crate::chunked_array::list::namespace::has_inner_nulls;
@@ -116,6 +117,12 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
 
     match ca.inner_dtype() {
         dt if dt.is_primitive_numeric() => Ok(min_list_numerical(ca, dt)),
+        dt if dt.is_temporal() => {
+            let phys = ca.to_physical_repr();
+            let out = min_list_numerical(&phys, &dt.to_physical());
+            // SAFETY: the physical values come from `dt`.
+            unsafe { out.from_physical_unchecked(dt) }
+        },
         _ => inner(ca),
     }
 }
@@ -234,6 +241,57 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
 
     match ca.inner_dtype() {
         dt if dt.is_primitive_numeric() => Ok(max_list_numerical(ca, dt)),
+        dt if dt.is_temporal() => {
+            let phys = ca.to_physical_repr();
+            let out = max_list_numerical(&phys, &dt.to_physical());
+            // SAFETY: the physical values come from `dt`.
+            unsafe { out.from_physical_unchecked(dt) }
+        },
         _ => inner(ca),
     }
+}
+
+fn arg_between_offsets<T>(arr: &ListArray<i64>, is_max: bool) -> PrimitiveArray<IdxSize>
+where
+    T: NativeType,
+    for<'a> &'a [T]: ArgMinMax,
+{
+    let values = arr
+        .values()
+        .as_any()
+        .downcast_ref::<PrimitiveArray<T>>()
+        .unwrap();
+    let values = values.values().as_slice();
+    let out: PrimitiveArray<IdxSize> = arr
+        .offsets()
+        .offset_and_length_iter()
+        .map(|(start, length)| {
+            if length == 0 {
+                return None;
+            }
+            let slice = unsafe { values.get_unchecked(start..start + length) };
+            let idx = if is_max {
+                slice.argmax()
+            } else {
+                slice.argmin()
+            };
+            Some(idx as IdxSize)
+        })
+        .collect();
+    let validity = combine_validities_and(out.validity(), arr.validity());
+    out.with_validity(validity)
+}
+
+/// The arg min or arg max of every list, or `None` if the inner dtype has no flat kernel.
+pub(super) fn list_arg_min_max_flat(ca: &ListChunked, is_max: bool) -> Option<IdxCa> {
+    let dt = ca.inner_dtype();
+    if !dt.is_primitive_numeric() || has_inner_nulls(ca) {
+        return None;
+    }
+    let chunks = ca.downcast_iter().map(|arr| {
+        with_match_physical_numeric_polars_type!(dt, |$T| {
+            arg_between_offsets::<<$T as PolarsNumericType>::Native>(arr, is_max)
+        })
+    });
+    Some(IdxCa::from_chunk_iter(ca.name().clone(), chunks))
 }

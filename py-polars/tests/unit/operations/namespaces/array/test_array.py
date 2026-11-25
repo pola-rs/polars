@@ -16,7 +16,7 @@ from tests.unit.conftest import INTEGER_DTYPES
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import EngineType
+    from polars._typing import EngineType, PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1280,3 +1280,33 @@ def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> 
 
     captured = capfd.readouterr().err
     assert "IdxSize limit hit; chunking branch hit" in captured
+
+
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Float64, pl.Float32])
+@pytest.mark.parametrize("op", ["arg_min", "arg_max"])
+def test_array_arg_min_max_flat(dtype: PolarsDataType, op: str) -> None:
+    rows: list[list[Any] | None] = [[3, 1, 2], None, [5, 5, 0], [2, 9, 9], [7, 0, 0]]
+    if dtype.is_float():
+        rows += [[float("nan"), 1.0, 2.0], [1.0, float("nan"), 0.5]]
+        rows += [[float("nan")] * 3]
+    s = pl.Series(rows, dtype=pl.Array(dtype, 3))
+    ref = pl.concat([s, pl.Series([[None, 1, 2]], dtype=pl.Array(dtype, 3))])
+    expected = getattr(ref.arr, op)()[: s.len()]
+    assert_series_equal(getattr(s.arr, op)(), expected)
+    assert_series_equal(getattr(s.slice(1, 5).arr, op)(), expected.slice(1, 5))
+    chunked = pl.concat([s.slice(0, 3), s.slice(3)], rechunk=False)
+    assert_series_equal(getattr(chunked.arr, op)(), expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt64, pl.Float64, pl.Float32])
+def test_array_mean_flat(dtype: PolarsDataType) -> None:
+    rows: list[list[int] | None] = [[3, 1, 2], None, [5, 5, 0], [2, 9, 9], [7, 0, 0]]
+    s = pl.Series(rows, dtype=pl.Array(dtype, 3))
+    expected = pl.Series(
+        [sum(r) / 3 if r else None for r in rows],
+        dtype=pl.Float32 if dtype == pl.Float32 else pl.Float64,
+    )
+    assert_series_equal(s.arr.mean(), expected, abs_tol=1e-6)
+    assert_series_equal(s.slice(1).arr.mean(), expected.slice(1), abs_tol=1e-6)
+    chunked = pl.concat([s.slice(0, 2), s.slice(2)], rechunk=False)
+    assert_series_equal(chunked.arr.mean(), expected, abs_tol=1e-6)

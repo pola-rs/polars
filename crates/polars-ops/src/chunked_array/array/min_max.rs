@@ -1,8 +1,9 @@
-use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::array::{Array, FixedSizeListArray, PrimitiveArray};
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::arg_min_max::ArgMinMax;
 
 fn array_agg<T, S, F1, F2>(
     values: &PrimitiveArray<T>,
@@ -85,4 +86,38 @@ pub(super) fn array_dispatch(ca: &ArrayChunked, agg_type: AggType) -> Series {
         }).collect()
     });
     Series::try_from((ca.name().clone(), chunks)).unwrap()
+}
+
+fn arg_per_row<T>(arr: &FixedSizeListArray, width: usize, is_max: bool) -> PrimitiveArray<IdxSize>
+where
+    T: NumericNative,
+    for<'a> &'a [T]: ArgMinMax,
+{
+    let values = arr
+        .values()
+        .as_any()
+        .downcast_ref::<PrimitiveArray<T>>()
+        .unwrap();
+    let out: PrimitiveArray<IdxSize> = values
+        .values()
+        .as_slice()
+        .chunks_exact(width)
+        .map(|row| Some((if is_max { row.argmax() } else { row.argmin() }) as IdxSize))
+        .collect();
+    out.with_validity(arr.validity().cloned())
+}
+
+/// The arg min or arg max of every array, or `None` if the inner dtype has no flat kernel.
+pub(super) fn array_arg_min_max_flat(ca: &ArrayChunked, is_max: bool) -> Option<IdxCa> {
+    let dt = ca.inner_dtype();
+    let width = ca.width();
+    if width == 0 || !dt.is_primitive_numeric() || super::namespace::has_inner_nulls(ca) {
+        return None;
+    }
+    let chunks = ca.downcast_iter().map(|arr| {
+        with_match_physical_numeric_polars_type!(dt, |$T| {
+            arg_per_row::<<$T as PolarsNumericType>::Native>(arr, width, is_max)
+        })
+    });
+    Some(IdxCa::from_chunk_iter(ca.name().clone(), chunks))
 }

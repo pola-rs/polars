@@ -1,3 +1,5 @@
+use std::ops::Div;
+
 use num_traits::{NumCast, ToPrimitive};
 use polars_arrow::array::{Array, PrimitiveArray};
 use polars_arrow::bitmap::Bitmap;
@@ -58,6 +60,75 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
         .collect::<Vec<_>>();
 
     Series::try_from((ca.name().clone(), chunks)).unwrap()
+}
+
+fn dispatch_mean<T, S>(arr: &dyn Array, width: usize, validity: Option<&Bitmap>) -> ArrayRef
+where
+    T: NativeType + ToPrimitive,
+    S: NativeType + NumCast + std::iter::Sum + Div<Output = S>,
+{
+    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+    let width_s: S = NumCast::from(width).unwrap();
+    let mean: Vec<S> = values
+        .values()
+        .as_slice()
+        .chunks_exact(width)
+        .map(|row| sum_slice::<T, S>(row) / width_s)
+        .collect();
+
+    Box::new(PrimitiveArray::from_data_default(
+        mean.into(),
+        validity.cloned(),
+    )) as ArrayRef
+}
+
+/// The mean of every array, or `None` if the inner dtype has no flat kernel.
+pub(super) fn mean_array_numerical(ca: &ArrayChunked) -> Option<Series> {
+    use DataType::*;
+    let width = ca.width();
+    if width == 0 || super::namespace::has_inner_nulls(ca) {
+        return None;
+    }
+    let inner_type = ca.inner_dtype();
+    if !matches!(
+        inner_type,
+        Int8 | Int16
+            | Int32
+            | Int64
+            | Int128
+            | UInt8
+            | UInt16
+            | UInt32
+            | UInt64
+            | UInt128
+            | Float32
+            | Float64
+    ) {
+        return None;
+    }
+    let chunks = ca
+        .downcast_iter()
+        .map(|arr| {
+            let values = arr.values().as_ref();
+            match inner_type {
+                Int8 => dispatch_mean::<i8, f64>(values, width, arr.validity()),
+                Int16 => dispatch_mean::<i16, f64>(values, width, arr.validity()),
+                Int32 => dispatch_mean::<i32, f64>(values, width, arr.validity()),
+                Int64 => dispatch_mean::<i64, f64>(values, width, arr.validity()),
+                Int128 => dispatch_mean::<i128, f64>(values, width, arr.validity()),
+                UInt8 => dispatch_mean::<u8, f64>(values, width, arr.validity()),
+                UInt16 => dispatch_mean::<u16, f64>(values, width, arr.validity()),
+                UInt32 => dispatch_mean::<u32, f64>(values, width, arr.validity()),
+                UInt64 => dispatch_mean::<u64, f64>(values, width, arr.validity()),
+                UInt128 => dispatch_mean::<u128, f64>(values, width, arr.validity()),
+                Float32 => dispatch_mean::<f32, f32>(values, width, arr.validity()),
+                Float64 => dispatch_mean::<f64, f64>(values, width, arr.validity()),
+                _ => unreachable!(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Some(Series::try_from((ca.name().clone(), chunks)).unwrap())
 }
 
 pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
