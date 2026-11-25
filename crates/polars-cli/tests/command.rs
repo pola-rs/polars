@@ -51,7 +51,7 @@ fn a_table_shows_every_row_and_value_whatever_the_environment() {
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
     let out = String::from_utf8(output.stdout).unwrap();
-    assert!(out.contains("12") && out.contains(&long), "{out}");
+    assert_eq!(out.matches(&long).count(), 12, "{out}");
 }
 
 /// Runs the command with nothing on standard input. Returns the exit code, stdout and stderr.

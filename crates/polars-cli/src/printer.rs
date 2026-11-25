@@ -253,6 +253,7 @@ impl<O: Write, E: Write> Printer<O, E> {
             } => {
                 self.several_statements = statements > 1;
                 self.statements = statements;
+                self.statement = 0;
                 self.ends_in_its_only_result = ends_in_its_only_result;
             },
             Event::Statement { kind } => {
