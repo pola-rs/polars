@@ -529,14 +529,19 @@ async fn compute_join_and_send(
             &mut probe_last_matched,
         );
 
-        let df = params.projection.gather_and_postprocess(
-            &build_payload,
-            &probe_payload,
-            Some(&arenas.gather_build),
-            Some(&arenas.gather_probe),
-            &mut arenas.df_builders,
-            left_is_build,
-        )?;
+        // SAFETY: Both frames were rechunked and projected above. match_keys
+        // emits paired in-bounds indices or MAX on a side that gathers nulls.
+        // Only this projection initializes and resets the builders.
+        let df = unsafe {
+            params.projection.gather_and_postprocess(
+                &build_payload,
+                &probe_payload,
+                Some(&arenas.gather_build),
+                Some(&arenas.gather_probe),
+                &mut arenas.df_builders,
+                left_is_build,
+            )
+        }?;
         debug_assert_eq!(df.schema(), &params.output_schema);
         if df.height() > 0 {
             let mut morsel = Morsel::new_unregistered(df, seq, source_token.clone());
@@ -549,14 +554,18 @@ async fn compute_join_and_send(
     }
 
     if params.probe_params().emit_unmatched {
-        let df_unmatched = params.projection.gather_and_postprocess(
-            &build_payload,
-            &probe_payload,
-            None,
-            Some(&arenas.gather_probe_unmatched),
-            &mut arenas.df_builders,
-            left_is_build,
-        )?;
+        // SAFETY: The frames and builders are as above. The unmatched probe
+        // indices are in bounds, and the build side is supplied as all nulls.
+        let df_unmatched = unsafe {
+            params.projection.gather_and_postprocess(
+                &build_payload,
+                &probe_payload,
+                None,
+                Some(&arenas.gather_probe_unmatched),
+                &mut arenas.df_builders,
+                left_is_build,
+            )
+        }?;
         debug_assert_eq!(df_unmatched.schema(), &params.output_schema);
         if df_unmatched.height() > 0 {
             if params.args.maintain_order == MaintainOrderJoin::None {

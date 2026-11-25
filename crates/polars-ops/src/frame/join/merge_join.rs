@@ -259,7 +259,9 @@ impl MergeJoinSideProjection {
         Cow::Owned(unsafe { DataFrame::new_unchecked(df.height(), columns) })
     }
 
-    fn gather(
+    // The projected frame, builder, and indices must satisfy the corresponding
+    // side of MergeJoinProjection::gather_and_postprocess's contract.
+    unsafe fn gather(
         &self,
         df: &DataFrame,
         indices: Option<&[IdxSize]>,
@@ -393,7 +395,18 @@ impl MergeJoinProjection {
         }
     }
 
-    pub fn gather_and_postprocess(
+    /// Gather output rows from the projected sides and coalesce keys.
+    ///
+    /// # Safety
+    /// - `build` and `probe` must be rechunked frames projected by `self.select`
+    ///   for this projection's input schemas and the same `left_is_build`.
+    /// - At least one gather slice must be present, and two present slices must
+    ///   have the same length. Every index must be in bounds of its frame.
+    ///   `IdxSize::MAX` is allowed on a side only if the opposite join side
+    ///   emits unmatched rows. An absent slice supplies an all-null side.
+    /// - `df_builders` must be `None` or the unmodified, reset builders populated
+    ///   by a previous call using this projection.
+    pub unsafe fn gather_and_postprocess(
         &self,
         build: &DataFrame,
         probe: &DataFrame,
@@ -414,14 +427,17 @@ impl MergeJoinProjection {
                 DataFrameBuilder::new(self.right.schema.clone()),
             )
         });
-        let mut left = self
-            .left
-            .gather(left, gather_left, height, left_builder)
-            .into_columns();
-        let right = self
-            .right
-            .gather(right, gather_right, height, right_builder)
-            .into_columns();
+        // SAFETY: The caller guarantees the schema, builder state, and indices on both sides.
+        let (mut left, right) = unsafe {
+            (
+                self.left
+                    .gather(left, gather_left, height, left_builder)
+                    .into_columns(),
+                self.right
+                    .gather(right, gather_right, height, right_builder)
+                    .into_columns(),
+            )
+        };
 
         // Keep right key columns available until every left key has consumed its
         // partners, including repeated right keys. Repeated left keys coalesce in
@@ -465,9 +481,12 @@ mod tests {
             &["x".into(), "y".into(), "x".into()],
         );
         let (build, probe) = projection.select(&left, &right, true);
-        let result = projection
-            .gather_and_postprocess(&build, &probe, None, Some(&[0, 1]), &mut None, true)
-            .unwrap();
+        // SAFETY: Both frames are projected single-chunk frames, [0, 1] are in
+        // bounds of the right frame, and no builders have been used yet.
+        let result = unsafe {
+            projection.gather_and_postprocess(&build, &probe, None, Some(&[0, 1]), &mut None, true)
+        }
+        .unwrap();
 
         assert_eq!(result, df!("a" => [7, 10], "b" => [7, 10]).unwrap());
     }
