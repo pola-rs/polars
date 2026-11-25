@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 import polars as pl
+import pytest
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -35,7 +34,9 @@ def test_join_where_cross_join_fused_drop() -> None:
         .filter(predicate)
         .select("rp", "lp", "v_R")
     )
-    assert_frame_equal(query.collect(engine="streaming"), expected, check_row_order=False)
+    assert_frame_equal(
+        query.collect(engine="streaming"), expected, check_row_order=False
+    )
 
 
 @pytest.mark.parametrize(("order", "morsel_size"), [("left", "2"), ("right", "12")])
