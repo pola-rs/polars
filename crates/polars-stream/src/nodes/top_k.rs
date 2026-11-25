@@ -993,6 +993,10 @@ impl ComputeNode for TopKNode {
                                 let mut columns = df.into_columns();
                                 columns.swap(0, idx);
                                 columns.truncate(1);
+                                if columns.capacity() > 8 {
+                                    // Reuse the allocation for narrow inputs and compact wide ones.
+                                    columns = vec![columns.pop().unwrap()];
+                                }
                                 DataFrame::new(height, columns)?
                             } else {
                                 df

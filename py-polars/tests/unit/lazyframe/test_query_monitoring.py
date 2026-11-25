@@ -481,6 +481,22 @@ def test_physical_nodes_attributed_to_ir_nodes() -> None:
     assert all(node["ir_node_id"] in ir_ids for node in phys)
 
 
+def test_physical_top_k_describes_projected_payload() -> None:
+    lf = pl.LazyFrame({"value": [1, 2], "key": [2, 1]})
+    projected = lf.select(pl.col("value").top_k_by("key", 1))
+    observer = _observe_streaming(lambda: projected.collect(engine="streaming"))
+    _, phys = _planned_payloads(observer)
+    (top_k,) = [n["properties"] for n in phys if n["properties"]["type"] == "TopK"]
+    assert isinstance(top_k["payload_column"], str)
+    assert top_k["payload_column"]
+
+    full = lf.select(pl.col("value").top_k(1))
+    observer = _observe_streaming(lambda: full.collect(engine="streaming"))
+    _, phys = _planned_payloads(observer)
+    (top_k,) = [n["properties"] for n in phys if n["properties"]["type"] == "TopK"]
+    assert "payload_column" not in top_k
+
+
 def test_ir_node_lowers_to_many_physical_nodes() -> None:
     """A filter with a non-elementwise predicate is one IR node, many physical."""
     lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > pl.col("a").mean())

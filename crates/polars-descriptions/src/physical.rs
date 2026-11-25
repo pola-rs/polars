@@ -256,6 +256,8 @@ pub enum PhysicalPropsDescription {
         reverse: Vec<bool>,
         nulls_last: Vec<bool>,
         dyn_pred: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload_column: Option<String>,
     },
     WithRowIndex {
         name: String,
