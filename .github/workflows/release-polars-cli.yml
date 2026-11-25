@@ -93,38 +93,8 @@ jobs:
           esac
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-  licenses:
-    needs: [version]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.version.outputs.sha }}
-
-      - name: Set up Rust
-        run: rustup show
-
-      - name: Install cargo-about
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about@0.9.3
-
-      - name: Write the third-party licences
-        run: |
-          cargo about generate --locked --fail \
-            --manifest-path "$CLI_DIR/Cargo.toml" \
-            --config "$CLI_DIR/about.toml" \
-            --output-file LICENSE-THIRD-PARTY \
-            "$CLI_DIR/about.hbs"
-
-      - name: Upload the third-party licences
-        uses: actions/upload-artifact@v7
-        with:
-          name: license-third-party
-          path: LICENSE-THIRD-PARTY
-
   build:
-    needs: [version, licenses]
+    needs: [version]
     runs-on: ${{ matrix.os }}
     env:
       POLARS_BUILD_COMMIT: ${{ needs.version.outputs.sha }}
@@ -187,13 +157,6 @@ jobs:
         run: |
           python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> "$GITHUB_PATH"
 
-      # maturin puts `LICENSE*` files beside the Cargo.toml into the wheel.
-      - name: Download the third-party licences
-        uses: actions/download-artifact@v8
-        with:
-          name: license-third-party
-          path: ${{ env.CLI_DIR }}
-
       - name: Set build flags
         env:
           TARGET: ${{ matrix.target }}
@@ -250,16 +213,14 @@ jobs:
 
           (wheel,) = pathlib.Path("dist").glob("*.whl")
           with zipfile.ZipFile(wheel) as z:
-              names = z.namelist()
-              assert any(m.endswith(".dist-info/licenses/LICENSE-THIRD-PARTY") for m in names)
-              (member,) = [m for m in names if m.endswith(f".data/scripts/{exe}")]
+              (member,) = [m for m in z.namelist() if m.endswith(f".data/scripts/{exe}")]
               data = z.read(member)
           # The runners have the Visual C++ runtime, so the smoke test would not notice.
           if windows:
               assert b"vcruntime140" not in data.lower(), "the executable needs the Visual C++ runtime"
           (out / exe).write_bytes(data)
           (out / exe).chmod(0o755)
-          for file in ["LICENSE", "LICENSE-THIRD-PARTY", "README.md"]:
+          for file in ["LICENSE", "README.md"]:
               shutil.copy(pathlib.Path(cli, file), out)
           print(shutil.make_archive(str(out), "zip" if windows else "gztar", "archive", name))
           PY
@@ -355,6 +316,33 @@ jobs:
               exit 1
             fi
           done
+
+      # On a rerun, PyPI may hold files of another run's build of this version.
+      - name: Check the version is not on PyPI with other files
+        if: inputs.dry-run == false
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          status=$(curl -s -o pypi.json -w '%{http_code}' "https://pypi.org/pypi/polars-cli/$VERSION/json")
+          case "$status" in
+            404) echo "polars-cli $VERSION is not on PyPI yet" ;;
+            200)
+              python3 - <<'PY'
+          import hashlib, json, pathlib, sys
+          listed = {u["filename"]: u["digests"]["sha256"] for u in json.load(open("pypi.json"))["urls"]}
+          local = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in pathlib.Path("dist").iterdir()}
+          bad = sorted(n for n, d in listed.items() if local.get(n) != d)
+          if bad:
+              print(f"::error::polars-cli is already on PyPI with files that differ from this build: {bad}. Bump the version in Cargo.toml, and release again")
+              sys.exit(1)
+          print(f"PyPI holds {len(listed)} file(s) of this build already")
+          PY
+              ;;
+            *)
+              echo "::error::PyPI answered HTTP $status for polars-cli $VERSION"
+              exit 1
+              ;;
+          esac
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
