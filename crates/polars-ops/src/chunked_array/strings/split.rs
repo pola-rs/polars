@@ -1,6 +1,6 @@
 use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
-use polars_arrow::array::{MutableArray, MutableUtf8Array};
+use polars_arrow::array::{MutableArray, MutablePlString};
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 use polars_core::prelude::*;
 use polars_utils::regex_cache::{RegexCache, with_regex_cache};
@@ -62,7 +62,7 @@ pub(super) fn as_single_char(s: &str) -> Option<char> {
 
 #[cfg(feature = "dtype-struct")]
 fn push_split<'a>(
-    arrs: &mut [MutableUtf8Array<i64>],
+    arrs: &mut [MutablePlString],
     splitted: Option<impl Iterator<Item = &'a str>>,
 ) {
     match splitted {
@@ -102,7 +102,7 @@ where
     use polars_utils::format_pl_smallstr;
 
     let mut arrs = (0..n)
-        .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+        .map(|_| MutablePlString::with_capacity(ca.len()))
         .collect::<Vec<_>>();
 
     if by.len() == 1 {
