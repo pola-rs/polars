@@ -287,7 +287,9 @@ pub(super) fn list_arg_min_max_flat(ca: &ListChunked, is_max: bool) -> Option<Id
     let dt = ca.inner_dtype();
     if !dt.is_primitive_numeric()
         || has_inner_nulls(ca)
-        || ca.get_inner().len() > IdxSize::MAX as usize
+        || ca
+            .downcast_iter()
+            .any(|arr| arr.values().len() > IdxSize::MAX as usize)
     {
         return None;
     }
