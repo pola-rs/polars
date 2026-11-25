@@ -1,10 +1,8 @@
 name: Lint Python
 
 on:
+  merge_group:
   pull_request:
-    paths:
-      - py-polars/**
-      - .github/workflows/lint-python.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -63,3 +61,12 @@ jobs:
       - name: Run Pyrefly coverage check
         working-directory: py-polars
         run: pyrefly coverage check --public-only src
+
+  lint-python-passed:
+    if: ${{ always() }}
+    needs: [ruff, type-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

@@ -1,0 +1,41 @@
+name: Changed paths
+description: >
+  Report whether a pull request changes any of the given paths, so that jobs can skip themselves
+  while the workflow still runs and reports its required checks. Every other event counts as a
+  change. Requires a checkout of the pull request's merge commit with `fetch-depth: 2`.
+
+inputs:
+  paths:
+    description: Git pathspecs, one per line, e.g. `crates/` or `Cargo.toml`
+    required: true
+
+outputs:
+  changed:
+    description: '`true` if the pull request changes any of the paths, `false` otherwise'
+    value: ${{ steps.diff.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compare against the base branch
+      id: diff
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        PATHS: ${{ inputs.paths }}
+      run: |
+        if [[ "$EVENT_NAME" != pull_request ]]; then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        mapfile -t paths < <(grep -v '^[[:space:]]*$' <<< "$PATHS")
+        # The merge commit's first parent is the base branch; `--no-renames` keeps git from
+        # fetching the file contents a blob-less checkout leaves out.
+        git diff --quiet --no-renames HEAD^1 HEAD -- "${paths[@]}" && status=0 || status=$?
+        case $status in
+          0) echo "changed=false" >> "$GITHUB_OUTPUT" ;;
+          1) echo "changed=true" >> "$GITHUB_OUTPUT" ;;
+          *) exit "$status" ;;
+        esac

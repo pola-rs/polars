@@ -1,15 +1,13 @@
 name: Test Bytecode Parser
 
 on:
+  merge_group:
   pull_request:
     types:
       - opened
       - ready_for_review
       - reopened
       - synchronize
-    paths:
-      - py-polars/**
-      - .github/workflows/test-bytecode-parser.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,3 +38,12 @@ jobs:
         env:
           PYTHONPATH: "py-polars/src:py-polars/runtime/polars-runtime-32:py-polars"
         run: pytest .github/scripts/test_bytecode_parser.py
+
+  test-bytecode-parser-passed:
+    if: ${{ always() }}
+    needs: [ubuntu]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

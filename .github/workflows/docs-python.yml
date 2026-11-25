@@ -1,16 +1,13 @@
 name: Build Python documentation
 
 on:
+  merge_group:
   pull_request:
     types:
       - opened
       - ready_for_review
       - reopened
       - synchronize
-    paths:
-      - py-polars/docs/**
-      - py-polars/src/polars/**
-      - .github/workflows/docs-python.yml
   push:
     branches:
       - main
@@ -35,8 +32,31 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  build-python-docs:
+  changes:
     if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github/actions
+
+      - name: Check for relevant changes
+        id: changes
+        uses: ./.github/actions/changed-paths
+        with:
+          # Keep in sync with `on.push.paths`.
+          paths: |
+            py-polars/docs/
+            py-polars/src/polars/
+            .github/workflows/docs-python.yml
+
+  build-python-docs:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Parse the tag to find the major version of Polars
@@ -127,3 +147,12 @@ jobs:
             {
               "sha": "${{ github.event.client_payload.sha }}"
             }
+
+  docs-python-passed:
+    if: ${{ always() }}
+    needs: [changes, build-python-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

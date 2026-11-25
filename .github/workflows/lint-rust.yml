@@ -1,22 +1,8 @@
 name: Lint Rust
 
 on:
+  merge_group:
   pull_request:
-    paths:
-      - crates/**
-      - docs/source/src/rust/**
-      - examples/**
-      - pyo3-polars/**
-      - pyo3-polars/Cargo.toml
-      - py-polars/src/**
-      - py-polars/Cargo.toml
-      - py-polars/polars-database/**
-      - py-polars/polars-iceberg/**
-      - deny.toml
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - .github/workflows/lint-rust.yml
   push:
     branches:
       - main
@@ -45,7 +31,40 @@ env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github/actions
+
+      - name: Check for relevant changes
+        id: changes
+        uses: ./.github/actions/changed-paths
+        with:
+          # Keep in sync with `on.push.paths`.
+          paths: |
+            crates/
+            docs/source/src/rust/
+            examples/
+            pyo3-polars/
+            py-polars/src/
+            py-polars/Cargo.toml
+            py-polars/polars-database/
+            py-polars/polars-iceberg/
+            deny.toml
+            Cargo.toml
+            Cargo.lock
+            rust-toolchain.toml
+            .github/workflows/lint-rust.yml
+
   clippy-nightly:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -64,6 +83,8 @@ jobs:
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -84,7 +105,8 @@ jobs:
         run: python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
 
   rustfmt:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -96,7 +118,8 @@ jobs:
         run: cargo fmt --all --check
 
   miri:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -122,7 +145,8 @@ jobs:
 #          -p polars-arrow
 
   deny:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' && github.event_name != 'push' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -132,3 +156,12 @@ jobs:
 
       - name: Run cargo deny
         run: cargo deny check
+
+  lint-rust-passed:
+    if: ${{ always() }}
+    needs: [changes, clippy-nightly, clippy-stable, rustfmt, miri, deny]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

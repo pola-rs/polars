@@ -1,18 +1,13 @@
 name: Test Python
 
 on:
+  merge_group:
   pull_request:
     types:
       - opened
       - ready_for_review
       - reopened
       - synchronize
-    paths:
-      - Cargo.lock
-      - py-polars/**
-      - docs/source/src/python/**
-      - crates/**
-      - .github/workflows/test-python.yml
   push:
     branches:
       - main
@@ -258,3 +253,13 @@ jobs:
         ideal_morsel_size: [100000]
 
     steps: *test-python-steps
+
+  test-python-passed:
+    if: ${{ always() }}
+    needs: [test-python, test-python-draft]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        working-directory: .
+        run: exit 1

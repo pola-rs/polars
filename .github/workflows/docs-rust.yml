@@ -1,15 +1,13 @@
 name: Build Rust documentation
 
 on:
+  merge_group:
   pull_request:
     types:
       - opened
       - ready_for_review
       - reopened
       - synchronize
-    paths:
-      - crates/**
-      - .github/workflows/docs-rust.yml
   push:
     branches:
       - main
@@ -60,3 +58,12 @@ jobs:
       - name: Clean up documentation artifacts
         if: ${{ github.ref_name == 'main' }}
         run: rm -rf target/doc
+
+  docs-rust-passed:
+    if: ${{ always() }}
+    needs: [build-rust-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

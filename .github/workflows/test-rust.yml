@@ -1,19 +1,13 @@
 name: Test Rust
 
 on:
+  merge_group:
   pull_request:
     types:
       - opened
       - ready_for_review
       - reopened
       - synchronize
-    paths:
-      - crates/**
-      - examples/**
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - .github/workflows/test-rust.yml
   push:
     branches:
       - main
@@ -35,8 +29,34 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  test:
+  changes:
     if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github/actions
+
+      - name: Check for relevant changes
+        id: changes
+        uses: ./.github/actions/changed-paths
+        with:
+          # Keep in sync with `on.push.paths`.
+          paths: |
+            crates/
+            examples/
+            Cargo.toml
+            Cargo.lock
+            rust-toolchain.toml
+            .github/workflows/test-rust.yml
+
+  test:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -82,7 +102,7 @@ jobs:
           -p polars-utils
 
       - name: Run tests
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
         run: >
           cargo test --lib --tests --bins --all-features
           -p polars-arrow
@@ -103,7 +123,8 @@ jobs:
           -p polars-utils
 
   integration-test:
-    if: ${{ !github.event.pull_request.draft }}
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
@@ -130,11 +151,12 @@ jobs:
         run: cargo test --all-features -p polars --test it --no-run
 
       - name: Run integration tests
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
         run: cargo test --all-features -p polars --test it
 
   check-features:
-    if: ${{ !github.event.pull_request.draft }}
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -163,7 +185,8 @@ jobs:
         run: cargo check -p pyo3-polars --no-default-features --features pyo3-polars/derive,polars/bigidx
 
   check-dsl-schema:
-    if: ${{ !github.event.pull_request.draft }}
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -185,3 +208,12 @@ jobs:
 
       - name: Run DSL schema check
         run: ./target/debug/dsl-schema check-hashes
+
+  test-rust-passed:
+    if: ${{ always() }}
+    needs: [changes, test, integration-test, check-features, check-dsl-schema]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

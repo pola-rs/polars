@@ -1,21 +1,13 @@
 name: Benchmark
 
 on:
+  merge_group:
   pull_request:
     types:
       - opened
       - ready_for_review
       - reopened
       - synchronize
-    paths:
-      - crates/**
-      - py-polars/polars-database/**
-      - py-polars/polars-iceberg/**
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - py-polars/tests/benchmark/**
-      - .github/workflows/benchmark.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,8 +17,35 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  main:
+  changes:
     if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github/actions
+
+      - name: Check for relevant changes
+        id: changes
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            crates/
+            py-polars/polars-database/
+            py-polars/polars-iceberg/
+            Cargo.toml
+            Cargo.lock
+            rust-toolchain.toml
+            py-polars/tests/benchmark/
+            .github/workflows/benchmark.yml
+
+  main:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -145,3 +164,11 @@ jobs:
         env:
           POLARS_TIMEOUT_MS: 60000
 
+  benchmark-passed:
+    if: ${{ always() }}
+    needs: [changes, main]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
