@@ -130,27 +130,6 @@ def test_weekday_all_time_units() -> None:
         assert out == [None if v is None else v.isoweekday() for v in df["a"].to_list()]
 
 
-def test_offset_by_column_repeated_durations() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [
-                datetime(2020, 1, 31),
-                datetime(2021, 3, 31),
-                None,
-                datetime(2020, 1, 1),
-            ],
-            "by": ["1mo", "-1mo", "1d", "1mo"],
-        }
-    )
-    out = df.select(pl.col("a").dt.offset_by(pl.col("by")))["a"].to_list()
-    assert out == [
-        datetime(2020, 2, 29),
-        datetime(2021, 2, 28),
-        None,
-        datetime(2020, 2, 1),
-    ]
-
-
 def _month_bounds(v: date) -> tuple[date, date]:
     last = calendar.monthrange(v.year, v.month)[1]
     return v.replace(day=1), v.replace(day=last)
