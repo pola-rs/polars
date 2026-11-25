@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 import re
 from functools import reduce
 
@@ -188,3 +189,44 @@ def test_removed_no_optimizations_parameter() -> None:
     )
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         lf.map_batches(lambda df: df, no_optimizations=True)  # type: ignore[call-arg]
+
+
+def test_map_batches_reused_expr_resolves_dtype_per_use() -> None:
+    e = pl.col("x").map_batches(
+        lambda s: s, return_dtype=pl.self_dtype(), is_elementwise=True
+    )
+    inferred = pl.col("x").map_elements(lambda v: v)
+
+    for expr in [e, inferred]:
+        assert pl.DataFrame({"x": [1]}).select(expr).dtypes == [pl.Int64]
+        assert pl.DataFrame({"x": ["a"]}).select(expr).dtypes == [pl.String]
+
+    lf = (
+        pl.LazyFrame({"x": [1]}).select(e).select(pl.col("x").cast(pl.String)).select(e)
+    )
+    assert lf.collect_schema() == {"x": pl.String}
+    assert_frame_equal(lf.collect(), pl.DataFrame({"x": ["1"]}))
+
+    for value in [1, "a"]:
+        q = pl.LazyFrame({"x": [value]}).select(u=e, v=e)
+        assert "__POLARS_CSER" in q.explain()
+
+    lf = pl.LazyFrame({"a": [1], "b": ["s"], "c": [1.0]})
+    expected = {"a": pl.Int64, "b": pl.String, "c": pl.Float64}
+    e = pl.all().map_batches(lambda s: s, return_dtype=pl.self_dtype())
+    assert lf.select(e).collect_schema() == expected
+    assert lf.select(pickle.loads(pickle.dumps(e))).collect().schema == expected
+
+    calls = []
+
+    def record(s: pl.Series) -> pl.Series:
+        calls.append(s.name)
+        return s
+
+    e = pl.all().map_batches(record, return_dtype=pl.self_dtype(), is_elementwise=True)
+    lf.select(e.name.suffix("1"), e.name.suffix("2")).collect()
+    assert sorted(calls) == ["a", "b", "c"]
+
+    e = pl.all().map_batches(lambda s: s if s.name == "a" else s.cast(pl.String))
+    lf = pl.LazyFrame({"a": [1], "b": [1]})
+    assert lf.select(e).collect().schema == {"a": pl.Int64, "b": pl.String}

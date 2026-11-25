@@ -1,5 +1,5 @@
 use std::io::Cursor;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
@@ -27,9 +27,48 @@ pub use polars_utils::python_function::{PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VE
 pub struct PythonUdfExpression {
     python_function: Py<PyAny>,
     output_type: Option<DataTypeExpr>,
-    materialized_field: OnceLock<Field>,
+    output_type_reads_schema: bool,
+    materialized: OnceLock<MaterializedDtype>,
+    /// Copies resolved for other inputs than `materialized`, shared by uses with those inputs.
+    copies: Mutex<Vec<Arc<PythonUdfExpression>>>,
     is_elementwise: bool,
     returns_scalar: bool,
+}
+
+const MAX_COPIES: usize = 16;
+
+struct MaterializedDtype {
+    dtype: DataType,
+    /// Input fields it was resolved for, and the schema if the output type reads it. `None` if
+    /// it was deserialized.
+    inputs: Option<(Vec<Field>, Option<Schema>)>,
+}
+
+impl MaterializedDtype {
+    fn is_for(&self, input_schema: &Schema, fields: &[Field], match_names: bool) -> bool {
+        self.inputs.as_ref().is_some_and(|(inputs, schema)| {
+            inputs.len() == fields.len()
+                && inputs
+                    .iter()
+                    .zip(fields)
+                    .all(|(a, b)| a.dtype() == b.dtype() && (!match_names || a.name() == b.name()))
+                && schema.as_ref().is_none_or(|s| s == input_schema)
+        })
+    }
+}
+
+fn reads_schema(dt_expr: &DataTypeExpr) -> bool {
+    use DataTypeExpr as D;
+    match dt_expr {
+        D::Literal(_) | D::SelfDtype => false,
+        D::OfExpr(_) => true,
+        D::InnerDataType { input, .. }
+        | D::Int(input, _)
+        | D::Struct(input, _)
+        | D::WrapInList(input)
+        | D::WrapInArray(input, _) => reads_schema(input),
+        D::StructWithFields(fields) => fields.iter().any(|(_, dt_expr)| reads_schema(dt_expr)),
+    }
 }
 
 impl PythonUdfExpression {
@@ -42,11 +81,56 @@ impl PythonUdfExpression {
         let output_type = output_type.map(Into::into);
         Self {
             python_function: lambda,
+            output_type_reads_schema: output_type.as_ref().is_some_and(reads_schema),
             output_type,
-            materialized_field: OnceLock::new(),
+            materialized: OnceLock::new(),
+            copies: Mutex::new(Vec::new()),
             is_elementwise,
             returns_scalar,
         }
+    }
+
+    fn fresh_copy(&self) -> Self {
+        Self::new(
+            Python::attach(|py| self.python_function.clone_ref(py)),
+            self.output_type.clone(),
+            self.is_elementwise,
+            self.returns_scalar,
+        )
+    }
+
+    /// Resolves the output dtype if needed. Returns `false` if it was resolved for other inputs.
+    fn materialize_for(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<bool> {
+        let materialized = match self.materialized.get() {
+            Some(m) => m,
+            None => {
+                let dtype = match self.output_type.as_ref() {
+                    None => {
+                        let func = CALL_PYTHON_COLUMNS_UDF.get().unwrap();
+                        let f = |s: &[Column]| func(s, None, &self.python_function);
+                        try_infer_udf_output_dtype(&f as _, fields)?
+                    },
+                    Some(output_type) => output_type
+                        .clone()
+                        .into_datatype_with_self(input_schema, fields[0].dtype())?,
+                };
+                let schema = self.output_type_reads_schema.then(|| input_schema.clone());
+                self.materialized.get_or_init(|| MaterializedDtype {
+                    dtype,
+                    inputs: Some((fields.to_vec(), schema)),
+                })
+            },
+        };
+        // Inference calls the function on named inputs, so its output can depend on them.
+        Ok(materialized.is_for(input_schema, fields, self.output_type.is_none()))
+    }
+
+    fn materialized_dtype(&self) -> &DataType {
+        &self
+            .materialized
+            .get()
+            .expect("should have been materialized at this point")
+            .dtype
     }
 
     #[cfg(feature = "serde")]
@@ -71,8 +155,11 @@ impl PythonUdfExpression {
         let python_function = pl_serialize::python_object_deserialize(buf)?;
 
         let mut udf = Self::new(python_function, output_type, is_elementwise, returns_scalar);
-        if let Some(materialized) = materialized {
-            udf.materialized_field = OnceLock::from(materialized);
+        if let Some(field) = materialized {
+            udf.materialized = OnceLock::from(MaterializedDtype {
+                dtype: field.dtype,
+                inputs: None,
+            });
         }
 
         Ok(Arc::new(udf))
@@ -106,24 +193,17 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
 impl ColumnsUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Column> {
         let func = CALL_PYTHON_COLUMNS_UDF.get().unwrap();
-        let field = self
-            .materialized_field
-            .get()
-            .expect("should have been materialized at this point");
-        let mut out = func(
-            s,
-            self.materialized_field.get().map(|f| f.dtype.clone()),
-            &self.python_function,
-        )?;
+        let dtype = self.materialized_dtype();
+        let mut out = func(s, Some(dtype.clone()), &self.python_function)?;
 
-        let must_cast = out.dtype().matches_schema_type(field.dtype()).map_err(|_| {
+        let must_cast = out.dtype().matches_schema_type(dtype).map_err(|_| {
             polars_err!(
                 SchemaMismatch: "expected output type '{:?}', got '{:?}'; set `return_dtype` to the proper datatype",
-                field.dtype(), out.dtype(),
+                dtype, out.dtype(),
             )
         })?;
         if must_cast {
-            out = out.cast(field.dtype())?;
+            out = out.cast(dtype)?;
         }
 
         Ok(out)
@@ -133,15 +213,6 @@ impl ColumnsUdf for PythonUdfExpression {
 impl AnonymousColumnsUdf for PythonUdfExpression {
     fn as_column_udf(self: Arc<Self>) -> Arc<dyn ColumnsUdf> {
         self as _
-    }
-    fn deep_clone(self: Arc<Self>) -> Arc<dyn AnonymousColumnsUdf> {
-        Arc::new(Self {
-            python_function: Python::attach(|py| self.python_function.clone_ref(py)),
-            output_type: self.output_type.clone(),
-            materialized_field: OnceLock::new(),
-            is_elementwise: self.is_elementwise,
-            returns_scalar: self.returns_scalar,
-        }) as _
     }
 
     #[cfg(feature = "serde")]
@@ -156,7 +227,9 @@ impl AnonymousColumnsUdf for PythonUdfExpression {
             &mut *buf,
             &(
                 self.output_type.clone(),
-                self.materialized_field.get().cloned(),
+                self.materialized
+                    .get()
+                    .map(|m| Field::new(PlSmallStr::EMPTY, m.dtype.clone())),
                 self.is_elementwise,
                 self.returns_scalar,
             ),
@@ -167,28 +240,42 @@ impl AnonymousColumnsUdf for PythonUdfExpression {
     }
 
     fn get_field(&self, input_schema: &Schema, fields: &[Field]) -> PolarsResult<Field> {
-        let field = match self.materialized_field.get() {
-            Some(f) => f.clone(),
-            None => {
-                let dtype = match self.output_type.as_ref() {
-                    None => {
-                        let func = CALL_PYTHON_COLUMNS_UDF.get().unwrap();
-                        let f = |s: &[Column]| func(s, None, &self.python_function);
-                        try_infer_udf_output_dtype(&f as _, fields)?
-                    },
-                    Some(output_type) => output_type
-                        .clone()
-                        .into_datatype_with_self(input_schema, fields[0].dtype())?,
-                };
+        if self.materialized.get().is_none() {
+            self.materialize_for(input_schema, fields)?;
+        }
+        // Take the name of first field, just like `map_field`.
+        Ok(Field::new(
+            fields[0].name().clone(),
+            self.materialized_dtype().clone(),
+        ))
+    }
 
-                // Take the name of first field, just like `map_field`.
-                let name = fields[0].name();
-                let f = Field::new(name.clone(), dtype);
-                self.materialized_field.get_or_init(|| f.clone());
-                f
-            },
-        };
-        Ok(field)
+    fn resolve(
+        self: Arc<Self>,
+        input_schema: &Schema,
+        fields: &[Field],
+    ) -> PolarsResult<(Arc<dyn AnonymousColumnsUdf>, Field)> {
+        if self.materialize_for(input_schema, fields)? {
+            let field = self.get_field(input_schema, fields)?;
+            return Ok((self, field));
+        }
+
+        let copies = self.copies.lock().unwrap().clone();
+        for copy in copies {
+            if copy.materialize_for(input_schema, fields)? {
+                let field = copy.get_field(input_schema, fields)?;
+                return Ok((copy, field));
+            }
+        }
+
+        let copy = Arc::new(self.fresh_copy());
+        let field = copy.get_field(input_schema, fields)?;
+        let mut copies = self.copies.lock().unwrap();
+        if copies.len() == MAX_COPIES {
+            copies.remove(0);
+        }
+        copies.push(copy.clone());
+        Ok((copy, field))
     }
 }
 

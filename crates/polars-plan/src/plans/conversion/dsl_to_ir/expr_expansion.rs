@@ -818,7 +818,7 @@ fn expand_expression_rec_inner(
                 }
                 out.push(Expr::AnonymousFunction {
                     input: expanded_input,
-                    function: LazySerde::Deserialized(function.deep_clone()),
+                    function: LazySerde::Deserialized(function.clone()),
                     options: *options,
                     fmt_str: fmt_str.clone(),
                 });
@@ -831,7 +831,7 @@ fn expand_expression_rec_inner(
                     opt_flags,
                     |e| Expr::AnonymousFunction {
                         input: e.to_vec(),
-                        function: LazySerde::Deserialized(function.clone().deep_clone()),
+                        function: LazySerde::Deserialized(function.clone()),
                         options: *options,
                         fmt_str: fmt_str.clone(),
                     },
