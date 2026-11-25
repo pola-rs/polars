@@ -3136,3 +3136,119 @@ def test_max_sorted_all_nan_with_nulls(dtype: pl.DataType) -> None:
     mixed = pl.Series("a", [None, 1.0, nan], dtype=dtype).sort()
     assert mixed.flags["SORTED_ASC"]
     assert mixed.max() == 1.0
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("values", "nan_min", "nan_max"),
+    [
+        ([1.0, float("nan"), 3.0], float("nan"), float("nan")),
+        ([float("nan"), 1.0, 3.0], float("nan"), float("nan")),
+        ([1.0, 3.0, float("nan")], float("nan"), float("nan")),
+        ([None, 2.0, 1.0, None, 5.0], 1.0, 5.0),
+        ([None, None], None, None),
+        ([None, float("nan"), 1.0], float("nan"), float("nan")),
+        ([], None, None),
+    ],
+)
+def test_nan_min_max_propagate(
+    dtype: pl.DataType,
+    engine: pl.QueryExecutionEngine,
+    values: list[float | None],
+    nan_min: float | None,
+    nan_max: float | None,
+) -> None:
+    lf = pl.LazyFrame({"a": pl.Series(values, dtype=dtype)})
+    out = lf.select(lo=pl.col("a").nan_min(), hi=pl.col("a").nan_max()).collect(
+        engine=engine
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {"lo": [nan_min], "hi": [nan_max]}, schema={"lo": dtype, "hi": dtype}
+        ),
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_nan_min_max_multi_chunk(engine: pl.QueryExecutionEngine) -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"a": [3.0, None]}),
+            pl.DataFrame({"a": [1.0, 2.0]}),
+            pl.DataFrame({"a": [None, float("nan")]}),
+        ],
+        rechunk=False,
+    )
+    out = df.lazy().select(lo=pl.col("a").nan_min(), hi=pl.col("a").nan_max())
+    result = out.collect(engine=engine)
+    assert result["lo"].is_nan().to_list() == [True]
+    assert result["hi"].is_nan().to_list() == [True]
+
+    no_nan = df.lazy().filter(pl.col("a").is_not_nan() | pl.col("a").is_null())
+    result = no_nan.select(lo=pl.col("a").nan_min(), hi=pl.col("a").nan_max()).collect(
+        engine=engine
+    )
+    assert result.to_dict(as_series=False) == {"lo": [1.0], "hi": [3.0]}
+
+
+@pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt32, pl.Int64, pl.Float32])
+def test_group_by_mean_var_std_multi_chunk(dtype: pl.DataType) -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"g": [1, 2, 1], "a": pl.Series([1, 2, 4], dtype=dtype)}),
+            pl.DataFrame({"g": [2, 1, 3], "a": pl.Series([6, None, 7], dtype=dtype)}),
+        ],
+        rechunk=False,
+    )
+    assert df.n_chunks() == 2
+    q = df.lazy().group_by("g", maintain_order=True)
+    aggs = [
+        pl.col("a").mean().alias("mean"),
+        pl.col("a").var().alias("var"),
+        pl.col("a").std().alias("std"),
+    ]
+    result = q.agg(aggs).collect(engine="in-memory")
+    expected = (
+        df.rechunk().lazy().group_by("g", maintain_order=True).agg(aggs).collect()
+    )
+    assert_frame_equal(result, expected)
+    assert result["mean"].to_list() == [2.5, 4.0, 7.0]
+
+
+def test_group_by_mean_no_nulls_multi_chunk() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"g": [1, 2], "a": [1, 2]}),
+            pl.DataFrame({"g": [1, 2], "a": [3, 6]}),
+        ],
+        rechunk=False,
+    )
+    out = df.group_by("g", maintain_order=True).agg(pl.col("a").mean())
+    assert out.to_dict(as_series=False) == {"g": [1, 2], "a": [2.0, 4.0]}
+
+
+@pytest.mark.parametrize(
+    "dtype", [pl.Int8, pl.UInt16, pl.Int32, pl.UInt64, pl.Float32, pl.Float64]
+)
+def test_skew_kurtosis_native_dtypes(dtype: pl.DataType) -> None:
+    values = [1, 2, 3, None, 4, 9]
+    s = pl.Series(values, dtype=dtype)
+    expected = pl.Series(values, dtype=pl.Float64)
+    assert s.skew() == pytest.approx(expected.skew())
+    assert s.skew(bias=False) == pytest.approx(expected.skew(bias=False))
+    assert s.kurtosis() == pytest.approx(expected.kurtosis())
+    assert s.kurtosis(fisher=False, bias=False) == pytest.approx(
+        expected.kurtosis(fisher=False, bias=False)
+    )
+    chunked = pl.concat([s[:3], s[3:]], rechunk=False)
+    assert chunked.skew() == pytest.approx(expected.skew())
+    assert chunked.kurtosis() == pytest.approx(expected.kurtosis())
+
+
+def test_skew_kurtosis_non_native_dtypes() -> None:
+    s = pl.Series([True, False, True, True])
+    f = pl.Series([1.0, 0.0, 1.0, 1.0])
+    assert s.skew() == pytest.approx(f.skew())
+    assert s.kurtosis() == pytest.approx(f.kurtosis())
