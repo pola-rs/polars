@@ -37,20 +37,64 @@ pub(crate) struct CrossJoinPredicate {
     pub output: Vec<CrossJoinColumn>,
 }
 
-impl CrossJoinPredicate {
-    fn input_columns(&self, input: &DataFrame, is_left: bool) -> DataFrame {
-        let columns = self
-            .operands
-            .iter()
-            .filter(|col| col.is_left == is_left)
-            .map(|col| {
-                let mut input = input.columns()[col.index].clone();
-                input.rename(col.name.clone());
-                input
-            })
-            .collect();
-        // SAFETY: The predicate schema has unique names.
-        unsafe { DataFrame::new_unchecked(input.height(), columns) }
+fn project_side(input: &DataFrame, columns: &[CrossJoinColumn], is_left: bool) -> DataFrame {
+    let columns = columns
+        .iter()
+        .filter(|col| col.is_left == is_left)
+        .map(|col| {
+            let mut input = input.columns()[col.index].clone();
+            input.rename(col.name.clone());
+            input
+        })
+        .collect();
+    // SAFETY: The joined schema has unique names.
+    unsafe { DataFrame::new_unchecked(input.height(), columns) }
+}
+
+struct CrossJoinRepeater {
+    build: DataFrameBuilder,
+    probe: DataFrameBuilder,
+    cached_build: DataFrame,
+}
+
+impl CrossJoinRepeater {
+    fn new(build_schema: Arc<Schema>, probe_schema: Arc<Schema>) -> Self {
+        Self {
+            build: DataFrameBuilder::new(build_schema),
+            probe: DataFrameBuilder::new(probe_schema),
+            cached_build: DataFrame::empty(),
+        }
+    }
+
+    fn repeat(
+        &mut self,
+        build: &DataFrame,
+        probe: &DataFrame,
+        probe_start: usize,
+        probe_len: usize,
+    ) -> (DataFrame, DataFrame) {
+        let len = build.height() * probe_len;
+        if len > self.cached_build.height() {
+            self.build.subslice_extend_repeated(
+                build,
+                0,
+                build.height(),
+                probe_len,
+                ShareStrategy::Never,
+            );
+            self.cached_build = self.build.freeze_reset();
+        }
+        self.probe.subslice_extend_each_repeated(
+            probe,
+            probe_start,
+            probe_len,
+            build.height(),
+            ShareStrategy::Always,
+        );
+        (
+            self.cached_build.slice(Slice::head(len)),
+            self.probe.freeze_reset(),
+        )
     }
 }
 
@@ -71,12 +115,80 @@ struct CrossJoinIndices {
 }
 
 impl CrossJoinChunk<'_> {
+    fn expand(
+        &self,
+        build: &DataFrame,
+        probe: &DataFrame,
+        repeater: &mut Option<CrossJoinRepeater>,
+        repeat_build: bool,
+    ) -> DataFrame {
+        let (mut left, mut right) = if repeat_build {
+            debug_assert_eq!(self.build_start, 0);
+            debug_assert_eq!(self.build_len, build.height());
+            repeater
+                .get_or_insert_with(|| {
+                    CrossJoinRepeater::new(build.schema().clone(), probe.schema().clone())
+                })
+                .repeat(build, probe, self.probe_start, self.probe_len)
+        } else {
+            debug_assert_eq!(self.probe_len, 1);
+            (
+                build.slice((self.build_start, self.build_len)),
+                probe.new_from_index(self.probe_start, self.build_len),
+            )
+        };
+        if !self.left_is_build {
+            core::mem::swap(&mut left, &mut right);
+        }
+        // SAFETY: Both sides have the same height and use unique joined names.
+        unsafe {
+            left.hstack_mut_unchecked(right.columns());
+        }
+        left
+    }
+
+    fn repeat_output(
+        &self,
+        columns: &[CrossJoinColumn],
+        repeater: &mut Option<CrossJoinRepeater>,
+    ) -> DataFrame {
+        let build = project_side(self.build, columns, self.left_is_build);
+        let probe = project_side(self.probe, columns, !self.left_is_build);
+        let frame = self.expand(&build, &probe, repeater, self.probe_len > 1);
+        let left_width = if self.left_is_build {
+            build.width()
+        } else {
+            probe.width()
+        };
+        if columns[..left_width].iter().all(|col| col.is_left) {
+            return frame;
+        }
+        let mut left_idx = 0;
+        let mut right_idx = left_width;
+        let ordered = columns
+            .iter()
+            .map(|col| {
+                let idx = if col.is_left {
+                    &mut left_idx
+                } else {
+                    &mut right_idx
+                };
+                let column = frame.columns()[*idx].clone();
+                *idx += 1;
+                column
+            })
+            .collect();
+        debug_assert_eq!(left_idx, left_width);
+        debug_assert_eq!(right_idx, frame.width());
+        // SAFETY: We only reordered the columns in the valid frame.
+        unsafe { DataFrame::new_unchecked(frame.height(), ordered) }
+    }
+
     fn gather_columns(
         &self,
         columns: &[CrossJoinColumn],
         indices: &CrossJoinIndices,
         len: usize,
-        candidates: bool,
     ) -> DataFrame {
         let columns = columns
             .iter()
@@ -84,12 +196,8 @@ impl CrossJoinChunk<'_> {
                 let mut output = if col.is_left == self.left_is_build {
                     let build =
                         self.build.columns()[col.index].slice((self.build_start, self.build_len));
-                    if candidates && self.probe_len == 1 {
-                        build
-                    } else {
-                        // SAFETY: The indices are relative to this build slice.
-                        unsafe { build.take_slice_unchecked(&indices.build) }
-                    }
+                    // SAFETY: The indices are relative to this build slice.
+                    unsafe { build.take_slice_unchecked(&indices.build) }
                 } else {
                     let probe = &self.probe.columns()[col.index];
                     if self.probe_len == 1 {
@@ -113,6 +221,7 @@ impl CrossJoinChunk<'_> {
         predicate: &CrossJoinPredicate,
         candidates: DataFrame,
         indices: &mut CrossJoinIndices,
+        output_repeater: &mut Option<CrossJoinRepeater>,
         state: &ExecutionState,
     ) -> PolarsResult<Option<DataFrame>> {
         let len = candidates.height();
@@ -121,7 +230,7 @@ impl CrossJoinChunk<'_> {
         let mask = column_to_mask(&mask, len)?;
         if mask.len() == 1 {
             return Ok((mask.get(0) == Some(true))
-                .then(|| self.gather_all_columns(&predicate.output, indices, len)));
+                .then(|| self.repeat_output(&predicate.output, output_repeater)));
         }
         polars_ensure!(
             mask.len() == len,
@@ -129,21 +238,23 @@ impl CrossJoinChunk<'_> {
             mask.len(), len
         );
         let mask = mask.rechunk();
-        let mask = mask.downcast_as_array();
-        let keep = match mask.validity() {
-            Some(validity) => mask.values() & validity,
-            None => mask.values().clone(),
+        let mask_array = mask.downcast_as_array();
+        let keep = match mask_array.validity() {
+            Some(validity) => mask_array.values() & validity,
+            None => mask_array.values().clone(),
         };
         let kept = keep.set_bits();
         if kept == 0 {
             return Ok(None);
         }
         if kept == len {
-            return Ok(Some(self.gather_all_columns(
-                &predicate.output,
-                indices,
-                len,
-            )));
+            return Ok(Some(self.repeat_output(&predicate.output, output_repeater)));
+        }
+        if kept >= len.div_ceil(2) {
+            // Dense masks benefit from the repeat and bitmap-filter kernels, especially
+            // for nested payloads where indexed gathers copy one value at a time.
+            let output = self.repeat_output(&predicate.output, output_repeater);
+            return output.filter_seq(&mask).map(Some);
         }
         indices.build.clear();
         indices.probe.clear();
@@ -151,31 +262,7 @@ impl CrossJoinChunk<'_> {
             indices.build.push((index % self.build_len) as IdxSize);
             indices.probe.push((index / self.build_len) as IdxSize);
         }
-        Ok(Some(self.gather_columns(
-            &predicate.output,
-            indices,
-            kept,
-            false,
-        )))
-    }
-
-    fn gather_all_columns(
-        &self,
-        columns: &[CrossJoinColumn],
-        indices: &mut CrossJoinIndices,
-        len: usize,
-    ) -> DataFrame {
-        indices.build.clear();
-        indices.probe.clear();
-        if self.probe_len > 1 {
-            for probe_index in 0..self.probe_len as IdxSize {
-                indices.build.extend(0..self.build_len as IdxSize);
-                indices
-                    .probe
-                    .extend(std::iter::repeat_n(probe_index, self.build_len));
-            }
-        }
-        self.gather_columns(columns, indices, len, true)
+        Ok(Some(self.gather_columns(&predicate.output, indices, kept)))
     }
 }
 
@@ -349,15 +436,16 @@ impl ComputeNode for CrossJoinNode {
                                 let build_step = build_df.height().min(ideal_morsel_size);
                                 let probe_step = ideal_morsel_size / build_step;
                                 let build_operands =
-                                    predicate.input_columns(build_df, left_is_build);
-                                let mut build_repeater =
-                                    DataFrameBuilder::new(build_operands.schema().clone());
-                                let mut probe_repeater = None;
-                                let mut cached_build_repeated = DataFrame::empty();
+                                    project_side(build_df, &predicate.operands, left_is_build);
+                                let mut operand_repeater = None;
+                                let mut output_repeater = None;
                                 while let Ok(morsel) = recv.recv().await {
                                     let probe_df = morsel.df().await;
-                                    let probe_operands =
-                                        predicate.input_columns(&probe_df, !left_is_build);
+                                    let probe_operands = project_side(
+                                        &probe_df,
+                                        &predicate.operands,
+                                        !left_is_build,
+                                    );
                                     for probe_start in (0..probe_df.height()).step_by(probe_step) {
                                         let probe_len =
                                             (probe_df.height() - probe_start).min(probe_step);
@@ -374,61 +462,18 @@ impl ComputeNode for CrossJoinNode {
                                                 probe_len,
                                                 left_is_build,
                                             };
-                                            let (mut build, mut probe) = if build_df.height()
-                                                >= ideal_morsel_size
-                                            {
-                                                (
-                                                    build_operands
-                                                        .slice((build_start, chunk.build_len)),
-                                                    probe_operands.new_from_index(
-                                                        probe_start,
-                                                        chunk.build_len,
-                                                    ),
-                                                )
-                                            } else {
-                                                let len = chunk.build_len * probe_len;
-                                                if len > cached_build_repeated.height() {
-                                                    build_repeater.subslice_extend_repeated(
-                                                        &build_operands,
-                                                        0,
-                                                        chunk.build_len,
-                                                        probe_len,
-                                                        ShareStrategy::Never,
-                                                    );
-                                                    cached_build_repeated =
-                                                        build_repeater.freeze_reset();
-                                                }
-                                                let probe_repeater = probe_repeater
-                                                    .get_or_insert_with(|| {
-                                                        DataFrameBuilder::new(
-                                                            probe_operands.schema().clone(),
-                                                        )
-                                                    });
-                                                probe_repeater.subslice_extend_each_repeated(
-                                                    &probe_operands,
-                                                    probe_start,
-                                                    probe_len,
-                                                    chunk.build_len,
-                                                    ShareStrategy::Always,
-                                                );
-                                                (
-                                                    cached_build_repeated.slice(Slice::head(len)),
-                                                    probe_repeater.freeze_reset(),
-                                                )
-                                            };
-                                            if !left_is_build {
-                                                core::mem::swap(&mut build, &mut probe);
-                                            }
-                                            // SAFETY: Both sides have the same height and already use
-                                            // the unique names in the joined predicate schema.
-                                            unsafe {
-                                                build.hstack_mut_unchecked(probe.columns());
-                                            }
+                                            let candidates = chunk.expand(
+                                                &build_operands,
+                                                &probe_operands,
+                                                &mut operand_repeater,
+                                                build_df.height() < ideal_morsel_size,
+                                            );
                                             if let Some(df) = chunk
                                                 .filter(
                                                     predicate,
-                                                    build,
+                                                    candidates,
                                                     &mut indices,
+                                                    &mut output_repeater,
                                                     &state.in_memory_exec_state,
                                                 )
                                                 .await?
@@ -448,14 +493,13 @@ impl ComputeNode for CrossJoinNode {
                                 return Ok(());
                             }
 
-                            let mut build_repeater =
-                                DataFrameBuilder::new(left_input_schema.clone());
-                            let mut probe_repeater =
-                                DataFrameBuilder::new(right_input_schema.clone());
-                            if !left_is_build {
-                                core::mem::swap(&mut build_repeater, &mut probe_repeater);
-                            }
-                            let mut cached_build_df_repeated = DataFrame::empty();
+                            let (build_schema, probe_schema) = if left_is_build {
+                                (left_input_schema, right_input_schema)
+                            } else {
+                                (right_input_schema, left_input_schema)
+                            };
+                            let mut repeater =
+                                CrossJoinRepeater::new(build_schema.clone(), probe_schema.clone());
 
                             while let Ok(morsel) = recv.recv().await {
                                 let combine =
@@ -507,30 +551,12 @@ impl ComputeNode for CrossJoinNode {
                                     while probe_offset < probe_df.height() {
                                         let build_repeats = (probe_df.height() - probe_offset)
                                             .min(max_build_repeats);
-                                        let build_height = build_repeats * build_df.height();
-                                        if build_height > cached_build_df_repeated.height() {
-                                            build_repeater.subslice_extend_repeated(
-                                                build_df,
-                                                0,
-                                                build_df.height(),
-                                                build_repeats,
-                                                ShareStrategy::Never,
-                                            );
-                                            cached_build_df_repeated =
-                                                build_repeater.freeze_reset();
-                                        }
-                                        let build_join_df = cached_build_df_repeated
-                                            .slice(Slice::head(build_height));
-
-                                        probe_repeater.subslice_extend_each_repeated(
+                                        let (build_join_df, probe_join_df) = repeater.repeat(
+                                            build_df,
                                             &probe_df,
                                             probe_offset,
                                             build_repeats,
-                                            build_df.height(),
-                                            ShareStrategy::Always,
                                         );
-                                        let probe_join_df = probe_repeater.freeze_reset();
-
                                         let combined = combine(build_join_df, probe_join_df);
                                         if send.send(combined).await.is_err() {
                                             return Ok(());
