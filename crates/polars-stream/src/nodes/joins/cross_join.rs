@@ -262,7 +262,9 @@ impl CrossJoinChunk<'_> {
         indices.probe.clear();
         for index in keep.true_idx_iter() {
             indices.build.push((index % self.build_len) as IdxSize);
-            indices.probe.push((index / self.build_len) as IdxSize);
+            if self.probe_len > 1 {
+                indices.probe.push((index / self.build_len) as IdxSize);
+            }
         }
         Ok(Some(self.gather_columns(&predicate.output, indices, kept)))
     }
