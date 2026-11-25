@@ -353,6 +353,10 @@ def test_merge_join_fused_drop() -> None:
     )
     check(query, expected.select("lp", "k_R", "rp"))
 
+    only_right = full.select("rp")
+    assert_join_projection(physical_plan(only_right), "merge-join", "project 1 / 3: rp")
+    check(only_right, expected.select("rp"))
+
     reordered = full.select("rp", "lp")
     assert 'label="select\\nrp, lp"' in physical_plan(reordered)
     check(reordered, expected.select("rp", "lp"))
