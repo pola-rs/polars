@@ -98,6 +98,26 @@ impl ExprProperties {
                 .all(|&n| self.is_elementwise(n, expr_arena))
     }
 
+    /// Return whether the expression at `node` reads a column or the frame's length.
+    #[recursive::recursive]
+    fn is_frame_dependent(&mut self, node: Node, expr_arena: &Arena<AExpr>) -> bool {
+        if let Some(&ret) = self.is_frame_dependent.get(&node) {
+            return ret;
+        }
+
+        let ae = expr_arena.get(node);
+        let ret = matches!(ae, AExpr::Column(_) | AExpr::Len) || {
+            let mut inputs: UnitVec<Node> = unitvec![];
+            ae.inputs_rev(&mut inputs);
+            inputs
+                .iter()
+                .any(|&n| self.is_frame_dependent(n, expr_arena))
+        };
+
+        self.is_frame_dependent.insert(node, ret);
+        ret
+    }
+
     /// Return whether the expression at `node` can be evaluated without the input frame. Unlike
     /// [`Self::is_input_independent_scalar`], the result need not be a scalar.
     #[recursive::recursive]
@@ -255,26 +275,6 @@ impl ExprProperties {
         };
 
         self.is_input_independent_scalar.insert(node, ret);
-        ret
-    }
-
-    /// Return whether the expression at `node` reads a column or the frame's length.
-    #[recursive::recursive]
-    fn is_frame_dependent(&mut self, node: Node, expr_arena: &Arena<AExpr>) -> bool {
-        if let Some(&ret) = self.is_frame_dependent.get(&node) {
-            return ret;
-        }
-
-        let ae = expr_arena.get(node);
-        let ret = matches!(ae, AExpr::Column(_) | AExpr::Len) || {
-            let mut inputs: UnitVec<Node> = unitvec![];
-            ae.inputs_rev(&mut inputs);
-            inputs
-                .iter()
-                .any(|&n| self.is_frame_dependent(n, expr_arena))
-        };
-
-        self.is_frame_dependent.insert(node, ret);
         ret
     }
 
