@@ -19,6 +19,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import EngineType, PolarsDataType
 
 
@@ -1687,16 +1689,16 @@ def test_list_arg_min_max_flat(dtype: PolarsDataType, op: str) -> None:
 
 @pytest.mark.parametrize("op", ["min", "max"])
 def test_list_min_max_temporal_flat(op: str) -> None:
-    ref = {"min": min, "max": max}[op]
-    for dtype, f in [
+    cases: list[tuple[PolarsDataType, Callable[[int], Any]]] = [
         (pl.Date, lambda i: date(2020, 1, 1 + i)),
         (pl.Datetime("ms", "UTC"), lambda i: datetime(2020, 1, 1, i, tzinfo=UTC)),
         (pl.Duration("us"), lambda i: timedelta(seconds=i)),
         (pl.Time, lambda i: time(i, 0)),
-    ]:
-        rows = [[f(3), f(1), f(2)], [], None, [f(5)]]
+    ]
+    for dtype, f in cases:
+        rows: list[list[Any] | None] = [[f(3), f(1), f(2)], [], None, [f(5)]]
         s = pl.Series(rows, dtype=pl.List(dtype))
-        expected = [ref(r) if r else None for r in rows]
+        expected = [(min(r) if op == "min" else max(r)) if r else None for r in rows]
         out = getattr(s.list, op)()
         assert out.dtype == dtype
         assert out.to_list() == expected
