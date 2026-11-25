@@ -633,9 +633,12 @@ impl PhysicalExpr for WindowExpr {
                     // we take the group locations to directly map them to the right place
                     (UpdateGroups::No, Some(out)) => Ok(out.into_column()),
                     (_, _) => {
-                        let keys = gb.keys();
-
                         let get_join_tuples = || {
+                            if let Some(ids) = group_idx_per_row(gb.get_groups(), df.height()) {
+                                return Ok(Arc::new(ids));
+                            }
+
+                            let keys = gb.keys();
                             if group_by_columns.len() == 1 {
                                 let mut left = group_by_columns[0].clone();
                                 // group key from right column
@@ -1088,6 +1091,62 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
             Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids, false) },
         }
     }
+}
+
+/// The group index of every row, if the groups cover all `len` rows.
+fn group_idx_per_row(groups: &GroupsType, len: usize) -> Option<ChunkJoinOptIds> {
+    let covered: usize = match groups {
+        GroupsType::Idx(groups) => groups.all().iter().map(|g| g.len()).sum(),
+        GroupsType::Slice {
+            groups,
+            overlapping,
+            ..
+        } => {
+            if *overlapping {
+                return None;
+            }
+            groups.iter().map(|[_, g_len]| *g_len as usize).sum()
+        },
+    };
+    if covered != len {
+        return None;
+    }
+
+    let mut ids: Vec<NullableIdxSize> = Vec::with_capacity(len);
+    // SAFETY: groups don't overlap, so threads never write to the same slot.
+    let sync_ptr = unsafe { SyncPtr::new(ids.as_mut_ptr()) };
+    match groups {
+        GroupsType::Idx(groups) => RAYON.install(|| {
+            groups
+                .all()
+                .par_iter()
+                .enumerate()
+                .for_each(|(group_idx, g)| {
+                    let ptr = sync_ptr.get();
+                    for idx in g.as_slice() {
+                        debug_assert!((*idx as usize) < len);
+                        unsafe { *ptr.add(*idx as usize) = (group_idx as IdxSize).into() }
+                    }
+                })
+        }),
+        GroupsType::Slice { groups, .. } => RAYON.install(|| {
+            groups
+                .par_iter()
+                .enumerate()
+                .for_each(|(group_idx, [start, g_len])| {
+                    let ptr = sync_ptr.get();
+                    let start = *start as usize;
+                    let end = start + *g_len as usize;
+                    debug_assert!(end <= len);
+                    for idx in start..end {
+                        unsafe { *ptr.add(idx) = (group_idx as IdxSize).into() }
+                    }
+                })
+        }),
+    }
+    // SAFETY: the groups cover all `len` rows.
+    unsafe { ids.set_len(len) };
+    Some(polars_arrow::Either::Left(ids))
 }
 
 /// Simple reducing aggregation can be set by the groups

@@ -2903,3 +2903,95 @@ def test_find_many_null_patterns_broadcast() -> None:
         },
     )
     assert_frame_equal(out.collect(), expected)
+
+
+def test_str_extract_and_split_per_row_pattern() -> None:
+    s = pl.Series(["a1b22", "xx", None, "c333d", "e4"])
+    pat = pl.Series([r"(\d+)", r"(\d)", r"(\d)", None, r"([a-z])"])
+    expected = [
+        None if v is None or p is None else (m.group(1) if (m := re.search(p, v)) else None)
+        for v, p in zip(s, pat)
+    ]
+    assert s.str.extract(pat).to_list() == expected
+    assert pl.Series(["a1b22"]).str.extract(pat).to_list() == ["1", "1", "1", None, "a"]
+
+    df = pl.DataFrame({"s": ["a,b;c", "d;e", None], "p": [",", ";", ","]})
+    out = df.select(pl.col("s").str.split(pl.col("p"), literal=False))
+    assert out["s"].to_list() == [["a", "b;c"], ["d", "e"], None]
+
+
+@pytest.mark.parametrize("by", [",", "é", ", "])
+def test_str_split_single_char_matches_str(by: str) -> None:
+    values = ["a,b,,c", "", None, "aé, bé, c", ",,", "no delimiter"]
+    s = pl.Series(values)
+    assert s.str.split(by).to_list() == [
+        None if v is None else v.split(by) for v in values
+    ]
+
+    def split_inclusive(v: str) -> list[str]:
+        parts, start = [], 0
+        while (i := v.find(by, start)) != -1:
+            parts.append(v[start : i + len(by)])
+            start = i + len(by)
+        if start < len(v):
+            parts.append(v[start:])
+        return parts
+
+    assert s.str.split(by, inclusive=True).to_list() == [
+        None if v is None else split_inclusive(v) for v in values
+    ]
+
+    def pad(parts: list[str], n: int) -> list[str | None]:
+        return [*parts, *[None] * (n - len(parts))][:n]  # type: ignore[list-item]
+
+    out = s.str.split_exact(by, 1).struct.unnest()
+    assert out.rows() == [
+        (None, None) if v is None else tuple(pad(v.split(by), 2)) for v in values
+    ]
+    out = s.str.splitn(by, 2).struct.unnest()
+    assert out.rows() == [
+        (None, None) if v is None else tuple(pad(v.split(by, 1), 2)) for v in values
+    ]
+
+
+def test_str_strip_long_strings() -> None:
+    values = [
+        "  a long string with spaces at both ends  ",
+        "xxshortxx",
+        None,
+        "",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "prefix-and-then-some-more-text-suffix",
+    ]
+    s = pl.Series(values).slice(0)
+    sliced = pl.Series(["dropped", *values]).slice(1)
+    for ser in [s, sliced]:
+        assert ser.str.strip_chars().to_list() == [
+            None if v is None else v.strip() for v in values
+        ]
+        assert ser.str.strip_chars("x").to_list() == [
+            None if v is None else v.strip("x") for v in values
+        ]
+        assert ser.str.strip_chars_start(" ap").to_list() == [
+            None if v is None else v.lstrip(" ap") for v in values
+        ]
+        assert ser.str.strip_chars_end("x s").to_list() == [
+            None if v is None else v.rstrip("x s") for v in values
+        ]
+        assert ser.str.strip_prefix("prefix-and-").to_list() == [
+            None if v is None else v.removeprefix("prefix-and-") for v in values
+        ]
+        assert ser.str.strip_suffix("-more-text-suffix").to_list() == [
+            None if v is None else v.removesuffix("-more-text-suffix") for v in values
+        ]
+
+    s = pl.Series(["ab", "ac"]).set_sorted()
+    out = s.str.strip_chars_end("c")
+    assert out.to_list() == ["ab", "a"]
+    assert not out.flags["SORTED_ASC"]
+
+
+def test_str_count_matches_literal() -> None:
+    s = pl.Series(["aaaa", "abab", "", None, "a long string with aa and aaa"])
+    assert s.str.count_matches("aa", literal=True).to_list() == [2, 0, 0, None, 2]
+    assert s.str.count_matches("", literal=True).to_list() == [5, 5, 1, None, 30]
