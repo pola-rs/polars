@@ -1203,7 +1203,9 @@ def test_int_cast_boundaries(from_dtype: Any, to_dtype: Any) -> None:
     s = pl.Series(values, dtype=from_dtype)
     out = s.cast(to_dtype, strict=False)
     assert out.dtype == to_dtype
-    assert out.to_list() == [v if ok else None for v, ok in zip(values, fits, strict=True)]
+    assert out.to_list() == [
+        v if ok else None for v, ok in zip(values, fits, strict=True)
+    ]
 
     with_nulls = pl.Series([None, *values, None], dtype=from_dtype)
     out = with_nulls.cast(to_dtype, strict=False)

@@ -3154,7 +3154,7 @@ def test_max_sorted_all_nan_with_nulls(dtype: pl.DataType) -> None:
 )
 def test_nan_min_max_propagate(
     dtype: pl.DataType,
-    engine: pl.QueryExecutionEngine,
+    engine: EngineType,
     values: list[float | None],
     nan_min: float | None,
     nan_max: float | None,
@@ -3172,7 +3172,7 @@ def test_nan_min_max_propagate(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_nan_min_max_multi_chunk(engine: pl.QueryExecutionEngine) -> None:
+def test_nan_min_max_multi_chunk(engine: EngineType) -> None:
     df = pl.concat(
         [
             pl.DataFrame({"a": [3.0, None]}),
