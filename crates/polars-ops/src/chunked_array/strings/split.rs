@@ -3,7 +3,7 @@ use polars_arrow::array::ValueSize;
 use polars_arrow::array::{MutableArray, MutableUtf8Array};
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 use polars_core::prelude::*;
-use polars_utils::regex_cache::compile_regex;
+use polars_utils::regex_cache::{RegexCache, with_regex_cache};
 use regex::Regex;
 
 pub struct SplitNChars<'a> {
@@ -55,16 +55,49 @@ fn split_chars(s: &str) -> SplitNChars<'_> {
 }
 
 #[cfg(feature = "dtype-struct")]
-pub fn split_to_struct<'a, F, I>(
+pub(super) fn as_single_char(s: &str) -> Option<char> {
+    let c = s.chars().next()?;
+    (c.len_utf8() == s.len()).then_some(c)
+}
+
+#[cfg(feature = "dtype-struct")]
+fn push_split<'a>(
+    arrs: &mut [MutableUtf8Array<i64>],
+    splitted: Option<impl Iterator<Item = &'a str>>,
+) {
+    match splitted {
+        None => {
+            for arr in arrs.iter_mut() {
+                arr.push_null()
+            }
+        },
+        Some(splitted) => {
+            let mut arr_iter = arrs.iter_mut();
+            splitted
+                .zip(&mut arr_iter)
+                .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+            // fill the remaining with null
+            for arr in arr_iter {
+                arr.push_null()
+            }
+        },
+    }
+}
+
+/// `op_char` is the same operation as `op`, but for a single char delimiter, which is faster.
+pub fn split_to_struct<'a, F, I, G, J>(
     ca: &'a StringChunked,
     by: &'a StringChunked,
     n: usize,
     op: F,
+    op_char: G,
     keep_remainder: bool,
 ) -> PolarsResult<StructChunked>
 where
     F: Fn(&'a str, &'a str) -> I,
     I: Iterator<Item = &'a str>,
+    G: Fn(&'a str, char) -> J,
+    J: Iterator<Item = &'a str>,
 {
     use polars_utils::format_pl_smallstr;
 
@@ -92,24 +125,10 @@ where
                         }
                     },
                 });
+            } else if let Some(c) = as_single_char(by) {
+                ca.for_each(|opt_s| push_split(&mut arrs, opt_s.map(|s| op_char(s, c))));
             } else {
-                ca.for_each(|opt_s| match opt_s {
-                    None => {
-                        for arr in &mut arrs {
-                            arr.push_null()
-                        }
-                    },
-                    Some(s) => {
-                        let mut arr_iter = arrs.iter_mut();
-                        op(s, by)
-                            .zip(&mut arr_iter)
-                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
-                        // fill the remaining with null
-                        for arr in arr_iter {
-                            arr.push_null()
-                        }
-                    },
-                });
+                ca.for_each(|opt_s| push_split(&mut arrs, opt_s.map(|s| op(s, by))));
             }
         } else {
             for arr in &mut arrs {
@@ -153,14 +172,18 @@ where
     StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())
 }
 
-pub fn split_helper<'a, F, I>(
+/// `op_char` is the same operation as `op`, but for a single char delimiter, which is faster.
+pub fn split_helper<'a, F, I, G, J>(
     ca: &'a StringChunked,
     by: &'a StringChunked,
     op: F,
+    op_char: G,
 ) -> PolarsResult<ListChunked>
 where
     F: Fn(&'a str, &'a str) -> I,
     I: Iterator<Item = &'a str>,
+    G: Fn(&'a str, char) -> J,
+    J: Iterator<Item = &'a str>,
 {
     Ok(match (ca.len(), by.len()) {
         (a, b) if a == b => {
@@ -209,6 +232,11 @@ where
                 if by.is_empty() {
                     ca.for_each(|opt_s| match opt_s {
                         Some(s) => builder.append_values_iter(split_chars(s)),
+                        _ => builder.append_null(),
+                    });
+                } else if let Some(c) = as_single_char(by) {
+                    ca.for_each(|opt_s| match opt_s {
+                        Some(s) => builder.append_values_iter(op_char(s, c)),
                         _ => builder.append_null(),
                     });
                 } else {
@@ -279,6 +307,7 @@ fn append_split_compiled(
 #[inline]
 fn append_split(
     builder: &mut ListStringChunkedBuilder,
+    cache: &mut RegexCache,
     s: &str,
     pat: &str,
     inclusive: bool,
@@ -289,9 +318,9 @@ fn append_split(
         return Ok(());
     }
 
-    match compile_regex(pat) {
+    match cache.compile(pat) {
         Ok(re) => {
-            append_split_compiled(builder, s, &re, inclusive);
+            append_split_compiled(builder, s, re, inclusive);
             Ok(())
         },
         Err(_) if strict => Err(invalid_regex_err(pat)),
@@ -316,12 +345,17 @@ pub fn split_regex_helper(
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
 
-            for (opt_s, opt_pat) in ca.iter().zip(by.iter()) {
-                match (opt_s, opt_pat) {
-                    (Some(s), Some(pat)) => append_split(&mut builder, s, pat, inclusive, strict)?,
-                    _ => builder.append_null(),
+            with_regex_cache(|cache| {
+                for (opt_s, opt_pat) in ca.iter().zip(by.iter()) {
+                    match (opt_s, opt_pat) {
+                        (Some(s), Some(pat)) => {
+                            append_split(&mut builder, cache, s, pat, inclusive, strict)?
+                        },
+                        _ => builder.append_null(),
+                    }
                 }
-            }
+                PolarsResult::Ok(())
+            })?;
 
             builder.finish()
         },
@@ -335,12 +369,17 @@ pub fn split_regex_helper(
                     by.get_values_size(),
                 );
 
-                for opt_pat in by.iter() {
-                    match opt_pat {
-                        Some(pat) => append_split(&mut builder, s0, pat, inclusive, strict)?,
-                        None => builder.append_null(),
+                with_regex_cache(|cache| {
+                    for opt_pat in by.iter() {
+                        match opt_pat {
+                            Some(pat) => {
+                                append_split(&mut builder, cache, s0, pat, inclusive, strict)?
+                            },
+                            None => builder.append_null(),
+                        }
                     }
-                }
+                    PolarsResult::Ok(())
+                })?;
 
                 builder.finish()
             } else {
