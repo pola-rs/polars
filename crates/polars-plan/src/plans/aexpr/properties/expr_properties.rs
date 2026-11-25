@@ -325,8 +325,10 @@ impl<'a> NodeVisitor for CachedLengthPreservingVisitor<'a> {
         use ControlFlow as CF;
 
         if let Some(length_preserving) = self.cache.get(&key) {
-            // TODO: A cached `false` comes back as `Unknown`, not the `Scalar` or `Range` it was,
-            // so whether a parent counts as length-preserving depends on what was queried before.
+            // TODO: `post_visit` still runs after this skip and recomputes the height from the
+            // skipped inputs' `Unknown` edges, overwriting this edge and the memo entry. A memoized
+            // node whose height comes from its inputs (`col("a") + col("b")`) thus turns `false`
+            // on its next query, as does a parent queried after it.
             edges.outputs()[0] = if *length_preserving {
                 ExprProjectionHeight::Column
             } else {
