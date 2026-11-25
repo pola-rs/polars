@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +19,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import EngineType, PolarsDataType
 
 
@@ -1664,3 +1666,48 @@ def test_list_to_struct_outer_nulls_28210() -> None:
             },
         ),
     )
+
+
+def _with_inner_null(s: pl.Series, dtype: PolarsDataType) -> pl.Series:
+    return pl.concat([s, pl.Series([[None, None]], dtype=pl.List(dtype))])
+
+
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt8, pl.Float64, pl.Float32])
+@pytest.mark.parametrize("op", ["arg_min", "arg_max"])
+def test_list_arg_min_max_flat(dtype: PolarsDataType, op: str) -> None:
+    rows: list[list[Any] | None] = [[3, 1, 2, 1], [], None, [5], [2, 2, 9, 9], [7, 0]]
+    if dtype.is_float():
+        rows += [[float("nan"), 1.0, 2.0], [1.0, float("nan"), 0.5, float("nan")]]
+        rows += [[float("nan")], [float("nan"), float("nan")]]
+    s = pl.Series(rows, dtype=pl.List(dtype))
+    expected = getattr(_with_inner_null(s, dtype).list, op)()[: s.len()]
+    assert_series_equal(getattr(s.list, op)(), expected)
+    assert_series_equal(getattr(s.slice(1, 4).list, op)(), expected.slice(1, 4))
+    chunked = pl.concat([s.slice(0, 3), s.slice(3)], rechunk=False)
+    assert_series_equal(getattr(chunked.list, op)(), expected)
+
+
+@pytest.mark.parametrize("op", ["min", "max"])
+def test_list_min_max_temporal_flat(op: str) -> None:
+    cases: list[tuple[PolarsDataType, Callable[[int], Any]]] = [
+        (pl.Date, lambda i: date(2020, 1, 1 + i)),
+        (pl.Datetime("ms", "UTC"), lambda i: datetime(2020, 1, 1, i, tzinfo=UTC)),
+        (pl.Duration("us"), lambda i: timedelta(seconds=i)),
+        (pl.Time, lambda i: time(i, 0)),
+    ]
+    for dtype, f in cases:
+        rows: list[list[Any] | None] = [[f(3), f(1), f(2)], [], None, [f(5)]]
+        s = pl.Series(rows, dtype=pl.List(dtype))
+        expected = [(min(r) if op == "min" else max(r)) if r else None for r in rows]
+        out = getattr(s.list, op)()
+        assert out.dtype == dtype
+        assert out.to_list() == expected
+        assert getattr(s.slice(1).list, op)().to_list() == expected[1:]
+
+
+def test_list_drop_nulls_no_inner_nulls() -> None:
+    s = pl.Series([[1, 2], [], None, [3]])
+    assert s.list.drop_nulls().to_list() == [[1, 2], [], None, [3]]
+    s = pl.Series([[1, None], [], None, [None, 3]])
+    assert s.list.drop_nulls().to_list() == [[1], [], None, [3]]
+    assert s.slice(1).list.drop_nulls().to_list() == [[], None, [3]]
