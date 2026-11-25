@@ -476,7 +476,7 @@ pub struct StagedScanIOPredicate {
     /// The conjuncts that read no or several columns, conjoined.
     pub rest: Option<Arc<dyn PhysicalIoExpr>>,
     /// The columns `rest` reads.
-    pub rest_columns: Arc<Vec<PlSmallStr>>,
+    pub rest_columns: Arc<PlHashSet<PlSmallStr>>,
 }
 
 impl StagedScanIOPredicate {
@@ -489,7 +489,7 @@ impl StagedScanIOPredicate {
             if let Some(p) = column_predicates.shift_remove(c) {
                 // The conjunct now lives in `rest`, which reads this column.
                 if !rest_columns.contains(c) {
-                    Arc::make_mut(&mut rest_columns).push(c.clone());
+                    Arc::make_mut(&mut rest_columns).insert(c.clone());
                 }
                 let p = p.conjoined();
                 rest = Some(match rest {

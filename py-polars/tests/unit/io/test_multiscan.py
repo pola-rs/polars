@@ -2299,6 +2299,36 @@ def test_multiscan_predicate_only_columns_parquet_rest_predicate(
 
 
 @pytest.mark.write_disk
+def test_multiscan_predicate_only_int64_is_null(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {"a": range(12), "b": [1, None, 2, None, 3, 4, 5, 6, None, None, None, None]}
+    )
+    path = tmp_path / "data.parquet"
+    df.write_parquet(path, row_group_size=4)
+    lf = pl.scan_parquet(path, parallel="prefiltered", use_statistics=False)
+    predicate = pl.col("b").is_null()
+
+    assert_frame_equal(
+        lf.filter(predicate).select("a").collect(engine="streaming"),
+        df.filter(predicate).select("a"),
+    )
+    assert_frame_equal(
+        lf.filter(predicate).select("a", "b").collect(engine="streaming"),
+        df.filter(predicate).select("a", "b"),
+    )
+
+    rest = (pl.col("a") + pl.col("b").fill_null(0)) % 2 == 0
+    assert_frame_equal(
+        lf.filter(predicate & rest).select("a").collect(engine="streaming"),
+        df.filter(predicate & rest).select("a"),
+    )
+    assert_frame_equal(
+        lf.head(2).filter(predicate).select("a").collect(engine="streaming"),
+        df.head(2).filter(predicate).select("a"),
+    )
+
+
+@pytest.mark.write_disk
 def test_multiscan_predicate_only_columns_missing_column_raises(
     tmp_path: Path,
 ) -> None:

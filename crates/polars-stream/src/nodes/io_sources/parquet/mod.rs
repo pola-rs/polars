@@ -17,7 +17,7 @@ use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSour
 use polars_parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use polars_plan::dsl::{ScanFieldSelection, ScanSource};
 use polars_utils::IdxSize;
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{PlHashMap, PlHashSet};
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -555,7 +555,7 @@ struct ParquetReadImpl {
     is_full_projection: bool,
     predicate: Option<ScanIOPredicate>,
     /// See `BeginReadArgs::drop_columns_after_predicate`.
-    drop_columns_after_predicate: Vec<PlSmallStr>,
+    drop_columns_after_predicate: PlHashSet<PlSmallStr>,
     options: ParquetOptions,
     byte_source: Arc<DynByteSource>,
     normalized_pre_slice: Option<(usize, usize)>,
