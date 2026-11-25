@@ -3,6 +3,7 @@ use polars_core::prelude::arity::broadcast_try_binary_elementwise;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_defs::time::duration::Duration;
+use polars_utils::cache::LruCache;
 
 fn apply_offsets_to_datetime(
     datetime: &Logical<DatetimeType, Int64Type>,
@@ -28,16 +29,25 @@ fn apply_offsets_to_datetime(
             },
             _ => Ok(datetime.phys.apply(|_| None)),
         },
-        _ => broadcast_try_binary_elementwise(
-            datetime.physical(),
-            offsets,
-            |timestamp_opt, offset_opt| match (timestamp_opt, offset_opt) {
-                (Some(timestamp), Some(offset)) => Duration::try_parse(offset)?
-                    .add(datetime.time_unit(), timestamp, time_zone)
-                    .map(Some),
-                _ => Ok(None),
-            },
-        ),
+        _ => {
+            // A sqrt(n) cache is not too small, not too large.
+            let mut duration_cache =
+                LruCache::with_capacity((offsets.len() as f64).sqrt() as usize);
+            broadcast_try_binary_elementwise(
+                datetime.physical(),
+                offsets,
+                |timestamp_opt, offset_opt| match (timestamp_opt, offset_opt) {
+                    (Some(timestamp), Some(offset)) => {
+                        let offset =
+                            *duration_cache.try_get_or_insert_with(offset, Duration::try_parse)?;
+                        offset
+                            .add(datetime.time_unit(), timestamp, time_zone)
+                            .map(Some)
+                    },
+                    _ => Ok(None),
+                },
+            )
+        },
     }
 }
 
