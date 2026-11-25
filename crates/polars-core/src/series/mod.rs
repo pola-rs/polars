@@ -854,6 +854,9 @@ impl Series {
     /// Traverse and collect every nth element in a new array.
     pub fn gather_every(&self, n: usize, offset: usize) -> PolarsResult<Series> {
         polars_ensure!(n > 0, ComputeError: "cannot perform gather every for `n=0`");
+        if n == 1 {
+            return Ok(self.slice((offset.min(self.len()) as i64, self.len())));
+        }
         let idx = ((offset as IdxSize)..self.len() as IdxSize)
             .step_by(n)
             .collect_ca(PlSmallStr::EMPTY);
