@@ -836,14 +836,8 @@ pub trait StringNameSpaceImpl: AsString {
     fn count_matches(&self, pat: &str, literal: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
         if literal {
-            if pat.is_empty() {
-                return Ok(unary_elementwise(ca, |opt_s| {
-                    opt_s.map(|s| s.matches(pat).count() as u32)
-                }));
-            }
-            let finder = memchr::memmem::Finder::new(pat);
             Ok(unary_elementwise(ca, |opt_s| {
-                opt_s.map(|s| finder.find_iter(s.as_bytes()).count() as u32)
+                opt_s.map(|s| s.matches(pat).count() as u32)
             }))
         } else {
             let re = compile_regex(pat)?;

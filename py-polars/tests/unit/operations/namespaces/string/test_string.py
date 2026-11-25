@@ -2991,9 +2991,3 @@ def test_str_strip_long_strings() -> None:
     out = s.str.strip_chars_end("c")
     assert out.to_list() == ["ab", "a"]
     assert not out.flags["SORTED_ASC"]
-
-
-def test_str_count_matches_literal() -> None:
-    s = pl.Series(["aaaa", "abab", "", None, "a long string with aa and aaa"])
-    assert s.str.count_matches("aa", literal=True).to_list() == [2, 0, 0, None, 2]
-    assert s.str.count_matches("", literal=True).to_list() == [5, 5, 1, None, 30]

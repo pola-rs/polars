@@ -1,8 +1,12 @@
 use polars_core::prelude::arity::broadcast_binary_elementwise;
 use polars_core::series::IsSorted;
 
-use super::split::as_single_char;
 use super::*;
+
+fn as_single_char(s: &str) -> Option<char> {
+    let c = s.chars().next()?;
+    (c.len_utf8() == s.len()).then_some(c)
+}
 
 /// Apply `f` by only rewriting the views.
 ///

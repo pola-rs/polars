@@ -54,9 +54,12 @@ fn split_chars(s: &str) -> SplitNChars<'_> {
     }
 }
 
-pub(super) fn as_single_char(s: &str) -> Option<char> {
-    let c = s.chars().next()?;
-    (c.len_utf8() == s.len()).then_some(c)
+/// A one-byte delimiter. Multi-byte chars are searched faster as `&str`.
+fn as_ascii_char(s: &str) -> Option<char> {
+    match s.as_bytes() {
+        [b] if b.is_ascii() => Some(*b as char),
+        _ => None,
+    }
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -122,7 +125,7 @@ where
                         }
                     },
                 });
-            } else if let Some(c) = as_single_char(by) {
+            } else if let Some(c) = as_ascii_char(by) {
                 ca.for_each(|opt_s| push_split(&mut arrs, opt_s.map(|s| op_char(s, c))));
             } else {
                 ca.for_each(|opt_s| push_split(&mut arrs, opt_s.map(|s| op(s, by))));
@@ -231,7 +234,7 @@ where
                         Some(s) => builder.append_values_iter(split_chars(s)),
                         _ => builder.append_null(),
                     });
-                } else if let Some(c) = as_single_char(by) {
+                } else if let Some(c) = as_ascii_char(by) {
                     ca.for_each(|opt_s| match opt_s {
                         Some(s) => builder.append_values_iter(op_char(s, c)),
                         _ => builder.append_null(),
