@@ -780,7 +780,9 @@ class Series(metaclass=_Meta):
             assert f is not None
             return self._from_pyseries(f(td))
 
-        elif self.dtype in [Categorical, Enum] and not isinstance(other, Series):
+        elif isinstance(self.dtype, (Categorical, Enum)) and not isinstance(
+            other, Series
+        ):
             other = Series([other])
 
         elif isinstance(other, date) and self.dtype == Date:

@@ -1175,7 +1175,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return (
                 dt.is_nested()
                 or dt.is_extension()
-                or dt in (Categorical, Enum, Null, Object, Unknown)
+                or dt.base_type() in (Categorical, Enum, Null, Object, Unknown)
             )
 
         # determine which columns will produce std/mean/percentile/etc

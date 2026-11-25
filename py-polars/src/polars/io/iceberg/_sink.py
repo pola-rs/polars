@@ -1047,7 +1047,7 @@ def _create_table_schema(
                 )
                 return None
             return DecimalType(dtype.precision, dtype.scale), dtype
-        if dtype in (pl.String, pl.Categorical, pl.Enum):
+        if dtype.base_type() in (pl.String, pl.Categorical, pl.Enum):
             return StringType(), pl.String()
         if dtype == pl.Binary:
             return BinaryType(), pl.Binary()

@@ -296,10 +296,20 @@ def test_compare_categorical(
         (pl.Series.ne_missing, pl.Series([True, True, False, True, False, True])),
     ],
 )
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Categorical(),
+        pl.Categorical(pl.Categories.random()),
+        pl.Enum(["a", "b", "c"]),
+    ],
+)
 def test_compare_categorical_single(
-    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    expected: pl.Series,
+    dtype: pl.DataType,
 ) -> None:
-    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=dtype)
     s2 = "b"
 
     assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
@@ -318,13 +328,18 @@ def test_compare_categorical_single(
         (pl.Series.eq_missing, pl.Series([False, False, False, False, False, False])),
     ],
 )
+@pytest.mark.parametrize(
+    "dtype", [pl.Categorical(), pl.Categorical(pl.Categories.random())]
+)
 def test_compare_categorical_single_non_existent(
-    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    expected: pl.Series,
+    dtype: pl.DataType,
 ) -> None:
-    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=dtype)
     s2 = "d"
     assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
-    s_cat = pl.Series(["d"], dtype=pl.Categorical)
+    s_cat = pl.Series(["d"], dtype=dtype)
     assert_series_equal(op(s, s_cat), expected)
     assert_series_equal(op(s, s_cat.cast(pl.String)), expected)
 
