@@ -37,6 +37,23 @@ pub(crate) struct CrossJoinPredicate {
     pub output: Vec<CrossJoinColumn>,
 }
 
+impl CrossJoinPredicate {
+    fn input_columns(&self, input: &DataFrame, is_left: bool) -> DataFrame {
+        let columns = self
+            .operands
+            .iter()
+            .filter(|col| col.is_left == is_left)
+            .map(|col| {
+                let mut input = input.columns()[col.index].clone();
+                input.rename(col.name.clone());
+                input
+            })
+            .collect();
+        // SAFETY: The predicate schema has unique names.
+        unsafe { DataFrame::new_unchecked(input.height(), columns) }
+    }
+}
+
 struct CrossJoinChunk<'a> {
     build: &'a DataFrame,
     probe: &'a DataFrame,
@@ -94,26 +111,17 @@ impl CrossJoinChunk<'_> {
     async fn filter(
         &self,
         predicate: &CrossJoinPredicate,
+        candidates: DataFrame,
         indices: &mut CrossJoinIndices,
         state: &ExecutionState,
     ) -> PolarsResult<Option<DataFrame>> {
-        let len = self.build_len * self.probe_len;
-        indices.build.clear();
-        indices.probe.clear();
-        if self.probe_len > 1 {
-            for probe_index in 0..self.probe_len as IdxSize {
-                indices.build.extend(0..self.build_len as IdxSize);
-                indices
-                    .probe
-                    .extend(std::iter::repeat_n(probe_index, self.build_len));
-            }
-        }
-        let candidates = self.gather_columns(&predicate.operands, indices, len, true);
+        let len = candidates.height();
         let mask = predicate.expr.evaluate(&candidates, state).await?;
+        drop(candidates);
         let mask = column_to_mask(&mask, len)?;
         if mask.len() == 1 {
             return Ok((mask.get(0) == Some(true))
-                .then(|| self.gather_columns(&predicate.output, indices, len, true)));
+                .then(|| self.gather_all_columns(&predicate.output, indices, len)));
         }
         polars_ensure!(
             mask.len() == len,
@@ -131,11 +139,10 @@ impl CrossJoinChunk<'_> {
             return Ok(None);
         }
         if kept == len {
-            return Ok(Some(self.gather_columns(
+            return Ok(Some(self.gather_all_columns(
                 &predicate.output,
                 indices,
                 len,
-                true,
             )));
         }
         indices.build.clear();
@@ -150,6 +157,25 @@ impl CrossJoinChunk<'_> {
             kept,
             false,
         )))
+    }
+
+    fn gather_all_columns(
+        &self,
+        columns: &[CrossJoinColumn],
+        indices: &mut CrossJoinIndices,
+        len: usize,
+    ) -> DataFrame {
+        indices.build.clear();
+        indices.probe.clear();
+        if self.probe_len > 1 {
+            for probe_index in 0..self.probe_len as IdxSize {
+                indices.build.extend(0..self.build_len as IdxSize);
+                indices
+                    .probe
+                    .extend(std::iter::repeat_n(probe_index, self.build_len));
+            }
+        }
+        self.gather_columns(columns, indices, len, true)
     }
 }
 
@@ -322,8 +348,16 @@ impl ComputeNode for CrossJoinNode {
                                     ideal_morsel_size.min(IdxSize::MAX as usize);
                                 let build_step = build_df.height().min(ideal_morsel_size);
                                 let probe_step = ideal_morsel_size / build_step;
+                                let build_operands =
+                                    predicate.input_columns(build_df, left_is_build);
+                                let mut build_repeater =
+                                    DataFrameBuilder::new(build_operands.schema().clone());
+                                let mut probe_repeater = None;
+                                let mut cached_build_repeated = DataFrame::empty();
                                 while let Ok(morsel) = recv.recv().await {
                                     let probe_df = morsel.df().await;
+                                    let probe_operands =
+                                        predicate.input_columns(&probe_df, !left_is_build);
                                     for probe_start in (0..probe_df.height()).step_by(probe_step) {
                                         let probe_len =
                                             (probe_df.height() - probe_start).min(probe_step);
@@ -340,9 +374,60 @@ impl ComputeNode for CrossJoinNode {
                                                 probe_len,
                                                 left_is_build,
                                             };
+                                            let (mut build, mut probe) = if build_df.height()
+                                                >= ideal_morsel_size
+                                            {
+                                                (
+                                                    build_operands
+                                                        .slice((build_start, chunk.build_len)),
+                                                    probe_operands.new_from_index(
+                                                        probe_start,
+                                                        chunk.build_len,
+                                                    ),
+                                                )
+                                            } else {
+                                                let len = chunk.build_len * probe_len;
+                                                if len > cached_build_repeated.height() {
+                                                    build_repeater.subslice_extend_repeated(
+                                                        &build_operands,
+                                                        0,
+                                                        chunk.build_len,
+                                                        probe_len,
+                                                        ShareStrategy::Never,
+                                                    );
+                                                    cached_build_repeated =
+                                                        build_repeater.freeze_reset();
+                                                }
+                                                let probe_repeater = probe_repeater
+                                                    .get_or_insert_with(|| {
+                                                        DataFrameBuilder::new(
+                                                            probe_operands.schema().clone(),
+                                                        )
+                                                    });
+                                                probe_repeater.subslice_extend_each_repeated(
+                                                    &probe_operands,
+                                                    probe_start,
+                                                    probe_len,
+                                                    chunk.build_len,
+                                                    ShareStrategy::Always,
+                                                );
+                                                (
+                                                    cached_build_repeated.slice(Slice::head(len)),
+                                                    probe_repeater.freeze_reset(),
+                                                )
+                                            };
+                                            if !left_is_build {
+                                                core::mem::swap(&mut build, &mut probe);
+                                            }
+                                            // SAFETY: Both sides have the same height and already use
+                                            // the unique names in the joined predicate schema.
+                                            unsafe {
+                                                build.hstack_mut_unchecked(probe.columns());
+                                            }
                                             if let Some(df) = chunk
                                                 .filter(
                                                     predicate,
+                                                    build,
                                                     &mut indices,
                                                     &state.in_memory_exec_state,
                                                 )

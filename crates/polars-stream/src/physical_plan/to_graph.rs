@@ -1777,8 +1777,15 @@ fn to_graph_rec<'a>(
                         name: name.clone(),
                     }
                 };
-                let names = aexpr_to_leaf_names_iter(predicate.node(), ctx.expr_arena);
-                let predicate_schema = Arc::new(joined_schema.try_project(names)?);
+                let names: PlHashSet<_> =
+                    aexpr_to_leaf_names_iter(predicate.node(), ctx.expr_arena).collect();
+                let predicate_schema = Arc::new(
+                    joined_schema.try_project(
+                        joined_schema
+                            .iter_names()
+                            .filter(|name| names.contains(name)),
+                    )?,
+                );
                 let expr = create_stream_expr(predicate, ctx, &predicate_schema)?;
                 Some(CrossJoinPredicate {
                     expr,
