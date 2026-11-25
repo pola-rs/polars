@@ -123,6 +123,7 @@ def test_cross_join_fused_predicate_in_query_observer() -> None:
             for node in msgpack.unpackb(payload, raw=False)
             if node["properties"]["type"] == "CrossJoin"
         ]
+        assert isinstance(props, dict)
         return props
 
     unfused_call, fused_call = observer.on_query_planned.call_args_list
