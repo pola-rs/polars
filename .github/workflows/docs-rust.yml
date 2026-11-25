@@ -2,6 +2,11 @@ name: Build Rust documentation
 
 on:
   pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
     paths:
       - crates/**
       - .github/workflows/docs-rust.yml
@@ -17,6 +22,7 @@ concurrency:
 
 jobs:
   build-rust-docs:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
