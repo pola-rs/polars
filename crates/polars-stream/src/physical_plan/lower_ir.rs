@@ -1636,6 +1636,7 @@ fn lower_ir_inner(
                                 descending: key_descending.unwrap(),
                                 nulls_last: key_nulls_last.unwrap(),
                                 args: args.clone(),
+                                pre_drop_schema: None,
                             },
                         ))
                     },
@@ -1664,6 +1665,7 @@ fn lower_ir_inner(
                                 descending,
                                 args: args.clone(),
                                 options: range_options,
+                                pre_drop_schema: None,
                             },
                         ))
                     },
@@ -1699,6 +1701,7 @@ fn lower_ir_inner(
                                 by_descending,
                                 by_nulls_last,
                                 args: args.clone(),
+                                pre_drop_schema: None,
                             },
                         ))
                     },

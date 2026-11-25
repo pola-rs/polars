@@ -545,6 +545,7 @@ pub enum PhysNodeKind {
         nulls_last: bool,
         keys_row_encoded: bool,
         args: JoinArgs,
+        pre_drop_schema: Option<SchemaRef>,
     },
 
     SemiAntiJoin {
@@ -581,6 +582,7 @@ pub enum PhysNodeKind {
         by_descending: Option<Vec<bool>>,
         by_nulls_last: Option<Vec<bool>>,
         args: JoinArgs,
+        pre_drop_schema: Option<SchemaRef>,
     },
 
     #[cfg(feature = "iejoin")]
@@ -594,6 +596,7 @@ pub enum PhysNodeKind {
         descending: bool,
         args: JoinArgs,
         options: polars_defs::join::IEJoinOptions,
+        pre_drop_schema: Option<SchemaRef>,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
@@ -995,24 +998,34 @@ fn split_multiplexers(
     });
 }
 
-/// Fuses a drop of columns (without renames) into the equi or semi/anti join `node` it reads, by
+/// Fuses a drop of columns (without renames) into the join `node` it reads, by
 /// narrowing the join's output schema, so the join does not gather the dropped columns. A join
 /// with a fused predicate still gathers the columns the predicate reads to evaluate it, but does
 /// not output them. Returns whether it was fused.
 fn fuse_drop_into_join(node: &mut PhysNode, columns: &PlIndexMap<PlSmallStr, PlSmallStr>) -> bool {
-    if !matches!(
-        node.kind(),
-        PhysNodeKind::EquiJoin { .. }
-            | PhysNodeKind::SemiAntiJoin {
-                output_bool: false,
-                ..
-            }
-    ) {
-        return false;
-    }
-
+    let pre_drop_schema = match &mut node.kind {
+        PhysNodeKind::EquiJoin {
+            pre_drop_schema, ..
+        }
+        | PhysNodeKind::SemiAntiJoin {
+            pre_drop_schema,
+            output_bool: false,
+            ..
+        }
+        | PhysNodeKind::MergeJoin {
+            pre_drop_schema, ..
+        }
+        | PhysNodeKind::AsOfJoin {
+            pre_drop_schema, ..
+        } => pre_drop_schema,
+        #[cfg(feature = "iejoin")]
+        PhysNodeKind::RangeJoin {
+            pre_drop_schema, ..
+        } => pre_drop_schema,
+        _ => return false,
+    };
     // The join outputs its columns in a fixed order.
-    let schema = node.output_schema(0);
+    let schema = &mut node.output_schemas[0];
     // Leave empty projections on their existing execution path.
     if columns.is_empty() || columns.len() == schema.len() {
         return false;
@@ -1025,18 +1038,9 @@ fn fuse_drop_into_join(node: &mut PhysNode, columns: &PlIndexMap<PlSmallStr, PlS
         return false;
     }
 
-    let schema = Arc::new(schema.try_project(columns.keys()).unwrap());
-    let pre_projection_schema = std::mem::replace(node.output_schema_mut(0), schema);
-    let (PhysNodeKind::EquiJoin {
-        pre_drop_schema, ..
-    }
-    | PhysNodeKind::SemiAntiJoin {
-        pre_drop_schema, ..
-    }) = node.kind_mut()
-    else {
-        unreachable!()
-    };
-    // Only the first drop's input schema matters: what a fused predicate reads is in it.
+    let narrowed = Arc::new(schema.try_project(columns.keys()).unwrap());
+    let pre_projection_schema = std::mem::replace(schema, narrowed);
+    // Retain the original output names for payload mapping and any fused predicate.
     pre_drop_schema.get_or_insert(pre_projection_schema);
     true
 }

@@ -22,6 +22,82 @@ use crate::morsel::Morsel;
 use crate::nodes::ExecutionState;
 use crate::pipe::PortReceiver;
 
+#[cfg(any(feature = "asof_join", feature = "iejoin"))]
+#[derive(Debug)]
+pub(super) struct JoinPayload {
+    pub schema: SchemaRef,
+    indices: Vec<usize>,
+}
+
+#[cfg(any(feature = "asof_join", feature = "iejoin"))]
+impl JoinPayload {
+    /// Resolve suffixes before pruning either side's payload. The skipped columns
+    /// are matching inputs that would have been omitted even without the drop.
+    pub fn for_join(
+        left: &Schema,
+        right: &Schema,
+        output: &Schema,
+        suffix: &str,
+        skip_left: impl Fn(&PlSmallStr) -> bool,
+        skip_right: impl Fn(&PlSmallStr) -> bool,
+    ) -> (Self, Self) {
+        let build = |selected: Vec<(usize, PlSmallStr)>| {
+            let (indices, names): (Vec<_>, Vec<_>) = selected.into_iter().unzip();
+            Self {
+                schema: Arc::new(output.try_project(names.iter()).unwrap()),
+                indices,
+            }
+        };
+        let left_payload = build(
+            left.iter_names()
+                .enumerate()
+                .filter(|(_, name)| !skip_left(name) && output.contains(name))
+                .map(|(idx, name)| (idx, name.clone()))
+                .collect(),
+        );
+        let right_payload = build(
+            right
+                .iter_names()
+                .enumerate()
+                .filter(|(_, name)| !skip_right(name))
+                .filter_map(|(idx, name)| {
+                    let output_name = if left.contains(name) && !skip_left(name) {
+                        polars_utils::format_pl_smallstr!("{name}{suffix}")
+                    } else {
+                        name.clone()
+                    };
+                    output.contains(&output_name).then_some((idx, output_name))
+                })
+                .collect(),
+        );
+        debug_assert!(
+            left_payload
+                .schema
+                .iter_names()
+                .chain(right_payload.schema.iter_names())
+                .eq(output.iter_names())
+        );
+        (left_payload, right_payload)
+    }
+
+    pub fn select(&self, df: &DataFrame) -> DataFrame {
+        let columns = self
+            .indices
+            .iter()
+            .zip(self.schema.iter_names())
+            .map(|(&idx, name)| {
+                let mut column = df.columns()[idx].clone();
+                if column.name() != name {
+                    column.rename(name.clone());
+                }
+                column
+            })
+            .collect();
+        // SAFETY: These are distinct output names and all columns have the input height.
+        unsafe { DataFrame::new_unchecked(df.height(), columns) }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct SpillFrameSearchBuffer {
     schema: SchemaRef,

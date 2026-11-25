@@ -325,3 +325,106 @@ def test_fused_predicate_many_unmatched_build_rows(
         how=how,  # type: ignore[arg-type]
     ).select(columns)
     check(q)
+
+
+def assert_join_projection(plan: str, kind: str, projection: str) -> None:
+    assert any(
+        f'label="{kind}\\n' in line and projection in line for line in plan.splitlines()
+    )
+
+
+def test_merge_join_fused_drop() -> None:
+    left = pl.LazyFrame({"k": [None, 1, 1, 3], "lp": ["d", "a", "b", "c"]}).set_sorted(
+        "k"
+    )
+    right = pl.LazyFrame({"k": [None, 1, 1, 2], "rp": [0, 20, 30, 10]}).set_sorted("k")
+    for coalesce in (True, False):
+        full = left.join(right, on="k", how="full", coalesce=coalesce, suffix="_R")
+        expected = full.collect(engine="in-memory")
+        query = full.select("lp", "rp")
+        assert_join_projection(
+            physical_plan(query), "merge-join", f"project 2 / {expected.width}: lp, rp"
+        )
+        check(query, expected.select("lp", "rp"))
+
+    query = full.select("lp", "k_R", "rp")
+    assert_join_projection(
+        physical_plan(query), "merge-join", "project 3 / 4: lp, k_R, rp"
+    )
+    check(query, expected.select("lp", "k_R", "rp"))
+
+    reordered = full.select("rp", "lp")
+    assert 'label="select\\nrp, lp"' in physical_plan(reordered)
+    check(reordered, expected.select("rp", "lp"))
+
+    stacked = query.select("lp", "rp")
+    options = pl.QueryOptFlags(projection_pushdown=False, fast_projection=False)
+    plan = stacked.show_graph(
+        engine="streaming",
+        plan_stage="physical",
+        raw_output=True,
+        optimizations=options,
+    )
+    assert plan is not None
+    assert_join_projection(plan, "merge-join", "project 2 / 4: lp, rp")
+    assert 'label="select\\nlp, k_R, rp"' not in plan
+    assert 'label="select\\nlp, rp"' not in plan
+    assert_frame_equal(
+        stacked.collect(engine="streaming", optimizations=options),
+        expected.select("lp", "rp"),
+        check_row_order=False,
+    )
+
+
+def test_range_join_fused_drop() -> None:
+    point = pl.LazyFrame({"p": [1, 5, 8, 10, None], "lp": list("abcde")})
+    interval = pl.LazyFrame(
+        {"lo": [0, 4, 9, None], "hi": [6, 10, 10, 10], "rp": [1, 2, 3, 4]}
+    )
+    p, lo, hi = pl.col("p"), pl.col("lo"), pl.col("hi")
+    for full, cols in (
+        (point.join_where(interval, lo < p), ["lp", "rp"]),
+        (point.join_where(interval, lo < p, p <= hi), ["lp", "rp"]),
+        (interval.join_where(point, lo < p, p <= hi), ["rp"]),
+        (point.join_where(interval, lo < p * 2, p * 2 <= hi + 3), ["lp", "rp"]),
+    ):
+        query = full.select(cols)
+        assert_join_projection(
+            physical_plan(query), "range-join", f"project {len(cols)} / "
+        )
+        check(query)
+
+
+def test_grouped_asof_join_fused_drop() -> None:
+    left = pl.LazyFrame(
+        {"g": [1, 1, 2, 3], "t": [1, 4, 5, 7], "lp": list("bcad")}
+    ).set_sorted("g", "t")
+    right = pl.LazyFrame(
+        {"g": [1, 1, 2], "t": [2, 3, 4], "rp": [10, 15, 20]}
+    ).set_sorted("g", "t")
+    full = left.join_asof(right, on="t", by="g", coalesce=False, suffix="_R")
+    query = full.select("lp", "rp")
+    expected = pl.DataFrame({"lp": list("bcad"), "rp": [None, 15, 20, None]})
+    assert_join_projection(physical_plan(query), "asof-join", "project 2 / 5: lp, rp")
+    assert_frame_equal(query.collect(engine="streaming"), expected)
+
+    query = full.select("lp", "t_R", "rp")
+    assert_join_projection(
+        physical_plan(query), "asof-join", "project 3 / 5: lp, t_R, rp"
+    )
+    assert_frame_equal(
+        query.collect(engine="streaming"),
+        expected.insert_column(1, pl.Series("t_R", [None, 3, 4, None])),
+    )
+
+
+def test_ungrouped_asof_join_fused_drop_only_right_payload() -> None:
+    left = pl.LazyFrame({"left_t": [0, 2, 3, 8]}).set_sorted("left_t")
+    right = pl.LazyFrame({"right_t": [1, 5, 7], "rp": [10, 50, 70]}).set_sorted(
+        "right_t"
+    )
+    query = left.join_asof(right, left_on="left_t", right_on="right_t").select("rp")
+    assert_join_projection(physical_plan(query), "asof-join", "project 1 / 3: rp")
+    assert_frame_equal(
+        query.collect(engine="streaming"), pl.DataFrame({"rp": [None, 10, 10, 70]})
+    )

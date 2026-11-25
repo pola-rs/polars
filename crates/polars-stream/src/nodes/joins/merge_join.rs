@@ -43,6 +43,7 @@ pub struct MergeJoinParams {
     pub left: MergeJoinSideParams,
     pub right: MergeJoinSideParams,
     pub output_schema: SchemaRef,
+    pre_drop_schema: Option<SchemaRef>,
     pub key_descending: bool,
     pub key_nulls_last: bool,
     pub keys_row_encoded: bool,
@@ -111,6 +112,7 @@ impl MergeJoinNode {
         left_input_schema: SchemaRef,
         right_input_schema: SchemaRef,
         output_schema: SchemaRef,
+        pre_drop_schema: Option<SchemaRef>,
         left_on: Vec<PlSmallStr>,
         right_on: Vec<PlSmallStr>,
         tmp_left_key_col: Option<PlSmallStr>,
@@ -143,6 +145,7 @@ impl MergeJoinNode {
             left,
             right,
             output_schema,
+            pre_drop_schema,
             key_descending: descending,
             key_nulls_last: nulls_last,
             keys_row_encoded,
@@ -525,6 +528,10 @@ async fn compute_join_and_send(
             &params.right.on,
             params.left_is_build(),
             &params.output_schema,
+            params
+                .pre_drop_schema
+                .as_deref()
+                .unwrap_or(&params.output_schema),
         )?;
         if df.height() > 0 {
             let mut morsel = Morsel::new_unregistered(df, seq, source_token.clone());
@@ -548,6 +555,10 @@ async fn compute_join_and_send(
             &params.right.on,
             params.left_is_build(),
             &params.output_schema,
+            params
+                .pre_drop_schema
+                .as_deref()
+                .unwrap_or(&params.output_schema),
         )?;
         if df_unmatched.height() > 0 {
             if params.args.maintain_order == MaintainOrderJoin::None {
@@ -939,6 +950,7 @@ mod tests {
         MergeJoinParams {
             left: side(matches!(how, JoinType::Left | JoinType::Full)),
             right: side(matches!(how, JoinType::Right | JoinType::Full)),
+            pre_drop_schema: None,
             output_schema: Arc::new(Schema::default()),
             key_descending: false,
             key_nulls_last: true,

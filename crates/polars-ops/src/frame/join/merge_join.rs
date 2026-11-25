@@ -9,7 +9,6 @@ use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_defs::join::{JoinArgs, JoinType};
-use polars_utils::itertools::Itertools;
 use polars_utils::sort::reorder_cmp;
 use polars_utils::total_ord::{TotalOrd, TotalOrdWrap};
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -235,6 +234,7 @@ pub fn gather_and_postprocess(
     right_on: &[PlSmallStr],
     left_is_build: bool,
     output_schema: &Schema,
+    pre_drop_schema: &Schema,
 ) -> PolarsResult<DataFrame> {
     let should_coalesce = args.should_coalesce();
     let left_emit_unmatched = matches!(args.how, JoinType::Left | JoinType::Full);
@@ -251,42 +251,42 @@ pub fn gather_and_postprocess(
     }
 
     let left_keys_coalesced_away = should_coalesce && matches!(args.how, JoinType::Right);
+    let right_keys_coalesced_away = should_coalesce && !left_keys_coalesced_away;
+    let coalesce_full = should_coalesce && matches!(args.how, JoinType::Full);
+    let left_input_schema = left.schema().clone();
 
-    // Remove non-payload columns
-    for col in left
-        .columns()
-        .iter()
-        .map(Column::name)
-        .cloned()
-        .collect_vec()
-    {
-        if left_on.contains(&col) && should_coalesce {
-            continue;
-        }
-        if !output_schema.contains(&col) {
+    // Resolve collisions against the full join output. Dropping the left namesake must
+    // not change the output name of a right column.
+    for col in left.get_column_names_owned() {
+        if (left_keys_coalesced_away && left_on.contains(&col)) || !output_schema.contains(&col) {
             left.drop_in_place(&col).unwrap();
         }
     }
-    for col in right
-        .columns()
-        .iter()
-        .map(Column::name)
-        .cloned()
-        .collect_vec()
-    {
-        if right_on.contains(&col) && should_coalesce {
+    let mut renames = Vec::new();
+    for col in right.get_column_names_owned() {
+        if right_keys_coalesced_away && right_on.contains(&col) {
+            // A right key is only needed for output if it contributes to a kept full-join key.
+            let needed = coalesce_full
+                && left_on
+                    .iter()
+                    .zip(right_on)
+                    .any(|(l, r)| r == &col && output_schema.contains(l));
+            if !needed {
+                right.drop_in_place(&col).unwrap();
+            }
             continue;
         }
-        // A right column takes the suffix only where it collides with a left column
-        // that survives coalescing.
-        let collides =
-            left.schema().contains(&col) && !(left_keys_coalesced_away && left_on.contains(&col));
-        let renamed = match collides {
+        let collides = pre_drop_schema.contains(&col)
+            && left_input_schema.contains(&col)
+            && !(left_keys_coalesced_away && left_on.contains(&col));
+        let output_name = match collides {
             true => Cow::Owned(format_pl_smallstr!("{}{}", col, args.suffix())),
             false => Cow::Borrowed(&col),
         };
-        if !output_schema.contains(&renamed) {
+        if !output_schema.contains(output_name.as_ref()) {
             right.drop_in_place(&col).unwrap();
+        } else if let Cow::Owned(output_name) = output_name {
+            renames.push((col, output_name));
         }
     }
 
@@ -321,56 +321,24 @@ pub fn gather_and_postprocess(
         None => DataFrame::full_null(right.schema(), gather_left.unwrap().len()),
     };
 
-    // Coalesce the key columns.
-    if should_coalesce {
-        match args.how {
-            JoinType::Inner | JoinType::Left => {
-                for c in right_on {
-                    if right.schema().contains(c) {
-                        right.drop_in_place(c.as_str())?;
-                    }
-                }
-            },
-            JoinType::Right => {
-                for c in left_on {
-                    if left.schema().contains(c) {
-                        left.drop_in_place(c.as_str())?;
-                    }
-                }
-            },
-            JoinType::Full => {
-                for (left_keycol, right_keycol) in Iterator::zip(left_on.iter(), right_on.iter()) {
-                    let left_col = left.column(left_keycol).unwrap();
-                    let right_col = right.column(right_keycol).unwrap();
-                    let coalesced =
-                        coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
-                    left.replace(left_keycol, coalesced).unwrap();
-                    right.drop_in_place(right_keycol).unwrap();
-                }
-            },
-            _ => unreachable!(),
+    if coalesce_full {
+        for (left_key, right_key) in left_on.iter().zip(right_on) {
+            if let Ok(left_col) = left.column(left_key) {
+                let right_col = right.column(right_key)?;
+                let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()])?;
+                left.replace(left_key, coalesced)?;
+            }
+        }
+        for right_key in right_on {
+            if right.schema().contains(right_key) {
+                right.drop_in_place(right_key)?;
+            }
         }
     }
-
-    // Rename any duplicate right columns to "{}_right".
-    let left_cols: PlHashSet<_> = left.columns().iter().map(Column::name).cloned().collect();
-    let right_cols_vec = right.get_column_names_owned();
-    let renames = right_cols_vec
-        .iter()
-        .filter(|c| left_cols.contains(*c))
-        .map(|c| {
-            let renamed = format_pl_smallstr!("{}{}", c, args.suffix());
-            (c.as_str(), renamed)
-        });
-    right = right.rename_many(renames).unwrap();
-
-    // Merge left and right and drop unused output columns.
+    if !renames.is_empty() {
+        right = right.rename_many(renames.iter().map(|(from, to)| (from.as_str(), to.clone())))?;
+    }
     left.hstack_mut(right.columns())?;
-    for col in left_on {
-        if left.schema().contains(col) && !output_schema.contains(col) {
-            left.drop_in_place(col).unwrap();
-        }
-    }
 
     debug_assert_eq!(**left.schema(), *output_schema);
     Ok(left)

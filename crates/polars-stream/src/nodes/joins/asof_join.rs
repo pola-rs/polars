@@ -24,7 +24,9 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
-use crate::nodes::joins::utils::{SpillFrameSearchBuffer, stop_and_take_pipe_contents};
+use crate::nodes::joins::utils::{
+    JoinPayload, SpillFrameSearchBuffer, stop_and_take_pipe_contents,
+};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 const ROW_ENCODED_COL_NAME: PlSmallStr = PlSmallStr::from_static("__PL_ASOF_JOIN_BY");
@@ -48,6 +50,7 @@ struct AsOfJoinParams {
     by_descending: Vec<bool>,
     by_nulls_last: Vec<bool>,
     args: JoinArgs,
+    payloads: Option<(JoinPayload, JoinPayload)>,
 }
 
 impl AsOfJoinParams {
@@ -103,6 +106,7 @@ impl AsOfJoinNode {
     pub fn new(
         left_input_schema: SchemaRef,
         right_input_schema: SchemaRef,
+        projected_output: Option<&SchemaRef>,
         left_on: PlSmallStr,
         right_on: PlSmallStr,
         tmp_left_key_col: Option<PlSmallStr>,
@@ -132,6 +136,23 @@ impl AsOfJoinNode {
         let left_key_dtype = left_input_schema.get(left_key_col).unwrap();
         let right_key_dtype = right_input_schema.get(right_key_col).unwrap();
         assert_eq!(left_key_dtype, right_key_dtype);
+        let payloads = projected_output.map(|output| {
+            JoinPayload::for_join(
+                &left_input_schema,
+                &right_input_schema,
+                output,
+                args.suffix(),
+                |name| tmp_left_key_col.as_ref() == Some(name),
+                |name| {
+                    tmp_right_key_col.as_ref() == Some(name)
+                        || options
+                            .right_by
+                            .as_ref()
+                            .is_some_and(|by| by.contains(name))
+                        || (args.should_coalesce() && left_on == right_on && name == &right_on)
+                },
+            )
+        });
         let left = AsOfJoinSideParams {
             on: left_on,
             tmp_key_col: tmp_left_key_col,
@@ -147,6 +168,7 @@ impl AsOfJoinNode {
             by_descending: by_descending.unwrap_or_default(),
             by_nulls_last: by_nulls_last.unwrap_or_default(),
             args,
+            payloads,
         };
         AsOfJoinNode {
             params,
@@ -714,11 +736,17 @@ impl<'a> ByGroups<'a> {
     }
 }
 
-fn drop_columns(
+fn select_payloads(
     left_df: &mut DataFrame,
     right_df: &mut DataFrame,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
+    if let Some((left, right)) = &params.payloads {
+        *left_df = left.select(left_df);
+        *right_df = right.select(right_df);
+        return Ok(());
+    }
+
     // Drop any temporary join-key columns that were added before calling _join_asof.
     if let Some(ref col) = params.left.tmp_key_col
         && left_df.schema().contains(col)
@@ -741,6 +769,19 @@ fn drop_columns(
         right_df.drop_in_place(&params.right.on)?;
     }
     Ok(())
+}
+
+fn finish_join(
+    mut left_df: DataFrame,
+    right_df: DataFrame,
+    params: &AsOfJoinParams,
+) -> PolarsResult<DataFrame> {
+    if params.payloads.is_some() {
+        left_df.hstack_mut(right_df.columns())?;
+        Ok(left_df)
+    } else {
+        _finish_join(left_df, right_df, params.args.suffix.clone())
+    }
 }
 
 /// Calls `_join_asof` on a left/right pair and cleans up the output via
@@ -768,10 +809,10 @@ fn join_asof_ungrouped(
         options.tolerance.clone().map(Scalar::into_value),
         options.allow_eq,
     )?;
-    drop_columns(&mut left_df, &mut right_df, params)?;
+    select_payloads(&mut left_df, &mut right_df, params)?;
     // SAFETY: _join_asof_dispatch only returns in-bounds indices.
     let right_df = unsafe { right_df.take_unchecked(&take_idx) };
-    _finish_join(left_df, right_df, params.args.suffix.clone())
+    finish_join(left_df, right_df, params)
 }
 
 async fn compute_asof_join(
@@ -819,7 +860,7 @@ async fn compute_asof_join(
     let mut right_groups_iter = right_groups.iter_groups();
     let mut right_group = right_groups_iter.next();
 
-    drop_columns(&mut left_df, &mut right_df, params)?;
+    select_payloads(&mut left_df, &mut right_df, params)?;
 
     let mut out_right = Vec::with_capacity(left_groups.run_lengths.len());
     for (left_start, left_group_len) in left_groups_iter {
@@ -871,7 +912,7 @@ async fn compute_asof_join(
     let initial = DataFrame::empty_with_arc_schema(right_df.schema().clone());
     let out_right =
         accumulate_dataframes_vertical_unchecked([initial].into_iter().chain(out_right));
-    _finish_join(left_df, out_right, params.args.suffix.clone())
+    finish_join(left_df, out_right, params)
 }
 
 fn check_df_sorted(

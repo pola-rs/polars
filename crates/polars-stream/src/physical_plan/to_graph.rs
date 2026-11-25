@@ -1715,6 +1715,7 @@ fn to_graph_rec<'a>(
             nulls_last,
             keys_row_encoded,
             args,
+            pre_drop_schema,
         } => {
             let args = args.clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
@@ -1729,6 +1730,7 @@ fn to_graph_rec<'a>(
                         left_input_schema,
                         right_input_schema,
                         output_schema,
+                        pre_drop_schema.clone(),
                         left_on.clone(),
                         right_on.clone(),
                         tmp_left_key_col.clone(),
@@ -1784,6 +1786,7 @@ fn to_graph_rec<'a>(
             by_descending,
             by_nulls_last,
             args,
+            pre_drop_schema,
         } => {
             let args = args.clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
@@ -1798,6 +1801,7 @@ fn to_graph_rec<'a>(
                         nodes::joins::asof_join::AsOfJoinNode::new(
                             left_input_schema,
                             right_input_schema,
+                            pre_drop_schema.as_ref().map(|_| node.output_schema(0)),
                             left_on.clone(),
                             right_on.clone(),
                             tmp_left_key_col.clone(),
@@ -1830,6 +1834,7 @@ fn to_graph_rec<'a>(
             tmp_right_key_cols,
             descending,
             args,
+            pre_drop_schema,
             options,
         } => {
             let args = args.clone();
@@ -1843,6 +1848,7 @@ fn to_graph_rec<'a>(
                     nodes::joins::range_join::RangeJoinNode::new(
                         left_input_schema,
                         right_input_schema,
+                        pre_drop_schema.as_ref().map(|_| node.output_schema(0)),
                         left_on.clone(),
                         right_on.clone(),
                         tmp_left_key_cols.clone(),
