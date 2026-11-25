@@ -141,6 +141,79 @@ def test_read_geoparquet_covering(
 
 
 @pytest.mark.parametrize(
+    ("box", "disk_order"),
+    [
+        (BOX_XY, ["xmax", "xmin", "ymax", "ymin"]),
+        (BOX_XYZ, ["zmax", "ymax", "xmax", "zmin", "ymin", "xmin"]),
+    ],
+)
+def test_read_geoparquet_covering_out_of_order(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    box: pl.Struct,
+    disk_order: list[str],
+) -> None:
+    canonical = {f.name: float(i + 1) for i, f in enumerate(box.fields)}
+    row0 = {name: canonical[name] for name in disk_order}
+    row1 = {name: canonical[name] + 10.0 for name in disk_order}
+    pa_type = pa.struct([(name, pa.float64()) for name in disk_order])
+    table = pa.table(
+        {
+            "geometry": pa.array([POINT_WKB, POINT_WKB, POINT_WKB], pa.binary()),
+            "bbox": pa.array([row0, None, row1], type=pa_type),
+        }
+    )
+    covering = {"bbox": {name: ["bbox", name] for name in disk_order}}
+    geo = {
+        "version": "1.1.0",
+        "primary_column": "geometry",
+        "columns": {
+            "geometry": {"encoding": "WKB", "geometry_types": [], "covering": covering}
+        },
+    }
+    path = tmp_path / "shuffled_bbox.parquet"
+    pq.write_table(
+        table.replace_schema_metadata({b"geo": json.dumps(geo)}),
+        path,
+        row_group_size=1,
+    )
+
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_READ", "1")
+    expected_rows = [canonical, None, {k: v + 10.0 for k, v in canonical.items()}]
+    assert _ext(pl.scan_parquet(path).collect_schema()["bbox"]) == (
+        "geoarrow.box",
+        box,
+        CRS84,
+    )
+    for df in (pl.read_parquet(path), pl.scan_parquet(path).collect()):
+        assert _ext(df.schema["bbox"]) == ("geoarrow.box", box, CRS84)
+        assert [f.name for f in df.schema["bbox"].ext_storage().fields] == [  # type: ignore[union-attr]
+            f.name for f in box.fields
+        ]
+        assert df["bbox"].ext.storage().to_list() == expected_rows
+
+    assert _ext(pl.scan_parquet(path).head(0).collect().schema["bbox"]) == (
+        "geoarrow.box",
+        box,
+        CRS84,
+    )
+    assert pl.scan_parquet(path).select(
+        pl.col("bbox").ext.storage().struct.field("xmin")
+    ).collect()["xmin"].to_list() == [canonical["xmin"], None, canonical["xmin"] + 10.0]
+
+    # Round-trip back to GeoParquet produces canonical covering layout,
+    # and scanning canonical + out-of-order files together works seamlessly.
+    plmonkeypatch.setenv("POLARS_GEOPARQUET_WRITE", "1.1")
+    canonical_path = tmp_path / "canonical_bbox.parquet"
+    pl.read_parquet(path).write_parquet(canonical_path)
+    assert _read_geo(canonical_path)["columns"]["geometry"]["covering"] == _covering(
+        "bbox", box
+    )
+    combined = pl.scan_parquet([canonical_path, path]).collect()
+    assert combined["bbox"].ext.storage().to_list() == expected_rows * 2
+
+
+@pytest.mark.parametrize(
     ("bbox", "covering", "match"),
     [
         (
@@ -151,6 +224,21 @@ def test_read_geoparquet_covering(
         (pa.array([XY_BOUNDS]), _covering("b", BOX_XY), "column 'b' not found"),
         (
             pa.array([{f.name: 1.0 for f in BOX_XYM.fields}]),
+            _covering("bbox", BOX_XY),
+            "not a struct of Float64 fields",
+        ),
+        (
+            pa.array(
+                [{"xmax": 2.0, "xmin": 1.0, "ymax": 4.0, "ymin": 3.0}],
+                type=pa.struct(
+                    [
+                        ("xmax", pa.float32()),
+                        ("xmin", pa.float64()),
+                        ("ymax", pa.float64()),
+                        ("ymin", pa.float64()),
+                    ]
+                ),
+            ),
             _covering("bbox", BOX_XY),
             "not a struct of Float64 fields",
         ),

@@ -219,6 +219,39 @@ pub fn columns_to_iter_recursive(
             },
 
             ArrowDataType::Extension(ext) => {
+                // GeoArrow `geoarrow.box` requires canonical field order, while GeoParquet
+                // coverings on disk may store those fields in any order. Align leaf streams
+                // to the canonical struct field names before deserializing the struct.
+                if ext.name == crate::arrow::geo::BOX_EXTENSION_NAME
+                    && let ArrowDataType::Struct(fields) = &ext.inner
+                    && columns.len() == fields.len()
+                    && types.len() == fields.len()
+                    && !fields
+                        .iter()
+                        .zip(&types)
+                        .all(|(f, t)| f.name == t.field_info.name)
+                {
+                    let mut paired: Vec<_> = columns.into_iter().zip(types).collect();
+                    let mut ordered_cols = Vec::with_capacity(fields.len());
+                    let mut ordered_types = Vec::with_capacity(fields.len());
+                    for f in fields {
+                        let pos = paired
+                            .iter()
+                            .position(|(_, t)| t.field_info.name == f.name)
+                            .ok_or_else(|| {
+                                ParquetError::oos(format!(
+                                    "missing leaf '{}' for '{}' column",
+                                    f.name, ext.name
+                                ))
+                            })?;
+                        let (col, ty) = paired.swap_remove(pos);
+                        ordered_cols.push(col);
+                        ordered_types.push(ty);
+                    }
+                    columns = ordered_cols;
+                    types = ordered_types;
+                }
+
                 // Perform deserialization for the storage type.
                 let (nested, mut array, ptm) = columns_to_iter_recursive(
                     columns,
