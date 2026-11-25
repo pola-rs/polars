@@ -168,8 +168,8 @@ def test_month_start_end_datetime(time_unit: TimeUnit, time_zone: str | None) ->
     values = [v for v in VALUES if v is None or v.year >= 1678]
     values += [datetime(2024, 2, 29, 23, 59, 59, 999000), datetime(2023, 2, 1, 0, 0, 1)]
     s = pl.Series(values, dtype=pl.Datetime(time_unit, time_zone))
-    expected_start = []
-    expected_end = []
+    expected_start: list[datetime | None] = []
+    expected_end: list[datetime | None] = []
     for v in values:
         if v is None:
             expected_start.append(None)
