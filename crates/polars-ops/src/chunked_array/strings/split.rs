@@ -61,10 +61,7 @@ pub(super) fn as_single_char(s: &str) -> Option<char> {
 }
 
 #[cfg(feature = "dtype-struct")]
-fn push_split<'a>(
-    arrs: &mut [MutablePlString],
-    splitted: Option<impl Iterator<Item = &'a str>>,
-) {
+fn push_split<'a>(arrs: &mut [MutablePlString], splitted: Option<impl Iterator<Item = &'a str>>) {
     match splitted {
         None => {
             for arr in arrs.iter_mut() {
