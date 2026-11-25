@@ -8,6 +8,7 @@ for compatibility with its documented import path.
 from __future__ import annotations
 
 import contextlib
+from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Final
 
 from polars.lazyframe.engine import (
@@ -45,6 +46,14 @@ _ENGINE_BY_NAME: Final[dict[str, Engine]] = {
     "streaming": _STREAMING_ENGINE,
 }
 
+# The entry point group a package registers an `Engine` subclass under. The
+# entry point's name is the engine name; its value is the class, or any callable
+# that takes no arguments and returns an engine.
+ENGINE_ENTRY_POINT_GROUP: Final = "polars.engines"
+
+# One instance per registered name, created on first use.
+_REGISTERED_ENGINES: dict[str, Engine] = {}
+
 # Engine objects cannot be stored in `POLARS_ENGINE_AFFINITY`; `Config` keeps
 # the object and name forms mutually exclusive.
 _ENGINE_AFFINITY_OVERRIDE: Engine | None = None
@@ -66,15 +75,47 @@ def _eager_engine() -> Engine:
     return _IN_MEMORY_ENGINE
 
 
-def _engine_from_name(engine: EngineTypeName) -> Engine:
+def registered_engine(name: str) -> Engine | None:
+    """
+    Return the engine an installed package registered under `name`, if any.
+
+    A package registers an engine through an entry point in the
+    `polars.engines` group. The engine is created without arguments the first
+    time its name is used and the same instance is returned afterwards.
+    """
+    if (engine := _REGISTERED_ENGINES.get(name)) is not None:
+        return engine
+
+    registered = tuple(entry_points(group=ENGINE_ENTRY_POINT_GROUP, name=name))
+    if not registered:
+        return None
+    if len(registered) > 1:
+        sources = sorted(entry_point.value for entry_point in registered)
+        msg = (
+            f"more than one installed package registers the engine {name!r}: {sources}"
+        )
+        raise ValueError(msg)
+
+    engine = registered[0].load()()
+    if not isinstance(engine, Engine):
+        msg = f"the entry point for the engine {name!r} must create a `polars.Engine`, got {type(engine).__name__!r}"
+        raise TypeError(msg)
+    _REGISTERED_ENGINES[name] = engine
+    return engine
+
+
+def _engine_from_name(engine: EngineTypeName | str) -> Engine:
     """Resolve an explicit engine name without applying the configured affinity."""
     if engine == "gpu":
         return GPUEngine()
 
-    if (selected := _ENGINE_BY_NAME.get(engine)) is None:
-        msg = f"Invalid engine argument {engine=}"
-        raise ValueError(msg)
-    return selected
+    if (selected := _ENGINE_BY_NAME.get(engine)) is not None:
+        return selected
+    # Built-in names are resolved first, so a package cannot replace one.
+    if (selected := registered_engine(engine)) is not None:
+        return selected
+    msg = f"Invalid engine argument {engine=}"
+    raise ValueError(msg)
 
 
 def _validate_engine(engine: EngineType) -> None:
@@ -102,8 +143,10 @@ def _select_engine(engine: EngineType) -> Engine:
 
 
 __all__ = [
+    "ENGINE_ENTRY_POINT_GROUP",
     "GPUEngine",
     "SUPPORTED_ENGINE_NAMES",
     "get_engine_affinity_override",
+    "registered_engine",
     "set_engine_affinity_override",
 ]

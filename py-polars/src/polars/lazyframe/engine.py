@@ -55,6 +55,18 @@ class Engine(ABC):
 
     Subclass this to plug a new backend into Polars.
 
+    Pass an instance as the `engine` argument of :meth:`LazyFrame.collect`. To make
+    the engine selectable by name, register the subclass in the `polars.engines`
+    entry point group of the package that provides it:
+
+    .. code-block:: toml
+
+        [project.entry-points."polars.engines"]
+        my-engine = "my_package:MyEngine"
+
+    `engine="my-engine"` then creates the engine without arguments on first use.
+    The built-in names cannot be replaced.
+
     .. warning::
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.

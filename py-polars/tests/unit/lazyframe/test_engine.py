@@ -7,6 +7,7 @@ import inspect
 import io
 import os
 import pickle
+import sys
 from typing import IO, TYPE_CHECKING, Any
 
 import pytest
@@ -506,3 +507,131 @@ def test_restore_defaults_resets_runtime_only_options() -> None:
 
     assert _select_engine("auto").name == "auto"
     assert builder.DEFAULT_CREDENTIAL_PROVIDER == "auto"
+
+
+def _make_counting_engine() -> pl.Engine:
+    return _CountingEngine()
+
+
+def _not_an_engine() -> object:
+    return object()
+
+
+def _install(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    distribution: str,
+    engines: dict[str, str],
+) -> None:
+    """
+    Install a distribution that registers engines, as a package's metadata does.
+
+    `engines` maps an engine name to the attribute of this module its entry point
+    loads.
+    """
+    info = tmp_path / f"{distribution}-1.0.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {distribution}\nVersion: 1.0\n"
+    )
+    registered = "\n".join(
+        f"{name} = {__name__}:{attribute}" for name, attribute in engines.items()
+    )
+    (info / "entry_points.txt").write_text(f"[polars.engines]\n{registered}\n")
+    if str(tmp_path) not in sys.path:
+        monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(engine_config, "_REGISTERED_ENGINES", {})
+
+
+@pytest.mark.parametrize("target", ["_CountingEngine", "_make_counting_engine"])
+def test_registered_engine_collects_when_selected_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lf: pl.LazyFrame, target: str
+) -> None:
+    # the entry point is a class or any callable that takes no arguments
+    _install(tmp_path, monkeypatch, "counting-engine", {"counting": target})
+
+    engine = _select_engine("counting")
+    assert isinstance(engine, _CountingEngine)
+    assert_frame_equal(lf.collect(engine="counting"), lf.collect(engine="in-memory"))
+    assert engine.collected == 1
+    # created once: a later use of the name reaches the same instance
+    lf.collect(engine="counting")
+    assert _select_engine("counting") is engine
+    assert engine.collected == 2
+
+
+@pytest.mark.usefixtures("_restore_affinity")
+def test_registered_engine_name_as_affinity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lf: pl.LazyFrame
+) -> None:
+    _install(tmp_path, monkeypatch, "counting-engine", {"counting": "_CountingEngine"})
+    engine = _select_engine("counting")
+    assert isinstance(engine, _CountingEngine)
+
+    with pl.Config(engine_affinity="counting"):
+        # Rust reads the environment variable and does not know the name, so
+        # the affinity is kept as the engine object
+        assert os.environ.get("POLARS_ENGINE_AFFINITY") is None
+        assert _select_engine("auto") is engine
+        assert_frame_equal(lf.collect(), lf.collect(engine="in-memory"))
+        assert engine.collected == 1
+    assert _select_engine("auto").name == "auto"
+    lf.collect()
+    assert engine.collected == 1
+
+    pl.Config.set_engine_affinity("counting")
+    assert _select_engine("auto") is engine
+
+
+@pytest.mark.usefixtures("_restore_affinity")
+@pytest.mark.parametrize("name", engine_config.SUPPORTED_ENGINE_NAMES)
+def test_registered_engine_cannot_replace_builtin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    builtin = _select_engine(name)  # type: ignore[arg-type]
+    _install(tmp_path, monkeypatch, "impostor", {name: "_CountingEngine"})
+
+    selected = _select_engine(name)  # type: ignore[arg-type]
+    assert type(selected) is type(builtin)
+    assert selected.name == name
+    pl.Config.set_engine_affinity(name)  # type: ignore[arg-type]
+    assert not isinstance(_select_engine("auto"), _CountingEngine)
+
+
+def test_engine_registered_by_two_distributions_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lf: pl.LazyFrame
+) -> None:
+    _install(tmp_path, monkeypatch, "first", {"counting": "_CountingEngine"})
+    _install(tmp_path, monkeypatch, "second", {"counting": "_make_counting_engine"})
+
+    # neither is picked, and the message names both
+    with pytest.raises(
+        ValueError,
+        match=r"more than one installed package.*_CountingEngine.*_make_counting_engine",
+    ):
+        lf.collect(engine="counting")
+    with pytest.raises(ValueError, match="more than one installed package"):
+        pl.Config.set_engine_affinity("counting")
+
+
+def test_registered_entry_point_must_create_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lf: pl.LazyFrame
+) -> None:
+    _install(tmp_path, monkeypatch, "broken", {"broken": "_not_an_engine"})
+
+    for _ in range(2):  # the object is not kept, so the name fails every time
+        with pytest.raises(TypeError, match=r"must create a `polars.Engine`"):
+            lf.collect(engine="broken")
+    with pytest.raises(TypeError, match=r"must create a `polars.Engine`"):
+        pl.Config.set_engine_affinity("broken")
+
+
+def test_name_no_distribution_registers_stays_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lf: pl.LazyFrame
+) -> None:
+    _install(tmp_path, monkeypatch, "counting-engine", {"counting": "_CountingEngine"})
+
+    with pytest.raises(ValueError, match="Invalid engine argument"):
+        lf.collect(engine="countin")  # type: ignore[call-overload]
+    with pytest.raises(ValueError, match="invalid engine"):
+        pl.Config.set_engine_affinity("countin")
