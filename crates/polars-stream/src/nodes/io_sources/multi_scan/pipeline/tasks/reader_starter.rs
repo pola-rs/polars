@@ -15,7 +15,6 @@ use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use tokio::sync::Semaphore;
@@ -529,7 +528,7 @@ async fn start_reader_impl(
     //   predicate has its columns, and missing columns are still reported), and narrow it after.
     let mut final_output_schema = final_output_schema;
     let mut output_schema_after_predicate = output_schema_after_predicate;
-    let mut drop_columns_after_predicate: Vec<PlSmallStr> = vec![];
+    let mut drop_columns_after_predicate = Default::default();
 
     if extra_ops_post.predicate.is_none()
         && predicate.is_some()
