@@ -184,6 +184,11 @@ impl HistBreaks {
     pub fn new(s: &Series, bin_count: Option<usize>, bins: Option<&Series>) -> PolarsResult<Self> {
         let bins = bins
             .map(|bins| {
+                // `Null` is the dtype of empty bins, e.g. `bins=[]` from Python.
+                polars_ensure!(
+                    bins.dtype().is_numeric() || bins.dtype().is_null(),
+                    InvalidOperation: "`hist` bins must be numeric, got dtype `{}`", bins.dtype()
+                );
                 polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
                 Ok(bins.cast(&DataType::Float64)?.rechunk())
             })
