@@ -184,6 +184,6 @@ def test_month_start_end_datetime(time_unit: TimeUnit, time_zone: str | None) ->
     assert s.dt.month_end().to_list() == end.to_list()
 
 
-def test_month_end_datetime_near_max_ns() -> None:
+def test_month_start_datetime_near_max_ns() -> None:
     s = pl.Series([datetime(2262, 4, 1)], dtype=pl.Datetime("ns"))
     assert s.dt.month_start().to_list() == [datetime(2262, 4, 1)]
