@@ -31,6 +31,7 @@ use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
+use polars_plan::utils::aexpr_to_leaf_names_iter;
 
 mod fmt;
 mod io;
@@ -570,6 +571,8 @@ pub enum PhysNodeKind {
         input_left: PhysStream,
         input_right: PhysStream,
         args: JoinArgs,
+        /// The predicate and the joined schema before the filter's projection.
+        fused_predicate: Option<(ExprIR, SchemaRef)>,
     },
 
     AsOfJoin {
@@ -1049,6 +1052,8 @@ fn fuse_drops(
     roots: Vec<PhysNodeKey>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+    expr_arena: &Arena<AExpr>,
+    expr_cache: &mut ExprCache,
 ) {
     // Collect first: fusing swaps nodes, which would stop the traversal from reaching the
     // inputs of the fused node.
@@ -1060,6 +1065,7 @@ fn fuse_drops(
     });
 
     // Fuse inner projections first so stacked projections can reach the same node.
+    let mut projected_filters = Vec::new();
     for key in projection_keys.into_iter().rev() {
         let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
             continue;
@@ -1129,8 +1135,78 @@ fn fuse_drops(
             let input_ir_node = phys_to_ir[input];
             phys_to_ir.insert(key, input_ir_node);
             phys_to_ir.insert(input, proj_ir_node);
+            if matches!(simple_proj_node.kind(), PhysNodeKind::Filter { .. }) {
+                projected_filters.push(key);
+            }
         }
     }
+
+    for key in projected_filters {
+        fuse_cross_join_filter(key, phys_sm, phys_to_ir, expr_arena, expr_cache);
+    }
+}
+
+fn fuse_cross_join_filter(
+    key: PhysNodeKey,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+    phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+    expr_arena: &Arena<AExpr>,
+    expr_cache: &mut ExprCache,
+) {
+    // Run after mux insertion: going through a multiplexer could duplicate a shared join.
+    let filter = &phys_sm[key];
+    let PhysNodeKind::Filter {
+        input,
+        predicate,
+        projection: Some(_),
+    } = filter.kind()
+    else {
+        return;
+    };
+    let output_schema = filter.output_schema(0);
+    let filter_input_schema = input.output_schema(phys_sm);
+    if filter.output_schemas.len() != 1
+        || output_schema.is_empty()
+        || output_schema.len() >= filter_input_schema.len()
+        || !lower_expr::is_elementwise_rec_cached(predicate.node(), expr_arena, expr_cache)
+    {
+        return;
+    }
+
+    // A join_where may put its output columns back in order before filtering.
+    let mut join = *input;
+    if let PhysNodeKind::SimpleProjection { input, columns } = phys_sm[join.node].kind()
+        && columns.iter().all(|(from, to)| from == to)
+    {
+        join = *input;
+    }
+    let join_node = &phys_sm[join.node];
+    let PhysNodeKind::CrossJoin {
+        input_left,
+        input_right,
+        args,
+        fused_predicate: None,
+    } = join_node.kind()
+    else {
+        return;
+    };
+    let joined_schema = join.output_schema(phys_sm);
+    if aexpr_to_leaf_names_iter(predicate.node(), expr_arena).any(|name| {
+        !filter_input_schema.contains(name.as_str()) || !joined_schema.contains(name.as_str())
+    }) || output_schema
+        .iter_names()
+        .any(|name| !joined_schema.contains(name.as_str()))
+    {
+        return;
+    }
+
+    *phys_sm[key].kind_mut() = PhysNodeKind::CrossJoin {
+        input_left: *input_left,
+        input_right: *input_right,
+        args: args.clone(),
+        fused_predicate: Some((predicate.clone(), joined_schema.clone())),
+    };
+    phys_to_ir.insert(key, phys_to_ir[join.node]);
 }
 
 /// Sets `rechunk_input` on any `Select` node directly feeding into a `GroupBy`.
@@ -1183,7 +1259,13 @@ pub fn build_physical_plan(
     )?;
     insert_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
     split_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
-    fuse_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    fuse_drops(
+        vec![phys_root.node],
+        phys_sm,
+        &mut phys_to_ir,
+        expr_arena,
+        &mut expr_cache,
+    );
 
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], phys_sm);

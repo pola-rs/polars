@@ -1749,6 +1749,7 @@ fn lower_ir_inner(
                             input_left: phys_left,
                             input_right: phys_right,
                             args: args.clone(),
+                            fused_predicate: None,
                         },
                     )),
                     _ => unreachable!(),

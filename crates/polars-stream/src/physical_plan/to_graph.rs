@@ -43,6 +43,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::joins::cross_join::{CrossJoinColumn, CrossJoinNode, CrossJoinPredicate};
 use crate::nodes::joins::merge_join::MergeJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::physical_plan::lower_group_by::augmented_group_by_input_schema;
@@ -1753,19 +1754,48 @@ fn to_graph_rec<'a>(
             input_left,
             input_right,
             args,
+            fused_predicate,
         } => {
             let args = args.clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             let left_input_schema = input_left.output_schema(ctx.phys_sm).clone();
             let right_input_schema = input_right.output_schema(ctx.phys_sm).clone();
+            let fused_predicate = if let Some((predicate, joined_schema)) = fused_predicate {
+                let left_width = left_input_schema.len();
+                let column = |name: &PlSmallStr| {
+                    // A cross join emits every left column, then every right column
+                    // under its joined name, including any suffix.
+                    let index = joined_schema.index_of(name).unwrap();
+                    CrossJoinColumn {
+                        is_left: index < left_width,
+                        index: if index < left_width {
+                            index
+                        } else {
+                            index - left_width
+                        },
+                        name: name.clone(),
+                    }
+                };
+                let names = aexpr_to_leaf_names_iter(predicate.node(), ctx.expr_arena);
+                let predicate_schema = Arc::new(joined_schema.try_project(names)?);
+                let expr = create_stream_expr(predicate, ctx, &predicate_schema)?;
+                Some(CrossJoinPredicate {
+                    expr,
+                    operands: predicate_schema.iter_names().map(column).collect(),
+                    output: node.output_schema(0).iter_names().map(column).collect(),
+                })
+            } else {
+                None
+            };
 
             ctx.add_node_with_metrics(
                 |registry| {
-                    nodes::joins::cross_join::CrossJoinNode::new(
+                    CrossJoinNode::new(
                         left_input_schema,
                         right_input_schema,
                         &args,
+                        fused_predicate,
                         registry.task_metrics(),
                     )
                 },

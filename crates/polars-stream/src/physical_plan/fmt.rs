@@ -1029,8 +1029,26 @@ fn visualize_plan_rec(
         PhysNodeKind::CrossJoin {
             input_left,
             input_right,
-            args: _,
-        } => ("cross-join".to_string(), &[*input_left, *input_right][..]),
+            fused_predicate,
+            ..
+        } => {
+            let mut label = "cross-join".to_string();
+            if let Some((predicate, joined_schema)) = fused_predicate {
+                let predicate =
+                    fmt_exprs_to_label(from_ref(predicate), expr_arena, FormatExprStyle::NoAliases);
+                let schema = phys_sm[node_key].output_schema(0);
+                write!(label, "\\nfused predicate: {predicate}").unwrap();
+                write!(
+                    EscapeLabel(&mut label),
+                    "\nproject {} / {}: {}",
+                    schema.len(),
+                    joined_schema.len(),
+                    schema.iter_names().join(", "),
+                )
+                .unwrap();
+            }
+            (label, &[*input_left, *input_right][..])
+        },
         PhysNodeKind::AsOfJoin {
             input_left,
             input_right,
