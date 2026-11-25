@@ -127,8 +127,7 @@ impl ExprProperties {
         }
 
         let ret = match expr_arena.get(node) {
-            // Handled separately in `Eval`.
-            AExpr::Element | AExpr::EvalColumn(_) => unreachable!(),
+            AExpr::Column(_) | AExpr::Element | AExpr::EvalColumn(_) => false,
             #[cfg(feature = "dtype-struct")]
             AExpr::StructField(_) => false,
             AExpr::Explode { expr: inner, .. }
@@ -141,7 +140,6 @@ impl ExprProperties {
                 expr: inner,
                 options: _,
             } => self.is_input_independent(*inner, expr_arena),
-            AExpr::Column(_) => false,
 
             AExpr::Literal(_) => true,
             AExpr::BinaryExpr { left, op: _, right } => {
