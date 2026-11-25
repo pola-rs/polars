@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_arrow::array::builder::ShareStrategy;
-use polars_async::executor::TaskMetricAggregator;
+use polars_async::executor::{TaskMetricAggregator, spawn};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinBuildSide, MaintainOrderJoin};
@@ -15,6 +15,8 @@ use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
+
+const REJECTED_PAIRS_PER_YIELD: usize = 64 * 1024;
 
 pub struct CrossJoinNode {
     left_is_build: bool,
@@ -439,6 +441,7 @@ impl ComputeNode for CrossJoinNode {
                                     project_side(build_df, &predicate.operands, left_is_build);
                                 let mut operand_repeater = None;
                                 let mut output_repeater = None;
+                                let mut rejected_pairs = 0usize;
                                 while let Ok(morsel) = recv.recv().await {
                                     let probe_df = morsel.df().await;
                                     let probe_operands = project_side(
@@ -478,6 +481,7 @@ impl ComputeNode for CrossJoinNode {
                                                 )
                                                 .await?
                                             {
+                                                rejected_pairs = 0;
                                                 let output = Morsel::new_unregistered(
                                                     df,
                                                     morsel.seq(),
@@ -485,6 +489,23 @@ impl ComputeNode for CrossJoinNode {
                                                 );
                                                 if send.send(output).await.is_err() {
                                                     return Ok(());
+                                                }
+                                            } else {
+                                                rejected_pairs = rejected_pairs.saturating_add(
+                                                    chunk.build_len * chunk.probe_len,
+                                                );
+                                                if rejected_pairs >= REJECTED_PAIRS_PER_YIELD {
+                                                    // A rejected batch has no send to yield on.
+                                                    spawn(
+                                                        TaskPriority::Low,
+                                                        None,
+                                                        std::future::ready(()),
+                                                    )
+                                                    .await;
+                                                    if send.is_closed() {
+                                                        return Ok(());
+                                                    }
+                                                    rejected_pairs = 0;
                                                 }
                                             }
                                         }

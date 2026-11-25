@@ -80,6 +80,19 @@ def test_cross_join_fused_filter_error() -> None:
         query.collect(engine="streaming")
 
 
+def test_cross_join_fused_filter_no_matches(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "64")
+    left = pl.LazyFrame({"a": range(0, 514, 2), "lp": range(257)})
+    right = pl.LazyFrame({"b": range(0, 514, 2)})
+    predicate = (pl.col("a") + pl.col("b")) % 2 == 1
+    query = left.join_where(right, predicate).select("lp")
+
+    assert 'label="cross-join\\nfused predicate:' in physical_plan(query)
+    assert_frame_equal(
+        query.collect(engine="streaming"), pl.DataFrame(schema={"lp": pl.Int64})
+    )
+
+
 def test_cross_join_with_shared_output() -> None:
     left = pl.LazyFrame({"a": [1, 2], "lp": ["a", "b"]})
     right = pl.LazyFrame({"b": [3, 4], "rp": ["x", "y"]})
