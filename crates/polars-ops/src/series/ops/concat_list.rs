@@ -30,15 +30,12 @@ pub fn concat_list(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
             // Don't expand scalars to height, this is handled by the `horizontal_concat_list` kernel.
             let s = c.as_materialized_series_maintain_scalar();
             debug_assert_eq!(s.dtype(), dtype);
-            // Use the length of s, not c: a scalar column reports it full height from
-            // c.len() but is kept at length 1 here.
 
             let len = s.len();
-            all_unit_len &= len == 1;
-
             let arr = s.list().unwrap().rechunk();
             let validity = arr.rechunk_validity();
 
+            all_unit_len &= len == 1;
             return_all_null |= len == 1 && validity.as_ref().is_some_and(|x| !x.get_bit(0));
 
             // Ignore unit-length validities. If they are non-valid then `return_all_null` will
