@@ -124,9 +124,8 @@ impl CrossJoinChunk<'_> {
         build: &DataFrame,
         probe: &DataFrame,
         repeater: &mut Option<CrossJoinRepeater>,
-        repeat_build: bool,
     ) -> DataFrame {
-        let (mut left, mut right) = if repeat_build {
+        let (mut left, mut right) = if self.probe_len > 1 {
             debug_assert_eq!(self.build_start, 0);
             debug_assert_eq!(self.build_len, build.height());
             repeater
@@ -158,7 +157,7 @@ impl CrossJoinChunk<'_> {
     ) -> DataFrame {
         let build = project_side(self.build, columns, self.left_is_build);
         let probe = project_side(self.probe, columns, !self.left_is_build);
-        let frame = self.expand(&build, &probe, repeater, self.probe_len > 1);
+        let frame = self.expand(&build, &probe, repeater);
         let left_width = if self.left_is_build {
             build.width()
         } else {
@@ -537,7 +536,6 @@ impl ComputeNode for CrossJoinNode {
                                                 &build_operands,
                                                 &probe_operands,
                                                 &mut operand_repeater,
-                                                build_df.height() < ideal_morsel_size,
                                             );
                                             if let Some(df) = chunk
                                                 .filter(
