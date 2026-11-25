@@ -422,7 +422,7 @@ def test_grouped_asof_join_fused_drop() -> None:
     )
 
     query = full.select("lp")
-    assert_join_projection(physical_plan(query), "asof-join", "project 1 / 5: lp")
+    assert_join_projection(physical_plan(query), "asof-join", "project 1 / 4: lp")
     assert_frame_equal(query.collect(engine="streaming"), expected.select("lp"))
 
 
