@@ -1,5 +1,5 @@
 use num_traits::{Float, NumCast, One, ToPrimitive, Zero};
-use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
+use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
 
@@ -45,16 +45,6 @@ fn erfc<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
     ca.cast_and_apply_in_place(erfc_f64)
 }
 
-/// Same result as `x.log(base)`, with `ln(base)` computed once.
-fn log_scalar_base<T>(ca: &ChunkedArray<T>, base: T::Native) -> ChunkedArray<T>
-where
-    T: PolarsFloatType,
-    T::Native: Float,
-{
-    let ln_base = base.ln();
-    unary_elementwise_values(ca, |x| x.ln() / ln_base)
-}
-
 pub trait LogSeries: SeriesSealed {
     /// Compute the logarithm to a given base
     fn log(&self, base: &Series) -> PolarsResult<Series> {
@@ -69,16 +59,6 @@ pub trait LogSeries: SeriesSealed {
         );
 
         match (s.dtype(), base.dtype()) {
-            (DataType::Float32, DataType::Float32) if base.len() == 1 && base.null_count() == 0 => {
-                let ca = s.f32().unwrap();
-                let base = base.f32().unwrap().get(0).unwrap();
-                Ok(log_scalar_base(ca, base).into_series())
-            },
-            (DataType::Float64, DataType::Float64) if base.len() == 1 && base.null_count() == 0 => {
-                let ca = s.f64().unwrap();
-                let base = base.f64().unwrap().get(0).unwrap();
-                Ok(log_scalar_base(ca, base).into_series())
-            },
             (dt1, dt2) if dt1 == dt2 && dt1.is_float() => {
                 with_match_physical_float_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref();

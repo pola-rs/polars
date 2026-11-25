@@ -174,12 +174,23 @@ pub fn rle_id(s: &Column) -> PolarsResult<Column> {
         return Ok(Column::new_empty(s.name().clone(), &IDX_DTYPE));
     }
 
-    let mut lengths = Vec::new();
-    rle_lengths(s, &mut lengths)?;
+    let (s1, s2) = (
+        s.slice(Slice::head(s.len() - 1)),
+        s.slice((1usize, s.len())),
+    );
+    let s_neq = s1
+        .as_materialized_series()
+        .not_equal_missing(s2.as_materialized_series())?;
 
     let mut out = Vec::<IdxSize>::with_capacity(s.len());
-    for (run_id, length) in lengths.iter().enumerate() {
-        out.extend(std::iter::repeat_n(run_id as IdxSize, *length as usize));
+    let mut last = 0;
+    out.push(last); // Run numbers start at zero
+    assert_eq!(s_neq.null_count(), 0);
+    for a in s_neq.downcast_iter() {
+        for aa in a.values_iter() {
+            last += aa as IdxSize;
+            out.push(last);
+        }
     }
     Ok(IdxCa::from_vec(s.name().clone(), out)
         .with_sorted_flag(IsSorted::Ascending)

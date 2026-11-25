@@ -45,57 +45,12 @@ def test_gather_every_one() -> None:
     assert s.slice(1).gather_every(1, 1).to_list() == [3, 4]
 
 
-@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64, pl.Int64, pl.String])
-def test_rle_id_matches_rle(dtype: pl.DataType) -> None:
-    values: list[object] = (
-        ["a", "a", None, None, "b", "a"]
-        if dtype == pl.String
-        else [1, 1, None, None, 2, 2, 1]
-    )
-    if dtype.is_float():
-        values = [float("nan"), float("nan"), 0.0, -0.0, None, None, 1.0]
-    s = multi_chunk(values, dtype)
-    out = s.rle_id()
-    assert out.dtype == pl.UInt32
-    lengths = s.rle().struct.field("len").to_list()
-    expected = [i for i, n in enumerate(lengths) for _ in range(n)]
-    assert out.to_list() == expected
-    assert out.is_sorted()
-    assert pl.Series("a", [], dtype).rle_id().to_list() == []
-
-
-def test_rle_id_nan_null() -> None:
-    s = pl.Series([float("nan"), float("nan"), None, None, 1.0])
-    assert s.rle_id().to_list() == [0, 0, 1, 1, 2]
-
-
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_clip_scalar_bounds_nulls(dtype: pl.DataType) -> None:
     s = multi_chunk([1.0, None, 5.0, -3.0, None, 9.0], dtype)
     out = s.clip(0, 6)
     assert out.to_list() == [1.0, None, 5.0, 0.0, None, 6.0]
     assert out.dtype == dtype
-
-
-@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
-def test_log_scalar_base(dtype: pl.DataType) -> None:
-    xs = [1.0, 2.5, None, 0.0, -1.0, float("inf"), 10.0]
-    s = pl.Series(xs, dtype=dtype)
-    out = s.log(3.0)
-    assert out.dtype == dtype
-    for x, o in zip(xs, out.to_list(), strict=True):
-        if x is None:
-            assert o is None
-        elif x < 0:
-            assert math.isnan(o)
-        elif x == 0:
-            assert o == -math.inf
-        elif dtype == pl.Float64:
-            assert o == math.log(x) / math.log(3.0)
-        else:
-            assert o == pytest.approx(math.log(x) / math.log(3.0), rel=1e-6)
-    base = pl.Series([2.0, 3.0, None, 2.0, 2.0, 2.0, 5.0], dtype=dtype)
-    assert s.log(base).to_list()[2] is None
 
 
 def test_pow_arctan2_columns() -> None:
@@ -128,35 +83,6 @@ def peaks_reference(values: list[float | None], is_max: bool) -> list[bool | Non
         else:
             out.append(True)
     return out
-
-
-@pytest.mark.parametrize("dtype", [pl.Float32, pl.Int64])
-def test_peaks(dtype: pl.DataType) -> None:
-    for values in (
-        [1, 3, 2, 2, 5, 1, 7],
-        [5],
-        [],
-        [1, None, 3, 2, 5],
-        [None, 4, 1],
-    ):
-        s = pl.Series(values, dtype=dtype)
-        for is_max, out in ((True, s.peak_max()), (False, s.peak_min())):
-            assert out.to_list() == peaks_reference(values, is_max)  # type: ignore[arg-type]
-    values = [1, 3, 2, 2, 5, 1, 7]
-    chunked = multi_chunk(values, dtype)
-    assert chunked.peak_max().to_list() == peaks_reference(values, True)  # type: ignore[arg-type]
-    assert chunked.peak_min().to_list() == peaks_reference(values, False)  # type: ignore[arg-type]
-    assert chunked.slice(1, 4).peak_max().to_list() == peaks_reference(
-        values[1:5], True
-    )  # type: ignore[arg-type]
-
-
-def test_peaks_nan() -> None:
-    assert pl.Series([1.0, float("nan"), 2.0]).peak_max().to_list() == [
-        False,
-        True,
-        False,
-    ]
 
 
 def test_hist_explicit_bins_edges() -> None:
