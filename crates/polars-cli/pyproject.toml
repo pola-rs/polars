@@ -1,0 +1,18 @@
+[build-system]
+requires = ["maturin>=1.15.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "polars-cli"
+description = "Run SQL from the command line with Polars"
+readme = "README.md"
+license = "MIT"
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://www.pola.rs/"
+Repository = "https://github.com/pola-rs/polars"
+
+[tool.maturin]
+bindings = "bin"
+strip = true

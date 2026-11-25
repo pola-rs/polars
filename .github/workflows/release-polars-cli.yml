@@ -1,0 +1,402 @@
+name: Release polars-cli
+
+# Releases the `polars` CLI (`crates/polars-cli`) for 8 targets: wheels of the PyPI package
+# `polars-cli` and archives on a draft GitHub release. Publishing the draft tags the commit; publish
+# it with `gh release edit polars-cli-<version> --draft=false --latest=false`, or it becomes the
+# repository's latest release. A dry run uploads the wheels to TestPyPI and nothing else; a second
+# dry run of the same version adds no files there.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA
+        type: string
+      dry-run:
+        description: Dry run
+        type: boolean
+        default: false
+
+# One release at a time, from any branch.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.13'
+  CLI_DIR: crates/polars-cli
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+  # As the Python release's default x86-64 runtime (`release-python.yml`).
+  X86_64_TUNE_CPU: skylake
+  X86_64_FEATURES: '+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe'
+  X86_64_CC_FEATURES: '-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.commits.outputs.sha }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Read polars-cli version
+        id: version
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-cli/Cargo.toml", "rb"))["package"]["version"])')
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::crates/polars-cli/Cargo.toml has no version of its own: '$VERSION'"
+            exit 1
+          fi
+          echo "polars-cli version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve commit
+        id: commits
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "commit: $SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check the version is not released
+        id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG=polars-cli-$VERSION
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]]; then
+            echo "::error::$TAG exists: bump the polars-cli version"
+            exit 1
+          fi
+          case "$(curl -s --retry 3 -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/polars-cli/$VERSION/json")" in
+            404) ;;
+            200)
+              echo "::error::polars-cli $VERSION is on PyPI: bump the version, or finish a partial upload with \"Re-run failed jobs\""
+              exit 1
+              ;;
+            *)
+              echo "::error::PyPI did not answer for polars-cli $VERSION"
+              exit 1
+              ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  licenses:
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.3
+
+      - name: Write the third-party licences
+        run: |
+          cargo about generate --locked --fail \
+            --manifest-path "$CLI_DIR/Cargo.toml" \
+            --config "$CLI_DIR/about.toml" \
+            --output-file LICENSE-THIRD-PARTY \
+            "$CLI_DIR/about.hbs"
+
+      - name: Upload the third-party licences
+        uses: actions/upload-artifact@v7
+        with:
+          name: license-third-party
+          path: LICENSE-THIRD-PARTY
+
+  build:
+    needs: [version, licenses]
+    runs-on: ${{ matrix.os }}
+    env:
+      POLARS_BUILD_COMMIT: ${{ needs.version.outputs.sha }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
+        include:
+          - job_config: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - job_config: linux-arm64
+            os: linux-arm-large
+            target: aarch64-unknown-linux-gnu
+          - job_config: linux-musl-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - job_config: linux-musl-arm64
+            os: linux-arm-large
+            target: aarch64-unknown-linux-musl
+          - job_config: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+          - job_config: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+          - job_config: win-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - job_config: win-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Setup build environment (ARM64 Windows)
+        if: matrix.os == 'windows-11-arm'
+        uses: ./.github/actions/setup-windows-arm64
+
+      - name: Free some disk space (remove unused packages)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@v1.3.1
+
+      - name: Set swap space for Linux
+        if: runner.os == 'Linux'
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
+        if: matrix.os == 'windows-11-arm'
+        run: |
+          python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> "$GITHUB_PATH"
+
+      # maturin puts `LICENSE*` files beside the Cargo.toml into the wheel.
+      - name: Download the third-party licences
+        uses: actions/download-artifact@v8
+        with:
+          name: license-third-party
+          path: ${{ env.CLI_DIR }}
+
+      - name: Set build flags
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          RUSTFLAGS=""
+          if [[ "$TARGET" == x86_64-* ]]; then
+            RUSTFLAGS="-C target-feature=$X86_64_FEATURES -Z tune-cpu=$X86_64_TUNE_CPU"
+            echo "CFLAGS=$X86_64_CC_FEATURES -mtune=$X86_64_TUNE_CPU" >> "$GITHUB_ENV"
+          fi
+          if [[ "$TARGET" == *-windows-msvc ]]; then
+            RUSTFLAGS="$RUSTFLAGS -C target-feature=+crt-static"
+          fi
+          echo "RUSTFLAGS=$RUSTFLAGS" >> "$GITHUB_ENV"
+          # aarch64 Linux can have 64 KiB pages.
+          if [[ "$TARGET" == aarch64-unknown-linux-* ]]; then
+            echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> "$GITHUB_ENV"
+          fi
+          # rustls-platform-verifier needs macOS 10.14.
+          if [[ "$TARGET" == x86_64-apple-darwin ]]; then
+            echo "MACOSX_DEPLOYMENT_TARGET=10.14" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          # maturin-action forwards only some environment variables into its container.
+          docker-options: -e POLARS_BUILD_COMMIT
+          args: >
+            --profile dist-release
+            --locked
+            --manifest-path ${{ env.CLI_DIR }}/Cargo.toml
+            --compression-level 9
+            --out dist
+          # For an executable, maturin gives a musl build a manylinux tag unless told otherwise.
+          manylinux: ${{ endsWith(matrix.target, '-musl') && 'musllinux_1_2' || 'auto' }}
+          maturin-version: 1.15.0
+
+      - name: Make the archive
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, shutil, zipfile
+
+          version, target, cli = os.environ["VERSION"], os.environ["TARGET"], os.environ["CLI_DIR"]
+          windows = target.endswith("-windows-msvc")
+          exe = "polars.exe" if windows else "polars"
+          name = f"polars-cli-{version}-{target}"
+          out = pathlib.Path("archive", name)
+          out.mkdir(parents=True)
+
+          (wheel,) = pathlib.Path("dist").glob("*.whl")
+          with zipfile.ZipFile(wheel) as z:
+              names = z.namelist()
+              assert any(m.endswith(".dist-info/licenses/LICENSE-THIRD-PARTY") for m in names)
+              (member,) = [m for m in names if m.endswith(f".data/scripts/{exe}")]
+              data = z.read(member)
+          # The runners have the Visual C++ runtime, so the smoke test would not notice.
+          if windows:
+              assert b"vcruntime140" not in data.lower(), "the executable needs the Visual C++ runtime"
+          (out / exe).write_bytes(data)
+          (out / exe).chmod(0o755)
+          for file in ["LICENSE", "LICENSE-THIRD-PARTY", "README.md"]:
+              shutil.copy(pathlib.Path(cli, file), out)
+          print(shutil.make_archive(str(out), "zip" if windows else "gztar", "archive", name))
+          PY
+
+      - name: Smoke test
+        env:
+          TARGET: ${{ matrix.target }}
+          SMOKE: .github/scripts/smoke-test-polars-cli.sh
+        run: |
+          EXE=$(echo archive/polars-cli-*/polars*)
+          case "$RUNNER_OS" in
+            Linux) file "$EXE" && ldd "$EXE" || true ;;
+            macOS) otool -L "$EXE" ;;
+          esac
+          # Apple silicon runs only signed code.
+          if [[ "$TARGET" == aarch64-apple-darwin ]]; then
+            codesign --verify --verbose "$EXE"
+          fi
+          if [[ "$TARGET" == *-musl ]]; then
+            if ! file "$EXE" | grep -Eq 'statically linked|static-pie linked'; then
+              echo "::error::$EXE is not statically linked"
+              exit 1
+            fi
+            docker run --rm -v "$PWD:/w" -w /w alpine:3.22 sh "$SMOKE" "/w/$EXE" "$POLARS_BUILD_COMMIT"
+            docker run --rm -v "$PWD:/w" -w /w python:${{ env.PYTHON_VERSION }}-alpine sh -c \
+              'pip install --root-user-action=ignore dist/*.whl && sh "$0" polars "$1"' \
+              "$SMOKE" "$POLARS_BUILD_COMMIT"
+          else
+            sh "$SMOKE" "$PWD/$EXE" "$POLARS_BUILD_COMMIT"
+            python -m pip install dist/*.whl
+            sh "$SMOKE" polars "$POLARS_BUILD_COMMIT"
+          fi
+
+      - name: Measure
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          python - archive/polars-cli-*/polars* <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import os, subprocess, sys, time
+
+          exe = sys.argv[1]
+          times = []
+          for _ in range(5):
+              start = time.perf_counter()
+              subprocess.run([exe, "-c", "SELECT 1"], check=True, capture_output=True)
+              times.append(time.perf_counter() - start)
+          size = os.path.getsize(exe) / 2**20
+          print(f"{os.environ['TARGET']}: {size:.1f} MiB, `SELECT 1` in {min(times) * 1000:.0f} ms")
+          PY
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.job_config }}
+          path: dist/*.whl
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: archive-${{ matrix.job_config }}
+          path: |
+            archive/*.tar.gz
+            archive/*.zip
+
+  # Last: a version on PyPI cannot be replaced.
+  publish-to-pypi:
+    needs: [version, build, github-release]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (inputs.dry-run || needs.github-release.result == 'success') }}
+    environment:
+      name: release-polars-cli
+      url: https://pypi.org/project/polars-cli
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v8
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Check wheel versions match Cargo.toml
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          ls dist
+          for f in dist/*; do
+            name=$(basename "$f")
+            if [[ "$name" != "polars_cli-$VERSION-py3-none-"*.whl ]]; then
+              echo "::error::$name is not a polars-cli $VERSION wheel"
+              exit 1
+            fi
+          done
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ inputs.dry-run && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          # For "Re-run failed jobs" after a partial upload.
+          skip-existing: true
+          verbose: true
+
+  github-release:
+    needs: [version, build]
+    if: inputs.dry-run == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: archive-*
+          path: archives
+          merge-multiple: true
+
+      - name: Write checksums
+        working-directory: archives
+        run: |
+          sha256sum -- *.tar.gz *.zip > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Draft the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SHA: ${{ needs.version.outputs.sha }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2> /dev/null)" == true ]]; then
+            gh release edit "$TAG" --target "$SHA"
+            gh release upload "$TAG" archives/* --clobber
+          else
+            gh release create "$TAG" archives/* --draft --target "$SHA" --latest=false \
+              --title "polars-cli $VERSION" \
+              --notes "Install with \`uv tool install polars-cli\` or \`pipx install polars-cli\`, or download the archive for your platform."
+          fi

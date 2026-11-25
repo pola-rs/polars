@@ -9,6 +9,22 @@ polars -c "SELECT city, avg(temp) FROM 'weather/*.parquet' GROUP BY city"
 polars -f report.sql --format csv > report.csv
 ```
 
+## Install
+
+```shell
+uv tool install polars-cli    # or: pipx install polars-cli
+```
+
+Or take the archive for your platform from a `polars-cli` release on
+[GitHub](https://github.com/pola-rs/polars/releases?q=polars-cli) and put `polars` on your `PATH`.
+On Linux, the `-gnu` build needs glibc 2.17 or newer; the `-musl` build runs on any Linux, Alpine
+included. On macOS, remove the quarantine of a downloaded `polars` with
+`xattr -d com.apple.quarantine polars`. macOS needs version 10.14 on Intel and 11 on Apple silicon,
+Windows version 10.
+
+HTTPS and cloud reads use the system's root certificates; a minimal container image may need the
+`ca-certificates` package.
+
 ## What it reads
 
 - **Formats:** Parquet, CSV, NDJSON and Arrow IPC, named by path (`FROM 'data.parquet'`) or read
