@@ -12,7 +12,8 @@ impl DurationChunked {
         }
     }
 
-    /// Change the underlying [`TimeUnit`]. And update the data accordingly.
+    /// Change the underlying [`TimeUnit`]. And update the data accordingly
+    /// (values that overflow the new time unit become null).
     #[must_use]
     pub fn cast_time_unit(&self, tu: TimeUnit) -> Self {
         let current_unit = self.time_unit();
@@ -21,7 +22,7 @@ impl DurationChunked {
 
         match current_unit.rescale_to(tu) {
             TimeUnitRescale::Unchanged => {},
-            TimeUnitRescale::Multiply(k) => out.phys = &self.phys * k,
+            TimeUnitRescale::Multiply(k) => out.phys = (&self.phys).checked_mul_scalar(k),
             TimeUnitRescale::Divide(k) => out.phys = (&self.phys).wrapping_trunc_div_scalar(k),
         }
         out

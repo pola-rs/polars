@@ -14,7 +14,6 @@ pub use categorical::PyCategories;
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "pivot")]
 use polars::frame::PivotColumnNaming;
-use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 use polars::prelude::ColumnMapping;
@@ -42,7 +41,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -60,35 +59,6 @@ use crate::series::{PySeries, import_schema_pycapsule};
 use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame, interned};
 
-/// # Safety
-/// Should only be implemented for transparent types
-pub(crate) unsafe trait Transparent {
-    type Target;
-}
-
-unsafe impl Transparent for PySeries {
-    type Target = Series;
-}
-
-unsafe impl<T> Transparent for Wrap<T> {
-    type Target = T;
-}
-
-unsafe impl<T: Transparent> Transparent for Option<T> {
-    type Target = Option<T::Target>;
-}
-
-pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
-    assert_eq!(size_of::<T>(), size_of::<T::Target>());
-    assert_eq!(align_of::<T>(), align_of::<T::Target>());
-    let len = input.len();
-    let cap = input.capacity();
-    let mut manual_drop_vec = std::mem::ManuallyDrop::new(input);
-    let vec_ptr: *mut T = manual_drop_vec.as_mut_ptr();
-    let ptr: *mut T::Target = vec_ptr as *mut T::Target;
-    unsafe { Vec::from_raw_parts(ptr, len, cap) }
-}
-
 #[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -105,6 +75,19 @@ impl<T> From<T> for Wrap<T> {
     fn from(t: T) -> Self {
         Wrap(t)
     }
+}
+
+pub(crate) fn py_int_to_u128(ob: &Bound<'_, PyAny>) -> PyResult<u128> {
+    let py = ob.py();
+    let int = unsafe { Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyNumber_Index(ob.as_ptr()))? };
+    // On Python >= 3.14 negative values raise a ValueError instead of an OverflowError.
+    int.extract::<u128>().map_err(|err| {
+        if err.is_instance_of::<PyValueError>(py) {
+            PyOverflowError::new_err(err.value(py).to_string())
+        } else {
+            err
+        }
+    })
 }
 
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
@@ -649,16 +632,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<StatisticsOptions> {
         }
 
         Ok(Wrap(statistics))
-    }
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Row<'static>> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let vals = ob.extract::<Vec<Wrap<AnyValue<'static>>>>()?;
-        let vals = reinterpret_vec(vals);
-        Ok(Wrap(Row(vals)))
     }
 }
 

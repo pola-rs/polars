@@ -154,8 +154,8 @@ where
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let batches = df
-            .iter_chunks(CompatLevel::newest(), false)
-            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+            .try_iter_chunks(CompatLevel::newest(), false)
+            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk?, fields.clone())) as ArrayRef));
 
         match self.json_format {
             JsonFormat::JsonLines => {
@@ -198,9 +198,9 @@ where
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        let chunks = df.iter_chunks(CompatLevel::newest(), false);
+        let chunks = df.try_iter_chunks(CompatLevel::newest(), false);
         let batches =
-            chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+            chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk?, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
         while let Some(block) = serializer.next()? {
             self.writer.write_all(block)?;

@@ -57,6 +57,7 @@ from polars._utils.expired import (
     removed_parameters,
 )
 from polars._utils.getitem import get_series_item_by_key
+from polars._utils.parse import parse_quantile_fraction
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
@@ -1404,7 +1405,7 @@ class Series(metaclass=_Meta):
             - ``Series`` (Boolean): a boolean mask.
             - ``Series`` (Integer): an index array.
             - ``ndarray``: a NumPy boolean mask or integer index array.
-            - ``list`` / ``tuple``: an index sequence (cast to UInt32).
+            - ``list`` / ``tuple``: an index sequence.
         value
             Scalar or sequence of values to assign.
 
@@ -1463,13 +1464,9 @@ class Series(metaclass=_Meta):
                 # boolean numpy mask
                 self._s = self.scatter(np.argwhere(key)[:, 0], value)._s
             else:
-                s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
-                )
-                self.__setitem__(s, value)
+                self.__setitem__(Series(key), value)
         elif isinstance(key, (list, tuple)):
-            s = self._from_pyseries(sequence_to_pyseries("", key, dtype=UInt32))
-            self.__setitem__(s, value)
+            self.scatter(key, value)  # pyrefly: ignore[bad-argument-type]
         else:
             msg = f'cannot use "{key!r}" for indexing'
             raise TypeError(msg)
@@ -2431,17 +2428,19 @@ class Series(metaclass=_Meta):
 
     @overload
     def quantile(
-        self, quantile: list_[float], interpolation: QuantileMethod = ...
-    ) -> list_[float] | list_[None]: ...
+        self, quantile: Sequence[float | None], interpolation: QuantileMethod = ...
+    ) -> list_[float | None]: ...
 
     @overload
     def quantile(
-        self, quantile: float, interpolation: QuantileMethod = ...
+        self, quantile: float | None, interpolation: QuantileMethod = ...
     ) -> float | None: ...
 
     def quantile(
-        self, quantile: float | list_[float], interpolation: QuantileMethod = "nearest"
-    ) -> float | None | list_[float] | list_[None]:
+        self,
+        quantile: float | Sequence[float | None] | None,
+        interpolation: QuantileMethod = "nearest",
+    ) -> float | None | list_[float | None]:
         """
         Get the quantile value of this Series.
 
@@ -2449,12 +2448,13 @@ class Series(metaclass=_Meta):
         ----------
         quantile
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+            A null quantile gives a null result.
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Returns
         -------
-        float | None | list[float] | list[None]
+        float | None | list[float | None]
             A single quantile value if a float is provided, or a list of quantile values if a list is provided.
 
         Examples
@@ -2468,7 +2468,8 @@ class Series(metaclass=_Meta):
         >>> s.quantile([0.25, 0.75], interpolation="linear")
         [1.5, 2.5]
         """  # noqa: W505
-        return self._s.quantile(quantile, interpolation)
+        fraction = parse_quantile_fraction(quantile)
+        return self._s.quantile(fraction._s, interpolation)
 
     def to_dummies(
         self,
@@ -10054,19 +10055,20 @@ class Series(metaclass=_Meta):
     @unstable()
     def approx_quantile(
         self,
-        quantile: float | list_[float],
+        quantile: float | Sequence[float | None] | None,
         *,
         method: ApproxQuantileMethod = "auto",
         error: float = 0.001,
         error_tightness: ApproxQuantileErrorBound = "empirical",
-    ) -> PythonLiteral | list_[PythonLiteral]:
+    ) -> PythonLiteral | list_[PythonLiteral | None] | None:
         """
         Compute approximate quantile(s) of this Series.
 
         Parameters
         ----------
         quantile
-            A single quantile or a list of quantiles.
+            A single quantile or a list of quantiles. A null quantile gives a null
+            result.
         method
             Specifies which approximate-quantile algorithm is to be used.
             When set to 'auto', polars will use KLL if the quantiles are all
@@ -10143,7 +10145,8 @@ class Series(metaclass=_Meta):
             .to_series()
         )
         # A list of quantiles comes back as a single list element.
-        return out.item().to_list() if isinstance(quantile, list) else out.item()
+        item = out.item()
+        return item.to_list() if isinstance(item, pl.Series) else item
 
     def _row_encode(
         self,

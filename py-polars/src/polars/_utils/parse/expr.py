@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
 
@@ -16,6 +18,49 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars._plr import PyExpr
     from polars._typing import ColumnNameOrSelector, IntoExpr, PolarsDataType
+
+
+def parse_quantile_fraction(quantile: Any) -> pl.Series:
+    """
+    Convert a Python `quantile` fraction to a Series of one row.
+
+    A list, tuple, range, NumPy array or Series becomes one row that holds a list. Ints
+    and floats in a list all become floats. `True` stays a Boolean, so that the
+    fraction check in polars rejects it.
+    """
+    is_array = _check_for_numpy(quantile) and isinstance(quantile, np.ndarray)
+    if is_array and quantile.ndim == 0:
+        return pl.Series([quantile.item()], strict=False)
+    is_list = isinstance(quantile, (Sequence, pl.Series)) and not isinstance(
+        quantile, (str, bytes)
+    )
+    if is_array or is_list:
+        return pl.Series(quantile, strict=False).implode()
+    return pl.Series([quantile], strict=False)
+
+
+def parse_quantile_values(quantile: Any, *, allow_list: bool = True) -> list[float]:
+    """
+    Check a Python `quantile` fraction and return its values.
+
+    The fraction gets the checks that polars runs on any fraction. Unless `allow_list`
+    is set, it must be one number.
+    """
+    fraction = parse_quantile_fraction(quantile)
+    return plr.extract_quantiles(fraction._s, allow_list)
+
+
+def parse_quantile_into_expression(quantile: Any) -> PyExpr:
+    """
+    Parse a `quantile` fraction into an expression.
+
+    An expression is used as is, and a string names a column. Any other value becomes
+    a literal of the Series that `parse_quantile_fraction` returns.
+    """
+    if isinstance(quantile, (pl.Expr, str)):
+        return parse_into_expression(quantile)
+    fraction = parse_quantile_fraction(quantile)
+    return plr.lit(fraction._s, allow_object=False, is_scalar=True)
 
 
 def parse_into_expression(

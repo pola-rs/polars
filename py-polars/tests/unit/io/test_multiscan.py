@@ -1697,14 +1697,14 @@ UNORDERED_FILES_SCAN_AND_WRITE = [
 ]
 
 
-def _multiscan_unordered_frames(
-    n_files: int = 20, n_rows: int = 1_000
-) -> list[pl.DataFrame]:
+def _multiscan_unordered_frames() -> list[pl.DataFrame]:
+    n_rows = 32
+    # More files than the four concurrent scans.
     return [
         pl.select(
             a=pl.int_range(i * n_rows, (i + 1) * n_rows), f=pl.lit(i, dtype=pl.Int64)
         )
-        for i in range(n_files)
+        for i in range(8)
     ]
 
 
@@ -1782,8 +1782,8 @@ def test_multiscan_unordered_files(
         df.with_row_index().filter(pl.col("a") % 3 == 0),
     )
     assert_frame_equal(
-        collect(lf.slice(1_234, 10_000).select(pl.col("a").sum(), pl.len())),
-        df.slice(1_234, 10_000).select(pl.col("a").sum(), pl.len()),
+        collect(lf.slice(40, 119).select(pl.col("a").sum(), pl.len())),
+        df.slice(40, 119).select(pl.col("a").sum(), pl.len()),
     )
     assert_frame_equal(
         collect(lf.group_by("f").agg(pl.len(), pl.col("a").min()).sort("f")),
@@ -1828,14 +1828,14 @@ def test_multiscan_unordered_files_post_apply(
     dfs = []
     for i, df in enumerate(_multiscan_unordered_frames()):
         path = tmp_path / f"{i:02}.{ext}"
-        write(df.drop("f") if insert_missing and i == 7 else df, path)
+        write(df.drop("f") if insert_missing and i == 5 else df, path)
         dfs.append(df.with_columns(path=pl.lit(str(path))))
     df = pl.concat(dfs).with_columns(normalize_path_separator_pl(pl.col("path")))
 
     kwargs: dict[str, Any] = {}
     if insert_missing:
         df = df.with_columns(
-            pl.when(pl.col("f") == 7).then(None).otherwise(pl.col("f")).alias("f")
+            pl.when(pl.col("f") == 5).then(None).otherwise(pl.col("f")).alias("f")
         )
         kwargs["missing_columns"] = "insert"
     lf = scan(tmp_path / f"*.{ext}", include_file_paths="path", **kwargs)
@@ -1870,7 +1870,7 @@ def test_multiscan_unordered_files_single_effective_source(
     capfd.readouterr()
     out = scan(sources[:1]).select(pl.col("a").sum()).collect(engine="streaming")
     assert "unordered_files: false (reason: single source)" in capfd.readouterr().err
-    assert out.item() == df.head(1_000)["a"].sum()
+    assert out.item() == df.filter(pl.col("f") == 0)["a"].sum()
 
     # The hive partition filter skips every file but one.
     hive = tmp_path / "hive"
@@ -1910,7 +1910,7 @@ def test_multiscan_unordered_files_error(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     sources, _ = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
-    write(pl.DataFrame({"a": ["x"], "f": [0]}), sources[10])
+    write(pl.DataFrame({"a": ["x"], "f": [0]}), sources[6])
     q = scan(sources).select(pl.col("a").sum())
 
     with plmonkeypatch.context() as cx:

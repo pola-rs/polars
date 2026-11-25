@@ -337,6 +337,21 @@ impl LiteralValue {
         self.to_any_value().is_some_and(|av| av.is_nan())
     }
 
+    /// This literal as the one-row Series that the `quantile` fraction checks take, or `None` if
+    /// the literal isn't one value, such as a `Series`.
+    pub fn to_quantile_fraction(&self) -> PolarsResult<Option<Series>> {
+        let value = match self {
+            Self::Scalar(_) | Self::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_)) => {
+                self.to_any_value()
+            },
+            _ => None,
+        };
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        Series::from_any_values(PlSmallStr::EMPTY, &[value], true).map(Some)
+    }
+
     pub fn to_any_value(&self) -> Option<AnyValue<'_>> {
         let av = match self {
             Self::Scalar(sc) => sc.value().clone(),

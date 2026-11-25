@@ -2277,6 +2277,12 @@ def test_csv_invalid_escape_utf8_14960(chunk_override: None) -> None:
         pl.read_csv('col1\n""•'.encode())
 
 
+@pytest.mark.parametrize("dtype", [pl.String, pl.Categorical])
+def test_csv_text_after_closing_quote(chunk_override: None, dtype: pl.DataType) -> None:
+    with pytest.raises(ComputeError, match=r"Field .* is not properly escaped"):
+        pl.read_csv('a,b\n"ab"é,1\n'.encode(), schema_overrides={"a": dtype})
+
+
 def test_csv_invalid_escape(chunk_override: None) -> None:
     with pytest.raises(ComputeError):
         pl.read_csv(b'col1,col2\n"a,b')

@@ -93,6 +93,13 @@ def test_series_getitem_numpy() -> None:
     assert s[np.array(-2)].to_list() == [8]
 
 
+@pytest.mark.parametrize("np_dtype", [np.int64, np.uint64])
+def test_series_getitem_numpy_large_index_31010(np_dtype: type) -> None:
+    s = pl.Series("a", [10, 11, 12, 13, 14])
+    with pytest.raises((ValueError, pl.exceptions.OutOfBoundsError)):
+        s[np.array([2**32 + 3], dtype=np_dtype)]
+
+
 @pytest.mark.parametrize(
     ("input", "match"),
     [

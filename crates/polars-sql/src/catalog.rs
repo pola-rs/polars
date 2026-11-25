@@ -207,6 +207,16 @@ pub enum CallArg {
 /// The procedures `CALL` runs, with their arguments in positional order (`table` first).
 pub(crate) const CALL_PROCEDURES: &[(&str, &[&str])] = &[
     (
+        "add_files",
+        &[
+            "table",
+            "source_table",
+            "partition_filter",
+            "check_duplicate_files",
+            "parallelism",
+        ],
+    ),
+    (
         "rewrite_data_files",
         &["table", "strategy", "sort_order", "options", "where"],
     ),

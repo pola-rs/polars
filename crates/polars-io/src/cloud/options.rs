@@ -480,6 +480,7 @@ impl CloudOptions {
     pub(crate) async fn build_aws(
         &self,
         url: PlRefPath,
+        error_cx: ObjectStoreErrorContext,
         clear_cached_credentials: bool,
         rate_limiter: Option<&RateLimiter>,
     ) -> PolarsResult<impl object_store::ObjectStore> {
@@ -660,7 +661,7 @@ impl CloudOptions {
         let out = builder
             .with_unsigned_payload(true)
             .build()
-            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+            .map_err(|e| error_cx.attach_err_info(e))?;
 
         Ok(out)
     }
@@ -682,13 +683,13 @@ impl CloudOptions {
     pub(crate) fn build_azure(
         &self,
         url: PlRefPath,
+        error_cx: ObjectStoreErrorContext,
         clear_cached_credentials: bool,
         rate_limiter: Option<&RateLimiter>,
     ) -> PolarsResult<impl object_store::ObjectStore> {
         use object_store::client::ReqwestConnector;
 
         use super::credential_provider::IntoCredentialProvider;
-        use crate::cloud::ObjectStoreErrorContext;
 
         let verbose = polars_core::config::verbose();
 
@@ -737,9 +738,7 @@ impl CloudOptions {
             None => builder,
         };
 
-        let out = builder
-            .build()
-            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+        let out = builder.build().map_err(|e| error_cx.attach_err_info(e))?;
 
         Ok(out)
     }
@@ -761,6 +760,7 @@ impl CloudOptions {
     pub(crate) fn build_gcp(
         &self,
         url: PlRefPath,
+        error_cx: ObjectStoreErrorContext,
         clear_cached_credentials: bool,
         rate_limiter: Option<&RateLimiter>,
     ) -> PolarsResult<impl object_store::ObjectStore> {
@@ -811,9 +811,7 @@ impl CloudOptions {
             None => builder,
         };
 
-        let out = builder
-            .build()
-            .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+        let out = builder.build().map_err(|e| error_cx.attach_err_info(e))?;
 
         Ok(out)
     }

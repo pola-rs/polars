@@ -136,6 +136,13 @@ def test_replace_null_pattern_aggregate() -> None:
         assert pl.sql(query, eager=True).rows() == [(None,)]
 
 
+def test_replace_empty_pattern() -> None:
+    # as in Postgres
+    df = pl.DataFrame({"s": ["ab", "cd", None], "p": ["", "c", "a"]})
+    res = df.sql("SELECT REPLACE(s, '', 'x') AS a, REPLACE(s, p, 'x') AS b FROM self")
+    assert res.rows() == [("ab", "ab"), ("cd", "xd"), (None, None)]
+
+
 def test_string_chr() -> None:
     df = pl.DataFrame(
         {
@@ -497,6 +504,26 @@ def test_null_argument_shortcuts() -> None:
         """
     )
     assert res.rows() == [(None, None)]
+
+
+def test_string_left_right_zero_count() -> None:
+    df = pl.DataFrame({"s": ["ab", None, "ab"], "x": [None, None, None]})
+    res = df.sql(
+        """
+        SELECT LEFT(s, 0), RIGHT(s, 0), LEFT(x, 0) AS lx, RIGHT(x, 0) AS rx
+        FROM self
+        """
+    )
+    assert res.columns == ["literal", "literal:1", "lx", "rx"]
+    assert res.rows() == [
+        ("", "", None, None),
+        (None, None, None, None),
+        ("", "", None, None),
+    ]
+    res = df.sql("SELECT s, LEFT(s, 0) FROM self GROUP BY s ORDER BY s NULLS FIRST")
+    assert res.rows() == [(None, None), ("ab", "")]
+    res = df.sql("SELECT LEFT(MIN(s), 0) AS a, RIGHT(MAX(x), 0) AS b FROM self")
+    assert res.rows() == [("", None)]
 
 
 def test_string_left_negative_expr() -> None:
@@ -878,6 +905,24 @@ def test_string_position() -> None:
                 },
             ),
         )
+
+    res = pl.sql(
+        """
+        SELECT
+          STRPOS('héllo', 'l') AS a,
+          POSITION('テ' IN '日本語テキスト') AS b,
+          POSITION('.' IN 'abc') AS c,
+          STRPOS('a(b', '(') AS d
+        """,
+        eager=True,
+    )
+    assert_frame_equal(
+        res,
+        pl.DataFrame(
+            {"a": [3], "b": [4], "c": [0], "d": [2]},
+            schema=dict.fromkeys("abcd", pl.Int64),
+        ),
+    )
 
 
 def test_string_replace() -> None:

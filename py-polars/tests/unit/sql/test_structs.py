@@ -156,6 +156,32 @@ def test_struct_field_operator_access(expr: str, expected: int | str) -> None:
     assert df.sql(f"SELECT {expr} FROM self").item() == expected
 
 
+def test_json_extract_path() -> None:
+    # the function forms of `#>` and `#>>`
+    df = pl.DataFrame(
+        {
+            "j": ['{"a": {"b": "x", "c": [1, 2, 3]}, "a,b": 1}', '{"k": 7}', None],
+            "s": [{"name": "Ann"}, {"name": None}, None],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          JSON_EXTRACT_PATH_TEXT(j, 'a', 'b') AS b,
+          JSON_EXTRACT_PATH_TEXT(j, 'a', 'c', 2) AS c,
+          JSON_EXTRACT_PATH(j, 'a', 'b') AS b_json,
+          JSON_EXTRACT_PATH_TEXT(j, 'a,b') AS comma,
+          JSON_EXTRACT_PATH_TEXT(s, 'name') AS name
+        FROM self
+        """
+    )
+    assert res.rows() == [
+        ("x", "3", "x", "1", "Ann"),
+        (None, None, None, None, None),
+        (None, None, None, None, None),
+    ]
+
+
 def test_json_string_operator_access() -> None:
     df = pl.DataFrame(
         {

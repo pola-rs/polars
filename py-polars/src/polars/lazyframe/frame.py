@@ -45,6 +45,7 @@ from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
     parse_into_list_of_expressions_require_selectors,
+    parse_quantile_into_expression,
 )
 from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
@@ -7871,7 +7872,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3.0 ┆ 1.0 │
         └─────┴─────┘
         """  # noqa: W505
-        quantile_py = parse_into_expression(quantile)
+        quantile_py = parse_quantile_into_expression(quantile)
         return self._height_preserving(
             lambda lf: lf._from_pyldf(lf._ldf.quantile(quantile_py, interpolation))
         )
