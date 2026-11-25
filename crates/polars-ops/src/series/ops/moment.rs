@@ -1,6 +1,5 @@
 use polars_compute::moment::{KurtosisState, SkewState, kurtosis, skew};
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
 
 use crate::prelude::SeriesSealed;
 
@@ -17,18 +16,21 @@ pub trait MomentSeries: SeriesSealed {
     fn skew(&self, bias: bool) -> PolarsResult<Option<f64>> {
         let s = self.as_series();
         let mut state = SkewState::default();
-        if s.dtype().is_primitive_numeric() {
-            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
-                for arr in ca.downcast_iter() {
+        macro_rules! combine {
+            ($ca:expr) => {
+                for arr in $ca.downcast_iter() {
                     state.combine(&skew(arr));
                 }
-            });
-        } else {
-            let s = s.cast(&DataType::Float64)?;
-            for arr in s.f64().unwrap().downcast_iter() {
-                state.combine(&skew(arr));
-            }
+            };
+        }
+        match s.dtype() {
+            DataType::Float32 => combine!(s.f32()?),
+            DataType::Float64 => combine!(s.f64()?),
+            DataType::Int32 => combine!(s.i32()?),
+            DataType::Int64 => combine!(s.i64()?),
+            DataType::UInt32 => combine!(s.u32()?),
+            DataType::UInt64 => combine!(s.u64()?),
+            _ => combine!(s.cast(&DataType::Float64)?.f64()?),
         }
         Ok(state.finalize(bias))
     }
@@ -45,18 +47,21 @@ pub trait MomentSeries: SeriesSealed {
     fn kurtosis(&self, fisher: bool, bias: bool) -> PolarsResult<Option<f64>> {
         let s = self.as_series();
         let mut state = KurtosisState::default();
-        if s.dtype().is_primitive_numeric() {
-            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
-                for arr in ca.downcast_iter() {
+        macro_rules! combine {
+            ($ca:expr) => {
+                for arr in $ca.downcast_iter() {
                     state.combine(&kurtosis(arr));
                 }
-            });
-        } else {
-            let s = s.cast(&DataType::Float64)?;
-            for arr in s.f64().unwrap().downcast_iter() {
-                state.combine(&kurtosis(arr));
-            }
+            };
+        }
+        match s.dtype() {
+            DataType::Float32 => combine!(s.f32()?),
+            DataType::Float64 => combine!(s.f64()?),
+            DataType::Int32 => combine!(s.i32()?),
+            DataType::Int64 => combine!(s.i64()?),
+            DataType::UInt32 => combine!(s.u32()?),
+            DataType::UInt64 => combine!(s.u64()?),
+            _ => combine!(s.cast(&DataType::Float64)?.f64()?),
         }
         Ok(state.finalize(fisher, bias))
     }

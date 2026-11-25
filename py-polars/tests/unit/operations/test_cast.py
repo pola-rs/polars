@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -1221,7 +1222,9 @@ def test_int_cast_boundaries(from_dtype: Any, to_dtype: Any) -> None:
 
 
 def test_int_cast_hidden_out_of_range_under_null() -> None:
-    arr = pa.array([1, 300, 2], mask=[False, True, False], type=pa.int32())
+    values = pa.py_buffer(np.array([1, 300, 2], dtype=np.int32).tobytes())
+    validity = pa.py_buffer(np.packbits([1, 0, 1], bitorder="little").tobytes())
+    arr = pa.Array.from_buffers(pa.int32(), 3, [validity, values], null_count=1)
     s = pl.Series(arr)
     assert s.cast(pl.UInt8).to_list() == [1, None, 2]
     assert s.cast(pl.UInt8, strict=False).to_list() == [1, None, 2]

@@ -236,8 +236,10 @@ where
     O: NativeType + num_traits::NumCast,
 {
     if is_integer(I::PRIMITIVE) && is_integer(O::PRIMITIVE) {
-        let all_fit = from.values().iter().fold(true, |fit, x| {
-            fit & num_traits::cast::cast::<I, O>(*x).is_some()
+        let all_fit = from.values().chunks(1024).all(|chunk| {
+            chunk.iter().fold(true, |fit, x| {
+                fit & num_traits::cast::cast::<I, O>(*x).is_some()
+            })
         });
         if all_fit {
             // SAFETY: every value was checked to fit in O.
