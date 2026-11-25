@@ -111,7 +111,11 @@ where
 pub(super) fn array_arg_min_max_flat(ca: &ArrayChunked, is_max: bool) -> Option<IdxCa> {
     let dt = ca.inner_dtype();
     let width = ca.width();
-    if width == 0 || !dt.is_primitive_numeric() || super::namespace::has_inner_nulls(ca) {
+    if width == 0
+        || width > IdxSize::MAX as usize
+        || !dt.is_primitive_numeric()
+        || super::namespace::has_inner_nulls(ca)
+    {
         return None;
     }
     let chunks = ca.downcast_iter().map(|arr| {

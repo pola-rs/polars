@@ -285,7 +285,10 @@ where
 /// The arg min or arg max of every list, or `None` if the inner dtype has no flat kernel.
 pub(super) fn list_arg_min_max_flat(ca: &ListChunked, is_max: bool) -> Option<IdxCa> {
     let dt = ca.inner_dtype();
-    if !dt.is_primitive_numeric() || has_inner_nulls(ca) {
+    if !dt.is_primitive_numeric()
+        || has_inner_nulls(ca)
+        || ca.get_inner().len() > IdxSize::MAX as usize
+    {
         return None;
     }
     let chunks = ca.downcast_iter().map(|arr| {
