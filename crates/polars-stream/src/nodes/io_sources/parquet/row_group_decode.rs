@@ -128,14 +128,14 @@ pub(super) struct RowGroupDecoder {
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     /// Per projected field: whether it is only read to evaluate the predicate, so that it is not
-    /// part of the output. All false if the predicate is not (fully) evaluated by the decoder.
-    pub(super) dropped_fields: Arc<[bool]>,
+    /// part of the output. `None` if all fields are kept.
+    pub(super) dropped_fields: Option<Bitmap>,
     /// Columns to keep in ordinary decode order, including the row index if present.
     /// `None` if all columns are kept.
     pub(super) output_keep_mask: Option<Bitmap>,
     /// Per projected field: whether it is dropped (see `dropped_fields`) and not read by
     /// `rest_predicate`, so that it can be dropped right after its own evaluation.
-    pub(super) early_dropped_fields: Arc<[bool]>,
+    pub(super) early_dropped_fields: Option<Bitmap>,
     pub(super) target_values_per_thread: usize,
     pub(super) runtime_range_skipper: Option<Arc<RuntimeRangeSkipper>>,
 }
@@ -154,14 +154,20 @@ impl RowGroupDecoder {
 
     fn is_dropped_early(&self, source: Source) -> bool {
         match source {
-            Source::Field(i) => self.early_dropped_fields[i],
+            Source::Field(i) => self
+                .early_dropped_fields
+                .as_ref()
+                .is_some_and(|fields| fields.get_bit(i)),
             Source::RowIndex => false,
         }
     }
 
     fn is_dropped(&self, source: Source) -> bool {
         match source {
-            Source::Field(i) => self.dropped_fields[i],
+            Source::Field(i) => self
+                .dropped_fields
+                .as_ref()
+                .is_some_and(|fields| fields.get_bit(i)),
             Source::RowIndex => false,
         }
     }
@@ -212,9 +218,9 @@ impl RowGroupDecoder {
             .chain(
                 self.projected_arrow_fields
                     .iter()
-                    .zip(self.dropped_fields.iter())
-                    .filter(|(_, dropped)| !**dropped)
-                    .map(|(p, _)| Column::new_empty(p.output_name().clone(), &p.output_dtype())),
+                    .enumerate()
+                    .filter(|&(i, _)| !self.is_dropped(Source::Field(i)))
+                    .map(|(_, p)| Column::new_empty(p.output_name().clone(), &p.output_dtype())),
             )
             .collect();
         unsafe { DataFrame::new_unchecked(0, columns) }
@@ -751,6 +757,9 @@ impl Pass {
         // The rows of `column` that its active dynamic conjuncts keep, `None` when
         // there is none.
         let dynamic_mask = |c: &PredicateColumn, column: &Column| -> PolarsResult<Option<Bitmap>> {
+            if c.dynamic.is_empty() {
+                return Ok(None);
+            }
             let mut mask: Option<Bitmap> = None;
             let df = column.clone().into_frame();
             for d in c.dynamic.iter().filter(|d| d.is_active()) {
@@ -1027,7 +1036,7 @@ impl RowGroupDecoder {
             .decode_items(
                 self.non_predicate_field_indices
                     .iter()
-                    .filter(|&&f| !self.dropped_fields[f])
+                    .filter(|&&f| !self.is_dropped(Source::Field(f)))
                     .map(|&f| Item::Source(Source::Field(f)))
                     .collect(),
                 &row_group_data,
