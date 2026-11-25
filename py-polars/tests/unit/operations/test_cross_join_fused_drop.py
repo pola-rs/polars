@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import polars as pl
 import pytest
+
+import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
