@@ -174,9 +174,18 @@ def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) ->
 
 
 def _already_committed(metadata: TableMetadata, sink_uuid: str) -> bool:
-    return any(
-        s.summary is not None and s.summary.get(_SINK_UUID_PROPERTY) == sink_uuid
-        for s in metadata.snapshots
+    return _committed_snapshot_id(metadata, sink_uuid) is not None
+
+
+def _committed_snapshot_id(metadata: TableMetadata, sink_uuid: str) -> int | None:
+    """The id of the newest snapshot the sink committed, or None if it has none."""
+    return next(
+        (
+            s.snapshot_id
+            for s in reversed(metadata.snapshots)
+            if s.summary is not None and s.summary.get(_SINK_UUID_PROPERTY) == sink_uuid
+        ),
+        None,
     )
 
 
@@ -1748,6 +1757,13 @@ class IcebergSinkState:
             credential_provider=credential_provider,
             lazy=True,
         )._ldf
+
+    def committed_snapshot_id(self) -> int | None:
+        """The id of the newest snapshot this sink committed, after `commit()`.
+
+        None when the commit created no snapshot, or when that snapshot has expired.
+        """
+        return _committed_snapshot_id(self.table().metadata, self.sink_uuid_str)
 
     def commit(self, sinked_files: list[_IcebergSinkedFile]) -> pl.DataFrame:
         """Commit the sinked files to the table.

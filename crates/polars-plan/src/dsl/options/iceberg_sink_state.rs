@@ -75,14 +75,32 @@ pub enum IcebergSchemaMode {
 mod _python_impl {
     use std::convert::Infallible;
 
+    use polars_core::error::PolarsResult;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::PyString;
-    use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python};
+    use pyo3::{
+        Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python, intern,
+    };
 
     use super::{IcebergCommitMode, IcebergSchemaMode, IcebergSinkState};
+    use crate::dsl::sink::{SinkedPathsCallbackArgs, commit_sinked_files};
 
     impl IcebergSinkState {
+        /// Commits the sinked files to the table, returning the id of the snapshot
+        /// the commit created.
+        ///
+        /// The id is `None` when the commit created no snapshot, or when that
+        /// snapshot has expired.
+        pub fn commit(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<Option<i64>> {
+            let state = self.clone().into_sink_state_obj()?;
+            commit_sinked_files("Iceberg", &state, args)?;
+            Python::attach(|py| {
+                let snapshot_id = state.call_method0(py, intern!(py, "committed_snapshot_id"))?;
+                Ok(snapshot_id.extract(py)?)
+            })
+        }
+
         pub(crate) fn into_sink_state_obj(self) -> PyResult<Py<PyAny>> {
             Python::attach(|py| {
                 polars_utils::python_convert_registry::get_python_convert_registry()

@@ -43,14 +43,27 @@ pub enum DeltaCommitMode {
 mod _python_impl {
     use std::convert::Infallible;
 
+    use polars_core::error::PolarsResult;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::PyString;
     use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python};
 
     use super::{DeltaCommitMode, DeltaSinkState};
+    use crate::dsl::sink::{SinkedPathsCallbackArgs, commit_sinked_files};
 
     impl DeltaSinkState {
+        /// Commits the sinked files to the table, returning the version the commit
+        /// created.
+        ///
+        /// The version is `None` when the commit created none, e.g. with
+        /// `mode="ignore"` on a table that exists.
+        pub fn commit(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<Option<i64>> {
+            let state = self.clone().into_sink_state_obj()?;
+            let committed = commit_sinked_files("Delta", &state, args)?;
+            Ok(committed.column("version")?.i64()?.get(0))
+        }
+
         pub(crate) fn into_sink_state_obj(self) -> PyResult<Py<PyAny>> {
             Python::attach(|py| {
                 polars_utils::python_convert_registry::get_python_convert_registry()
