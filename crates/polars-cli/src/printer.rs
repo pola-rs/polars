@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use polars::io::utils::file::{Writable, WritableTrait};
 use polars::prelude::{
-    CompatLevel, CsvWriterOptions, DataFrame, DataType, FileWriteFormat, NDJsonWriterOptions,
-    ParquetWriteOptions, PolarsResult, SchemaExt, SchemaRef, SinkTarget, SpecialEq, polars_bail,
-    polars_ensure,
+    CompatLevel, CsvWriterOptions, DataFrame, DataType, FileWriteFormat, IdxSize,
+    NDJsonWriterOptions, ParquetWriteOptions, PolarsResult, SchemaExt, SchemaRef, SinkTarget,
+    SpecialEq, polars_bail, polars_ensure,
 };
 use polars_arrow::io::ipc::write::{StreamWriter as ArrowStream, WriteOptions};
 use unicode_width::UnicodeWidthChar;
@@ -18,9 +18,14 @@ use crate::script::StatementKind;
 /// How results are written to the output.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum Format {
-    /// A table for reading; a long result is cut to its first and last rows. The result of
-    /// DESCRIBE or EXPLAIN is printed in full, as plain text
+    /// A table of the first 10 rows and 8 columns, with the number of rows. The last statement
+    /// of a script runs only as far as the preview needs, counting up to 10,000 rows, so it can
+    /// hide an error in a later row; earlier statements run in full. The result of DESCRIBE or
+    /// EXPLAIN is printed in full, as plain text
     #[default]
+    Preview,
+    /// A table of every row and column, with numbers in full and other values of up to 10,000
+    /// characters; the whole result is held in memory
     Table,
     /// Every row, with a header line
     Csv,
@@ -43,6 +48,7 @@ impl Format {
 impl fmt::Display for Format {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            Self::Preview => "preview",
             Self::Table => "table",
             Self::Csv => "csv",
             Self::Ndjson => "ndjson",
@@ -93,6 +99,9 @@ pub struct Printer<O: Write, E> {
     result: Option<ResultWriter<O>>,
     /// Whether the script has several statements. Errors then name their statement.
     several_statements: bool,
+    /// How many statements the script has, and which one runs, from 1.
+    statements: usize,
+    statement: usize,
     /// Whether the last statement is the only one that returns rows. A binary `COPY ... TO
     /// STDOUT` needs that.
     ends_in_its_only_result: bool,
@@ -107,9 +116,18 @@ pub struct Printer<O: Write, E> {
 }
 
 enum ResultWriter<O: Write> {
-    Table(DataFrame),
+    /// The rows shown, and the result's row count, up to the preview's count limit.
+    Table {
+        shown: DataFrame,
+        rows: usize,
+    },
     ArrowStream(Box<ArrowStream<Shared<O>>>),
 }
+
+const PREVIEW_ROWS: usize = 10;
+const PREVIEW_COLUMNS: usize = 8;
+/// A preview counts rows up to this, then stops the query.
+const PREVIEW_COUNT_LIMIT: usize = 10_000;
 
 /// The Arrow types that older readers know, as Polars' own stream writer uses.
 const ARROW_COMPAT: CompatLevel = CompatLevel::oldest();
@@ -125,6 +143,8 @@ impl<O: Write, E: Write> Printer<O, E> {
             format,
             result: None,
             several_statements: false,
+            statements: 0,
+            statement: 0,
             ends_in_its_only_result: false,
             on_terminal: false,
             kind: StatementKind::default(),
@@ -159,6 +179,19 @@ impl<O: Write, E: Write> Printer<O, E> {
         self.kind == StatementKind::Effect
     }
 
+    /// Whether the current result is a preview; a description never is.
+    fn previews(&self) -> bool {
+        self.format == Format::Preview && self.kind != StatementKind::Description
+    }
+
+    /// A preview's plan limit, for the last statement: one row past the count limit, to tell
+    /// that more follow.
+    pub(crate) fn preview_limit(&self) -> Option<IdxSize> {
+        // Earlier statements run in full, so that an error stops the script.
+        let last = self.statement >= self.statements;
+        (self.previews() && last).then_some((PREVIEW_COUNT_LIMIT + 1) as IdxSize)
+    }
+
     /// Whether the reader of the output has gone away, as when it is piped into `head`.
     pub fn output_is_closed(&self) -> bool {
         self.out.closed.load(Ordering::Relaxed)
@@ -175,7 +208,7 @@ impl<O: Write, E: Write> Printer<O, E> {
             Format::Csv => FileWriteFormat::Csv(CsvWriterOptions::default()),
             Format::Ndjson => FileWriteFormat::NDJson(NDJsonWriterOptions::default()),
             Format::Parquet => FileWriteFormat::Parquet(Arc::new(ParquetWriteOptions::default())),
-            Format::Table | Format::ArrowStream => return None,
+            Format::Preview | Format::Table | Format::ArrowStream => return None,
         };
         Some((self.sink_target(), format))
     }
@@ -219,19 +252,31 @@ impl<O: Write, E: Write> Printer<O, E> {
                 ends_in_its_only_result,
             } => {
                 self.several_statements = statements > 1;
+                self.statements = statements;
                 self.ends_in_its_only_result = ends_in_its_only_result;
             },
-            Event::Statement { kind } => self.kind = kind,
+            Event::Statement { kind } => {
+                self.kind = kind;
+                self.statement += 1;
+            },
             Event::Schema(schema) => self.result = Some(self.start_result(&schema)?),
             Event::Rows(mut rows) => {
                 if self.result.is_none() {
                     self.result = Some(self.start_result(rows.schema())?);
                 }
+                let table_rows = match self.previews() {
+                    true => PREVIEW_ROWS,
+                    false => usize::MAX,
+                };
                 // The writers need the columns of a batch chunked alike.
                 rows.align_chunks();
                 match self.result.as_mut().unwrap() {
-                    ResultWriter::Table(table) => {
-                        table.vstack_mut(&rows)?;
+                    ResultWriter::Table { shown, rows: count } => {
+                        let room = table_rows.saturating_sub(shown.height());
+                        if room > 0 {
+                            shown.vstack_mut(&rows.head(Some(room)))?;
+                        }
+                        *count += rows.height();
                     },
                     ResultWriter::ArrowStream(writer) => {
                         for batch in rows.try_iter_chunks(ARROW_COMPAT, true) {
@@ -242,10 +287,16 @@ impl<O: Write, E: Write> Printer<O, E> {
             },
             Event::StatementEnd => {
                 match self.result.take() {
-                    Some(ResultWriter::Table(table)) if self.kind == StatementKind::Description => {
-                        write_in_full(&mut self.out, &table)?
+                    Some(ResultWriter::Table { shown, .. })
+                        if self.kind == StatementKind::Description =>
+                    {
+                        write_in_full(&mut self.out, &shown)?
                     },
-                    Some(ResultWriter::Table(table)) => writeln!(self.out, "{table}")?,
+                    Some(ResultWriter::Table { shown, rows }) if self.previews() => {
+                        let counted_to = self.preview_limit().map(|_| PREVIEW_COUNT_LIMIT);
+                        write_preview(&mut self.out, &shown, rows, counted_to)?
+                    },
+                    Some(ResultWriter::Table { shown, .. }) => writeln!(self.out, "{shown}")?,
                     Some(ResultWriter::ArrowStream(mut writer)) => writer.finish()?,
                     None => {},
                 }
@@ -278,7 +329,10 @@ impl<O: Write, E: Write> Printer<O, E> {
     fn start_result(&self, schema: &SchemaRef) -> PolarsResult<ResultWriter<O>> {
         let out = self.out.clone();
         Ok(match self.format {
-            Format::Table => ResultWriter::Table(DataFrame::empty_with_schema(schema)),
+            Format::Preview | Format::Table => ResultWriter::Table {
+                shown: DataFrame::empty_with_schema(schema),
+                rows: 0,
+            },
             Format::ArrowStream => {
                 let mut writer = ArrowStream::new(out, WriteOptions { compression: None });
                 writer.start(&schema.to_arrow(ARROW_COMPAT), None)?;
@@ -417,9 +471,141 @@ fn excerpt(line: &str, at: usize, width: usize) -> (String, usize, usize) {
     (text, caret, cells(&chars[at..shown]).max(1))
 }
 
-/// Writes every row of `table` as plain text, where the table format cuts rows and long
-/// values. One column is written as its values, one per line. Several columns get a header
-/// line and are padded to line up.
+/// Writes `shown`, the first rows of a result of `rows` rows, under a shape line with the
+/// result's size; a count that stopped at `counted_to` is a lower bound. When rows or columns
+/// are cut, a line under the table says so.
+fn write_preview(
+    out: &mut impl Write,
+    shown: &DataFrame,
+    rows: usize,
+    counted_to: Option<usize>,
+) -> io::Result<()> {
+    let columns = PREVIEW_COLUMNS.min(shown.width());
+    let cut_rows = rows > shown.height();
+    let cut_columns = columns < shown.width();
+    if !cut_rows && !cut_columns {
+        return writeln!(out, "{shown}");
+    }
+
+    let note = match cut_rows {
+        // Polars' shape line gives the size.
+        false => {
+            writeln!(out, "{shown}")?;
+            format!("Preview showing {columns} columns")
+        },
+        // Polars' shape line would give only what is shown.
+        true => {
+            let size = match counted_to {
+                Some(limit) if rows > limit => format!(">{}", grouped(limit)),
+                _ => grouped(rows),
+            };
+            writeln!(out, "shape: ({size}, {})", grouped(shown.width()))?;
+            let table = shown.to_string();
+            let mut lines: Vec<&str> = table
+                .lines()
+                .filter(|line| !line.starts_with("shape: "))
+                .collect();
+            let more = lines.last().and_then(|bottom| more_rows_row(bottom));
+            if let Some(more) = &more {
+                lines.insert(lines.len() - 1, more);
+            }
+            for line in lines {
+                writeln!(out, "{line}")?;
+            }
+            match cut_columns {
+                true => format!(
+                    "Preview showing the first {} rows and {columns} columns",
+                    shown.height()
+                ),
+                false => format!("Preview showing the first {} rows", shown.height()),
+            }
+        },
+    };
+    writeln!(
+        out,
+        "{note}. See --help for formats that show the whole result."
+    )
+}
+
+/// `n` with its digits in groups of three, as Polars writes a shape.
+fn grouped(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push('_');
+        }
+        out.push(digit);
+    }
+    out
+}
+
+/// A row of `…` for above `bottom`, the table's bottom border, as Polars marks left-out rows.
+/// `None` for other border styles.
+fn more_rows_row(bottom: &str) -> Option<String> {
+    if !(bottom.starts_with('└') && bottom.ends_with('┘')) {
+        return None;
+    }
+    // Each cell is padded with a space, so its `…` comes after the first `─` of its border.
+    let mut row = String::with_capacity(bottom.len());
+    let mut after_border = 0;
+    for c in bottom.chars() {
+        match c {
+            '└' | '┘' | '┴' => {
+                row.push(if c == '┴' { '┆' } else { '│' });
+                after_border = 0;
+            },
+            _ => {
+                after_border += 1;
+                row.push(if after_border == 2 { '…' } else { ' ' });
+            },
+        }
+    }
+    Some(row)
+}
+
+/// Sets Polars' table display for `format`. Polars reads it only from the environment, as
+/// `pl.Config` sets it; the user's own settings are removed, so the output does not depend on
+/// them.
+///
+/// # Safety
+///
+/// As for [`std::env::set_var`]: no other thread may use the environment meanwhile.
+pub unsafe fn set_table_display(format: Format) {
+    let preview_columns = PREVIEW_COLUMNS.to_string();
+    let (columns, values, list_items, width) = match format {
+        // Values are cut at 10,000 characters: the table's column widths are 16-bit numbers.
+        Format::Table => ("-1", "10000", "-1", "-1"),
+        _ => (preview_columns.as_str(), "30", "3", "100"),
+    };
+    for (name, _) in std::env::vars_os() {
+        // Names of environment variables are case-insensitive on Windows.
+        let upper = name.to_string_lossy().to_ascii_uppercase();
+        let user_setting = upper.starts_with("POLARS_FMT_") || upper.starts_with("POLARS_TABLE_");
+        if user_setting {
+            // SAFETY: the caller guarantees that nothing else uses the environment.
+            unsafe { std::env::remove_var(name) };
+        }
+    }
+    let settings = [
+        ("POLARS_FMT_MAX_ROWS", "-1"),
+        ("POLARS_FMT_MAX_COLS", columns),
+        ("POLARS_FMT_STR_LEN", values),
+        ("POLARS_FMT_TABLE_CELL_LIST_LEN", list_items),
+        ("POLARS_TABLE_WIDTH", width),
+    ];
+    for (name, value) in settings {
+        // SAFETY: the caller guarantees that nothing else uses the environment.
+        unsafe { std::env::set_var(name, value) };
+    }
+    if format == Format::Table {
+        polars_core::fmt::set_float_fmt(polars_core::fmt::FloatFmt::Full);
+    }
+}
+
+/// Writes every row of `table` as plain text, where a preview cuts rows and long values. One
+/// column is written as its values, one per line. Several columns get a header line and are
+/// padded to line up.
 fn write_in_full(out: &mut impl Write, table: &DataFrame) -> PolarsResult<()> {
     let mut columns = Vec::with_capacity(table.width());
     for column in table.columns() {

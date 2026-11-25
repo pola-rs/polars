@@ -8,7 +8,7 @@ use clap::{CommandFactory, FromArgMatches};
 use polars::polars_utils::version::{
     set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version,
 };
-use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run};
+use polars_cli::{Args, Input, Printer, STACK_SIZE, Script, exit_code, run, set_table_display};
 
 // The allocator of the Python runtime, so that both perform alike.
 #[global_allocator]
@@ -80,6 +80,8 @@ fn run_command() -> ExitCode {
         Err(error) => return report(error),
     };
     let format = args.format();
+    // SAFETY: `main` only waits for this thread, and Polars starts its threads later.
+    unsafe { set_table_display(format) };
     let read_only = args.read_only_origin();
     let verbose = args.verbose();
     let on_terminal = io::stdout().is_terminal();

@@ -162,8 +162,9 @@ mod tests {
 
     #[test]
     fn formats() {
-        assert_eq!(parse(&[]).unwrap().format(), Format::Table);
+        assert_eq!(parse(&[]).unwrap().format(), Format::Preview);
         for (name, format) in [
+            ("preview", Format::Preview),
             ("table", Format::Table),
             ("csv", Format::Csv),
             ("ndjson", Format::Ndjson),

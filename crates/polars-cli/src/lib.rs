@@ -25,7 +25,7 @@ mod script;
 
 pub use args::{Args, Input};
 pub use error::{ErrorRecord, Location};
-pub use printer::{Event, Format, Printer};
+pub use printer::{Event, Format, Printer, set_table_display};
 pub use script::{Script, StatementKind};
 
 /// The stack of the threads that plan and run statements, as a main thread on Linux has.
@@ -228,6 +228,11 @@ where
     }
 
     let mut unsunk = plan.clone();
+    let limited = printer.preview_limit().is_some();
+    let plan = match printer.preview_limit() {
+        Some(limit) => plan.limit(limit),
+        None => plan,
+    };
     // One batch in flight: the engine waits while a batch is being written.
     let (send, receive) = sync_channel::<DataFrame>(1);
     let plan = plan.sink_batches(
@@ -268,7 +273,12 @@ where
         match engine.join() {
             Ok(Ok(ran)) => {
                 printed?;
-                ran.map_err(without_sink_context)?;
+                ran.map_err(without_sink_context)
+                    .map_err(|error| match limited {
+                        // The preview's limit, not the statement's.
+                        true => without_context(error, "'slice'"),
+                        false => error,
+                    })?;
             },
             Ok(Err(aborted)) => return Err(Stop::Aborted(aborted)),
             Err(panic) => resume_unwind(panic),
@@ -308,10 +318,15 @@ where
 /// Errors name the plan nodes they passed through. The outermost one is the batch sink that
 /// `stream` adds, which is not part of the statement.
 fn without_sink_context(error: PolarsError) -> PolarsError {
+    without_context(error, "'sink'")
+}
+
+/// `error` without an outermost `context`, from a plan node the CLI added.
+fn without_context(error: PolarsError, context: &str) -> PolarsError {
     match error {
-        PolarsError::Context { error, msg } if &*msg == "'sink'" => *error,
+        PolarsError::Context { error, msg } if &*msg == context => *error,
         PolarsError::Attached { error, attachment } => {
-            without_sink_context(*error).with_attachment(*attachment)
+            without_context(*error, context).with_attachment(*attachment)
         },
         error => error,
     }
@@ -365,7 +380,7 @@ mod tests {
     }
 
     fn run_captured(sql: &str) -> (u8, String, String) {
-        run_formatted(sql, Format::Table)
+        run_formatted(sql, Format::default())
     }
 
     fn run_formatted(sql: &str, format: Format) -> (u8, String, String) {
@@ -397,6 +412,33 @@ mod tests {
         assert_eq!(code, exit_code::OK);
         assert!(out.starts_with("shape: (1, 1)\n"), "{out}");
         assert_eq!(err, "");
+    }
+
+    #[test]
+    fn a_long_preview_shows_its_first_rows_and_counts_the_rest() {
+        let (code, out, _) = run_captured("SELECT n FROM generate_series(101, 125) AS t (n)");
+        assert_eq!(code, exit_code::OK);
+        assert!(out.starts_with("shape: (25, 1)\n"), "{out}");
+        assert!(out.contains("110") && !out.contains("111"), "{out}");
+
+        // An effect statement stores every row.
+        let sql = "CREATE TABLE t AS SELECT n FROM generate_series(1, 20000) AS s (n); \
+                   SELECT count(*) AS c FROM t";
+        let (_, out, _) = run_captured(sql);
+        assert!(out.contains("20000"), "{out}");
+
+        // A later row's error goes unseen in a preview, not in the whole result.
+        let sql = "SELECT CAST(CASE WHEN n > 15000 THEN 'x' ELSE '1' END AS INT) AS v \
+                   FROM generate_series(1, 20000) AS t (n)";
+        let (code, out, _) = run_captured(sql);
+        assert_eq!(code, exit_code::OK);
+        assert!(out.starts_with("shape: (>10_000, 1)\n"), "{out}");
+        assert_eq!(run_formatted(sql, Format::Csv).0, exit_code::FAILURE);
+        // Only the last statement stops early: an earlier one's error stops the script.
+        assert_eq!(
+            run_captured(&format!("{sql}; SELECT 1")).0,
+            exit_code::FAILURE
+        );
     }
 
     #[test]
