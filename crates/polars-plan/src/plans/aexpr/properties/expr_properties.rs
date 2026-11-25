@@ -1,8 +1,6 @@
-#![expect(clippy::disallowed_types)] // We don't iterate over the maps.
-
 use std::ops::ControlFlow;
 
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unitvec;
@@ -18,12 +16,12 @@ use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 /// A `Node` must keep referring to the same expression for as long as `ExprProperties` is used.
 #[derive(Default)]
 pub struct ExprProperties {
-    is_elementwise: PlHashMap<Node, bool>,
-    is_row_separable: PlHashMap<Node, bool>,
-    is_input_independent: PlHashMap<Node, bool>,
-    is_input_independent_scalar: PlHashMap<Node, bool>,
-    is_frame_dependent: PlHashMap<Node, bool>,
-    is_length_preserving: PlHashMap<Node, bool>,
+    is_elementwise: PlIndexMap<Node, bool>,
+    is_row_separable: PlIndexMap<Node, bool>,
+    is_input_independent: PlIndexMap<Node, bool>,
+    is_input_independent_scalar: PlIndexMap<Node, bool>,
+    is_frame_dependent: PlIndexMap<Node, bool>,
+    is_length_preserving: PlIndexMap<Node, bool>,
     node_scratch: ScratchVec<Node>,
     height_scratch: ScratchVec<ExprProjectionHeight>,
 }
@@ -31,12 +29,12 @@ pub struct ExprProperties {
 impl ExprProperties {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            is_elementwise: PlHashMap::with_capacity(capacity),
-            is_row_separable: PlHashMap::with_capacity(capacity),
-            is_input_independent: PlHashMap::with_capacity(capacity),
-            is_input_independent_scalar: PlHashMap::with_capacity(capacity),
-            is_frame_dependent: PlHashMap::with_capacity(capacity),
-            is_length_preserving: PlHashMap::with_capacity(capacity),
+            is_elementwise: PlIndexMap::with_capacity(capacity),
+            is_row_separable: PlIndexMap::with_capacity(capacity),
+            is_input_independent: PlIndexMap::with_capacity(capacity),
+            is_input_independent_scalar: PlIndexMap::with_capacity(capacity),
+            is_frame_dependent: PlIndexMap::with_capacity(capacity),
+            is_length_preserving: PlIndexMap::with_capacity(capacity),
             node_scratch: ScratchVec::default(),
             height_scratch: ScratchVec::default(),
         }
@@ -111,6 +109,7 @@ impl ExprProperties {
         let ret = match expr_arena.get(node) {
             // Handled separately in `Eval`.
             AExpr::Element | AExpr::EvalColumn(_) => unreachable!(),
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructField(_) => false,
             AExpr::Explode { expr: inner, .. }
             | AExpr::Cast {
@@ -197,6 +196,7 @@ impl ExprProperties {
                         .iter()
                         .all(|c| self.is_input_independent(c.node(), expr_arena))
             },
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructEval {
                 expr,
                 evaluation,
@@ -301,7 +301,7 @@ impl ExprProperties {
 
 struct CachedLengthPreservingVisitor<'a> {
     height_resolver: &'a mut ExprHeightVisitor<'a>,
-    cache: &'a mut PlHashMap<Node, bool>,
+    cache: &'a mut PlIndexMap<Node, bool>,
 }
 
 impl<'a> NodeVisitor for CachedLengthPreservingVisitor<'a> {
