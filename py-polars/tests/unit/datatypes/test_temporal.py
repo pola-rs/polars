@@ -107,7 +107,9 @@ def test_fill_null_temporal() -> None:
         ldf = ldf.fill_null(temporal_literal)
 
     # validate
-    assert ldf.collect().rows() == [
+    with pytest.deprecated_call():
+        out = ldf.collect()
+    assert out.rows() == [
         (dtm, dtm_ms, dtm, dtm, dt, tm, td, td, td, td),  # first row (no null values)
         (  # second row (was composed entirely of nulls, now filled-in with literals)
             dtm_us_fill,

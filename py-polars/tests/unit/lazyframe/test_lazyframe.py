@@ -1208,11 +1208,12 @@ def test_update_schema_after_projection_pd_t4157() -> None:
 
 
 def test_type_coercion_unknown_4190() -> None:
-    df = (
-        pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).with_columns(
-            pl.col("a") & pl.col("a").fill_null(True)
-        )
-    ).collect()
+    with pytest.deprecated_call():
+        df = (
+            pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).with_columns(
+                pl.col("a") & pl.col("a").fill_null(True)
+            )
+        ).collect()
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 1), (2, 2), (3, 3)]
 
