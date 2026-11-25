@@ -109,6 +109,8 @@ pub enum PhysicalPropsDescription {
     CrossJoin {
         maintain_order: String,
         suffix: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fused_predicate: Option<Vec<String>>,
     },
     EquiJoin {
         how: String,

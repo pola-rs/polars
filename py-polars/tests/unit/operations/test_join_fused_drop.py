@@ -421,6 +421,10 @@ def test_grouped_asof_join_fused_drop() -> None:
         expected.insert_column(1, pl.Series("t_R", [None, 3, 4, None])),
     )
 
+    query = full.select("lp")
+    assert_join_projection(physical_plan(query), "asof-join", "project 1 / 5: lp")
+    assert_frame_equal(query.collect(engine="streaming"), expected.select("lp"))
+
 
 def test_ungrouped_asof_join_fused_drop_only_right_payload() -> None:
     left = pl.LazyFrame({"left_t": [0, 2, 3, 8]}).set_sorted("left_t")

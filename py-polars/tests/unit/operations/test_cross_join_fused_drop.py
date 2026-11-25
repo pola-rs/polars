@@ -5,9 +5,14 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+import polars._plr as plr
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import mock_module_import
+from tests.unit.lazyframe.test_query_monitoring import CLOUD_MODULE, fake_cloud_observer
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from polars._typing import MaintainOrderJoin
     from tests.conftest import PlMonkeyPatch
 
@@ -54,6 +59,77 @@ def test_ordered_cross_join_fused_drop(
     assert 'label="cross-join\\nfused predicate:' in physical_plan(query)
     expected = joined.collect(engine="in-memory").filter(predicate).select("lp", "rp")
     assert_frame_equal(query.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize(
+    ("output", "excluded"),
+    [(("b", "a"), 3), (("rp", "a", "b", "lp"), 2)],
+)
+def test_cross_join_reuses_dense_operand_output(
+    output: tuple[str, ...], excluded: int, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "64")
+    left = pl.LazyFrame(
+        {"a": [[1], [2], [3], [4]], "l": [0, 1, 2, 3], "lp": list("abcd")}
+    )
+    right = pl.LazyFrame(
+        {"b": [[5], [6], [7], [8]], "r": [0, 1, 2, 3], "rp": list("wxyz")}
+    )
+    joined = left.join(right, how="cross", maintain_order="left")
+    predicate = (
+        pl.col("a").list.len() + pl.col("b").list.len() + pl.col("l") + pl.col("r")
+    ) % 3 != excluded
+    query = joined.filter(predicate).select(*output)
+    assert 'label="cross-join\\nfused predicate:' in physical_plan(query)
+    expected = joined.collect(engine="in-memory").filter(predicate).select(*output)
+    assert_frame_equal(query.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize(
+    ("output", "morsel_size"), [("lp", "3"), ("lp", "64"), ("rp", "64")]
+)
+def test_cross_join_sparse_output_from_one_side(
+    output: str, morsel_size: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", morsel_size)
+    left = pl.LazyFrame({"a": range(4), "lp": list("abcd")})
+    right = pl.LazyFrame({"b": range(0, 40, 10), "rp": list("wxyz")})
+    joined = left.join(right, how="cross", maintain_order="left")
+    predicate = (pl.col("a") + pl.col("b")) % 11 == 0
+    query = joined.filter(predicate).select(output)
+    assert 'label="cross-join\\nfused predicate:' in physical_plan(query)
+    expected = joined.collect(engine="in-memory").filter(predicate).select(output)
+    assert_frame_equal(query.collect(engine="streaming"), expected)
+
+
+def test_cross_join_fused_predicate_in_query_observer() -> None:
+    msgpack = pytest.importorskip("msgpack")
+    left = pl.LazyFrame({"a": [0, 1], "lp": list("ab")})
+    right = pl.LazyFrame({"b": [0, 1]})
+    joined = left.join(right, how="cross", maintain_order="left")
+    fused = joined.filter((pl.col("a") + pl.col("b")) % 2 == 0).select("lp")
+    module, observer = fake_cloud_observer()
+    try:
+        with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
+            engine = pl.StreamingEngine(monitoring=True)
+            for query in [joined, fused]:
+                query.collect(engine=engine)
+    finally:
+        plr.set_query_monitoring(False)
+
+    def cross_join_properties(payload: bytes) -> dict[str, Any]:
+        (props,) = [
+            node["properties"]
+            for node in msgpack.unpackb(payload, raw=False)
+            if node["properties"]["type"] == "CrossJoin"
+        ]
+        return props
+
+    unfused_call, fused_call = observer.on_query_planned.call_args_list
+    assert "fused_predicate" not in cross_join_properties(unfused_call.args[3])
+    (predicate,) = cross_join_properties(fused_call.args[3])["fused_predicate"]
+    assert 'col("a")' in predicate
+    assert 'col("b")' in predicate
 
 
 def test_cross_join_non_elementwise_filter_kept() -> None:

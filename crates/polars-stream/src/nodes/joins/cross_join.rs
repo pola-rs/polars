@@ -37,6 +37,8 @@ pub(crate) struct CrossJoinPredicate {
     pub expr: StreamExpr,
     pub operands: Vec<CrossJoinColumn>,
     pub output: Vec<CrossJoinColumn>,
+    pub output_operand_indices: Vec<Option<usize>>,
+    pub output_only: Vec<CrossJoinColumn>,
 }
 
 fn project_side(input: &DataFrame, columns: &[CrossJoinColumn], is_left: bool) -> DataFrame {
@@ -149,7 +151,7 @@ impl CrossJoinChunk<'_> {
         left
     }
 
-    fn repeat_output(
+    fn repeat_columns(
         &self,
         columns: &[CrossJoinColumn],
         repeater: &mut Option<CrossJoinRepeater>,
@@ -184,6 +186,46 @@ impl CrossJoinChunk<'_> {
         debug_assert_eq!(right_idx, frame.width());
         // SAFETY: We only reordered the columns in the valid frame.
         unsafe { DataFrame::new_unchecked(frame.height(), ordered) }
+    }
+
+    fn repeat_output(
+        &self,
+        predicate: &CrossJoinPredicate,
+        candidates: DataFrame,
+        repeater: &mut Option<CrossJoinRepeater>,
+    ) -> DataFrame {
+        if predicate.output.len() == predicate.output_only.len() {
+            drop(candidates);
+            return self.repeat_columns(&predicate.output, repeater);
+        }
+        let len = candidates.height();
+        if predicate.output_only.is_empty() {
+            let columns = predicate
+                .output_operand_indices
+                .iter()
+                .map(|idx| candidates.columns()[idx.unwrap()].clone())
+                .collect();
+            // SAFETY: The output is a projection of the candidates.
+            return unsafe { DataFrame::new_unchecked(len, columns) };
+        }
+
+        let output = predicate
+            .output_operand_indices
+            .iter()
+            .map(|idx| idx.map(|idx| candidates.columns()[idx].clone()))
+            .collect::<Vec<_>>();
+        drop(candidates);
+
+        let mut output_only = self
+            .repeat_columns(&predicate.output_only, repeater)
+            .into_columns()
+            .into_iter();
+        let columns = output
+            .into_iter()
+            .map(|operand| operand.unwrap_or_else(|| output_only.next().unwrap()))
+            .collect();
+        // SAFETY: The output mapping follows the unique joined names in output order.
+        unsafe { DataFrame::new_unchecked(len, columns) }
     }
 
     fn gather_columns(
@@ -228,11 +270,10 @@ impl CrossJoinChunk<'_> {
     ) -> PolarsResult<Option<DataFrame>> {
         let len = candidates.height();
         let mask = predicate.expr.evaluate(&candidates, state).await?;
-        drop(candidates);
         let mask = column_to_mask(&mask, len)?;
         if mask.len() == 1 {
             return Ok((mask.get(0) == Some(true))
-                .then(|| self.repeat_output(&predicate.output, output_repeater)));
+                .then(|| self.repeat_output(predicate, candidates, output_repeater)));
         }
         polars_ensure!(
             mask.len() == len,
@@ -249,21 +290,36 @@ impl CrossJoinChunk<'_> {
         if kept == 0 {
             return Ok(None);
         }
-        if kept == len {
-            return Ok(Some(self.repeat_output(&predicate.output, output_repeater)));
-        }
         if kept >= len.div_ceil(2) {
             // Dense masks benefit from the repeat and bitmap-filter kernels, especially
             // for nested payloads where indexed gathers copy one value at a time.
-            let output = self.repeat_output(&predicate.output, output_repeater);
-            return output.filter_seq(&mask).map(Some);
+            let output = self.repeat_output(predicate, candidates, output_repeater);
+            return if kept == len {
+                Ok(Some(output))
+            } else {
+                output.filter_seq(&mask).map(Some)
+            };
         }
+        drop(candidates);
+        let gather_build = predicate
+            .output
+            .iter()
+            .any(|col| col.is_left == self.left_is_build);
+        let gather_probe = self.probe_len > 1
+            && predicate
+                .output
+                .iter()
+                .any(|col| col.is_left != self.left_is_build);
         indices.build.clear();
         indices.probe.clear();
-        for index in keep.true_idx_iter() {
-            indices.build.push((index % self.build_len) as IdxSize);
-            if self.probe_len > 1 {
-                indices.probe.push((index / self.build_len) as IdxSize);
+        if gather_build || gather_probe {
+            for index in keep.true_idx_iter() {
+                if gather_build {
+                    indices.build.push((index % self.build_len) as IdxSize);
+                }
+                if gather_probe {
+                    indices.probe.push((index / self.build_len) as IdxSize);
+                }
             }
         }
         Ok(Some(self.gather_columns(&predicate.output, indices, kept)))
