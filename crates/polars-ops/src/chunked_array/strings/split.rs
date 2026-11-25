@@ -54,7 +54,6 @@ fn split_chars(s: &str) -> SplitNChars<'_> {
     }
 }
 
-#[cfg(feature = "dtype-struct")]
 pub(super) fn as_single_char(s: &str) -> Option<char> {
     let c = s.chars().next()?;
     (c.len_utf8() == s.len()).then_some(c)
@@ -82,6 +81,7 @@ fn push_split<'a>(arrs: &mut [MutablePlString], splitted: Option<impl Iterator<I
 }
 
 /// `op_char` is the same operation as `op`, but for a single char delimiter, which is faster.
+#[cfg(feature = "dtype-struct")]
 pub fn split_to_struct<'a, F, I, G, J>(
     ca: &'a StringChunked,
     by: &'a StringChunked,

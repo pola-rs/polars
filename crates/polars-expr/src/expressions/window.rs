@@ -634,7 +634,10 @@ impl PhysicalExpr for WindowExpr {
                     (UpdateGroups::No, Some(out)) => Ok(out.into_column()),
                     (_, _) => {
                         let get_join_tuples = || {
-                            if let Some(ids) = group_idx_per_row(gb.get_groups(), df.height()) {
+                            // SAFETY: the groups of a group-by over `df` don't overlap.
+                            if let Some(ids) =
+                                unsafe { group_idx_per_row(gb.get_groups(), df.height()) }
+                            {
                                 return Ok(Arc::new(ids));
                             }
 
@@ -1094,7 +1097,10 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
 }
 
 /// The group index of every row, if the groups cover all `len` rows.
-fn group_idx_per_row(groups: &GroupsType, len: usize) -> Option<ChunkJoinOptIds> {
+///
+/// # Safety
+/// The groups may not overlap and every row index must be smaller than `len`.
+unsafe fn group_idx_per_row(groups: &GroupsType, len: usize) -> Option<ChunkJoinOptIds> {
     let covered: usize = match groups {
         GroupsType::Idx(groups) => groups.all().iter().map(|g| g.len()).sum(),
         GroupsType::Slice {
