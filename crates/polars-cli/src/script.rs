@@ -1,9 +1,35 @@
 use std::ops::Range;
 
 use sqlparser::dialect::GenericDialect;
-use sqlparser::tokenizer::{Location as TokenLocation, Token, TokenWithSpan, Tokenizer};
+use sqlparser::keywords::Keyword;
+use sqlparser::tokenizer::{Location as TokenLocation, Token, TokenWithSpan, Tokenizer, Word};
 
 use crate::error::{ErrorRecord, Location};
+
+/// A statement of a script, without its `;`.
+pub(crate) struct Statement<'a> {
+    pub sql: &'a str,
+    /// Where it starts in the script, in bytes.
+    pub offset: usize,
+    /// What the statement returns.
+    pub kind: StatementKind,
+}
+
+/// What the result of a statement is. The engine does not tell what kind of statement a
+/// result comes from, so the first keyword of the statement stands in for that, and `TO
+/// STDOUT` in a `COPY`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StatementKind {
+    /// Rows, as a query and `COPY ... TO STDOUT` return.
+    #[default]
+    Query,
+    /// A description of a table, a query or a plan, as `DESCRIBE` and `EXPLAIN` return. It is
+    /// read as a whole.
+    Description,
+    /// None: the statement changes the session or writes a file, as `CREATE` and `COPY ... TO`
+    /// a file do.
+    Effect,
+}
 
 /// A SQL script, split into its statements.
 ///
@@ -11,7 +37,7 @@ use crate::error::{ErrorRecord, Location};
 /// statement.
 pub struct Script {
     text: String,
-    statements: Vec<Range<usize>>,
+    statements: Vec<(Range<usize>, StatementKind)>,
     /// Why the text after the last statement cannot be split, for example an unclosed string.
     error: Option<(String, Location)>,
 }
@@ -28,7 +54,7 @@ impl Script {
                     line: error.location.line as usize,
                     column: error.location.column as usize,
                 };
-                (format!("sql parser error: {error}"), location)
+                (format!("sql parser error: {}", error.message), location)
             });
 
         // A statement is the text between two separators.
@@ -36,6 +62,7 @@ impl Script {
         let mut statements = Vec::new();
         let mut start = 0;
         let mut has_tokens = false;
+        let mut kind = KindReader::default();
         // Where the executable comment that is being passed ends.
         let mut comment_end = 0;
         for TokenWithSpan { token, span } in &tokens {
@@ -51,17 +78,21 @@ impl Script {
                 Token::Whitespace(_) | Token::EOF => {},
                 Token::SemiColon if !in_comment => {
                     if has_tokens {
-                        statements.push(trimmed(&text, start..offset));
+                        statements.push((trimmed(&text, start..offset), kind.kind()));
                     }
                     start = offset + 1;
                     has_tokens = false;
+                    kind = KindReader::default();
                 },
-                _ => has_tokens = true,
+                _ => {
+                    kind.read(token);
+                    has_tokens = true;
+                },
             }
         }
         // With an error, the text after the last separator is an incomplete statement.
         if error.is_none() && has_tokens {
-            statements.push(trimmed(&text, start..text.len()));
+            statements.push((trimmed(&text, start..text.len()), kind.kind()));
         }
 
         Self {
@@ -76,11 +107,43 @@ impl Script {
         self.statements.is_empty() && self.error.is_none()
     }
 
-    /// The statements that can be run, in order, each without its `;`.
-    pub(crate) fn statements(&self) -> impl Iterator<Item = &str> {
-        self.statements
-            .iter()
-            .map(|statement| &self.text[statement.clone()])
+    /// The statements that can be run, in order.
+    pub(crate) fn statements(&self) -> impl Iterator<Item = Statement<'_>> {
+        self.statements.iter().map(|(range, kind)| Statement {
+            sql: &self.text[range.clone()],
+            offset: range.start,
+            kind: *kind,
+        })
+    }
+
+    /// Line `number` of the script, counted from 1.
+    pub(crate) fn line(&self, number: usize) -> Option<&str> {
+        self.text.lines().nth(number.checked_sub(1)?)
+    }
+
+    /// The line and column of the byte `offset` of the script.
+    pub(crate) fn location_of(&self, offset: usize) -> Location {
+        let before = &self.text[..offset];
+        let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+        Location {
+            line: before.matches('\n').count() + 1,
+            column: before[line_start..].chars().count() + 1,
+        }
+    }
+
+    /// Whether the last statement is the only one that returns rows, as a format that writes
+    /// one file needs. Text at the end that cannot be split is not a statement.
+    pub fn ends_in_its_only_result(&self) -> bool {
+        let mut kinds = self.statements.iter().rev().map(|(_, kind)| *kind);
+        kinds
+            .next()
+            .is_some_and(|last| last != StatementKind::Effect)
+            && kinds.all(|kind| kind == StatementKind::Effect)
+    }
+
+    /// Whether all of the text splits into statements.
+    pub fn can_be_split(&self) -> bool {
+        self.error.is_none()
     }
 
     /// The number of statements, counting the one that cannot be split.
@@ -91,13 +154,75 @@ impl Script {
     /// The error of the statement that cannot be split. It follows all other statements.
     pub(crate) fn split_error(&self) -> Option<ErrorRecord> {
         let (message, location) = self.error.as_ref()?;
-        Some(ErrorRecord {
-            class: "SQLInterfaceError",
-            message: message.clone(),
-            hint: None,
-            location: Some(*location),
-            statement: self.len(),
-        })
+        Some(ErrorRecord::split(
+            message.clone(),
+            *location,
+            self.len(),
+            self,
+        ))
+    }
+}
+
+/// Reads the kind of a statement from its tokens, in order.
+#[derive(Default)]
+struct KindReader {
+    /// The kind that the first word gives. An executable comment can start with a `;`, so it is
+    /// the first word, not the first token.
+    first: Option<StatementKind>,
+    copy: bool,
+    /// The depth of parentheses, and whether the last token was `TO` outside them.
+    depth: usize,
+    after_to: bool,
+    to_stdout: bool,
+}
+
+impl KindReader {
+    fn read(&mut self, token: &Token) {
+        if self.first.is_none()
+            && let Token::Word(word) = token
+        {
+            self.first = Some(kind_of(word));
+            self.copy = word.keyword == Keyword::COPY;
+        }
+        let after_to = std::mem::take(&mut self.after_to);
+        match token {
+            Token::LParen => self.depth += 1,
+            Token::RParen => self.depth = self.depth.saturating_sub(1),
+            Token::Word(word) if self.depth == 0 => {
+                self.to_stdout |= after_to && word.keyword == Keyword::STDOUT;
+                self.after_to = word.keyword == Keyword::TO;
+            },
+            _ => {},
+        }
+    }
+
+    fn kind(&self) -> StatementKind {
+        if self.copy && self.to_stdout {
+            StatementKind::Query
+        } else {
+            self.first.unwrap_or_default()
+        }
+    }
+}
+
+/// The kind of a statement whose first word is `word`.
+fn kind_of(word: &Word) -> StatementKind {
+    match word.keyword {
+        Keyword::DESCRIBE | Keyword::DESC | Keyword::EXPLAIN => StatementKind::Description,
+        Keyword::ALTER
+        | Keyword::ATTACH
+        | Keyword::COPY
+        | Keyword::CREATE
+        | Keyword::DELETE
+        | Keyword::DETACH
+        | Keyword::DROP
+        | Keyword::INSERT
+        | Keyword::MERGE
+        | Keyword::REPLACE
+        | Keyword::TRUNCATE
+        | Keyword::UPDATE
+        | Keyword::USE => StatementKind::Effect,
+        _ => StatementKind::Query,
     }
 }
 
@@ -181,7 +306,52 @@ mod tests {
     fn split(text: &str) -> Vec<String> {
         let script = Script::new(text.to_string());
         assert!(script.split_error().is_none());
-        script.statements().map(str::to_string).collect()
+        split_sql(&script)
+    }
+
+    fn split_sql(script: &Script) -> Vec<String> {
+        script
+            .statements()
+            .map(|statement| statement.sql.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn statement_kinds_follow_the_first_keyword() {
+        use StatementKind::*;
+        for (sql, kind) in [
+            ("desc t", Description),
+            ("-- how it runs\nEXPLAIN SELECT 1", Description),
+            ("SELECT 'DESCRIBE'", Query),
+            ("\"DESC\"", Query),
+            ("(SELECT 1)", Query),
+            ("create table t AS SELECT 1", Effect),
+            ("COPY t TO 'f.csv'", Effect),
+            ("/*! ; */ CREATE TABLE t AS SELECT 1", Effect),
+            ("COPY (SELECT 1 AS \"to\") TO STDOUT (FORMAT csv)", Query),
+            ("COPY t TO 'stdout'", Effect),
+            ("REPLACE INTO t VALUES (2)", Effect),
+        ] {
+            let script = Script::new(sql.to_string());
+            assert_eq!(script.statements().next().unwrap().kind, kind, "{sql}");
+        }
+    }
+
+    #[test]
+    fn a_one_file_format_takes_one_result_last() {
+        for (sql, takes) in [
+            ("CREATE TABLE t AS SELECT 1; SELECT * FROM t", true),
+            (
+                "CREATE TABLE t AS SELECT 1; COPY t TO STDOUT (FORMAT parquet)",
+                true,
+            ),
+            ("CREATE TABLE t AS SELECT 1", false),
+            ("SELECT 1; SELECT 2", false),
+            ("SELECT 1; DROP TABLE t", false),
+        ] {
+            let script = Script::new(sql.to_string());
+            assert_eq!(script.ends_in_its_only_result(), takes, "{sql}");
+        }
     }
 
     #[test]
@@ -268,14 +438,16 @@ mod tests {
     #[test]
     fn unclosed_string_fails_after_the_complete_statements() {
         let script = Script::new("SELECT 1;\nSELECT 'abc".to_string());
-        assert_eq!(script.statements().collect::<Vec<_>>(), ["SELECT 1"]);
+        assert_eq!(split_sql(&script), ["SELECT 1"]);
         assert!(!script.is_empty());
         assert_eq!(script.len(), 2);
 
         let error = script.split_error().unwrap();
         assert_eq!(error.class, "SQLInterfaceError");
         assert_eq!(error.statement, 2);
-        assert_eq!(error.location, Some(Location { line: 2, column: 8 }));
+        let location = error.location.unwrap();
+        assert_eq!(location.start, Location { line: 2, column: 8 });
+        assert_eq!(location.line, "SELECT 'abc");
         assert!(
             error
                 .message

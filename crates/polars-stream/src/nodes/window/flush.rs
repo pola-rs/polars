@@ -249,7 +249,7 @@ fn into_morsels(df: DataFrame) -> VecDeque<DataFrame> {
     let morsel_size = get_ideal_morsel_size();
     (0..df.height())
         .step_by(morsel_size)
-        .map(|offset| df.slice(offset as i64, morsel_size))
+        .map(|offset| df.slice((offset, morsel_size)))
         .collect()
 }
 
@@ -302,7 +302,7 @@ async fn prepare(unit: OutputUnit) -> PolarsResult<(VecDeque<DataFrame>, Option<
         if height == 0 {
             continue;
         }
-        let columns = windows.slice(offset as i64, height).into_columns();
+        let columns = windows.slice((offset, height)).into_columns();
         // SAFETY: the window columns have the height of the morsel and new names.
         unsafe { df.hstack_mut_unchecked(&columns) };
         offset += height;

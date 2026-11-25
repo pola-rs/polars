@@ -443,7 +443,8 @@ fn hoist_uncorrelated(
             };
             let name = format!("{NESTED_PREFIX}{}", unique_column_name());
             let value_name = format!("{name}_v");
-            let Ok(query) = select_value(SQLExpr::Subquery(subquery.clone()), &value_name) else {
+            let Ok(query) = select_values([(SQLExpr::Subquery(subquery.clone()), &value_name)])
+            else {
                 return ControlFlow::Break(());
             };
             let mut ctx = self.x_ctx.isolated();
@@ -472,8 +473,10 @@ fn hoist_uncorrelated(
     Some((conj, hoist.tables))
 }
 
-/// `SELECT <value> AS <alias>`.
-fn select_value(value: SQLExpr, alias: &str) -> PolarsResult<Query> {
+/// `SELECT <value> AS <alias>, ...`.
+pub(crate) fn select_values<S: Into<String>>(
+    values: impl IntoIterator<Item = (SQLExpr, S)>,
+) -> PolarsResult<Query> {
     let mut query = Parser::new(&GenericDialect)
         .try_with_sql("SELECT NULL")
         .and_then(|mut parser| parser.parse_query())
@@ -481,10 +484,13 @@ fn select_value(value: SQLExpr, alias: &str) -> PolarsResult<Query> {
     let SetExpr::Select(select) = query.body.as_mut() else {
         unreachable!()
     };
-    select.projection = vec![SelectItem::ExprWithAlias {
-        expr: value,
-        alias: Ident::new(alias),
-    }];
+    select.projection = values
+        .into_iter()
+        .map(|(expr, alias)| SelectItem::ExprWithAlias {
+            expr,
+            alias: Ident::new(alias),
+        })
+        .collect();
     Ok(*query)
 }
 
@@ -1003,7 +1009,8 @@ fn first_row_order(y: &Query, select: &Select, exprs: &[OrderByExpr]) -> Option<
     // function would see the rows of the other keys.
     let unsupported = |e: &SQLExpr| match strip_nested(e) {
         SQLExpr::Identifier(ident) => alias.is_some_and(|a| a.value == ident.value),
-        SQLExpr::Value(_) => true,
+        // A number in parentheses is no position.
+        SQLExpr::Value(_) => !matches!(e, SQLExpr::Nested(_)),
         e => expr_has_window_functions(e),
     };
     if exprs
@@ -1417,38 +1424,41 @@ fn holds_values(from: &DataType, to: &DataType) -> bool {
     }
 }
 
-/// Whether `node` calls an aggregate outside of its subqueries. A function that isn't
-/// known counts as one.
-pub(crate) fn has_aggregate(ctx: &SQLContext, node: &(impl Visit + ?Sized)) -> bool {
+/// The name of the first function that `node` calls, outside subqueries and `OVER`, that
+/// `is_aggregate` takes for an aggregate.
+fn first_aggregate_call(
+    ctx: &SQLContext,
+    node: &(impl Visit + ?Sized),
+    is_aggregate: fn(PolarsResult<PolarsSQLFunctions>) -> bool,
+) -> Option<String> {
     struct Aggregates<'a> {
         ctx: &'a SQLContext,
         query_depth: usize,
+        is_aggregate: fn(PolarsResult<PolarsSQLFunctions>) -> bool,
     }
 
     impl Visitor for Aggregates<'_> {
-        type Break = ();
+        type Break = String;
 
-        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<String> {
             self.query_depth += 1;
             ControlFlow::Continue(())
         }
 
-        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<String> {
             self.query_depth -= 1;
             ControlFlow::Continue(())
         }
 
-        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
-            match expr {
-                SQLExpr::Function(function) if self.query_depth == 0 && function.over.is_none() => {
-                    match PolarsSQLFunctions::try_from_sql(function, self.ctx) {
-                        Ok(PolarsSQLFunctions::Udf(_)) | Err(_) => ControlFlow::Break(()),
-                        Ok(f) if f.is_builtin_aggregate() => ControlFlow::Break(()),
-                        Ok(_) => ControlFlow::Continue(()),
-                    }
-                },
-                _ => ControlFlow::Continue(()),
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<String> {
+            if let SQLExpr::Function(function) = expr
+                && self.query_depth == 0
+                && function.over.is_none()
+                && (self.is_aggregate)(PolarsSQLFunctions::try_from_sql(function, self.ctx))
+            {
+                return ControlFlow::Break(function.name.to_string());
             }
+            ControlFlow::Continue(())
         }
     }
 
@@ -1457,9 +1467,28 @@ pub(crate) fn has_aggregate(ctx: &SQLContext, node: &(impl Visit + ?Sized)) -> b
         &mut Aggregates {
             ctx,
             query_depth: 0,
+            is_aggregate,
         },
     )
-    .is_break()
+    .break_value()
+}
+
+/// The first built-in aggregate that `node` calls, outside subqueries and `OVER`.
+pub(crate) fn builtin_aggregate_call(
+    ctx: &SQLContext,
+    node: &(impl Visit + ?Sized),
+) -> Option<String> {
+    first_aggregate_call(ctx, node, |f| f.is_ok_and(|f| f.is_builtin_aggregate()))
+}
+
+/// Whether `node` calls an aggregate outside of its subqueries. A function that isn't
+/// known counts as one.
+pub(crate) fn has_aggregate(ctx: &SQLContext, node: &(impl Visit + ?Sized)) -> bool {
+    first_aggregate_call(ctx, node, |f| match f {
+        Ok(PolarsSQLFunctions::Udf(_)) | Err(_) => true,
+        Ok(f) => f.is_builtin_aggregate(),
+    })
+    .is_some()
 }
 
 /// Whether `expr` is NULL when it aggregates no rows: an aggregate other than a count,

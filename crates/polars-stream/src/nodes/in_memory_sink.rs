@@ -83,6 +83,8 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
+                    // Materialize here, in parallel, rather than when the output is assembled.
+                    morsel.df_mut().await.materialize_dictionary_columns();
                     slf.spill_ctx.register(morsel.sf()).await;
                     morsels.push(morsel);
                 }

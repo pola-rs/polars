@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
+from collections import UserDict
 from contextlib import closing, nullcontext, suppress
 from datetime import date
 from pathlib import Path
-from types import GeneratorType
+from types import GeneratorType, ModuleType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 from unittest.mock import Mock, patch
 
@@ -22,6 +23,7 @@ from sqlalchemy.sql.expression import cast as alchemy_cast
 import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import DuplicateError, UnsuitableSQLError
+from polars.io.database import _executor
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import OracleCursorProxy
 from polars.io.database._executor import ConnectionExecutor
@@ -29,6 +31,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.io.database.conftest import create_sqlite_engine
 
 if TYPE_CHECKING:
+    from typing import Self
+
     from sqlalchemy.engine import Engine
 
     from polars._typing import (
@@ -1261,7 +1265,12 @@ def test_read_database_exceptions(
     execute_options: dict[str, Any] | None,
     pre_execution_query: str | list[str] | None,
     kwargs: dict[str, Any] | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # ignore ADBC drivers installed on this machine (e.g. with `dbc`)
+    monkeypatch.setattr(
+        "polars.io.database._utils._find_installed_adbc_driver", lambda _: None
+    )
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
         params = {
@@ -1580,3 +1589,628 @@ def test_read_database_uri_connectorx_panic_becomes_runtime_error(
     # credentials are sanitised and the original panic is preserved as the cause
     assert "secret" not in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, PanicException)
+    ("driver_name", "uri", "expected"),
+    [
+        ("duckdb", "/data/my%20db.duckdb", {"path": "/data/my db.duckdb"}),
+        ("duckdb", "", {"path": ":memory:"}),
+        (
+            "clickhouse",
+            "clickhouse://us%40er:p%3Aw@h:8123/db?secure=1&x=2",
+            {
+                "uri": "https://h:8123/?database=db&x=2",
+                "username": "us@er",
+                "password": "p:w",
+            },
+        ),
+        ("postgresql", "postgresql://h/db", {"uri": "postgresql://h/db"}),
+    ],
+)
+def test_adbc_manifest_driver_options(
+    driver_name: str, uri: str, expected: dict[str, str]
+) -> None:
+    from polars.io.database._utils import _adbc_db_kwargs
+
+    assert _adbc_db_kwargs(driver_name, uri) == expected
+
+
+def test_adbc_manifest_driver_bare_names_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # the URI's scheme is looked up as a driver name, never as a path, manifest or
+    # library: `find_adbc_driver` would load those
+    from polars.io.database._utils import _find_installed_adbc_driver
+
+    calls: list[str] = []
+
+    def find_adbc_driver(name: str) -> tuple[str, str | None] | None:
+        calls.append(name)
+        return None
+
+    fake = type(sys)("polars_database")
+    fake.find_adbc_driver = find_adbc_driver  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "polars_database", fake)
+
+    manifest = tmp_path / "driver.toml"
+    manifest.write_text('[Driver]\nshared = "/nonexistent/libdriver.so"\n')
+    for name in [str(manifest), "./libdriver.so", "x.toml", "Sqlite", "my-driver"]:
+        assert _find_installed_adbc_driver(name) is None
+    assert calls == []
+
+    # relative: an absolute Windows path starts with a drive letter, a bare scheme
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ModuleNotFoundError):
+        pl.read_database_uri("SELECT 1", f"{manifest.name}:x", engine="adbc")
+    assert calls == []
+
+    assert _find_installed_adbc_driver("some_driver2") is None
+    assert calls == ["some_driver2"]
+
+
+@pytest.mark.parametrize("failure", ["import", "search"])
+def test_adbc_manifest_driver_plugin_failure_keeps_advice(
+    failure: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a polars-database that fails to load (or to search) does not replace the
+    # "driver not detected ... pip install" advice of read_database_uri
+    if failure == "import":
+        pkg = tmp_path / "polars_database"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text(
+            "raise ImportError('libplugin.so: cannot open shared object file',"
+            " name='polars_database._native')\n"
+        )
+        monkeypatch.delitem(sys.modules, "polars_database", raising=False)
+        monkeypatch.syspath_prepend(str(tmp_path))
+    else:
+
+        def find_adbc_driver(name: str) -> tuple[str, str | None] | None:
+            msg = "libplugin.so: cannot open shared object file"
+            raise RuntimeError(msg)
+
+        fake = type(sys)("polars_database")
+        fake.find_adbc_driver = find_adbc_driver  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "polars_database", fake)
+
+    with pytest.raises(ModuleNotFoundError, match="driver not detected") as exc:
+        pl.read_database_uri("SELECT 1", "nosuchdb://h/db", engine="adbc")
+    notes = getattr(exc.value, "__notes__", [])
+    assert any("libplugin.so" in note for note in notes), notes
+
+
+def test_read_database_struct_schema_overrides_30471() -> None:
+    duckdb = pytest.importorskip("duckdb")
+    query = "SELECT {'a': 1, 'b': 2} AS s"
+    with duckdb.connect() as conn:
+        # Struct overrides reorder and add fields by name.
+        dtype = pl.Struct({"b": pl.Int64, "a": pl.Int64, "c": pl.Int64})
+        df = pl.read_database(query, conn, schema_overrides={"s": dtype})
+        assert df.schema["s"] == dtype
+        assert df["s"].to_list() == [{"b": 2, "a": 1, "c": None}]
+
+        # Dropping a field or overflowing a value raises.
+        for dtype in (
+            pl.Struct({"a": pl.Int64}),
+            pl.Struct({"a": pl.Int64, "b": pl.Int8}),
+        ):
+            with pytest.raises(pl.exceptions.InvalidOperationError):
+                pl.read_database(
+                    "SELECT {'a': 1, 'b': 300} AS s",
+                    conn,
+                    schema_overrides={"s": dtype},
+                )
+
+
+class _TrinoNamedRowTuple(tuple):  # type: ignore[type-arg]
+    """Mirrors `trino.types.NamedRowTuple` (returned by trino for `ROW` values)."""
+
+    def __new__(
+        cls, values: list[Any], names: list[str | None], types: list[str]
+    ) -> Self:
+        return super().__new__(cls, values)
+
+    def __init__(
+        self, values: list[Any], names: list[str | None], types: list[str]
+    ) -> None:
+        self._names = names
+        self.__annotations__ = {"names": names, "types": types}
+        for name, value in zip(names, values, strict=True):
+            if name is not None and names.count(name) == 1:
+                setattr(self, name, value)
+
+    def __getattr__(self, name: str) -> Any:
+        # note: implicitly returns None for unknown attributes (eg: `_fields`)
+        if self._names.count(name):
+            msg = f"Ambiguous row field reference: {name}"
+            raise ValueError(msg)
+
+
+class _TrinoCursor:
+    """Minimal DBAPI cursor mimicking the trino driver."""
+
+    def __init__(self, description: list[tuple[str, str]], rows: list[Any]) -> None:
+        self.description = [
+            (nm, tp, None, None, None, None, None) for nm, tp in description
+        ]
+        self._rows = rows
+
+    def execute(self, query: str) -> Any:
+        return self
+
+    def fetchall(self) -> list[Any]:
+        rows, self._rows = self._rows, []
+        return rows
+
+    def fetchmany(self, size: int | None = None) -> list[Any]:
+        rows, self._rows = self._rows[:size], self._rows[size:]
+        return rows
+
+    def close(self) -> None:
+        pass
+
+
+@pytest.fixture
+def mock_trino(monkeypatch: pytest.MonkeyPatch) -> None:
+    trino_types = ModuleType("trino.types")
+    trino_types.NamedRowTuple = _TrinoNamedRowTuple  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "trino.types", trino_types)
+    trino_dbapi = ModuleType("trino.dbapi")
+    trino_dbapi.Cursor = _TrinoCursor  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "trino.dbapi", trino_dbapi)
+    monkeypatch.setattr(_TrinoCursor, "__module__", "trino.dbapi")
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_trino_row_types(iter_batches: bool) -> None:
+    # https://github.com/pola-rs/polars/issues/19483
+    def row(values: list[Any], names: list[str | None]) -> _TrinoNamedRowTuple:
+        return _TrinoNamedRowTuple(values, names, ["unknown"] * len(values))
+
+    assert row([1.0, "x"], ["b1", "b2"])._fields is None  # looks like a namedtuple
+
+    cursor = _TrinoCursor(
+        description=[
+            ("a", "integer"),
+            ("b", "array(row(b1 double, b2 varchar))"),
+            ("c", "row(c1 row(x integer), integer)"),
+        ],
+        rows=[
+            [
+                1,
+                [row([0.543976, "hello"], ["b1", "b2"])],
+                row([row([10], ["x"]), 20], ["c1", None]),
+            ],
+            [
+                2,
+                [row([1.5, "world"], ["b1", "b2"]), row([2.5, None], ["b1", "b2"])],
+                row([row([30], ["x"]), 40], ["c1", None]),
+            ],
+        ],
+    )
+    res = pl.read_database(
+        "SELECT * FROM toto",
+        connection=cursor,
+        iter_batches=iter_batches,
+        batch_size=1 if iter_batches else None,
+    )
+    if iter_batches:
+        assert isinstance(res, GeneratorType)
+        res = pl.concat(res)
+
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [
+                [{"b1": 0.543976, "b2": "hello"}],
+                [{"b1": 1.5, "b2": "world"}, {"b1": 2.5, "b2": None}],
+            ],
+            "c": [
+                {"c1": {"x": 10}, "field_1": 20},
+                {"c1": {"x": 30}, "field_1": 40},
+            ],
+        }
+    )
+    assert_frame_equal(res, expected)  # type: ignore[arg-type]
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize(
+    ("names", "values", "expected"),
+    [
+        (
+            [None, "field_0", "field_1", None],
+            [1, 2, 3, 4],
+            {"field_2": 1, "field_0": 2, "field_1": 3, "field_3": 4},
+        ),
+        (["field_1", None], [10, 20], {"field_1": 10, "field_2": 20}),
+        (["a", "a"], [10, 20], {"field_0": 10, "field_1": 20}),
+        (["_names"], [7], {"_names": 7}),
+        (["_names"], ["x"], {"_names": "x"}),
+        (
+            ["__annotations__"],
+            [{"names": ["wrong"]}],
+            {"__annotations__": {"names": ["wrong"]}},
+        ),
+    ],
+)
+def test_read_database_trino_row_field_names(
+    names: list[str | None], values: list[Any], expected: dict[str, Any]
+) -> None:
+    row = _TrinoNamedRowTuple(values, names, ["unknown"] * len(values))
+    cursor = _TrinoCursor([("v", "row(a bigint)")], [[row]])
+    assert pl.read_database("SELECT v", cursor).to_dicts() == [{"v": expected}]
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize(
+    ("names", "values", "type_code"),
+    [
+        (
+            ["_names", "__annotations__"],
+            [["wrong", "names"], {"names": ["also", "wrong"]}],
+            "row(_names array(varchar), __annotations__ map(varchar, array(varchar)))",
+        ),
+        (
+            ["__dict__"],
+            [{"_names": ["wrong"]}],
+            "row(__dict__ map(varchar, array(varchar)))",
+        ),
+    ],
+)
+def test_read_database_trino_row_shadowed_metadata(
+    names: list[str], values: list[Any], type_code: str
+) -> None:
+    row = _TrinoNamedRowTuple(values, list(names), ["unknown"] * len(names))
+    cursor = _TrinoCursor([("v", type_code)], [[row]])
+    with pytest.raises(ValueError, match="missing or shadowed driver metadata"):
+        pl.read_database("SELECT v", cursor)
+
+
+@pytest.mark.usefixtures("mock_trino")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_trino_mapping_rows(iter_batches: bool) -> None:
+    class WrappedConnection:
+        def cursor(self) -> _TrinoCursor:
+            return cursor
+
+    payload = list(range(128))
+    row = _TrinoNamedRowTuple([7], ["a"], ["bigint"])
+    cursor = _TrinoCursor(
+        [("v", "row(a bigint)"), ("payload", "array(bigint)")],
+        [UserDict({"payload": payload, "v": row})],
+    )
+    with patch.object(
+        _executor, "_convert_trino_value", wraps=_executor._convert_trino_value
+    ) as convert:
+        res = pl.read_database(
+            "SELECT v, payload",
+            WrappedConnection(),
+            iter_batches=iter_batches,
+            batch_size=1 if iter_batches else None,
+        )
+        if not isinstance(res, pl.DataFrame):
+            res = pl.concat(res)
+        assert all(call.args[0] is not payload for call in convert.call_args_list)
+    assert res.to_dicts() == [{"v": {"a": 7}, "payload": payload}]
+
+
+@pytest.mark.usefixtures("mock_trino")
+def test_read_database_non_trino_mapping_rows() -> None:
+    cursor = Mock(spec=["description", "execute", "fetchall"])
+    cursor.description = [("v", "row(a bigint)", None, None, None, None, None)]
+    cursor.execute.return_value = cursor
+    cursor.fetchall.return_value = [{"v": {"a": 7}}]
+    with patch.object(_executor, "_convert_trino_value") as convert:
+        assert pl.read_database("SELECT v", cursor).to_dicts() == [{"v": {"a": 7}}]
+    convert.assert_not_called()
+
+
+def _databricks_standin_engine(tmp_path: Any, closed: list[bool] | None = None) -> Any:
+    # a SQLite engine standing in for databricks-sqlalchemy
+    import sqlite3
+
+    sa = pytest.importorskip("sqlalchemy")
+
+    pa = pytest.importorskip("pyarrow")
+
+    class Cursor(sqlite3.Cursor):
+        # (the driver's Arrow methods; Int32, where rows read as Int64)
+        def _arrow(self, rows: list[Any]) -> Any:
+            names = [d[0] for d in self.description]
+            return pa.table(
+                {
+                    n: pa.array([r[i] for r in rows], pa.int32())
+                    for i, n in enumerate(names)
+                }
+            )
+
+        def close(self) -> None:
+            if closed is not None:
+                closed.append(True)
+            super().close()
+
+        def fetchmany_arrow(self, size: int) -> Any:
+            return self._arrow(self.fetchmany(size))
+
+        def fetchall_arrow(self) -> Any:
+            return self._arrow(self.fetchall())
+
+    class Connection(sqlite3.Connection):
+        def cursor(self, factory: Any = Cursor) -> Any:  # type: ignore[override]
+            return super().cursor(factory)
+
+    path = str(tmp_path / "x.db")
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE t (a INTEGER)")
+    c.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(5)])
+    c.commit()
+    c.close()
+    engine = sa.create_engine(
+        f"sqlite:///{path}",
+        creator=lambda: sqlite3.connect(path, factory=Connection),
+        poolclass=sa.pool.QueuePool,
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=0.5,
+        future=True,
+    )
+    engine.dialect.driver = "databricks"
+    return engine
+
+
+def test_databricks_sqlalchemy_executes_with_sqlalchemy(tmp_path: Any) -> None:
+    engine = _databricks_standin_engine(tmp_path)
+    seen = []
+
+    @sqlalchemy.event.listens_for(engine, "before_cursor_execute")
+    def _record(
+        conn: Any, cursor: Any, statement: str, params: Any, context: Any, many: bool
+    ) -> None:
+        seen.append(context.execution_options.get("tag"))
+
+    @sqlalchemy.event.listens_for(engine, "before_execute", retval=True)
+    def _rewrite(
+        conn: Any, clause: Any, multiparams: Any, params: Any, options: Any
+    ) -> Any:
+        if options.get("tag") == "rewrite":
+            clause = text("SELECT 7 AS a")
+        return clause, multiparams, params
+
+    tagged = engine.execution_options(tag="x")
+    for query, params in [
+        ("SELECT a FROM t WHERE a = ?", [1]),
+        ("SELECT a FROM t WHERE a = :a", {"a": 1}),
+    ]:
+        df = pl.read_database(query, tagged, execute_options={"parameters": params})
+        assert df.schema == {"a": pl.Int32}
+        assert df.item() == 1
+        assert seen[-1] == "x"
+        assert engine.pool.checkedout() == 0
+
+    df = pl.read_database(
+        "SELECT 1 AS a",
+        tagged,
+        execute_options={"execution_options": {"tag": "rewrite"}},
+    )
+    assert df.item() == 7
+    assert df.schema == {"a": pl.Int32}
+    assert seen[-1] == "rewrite"
+
+    with tagged.connect() as conn:
+        # (on the caller's Connection: its session, left open)
+        conn.exec_driver_sql("CREATE TEMP TABLE tmp (x INTEGER)")
+        conn.exec_driver_sql("INSERT INTO tmp VALUES (7)")
+        df = pl.read_database("SELECT x FROM tmp", conn)
+        assert df.schema == {"x": pl.Int32}
+        assert df["x"].to_list() == [7]
+        assert seen[-1] == "x"
+        assert conn.exec_driver_sql("SELECT x FROM tmp").fetchall() == [(7,)]
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_closed_connection_is_a_clear_error(
+    tmp_path: Any,
+) -> None:
+    engine = _databricks_standin_engine(tmp_path)
+    conn = engine.connect()
+    conn.close()
+    with pytest.raises(Exception, match=r"(?i)closed|invalidated"):
+        pl.read_database("SELECT 1", conn)
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_engine_gives_back_the_connection_on_early_stop(
+    tmp_path: Any,
+) -> None:
+    # dropping a batch iterator early (or an error while iterating) must return the
+    # pooled connection: it was held by a reference cycle that was never collected
+    engine = _databricks_standin_engine(tmp_path)
+    for _ in range(2):  # (a pool of one: the second read fails if the first leaked)
+        it = pl.read_database(
+            "SELECT a FROM t", engine, iter_batches=True, batch_size=2
+        )
+        next(iter(it))
+        del it
+        assert engine.pool.checkedout() == 0
+
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    gen: Any = iter(it)
+    next(gen)
+    gen.close()
+    assert engine.pool.checkedout() == 0
+
+    # an error part-way through the batches
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    next(it)
+    with pytest.raises(RuntimeError, match="boom"):
+        it.throw(RuntimeError("boom"))  # type: ignore[attr-defined]
+    assert engine.pool.checkedout() == 0
+
+    # an error from the query
+    with pytest.raises(Exception, match="no such column"):
+        pl.read_database("SELECT nope FROM t", engine)
+    assert engine.pool.checkedout() == 0
+    assert pl.read_database("SELECT a FROM t", engine).height == 5
+    assert engine.pool.checkedout() == 0
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_statement_objects_use_sqlalchemy(
+    tmp_path: Any,
+) -> None:
+    # SQLAlchemy statements (not str) are compiled by SQLAlchemy, as before
+    sa = pytest.importorskip("sqlalchemy")
+
+    engine = _databricks_standin_engine(tmp_path)
+    queries = [
+        sa.select(sa.literal(1)),
+        sa.text("SELECT 1"),
+        sa.text("SELECT a FROM t WHERE a = :a").bindparams(a=1),
+    ]
+    assert pl.read_database(sa.select(sa.literal(True)), engine).schema.dtypes() == [
+        pl.Boolean
+    ]
+    for q in queries:
+        df = pl.read_database(q, engine)
+        assert df.height == 1
+        assert engine.pool.checkedout() == 0
+        with engine.connect() as conn:
+            assert pl.read_database(q, conn).height == 1
+            assert conn.exec_driver_sql("SELECT 1").fetchall() == [(1,)]  # (still open)
+        assert engine.pool.checkedout() == 0
+    engine.dispose()
+
+
+def test_databricks_sqlalchemy_close_batches_before_first_next(
+    tmp_path: Any,
+) -> None:
+    closed: list[bool] = []
+    engine = _databricks_standin_engine(tmp_path, closed)
+    engine.connect().close()  # (SQLAlchemy's own first-connect cursors)
+    closed.clear()
+    it = pl.read_database("SELECT a FROM t", engine, iter_batches=True, batch_size=2)
+    assert engine.pool.checkedout() == 1
+    assert closed == []
+    it.close()  # type: ignore[attr-defined]
+    assert closed == [True]  # (the cursor itself)
+    assert engine.pool.checkedout() == 0
+    it.close()  # type: ignore[attr-defined]  # (idempotent)
+    assert closed == [True]
+
+    with engine.connect() as conn:
+        # the result is closed, the caller's Connection left open
+        closed.clear()
+        assert pl.read_database("SELECT a FROM t", conn).height == 5
+        assert closed == [True]
+        closed.clear()
+        it = pl.read_database("SELECT a FROM t", conn, iter_batches=True, batch_size=2)
+        it.close()  # type: ignore[attr-defined]
+        assert closed == [True]
+        assert conn.exec_driver_sql("SELECT 1").fetchall() == [(1,)]
+    engine.dispose()
+
+
+def _invalid_text_table(shape: str) -> pa.Table:
+    # a STRING made of the byte 0xFF, which an Arrow driver passes on unchecked
+    bad = pa.Array.from_buffers(
+        pa.string(),
+        1,
+        [
+            None,
+            pa.py_buffer(b"\x00\x00\x00\x00\x01\x00\x00\x00"),
+            pa.py_buffer(b"\xff"),
+        ],
+    )
+    good = pa.array(["a"])
+    offsets = pa.array([0, 1], pa.int32())
+    column = {
+        "top": bad,
+        "list": pa.ListArray.from_arrays(offsets, bad),
+        "struct": pa.StructArray.from_arrays([good, bad], names=["a", "b"]),
+        "map_key": pa.MapArray.from_arrays(offsets, bad, good),
+        "map_value": pa.MapArray.from_arrays(offsets, good, bad),
+        "map_in_list": pa.ListArray.from_arrays(
+            offsets, pa.MapArray.from_arrays(offsets, good, bad)
+        ),
+    }[shape]
+    return pa.table({"id": pa.array([1]), "c": column})
+
+
+_INVALID_TEXT_SHAPES = ["top", "list", "struct", "map_key", "map_value", "map_in_list"]
+
+
+@pytest.mark.parametrize("shape", _INVALID_TEXT_SHAPES)
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_databricks_invalid_utf8_is_an_error(
+    shape: str, iter_batches: bool
+) -> None:
+    # the connector passes on the bytes of a STRING (`unhex('FF')`) as they are, and a
+    # Polars String of them breaks string operations
+    mc = MockConnection(
+        "databricks",
+        10 if iter_batches else None,
+        test_data=_invalid_text_table(shape),
+        repeat_batch_calls=True,
+        exact_batch_size=True,
+    )
+
+    def read() -> None:
+        res = pl.read_database(
+            "SELECT 1",
+            mc,
+            iter_batches=iter_batches,
+            batch_size=10 if iter_batches else None,
+        )
+        if iter_batches:
+            list(res)  # type: ignore[arg-type]
+
+    with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+        read()
+
+
+def test_read_database_databricks_valid_text_is_read() -> None:
+    good = pa.array(["a", "�", None])
+    offsets = pa.array([0, 1, 2, 3], pa.int32())
+    table = pa.table(
+        {
+            "s": good,
+            "m": pa.MapArray.from_arrays(offsets, pa.array(["k", "l", "m"]), good),
+        }
+    )
+    mc = MockConnection(
+        "databricks",
+        None,
+        test_data=table,
+        repeat_batch_calls=True,
+        exact_batch_size=True,
+    )
+    out = pl.read_database("SELECT 1", mc)
+    assert out["s"].to_list() == ["a", "�", None]
+    assert out["m"].dtype == pl.Map(pl.String, pl.String)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc_driver_sqlite not available")
+@pytest.mark.parametrize("iter_batches", [False, True])
+def test_read_database_adbc_invalid_utf8_is_an_error(
+    iter_batches: bool, tmp_path: Path
+) -> None:
+    sql = "SELECT 1 AS id, CAST(X'FF' AS TEXT) AS s"
+    with closing(adbc_sqlite_connect(tmp_path / "x.db")) as conn:
+
+        def read() -> None:
+            res = pl.read_database(
+                sql,
+                conn,
+                iter_batches=iter_batches,
+                batch_size=10 if iter_batches else None,
+            )
+            if iter_batches:
+                list(res)  # type: ignore[arg-type]
+
+        with pytest.raises(pl.exceptions.ComputeError, match=r"isn't valid UTF-8"):
+            read()
+        ok = pl.read_database("SELECT 1 AS id, CAST(X'FF' AS BLOB) AS b", conn)
+        assert ok["b"].to_list() == [b"\xff"]
+        # column names are taken as they are, not as a wildcard or a pattern
+        ok = pl.read_database("SELECT 'a' AS \"*\", 'b' AS s, 'c' AS \"^s$\"", conn)
+        assert ok.rows() == [("a", "b", "c")]

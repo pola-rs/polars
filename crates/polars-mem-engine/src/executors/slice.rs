@@ -2,8 +2,7 @@ use super::*;
 
 pub struct SliceExec {
     pub input: Box<dyn Executor>,
-    pub offset: i64,
-    pub len: IdxSize,
+    pub slice: Slice,
 }
 
 impl Executor for SliceExec {
@@ -15,6 +14,6 @@ impl Executor for SliceExec {
             }
         }
         let df = self.input.execute(state)?;
-        Ok(df.slice(self.offset, self.len as usize))
+        Ok(df.slice(self.slice))
     }
 }

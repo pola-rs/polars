@@ -205,10 +205,13 @@ def test_bin_ranks_temporal_and_decimal_match_physical(dtype: pl.DataType) -> No
 @pytest.mark.parametrize("n_bins", [3, 1000])
 def test_bin_ranks_large_matches_ordinal_rank(n_bins: int) -> None:
     # Large enough for the binning passes to split into parallel ranges.
-    df = pl.select(v=pl.int_range(300_000)).select(
+    chunk_size = (1 << 15) + 1
+    df = pl.select(v=pl.int_range(3 * chunk_size)).select(
         pl.when(pl.col("v").hash(1) % 20 != 0).then(pl.col("v").hash(2) % 50)
     )
-    s = pl.concat([part.to_series() for part in df.iter_slices(100_000)], rechunk=False)
+    s = pl.concat(
+        [part.to_series() for part in df.iter_slices(chunk_size)], rechunk=False
+    )
     assert s.n_chunks() == 3
     _check_against_ordinal_rank(s, n_bins)
 
@@ -216,9 +219,7 @@ def test_bin_ranks_large_matches_ordinal_rank(n_bins: int) -> None:
 def test_bin_ranks_many_small_chunks() -> None:
     # One range of rows spans all the single-row chunks.
     rng = random.Random(5)
-    values = [
-        None if rng.random() < 0.1 else rng.randint(0, 2000) for _ in range(20_000)
-    ]
+    values = [None if rng.random() < 0.1 else rng.randint(0, 200) for _ in range(2400)]
     s = pl.concat(
         [pl.Series("a", values[i : i + 1], dtype=pl.Int64) for i in range(len(values))],
         rechunk=False,

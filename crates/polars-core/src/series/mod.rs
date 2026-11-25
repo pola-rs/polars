@@ -41,6 +41,7 @@ use polars_arrow::compute::aggregate::estimated_bytes_size;
 use polars_error::feature_gated;
 use polars_utils::broadcast::BroadcastLength;
 use polars_utils::float::IsFloat;
+use polars_utils::slice_enum::Slice;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;
@@ -923,6 +924,26 @@ impl Series {
         self.cast_with_options(dtype, CastOptions::Strict)
     }
 
+    /// Cast just the (possibly nested) time units to those at the same positions in `dtype`,
+    /// leaving any other differences to the caller; values that overflow raise if `strict`,
+    /// else become null.
+    pub fn cast_time_units_like(&self, dtype: &DataType, strict: bool) -> PolarsResult<Series> {
+        if !self.dtype().contains_time_units() {
+            return Ok(self.clone());
+        }
+        let mut target = self.dtype().clone();
+        target.adopt_time_units_from(dtype);
+        if &target == self.dtype() {
+            return Ok(self.clone());
+        }
+        let options = if strict {
+            CastOptions::Strict
+        } else {
+            CastOptions::NonStrict
+        };
+        self.cast_with_options(&target, options)
+    }
+
     /// Cast non-strictly, also returning the rows the cast did not represent exactly.
     ///
     /// A row is inexact if it became null or does not survive the cast back unchanged. The mask
@@ -1058,15 +1079,17 @@ impl Series {
     }
     /// Get the head of the Series.
     pub fn head(&self, length: Option<usize>) -> Series {
-        let len = length.unwrap_or(HEAD_DEFAULT_LENGTH);
-        self.slice(0, std::cmp::min(len, self.len()))
+        self.slice(Slice::head(length.unwrap_or(HEAD_DEFAULT_LENGTH)))
     }
 
     /// Get the tail of the Series.
     pub fn tail(&self, length: Option<usize>) -> Series {
-        let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
-        let len = std::cmp::min(len, self.len());
-        self.slice(-(len as i64), len)
+        self.slice(Slice::tail(length.unwrap_or(TAIL_DEFAULT_LENGTH)))
+    }
+
+    /// Get a zero copy view of the elements `slice` selects.
+    pub fn slice(&self, slice: impl Into<Slice>) -> Series {
+        self.0.slice(slice.into())
     }
 
     /// Compute the unique elements, but maintain order. This requires more work
@@ -1319,9 +1342,9 @@ mod test {
     fn series_slice_works() {
         let series = Series::new("a".into(), &[1i64, 2, 3, 4, 5]);
 
-        let slice_1 = series.slice(-3, 3);
-        let slice_2 = series.slice(-5, 5);
-        let slice_3 = series.slice(0, 5);
+        let slice_1 = series.slice((-3i64, 3));
+        let slice_2 = series.slice((-5i64, 5));
+        let slice_3 = series.slice(Slice::head(5));
 
         assert_eq!(slice_1.get(0).unwrap(), AnyValue::Int64(3));
         assert_eq!(slice_2.get(0).unwrap(), AnyValue::Int64(1));
@@ -1332,8 +1355,8 @@ mod test {
     fn out_of_range_slice_does_not_panic() {
         let series = Series::new("a".into(), &[1i64, 2, 3, 4, 5]);
 
-        let _ = series.slice(-3, 4);
-        let _ = series.slice(-6, 2);
-        let _ = series.slice(4, 2);
+        let _ = series.slice((-3i64, 4));
+        let _ = series.slice((-6i64, 2));
+        let _ = series.slice((4usize, 2));
     }
 }

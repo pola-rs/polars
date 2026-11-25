@@ -60,6 +60,7 @@ if sys.version_info < (3, 12):
 # run; if the module is not found, their doctests are skipped.
 OPTIONAL_MODULES_AND_METHODS: dict[str, set[str]] = {
     "jax": {"to_jax"},
+    "sqlglot": set(),
     "torch": {"to_torch", "from_torch"},
 }
 OPTIONAL_MODULES: set[str] = set()

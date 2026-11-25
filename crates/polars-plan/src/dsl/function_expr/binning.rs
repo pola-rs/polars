@@ -67,7 +67,9 @@ impl Hash for DslIntervalSpec {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
-            Self::Breaks(breaks) => Wrap(breaks.slice(0, CHEAP_SERIES_HASH_LIMIT)).hash(state),
+            Self::Breaks(breaks) => {
+                Wrap(breaks.slice(Slice::head(CHEAP_SERIES_HASH_LIMIT))).hash(state)
+            },
             Self::Count(n_bins) => n_bins.hash(state),
         }
     }

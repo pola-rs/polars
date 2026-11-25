@@ -17,6 +17,7 @@ use polars_time::{IndexSpace, LB_NAME, UB_NAME};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::slice_enum::Slice;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -37,8 +38,8 @@ pub struct DynamicGroupBy {
 
     seq: MorselSeq,
 
-    slice_offset: IdxSize,
-    slice_length: IdxSize,
+    /// The slice of the windows not yet sent, `None` if it selects every window.
+    slice: Option<Slice>,
 
     group_by: Option<PlSmallStr>,
     index_column: PlSmallStr,
@@ -55,8 +56,9 @@ impl DynamicGroupBy {
         schema: Arc<Schema>,
         options: DynamicGroupOptionsIR,
         aggs: Arc<[(PlSmallStr, StreamExpr)]>,
-        slice: Option<(IdxSize, IdxSize)>,
+        slice: Option<Slice>,
     ) -> PolarsResult<Self> {
+        assert!(slice.is_none_or(|s| s.is_positive()));
         let DynamicGroupOptionsIR {
             index_column,
             every,
@@ -94,8 +96,6 @@ impl DynamicGroupBy {
             placement,
         );
 
-        let (slice_offset, slice_length) = slice.unwrap_or((0, IdxSize::MAX));
-
         Ok(Self {
             buf_df,
 
@@ -103,8 +103,7 @@ impl DynamicGroupBy {
             buf_index_column,
             seq: MorselSeq::default(),
 
-            slice_offset,
-            slice_length,
+            slice,
 
             group_by: None,
             index_column,
@@ -220,8 +219,12 @@ impl DynamicGroupBy {
 
         if windows.is_empty() {
             if num_retired > 0 {
-                self.buf_df = self.buf_df.slice(num_retired as i64, usize::MAX);
-                self.buf_index_column = self.buf_index_column.slice(num_retired as i64, usize::MAX);
+                self.buf_df = self
+                    .buf_df
+                    .slice(num_retired as usize..self.buf_df.height());
+                self.buf_index_column = self
+                    .buf_index_column
+                    .slice(num_retired as usize..self.buf_index_column.len());
                 self.buf_df_offset += num_retired;
             }
 
@@ -234,33 +237,29 @@ impl DynamicGroupBy {
         let offset = windows[0][0];
         let end = windows.iter().map(|[s, len]| s + len).max().unwrap();
 
-        if self.slice_offset as usize > windows.len() {
-            self.slice_offset -= windows.len() as IdxSize;
-            windows.clear();
-            lower_bound.clear();
-            upper_bound.clear();
-        } else if self.slice_offset > 0 {
-            let offset = self.slice_offset as usize;
-            self.slice_offset = self.slice_offset.saturating_sub(windows.len() as IdxSize);
-            windows.drain(..offset);
-            lower_bound.drain(..offset.min(lower_bound.len()));
-            upper_bound.drain(..offset.min(upper_bound.len()));
+        let range;
+        (range, self.slice) = self
+            .slice
+            .map_or((0..windows.len(), None), |s| s.split_front(windows.len()));
+        windows.truncate(range.end);
+        windows.drain(..range.start);
+        for bound in [&mut lower_bound, &mut upper_bound] {
+            bound.truncate(range.end);
+            bound.drain(..range.start.min(bound.len()));
         }
 
-        let trunc_length = windows.len().min(self.slice_length as usize);
-        windows.truncate(trunc_length);
-        lower_bound.truncate(trunc_length);
-        upper_bound.truncate(trunc_length);
-        self.slice_length -= windows.len() as IdxSize;
-
         windows.iter_mut().for_each(|[s, _]| *s -= offset);
-        let data = self.buf_df.slice(
-            (offset - self.buf_df_offset) as i64,
+        let data = self.buf_df.slice((
+            (offset - self.buf_df_offset) as usize,
             (end - self.buf_df_offset) as usize,
-        );
+        ));
 
-        self.buf_df = self.buf_df.slice(num_retired as i64, usize::MAX);
-        self.buf_index_column = self.buf_index_column.slice(num_retired as i64, usize::MAX);
+        self.buf_df = self
+            .buf_df
+            .slice(num_retired as usize..self.buf_df.height());
+        self.buf_index_column = self
+            .buf_index_column
+            .slice(num_retired as usize..self.buf_index_column.len());
         self.buf_df_offset += num_retired;
 
         if windows.is_empty() {
@@ -284,7 +283,7 @@ impl ComputeNode for DynamicGroupBy {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        if self.slice_length == 0 || self.windower.is_done() {
+        if self.slice.is_some_and(|s| s.is_empty()) || self.windower.is_done() {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
             std::mem::take(&mut self.buf_df);
@@ -320,7 +319,7 @@ impl ComputeNode for DynamicGroupBy {
         let Some(recv) = recv_ports[0].take() else {
             // We no longer have to receive data. Finalize and send all remaining data.
             assert!(self.buf_df.height() > 0);
-            assert!(self.slice_length > 0);
+            assert!(self.slice.is_none_or(|s| !s.is_empty()));
             let mut send = send_ports[0].take().unwrap().serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 if let Some((windows, lower_bound, upper_bound, df)) = self.next_windows(true)? {
@@ -417,7 +416,7 @@ impl ComputeNode for DynamicGroupBy {
         // This finds boundaries to distribute to worker threads over.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await
-                && self.slice_length > 0
+                && self.slice.is_none_or(|s| !s.is_empty())
                 && !self.windower.is_done()
             {
                 let (sf, seq, source_token, wait_token) = morsel.into_inner();

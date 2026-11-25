@@ -281,8 +281,8 @@ impl SeriesTrait for NullChunked {
         AnyValue::Null
     }
 
-    fn slice(&self, offset: i64, length: usize) -> Series {
-        let (chunks, len) = chunkops::slice(&self.chunks, offset, length, self.len());
+    fn slice(&self, slice: Slice) -> Series {
+        let (chunks, len) = chunkops::slice(&self.chunks, slice, self.len());
         NullChunked {
             name: self.name.clone(),
             length: len,
@@ -368,6 +368,21 @@ impl SeriesTrait for NullChunked {
 
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         Ok(Scalar::null(DataType::Null))
+    }
+
+    fn quantile_reduce(&self, quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
+        check_quantiles([quantile])?;
+        Ok(Scalar::null(DataType::Null))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], _method: QuantileMethod) -> PolarsResult<Scalar> {
+        check_quantiles(quantiles.iter().copied())?;
+        let name = PlSmallStr::from_static("quantiles");
+        let s = Series::full_null(name, quantiles.len(), &DataType::Null);
+        Ok(Scalar::new(
+            DataType::List(Box::new(DataType::Null)),
+            AnyValue::List(s),
+        ))
     }
 
     fn std_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {

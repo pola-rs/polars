@@ -4,16 +4,231 @@ use hashbrown::hash_table::{Entry, HashTable};
 use polars_arrow::array::Array;
 use polars_arrow::bitmap::MutableBitmap;
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
+use polars_utils::float16::pf16;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
 use crate::hash_keys::{BLOCK_SIZE, HashKeys, MIN_PREFETCH_BUCKETS};
 
-pub struct SingleKeyHashGrouper<T: PolarsDataType> {
-    /// Each key with its group.
-    table: HashTable<(T::Physical<'static>, IdxSize)>,
+/// Where a grouper keeps its keys and their groups.
+pub trait KeyStore<K>: Send + Sync + 'static {
+    fn new() -> Self;
+
+    fn num_groups(&self) -> IdxSize;
+
+    fn num_buckets(&self) -> usize;
+
+    fn reserve(&mut self, additional: usize, random_state: &PlRandomState);
+
+    fn prefetch_insert(&self, hash: u64);
+
+    fn prefetch_get(&self, hash: u64);
+
+    fn get(&self, hash: u64, key: &K) -> Option<IdxSize>;
+
+    /// The group of `key`, a new group if `key` isn't stored yet.
+    fn get_or_insert(&mut self, hash: u64, key: K, random_state: &PlRandomState) -> IdxSize;
+
+    /// Adds a group without a key, for the null key.
+    fn push_keyless_group(&mut self) -> IdxSize;
+
+    /// The key of each group, a default key for a group without one.
+    fn keys_in_group_order(&self) -> Vec<K>;
+
+    /// As `keys_in_group_order`, leaving the store empty.
+    fn take_keys_in_group_order(&mut self) -> Vec<K>;
+}
+
+/// A key type of the single-key grouper, with the store for it.
+pub trait GroupKey: Default + TotalHash + TotalEq + Copy + Send + Sync + 'static {
+    type Store: KeyStore<Self>;
+}
+
+macro_rules! impl_group_key {
+    ($store:ident: $($t:ty),*) => {$(
+        impl GroupKey for $t {
+            type Store = $store<$t>;
+        }
+    )*};
+}
+impl_group_key!(InlineKeys: u8, u16, u32, u64, i8, i16, i32, i64, pf16, f32, f64);
+// A 16-byte key next to its group would make every bucket half padding.
+impl_group_key!(DenseKeys: u128, i128);
+
+/// Each key with its group in the hash table.
+pub struct InlineKeys<K> {
+    table: HashTable<(K, IdxSize)>,
     num_groups: IdxSize,
+}
+
+impl<K: GroupKey> KeyStore<K> for InlineKeys<K> {
+    fn new() -> Self {
+        Self {
+            table: HashTable::new(),
+            num_groups: 0,
+        }
+    }
+
+    #[inline(always)]
+    fn num_groups(&self) -> IdxSize {
+        self.num_groups
+    }
+
+    #[inline(always)]
+    fn num_buckets(&self) -> usize {
+        self.table.num_buckets()
+    }
+
+    #[inline(always)]
+    fn reserve(&mut self, additional: usize, random_state: &PlRandomState) {
+        self.table
+            .reserve(additional, |(k, _)| random_state.tot_hash_one(*k));
+    }
+
+    #[inline(always)]
+    fn prefetch_insert(&self, hash: u64) {
+        self.table.prefetch_insert(hash);
+    }
+
+    #[inline(always)]
+    fn prefetch_get(&self, hash: u64) {
+        self.table.prefetch_get(hash);
+    }
+
+    #[inline(always)]
+    fn get(&self, hash: u64, key: &K) -> Option<IdxSize> {
+        self.table
+            .find(hash, |(k, _)| k.tot_eq(key))
+            .map(|(_, group)| *group)
+    }
+
+    #[inline(always)]
+    fn get_or_insert(&mut self, hash: u64, key: K, random_state: &PlRandomState) -> IdxSize {
+        let hasher = |(k, _): &(K, IdxSize)| random_state.tot_hash_one(*k);
+        match self.table.entry(hash, |(k, _)| k.tot_eq(&key), hasher) {
+            Entry::Occupied(o) => o.get().1,
+            Entry::Vacant(v) => {
+                let group = self.num_groups;
+                v.insert((key, group));
+                self.num_groups += 1;
+                group
+            },
+        }
+    }
+
+    fn push_keyless_group(&mut self) -> IdxSize {
+        self.num_groups += 1;
+        self.num_groups - 1
+    }
+
+    fn keys_in_group_order(&self) -> Vec<K> {
+        let mut keys = vec![K::default(); self.num_groups as usize];
+        for (key, group) in self.table.iter() {
+            unsafe { *keys.get_unchecked_mut(*group as usize) = *key };
+        }
+        keys
+    }
+
+    fn take_keys_in_group_order(&mut self) -> Vec<K> {
+        let keys = self.keys_in_group_order();
+        *self = Self::new();
+        keys
+    }
+}
+
+/// The group of each key in the hash table, and the keys in group order.
+pub struct DenseKeys<K> {
+    table: HashTable<IdxSize>,
+    keys: Vec<K>,
+}
+
+impl<K: GroupKey> KeyStore<K> for DenseKeys<K> {
+    fn new() -> Self {
+        Self {
+            table: HashTable::new(),
+            keys: Vec::new(),
+        }
+    }
+
+    #[inline(always)]
+    fn num_groups(&self) -> IdxSize {
+        self.keys.len() as IdxSize
+    }
+
+    #[inline(always)]
+    fn num_buckets(&self) -> usize {
+        self.table.num_buckets()
+    }
+
+    #[inline(always)]
+    fn reserve(&mut self, additional: usize, random_state: &PlRandomState) {
+        let keys = &self.keys;
+        self.table.reserve(additional, |g| unsafe {
+            random_state.tot_hash_one(*keys.get_unchecked(*g as usize))
+        });
+        self.keys.reserve(additional);
+    }
+
+    #[inline(always)]
+    fn prefetch_insert(&self, hash: u64) {
+        self.table.prefetch_insert(hash);
+    }
+
+    #[inline(always)]
+    fn prefetch_get(&self, hash: u64) {
+        self.table.prefetch_get(hash);
+    }
+
+    #[inline(always)]
+    fn get(&self, hash: u64, key: &K) -> Option<IdxSize> {
+        let keys = &self.keys;
+        self.table
+            .find(hash, |g| {
+                unsafe { keys.get_unchecked(*g as usize) }.tot_eq(key)
+            })
+            .copied()
+    }
+
+    #[inline(always)]
+    fn get_or_insert(&mut self, hash: u64, key: K, random_state: &PlRandomState) -> IdxSize {
+        let keys = &self.keys;
+        let entry = self.table.entry(
+            hash,
+            |g| unsafe { keys.get_unchecked(*g as usize) }.tot_eq(&key),
+            |g| random_state.tot_hash_one(*unsafe { keys.get_unchecked(*g as usize) }),
+        );
+        match entry {
+            Entry::Occupied(o) => *o.get(),
+            Entry::Vacant(v) => {
+                let group = self.keys.len() as IdxSize;
+                v.insert(group);
+                self.keys.push(key);
+                group
+            },
+        }
+    }
+
+    fn push_keyless_group(&mut self) -> IdxSize {
+        self.keys.push(K::default());
+        self.keys.len() as IdxSize - 1
+    }
+
+    fn keys_in_group_order(&self) -> Vec<K> {
+        self.keys.clone()
+    }
+
+    fn take_keys_in_group_order(&mut self) -> Vec<K> {
+        self.table = HashTable::new();
+        std::mem::take(&mut self.keys)
+    }
+}
+
+pub struct SingleKeyHashGrouper<T: PolarsDataType>
+where
+    for<'a> T::Physical<'a>: GroupKey,
+{
+    keys: <T::Physical<'static> as GroupKey>::Store,
     /// The group of the null key, IdxSize::MAX if there is none.
     null_idx: IdxSize,
     random_state: PlRandomState,
@@ -22,12 +237,11 @@ pub struct SingleKeyHashGrouper<T: PolarsDataType> {
 impl<K, T: PolarsDataType> SingleKeyHashGrouper<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
-    K: Default + TotalHash + TotalEq + Copy + Send + Sync + 'static,
+    K: GroupKey,
 {
     pub fn new() -> Self {
         Self {
-            table: HashTable::new(),
-            num_groups: 0,
+            keys: K::Store::new(),
             null_idx: IdxSize::MAX,
             random_state: PlRandomState::default(),
         }
@@ -35,14 +249,12 @@ where
 
     #[inline(always)]
     fn should_prefetch(&self) -> bool {
-        self.table.num_buckets() >= MIN_PREFETCH_BUCKETS
+        self.keys.num_buckets() >= MIN_PREFETCH_BUCKETS
     }
 
     #[inline(always)]
     fn group_idx(&self, hash: u64, key: &K) -> Option<IdxSize> {
-        self.table
-            .find(hash, |(k, _)| k.tot_eq(key))
-            .map(|(_, group)| *group)
+        self.keys.get(hash, key)
     }
 
     #[inline(always)]
@@ -65,23 +277,22 @@ where
     ) {
         // IdxSize::MAX marks a missing null group, so it can't be a group.
         assert!(
-            self.num_groups as usize + subset.len() < IdxSize::MAX as usize,
+            self.keys.num_groups() as usize + subset.len() < IdxSize::MAX as usize,
             "{}",
             LENGTH_LIMIT_MSG
         );
 
         let validity = arr.validity().filter(|_| arr.has_nulls());
         let random_state = &self.random_state;
-        let hasher = |(k, _): &(K, IdxSize)| random_state.tot_hash_one(*k);
         let mut hashes = [0; BLOCK_SIZE];
         for block in subset.chunks(BLOCK_SIZE) {
             // Reserve up front so the table doesn't move after prefetching.
-            self.table.reserve(block.len(), hasher);
+            self.keys.reserve(block.len(), random_state);
             let prefetch = self.should_prefetch();
             for (hash, idx) in hashes.iter_mut().zip(block) {
                 *hash = random_state.tot_hash_one(arr.value_unchecked(*idx as usize));
                 if prefetch {
-                    self.table.prefetch_insert(*hash);
+                    self.keys.prefetch_insert(*hash);
                 }
             }
 
@@ -90,21 +301,13 @@ where
                 if validity.is_some_and(|v| !v.get_bit_unchecked(idx)) {
                     if null_is_valid {
                         if self.null_idx == IdxSize::MAX {
-                            self.null_idx = self.num_groups;
-                            self.num_groups += 1;
+                            self.null_idx = self.keys.push_keyless_group();
                         }
                         on_group(self.null_idx);
                     }
                 } else {
                     let key = arr.value_unchecked(idx);
-                    match self.table.entry(*hash, |(k, _)| k.tot_eq(&key), hasher) {
-                        Entry::Occupied(o) => on_group(o.get().1),
-                        Entry::Vacant(v) => {
-                            v.insert((key, self.num_groups));
-                            on_group(self.num_groups);
-                            self.num_groups += 1;
-                        },
-                    }
+                    on_group(self.keys.get_or_insert(*hash, key, random_state));
                 }
             }
         }
@@ -149,7 +352,7 @@ where
                 let p_grouper = grouper(*p);
                 *hash = p_grouper.random_state.tot_hash_one(key);
                 if p_grouper.should_prefetch() {
-                    p_grouper.table.prefetch_get(*hash);
+                    p_grouper.keys.prefetch_get(*hash);
                 }
             }
 
@@ -186,20 +389,18 @@ where
 impl<K, T: PolarsDataType> Grouper for SingleKeyHashGrouper<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
-    K: Default + TotalHash + TotalEq + Copy + Send + Sync + 'static,
+    K: GroupKey,
 {
     fn new_empty(&self) -> Box<dyn Grouper> {
         Box::new(Self::new())
     }
 
     fn reserve(&mut self, additional: usize) {
-        let random_state = &self.random_state;
-        self.table
-            .reserve(additional, |(k, _)| random_state.tot_hash_one(*k));
+        self.keys.reserve(additional, &self.random_state);
     }
 
     fn num_groups(&self) -> IdxSize {
-        self.num_groups
+        self.keys.num_groups()
     }
 
     unsafe fn insert_keys_subset(
@@ -225,12 +426,14 @@ where
     }
 
     fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame {
-        // The null group keeps a default key.
-        let mut keys = vec![K::default(); self.num_groups as usize];
-        for (key, group) in self.table.iter() {
-            unsafe { *keys.get_unchecked_mut(*group as usize) = *key };
-        }
-        self.finalize_keys(schema, keys)
+        self.finalize_keys(schema, self.keys.keys_in_group_order())
+    }
+
+    fn take_keys_in_group_order(&mut self, schema: &Schema) -> DataFrame {
+        let keys = self.keys.take_keys_in_group_order();
+        let out = self.finalize_keys(schema, keys);
+        self.null_idx = IdxSize::MAX;
+        out
     }
 
     /// # Safety

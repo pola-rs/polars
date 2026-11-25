@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLSyntaxError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -35,6 +35,21 @@ def test_case_when() -> None:
             "v2": [101, 202, 303, 404],
             "v3": ["odd", "even", "odd", "even"],
         }
+
+
+def test_case_when_nested_deeply() -> None:
+    # https://github.com/pola-rs/polars/issues/31043
+    df = pl.DataFrame({"a": [1, -1]})
+
+    def nested_case(n: int) -> str:
+        return f"SELECT {'CASE WHEN a > 0 THEN ' * n}a{' ELSE 0 END' * n} FROM self"
+
+    assert df.sql(nested_case(100)).to_series().to_list() == [1, 0]
+    for n in (125, 300):
+        with pytest.raises(SQLInterfaceError, match="recursion limit exceeded"):
+            df.sql(nested_case(n))
+    with pytest.raises(SQLInterfaceError, match="recursion limit exceeded"):
+        df.sql(f"SELECT {'NOT ' * 200}(a > 0) FROM self")
 
 
 @pytest.mark.parametrize("else_clause", ["ELSE NULL ", ""])
@@ -178,6 +193,14 @@ def test_greatest_least() -> None:
                 }
             ),
         )
+
+
+@pytest.mark.parametrize("func", ["GREATEST", "LEAST", "COALESCE"])
+def test_variadic_no_arguments(func: str) -> None:
+    with pytest.raises(
+        SQLSyntaxError, match=f"{func} expects at least 1 argument \\(found 0\\)"
+    ):
+        pl.sql(f"SELECT {func}() AS x").collect()
 
 
 @pytest.mark.parametrize(

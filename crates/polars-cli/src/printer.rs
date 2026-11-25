@@ -5,26 +5,31 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use polars::io::utils::file::{Writable, WritableTrait};
 use polars::prelude::{
-    CompatLevel, CsvWriterOptions, DataFrame, FileWriteFormat, NDJsonWriterOptions,
+    CompatLevel, CsvWriterOptions, DataFrame, DataType, FileWriteFormat, NDJsonWriterOptions,
     ParquetWriteOptions, PolarsResult, SchemaExt, SchemaRef, SinkTarget, SpecialEq, polars_bail,
+    polars_ensure,
 };
 use polars_arrow::io::ipc::write::{StreamWriter as ArrowStream, WriteOptions};
+use unicode_width::UnicodeWidthChar;
 
-use crate::error::ErrorRecord;
+use crate::error::{ErrorRecord, LocationKind, SourceLocation};
+use crate::script::StatementKind;
 
 /// How results are written to the output.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum Format {
-    /// A table for reading; a long result is cut to its first and last rows
+    /// A table for reading; a long result is cut to its first and last rows. The result of
+    /// DESCRIBE or EXPLAIN is printed in full, as plain text
     #[default]
     Table,
     /// Every row, with a header line
     Csv,
     /// Every row, one JSON object per line
     Ndjson,
-    /// Every row, as one Parquet file; for a script of one statement
+    /// Every row, as one Parquet file; the last statement must be the only one that returns rows
     Parquet,
-    /// Every row, in the Arrow IPC stream format; for a script of one statement
+    /// Every row, in the Arrow IPC stream format; the last statement must be the only one that
+    /// returns rows
     ArrowStream,
 }
 
@@ -49,13 +54,20 @@ impl fmt::Display for Format {
 
 /// What happens while a script runs.
 ///
-/// A run begins with `Start`. A statement that returns rows sends `Schema`, then any number of
-/// `Rows`. Every statement ends with `StatementEnd`, `Error` or `Interrupted`. Nothing follows
-/// `Error` or `Interrupted`.
+/// A run begins with `Start`. A statement begins with `Statement`. One that returns rows
+/// sends `Schema`, then any number of `Rows`. An effect statement sends neither. Every
+/// statement ends with `StatementEnd`, `Error` or `Interrupted`. Nothing follows `Error` or
+/// `Interrupted`.
 #[derive(Debug)]
 pub enum Event {
-    /// The run begins. `statements` is how many statements the script holds.
-    Start { statements: usize },
+    /// The run begins. `statements` is how many statements the script holds;
+    /// `ends_in_its_only_result` whether the last one is the only one that returns rows.
+    Start {
+        statements: usize,
+        ends_in_its_only_result: bool,
+    },
+    /// A statement begins.
+    Statement { kind: StatementKind },
     /// The columns of the result.
     Schema(SchemaRef),
     /// A batch of result rows.
@@ -79,8 +91,19 @@ pub struct Printer<O: Write, E> {
     err: E,
     format: Format,
     result: Option<ResultWriter<O>>,
-    /// Whether errors name their statement: only when the script has several.
-    number_statements: bool,
+    /// Whether the script has several statements. Errors then name their statement.
+    several_statements: bool,
+    /// Whether the last statement is the only one that returns rows. A binary `COPY ... TO
+    /// STDOUT` needs that.
+    ends_in_its_only_result: bool,
+    /// Whether the output is a terminal.
+    on_terminal: bool,
+    /// The kind of the current statement.
+    kind: StatementKind,
+    /// The name errors give the script.
+    source: String,
+    /// Whether errors show the plan and the context they have.
+    verbose: bool,
 }
 
 enum ResultWriter<O: Write> {
@@ -101,8 +124,39 @@ impl<O: Write, E: Write> Printer<O, E> {
             err,
             format,
             result: None,
-            number_statements: false,
+            several_statements: false,
+            ends_in_its_only_result: false,
+            on_terminal: false,
+            kind: StatementKind::default(),
+            source: "<command>".to_string(),
+            verbose: false,
         }
+    }
+
+    pub fn source(mut self, source: String) -> Self {
+        self.source = source;
+        self
+    }
+
+    pub fn verbose(mut self, verbose: bool) -> Self {
+        self.verbose = verbose;
+        self
+    }
+
+    /// Tells whether the output is a terminal, which does not take a binary format.
+    pub fn on_terminal(mut self, on_terminal: bool) -> Self {
+        self.on_terminal = on_terminal;
+        self
+    }
+
+    /// Whether the output is one file, which holds one result.
+    pub(crate) fn writes_one_file(&self) -> bool {
+        self.format.is_one_file()
+    }
+
+    /// Whether the current statement is an effect statement, which sends no rows.
+    pub(crate) fn runs_effect(&self) -> bool {
+        self.kind == StatementKind::Effect
     }
 
     /// Whether the reader of the output has gone away, as when it is piped into `head`.
@@ -123,14 +177,51 @@ impl<O: Write, E: Write> Printer<O, E> {
             Format::Parquet => FileWriteFormat::Parquet(Arc::new(ParquetWriteOptions::default())),
             Format::Table | Format::ArrowStream => return None,
         };
+        Some((self.sink_target(), format))
+    }
+
+    /// For `COPY ... TO STDOUT`: the output as the target of a sink that writes `format`, the
+    /// format of the statement. A binary format is one file, which a terminal cannot show and
+    /// which cannot share the output with another result.
+    pub(crate) fn copy_target(&self, format: &FileWriteFormat) -> PolarsResult<SinkTarget>
+    where
+        O: Send + 'static,
+    {
+        if !matches!(format, FileWriteFormat::Csv(_) | FileWriteFormat::NDJson(_)) {
+            let name = format.extension();
+            polars_ensure!(
+                !self.on_terminal,
+                InvalidOperation:
+                "COPY TO STDOUT format '{name}' is binary; send the output to a file or a pipe"
+            );
+            polars_ensure!(
+                self.ends_in_its_only_result,
+                InvalidOperation:
+                "COPY TO STDOUT format '{name}' writes one file, so it must be the last statement \
+                 and the only one that returns rows"
+            );
+        }
+        Ok(self.sink_target())
+    }
+
+    fn sink_target(&self) -> SinkTarget
+    where
+        O: Send + 'static,
+    {
         let writer = Writable::Dyn(Box::new(self.out.clone()));
-        let target = SinkTarget::Dyn(SpecialEq::new(Arc::new(Mutex::new(Some(writer)))));
-        Some((target, format))
+        SinkTarget::Dyn(SpecialEq::new(Arc::new(Mutex::new(Some(writer)))))
     }
 
     pub fn event(&mut self, event: Event) -> PolarsResult<()> {
         match event {
-            Event::Start { statements } => self.number_statements = statements > 1,
+            Event::Start {
+                statements,
+                ends_in_its_only_result,
+            } => {
+                self.several_statements = statements > 1;
+                self.ends_in_its_only_result = ends_in_its_only_result;
+            },
+            Event::Statement { kind } => self.kind = kind,
             Event::Schema(schema) => self.result = Some(self.start_result(&schema)?),
             Event::Rows(mut rows) => {
                 if self.result.is_none() {
@@ -143,14 +234,17 @@ impl<O: Write, E: Write> Printer<O, E> {
                         table.vstack_mut(&rows)?;
                     },
                     ResultWriter::ArrowStream(writer) => {
-                        for batch in rows.iter_chunks(ARROW_COMPAT, true) {
-                            writer.write(&batch, None)?;
+                        for batch in rows.try_iter_chunks(ARROW_COMPAT, true) {
+                            writer.write(&batch?, None)?;
                         }
                     },
                 }
             },
             Event::StatementEnd => {
                 match self.result.take() {
+                    Some(ResultWriter::Table(table)) if self.kind == StatementKind::Description => {
+                        write_in_full(&mut self.out, &table)?
+                    },
                     Some(ResultWriter::Table(table)) => writeln!(self.out, "{table}")?,
                     Some(ResultWriter::ArrowStream(mut writer)) => writer.finish()?,
                     None => {},
@@ -162,10 +256,13 @@ impl<O: Write, E: Write> Printer<O, E> {
                 // What was written of the results comes before the error. The output may be
                 // what failed, so the error is reported whether or not this works.
                 let _ = self.out.flush();
-                if self.number_statements {
-                    write!(self.err, "statement {}: ", error.statement)?;
-                }
-                writeln!(self.err, "{}: {}", error.class, error.message)?;
+                write_error(
+                    &mut self.err,
+                    &error,
+                    &self.source,
+                    self.several_statements,
+                    self.verbose,
+                )?;
                 self.err.flush()?;
             },
             Event::Interrupted => {
@@ -192,6 +289,161 @@ impl<O: Write, E: Write> Printer<O, E> {
             },
         })
     }
+}
+
+/// Writes `error` as a compiler writes a diagnostic.
+fn write_error(
+    err: &mut impl Write,
+    error: &ErrorRecord,
+    source: &str,
+    several_statements: bool,
+    verbose: bool,
+) -> io::Result<()> {
+    if several_statements {
+        write!(err, "statement {}: ", error.statement)?;
+    }
+    // The first paragraph heads the report; the others follow the location.
+    let (headline, rest) = match error.message.split_once("\n\n") {
+        Some((headline, rest)) => (headline, Some(rest)),
+        None => (error.message.as_str(), None),
+    };
+    writeln!(err, "{}: {headline}", error.class)?;
+    let digits = error
+        .location
+        .as_ref()
+        .map_or(1, |location| location.start.line.to_string().len());
+    let gutter = " ".repeat(digits + 1);
+    let exact = matches!(
+        error.location,
+        Some(SourceLocation {
+            kind: LocationKind::Exact,
+            ..
+        })
+    );
+    if let Some(location) = &error.location {
+        let label = match &location.kind {
+            LocationKind::Exact => String::new(),
+            LocationKind::Clause(clause) => format!(" (in this {clause} clause)"),
+            LocationKind::Statement => " (statement starts here)".to_string(),
+        };
+        let start = location.start;
+        writeln!(
+            err,
+            "{}--> {source}:{}:{}{label}",
+            &gutter[1..],
+            start.line,
+            start.column
+        )?;
+        let mut width = match location.end.line == start.line {
+            true => location.end.column.saturating_sub(start.column).max(1),
+            false => usize::MAX,
+        };
+        // The span of a function call ends at its last argument: take its parentheses too.
+        let chars: Vec<char> = location.line.chars().collect();
+        let from = start.column.saturating_sub(1);
+        if width != usize::MAX {
+            let mut open = chars
+                .iter()
+                .skip(from)
+                .take(width)
+                .fold(0, |open, c| match c {
+                    '(' => open + 1,
+                    ')' => open - 1,
+                    _ => open,
+                });
+            while open > 0 {
+                match (from + width..chars.len()).find(|&i| !chars[i].is_whitespace()) {
+                    Some(i) if chars[i] == ')' => {
+                        width = i + 1 - from;
+                        open -= 1;
+                    },
+                    _ => break,
+                }
+            }
+        }
+        let (text, caret, width) = excerpt(&location.line, from, width);
+        writeln!(err, "{gutter}|")?;
+        writeln!(err, "{} | {text}", start.line)?;
+        if exact {
+            writeln!(err, "{gutter}| {}{}", " ".repeat(caret), "^".repeat(width))?;
+        }
+    }
+    if let Some(expression) = error.expression.as_ref().filter(|_| !exact) {
+        writeln!(err, "{gutter}= expression: {expression}")?;
+    }
+    for hint in &error.hints {
+        writeln!(err, "{gutter}= hint: {hint}")?;
+    }
+    if let Some(rest) = rest {
+        writeln!(err, "\n{}", rest.trim_end())?;
+    }
+    if verbose && !error.details.is_empty() {
+        writeln!(err, "\n{}", error.details.trim_end())?;
+    }
+    Ok(())
+}
+
+const EXCERPT_WIDTH: usize = 100;
+
+/// The shown part of `line` around the `width` characters at `at`, and their terminal columns.
+fn excerpt(line: &str, at: usize, width: usize) -> (String, usize, usize) {
+    // One space per tab or other control character keeps the underline aligned.
+    let chars: Vec<char> = line
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let at = at.min(chars.len());
+    let (start, end) = match chars.len() <= EXCERPT_WIDTH {
+        true => (0, chars.len()),
+        false => {
+            let start = at
+                .saturating_sub(EXCERPT_WIDTH / 2)
+                .min(chars.len() - EXCERPT_WIDTH);
+            (start, start + EXCERPT_WIDTH)
+        },
+    };
+    let cells = |chars: &[char]| -> usize { chars.iter().map(|c| c.width().unwrap_or(0)).sum() };
+    let mut text = String::new();
+    let mut caret = cells(&chars[start..at]);
+    if start > 0 {
+        text.push_str("...");
+        caret += 3;
+    }
+    text.extend(&chars[start..end]);
+    if end < chars.len() {
+        text.push_str("...");
+    }
+    let shown = (at + width.min(end.saturating_sub(at))).min(end);
+    (text, caret, cells(&chars[at..shown]).max(1))
+}
+
+/// Writes every row of `table` as plain text, where the table format cuts rows and long
+/// values. One column is written as its values, one per line. Several columns get a header
+/// line and are padded to line up.
+fn write_in_full(out: &mut impl Write, table: &DataFrame) -> PolarsResult<()> {
+    let mut columns = Vec::with_capacity(table.width());
+    for column in table.columns() {
+        let text = column.cast(&DataType::String)?;
+        let mut cells = Vec::with_capacity(table.height() + 1);
+        if table.width() > 1 {
+            cells.push(column.name().to_string());
+        }
+        cells.extend(text.str()?.iter().map(|v| v.unwrap_or("null").to_string()));
+        let width = cells.iter().map(|cell| cell.chars().count()).max();
+        columns.push((cells, width.unwrap_or(0)));
+    }
+
+    let lines = columns.first().map_or(0, |(cells, _)| cells.len());
+    for line in 0..lines {
+        for (index, (cells, width)) in columns.iter().enumerate() {
+            match index + 1 == columns.len() {
+                // Nothing follows the last column, so it needs no padding.
+                true => writeln!(out, "{}", cells[line])?,
+                false => write!(out, "{:width$}  ", cells[line])?,
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The output, shared between the printer and the writer of the result that is in progress.

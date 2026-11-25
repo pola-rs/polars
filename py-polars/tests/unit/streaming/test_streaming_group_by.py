@@ -1146,6 +1146,88 @@ def test_streaming_group_by_unique_hot_table_switch(
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.parametrize("kind", ["int", "float", "str", "long_str"])
+@pytest.mark.parametrize("with_nulls", [False, True])
+@pytest.mark.parametrize("hot_table_size", ["2", "4096"])
+@pytest.mark.parametrize("count_only", [False, True])
+def test_streaming_group_by_unique_value_runs(
+    kind: str,
+    with_nulls: bool,
+    hot_table_size: str,
+    count_only: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", hot_table_size)
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", hot_table_size)
+    n = 240
+    k = [(j // 5) % 4 for j in range(n)]
+    # Runs of equal values that continue past the runs of equal groups.
+    idx: list[int | None] = [(j // 3) % 24 for j in range(n)]
+    if with_nulls:
+        idx = [i if j % 7 != 3 else None for j, i in enumerate(idx)]
+    if kind == "int":
+        uniq = pl.Series("v", range(24))
+    elif kind == "float":
+        uniq = pl.Series("v", [float("nan"), -0.0, 0.0] + [float(i) for i in range(21)])
+    else:
+        prefix = "a-long-string-value-" if kind == "long_str" else ""
+        uniq = pl.Series("v", [""] + [f"{prefix}{i}" for i in range(23)])
+    # Gathering keeps equal strings as equal views, also for long strings.
+    v = uniq.gather(pl.Series(idx, dtype=pl.UInt32))
+    lf = pl.LazyFrame({"k": k, "v": v})
+    aggs = [pl.col("v").n_unique(), pl.col("v").drop_nulls().n_unique().alias("nn")]
+    if not count_only:
+        aggs.append(pl.col("v").unique().alias("u"))
+    q = lf.group_by("k").agg(aggs)
+
+    def collect(engine: Any) -> pl.DataFrame:
+        out = q.collect(engine=engine).sort("k")
+        return out if count_only else out.with_columns(pl.col("u").list.sort())
+
+    assert_frame_equal(collect("streaming"), collect("in-memory"))
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.Float64])
+@pytest.mark.parametrize("with_nulls", [False, True])
+@pytest.mark.parametrize("hot_table_size", ["2", "4096"])
+def test_streaming_group_by_numeric_value_runs(
+    dtype: pl.DataType,
+    with_nulls: bool,
+    hot_table_size: str,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "64")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", hot_table_size)
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", hot_table_size)
+    i = pl.int_range(2000)
+    # Runs of 20 rows over more groups than there are lanes.
+    g = (i // 20 * 7) % 71
+    x = (i % 17 - 8).cast(dtype)
+    if dtype == pl.Float64:
+        x = pl.when(i % 13 == 5).then(float("nan")).otherwise(x)
+    if with_nulls:
+        # Also runs without a valid value.
+        x = pl.when((i % 11 != 3) & (i // 20 % 9 != 4)).then(x)
+    q = (
+        pl.select(g=g, x=x)
+        .lazy()
+        .group_by("g")
+        .agg(
+            s=pl.col("x").sum(),
+            mean=pl.col("x").mean(),
+            min=pl.col("x").min(),
+            max=pl.col("x").max(),
+            count=pl.col("x").count(),
+            len=pl.len(),
+        )
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming").sort("g"),
+        q.collect(engine="in-memory").sort("g"),
+    )
+
+
 @pytest.mark.parametrize("prefix", ["", "a-long-string-key-"])
 @pytest.mark.parametrize("with_nulls", [False, True])
 def test_streaming_group_by_string_key_runs(

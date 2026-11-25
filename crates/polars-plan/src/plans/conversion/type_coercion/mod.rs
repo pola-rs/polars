@@ -910,12 +910,30 @@ impl OptimizationRule for TypeCoercionRule {
                     type_left,
                     type_other
                 );
-                if matches!(
-                    function,
-                    IRFunctionExpr::StringExpr(IRStringFunction::ContainsAny { .. })
-                ) {
-                    ensure_one_list_of_values(input[1].node(), expr_arena, function)?;
-                }
+                None
+            },
+            #[cfg(feature = "find_many")]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::BinaryExpr(IRBinaryFunction::FindMany { .. }),
+                ref input,
+                ..
+            } => {
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_other) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                let DataType::List(inner_dtype) = &type_other else {
+                    polars_bail!(InvalidOperation: "`{function}` with a flat {type_other} datatype is invalid. Use `implode` to wrap the value into a list.");
+                };
+
+                polars_ensure!(
+                    type_left.is_binary() && (inner_dtype.is_binary() || inner_dtype.is_string()),
+                    op = format!("{function}"),
+                    type_left,
+                    type_other
+                );
                 None
             },
 
@@ -949,8 +967,7 @@ impl OptimizationRule for TypeCoercionRule {
             )?,
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
-                function:
-                    ref function @ IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
+                function: IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
                 ref input,
                 ..
             } => {
@@ -977,9 +994,6 @@ impl OptimizationRule for TypeCoercionRule {
                     type_patterns,
                     type_replace_with
                 );
-                for node in [input[1].node(), input[2].node()] {
-                    ensure_one_list_of_values(node, expr_arena, function)?;
-                }
                 None
             },
             #[cfg(feature = "replace")]
@@ -1017,9 +1031,7 @@ impl OptimizationRule for TypeCoercionRule {
                 let mut input = input.clone();
                 let mut changed = false;
                 for (i, is_list) in [(1, old_is_list), (2, new_is_list)] {
-                    if is_list {
-                        ensure_one_list_of_values(input[i].node(), expr_arena, &function)?;
-                    } else {
+                    if !is_list {
                         let imploded = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
                             input: input[i].node(),
                             maintain_order: true,
@@ -1712,20 +1724,5 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
     if !can_cast {
         polars_bail!(InvalidOperation: "cannot cast losslessly from {} to {}", from, to)
     }
-    Ok(())
-}
-
-/// Checks that a list argument of `function` holds one list of values for the whole column, as
-/// its kernel doesn't support a list per row.
-#[cfg(any(feature = "replace", all(feature = "strings", feature = "find_many")))]
-fn ensure_one_list_of_values(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    function: &IRFunctionExpr,
-) -> PolarsResult<()> {
-    polars_ensure!(
-        is_scalar_ae(node, expr_arena) || is_single_literal_ae(node, expr_arena),
-        InvalidOperation: "`{function}` does not support a list of values per row; the list must be a scalar, e.g. an `implode()` or a literal"
-    );
     Ok(())
 }

@@ -21,8 +21,17 @@ use super::*;
 pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRStringFunction::*;
     match func {
-        Format { format, insertions } => {
-            map_as_slice!(strings::format, format.as_str(), insertions.as_ref())
+        Format {
+            format,
+            insertions,
+            specs,
+        } => {
+            map_as_slice!(
+                strings::format,
+                format.as_str(),
+                insertions.as_ref(),
+                specs.as_ref()
+            )
         },
         #[cfg(feature = "regex")]
         Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
@@ -43,6 +52,7 @@ pub fn function_expr_to_udf(func: IRStringFunction) -> SpecialEq<Arc<dyn Columns
         Find { literal, strict } => map_as_slice!(strings::find, literal, strict),
         LenBytes => map!(strings::len_bytes),
         LenChars => map!(strings::len_chars),
+        FromCodePoint => map!(strings::from_code_point),
         #[cfg(feature = "string_pad")]
         PadEnd { fill_char } => {
             map_as_slice!(strings::pad_end, fill_char)
@@ -237,6 +247,27 @@ pub(super) fn titlecase(s: &Column) -> PolarsResult<Column> {
 pub(super) fn len_chars(s: &Column) -> PolarsResult<Column> {
     let ca = s.str()?;
     Ok(ca.str_len_chars().into_column())
+}
+
+pub(super) fn from_code_point(s: &Column) -> PolarsResult<Column> {
+    polars_ensure!(
+        s.dtype().is_integer() || s.dtype().is_null(),
+        InvalidOperation: "expected an integer code point, got {}", s.dtype()
+    );
+    // Values that do not fit in an Int64 become null here.
+    let codes = s.cast(&DataType::Int64)?;
+    if codes.null_count() != s.null_count() {
+        let out_of_range = s.is_not_null() & codes.is_null();
+        let invalid = s.filter(&out_of_range)?;
+        polars_bail!(ComputeError: "invalid Unicode code point: {}", invalid.get(0)?);
+    }
+    let out = codes.i64()?.try_apply_into_string_amortized(|n, buf| {
+        let c = u32::try_from(n).ok().and_then(char::from_u32);
+        let c = c.ok_or_else(|| polars_err!(ComputeError: "invalid Unicode code point: {}", n))?;
+        buf.push(c);
+        PolarsResult::Ok(())
+    })?;
+    Ok(out.into_column())
 }
 
 pub(super) fn len_bytes(s: &Column) -> PolarsResult<Column> {
@@ -625,12 +656,20 @@ fn expand_for_literal_pat<'a>(pat: &str, val: &'a str) -> PolarsResult<std::borr
     if !val.contains('$') {
         return Ok(std::borrow::Cow::Borrowed(val));
     }
-    let reg = polars_utils::regex_cache::compile_regex(pat)?;
     let mut out = String::new();
-    if let Some(caps) = reg.captures(pat) {
-        caps.expand(val, &mut out);
-    }
+    expand_for_literal_pat_into(pat, val, &mut out)?;
     Ok(std::borrow::Cow::Owned(out))
+}
+
+#[cfg(feature = "regex")]
+fn expand_for_literal_pat_into(pat: &str, val: &str, out: &mut String) -> PolarsResult<()> {
+    out.clear();
+    polars_utils::regex_cache::with_regex_cache(|cache| {
+        if let Some(caps) = cache.compile(pat)?.captures(pat) {
+            caps.expand(val, out);
+        }
+        Ok(())
+    })
 }
 
 #[cfg(feature = "regex")]
@@ -647,6 +686,9 @@ fn replace_n(
             let Some(val) = val.get(0) else {
                 return Ok(ca.clone());
             };
+            if n == 0 {
+                return Ok(ca.clone());
+            }
             if literal {
                 return ca.replace_literal(pat, val, n);
             }
@@ -694,9 +736,7 @@ fn replace_n(
 
             Ok(iter_and_replace(ca, val, f))
         },
-        _ => polars_bail!(
-            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
-        ),
+        _ => replace_per_row(ca, pat, val, literal, Some(n)),
     }
 }
 
@@ -750,14 +790,118 @@ fn replace_all(
 
             Ok(iter_and_replace(ca, val, f))
         },
-        _ => polars_bail!(
-            ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
-        ),
+        _ => replace_per_row(ca, pat, val, literal, None),
     }
 }
 
-pub(super) fn format(s: &mut [Column], format: &str, insertions: &[usize]) -> PolarsResult<Column> {
-    polars_ops::series::str_format(s, format, insertions)
+/// Write `s` with the first `limit` matches of the literal `pat` replaced by `val` into
+/// `buf`, or all matches if `limit` is 0. Returns whether `pat` matched.
+#[cfg(feature = "regex")]
+fn literal_replacen_into(s: &str, pat: &str, val: &str, limit: usize, buf: &mut String) -> bool {
+    let mut matches = s.match_indices(pat);
+    let Some((start, m)) = matches.next() else {
+        return false;
+    };
+    buf.clear();
+    buf.push_str(&s[..start]);
+    buf.push_str(val);
+    let mut last_match = start + m.len();
+    let rest = if limit == 0 { usize::MAX } else { limit - 1 };
+    for (start, m) in matches.take(rest) {
+        buf.push_str(&s[last_match..start]);
+        buf.push_str(val);
+        last_match = start + m.len();
+    }
+    buf.push_str(&s[last_match..]);
+    true
+}
+
+/// Replace with a pattern per row, for at most `limit` matches, or all if `limit` is `None`.
+/// Each row follows the rules for a single pattern, so that the result does not depend on how
+/// the rows are split into batches.
+#[cfg(feature = "regex")]
+fn replace_per_row(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
+    literal: bool,
+    limit: Option<usize>,
+) -> PolarsResult<StringChunked> {
+    fn values(c: &StringChunked, len: usize) -> Box<dyn Iterator<Item = Option<&str>> + '_> {
+        if c.len() == len {
+            Box::new(c.iter())
+        } else {
+            Box::new(std::iter::repeat_n(c.get(0), len))
+        }
+    }
+    let len = broadcast_len([ca.len(), pat.len(), val.len()])?;
+    if limit == Some(0) {
+        polars_ensure!(
+            !pat.has_nulls(),
+            ComputeError: "pattern cannot be 'null' in 'replace' expression"
+        );
+        return Ok(if ca.len() == len {
+            ca.clone()
+        } else {
+            ca.new_from_index(0, len)
+        });
+    }
+
+    let mut buf = String::new();
+    let mut expanded = String::new();
+    let mut builder = StringChunkedBuilder::new(ca.name().clone(), len);
+    for ((opt_src, opt_pat), opt_val) in values(ca, len).zip(values(pat, len)).zip(values(val, len))
+    {
+        let Some(pat) = opt_pat else {
+            polars_bail!(ComputeError: "pattern cannot be 'null' in 'replace' expression");
+        };
+        let replaced = match opt_val {
+            None => {
+                polars_ensure!(
+                    limit.is_some(),
+                    ComputeError: "value cannot be 'null' in 'replace' expression"
+                );
+                false
+            },
+            Some(val) if literal => opt_src.is_some_and(|src| {
+                literal_replacen_into(src, pat, val, limit.unwrap_or(0), &mut buf)
+            }),
+            Some(mut val) if is_literal_pat(pat) => {
+                if val.contains('$') {
+                    expand_for_literal_pat_into(pat, val, &mut expanded)?;
+                    val = &expanded;
+                }
+                opt_src.is_some_and(|src| {
+                    literal_replacen_into(src, pat, val, limit.unwrap_or(0), &mut buf)
+                })
+            },
+            // An invalid pattern raises, also in rows where nothing is replaced.
+            Some(val) => polars_utils::regex_cache::with_regex_cache(|cache| {
+                polars_ensure!(
+                    limit.is_none_or(|n| n <= 1),
+                    ComputeError: "regex replacement with 'n > 1' not yet supported"
+                );
+                let reg = cache.compile(pat)?;
+                PolarsResult::Ok(opt_src.is_some_and(|src| {
+                    regex_replacen_into(reg, src, limit.unwrap_or(0), val, &mut buf)
+                }))
+            })?,
+        };
+        match opt_src {
+            Some(src) => builder.append_value(if replaced { buf.as_str() } else { src }),
+            None => builder.append_null(),
+        }
+    }
+    Ok(builder.finish())
+}
+
+pub(super) fn format(
+    s: &mut [Column],
+    format: &str,
+    insertions: &[usize],
+    specs: &[Option<PlSmallStr>],
+) -> PolarsResult<Column> {
+    polars_ops::series::str_format(s, format, insertions, specs)
 }
 
 #[cfg(feature = "regex")]

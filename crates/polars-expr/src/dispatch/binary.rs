@@ -18,6 +18,17 @@ pub fn function_expr_to_udf(func: IRBinaryFunction) -> SpecialEq<Arc<dyn Columns
         StartsWith => {
             map_as_slice!(starts_with)
         },
+        Find => {
+            map_as_slice!(find)
+        },
+        #[cfg(feature = "find_many")]
+        FindMany {
+            ascii_case_insensitive,
+            overlapping,
+            leftmost,
+        } => {
+            map_as_slice!(find_many, ascii_case_insensitive, overlapping, leftmost)
+        },
         #[cfg(feature = "binary_encoding")]
         HexDecode(strict) => map!(hex_decode, strict),
         #[cfg(feature = "binary_encoding")]
@@ -51,6 +62,32 @@ pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
         .contains_chunked(lit)?
         .with_name(ca.name().clone())
         .into_column())
+}
+
+pub(super) fn find(s: &[Column]) -> PolarsResult<Column> {
+    let ca = s[0].binary()?;
+    let pat = s[1].binary()?;
+    Ok(ca.bin_find(pat)?.with_name(ca.name().clone()).into_column())
+}
+
+#[cfg(feature = "find_many")]
+fn find_many(
+    s: &[Column],
+    ascii_case_insensitive: bool,
+    overlapping: bool,
+    leftmost: bool,
+) -> PolarsResult<Column> {
+    let ca = s[0].binary()?;
+    let patterns = s[1].as_materialized_series_maintain_scalar();
+
+    polars_ops::chunked_array::strings::bin_find_many(
+        ca,
+        patterns.list()?,
+        ascii_case_insensitive,
+        overlapping,
+        leftmost,
+    )
+    .map(|out| out.into_column())
 }
 
 pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {

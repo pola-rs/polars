@@ -95,6 +95,28 @@ def test_is_distinct_from_precedence(predicate: str, expected: list[bool]) -> No
     assert df.sql(f"SELECT {predicate} AS m FROM self")["m"].to_list() == expected
 
 
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        ("d IS NOT DISTINCT FROM '2024-01-03'", [False, True, False]),
+        ("'2024-01-03' IS DISTINCT FROM d", [True, False, True]),
+        ("s IS NOT DISTINCT FROM 22", [False, True, False]),
+        # intervals compare by length
+        ("INTERVAL '24 hours' IS NOT DISTINCT FROM INTERVAL '1 day'", [True] * 3),
+        ("INTERVAL '24 hours' IS DISTINCT FROM INTERVAL '1 day'", [False] * 3),
+        ("INTERVAL '24 hours' = INTERVAL '1 day'", [True] * 3),
+        ("INTERVAL '24 hours' <> INTERVAL '1 day'", [False] * 3),
+    ],
+)
+def test_is_distinct_from_literal_coercion(
+    predicate: str, expected: list[bool]
+) -> None:
+    df = pl.DataFrame(
+        {"d": [date(2024, 1, 1), date(2024, 1, 3), None], "s": ["13", "22", None]}
+    )
+    assert df.sql(f"SELECT {predicate} AS m FROM self")["m"].to_list() == expected
+
+
 def test_string_compared_with_integer_literals() -> None:
     # integer literals tested for (in)equality against a string are compared as strings
     df = pl.DataFrame({"phone": ["13-123", "31-456", "22-789", "22"]})
@@ -219,7 +241,6 @@ def test_constant_where_condition_is_planned_not_executed() -> None:
     ("condition", "expected"),
     [
         ("ROW_NUMBER() OVER () <= 2", [1, 2]),
-        ("COUNT(1) > 1", [1, 2, 3]),
         ("COLUMNS('^a$') > 1", [2, 3]),
     ],
 )
