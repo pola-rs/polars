@@ -27,7 +27,7 @@ pub struct GroupByExec {
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     maintain_order: bool,
     output_schema: SchemaRef,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 }
 
 impl GroupByExec {
@@ -39,7 +39,7 @@ impl GroupByExec {
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         output_schema: SchemaRef,
-        slice: Option<(i64, usize)>,
+        slice: Option<Slice>,
     ) -> Self {
         Self {
             input,
@@ -62,7 +62,7 @@ pub(super) fn group_by_helper(
     state: &ExecutionState,
     maintain_order: bool,
     output_schema: &SchemaRef,
-    slice: Option<(i64, usize)>,
+    slice: Option<Slice>,
 ) -> PolarsResult<DataFrame> {
     df.rechunk_mut_par();
     let gb = df.group_by_with_series(keys, true, maintain_order)?;
@@ -77,8 +77,8 @@ pub(super) fn group_by_helper(
     // it is unused because we only use it to keep the lifetime of sliced_group valid
     let mut sliced_groups = None;
 
-    if let Some((offset, len)) = slice {
-        sliced_groups = Some(groups.slice(offset, len));
+    if let Some(slice) = slice {
+        sliced_groups = Some(groups.slice(slice));
         groups = sliced_groups.as_ref().unwrap();
     }
 

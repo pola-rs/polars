@@ -213,7 +213,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 fn slice_arg(c: &Column) -> PolarsResult<Int64Chunked> {
     let s = match c {
         Column::Scalar(sc) => sc.as_single_value_series(),
-        Column::Series(_) => c.as_materialized_series().clone(),
+        Column::Series(_) | Column::Dictionary(_) => c.as_materialized_series().clone(),
     };
     Ok(s.cast(&DataType::Int64)?.i64()?.clone())
 }
@@ -298,7 +298,8 @@ pub(super) fn gather_every(args: &[Column]) -> PolarsResult<Column> {
 #[cfg(feature = "list_count")]
 pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
-    let element = &args[1];
+    // A broadcast scalar is one element, not one per row.
+    let element = args[1].as_materialized_series_maintain_scalar();
     polars_ensure!(
         element.len() == 1,
         ComputeError: "argument expression in `list.count_matches` must produce exactly one element, got {}",

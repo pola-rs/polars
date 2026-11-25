@@ -494,10 +494,8 @@ impl Expr {
         let mut ctx = ExprToIRContext::new_with_fields(expr_arena, schema);
         ctx.allow_unknown = true;
         let expr = to_expr_ir(self, &mut ctx)?;
-        let (node, output_name) = expr.into_inner();
-        let dtype = expr_arena
-            .get(node)
-            .to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+        let dtype = expr.dtype(schema, expr_arena)?.clone();
+        let (_, output_name) = expr.into_inner();
         Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 

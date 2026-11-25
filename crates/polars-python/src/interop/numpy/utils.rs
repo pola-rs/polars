@@ -3,7 +3,7 @@ use std::ffi::{c_int, c_void};
 
 use ndarray::{Dim, Dimension};
 use numpy::npyffi::PyArrayObject;
-use numpy::{Element, PY_ARRAY_API, PyArrayDescr, PyArrayDescrMethods, ToNpyDims, npyffi};
+use numpy::{Element, PY_ARRAY_API, PyArrayDescr, PyArrayDescrMethods, ToNpyDims};
 use polars_core::prelude::*;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -30,7 +30,7 @@ where
     // See: https://numpy.org/doc/stable/reference/c-api/array.html
     let array = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
-        npyffi::get_type_object(py, npyffi::NpyTypes::PyArray_Type),
+        <numpy::PyArrayDyn<u8> as pyo3::PyTypeInfo>::type_object_raw(py),
         dtype.into_dtype_ptr(),
         shape.ndim_cint(),
         shape.as_dims_ptr(),

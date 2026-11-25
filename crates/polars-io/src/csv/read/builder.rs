@@ -15,9 +15,9 @@ use polars_error::to_compute_err;
 use polars_utils::float16::pf16;
 use polars_utils::vec::PushUnchecked;
 
-use super::options::CsvEncoding;
+use super::options::{CsvEncoding, NullValuesCompiled};
 use super::parser::{could_be_whitespace_fast, skip_whitespace};
-use super::utils::escape_field;
+use super::utils::unescape_field;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
     fn parse(bytes: &[u8]) -> Option<Self::Native>;
@@ -195,7 +195,7 @@ pub fn validate_utf8(bytes: &[u8]) -> bool {
 }
 
 impl ParsedBuilder for Utf8Field {
-    #[inline]
+    #[inline(always)]
     fn parse_bytes(
         &mut self,
         bytes: &[u8],
@@ -215,15 +215,16 @@ impl ParsedBuilder for Utf8Field {
 
         // note that one branch writes without updating the length, so we must do that later.
         let escaped_bytes = if needs_escaping {
-            self.scratch.clear();
-            self.scratch.reserve(bytes.len());
             polars_ensure!(bytes.len() > 1 && bytes.last() == Some(&self.quote_char), ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+            let inner = &bytes[1..bytes.len() - 1];
+            self.scratch.clear();
+            self.scratch.reserve(inner.len());
 
             // SAFETY:
             // we just allocated enough capacity and data_len is correct.
             unsafe {
                 let n_written =
-                    escape_field(bytes, self.quote_char, self.scratch.spare_capacity_mut());
+                    unescape_field(inner, self.quote_char, self.scratch.spare_capacity_mut());
                 self.scratch.set_len(n_written);
             }
 
@@ -300,36 +301,29 @@ impl<T: PolarsCategoricalType> CategoricalField<T> {
             self.builder.append_null();
             return Ok(());
         }
-        if validate_utf8(bytes) {
-            if needs_escaping {
-                polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
-                self.escape_scratch.clear();
-                self.escape_scratch.reserve(bytes.len());
-                // SAFETY:
-                // we just allocated enough capacity and data_len is correct.
-                unsafe {
-                    let n_written = escape_field(
-                        bytes,
-                        self.quote_char,
-                        self.escape_scratch.spare_capacity_mut(),
-                    );
-                    self.escape_scratch.set_len(n_written);
-                }
-
-                // SAFETY:
-                // just did utf8 check
-                let key = unsafe { std::str::from_utf8_unchecked(&self.escape_scratch) };
-                self.builder.append_str(key)?;
-            } else {
-                // SAFETY:
-                // just did utf8 check
-                let key = unsafe { std::str::from_utf8_unchecked(bytes) };
-                self.builder.append_str(key)?;
+        let escaped_bytes = if needs_escaping {
+            polars_ensure!(bytes.len() > 1 && bytes.last() == Some(&self.quote_char), ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+            let inner = &bytes[1..bytes.len() - 1];
+            self.escape_scratch.clear();
+            self.escape_scratch.reserve(inner.len());
+            // SAFETY: we just allocated enough capacity and data_len is correct.
+            unsafe {
+                let n_written = unescape_field(
+                    inner,
+                    self.quote_char,
+                    self.escape_scratch.spare_capacity_mut(),
+                );
+                self.escape_scratch.set_len(n_written);
             }
-        } else if ignore_errors {
-            self.builder.append_null()
+            self.escape_scratch.as_slice()
         } else {
-            polars_bail!(ComputeError: "invalid utf-8 sequence");
+            bytes
+        };
+
+        match simdutf8::basic::from_utf8(escaped_bytes) {
+            Ok(key) => self.builder.append_str(key)?,
+            Err(_) if ignore_errors => self.builder.append_null(),
+            Err(_) => polars_bail!(ComputeError: "invalid utf-8 sequence"),
         }
         Ok(())
     }
@@ -1125,6 +1119,124 @@ impl Builder {
                 buf.parse_bytes(bytes, ignore_errors, needs_escaping, missing_is_null, None)
             },
         }
+    }
+}
+
+/// Adds the fields of one column, `None` being a field that is not in its line. Returns the row and
+/// error of the first field that fails.
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn add_fields<'a, B: ?Sized>(
+    buf: &mut B,
+    fields: impl Iterator<Item = Option<(&'a [u8], bool)>>,
+    column_idx: usize,
+    null_values: Option<&NullValuesCompiled>,
+    missing_is_null: bool,
+    mut add: impl FnMut(&mut B, &[u8], bool) -> PolarsResult<()>,
+    mut add_null: impl FnMut(&mut B, bool),
+) -> Result<(), (usize, PolarsError)> {
+    for (row, field) in fields.enumerate() {
+        let Some((field, needs_escaping)) = field else {
+            add_null(buf, !missing_is_null);
+            continue;
+        };
+        if let Some(null_values) = null_values {
+            let unquoted = if needs_escaping && field.len() >= 2 {
+                &field[1..field.len() - 1]
+            } else {
+                field
+            };
+            // SAFETY: the caller ensures `column_idx` is in bounds.
+            if unsafe { null_values.is_null(unquoted, column_idx) } {
+                add_null(buf, !missing_is_null && field.is_empty());
+                continue;
+            }
+        }
+        add(buf, field, needs_escaping).map_err(|e| (row, e))?;
+    }
+    Ok(())
+}
+
+impl Builder {
+    /// Adds the fields of one column, `None` being a field that is not in its line. Returns the
+    /// row and error of the first field that fails.
+    ///
+    /// # Safety
+    /// `column_idx` must be in bounds of the per column `null_values`.
+    pub(super) unsafe fn add_column<'a>(
+        &mut self,
+        fields: impl Iterator<Item = Option<(&'a [u8], bool)>>,
+        column_idx: usize,
+        null_values: Option<&NullValuesCompiled>,
+        ignore_errors: bool,
+        missing_is_null: bool,
+    ) -> Result<(), (usize, PolarsError)> {
+        macro_rules! add_parsed {
+            ($buf:expr, $time_unit:expr, $add_null:expr) => {
+                add_fields(
+                    $buf,
+                    fields,
+                    column_idx,
+                    null_values,
+                    missing_is_null,
+                    |b, field, needs_escaping| {
+                        ParsedBuilder::parse_bytes(
+                            b,
+                            field,
+                            ignore_errors,
+                            needs_escaping,
+                            missing_is_null,
+                            $time_unit,
+                        )
+                    },
+                    $add_null,
+                )
+            };
+        }
+
+        use Builder::*;
+        match self {
+            Boolean(buf) => add_parsed!(buf, None, |b, _| b.append_null()),
+            Int32(buf) => add_parsed!(buf, None, |b, _| b.append_null()),
+            Int64(buf) => add_parsed!(buf, None, |b, _| b.append_null()),
+            UInt32(buf) => add_parsed!(buf, None, |b, _| b.append_null()),
+            UInt64(buf) => add_parsed!(buf, None, |b, _| b.append_null()),
+            Float32(buf) => add_parsed!(buf, None, |b, _| b.append_null()),
+            Float64(buf) => add_parsed!(buf, None, |b, _| b.append_null()),
+            Utf8(buf) => add_parsed!(buf, None, |b, valid| if valid {
+                b.mutable.push_value("")
+            } else {
+                b.mutable.push_null()
+            }),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime { buf, time_unit, .. } => {
+                let time_unit = *time_unit;
+                add_parsed!(buf, Some(time_unit), |b, _| b.builder.append_null())
+            },
+            #[cfg(feature = "dtype-date")]
+            Date(buf) => add_parsed!(buf, None, |b, _| b.builder.append_null()),
+            _ => add_fields(
+                self,
+                fields,
+                column_idx,
+                null_values,
+                missing_is_null,
+                |b, field, needs_escaping| {
+                    b.add(field, ignore_errors, needs_escaping, missing_is_null)
+                },
+                |b, valid| b.add_null(valid),
+            ),
+        }
+    }
+
+    pub(super) fn is_categorical(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        return matches!(
+            self,
+            Builder::Categorical8(_) | Builder::Categorical16(_) | Builder::Categorical32(_)
+        );
+        #[cfg(not(feature = "dtype-categorical"))]
+        false
     }
 }
 

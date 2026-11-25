@@ -10,6 +10,13 @@ pub enum BinaryFunction {
     Contains,
     StartsWith,
     EndsWith,
+    Find,
+    #[cfg(feature = "find_many")]
+    FindMany {
+        ascii_case_insensitive: bool,
+        overlapping: bool,
+        leftmost: bool,
+    },
     #[cfg(feature = "binary_encoding")]
     HexDecode(bool),
     #[cfg(feature = "binary_encoding")]
@@ -36,6 +43,9 @@ impl Display for BinaryFunction {
             Contains => "contains",
             StartsWith => "starts_with",
             EndsWith => "ends_with",
+            Find => "find",
+            #[cfg(feature = "find_many")]
+            FindMany { .. } => "find_many",
             #[cfg(feature = "binary_encoding")]
             HexDecode(_) => "hex_decode",
             #[cfg(feature = "binary_encoding")]

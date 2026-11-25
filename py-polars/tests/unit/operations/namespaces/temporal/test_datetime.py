@@ -432,6 +432,26 @@ def test_duration_extract_times(
     assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
 
 
+def test_duration_extract_times_overflow_16057() -> None:
+    s_us = pl.Series(
+        [timedelta(days=106752), timedelta(days=1), timedelta(days=-106752)],
+        dtype=pl.Duration("us"),
+    )
+    assert_series_equal(
+        s_us.dt.total_nanoseconds(),
+        pl.Series([None, 86400 * 10**9, None], dtype=pl.Int64),
+    )
+
+    s_ms = pl.Series([2**62, 1, -(2**62)], dtype=pl.Int64).cast(pl.Duration("ms"))
+    assert_series_equal(
+        s_ms.dt.total_microseconds(), pl.Series([None, 1000, None], dtype=pl.Int64)
+    )
+    assert_series_equal(
+        s_ms.dt.total_nanoseconds(),
+        pl.Series([None, 1_000_000, None], dtype=pl.Int64),
+    )
+
+
 @pytest.mark.parametrize(
     ("time_unit", "every"),
     [
@@ -637,6 +657,19 @@ def test_cast_time_unit_overflow_22878() -> None:
     with pytest.raises(InvalidOperationError):
         d.dt.cast_time_unit("ns")
     assert d.dt.cast_time_unit("ms").to_list() == [timedelta(days=200_000)]
+
+    # constant-folded literals also raise
+    for value in (s.item(), d.item()):
+        with pytest.raises(InvalidOperationError, match="failed in column 'literal'"):
+            pl.select(pl.lit(value).dt.cast_time_unit("ns"))
+
+
+def test_cast_time_unit_rounding() -> None:
+    # datetimes round down, durations round towards zero
+    for dtype, expected in ((pl.Datetime, [-1, 0]), (pl.Duration, [0, 0])):
+        s = pl.Series([-1, 1], dtype=dtype("ns"))
+        assert s.dt.cast_time_unit("us").cast(pl.Int64).to_list() == expected
+        assert s.cast(dtype("us")).cast(pl.Int64).to_list() == expected
 
 
 def test_epoch_matches_timestamp() -> None:
@@ -1417,41 +1450,6 @@ def test_agg_median_expr() -> None:
 
 
 @given(
-    s=series(min_size=1, max_size=10, dtype=pl.Duration),
-)
-@pytest.mark.skip(
-    "These functions are currently bugged for large values: "
-    "https://github.com/pola-rs/polars/issues/16057"
-)
-def test_series_duration_timeunits(
-    s: pl.Series,
-) -> None:
-    nanos = s.dt.total_nanoseconds().to_list()
-    micros = s.dt.total_microseconds().to_list()
-    millis = s.dt.total_milliseconds().to_list()
-
-    scale = {
-        "ns": 1,
-        "us": 1_000,
-        "ms": 1_000_000,
-    }
-    assert nanos == [v * scale[s.dtype.time_unit] for v in s.to_physical()]  # type: ignore[attr-defined]
-    assert micros == [int(v / 1_000) for v in nanos]
-    assert millis == [int(v / 1_000) for v in micros]
-
-    # special handling for ns timeunit (as we may generate a microsecs-based
-    # timedelta that results in 64bit overflow on conversion to nanosecs)
-    lower_bound, upper_bound = -(2**63), (2**63) - 1
-    if all(
-        (lower_bound <= (us * 1000) <= upper_bound)
-        for us in micros
-        if isinstance(us, int)
-    ):
-        for ns, us in zip(s.dt.total_nanoseconds(), micros, strict=True):
-            assert ns == (us * 1000)
-
-
-@given(
     s=series(min_size=1, max_size=10, dtype=pl.Datetime, allow_null=False),
 )
 def test_series_datetime_timeunits(
@@ -1662,3 +1660,91 @@ def test_offset_by_boundary_value_succeeds_series_29017() -> None:
     assert result.dt.year().item() == 262142
     assert result.dt.month().item() == 1
     assert result.dt.day().item() == 1
+
+
+def _date_parts(s: pl.Series) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "year": s.dt.year(),
+            "month": s.dt.month(),
+            "day": s.dt.day(),
+            "ordinal_day": s.dt.ordinal_day(),
+            "is_leap_year": s.dt.is_leap_year(),
+            "days_in_month": s.dt.days_in_month(),
+            "quarter": s.dt.quarter(),
+        }
+    )
+
+
+def _expected_date_parts(dates: list[date]) -> pl.DataFrame:
+    def days_in_month(d: date) -> int:
+        if d.month == 12:
+            return 31
+        return (date(d.year, d.month + 1, 1) - timedelta(days=1)).day
+
+    return pl.DataFrame(
+        {
+            "year": [d.year for d in dates],
+            "month": [d.month for d in dates],
+            "day": [d.day for d in dates],
+            "ordinal_day": [d.timetuple().tm_yday for d in dates],
+            "is_leap_year": [
+                d.year % 4 == 0 and (d.year % 100 != 0 or d.year % 400 == 0)
+                for d in dates
+            ],
+            "days_in_month": [days_in_month(d) for d in dates],
+            "quarter": [(d.month + 2) // 3 for d in dates],
+        },
+        schema=_date_parts(pl.Series([date(2000, 1, 1)])).schema,
+    )
+
+
+@pytest.mark.parametrize("time_unit", [None, "ms", "us", "ns"])
+def test_date_parts_match_python(time_unit: TimeUnit | None) -> None:
+    first, last = (date(1, 1, 1), date(9999, 12, 31))
+    if time_unit == "ns":
+        first, last = (date(1677, 9, 22), date(2262, 4, 10))
+    step = 97 if time_unit != "ns" else 7
+    dates = [
+        first + timedelta(days=i) for i in range(0, (last - first).days + 1, step)
+    ] + [last, date(1969, 12, 31), date(1970, 1, 1), date(2000, 2, 29)]
+
+    if time_unit is None:
+        s = pl.Series(dates, dtype=pl.Date)
+    else:
+        # A time of day before the epoch must not move the date.
+        s = pl.Series(
+            [datetime(d.year, d.month, d.day, 23, 59, 59) for d in dates],
+            dtype=pl.Datetime(time_unit),
+        )
+    assert_frame_equal(_date_parts(s), _expected_date_parts(dates))
+
+
+def test_date_parts_out_of_range() -> None:
+    s = pl.Series(
+        [-(2**31), -95_000_000, 95_000_000, 96_000_000, 2**31 - 1, None, 0],
+        dtype=pl.Int32,
+    ).cast(pl.Date)
+    expected = pl.DataFrame(
+        {
+            "year": [None, -258132, 262071, None, None, None, 1970],
+            "month": [None, 11, 3, None, None, None, 1],
+            "day": [None, 1, 2, None, None, None, 1],
+            "ordinal_day": [None, 306, 61, None, None, None, 1],
+            "is_leap_year": [None, True, False, None, None, None, False],
+            "days_in_month": [None, 30, 31, None, None, None, 31],
+            "quarter": [None, 4, 1, None, None, None, 1],
+        },
+        schema=_date_parts(s).schema,
+    )
+    assert_frame_equal(_date_parts(s), expected)
+
+    t = pl.Series([-(2**63), 2**63 - 1, None, 0], dtype=pl.Int64)
+    for time_unit in ["ms", "us"]:
+        out = _date_parts(t.cast(pl.Datetime(time_unit)))  # type: ignore[arg-type]
+        assert out["year"].to_list() == [None, None, None, 1970]
+        assert out["ordinal_day"].to_list() == [None, None, None, 1]
+    out = _date_parts(t.cast(pl.Datetime("ns")))
+    assert out["year"].to_list() == [1677, 2262, None, 1970]
+    assert out["month"].to_list() == [9, 4, None, 1]
+    assert out["ordinal_day"].to_list() == [264, 101, None, 1]

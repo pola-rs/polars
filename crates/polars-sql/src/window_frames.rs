@@ -1,14 +1,18 @@
 //! SQL window functions that read the window frame of their OVER clause: the aggregates SUM,
-//! COUNT, MIN, MAX, AVG and TOTAL, and FIRST_VALUE, LAST_VALUE and NTH_VALUE.
+//! COUNT, COUNT_IF, MIN, MAX, BOOL_AND, BOOL_OR, AVG and TOTAL, and FIRST_VALUE, LAST_VALUE and
+//! NTH_VALUE.
 
+use polars_compute::cast::temporal::NANOSECONDS_IN_DAY;
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "rolling_window")]
 use polars_core::prelude::RollingOptionsFixedWindow;
 use polars_core::prelude::{
-    DataType, PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err,
+    DataType, PolarsError, PolarsResult, SortOptions, polars_bail, polars_ensure, polars_err,
 };
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 use polars_lazy::dsl::Expr;
-use polars_plan::dsl::functions::{len, lit, repeat, when};
+use polars_plan::dsl::functions::{len, lit, max_horizontal, min_horizontal, repeat, when};
 use polars_plan::plans::{DynLiteralValue, LiteralValue};
 use sqlparser::ast::{Expr as SQLExpr, FunctionArgExpr, WindowFrameBound, WindowFrameUnits};
 
@@ -16,7 +20,7 @@ use crate::functions::{
     PolarsSQLFunctions, SQLFunctionVisitor, extract_args, extract_args_distinct, is_constant_key,
     is_first_peer, is_last_peer, is_non_null_literal, sql_sum, window_row_index,
 };
-use crate::sql_expr::parse_sql_expr;
+use crate::sql_expr::{interval_to_duration, parse_sql_expr};
 
 /// The rows of a window frame, in the sorted window partition.
 #[derive(Clone, Copy)]
@@ -31,6 +35,40 @@ enum FrameShape {
     Peers,
     /// The current row and the given number of rows before it.
     Preceding(usize),
+    /// A frame ending `rows` rows before the current row: from the first row, or `width + 1` wide.
+    Before { rows: usize, width: Option<usize> },
+    /// A frame that starts after it ends, which holds no row.
+    Empty,
+    /// The rows whose ORDER BY key is within the bounds of the current row's key. At least
+    /// one bound is an offset.
+    Range { start: RangeBound, end: RangeBound },
+}
+
+/// A bound of a RANGE frame.
+#[derive(Clone, Copy)]
+enum RangeBound {
+    Unbounded,
+    /// The peers of the current row.
+    CurrentRow,
+    /// The rows whose key is at most this far from the current row's key.
+    Offset(Duration),
+}
+
+/// A part of a RANGE frame, in the sorted window partition.
+enum FramePart {
+    /// The rows up to the last peer of the current row.
+    ToLastPeer,
+    /// The rows from the first peer of the current row.
+    FromFirstPeer,
+    /// The rows whose `by` value is within `size` before the current row's, read in reverse
+    /// order if `reversed`.
+    #[cfg_attr(not(feature = "rolling_window_by"), allow(dead_code))]
+    Window {
+        by: Expr,
+        size: Duration,
+        closed: ClosedWindow,
+        reversed: bool,
+    },
 }
 
 /// A bound of a window frame, as a row of the sorted window partition.
@@ -75,7 +113,7 @@ enum Aggregate {
 pub(crate) fn is_frame_aggregate(function: &PolarsSQLFunctions, is_distinct: bool) -> bool {
     use PolarsSQLFunctions::*;
     match function {
-        Avg | Max | Min | Sum | Total => true,
+        Avg | BoolAnd | BoolOr | CountIf | Max | Min | Sum | Total => true,
         Count => !is_distinct,
         _ => false,
     }
@@ -109,6 +147,10 @@ impl SQLFunctionVisitor<'_> {
             ),
             (None, value) => value,
         };
+        let value = match function {
+            BoolAnd | BoolOr | CountIf => value.map(|v| self.boolean_arg(v)).transpose()?,
+            _ => value,
+        };
         // A scalar counts once per row, as in `SUM(1)`.
         let is_scalar = value.as_ref().is_some_and(is_constant_key);
         let value = value.map(|value| match frame {
@@ -119,7 +161,7 @@ impl SQLFunctionVisitor<'_> {
 
         // DISTINCT doesn't change MIN and MAX.
         let distinct_supported = match function {
-            Max | Min => true,
+            BoolAnd | BoolOr | Max | Min => true,
             Avg => matches!(frame, FrameShape::Partition),
             _ => false,
         };
@@ -134,8 +176,13 @@ impl SQLFunctionVisitor<'_> {
             (Count, Some(value)) => Aggregate::Count(value),
             (Avg, Some(value)) if is_distinct => Aggregate::Avg(value.unique()),
             (Avg, Some(value)) => Aggregate::Avg(value),
-            (Max, Some(value)) => Aggregate::Max(value),
-            (Min, Some(value)) => Aggregate::Min(value),
+            (CountIf, Some(value)) => Aggregate::Count(
+                when(value)
+                    .then(lit(true))
+                    .otherwise(Expr::Literal(LiteralValue::untyped_null())),
+            ),
+            (BoolOr | Max, Some(value)) => Aggregate::Max(value),
+            (BoolAnd | Min, Some(value)) => Aggregate::Min(value),
             (Sum | Total, Some(value)) => Aggregate::Sum(value),
             _ => return self.not_supported_error(),
         };
@@ -163,6 +210,36 @@ impl SQLFunctionVisitor<'_> {
                 (expr, Vec::new(), order_keys)
             },
             FrameShape::Preceding(n) => (aggregate.rolling(n)?, Vec::new(), order_keys),
+            FrameShape::Before { rows, width } => {
+                // the frame of the row `rows` rows before, which the first rows don't have
+                let frame = match width {
+                    None => aggregate.running(false),
+                    Some(width) => aggregate.rolling(width)?,
+                };
+                let expr = frame.shift(lit(rows as i64));
+                let expr = match aggregate {
+                    Aggregate::Count(_) | Aggregate::CountRows => expr.fill_null(lit(0i64)),
+                    _ => expr,
+                };
+                (expr, Vec::new(), order_keys)
+            },
+            FrameShape::Empty => {
+                // NULL typed as the aggregate over the partition, which every type supports
+                let empty = match aggregate {
+                    Aggregate::Count(_) | Aggregate::CountRows => lit(0i64),
+                    _ => Expr::Literal(LiteralValue::untyped_null()),
+                };
+                let typed = aggregate.whole(false);
+                (
+                    when(lit(false)).then(typed).otherwise(empty),
+                    Vec::new(),
+                    order_keys,
+                )
+            },
+            FrameShape::Range { start, end } => {
+                let expr = self.range_aggregate(&aggregate, start, end, &order_keys)?;
+                (expr, Vec::new(), order_keys)
+            },
         };
         let expr = match function {
             Total => expr.cast(DataType::Float64).fill_null(lit(0.0)),
@@ -200,6 +277,23 @@ impl SQLFunctionVisitor<'_> {
             (WindowFrameUnits::Rows, Preceding(Some(n)), CurrentRow) => {
                 Some(FrameShape::Preceding(self.window_frame_offset(n)?))
             },
+            (WindowFrameUnits::Rows, Preceding(None), Preceding(Some(m))) => {
+                match self.window_frame_offset(m)? {
+                    0 => Some(FrameShape::ToCurrentRow { peers: false }),
+                    rows => Some(FrameShape::Before { rows, width: None }),
+                }
+            },
+            (WindowFrameUnits::Rows, Preceding(Some(n)), Preceding(Some(m))) => {
+                let (n, m) = (self.window_frame_offset(n)?, self.window_frame_offset(m)?);
+                match (n.checked_sub(m), m) {
+                    (Some(width), 0) => Some(FrameShape::Preceding(width)),
+                    (Some(width), rows) => Some(FrameShape::Before {
+                        rows,
+                        width: Some(width),
+                    }),
+                    (None, _) => Some(FrameShape::Empty),
+                }
+            },
             (WindowFrameUnits::Rows, _, _) => None,
             // In RANGE and GROUPS frames, the current row includes its peers.
             (_, Preceding(None) | CurrentRow, CurrentRow | Following(None)) if !has_order_keys => {
@@ -208,9 +302,130 @@ impl SQLFunctionVisitor<'_> {
             (_, Preceding(None), CurrentRow) => Some(FrameShape::ToCurrentRow { peers: true }),
             (_, CurrentRow, Following(None)) => Some(FrameShape::FromCurrentRow { peers: true }),
             (_, CurrentRow, CurrentRow) => Some(FrameShape::Peers),
+            (WindowFrameUnits::Range, start, end) => {
+                self.range_frame_shape(start, end, has_order_keys)?
+            },
             _ => None,
         };
         shape.ok_or_else(|| self.unsupported_frame())
+    }
+
+    /// The shape of a RANGE frame with an offset bound; `None` if it is not supported.
+    fn range_frame_shape(
+        &mut self,
+        start: &WindowFrameBound,
+        end: &WindowFrameBound,
+        has_order_keys: bool,
+    ) -> PolarsResult<Option<FrameShape>> {
+        use WindowFrameBound::{CurrentRow, Following, Preceding};
+        let start = match start {
+            Preceding(None) => RangeBound::Unbounded,
+            CurrentRow => RangeBound::CurrentRow,
+            Preceding(Some(offset)) => self.range_offset(offset)?,
+            Following(_) => return Ok(None),
+        };
+        let end = match end {
+            Following(None) => RangeBound::Unbounded,
+            CurrentRow => RangeBound::CurrentRow,
+            Following(Some(offset)) => self.range_offset(offset)?,
+            Preceding(_) => return Ok(None),
+        };
+        polars_ensure!(
+            has_order_keys,
+            SQLInterface: "a RANGE window frame with an offset needs one ORDER BY key"
+        );
+        use RangeBound::{CurrentRow as Current, Unbounded};
+        Ok(Some(match (start, end) {
+            (Unbounded, Unbounded) => FrameShape::Partition,
+            (Unbounded, Current) => FrameShape::ToCurrentRow { peers: true },
+            (Current, Unbounded) => FrameShape::FromCurrentRow { peers: true },
+            (Current, Current) => FrameShape::Peers,
+            (start, end) => FrameShape::Range { start, end },
+        }))
+    }
+
+    /// An offset of a RANGE frame: a non-negative integer or INTERVAL literal. A zero offset
+    /// is the current row.
+    fn range_offset(&mut self, offset: &SQLExpr) -> PolarsResult<RangeBound> {
+        let duration = match offset {
+            SQLExpr::Interval(interval) => Some(interval_to_duration(interval, false)?),
+            _ => match parse_sql_expr(offset, self.ctx, self.active_schema)? {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
+                    i64::try_from(n).ok().map(Duration::new)
+                },
+                _ => None,
+            },
+        };
+        let Some(duration) = duration.filter(|d| !d.negative()) else {
+            polars_bail!(
+                SQLSyntax: "a RANGE window frame offset must be a non-negative integer or INTERVAL literal; found {}",
+                offset
+            );
+        };
+        Ok(if duration.is_zero() {
+            RangeBound::CurrentRow
+        } else {
+            RangeBound::Offset(duration)
+        })
+    }
+
+    /// An aggregate over a RANGE frame with an offset bound, from rolling windows over the
+    /// ORDER BY key.
+    fn range_aggregate(
+        &mut self,
+        aggregate: &Aggregate,
+        start: RangeBound,
+        end: RangeBound,
+        order_keys: &[(Expr, SortOptions)],
+    ) -> PolarsResult<Expr> {
+        use RangeBound::{CurrentRow, Offset, Unbounded};
+        let [(key, options)] = order_keys else {
+            polars_bail!(SQLInterface: "a RANGE window frame with an offset needs one ORDER BY key");
+        };
+        let Some(dtype) = self.ctx.expr_dtype(key, self.active_schema) else {
+            polars_bail!(SQLInterface: "cannot determine the type of the ORDER BY key of a RANGE window frame");
+        };
+        if let Aggregate::Sum(value)
+        | Aggregate::Avg(value)
+        | Aggregate::Min(value)
+        | Aggregate::Max(value) = aggregate
+            && let Some(dtype) = self.ctx.expr_dtype(value, self.active_schema)
+        {
+            polars_ensure!(
+                dtype.is_primitive_numeric() || dtype.is_null(),
+                SQLInterface: "{} over a RANGE window frame with an offset needs a number value; found {}",
+                self.func.name, dtype
+            );
+        }
+        let range_key = RangeKey {
+            key,
+            dtype: &dtype,
+            descending: options.descending,
+        };
+        let parts = match (start, end) {
+            (Offset(n), CurrentRow) => vec![range_key.before(n, true)?],
+            (CurrentRow, Offset(m)) => vec![range_key.after(m, true)?],
+            (Offset(n), Offset(m)) => vec![range_key.before(n, true)?, range_key.after(m, false)?],
+            (Unbounded, Offset(m)) => {
+                vec![FramePart::ToLastPeer, range_key.after(m, false)?]
+            },
+            (Offset(n), Unbounded) => {
+                vec![range_key.before(n, false)?, FramePart::FromFirstPeer]
+            },
+            _ => unreachable!(),
+        };
+        let keys = [key.clone()];
+        let expr = aggregate.over_parts(&parts, &keys)?;
+
+        // A NULL key is at no distance from another key: an offset reaches its peers only.
+        let null_part = match (start, end) {
+            (Unbounded, _) => FramePart::ToLastPeer,
+            (_, Unbounded) => FramePart::FromFirstPeer,
+            _ if options.nulls_last => FramePart::FromFirstPeer,
+            _ => FramePart::ToLastPeer,
+        };
+        let null_expr = aggregate.over_parts(&[null_part], &keys)?;
+        Ok(when(key.clone().is_null()).then(null_expr).otherwise(expr))
     }
 
     fn unsupported_frame(&self) -> PolarsError {
@@ -509,6 +724,181 @@ impl Aggregate {
         {
             let _ = n;
             polars_bail!(SQLInterface: "'ROWS <n> PRECEDING' window frames require the 'rolling_window' feature")
+        }
+    }
+
+    /// The aggregate over the union of disjoint frame parts.
+    fn over_parts(&self, parts: &[FramePart], keys: &[Expr]) -> PolarsResult<Expr> {
+        let total = |aggregate: Aggregate| -> PolarsResult<Expr> {
+            let mut terms = parts.iter().map(|part| part.apply(&aggregate, keys));
+            let first = terms.next().unwrap()?.fill_null(lit(0i64));
+            terms.try_fold(first, |acc, term| Ok(acc + term?.fill_null(lit(0i64))))
+        };
+        Ok(match self {
+            Aggregate::Sum(value) | Aggregate::Avg(value) => {
+                let avg = matches!(self, Aggregate::Avg(_));
+                let value = match avg {
+                    true => value.clone().cast(DataType::Float64),
+                    false => value.clone(),
+                };
+                let count = total(Aggregate::Count(value.clone()))?;
+                let sum = total(Aggregate::Sum(value))?;
+                let result = match avg {
+                    true => sum / count.clone(),
+                    false => sum,
+                };
+                when(count.gt(lit(0i64)))
+                    .then(result)
+                    .otherwise(Expr::Literal(LiteralValue::untyped_null()))
+            },
+            Aggregate::Count(value) => total(Aggregate::Count(value.clone()))?,
+            Aggregate::CountRows => total(Aggregate::CountRows)?,
+            Aggregate::Max(_) | Aggregate::Min(_) => {
+                let terms = parts
+                    .iter()
+                    .map(|part| part.apply(self, keys))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                match self {
+                    Aggregate::Max(_) => max_horizontal(terms)?,
+                    _ => min_horizontal(terms)?,
+                }
+            },
+        })
+    }
+}
+
+/// The ORDER BY key of a RANGE frame.
+struct RangeKey<'a> {
+    key: &'a Expr,
+    dtype: &'a DataType,
+    descending: bool,
+}
+
+impl RangeKey<'_> {
+    /// The rows before the current row in the sorted window whose key is at most `size` away;
+    /// the peers of the current row are included if `peers`.
+    fn before(&self, size: Duration, peers: bool) -> PolarsResult<FramePart> {
+        self.window(size, peers, false)
+    }
+
+    /// The rows after the current row in the sorted window whose key is at most `size` away;
+    /// the peers of the current row are included if `peers`.
+    fn after(&self, size: Duration, peers: bool) -> PolarsResult<FramePart> {
+        // Read in reverse, the rows after the current row come before it.
+        self.window(size, peers, true)
+    }
+
+    /// A window over the key, read in reverse if `reversed`.
+    fn window(&self, size: Duration, peers: bool, reversed: bool) -> PolarsResult<FramePart> {
+        // A key that falls in the reading order is negated, so that it rises.
+        let negate = self.descending != reversed;
+        let key = self.key.clone();
+        let is_temporal = matches!(self.dtype, DataType::Date | DataType::Datetime(_, _));
+        polars_ensure!(
+            size.parsed_int != is_temporal,
+            SQLInterface: "a RANGE window frame takes a number offset over a number ORDER BY key and an INTERVAL offset over a date or timestamp key"
+        );
+        // The key and offset as integers.
+        let (key, units) = match self.dtype {
+            dtype if dtype.is_integer() => (key.strict_cast(DataType::Int64), size.nanoseconds()),
+            DataType::Date if size.is_constant_duration(None) => {
+                let days = size
+                    .weeks()
+                    .checked_mul(7)
+                    .and_then(|days| days.checked_add(size.days()))
+                    .and_then(|days| days.checked_add(size.nanoseconds() / NANOSECONDS_IN_DAY));
+                let Some(days) = days else {
+                    polars_bail!(SQLInterface: "RANGE window frame offset is too large");
+                };
+                (key.to_physical().cast(DataType::Int64), days)
+            },
+            DataType::Datetime(unit, time_zone)
+                if size.is_constant_duration(time_zone.as_ref()) =>
+            {
+                (key.to_physical(), size.duration(*unit))
+            },
+            // Calendar months are only rolled over dates in their own order. Over timestamps
+            // a calendar interval back from one can be before that from an earlier one.
+            DataType::Date if !negate => {
+                let closed = if peers {
+                    ClosedWindow::Both
+                } else {
+                    ClosedWindow::Left
+                };
+                return Ok(FramePart::Window {
+                    by: key,
+                    size,
+                    closed,
+                    reversed,
+                });
+            },
+            DataType::Date | DataType::Datetime(_, _) => polars_bail!(
+                SQLInterface: "this INTERVAL offset is not supported in this RANGE window frame"
+            ),
+            dtype => polars_bail!(
+                SQLInterface: "a RANGE window frame with an offset needs an integer, date or timestamp ORDER BY key; found {}",
+                dtype
+            ),
+        };
+        // `!key` reverses the order of the keys and keeps their distances.
+        let by = if negate { key.not() } else { key };
+        // Over integers, the keys within `units` are those less than `units + 1` away.
+        let Some(size) = units.checked_add(1).map(Duration::new) else {
+            polars_bail!(SQLInterface: "RANGE window frame offset is too large");
+        };
+        let closed = if peers {
+            ClosedWindow::Right
+        } else {
+            ClosedWindow::None
+        };
+        Ok(FramePart::Window {
+            by,
+            size,
+            closed,
+            reversed,
+        })
+    }
+}
+
+impl FramePart {
+    /// The aggregate over this part of the frame.
+    fn apply(&self, aggregate: &Aggregate, keys: &[Expr]) -> PolarsResult<Expr> {
+        match self {
+            FramePart::ToLastPeer => Ok(at_last_peer(aggregate.running(false), keys)),
+            FramePart::FromFirstPeer => Ok(at_first_peer(aggregate.running(true), keys)),
+            #[cfg(feature = "rolling_window_by")]
+            FramePart::Window {
+                by,
+                size,
+                closed,
+                reversed,
+            } => {
+                use polars_defs::time::rolling::RollingOptionsDynamicWindow;
+                let options = |min_samples| RollingOptionsDynamicWindow {
+                    window_size: *size,
+                    min_samples,
+                    closed_window: *closed,
+                    fn_params: None,
+                };
+                let order = |e: Expr| if *reversed { e.reverse() } else { e };
+                let by = order(by.clone());
+                let expr = match aggregate {
+                    Aggregate::Sum(value) => order(value.clone()).rolling_sum_by(by, options(0)),
+                    Aggregate::Count(value) => {
+                        order(value.clone().is_not_null().cast(DataType::Int64))
+                            .rolling_sum_by(by, options(0))
+                    },
+                    Aggregate::CountRows => repeat(lit(1i64), len()).rolling_sum_by(by, options(0)),
+                    Aggregate::Max(value) => order(value.clone()).rolling_max_by(by, options(1)),
+                    Aggregate::Min(value) => order(value.clone()).rolling_min_by(by, options(1)),
+                    Aggregate::Avg(_) => unreachable!(),
+                };
+                Ok(order(expr))
+            },
+            #[cfg(not(feature = "rolling_window_by"))]
+            FramePart::Window { .. } => {
+                polars_bail!(SQLInterface: "RANGE window frames with an offset require the 'rolling_window_by' feature")
+            },
         }
     }
 }

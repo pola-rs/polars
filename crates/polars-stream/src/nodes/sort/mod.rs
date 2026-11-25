@@ -3,6 +3,7 @@ mod sample;
 mod split_tree;
 mod tuning;
 
+use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -24,10 +25,10 @@ use polars_ooc::{
 };
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use self::flush::{Flush, PendingBucket, sort_index_row_bytes};
+use self::flush::{FlushState, PendingBucket, sort_index_row_bytes};
 use self::sample::{KeySample, split_keys};
 use self::split_tree::BucketClassifier;
 use self::tuning::SortTuning;
@@ -39,7 +40,7 @@ use crate::morsel::{Morsel, MorselSeq, get_ideal_morsel_size};
 use crate::pipe::{RecvPort, SendPort};
 use crate::utils::in_memory_linearize::linearize;
 
-struct BufferAndSample {
+struct BufferAndSampleState {
     /// The buffered morsels, one list per pipe per phase.
     morsels: Mutex<Vec<Vec<Morsel>>>,
     /// The key sample of each pipe, kept across phases.
@@ -49,9 +50,9 @@ struct BufferAndSample {
 }
 
 enum SortState {
-    BufferAndSample(BufferAndSample),
+    BufferAndSample(BufferAndSampleState),
     Source(InMemorySourceNode),
-    Flush(Flush),
+    Flush(FlushState),
     Done,
 }
 
@@ -61,7 +62,8 @@ pub struct SortNode {
     key: PlSmallStr,
     key_dtype: DataType,
     input_schema: Arc<Schema>,
-    slice: Option<(i64, usize)>,
+    projection: Option<Vec<PlSmallStr>>,
+    slice: Option<Slice>,
     limit: Option<IdxSize>,
     sort_options: SortMultipleOptions,
     tuning: SortTuning,
@@ -71,7 +73,8 @@ impl SortNode {
     pub fn new(
         key: PlSmallStr,
         input_schema: Arc<Schema>,
-        slice: Option<(i64, usize)>,
+        projection: Option<Vec<PlSmallStr>>,
+        slice: Option<Slice>,
         mut sort_options: SortMultipleOptions,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
@@ -84,7 +87,7 @@ impl SortNode {
         };
 
         Self {
-            state: SortState::BufferAndSample(BufferAndSample {
+            state: SortState::BufferAndSample(BufferAndSampleState {
                 morsels: Mutex::default(),
                 samples: Vec::new(),
                 bytes: AtomicU64::new(0),
@@ -93,6 +96,7 @@ impl SortNode {
             key,
             key_dtype,
             input_schema,
+            projection,
             slice,
             limit,
             sort_options,
@@ -100,30 +104,32 @@ impl SortNode {
         }
     }
 
-    /// The `(offset, len)` rows of the sorted output to emit. The limit applies
-    /// before the slice.
-    fn output_range(&self, height: usize) -> (usize, usize) {
+    /// The rows of the sorted output to emit. The limit applies before the slice.
+    fn output_range(&self, height: usize) -> Range<usize> {
         let height = self
             .limit
             .map_or(height, |limit| height.min(limit as usize));
-        match self.slice {
-            Some((offset, len)) => slice_offsets(offset, len, height),
-            None => (0, height),
-        }
+        self.slice.map_or(0..height, |s| s.resolve(height))
     }
 
     fn sort_in_memory(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let range = self.output_range(df.height());
-        sort_range(df, &self.key, self.sort_options.clone(), range)
+        sort_range(
+            df,
+            &self.key,
+            self.projection.as_deref(),
+            self.sort_options.clone(),
+            range,
+        )
     }
 
     /// Turns the buffered input into the state that emits the sorted output.
     fn finish_buffer(
         &self,
-        buffer: BufferAndSample,
+        buffer: BufferAndSampleState,
         state: &StreamingExecutionState,
     ) -> PolarsResult<SortState> {
-        let BufferAndSample {
+        let BufferAndSampleState {
             morsels,
             samples,
             bytes,
@@ -170,7 +176,7 @@ impl SortNode {
         samples: Vec<KeySample>,
         total_bytes: u64,
         state: &StreamingExecutionState,
-    ) -> PolarsResult<Flush> {
+    ) -> PolarsResult<FlushState> {
         let total_rows: usize = frames.iter().map(SpillFrame::height).sum();
         let descending = self.sort_options.descending[0];
         let maintain_order = self.sort_options.maintain_order;
@@ -265,8 +271,7 @@ impl SortNode {
             }
         }
 
-        let (range_start, range_len) = self.output_range(total_rows);
-        let range_end = range_start + range_len;
+        let range = self.output_range(total_rows);
 
         // The null bucket is emitted on the side the nulls sort to.
         let null_bucket = num_buckets;
@@ -291,12 +296,12 @@ impl SortNode {
             };
             for frames in units {
                 let height: usize = frames.iter().map(SpillFrame::height).sum();
-                let lo = range_start.max(row);
-                let hi = range_end.min(row + height);
+                let lo = range.start.max(row);
+                let hi = range.end.min(row + height);
                 if lo < hi {
                     pending.push(PendingBucket {
                         frames,
-                        local: (lo - row, hi - lo),
+                        local: (lo - row)..(hi - row),
                         needs_sort: needs_sort[b],
                     });
                 } else {
@@ -307,7 +312,7 @@ impl SortNode {
         }
         drop_parallel(dropped);
 
-        Ok(Flush::new(
+        Ok(FlushState::new(
             pending,
             get_ideal_morsel_size().max(1),
             self.tuning.flush_ahead(num_tasks),
@@ -402,6 +407,7 @@ impl ComputeNode for SortNode {
         let Self {
             state: sort_state,
             key,
+            projection,
             sort_options,
             tuning,
             ..
@@ -411,7 +417,7 @@ impl ComputeNode for SortNode {
             SortState::BufferAndSample(buffer) => {
                 assert!(send_ports[0].is_none());
                 let receivers = recv_ports[0].take().unwrap().parallel();
-                let BufferAndSample {
+                let BufferAndSampleState {
                     morsels,
                     samples,
                     bytes,
@@ -449,7 +455,14 @@ impl ComputeNode for SortNode {
             SortState::Flush(flush) => {
                 assert!(recv_ports[0].is_none());
                 let senders = send_ports[0].take().unwrap().parallel();
-                flush.spawn(scope, senders, key, sort_options, join_handles);
+                flush.spawn(
+                    scope,
+                    senders,
+                    key,
+                    projection.as_deref(),
+                    sort_options,
+                    join_handles,
+                );
             },
             SortState::Done => unreachable!(),
         }
@@ -470,20 +483,30 @@ fn key_series(df: &DataFrame, key: &str) -> PolarsResult<Series> {
     })
 }
 
-/// Sorts `df` and restricts it to the `(offset, len)` row range of the result.
+/// Sorts `df` and restricts it to the `range` rows of the result.
 fn sort_range(
-    df: DataFrame,
+    mut df: DataFrame,
     key: &str,
+    projection: Option<&[PlSmallStr]>,
     sort_options: SortMultipleOptions,
-    (offset, len): (usize, usize),
+    range: Range<usize>,
 ) -> PolarsResult<DataFrame> {
     let by_column = vec![df.column(key)?.clone()];
-    if offset == 0 {
+    if let Some(columns) = projection {
+        df = df.select(columns)?;
+        if df.width() == 0 {
+            // sort_impl returns early for zero-width frames, ignoring the slice.
+            return Ok(df.slice(range));
+        }
+    }
+    if range.start == 0 {
         // A `(0, len)` slice would send `sort_impl` down the bottom-k path,
         // which row-encodes the key.
-        return Ok(df.sort_impl(by_column, sort_options, None)?.slice(0, len));
+        return Ok(df
+            .sort_impl(by_column, sort_options, None)?
+            .slice(Slice::head(range.len())));
     }
-    df.sort_impl(by_column, sort_options, Some((offset as i64, len)))
+    df.sort_impl(by_column, sort_options, Some(range.into()))
 }
 
 /// Drops the items on the thread pool, as there may be many large frames.

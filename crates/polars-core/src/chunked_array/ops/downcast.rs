@@ -71,6 +71,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// # Safety
     /// The caller must ensure:
     /// * The length remains correct.
+    /// * The null count remains correct.
     /// * The flags (sorted, etc) remain correct.
     /// * The dtype remains the same.
     #[inline]

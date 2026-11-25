@@ -69,6 +69,7 @@ pub(crate) fn flush_local_drift() {
     if first_flush {
         drift_bytes = drift_bytes.wrapping_sub(UNREGISTERED_DRIFT);
     }
+    crate::dirty_limit::sync_limit();
 
     let old = GLOBAL_ALLOC_SIZE.fetch_add(drift_bytes as u64, Ordering::AcqRel);
     let total = old.wrapping_add(drift_bytes as u64);

@@ -4,6 +4,7 @@ use polars_core::prelude::{Column, DataType, FillNullStrategy};
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -177,7 +178,7 @@ impl ComputeNode for BackwardFillNode {
 
                 let mut column = if new_pending_nulls > 0 {
                     // Remove new pending nulls.
-                    column.slice(0, column.len() - new_pending_nulls as usize)
+                    column.slice(Slice::head(column.len() - new_pending_nulls as usize))
                 } else {
                     column.clone()
                 };

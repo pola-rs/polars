@@ -912,6 +912,30 @@ impl OptimizationRule for TypeCoercionRule {
                 );
                 None
             },
+            #[cfg(feature = "find_many")]
+            AExpr::Function {
+                function:
+                    ref function @ IRFunctionExpr::BinaryExpr(IRBinaryFunction::FindMany { .. }),
+                ref input,
+                ..
+            } => {
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_other) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                let DataType::List(inner_dtype) = &type_other else {
+                    polars_bail!(InvalidOperation: "`{function}` with a flat {type_other} datatype is invalid. Use `implode` to wrap the value into a list.");
+                };
+
+                polars_ensure!(
+                    type_left.is_binary() && (inner_dtype.is_binary() || inner_dtype.is_string()),
+                    op = format!("{function}"),
+                    type_left,
+                    type_other
+                );
+                None
+            },
 
             #[cfg(feature = "string_pad")]
             AExpr::Function {
@@ -979,6 +1003,7 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
+                let (_, type_in) = unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
                 let (_, type_old) =
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
                 let (_, type_new) =
@@ -989,32 +1014,37 @@ impl OptimizationRule for TypeCoercionRule {
                     InvalidOperation: "`replace` does not support `old`/`new` values of object dtype"
                 );
 
-                let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
-                    let function = function.clone();
-                    let mut input = input.clone();
-
-                    if !type_old.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[1].node(),
-                            maintain_order: true,
-                        }));
-                        input[1].set_node(other_input);
-                    }
-                    if !type_new.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[2].node(),
-                            maintain_order: true,
-                        }));
-                        input[2].set_node(other_input);
-                    }
-
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
+                let is_list_of = |dtype: &DataType, values_dtype: &DataType| {
+                    dtype.is_list() && dtype != values_dtype
                 };
-                None
+                let old_is_list = is_list_of(&type_old, &type_in);
+                let new_is_list = match function {
+                    IRFunctionExpr::ReplaceStrict {
+                        return_dtype: Some(dtype),
+                    } => is_list_of(&type_new, dtype),
+                    // The output dtype is inferred from `new`, so a list can't be told apart from
+                    // a list of values; it is taken to be the latter.
+                    IRFunctionExpr::ReplaceStrict { return_dtype: None } => type_new.is_list(),
+                    _ => is_list_of(&type_new, &type_in),
+                };
+                let function = function.clone();
+                let mut input = input.clone();
+                let mut changed = false;
+                for (i, is_list) in [(1, old_is_list), (2, new_is_list)] {
+                    if !is_list {
+                        let imploded = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[i].node(),
+                            maintain_order: true,
+                        }));
+                        input[i].set_node(imploded);
+                        changed = true;
+                    }
+                }
+                changed.then_some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
             },
             #[cfg(feature = "range")]
             AExpr::Function {
@@ -1650,10 +1680,11 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
                 && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
         },
-        // Can't check for more granular time_unit in less-granular time_unit
-        // data, or we'll cast away valid/necessary precision (eg: nanosecs to
-        // millisecs):
-        (DataType::Datetime(to_unit, _), DataType::Datetime(from_unit, _)) => to_unit <= from_unit,
+        // The target unit must be at least as fine as the source unit. A cast
+        // between naive and time zone aware datetimes changes their meaning.
+        (DataType::Datetime(to_unit, to_tz), DataType::Datetime(from_unit, from_tz)) => {
+            to_unit <= from_unit && to_tz.is_some() == from_tz.is_some()
+        },
         (DataType::Duration(to_unit), DataType::Duration(from_unit)) => to_unit <= from_unit,
         (DataType::List(to), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]

@@ -32,6 +32,6 @@ how memory intensive the operation can be.
 
 ## Monitoring a streaming query
 
-The streaming engine can report per-node runtime metrics to Polars Cloud, letting you inspect where
+The streaming engine can report per-node runtime metrics to Polars Nanook, letting you inspect where
 a query spends its time from the dashboard, so that you can uncover bottlenecks and improve its
 performance. See [Query monitoring](../misc/monitoring.md).

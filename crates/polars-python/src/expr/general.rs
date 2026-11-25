@@ -620,29 +620,15 @@ impl PyExpr {
     #[cfg(feature = "approx_quantile")]
     fn approx_quantile(
         &self,
-        quantile: Bound<'_, PyAny>,
+        quantile: PyExpr,
         method: Wrap<ApproxQuantileMethod>,
         error: f64,
         use_formal_bound: bool,
-    ) -> PyResult<Self> {
-        let quantile = if let Ok(expr) = quantile.extract::<PyExpr>() {
-            expr.inner
-        } else if let Ok(q) = quantile.extract::<f64>() {
-            lit(q)
-        } else if let Ok(qs) = quantile.extract::<Vec<f64>>() {
-            let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice());
-            let dtype = DataType::List(Box::new(DataType::Float64));
-            lit(Scalar::new(dtype, AnyValue::List(s)))
-        } else {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "`quantile` must be a float, a list of floats, or an expression",
-            ));
-        };
-        Ok(self
-            .inner
+    ) -> Self {
+        self.inner
             .clone()
-            .approx_quantile(quantile, error, use_formal_bound, method.0)
-            .into())
+            .approx_quantile(quantile.inner, error, use_formal_bound, method.0)
+            .into()
     }
 
     fn is_first_distinct(&self) -> Self {
@@ -1104,6 +1090,10 @@ impl PyExpr {
 
     fn log1p(&self) -> Self {
         self.inner.clone().log1p().into()
+    }
+
+    fn x_log_y(&self, y: PyExpr, base: f64) -> Self {
+        self.inner.clone().x_log_y(y.inner, base).into()
     }
 
     fn exp(&self) -> Self {

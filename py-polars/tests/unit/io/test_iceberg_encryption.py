@@ -6,6 +6,7 @@ import json
 import pickle
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
+from time import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import pyarrow.parquet as pq
@@ -846,6 +847,7 @@ def test_encrypted_scan_storage_credential_precedence(
         tmp_path, schema=Schema(NestedField(1, "x", LongType()))
     )
     table.append(pl.DataFrame({"x": [42]}).to_arrow())
+    file_tasks = list(table.scan().plan_files())
     metadata_path = write_encrypted_snapshot_metadata(table, tmp_path, ["a"])
     table = StaticTable.from_metadata(str(metadata_path))
     iceberg_keys = ["s3.access-key-id", "s3.secret-access-key", "s3.session-token"]
@@ -862,21 +864,76 @@ def test_encrypted_scan_storage_credential_precedence(
         )
     resolved = resolver._to_dataset_scan_impl()
     assert isinstance(resolved, _NativeIcebergScanData)
+    assert_frame_equal(resolved.to_lazyframe().collect(), pl.DataFrame({"x": [42]}))
+
+    table.metadata = table.metadata.model_copy(update={"location": "s3://bucket/table"})
+    for task in file_tasks:
+        task.file[1] = "s3://bucket/table/data.parquet"
+    resolver.file_tasks = file_tasks
+    resolved = resolver._to_dataset_scan_impl()
+    assert isinstance(resolved, _NativeIcebergScanData)
+    assert resolved.sources == ["s3://bucket/table/data.parquet"]
     assert resolved.storage_options == dict.fromkeys(
         native_keys, "explicit" if explicit else "vended"
     )
-    assert_frame_equal(resolved.to_lazyframe().collect(), pl.DataFrame({"x": [42]}))
+
+
+def test_encrypted_scan_renews_storage_credentials(tmp_path: Path) -> None:
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
+    from polars.io.cloud.credential_provider._providers import CachingCredentialProvider
+
+    expires_at = int(time()) + 3600
+    table, catalog = new_iceberg_table(
+        tmp_path,
+        schema=Schema(NestedField(1, "x", LongType())),
+        catalog_properties={
+            "py-kms-impl": f"{__name__}._TestKmsClient",
+            "aws_access_key_id": "kms-access",
+            "aws_secret_access_key": "kms-secret",
+            "s3.access-key-id": "storage-access",
+            "s3.secret-access-key": "storage-secret",
+            "s3.session-token": "token-1",
+            "s3.session-token-expires-at-ms": str(expires_at * 1000),
+        },
+    )
+    table.metadata = table.metadata.model_copy(update={"location": "s3://bucket/table"})
+    resolved = new_iceberg_scan_resolver(table)._to_dataset_scan_impl()
+    assert isinstance(resolved, _NativeIcebergScanData)
+    assert resolved.storage_options is None
+    assert isinstance(resolved.credential_provider, CredentialProviderBuilder)
+    provider = resolved.credential_provider.build_credential_provider()
+    assert isinstance(provider, CachingCredentialProvider)
+    credentials = {
+        "aws_access_key_id": "storage-access",
+        "aws_secret_access_key": "storage-secret",
+        "aws_session_token": "token-1",
+    }
+    assert provider() == (credentials, expires_at - 60)
+
+    catalog.properties.update(
+        {
+            "s3.session-token": "token-2",
+            "s3.session-token-expires-at-ms": str((expires_at + 3600) * 1000),
+        }
+    )
+    provider.clear_cached_credentials()
+    assert provider() == (
+        {**credentials, "aws_session_token": "token-2"},
+        expires_at + 3600 - 60,
+    )
+    config = _load_kms_config(table)
+    assert config is not None
+    assert isinstance(config.client, _TestKmsClient)
+    assert config.client.properties["aws_access_key_id"] == "kms-access"
 
 
 @pytest.mark.parametrize("reverse", [False, True])
 def test_iceberg_storage_aliases_match_file_io_precedence(reverse: bool) -> None:
-    from polars.io.iceberg._dataset import (
-        _convert_iceberg_to_object_store_storage_options,
-    )
+    from polars.io.iceberg._plugin import _catalog_storage_options
 
     items = [("s3.access-key-id", "vended"), ("aws_access_key_id", "catalog")]
     if reverse:
         items.reverse()
-    assert _convert_iceberg_to_object_store_storage_options(dict(items)) == {
+    assert _catalog_storage_options(dict(items), "s3://bucket/table") == {
         "aws_access_key_id": "vended"
     }

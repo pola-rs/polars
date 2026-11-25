@@ -28,7 +28,7 @@ where
             let bin_len = bins.len();
             if bin_len > 1 {
                 for i in 1..bin_len {
-                    if (bins[i] - bins[i - 1]) <= 0.0 {
+                    if bins[i].is_nan() || bins[i - 1].is_nan() || bins[i] - bins[i - 1] <= 0.0 {
                         return Err(PolarsError::ComputeError(
                             "bins must increase monotonically".into(),
                         ));
@@ -117,119 +117,161 @@ where
     count
 }
 
-// Variable-width bucketing. We sort the items and then move linearly through buckets.
+// Variable-width bucketing. Each item is placed with a binary search over the breaks.
 fn hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     let num_bins = breaks.len() - 1;
-    let mut breaks_iter = breaks.iter().skip(1); // Skip the first lower bound
     let (min_break, max_break) = (breaks[0], breaks[breaks.len() - 1]);
-    let mut upper_bound = *breaks_iter.next().unwrap();
-    let mut sorted = ca.sort(false);
-    sorted.rechunk_mut();
-    let mut current_count: IdxSize = 0;
-    let chunk = sorted.downcast_as_array();
-    let mut count: Vec<IdxSize> = Vec::with_capacity(num_bins);
+    let mut count: Vec<IdxSize> = vec![0; num_bins];
 
-    'item: for item in chunk.non_null_values_iter() {
-        let item = item.to_f64().unwrap();
-
-        // Cycle through items until we hit the first bucket.
-        if item.is_nan() || item < min_break {
-            continue;
-        }
-
-        while item > upper_bound {
-            if item > max_break {
-                // No more items will fit in any buckets
-                break 'item;
+    for arr in ca.downcast_iter() {
+        for item in arr.non_null_values_iter() {
+            let item = item.to_f64().unwrap();
+            if item.is_nan() || item < min_break || item > max_break {
+                continue;
             }
-
-            // Finished with prior bucket; push, reset, and move to next.
-            count.push(current_count);
-            current_count = 0;
-            upper_bound = *breaks_iter.next().unwrap();
+            // The first bin also includes `min_break`.
+            let idx = breaks.partition_point(|b| *b < item).saturating_sub(1);
+            count[idx] += 1;
         }
-
-        // Item is in bound.
-        current_count += 1;
     }
-    count.push(current_count);
-    count.resize(num_bins, 0); // If we left early, fill remainder with 0.
     count
 }
 
-fn compute_hist<T>(
-    ca: &ChunkedArray<T>,
-    bin_count: Option<usize>,
-    bins: Option<&[f64]>,
-    include_category: bool,
-    include_breakpoint: bool,
-) -> PolarsResult<Series>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: ChunkAgg<T::Native>,
-{
-    let (breaks, uniform) = get_breaks(ca, bin_count, bins)?;
-    let num_bins = std::cmp::max(breaks.len(), 1) - 1;
-    let count = if num_bins > 0 && ca.len() > ca.null_count() {
-        if uniform {
-            uniform_hist_count(&breaks, ca)
-        } else {
-            hist_count(&breaks, ca)
-        }
-    } else {
-        vec![0; num_bins]
-    };
+fn ensure_hist_dtype(s: &Series) -> PolarsResult<()> {
+    polars_ensure!(
+        s.dtype().is_primitive_numeric(),
+        opq = hist,
+        got = s.dtype(),
+        expected = "integer or float"
+    );
+    Ok(())
+}
 
-    // Generate output: breakpoint (optional), breaks (optional), count
-    let mut fields = Vec::with_capacity(3);
+/// The bin edges of `hist`, which for a bin count depend only on the min and max of the column.
+#[derive(Clone, Debug)]
+pub struct HistBreaks {
+    edges: Vec<f64>,
+    // Equal-width edges allow counting without sorting.
+    uniform: bool,
+}
 
-    if include_breakpoint {
-        let breakpoints = if num_bins > 0 {
-            Series::new(PlSmallStr::from_static("breakpoint"), &breaks[1..])
-        } else {
-            let empty: &[f64; 0] = &[];
-            Series::new(PlSmallStr::from_static("breakpoint"), empty)
-        };
-        fields.push(breakpoints)
+impl HistBreaks {
+    /// The edges of `bin_count` bins over `s`, or the given `bins`.
+    pub fn new(s: &Series, bin_count: Option<usize>, bins: Option<&Series>) -> PolarsResult<Self> {
+        let bins = bins
+            .map(|bins| {
+                // `Null` is the dtype of empty bins, e.g. `bins=[]` from Python.
+                polars_ensure!(
+                    bins.dtype().is_numeric() || bins.dtype().is_null(),
+                    InvalidOperation: "`hist` bins must be numeric, got dtype `{}`", bins.dtype()
+                );
+                polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
+                Ok(bins.cast(&DataType::Float64)?.rechunk())
+            })
+            .transpose()?;
+        let bins = bins
+            .as_ref()
+            .map(|bins| bins.f64().unwrap().cont_slice().unwrap());
+        ensure_hist_dtype(s)?;
+
+        let (edges, uniform) = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            get_breaks(ca, bin_count, bins)?
+        });
+        Ok(Self { edges, uniform })
     }
 
-    if include_category {
-        let mut categories =
-            StringChunkedBuilder::new(PlSmallStr::from_static("category"), breaks.len());
-        if num_bins > 0 {
-            let mut lower = AnyValue::Float64(breaks[0]);
-            let mut buf = String::new();
-            let mut open_bracket = "[";
-            for br in &breaks[1..] {
-                let br = AnyValue::Float64(*br);
-                buf.clear();
-                write!(buf, "{open_bracket}{lower}, {br}]").unwrap();
-                open_bracket = "(";
-                categories.append_value(buf.as_str());
-                lower = br;
-            }
+    pub fn edges(&self) -> &[f64] {
+        &self.edges
+    }
+
+    pub fn num_bins(&self) -> usize {
+        self.edges.len().saturating_sub(1)
+    }
+
+    /// The number of values of `s` in each bin.
+    pub fn count(&self, s: &Series) -> PolarsResult<Vec<IdxSize>> {
+        ensure_hist_dtype(s)?;
+        let num_bins = self.num_bins();
+        if num_bins == 0 || s.len() == s.null_count() {
+            return Ok(vec![0; num_bins]);
         }
-        let categories = categories
-            .finish()
-            .cast(&DataType::from_categories(Categories::global()))
-            .unwrap();
-        fields.push(categories);
-    };
+        Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            if self.uniform {
+                uniform_hist_count(&self.edges, ca)
+            } else {
+                hist_count(&self.edges, ca)
+            }
+        }))
+    }
 
-    let count = Series::new(PlSmallStr::from_static("count"), count);
-    fields.push(count);
+    /// The `hist` output named `name` for the `counts` of each bin.
+    pub fn finish(
+        &self,
+        name: PlSmallStr,
+        counts: &[IdxSize],
+        include_category: bool,
+        include_breakpoint: bool,
+    ) -> PolarsResult<Series> {
+        let breaks = &self.edges;
+        let num_bins = self.num_bins();
+        polars_ensure!(
+            counts.len() == num_bins,
+            ShapeMismatch: "`hist` has {} bins but got {} counts", num_bins, counts.len()
+        );
 
-    Ok(if fields.len() == 1 {
-        fields.pop().unwrap().with_name(ca.name().clone())
-    } else {
-        StructChunked::from_series(ca.name().clone(), fields[0].len(), fields.iter())
-            .unwrap()
-            .into_series()
-    })
+        // Generate output: breakpoint (optional), breaks (optional), count
+        let mut fields = Vec::with_capacity(3);
+
+        if include_breakpoint {
+            let breakpoints = if num_bins > 0 {
+                Series::new(PlSmallStr::from_static("breakpoint"), &breaks[1..])
+            } else {
+                let empty: &[f64; 0] = &[];
+                Series::new(PlSmallStr::from_static("breakpoint"), empty)
+            };
+            fields.push(breakpoints)
+        }
+
+        if include_category {
+            let mut categories =
+                StringChunkedBuilder::new(PlSmallStr::from_static("category"), breaks.len());
+            if num_bins > 0 {
+                let mut lower = AnyValue::Float64(breaks[0]);
+                let mut buf = String::new();
+                let mut open_bracket = "[";
+                for br in &breaks[1..] {
+                    let br = AnyValue::Float64(*br);
+                    buf.clear();
+                    write!(buf, "{open_bracket}{lower}, {br}]").unwrap();
+                    open_bracket = "(";
+                    categories.append_value(buf.as_str());
+                    lower = br;
+                }
+            }
+            let categories = categories
+                .finish()
+                .cast(&DataType::from_categories(Categories::global()))
+                .unwrap();
+            fields.push(categories);
+        };
+
+        let count = Series::new(PlSmallStr::from_static("count"), counts);
+        fields.push(count);
+
+        Ok(if fields.len() == 1 {
+            fields.pop().unwrap().with_name(name)
+        } else {
+            StructChunked::from_series(name, fields[0].len(), fields.iter())
+                .unwrap()
+                .into_series()
+        })
+    }
 }
 
 pub fn hist_series(
@@ -239,28 +281,12 @@ pub fn hist_series(
     include_category: bool,
     include_breakpoint: bool,
 ) -> PolarsResult<Series> {
-    let mut bins_arg = None;
-
-    let owned_bins;
-    if let Some(bins) = bins {
-        polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
-        let bins = bins.cast(&DataType::Float64)?;
-        let bins_s = bins.rechunk();
-        owned_bins = bins_s;
-        let bins = owned_bins.f64().unwrap();
-        let bins = bins.cont_slice().unwrap();
-        bins_arg = Some(bins);
-    };
-    polars_ensure!(
-        s.dtype().is_primitive_numeric(),
-        opq = hist,
-        got = s.dtype(),
-        expected = "integer or float"
-    );
-
-    let out = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-         compute_hist(ca, bin_count, bins_arg, include_category, include_breakpoint)?
-    });
-    Ok(out)
+    let breaks = HistBreaks::new(s, bin_count, bins.as_ref())?;
+    let counts = breaks.count(s)?;
+    breaks.finish(
+        s.name().clone(),
+        &counts,
+        include_category,
+        include_breakpoint,
+    )
 }

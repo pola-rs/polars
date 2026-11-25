@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 inf = float("inf")
@@ -158,6 +160,29 @@ def test_hist_invalid_bins() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     with pytest.raises(ComputeError, match="bins must increase monotonically"):
         s.hist(bins=[1, 0])  # invalid order
+
+
+@pytest.mark.parametrize(
+    "bins",
+    [
+        pl.Series(["a", "1"]),
+        pl.Series(["1", "2"]),
+        pl.Series([True, False]),
+    ],
+)
+def test_hist_non_numeric_bins(bins: pl.Series) -> None:
+    lf = pl.LazyFrame({"x": [1.0, 2.0]})
+    q = lf.select(pl.col("x").hist(bins=pl.lit(bins)))
+    with pytest.raises(InvalidOperationError, match="bins must be numeric"):
+        q.collect()
+
+
+def test_hist_decimal_bins() -> None:
+    lf = pl.LazyFrame({"x": [1.0, 2.0]})
+    bins = pl.Series([Decimal("0.5"), Decimal("1.5")])
+    result = lf.select(pl.col("x").hist(bins=pl.lit(bins))).collect()
+    expected = pl.DataFrame({"x": pl.Series([1], dtype=pl.get_index_type())})
+    assert_frame_equal(result, expected)
 
 
 def test_hist_bin_outside_data() -> None:

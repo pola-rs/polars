@@ -1078,9 +1078,24 @@ def _supply_query(subquery: str, op: str, extra: str = "") -> str:
 
 
 def _partsupp_scans(query: str) -> int:
+    """Reads of partsupp: its scans, each read through a cache counted once."""
     with pl.SQLContext(frames=_supply_frames()) as ctx:
-        plan = ctx.execute(query).explain()
-    return plan.count('DF ["ps_partkey"')
+        lines = ctx.execute(query).explain().splitlines()
+    scan = 'DF ["ps_partkey"'
+    cache_ids = [re.search(r"CACHE\[id: ([^\]]+)\]", line) for line in lines]
+    partsupp_caches = {
+        cache.group(1)
+        for cache, below in zip(cache_ids, [*lines[1:], ""], strict=True)
+        if cache is not None and scan in below
+    }
+    direct = sum(
+        scan in line and above is None
+        for above, line in zip([None, *cache_ids], lines, strict=False)
+    )
+    cached = sum(
+        cache is not None and cache.group(1) in partsupp_caches for cache in cache_ids
+    )
+    return direct + cached
 
 
 SUPPLY_SUBQUERY = """
@@ -1872,6 +1887,135 @@ def test_subquery_struct_field_is_not_correlated(projection: str, field: str) ->
 
 
 @pytest.mark.parametrize(
+    ("exists", "expected"), [("EXISTS", [1, 2]), ("NOT EXISTS", [])]
+)
+@pytest.mark.parametrize("field", ["s.id", "c.s.id", "a.id", "c.a.id"])
+def test_exists_subquery_struct_field_is_not_correlated(
+    exists: str, expected: list[int], field: str
+) -> None:
+    # `s` and `a` are struct columns of `c`; `a` is also the outer relation.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2]}),
+            "c": pl.DataFrame(
+                {
+                    "id": [1, 3],
+                    "s": [{"id": 1}, {"id": 2}],
+                    "a": [{"id": 1}, {"id": 2}],
+                }
+            ),
+        },
+        query=f"SELECT a.id FROM a WHERE {exists} (SELECT 1 FROM c WHERE {field} = c.id)",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": expected},
+        engines=ENGINES,
+    )
+
+
+def _struct_scope_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "o": pl.DataFrame({"id": [1, 2], "f": [10, 2]}),
+        "o2": pl.DataFrame({"id": [1, 2], "s": [{"f": 10}, {"f": 2}]}),
+        "i": pl.DataFrame({"k": [1, 2], "s": [{"f": 1}, {"f": 5}]}),
+        "i_plain": pl.DataFrame({"k": [1, 2], "s": [1, 5]}),
+        "tf": pl.DataFrame({"f": [2]}),
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        # a plain column `s` is no struct path, so `s.f` reads the outer relation
+        (
+            "SELECT id FROM o AS s WHERE EXISTS (SELECT 1 FROM i_plain WHERE s.f = i_plain.k)",
+            {"id": [2]},
+        ),
+        # the inner struct column hides the outer one
+        (
+            "SELECT id FROM o2 WHERE EXISTS (SELECT 1 FROM i WHERE s.f = i.k)",
+            {"id": [1, 2]},
+        ),
+        # in one scope, the relation `s` wins over the struct column `s`
+        (
+            "SELECT id, (SELECT MAX(s.f) FROM i JOIN tf AS s ON TRUE) AS m FROM o",
+            {"id": [1, 2], "m": [2, 2]},
+        ),
+    ],
+)
+def test_subquery_struct_path_scope(query: str, expected: dict[str, Any]) -> None:
+    assert_sql_matches(
+        frames=_struct_scope_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        expected=expected,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id FROM o AS s WHERE EXISTS (SELECT 1 FROM i WHERE s.g = i.k)",
+        # an aggregate returns one row whatever WHERE keeps, but WHERE is still checked
+        "SELECT id FROM o WHERE EXISTS (SELECT COUNT(*) FROM i WHERE s.g = 1)",
+        "SELECT id FROM o WHERE EXISTS (SELECT COUNT(*) FROM i WHERE i.s.g = 1)",
+        "SELECT id FROM o WHERE NOT EXISTS "
+        "(SELECT COUNT(*) FROM i WHERE i.k = o.id AND s.g = 1)",
+    ],
+)
+def test_subquery_missing_struct_field_is_an_error(query: str) -> None:
+    with pytest.raises(pl.exceptions.StructFieldNotFoundError):
+        pl.SQLContext(_struct_scope_frames()).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT id FROM a AS k WHERE EXISTS "
+            "(SELECT 1 FROM c JOIN d ON c.k = d.k WHERE k.id = c.id)",
+            [(1,)],
+        ),
+        (
+            "SELECT id, (SELECT MAX(c.id) FROM c JOIN d ON c.k = d.k WHERE k.id = c.id) "
+            "AS m FROM a AS k ORDER BY id",
+            [(1, 1), (2, None)],
+        ),
+    ],
+)
+def test_subquery_dotted_name_over_joined_plain_columns(
+    query: str, expected: list[tuple[Any, ...]]
+) -> None:
+    # `k` is a plain column of both joined relations, so `k.id` reads the outer `k`
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3], "k": [7, 8]}),
+        d=pl.DataFrame({"id": [1, 3], "k": [7, 9]}),
+    )
+    assert ctx.execute(query, eager=True).rows() == expected
+
+
+@pytest.mark.parametrize("join", ["d JOIN cs", "cs JOIN d"])
+def test_subquery_dotted_name_over_joined_struct_and_plain_column(join: str) -> None:
+    # `k.f` can read the struct `cs.k` or the outer `k`
+    ctx = pl.SQLContext(
+        o=pl.DataFrame({"id": [1, 2], "f": [10, 2]}),
+        cs=pl.DataFrame({"id": [1, 3], "k": [{"f": 1}, {"f": 3}]}),
+        d=pl.DataFrame({"id": [1, 3], "k": [2, 9]}),
+    )
+    query = f"""
+        SELECT id FROM o AS k
+        WHERE EXISTS (SELECT 1 FROM {join} ON cs.id = d.id WHERE k.f = d.k)
+    """
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError, match=r'ambiguous reference to column "k"'
+    ):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
     ("query", "expected"),
     [
         (
@@ -2191,6 +2335,34 @@ def test_correlated_subquery_inner_subquery_filter_join_tree() -> None:
 
 
 @pytest.mark.parametrize(
+    "condition",
+    [
+        "EXISTS (SELECT 1 FROM c WHERE c.id = {name}.id)",
+        "NOT EXISTS (SELECT 1 FROM c WHERE c.id = {name}.id)",
+        "a.id IN (SELECT c.id FROM c WHERE c.id = {name}.id)",
+        "a.id = (SELECT MAX(c.id) FROM c WHERE c.id = {name}.id)",
+    ],
+)
+@pytest.mark.parametrize(
+    ("name", "error"),
+    [
+        ("nope", r"^no table or struct column named 'nope' found(\n|$)"),
+        ("t", r"""named 't' found; table "t" is hidden by alias "a"(\n|$)"""),
+    ],
+)
+def test_subquery_unknown_qualifier(condition: str, name: str, error: str) -> None:
+    # A qualifier that names no relation or struct column of either query is an
+    # error, as in the outer query; the alias `a` hides the table `t`.
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    query = f"SELECT a.id FROM t AS a WHERE {condition.format(name=name)}"
+    with pytest.raises(pl.exceptions.SQLInterfaceError, match=error):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
     "query",
     [
         # The nested subquery reads the outer `a` through a FROM that declares `a`.
@@ -2488,6 +2660,7 @@ def test_correlated_in_subquery_on_its_correlation_key(op: str) -> None:
             SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY j DESC LIMIT 5
         )
         """,
+        "SELECT n.k, (SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.ck LIMIT (1)) AS top FROM n",
     ],
 )
 def test_correlated_subquery_limit(query: str) -> None:
@@ -2625,3 +2798,150 @@ def test_correlated_decimal_float_keys(query: str) -> None:
         check_dtypes=False,
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "WITH x AS (SELECT a.id FROM t AS a WHERE {cond}) SELECT * FROM x",
+        "SELECT * FROM (SELECT a.id FROM t AS a WHERE {cond}) AS y",
+        "SELECT a.id FROM t AS a WHERE {cond} UNION ALL SELECT 9",
+    ],
+)
+def test_subquery_unknown_qualifier_in_cte_derived_table_set_operand(
+    query: str,
+) -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    cond = "EXISTS (SELECT 1 FROM c WHERE c.id = nope.id)"
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError,
+        match=r"^no table or struct column named 'nope' found(\n|$)",
+    ):
+        ctx.execute(query.format(cond=cond), eager=True)
+
+
+def test_subquery_qualifier_hidden_by_inner_alias() -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError,
+        match=r"""named 'c' found; table "c" is hidden by alias "x"(\n|$)""",
+    ):
+        ctx.execute(
+            "SELECT a.id FROM t AS a WHERE EXISTS (SELECT 1 FROM c AS x WHERE c.id = a.id)",
+            eager=True,
+        )
+
+
+def test_nested_subquery_reading_outermost_query() -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+        d=pl.DataFrame({"id": [1, 2]}),
+    )
+    query = """
+        SELECT a.id FROM t AS a
+        WHERE EXISTS (SELECT 1 FROM c WHERE EXISTS (SELECT 1 FROM d WHERE d.id > a.id))
+    """
+    assert ctx.execute(query, eager=True).rows() == [(1,)]
+
+    # Not supported yet: `a` is the outermost relation, which the error must not
+    # report as unknown.
+    query = """
+        SELECT a.id, (
+            SELECT max(c.id) FROM c WHERE EXISTS (SELECT 1 FROM d WHERE d.id > a.id)
+        ) AS m
+        FROM t AS a
+    """
+    with pytest.raises(pl.exceptions.SQLInterfaceError) as exc:
+        ctx.execute(query, eager=True)
+    assert "named 'a'" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT a, (SELECT b.v FROM (SELECT o.a * 10 AS v) AS b) AS r FROM t AS o",
+            [(1, 10), (2, 20), (3, 30), (4, 40)],
+        ),
+        (
+            """
+            SELECT a, (SELECT MAX(s.x) FROM (SELECT x FROM u WHERE u.k = o.a) AS s) AS r
+            FROM t AS o
+            """,
+            [(1, 6), (2, 7), (3, 8), (4, None)],
+        ),
+        (
+            """
+            SELECT a, (
+                SELECT COUNT(*) FROM (SELECT x AS y FROM u WHERE u.k = o.a) AS s
+                WHERE s.y > 5
+            ) AS r FROM t AS o
+            """,
+            [(1, 1), (2, 1), (3, 1), (4, 0)],
+        ),
+        (
+            "SELECT a, (SELECT MIN(x) FROM (SELECT u.x FROM u WHERE u.k = o.a) AS s) AS r FROM t AS o",
+            [(1, 5), (2, 7), (3, 8), (4, None)],
+        ),
+        (
+            """
+            SELECT a, NULL AS r FROM t AS o
+            WHERE (SELECT MAX(s.x) FROM (SELECT x FROM u WHERE u.k = o.a) AS s) > 6
+            """,
+            [(2, None), (3, None)],
+        ),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scalar_subquery_derived_table_reads_outer(
+    query: str, expected: list[tuple[int, int | None]], engine: EngineType
+) -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"a": [1, 2, 3, 4]}),
+        u=pl.DataFrame({"k": [1, 1, 2, 3], "x": [5, 6, 7, 8]}),
+    )
+    res = ctx.execute(query).sort("a").collect(engine=engine)
+    assert res.rows() == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # A limit of the derived table applies per outer row.
+        """
+        SELECT a, (
+            SELECT SUM(s.x) FROM (SELECT x FROM u WHERE u.k = o.a ORDER BY x LIMIT 1) AS s
+        ) AS r FROM t AS o
+        """,
+        # The aggregate of a value of the outer row would aggregate the outer query.
+        "SELECT a, (SELECT MAX(b.v) FROM (SELECT o.a * 10 AS v FROM u) AS b) AS r FROM t AS o",
+        # `u.k` reads the outer `u`, not the relation of the derived table.
+        """
+        SELECT o.a, (
+            SELECT MAX(s.x) FROM (SELECT x FROM u WHERE u.k = o.a) AS s WHERE s.x > u.k
+        ) AS r FROM t AS o CROSS JOIN (SELECT 5 AS k) AS u
+        """,
+        # An item that is not read must still resolve.
+        "SELECT a, (SELECT COUNT(*) FROM (SELECT o.b AS v FROM u) AS d) AS r FROM t AS o",
+        # The selector reads the columns of the derived table.
+        """
+        SELECT a, (
+            SELECT MAX(COLUMNS('^x$')) FROM (SELECT k AS x FROM u WHERE u.k = o.a) AS d
+        ) AS r FROM t AS o
+        """,
+    ],
+)
+def test_scalar_subquery_derived_table_reads_outer_unsupported(query: str) -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"a": [1, 2, 3, 4]}),
+        u=pl.DataFrame({"k": [1, 1, 2, 3], "x": [5, 6, 7, 8]}),
+    )
+    with pytest.raises(pl.exceptions.SQLInterfaceError, match="named 'o'"):
+        ctx.execute(query, eager=True)

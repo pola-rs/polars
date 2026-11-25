@@ -90,11 +90,14 @@ def new_iceberg_table(
     sort_order: SortOrder | None = None,
     name: str = "table",
     properties: dict[str, str] | None = None,
+    catalog_properties: dict[str, str] | None = None,
 ) -> tuple[pyiceberg.table.Table, SqlCatalog]:
+    # `catalog_properties` are passed to the tables' FileIO, as vended credentials.
     catalog = SqlCatalog(
         "default",
         uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
         warehouse=format_file_uri_iceberg(tmp_path),
+        **(catalog_properties or {}),
     )
     namespace = uuid.uuid4().bytes.hex()
     catalog.create_namespace(namespace)

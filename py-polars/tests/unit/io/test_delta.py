@@ -785,7 +785,7 @@ def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
     df.write_delta(root)
 
     # Manually overwrite the file with one that has nanosecond timestamps.
-    parquet_files = [x for x in root.iterdir() if x.suffix == ".parquet"]
+    parquet_files = [x for x in root.rglob("*.parquet") if "_delta_log" not in x.parts]
     assert len(parquet_files) == 1
     parquet_file_path = parquet_files[0]
 
@@ -1913,6 +1913,8 @@ def test_scan_delta_runtime_join_filter(
     capfd: pytest.CaptureFixture[str],
     renamed: bool,
 ) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
     # One file per append.
     for i in range(3):
         pl.DataFrame({"x": range(100 * i, 100 * i + 100), "f": range(100)}).write_delta(
@@ -1952,6 +1954,8 @@ def test_scan_delta_runtime_join_filter_with_partition_predicate(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
+    # The scans here are far smaller than the probe sides worth filtering by default.
+    plmonkeypatch.setenv("POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS", "0")
     for p in range(3):
         pl.DataFrame({"x": range(100 * p, 100 * p + 100), "p": p}).write_delta(
             tmp_path, mode="append", delta_write_options={"partition_by": "p"}
@@ -2003,3 +2007,27 @@ def test_scan_delta_partition_values_from_log(tmp_path: Path) -> None:
     assert_frame_equal(lf.collect(), df, check_row_order=False)
     assert_frame_equal(lf.filter(pl.col("s") == "a=b/c").collect(), df[:1])
     assert_frame_equal(lf.filter(pl.col("t").is_null()).collect(), df[2:])
+
+
+@pytest.mark.write_disk
+def test_scan_delta_aggregates_do_not_load_statistics(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Delta statistics are loose: aggregates neither use nor load them.
+    pl.DataFrame({"a": [1, 2]}).write_delta(tmp_path / "t")
+    pl.DataFrame({"a": [3]}).write_delta(tmp_path / "t", mode="append")
+    DeltaTable.create(tmp_path / "empty", pa.schema([("a", pa.int64())]))
+    calls = []
+    get_add_actions = DeltaTable.get_add_actions
+
+    def count(self: DeltaTable, *args: Any, **kwargs: Any) -> Any:
+        calls.append(self)
+        return get_add_actions(self, *args, **kwargs)
+
+    plmonkeypatch.setattr(DeltaTable, "get_add_actions", count)
+    for name, expected in [("t", (3, 3)), ("empty", (None, 0))]:
+        q = pl.scan_delta(tmp_path / name).select(pl.col("a").max(), pl.len())
+        assert q.collect().row(0) == expected
+        # A duplicated subplan
+        assert pl.concat([q, q]).collect().rows() == [expected, expected]
+    assert calls == []

@@ -41,6 +41,12 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
         false
     }
 
+    /// Whether a source may be a compressed file, which can't be sliced from its end. Sources
+    /// that aren't files at all (plugin source ids) are never.
+    fn may_be_compressed_file(&self) -> bool {
+        !self.is_external_python_reader()
+    }
+
     fn is_external_python_reader_with_filter_support(&self) -> PolarsResult<bool> {
         Ok(false)
     }
@@ -49,6 +55,26 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
     /// from the default. Scans over many small remote files are latency-bound, readers with cheap
     /// initialization can prefer a higher number. The multi-scan applies overrides and limits.
     fn preferred_remote_pre_init(&self) -> Option<usize> {
+        None
+    }
+
+    /// Whether the sources are remote, if the reader knows better than the path heuristic.
+    /// Sources that are ids rather than paths (database partitions, dataset fragments) look
+    /// like local paths but have remote latency.
+    fn sources_are_remote(&self) -> Option<bool> {
+        None
+    }
+
+    /// An upper bound on concurrently running readers, e.g. a database connection budget.
+    /// `POLARS_MAX_CONCURRENT_SCANS` can lower it but not raise it.
+    fn max_concurrent_scans(&self) -> Option<usize> {
+        None
+    }
+
+    /// For readers with a pipeline budget: a guard that returns the scan's pool kilobytes when
+    /// dropped. Call after `set_execution_state`.
+    #[cfg(any(feature = "parquet", feature = "ipc"))]
+    fn active_scan(&self) -> Option<crate::nodes::io_sources::shared::pipeline_budget::ActiveScan> {
         None
     }
 

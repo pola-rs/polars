@@ -633,9 +633,15 @@ impl PhysicalExpr for WindowExpr {
                     // we take the group locations to directly map them to the right place
                     (UpdateGroups::No, Some(out)) => Ok(out.into_column()),
                     (_, _) => {
-                        let keys = gb.keys();
-
                         let get_join_tuples = || {
+                            // SAFETY: the groups of a group-by over `df` don't overlap.
+                            if let Some(ids) =
+                                unsafe { group_idx_per_row(gb.get_groups(), df.height()) }
+                            {
+                                return Ok(Arc::new(ids));
+                            }
+
+                            let keys = gb.keys();
                             if group_by_columns.len() == 1 {
                                 let mut left = group_by_columns[0].clone();
                                 // group key from right column
@@ -990,7 +996,9 @@ impl PhysicalExpr for WindowExpr {
             },
         }
 
-        let mut subgroups = GroupsType::Idx(subgroups.into());
+        let mut subgroups: GroupsIdx = subgroups.into();
+        subgroups.set_sorted_idxs_in_groups(groups.has_sorted_idxs_in_groups());
+        let mut subgroups = GroupsType::Idx(subgroups);
         if let Some((order_by, _, options)) = order_by {
             subgroups =
                 update_groups_sort_by(&subgroups, order_by.as_materialized_series(), &options)?;
@@ -1086,6 +1094,65 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
             Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids, false) },
         }
     }
+}
+
+/// The group index of every row, if the groups cover all `len` rows.
+///
+/// # Safety
+/// The groups may not overlap and every row index must be smaller than `len`.
+unsafe fn group_idx_per_row(groups: &GroupsType, len: usize) -> Option<ChunkJoinOptIds> {
+    let covered: usize = match groups {
+        GroupsType::Idx(groups) => groups.all().iter().map(|g| g.len()).sum(),
+        GroupsType::Slice {
+            groups,
+            overlapping,
+            ..
+        } => {
+            if *overlapping {
+                return None;
+            }
+            groups.iter().map(|[_, g_len]| *g_len as usize).sum()
+        },
+    };
+    if covered != len {
+        return None;
+    }
+
+    let mut ids: Vec<NullableIdxSize> = Vec::with_capacity(len);
+    // SAFETY: groups don't overlap, so threads never write to the same slot.
+    let sync_ptr = unsafe { SyncPtr::new(ids.as_mut_ptr()) };
+    match groups {
+        GroupsType::Idx(groups) => RAYON.install(|| {
+            groups
+                .all()
+                .par_iter()
+                .enumerate()
+                .for_each(|(group_idx, g)| {
+                    let ptr = sync_ptr.get();
+                    for idx in g.as_slice() {
+                        debug_assert!((*idx as usize) < len);
+                        unsafe { *ptr.add(*idx as usize) = (group_idx as IdxSize).into() }
+                    }
+                })
+        }),
+        GroupsType::Slice { groups, .. } => RAYON.install(|| {
+            groups
+                .par_iter()
+                .enumerate()
+                .for_each(|(group_idx, [start, g_len])| {
+                    let ptr = sync_ptr.get();
+                    let start = *start as usize;
+                    let end = start + *g_len as usize;
+                    debug_assert!(end <= len);
+                    for idx in start..end {
+                        unsafe { *ptr.add(idx) = (group_idx as IdxSize).into() }
+                    }
+                })
+        }),
+    }
+    // SAFETY: the groups cover all `len` rows.
+    unsafe { ids.set_len(len) };
+    Some(polars_arrow::Either::Left(ids))
 }
 
 /// Simple reducing aggregation can be set by the groups
@@ -1188,7 +1255,7 @@ fn set_numeric<T: PolarsNumericType>(
             GroupsType::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
                 let offset = *offset;
                 let offset_len = *offset_len;
-                let ca = ca.slice(offset as i64, offset_len);
+                let ca = ca.slice((offset, offset_len));
                 let groups = &groups.all()[offset..offset + offset_len];
                 let values_ptr = sync_ptr_values.get();
                 let validity_ptr = sync_ptr_validity.get();
@@ -1216,7 +1283,7 @@ fn set_numeric<T: PolarsNumericType>(
                 offsets.par_iter().for_each(|(offset, offset_len)| {
                     let offset = *offset;
                     let offset_len = *offset_len;
-                    let ca = ca.slice(offset as i64, offset_len);
+                    let ca = ca.slice((offset, offset_len));
                     let groups = &groups[offset..offset + offset_len];
                     let values_ptr = sync_ptr_values.get();
                     let validity_ptr = sync_ptr_validity.get();

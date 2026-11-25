@@ -26,7 +26,7 @@ impl FrameWithKeys {
         self.mask.as_ref().map_or(self.keys.len(), |m| m.set_bits())
     }
 
-    fn estimated_size(&self) -> usize {
+    pub fn estimated_size(&self) -> usize {
         self.frame.estimated_size(false)
             + self.keys.estimated_size()
             + self.mask.as_ref().map_or(0, |m| m.len().div_ceil(8))

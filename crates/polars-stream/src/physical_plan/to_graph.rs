@@ -6,7 +6,7 @@ use polars_core::config;
 use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_ensure, polars_err};
-use polars_expr::groups::new_hash_grouper;
+use polars_expr::hash_keys::KeyEncoder;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, create_window_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
@@ -26,6 +26,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 use slotmap::{DenseSlotMap, SecondaryMap};
 
@@ -170,14 +171,10 @@ fn to_graph_rec<'a>(
             return Ok(node);
         },
 
-        StreamingSlice {
-            input,
-            offset,
-            length,
-        } => {
+        StreamingSlice { input, slice } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
-                nodes::streaming_slice::StreamingSliceNode::new(*offset, *length),
+                nodes::streaming_slice::StreamingSliceNode::new(Some(*slice)),
                 [(input_key, input.port)],
             )
         },
@@ -192,14 +189,14 @@ fn to_graph_rec<'a>(
 
         NegativeSlice {
             input,
-            offset,
+            offset_from_end,
             length,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.add_node_with_metrics(
                 |registry| {
                     nodes::negative_slice::NegativeSliceNode::new(
-                        *offset,
+                        Slice::tail(*offset_from_end).to_signed_offset_len().0,
                         *length,
                         registry.task_metrics(),
                     )
@@ -796,8 +793,10 @@ fn to_graph_rec<'a>(
             by_column,
             slice,
             sort_options,
+            projection,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm).clone();
+            let projection = projection.as_ref().map(|(names, _)| names.to_vec());
             let [by] = by_column.as_slice() else {
                 unreachable!()
             };
@@ -812,6 +811,7 @@ fn to_graph_rec<'a>(
                     nodes::sort::SortNode::new(
                         key,
                         input_schema,
+                        projection,
                         *slice,
                         sort_options.clone(),
                         registry.task_metrics(),
@@ -885,8 +885,9 @@ fn to_graph_rec<'a>(
         #[cfg(feature = "cum_agg")]
         CumAgg { input, kind } => {
             let input_key = to_graph_rec(input.node, ctx)?;
+            let (_, dtype) = node.output_schema(0).get_at_index(0).unwrap();
             ctx.graph.add_node(
-                nodes::cum_agg::CumAggNode::new(*kind),
+                nodes::cum_agg::CumAggNode::new(*kind, dtype.clone()),
                 [(input_key, input.port)],
             )
         },
@@ -1111,6 +1112,7 @@ fn to_graph_rec<'a>(
                         ctx.expr_arena,
                         output_schema,
                         hive_parts.as_ref().map(|hp| hp.df().schema().as_ref()),
+                        include_file_paths.as_deref(),
                         &mut ctx.expr_conversion_state,
                         true, // create_skip_batch_predicate
                         file_reader_builder
@@ -1176,7 +1178,7 @@ fn to_graph_rec<'a>(
             let file_projection_builder = file_projection_builder.clone();
 
             let row_index = row_index.clone();
-            let pre_slice = pre_slice.clone();
+            let pre_slice = *pre_slice;
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
             let extra_columns_policy = *extra_columns_policy;
@@ -1233,6 +1235,7 @@ fn to_graph_rec<'a>(
             key_per_input,
             fused_agg_inputs_per_input,
             aggs_per_input,
+            key_ranges,
         } => {
             let mut key_ports = Vec::new();
             let mut key_schema_per_input = Vec::new();
@@ -1353,16 +1356,20 @@ fn to_graph_rec<'a>(
             let key_schema = key_schema_per_input.swap_remove(0);
             assert!(key_schema_per_input.iter().all(|s| **s == *key_schema));
 
-            let grouper = new_hash_grouper(key_schema.clone());
+            let key_encoder = KeyEncoder::new(key_schema, true, key_ranges);
+            if config::verbose()
+                && let Some(layout) = key_encoder.describe_packed()
+            {
+                eprintln!("group-by packed keys: {layout}");
+            }
             let output_schema = node.output_schema(0).clone();
             let num_pipelines = ctx.num_pipelines;
             ctx.add_node_with_metrics(
                 |registry| {
                     nodes::group_by::GroupByNode::new(
-                        key_schema,
+                        key_encoder,
                         key_selectors_per_input,
                         reductions_per_input,
-                        grouper,
                         grouped_reduction_cols,
                         payload_per_input,
                         grouped_reductions,
@@ -1528,6 +1535,9 @@ fn to_graph_rec<'a>(
             args,
             fused_predicate: _,
             runtime_filters: _,
+            estimated_rows: _,
+            key_ranges,
+            pre_drop_schema: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1538,6 +1548,8 @@ fn to_graph_rec<'a>(
             output_bool: _,
             runtime_filters: _,
             estimated_rows: _,
+            key_ranges,
+            pre_drop_schema: _,
         } => {
             let args = args.clone();
             let output_schema = node.output_schema(0).clone();
@@ -1587,6 +1599,14 @@ fn to_graph_rec<'a>(
 
             let unique_key_schema =
                 compute_output_schema(&left_input_schema, &unique_left_on, ctx.expr_arena)?;
+            // An anti join built from its left side keeps the left rows with null keys.
+            let nulls_in_key = args.nulls_equal || args.how.is_anti();
+            let key_encoder = KeyEncoder::new(unique_key_schema, nulls_in_key, key_ranges);
+            if config::verbose()
+                && let Some(layout) = key_encoder.describe_packed()
+            {
+                eprintln!("join packed keys: {layout}");
+            }
             let num_pipelines = ctx.num_pipelines;
 
             match node.kind {
@@ -1599,7 +1619,7 @@ fn to_graph_rec<'a>(
                 } => ctx.try_add_node_with_metrics(
                     |registry| {
                         nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
-                            unique_key_schema,
+                            key_encoder,
                             output_schema,
                             left_key_selectors,
                             right_key_selectors,
@@ -1619,8 +1639,17 @@ fn to_graph_rec<'a>(
                 EquiJoin {
                     ref fused_predicate,
                     ref runtime_filters,
+                    estimated_rows,
+                    ref pre_drop_schema,
                     ..
                 } => {
+                    // The predicate reads columns a fused drop does not output.
+                    let candidate_schema = pre_drop_schema
+                        .clone()
+                        .filter(|_| fused_predicate.is_some());
+                    let predicate_input_schema =
+                        candidate_schema.as_ref().unwrap_or(&output_schema);
+
                     // Compiled against a narrow frame of exactly the columns it reads, in
                     // the order the node gathers them.
                     let fused_predicate = fused_predicate
@@ -1634,7 +1663,7 @@ fn to_graph_rec<'a>(
                             names.dedup();
 
                             let fused_predicate_schema =
-                                Arc::new(output_schema.try_project(names.iter())?);
+                                Arc::new(predicate_input_schema.try_project(names.iter())?);
                             PolarsResult::Ok((
                                 create_stream_expr(fused_predicate, ctx, &fused_predicate_schema)?,
                                 fused_predicate_schema,
@@ -1649,12 +1678,14 @@ fn to_graph_rec<'a>(
                                 right_input_schema,
                                 left_key_schema,
                                 right_key_schema,
-                                unique_key_schema,
+                                key_encoder,
                                 output_schema,
+                                candidate_schema,
                                 left_key_selectors,
                                 right_key_selectors,
                                 fused_predicate,
                                 runtime_filters.clone(),
+                                estimated_rows,
                                 args,
                                 num_pipelines,
                                 registry.task_metrics(),
@@ -2031,7 +2062,7 @@ fn to_graph_rec<'a>(
             let sources = ScanSources::Paths(Buffer::from_iter([PlRefPath::new("python-scan-0")]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
-            let file_projection_builder = ProjectionBuilder::new(output_schema, None, None);
+            let file_projection_builder = ProjectionBuilder::new(output_schema, None, None, None);
             let row_index = None;
             let pre_slice = None;
             let predicate = None;

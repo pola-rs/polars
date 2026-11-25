@@ -3,7 +3,7 @@ use polars_arrow::array::{Array, FixedSizeListArray};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::chunked_array::builder::fixed_size_list::get_fixed_size_list_builder;
 use polars_core::prelude::arity::unary_kernel;
-use polars_utils::slice::slice_offsets;
+use polars_utils::slice_enum::Slice;
 
 use super::min_max::AggType;
 use super::*;
@@ -60,6 +60,9 @@ pub trait ArrayNameSpace: AsArray {
 
     fn array_mean(&self) -> PolarsResult<Series> {
         let ca = self.as_array();
+        if let Some(out) = sum_mean::mean_array_numerical(ca) {
+            return Ok(out);
+        }
         dispersion::mean_with_nulls(ca)
     }
 
@@ -86,6 +89,9 @@ pub trait ArrayNameSpace: AsArray {
 
     fn array_arg_min(&self) -> IdxCa {
         let ca = self.as_array();
+        if let Some(out) = min_max::array_arg_min_max_flat(ca, false) {
+            return out;
+        }
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize))
         })
@@ -93,6 +99,9 @@ pub trait ArrayNameSpace: AsArray {
 
     fn array_arg_max(&self) -> IdxCa {
         let ca = self.as_array();
+        if let Some(out) = min_max::array_arg_min_max_flat(ca, true) {
+            return out;
+        }
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
         })
@@ -171,7 +180,8 @@ pub trait ArrayNameSpace: AsArray {
                 }
                 .try_into()
                 .expect("Length can not be larger than i64::MAX");
-                let (raw_offset, slice_len) = slice_offsets(offset, length, arr.size());
+                let range = Slice::from((offset, length)).resolve(arr.size());
+                let (raw_offset, slice_len) = (range.start, range.len());
 
                 let mut builder = make_builder(arr.values().dtype());
                 builder.reserve(slice_len * arr.len());

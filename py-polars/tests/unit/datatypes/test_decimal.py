@@ -1063,6 +1063,13 @@ def test_decimal_agg() -> None:
     )
 
 
+def test_decimal_frame_median() -> None:
+    df = pl.DataFrame({"x": [D("1.5"), D("2.5")]})
+    expected = pl.DataFrame({"x": [2.0]})
+    assert_frame_equal(df.median(), expected)
+    assert_frame_equal(df.lazy().median().collect(), expected)
+
+
 def test_string_to_decimal_combined_prec_scale_24801() -> None:
     values = ["0.01", "10.0"]
     s = pl.Series(values).str.to_decimal()
@@ -1152,6 +1159,44 @@ def test_decimal_group_by_mean_sum_past_i128(
     if engine == "streaming":
         with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
             lf.group_by("g").agg(pl.col("d").sum()).collect(engine=engine)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_mean_sum_ignore_values_under_nulls(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    # The null slots hold 1000, which must not be added.
+    values = [1, 1000, 3, 1000, 5]
+    validity = [True, False, True, False, True]
+    data = pa.py_buffer(b"".join(v.to_bytes(16, "little", signed=True) for v in values))
+    mask = pa.array(validity).buffers()[1]
+    arr = pa.Array.from_buffers(pa.decimal128(38, 0), len(values), [mask, data])
+    chunk = pl.Series("d", arr)
+    dtype = pl.Decimal(38, 0)
+    all_null = pl.Series("d", [None, None, None], dtype=dtype)
+    last = pl.Series("d", [D(7)], dtype=dtype)
+    # `chunk[1:]` starts in the middle of a validity byte.
+    s = pl.concat([chunk, chunk[1:], all_null, last], rechunk=False)
+    assert s.n_chunks() == 4
+
+    q = s.to_frame().lazy().select(sum=pl.col("d").sum(), mean=pl.col("d").mean())
+    expected = pl.DataFrame(
+        {"sum": [D(24)], "mean": [4.0]}, schema={"sum": dtype, "mean": pl.Float64}
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_mean_sum_past_i128_across_chunks(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    dtype = pl.Decimal(38, 0)
+    big = pl.Series("d", [D(10**38 - 1)], dtype=dtype)
+    s = pl.concat([big, big, big], rechunk=False).to_frame().lazy()
+    out = s.select(pl.col("d").mean()).collect(engine=engine)
+    assert out.item() == pytest.approx(1e38)
+    with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
+        s.select(pl.col("d").sum()).collect(engine=engine)
 
 
 def _mixed_scale_frame() -> pl.DataFrame:

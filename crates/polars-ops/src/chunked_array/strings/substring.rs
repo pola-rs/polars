@@ -4,14 +4,8 @@ use polars_core::prelude::{ChunkFullNull, Int64Chunked, StringChunked, UInt64Chu
 use polars_core::series::IsSorted;
 use polars_error::{PolarsResult, polars_ensure};
 
-#[inline(always)]
-fn is_utf8_codepoint_start(b: u8) -> bool {
-    // The top two bits of a continuation byte are 10. Any other value is a
-    // starting byte. We can use signed comparison to test for this in one
-    // instruction, as the top bits 11, 00 and 01 are all more positive and thus
-    // larger in signed comparison.
-    (b as i8) >= (0b1100_0000_u8 as i8)
-}
+use super::utf8::is_utf8_codepoint_start;
+use crate::chunked_array::saturating_usize;
 
 /// Similar to char_to_byte_idx but if `char_idx` would be out-of-bounds the
 /// number of codepoints in s is returned as an error.
@@ -131,10 +125,11 @@ fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
 }
 
 fn head_binary_values(str_val: &str, n: i64) -> usize {
+    let count = saturating_usize(n.unsigned_abs());
     if n >= 0 {
-        char_to_byte_idx(str_val, n as usize)
+        char_to_byte_idx(str_val, count)
     } else {
-        rev_char_to_byte_idx(str_val, (-n) as usize)
+        rev_char_to_byte_idx(str_val, count)
     }
 }
 
@@ -148,10 +143,11 @@ fn tail_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
 }
 
 fn tail_binary_values(str_val: &str, n: i64) -> usize {
+    let count = saturating_usize(n.unsigned_abs());
     if n >= 0 {
-        rev_char_to_byte_idx(str_val, n as usize)
+        rev_char_to_byte_idx(str_val, count)
     } else {
-        char_to_byte_idx(str_val, (-n) as usize)
+        char_to_byte_idx(str_val, count)
     }
 }
 
@@ -190,18 +186,20 @@ pub fn substring_ternary_offsets_value(
             return (0, 0);
         }
 
-        match rev_char_to_byte_idx_or_cp_count(str_val, (-offset) as usize) {
+        let rev_offset = offset.unsigned_abs();
+        match rev_char_to_byte_idx_or_cp_count(str_val, saturating_usize(rev_offset)) {
             Ok(so) => so,
             Err(n_cp) => {
                 // Our offset was so negative it is before the start of our string.
                 // This means our length must be reduced, assuming it is finite.
-                length = length.saturating_sub((-offset) as u64 - n_cp as u64);
+                length = length.saturating_sub(rev_offset - n_cp as u64);
                 0
             },
         }
     };
 
-    let stop_byte_offset = char_to_byte_idx(&str_val[start_byte_offset..], length as usize);
+    let stop_byte_offset =
+        char_to_byte_idx(&str_val[start_byte_offset..], saturating_usize(length));
     (start_byte_offset, start_byte_offset + stop_byte_offset)
 }
 
@@ -311,12 +309,17 @@ pub(super) fn head(ca: &StringChunked, n: &Int64Chunked) -> PolarsResult<StringC
                 return Ok(StringChunked::full_null(ca.name().clone(), len));
             };
 
-            Ok(unsafe {
+            let mut out = unsafe {
                 ca.apply_views(|view, val| {
                     let end = head_binary_values(val, n);
                     update_view(view, 0, end, val)
                 })
-            })
+            };
+            // A prefix keeps the order, removing a suffix does not.
+            if n < 0 {
+                out.set_sorted_flag(IsSorted::Not);
+            }
+            Ok(out)
         },
         // TODO! below should also work on only views
         (1, _) => {

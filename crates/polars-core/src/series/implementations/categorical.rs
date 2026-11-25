@@ -177,8 +177,8 @@ macro_rules! impl_cat_series {
                 self.0.physical_mut().shrink_to_fit()
             }
 
-            fn slice(&self, offset: i64, length: usize) -> Series {
-                unsafe { self.apply_on_phys(|cats| cats.slice(offset, length)).into_series() }
+            fn slice(&self, slice: Slice) -> Series {
+                unsafe { self.apply_on_phys(|cats| cats.slice(slice)).into_series() }
             }
 
             fn split_at(&self, offset: i64) -> (Series, Series) {

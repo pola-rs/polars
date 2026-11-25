@@ -2,6 +2,7 @@ use polars::datatypes::CompatLevel;
 use polars::frame::DataFrame;
 use polars::prelude::{ArrayRef, ArrowField, PlSmallStr, SchemaExt};
 use polars::series::Series;
+use polars_arrow::array::StructArray;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::ffi;
 use polars_arrow::record_batch::RecordBatch;
@@ -71,7 +72,8 @@ pub(crate) fn series_to_stream<'py>(
     let field = series.field().to_arrow(CompatLevel::newest());
     let series = series.clone();
     let iter = Box::new(
-        (0..series.n_chunks()).map(move |i| Ok(series.to_arrow(i, CompatLevel::newest()))),
+        (0..series.n_chunks())
+            .flat_map(move |i| series.try_to_arrow_split(i, CompatLevel::newest())),
     ) as _;
 
     let stream = ffi::export_iterator(iter, field);
@@ -82,9 +84,17 @@ pub(crate) fn dataframe_to_stream<'py>(
     df: &DataFrame,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let iter = Box::new(DataFrameStreamIterator::new(df));
-    let field = iter.field();
-    let stream = ffi::export_iterator(iter, field);
+    // Materialize Scalar and Dictionary columns on `df` itself, so that repeated exports share
+    // their buffers. A Map column may be split without materializing it.
+    for c in df.columns() {
+        if c.as_series().is_none() && !c.dtype().contains_map() {
+            c.as_materialized_series();
+        }
+    }
+    let schema = df.schema().to_arrow(CompatLevel::newest());
+    let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
+    let field = ArrowField::new(PlSmallStr::EMPTY, dtype.clone(), false);
+    let stream = ffi::export_iterator(frame_to_struct_arrays(df.clone(), dtype, false), field);
     PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
 }
 
@@ -111,65 +121,23 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
     PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }
 
-pub struct DataFrameStreamIterator {
-    columns: Vec<Series>,
+/// The record batches of `df` as arrow struct arrays of `dtype`, the way a C stream carries a table.
+pub(crate) fn frame_to_struct_arrays(
+    df: DataFrame,
     dtype: ArrowDataType,
-    idx: usize,
-    n_chunks: usize,
-    height: usize,
-}
-
-impl DataFrameStreamIterator {
-    fn new(df: &DataFrame) -> Self {
-        let schema = df.schema().to_arrow(CompatLevel::newest());
-        let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
-        let n_chunks = if df.width() == 0 {
-            usize::from(df.height() > 0)
-        } else {
-            df.first_col_n_chunks()
-        };
-
-        Self {
-            columns: df
-                .columns()
-                .iter()
-                .map(|v| v.as_materialized_series().clone())
-                .collect(),
-            dtype,
-            idx: 0,
-            n_chunks,
-            height: df.height(),
-        }
+    parallel: bool,
+) -> Box<dyn Iterator<Item = PolarsResult<ArrayRef>> + Send> {
+    // `into_try_iter_chunks` cuts a frame without columns into batches of the ideal morsel size.
+    if df.width() == 0 {
+        let height = df.height();
+        let array = (height > 0).then(|| Ok(StructArray::new(dtype, height, vec![], None).boxed()));
+        return Box::new(array.into_iter());
     }
 
-    fn field(&self) -> ArrowField {
-        ArrowField::new(PlSmallStr::EMPTY, self.dtype.clone(), false)
-    }
-}
-
-impl Iterator for DataFrameStreamIterator {
-    type Item = PolarsResult<ArrayRef>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= self.n_chunks {
-            None
-        } else {
-            // create a batch of the columns with the same chunk no.
-            let batch_cols = self
-                .columns
-                .iter()
-                .map(|s| s.to_arrow(self.idx, CompatLevel::newest()))
-                .collect::<Vec<_>>();
-            self.idx += 1;
-
-            let col_len = batch_cols.first().map_or(self.height, |c| c.len());
-            let array = polars_arrow::array::StructArray::new(
-                self.dtype.clone(),
-                col_len,
-                batch_cols,
-                None,
-            );
-            Some(Ok(Box::new(array)))
-        }
-    }
+    let batches = df.into_try_iter_chunks(CompatLevel::newest(), parallel);
+    Box::new(batches.map(move |batch| {
+        let batch = batch?;
+        let array = StructArray::new(dtype.clone(), batch.len(), batch.into_arrays(), None);
+        Ok(array.boxed())
+    }))
 }

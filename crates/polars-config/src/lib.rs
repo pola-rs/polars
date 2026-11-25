@@ -60,6 +60,9 @@ const DEFAULT_VERBOSE_SENSITIVE: bool = false;
 const FORCE_ASYNC: &str = "POLARS_FORCE_ASYNC";
 const DEFAULT_FORCE_ASYNC: bool = false;
 
+const LOG_CONCURRENCY: &str = "POLARS_LOG_CONCURRENCY";
+const DEFAULT_LOG_CONCURRENCY: bool = false;
+
 const SCAN_CHUNK_STATISTICS: &str = "POLARS_SCAN_CHUNK_STATISTICS";
 const DEFAULT_SCAN_CHUNK_STATISTICS: bool = false;
 
@@ -103,11 +106,8 @@ const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
 
-const OOC_PRESSURE_DECAY: &str = "POLARS_OOC_PRESSURE_DECAY";
-const DEFAULT_OOC_PRESSURE_DECAY: bool = true;
-
-const OOC_PRESSURE_DECAY_GRACE_MS: &str = "POLARS_OOC_PRESSURE_DECAY_GRACE_MS";
-const DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS: u64 = 1000;
+const OOC_DIRTY_LIMIT_FRACTION: &str = "POLARS_OOC_DIRTY_LIMIT_FRACTION";
+const DEFAULT_OOC_DIRTY_LIMIT_FRACTION: f64 = 0.8;
 
 const OOMKILL_THRESHOLD_FRACTION: &str = "POLARS_OOMKILL_THRESHOLD_FRACTION";
 const DEFAULT_OOMKILL_THRESHOLD_FRACTION: f64 = f64::INFINITY;
@@ -121,6 +121,12 @@ const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 /// Whether hash joins publish key ranges to the parquet scans below them.
 const JOIN_RUNTIME_FILTERS: &str = "POLARS_JOIN_RUNTIME_FILTERS";
 const DEFAULT_JOIN_RUNTIME_FILTERS: bool = true;
+
+/// The fewest rows the scans under a hash join's probe side must read, together, for the join to
+/// publish a runtime filter to them. A join with one reads its build side before its probe side,
+/// which costs more than skipping parts of smaller scans saves.
+const JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS: &str = "POLARS_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS";
+const DEFAULT_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS: u64 = 1 << 20;
 
 /// Allows pruning of strict hconcat inputs in projection pushdown. This can reduce data loading
 /// but may discard shape errors.
@@ -216,6 +222,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     // Private.
     VERBOSE_SENSITIVE,
     FORCE_ASYNC,
+    LOG_CONCURRENCY,
     SCAN_CHUNK_STATISTICS,
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
@@ -230,12 +237,12 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MAX_PARALLEL_SPILL_TASKS,
     OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
-    OOC_PRESSURE_DECAY,
-    OOC_PRESSURE_DECAY_GRACE_MS,
+    OOC_DIRTY_LIMIT_FRACTION,
     OOMKILL_THRESHOLD_FRACTION,
     OOMKILL_THRESHOLD_MB,
     JOIN_SAMPLE_LIMIT,
     JOIN_RUNTIME_FILTERS,
+    JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
     DNS_LOG_THRESHOLD_MS,
     NUMA_AWARE,
@@ -269,6 +276,7 @@ pub struct Config {
     // Private.
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
+    log_concurrency: AtomicBool,
     scan_chunk_statistics: AtomicBool,
     import_interval_as_struct: AtomicBool,
     ooc_spill_format: AtomicU8,
@@ -282,12 +290,12 @@ pub struct Config {
     ooc_max_parallel_spill_tasks: AtomicU64,
     ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
-    ooc_pressure_decay: AtomicBool,
-    ooc_pressure_decay_grace_ms: AtomicU64,
+    ooc_dirty_limit_fraction: AtomicU64,
     oomkill_threshold_fraction: AtomicU64,
     oomkill_threshold_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
     join_runtime_filters: AtomicBool,
+    join_runtime_filter_min_probe_rows: AtomicU64,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
@@ -329,6 +337,7 @@ impl Config {
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
+            log_concurrency: AtomicBool::new(DEFAULT_LOG_CONCURRENCY),
             scan_chunk_statistics: AtomicBool::new(DEFAULT_SCAN_CHUNK_STATISTICS),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
@@ -352,8 +361,7 @@ impl Config {
                 DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
             ),
             ooc_log_metrics: AtomicBool::new(false),
-            ooc_pressure_decay: AtomicBool::new(DEFAULT_OOC_PRESSURE_DECAY),
-            ooc_pressure_decay_grace_ms: AtomicU64::new(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
+            ooc_dirty_limit_fraction: AtomicU64::new(DEFAULT_OOC_DIRTY_LIMIT_FRACTION.to_bits()),
             oomkill_threshold_fraction: AtomicU64::new(
                 DEFAULT_OOMKILL_THRESHOLD_FRACTION.to_bits(),
             ),
@@ -362,6 +370,9 @@ impl Config {
             ),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
             join_runtime_filters: AtomicBool::new(DEFAULT_JOIN_RUNTIME_FILTERS),
+            join_runtime_filter_min_probe_rows: AtomicU64::new(
+                DEFAULT_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS,
+            ),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
@@ -428,6 +439,17 @@ impl Config {
         let grant_frac = f64::from_bits(self.ooc_memory_grant_fraction.load(Ordering::Relaxed));
         self.ooc_memory_grant_budget_bytes
             .store((bytes as f64 * grant_frac) as u64, Ordering::Relaxed);
+
+        let dirty_limit_frac =
+            f64::from_bits(self.ooc_dirty_limit_fraction.load(Ordering::Relaxed));
+        OOC_DIRTY_LIMIT_BYTES_ATOMIC.store(
+            if dirty_limit_frac.is_finite() {
+                (total_memory() as f64 * dirty_limit_frac) as u64
+            } else {
+                u64::MAX
+            },
+            Ordering::Relaxed,
+        );
 
         let oomkill_frac = f64::from_bits(self.oomkill_threshold_fraction.load(Ordering::Relaxed));
         let oomkill_frac_bytes = if oomkill_frac.is_finite() {
@@ -514,6 +536,11 @@ impl Config {
                     .unwrap_or(DEFAULT_FORCE_ASYNC),
                 Ordering::Relaxed,
             ),
+            LOG_CONCURRENCY => self.log_concurrency.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_LOG_CONCURRENCY),
+                Ordering::Relaxed,
+            ),
             SCAN_CHUNK_STATISTICS => self.scan_chunk_statistics.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_SCAN_CHUNK_STATISTICS),
@@ -591,14 +618,10 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
                 Ordering::Relaxed,
             ),
-            OOC_PRESSURE_DECAY => self.ooc_pressure_decay.store(
-                val.and_then(|x| parse::parse_bool(var, x))
-                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY),
-                Ordering::Relaxed,
-            ),
-            OOC_PRESSURE_DECAY_GRACE_MS => self.ooc_pressure_decay_grace_ms.store(
-                val.and_then(|x| parse::parse_u64(var, x))
-                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
+            OOC_DIRTY_LIMIT_FRACTION => self.ooc_dirty_limit_fraction.store(
+                val.and_then(|x| parse::parse_f64(var, x))
+                    .unwrap_or(DEFAULT_OOC_DIRTY_LIMIT_FRACTION)
+                    .to_bits(),
                 Ordering::Relaxed,
             ),
             OOMKILL_THRESHOLD_FRACTION => self.oomkill_threshold_fraction.store(
@@ -621,6 +644,11 @@ impl Config {
             JOIN_RUNTIME_FILTERS => self.join_runtime_filters.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_JOIN_RUNTIME_FILTERS),
+                Ordering::Relaxed,
+            ),
+            JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS => self.join_runtime_filter_min_probe_rows.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_JOIN_RUNTIME_FILTER_MIN_PROBE_ROWS),
                 Ordering::Relaxed,
             ),
             PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS => {
@@ -787,6 +815,12 @@ impl Config {
         self.force_async.load(Ordering::Relaxed)
     }
 
+    /// Whether to log the cloud and scan pipeline concurrency state.
+    #[inline(always)]
+    pub fn log_concurrency(&self) -> bool {
+        self.log_concurrency.load(Ordering::Relaxed)
+    }
+
     /// Whether a parquet scan, besides its per-column totals, keeps the min, max, null count and
     /// sizes that each sampled row group records. Planners use these to estimate how a column's
     /// values are distributed across the files, e.g. how many rows a filter keeps.
@@ -875,18 +909,6 @@ impl Config {
         self.ooc_log_metrics.load(Ordering::Relaxed)
     }
 
-    /// Whether the allocator returns freed memory right away while out-of-core
-    /// data is being spilled or is spilled.
-    #[inline(always)]
-    pub fn ooc_pressure_decay(&self) -> bool {
-        self.ooc_pressure_decay.load(Ordering::Relaxed)
-    }
-
-    #[inline(always)]
-    pub fn ooc_pressure_decay_grace_ms(&self) -> u64 {
-        self.ooc_pressure_decay_grace_ms.load(Ordering::Relaxed)
-    }
-
     pub fn ooc_spill_dir(&self) -> std::path::PathBuf {
         if let Ok(dir) = std::env::var("POLARS_OOC_SPILL_DIR") {
             std::path::PathBuf::from(dir)
@@ -908,6 +930,12 @@ impl Config {
     #[inline(always)]
     pub fn join_runtime_filters(&self) -> bool {
         self.join_runtime_filters.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn join_runtime_filter_min_probe_rows(&self) -> u64 {
+        self.join_runtime_filter_min_probe_rows
+            .load(Ordering::Relaxed)
     }
 
     #[inline(always)]
@@ -1029,6 +1057,7 @@ pub fn total_memory() -> u64 {
 static OOC_DRIFT_THRESHOLD_ATOMIC: AtomicU64 = AtomicU64::new(DEFAULT_OOC_DRIFT_THRESHOLD);
 static OOMKILL_THRESHOLD_BYTES_ATOMIC: AtomicU64 =
     AtomicU64::new(DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000));
+static OOC_DIRTY_LIMIT_BYTES_ATOMIC: AtomicU64 = AtomicU64::new(u64::MAX);
 
 #[inline(always)]
 pub fn get_ooc_drift_threshold() -> u64 {
@@ -1038,4 +1067,11 @@ pub fn get_ooc_drift_threshold() -> u64 {
 #[inline(always)]
 pub fn get_oomkill_threshold_bytes() -> u64 {
     OOMKILL_THRESHOLD_BYTES_ATOMIC.load(Ordering::Relaxed)
+}
+
+/// `POLARS_OOC_DIRTY_LIMIT_FRACTION` times the total memory: the allocator frees
+/// unused pages before the memory it holds would exceed it.
+#[inline(always)]
+pub fn get_ooc_dirty_limit_bytes() -> u64 {
+    OOC_DIRTY_LIMIT_BYTES_ATOMIC.load(Ordering::Relaxed)
 }

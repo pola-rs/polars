@@ -39,7 +39,7 @@ impl Series {
 
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idxs| {
-                debug_assert!(idxs.len() <= self.len());
+                debug_assert!(_idx_in_bounds(idxs, self.len()));
                 if let Some(v) = &valid {
                     let mut count = 0;
                     for idx in idxs.iter() {
@@ -354,7 +354,7 @@ impl Series {
                     .map_with(CloneWrapper(state), |state, &[start, len]| {
                         let len_us = len as usize;
                         if len_us > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
-                            col.slice(start as i64, len_us).n_unique().unwrap() as IdxSize
+                            col.slice((start as usize, len_us)).n_unique().unwrap() as IdxSize
                         } else {
                             state.0.n_unique_slice(values, start, len)
                         }
@@ -483,7 +483,7 @@ impl Series {
     pub unsafe fn agg_quantile(
         &self,
         groups: &GroupsType,
-        quantile: f64,
+        quantile: GroupQuantile<'_>,
         method: QuantileMethod,
     ) -> Series {
         // Prevent a rechunk for every individual group.
@@ -495,6 +495,10 @@ impl Series {
 
         use DataType::*;
         match s.dtype() {
+            Boolean => s
+                .cast(&Float64)
+                .unwrap()
+                .agg_quantile(groups, quantile, method),
             #[cfg(feature = "dtype-f16")]
             Float16 => s.f16().unwrap().agg_quantile(groups, quantile, method),
             Float32 => s.f32().unwrap().agg_quantile(groups, quantile, method),

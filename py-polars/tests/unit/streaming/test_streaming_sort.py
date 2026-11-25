@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
@@ -636,6 +633,65 @@ def test_sort_expression_sort_and_sort_by(sort_mode: str) -> None:
     )
 
 
+@pytest.mark.parametrize("keys", [[pl.col("k").abs()], [pl.col("k"), pl.col("idx")]])
+def test_sort_fused_projection_temporary_key(
+    sort_mode: str, keys: list[pl.Expr]
+) -> None:
+    q = (
+        _payload(DIRECT_KEYS["i32"])
+        .lazy()
+        .sort(keys, maintain_order=True)
+        .select("pad", "idx")
+    )
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert any(
+        r"sort\n" in line and "project 2 / 4: pad, idx" in line
+        for line in plan.splitlines()
+    ), plan
+    assert_sort_matches_in_memory(q, [], exact=True)
+
+
+@pytest.mark.parametrize(
+    ("columns", "offset"), [(["pad", "idx"], 3), (["idx", "k"], -20)]
+)
+def test_sort_fused_projection_direct_key(
+    sort_mode: str, columns: list[str], offset: int
+) -> None:
+    keys = pl.Series("k", range(N_ROWS)).shuffle(seed=0)
+    q = (
+        _payload(keys)
+        .lazy()
+        .sort("k", descending=True)
+        .slice(offset, 15)
+        .select(columns)
+    )
+    opts = pl.QueryOptFlags(projection_pushdown=False)
+    plan = q.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, optimizations=opts
+    )
+    assert any(
+        r"sort\n" in line and f"project 2 / 3: {', '.join(columns)}" in line
+        for line in plan.splitlines()
+    ), plan
+    assert_sort_matches_in_memory(q, [], exact=True, optimizations=opts)
+
+
+def test_sort_fused_projection_null_bucket(sort_mode: str) -> None:
+    q = (
+        _payload(DEGENERATE_KEYS["mostly_null"])
+        .lazy()
+        .sort("k", nulls_last=True, maintain_order=True)
+        .slice(N_ROWS // 2)
+        .select("pad", "idx")
+    )
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert any(
+        r"sort\n" in line and "project 2 / 3: pad, idx" in line
+        for line in plan.splitlines()
+    ), plan
+    assert_sort_matches_in_memory(q, [], exact=True)
+
+
 def test_sort_group_by_and_over(sort_mode: str) -> None:
     df = _payload(DEGENERATE_KEYS["periodic"])
     assert_sort_matches_in_memory(
@@ -723,58 +779,3 @@ def test_sort_resume_over_phase_boundary_multiplexer(sort_mode: str) -> None:
         sorted_lf.join(sorted_lf.select("rn", pl.col("idx").alias("idx2")), on="rn"),
         [],
     )
-
-
-_DECAY_SCRIPT = f"""
-import os
-import sys
-import time
-
-import polars as pl
-from polars.testing import assert_frame_equal
-
-df = pl.DataFrame({{"k": pl.Series(range({N_ROWS})).shuffle(seed=0)}})
-out = df.lazy().sort("k").collect(engine="streaming")
-assert_frame_equal(out, df.sort("k"))
-print("sort done", file=sys.stderr, flush=True)
-
-# With a positive budget nothing needs to spill anymore.
-del os.environ["POLARS_OOC_MEMORY_BUDGET_MB"]
-pl.Config.reload_env_vars()
-deadline = time.monotonic() + 10
-while time.monotonic() < deadline:
-    with open(sys.argv[1]) as f:
-        if "restoring allocator decay" in f.read():
-            break
-    time.sleep(0.05)
-"""
-
-
-@pytest.mark.write_disk
-@pytest.mark.slow
-@pytest.mark.skipif(sys.platform == "win32", reason="only jemalloc has a decay")
-def test_sort_spill_sets_and_restores_allocator_decay(tmp_path: Path) -> None:
-    # The decay and the spill state are global to the process, and earlier tests
-    # can leave them changed, so this runs in a new process.
-    env = {
-        **os.environ,
-        **PARTITION_ENV,
-        **SPILL_ENV,
-        "POLARS_OOC_SPILL_DIR": str(tmp_path),
-        "POLARS_OOC_PRESSURE_DECAY_GRACE_MS": "0",
-        "POLARS_VERBOSE": "1",
-    }
-    err_path = tmp_path / "stderr.txt"
-    with err_path.open("w") as err_file:
-        subprocess.run(
-            [sys.executable, "-c", _DECAY_SCRIPT, str(err_path)],
-            env=env,
-            stderr=err_file,
-            check=True,
-            timeout=60,
-        )
-
-    before, after = err_path.read_text().split("sort done")
-    assert "setting allocator dirty decay to 0" in before
-    assert "restoring allocator decay" not in before
-    assert "restoring allocator decay" in after

@@ -14,6 +14,18 @@ use polars_utils::float::IsFloat;
 
 use super::*;
 use crate::series::AsSeries;
+#[cfg(feature = "rolling_window_by")]
+use crate::windows::group_by::group_by_values_iter_lookbehind_collected;
+
+/// Returns an error if the fraction that `params` gives a rolling quantile is NaN or outside
+/// `0.0..=1.0`.
+#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
+fn check_rolling_quantile(params: Option<&RollingFnParams>) -> PolarsResult<()> {
+    if let Some(RollingFnParams::Quantile(params)) = params {
+        check_quantiles([params.prob])?;
+    }
+    Ok(())
+}
 
 #[cfg(feature = "rolling_window")]
 #[allow(clippy::type_complexity)]
@@ -72,6 +84,161 @@ where
     Series::try_from((ca.name().clone(), arr))
 }
 
+/// The windows of a `rolling_*_by` operation, over the rows where `by` is not null, sorted by `by`.
+#[cfg(feature = "rolling_window_by")]
+struct RollingByWindows {
+    /// `[start, len]` of the window of each row, in sorted order.
+    windows: Vec<[IdxSize; 2]>,
+    /// The rows to aggregate, in sorted order, if not all rows in their original order.
+    gather: Option<IdxCa>,
+    /// Gathers the output, which is in sorted order, to the original rows if `by` has nulls or
+    /// was not sorted.
+    output_gather: Option<IdxCa>,
+}
+
+#[cfg(feature = "rolling_window_by")]
+impl RollingByWindows {
+    fn new(by: &Series, len: usize, options: &RollingOptionsDynamicWindow) -> PolarsResult<Self> {
+        polars_ensure!(
+            len == by.len(),
+            InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column (got {} and {})",
+            by.len(), len
+        );
+        ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
+        polars_ensure!(
+            !options.window_size.is_zero() && !options.window_size.negative,
+            InvalidOperation: "`window_size` must be strictly positive"
+        );
+
+        let mut by = Cow::Borrowed(by);
+        let mut valid_rows = None;
+        let mut rank_gather = None;
+        if by.has_nulls() {
+            let validity = by.rechunk_validity().unwrap();
+            let mut valid_indices: Vec<IdxSize> = Vec::with_capacity(len - by.null_count());
+            let mut ranks: Vec<IdxSize> = Vec::with_capacity(len);
+            let mut rank: IdxSize = 0;
+            for (orig_pos, valid) in validity.iter().enumerate() {
+                if valid {
+                    valid_indices.push(orig_pos as IdxSize);
+                    ranks.push(rank);
+                    rank += 1;
+                } else {
+                    ranks.push(0);
+                }
+            }
+            let valid_idx_ca = IdxCa::from_vec(PlSmallStr::EMPTY, valid_indices);
+            // SAFETY: the indices are in bounds of `by`.
+            by = Cow::Owned(unsafe { by.rechunk().take_unchecked(&valid_idx_ca) });
+            valid_rows = Some(valid_idx_ca);
+            let gather_arr = IdxArr::from_vec(ranks).with_validity_typed(Some(validity));
+            rank_gather = Some(IdxCa::with_chunk(PlSmallStr::EMPTY, gather_arr));
+        }
+
+        if by.is_empty() {
+            return Ok(Self {
+                windows: Vec::new(),
+                gather: None,
+                output_gather: rank_gather,
+            });
+        }
+
+        let (by, tz) = match by.dtype() {
+            DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz.clone()),
+            DataType::Date => (
+                by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
+                None,
+            ),
+            DataType::Int64 => (
+                by.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
+                None,
+            ),
+            DataType::Int32 | DataType::UInt64 | DataType::UInt32 => (
+                by.cast(&DataType::Int64)?
+                    .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
+                None,
+            ),
+            dt => polars_bail!(InvalidOperation:
+                "in `rolling_*_by` operation, `by` argument of dtype `{}` is not supported (expected `{}`)",
+                dt,
+                "Date/Datetime/Int64/Int32/UInt64/UInt32"),
+        };
+        let by = by.rechunk();
+        let by_is_sorted = by.is_sorted(SortOptions {
+            descending: false,
+            ..Default::default()
+        })?;
+        let by_logical = by.datetime().unwrap();
+        let tu = by_logical.time_unit();
+        let mut by_physical = Cow::Borrowed(by_logical.physical());
+        let sorting_indices = (!by_is_sorted).then(|| by_physical.arg_sort(Default::default()));
+        if let Some(sorting_indices) = &sorting_indices {
+            // SAFETY: `sorting_indices` is in-bounds because they are derived from `by`.
+            by_physical = Cow::Owned(unsafe { by_physical.take_unchecked(sorting_indices) });
+        }
+
+        #[cfg(feature = "timezones")]
+        let tz = tz.and_then(|tz| tz.parse::<chrono_tz::Tz>().ok());
+        #[cfg(not(feature = "timezones"))]
+        let tz: Option<polars_arrow::legacy::time_zone::Tz> = {
+            let _ = tz;
+            None
+        };
+        let windows = group_by_values_iter_lookbehind_collected(
+            options.window_size,
+            -options.window_size,
+            by_physical.cont_slice().unwrap(),
+            options.closed_window,
+            tu,
+            tz,
+            0,
+            None,
+        )?;
+
+        let output_gather = match &sorting_indices {
+            Some(sorting_indices) => {
+                let mut sorted_position = vec![0 as IdxSize; sorting_indices.len()];
+                for (i, row) in sorting_indices.cont_slice().unwrap().iter().enumerate() {
+                    sorted_position[*row as usize] = i as IdxSize;
+                }
+                match rank_gather {
+                    Some(rank_gather) => {
+                        let ranks = rank_gather.downcast_as_array();
+                        let positions: Vec<IdxSize> = ranks
+                            .values()
+                            .iter()
+                            .map(|rank| sorted_position[*rank as usize])
+                            .collect();
+                        let arr =
+                            IdxArr::from_vec(positions).with_validity(ranks.validity().cloned());
+                        Some(IdxCa::with_chunk(PlSmallStr::EMPTY, arr))
+                    },
+                    None => Some(IdxCa::from_vec(PlSmallStr::EMPTY, sorted_position)),
+                }
+            },
+            None => rank_gather,
+        };
+        let gather = match (valid_rows, &sorting_indices) {
+            // SAFETY: `sorting_indices` is in-bounds because it is derived from the valid rows.
+            (Some(rows), Some(idx)) => Some(unsafe { rows.take_unchecked(idx) }),
+            (rows, idx) => rows.or_else(|| idx.clone()),
+        };
+        Ok(Self {
+            windows,
+            gather,
+            output_gather,
+        })
+    }
+
+    fn finish(&self, out: Series) -> Series {
+        match &self.output_gather {
+            // SAFETY: the indices are positions in the output.
+            Some(idx) => unsafe { out.take_unchecked(idx) },
+            None => out,
+        }
+    }
+}
+
 #[cfg(feature = "rolling_window_by")]
 fn rolling_agg_by<T, Out, NoNullsAgg, NullsAgg>(
     ca: &ChunkedArray<T>,
@@ -92,89 +259,17 @@ where
     if ca.is_empty() {
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
-
-    polars_ensure!(
-        ca.len() == by.len(),
-        InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column (got {} and {})",
-        by.len(), ca.len()
-    );
-    ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
-    polars_ensure!(
-        !options.window_size.is_zero() && !options.window_size.negative,
-        InvalidOperation: "`window_size` must be strictly positive"
-    );
-
-    if by.has_nulls() {
-        let n = ca.len();
-        let by = by.rechunk();
-        let validity = by.rechunk_validity().unwrap();
-
-        let mut valid_indices: Vec<IdxSize> = Vec::with_capacity(n - by.null_count());
-        let mut ranks: Vec<IdxSize> = Vec::with_capacity(n);
-        let mut rank: IdxSize = 0;
-        for (orig_pos, valid) in validity.iter().enumerate() {
-            if valid {
-                valid_indices.push(orig_pos as IdxSize);
-                ranks.push(rank);
-                rank += 1;
-            } else {
-                ranks.push(0);
-            }
-        }
-
-        let valid_idx_ca = IdxCa::from_vec(PlSmallStr::EMPTY, valid_indices);
-        let ca_filtered = unsafe { ca.rechunk().take_unchecked(&valid_idx_ca) };
-        let by_filtered = unsafe { by.take_unchecked(&valid_idx_ca) };
-
-        let computed =
-            rolling_agg_by::<T, Out, NoNullsAgg, NullsAgg>(&ca_filtered, &by_filtered, options)?;
-
-        let gather_arr = IdxArr::from_vec(ranks).with_validity_typed(Some(validity));
-        let gather_ca = IdxCa::with_chunk(PlSmallStr::EMPTY, gather_arr);
-        return Ok(unsafe { computed.take_unchecked(&gather_ca) });
+    let windows = RollingByWindows::new(by, ca.len(), &options)?;
+    if windows.windows.is_empty() {
+        return Ok(windows.finish(Series::new_empty(ca.name().clone(), ca.dtype())));
     }
 
-    let (by, tz) = match by.dtype() {
-        DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
-        DataType::Date => (
-            by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
-            &None,
-        ),
-        DataType::Int64 => (
-            by.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
-            &None,
-        ),
-        DataType::Int32 | DataType::UInt64 | DataType::UInt32 => (
-            by.cast(&DataType::Int64)?
-                .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
-            &None,
-        ),
-        dt => polars_bail!(InvalidOperation:
-            "in `rolling_*_by` operation, `by` argument of dtype `{}` is not supported (expected `{}`)",
-            dt,
-            "Date/Datetime/Int64/Int32/UInt64/UInt32"),
+    let ca = match &windows.gather {
+        // SAFETY: the rows are in bounds because `ca.len() == by.len()`.
+        Some(rows) => Cow::Owned(unsafe { ca.rechunk().take_unchecked(rows) }),
+        None => ca.rechunk(),
     };
-    let mut ca_rechunked = ca.rechunk();
-    let by = by.rechunk();
-    let by_is_sorted = by.is_sorted(SortOptions {
-        descending: false,
-        ..Default::default()
-    })?;
-    let by_logical = by.datetime().unwrap();
-    let tu = by_logical.time_unit();
-    let mut by_physical = Cow::Borrowed(by_logical.physical());
-    let sorting_indices_opt = (!by_is_sorted).then(|| by_physical.arg_sort(Default::default()));
-
-    if let Some(sorting_indices) = &sorting_indices_opt {
-        // SAFETY: `sorting_indices` is in-bounds because we checked that `ca.len() == by.len()` and
-        // they are derived from `by`.
-        ca_rechunked = Cow::Owned(unsafe { ca_rechunked.take_unchecked(sorting_indices) });
-        // SAFETY: `sorting_indices` is in-bounds because they are derived from `by`.
-        by_physical = Cow::Owned(unsafe { by_physical.take_unchecked(sorting_indices) });
-    }
-
-    let by_values = by_physical.cont_slice().unwrap();
-    let arr = ca_rechunked.downcast_iter().next().unwrap();
+    let arr = ca.downcast_iter().next().unwrap();
     let values = arr.values().as_slice();
 
     // We explicitly branch here because we want to compile different versions based on the no_nulls
@@ -182,19 +277,7 @@ where
     let out: ArrayRef = if ca.null_count() == 0 {
         let mut agg_window =
             RollingAggWindowNoNullsWrapper(NoNullsAgg::new(values, 0, 0, options.fn_params, None));
-
-        rolling_apply_agg(
-            &mut agg_window,
-            options.window_size,
-            by_values,
-            options.closed_window,
-            options.min_samples,
-            tu,
-            tz.as_ref(),
-            sorting_indices_opt
-                .as_ref()
-                .map(|s| s.cont_slice().unwrap()),
-        )?
+        rolling_apply_agg(&mut agg_window, &windows.windows, options.min_samples)
     } else {
         let validity = arr.validity().unwrap();
         let mut agg_window = RollingAggWindowNullsWrapper(NullsAgg::new(
@@ -205,22 +288,10 @@ where
             options.fn_params,
             None,
         ));
-
-        rolling_apply_agg(
-            &mut agg_window,
-            options.window_size,
-            by_values,
-            options.closed_window,
-            options.min_samples,
-            tu,
-            tz.as_ref(),
-            sorting_indices_opt
-                .as_ref()
-                .map(|s| s.cont_slice().unwrap()),
-        )?
+        rolling_apply_agg(&mut agg_window, &windows.windows, options.min_samples)
     };
 
-    Series::try_from((ca.name().clone(), out))
+    Ok(windows.finish(Series::try_from((ca.name().clone(), out))?))
 }
 
 pub trait SeriesOpsTime: AsSeries {
@@ -324,6 +395,7 @@ pub trait SeriesOpsTime: AsSeries {
         by: &Series,
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
+        check_rolling_quantile(options.fn_params.as_ref())?;
         let s = self.as_series().to_float()?;
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -339,6 +411,7 @@ pub trait SeriesOpsTime: AsSeries {
     /// Apply a rolling quantile to a Series.
     #[cfg(feature = "rolling_window")]
     fn rolling_quantile(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
+        check_rolling_quantile(options.fn_params.as_ref())?;
         let s = self.as_series().to_float()?;
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

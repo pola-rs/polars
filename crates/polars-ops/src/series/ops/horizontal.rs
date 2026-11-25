@@ -1,10 +1,12 @@
 use std::borrow::Cow;
 
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::compute::utils::combine_validities_or;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
-use polars_core::utils::dtypes_to_supertype;
+use polars_core::utils::{CustomIterTools, align_chunks_binary, dtypes_to_supertype};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::min_max::MinMax;
@@ -49,36 +51,57 @@ impl SumMeanHorizontal for DataFrame {
     }
 }
 
-fn min_binary<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: MinMax,
-{
-    if !left.has_nulls() && !right.has_nulls() {
-        arity::broadcast_binary_elementwise_values(left, right, MinMax::min_ignore_nan)
+/// Replace the nulls in `s` with the values of `other` at the same position.
+fn fill_null_from<'a>(s: &'a Series, other: &Series) -> PolarsResult<Cow<'a, Series>> {
+    if s.has_nulls() {
+        s.zip_with_same_type(&s.is_not_null(), other)
+            .map(Cow::Owned)
     } else {
-        arity::broadcast_binary_elementwise(left, right, |opt_l, opt_r| match (opt_l, opt_r) {
-            (Some(l), Some(r)) => Some(l.min_ignore_nan(r)),
-            (Some(x), None) | (None, Some(x)) => Some(x),
-            (None, None) => None,
-        })
+        Ok(Cow::Borrowed(s))
     }
 }
 
-fn max_binary<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> ChunkedArray<T>
+/// Elementwise `op` where a null on one side takes the value of the other side.
+fn binary_ignore_nulls<T, F>(
+    left: &ChunkedArray<T>,
+    right: &ChunkedArray<T>,
+    op: F,
+) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: MinMax,
+    F: Fn(T::Native, T::Native) -> T::Native,
 {
-    if !left.has_nulls() && !right.has_nulls() {
-        arity::broadcast_binary_elementwise_values(left, right, MinMax::max_ignore_nan)
-    } else {
-        arity::broadcast_binary_elementwise(left, right, |opt_l, opt_r| match (opt_l, opt_r) {
-            (Some(l), Some(r)) => Some(l.max_ignore_nan(r)),
-            (Some(x), None) | (None, Some(x)) => Some(x),
-            (None, None) => None,
-        })
-    }
+    let (left, right) = align_chunks_binary(left, right);
+    let chunks = left
+        .downcast_iter()
+        .zip(right.downcast_iter())
+        .map(|(l, r)| {
+            let lv = l.values().iter().copied();
+            let rv = r.values().iter().copied();
+            let values: Vec<T::Native> = match (l.validity(), r.validity()) {
+                (Some(lm), Some(rm)) => lv
+                    .zip(rv)
+                    .zip(lm.iter().zip(rm.iter()))
+                    .map(|((a, b), (a_valid, b_valid))| {
+                        op(if a_valid { a } else { b }, if b_valid { b } else { a })
+                    })
+                    .collect_trusted(),
+                (Some(lm), None) => lv
+                    .zip(rv)
+                    .zip(lm.iter())
+                    .map(|((a, b), a_valid)| op(if a_valid { a } else { b }, b))
+                    .collect_trusted(),
+                (None, Some(rm)) => lv
+                    .zip(rv)
+                    .zip(rm.iter())
+                    .map(|((a, b), b_valid)| op(a, if b_valid { b } else { a }))
+                    .collect_trusted(),
+                (None, None) => lv.zip(rv).map(|(a, b)| op(a, b)).collect_trusted(),
+            };
+            let validity = combine_validities_or(l.validity(), r.validity());
+            PrimitiveArray::from_vec(values).with_validity(validity)
+        });
+    ChunkedArray::from_chunk_iter(left.name().clone(), chunks)
 }
 
 fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsResult<Column> {
@@ -93,18 +116,29 @@ fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsRes
 
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
+        let has_nulls = lhs.has_nulls() || rhs.has_nulls();
+        let same_len = lhs.len() == rhs.len();
+        let (lhs, rhs) = if has_nulls && !same_len {
+            (fill_null_from(&lhs, &rhs)?, fill_null_from(&rhs, &lhs)?)
+        } else {
+            (lhs, rhs)
+        };
 
         with_match_physical_numeric_polars_type!(lhs.dtype(), |$T| {
             let a: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
             let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-            unsafe {
-                if min {
-                    min_binary(a, b).into_series().from_physical_unchecked(logical)
-                } else {
-                    max_binary(a, b).into_series().from_physical_unchecked(logical)
-                }
-            }
+            let out: ChunkedArray<$T> = match (has_nulls && same_len, min) {
+                (true, true) => binary_ignore_nulls(a, b, MinMax::min_ignore_nan),
+                (true, false) => binary_ignore_nulls(a, b, MinMax::max_ignore_nan),
+                (false, true) => {
+                    arity::broadcast_binary_elementwise_values(a, b, MinMax::min_ignore_nan)
+                },
+                (false, false) => {
+                    arity::broadcast_binary_elementwise_values(a, b, MinMax::max_ignore_nan)
+                },
+            };
+            unsafe { out.into_series().from_physical_unchecked(logical) }
         })
         .and_then(|s| s.broadcast_owned_to(height))
         .map(Column::from)
@@ -284,6 +318,24 @@ pub fn mean_horizontal(
             _ => columns[0].clone(),
         })),
         _ => {
+            let fast_path = columns.iter().all(|c| {
+                c.null_count() == 0
+                    && c.dtype().is_primitive_numeric()
+                    && !matches!(c.dtype(), DataType::Float16)
+            });
+            if fast_path {
+                let sum = sum_horizontal(columns.as_slice(), null_strategy)?.unwrap();
+                let n = num_rows as f64;
+                let out = if sum.dtype() == &DataType::Float32 {
+                    let n = n as f32;
+                    sum.f32()?.apply_values(|v| v / n).into_column()
+                } else {
+                    let sum = sum.cast(&DataType::Float64)?;
+                    sum.f64()?.apply_values(|v| v / n).into_column()
+                };
+                return Ok(Some(out));
+            }
+
             let sum = || sum_horizontal(columns.as_slice(), null_strategy);
             let null_count = || {
                 columns

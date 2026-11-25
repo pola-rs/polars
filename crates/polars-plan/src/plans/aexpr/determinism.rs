@@ -25,6 +25,7 @@ pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
         | AExpr::Literal(_)
         | AExpr::Len
         | AExpr::Element
+        | AExpr::EvalColumn(_)
         | AExpr::BinaryExpr { .. }
         | AExpr::Cast { .. }
         | AExpr::Ternary { .. }
@@ -208,7 +209,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "log")]
         F::Entropy { .. } => false,
         #[cfg(feature = "log")]
-        F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => false,
+        F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc | F::XLogY { .. } => false,
         F::Unique(_) => false,
         #[cfg(feature = "round_series")]
         F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => false,
@@ -302,11 +303,14 @@ fn is_inherently_nondeterministic_binary_fn(f: &IRBinaryFunction) -> bool {
         B::Contains
         | B::StartsWith
         | B::EndsWith
+        | B::Find
         | B::Size
         | B::Slice
         | B::Head
         | B::Tail
         | B::Get(_) => false,
+        #[cfg(feature = "find_many")]
+        B::FindMany { .. } => false,
         #[cfg(feature = "binary_encoding")]
         B::HexDecode(_)
         | B::HexEncode

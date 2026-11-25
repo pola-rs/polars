@@ -461,12 +461,43 @@ def test_http_store_cache_size(cache_size: int, plmonkeypatch: PlMonkeyPatch) ->
 
 @pytest.mark.slow
 def test_cloud_connection_refused_error() -> None:
-    q = _scan_s3_endpoint("http://127.0.0.1:1")
+    # A refused connect takes about 2 s on Windows, longer than the default stall
+    # timeout. The timeout is read once per process, so it is disabled in a new one.
+    out = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """\
+import polars as pl
 
-    with pytest.raises(ConnectionRefusedError, match="Caused by:") as exc:
-        q.collect()
+q = pl.scan_parquet(
+    "s3://bucket/x.parquet",
+    storage_options={
+        "aws_endpoint_url": "http://127.0.0.1:1",
+        "aws_allow_http": "true",
+        "aws_access_key_id": "a",
+        "aws_secret_access_key": "b",
+        "aws_region": "us-east-1",
+        "max_retries": 0,
+    },
+    credential_provider=None,
+)
 
-    assert "tcp connect error" in str(exc.value)
+try:
+    q.collect()
+except ConnectionRefusedError as e:
+    assert "Caused by:" in str(e), e
+    assert "tcp connect error" in str(e), e
+else:
+    raise AssertionError
+""",
+        ],
+        env={**os.environ, "POLARS_HTTP_STALL_TIMEOUT_MS": "0"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert out.returncode == 0, out.stderr
 
 
 @pytest.mark.slow
@@ -485,6 +516,28 @@ def test_cloud_timeout_error() -> None:
             q.collect()
 
     assert "operation timed out" in str(exc.value)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("op", ["scan", "sink"])
+def test_cloud_error_names_failing_path_29446(s3: CountingS3, op: str) -> None:
+    storage_options = {**s3.storage_options, "max_retries": 0}
+
+    # Builds the bucket's cached store, then removes the object for later tests.
+    df = pl.DataFrame({"x": range(10)})
+    df.lazy().sink_parquet("s3://bucket/a.parquet", storage_options=storage_options)
+    s3.client.delete_object(Bucket="bucket", Key="a.parquet")
+
+    s3.on_request = lambda environ: environ["PATH_INFO"].endswith("/b.parquet") or None
+    url = "s3://bucket/query=B/b.parquet"
+    run = (
+        pl.scan_parquet(url, storage_options=storage_options).collect
+        if op == "scan"
+        else partial(df.lazy().sink_parquet, url, storage_options=storage_options)
+    )
+
+    with pytest.raises(OSError, match=re.escape(f"(path: {url})")):
+        run()
 
 
 @pytest.mark.slow
@@ -902,3 +955,24 @@ def test_scan_parquet_empty_row_groups_29995(s3: CountingS3) -> None:
     lf = pl.scan_parquet(f"s3://bucket/{key}", storage_options=s3.storage_options)
     assert_frame_equal(lf.collect(), df)
     assert_frame_equal(lf.select("b", "c").collect(), df.select("b", "c"))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("model", ["knee", "ttfb"])
+def test_scan_parquet_inflight_byte_budget_model(
+    s3: CountingS3, model: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Both in-flight byte budget models read correctly: the knee (default) and the
+    # TTFB fallback.
+    plmonkeypatch.setenv("POLARS_INFLIGHT_BYTE_BUDGET_MODEL", model)
+    df = pl.DataFrame({"x": pl.int_range(200_000, eager=True)})
+    buf = io.BytesIO()
+    df.write_parquet(buf, row_group_size=10_000)
+    s3.client.put_object(Bucket="bucket", Key="data.parquet", Body=buf.getvalue())
+
+    out = pl.scan_parquet(
+        "s3://bucket/data.parquet", storage_options=s3.storage_options
+    ).collect()
+
+    assert_frame_equal(out, df)
+    assert s3.n_requests("GET bytes=") >= 2

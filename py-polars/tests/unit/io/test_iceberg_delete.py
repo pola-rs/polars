@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import struct
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -81,7 +82,7 @@ def new_table(
 
 
 def read(table: pyiceberg.table.Table) -> pl.DataFrame:
-    table.refresh()
+    # not refreshed: `delete_iceberg` updates the caller's table
     return pl.scan_iceberg(table).sort("id").collect()
 
 
@@ -122,18 +123,30 @@ def read(table: pyiceberg.table.Table) -> pl.DataFrame:
         (pl.col("x") == 1) & (pl.col("s") == "apple"),
         (pl.col("x") > 1) & (pl.col("y") == 2) & pl.col("d").is_not_null(),
         pl.lit(True),
-        pytest.param(
-            pl.lit(False),
-            marks=pytest.mark.filterwarnings(
-                "ignore:Delete operation did not match any records"
-            ),
-        ),
+        pl.lit(False),
     ],
 )
 def test_delete_iceberg(tmp_path: Path, predicate: pl.Expr) -> None:
     table = new_table(tmp_path)
     pl.delete_iceberg(table, predicate)
     assert_frame_equal(read(table), DATA.remove(predicate))
+
+
+@pytest.mark.write_disk
+def test_delete_iceberg_keeps_deleted_rows_30616(tmp_path: Path) -> None:
+    from tests.unit.io.test_iceberg import _add_position_deletes
+
+    table = new_table(tmp_path)
+    path = next(iter(table.scan().plan_files())).file.file_path
+    # bounds of the deleted row (id = 3) that the predicate cannot match
+    id_ = struct.pack("<q", 3)
+    _add_position_deletes(table, {path: [3]}, row_bounds={1: (id_, id_)})
+    table.refresh()
+
+    pl.delete_iceberg(table, pl.col("id") == 0)
+
+    # id 3, deleted earlier, stays deleted in the rewritten file
+    assert_frame_equal(read(table), DATA.filter(~pl.col("id").is_in([0, 3])))
 
 
 @pytest.mark.write_disk

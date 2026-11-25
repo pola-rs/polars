@@ -90,7 +90,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     /// element. `n` can be negative, in which case the slice ends `n` bytes from the end.
     fn bin_head(&self, n: &Column) -> PolarsResult<BinaryChunked> {
         let ca = self.as_binary();
-        let n = n.strict_cast(&DataType::Int64)?;
+        let n = crate::chunked_array::count_as_i64(n, ca.len())?;
 
         super::slice::head(ca, n.i64()?)
     }
@@ -101,7 +101,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     /// negative, in which case the slice begins `n` bytes from the start.
     fn bin_tail(&self, n: &Column) -> PolarsResult<BinaryChunked> {
         let ca = self.as_binary();
-        let n = n.strict_cast(&DataType::Int64)?;
+        let n = crate::chunked_array::count_as_i64(n, ca.len())?;
 
         super::slice::tail(ca, n.i64()?)
     }
@@ -109,7 +109,8 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     /// Check if binary contains given literal
     fn contains(&self, lit: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
-        let f = |s: &[u8]| find(s, lit).is_some();
+        let finder = memchr::memmem::Finder::new(lit);
+        let f = |s: &[u8]| finder.find(s).is_some();
         unary_elementwise_values(ca, f)
     }
 
@@ -130,6 +131,18 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 broadcast_binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some())
             },
         })
+    }
+
+    /// Return the byte offset of the first occurrence of a literal in each binary value.
+    fn bin_find(&self, pat: &BinaryChunked) -> PolarsResult<UInt32Chunked> {
+        let ca = self.as_binary();
+        polars_ensure!(
+            pat.len() == 1 || ca.len() == pat.len() || ca.len() == 1,
+            length_mismatch = "bin.find",
+            ca.len(),
+            pat.len()
+        );
+        Ok(super::find::find_literal_offsets(ca, pat, |_, i| i))
     }
 
     /// Check if strings ends with a substring

@@ -238,6 +238,33 @@ impl Iterator for BitmapIter<'_> {
     }
 
     #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut acc = init;
+        let mut word = self.word;
+        let mut word_len = self.word_len;
+        let mut bytes = self.bytes;
+        let mut rest_len = self.rest_len;
+        loop {
+            for i in 0..word_len {
+                acc = f(acc, (word >> i) & 1 != 0);
+            }
+            if rest_len == 0 {
+                return acc;
+            }
+            word_len = rest_len.min(64);
+            rest_len -= word_len;
+            unsafe {
+                let chunk = bytes.get_unchecked(..8).try_into().unwrap();
+                word = u64::from_le_bytes(chunk);
+                bytes = bytes.get_unchecked(8..);
+            }
+        }
+    }
+
+    #[inline]
     fn nth(&mut self, mut n: usize) -> Option<Self::Item> {
         if n >= self.word_len + self.rest_len {
             self.word = 0;
