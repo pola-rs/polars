@@ -28,7 +28,7 @@ where
             let bin_len = bins.len();
             if bin_len > 1 {
                 for i in 1..bin_len {
-                    if (bins[i] - bins[i - 1]) <= 0.0 {
+                    if bins[i].is_nan() || bins[i - 1].is_nan() || bins[i] - bins[i - 1] <= 0.0 {
                         return Err(PolarsError::ComputeError(
                             "bins must increase monotonically".into(),
                         ));

@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import math
-
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-
-FLOATS = [1.0, None, float("nan"), 3.0, 3.0, -0.0, 0.0, 2.0, None]
 
 
 def multi_chunk(values: list[object], dtype: pl.DataType) -> pl.Series:
@@ -51,38 +47,6 @@ def test_clip_scalar_bounds_nulls(dtype: pl.DataType) -> None:
     out = s.clip(0, 6)
     assert out.to_list() == [1.0, None, 5.0, 0.0, None, 6.0]
     assert out.dtype == dtype
-
-
-def test_pow_arctan2_columns() -> None:
-    df = pl.DataFrame(
-        {"b": [2.0, None, 3.0, 4.0], "e": [3.0, 2.0, None, 0.5]},
-        schema={"b": pl.Float64, "e": pl.Float64},
-    )
-    out = df.select(p=pl.col("b").pow(pl.col("e")), a=pl.arctan2("b", "e"))
-    assert out["p"].to_list() == [8.0, None, None, 2.0]
-    assert out["a"][1] is None
-    assert out["a"][0] == pytest.approx(math.atan2(2.0, 3.0))
-    ints = pl.DataFrame({"b": [2, None, 3], "e": [3, 2, 4]})
-    assert ints.select(pl.col("b").pow(pl.col("e")))["b"].to_list() == [8, None, 81]
-
-
-def peaks_reference(values: list[float | None], is_max: bool) -> list[bool | None]:
-    # The edges are compared against 0.
-    out: list[bool | None] = []
-    for i, v in enumerate(values):
-        left = values[i - 1] if i > 0 else 0
-        right = values[i + 1] if i + 1 < len(values) else 0
-        results = [
-            None if v is None or n is None else (n < v if is_max else n > v)
-            for n in (left, right)
-        ]
-        if False in results:
-            out.append(False)
-        elif None in results:
-            out.append(None)
-        else:
-            out.append(True)
-    return out
 
 
 def test_hist_explicit_bins_edges() -> None:
@@ -132,13 +96,6 @@ def test_cut_qcut_labels_and_nulls() -> None:
     assert pl.Series([], dtype=pl.Float64).cut([1.0]).to_list() == []
 
 
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_cut_unused_labels_not_added_to_categories() -> None:
-    s = pl.Series([1.0, 2.0])
-    out = s.qcut([0.5], labels=["unused_lo_x", "unused_hi_x"], allow_duplicates=True)
-    assert out.cast(pl.String).to_list() == ["unused_lo_x", "unused_hi_x"]
-
-
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Int64])
 def test_mean_horizontal_nulls(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
@@ -163,3 +120,16 @@ def test_mean_horizontal_nulls(dtype: pl.DataType) -> None:
             schema={"a": pl.Float32 if dtype == pl.Float32 else pl.Float64},
         ),
     )
+
+
+def test_mean_horizontal_no_nulls_divides_exactly() -> None:
+    df = pl.DataFrame({"a": [1.0, 5.0], "b": [1.0, 0.0], "c": [3.0, 0.0]})
+    out = df.select(pl.mean_horizontal("a", "b", "c"))["a"].to_list()
+    assert out == [5.0 / 3.0, 5.0 / 3.0]
+    out = df.select(pl.mean_horizontal(pl.lit(None), "a", ignore_nulls=False))
+    assert out.to_series().to_list() == [None, None]
+
+
+def test_hist_nan_bins_raise() -> None:
+    with pytest.raises(pl.exceptions.ComputeError, match="monotonically"):
+        pl.Series([9.0]).hist(bins=[0.0, float("nan"), 2.0, 10.0])

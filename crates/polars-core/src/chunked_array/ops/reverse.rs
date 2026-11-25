@@ -15,23 +15,12 @@ where
             let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect_trusted();
             ca.into_inner()
         } else {
-            let chunks = self
-                .downcast_iter()
-                .rev()
-                .map(|arr| {
-                    let values: Vec<T::Native> = arr.values().iter().rev().copied().collect();
-                    let validity = arr.validity().map(|v| v.iter().rev().collect::<Bitmap>());
-                    PrimitiveArray::new(arr.dtype().clone(), values.into(), validity).boxed()
-                })
-                .collect();
-            // SAFETY: the chunks have the physical dtype of `self`.
-            unsafe {
-                ChunkedArray::from_chunks_and_dtype_unchecked(
-                    self.name().clone(),
-                    chunks,
-                    self.dtype().clone(),
-                )
-            }
+            let chunks = self.downcast_iter().rev().map(|arr| {
+                let values: Vec<T::Native> = arr.values().iter().rev().copied().collect();
+                let validity = arr.validity().map(|v| v.iter().rev().collect::<Bitmap>());
+                PrimitiveArray::new(arr.dtype().clone(), values.into(), validity)
+            });
+            ChunkedArray::from_chunk_iter_like(self, chunks)
         };
         out.rename(self.name().clone());
 
@@ -65,23 +54,12 @@ impl ChunkReverse for BooleanChunked {
         if self.is_empty() {
             return self.clone();
         };
-        let chunks = self
-            .downcast_iter()
-            .rev()
-            .map(|arr| {
-                let values = arr.values().iter().rev().collect::<Bitmap>();
-                let validity = arr.validity().map(|v| v.iter().rev().collect::<Bitmap>());
-                BooleanArray::new(arr.dtype().clone(), values, validity).boxed()
-            })
-            .collect();
-        // SAFETY: the chunks have the dtype of `self`.
-        unsafe {
-            BooleanChunked::from_chunks_and_dtype_unchecked(
-                self.name().clone(),
-                chunks,
-                self.dtype().clone(),
-            )
-        }
+        let chunks = self.downcast_iter().rev().map(|arr| {
+            let values = arr.values().iter().rev().collect::<Bitmap>();
+            let validity = arr.validity().map(|v| v.iter().rev().collect::<Bitmap>());
+            BooleanArray::new(arr.dtype().clone(), values, validity)
+        });
+        BooleanChunked::from_chunk_iter_like(self, chunks)
     }
 }
 
