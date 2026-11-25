@@ -250,16 +250,6 @@ pub(super) fn is_input_independent_scalar_top_level(ae: &AExpr) -> bool {
     }
 }
 
-/// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
-/// be extended further with any nested expression nodes.
-///
-/// This doesn't check that the inputs it pushes line up within a batch, so walking it with
-/// `property_rec` accepts `a.filter(p) + b.filter(q)`; use
-/// [`ExprProperties::is_row_separable`] for a whole expression.
-pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
-    is_prop(stack, ae, expr_arena, |ae| ae.is_row_separable_top_level())
-}
-
 #[derive(Debug, Clone)]
 pub enum ExprPushdownGroup {
     /// Can be pushed. (elementwise, infallible)

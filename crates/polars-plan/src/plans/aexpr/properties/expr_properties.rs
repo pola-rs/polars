@@ -84,8 +84,8 @@ impl ExprProperties {
         ret
     }
 
-    /// Return whether `inputs`, zipped within a batch of rows are guaranteed to line up as they
-    /// do over the whole frame: all are elementwise, or all but one are input-independent scalars.
+    /// Return whether `inputs`, zipped within a batch of rows, line up as they do over the whole
+    /// frame: all are elementwise, or all but one are input-independent scalars.
     pub fn zipped_inputs_line_up(&mut self, inputs: &[Node], expr_arena: &Arena<AExpr>) -> bool {
         let non_scalars: UnitVec<Node> = inputs
             .iter()
@@ -99,7 +99,7 @@ impl ExprProperties {
     }
 
     /// Return whether the expression at `node` can be evaluated without the input frame. Unlike
-    /// [`ExprProperties::is_input_independent_scalar`]. Its result need not be a scalar.
+    /// [`Self::is_input_independent_scalar`], the result need not be a scalar.
     #[recursive::recursive]
     pub fn is_input_independent(&mut self, node: Node, expr_arena: &Arena<AExpr>) -> bool {
         if let Some(&ret) = self.is_input_independent.get(&node) {
