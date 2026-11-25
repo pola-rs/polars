@@ -878,11 +878,21 @@ fn try_lower_agg_input_expr(
             options: _,
         } => {
             let input = inputs_ref[0].node();
-            if !expr_props.is_elementwise(input, expr_arena) {
+            let is_drop_nulls = matches!(function, IRFunctionExpr::DropNulls);
+            let Some((input_stream, input, all_keys_included)) = try_lower_agg_input_expr(
+                input_stream,
+                keys,
+                input,
+                expr_arena,
+                phys_sm,
+                expr_props,
+                ctx,
+            )?
+            else {
                 return Ok(None);
-            }
+            };
 
-            let predicate = if matches!(function, IRFunctionExpr::DropNulls) {
+            let predicate = if is_drop_nulls {
                 AExprBuilder::new_from_node(input).is_not_null(expr_arena)
             } else {
                 let input_schema = input_stream.output_schema(phys_sm);
@@ -891,7 +901,7 @@ fn try_lower_agg_input_expr(
                     .to_dtype(&ToFieldContext::new(expr_arena, input_schema))?;
                 // `drop_nans` only drops values of float columns.
                 if !dtype.is_float() {
-                    return Ok(Some((input_stream, input, true)));
+                    return Ok(Some((input_stream, input, all_keys_included)));
                 }
                 // Keep nulls, for which `is_not_nan` is null.
                 let x = AExprBuilder::new_from_node(input);

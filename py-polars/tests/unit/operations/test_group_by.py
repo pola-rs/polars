@@ -2547,6 +2547,52 @@ def test_group_by_drop_nans_reduction_30823(
     assert_frame_equal(out, expected)
 
 
+_DROP_NULLS_NANS_LF = pl.LazyFrame(
+    {
+        "g": [1, 1, 1, 1, 1, 2, 2, 3],
+        "a": [1.0, 1.0, None, float("nan"), 2.0, None, 3.0, 4.0],
+        "i": [1, 2, None, 3, 4, None, 5, 6],
+        "b": [True, True, True, True, False, True, True, False],
+    }
+)
+
+
+@pytest.mark.parametrize(
+    ("expr", "values"),
+    [
+        (pl.col("a").filter("b").drop_nulls().len(), [3, 1, 0]),
+        (pl.col("a").drop_nans().drop_nulls().len(), [3, 1, 1]),
+        (pl.col("a").unique().drop_nulls().len(), [3, 1, 1]),
+        (pl.col("a").filter("b").drop_nans().len(), [3, 2, 0]),
+        (pl.col("i").filter("b").drop_nans().len(), [4, 2, 0]),
+        (pl.col("a").filter("b").drop_nans().last(), [None, 3.0, None]),
+    ],
+)
+def test_group_by_drop_nulls_nans_over_non_elementwise(
+    expr: pl.Expr, values: list[Any]
+) -> None:
+    q = _DROP_NULLS_NANS_LF.group_by("g").agg(expr.alias("x"))
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "in-memory-map" not in dot
+
+    dtype = pl.Float64 if isinstance(values[1], float) else get_index_type()
+    expected = pl.DataFrame(
+        {"g": [1, 2, 3], "x": values}, schema_overrides={"x": dtype}
+    )
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
+
+
+def test_over_drop_nulls_over_non_elementwise() -> None:
+    q = _DROP_NULLS_NANS_LF.select(pl.col("a").filter("b").drop_nulls().len().over("g"))
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "in-memory-map" not in dot
+
+    expected = pl.DataFrame(
+        {"a": [3, 3, 3, 3, 3, 1, 1, 0]}, schema_overrides={"a": get_index_type()}
+    )
+    assert_frame_equal(q.collect(), expected)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
     ("expr", "check_order", "returns_scalar", "length_preserving", "is_window"),
