@@ -1711,3 +1711,16 @@ def test_list_drop_nulls_no_inner_nulls() -> None:
     s = pl.Series([[1, None], [], None, [None, 3]])
     assert s.list.drop_nulls().to_list() == [[1], [], None, [3]]
     assert s.slice(1).list.drop_nulls().to_list() == [[], None, [3]]
+
+
+def test_concat_list_all_null_list_eval_scalar_31086() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1], [2]],
+            "b": pl.Series([None, None], dtype=pl.List(pl.Int64)),
+        }
+    )
+    out = df.select(
+        pl.concat_list("a", pl.col("b").list.eval(pl.element()))
+    ).to_series()
+    assert_series_equal(out, pl.Series("a", [None, None], dtype=pl.List(pl.Int64)))
