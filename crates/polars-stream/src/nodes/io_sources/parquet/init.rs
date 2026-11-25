@@ -594,9 +594,11 @@ impl ParquetReadImpl {
                                 predicate.clone(),
                                 p.specialized.clone(),
                             );
-                            // The flat Int64 decoder can produce the null mask from page validity.
-                            let mask_only = matches!(arrow_field.dtype(), ArrowDataType::Int64)
-                                && p.dynamic.is_empty()
+                            // Flat integer decoders can produce the null mask from page validity.
+                            let mask_only = matches!(
+                                arrow_field.dtype(),
+                                ArrowDataType::Int32 | ArrowDataType::Int64
+                            ) && p.dynamic.is_empty()
                                 && early_dropped_fields
                                     .as_ref()
                                     .is_some_and(|fields| fields.get_bit(field_idx))
