@@ -553,6 +553,12 @@ impl Translator<'_> {
         // string literals too
         let placeholder =
             self.binds_params() && (s.contains('%') || (self.sqlalchemy() && s.contains(':')));
+        // Google's BigQuery DB-API unescapes %% even without bound parameters.
+        let bigquery_percent = s.contains("%%")
+            && crate::database::planner::is_google_bigquery(
+                self.dialect(),
+                &self.config.backend.kind,
+            );
         // the renderer (sqlglot) writes `\\` and control characters (NUL, `\n`, `\t`, `\r`, `\b`,
         // `\x1a`, and more in older versions) as backslash escapes
         let escape =
@@ -598,7 +604,13 @@ impl Translator<'_> {
                 DialectName::Sqlite | DialectName::Clickhouse
             )
             && (s.contains('\\') || s.contains("''"));
-        !(placeholder || escape || backslash_escapes || nul || question || quotes)
+        !(placeholder
+            || bigquery_percent
+            || escape
+            || backslash_escapes
+            || nul
+            || question
+            || quotes)
     }
 
     /// Whether a literal compared with the column means the same value to the database.
@@ -1656,6 +1668,7 @@ pub(crate) mod tests {
                     .collect(),
             ),
             columns: metas.into(),
+            bigquery_sampled_schema: Default::default(),
             stats: Default::default(),
             compiled: None,
             connection_share: None,

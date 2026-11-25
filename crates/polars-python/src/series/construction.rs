@@ -238,33 +238,57 @@ impl PySeries {
     }
 }
 
+/// If given, temporal values are converted to `time_unit`.
 fn convert_to_avs(
     values: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
     dtype: Option<&DataType>,
+    time_unit: Option<TimeUnit>,
 ) -> PyResult<Vec<AnyValue<'static>>> {
-    values
-        .try_iter()?
-        .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object, dtype))
-        .collect()
+    // (pre-sized, as collecting `PyResult`s would discard the size hint)
+    let mut avs = Vec::with_capacity(values.len().unwrap_or(0));
+    for v in values.try_iter()? {
+        let av = py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object, dtype)?;
+        avs.push(match time_unit {
+            Some(tu) => av.cast_time_unit(tu, strict).map_err(PyPolarsErr::from)?,
+            None => av,
+        });
+    }
+    Ok(avs)
+}
+
+/// Error for a failed (strict) Series construction from AnyValues.
+pub(crate) fn construction_error(err: PolarsError) -> PyErr {
+    // Out-of-range values (eg: temporal values overflowing their time unit) raise as-is
+    let mut root = &err;
+    while let PolarsError::Context { error, .. } = root {
+        root = error;
+    }
+    if matches!(root, PolarsError::InvalidOperation(_)) {
+        return PyPolarsErr::from(err).into();
+    }
+    PyTypeError::new_err(format!(
+        "{err}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
+    ))
 }
 
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_from_any_values(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
-        let any_values_result = values
-            .try_iter()?
-            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true, None))
-            .collect::<PyResult<Vec<AnyValue>>>();
+    #[pyo3(signature = (name, values, strict, time_unit=None))]
+    fn new_from_any_values(
+        name: &str,
+        values: &Bound<PyAny>,
+        strict: bool,
+        time_unit: Option<Wrap<TimeUnit>>,
+    ) -> PyResult<Self> {
+        let any_values_result =
+            convert_to_avs(values, strict, true, None, time_unit.map(|tu| tu.0));
 
         let result = any_values_result.and_then(|avs| {
-            let s = Series::from_any_values(name.into(), avs.as_slice(), strict).map_err(|e| {
-                PyTypeError::new_err(format!(
-                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-                ))
-            })?;
+            let s = Series::from_any_values(name.into(), avs.as_slice(), strict)
+                .map_err(construction_error)?;
             Ok(s.into())
         });
 
@@ -289,13 +313,9 @@ impl PySeries {
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<Self> {
-        let avs = convert_to_avs(values, strict, false, Some(&dtype.0))?;
+        let avs = convert_to_avs(values, strict, false, Some(&dtype.0), None)?;
         let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
-            .map_err(|e| {
-                PyTypeError::new_err(format!(
-                    "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-                ))
-            })?;
+            .map_err(construction_error)?;
         Ok(s.into())
     }
 
@@ -341,7 +361,7 @@ impl PySeries {
 
     #[staticmethod]
     fn new_decimal(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
-        Self::new_from_any_values(name, values, strict)
+        Self::new_from_any_values(name, values, strict, None)
     }
 
     #[staticmethod]

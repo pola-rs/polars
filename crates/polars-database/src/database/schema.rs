@@ -334,7 +334,54 @@ pub fn cast_to_user_schema(
         &PlHashSet::new(),
         &PlHashMap::new(),
         &PlHashSet::new(),
+        false,
     )
+}
+
+/// Check JSON kinds before casting. An unobserved leaf uses a String fallback for
+/// scalars only, and the regular cast checks numeric exactness.
+pub(crate) fn check_bigquery_json(df: &DataFrame, sampled: &Schema) -> PolarsResult<()> {
+    for (name, planned) in sampled.iter() {
+        if let Ok(col) = df.column(name) {
+            check_bigquery_json_kind(col.dtype(), planned, name)?;
+        }
+    }
+    Ok(())
+}
+
+fn check_bigquery_json_kind(actual: &DataType, planned: &DataType, path: &str) -> PolarsResult<()> {
+    if actual == planned {
+        return Ok(());
+    }
+    match (actual, planned) {
+        (DataType::List(_) | DataType::Struct(_), DataType::Null) => polars_bail!(
+            SchemaMismatch:
+            "BigQuery JSON field '{path}' is {actual} but no non-null value was sampled: \
+            the String fallback only accepts scalar JSON values; use TO_JSON_STRING(<json>) in the source query"
+        ),
+        (DataType::Null, _) | (_, DataType::Null) => Ok(()),
+        (DataType::List(a), DataType::List(b)) => {
+            check_bigquery_json_kind(a, b, &format!("{path}[]"))
+        },
+        (DataType::Struct(a), DataType::Struct(b)) => {
+            for field in b {
+                if let Some(actual) = a.iter().find(|actual| actual.name() == field.name()) {
+                    check_bigquery_json_kind(
+                        actual.dtype(),
+                        field.dtype(),
+                        &format!("{path}.{}", field.name()),
+                    )?;
+                }
+            }
+            Ok(())
+        },
+        (a, b) if is_number(a) && is_number(b) => Ok(()),
+        _ => polars_bail!(
+            SchemaMismatch:
+            "BigQuery JSON field '{path}' is {actual} but {planned} was sampled: \
+            the JSON type changed since the scan was planned; use TO_JSON_STRING(<json>) in the source query"
+        ),
+    }
 }
 
 /// [`cast_to_user_schema`], where `plugin_converted` are the columns the plugin reads through a
@@ -352,6 +399,7 @@ pub fn cast_columns(
     plugin_converted: &PlHashSet<PlSmallStr>,
     time_text_risk: &PlHashMap<PlSmallStr, String>,
     truncating: &PlHashSet<PlSmallStr>,
+    bigquery: bool,
 ) -> PolarsResult<DataFrame> {
     let height = df.height();
     let mut columns = Vec::with_capacity(schema.len());
@@ -435,7 +483,12 @@ pub fn cast_columns(
             if has_values
                 && !user_typed
                 && (kind_changed(col.dtype(), dtype)
-                    || value_kind_changed(col.dtype(), dtype, plugin_converted.contains(name)))
+                    || value_kind_changed(
+                        col.dtype(),
+                        dtype,
+                        plugin_converted.contains(name),
+                        bigquery,
+                    ))
             {
                 polars_bail!(
                     SchemaMismatch:
@@ -554,16 +607,25 @@ fn kind_changed(from: &DataType, to: &DataType) -> bool {
 /// instant): text where an integer or float was planned (`'42'` is no 42), a boolean where a number
 /// was (read as 1), and a naive timestamp where one with a time zone was (its wall clock would be
 /// read as UTC). Nested too.
-fn value_kind_changed(from: &DataType, to: &DataType, converted: bool) -> bool {
-    !converted
+fn value_kind_changed(from: &DataType, to: &DataType, converted: bool, bigquery: bool) -> bool {
+    (!converted || bigquery)
         && any_leaf_pair(from, to, &|from, to| {
             let plain_number = |d: &DataType| d.is_integer() || d.is_float();
-            (matches!(from, DataType::String) && plain_number(to))
-                || (matches!(from, DataType::Boolean) && is_number(to))
-                || matches!(
-                    (from, to),
-                    (DataType::Datetime(_, None), DataType::Datetime(_, Some(_)))
-                )
+            // BigQuery marks columns converted even when the driver infers JSON
+            // leaves per batch. Preserve the distinction between numbers and booleans.
+            if bigquery
+                && ((matches!(from, DataType::Boolean) && plain_number(to))
+                    || (plain_number(from) && matches!(to, DataType::Boolean)))
+            {
+                return true;
+            }
+            !converted
+                && ((matches!(from, DataType::String) && plain_number(to))
+                    || (matches!(from, DataType::Boolean) && is_number(to))
+                    || matches!(
+                        (from, to),
+                        (DataType::Datetime(_, None), DataType::Datetime(_, Some(_)))
+                    ))
         })
 }
 

@@ -1084,7 +1084,9 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Expr:
         """
-        Return the bytes offset of the first substring matching a pattern.
+        Return the character offset of the first substring matching a pattern.
+
+        The offset is in Unicode code points, the same unit as :meth:`slice`.
 
         If the pattern is not found, returns None.
 
@@ -3022,7 +3024,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Use the Aho-Corasick algorithm to find many matches.
 
-        The function will return the bytes offset of the start of each match.
+        The function will return the character offset (in Unicode code points) of
+        the start of each match.
         The return type will be `List<UInt32>`
 
         .. engine-support:: in-memory, streaming, distributed

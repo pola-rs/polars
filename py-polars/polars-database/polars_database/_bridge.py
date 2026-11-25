@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import copy
 import functools
 import importlib.util
 import inspect
@@ -20,8 +21,10 @@ import sys
 import threading
 import time
 import weakref
+from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _dist_version
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit
 
@@ -43,6 +46,7 @@ _MAX_FETCH_SIZE = 2**31 - 1
 # result (at least a pointer a row and column).
 _MAX_ORACLE_FETCH_SIZE = 2**20
 _ORACLE_MODULES = frozenset({"oracledb", "cx_Oracle"})
+_BIGQUERY_MODULE = "google.cloud.bigquery"
 
 # Python package (distribution) names, for version lookups.
 _DISTRIBUTIONS = {
@@ -50,7 +54,7 @@ _DISTRIBUTIONS = {
     "psycopg2": "psycopg2-binary",
     "mysql.connector": "mysql-connector-python",
     "snowflake.connector": "snowflake-connector-python",
-    "google.cloud.bigquery": "google-cloud-bigquery",
+    _BIGQUERY_MODULE: "google-cloud-bigquery",
     "databricks.sql": "databricks-sql-connector",
     "clickhouse_connect": "clickhouse-connect",
     "clickhouse_driver": "clickhouse-driver",
@@ -120,7 +124,10 @@ def _module_of(obj: Any) -> str:
 
 
 def _top_module(cls: type) -> str:
-    module = (getattr(cls, "__module__", None) or "builtins").split(".", 1)[0]
+    module = getattr(cls, "__module__", None) or "builtins"
+    if module == _BIGQUERY_MODULE or module.startswith(f"{_BIGQUERY_MODULE}."):
+        return _BIGQUERY_MODULE
+    module = module.split(".", 1)[0]
     # compiled driver modules can have a leading underscore (eg: "_duckdb")
     public = module.lstrip("_")
     return public if public != module and _has_module(public) else module
@@ -147,7 +154,7 @@ _DRIVER_MODULES = frozenset(
         "pyodbc",
         "snowflake",
         "databricks",
-        "google",
+        _BIGQUERY_MODULE,
         "trino",
         "redshift_connector",
     }
@@ -290,7 +297,23 @@ def _singleton_pool_error() -> TypeError:
     )
 
 
-def shared_pool_connection(obj: Any) -> Any:
+class _BigQuerySharedCheckout:
+    """A real SQLAlchemy Connection, checked in without resetting its shared driver."""
+
+    def __init__(self, conn: Any, fairy: Any) -> None:
+        self.conn = conn
+        self.fairy = fairy
+        self.driver = fairy.driver_connection
+
+    def close(self) -> None:
+        # The Connection's normal close also rolls back; only release the pool's
+        # checkout. The scan alone used this Connection's SQLAlchemy transaction.
+        _release_without_reset(self.fairy)
+
+
+def shared_pool_connection(
+    obj: Any, params: Any = None, execute_options: Mapping[str, Any] | None = None
+) -> Any:
     """
     The DB-API connection of a checkout (`engine.raw_connection()`, `engine.connect()`,
     an ORM Session of the engine) from a pool that shares one connection, released
@@ -299,9 +322,13 @@ def shared_pool_connection(obj: Any) -> Any:
     live one. Raises for a SingletonThreadPool (see `_singleton_pool_error`).
     """
     fairy = obj
-    if _module_of(obj) == "sqlalchemy" and type(obj).__name__ == "Connection":
+    is_connection = (
+        _module_of(obj) == "sqlalchemy" and type(obj).__name__ == "Connection"
+    )
+    if is_connection:
         fairy = getattr(obj, "connection", None)
     elif _is_orm_session(obj):
+        _check_bigquery_orm_session(obj)
         # a Session checks its connection out on first use, and gives it back on
         # `rollback()`/`close()`: read the Engine's one connection instead
         engine = None
@@ -312,6 +339,8 @@ def shared_pool_connection(obj: Any) -> Any:
             return None
         if _has_pool(engine, "SingletonThreadPool"):
             raise _singleton_pool_error()
+        if _sqlalchemy_dialect(engine) == "bigquery":
+            _check_bigquery_shared_options(engine, params, execute_options, obj)
         return _engine_shared_connection(engine)
     if type(fairy).__name__ != "_ConnectionFairy":
         return None
@@ -324,12 +353,15 @@ def shared_pool_connection(obj: Any) -> Any:
     if any(c.__name__ == "SingletonThreadPool" for c in type(pool).__mro__):
         _release_without_reset(fairy)
         raise _singleton_pool_error()
+    if is_connection and _sqlalchemy_dialect(obj) == "bigquery":
+        return _BigQuerySharedCheckout(obj, fairy)
     _release_without_reset(fairy)
     return driver
 
 
 def _engine_shared_connection(engine: Any) -> Any:
     """The one DB-API connection of an Engine whose pool shares it, left as it is."""
+    _check_bigquery_pool(engine)
     pool = engine.pool
     if any(c.__name__ == "AssertionPool" for c in type(pool).__mro__) and getattr(
         pool, "_checked_out", False
@@ -371,6 +403,7 @@ def _duckdb_engine_connection(obj: Any, session: dict[str, Any]) -> Any:
 
 # ADBC's vendor names, as dialect names
 _ADBC_VENDORS = {
+    "bigquery": "bigquery",
     "postgresql": "postgresql",
     "sqlite": "sqlite",
     "duckdb": "duckdb",
@@ -386,8 +419,14 @@ def connection_info(obj: Any, kind: str) -> tuple[str, str]:
     """`(dialect, module)` of a connection factory or live connection object."""
     if kind == "factory":
         conn = obj()
+        _check_bigquery_pool(conn)
         _refuse_bound_session(conn)
         if (shared := shared_pool_connection(conn)) is not None:
+            if isinstance(shared, _BigQuerySharedCheckout):
+                try:
+                    return _connection_info(shared.conn)
+                finally:
+                    shared.close()
             return _connection_info(shared)
         driver, give_back, _ = _pool_checkout(conn)
         try:
@@ -428,6 +467,7 @@ def _connection_info(obj: Any) -> tuple[str, str]:
     if module == "adbc_driver_manager":
         # its driver says which database it is
         with contextlib.suppress(Exception):
+            obj = getattr(obj, "connection", obj)
             vendor = str(obj.adbc_get_info().get("vendor_name", "")).lower()
             return _ADBC_VENDORS.get(vendor, ""), module
     if module == "pyodbc":
@@ -782,6 +822,254 @@ def _raise_unmapped(module: str, names: list[str]) -> None:
             "or pin another driver with driver=..."
         )
         raise ValueError(msg)
+
+
+def _bigquery_uri(uri: str) -> tuple[str | None, str | None, dict[str, str]]:
+    """Project and dataset for drivers without native BigQuery URI support."""
+    parsed = urlsplit(_strip_driver(uri))
+    path = parsed.path.removeprefix("/")
+    if parsed.netloc:
+        project, dataset = parsed.netloc, path
+    else:
+        project, _, dataset = path.partition("/")
+    project, dataset = unquote(project), unquote(dataset)
+    if (
+        parsed.scheme != "bigquery"
+        or "://" not in uri
+        or "#" in uri
+        or (not project and parsed.path not in ("", "/"))
+        or (project and not re.fullmatch(r"[A-Za-z0-9_-]+", project))
+        or (dataset and not re.fullmatch(r"[A-Za-z0-9_]+", dataset))
+    ):
+        msg = "expected bigquery://project[/dataset] or bigquery:///project[/dataset]"
+        raise ValueError(msg)
+    params: dict[str, str] = {}
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        key = key.lower()
+        if key in params:
+            msg = "duplicate BigQuery URI parameter"
+            raise ValueError(msg)
+        params[key] = value
+    query_dataset = params.pop("datasetid", None)
+    if query_dataset is not None:
+        if dataset or not re.fullmatch(r"[A-Za-z0-9_]+", query_dataset):
+            msg = "BigQuery URI needs a single valid dataset name"
+            raise ValueError(msg)
+        dataset = query_dataset
+    return project or None, dataset or None, params
+
+
+def _connect_bigquery(
+    uri: str, options: dict[str, Any]
+) -> tuple[Any, Callable[[], None] | None]:
+    project, dataset, params = _bigquery_uri(uri)
+    location = params.pop("location", None)
+    prefer_storage = params.pop("prefer_bqstorage_client", None)
+    _raise_unmapped(_BIGQUERY_MODULE, list(params))
+    dbapi_kw = dict(options)
+    if prefer_storage is not None:
+        dbapi_kw.setdefault(
+            "prefer_bqstorage_client",
+            _convert(
+                _BIGQUERY_MODULE, "prefer_bqstorage_client", prefer_storage, _bool
+            ),
+        )
+    client_kw = _drop_none(project=project, location=location)
+    for key in (
+        "project",
+        "location",
+        "credentials",
+        "client_options",
+        "client_info",
+        "default_query_job_config",
+        "default_load_job_config",
+        "default_job_creation_mode",
+    ):
+        if key in dbapi_kw:
+            client_kw[key] = dbapi_kw.pop(key)
+    if dbapi_kw.get("client") is not None and (client_kw or dataset):
+        msg = "BigQuery client cannot be combined with URI project, dataset or client options"
+        raise ValueError(msg)
+
+    _check_bigquery_destination(client_kw.get("default_query_job_config"))
+    _check_bigquery_destination(
+        getattr(dbapi_kw.get("client"), "default_query_job_config", None)
+    )
+    dbapi = importlib.import_module(f"{_BIGQUERY_MODULE}.dbapi")
+    if not client_kw and dataset is None:
+        return dbapi.connect(**dbapi_kw), None
+    bigquery = importlib.import_module(_BIGQUERY_MODULE)
+    if dataset is not None:
+        if not (project := client_kw.get("project")):
+            msg = "a BigQuery URI dataset requires a project"
+            raise ValueError(msg)
+        default_dataset = f"{project}.{dataset}"
+        config = client_kw.get("default_query_job_config")
+        if config is None:
+            config = bigquery.QueryJobConfig(default_dataset=default_dataset)
+        elif config.default_dataset is None:
+            config = copy.deepcopy(config)
+            config.default_dataset = default_dataset
+        elif str(config.default_dataset) != default_dataset:
+            msg = "BigQuery URI dataset contradicts default_query_job_config.default_dataset"
+            raise ValueError(msg)
+        client_kw["default_query_job_config"] = config
+    client = bigquery.Client(**client_kw)
+    try:
+        conn = dbapi.connect(**{**dbapi_kw, "client": client})
+    except BaseException:
+        client.close()
+        raise
+
+    def close() -> None:
+        try:
+            conn.close()
+        finally:
+            client.close()
+
+    return conn, close
+
+
+def _check_bigquery_destination(config: Any) -> None:
+    if getattr(config, "destination", None) is not None:
+        raise _bigquery_destination_error()
+
+
+def _bigquery_destination_error() -> ValueError:
+    return ValueError("scan_database cannot run with a BigQuery destination table")
+
+
+_ADBC_BIGQUERY_DESTINATION_OPTIONS = (
+    "adbc.bigquery.sql.query.destination_table",
+    "bigquery.query.destination_table",
+)
+
+
+def _check_adbc_bigquery_cursor(cursor: Any) -> None:
+    statement = getattr(cursor, "adbc_statement", None)
+    if statement is None:
+        return
+    from adbc_driver_manager import AdbcStatusCode, Error
+
+    for key in _ADBC_BIGQUERY_DESTINATION_OPTIONS:
+        try:
+            destination = statement.get_option(key)
+        except Error as e:
+            if e.status_code not in (
+                AdbcStatusCode.NOT_IMPLEMENTED,
+                AdbcStatusCode.NOT_FOUND,
+                AdbcStatusCode.INVALID_ARGUMENT,
+            ):
+                raise
+        else:
+            if destination:
+                raise _bigquery_destination_error()
+
+
+def _check_bigquery_pool(engine: Any) -> None:
+    if getattr(
+        getattr(engine, "dialect", None), "name", None
+    ) == "bigquery" and getattr(getattr(engine, "pool", None), "_pre_ping", False):
+        # SQLAlchemy runs SELECT 1 on the checked-out DB-API connection before
+        # returning it to Polars. That ping would use the client's job defaults.
+        msg = (
+            "scan_database cannot check out a BigQuery connection with pool_pre_ping "
+            "enabled; pass an established SQLAlchemy Connection or disable pool_pre_ping"
+        )
+        raise ValueError(msg)
+
+
+def _check_bigquery_orm_session(session: Any) -> None:
+    if _is_orm_session(session) and _sqlalchemy_dialect(session) == "bigquery":
+        if session.dispatch.do_orm_execute:
+            msg = (
+                "scan_database cannot use a BigQuery ORM Session with do_orm_execute "
+                "listeners; pass an established SQLAlchemy Connection"
+            )
+            raise TypeError(msg)
+        # SQLAlchemy 2.1's Session.execute merges these options independently of
+        # Connection options. Checking them must not open the session's connection.
+        options = getattr(session, "execution_options", None)
+        if isinstance(options, Mapping):
+            _check_bigquery_destination(options.get("job_config"))
+        _check_bigquery_pool(session.get_bind())
+
+
+def _has_sqlalchemy_execution_hooks(target: Any) -> bool:
+    dispatch = target.dispatch
+    dialect = target.dialect.dispatch
+    return bool(
+        dispatch.before_execute
+        or any(
+            listener is not _psycopg2_scan_cursor
+            for listener in dispatch.before_cursor_execute
+        )
+        or dialect.do_execute
+        or dialect.do_execute_no_params
+        or dialect.do_executemany
+    )
+
+
+def _check_bigquery_shared_options(
+    target: Any,
+    params: Any,
+    execute_options: Mapping[str, Any] | None,
+    session: Any = None,
+) -> None:
+    _check_bigquery_orm_session(session)
+    options = (execute_options or {}).get("execution_options")
+    target_options = target.get_execution_options()
+    session_options = getattr(session, "execution_options", None)
+    for execution_options in (options, target_options, session_options):
+        if isinstance(execution_options, Mapping):
+            _check_bigquery_destination(execution_options.get("job_config"))
+    if (
+        params is not None
+        or execute_options
+        or target_options
+        or target.dispatch.engine_connect
+        or target.dispatch.begin
+        or _has_sqlalchemy_execution_hooks(target)
+        or (
+            session is not None
+            and (
+                session_options
+                or session.dispatch.do_orm_execute
+                or session.in_transaction()
+            )
+        )
+    ):
+        msg = (
+            "scan_database cannot preserve SQLAlchemy execution options, listeners "
+            "or parameters through this shared BigQuery pool; pass an established "
+            "SQLAlchemy Connection"
+        )
+        raise TypeError(msg)
+
+
+def _check_bigquery_execute(conn: Any, options: dict[str, Any]) -> None:
+    """Check both per-statement config and client defaults, which Google merges."""
+    module = _module_of(conn)
+    if module == "sqlalchemy" and _sqlalchemy_dialect(conn) == "bigquery":
+        if _is_orm_session(conn):
+            conn = conn.connection()
+        if conn.dispatch.begin or _has_sqlalchemy_execution_hooks(conn):
+            msg = (
+                "scan_database cannot use BigQuery SQLAlchemy execution or begin "
+                "listeners because they can modify the query job configuration"
+            )
+            raise TypeError(msg)
+        _check_bigquery_destination(conn.get_execution_options().get("job_config"))
+        _check_bigquery_destination(
+            (options.get("execution_options") or {}).get("job_config")
+        )
+        conn = conn.connection.driver_connection
+    elif module != _BIGQUERY_MODULE:
+        return
+    _check_bigquery_destination(options.get("job_config"))
+    # A live DB-API cursor keeps the connection on its public `connection` attribute.
+    client = getattr(getattr(conn, "connection", conn), "_client", None)
+    _check_bigquery_destination(getattr(client, "default_query_job_config", None))
 
 
 def _tls_context(
@@ -1509,22 +1797,27 @@ def _sqlalchemy_psycopg2_guard() -> None:
     from sqlalchemy import event
     from sqlalchemy.engine import Engine
 
-    @event.listens_for(Engine, "before_cursor_execute")
-    def _on_cursor(
-        conn: Any,
-        cursor: Any,
-        statement: Any,
-        parameters: Any,
-        context: Any,
-        executemany: Any,
-    ) -> None:
-        if (
-            context is not None
-            and context.execution_options.get(_SCAN_OPTION)
-            and _module_of(cursor) == "psycopg2"
-        ):
-            _psycopg2_bytes(cursor)
-            _psycopg2_no_infinity(cursor)
+    # retval=True keeps the listener itself in the dispatch rather than wrapping
+    # it, so the BigQuery execution checks can recognize this psycopg2-only hook.
+    event.listen(Engine, "before_cursor_execute", _psycopg2_scan_cursor, retval=True)
+
+
+def _psycopg2_scan_cursor(
+    conn: Any,
+    cursor: Any,
+    statement: Any,
+    parameters: Any,
+    context: Any,
+    executemany: Any,
+) -> tuple[Any, Any]:
+    if (
+        context is not None
+        and context.execution_options.get(_SCAN_OPTION)
+        and _module_of(cursor) == "psycopg2"
+    ):
+        _psycopg2_bytes(cursor)
+        _psycopg2_no_infinity(cursor)
+    return statement, parameters
 
 
 def _psycopg2_no_infinity(cursor: Any) -> None:
@@ -1966,6 +2259,16 @@ def _exec_driver_sql(target: Any) -> Callable[..., Any] | None:
         with contextlib.suppress(Exception):
             return cast("Callable[..., Any]", connection().exec_driver_sql)
     return None
+
+
+def _needs_sqlalchemy_statement(target: Any) -> bool:
+    """Whether executing driver SQL would bypass SQLAlchemy listeners or defaults."""
+    if not _is_orm_session(target):
+        return bool(target.dispatch.before_execute)
+    if getattr(target, "execution_options", None) or target.dispatch.do_orm_execute:
+        return True
+    bind = _session_connection(target) or target.get_bind()
+    return bool(bind.dispatch.before_execute)
 
 
 def _sql_str(value: Any, *, dialect: str) -> str:
@@ -2696,8 +2999,11 @@ class _Session:
         params: Any = None,
         factory: bool = False,
         invalidate: Callable[[], None] | None = None,
+        shared_driver: Any = None,
     ) -> None:
         _register_at_exit_before_duckdb(conn)
+        if _module_of(conn) == "sqlalchemy" and getattr(conn, "invalidated", False):
+            _check_bigquery_pool(conn.engine)
         self.conn = conn
         self.owned = owned
         # from the user's function, whose `close` may return it to a pool of theirs
@@ -2707,7 +3013,12 @@ class _Session:
         self._close = close
         # discards it from its pool instead (when its socket was shut down)
         self._invalidate = invalidate
-        self._state = _ConnectionState() if owned else _live_state(conn)
+        self._state = (
+            _ConnectionState()
+            if owned
+            else _live_state(conn if shared_driver is None else shared_driver)
+        )
+        self._shared_driver = shared_driver
         self._factory_key: int | None = None
         if factory:
             self._register_factory_connection()
@@ -2729,6 +3040,9 @@ class _Session:
         # between the check of `_cancelled` and the driver call's return
         self._issuing = False
         module = _module_of(conn)
+        self._adbc_bigquery = (
+            module == "adbc_driver_manager" and _connection_info(conn)[0] == "bigquery"
+        )
         # PyMySQL and pg8000 have no cancel, and closing PyMySQL's unbuffered cursor
         # reads the rest of the result; a cancelled session is never reused, so its
         # socket can go
@@ -2745,6 +3059,7 @@ class _Session:
         )
         # the last statement's result columns that are a `TIMETZ` (offset dropped)
         self.timetz_columns: list[str] = []
+        self.bigquery_text_columns: list[str] = []
         # a live MySQL driver's session reads a TIMESTAMP in its own time zone, which
         # `execute` converts to UTC (a SQLAlchemy Connection is its driver's connection)
         self.mysql_converts = not owned and _module_of(_cancel_target(conn)) in (
@@ -2784,6 +3099,7 @@ class _Session:
         )
         state = self._state
         self.timetz_columns = []
+        self.bigquery_text_columns = []
         entered = False
         cursor = None
         cx_cursor: Any = None
@@ -2797,6 +3113,7 @@ class _Session:
             with state.lock:
                 state.active += 1
                 entered = True
+                _check_bigquery_orm_session(self.conn)
                 if not self.owned:
                     _refuse_pending_results(self.conn)
                 # A live connection outside a transaction is left without one. Polars
@@ -2804,7 +3121,11 @@ class _Session:
                 # the user runs statements on the connection again: a ROLLBACK then
                 # could end theirs. So the result is read whole and the transaction it
                 # opened rolled back here, before any batch is handed over.
-                status = None if self.owned else _transaction_idle(self.conn)
+                status = (
+                    None
+                    if self.owned or self._shared_driver is not None
+                    else _transaction_idle(self.conn)
+                )
                 idle = status is True
                 in_database = status is False
                 if in_database and _module_of(self.conn) == "sqlalchemy":
@@ -2874,6 +3195,9 @@ class _Session:
                 if not bind:
                     for key in {"parameters", "params", _params_keyword(cx)}:
                         options.pop(key, None)
+                _check_bigquery_execute(cx.cursor, options)
+                if self._adbc_bigquery:
+                    _check_adbc_bigquery_cursor(cx.cursor)
                 oracle_arrow = (
                     cx.driver_name == "oracledb_proxy"
                     or cx._oracle_arrow_proxy() is not None
@@ -2906,6 +3230,7 @@ class _Session:
                 if params is not None:
                     # each driver names the parameters argument of `execute()` itself
                     options[_params_keyword(cx)] = params
+                sqlalchemy_bigquery = False
                 if (
                     _module_of(self.conn) == "sqlalchemy"
                     and not oracle_arrow
@@ -2918,6 +3243,13 @@ class _Session:
                         **(options.get("execution_options") or {}),
                         _SCAN_OPTION: True,
                     }
+                    sqlalchemy_bigquery = _sqlalchemy_dialect(cx.cursor) == "bigquery"
+                    if sqlalchemy_bigquery:
+                        # Let the Google cursor start fetching when the scan can
+                        # observe its REST/Storage choice. It already pages rows.
+                        options["execution_options"].update(
+                            stream_results=False, yield_per=None, no_parameters=False
+                        )
                 runner = (
                     cx.cursor
                     if cx.driver_name == "duckdb" and cx.cursor is not self.conn
@@ -2928,9 +3260,16 @@ class _Session:
                         raise RuntimeError(_CANCELLED)
                     self._running = runner
                     self._issuing = True
+                run_through_sqlalchemy = (
+                    raw_sqlalchemy
+                    and cx.driver_name == "sqlalchemy"
+                    and cx._is_alchemy_object(cx.cursor)
+                    and _needs_sqlalchemy_statement(cx.cursor)
+                )
                 exec_driver_sql = (
                     _exec_driver_sql(cx.cursor)
                     if raw_sqlalchemy
+                    and not run_through_sqlalchemy
                     and not oracle_arrow
                     and cx.driver_name in ("sqlalchemy", "duckdb")
                     else None
@@ -2938,56 +3277,85 @@ class _Session:
                 if exec_driver_sql is not None:
                     # as `cx.execute`, but without `text()` (see `__init__`); with
                     # `no_parameters`, `%`-style drivers don't format the SQL either
-                    # (`text()` escaped `%` for them)
+                    # (`text()` escaped `%` for them). BigQuery needs the dialect's
+                    # regular execute hook to pass job_config even without parameters.
                     execution_options = options.pop("execution_options", None) or {}
                     result = exec_driver_sql(
                         sql,
-                        execution_options={**execution_options, "no_parameters": True},
+                        execution_options={
+                            **execution_options,
+                            "no_parameters": not sqlalchemy_bigquery,
+                        },
                         **options,
                     )
                     if cx.driver_name == "duckdb" and cx._is_alchemy_result(result):
                         result = result.cursor
                     cx.result = result
+                elif run_through_sqlalchemy:
+                    from sqlalchemy import text
+
+                    # TextClause interprets colons even inside SQL literals. Escape
+                    # them so that a statement without bindings keeps its raw SQL.
+                    cx.execute(
+                        text(re.sub(r"(?<!:):(?!:)", r"\\:", sql)),
+                        options=options or None,
+                    )
                 else:
                     cx.execute(sql, options=options or None)
                 if cursor is not None and cursor.description is None:
                     # psycopg2's named cursors describe the result only after a fetch;
                     # `FETCH FORWARD 0` returns no row
                     cursor.fetchmany(0)
-                frames = _object_columns_as_text(
-                    _no_panics(
-                        cx.to_polars(  # type: ignore[arg-type]
-                            iter_batches=True,
-                            batch_size=batch_size,
-                            # every row types a batch: a column whose first rows are
-                            # NULL would fail on its first value otherwise
-                            infer_schema_length=None,
+                result = cx.result
+                raw_result = (
+                    getattr(result, "cursor", None)
+                    if _module_of(result) == "sqlalchemy"
+                    else result
+                )
+                if _module_of(raw_result) == _BIGQUERY_MODULE:
+                    from polars_database._bigquery import result_frames
+
+                    empty_frame, frames, self.bigquery_text_columns = result_frames(
+                        raw_result, batch_size, fetchmany=result.fetchmany
+                    )
+                    frames = _object_columns_as_text(_no_panics(frames))
+                else:
+                    frames = _object_columns_as_text(
+                        _no_panics(
+                            cx.to_polars(  # type: ignore[arg-type]
+                                iter_batches=True,
+                                batch_size=batch_size,
+                                # every row types a batch: a column whose first rows are
+                                # NULL would fail on its first value otherwise
+                                infer_schema_length=None,
+                            )
                         )
                     )
-                )
-                # A live MySQL session reads a TIMESTAMP in its own time zone, as naive
-                # wall-clock time: the instants (UTC), as the table source reads them
-                self.timetz_columns = _time_with_zone_columns(cx.result)
-                timestamps = _mysql_timestamp_columns(cx.result) if mysql_live else []
-                if timestamps:
-                    if live_zone is None:
-                        msg = (
-                            f"the TIMESTAMP column(s) {timestamps} are read in this "
-                            "connection's time zone, which can't be told exactly (the "
-                            "server's own zone, or an abbreviation): run SET time_zone "
-                            "= '+00:00' on the connection first, or give an IANA name "
-                            "or an offset"
-                        )
-                        raise RuntimeError(msg)
-                    frames = _mysql_timestamps_to_utc(frames, timestamps, live_zone)
-                # some drivers yield no batch for an empty result, and close the
-                # cursor when done: take the column names first
-                empty_frame = _empty_frame(
-                    cx.result, utc=self.owned or bool(timestamps)
-                )
-                if _module_of(cx.result) == "trino":
-                    # a Trino batch types a column of NULLs only as `Null`
-                    frames = _cast_null_columns(frames, empty_frame.schema)
+                    # A live MySQL session reads a TIMESTAMP in its own time zone, as
+                    # naive wall-clock time: return UTC instants like a table source.
+                    self.timetz_columns = _time_with_zone_columns(cx.result)
+                    timestamps = (
+                        _mysql_timestamp_columns(cx.result) if mysql_live else []
+                    )
+                    if timestamps:
+                        if live_zone is None:
+                            msg = (
+                                f"the TIMESTAMP column(s) {timestamps} are read in this "
+                                "connection's time zone, which can't be told exactly (the "
+                                "server's own zone, or an abbreviation): run SET time_zone "
+                                "= '+00:00' on the connection first, or give an IANA name "
+                                "or an offset"
+                            )
+                            raise RuntimeError(msg)
+                        frames = _mysql_timestamps_to_utc(frames, timestamps, live_zone)
+                    # some drivers yield no batch for an empty result, and close the
+                    # cursor when done: take the column names first
+                    empty_frame = _empty_frame(
+                        cx.result, utc=self.owned or bool(timestamps)
+                    )
+                    if _module_of(cx.result) == "trino":
+                        # a Trino batch types a column of NULLs only as `Null`
+                        frames = _cast_null_columns(frames, empty_frame.schema)
                 if on_connection:
                     frames = iter(list(frames))
                 if (
@@ -3148,8 +3516,10 @@ class _Session:
             import pymysql.cursors  # type: ignore[import-untyped]
 
             return self.conn.cursor(pymysql.cursors.SSCursor)
-        if module == "sqlalchemy" and callable(
-            opts := getattr(self.conn, "execution_options", None)
+        if (
+            module == "sqlalchemy"
+            and callable(opts := getattr(self.conn, "execution_options", None))
+            and _sqlalchemy_dialect(self.conn) != "bigquery"
         ):
             # the dialect's own streaming cursor (named, SSCursor, ...), but not in
             # AUTOCOMMIT: a Postgres named cursor needs a transaction there is none of
@@ -3185,6 +3555,8 @@ class _Session:
         self._setup_ran = True
         cursor = conn.cursor() if hasattr(conn, "cursor") else conn
         try:
+            if self._adbc_bigquery:
+                _check_adbc_bigquery_cursor(cursor)
             cursor.execute(sql)
         finally:
             if cursor is not conn:
@@ -3485,6 +3857,35 @@ class _ArrowOdbcSession:
         pass
 
 
+def _is_bigquery_wheel(driver: str) -> bool:
+    if (found := probe("adbc:bigquery")) is not None and found[1] is not None:
+        with contextlib.suppress(OSError):
+            return Path(driver).samefile(found[1])
+    return False
+
+
+def _bigquery_wheel_options(
+    uri: str, database_options: dict[str, str], statement_options: dict[str, str]
+) -> None:
+    project, dataset, params = _bigquery_uri(uri)
+    location = params.pop("location", None)
+    _raise_unmapped("adbc-driver-bigquery", list(params))
+    prefix = "adbc.bigquery.sql."
+    for key, value in (
+        ("project_id", project),
+        ("dataset_id", dataset),
+        ("location", location),
+    ):
+        if value is not None:
+            database_options.setdefault(prefix + key, value)
+    # The wheel seeds statements with the connection's project and dataset. BigQuery
+    # rejects a default project without a dataset, even for SELECT 1.
+    if not statement_options.get(
+        prefix + "query.default_dataset_id", database_options.get(prefix + "dataset_id")
+    ):
+        statement_options.setdefault(prefix + "query.default_project_id", "")
+
+
 class _AdbcSession:
     """
     An ADBC connection opened through `adbc_driver_manager`.
@@ -3518,16 +3919,32 @@ class _AdbcSession:
             raise ModuleNotFoundError(msg)
 
         # the driver manager's own arguments: as options they would load another driver
-        reserved = {"driver", "entrypoint", "load_flags", "init_func"} & dict(
-            options
-        ).keys()
+        database_options = dict(options)
+        reserved = {
+            "driver",
+            "entrypoint",
+            "load_flags",
+            "init_func",
+        } & database_options.keys()
         if reserved:
             msg = (
                 f"connect option(s) {sorted(reserved)} can't be used with ADBC: "
                 "adbc_driver_manager reads them as its own arguments"
             )
             raise ValueError(msg)
-        kwargs: dict[str, Any] = {"driver": driver, **dict(options)}
+        self._execute_options = dict(execute_options)
+        if any(
+            self._execute_options.get(key) for key in _ADBC_BIGQUERY_DESTINATION_OPTIONS
+        ):
+            raise _bigquery_destination_error()
+        if (
+            (uri := database_options.get("uri")) is not None
+            and uri.lower().startswith("bigquery:")
+            and _is_bigquery_wheel(driver)
+        ):
+            del database_options["uri"]
+            _bigquery_wheel_options(uri, database_options, self._execute_options)
+        kwargs: dict[str, Any] = {"driver": driver, **database_options}
         if entrypoint:
             kwargs["entrypoint"] = entrypoint
         self._db = AdbcDatabase(**kwargs)
@@ -3536,7 +3953,6 @@ class _AdbcSession:
         except BaseException:
             self._db.close()
             raise
-        self._execute_options = dict(execute_options)
         self._lock = threading.Lock()
         # held while a statement or the connection is cancelled or closed: the driver
         # manager calls the driver for both without a lock of its own, and a cancel must
@@ -3750,8 +4166,13 @@ def connect(
                             raise
                         time.sleep(0.002)
         _refuse_bound_session(checkout)
-        if (shared := shared_pool_connection(checkout)) is not None:
+        _check_bigquery_pool(checkout)
+        if (
+            shared := shared_pool_connection(checkout, params, execute_opts)
+        ) is not None:
             if dialect in _SESSION_SETUP_DIALECTS:
+                if isinstance(shared, _BigQuerySharedCheckout):
+                    shared.close()
                 # the plan relies on the session setup, which the user's connection
                 # must not get
                 msg = (
@@ -3761,6 +4182,14 @@ def connect(
                     "is read as a live connection"
                 )
                 raise TypeError(msg)
+            if isinstance(shared, _BigQuerySharedCheckout):
+                return _Session(
+                    shared.conn,
+                    owned=False,
+                    close=shared.close,
+                    shared_driver=shared.driver,
+                    **session,
+                )
             # one connection that the user's own statements use too (an open
             # transaction): a live connection, never rolled back or closed
             return _Session(shared, owned=False, **session)
@@ -3807,6 +4236,13 @@ def _open(
             conn = mod.connect(target, **connect_opts)
         return _Session(conn, owned=True, **session)
 
+    if head == "python" and tail == _BIGQUERY_MODULE:
+        if creds is not None and any(value is not None for value in creds):
+            msg = "BigQuery does not use username and password credentials; pass Google credentials in connect_options"
+            raise ValueError(msg)
+        conn, close = _connect_bigquery(target, connect_opts)
+        return _Session(conn, owned=True, close=close, **session)
+
     uri = _canonical_scheme(_with_credentials(target, creds), dialect, head)
     uri = _with_connect_timeout(uri, dialect, kind)
     if head == "connectorx":
@@ -3827,9 +4263,17 @@ def _open(
     if head == "sqlalchemy":
         _require_sqlalchemy()
         from sqlalchemy import create_engine
+        from sqlalchemy.engine import make_url
 
         if dialect == "sqlite":
             uri = _sqlalchemy_sqlite_uri(uri)
+        elif dialect == "bigquery":
+            if "destination" in make_url(uri).query:
+                raise _bigquery_destination_error()
+            client = (connect_opts.get("connect_args") or {}).get("client")
+            _check_bigquery_destination(
+                getattr(client, "default_query_job_config", None)
+            )
         try:
             engine = create_engine(uri, **connect_opts)
         except Exception as e:
@@ -3842,7 +4286,12 @@ def _open(
                 "driver=..., or pass a connection factory"
             )
             raise ValueError(msg) from None
-        conn = engine.connect()
+        try:
+            _check_bigquery_pool(engine)
+            conn = engine.connect()
+        except BaseException:
+            engine.dispose()
+            raise
 
         def close() -> None:
             conn.close()

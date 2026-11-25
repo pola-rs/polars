@@ -223,32 +223,6 @@ pub fn is_input_independent_rec(
                     true
                 })
         },
-        #[cfg(feature = "dynamic_group_by")]
-        AExpr::Rolling {
-            function,
-            index_column,
-            period: _,
-            offset: _,
-            closed_window: _,
-        } => {
-            is_input_independent_rec(*function, arena, cache)
-                && is_input_independent_rec(*index_column, arena, cache)
-        },
-        AExpr::Over {
-            function,
-            partition_by,
-            order_by,
-            mapping: _,
-            may_reorder: _,
-        } => {
-            is_input_independent_rec(*function, arena, cache)
-                && partition_by
-                    .iter()
-                    .all(|expr| is_input_independent_rec(*expr, arena, cache))
-                && order_by
-                    .iter()
-                    .all(|(expr, _options)| is_input_independent_rec(*expr, arena, cache))
-        },
         AExpr::Slice {
             input,
             offset,
@@ -259,6 +233,10 @@ pub fn is_input_independent_rec(
                 && is_input_independent_rec(*length, arena, cache)
         },
         AExpr::Len => false,
+        // The length of a window's output depends on the input's height.
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling { .. } => false,
+        AExpr::Over { .. } => false,
     };
 
     cache.insert(expr_key, ret);
@@ -2668,7 +2646,8 @@ fn lower_exprs_with_ctx(
                     .map(|n| AExprBuilder::col(n.clone(), ctx.expr_arena).expr_ir(n))
                     .chain(std::iter::once(index_column_expr_ir.clone()))
                     .collect::<Vec<_>>();
-                let input = build_select_stream_with_ctx(input, &input_columns, ctx)?;
+                let input =
+                    build_length_preserving_select_stream_with_ctx(input, &input_columns, ctx)?;
 
                 let kind = PhysNodeKind::RollingGroupBy {
                     input,

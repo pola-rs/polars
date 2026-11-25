@@ -17,7 +17,7 @@ use polars_utils::vec::PushUnchecked;
 
 use super::options::{CsvEncoding, NullValuesCompiled};
 use super::parser::{could_be_whitespace_fast, skip_whitespace};
-use super::utils::escape_field;
+use super::utils::unescape_field;
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
     fn parse(bytes: &[u8]) -> Option<Self::Native>;
@@ -215,15 +215,16 @@ impl ParsedBuilder for Utf8Field {
 
         // note that one branch writes without updating the length, so we must do that later.
         let escaped_bytes = if needs_escaping {
-            self.scratch.clear();
-            self.scratch.reserve(bytes.len());
             polars_ensure!(bytes.len() > 1 && bytes.last() == Some(&self.quote_char), ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+            let inner = &bytes[1..bytes.len() - 1];
+            self.scratch.clear();
+            self.scratch.reserve(inner.len());
 
             // SAFETY:
             // we just allocated enough capacity and data_len is correct.
             unsafe {
                 let n_written =
-                    escape_field(bytes, self.quote_char, self.scratch.spare_capacity_mut());
+                    unescape_field(inner, self.quote_char, self.scratch.spare_capacity_mut());
                 self.scratch.set_len(n_written);
             }
 
@@ -300,36 +301,29 @@ impl<T: PolarsCategoricalType> CategoricalField<T> {
             self.builder.append_null();
             return Ok(());
         }
-        if validate_utf8(bytes) {
-            if needs_escaping {
-                polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
-                self.escape_scratch.clear();
-                self.escape_scratch.reserve(bytes.len());
-                // SAFETY:
-                // we just allocated enough capacity and data_len is correct.
-                unsafe {
-                    let n_written = escape_field(
-                        bytes,
-                        self.quote_char,
-                        self.escape_scratch.spare_capacity_mut(),
-                    );
-                    self.escape_scratch.set_len(n_written);
-                }
-
-                // SAFETY:
-                // just did utf8 check
-                let key = unsafe { std::str::from_utf8_unchecked(&self.escape_scratch) };
-                self.builder.append_str(key)?;
-            } else {
-                // SAFETY:
-                // just did utf8 check
-                let key = unsafe { std::str::from_utf8_unchecked(bytes) };
-                self.builder.append_str(key)?;
+        let escaped_bytes = if needs_escaping {
+            polars_ensure!(bytes.len() > 1 && bytes.last() == Some(&self.quote_char), ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
+            let inner = &bytes[1..bytes.len() - 1];
+            self.escape_scratch.clear();
+            self.escape_scratch.reserve(inner.len());
+            // SAFETY: we just allocated enough capacity and data_len is correct.
+            unsafe {
+                let n_written = unescape_field(
+                    inner,
+                    self.quote_char,
+                    self.escape_scratch.spare_capacity_mut(),
+                );
+                self.escape_scratch.set_len(n_written);
             }
-        } else if ignore_errors {
-            self.builder.append_null()
+            self.escape_scratch.as_slice()
         } else {
-            polars_bail!(ComputeError: "invalid utf-8 sequence");
+            bytes
+        };
+
+        match simdutf8::basic::from_utf8(escaped_bytes) {
+            Ok(key) => self.builder.append_str(key)?,
+            Err(_) if ignore_errors => self.builder.append_null(),
+            Err(_) => polars_bail!(ComputeError: "invalid utf-8 sequence"),
         }
         Ok(())
     }
