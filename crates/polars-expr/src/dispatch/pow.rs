@@ -1,7 +1,7 @@
 use num_traits::pow::Pow;
 use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_core::prelude::arity::{broadcast_binary_elementwise, unary_elementwise_values};
+use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 use polars_core::prelude::{
     ChunkApply, ChunkedArray, Column, DataType, IntoColumn, PolarsFloatType, PolarsIntegerType,
     PolarsNumericType,
@@ -31,7 +31,7 @@ where
         }
     }
 
-    broadcast_binary_elementwise(base, exponent, |b, e| Some(Pow::pow(b?, e?)))
+    broadcast_binary_elementwise_values(base, exponent, |b, e| Pow::pow(b, e))
 }
 
 fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &ChunkedArray<T>) -> PolarsResult<Column>

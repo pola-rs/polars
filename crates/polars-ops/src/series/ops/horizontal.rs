@@ -319,8 +319,12 @@ pub fn mean_horizontal(
         })),
         _ => {
             let sum = || sum_horizontal(columns.as_slice(), null_strategy);
+            let null_columns = columns
+                .iter()
+                .filter(|c| c.null_count() > 0)
+                .collect::<Vec<_>>();
             let null_count = || {
-                columns
+                null_columns
                     .par_iter()
                     .map(|c| {
                         c.is_null()
@@ -333,36 +337,42 @@ pub fn mean_horizontal(
                         let result = std::ops::Add::add(&l, &r)?;
                         PolarsResult::Ok(result)
                     })
-                    // we can unwrap the option, because we are certain there is a column
-                    // we started this operation on 2 columns
-                    .unwrap()
+                    .transpose()
             };
 
             let (sum, null_count) = RAYON.install(|| rayon::join(sum, null_count));
             let sum = sum?;
             let null_count = null_count?;
 
-            // value lengths: len - null_count
-            let value_length: UInt32Chunked = (Column::new_scalar(
-                PlSmallStr::EMPTY,
-                Scalar::from(num_rows as u32),
-                null_count.len(),
-            ) - null_count)?
-                .u32()
-                .unwrap()
-                .clone();
-
-            // make sure that we do not divide by zero
-            // by replacing with None
             let dt = sum
                 .as_ref()
                 .map(Column::dtype)
                 .filter(|dt| matches!(dt, DataType::Float16 | DataType::Float32))
                 .unwrap_or(&DataType::Float64);
-            let value_length = value_length
-                .set(&value_length.equal(0), None)?
-                .into_column()
-                .cast(dt)?;
+
+            let value_length = match null_count {
+                // No nulls: every row has `num_rows` values.
+                None => Column::new_scalar(PlSmallStr::EMPTY, Scalar::from(num_rows as u32), 1)
+                    .cast(dt)?,
+                Some(null_count) => {
+                    // value lengths: len - null_count
+                    let value_length: UInt32Chunked = (Column::new_scalar(
+                        PlSmallStr::EMPTY,
+                        Scalar::from(num_rows as u32),
+                        null_count.len(),
+                    ) - null_count)?
+                        .u32()
+                        .unwrap()
+                        .clone();
+
+                    // make sure that we do not divide by zero
+                    // by replacing with None
+                    value_length
+                        .set(&value_length.equal(0), None)?
+                        .into_column()
+                        .cast(dt)?
+                },
+            };
 
             sum.map(|sum| std::ops::Div::div(&sum, &value_length))
                 .transpose()

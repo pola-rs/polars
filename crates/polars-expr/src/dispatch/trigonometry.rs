@@ -1,5 +1,5 @@
 use num_traits::Float;
-use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise;
+use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise_values;
 use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::prelude::*;
 use polars_plan::plans::IRTrigonometricFunction;
@@ -84,7 +84,7 @@ where
         .unpack_series_matching_type(x.as_materialized_series())
         .unwrap();
 
-    Ok(broadcast_binary_elementwise(y, x, |yv, xv| Some(yv?.atan2(xv?))).into_column())
+    Ok(broadcast_binary_elementwise_values(y, x, |yv, xv| yv.atan2(xv)).into_column())
 }
 
 fn apply_trigonometric_function_to_float<T>(
