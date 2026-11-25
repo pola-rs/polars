@@ -1780,11 +1780,10 @@ fn to_graph_rec<'a>(
                 let predicate_schema = {
                     let names: PlHashSet<_> =
                         aexpr_to_leaf_names_iter(predicate.node(), ctx.expr_arena).collect();
-                    Arc::new(joined_schema.try_project(
-                        joined_schema
-                            .iter_names()
-                            .filter(|name| names.contains(name)),
-                    )?)
+                    let operand_names = joined_schema
+                        .iter_names()
+                        .filter(|name| names.contains(name));
+                    Arc::new(joined_schema.try_project(operand_names)?)
                 };
                 let expr = create_stream_expr(predicate, ctx, &predicate_schema)?;
                 Some(CrossJoinPredicate {
