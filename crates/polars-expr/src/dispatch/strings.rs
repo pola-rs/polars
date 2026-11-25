@@ -750,9 +750,11 @@ fn replace_all(
     match (pat.len(), val.len()) {
         (1, 1) => {
             let pat = get_pat(pat)?;
-            let val = val.get(0).ok_or_else(
-                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
-            )?;
+            // A null replacement keeps the source, same as `replace`. A one-row
+            // streaming chunk must not turn that null into an error.
+            let Some(val) = val.get(0) else {
+                return Ok(ca.clone());
+            };
             if literal {
                 return ca.replace_literal_all(pat, val);
             }
@@ -856,13 +858,8 @@ fn replace_per_row(
             polars_bail!(ComputeError: "pattern cannot be 'null' in 'replace' expression");
         };
         let replaced = match opt_val {
-            None => {
-                polars_ensure!(
-                    limit.is_some(),
-                    ComputeError: "value cannot be 'null' in 'replace' expression"
-                );
-                false
-            },
+            // A null replacement keeps the source for both `replace` and `replace_all`.
+            None => false,
             Some(val) if literal => opt_src.is_some_and(|src| {
                 literal_replacen_into(src, pat, val, limit.unwrap_or(0), &mut buf)
             }),
@@ -1031,4 +1028,60 @@ pub(super) fn json_path_match(s: &[Column]) -> PolarsResult<Column> {
 pub(super) fn escape_regex(s: &Column) -> PolarsResult<Column> {
     let ca = s.str()?;
     Ok(ca.str_escape_regex().into_column())
+}
+
+#[cfg(all(test, feature = "regex"))]
+mod tests {
+    use super::*;
+
+    fn strings(name: &str, values: &[Option<&str>]) -> Column {
+        Column::new(name.into(), values)
+    }
+
+    fn values(column: &Column) -> Vec<Option<&str>> {
+        column.str().unwrap().iter().collect()
+    }
+
+    #[test]
+    fn replace_all_null_value_keeps_the_source() {
+        // Aligned column: a null replacement leaves that row unchanged.
+        let out = replace(
+            &[
+                strings("s", &[Some("x"), Some("y"), Some("x")]),
+                strings("p", &[Some("x")]),
+                strings("v", &[Some("p"), None, Some("q")]),
+            ],
+            true,
+            -1,
+        )
+        .unwrap();
+        assert_eq!(values(&out), vec![Some("p"), Some("y"), Some("q")]);
+
+        // One-row chunk, the shape streaming produces. `replace` already keeps the source.
+        let out = replace(
+            &[
+                strings("s", &[Some("a")]),
+                strings("p", &[Some("a")]),
+                strings("v", &[None]),
+            ],
+            true,
+            -1,
+        )
+        .unwrap();
+        assert_eq!(values(&out), vec![Some("a")]);
+
+        // A per-row null value does not evaluate the pattern, including an invalid one.
+        let out = replace(
+            &[
+                strings("s", &[Some("aa"), Some("bb")]),
+                strings("p", &[Some("["), Some("b")]),
+                strings("v", &[None, Some("x")]),
+            ],
+            false,
+            -1,
+        )
+        .unwrap();
+        // replace_all replaces every match, so both letters change.
+        assert_eq!(values(&out), vec![Some("aa"), Some("xx")]);
+    }
 }

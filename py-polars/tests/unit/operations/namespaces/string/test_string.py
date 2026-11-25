@@ -1574,6 +1574,18 @@ def test_replace_column_pattern(engine: EngineType) -> None:
     lf = pl.LazyFrame({"s": ["aa", "bb"], "p": ["[", "b"], "v": [None, "x"]})
     q = lf.select(pl.col("s").str.replace(pl.col("p"), pl.col("v")))
     assert q.collect(engine=engine)["s"].to_list() == ["aa", "xb"]
+    q = lf.select(pl.col("s").str.replace_all(pl.col("p"), pl.col("v")))
+    assert q.collect(engine=engine)["s"].to_list() == ["aa", "xx"]
+
+    # A one-row null used to error in replace_all, and streaming chunks of that
+    # shape disagreed with the in-memory engine.
+    lf = pl.LazyFrame({"s": ["x", "y", "x"], "v": ["p", None, "q"]})
+    q = lf.select(pl.col("s").str.replace_all("x", pl.col("v"), literal=True))
+    assert q.collect(engine=engine)["s"].to_list() == ["p", "y", "q"]
+    one = pl.LazyFrame({"s": ["a"], "v": pl.Series([None], dtype=pl.String)})
+    assert one.select(
+        pl.col("s").str.replace_all("a", pl.col("v"), literal=True)
+    ).collect(engine=engine)["s"].to_list() == ["a"]
 
 
 def test_replace_regex_zero_count() -> None:
