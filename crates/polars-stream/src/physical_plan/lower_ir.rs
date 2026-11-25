@@ -211,6 +211,7 @@ pub(crate) fn build_top_k_stream(
             reverse: sort_options.descending.iter().map(|x| !x).collect(),
             nulls_last: sort_options.nulls_last.clone(),
             dyn_pred,
+            payload_column: None,
         },
     )))
 }

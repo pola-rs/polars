@@ -807,17 +807,20 @@ pub struct TopKNode {
     nulls_last: Vec<bool>,
     key_schema: Arc<Schema>,
     key_selectors: Vec<StreamExpr>,
+    payload_idx: Option<usize>,
     state: TopKState,
     dyn_pred: Option<DynamicPred>,
 }
 
 impl TopKNode {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         k_schema: Arc<Schema>,
         reverse: Vec<bool>,
         nulls_last: Vec<bool>,
         key_schema: Arc<Schema>,
         key_selectors: Vec<StreamExpr>,
+        payload_idx: Option<usize>,
         dyn_pred: Option<DynamicPred>,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
@@ -826,6 +829,7 @@ impl TopKNode {
             nulls_last,
             key_schema,
             key_selectors,
+            payload_idx,
             state: TopKState::WaitingForK(InMemorySinkNode::new(k_schema, task_metrics)),
             dyn_pred,
         }
@@ -968,6 +972,7 @@ impl ComputeNode for TopKNode {
                 assert!(send_ports[0].is_none());
                 assert!(recv_ports[1].is_none());
                 let receivers = recv_ports[0].take().unwrap().parallel();
+                let payload_idx = self.payload_idx;
 
                 for (mut recv, reducer) in receivers.into_iter().zip(reducers) {
                     let key_selectors = &*key_selectors;
@@ -983,7 +988,16 @@ impl ComputeNode for TopKNode {
                                 DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)?
                             };
 
-                            reducer.add(df, keys);
+                            let payload = if let Some(idx) = payload_idx {
+                                let height = df.height();
+                                let mut columns = df.into_columns();
+                                columns.swap(0, idx);
+                                columns.truncate(1);
+                                DataFrame::new(height, columns)?
+                            } else {
+                                df
+                            };
+                            reducer.add(payload, keys);
                         }
 
                         Ok(())

@@ -2028,6 +2028,15 @@ fn lower_exprs_with_ctx(
                     _ => unreachable!(),
                 };
 
+                // The expression returns only its value column. Keep the other columns
+                // available as ranking keys while omitting them from the reducer payload.
+                let data_schema = data_stream.output_schema(ctx.phys_sm);
+                let payload_column = (!by.is_empty()).then(|| out_col_expr.output_name().clone());
+                let output_schema = if let Some(name) = &payload_column {
+                    Arc::new(data_schema.try_project([name])?)
+                } else {
+                    data_schema.clone()
+                };
                 let kind = PhysNodeKind::TopK {
                     input: data_stream,
                     k: k_stream,
@@ -2035,8 +2044,8 @@ fn lower_exprs_with_ctx(
                     reverse,
                     by_column,
                     dyn_pred: None,
+                    payload_column,
                 };
-                let output_schema = data_stream.output_schema(ctx.phys_sm).clone();
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(out_col_node);

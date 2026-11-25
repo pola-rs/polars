@@ -598,6 +598,35 @@ def test_top_k_by() -> None:
     )
 
 
+def test_streaming_top_k_by_projects_payload() -> None:
+    lf = pl.LazyFrame(
+        {"value": [10, 20, 30, 40], "key": ["low", None, "middle", "top"]}
+    )
+    query = lf.select(pl.col("value").top_k_by("key", 2))
+    plan = query.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "project payload: 1 / 2" in plan
+    assert_frame_equal(
+        query.collect(engine="streaming"),
+        pl.DataFrame({"value": [30, 40]}),
+        check_row_order=False,
+    )
+
+    sort_head = lf.sort("key", descending=True, nulls_last=True).head(2)
+    expr_sort_head = lf.select(
+        pl.col("value").sort_by("key", descending=True, nulls_last=True).head(2)
+    )
+    for control, expected in (
+        (sort_head, pl.DataFrame({"value": [40, 30], "key": ["top", "middle"]})),
+        (expr_sort_head, pl.DataFrame({"value": [40, 30]})),
+    ):
+        plan = control.show_graph(
+            engine="streaming", plan_stage="physical", raw_output=True
+        )
+        assert "top-k" in plan or "bottom-k" in plan
+        assert "project payload:" not in plan
+        assert_frame_equal(control.collect(engine="streaming"), expected)
+
+
 def test_bottom_k_by() -> None:
     # expression
     s = pl.Series("a", [3, 8, 1, 5, 2])

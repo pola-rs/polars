@@ -360,6 +360,8 @@ pub enum PhysNodeKind {
         reverse: Vec<bool>,
         nulls_last: Vec<bool>,
         dyn_pred: Option<DynamicPred>,
+        /// If set, retain only this column after evaluating the keys.
+        payload_column: Option<PlSmallStr>,
     },
 
     Repeat {
