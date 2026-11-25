@@ -419,7 +419,17 @@ impl ComputeNode for CrossJoinNode {
             CrossJoinState::Probe(build_df) => {
                 assert!(recv_ports[build_idx].is_none());
                 let receivers = recv_ports[probe_idx].take().unwrap().parallel();
-                let senders = send_ports[0].take().unwrap().parallel();
+                let output = send_ports[0].take().unwrap();
+                let senders = if self.fused_predicate.is_some()
+                    && state.num_pipelines == 1
+                    && output.is_receiver_serial()
+                {
+                    // Connect directly so a serial consumer can close the only output lane
+                    // even when this join has no more passing batches to send.
+                    vec![output.serial()]
+                } else {
+                    output.parallel()
+                };
                 let ideal_morsel_size = get_ideal_morsel_size();
 
                 for (mut recv, mut send) in receivers.into_iter().zip(senders) {
