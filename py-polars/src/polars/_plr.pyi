@@ -55,7 +55,7 @@ StartBy: TypeAlias = Literal[
     "sunday",
 ]
 ClosedWindow: TypeAlias = Literal["left", "right", "both", "none"]
-RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinType: TypeAlias = Literal["inner", "left", "right", "full", "semi", "anti", "cross"]
