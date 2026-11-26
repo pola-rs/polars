@@ -6,7 +6,6 @@ use polars_error::PolarsResult;
 use polars_error::abort::{QueryAborted, catch_polars_abort};
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
-use pyo3::types::PyAnyMethods;
 use pyo3::{PyErr, PyResult, Python};
 
 use crate::dataframe::PyDataFrame;
@@ -126,13 +125,6 @@ pub trait EnterPolarsExt {
     }
 }
 
-fn get_traceback(py: Python<'_>) -> PyResult<String> {
-    let tb = py.import(pyo3::intern!(py, "traceback"))?;
-    let format_stack = tb.getattr("format_stack")?;
-    let lines: Vec<String> = format_stack.call0()?.extract()?;
-    Ok(lines.join("\n"))
-}
-
 impl EnterPolarsExt for Python<'_> {
     fn enter_polars<T, E, F>(self, f: F) -> PyResult<T>
     where
@@ -142,7 +134,7 @@ impl EnterPolarsExt for Python<'_> {
     {
         let _timeout_guard = is_timeout_enabled().then(|| {
             std::hint::cold_path();
-            schedule_polars_timeout(get_traceback(self).ok())
+            schedule_polars_timeout(self)
         });
         let ret = self.detach(|| catch_polars_abort(AssertUnwindSafe(f)));
         match ret {
