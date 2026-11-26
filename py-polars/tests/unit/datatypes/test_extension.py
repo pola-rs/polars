@@ -222,3 +222,16 @@ def test_ext_concat_27512() -> None:
                 pl.DataFrame(range(2), schema={"col": ExtensionAFloat}),
             ]
         )
+
+
+def test_ext_object_map_batches_group_by_27518() -> None:
+    Ext = pl.Extension(name="my.ext", storage=pl.Object)
+    df = pl.DataFrame(
+        {"g": [0, 0, 1, 1], "v": pl.Series([1, 2, 3, 4], dtype=Ext)},
+    )
+
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("v").map_batches(lambda s: 0, return_dtype=Ext, returns_scalar=True)
+    )
+    assert out["v"].dtype == Ext
+    assert out["v"].to_list() == [0, 0]
