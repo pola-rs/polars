@@ -4,13 +4,14 @@ use std::sync::Arc;
 use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_core::schema::SchemaRef;
 #[cfg(feature = "json")]
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 #[cfg(feature = "json")]
 use polars_io::metrics::IOMetrics;
-use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
+use polars_plan::dsl::{ExtraColumnsPolicy, NDJsonReadOptions, ScanSource};
 #[cfg(feature = "json")]
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -23,6 +24,11 @@ use crate::nodes::io_sources::shared::file_init::CLOUD_PRE_INIT_LIMIT;
 
 pub struct NDJsonReaderBuilder {
     pub options: Arc<NDJsonReadOptions>,
+    /// The full file schema.
+    pub file_schema: Option<SchemaRef>,
+    /// Not taken per read: row-count reads pass defaults.
+    pub extra_columns_policy: ExtraColumnsPolicy,
+    pub extra_struct_fields_policy: ExtraColumnsPolicy,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
@@ -100,14 +106,31 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
         &self,
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
-        _scan_source_idx: usize,
+        scan_source_idx: usize,
     ) -> PolarsResult<Box<dyn FileReader>> {
+        use polars_io::prelude::ExtraKeysHint;
+
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::shared::file_init::ChunkPrefetchSync;
 
         let scan_source = source;
+        let hint = if self.options.schema.is_some() {
+            ExtraKeysHint::GivenSchema
+        } else if scan_source_idx > 0 {
+            ExtraKeysHint::FirstSource
+        } else {
+            ExtraKeysHint::InferSchemaLength
+        };
         let chunk_reader_builder = ChunkReaderBuilder::NDJson {
             ignore_errors: self.options.ignore_errors,
+            file_schema: self.file_schema.clone(),
+            extra_columns_policy: self.extra_columns_policy,
+            extra_struct_fields_policy: self.extra_struct_fields_policy,
+            source: match &scan_source {
+                ScanSource::Path(path) => Some(PlSmallStr::from_str(path.as_str())),
+                ScanSource::File(_) | ScanSource::Buffer(_) => None,
+            },
+            hint,
         };
         let verbose = config::verbose();
 

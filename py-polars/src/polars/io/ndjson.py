@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Literal
 
 from polars._utils.expired import RemovedParameter, RenamedParameter, removed_parameters
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import is_path_or_str_sequence, normalize_filepath
 from polars._utils.wrap import wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
@@ -64,6 +65,7 @@ def read_ndjson(
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     include_file_paths: str | None = None,
+    extra_columns: Literal["ignore", "raise"] | None = None,
 ) -> DataFrame:
     r"""
     Read into a DataFrame from a newline delimited JSON file.
@@ -85,12 +87,17 @@ def read_ndjson(
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+        Keys outside this schema are ignored, unless `extra_columns="raise"`.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
-        any dtypes inferred from the schema param will be overridden.
+        any dtypes inferred from the schema param will be overridden. Overrides
+        cannot add columns; fields outside an overridden struct dtype are handled
+        like other keys outside the schema (see `extra_columns`).
     infer_schema_length
         The maximum number of rows to scan for schema inference.
         If set to `None`, the full data may be scanned *(this is slow)*.
+        A key that first appears after the inferred rows raises an error. With
+        several sources, the schema is inferred from the first one.
     batch_size
         Number of rows to read in each batch.
     n_rows
@@ -103,7 +110,8 @@ def read_ndjson(
     row_index_offset
         Offset to start the row index column (only use if the name is set)
     ignore_errors
-        Return `Null` if parsing fails because of schema mismatches.
+        Return `Null` if parsing fails because of schema mismatches. Keys outside
+        the schema still raise; see `extra_columns`.
     storage_options
         Options that indicate how to connect to a cloud provider.
 
@@ -128,6 +136,20 @@ def read_ndjson(
             at any point without it being considered a breaking change.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    extra_columns
+        Configuration for behavior when keys outside of the schema are
+        encountered in the data, at any nesting level:
+
+        * `ignore`: Silently ignores.
+        * `raise`: Raises an error.
+
+        Defaults to `raise` when the schema is inferred and to `ignore` when
+        `schema` is given. Checks are skipped when a query reads only part of
+        the data.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     See Also
     --------
@@ -182,6 +204,7 @@ def read_ndjson(
         include_file_paths=include_file_paths,
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
+        extra_columns=extra_columns,
     )._collect_eager()
 
 
@@ -243,6 +266,7 @@ def scan_ndjson(
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     include_file_paths: str | None = None,
+    extra_columns: Literal["ignore", "raise"] | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a newline delimited JSON file or multiple files via glob patterns.
@@ -268,12 +292,17 @@ def scan_ndjson(
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
         of names given in the schema should match the underlying data dimensions.
+        Keys outside this schema are ignored, unless `extra_columns="raise"`.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
-        any dtypes inferred from the schema param will be overridden.
+        any dtypes inferred from the schema param will be overridden. Overrides
+        cannot add columns; fields outside an overridden struct dtype are handled
+        like other keys outside the schema (see `extra_columns`).
     infer_schema_length
         The maximum number of rows to scan for schema inference.
         If set to `None`, the full data may be scanned *(this is slow)*.
+        A key that first appears after the inferred rows raises an error. With
+        several sources, the schema is inferred from the first one.
     batch_size
         Number of rows to read in each batch.
     n_rows
@@ -286,7 +315,8 @@ def scan_ndjson(
     row_index_offset
         Offset to start the row index column (only use if the name is set)
     ignore_errors
-        Return `Null` if parsing fails because of schema mismatches.
+        Return `Null` if parsing fails because of schema mismatches. Keys outside
+        the schema still raise; see `extra_columns`.
     storage_options
         Options that indicate how to connect to a cloud provider.
 
@@ -311,6 +341,20 @@ def scan_ndjson(
             at any point without it being considered a breaking change.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    extra_columns
+        Configuration for behavior when keys outside of the schema are
+        encountered in the data, at any nesting level:
+
+        * `ignore`: Silently ignores.
+        * `raise`: Raises an error.
+
+        Defaults to `raise` when the schema is inferred and to `ignore` when
+        `schema` is given. Checks are skipped when a query reads only part of
+        the data.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Notes
     -----
@@ -336,6 +380,10 @@ def scan_ndjson(
         msg = "'infer_schema_length' should be positive"
         raise ValueError(msg)
 
+    if extra_columns is not None:
+        msg = "the `extra_columns` parameter of `scan_ndjson` is considered unstable"
+        issue_unstable_warning(msg)
+
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_ndjson"
     )
@@ -357,5 +405,6 @@ def scan_ndjson(
         include_file_paths=include_file_paths,
         cloud_options=storage_options,
         credential_provider=credential_provider_builder,
+        extra_columns=extra_columns,
     )
     return wrap_ldf(pylf)

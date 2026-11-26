@@ -356,9 +356,8 @@ _NDJSON_KEY_LATE = (
     ("contents", "options", "kwargs"),
     [
         (_NDJSON_ROWS, "", {}),
-        # a key first seen after the inference window is dropped, unless inference
-        # covers it
-        (_NDJSON_KEY_LATE, "", {}),
+        # a key first seen after the inference window raises (see below), unless
+        # inference covers it
         (
             _NDJSON_KEY_LATE,
             "infer_schema_length => NULL",
@@ -407,6 +406,16 @@ def test_read_ndjson_options_match_scan_ndjson(
     # the same path spelling as in the query keeps `include_file_paths` identical
     expected = pl.scan_ndjson(path.as_posix(), **kwargs).collect()
     assert_frame_equal(_read_ndjson_sql(path, options), expected)
+
+
+def test_read_ndjson_key_after_inference_raises(tmp_path: Path) -> None:
+    path = tmp_path / "data.ndjson"
+    path.write_text(_NDJSON_KEY_LATE)
+    msg = "extra field in NDJSON data: b"
+    with pytest.raises(pl.exceptions.ComputeError, match=msg):
+        pl.scan_ndjson(path.as_posix()).collect()
+    with pytest.raises(pl.exceptions.ComputeError, match=msg):
+        _read_ndjson_sql(path, "")
 
 
 def test_read_ndjson_include_file_paths_over_a_glob(tmp_path: Path) -> None:

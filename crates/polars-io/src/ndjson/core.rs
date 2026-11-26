@@ -17,6 +17,50 @@ use crate::prelude::*;
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
 
+/// Raises on keys outside the schema while parsing NDJSON.
+#[derive(Clone, Debug, Default)]
+pub struct ExtraKeysCheck {
+    pub top_level: bool,
+    /// Per schema column: check struct fields.
+    pub nested: Vec<bool>,
+    pub source: Option<PlSmallStr>,
+    pub hint: ExtraKeysHint,
+}
+
+/// What the extra-key error suggests.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExtraKeysHint {
+    #[default]
+    InferSchemaLength,
+    /// Inferred from another source.
+    FirstSource,
+    GivenSchema,
+}
+
+impl ExtraKeysCheck {
+    pub(crate) fn err(&self, path: impl std::fmt::Display) -> PolarsError {
+        let source = match &self.source {
+            Some(source) => format!(" in file '{source}'"),
+            None => String::new(),
+        };
+        let hint = match self.hint {
+            ExtraKeysHint::InferSchemaLength => {
+                "consider increasing infer_schema_length, or manually specifying the full schema \
+                to ignore extra fields"
+            },
+            ExtraKeysHint::FirstSource => {
+                "the schema is inferred from the first file; consider manually specifying the \
+                full schema to ignore extra fields"
+            },
+            ExtraKeysHint::GivenSchema => {
+                "the field is not in the given schema; set extra_columns='ignore' to ignore extra \
+                fields"
+            },
+        };
+        polars_err!(ComputeError: "extra field in NDJSON data: {path}{source}, {hint}")
+    }
+}
+
 pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     n_rows: Option<usize>,
@@ -29,6 +73,7 @@ pub(crate) struct CoreJsonReader<'a> {
     row_index: Option<&'a mut RowIndex>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     projection: Option<Arc<[PlSmallStr]>>,
+    extra_keys: ExtraKeysCheck,
 }
 impl<'a> CoreJsonReader<'a> {
     #[allow(clippy::too_many_arguments)]
@@ -49,6 +94,8 @@ impl<'a> CoreJsonReader<'a> {
     ) -> PolarsResult<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
+        // Only an inferred schema rejects other keys.
+        let schema_inferred = schema.is_none();
         let mut schema = match schema {
             Some(schema) => schema,
             None => {
@@ -61,6 +108,15 @@ impl<'a> CoreJsonReader<'a> {
             let schema = Arc::make_mut(&mut schema);
             overwrite_schema(schema, overwriting_schema)?;
         }
+        let extra_keys = if schema_inferred {
+            ExtraKeysCheck {
+                top_level: true,
+                nested: vec![true; schema.len()],
+                ..Default::default()
+            }
+        } else {
+            ExtraKeysCheck::default()
+        };
 
         Ok(CoreJsonReader {
             reader_bytes: Some(reader_bytes),
@@ -74,6 +130,7 @@ impl<'a> CoreJsonReader<'a> {
             row_index,
             predicate,
             projection,
+            extra_keys,
         })
     }
 
@@ -122,6 +179,7 @@ impl<'a> CoreJsonReader<'a> {
                         Some(capacity),
                         &self.schema,
                         self.ignore_errors,
+                        &self.extra_keys,
                     )?;
 
                     let prepredicate_height = local_df.height() as IdxSize;
@@ -180,6 +238,7 @@ fn parse_impl(
     scratch: &mut Scratch,
     guide: Option<&TapeGuide>,
     ignore_errors: bool,
+    extra_keys: &ExtraKeysCheck,
 ) -> PolarsResult<usize> {
     scratch.json.clear();
     scratch.json.extend_from_slice(bytes);
@@ -196,13 +255,25 @@ fn parse_impl(
     };
     match value {
         simd_json::BorrowedValue::Object(value) => {
+            let mut n_found = 0;
             buffers.iter_mut().try_for_each(|(s, inner)| {
                 match s.0.map_lookup(&value) {
-                    Some(v) => inner.add(v)?,
+                    Some(v) => {
+                        n_found += 1;
+                        inner.add(v)?
+                    },
                     None => inner.add_null(),
                 }
                 PolarsResult::Ok(())
             })?;
+            // Duplicate keys also lower the match count.
+            if extra_keys.top_level
+                && n_found < value.len()
+                && let Some(key) =
+                    (value.keys()).find(|k| !buffers.keys().any(|b| b.0.key() == k.as_ref()))
+            {
+                return Err(extra_keys.err(key));
+            }
         },
         _ if ignore_errors => {
             buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
@@ -238,19 +309,29 @@ pub fn is_json_line(bytes: &[u8]) -> bool {
         .any(|byte| !matches!(*byte, b' ' | b'\t' | b'\r'))
 }
 
+/// Returns the number of records.
 fn parse_lines(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
     guide: Option<&TapeGuide>,
     ignore_errors: bool,
-) -> PolarsResult<()> {
+    extra_keys: &ExtraKeysCheck,
+) -> PolarsResult<usize> {
     let mut scratch = Scratch::default();
 
-    let iter = json_lines(bytes);
-    for bytes in iter {
-        parse_impl(bytes, buffers, &mut scratch, guide, ignore_errors)?;
+    let mut n_records = 0;
+    for bytes in json_lines(bytes) {
+        parse_impl(
+            bytes,
+            buffers,
+            &mut scratch,
+            guide,
+            ignore_errors,
+            extra_keys,
+        )?;
+        n_records += 1;
     }
-    Ok(())
+    Ok(n_records)
 }
 
 pub fn parse_ndjson(
@@ -258,6 +339,7 @@ pub fn parse_ndjson(
     n_rows_hint: Option<usize>,
     schema: &Schema,
     ignore_errors: bool,
+    extra_keys: &ExtraKeysCheck,
 ) -> PolarsResult<DataFrame> {
     let capacity = n_rows_hint.unwrap_or_else(|| estimate_n_lines_in_chunk(bytes));
 
@@ -280,14 +362,37 @@ pub fn parse_ndjson(
             .collect()
     });
 
+    // Map keys are data, not struct fields.
+    let masked_extra_keys;
+    let extra_keys = if has_map {
+        masked_extra_keys = ExtraKeysCheck {
+            nested: (extra_keys.nested.iter())
+                .zip(schema.iter_values())
+                .map(|(&check, dt)| check && !dt.contains_map())
+                .collect(),
+            ..extra_keys.clone()
+        };
+        &masked_extra_keys
+    } else {
+        extra_keys
+    };
+
     let mut buffers = init_buffers(
         decode_schema.as_ref().unwrap_or(schema),
         capacity,
         ignore_errors,
+        extra_keys,
     )?;
-    parse_lines(bytes, &mut buffers, guide.as_ref(), ignore_errors)?;
+    let height = parse_lines(
+        bytes,
+        &mut buffers,
+        guide.as_ref(),
+        ignore_errors,
+        extra_keys,
+    )?;
 
-    DataFrame::new_infer_height(
+    DataFrame::new(
+        height,
         buffers
             .into_values()
             .zip(schema.iter_values())

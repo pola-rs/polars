@@ -1038,6 +1038,25 @@ fn lower_ir_inner(
                     FileScanIR::NDJson { options } => Arc::new(
                         crate::nodes::io_sources::ndjson::builder::NDJsonReaderBuilder {
                             options: Arc::new(options.clone()),
+                            file_schema: Some({
+                                // The IR schema also holds the row index and file path columns.
+                                let mut schema = file_info.schema.clone();
+                                let row_index = unified_scan_args.row_index.as_ref();
+                                for name in [row_index.map(|ri| &ri.name)]
+                                    .into_iter()
+                                    .chain([unified_scan_args.include_file_paths.as_ref()])
+                                    .flatten()
+                                {
+                                    if schema.contains(name) {
+                                        Arc::make_mut(&mut schema).shift_remove(name);
+                                    }
+                                }
+                                schema
+                            }),
+                            extra_columns_policy: unified_scan_args.extra_columns_policy,
+                            extra_struct_fields_policy: unified_scan_args
+                                .cast_columns_policy
+                                .extra_struct_fields,
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
@@ -1147,6 +1166,8 @@ fn lower_ir_inner(
                         FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
                         #[cfg(feature = "csv")]
                         FileScanIR::Csv { .. } => unified_scan_args.extra_columns_policy,
+                        #[cfg(feature = "json")]
+                        FileScanIR::NDJson { .. } => unified_scan_args.extra_columns_policy,
 
                         _ => {
                             if unified_scan_args.projection.is_some() {

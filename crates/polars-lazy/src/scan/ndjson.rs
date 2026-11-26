@@ -28,6 +28,7 @@ pub struct LazyJsonLineReader {
     pub(crate) ignore_errors: bool,
     pub(crate) include_file_paths: Option<PlSmallStr>,
     pub(crate) cloud_options: Option<CloudOptions>,
+    pub(crate) extra_columns_policy: Option<ExtraColumnsPolicy>,
 }
 
 impl LazyJsonLineReader {
@@ -49,6 +50,7 @@ impl LazyJsonLineReader {
             n_rows: None,
             include_file_paths: None,
             cloud_options: None,
+            extra_columns_policy: None,
         }
     }
 
@@ -121,10 +123,21 @@ impl LazyJsonLineReader {
         self.include_file_paths = include_file_paths;
         self
     }
+
+    /// Keys outside the schema, at any level. Defaults to raise for an inferred schema.
+    #[must_use]
+    pub fn with_extra_columns_policy(mut self, policy: Option<ExtraColumnsPolicy>) -> Self {
+        self.extra_columns_policy = policy;
+        self
+    }
 }
 
 impl LazyFileListReader for LazyJsonLineReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
+        let extra_columns_policy = self.extra_columns_policy.unwrap_or(match self.schema {
+            Some(_) => ExtraColumnsPolicy::Ignore,
+            None => ExtraColumnsPolicy::Raise,
+        });
         let unified_scan_args = UnifiedScanArgs {
             schema: None,
             cloud_options: self.cloud_options,
@@ -140,9 +153,12 @@ impl LazyFileListReader for LazyJsonLineReader {
             default_values: None,
             row_index: self.row_index,
             pre_slice: self.n_rows.map(|len| Slice::Positive { offset: 0, len }),
-            cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+            cast_columns_policy: CastColumnsPolicy {
+                extra_struct_fields: extra_columns_policy,
+                ..CastColumnsPolicy::ERROR_ON_MISMATCH
+            },
             missing_columns_policy: MissingColumnsPolicy::Raise,
-            extra_columns_policy: ExtraColumnsPolicy::Raise,
+            extra_columns_policy,
             include_file_paths: self.include_file_paths,
             deletion_files: None,
             table_statistics: None,

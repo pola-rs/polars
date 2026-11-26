@@ -858,6 +858,7 @@ class PyLazyFrame:
         include_file_paths: str | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
+        extra_columns: Literal["ignore", "raise"] | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_csv(
