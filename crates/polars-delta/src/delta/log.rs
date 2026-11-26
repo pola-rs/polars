@@ -319,7 +319,8 @@ fn commit_range(
     }
     Ok(commits)
 }
-/// The version a timestamp selects: the newest commit whose timestamp is at or before it.
+/// The version a timestamp selects: the newest commit whose timestamp is at or before it, or the
+/// earliest commit in `commits` when the timestamp precedes them all (as deltalake does).
 ///
 /// A commit's timestamp is its `inCommitTimestamp` from the version the table enabled them
 /// (`ict_from`), and its file modification time before that, raised to one millisecond past the
@@ -336,6 +337,10 @@ pub(super) async fn version_at(
     timestamp: i64,
     ict_from: Option<(i64, Option<i64>)>,
 ) -> Result<i64> {
+    let earliest = *commits
+        .keys()
+        .next()
+        .ok_or_else(|| input("not a Delta table: no commits"))?;
     let in_commit_era = ict_from.is_some_and(|(_, at)| at.is_some_and(|at| timestamp >= at));
     let ict_from = ict_from.map(|(version, _)| version);
     let mut chosen = None;
@@ -355,7 +360,7 @@ pub(super) async fn version_at(
         let time = previous.map_or(mtime, |p| mtime.max(p.saturating_add(1)));
         previous = Some(time);
         if time > timestamp {
-            return chosen.ok_or_else(|| input("timestamp precedes available Delta history"));
+            return Ok(chosen.unwrap_or(earliest));
         }
         chosen = Some(*version);
     }
@@ -375,7 +380,7 @@ pub(super) async fn version_at(
     if lo > 0 {
         chosen = Some(in_commit[lo - 1].0);
     }
-    chosen.ok_or_else(|| input("timestamp precedes available Delta history"))
+    Ok(chosen.unwrap_or(earliest))
 }
 
 async fn version_at_with_metadata(

@@ -221,6 +221,23 @@ def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
     assert_frame_equal(df2, pl.concat([df_sample, df_sample2]), check_row_order=False)
 
 
+@pytest.mark.write_disk
+@pytest.mark.parametrize("planner", [None, "plugin", "deltalake"])
+def test_scan_delta_timestamp_version_before_first_commit_clamps(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, planner: str | None
+) -> None:
+    if planner is None:
+        plmonkeypatch.delenv("POLARS_DELTA_PLANNER", raising=False)
+    else:
+        _planner_or_skip(plmonkeypatch, planner)
+    for i in range(3):
+        pl.DataFrame({"a": [i]}).write_delta(tmp_path, mode="append")
+
+    result = pl.scan_delta(tmp_path, version=datetime(1970, 1, 2, tzinfo=UTC)).collect()
+    assert_frame_equal(result, pl.scan_delta(tmp_path, version=0).collect())
+    assert result["a"].to_list() == [0]
+
+
 def test_scan_delta_columns(delta_table_path: Path) -> None:
     ldf = pl.scan_delta(delta_table_path, version=0).select("name")
 

@@ -933,7 +933,8 @@ fn schema_only_rejects_duplicate_actions_across_checkpoint_parts() {
     );
 }
 
-/// The linear scan the planner used before binary search, as the oracle.
+/// The linear scan the planner used before binary search, as the oracle. A timestamp before every
+/// commit selects version 0.
 fn linear_version_at(times: &[(i64, Option<i64>)], timestamp: i64) -> Option<i64> {
     let (mut previous, mut chosen) = (None, None);
     for (version, (mtime, ict)) in times.iter().enumerate() {
@@ -948,7 +949,7 @@ fn linear_version_at(times: &[(i64, Option<i64>)], timestamp: i64) -> Option<i64
             break;
         }
     }
-    chosen
+    chosen.or(Some(0))
 }
 fn version_at_store(
     times: &[(i64, Option<i64>)],
@@ -1033,7 +1034,21 @@ fn timestamp_travel_trusts_in_commit_timestamps_from_the_enablement_timestamp() 
         version_at_store(&times, 1500, Some((2, Some(2000)))).0,
         Some(0)
     );
-    assert_eq!(version_at_store(&times, 500, Some((2, Some(2000)))).0, None);
+    // Before every commit the earliest version is selected.
+    assert_eq!(
+        version_at_store(&times, 500, Some((2, Some(2000)))).0,
+        Some(0)
+    );
+}
+
+#[test]
+fn timestamp_travel_before_the_first_commit_clamps_to_the_earliest_version() {
+    let mtimes = [(5000, None), (6000, None), (7000, None)];
+    assert_eq!(version_at_store(&mtimes, 0, None).0, Some(0));
+    assert_eq!(version_at_store(&mtimes, 4999, None).0, Some(0));
+    let ict = [(50, Some(5000)), (50, Some(6000))];
+    assert_eq!(version_at_store(&ict, 0, Some((0, None))).0, Some(0));
+    assert_eq!(version_at_store(&ict, 0, Some((0, Some(5000)))).0, Some(0));
 }
 
 #[test]
