@@ -446,3 +446,18 @@ fn version() {
         )
     );
 }
+
+#[test]
+#[cfg(all(target_family = "unix", not(target_os = "emscripten")))]
+fn jemalloc_starts_with_the_settings_of_the_python_package() {
+    let output = common::polars()
+        .arg("--version")
+        .env("_RJEM_MALLOC_CONF", "confirm_conf:true")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("dirty_decay_ms:500,muzzy_decay_ms:1000"),
+        "{stderr}"
+    );
+}
