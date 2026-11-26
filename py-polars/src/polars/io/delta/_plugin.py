@@ -217,17 +217,17 @@ def plugin_scan(
     )
     expected_id = dataset._expected_table_id()
     # An empty id is unknown (a table without one): nothing to compare.
-    table_id = table_id or None
-    if expected_id is not None and table_id is not None and table_id != expected_id:
+    scanned_id: str | None = table_id or None
+    if expected_id is not None and scanned_id is not None and scanned_id != expected_id:
         msg = (
             f"the Delta table at {dataset._user_table_uri()!r} is not the one this scan was created from "
-            f"(table id {table_id!r}, expected {expected_id!r}); it was replaced. "
+            f"(table id {scanned_id!r}, expected {expected_id!r}); it was replaced. "
             "Create a new scan"
         )
         raise ComputeError(msg)
-    if table_id is not None:
+    if scanned_id is not None:
         # An unknown id must not erase one learned earlier.
-        dataset._resolved_table_id = table_id
+        dataset._resolved_table_id = scanned_id
     dataset._resolved_version = resolved_version
     if ambiguous:
         dataset._root_planner = "plugin"

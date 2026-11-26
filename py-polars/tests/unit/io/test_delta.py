@@ -2418,11 +2418,12 @@ def test_scan_delta_supplied_table_after_log_expiry(
     if not os.environ.get("POLARS_DELTA_PLANNER"):
         calls = []
         original = _plugin.plugin_scan
-        monkeypatch.setattr(
-            _plugin,
-            "plugin_scan",
-            lambda *a, **k: calls.append(1) or original(*a, **k),
-        )
+
+        def counting_plugin_scan(*a: Any, **k: Any) -> Any:
+            calls.append(1)
+            return original(*a, **k)
+
+        monkeypatch.setattr(_plugin, "plugin_scan", counting_plugin_scan)
         dataset = new_pl_delta_dataset(held)
         assert dataset._plugin_scan(schema_only=True) is None
         assert dataset._plugin_scan(schema_only=True) is None
@@ -2488,9 +2489,12 @@ def test_delta_auto_planner_uses_deltalake_for_ambiguous_caller_root(
 
     calls = []
     monkeypatch.setattr(_plugin, "use_plugin_planner", lambda: True)
-    monkeypatch.setattr(
-        _plugin, "plugin_scan", lambda *_, **__: calls.append(1) or (None, 0)
-    )
+
+    def fake_plugin_scan(*_: Any, **__: Any) -> Any:
+        calls.append(1)
+        return None, 0
+
+    monkeypatch.setattr(_plugin, "plugin_scan", fake_plugin_scan)
     uri = "s3://bucket/literal%20space"
 
     monkeypatch.delenv("POLARS_DELTA_PLANNER", raising=False)
@@ -2574,11 +2578,12 @@ def test_scan_delta_pyarrow_builds_one_dataset_per_version(
     write_deltalake(tmp_path, pa.table({"a": [1]}))
     calls = []
     original = DeltaTable.to_pyarrow_dataset
-    monkeypatch.setattr(
-        DeltaTable,
-        "to_pyarrow_dataset",
-        lambda *a, **k: calls.append(1) or original(*a, **k),
-    )
+
+    def counting_to_pyarrow_dataset(*a: Any, **k: Any) -> Any:
+        calls.append(1)
+        return original(*a, **k)
+
+    monkeypatch.setattr(DeltaTable, "to_pyarrow_dataset", counting_to_pyarrow_dataset)
     lf = pl.scan_delta(tmp_path, use_pyarrow=True)
     assert lf.collect_schema() == {"a": pl.Int64}
     assert lf.collect().rows() == [(1,)]
