@@ -333,10 +333,10 @@ def duration(
     For non-fixed durations such as "calendar month" or "calendar day",
     please use :meth:`polars.Expr.dt.offset_by` instead.
 
-    Integer components are combined exactly, and float components (with float
-    precision) are added to them, so that only the total is truncated (towards zero)
-    to `time_unit`. Totals that do not fit into `time_unit`, or are not finite, are
-    null (integer inputs that do not fit into Int64 raise an error).
+    Integer components are combined exactly and truncated (towards zero) to
+    `time_unit`, and float components are then added with float precision. Totals
+    that do not fit into `time_unit`, or are not finite, are null (integer inputs that
+    do not fit into Int64 raise an error).
 
     Examples
     --------

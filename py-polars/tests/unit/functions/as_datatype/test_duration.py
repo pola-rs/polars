@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import functools
 import math
+import operator
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
@@ -287,6 +289,26 @@ NANOSECONDS_PER = {
 }
 
 
+def _expected_duration(kwargs: dict[str, float], unit_ns: int) -> int | None:
+    # integers are summed exactly and truncated (towards zero), then the floats are
+    # added (in component order) with float precision; null if out of range
+    ints = sum(v * NANOSECONDS_PER[k] for k, v in kwargs.items() if isinstance(v, int))
+    total = int(Fraction(ints, unit_ns))
+    if not -(2**63) <= total < 2**63:
+        return None
+    terms = [
+        v * (ns // unit_ns) if ns >= unit_ns else v / (unit_ns // ns)
+        for k, ns in NANOSECONDS_PER.items()
+        if isinstance(v := kwargs.get(k), float)
+    ]
+    if not terms:
+        return total
+    f = functools.reduce(operator.add, terms)
+    if any(isinstance(v, int) for v in kwargs.values()):
+        f = float(total) + f
+    return int(f) if math.isfinite(f) and -(2**63) <= f < 2**63 else None
+
+
 @pytest.mark.parametrize("time_unit", ["ns", "us", "ms"])
 @pytest.mark.parametrize(
     "kwargs",
@@ -308,7 +330,7 @@ NANOSECONDS_PER = {
         {"weeks": 50_000, "days": -349_999, "seconds": 0.5},
         {"days": 300 * 365, "nanoseconds": 1, "seconds": 0.5},
         {"days": 300 * 365, "nanoseconds": 1},
-        # (integers are exact when floats are added)
+        # (integers are truncated exactly before floats are added)
         {"days": 200, "nanoseconds": 1, "seconds": 0.0},
         {"nanoseconds": 1_700_000_000_000_000_999, "seconds": 0.5},
         {"nanoseconds": -1_700_000_000_000_000_999, "seconds": -0.5},
@@ -325,26 +347,23 @@ NANOSECONDS_PER = {
         {"milliseconds": 2.0**63 - 1024},  # (the largest float below 2**63)
     ],
 )
-def test_duration_combines_components_exactly(
+def test_duration_combines_components(
     kwargs: dict[str, float], time_unit: TimeUnit
 ) -> None:
-    # the components are combined exactly and only the total is truncated (towards
-    # zero), whether they are columns or literals (which are constant-folded)
+    # (the same for columns and for literals, which are constant-folded; zero float
+    # literals are skipped, so they do not make the integers float)
     unit_ns = {"ns": 1, "us": 1_000, "ms": 1_000_000}[time_unit]
-    expected: int | None = None
-    if all(math.isfinite(v) for v in kwargs.values()):
-        total = sum(Fraction(v) * NANOSECONDS_PER[k] for k, v in kwargs.items())
-        expected = int(total / unit_ns)
-        if not -(2**63) <= expected < 2**63:
-            expected = None
-
     df = pl.DataFrame({k: [v, v] for k, v in kwargs.items()})
     evaluated = df.select(
         pl.duration(**{k: pl.col(k) for k in kwargs}, time_unit=time_unit)  # type: ignore[arg-type]
     )
+    expected = _expected_duration(kwargs, unit_ns)
     assert evaluated.to_series().to_physical().to_list() == [expected] * 2
+
     folded = pl.select(pl.duration(**kwargs, time_unit=time_unit))  # type: ignore[arg-type]
     assert folded.columns == ["duration"]  # (folded into a literal)
+    nonzero = {k: v for k, v in kwargs.items() if v != 0}
+    expected = _expected_duration(nonzero, unit_ns)
     assert folded.to_series().to_physical().item() == expected
 
 
