@@ -15,8 +15,8 @@ use crate::dsl::Operator;
 use crate::plans::iterator::ArenaExprIter;
 use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::{
-    AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinType, MintermIter, OutputName,
-    is_row_separable_rec,
+    AExpr, ExprIR, ExprProperties, ExprPushdownGroup, IR, JoinOptionsIR, JoinType, MintermIter,
+    OutputName,
 };
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
@@ -58,7 +58,7 @@ pub(super) fn can_fuse_predicate(node: Node, expr_arena: &Arena<AExpr>) -> bool 
     group.update_with_expr_rec(expr_arena.get(node), expr_arena, None);
 
     matches!(group, ExprPushdownGroup::Pushable)
-        && is_row_separable_rec(node, expr_arena)
+        && ExprProperties::default().is_row_separable(node, expr_arena)
         && !contains_dynamic_pred(node, expr_arena)
 }
 
