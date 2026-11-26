@@ -1681,10 +1681,11 @@ fn can_cast_to_lossless(to: &DataType, from: &DataType) -> PolarsResult<()> {
             max_int_value >= dt.max().unwrap().value().extract::<i128>().unwrap()
                 && min_int_value <= dt.min().unwrap().value().extract::<i128>().unwrap()
         },
-        // Can't check for more granular time_unit in less-granular time_unit
-        // data, or we'll cast away valid/necessary precision (eg: nanosecs to
-        // millisecs):
-        (DataType::Datetime(to_unit, _), DataType::Datetime(from_unit, _)) => to_unit <= from_unit,
+        // The target unit must be at least as fine as the source unit. A cast
+        // between naive and time zone aware datetimes changes their meaning.
+        (DataType::Datetime(to_unit, to_tz), DataType::Datetime(from_unit, from_tz)) => {
+            to_unit <= from_unit && to_tz.is_some() == from_tz.is_some()
+        },
         (DataType::Duration(to_unit), DataType::Duration(from_unit)) => to_unit <= from_unit,
         (DataType::List(to), DataType::List(from)) => return can_cast_to_lossless(to, from),
         #[cfg(feature = "dtype-array")]

@@ -5,7 +5,6 @@ import sys
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote, unquote
 
 import polars as pl
 from polars._utils.logging import eprint
@@ -497,6 +496,8 @@ class DeltaScanResolver(LazyFrameResolver):
             table_statistics = None
         hive_partitions = None
         if partition_columns:
+            from urllib.parse import unquote
+
             if not all(
                 path.endswith(unquote(add_path))
                 for path, add_path in zip(paths, add_actions["path"], strict=True)
@@ -779,6 +780,8 @@ def _dv_path_key(path: str, table_root: str | None) -> str:
     Below the table root, file_uris() decodes local paths and gives cloud paths as a
     URL path, while deletion vector paths keep the log's percent-encoding.
     """
+    from urllib.parse import quote, unquote
+
     root = table_root if table_root and path.startswith(table_root) else ""
     rel = unquote(path[len(root) :])
     if "://" in path:

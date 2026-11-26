@@ -213,6 +213,93 @@ impl AnyValue<'static> {
             DT::Unknown(_) => unreachable!(),
         }
     }
+
+    /// This datetime or duration rescaled to `time_unit` (other values are returned as-is);
+    /// values that overflow `time_unit` raise if `strict`, else become null.
+    #[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
+    pub fn cast_time_unit(self, time_unit: TimeUnit, strict: bool) -> PolarsResult<Self> {
+        let converted = match &self {
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v, tu, tz) => tu
+                .rescale_to(time_unit)
+                .datetime_value(*v)
+                .map(|v| AnyValue::Datetime(v, time_unit, *tz)),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(v, tu, tz) => tu
+                .rescale_to(time_unit)
+                .datetime_value(*v)
+                .map(|v| AnyValue::DatetimeOwned(v, time_unit, tz.clone())),
+            #[cfg(feature = "dtype-duration")]
+            AnyValue::Duration(v, tu) => tu
+                .rescale_to(time_unit)
+                .duration_value(*v)
+                .map(|v| AnyValue::Duration(v, time_unit)),
+            _ => return Ok(self),
+        };
+        match converted {
+            Some(av) => Ok(av),
+            None if strict => {
+                let from = self.dtype();
+                let to = match &from {
+                    #[cfg(feature = "dtype-datetime")]
+                    DataType::Datetime(_, tz) => DataType::Datetime(time_unit, tz.clone()),
+                    #[cfg(feature = "dtype-duration")]
+                    DataType::Duration(_) => DataType::Duration(time_unit),
+                    _ => unreachable!("only datetimes and durations are rescaled"),
+                };
+                Err(time_unit::time_unit_conversion_error(&from, &to, &self))
+            },
+            None => Ok(AnyValue::Null),
+        }
+    }
+
+    /// This value with its (possibly nested) time units cast to those at the same positions in
+    /// `dtype`, leaving any other differences to the caller; values that overflow raise if
+    /// `strict`, else become null.
+    #[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
+    pub fn cast_time_units_like(self, dtype: &DataType, strict: bool) -> PolarsResult<Self> {
+        match (self, dtype) {
+            #[cfg(feature = "dtype-datetime")]
+            (
+                av @ (AnyValue::Datetime(..) | AnyValue::DatetimeOwned(..)),
+                DataType::Datetime(tu, _),
+            ) => av.cast_time_unit(*tu, strict),
+            #[cfg(feature = "dtype-duration")]
+            (av @ AnyValue::Duration(..), DataType::Duration(tu)) => av.cast_time_unit(*tu, strict),
+            (AnyValue::List(s), DataType::List(inner)) => {
+                Ok(AnyValue::List(s.cast_time_units_like(inner, strict)?))
+            },
+            // (a Python list is a list value, also for an array column)
+            #[cfg(feature = "dtype-array")]
+            (AnyValue::List(s), DataType::Array(inner, _)) => {
+                Ok(AnyValue::List(s.cast_time_units_like(inner, strict)?))
+            },
+            #[cfg(feature = "dtype-array")]
+            (AnyValue::Array(s, width), DataType::Array(inner, _)) => Ok(AnyValue::Array(
+                s.cast_time_units_like(inner, strict)?,
+                width,
+            )),
+            #[cfg(feature = "dtype-struct")]
+            (AnyValue::StructOwned(payload), DataType::Struct(targets)) => {
+                let (values, mut fields) = *payload;
+                let values = values
+                    .into_iter()
+                    .zip(&mut fields)
+                    .map(
+                        |(value, field)| match targets.iter().find(|t| t.name == field.name) {
+                            Some(target) => {
+                                field.dtype.adopt_time_units_from(&target.dtype);
+                                value.cast_time_units_like(&target.dtype, strict)
+                            },
+                            None => Ok(value),
+                        },
+                    )
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                Ok(AnyValue::StructOwned(Box::new((values, fields))))
+            },
+            (av, _) => Ok(av),
+        }
+    }
 }
 
 impl<'a> AnyValue<'a> {
@@ -553,11 +640,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (AnyValue::Date(v), DataType::Datetime(tu, _)) => AnyValue::Datetime(
-                match tu {
-                    TimeUnit::Nanoseconds => (*v as i64) * NS_IN_DAY,
-                    TimeUnit::Microseconds => (*v as i64) * US_IN_DAY,
-                    TimeUnit::Milliseconds => (*v as i64) * MS_IN_DAY,
-                },
+                (*v as i64).checked_mul(NS_IN_DAY / tu.nanoseconds())?,
                 *tu,
                 None,
             ),
@@ -566,15 +649,7 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _),
                 DataType::Datetime(tu_r, tz_r),
             ) => AnyValue::Datetime(
-                match (tu, tu_r) {
-                    (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => *v / 1_000i64,
-                    (TimeUnit::Nanoseconds, TimeUnit::Milliseconds) => *v / 1_000_000i64,
-                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => *v * 1_000i64,
-                    (TimeUnit::Microseconds, TimeUnit::Milliseconds) => *v / 1_000i64,
-                    (TimeUnit::Milliseconds, TimeUnit::Microseconds) => *v * 1_000i64,
-                    (TimeUnit::Milliseconds, TimeUnit::Nanoseconds) => *v * 1_000_000i64,
-                    _ => *v,
-                },
+                tu.rescale_to(*tu_r).datetime_value(*v)?,
                 *tu_r,
                 tz_r.as_ref(),
             ),
@@ -586,11 +661,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Date) => {
-                AnyValue::Date(match tu {
-                    TimeUnit::Nanoseconds => *v / NS_IN_DAY,
-                    TimeUnit::Microseconds => *v / US_IN_DAY,
-                    TimeUnit::Milliseconds => *v / MS_IN_DAY,
-                } as i32)
+                AnyValue::Date(i32::try_from(v.div_euclid(NS_IN_DAY / tu.nanoseconds())).ok()?)
             },
 
             // to time
@@ -600,11 +671,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Time) => {
-                AnyValue::Time(match tu {
-                    TimeUnit::Nanoseconds => *v % NS_IN_DAY,
-                    TimeUnit::Microseconds => (*v % US_IN_DAY) * 1_000i64,
-                    TimeUnit::Milliseconds => (*v % MS_IN_DAY) * 1_000_000i64,
-                })
+                AnyValue::Time(v.rem_euclid(NS_IN_DAY / tu.nanoseconds()) * tu.nanoseconds())
             },
 
             // to duration
@@ -617,19 +684,9 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Duration(tu.from_nsecs(*v), *tu)
             },
             #[cfg(feature = "dtype-duration")]
-            (AnyValue::Duration(v, tu), DataType::Duration(tu_r)) => AnyValue::Duration(
-                match (tu, tu_r) {
-                    (_, _) if tu == tu_r => *v,
-                    (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => *v / 1_000i64,
-                    (TimeUnit::Nanoseconds, TimeUnit::Milliseconds) => *v / 1_000_000i64,
-                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => *v * 1_000i64,
-                    (TimeUnit::Microseconds, TimeUnit::Milliseconds) => *v / 1_000i64,
-                    (TimeUnit::Milliseconds, TimeUnit::Microseconds) => *v * 1_000i64,
-                    (TimeUnit::Milliseconds, TimeUnit::Nanoseconds) => *v * 1_000_000i64,
-                    _ => *v,
-                },
-                *tu_r,
-            ),
+            (AnyValue::Duration(v, tu), DataType::Duration(tu_r)) => {
+                AnyValue::Duration(tu.rescale_to(*tu_r).duration_value(*v)?, *tu_r)
+            },
 
             #[cfg(feature = "dtype-decimal")]
             (av, DataType::Decimal(p, s)) if av.is_integer() => {

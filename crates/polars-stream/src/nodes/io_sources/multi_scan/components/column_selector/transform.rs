@@ -9,15 +9,19 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ColumnTransform {
     /// Cast the column to a dtype.
     Cast {
         dtype: DataType,
         options: CastOptions,
+        /// The cast never turns a non-null value into a null.
+        preserves_null_count: bool,
     },
     /// Set the name of the column.
     Rename { name: PlSmallStr },
+    /// Replace with a full-null column of `dtype`, keeping the name.
+    FullNull { dtype: DataType },
     /// Construct a struct column by applying column selectors onto the field arrays.
     StructFieldsMapping {
         field_selectors: Box<[ColumnSelector]>,
@@ -43,13 +47,21 @@ impl ColumnTransform {
         use ColumnTransform as TF;
 
         let out = match self {
-            TF::Cast { dtype, options } => {
+            TF::Cast {
+                dtype,
+                options,
+                preserves_null_count,
+            } => {
                 // note: strict casts are only sound for non-nested dtypes here;
                 // recursion currently does not propagate NULLs across nesting levels
                 debug_assert!(!matches!(options, CastOptions::Strict) || !dtype.is_nested());
 
-                input.cast_with_options(dtype, *options)?
+                let out = input.cast_with_options(dtype, *options)?;
+                debug_assert!(!preserves_null_count || out.null_count() == input.null_count());
+                out
             },
+
+            TF::FullNull { dtype } => Column::full_null(input.name().clone(), input.len(), dtype),
 
             TF::Rename { name } => input.with_name(name.clone()),
 

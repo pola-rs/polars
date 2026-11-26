@@ -5,7 +5,6 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote, urlsplit, urlunsplit
 
 from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars._utils.logging import eprint
@@ -35,6 +34,8 @@ def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> st
 
 def _native_uri_from_delta_table_uri(uri: str) -> str:
     """Convert an escaped DeltaTable URI to a native storage path."""
+    from urllib.parse import unquote, urlsplit, urlunsplit
+
     if uri.startswith("file://"):
         return uri
     parts = urlsplit(uri)

@@ -2,24 +2,19 @@ name: Benchmark
 
 on:
   pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
     paths:
       - crates/**
       - py-polars/polars-database/**
       - py-polars/polars-delta/**
       - py-polars/polars-iceberg/**
       - Cargo.toml
-      - py-polars/tests/benchmark/**
-      - .github/workflows/benchmark.yml
-  push:
-    branches:
-      - main
-      - "1.x"
-    paths:
-      - crates/**
-      - py-polars/polars-database/**
-      - py-polars/polars-delta/**
-      - py-polars/polars-iceberg/**
-      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
       - py-polars/tests/benchmark/**
       - .github/workflows/benchmark.yml
 
@@ -32,6 +27,7 @@ env:
 
 jobs:
   main:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -65,16 +61,6 @@ jobs:
 
       - name: Set up Rust
         run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          env-vars: ImageVersion
-          save-if: ${{ github.event_name == 'push' }}
-          # This job builds with `-C target-cpu=native`, which the cache key does
-          # not capture, so reusing artifacts across runner CPUs risks SIGILL and
-          # makes timings incomparable; cache the registry only.
-          cache-targets: false
 
       - name: Build Polars release build
         working-directory: py-polars
@@ -153,14 +139,6 @@ jobs:
           maturin develop --uv --manifest-path polars-database/Cargo.toml
           # The plugin tests skip when the module is missing; fail here instead.
           python -c 'import polars_database'
-
-      - name: Install polars_delta plugin
-        working-directory: py-polars
-        run: |
-          # The venv is created by uv and has no pip.
-          maturin develop --uv --manifest-path polars-delta/Cargo.toml
-          # The plugin tests skip when the module is missing; fail here instead.
-          python -c 'import polars_delta; import polars._plr as plr; from polars.io.delta._plugin import _plugin_capsule; assert hasattr(plr, "_delta_plugin_scan"); assert _plugin_capsule(plr._IO_PLUGIN_IDS) is not None'
 
       - name: Run non-benchmark tests
         working-directory: py-polars

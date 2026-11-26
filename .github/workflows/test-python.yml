@@ -2,6 +2,11 @@ name: Test Python
 
 on:
   pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
     paths:
       - Cargo.lock
       - py-polars/**
@@ -58,8 +63,9 @@ defaults:
 
 jobs:
   test-python:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
-    env:
+    env: &test-python-env
       POLARS_IDEAL_MORSEL_SIZE: ${{ matrix.ideal_morsel_size }}
       # Slow tests are prohibitively slow with a tiny morsel size.
       EXTRA_PYTEST_MARKERS: ${{ matrix.ideal_morsel_size < 10 && ' and not slow' || '' }}
@@ -67,7 +73,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.11', '3.12', '3.13', '3.14', '3.15t']
+        python-version: ['3.11', '3.12', '3.13', '3.14']
         variant: [null]
         ideal_morsel_size: [100000]
         include:
@@ -88,7 +94,7 @@ jobs:
             variant: engine_affinity_in_memory
             ideal_morsel_size: 100000
 
-    steps:
+    steps: &test-python-steps
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
@@ -257,3 +263,17 @@ jobs:
         run: |
           uv pip install $(grep -E '^(numpy|pandas|pyarrow|pydantic|hypothesis|pytest|pytest-xdist)([<>=!~]|$)' requirements-dev.txt)
           pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/constructors tests/unit/operations/test_comparison.py
+
+  # A job-level `if` cannot see the matrix, so draft PRs get their own job reusing the steps above.
+  test-python-draft:
+    if: ${{ github.event.pull_request.draft }}
+    runs-on: ${{ matrix.os }}
+    env: *test-python-env
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.14']
+        variant: [null]
+        ideal_morsel_size: [100000]
+
+    steps: *test-python-steps

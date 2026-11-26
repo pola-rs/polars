@@ -4,7 +4,6 @@ import contextlib
 import io
 import warnings
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, reduce
 from io import BytesIO, StringIO
@@ -187,8 +186,6 @@ if TYPE_CHECKING:
     T = TypeVar("T")
     P = ParamSpec("P")
 
-
-_COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 # Name of the placeholder column used by `LazyFrame._with_height_column()`.
 _HEIGHT_COLUMN = "__POLARS_INTERNAL_HEIGHT_COLUMN"

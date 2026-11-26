@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import abc
 import importlib.util
-import json
 import os
-import subprocess
 import sys
-import zoneinfo
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
@@ -18,6 +15,7 @@ from typing import (
 )
 
 import polars._utils.logging
+from polars._dependencies import json, subprocess
 from polars._utils.logging import eprint, verbose
 from polars.io.cloud._utils import NoPickleOption
 
@@ -600,6 +598,8 @@ class CredentialProviderGCP(CachingCredentialProvider):
 
     def retrieve_credentials_impl(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
+        import zoneinfo
+
         import google.auth.transport.requests
 
         creds, _project_id = self._init_creds()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import os
 import threading
 from abc import ABC, abstractmethod
@@ -12,6 +11,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 
 import polars._reexport as pl
+from polars._dependencies import hashlib
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError

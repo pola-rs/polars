@@ -2,6 +2,11 @@ name: Build documentation
 
 on:
   pull_request:
+    types:
+      - opened
+      - ready_for_review
+      - reopened
+      - synchronize
     paths:
       - docs/**
       - zensical.toml
@@ -11,7 +16,7 @@ on:
       - main
     paths:
       - docs/**
-      - mkdocs.yml
+      - zensical.toml
       - .github/workflows/docs-global.yml
   repository_dispatch:
     types:
@@ -23,6 +28,7 @@ env:
 
 jobs:
   markdown-link-check:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -34,6 +40,7 @@ jobs:
           folder-path: docs
 
   lint:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -59,6 +66,7 @@ jobs:
           args: format --diff
 
   deploy:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

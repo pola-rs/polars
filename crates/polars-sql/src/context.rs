@@ -52,7 +52,9 @@ use crate::catalog::{
 use crate::copy::{self, CopyToStdout};
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::functions::{PolarsSQLFunctions, is_builtin_function, is_random, random_once};
+use crate::functions::{
+    PolarsSQLFunctions, UNNEST_OPTIONS, is_builtin_function, is_random, random_once,
+};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
     check_columns_in_aggregates, has_marked_aggregate, has_random_outside_aggregates,
@@ -64,7 +66,7 @@ use crate::grouping_sets::{
     expand_grouping_sets, is_grouping_placeholder, new_placeholder,
 };
 use crate::iceberg_alter::{self, IcebergAlter, IcebergAlterOp, OtherStatement};
-use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
+use crate::join_keys::{distinct_key_names, sql_join_key_pair, sql_join_where_predicate};
 use crate::location::{
     complete_location, locate, locate_in_statement, without_macro_positions, without_positions,
 };
@@ -110,6 +112,19 @@ type UpdateParts<'a> = (
     Vec<(String, SQLExpr)>,
     Option<&'a SQLExpr>,
 );
+
+/// The stack kept free for the walks over a query's AST that do not grow the stack, such as
+/// clones. These walks go as deep as the parser's recursion limit allows.
+const QUERY_RED_ZONE: usize = if cfg!(debug_assertions) {
+    8 << 20
+} else {
+    2 << 20
+};
+
+/// Runs `f` with at least [`QUERY_RED_ZONE`] of stack free.
+fn with_query_stack<R>(f: impl FnOnce() -> R) -> R {
+    stacker::maybe_grow(QUERY_RED_ZONE, 4 * QUERY_RED_ZONE, f)
+}
 
 /// Columns of a catalog `MERGE`'s frames; the Python side uses the same names.
 const MERGE_FILE: &str = "__polars_merge_file";
@@ -577,6 +592,10 @@ impl SQLContext {
 
     /// The catalog tables that `query` reads, once per table and version.
     pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
+        with_query_stack(|| self.catalog_tables_impl(query))
+    }
+
+    fn catalog_tables_impl(&self, query: &str) -> PolarsResult<Vec<CatalogRead>> {
         // these ALTER TABLE operations read no table
         let Ok(mut stmt) = iceberg_alter::parse_single_statement_or_alter(query)? else {
             return Ok(Vec::new());
@@ -604,6 +623,10 @@ impl SQLContext {
     /// The catalog statement of `query`, if any, for the caller to perform:
     /// [`SQLContext::execute`] rejects it.
     pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
+        with_query_stack(|| self.catalog_statement_impl(query))
+    }
+
+    fn catalog_statement_impl(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
         let mut stmt = match iceberg_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => {
@@ -1464,6 +1487,14 @@ impl SQLContext {
         query: &str,
         params: &QueryParams,
     ) -> PolarsResult<LazyFrame> {
+        with_query_stack(|| self.execute_with_params_impl(query, params))
+    }
+
+    fn execute_with_params_impl(
+        &mut self,
+        query: &str,
+        params: &QueryParams,
+    ) -> PolarsResult<LazyFrame> {
         let mut stmt = match iceberg_alter::parse_single_statement_or_alter(query)? {
             Ok(stmt) => stmt,
             Err(OtherStatement::Alter(alter)) => return Err(self.alter_table_error(&alter.name)),
@@ -1530,7 +1561,7 @@ impl SQLContext {
     /// its output: [`SQLContext::execute`] rejects it. It is not a file that SQL writes, so
     /// [`SQLContext::with_file_writes`] does not limit it.
     pub fn copy_to_stdout(&mut self, query: &str) -> PolarsResult<Option<CopyToStdout>> {
-        self.describe_copy_to_stdout(query)
+        with_query_stack(|| self.describe_copy_to_stdout(query))
             .map_err(|e| complete_location(e, query))
     }
 
@@ -1644,6 +1675,16 @@ impl SQLContext {
     /// resolve into the arenas of the ongoing conversion. `cached` is the desugared statement
     /// the node was built with, and `query` is only parsed when it is absent.
     pub(crate) fn execute_with_arenas(
+        &mut self,
+        query: &str,
+        cached: Option<&Statement>,
+        lp_arena: &mut Arena<IR>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<DslPlan> {
+        with_query_stack(|| self.execute_with_arenas_impl(query, cached, lp_arena, expr_arena))
+    }
+
+    fn execute_with_arenas_impl(
         &mut self,
         query: &str,
         cached: Option<&Statement>,
@@ -1862,11 +1903,13 @@ impl SQLContext {
     }
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
-        // A nested query does not read the SELECT aliases around it.
-        let outer_aliases = std::mem::take(&mut self.select_aliases);
-        let lf = self.execute_query_body(query);
-        self.select_aliases = outer_aliases;
-        lf
+        with_query_stack(|| {
+            // A nested query does not read the SELECT aliases around it.
+            let outer_aliases = std::mem::take(&mut self.select_aliases);
+            let lf = self.execute_query_body(query);
+            self.select_aliases = outer_aliases;
+            lf
+        })
     }
 
     fn execute_query_body(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
@@ -2794,11 +2837,7 @@ impl SQLContext {
                 names: Arc::from(explode_cols),
                 strict: true,
             },
-            ExplodeOptions {
-                // As in Postgres: an empty or NULL list gives no row.
-                empty_as_null: false,
-                keep_nulls: false,
-            },
+            UNNEST_OPTIONS,
         );
         if !rename_from.is_empty() {
             lf = lf.rename(rename_from, rename_to, true);
@@ -3470,16 +3509,10 @@ impl SQLContext {
         // Postgres: its rows join the table as data, so that the table's plan never holds itself,
         // which would double it with each such INSERT. Its reads of the table share one plan,
         // computed once. The query is planned with the table in a cache, which tells.
-        let shared = match reads_no_table {
-            true => None,
-            false => self.share_target(&tbl)?,
+        let (rows, reads_target) = match reads_no_table {
+            true => (self.execute_query(&query)?, false),
+            false => self.plan_sharing_target(&tbl, |ctx| ctx.execute_query(&query))?,
         };
-        let rows = self.execute_query(&query);
-        if shared.is_some() {
-            self.set_registered(&tbl, table.clone())?;
-        }
-        let rows = rows?;
-        let reads_target = shared.is_some_and(|id| holds_cache(&rows.logical_plan, id, 1));
         let added = Added {
             statement,
             from: "the query",
@@ -3597,23 +3630,13 @@ impl SQLContext {
         // The types of the columns that the file fills, in order: a CSV field is read as the
         // type of its column.
         let target = self.get_frame_schema(&mut table)?;
-        let mut schema = Schema::with_capacity(target.len());
-        let names: Vec<&str> = match columns.is_empty() {
-            true => target.iter_names().map(|c| c.as_str()).collect(),
-            false => columns.iter().map(|c| c.as_str()).collect(),
-        };
-        for (i, name) in names.iter().enumerate() {
-            let Some(dtype) = target.get(name) else {
-                polars_bail!(
-                    ColumnNotFound: "column '{}' not found in table '{}'; column names are case-sensitive", name, tbl
-                )
-            };
-            polars_ensure!(
-                !names[..i].contains(name),
-                Duplicate: "column '{}' is listed more than once in COPY FROM", name
-            );
-            schema.with_column((*name).into(), dtype.clone());
-        }
+        let schema: Schema = listed_columns(&target, &columns, &tbl, "COPY FROM")?
+            .into_iter()
+            .map(|name| {
+                let dtype = target.get(&name).unwrap().clone();
+                (name, dtype)
+            })
+            .collect();
         // Another format keeps the columns of the file, by position.
         let rows = match copy::read_rows(path, &schema, options, legacy_options)? {
             (_, Some(rows)) => rows,
@@ -3628,34 +3651,49 @@ impl SQLContext {
         self.add_rows(&tbl, table, rows, &columns, added)
     }
 
-    /// Put the plan of registered table `tbl` in a cache, for a statement that changes the table
-    /// and may also read it, and give the cache's id: a plan that holds it reads the table, and
-    /// all its reads share one plan, computed once. `None` for a table that is not registered,
-    /// which is left for the statement to report. Restore the table with `set_registered`.
-    fn share_target(&self, tbl: &str) -> PolarsResult<Option<UniqueId>> {
-        let mut table_map = self.table_map.write().unwrap();
-        let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() else {
-            return Ok(None);
+    /// The frame that `plan` gives, planned with the plan of registered table `tbl` in a cache,
+    /// for a statement that changes the table and may also read it; and whether the frame
+    /// reads the table, through the cache. All its reads share one plan, computed once.
+    fn plan_sharing_target(
+        &mut self,
+        tbl: &str,
+        plan: impl FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
+    ) -> PolarsResult<(LazyFrame, bool)> {
+        let shared = {
+            let mut table_map = self.table_map.write().unwrap();
+            match key_ignoring_case(&table_map, tbl)?.cloned() {
+                Some(key) => {
+                    let original = table_map[&key].clone();
+                    let cached = match original.logical_plan {
+                        DslPlan::Cache { .. } => original.clone(),
+                        _ => original.clone().cache(),
+                    };
+                    let DslPlan::Cache { id, .. } = cached.logical_plan else {
+                        unreachable!()
+                    };
+                    table_map.insert(key, cached);
+                    Some((id, original))
+                },
+                // Not registered: left for the statement to report.
+                None => None,
+            }
         };
-        let table = table_map.get(&key).unwrap();
-        let shared = match table.logical_plan {
-            DslPlan::Cache { .. } => table.clone(),
-            _ => table.clone().cache(),
+        let lf = plan(self);
+        let Some((id, original)) = shared else {
+            return Ok((lf?, false));
         };
-        let DslPlan::Cache { id, .. } = shared.logical_plan else {
-            unreachable!()
-        };
-        table_map.insert(key, shared);
-        Ok(Some(id))
-    }
-
-    /// Register `lf` again as table `tbl`, under the name it has.
-    fn set_registered(&self, tbl: &str, lf: LazyFrame) -> PolarsResult<()> {
+        // Looked up again: planning may have changed the table map.
         let mut table_map = self.table_map.write().unwrap();
         if let Some(key) = key_ignoring_case(&table_map, tbl)?.cloned() {
-            table_map.insert(key, lf);
+            table_map.insert(key, original);
         }
-        Ok(())
+        drop(table_map);
+        let lf = lf?;
+        let reads_target = lf
+            .logical_plan
+            .into_iter()
+            .any(|p| matches!(p, DslPlan::Cache { id: cache, .. } if *cache == id));
+        Ok((lf, reads_target))
     }
 
     // DELETE FROM <tbl> [WHERE ...]
@@ -3682,20 +3720,11 @@ impl SQLContext {
         // A condition whose subquery reads the table itself, also through a view, is computed now,
         // as in Postgres (see `execute_insert`). The subquery is planned with the table in a
         // cache, which tells; the rows it filters are `lf`, taken before.
-        let original = match selection.is_some_and(expr_contains_subquery) {
-            true => get_ignoring_case(&self.table_map.read().unwrap(), &tbl)?.cloned(),
-            false => None,
+        let (mut remaining, reads_target) = match selection.is_some_and(expr_contains_subquery) {
+            true => self.plan_sharing_target(&tbl, |ctx| ctx.delete_remaining(lf, selection))?,
+            false => (self.delete_remaining(lf, selection)?, false),
         };
-        let shared = match original {
-            Some(_) => self.share_target(&tbl)?,
-            None => None,
-        };
-        let remaining = self.delete_remaining(lf, selection);
-        if let Some(original) = original {
-            self.set_registered(&tbl, original)?;
-        }
-        let mut remaining = remaining?;
-        if shared.is_some_and(|id| holds_cache(&remaining.logical_plan, id, 1)) {
+        if reads_target {
             remaining = remaining.collect()?.lazy();
         }
         // Later statements see the remaining rows, as after TRUNCATE. Locked only now:
@@ -5165,11 +5194,7 @@ impl SQLContext {
                     names: Arc::from(explode_names),
                     strict: true,
                 },
-                ExplodeOptions {
-                    // As in Postgres: an empty or NULL list gives no row.
-                    empty_as_null: false,
-                    keep_nulls: false,
-                },
+                UNNEST_OPTIONS,
             );
             projections = projections
                 .into_iter()
@@ -5293,6 +5318,12 @@ impl SQLContext {
                 } else {
                     group_by_keys.retain(|key| !is_literal(key));
                 }
+            }
+        }
+        // Unnamed constant keys would all be called `literal`.
+        for key in group_by_keys.iter_mut() {
+            if !matches!(key, Expr::Alias(..)) && is_constant(key) {
+                *key = key.clone().alias(unique_column_name());
             }
         }
 
@@ -5914,6 +5945,36 @@ impl SQLContext {
         Ok(independent.then_some(predicate))
     }
 
+    /// The key pairs of a join condition made only of `IS NOT DISTINCT FROM` comparisons that
+    /// each give a join key pair, which join like `=` keys with nulls equal. `None` for any
+    /// other condition.
+    fn nulls_equal_join_keys(
+        &mut self,
+        expr: &SQLExpr,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> Option<(Vec<Expr>, Vec<Expr>)> {
+        if expr_contains_subquery(expr) || contains_random(expr, false) {
+            return None;
+        }
+        let eq_conditions = flatten_and_conditions(expr)
+            .into_iter()
+            .map(|cond| match cond {
+                SQLExpr::IsNotDistinctFrom(left, right) => Some(SQLExpr::BinaryOp {
+                    left: left.clone(),
+                    op: SQLBinaryOperator::Eq,
+                    right: right.clone(),
+                }),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let eq_expr = combine_conditions(eq_conditions, SQLBinaryOperator::And)?;
+        let (left_on, right_on, predicates) =
+            process_join_constraint(&JoinConstraint::On(eq_expr), tbl_left, tbl_right, self)
+                .ok()?;
+        predicates.is_empty().then_some((left_on, right_on))
+    }
+
     /// Join `tbl_left` with `tbl_right`. With `keep_right` (`RIGHT SEMI` / `RIGHT ANTI`),
     /// `join_type` is a semi or anti join that keeps the rows of `tbl_right`.
     pub(super) fn process_join(
@@ -5985,6 +6046,7 @@ impl SQLContext {
         join_type: JoinType,
         keep_right: bool,
     ) -> PolarsResult<LazyFrame> {
+        let mut nulls_equal = false;
         let (mut left_on, mut right_on, predicates) = match constraint {
             // A condition that reads no input (eg: `ON TRUE`, `ON 1 = 1`) pairs every row with
             // every row, or none: join on the condition itself as a boolean key (a null key
@@ -5997,6 +6059,18 @@ impl SQLContext {
                     vec![lit(true)],
                     vec![],
                 )
+            },
+            // Semi and anti joins reject conditions other than key pairs, so comparisons where
+            // nulls compare equal (`IS NOT DISTINCT FROM`) become keys here; other joins leave
+            // this to the optimizer. Extra keys would also get nulls equal, so there must be none.
+            Some(JoinConstraint::On(expr))
+                if join_type.is_semi_anti()
+                    && extra_keys.0.is_empty()
+                    && let Some((left_on, right_on)) =
+                        self.nulls_equal_join_keys(expr, tbl_left, tbl_right) =>
+            {
+                nulls_equal = true;
+                (left_on, right_on, vec![])
             },
             Some(constraint) => {
                 let keys = process_join_constraint(constraint, tbl_left, tbl_right, self)?;
@@ -6039,8 +6113,11 @@ impl SQLContext {
             right_on.push(lit(true));
         }
         let (mut left_frame, mut right_frame) = (tbl_left.frame.clone(), tbl_right.frame.clone());
+        let mut key_columns: Vec<PlSmallStr> = Vec::new();
+        // Semi and anti joins only keep the left columns, so their key columns stay as they are.
+        let coalesced =
+            matches!(constraint, Some(JoinConstraint::Natural)) && !join_type.is_semi_anti();
         if predicates.is_empty() {
-            let natural = matches!(constraint, Some(JoinConstraint::Natural));
             let key_dtype = |key: &Expr, schema: &Schema| match key {
                 Expr::Column(name) => schema.get(name).cloned(),
                 key => key.to_field(schema).ok().map(|f| f.dtype),
@@ -6058,32 +6135,50 @@ impl SQLContext {
                     continue;
                 };
                 // A coalesced key column takes the common type.
-                if natural && let (Expr::Column(l_name), Expr::Column(r_name)) = (&*l, &*r) {
+                if coalesced && let (Expr::Column(l_name), Expr::Column(r_name)) = (&*l, &*r) {
                     left_frame = left_frame.with_column(l_cast.alias(l_name.clone()));
                     right_frame = right_frame.with_column(r_cast.alias(r_name.clone()));
                 } else {
                     (*l, *r) = (l_cast, r_cast);
                 }
             }
+            key_columns = distinct_key_names(
+                &mut left_frame,
+                &mut right_frame,
+                &mut left_on,
+                &mut right_on,
+                &tbl_left.schema,
+                &tbl_right.schema,
+            );
         }
+        let drop_key_columns = |lf: LazyFrame| match key_columns.is_empty() {
+            true => lf,
+            false => lf.drop(Selector::ByName {
+                names: key_columns.clone().into(),
+                strict: false,
+            }),
+        };
         if keep_right {
             polars_ensure!(
                 predicates.is_empty(),
                 InvalidOperation: "'{}' join is not supported with non-equi join conditions",
                 join_type
             );
-            return right_frame
-                .join_builder()
-                .with(left_frame)
-                .left_on(right_on)
-                .right_on(left_on)
-                .how(join_type)
-                .finish();
+            return Ok(drop_key_columns(
+                right_frame
+                    .join_builder()
+                    .with(left_frame)
+                    .left_on(right_on)
+                    .right_on(left_on)
+                    .how(join_type)
+                    .join_nulls(nulls_equal)
+                    .finish()?,
+            ));
         }
-        let coalesce_type = match constraint {
-            // "NATURAL" joins should coalesce; otherwise we disambiguate
-            Some(JoinConstraint::Natural) => JoinCoalesce::CoalesceColumns,
-            _ => JoinCoalesce::KeepColumns,
+        let coalesce_type = if coalesced {
+            JoinCoalesce::CoalesceColumns
+        } else {
+            JoinCoalesce::KeepColumns
         };
         // `join_where` and the filter on the joined rows resolve the right columns that the
         // left input also has under their suffixed names.
@@ -6107,6 +6202,7 @@ impl SQLContext {
                 .left_on(left_on)
                 .right_on(right_on)
                 .how(join_type)
+                .join_nulls(nulls_equal)
                 .suffix(suffix)
                 .coalesce(coalesce_type)
                 .finish()?
@@ -6140,10 +6236,12 @@ impl SQLContext {
         let random_predicates = random_predicates.into_iter().map(|p| {
             sql_join_where_predicate(strip_join_aliases(p), &tbl_left.schema, &joined_schema)
         });
-        Ok(match random_predicates.reduce(Expr::and) {
-            Some(predicate) => joined.filter(predicate),
-            None => joined,
-        })
+        Ok(drop_key_columns(
+            match random_predicates.reduce(Expr::and) {
+                Some(predicate) => joined.filter(predicate),
+                None => joined,
+            },
+        ))
     }
 
     /// Whether the relation `name` is the right input of a join; any other relation in
@@ -10852,7 +10950,7 @@ fn tuple_values(value: &SQLExpr) -> Option<Vec<SQLExpr>> {
 }
 
 /// Whether `expr` gives each row a value from that row alone, `RANDOM()` included.
-fn is_row_wise(expr: &Expr, schema: &Schema) -> PolarsResult<bool> {
+pub(crate) fn is_row_wise(expr: &Expr, schema: &Schema) -> PolarsResult<bool> {
     let probe = expr
         .clone()
         .map_expr(|e| if is_random(&e) { lit(0u64) } else { e });
@@ -11107,15 +11205,6 @@ fn insert_source(insert: &Insert, outer: Option<&Query>) -> PolarsResult<Option<
     Ok(Some(source))
 }
 
-/// Whether `plan` holds the cache `id` at least `times` times.
-fn holds_cache(plan: &DslPlan, id: UniqueId, times: usize) -> bool {
-    plan.into_iter()
-        .filter(|p| matches!(p, DslPlan::Cache { id: cache, .. } if *cache == id))
-        .take(times)
-        .count()
-        == times
-}
-
 /// The columns an `INSERT` lists; empty for all columns.
 fn insert_columns(insert: &Insert) -> PolarsResult<Vec<String>> {
     insert
@@ -11140,18 +11229,14 @@ struct Added<'a> {
     overwrite: bool,
 }
 
-/// The rows that a statement (`added`) adds to table `tbl` of schema `target`: the columns of
-/// `rows`, of schema `source`, go by position into `columns` (every column if empty),
-/// converted to the column types. Other columns are NULL.
-fn rows_to_insert(
-    rows: LazyFrame,
-    source: &Schema,
+/// The columns of table `tbl` of schema `target` that `statement` writes: `columns`, or every
+/// column if empty.
+fn listed_columns(
     target: &Schema,
     columns: &[String],
     tbl: &str,
-    added: &Added<'_>,
-) -> PolarsResult<LazyFrame> {
-    let statement = added.statement;
+    statement: &str,
+) -> PolarsResult<Vec<PlSmallStr>> {
     let columns: Vec<PlSmallStr> = match columns.is_empty() {
         true => target.iter_names().cloned().collect(),
         false => columns.iter().map(|c| c.as_str().into()).collect(),
@@ -11166,6 +11251,22 @@ fn rows_to_insert(
             Duplicate: "column '{}' is listed more than once in {}", column, statement
         );
     }
+    Ok(columns)
+}
+
+/// The rows that a statement (`added`) adds to table `tbl` of schema `target`: the columns of
+/// `rows`, of schema `source`, go by position into `columns` (every column if empty),
+/// converted to the column types. Other columns are NULL.
+fn rows_to_insert(
+    rows: LazyFrame,
+    source: &Schema,
+    target: &Schema,
+    columns: &[String],
+    tbl: &str,
+    added: &Added<'_>,
+) -> PolarsResult<LazyFrame> {
+    let statement = added.statement;
+    let columns = listed_columns(target, columns, tbl, statement)?;
     polars_ensure!(
         source.len() == columns.len(),
         SQLInterface: "{} writes {} columns of table '{}', but {} gives {}",

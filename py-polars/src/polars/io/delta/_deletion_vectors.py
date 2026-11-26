@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from urllib.parse import unquote, urlsplit
-from uuid import UUID
 
 import polars as pl
 from polars.exceptions import ComputeError
@@ -50,6 +48,9 @@ def _native_deletion_vectors(
     if not isinstance(dtype, pl.Struct) or dict(dtype.to_schema()) != expected:
         msg = f"invalid Delta deletion_vector descriptor schema: {dtype}"
         raise ComputeError(msg)
+
+    from urllib.parse import unquote, urlsplit
+    from uuid import UUID
 
     # Normalize local URI schemes before applying delta-rs's file_uris escaping:
     # file:/// paths are local paths and must be decoded, rather than URL-quoted.

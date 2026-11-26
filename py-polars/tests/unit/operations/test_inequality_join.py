@@ -1542,6 +1542,20 @@ def test_outer_join_where_key_kinds(
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_inner_join_where_eq_missing_plans_equi_join(engine: EngineType) -> None:
+    left = pl.LazyFrame({"k": [1, 2, None, None], "v": [1, 2, 3, 40]})
+    right = pl.LazyFrame({"k": [1, None, 5], "w": [10, 20, 30]})
+    query = left.join_where(
+        right, pl.col("k").eq_missing(pl.col("k_right")), pl.col("v") < pl.col("w")
+    )
+    assert 'LEFT PLAN ON: [col("k")]' in query.explain(engine=engine)
+    expected = pl.DataFrame(
+        {"k": [1, None], "v": [1, 3], "k_right": [1, None], "w": [10, 20]}
+    )
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 def test_cross_join_nulls_equal_filter_on_equality(engine: EngineType) -> None:
     left = pl.LazyFrame({"k": [None, 1]})
     right = pl.LazyFrame({"k": [None, 1]})

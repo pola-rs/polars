@@ -71,6 +71,34 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
+    /// Returns the number of milliseconds since the whole second.
+    fn millisecond(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.millisecond()),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => s
+                .time()
+                .map(|ca| ca.nanosecond().wrapping_trunc_div_scalar(1_000_000)),
+            dt => polars_bail!(opq = millisecond, dt),
+        }
+    }
+
+    /// Returns the number of microseconds since the whole second.
+    fn microsecond(&self) -> PolarsResult<Int32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.microsecond()),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => s
+                .time()
+                .map(|ca| ca.nanosecond().wrapping_trunc_div_scalar(1_000)),
+            dt => polars_bail!(opq = microsecond, dt),
+        }
+    }
+
     /// Extract day from underlying NaiveDateTime representation.
     /// Returns the day of month starting from 1.
     ///
@@ -103,15 +131,17 @@ pub trait TemporalMethods: AsSeries {
                         // fastpath!
                         // Same idea as above, but we need to subtract 1 for dates
                         // before 1970-01-01 with non-zero sub-daily components.
-                        let divisor = match time_unit {
-                            TimeUnit::Milliseconds => MILLISECONDS_IN_DAY,
-                            TimeUnit::Microseconds => MICROSECONDS_IN_DAY,
-                            TimeUnit::Nanoseconds => NANOSECONDS_IN_DAY,
-                        };
-                        unary_elementwise_values(ca.physical(), |t| {
-                            let t = t / divisor - ((t < 0 && t % divisor != 0) as i64);
-                            (((t - 4) % 7 + 7) % 7 + 1) as i8
-                        })
+                        fn weekday<const DIVISOR: i64>(ca: &DatetimeChunked) -> Int8Chunked {
+                            unary_elementwise_values(ca.physical(), |t| {
+                                let t = t / DIVISOR - ((t < 0 && t % DIVISOR != 0) as i64);
+                                (((t - 4) % 7 + 7) % 7 + 1) as i8
+                            })
+                        }
+                        match time_unit {
+                            TimeUnit::Milliseconds => weekday::<MILLISECONDS_IN_DAY>(ca),
+                            TimeUnit::Microseconds => weekday::<MICROSECONDS_IN_DAY>(ca),
+                            TimeUnit::Nanoseconds => weekday::<NANOSECONDS_IN_DAY>(ca),
+                        }
                     },
                     _ => ca.weekday(),
                 }
