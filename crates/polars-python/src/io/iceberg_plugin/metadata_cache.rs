@@ -116,8 +116,20 @@ impl MetadataFileCache {
         self.entries.lock().map.len()
     }
 
-    fn get(&self, key: &str) -> Option<Bytes> {
+    pub fn get(&self, key: &str) -> Option<Bytes> {
         self.entries.lock().get(key)
+    }
+
+    /// Set `key`, replacing an entry: for mutable entries such as `_last_checkpoint`.
+    pub fn replace(&self, key: &str, data: Bytes) {
+        {
+            let mut entries = self.entries.lock();
+            if let Some((old, stamp)) = entries.map.remove(key) {
+                entries.order.remove(&stamp);
+                entries.total_bytes -= (key.len() + old.len()) as u64;
+            }
+        }
+        self.put(key, data);
     }
 
     fn put(&self, key: &str, data: Bytes) {

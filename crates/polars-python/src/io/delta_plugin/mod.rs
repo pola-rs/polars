@@ -265,28 +265,71 @@ pub fn _delta_plugin_scan(
         stats: Default::default(),
     };
     let (lf, version, table_id) = py.enter_polars(move || {
-        let ctx = host::HostCtx {
-            cloud_options: cloud_options.clone(),
-            metadata_cache: Some(metadata_cache),
-            io_error_kinds: Default::default(),
+        let plan = |pinned_version: Option<i64>| {
+            let ctx = host::HostCtx {
+                cloud_options: cloud_options.clone(),
+                metadata_cache: Some(metadata_cache.clone()),
+                io_error_kinds: Default::default(),
+                pinned_version,
+                hint_served: Default::default(),
+                hint_read: Default::default(),
+            };
+            let host = ctx.host();
+            let mut stale_hint_possible = false;
+            let result = request
+                .with_ffi(|r| unsafe { (plugin.plan)(&host, r) })
+                .into_result()
+                .map_err(|e| {
+                    // What a stale hint causes: Kernel's invalid checkpoint (OTHER), a
+                    // checkpoint or commit gone (NOT_FOUND) or replaced (OBJECT_CHANGED).
+                    stale_hint_possible = request.testing_fail.is_none()
+                        && matches!(
+                            e.kind(),
+                            FfiErrorKind::OTHER
+                                | FfiErrorKind::NOT_FOUND
+                                | FfiErrorKind::OBJECT_CHANGED
+                        );
+                    let io_kind = ctx.io_error_kinds.kind_of(&e.message());
+                    ffi_to_polars_err(e, PLUGIN_NAME, io_kind)
+                });
+            let retry =
+                stale_hint_possible && ctx.hint_served.load(std::sync::atomic::Ordering::Relaxed);
+            let hint_read = ctx.hint_read.lock().unwrap().take();
+            (result, retry, hint_read)
         };
-        let host = ctx.host();
-        let output = request
-            .with_ffi(|r| unsafe { (plugin.plan)(&host, r) })
-            .into_result()
-            .map_err(|e| {
-                let io_kind = ctx.io_error_kinds.kind_of(&e.message());
-                ffi_to_polars_err(e, PLUGIN_NAME, io_kind)
-            })?;
+        // Only a plan pinned to the version a hint was recorded for may use it. A failure that
+        // followed one (the table was replaced or its checkpoint deleted) is retried reading it
+        // fresh.
+        let (output, retry, hint_read) = plan(version);
+        let (output, hint_read) = match output {
+            Err(_) if retry => match plan(None) {
+                (Ok(output), _, hint_read) => (output, hint_read),
+                (Err(e), _, hint_read) => {
+                    // Also failing fresh: do not plan from the cached hint again.
+                    if let Some(read) = hint_read {
+                        host::poison_hint(&metadata_cache, read);
+                    }
+                    return Err(e);
+                },
+            },
+            output => (output?, hint_read),
+        };
+        let record = |version: i64| {
+            if let Some(read) = hint_read {
+                host::record_hint(&metadata_cache, read, version);
+            }
+        };
         if schema_only {
             // An empty frame with the table's schema: the plan listed no files.
             let (schema, version, table_id) = schema::schema_only(output)?;
+            record(version);
             let lf = polars::prelude::IntoLazy::lazy(
                 polars::prelude::DataFrame::empty_with_schema(&schema),
             );
             return PolarsResult::Ok((lf, version, table_id));
         }
         let (dsl, version, table_id) = convert::build_scan(output, cloud_options)?;
+        record(version);
         Ok((polars::prelude::LazyFrame::from(dsl), version, table_id))
     })?;
     Ok((lf.into(), version, table_id))

@@ -6,7 +6,7 @@ use std::future::Future;
 use std::io::{Read, Seek, SeekFrom};
 use std::ops::Range;
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
@@ -38,6 +38,50 @@ pub(super) struct HostCtx {
     pub cloud_options: Option<CloudOptions>,
     pub metadata_cache: Option<ScopedMetadataCache>,
     pub io_error_kinds: IoErrorKinds,
+    /// The version the plan is pinned to; `_last_checkpoint` may be served from the cache only
+    /// then. Unpinned (latest) plans always read it from storage.
+    pub pinned_version: Option<i64>,
+    /// Whether a plan served a cached `_last_checkpoint`; cleared by a retry that bypasses it.
+    pub hint_served: Arc<AtomicBool>,
+    /// The `_last_checkpoint` this plan read from storage, as (cache key, bytes; empty for a 404).
+    /// Recorded by [`record_hint`] once the plan has resolved its version.
+    pub hint_read: Arc<Mutex<Option<(String, Bytes)>>>,
+}
+
+/// Remember the `_last_checkpoint` a plan read, for pinned plans of the same `version`. A pinned
+/// plan of another version reads it fresh: a scan over a table that advances would otherwise
+/// keep planning from an ever older checkpoint.
+pub fn record_hint(cache: &ScopedMetadataCache, read: (String, Bytes), version: i64) {
+    let (key, bytes) = read;
+    let bytes = if bytes.is_empty() {
+        bytes
+    } else {
+        match strip_checkpoint_schemas(&bytes) {
+            // Kernel would ignore a hint newer than the version for a backward scan.
+            Some((hint, hint_version)) if hint_version <= version => hint,
+            _ => return,
+        }
+    };
+    let mut entry = version.to_be_bytes().to_vec();
+    entry.extend_from_slice(&bytes);
+    cache.cache.replace(&key, Bytes::from(entry));
+}
+
+/// Make the entry of `read` match no pinned plan: a plan and its retry both failed.
+pub fn poison_hint(cache: &ScopedMetadataCache, read: (String, Bytes)) {
+    cache.cache.replace(&read.0, Bytes::new());
+}
+
+/// The hint without `checkpointSchema` and `sidecarFileSchema`, and its version. Kernel trusts
+/// them when the version and shape match, and a checkpoint rewritten at that version by another
+/// writer can differ: Kernel reads the footer instead, which the cache keys by generation.
+fn strip_checkpoint_schemas(bytes: &[u8]) -> Option<(Bytes, i64)> {
+    let mut hint: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let version = hint.get("version")?.as_i64()?;
+    let map = hint.as_object_mut()?;
+    map.remove("checkpointSchema");
+    map.remove("sidecarFileSchema");
+    Some((Bytes::from(serde_json::to_vec(&hint).ok()?), version))
 }
 
 impl HostCtx {
@@ -175,6 +219,9 @@ unsafe extern "C" fn host_get_storage(
                 cloud_options: ctx.cloud_options.clone(),
                 metadata_cache: ctx.metadata_cache.clone(),
                 io_error_kinds: ctx.io_error_kinds.clone(),
+                pinned_version: ctx.pinned_version,
+                hint_served: ctx.hint_served.clone(),
+                hint_read: ctx.hint_read.clone(),
                 resolution: NEXT_RESOLUTION.fetch_add(1, Ordering::Relaxed),
                 listed: Default::default(),
                 checkpoints: Default::default(),
@@ -198,9 +245,12 @@ struct HostStorage {
     cloud_options: Option<CloudOptions>,
     metadata_cache: Option<ScopedMetadataCache>,
     io_error_kinds: IoErrorKinds,
+    pinned_version: Option<i64>,
+    hint_served: Arc<AtomicBool>,
+    hint_read: Arc<Mutex<Option<(String, Bytes)>>>,
     resolution: u64,
-    /// Strong cloud validators from LIST, for whole-object reads and subsequent checkpoint HEADs.
-    listed: Mutex<HashMap<String, Generation>>,
+    /// Strong cloud validators and sizes from LIST, for whole-object reads and checkpoint opens.
+    listed: Mutex<HashMap<String, (Generation, u64)>>,
     /// The generation to keep for each HEAD followed by range reads, including multipart passes.
     checkpoints: Mutex<HashMap<String, Arc<OnceCell<CheckpointRead>>>>,
     local_file_slots: Semaphore,
@@ -338,17 +388,20 @@ impl HostStorage {
         }
 
         let listed = self.listed.lock().unwrap().get(url).cloned();
+        if let Some((generation, size)) = listed {
+            // LIST gave the generation and size: no HEAD. Every range read is conditional on the
+            // generation (and re-checks the response's), so a replaced object fails as
+            // OBJECT_CHANGED, as a mismatch between LIST and HEAD did.
+            return Ok(CheckpointRead {
+                size,
+                source: CheckpointSource::Ranges(loc, generation),
+            });
+        }
         let meta = loc
             .store
             .head(&loc.path, ConcurrencyStrategy::BytesBased)
             .await
-            .map_err(|e| read_error(&self.io_error_kinds, e, listed.is_some()))?;
-        if listed.is_some_and(|generation| !generation.matches(&meta)) {
-            return Err(FfiError::new(
-                FfiErrorKind::OBJECT_CHANGED,
-                format!("object generation differs between LIST and HEAD: {url}"),
-            ));
-        }
+            .map_err(|e| read_error(&self.io_error_kinds, e, false))?;
         let Some(generation) = Generation::from_meta(&meta) else {
             return self
                 .open_checkpoint_file(&loc, Some(meta.size))
@@ -634,6 +687,18 @@ unsafe extern "C" fn storage_release(storage: StorageHandle) {
     unsafe { Arc::decrement_strong_count(storage.0 as *const HostStorage) };
 }
 
+fn is_last_checkpoint(url: &str) -> bool {
+    url.ends_with("/_delta_log/_last_checkpoint")
+}
+
+/// The checkpoint version a `_last_checkpoint` names, if it parses.
+fn hint_version(bytes: &[u8]) -> Option<i64> {
+    serde_json::from_slice::<serde_json::Value>(bytes)
+        .ok()?
+        .get("version")?
+        .as_i64()
+}
+
 fn is_cacheable(url: &str) -> bool {
     // Mutable hints and listings always go back to storage.
     let name = url.rsplit('/').next().unwrap_or(url);
@@ -652,7 +717,12 @@ unsafe extern "C" fn storage_get(
 
         spawn_io(async move {
             let url = url?;
-            let generation = storage.listed.lock().unwrap().get(&url).cloned();
+            let generation = storage
+                .listed
+                .lock()
+                .unwrap()
+                .get(&url)
+                .map(|(generation, _)| generation.clone());
             let fetch = || async {
                 let to_ffi_err = |e| storage.io_error_kinds.to_ffi_err(e);
                 let loc = storage.resolve(&url).await.map_err(to_ffi_err)?;
@@ -665,6 +735,42 @@ unsafe extern "C" fn storage_get(
                 Some(c) if is_cacheable(&url) => {
                     let key = storage.cache_key(&c.scope, &url, generation.as_ref(), None);
                     c.cache.get_or_fetch(&key, &c.stats, fetch).await?
+                },
+                Some(c) if is_last_checkpoint(&url) => {
+                    let key = format!("delta-hint:{:?}:{url:?}", c.scope);
+                    // The entry is the version the recording plan resolved (8 bytes, big endian),
+                    // then the file; only a plan pinned to that version may use it. Empty
+                    // after the version is a recorded 404.
+                    if let Some(pinned) = storage.pinned_version
+                        && let Some(cached) = c.cache.get(&key)
+                        && let Some((resolved, hint)) = cached.split_first_chunk::<8>()
+                        && i64::from_be_bytes(*resolved) == pinned
+                    {
+                        let hint = cached.slice_ref(hint);
+                        if hint.is_empty() {
+                            storage.hint_served.store(true, Ordering::Relaxed);
+                            return Err(FfiError::new(
+                                FfiErrorKind::NOT_FOUND,
+                                format!("not found: {url}"),
+                            ));
+                        }
+                        if hint_version(&hint).is_some_and(|v| v <= pinned) {
+                            storage.hint_served.store(true, Ordering::Relaxed);
+                            return Ok(FfiBuf::from_owner(hint));
+                        }
+                    }
+                    match fetch().await {
+                        Ok(bytes) => {
+                            *storage.hint_read.lock().unwrap() = Some((key, bytes.clone()));
+                            bytes
+                        },
+                        Err(e) => {
+                            if e.kind() == FfiErrorKind::NOT_FOUND {
+                                *storage.hint_read.lock().unwrap() = Some((key, Bytes::new()));
+                            }
+                            return Err(e);
+                        },
+                    }
                 },
                 _ => fetch().await?,
             };
@@ -839,7 +945,7 @@ unsafe extern "C" fn storage_list(
                     && is_cacheable(&url)
                     && let Some(generation) = Generation::from_meta(&object)
                 {
-                    identities.push((url.clone(), generation));
+                    identities.push((url.clone(), (generation, object.size)));
                 }
                 objects.push(ObjectMeta {
                     url: FfiBuf::from_string(url),
@@ -873,6 +979,29 @@ mod tests {
     use polars_io::cloud::ObjectStoreErrorContext;
 
     use super::*;
+
+    #[test]
+    fn recorded_hint_drops_checkpoint_schemas() {
+        let hint = br#"{"version":5,"size":3,"checkpointSchema":{"type":"struct"},"sidecarFileSchema":{},"parts":2}"#;
+        let (stripped, version) = strip_checkpoint_schemas(hint).unwrap();
+        assert_eq!(version, 5);
+        let value: serde_json::Value = serde_json::from_slice(&stripped).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"version": 5, "size": 3, "parts": 2})
+        );
+        assert!(strip_checkpoint_schemas(b"not json").is_none());
+        assert!(strip_checkpoint_schemas(b"[]").is_none());
+    }
+
+    #[test]
+    fn last_checkpoint_version_is_read_from_the_hint() {
+        assert_eq!(hint_version(br#"{"version":7,"size":3}"#), Some(7));
+        assert_eq!(hint_version(b"{}"), None);
+        assert_eq!(hint_version(b"not json"), None);
+        assert!(is_last_checkpoint("s3://b/t/_delta_log/_last_checkpoint"));
+        assert!(!is_last_checkpoint("s3://b/t/_delta_log/1.json"));
+    }
 
     #[test]
     fn checkpoint_etag_accepts_list_quoting_and_rejects_weak_or_malformed_tags() {
@@ -922,6 +1051,9 @@ mod tests {
             cloud_options: None,
             metadata_cache: None,
             io_error_kinds: Default::default(),
+            pinned_version: None,
+            hint_served: Default::default(),
+            hint_read: Default::default(),
         };
         ASYNC.block_on(async {
             let handle = unsafe {

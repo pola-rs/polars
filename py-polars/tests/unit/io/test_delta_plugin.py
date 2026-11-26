@@ -1647,6 +1647,140 @@ def test_delta_plugin_missing_last_checkpoint_does_not_rebuild_credentials(
         s3.server.shutdown()
 
 
+def _put_table(s3: Any, bucket: str, folder: Path) -> None:
+    for file in folder.rglob("*"):
+        if file.is_file():
+            s3.client.put_object(
+                Bucket=bucket,
+                Key=file.relative_to(folder).as_posix(),
+                Body=file.read_bytes(),
+            )
+
+
+def _write_versions(folder: Path, checkpoint: bool) -> None:
+    from deltalake import DeltaTable
+
+    pl.DataFrame({"a": [1, 2]}).write_delta(folder)
+    pl.DataFrame({"a": [3]}).write_delta(folder, mode="append")
+    if checkpoint:
+        DeltaTable(folder).create_checkpoint()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("checkpoint", [True, False])
+def test_delta_plugin_schema_then_collect_reads_hint_once(
+    tmp_path: Path, checkpoint: bool
+) -> None:
+    import threading
+    from uuid import uuid4
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    _write_versions(tmp_path, checkpoint)
+    bucket = f"delta-hint-once-{uuid4().hex}"
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    try:
+        s3.client.create_bucket(Bucket=bucket)
+        _put_table(s3, bucket, tmp_path)
+        scan = pl.scan_delta(f"s3://{bucket}/", storage_options=s3.storage_options)
+        mark = len(s3.log)
+        scan.collect_schema()
+        assert scan.collect().sort("a")["a"].to_list() == [1, 2, 3]
+        log = s3.since(mark)
+        hint = f"{bucket}/_delta_log/_last_checkpoint"
+        # Both plans, schema-only (unpinned) and full (pinned), read the hint once.
+        assert [e for e in log if e[:2] == ("GET", hint)] == [("GET", hint, "")]
+        # A checkpoint's size and generation come from the LIST: no HEAD.
+        assert not [e for e in log if e[0] == "HEAD" and "checkpoint.parquet" in e[1]]
+        # A new scan is unpinned and reads the hint again.
+        mark = len(s3.log)
+        fresh = pl.scan_delta(f"s3://{bucket}/", storage_options=s3.storage_options)
+        assert fresh.collect().height == 3
+        assert len([e for e in s3.since(mark) if e[:2] == ("GET", hint)]) == 1
+    finally:
+        s3.server.shutdown()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_delta_plugin_replaced_table_with_cached_hint(tmp_path: Path) -> None:
+    import threading
+    from uuid import uuid4
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    old, new = tmp_path / "old", tmp_path / "new"
+    _write_versions(old, checkpoint=True)
+    _write_versions(new, checkpoint=False)
+    bucket = f"delta-hint-replaced-{uuid4().hex}"
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    try:
+        s3.client.create_bucket(Bucket=bucket)
+        _put_table(s3, bucket, old)
+        scan = pl.scan_delta(f"s3://{bucket}/", storage_options=s3.storage_options)
+        scan.collect_schema()  # caches the old table's hint, a checkpoint at version 1
+        for obj in s3.client.list_objects_v2(Bucket=bucket)["Contents"]:
+            s3.client.delete_object(Bucket=bucket, Key=obj["Key"])
+        # The replacement has the same version but no checkpoint at the hint's version.
+        _put_table(s3, bucket, new)
+        mark = len(s3.log)
+        with pytest.raises(pl.exceptions.ComputeError, match="replaced"):
+            scan.collect()
+        log = s3.since(mark)
+        # The cached hint was served and failed: Kernel's plan listed the log, then the
+        # retry read `_last_checkpoint` fresh (a 404) and listed again.
+        hint = f"{bucket}/_delta_log/_last_checkpoint"
+        assert len([e for e in log if e[:2] == ("GET", hint)]) == 1
+        assert len([e for e in log if e[0] == "GET" and e[1] == bucket]) == 2
+    finally:
+        s3.server.shutdown()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_delta_plugin_advancing_supplied_table_reads_hint_fresh(
+    tmp_path: Path,
+) -> None:
+    import threading
+    from uuid import uuid4
+
+    from deltalake import DeltaTable
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    _write_versions(tmp_path, checkpoint=True)
+    bucket = f"delta-hint-advance-{uuid4().hex}"
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    try:
+        s3.client.create_bucket(Bucket=bucket)
+        _put_table(s3, bucket, tmp_path)
+        uri = f"s3://{bucket}/"
+        table = DeltaTable(uri, storage_options=s3.storage_options)
+        scan = pl.scan_delta(table, storage_options=s3.storage_options)
+        scan.collect_schema()
+        pl.DataFrame({"a": [4]}).write_delta(tmp_path, mode="append")
+        _put_table(s3, bucket, tmp_path)
+        table.update_incremental()
+        assert table.version() == 2
+        mark = len(s3.log)
+        assert scan.collect().height == 4
+        hint = f"{bucket}/_delta_log/_last_checkpoint"
+        # The plan for version 2 does not reuse the hint recorded for version 1.
+        assert len([e for e in s3.since(mark) if e[:2] == ("GET", hint)]) == 1
+        # Another plan for version 2 (another filter) does.
+        mark = len(s3.log)
+        assert scan.filter(pl.col("a") > 1).collect().height == 3
+        log = s3.since(mark)
+        assert [e for e in log if e[0] == "GET" and e[1] == bucket]  # it did plan
+        assert not [e for e in log if e[:2] == ("GET", hint)]
+    finally:
+        s3.server.shutdown()
+
+
 def _add_parquet(path: Path, table: Any) -> None:
     import pyarrow.parquet as pq
 
