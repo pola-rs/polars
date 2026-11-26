@@ -14,8 +14,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ubuntu:
+  changes:
     if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github/actions
+
+      - name: Check for relevant changes
+        id: changes
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            py-polars/
+            .github/scripts/test_bytecode_parser.py
+            .github/workflows/test-bytecode-parser.yml
+
+  ubuntu:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -41,7 +63,7 @@ jobs:
 
   test-bytecode-parser-passed:
     if: ${{ always() }}
-    needs: [ubuntu]
+    needs: [changes, ubuntu]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if a job failed or was cancelled

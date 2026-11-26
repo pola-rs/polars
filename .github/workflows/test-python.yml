@@ -52,8 +52,32 @@ defaults:
     shell: bash
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github/actions
+
+      - name: Check for relevant changes
+        id: changes
+        uses: ./.github/actions/changed-paths
+        with:
+          # Keep in sync with `on.push.paths`.
+          paths: |
+            Cargo.lock
+            crates/
+            docs/source/src/python/
+            py-polars/
+            .github/workflows/test-python.yml
+
   test-python:
-    if: ${{ !github.event.pull_request.draft }}
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' && !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     env: &test-python-env
       POLARS_IDEAL_MORSEL_SIZE: ${{ matrix.ideal_morsel_size }}
@@ -242,7 +266,8 @@ jobs:
 
   # A job-level `if` cannot see the matrix, so draft PRs get their own job reusing the steps above.
   test-python-draft:
-    if: ${{ github.event.pull_request.draft }}
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' && github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     env: *test-python-env
     strategy:
@@ -256,7 +281,7 @@ jobs:
 
   test-python-passed:
     if: ${{ always() }}
-    needs: [test-python, test-python-draft]
+    needs: [changes, test-python, test-python-draft]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if a job failed or was cancelled

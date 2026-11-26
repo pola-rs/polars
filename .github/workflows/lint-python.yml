@@ -9,7 +9,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          filter: blob:none
+          sparse-checkout: .github/actions
+
+      - name: Check for relevant changes
+        id: changes
+        uses: ./.github/actions/changed-paths
+        with:
+          paths: |
+            py-polars/
+            .github/workflows/lint-python.yml
+
   ruff:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -23,6 +44,8 @@ jobs:
       - run: ruff format --diff
 
   type-check:
+    needs: changes
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,7 +87,7 @@ jobs:
 
   lint-python-passed:
     if: ${{ always() }}
-    needs: [ruff, type-check]
+    needs: [changes, ruff, type-check]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if a job failed or was cancelled
