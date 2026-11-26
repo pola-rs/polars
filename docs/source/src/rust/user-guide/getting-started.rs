@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:csv]
     use std::fs::File;
 
-    let mut file = File::create("docs/assets/data/output.csv").expect("could not create file");
+    let mut file = File::create("output.csv").expect("could not create file");
     CsvWriter::new(&mut file)
         .include_header(true)
         .with_separator(b',')
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df_csv = CsvReadOptions::default()
         .with_has_header(true)
         .with_parse_options(CsvParseOptions::default().with_try_parse_dates(true))
-        .try_into_reader_with_file_path(Some("docs/assets/data/output.csv".into()))?
+        .try_into_reader_with_file_path(Some("output.csv".into()))?
         .finish()?;
     println!("{df_csv}");
     // --8<-- [end:csv]
