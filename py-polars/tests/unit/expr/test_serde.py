@@ -1,9 +1,16 @@
+from __future__ import annotations
+
 import io
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @pytest.mark.parametrize(
@@ -57,3 +64,29 @@ def test_expression_json_13991() -> None:
 
     round_tripped = pl.Expr.deserialize(io.StringIO(json), format="json")
     assert round_tripped.meta == expr
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize(
+    "make_expr",
+    [
+        lambda v: pl.lit(v),
+        lambda v: pl.lit(v, dtype=pl.Float16),
+        lambda v: pl.lit(v, dtype=pl.Float32),
+        lambda v: pl.lit(v, dtype=pl.Float64),
+        lambda v: pl.lit({"a": v}),
+        lambda v: pl.col("x").fill_null(v),
+    ],
+)
+def test_expr_serde_json_non_finite_float_29465(
+    value: float, make_expr: Callable[[float], pl.Expr]
+) -> None:
+    expr = make_expr(value)
+    json = expr.meta.serialize(format="json")
+    round_tripped = pl.Expr.deserialize(io.StringIO(json), format="json")
+    assert round_tripped.meta == expr
+
+    df = pl.DataFrame({"x": [None]}, schema={"x": pl.Float64})
+    assert_frame_equal(
+        df.select(round_tripped.alias("out")), df.select(expr.alias("out"))
+    )
