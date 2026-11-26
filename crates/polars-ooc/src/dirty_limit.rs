@@ -1,9 +1,6 @@
-//! Keeps the tracked memory plus jemalloc's unused (dirty) pages under
-//! [`polars_config::get_ooc_dirty_limit_bytes`]. jemalloc calls the hook before
-//! an allocation takes pages that are not resident, and purges the returned
-//! number of bytes of dirty pages first. The tracked memory counts a reallocation
-//! at its new size, so the old allocations that moving reallocations still hold
-//! are added separately.
+//! Limits the memory jemalloc holds, its active and unused (dirty) pages, to
+//! [`polars_config::get_ooc_dirty_limit_bytes`]. Before an allocation would take
+//! it above the limit, jemalloc purges dirty pages first.
 
 #[cfg(all(
     feature = "fast_alloc",
@@ -12,54 +9,44 @@
 ))]
 mod jemalloc {
     use std::ffi::c_void;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use tikv_jemalloc_sys as jemalloc_sys;
 
-    use crate::estimate_memory_usage;
+    /// The limit last given to jemalloc, where 0 means no limit and `UNKNOWN` that
+    /// it must be given again.
+    static JEMALLOC_LIMIT: AtomicU64 = AtomicU64::new(0);
+    const UNKNOWN: u64 = u64::MAX;
 
-    /// Purged on top of the excess, so that the next allocations don't purge again.
-    const SLACK_BYTES: u64 = 64 << 20;
-
-    /// Fewer dirty pages than this are not worth visiting every arena for.
-    const MIN_PURGE_BYTES: u64 = 16 << 20;
-
-    static INSTALLED: AtomicBool = AtomicBool::new(false);
-
-    type PurgeBeforeGrowHook = extern "C" fn(usize, usize, usize) -> usize;
-
-    /// Runs inside malloc, so it must not allocate. The allocator counts an allocation
-    /// before calling jemalloc, so the usage already includes it.
-    extern "C" fn purge_before_grow(
-        _size: usize,
-        dirty_bytes: usize,
-        ralloc_move_bytes: usize,
-    ) -> usize {
-        let dirty_bytes = dirty_bytes as u64;
-        let usage = estimate_memory_usage() + dirty_bytes + ralloc_move_bytes as u64;
-        let excess = usage.saturating_sub(polars_config::get_ooc_dirty_limit_bytes());
-        let purge = (excess + SLACK_BYTES).min(dirty_bytes);
-        if excess == 0 || purge < MIN_PURGE_BYTES {
-            return 0;
+    fn current_limit() -> u64 {
+        match polars_config::get_ooc_dirty_limit_bytes() {
+            u64::MAX => 0,
+            limit => limit.max(1),
         }
-        purge.try_into().unwrap_or(usize::MAX)
     }
 
-    /// Called from the allocator, so it must not allocate or read the config.
-    pub(crate) fn install() {
-        if INSTALLED.swap(true, Ordering::Relaxed) {
+    /// Gives jemalloc the current limit if it changed. Called from the allocator,
+    /// so it must not allocate.
+    pub(crate) fn sync_limit() {
+        let limit = current_limit();
+        if JEMALLOC_LIMIT.load(Ordering::Relaxed) == limit {
             return;
         }
-        let mut hook: PurgeBeforeGrowHook = purge_before_grow;
-        // Without the hook, dirty pages are only returned by decay.
+        JEMALLOC_LIMIT.store(limit, Ordering::Relaxed);
+        let mut jemalloc_limit: usize = limit.try_into().unwrap_or(0);
+        // Without the limit, dirty pages are only returned by decay.
         unsafe {
             jemalloc_sys::mallctl(
-                c"experimental.hooks.purge_before_grow_v2".as_ptr(),
+                c"experimental.active_dirty_purge_threshold".as_ptr(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-                (&raw mut hook).cast::<c_void>(),
-                size_of::<PurgeBeforeGrowHook>(),
+                (&raw mut jemalloc_limit).cast::<c_void>(),
+                size_of::<usize>(),
             );
+        }
+        // A thread that read an older limit may have set it after a newer one.
+        if current_limit() != limit {
+            JEMALLOC_LIMIT.store(UNKNOWN, Ordering::Relaxed);
         }
     }
 }
@@ -69,11 +56,11 @@ mod jemalloc {
     target_family = "unix",
     not(target_os = "emscripten"),
 ))]
-pub(crate) use jemalloc::install;
+pub(crate) use jemalloc::sync_limit;
 
 #[cfg(not(all(
     feature = "fast_alloc",
     target_family = "unix",
     not(target_os = "emscripten"),
 )))]
-pub(crate) fn install() {}
+pub(crate) fn sync_limit() {}

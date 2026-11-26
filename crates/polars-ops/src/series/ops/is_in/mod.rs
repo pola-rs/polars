@@ -347,6 +347,14 @@ where
     let offsets = other.offsets()?;
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
+    let inner = inner.rechunk();
+    let inner_arr = inner.downcast_iter().next();
+    let any_eq = |key: &_, start: usize, length: usize| -> bool {
+        inner_arr.is_some_and(|arr| {
+            // SAFETY: offsets are in bounds of the inner values.
+            (start..start + length).any(|i| unsafe { arr.get_unchecked(i) }.to_total_ord() == *key)
+        })
+    };
     let validity = other.rechunk_validity();
 
     let mut ca: BooleanChunked = if ca_in.len() == 1 {
@@ -356,13 +364,10 @@ where
             None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
             value => {
                 let mut builder = BitmapBuilder::with_capacity(other.len());
+                let key = value.to_total_ord();
 
                 for (start, length) in offsets.offset_and_length_iter() {
-                    let mut is_in = false;
-                    for i in 0..length {
-                        is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
-                    }
-                    builder.push(is_in);
+                    builder.push(any_eq(&key, start, length));
                 }
 
                 let values = builder.freeze();
@@ -378,11 +383,7 @@ where
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
 
                 for (value, (start, length)) in ca_in.iter().zip(offsets.offset_and_length_iter()) {
-                    let mut is_in = false;
-                    for i in 0..length {
-                        is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
-                    }
-                    builder.push(is_in);
+                    builder.push(any_eq(&value.to_total_ord(), start, length));
                 }
 
                 let values = builder.freeze();
@@ -393,13 +394,7 @@ where
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
 
                 for (value, (start, length)) in ca_in.iter().zip(offsets.offset_and_length_iter()) {
-                    let mut is_in = false;
-                    if value.is_some() {
-                        for i in 0..length {
-                            is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
-                        }
-                    }
-                    builder.push(is_in);
+                    builder.push(value.is_some() && any_eq(&value.to_total_ord(), start, length));
                 }
 
                 let values = builder.freeze();
@@ -434,6 +429,14 @@ where
     let width = other.width();
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
+    let inner = inner.rechunk();
+    let inner_arr = inner.downcast_iter().next();
+    let any_eq = |key: &_, start: usize| -> bool {
+        inner_arr.is_some_and(|arr| {
+            // SAFETY: every row has `width` values in the inner array.
+            (start..start + width).any(|i| unsafe { arr.get_unchecked(i) }.to_total_ord() == *key)
+        })
+    };
     let validity = other.rechunk_validity();
 
     let mut ca: BooleanChunked = if ca_in.len() == 1 {
@@ -443,13 +446,10 @@ where
             None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
             value => {
                 let mut builder = BitmapBuilder::with_capacity(other.len());
+                let key = value.to_total_ord();
 
                 for i in 0..other.len() {
-                    let mut is_in = false;
-                    for j in 0..width {
-                        is_in |= value.to_total_ord() == inner.get(i * width + j).to_total_ord();
-                    }
-                    builder.push(is_in);
+                    builder.push(any_eq(&key, i * width));
                 }
 
                 let values = builder.freeze();
@@ -465,11 +465,7 @@ where
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
 
                 for (i, value) in ca_in.iter().enumerate() {
-                    let mut is_in = false;
-                    for j in 0..width {
-                        is_in |= value.to_total_ord() == inner.get(i * width + j).to_total_ord();
-                    }
-                    builder.push(is_in);
+                    builder.push(any_eq(&value.to_total_ord(), i * width));
                 }
 
                 let values = builder.freeze();
@@ -480,14 +476,7 @@ where
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
 
                 for (i, value) in ca_in.iter().enumerate() {
-                    let mut is_in = false;
-                    if value.is_some() {
-                        for j in 0..width {
-                            is_in |=
-                                value.to_total_ord() == inner.get(i * width + j).to_total_ord();
-                        }
-                    }
-                    builder.push(is_in);
+                    builder.push(value.is_some() && any_eq(&value.to_total_ord(), i * width));
                 }
 
                 let values = builder.freeze();
