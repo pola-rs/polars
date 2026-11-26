@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use num_traits::AsPrimitive;
 use polars_async::executor::TaskMetricAggregator;
@@ -12,7 +11,8 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
 use super::in_memory_sink::InMemorySinkNode;
-use crate::morsel::{SourceToken, get_ideal_morsel_size};
+use super::in_memory_source::in_memory_morsel_size;
+use crate::morsel::SourceToken;
 
 /// Generates `int_range(start, end, step)` from single-value `start` and `end` inputs.
 pub struct IntRangeNode {
@@ -31,8 +31,8 @@ enum IntRangeState {
         /// The `start` and `end` columns.
         bounds: Box<[Column; 2]>,
         len: usize,
-        /// Offset of the next morsel to claim.
-        next_offset: AtomicU64,
+        emitted: usize,
+        seq: MorselSeq,
     },
     Done,
 }
@@ -87,7 +87,8 @@ impl ComputeNode for IntRangeNode {
             self.state = IntRangeState::Emitting {
                 bounds: Box::new([start, end]),
                 len,
-                next_offset: AtomicU64::new(0),
+                emitted: 0,
+                seq: MorselSeq::default(),
             };
         }
 
@@ -97,11 +98,9 @@ impl ComputeNode for IntRangeNode {
                 end.update_state(&mut recv[1..2], &mut [], state)?;
                 send[0] = PortState::Blocked;
             },
-            IntRangeState::Emitting {
-                len, next_offset, ..
-            } => {
+            IntRangeState::Emitting { len, emitted, .. } => {
                 recv.fill(PortState::Done);
-                send[0] = if (*next_offset.get_mut() as usize) < *len {
+                send[0] = if emitted < len {
                     PortState::Ready
                 } else {
                     PortState::Done
@@ -137,66 +136,57 @@ impl ComputeNode for IntRangeNode {
             IntRangeState::Emitting {
                 bounds,
                 len,
-                next_offset,
+                emitted,
+                seq,
             } => {
                 assert!(recv_ports.iter().all(|p| p.is_none()));
-                let senders = send_ports[0].take().unwrap().parallel();
+                let mut send = send_ports[0].take().unwrap().serial();
                 let [start, end] = &**bounds;
-                let (len, next_offset) = (*len, &*next_offset);
-
-                let remaining = len - next_offset.load(Ordering::Relaxed) as usize;
-                let ideal_morsel_count = (remaining / get_ideal_morsel_size()).max(1);
-                let morsel_count = ideal_morsel_count.next_multiple_of(state.num_pipelines);
-                let morsel_size = remaining.div_ceil(morsel_count).max(1);
+                let len = *len;
+                let morsel_size = in_memory_morsel_size(len - *emitted, state.num_pipelines);
                 let (name, dtype, step) = (&self.name, &self.dtype, self.step);
 
-                let source_token = SourceToken::new();
-                for mut send in senders {
-                    let source_token = source_token.clone();
-                    join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                        let wait_group = WaitGroup::default();
-                        loop {
-                            let offset =
-                                next_offset.fetch_add(morsel_size as u64, Ordering::Relaxed) as usize;
-                            if offset >= len {
-                                break;
-                            }
-                            let height = morsel_size.min(len - offset);
-                            let range = with_match_physical_integer_polars_type!(dtype, |$T| {
-                                type N = <$T as PolarsNumericType>::Native;
-                                let (start, end) = int_range_bounds::<$T>(start, end)?;
-                                // Wrapping arithmetic is exact for representable elements.
-                                let step_n: N = step.as_();
-                                let at = |i: usize| -> N {
-                                    start.wrapping_add(AsPrimitive::<N>::as_(i).wrapping_mul(step_n))
-                                };
-                                // Element `len` may not be representable, so the last morsel ends at `end`.
-                                let morsel_end = if offset + height == len {
-                                    end
-                                } else {
-                                    at(offset + height)
-                                };
-                                new_int_range::<$T>(at(offset), morsel_end, step, name.clone())?
-                            });
-                            let mut morsel = Morsel::new_unregistered(
-                                range.into_frame(),
-                                MorselSeq::new(offset as u64),
-                                source_token.clone(),
-                            );
-                            morsel.set_consume_token(wait_group.token());
-                            if send.send(morsel).await.is_err() {
-                                break;
-                            }
+                join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+                    let source_token = SourceToken::new();
 
-                            wait_group.wait().await;
-                            if source_token.stop_requested() {
-                                break;
-                            }
+                    let wait_group = WaitGroup::default();
+                    while *emitted < len && !source_token.stop_requested() {
+                        let offset = *emitted;
+                        let height = morsel_size.min(len - offset);
+                        let range = with_match_physical_integer_polars_type!(dtype, |$T| {
+                            type N = <$T as PolarsNumericType>::Native;
+                            let (start, end) = int_range_bounds::<$T>(start, end)?;
+                            // Wrapping arithmetic is exact for representable elements.
+                            let step_n: N = step.as_();
+                            let at = |i: usize| -> N {
+                                start.wrapping_add(AsPrimitive::<N>::as_(i).wrapping_mul(step_n))
+                            };
+                            // Element `len` may not be representable, so the last morsel ends at `end`.
+                            let morsel_end = if offset + height == len {
+                                end
+                            } else {
+                                at(offset + height)
+                            };
+                            new_int_range::<$T>(at(offset), morsel_end, step, name.clone())?
+                        });
+                        let mut morsel = Morsel::new_unregistered(
+                            range.into_frame(),
+                            *seq,
+                            source_token.clone(),
+                        );
+                        morsel.set_consume_token(wait_group.token());
+
+                        *seq = seq.successor();
+                        *emitted += height;
+
+                        if send.send(morsel).await.is_err() {
+                            break;
                         }
+                        wait_group.wait().await;
+                    }
 
-                        Ok(())
-                    }));
-                }
+                    Ok(())
+                }));
             },
             IntRangeState::Done => unreachable!(),
         }
