@@ -128,14 +128,11 @@ fn row_encode_nested(
 fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     let null_count = s.null_count();
 
-    if (options.descending
-        && (options.nulls_last || null_count == 0)
-        && matches!(s.is_sorted_flag(), IsSorted::Descending))
-        || (!options.descending
-            && (!options.nulls_last || null_count == 0)
-            && matches!(s.is_sorted_flag(), IsSorted::Ascending))
-    {
-        return Ok(true);
+    if null_count == 0 {
+        match (options.descending, s.is_sorted_flag()) {
+            (true, IsSorted::Descending) | (false, IsSorted::Ascending) => return Ok(true),
+            _ => (),
+        }
     }
 
     if let Some(encoded) = row_encode_nested(s, options.descending, options.nulls_last)? {
