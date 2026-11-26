@@ -46,3 +46,10 @@ def test_rename_non_strict_20407() -> None:
         .collect(),
         pl.DataFrame({"TEST": [1]}),
     )
+
+
+def test_rename_same_column_twice_raises() -> None:
+    lf = pl.LazyFrame({"a": [1]})
+    renamed = pl.LazyFrame._from_pyldf(lf._ldf.rename(["a", "a"], ["x", "y"], True))
+    with pytest.raises(pl.exceptions.DuplicateError, match="more than once"):
+        renamed.collect()

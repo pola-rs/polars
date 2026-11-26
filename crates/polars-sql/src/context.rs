@@ -2778,6 +2778,8 @@ impl SQLContext {
             Vec::with_capacity(array_exprs.len()),
         );
         let is_single_col = array_exprs.len() == 1;
+        // A column unnested more than once is copied under its alias, as in Postgres.
+        let (mut seen, mut copies) = (PlHashSet::new(), vec![]);
 
         for (i, arr_expr) in array_exprs.iter().enumerate() {
             let col_name = match arr_expr {
@@ -2793,20 +2795,37 @@ impl SQLContext {
                 ),
             };
             // alias: column name from "AS t(col)", or table alias
-            if let Some(name) = alias
+            let name = alias
                 .columns
                 .get(i)
                 .map(|c| c.name.value.as_str())
                 .or_else(|| is_single_col.then_some(alias.name.value.as_str()))
                 .filter(|name| !name.is_empty() && *name != col_name.as_str())
-            {
+                .map(PlSmallStr::from_str);
+            if !seen.insert(col_name.clone()) {
+                let name = name.ok_or_else(|| polars_err!(
+                    SQLSyntax: "UNNEST of column '{}' more than once requires a distinct alias for each", col_name
+                ))?;
+                copies.push((name.clone(), col(col_name).alias(name.clone())));
+                explode_cols.push(name);
+                continue;
+            }
+            if let Some(name) = name {
                 rename_from.push(col_name.clone());
-                rename_to.push(PlSmallStr::from_str(name));
+                rename_to.push(name);
             }
             explode_cols.push(col_name);
         }
         // WITH ORDINALITY: the 1-based position in the (first) list, as in Postgres.
         let mut lf = lf;
+        if !copies.is_empty() {
+            // `with_columns` would silently overwrite; error like the rename path does.
+            let schema = lf.clone().collect_schema()?;
+            if let Some((name, _)) = copies.iter().find(|(n, _)| schema.contains(n)) {
+                polars_bail!(Duplicate: "column '{}' is duplicate", name);
+            }
+            lf = lf.with_columns(copies.into_iter().map(|(_, e)| e).collect::<Vec<_>>());
+        }
         if with_ordinality {
             let n = array_exprs.len();
             polars_ensure!(
