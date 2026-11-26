@@ -10,6 +10,14 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::utils::tokio_handle_ext;
 
+/// Chunks of local files are read in concurrent parts of this size.
+const LOCAL_READ_SIZE: usize = 4 * 1024 * 1024;
+
+/// Number of chunks of a local file that are fetched ahead of its reader. Local reads have low
+/// latency and every chunk is read concurrently, so fetching further ahead would only hold more of
+/// the file in memory.
+const LOCAL_PREFETCH_LIMIT: usize = 2;
+
 pub(crate) struct ChunkDataFetcher {
     pub(crate) memory_prefetch_func: fn(&[u8]) -> (),
     pub(crate) byte_source: Arc<DynByteSource>,
@@ -27,6 +35,23 @@ pub(crate) struct ChunkDataFetcher {
 }
 
 impl ChunkDataFetcher {
+    /// Number of chunks of `chunk_size` to fetch ahead of the reader of `byte_source`, which is
+    /// also the capacity of the `prefetch_send` channel.
+    pub(crate) fn prefetch_depth(
+        byte_source: &DynByteSource,
+        prefetch_limit: usize,
+        file_size: usize,
+        chunk_size: usize,
+    ) -> usize {
+        let limit = if let DynByteSource::File(_) = byte_source {
+            prefetch_limit.min(LOCAL_PREFETCH_LIMIT)
+        } else {
+            prefetch_limit
+        };
+
+        limit.min(file_size.div_ceil(chunk_size)).max(1)
+    }
+
     pub(crate) async fn run(&mut self) -> PolarsResult<()> {
         let mut byte_offset = 0;
         let file_size = self.file_size;
@@ -35,6 +60,12 @@ impl ChunkDataFetcher {
         debug_assert!(prefix.as_ref().is_none_or(|x| x.len() <= file_size));
 
         while byte_offset < file_size {
+            // Wait for a slot before fetching, so that at most the channel capacity of chunks is
+            // fetched ahead of the reader.
+            let Ok(slot) = self.prefetch_send.reserve().await else {
+                break;
+            };
+
             let fetch_permit = self
                 .prefetch_semaphore
                 .clone()
@@ -68,6 +99,8 @@ impl ChunkDataFetcher {
                         }
 
                         mem_slice.0.clone().sliced(range)
+                    } else if let DynByteSource::File(file) = current_byte_source.as_ref() {
+                        file.get_range_concurrent(range, LOCAL_READ_SIZE).await?
                     } else {
                         // @NOTE. Performance can be optimized by grouping requests and downloading
                         // through `get_ranges()`.
@@ -78,14 +111,7 @@ impl ChunkDataFetcher {
             });
 
             let handle = tokio_handle_ext::AbortOnDropHandle(handle);
-            if self
-                .prefetch_send
-                .send((handle, fetch_permit))
-                .await
-                .is_err()
-            {
-                break;
-            }
+            slot.send((handle, fetch_permit));
 
             byte_offset += range_len;
         }
