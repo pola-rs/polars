@@ -3164,3 +3164,27 @@ def test_rolling_literal_index_31006(expr: pl.Expr, expected: pl.Series) -> None
     lf = pl.LazyFrame({"a": [1, 2, 3]})
     out = lf.select(expr.rolling(pl.lit(1).cast(pl.Int64), period="1i")).collect()
     assert_frame_equal(out, expected.to_frame())
+
+
+@pytest.mark.parametrize("values", [[{"a": 1.0}, {"a": 2.0}], ["1", "2"]])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").rolling_mean(2),
+        pl.col("x").rolling_var(2),
+        pl.col("x").rolling_std(2),
+        pl.col("x").rolling_quantile(0.5, window_size=2),
+        pl.col("x").rolling_median(2),
+        pl.col("x").rolling_mean_by("t", "2i"),
+        pl.col("x").rolling_var_by("t", "2i"),
+        pl.col("x").rolling_std_by("t", "2i"),
+        pl.col("x").rolling_quantile_by("t", "2i", quantile=0.5),
+        pl.col("x").rolling_median_by("t", "2i"),
+    ],
+)
+def test_rolling_float_aggs_reject_struct_and_string(
+    expr: pl.Expr, values: list[object]
+) -> None:
+    df = pl.DataFrame({"x": values, "t": [1, 2]})
+    with pytest.raises(InvalidOperationError, match="not supported for dtype"):
+        df.select(expr)
