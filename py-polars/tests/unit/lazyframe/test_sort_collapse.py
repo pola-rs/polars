@@ -6,6 +6,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 from polars.testing.parametric.strategies.core import dataframes
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("key1", ["col0", "col1"])
 @pytest.mark.parametrize("key2", ["col0", "col1"])
 @pytest.mark.parametrize("mo1", [False, True])
@@ -57,6 +58,7 @@ def test_sort_node_collapse_multiple(mo1: bool) -> None:
         assert_frame_equal(actual, expected, check_row_order=mo1)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("key1", ["col0", "col1"])
 @pytest.mark.parametrize("key2", ["col0", "col1"])
 @pytest.mark.parametrize("maintain_order", [False, True])

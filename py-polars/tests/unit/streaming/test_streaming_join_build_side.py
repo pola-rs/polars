@@ -49,6 +49,7 @@ def assert_matches_in_memory(q: pl.LazyFrame, out: pl.DataFrame) -> None:
     assert_frame_equal(out, expected, check_row_order=False)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("dim_left", [False, True])
 def test_unique_side_is_built_against_a_duplicated_side(
     dim_left: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
@@ -62,6 +63,7 @@ def test_unique_side_is_built_against_a_duplicated_side(
     assert_matches_in_memory(q, out)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("dim_left", [False, True])
 def test_somewhat_wider_unique_side_is_built(
     dim_left: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
@@ -91,6 +93,7 @@ def test_wide_unique_side_is_not_built(
     assert_matches_in_memory(q, out)
 
 
+@pytest.mark.slow
 def test_mildly_repeated_side_is_compared_by_width(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -121,6 +124,7 @@ def test_similar_sides_build_the_right_side(
     assert_matches_in_memory(q, out)
 
 
+@pytest.mark.slow
 def test_null_keys_are_not_counted_as_keys(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -146,6 +150,7 @@ def test_null_keys_are_not_counted_as_keys(
     assert_matches_in_memory(q, out)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("small_left", [False, True])
 def test_estimated_rows_pick_the_shorter_side(
     small_left: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]

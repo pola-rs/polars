@@ -472,6 +472,7 @@ def _rolling_extrema_naive(
     }, counts
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("length", "stride", "invert", "with_nan"),
     [
@@ -1536,6 +1537,7 @@ def interval_defs() -> SearchStrategy[ClosedInterval]:
     return st.sampled_from(closed)
 
 
+@pytest.mark.slow
 @given(
     period=st.timedeltas(
         min_value=timedelta(microseconds=0), max_value=timedelta(days=1000)
@@ -1601,6 +1603,7 @@ def test_rolling_parametric(
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.slow
 @given(
     window_size=st.timedeltas(
         min_value=timedelta(microseconds=0), max_value=timedelta(days=2)
@@ -2263,6 +2266,7 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
     assert_series_equal(pl.Series(data).rolling_sum(4, min_samples=2), pl.Series(naive))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("method", "out_dtype"),
     [
@@ -2308,6 +2312,7 @@ def test_rolling_rank(
     assert_frame_equal(actual.collect(), expected)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("center", [False, True])
 @given(
     s=series(

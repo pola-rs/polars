@@ -27,6 +27,7 @@ def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.slow
 @given(df=dataframes())
 @example(df=pl.DataFrame({"a": {"a": 1.0}}, schema={"a": pl.Struct({"a": pl.Float16})}))
 @example(df=pl.DataFrame({"a": [None, None]}, schema={"a": pl.Null}))

@@ -135,6 +135,7 @@ def make_add_one() -> Callable[[pl.Series], pl.Series]:
     return add_one  # type: ignore[no-any-return]
 
 
+@pytest.mark.slow
 def test_generalized_ufunc() -> None:
     """A generalized ufunc can be called on a pl.Series."""
     add_one = make_add_one()
@@ -175,6 +176,7 @@ def make_divide_by_sum() -> Callable[[pl.Series, pl.Series], pl.Series]:
     return divide_by_sum  # type: ignore[no-any-return]
 
 
+@pytest.mark.slow
 def test_generalized_ufunc_different_output_size() -> None:
     """
     It's possible to call a generalized ufunc that takes pl.Series of different sizes.

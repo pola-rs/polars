@@ -193,6 +193,7 @@ def _null_count_value(s: pl.Series) -> Any:
     return s.null_count()
 
 
+@pytest.mark.slow
 @given(
     s=series(
         name="x",

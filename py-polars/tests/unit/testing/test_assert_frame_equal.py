@@ -20,6 +20,7 @@ nan = float("nan")
 pytest_plugins = ["pytester"]
 
 
+@pytest.mark.slow
 @given(df=dataframes())
 def test_equal(df: pl.DataFrame) -> None:
     assert_frame_equal(df, df.clone(), check_exact=True)

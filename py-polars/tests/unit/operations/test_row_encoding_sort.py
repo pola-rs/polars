@@ -140,6 +140,7 @@ def tuple_order(
     return 0
 
 
+@pytest.mark.slow
 @given(
     s=series(
         excluded_dtypes=[
@@ -185,6 +186,7 @@ def test_series_sort_parametric(s: pl.Series) -> None:
             )
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         excluded_dtypes=[
@@ -282,6 +284,7 @@ def parametric_order_base(df: pl.DataFrame) -> None:
     assert_series_equal(lhs < rhs, lhs_re > rhs_re, check_names=False)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes([column(dtype=pl.Int32), column(dtype=pl.Int32)], allow_null=False)
 )
@@ -289,6 +292,7 @@ def test_parametric_int_order(df: pl.DataFrame) -> None:
     parametric_order_base(df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes([column(dtype=pl.UInt32), column(dtype=pl.UInt32)], allow_null=False)
 )
@@ -296,6 +300,7 @@ def test_parametric_uint_order(df: pl.DataFrame) -> None:
     parametric_order_base(df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes([column(dtype=pl.String), column(dtype=pl.String)], allow_null=False)
 )
@@ -303,6 +308,7 @@ def test_parametric_string_order(df: pl.DataFrame) -> None:
     parametric_order_base(df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes([column(dtype=pl.Binary), column(dtype=pl.Binary)], allow_null=False)
 )

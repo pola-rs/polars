@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
 
 
+@pytest.mark.slow
 @given(
     s=series(
         excluded_dtypes=[
@@ -33,6 +34,7 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
     assert_series_equal(result, result.sort())
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         excluded_dtypes=[
@@ -1841,6 +1843,7 @@ def _key_frame(dtype: PolarsDataType) -> pl.DataFrame:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize(
     "dtype",
@@ -2063,6 +2066,7 @@ def test_sort_head_streaming_top_k() -> None:
         assert "top-k" in dot or "bottom-k" in dot
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize(
     "expr",

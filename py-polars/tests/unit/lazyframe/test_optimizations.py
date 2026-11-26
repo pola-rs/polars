@@ -1931,6 +1931,7 @@ def _assert_year_filters_match(lf: pl.LazyFrame, year: int) -> None:
             )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "dtype",
     [pl.Date, pl.Datetime("ns"), pl.Datetime("us"), pl.Datetime("ms")],

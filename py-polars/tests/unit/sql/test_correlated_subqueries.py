@@ -1309,6 +1309,7 @@ def test_correlated_membership_in_join_on(query: str) -> None:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
 @pytest.mark.parametrize(
     "condition",
@@ -1356,6 +1357,7 @@ def test_correlated_one_input_condition_in_join_on_many_rows(condition: str) -> 
         ctx.execute(f"SELECT a.id FROM a JOIN b ON {condition}").collect()
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
 @pytest.mark.parametrize(
     "condition",
@@ -2249,6 +2251,7 @@ def test_correlated_in_subquery_aggregate_rejected(condition: str) -> None:
         )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "nested",
     [

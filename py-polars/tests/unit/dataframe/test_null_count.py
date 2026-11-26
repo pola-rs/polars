@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from hypothesis import example, given
 
 import polars as pl
@@ -7,6 +8,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=1,

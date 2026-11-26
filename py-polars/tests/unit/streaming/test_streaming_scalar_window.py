@@ -85,6 +85,7 @@ def _assert_same_on_path(
     return lines
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "exprs",
     [
@@ -377,6 +378,7 @@ def test_scalar_window_mixed_spec_falls_back(tmp_path: Path) -> None:
     _assert_same(q)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(("groups", "path"), [(10, "local"), (100_000, "partitioned")])
 def test_scalar_window_many_groups(
     tmp_path: Path, groups: int, path: str, plmonkeypatch: PlMonkeyPatch, capfd: Any
@@ -432,6 +434,7 @@ def test_scalar_window_value_dtypes(dtype: pl.DataType) -> None:
     _assert_same(q)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("groups", [7, 100_000])
 @pytest.mark.parametrize(
     "key",
@@ -478,6 +481,7 @@ SPILL_ENV = {
 }
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(("groups", "path"), [(7, "local"), (100_000, "partitioned")])
 def test_scalar_window_spilled(
@@ -520,6 +524,7 @@ def test_scalar_window_spilled(
     _assert_same(other.join(q, on="id", how="left", maintain_order="left"))
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_scalar_window_spill_files_removed(tmp_path: Path) -> None:
     # The spill directory is fixed per process, so use a fresh one.

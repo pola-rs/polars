@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pytest
 from hypothesis import given
 
 import polars as pl
@@ -68,6 +69,7 @@ def test_unique_counts_boolean_sorted_nulls_last() -> None:
     )
 
 
+@pytest.mark.slow
 @given(s=series(excluded_dtypes=[pl.Object]))
 def test_unique_counts_parametric(s: pl.Series) -> None:
     result = s.unique_counts()

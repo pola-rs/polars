@@ -2,12 +2,14 @@
 # Validate LazyFrame behaviour with parametric tests
 # ----------------------------------------------------
 import hypothesis.strategies as st
+import pytest
 from hypothesis import example, given
 
 import polars as pl
 from polars.testing.parametric import column, dataframes
 
 
+@pytest.mark.slow
 @given(
     ldf=dataframes(
         max_size=10,

@@ -178,6 +178,7 @@ def test_interpolate_overflow_27184() -> None:
     assert_series_equal(out, expected)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(cols=[column("a", dtype=pl.Float64, allow_null=True)]),
 )
@@ -198,6 +199,7 @@ def test_streaming_interpolate_vs_in_memory(
     )
 
 
+@pytest.mark.slow
 @given(
     data=series(name="a", allowed_dtypes=NUMERIC_DTYPES),
 )

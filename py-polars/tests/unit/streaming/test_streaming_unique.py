@@ -75,6 +75,7 @@ def test_streaming_unique_list_of_struct_with_decimal_26505() -> None:
     assert_frame_equal(result, df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(cols=[column("key")]), descending=booleans(), nulls_last=booleans()
 )
@@ -104,6 +105,7 @@ def test_sorted_streaming_unique_vs_in_memory(
     )
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(cols=[column("key1"), column("key2")]),
     descending=booleans(),

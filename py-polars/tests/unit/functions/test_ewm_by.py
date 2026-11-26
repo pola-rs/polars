@@ -11,6 +11,7 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import column, dataframes
 
 
+@pytest.mark.slow
 @given(
     data=st.data(),
     half_life=st.integers(min_value=1, max_value=1000),

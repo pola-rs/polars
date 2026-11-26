@@ -179,6 +179,7 @@ def test_bigquery_supplied_json_type_filters_stay_local(overrides: bool) -> None
     assert filtered.collect()["value"].to_list() == [None]
 
 
+@pytest.mark.slow
 def test_bigquery_json_rest_sample_and_storage_rows_match() -> None:
     fields = [
         _Field("j", "JSON"),

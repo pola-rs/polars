@@ -87,6 +87,7 @@ def test_partition_by_api() -> None:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("io_type", io_types)
 @pytest.mark.parametrize("engine", engines)
 @pytest.mark.parametrize("length", [0, 1, 4, 5, 6, 7])
@@ -190,6 +191,7 @@ def test_max_size_partition_lambda(
         i += 1
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("io_type", io_types)
 @pytest.mark.parametrize("engine", engines)
 @pytest.mark.write_disk
@@ -280,6 +282,7 @@ def test_partition_by_key(
 
 
 # We only deal with self-describing formats
+@pytest.mark.slow
 @pytest.mark.parametrize("io_type", [io_types[2], io_types[3]])
 @example(df=pl.DataFrame({"a": [0.0, -0.0]}, schema={"a": pl.Float16}))
 @given(

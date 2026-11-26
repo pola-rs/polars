@@ -2066,6 +2066,7 @@ def test_group_by_filter_parametric(
     assert_series_equal(gb, sl)
 
 
+@pytest.mark.slow
 @given(s=series(name="a", min_size=1))
 @pytest.mark.parametrize(
     ("expr", "is_scalar", "maintain_order"),
@@ -2160,6 +2161,7 @@ def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
     )
 
 
+@pytest.mark.slow
 @given(
     s=series(
         name="f",
@@ -2342,6 +2344,7 @@ def test_group_by_forward_backward_fill(
     )
 
 
+@pytest.mark.slow
 @given(s=series())
 def test_group_by_drop_nulls(s: pl.Series) -> None:
     df = s.rename("f").to_frame()
@@ -2380,6 +2383,7 @@ def test_group_by_drop_nulls(s: pl.Series) -> None:
     )
 
 
+@pytest.mark.slow
 @given(s=series())
 def test_group_by_drop_nans(s: pl.Series) -> None:
     df = s.rename("f").to_frame()
@@ -2920,6 +2924,7 @@ def test_group_bool_unique_25267(maintain_order: bool, stable: bool) -> None:
             assert_series_equal(df_s, ls_s, check_order=stable)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("group_as_slice", [False, True])
 @pytest.mark.parametrize("n", [10, 100, 519])
 @pytest.mark.parametrize(

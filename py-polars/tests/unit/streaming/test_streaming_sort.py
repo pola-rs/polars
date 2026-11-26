@@ -380,6 +380,7 @@ DIRECT_KEYS = _direct_key_series()
 ROW_ENCODED_KEYS = _row_encoded_key_series()
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("key_dtype", list(DIRECT_KEYS))
 @pytest.mark.parametrize("descending", [False, True])
 def test_sort_direct_key_dtypes(

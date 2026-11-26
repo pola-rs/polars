@@ -109,6 +109,7 @@ def test_scan_from_lance_slice_parametric(tmp_path: Path) -> None:
         raise type(exc)(msg) from exc
 
 
+@pytest.mark.slow
 def test_scan_lance_filter_pushdown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

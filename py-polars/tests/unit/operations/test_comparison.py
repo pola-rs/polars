@@ -628,6 +628,7 @@ def test_date_duration_comparison_error_25517() -> None:
         _ = date == duration
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("dtype_lhs", "dtype_rhs"),
     combinations(sorted(INTEGER_DTYPES, key=lambda v: str(v)), 2),

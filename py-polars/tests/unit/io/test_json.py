@@ -47,6 +47,7 @@ def test_write_json_example() -> None:
     assert_frame_equal(result, df)
 
 
+@pytest.mark.slow
 @pytest.mark.may_fail_cloud  # reason: object
 @given(
     df=dataframes(
@@ -77,6 +78,7 @@ def test_write_json_roundtrip(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         min_size=1,
@@ -468,6 +470,7 @@ def test_write_ndjson_sliced_masked_nested_list() -> None:
             assert sliced.write_ndjson() == expected
 
 
+@pytest.mark.slow
 def test_sink_ndjson_nested_multiple_morsels_30178(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:

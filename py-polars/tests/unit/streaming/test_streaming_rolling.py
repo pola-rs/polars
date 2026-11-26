@@ -66,6 +66,7 @@ def small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("func", ROLLING_FUNCTIONS)
 @pytest.mark.parametrize("center", [False, True])
 def test_streaming_rolling(func: str, center: bool) -> None:
@@ -84,6 +85,7 @@ def test_streaming_rolling(func: str, center: bool) -> None:
     assert_streaming_matches(lf)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("func", WEIGHTED_FUNCTIONS)
 @pytest.mark.parametrize("center", [False, True])
 def test_streaming_rolling_weights(func: str, center: bool) -> None:
@@ -125,6 +127,7 @@ def test_streaming_rolling_corr_cov() -> None:
     assert_streaming_matches(lf)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("morsel_size", ["1", "3", "1000"])
 def test_streaming_rolling_morsel_sizes(
     plmonkeypatch: PlMonkeyPatch, morsel_size: str

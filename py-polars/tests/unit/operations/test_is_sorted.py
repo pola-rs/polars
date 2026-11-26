@@ -306,6 +306,7 @@ def test_series_is_sorted() -> None:
     )
 
 
+@pytest.mark.slow
 @given(s=series(), descending=st.booleans(), nulls_last=st.booleans())
 def test_series_is_sorted_parametric(
     s: pl.Series, descending: bool, nulls_last: bool
@@ -319,6 +320,7 @@ def test_series_is_sorted_parametric(
         assert not s.is_sorted(descending=descending, nulls_last=not nulls_last)
 
 
+@pytest.mark.slow
 @given(data=st.data())
 def test_dataframe_is_sorted_parametric(data: st.DataObject) -> None:
     n = data.draw(st.integers(min_value=1, max_value=10))

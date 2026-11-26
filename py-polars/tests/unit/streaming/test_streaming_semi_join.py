@@ -85,6 +85,7 @@ def test_duplicates_on_both_sides(build_side: JoinBuildSide) -> None:
     assert_semi(left, right, expected, on="k", build_side=build_side)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("build_side", BUILD_SIDES)
 def test_empty_sides(build_side: JoinBuildSide) -> None:
     left = pl.LazyFrame({"k": [1, 2, 3], "v": [1.0, 2.0, 3.0]})
@@ -105,6 +106,7 @@ def test_disjoint_keys(build_side: JoinBuildSide) -> None:
     assert_semi(left, right, left.clear().collect(), on="k", build_side=build_side)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("build_side", BUILD_SIDES)
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_null_keys(build_side: JoinBuildSide, nulls_equal: bool) -> None:
@@ -119,6 +121,7 @@ def test_null_keys(build_side: JoinBuildSide, nulls_equal: bool) -> None:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("build_side", BUILD_SIDES)
 @pytest.mark.parametrize("nulls_equal", [False, True])
 def test_composite_and_string_keys(
@@ -196,6 +199,7 @@ def test_downstream_limit() -> None:
         )
 
 
+@pytest.mark.slow
 def test_sampling_builds_smaller_left(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -230,6 +234,7 @@ def test_sampling_keeps_right_build_for_wide_left(
     assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
 
 
+@pytest.mark.slow
 def test_sampling_keeps_right_build_for_incomplete_left(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -316,6 +321,7 @@ def test_incomplete_sides_keep_right_build_for_wide_left(
     assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "right"
 
 
+@pytest.mark.slow
 def test_incomplete_sides_sample_overrides_low_estimate(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -376,6 +382,7 @@ def incomplete_sides_err(
     return err
 
 
+@pytest.mark.slow
 def test_incomplete_sides_right_references_left(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -457,6 +464,7 @@ def test_incomplete_sides_right_references_left_but_fewer_bytes(
     assert "build side chosen: right" in err
 
 
+@pytest.mark.slow
 def test_incomplete_sides_null_keys_reference_nothing(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -480,6 +488,7 @@ def test_incomplete_sides_null_keys_reference_nothing(
     assert "right references left: true" in err
 
 
+@pytest.mark.slow
 def test_incomplete_sides_anti_left_null_keys(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -532,6 +541,7 @@ def test_incomplete_sides_sample_slow_right(
     assert int(line.rsplit(" ", 1)[1].rstrip(".")) >= 100
 
 
+@pytest.mark.slow
 def test_sampling_hints(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

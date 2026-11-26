@@ -242,6 +242,7 @@ def _assert_unordered_window(q: pl.LazyFrame, n_nodes: int = 1) -> None:
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "expr",
     [
@@ -691,6 +692,7 @@ MODE_EXPRS = [
 ]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("expr", MODE_EXPRS)
 def test_window_mode_ordered(window_mode: str, expr: pl.Expr) -> None:
     q = _keyed_frame(2000).lazy().with_columns(w=expr)
@@ -698,6 +700,7 @@ def test_window_mode_ordered(window_mode: str, expr: pl.Expr) -> None:
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("expr", MODE_EXPRS)
 def test_window_mode_unordered(window_mode: str, expr: pl.Expr) -> None:
     q = _keyed_frame(2000).lazy().with_columns(w=expr).sort("x", "id")
@@ -705,6 +708,7 @@ def test_window_mode_unordered(window_mode: str, expr: pl.Expr) -> None:
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("expr", MODE_EXPRS)
 def test_window_mode_partitions(window_mode: str, expr: pl.Expr) -> None:
     columns = list(dict.fromkeys(expr.meta.root_names()))
@@ -714,6 +718,7 @@ def test_window_mode_partitions(window_mode: str, expr: pl.Expr) -> None:
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.slow
 def test_window_mode_several_specs(window_mode: str) -> None:
     q = (
         _keyed_frame(2000)
@@ -753,6 +758,7 @@ def test_window_one_partition_interleaved_keys(plmonkeypatch: PlMonkeyPatch) -> 
     assert out.collect(engine="streaming")["w"].to_list() == [10, 20, 40, 60]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("key", [pl.col("g"), pl.col("id") * 0])
 def test_window_resplit_large_partitions(
     window_mode: str, key: pl.Expr, plmonkeypatch: PlMonkeyPatch

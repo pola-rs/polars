@@ -828,6 +828,7 @@ TIMES = (
 )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("dtype", "values", "keys", "groups"),
     [

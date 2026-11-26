@@ -159,6 +159,7 @@ def test_catalog_query_params(lake: CountingCatalog) -> None:
     assert ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item() == 2
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize("qualifier", ["lake.tpch.orders", "tpch.orders", "orders"])
 @pytest.mark.usefixtures("planner")
@@ -444,6 +445,7 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
     assert table.properties["k"] == "v"
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "error"),
@@ -2491,6 +2493,7 @@ def test_create_catalog_schema_unknown_existence(
     ctx.execute("CREATE SCHEMA IF NOT EXISTS sales")
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "error"),
@@ -2895,6 +2898,7 @@ def test_alter_catalog_table_added_types(lake: CountingCatalog) -> None:
         ctx.execute("ALTER TABLE lineitem ADD COLUMN g UBIGINT")
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "error"),
@@ -4329,6 +4333,7 @@ ORDERS = [(1, 10), (2, 20), (3, 30)]
 STRING_LIMIT = "(only letters, digits, space, '-' and '_' for now)"
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "statement",
@@ -4443,6 +4448,7 @@ def test_delete_catalog_table_types(lake: CountingCatalog) -> None:
         ctx.execute("DELETE FROM typed WHERE st.a = 1")
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("condition", "reason"),
@@ -4544,6 +4550,7 @@ NO_RETRY = {"commit.retry.num-retries": "0"}
 RETRY = {"commit.retry.min-wait-ms": "0", "commit.retry.max-wait-ms": "0"}
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "remaining"),
@@ -4904,6 +4911,7 @@ def update_ctx(lake: CountingCatalog) -> pl.SQLContext[pl.LazyFrame]:
 T_ROWS = [(1, "a", 10), (2, "b", 20), (3, "c", 30), (4, "d", None)]
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "rows"),
@@ -5097,6 +5105,7 @@ def test_update_catalog_table_not_null(lake: CountingCatalog) -> None:
     assert lake.load_table(("tpch", "r")).current_snapshot() == snapshot
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "error"),
@@ -5567,6 +5576,7 @@ def merge_ctx(lake: CountingCatalog) -> pl.SQLContext[pl.LazyFrame]:
     return ctx
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("clauses", "rows"),
@@ -5660,6 +5670,7 @@ def test_merge_catalog_table(
     assert table_rows(lake, "tpch", "t") == rows
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "rows"),
@@ -5832,6 +5843,7 @@ def test_merge_catalog_table_casts(lake: CountingCatalog) -> None:
     assert lake.load_table(("tpch", "r")).current_snapshot() is None
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "error"),
@@ -5995,6 +6007,7 @@ def test_merge_catalog_table_sql_errors(
     assert lake.load_table(("tpch", "t")).current_snapshot() == snapshot
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "error", "kind"),
@@ -6066,6 +6079,7 @@ def test_merge_catalog_table_checked_first(
     assert calls == []
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("statement", "rows"),
@@ -6151,6 +6165,7 @@ def test_merge_catalog_table_not_null_from_data(lake: CountingCatalog) -> None:
     assert lake.load_table(("tpch", "r")).current_snapshot() is None
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_merge_catalog_table_round_two(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
@@ -6582,6 +6597,7 @@ def inspected(catalog: CountingCatalog, name: str, *identifier: str) -> pl.DataF
     return pl.DataFrame(pl.from_arrow(getattr(table.inspect, name)()))
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize("name", METADATA_TABLES)
 def test_catalog_metadata_tables(lake: CountingCatalog, name: str) -> None:
@@ -6949,6 +6965,7 @@ def history(
     return lake_ctx(lake), ids
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.usefixtures("planner")
 def test_catalog_time_travel(
@@ -7101,6 +7118,7 @@ def test_catalog_time_travel_in_statements(
     assert sorted(ctx.execute("SELECT k FROM hist", eager=True)["k"]) == [0, 1, 2, 10]
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("query", "error", "match"),
@@ -7273,6 +7291,7 @@ def test_catalog_time_travel_qualified_columns(
         )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "source",
@@ -8148,6 +8167,7 @@ def test_call_rewrite_data_files_concurrent_append(
     ]
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "race",
@@ -8637,6 +8657,7 @@ def field_id_table(nested: bool) -> Any:
     return pa.table({"k": [7], "v": ["g"]}, schema=schema)
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("table", "files", "error", "match"),

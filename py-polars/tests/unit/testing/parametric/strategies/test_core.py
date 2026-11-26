@@ -31,6 +31,7 @@ def test_series_name(s: pl.Series) -> None:
     assert s.name == "hello"
 
 
+@pytest.mark.slow
 @given(st.data())
 def test_series_dtype(data: st.DataObject) -> None:
     dtype = data.draw(dtypes())
@@ -57,6 +58,7 @@ def test_series_size_range(s: pl.Series) -> None:
     assert 3 <= s.len() <= 8
 
 
+@pytest.mark.slow
 @given(s=series(allow_null=False))
 def test_series_allow_null_false(s: pl.Series) -> None:
     assert not s.has_nulls()
@@ -115,6 +117,7 @@ def test_dataframes_allow_null_column(df: pl.DataFrame) -> None:
     assert 0 <= null_count <= df.height * df.width
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         cols=1,
@@ -127,6 +130,7 @@ def test_dataframes_allow_null_override(df: pl.DataFrame) -> None:
     assert 0 <= df.get_column("colx").null_count() <= df.height
 
 
+@pytest.mark.slow
 @given(
     lf=dataframes(
         # generate lazyframes with at least one row
@@ -177,6 +181,7 @@ def test_allow_infinities_removed(data: st.DataObject) -> None:
         series(dtype=pl.Float64, allow_infinities=False)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         cols=[
@@ -211,6 +216,7 @@ def test_dataframes_nested_strategies(df: pl.DataFrame) -> None:
             assert all(s in ("aa", "bb", "cc") for s in inner_list)
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(allowed_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5),
     lf=dataframes(excluded_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5, lazy=True),

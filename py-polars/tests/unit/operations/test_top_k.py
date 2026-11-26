@@ -403,6 +403,7 @@ def test_top_k_empty() -> None:
     assert_frame_equal(df.select([pl.col("test").top_k(2)]), df)
 
 
+@pytest.mark.slow
 @given(s=series(excluded_dtypes=[pl.Null, pl.Struct]), should_sort=booleans())
 def test_top_k_nulls(s: pl.Series, should_sort: bool) -> None:
     if should_sort:
@@ -441,6 +442,7 @@ def test_top_k_descending_removed() -> None:
         pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("sort_function"),
     [

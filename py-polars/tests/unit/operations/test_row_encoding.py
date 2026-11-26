@@ -79,6 +79,7 @@ def roundtrip_series_re(
     )
 
 
+@pytest.mark.slow
 @given(
     df=dataframes(
         excluded_dtypes=[
@@ -376,6 +377,7 @@ def test_int_after_null() -> None:
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("field", FIELD_COMBS_ARGS)
 @given(s=series(allow_null=False, allow_chunks=False, excluded_dtypes=[pl.Categorical]))
 def test_optional_eq_non_optional_20320(field: Any, s: pl.Series) -> None:
@@ -390,6 +392,7 @@ def test_optional_eq_non_optional_20320(field: Any, s: pl.Series) -> None:
     assert_series_equal(re_with_null.head(s.len()), re_without_null)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("field", FIELD_COMBS_ARGS)
 @given(dtype=dtypes(excluded_dtypes=[pl.Categorical]))
 def test_null(

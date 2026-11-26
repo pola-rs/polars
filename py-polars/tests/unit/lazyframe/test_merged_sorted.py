@@ -56,6 +56,7 @@ def test_merge_sorted_bad_input_type() -> None:
     a.merge_sorted(b, key="x")
 
 
+@pytest.mark.slow
 @given(s=series(name="x"))
 def test_merge_sorted_parametric(s: pl.Series) -> None:
     lf = s.sort().to_frame().lazy()

@@ -848,6 +848,7 @@ print("OK", end="")
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_sink_upload_chunk_size_config(
     tmp_path: Path,
@@ -889,6 +890,7 @@ def test_sink_upload_chunk_size_config(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 def test_sink_upload_chunk_size_config_partitioned(
     tmp_path: Path,

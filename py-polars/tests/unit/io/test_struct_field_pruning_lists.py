@@ -245,6 +245,7 @@ NESTED = pl.DataFrame(
 )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("fmt", ["parquet", "ipc"])
 @pytest.mark.parametrize("how", ["vertical", "diagonal"])
 def test_struct_field_pruning_concat_aligns_nested_lists(

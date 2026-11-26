@@ -522,6 +522,7 @@ def test_explode_basic() -> None:
     )
 
 
+@pytest.mark.slow
 @given(s=series(min_size=1))
 @pytest.mark.parametrize("empty_as_null", [False, True])
 @pytest.mark.parametrize("keep_nulls", [False, True])

@@ -232,6 +232,7 @@ def test_to_pandas_no_deadlock_multithreaded_27396() -> None:
         [f.result(timeout=10) for f in fs]
 
 
+@pytest.mark.slow
 @pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
 def test_to_pandas_no_deadlock_with_concurrent_map_elements_30358() -> None:
     from concurrent.futures import ThreadPoolExecutor

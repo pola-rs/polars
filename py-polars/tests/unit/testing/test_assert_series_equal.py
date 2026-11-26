@@ -24,6 +24,7 @@ def test_assert_series_equal_parametric(s: pl.Series) -> None:
     assert_series_equal(s, s)
 
 
+@pytest.mark.slow
 @given(data=st.data())
 def test_assert_series_equal_parametric_array(data: st.DataObject) -> None:
     inner = data.draw(dtypes(excluded_dtypes=[pl.Categorical]))

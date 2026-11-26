@@ -603,6 +603,7 @@ def test_streaming_group_by_hot_table_growth(
     assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
 
 
+@pytest.mark.slow
 def test_streaming_group_by_pre_aggs_over_budget(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -822,6 +823,7 @@ def _keys(dtype: str) -> dict[str, pl.Expr]:
     return {name: pl.when(g != 0).then(key) for name, key in keys.items()}
 
 
+@pytest.mark.slow
 @_modes("spilled")
 @pytest.mark.parametrize(
     "dtype", ["categorical", "decimal", "datetime", "string", "struct", "multiple"]
@@ -1115,6 +1117,7 @@ def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
     assert_frame_equal(sort_lists(lf, "streaming"), sort_lists(lf, "in-memory"))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("repeats", [False, True])
 def test_streaming_group_by_unique_hot_table_switch(
     repeats: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
@@ -1146,6 +1149,7 @@ def test_streaming_group_by_unique_hot_table_switch(
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("kind", ["int", "float", "str", "long_str"])
 @pytest.mark.parametrize("with_nulls", [False, True])
 @pytest.mark.parametrize("hot_table_size", ["2", "4096"])

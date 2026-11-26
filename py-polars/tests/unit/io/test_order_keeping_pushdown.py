@@ -68,6 +68,7 @@ ORDER_KEEPING = [
 ]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("expr", ORDER_KEEPING)
 @pytest.mark.parametrize("descending", [False, True])
 def test_top_k_through_order_keeping_projection(
@@ -85,6 +86,7 @@ def test_top_k_through_order_keeping_projection(
     assert_frame_equal(out.select("k"), q.collect(engine="in-memory").select("k"))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("expr", ORDER_KEEPING)
 def test_filter_through_order_keeping_projection(
     expr: pl.Expr,
@@ -112,6 +114,7 @@ def test_filter_through_date_cast(scan: pl.LazyFrame) -> None:
     assert q.select(pl.len()).collect().item() == 31 * ROWS_PER_GROUP
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "expr",
     [
