@@ -13,7 +13,6 @@ import pytest
 from deltalake import DeltaTable, write_deltalake
 
 import polars as pl
-from polars._utils.various import parse_version
 from polars._utils.wrap import wrap_ldf
 from polars.exceptions import ComputeError, SchemaError
 from polars.io.delta._sink import (
@@ -33,11 +32,6 @@ pytestmark = pytest.mark.write_disk
 
 def _sink(lf: pl.LazyFrame, path: Path | str, mode: Any) -> None:
     DeltaSinkState.new(str(path), mode=mode).attach_sink(lf).collect()
-
-
-# deltalake 1.7 writes timestamps without a time zone in maps and commits to tables
-# with domainMetadata or vacuumProtocolCheck. Older versions reject both.
-_DELTALAKE_REJECTS = parse_version(deltalake.__version__) < (1, 7)
 
 
 def _read(path: Path, *sort: str) -> pl.DataFrame:
@@ -556,15 +550,18 @@ def _add_writer_feature(path: Path, feature: str) -> None:
 
 
 @pytest.mark.parametrize("feature", ["domainMetadata", "vacuumProtocolCheck"])
-def test_delta_sink_feature_deltalake_rejects(tmp_path: Path, feature: str) -> None:
+def test_delta_sink_feature_append(tmp_path: Path, feature: str) -> None:
     write_deltalake(str(tmp_path), pa.table({"a": [1]}))
     _add_writer_feature(tmp_path, feature)
-    files = _data_files(tmp_path)
 
-    with pytest.raises(NotImplementedError, match=feature):
-        _sink(pl.LazyFrame({"a": [2]}), tmp_path, "append")
+    _sink(pl.LazyFrame({"a": [2]}), tmp_path, "append")
 
-    assert _data_files(tmp_path) == files
+    table = DeltaTable(str(tmp_path))
+    assert feature in (table.protocol().writer_features or [])
+    # Neither Polars nor pyarrow reads tables with the vacuumProtocolCheck reader
+    # feature, so the commit is checked instead of the data.
+    adds = _adds(tmp_path, table.version())
+    assert [json.loads(add["stats"])["numRecords"] for add in adds] == [1]
 
 
 def test_delta_sink_variant_feature_unused(tmp_path: Path) -> None:
@@ -707,11 +704,12 @@ def _ntz_map_frame() -> pl.DataFrame:
 
 
 def test_delta_sink_new_table_ntz_in_map(tmp_path: Path) -> None:
-    # deltalake would create the table without the timestampNtz feature.
-    with pytest.raises(NotImplementedError, match="without a time zone in a map"):
-        _sink(_ntz_map_frame().lazy(), tmp_path, "error")
+    df = _ntz_map_frame()
+    _sink(df.lazy(), tmp_path, "error")
 
-    assert list(tmp_path.iterdir()) == []
+    protocol = DeltaTable(str(tmp_path)).protocol()
+    assert "timestampNtz" in (protocol.writer_features or [])
+    assert_frame_equal(_read(tmp_path), df)
 
 
 def test_delta_sink_type_casts(tmp_path: Path) -> None:
@@ -984,11 +982,13 @@ def test_delta_sink_stats_dotted_column(tmp_path: Path) -> None:
         assert _stats(path, 1)["minValues"] == expected
 
 
-def test_delta_sink_deltalake_api_missing(
+def test_delta_sink_deltalake_too_old(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delattr(DeltaTable, "transaction_version")
-    with pytest.raises(ImportError, match=r"DeltaTable\.transaction_version"):
+    monkeypatch.setattr(deltalake, "__version__", "1.6.6")
+    with pytest.raises(
+        ImportError, match=r"deltalake >= 1\.7\.0 \(installed: 1\.6\.6\)"
+    ):
         DeltaSinkState.new(str(tmp_path), mode="append")
 
 
@@ -1189,27 +1189,18 @@ def test_delta_write_delta_table_target(tmp_path: Path, write: Any) -> None:
 
 @_public_writers
 def test_delta_write_new_table_ntz_in_map(tmp_path: Path, write: Any) -> None:
-    from deltalake.exceptions import DeltaError
-
     df = _ntz_map_frame()
-    if not _DELTALAKE_REJECTS:
-        write(df, tmp_path)
-        assert not _native_commit(tmp_path, 0)
-        assert_frame_equal(_read(tmp_path), df)
-        return
+    write(df, tmp_path)
 
-    # deltalake rejects the data before writing anything.
-    with pytest.raises(DeltaError):
-        write(df, tmp_path)
-
-    assert list(tmp_path.iterdir()) == []
+    assert _native_commit(tmp_path, 0)
+    assert_frame_equal(_read(tmp_path), df)
 
 
 @_public_writers
-def test_delta_write_deltalake_api_missing(
+def test_delta_write_deltalake_too_old(
     tmp_path: Path, write: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delattr(DeltaTable, "transaction_version")
+    monkeypatch.setattr(deltalake, "__version__", "1.6.6")
 
     write(pl.DataFrame({"a": [1]}), tmp_path)
 
@@ -1398,25 +1389,13 @@ def test_delta_sink_files_auto_credential_provider(
 
 @_public_writers
 @pytest.mark.parametrize("feature", ["domainMetadata", "vacuumProtocolCheck"])
-def test_delta_write_feature_deltalake_rejects(
-    tmp_path: Path, write: Any, feature: str
-) -> None:
-    from deltalake.exceptions import CommitFailedError
-
+def test_delta_write_feature_native(tmp_path: Path, write: Any, feature: str) -> None:
     write_deltalake(str(tmp_path), pa.table({"a": [1]}))
     _add_writer_feature(tmp_path, feature)
-    files = _data_files(tmp_path)
 
-    if not _DELTALAKE_REJECTS:
-        write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
-        version = DeltaTable(str(tmp_path)).version()
-        assert not _native_commit(tmp_path, version)
-        assert len(_adds(tmp_path, version)) == 1
-        assert len(_data_files(tmp_path)) == len(files) + 1
-        return
+    write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
 
-    # deltalake writes the table and fails before writing any file.
-    with pytest.raises(CommitFailedError, match="Unsupported table features"):
-        write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
-
-    assert _data_files(tmp_path) == files
+    version = DeltaTable(str(tmp_path)).version()
+    assert _native_commit(tmp_path, version)
+    adds = _adds(tmp_path, version)
+    assert [json.loads(add["stats"])["numRecords"] for add in adds] == [1]

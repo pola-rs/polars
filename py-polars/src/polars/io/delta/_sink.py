@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import quote, unquote, urlparse
 
 from polars._utils.logging import eprint, verbose
+from polars._utils.various import parse_version
 from polars._utils.wrap import wrap_ldf
 from polars.exceptions import ComputeError, SchemaError
 from polars.io.cloud._utils import (
@@ -65,10 +66,8 @@ _SINK_UUID_PROPERTY = "polars.sink-uuid"
 #   rejected.
 # - changeDataFeed: the add and remove actions describe the change of an append or
 #   overwrite.
-# - deletionVectors: nothing to do for new files.
-#
-# domainMetadata and vacuumProtocolCheck need nothing for new files either, but
-# deltalake 1.6.6 refuses to commit to tables with them.
+# - deletionVectors, domainMetadata and vacuumProtocolCheck: nothing to do for new
+#   files.
 _ALLOWED_WRITER_FEATURES = frozenset(
     {
         "appendOnly",
@@ -76,13 +75,20 @@ _ALLOWED_WRITER_FEATURES = frozenset(
         "timestampNtz",
         "changeDataFeed",
         "deletionVectors",
+        "domainMetadata",
+        "vacuumProtocolCheck",
     }
 )
 
 # Writer features that only constrain variant columns, so they are allowed when the
-# table has none. deltalake 1.6.4 to 1.6.6 adds variantType to tables without
+# table has none. deltalake 1.6.4 to 1.6.6 added variantType to tables without
 # variant columns.
 _VARIANT_WRITER_FEATURES = frozenset({"variantType", "variantType-preview"})
+
+# The oldest deltalake that the sink commits with. Older versions refuse to commit to
+# tables with domainMetadata or vacuumProtocolCheck. They also don't add the
+# timestampNtz feature for a timestamp without a time zone inside a map.
+_MIN_DELTALAKE_VERSION = "1.7.0"
 
 # Same default as delta-rs and Spark.
 _DEFAULT_NUM_INDEXED_COLS = 32
@@ -135,36 +141,6 @@ def _is_delta_type(dtype: PolarsDataType) -> bool:
         return False
 
 
-def _has_ntz_in_map(dtype: PolarsDataType, *, in_map: bool = False) -> bool:
-    """Whether `dtype` has a timestamp without a time zone inside a map."""
-    import polars as pl
-
-    if isinstance(dtype, pl.Datetime):
-        return in_map and dtype.time_zone is None
-    if isinstance(dtype, pl.Map):
-        return _has_ntz_in_map(dtype.key, in_map=True) or _has_ntz_in_map(
-            dtype.value, in_map=True
-        )
-    if isinstance(dtype, (pl.List, pl.Array)):
-        return _has_ntz_in_map(dtype.inner, in_map=in_map)
-    if isinstance(dtype, pl.Struct):
-        return any(_has_ntz_in_map(f.dtype, in_map=in_map) for f in dtype.fields)
-    return False
-
-
-def _new_table_rejection(schema: pl.Schema) -> str | None:
-    """Why the sink can't create a table for data of `schema`, or None.
-
-    deltalake 1.6.6 doesn't add the timestampNtz feature for a timestamp without a
-    time zone inside a map. The table would lack the feature, and no reader would
-    open it. `write_deltalake` rejects such data.
-    """
-    for name, dtype in schema.items():
-        if _has_ntz_in_map(dtype):
-            return f"column {name!r} has a timestamp without a time zone in a map"
-    return None
-
-
 def _schema_mismatch(schema: pl.Schema, expected: pl.Schema) -> str | None:
     """How data of `schema` differs from the table schema `expected`, or None."""
     if set(schema.names()) != set(expected.names()):
@@ -175,51 +151,23 @@ def _schema_mismatch(schema: pl.Schema, expected: pl.Schema) -> str | None:
     return None
 
 
-def _check_deltalake_apis() -> None:
-    """Raise if the installed deltalake lacks an API that the sink commits with."""
+def _deltalake_too_old() -> bool:
+    """Whether the installed deltalake is older than the sink supports."""
     import deltalake
 
-    if missing := _missing_deltalake_apis():
+    return parse_version(deltalake.__version__) < parse_version(_MIN_DELTALAKE_VERSION)
+
+
+def _check_deltalake_version() -> None:
+    """Raise if the installed deltalake is older than the sink supports."""
+    import deltalake
+
+    if _deltalake_too_old():
         msg = (
-            f"DeltaSinkState requires a newer deltalake (installed: "
-            f"{deltalake.__version__}), which has: {', '.join(missing)}"
+            f"DeltaSinkState requires deltalake >= {_MIN_DELTALAKE_VERSION} "
+            f"(installed: {deltalake.__version__})"
         )
         raise ImportError(msg)
-
-
-def _missing_deltalake_apis() -> list[str]:
-    """The APIs that the sink commits with and the installed deltalake lacks."""
-    import inspect
-
-    import deltalake
-    import deltalake.transaction
-
-    return [
-        name
-        for name, available in [
-            (
-                "DeltaTable.create_write_transaction",
-                hasattr(deltalake.DeltaTable, "create_write_transaction"),
-            ),
-            (
-                "DeltaTable.transaction_version",
-                hasattr(deltalake.DeltaTable, "transaction_version"),
-            ),
-            (
-                "transaction.create_table_with_add_actions",
-                hasattr(deltalake.transaction, "create_table_with_add_actions"),
-            ),
-            ("transaction.AddAction", hasattr(deltalake.transaction, "AddAction")),
-            ("transaction.Transaction", hasattr(deltalake.transaction, "Transaction")),
-            (
-                "CommitProperties(app_transactions=...)",
-                hasattr(deltalake.transaction, "CommitProperties")
-                and "app_transactions"
-                in inspect.signature(deltalake.transaction.CommitProperties).parameters,
-            ),
-        ]
-        if not available
-    ]
 
 
 def _check_writable(table: deltalake.DeltaTable, mode: DeltaSinkMode) -> None:
@@ -646,7 +594,7 @@ class DeltaSinkState:
         | None = "auto",
     ) -> DeltaSinkState:
         _check_if_delta_available()
-        _check_deltalake_apis()
+        _check_deltalake_version()
 
         from deltalake import DeltaTable
 
@@ -754,7 +702,7 @@ class DeltaSinkState:
         """
         table = self._load_table()
         if table is None:
-            return _new_table_rejection(schema)
+            return None
 
         if self.mode in ("error", "ignore"):
             # deltalake raises its own error, or writes nothing.
@@ -846,10 +794,6 @@ class DeltaSinkState:
             lf = lf.select(expected.names())
         else:
             from deltalake import Schema
-
-            if (rejection := _new_table_rejection(input_schema)) is not None:
-                msg = f"sink to a new Delta table: {rejection}"
-                raise NotImplementedError(msg)
 
             # A new table is not partitioned.
             partition_columns = []
@@ -999,7 +943,7 @@ class DeltaSinkState:
         )
 
         # The commit may run in another process than `new()`.
-        _check_deltalake_apis()
+        _check_deltalake_version()
 
         loaded = self.table_.get()
         routed = loaded is not None and loaded.routed
@@ -1231,8 +1175,8 @@ def _native_sink_state(
         reason = f"mode is {mode!r}"
     elif delta_write_options:
         reason = f"delta_write_options are given: {sorted(delta_write_options)}"
-    elif missing := _missing_deltalake_apis():
-        reason = f"deltalake lacks {', '.join(missing)}"
+    elif _deltalake_too_old():
+        reason = f"deltalake is older than {_MIN_DELTALAKE_VERSION}"
     elif isinstance(target, DeltaTable) and not _is_local_uri(uri):
         # The sink would write the data files without the table's storage options.
         reason = "the target is a DeltaTable of a remote table"
