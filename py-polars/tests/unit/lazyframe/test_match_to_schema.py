@@ -227,3 +227,19 @@ def test_match_to_schema_float_upcast(float_dtype: pl.DataType) -> None:
 
     result = df.lazy().match_to_schema(expected.schema, float_cast="upcast").collect()
     assert_frame_equal(expected, result)
+
+
+def test_match_to_schema_missing_columns_expression_dtype_27255() -> None:
+
+    with pytest.raises(pl.exceptions.SchemaError, match=r"Int32.*Int64"):
+        pl.DataFrame().match_to_schema(
+            {"b": pl.Int64}, missing_columns={"b": pl.lit(0, dtype=pl.Int32)}
+        )
+
+    result = pl.DataFrame().match_to_schema(
+        {"b": pl.Int64},
+        missing_columns={"b": pl.lit(0, dtype=pl.Int32)},
+        integer_cast="upcast",
+    )
+    assert result.schema == {"b": pl.Int64}
+    assert result["b"].to_list() == [0]
