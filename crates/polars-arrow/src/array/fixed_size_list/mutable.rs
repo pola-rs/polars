@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::FixedSizeListArray;
+use super::{FixedSizeListArray, child_length};
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, PushUnchecked, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
@@ -136,7 +136,7 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
 
     /// Reserves `additional` slots.
     pub fn reserve(&mut self, additional: usize) {
-        self.values.reserve(additional * self.size);
+        self.values.reserve(child_length(additional, self.size));
         if let Some(x) = self.validity.as_mut() {
             x.reserve(additional)
         }
