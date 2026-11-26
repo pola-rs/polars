@@ -1318,6 +1318,22 @@ def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
         q.explain()
 
 
+@pytest.mark.parametrize("lower_bound", [1, 1.5])
+def test_is_between_rejects_duration_datetime_bound_31075(lower_bound: float) -> None:
+    df = pl.DataFrame(
+        {
+            "duration": [timedelta(days=1)],
+            "datetime": [datetime(2020, 1, 1)],
+        }
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot compare Duration with another temporal dtype",
+    ):
+        df.select(pl.col("duration").is_between(lower_bound, pl.col("datetime")))
+
+
 @pytest.mark.parametrize("dtype", sorted(INTEGER_DTYPES, key=lambda v: str(v)))
 @pytest.mark.parametrize(
     "value",

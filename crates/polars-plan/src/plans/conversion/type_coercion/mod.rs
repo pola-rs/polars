@@ -355,6 +355,23 @@ impl OptimizationRule for TypeCoercionRule {
                     Some(high_dtype) => high_dtype,
                     None => unpack!(try_get_dtype(expr_arena, high.node(), schema).ok()),
                 };
+
+                // A duration may be compared with a numeric bound through its physical
+                // representation, but not with another temporal logical type. Do this
+                // check before finding one common dtype for both bounds: otherwise an
+                // integer bound can make the common dtype Int64 and silently turn a
+                // Duration <-> Datetime comparison into an integer comparison.
+                let dtypes = [&needle_dtype, &low_dtype, &high_dtype];
+                if dtypes.iter().any(|dtype| dtype.is_duration())
+                    && dtypes
+                        .iter()
+                        .any(|dtype| dtype.is_temporal() && !dtype.is_duration())
+                {
+                    polars_bail!(
+                        InvalidOperation:
+                        "cannot compare Duration with another temporal dtype"
+                    );
+                }
                 let high_ae = expr_arena.get(high.node());
 
                 if high_dtype != needle_dtype
