@@ -368,6 +368,24 @@ def test_delta_sink_commit_twice_one_version(tmp_path: Path) -> None:
     assert _read(tmp_path, "a")["a"].to_list() == [1, 2, 3]
 
 
+def test_delta_sink_commit_history_error_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = DeltaSinkState.new(str(tmp_path), mode="append")
+    files = _resolve_and_write(state, pl.LazyFrame({"a": [1]}))
+    state.commit(files)
+
+    def fail(self: DeltaTable, *args: Any, **kwargs: Any) -> None:
+        msg = "history read failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(DeltaTable, "history", fail)
+
+    # The retry finds the commit, but not its version.
+    with pytest.raises(RuntimeError, match="history read failed"):
+        state.commit(files)
+
+
 def test_delta_sink_commit_version_concurrent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1274,7 +1292,7 @@ def _before_commit(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
 
 
 @_public_writers
-def test_delta_write_append_no_log_reads(
+def test_delta_write_append_one_log_read(
     tmp_path: Path, write: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_deltalake(str(tmp_path), pa.table({"a": [1]}))
@@ -1283,11 +1301,13 @@ def test_delta_write_append_no_log_reads(
     # Counted up to the commit: resolving the plan again afterwards (as the
     # schema check of the tests does) reads the log to find the commit.
     at_commit: dict[str, int] = {}
+    committed: list[pl.DataFrame] = []
     commit = DeltaSinkState.commit
 
     def commit_and_count(self: DeltaSinkState, files: Any) -> Any:
         out = commit(self, files)
         at_commit.update(counts)
+        committed.append(out)
         return out
 
     monkeypatch.setattr(DeltaSinkState, "commit", commit_and_count)
@@ -1295,11 +1315,13 @@ def test_delta_write_append_no_log_reads(
     write(pl.DataFrame({"a": [2]}), tmp_path, mode="append")
 
     assert _native_commit(tmp_path, 1)
+    # The one log read finds the version of the commit.
     assert at_commit == {
-        "update_incremental": 0,
+        "update_incremental": 1,
         "transaction_version": 0,
         "history": 0,
     }
+    assert [df.to_dict(as_series=False) for df in committed] == [{"version": [1]}]
 
 
 @_public_writers

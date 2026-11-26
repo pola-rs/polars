@@ -57,7 +57,8 @@ mod _python_impl {
         /// created.
         ///
         /// The version is `None` when the commit created none, e.g. with
-        /// `mode="ignore"` on a table that exists.
+        /// `mode="ignore"` on a table that exists. It is also `None` when the commit
+        /// is no longer in the table history, e.g. after log cleanup.
         pub fn commit(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<Option<i64>> {
             let state = self.clone().into_sink_state_obj()?;
             let committed = commit_sinked_files("Delta", &state, args)?;
