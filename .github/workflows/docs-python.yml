@@ -35,24 +35,22 @@ jobs:
   changes:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     outputs:
-      changed: ${{ steps.changes.outputs.changed }}
+      changed: ${{ github.event_name != 'pull_request' || steps.changes.outputs.changed == 'true' }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 2
-          filter: blob:none
-          sparse-checkout: .github/actions
-
       - name: Check for relevant changes
         id: changes
-        uses: ./.github/actions/changed-paths
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: dorny/paths-filter@v4
         with:
           # Keep in sync with `on.push.paths`.
-          paths: |
-            py-polars/docs/
-            py-polars/src/polars/
-            .github/workflows/docs-python.yml
+          filters: |
+            changed:
+              - py-polars/docs/**
+              - py-polars/src/polars/**
+              - .github/workflows/docs-python.yml
 
   build-python-docs:
     needs: changes

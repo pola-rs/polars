@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  main:
+  lint-global-passed:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -21,12 +21,3 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Check for FIXME comments
         run: make check-fixme
-
-  lint-global-passed:
-    if: ${{ always() }}
-    needs: [main]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Fail if a job failed or was cancelled
-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
-        run: exit 1
