@@ -8394,6 +8394,58 @@ def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_scan_iceberg_struct_field_initial_default_null_parent(
+    tmp_path: Path,
+) -> None:
+    # A non-null default is still null where the parent struct is null.
+    table, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "s", StructType(NestedField(2, "a", LongType())))
+        ),
+    )
+
+    schema = {"s": pl.Struct({"a": pl.Int64})}
+    pl.DataFrame({"s": [{"a": 1}, {"a": 2}]}, schema=schema).write_iceberg(
+        table, mode="append"
+    )
+    pl.DataFrame({"s": [None, {"a": 3}]}, schema=schema).write_iceberg(
+        table, mode="append"
+    )
+
+    md_path = Path(
+        table.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+    md_object["format-version"] = 3
+    md_object["schemas"][-1]["fields"][0]["type"]["fields"].append(
+        {"id": 3, "name": "b", "required": False, "type": "long", "initial-default": 5}
+    )
+    md_path.write_text(json.dumps(md_object))
+    table = catalog.load_table(table.name())
+
+    lf = pl.scan_iceberg(table)
+    expect = pl.DataFrame(
+        {"s": [None]}, schema={"s": pl.Struct({"a": pl.Int64, "b": pl.Int64})}
+    )
+
+    assert_frame_equal(lf.filter(pl.col("s").is_null()).collect(), expect)
+    assert_frame_equal(
+        lf.filter(pl.col("s").struct.field("b").is_null()).collect(), expect
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("s").struct.field("b") == 5).collect(),
+        pl.DataFrame(
+            {"s": [{"a": 1, "b": 5}, {"a": 2, "b": 5}, {"a": 3, "b": 5}]},
+            schema={"s": pl.Struct({"a": pl.Int64, "b": pl.Int64})},
+        ),
+        check_row_order=False,
+    )
+
+
 def test_scan_iceberg_self_join_28465(tmp_path: Path) -> None:
     table, _ = new_iceberg_table(
         tmp_path, schema=IcebergSchema(NestedField(1, "x", LongType()))

@@ -16,10 +16,8 @@ in `.v<N>`, which only orders them for error messages.
 
 from __future__ import annotations
 
-import importlib.metadata
 import os
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 from polars._utils.logging import eprint, verbose
 from polars._utils.wrap import wrap_ldf
@@ -417,6 +415,8 @@ def _account_sas_properties(
 
 def _azure_account(properties: Mapping[str, Any], location: str) -> str | None:
     """Storage account of an Azure `location`; None if it cannot be told."""
+    from urllib.parse import urlparse
+
     # The URL's account is the one accessed. `az://container/...` has none.
     host = urlparse(location).hostname or ""
     name = host.split(".")[0] if "." in host else properties.get("adls.account-name")
@@ -656,6 +656,8 @@ def _install_command(supported_ids: list[str]) -> str:
 
 def _package(distribution: str, module: Any = None) -> str:
     """Pip requirement pinning an installed distribution, e.g. `polars==2.0.0rc2`."""
+    import importlib.metadata
+
     try:
         version = importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:

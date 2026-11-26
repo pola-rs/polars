@@ -5369,7 +5369,7 @@ dependencies = [
 [[package]]
 name = "tikv-jemalloc-sys"
 version = "0.7.1+5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc"
-source = "git+https://github.com/pola-rs/jemallocator?rev=e947a0d1a786e221ac1c14ba1566b55151e61ec9#e947a0d1a786e221ac1c14ba1566b55151e61ec9"
+source = "git+https://github.com/pola-rs/jemallocator?rev=ad55c8c42c4a0dfb2ca6674acf9e3d8d749e6b30#ad55c8c42c4a0dfb2ca6674acf9e3d8d749e6b30"
 dependencies = [
  "cc",
  "libc",
@@ -5678,9 +5678,9 @@ checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
 
 [[package]]
 name = "unicode-width"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
+checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 
 [[package]]
 name = "untrusted"

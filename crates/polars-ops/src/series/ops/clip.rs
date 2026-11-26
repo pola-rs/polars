@@ -1,4 +1,6 @@
-use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
+use polars_core::prelude::arity::{
+    binary_elementwise, ternary_elementwise, unary_elementwise_values,
+};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::broadcast::broadcast_len;
@@ -227,7 +229,7 @@ where
     T: PolarsNumericType,
     F: Fn(T::Native) -> T::Native + Copy,
 {
-    unary_elementwise(ca, |v| v.map(op))
+    unary_elementwise_values(ca, op)
 }
 
 fn clip_ternary<T>(

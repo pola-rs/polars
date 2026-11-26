@@ -74,6 +74,8 @@ impl ColumnSelectorBuilder {
                 Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
+                    // Input is full-null.
+                    preserves_null_count: true,
                 }
                 .into_selector(input_selector))
             } else {
@@ -196,6 +198,8 @@ impl ColumnSelectorBuilder {
                 return Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
+                    // Conservative.
+                    preserves_null_count: false,
                 }
                 .into_selector(input_selector));
             }
@@ -258,6 +262,8 @@ impl ColumnSelectorBuilder {
                 return Ok(ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
+                    // Conservative.
+                    preserves_null_count: false,
                 }
                 .into_selector(input_selector));
             }
@@ -287,6 +293,8 @@ impl ColumnSelectorBuilder {
                 selector = ColumnTransform::Cast {
                     dtype: target_dtype.clone(),
                     options: CastOptions::NonStrict,
+                    // Conservative.
+                    preserves_null_count: false,
                 }
                 .into_selector(selector);
             }
@@ -318,13 +326,15 @@ impl ColumnSelectorBuilder {
         let target_dtype = materialize_unknown(target_dtype);
 
         // Attaches a cast to the target dtype.
-        let attach_cast = |options: CastOptions| -> PolarsResult<ColumnSelector> {
-            Ok(ColumnTransform::Cast {
-                dtype: target_dtype.clone().into_owned(),
-                options,
-            }
-            .into_selector(input_selector))
-        };
+        let attach_cast =
+            |options: CastOptions, preserves_null_count: bool| -> PolarsResult<ColumnSelector> {
+                Ok(ColumnTransform::Cast {
+                    dtype: target_dtype.clone().into_owned(),
+                    options,
+                    preserves_null_count,
+                }
+                .into_selector(input_selector))
+            };
 
         let incoming_dtype = incoming_dtype.as_ref();
         let target_dtype = target_dtype.as_ref();
@@ -334,7 +344,7 @@ impl ColumnSelectorBuilder {
                 match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
                     Some(ref v) if v == target_dtype => {
                         // Use overflowing on lossless cast to elide validation.
-                        attach_cast(CastOptions::Overflowing)
+                        attach_cast(CastOptions::Overflowing, true)
                     },
                     _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
                 }
@@ -354,7 +364,7 @@ impl ColumnSelectorBuilder {
                 mismatch_err("incoming dtype cannot safely cast to target dtype")
             } else if self.cast_columns_policy.integer_upcast {
                 // Lossless, so use overflowing to elide validation.
-                attach_cast(CastOptions::Overflowing)
+                attach_cast(CastOptions::Overflowing, true)
             } else {
                 mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')")
             };
@@ -385,12 +395,13 @@ impl ColumnSelectorBuilder {
                 _ => unreachable!(),
             };
 
-            return attach_cast(CastOptions::NonStrict);
+            // Saturates to +/-inf, never null.
+            return attach_cast(CastOptions::NonStrict, true);
         }
 
         if target_dtype.is_float() && incoming_dtype.is_integer() {
             return if self.cast_columns_policy.integer_to_float_cast {
-                attach_cast(CastOptions::Overflowing)
+                attach_cast(CastOptions::Overflowing, true)
             } else {
                 mismatch_err(
                     "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
@@ -464,12 +475,12 @@ impl ColumnSelectorBuilder {
             };
 
             // Dtype differs and we are allowed to coerce
-            return attach_cast(cast_options);
+            return attach_cast(cast_options, true);
         }
 
         if target_dtype.is_string() && incoming_dtype.is_categorical() {
             return if self.cast_columns_policy.categorical_to_string {
-                attach_cast(CastOptions::NonStrict)
+                attach_cast(CastOptions::NonStrict, true)
             } else {
                 mismatch_err(
                     "hint: pass cast_options=pl.ScanCastOptions(categorical_to_string='allow')",
@@ -688,6 +699,8 @@ impl ColumnSelectorBuilder {
                             selector = ColumnTransform::Cast {
                                 dtype: target_column.type_.to_polars_dtype(),
                                 options: CastOptions::NonStrict,
+                                // Conservative.
+                                preserves_null_count: false,
                             }
                             .into_selector(selector);
                         }

@@ -11,6 +11,31 @@ impl Int64Chunked {
     }
 }
 
+impl DatetimeChunked {
+    /// The days since the epoch, or `None` if a day does not fit in an `i32`.
+    #[cfg(feature = "dtype-date")]
+    fn to_date_values<const PER_DAY: i64>(&self) -> Option<Int32Chunked> {
+        let first = (i32::MIN as i64).checked_mul(PER_DAY).unwrap_or(i64::MIN);
+        let last = (i32::MAX as i64 + 1)
+            .checked_mul(PER_DAY)
+            .map_or(i64::MAX, |v| v - 1);
+        let in_range = self.phys.downcast_iter().all(|arr| {
+            arr.values()
+                .iter()
+                .fold(true, |acc, &v| acc & (first <= v) & (v <= last))
+        });
+        in_range
+            .then(|| arity::unary_elementwise_values(&self.phys, |v| v.div_euclid(PER_DAY) as i32))
+    }
+
+    /// The nanoseconds since midnight.
+    #[cfg(feature = "dtype-time")]
+    fn to_time_values<const PER_DAY: i64, const TO_NANOSECONDS: i64>(&self) -> Int64Chunked {
+        self.phys
+            .apply_values(|v| v.rem_euclid(PER_DAY) * TO_NANOSECONDS)
+    }
+}
+
 impl LogicalType for DatetimeChunked {
     fn dtype(&self) -> &DataType {
         &self.dtype
@@ -45,36 +70,37 @@ impl LogicalType for DatetimeChunked {
                 .into_series()),
             #[cfg(feature = "dtype-date")]
             Date => {
-                let cast_to_date = |tu_in_day: i64| {
-                    Ok(self
-                        .phys
-                        .apply_values(|v| v.div_euclid(tu_in_day))
-                        .cast_with_options(&Int32, cast_options)
-                        .unwrap()
-                        .into_date()
-                        .into_series())
+                let date = match self.time_unit() {
+                    Nanoseconds => self.to_date_values::<NS_IN_DAY>(),
+                    Microseconds => self.to_date_values::<US_IN_DAY>(),
+                    Milliseconds => self.to_date_values::<MS_IN_DAY>(),
                 };
-                match self.time_unit() {
-                    Nanoseconds => cast_to_date(NS_IN_DAY),
-                    Microseconds => cast_to_date(US_IN_DAY),
-                    Milliseconds => cast_to_date(MS_IN_DAY),
+                match date {
+                    Some(date) => Ok(date.into_date().into_series()),
+                    None => {
+                        let tu_in_day = match self.time_unit() {
+                            Nanoseconds => NS_IN_DAY,
+                            Microseconds => US_IN_DAY,
+                            Milliseconds => MS_IN_DAY,
+                        };
+                        Ok(self
+                            .phys
+                            .apply_values(|v| v.div_euclid(tu_in_day))
+                            .cast_with_options(&Int32, cast_options)
+                            .unwrap()
+                            .into_date()
+                            .into_series())
+                    },
                 }
             },
             #[cfg(feature = "dtype-time")]
             Time => {
-                let (scaled_mod, multiplier) = match self.time_unit() {
-                    Nanoseconds => (NS_IN_DAY, 1i64),
-                    Microseconds => (US_IN_DAY, 1_000i64),
-                    Milliseconds => (MS_IN_DAY, 1_000_000i64),
+                let time = match self.time_unit() {
+                    Nanoseconds => self.to_time_values::<NS_IN_DAY, 1>(),
+                    Microseconds => self.to_time_values::<US_IN_DAY, 1_000>(),
+                    Milliseconds => self.to_time_values::<MS_IN_DAY, 1_000_000>(),
                 };
-                return Ok(self
-                    .phys
-                    .apply(|v| {
-                        let t = (v? % scaled_mod).checked_mul(multiplier)?;
-                        t.checked_add(NS_IN_DAY * (t < 0) as i64)
-                    })
-                    .into_time()
-                    .into_series());
+                return Ok(time.into_time().into_series());
             },
             dt if dt.is_primitive_numeric() => {
                 return self.phys.cast_with_options(dtype, cast_options);

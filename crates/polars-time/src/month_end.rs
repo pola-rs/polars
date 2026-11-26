@@ -5,7 +5,8 @@ use polars_core::prelude::*;
 use polars_core::utils::polars_arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_defs::time::duration::Duration;
 
-use crate::month_start::roll_backward;
+use crate::chunkedarray::kernels::month_end_from_days;
+use crate::month_start::{roll_backward, shift_naive_days};
 
 // roll forward to the last day of the month
 fn roll_forward(
@@ -55,6 +56,11 @@ impl PolarsMonthEnd for DatetimeChunked {
         Ok(self
             .phys
             .try_apply_nonnull_values_generic(|t| {
+                if time_zone.is_none() {
+                    if let Some(t) = shift_naive_days(t, self.time_unit(), month_end_from_days) {
+                        return Ok(t);
+                    }
+                }
                 roll_forward(t, time_zone, self.time_unit(), &one_month, &minus_one_day)
             })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
@@ -67,6 +73,9 @@ impl PolarsMonthEnd for DateChunked {
         let one_month = Duration::parse("1mo");
         let minus_one_day = Duration::parse("-1d");
         let ret = self.phys.try_apply_nonnull_values_generic(|t| {
+            if let Some(days) = month_end_from_days(t as i64) {
+                return PolarsResult::Ok(days as i32);
+            }
             let fwd = roll_forward(
                 MSECS_IN_DAY * t as i64,
                 None,

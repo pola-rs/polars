@@ -198,8 +198,8 @@ question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "20f5eea183563bb4cfac9a4d65901d4a1002cde2" }
 
-# Purge-before-grow hook with moving reallocation accounting.
-tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "e947a0d1a786e221ac1c14ba1566b55151e61ec9" }
+# Purges dirty pages when the active plus dirty pages exceed a threshold.
+tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "ad55c8c42c4a0dfb2ca6674acf9e3d8d749e6b30" }
 
 # https://github.com/rust-lang/hashbrown/pull/727
 hashbrown = { git = "https://github.com/pola-rs/hashbrown", rev = "d76a6f81abd8f388676aff15068236a8d21c7e1a" }
