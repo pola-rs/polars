@@ -60,6 +60,9 @@ pub trait ArrayNameSpace: AsArray {
 
     fn array_mean(&self) -> PolarsResult<Series> {
         let ca = self.as_array();
+        if let Some(out) = sum_mean::mean_array_numerical(ca) {
+            return Ok(out);
+        }
         dispersion::mean_with_nulls(ca)
     }
 
@@ -86,6 +89,9 @@ pub trait ArrayNameSpace: AsArray {
 
     fn array_arg_min(&self) -> IdxCa {
         let ca = self.as_array();
+        if let Some(out) = min_max::array_arg_min_max_flat(ca, false) {
+            return out;
+        }
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize))
         })
@@ -93,6 +99,9 @@ pub trait ArrayNameSpace: AsArray {
 
     fn array_arg_max(&self) -> IdxCa {
         let ca = self.as_array();
+        if let Some(out) = min_max::array_arg_min_max_flat(ca, true) {
+            return out;
+        }
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
         })

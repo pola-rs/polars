@@ -214,6 +214,9 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_arg_min(&self) -> IdxCa {
         let ca = self.as_list();
+        if let Some(out) = min_max::list_arg_min_max_flat(ca, false) {
+            return out;
+        }
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize))
         })
@@ -221,6 +224,9 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_arg_max(&self) -> IdxCa {
         let ca = self.as_list();
+        if let Some(out) = min_max::list_arg_min_max_flat(ca, true) {
+            return out;
+        }
         ca.apply_amortized_generic(|opt_s| {
             opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
         })
@@ -394,6 +400,10 @@ pub trait ListNameSpaceImpl: AsList {
     #[cfg(feature = "list_drop_nulls")]
     fn lst_drop_nulls(&self) -> ListChunked {
         let list_ca = self.as_list();
+
+        if !has_inner_nulls(list_ca) {
+            return list_ca.clone();
+        }
 
         // SAFETY: `drop_nulls` doesn't change the dtype
         unsafe { list_ca.apply_amortized_same_type(|s| s.as_ref().drop_nulls()) }
