@@ -675,7 +675,8 @@ the optional ``IF EXISTS`` clause is given.
 
 EXPLAIN
 -------
-Returns the Polars execution plan for a given SQL query.
+Returns the Polars execution plan for a given SQL query, as optimized for the streaming engine,
+which runs queries by default.
 
 **Example:**
 

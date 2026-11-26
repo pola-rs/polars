@@ -2951,7 +2951,12 @@ impl SQLContext {
                     ),
                 };
                 let lf = self.execute_query(query)?;
-                let plan = lf.describe_optimized_plan()?;
+                // As `collect` runs it.
+                let mut flags = lf.get_current_optimizations();
+                if !flags.eager() {
+                    flags |= OptFlags::STREAMING;
+                }
+                let plan = lf.with_optimizations(flags).describe_optimized_plan()?;
                 let plan = plan
                     .split('\n')
                     .collect::<Series>()
