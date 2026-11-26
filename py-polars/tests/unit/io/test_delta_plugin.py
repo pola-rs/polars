@@ -1559,6 +1559,94 @@ def test_delta_plugin_checkpoint_replaced_between_head_and_range(
         s3.server.shutdown()
 
 
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_delta_plugin_lakefs_reads_through_s3_gateway(tmp_path: Path) -> None:
+    import threading
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    first = pl.DataFrame({"a": [1, 2]})
+    second = pl.DataFrame({"a": [3]})
+    first.write_delta(tmp_path)
+    second.write_delta(tmp_path, mode="append")
+
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    try:
+        s3.client.create_bucket(Bucket="repo")
+        for file in tmp_path.rglob("*"):
+            if file.is_file():
+                s3.client.put_object(
+                    Bucket="repo",
+                    Key=f"main/t/{file.relative_to(tmp_path).as_posix()}",
+                    Body=file.read_bytes(),
+                )
+        options = s3.storage_options
+        for version, expected in [(None, pl.concat([first, second])), (0, first)]:
+            lakefs = pl.scan_delta(
+                "lakefs://repo/main/t", version=version, storage_options=options
+            )
+            s3_scan = pl.scan_delta(
+                "s3://repo/main/t", version=version, storage_options=options
+            )
+            assert_frame_equal(lakefs.collect(), s3_scan.collect())
+            assert_frame_equal(lakefs.collect(), expected)
+    finally:
+        s3.server.shutdown()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_delta_plugin_missing_last_checkpoint_does_not_rebuild_credentials(
+    tmp_path: Path,
+) -> None:
+    import threading
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    pl.DataFrame({"a": [1]}).write_delta(tmp_path)
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    calls = 0
+    creds = {
+        "aws_access_key_id": s3.storage_options["aws_access_key_id"],
+        "aws_secret_access_key": s3.storage_options["aws_secret_access_key"],
+    }
+
+    def provider() -> tuple[dict[str, str], int | None]:
+        nonlocal calls
+        calls += 1
+        return creds, None
+
+    try:
+        s3.client.create_bucket(Bucket="credbucket")
+        for file in tmp_path.rglob("*"):
+            if file.is_file():
+                s3.client.put_object(
+                    Bucket="credbucket",
+                    Key=f"t/{file.relative_to(tmp_path).as_posix()}",
+                    Body=file.read_bytes(),
+                )
+        options = {k: v for k, v in s3.storage_options.items() if "access" not in k}
+        scan = pl.scan_delta(
+            "s3://credbucket/t",
+            storage_options=options,
+            credential_provider=provider,
+        )
+        mark = len(s3.log)
+        scan.collect_schema()
+        last = [
+            e
+            for e in s3.log[mark:]
+            if e[0] == "GET" and e[1] == "credbucket/t/_delta_log/_last_checkpoint"
+        ]
+        assert len(last) == 1
+        assert calls == 1
+    finally:
+        s3.server.shutdown()
+
+
 def _add_parquet(path: Path, table: Any) -> None:
     import pyarrow.parquet as pq
 
@@ -1703,3 +1791,72 @@ def test_delta_plugin_refuses_replaced_table_at_same_version(
     assert pl.scan_delta(path).collect().rows() == [(9, 8)]
     with pytest.raises(pl.exceptions.ComputeError, match="replaced"):
         (scan.select("x") if held == "projection" else scan).collect()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"without_files": True},
+        {"log_buffer_size": 4},
+        {"skip_stats": True},
+        {"without_files": True, "log_buffer_size": 4, "skip_stats": True},
+    ],
+)
+def test_delta_plugin_ignores_noop_delta_table_options(
+    tmp_path: Path, options: dict[str, Any]
+) -> None:
+    path = _table(tmp_path / "t", [_field("a", "long")], [pl.DataFrame({"a": [1]})])
+    expected = pl.scan_delta(path).collect()
+    assert_frame_equal(
+        pl.scan_delta(path, delta_table_options=options).collect(), expected
+    )
+
+
+def test_delta_plugin_unknown_delta_table_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _table(tmp_path / "t", [_field("a", "long")], [pl.DataFrame({"a": [1]})])
+    options = {"without_files": True, "bogus": 1}
+    with pytest.raises(NotImplementedError, match="bogus"):
+        pl.scan_delta(path, delta_table_options=options).collect()
+    monkeypatch.delenv("POLARS_DELTA_PLANNER")
+    with pytest.raises(TypeError):
+        pl.scan_delta(path, delta_table_options=options).collect()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_delta_plugin_lakefs_absolute_add_path(tmp_path: Path) -> None:
+    import json
+    import threading
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    expected = pl.DataFrame({"a": [1, 2]})
+    expected.write_delta(tmp_path)
+
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    try:
+        s3.client.create_bucket(Bucket="lakefs-abs")
+        for file in tmp_path.rglob("*"):
+            if not file.is_file():
+                continue
+            relative = file.relative_to(tmp_path).as_posix()
+            body = file.read_bytes()
+            if relative.endswith(".json"):
+                actions = [json.loads(line) for line in body.decode().splitlines()]
+                for action in actions:
+                    if "add" in action:
+                        path = action["add"]["path"]
+                        action["add"]["path"] = f"lakefs://lakefs-abs/main/abs/{path}"
+                body = "\n".join(json.dumps(a) for a in actions).encode()
+            s3.client.put_object(
+                Bucket="lakefs-abs", Key=f"main/abs/{relative}", Body=body
+            )
+        scan = pl.scan_delta(
+            "lakefs://lakefs-abs/main/abs", storage_options=s3.storage_options
+        )
+        assert_frame_equal(scan.collect(), expected)
+    finally:
+        s3.server.shutdown()

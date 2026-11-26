@@ -59,6 +59,19 @@ impl Live {
         Ok(size)
     }
 
+    /// Fetch every object of `urls` at once. Failures are returned, not tracked: the reader that
+    /// consumes an entry tracks it, so an unused failure never marks the table as changed.
+    pub(super) async fn get_many(
+        &self,
+        urls: &[String],
+    ) -> Vec<std::result::Result<FfiBuf, HostError>> {
+        futures::future::join_all(
+            urls.iter()
+                .map(|url| async { self.storage.get(url).await.map_err(HostError::from) }),
+        )
+        .await
+    }
+
     pub(super) async fn get(&mut self, url: &str) -> Result<FfiBuf, HostError> {
         let result = self.storage.get(url).await;
         self.track(result.map_err(HostError::from))
@@ -126,7 +139,12 @@ impl ObjectStore for HostStore {
             let bytes = Bytes::from_owner(live.range(url, range.clone()).await?);
             (bytes, size, range)
         } else {
-            let bytes = Bytes::from_owner(live.get(url).await?);
+            let prefetched = self.0.prefetched.lock().unwrap().remove(url);
+            let buf = match prefetched {
+                Some(result) => live.track(result)?,
+                None => live.get(url).await?,
+            };
+            let bytes = Bytes::from_owner(buf);
             let size = bytes.len() as u64;
             (bytes, size, 0..size)
         };

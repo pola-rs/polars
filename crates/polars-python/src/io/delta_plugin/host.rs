@@ -525,7 +525,8 @@ async fn fetch_bytes(
     range: Option<Range<u64>>,
 ) -> PolarsResult<Bytes> {
     let path = &loc.path;
-    loc.store
+    let result = loc
+        .store
         .exec_with_rebuild_retry_on_err(path, |s| {
             let mut options = GetOptions {
                 range: range.clone().map(Into::into),
@@ -537,7 +538,14 @@ async fn fetch_bytes(
                 None => {},
             }
             async move {
-                let result = s.get_opts(path, options).await?;
+                let result = match s.get_opts(path, options).await {
+                    Ok(result) => result,
+                    // An absent object (`_last_checkpoint` of a table without a checkpoint)
+                    // is an answer: retrying on a rebuilt store costs a TCP and TLS
+                    // handshake and a credential refresh per such read.
+                    Err(error @ object_store::Error::NotFound { .. }) => return Ok(Err(error)),
+                    Err(error) => return Err(error),
+                };
                 // Some HTTP servers accept conditional requests without enforcing them.
                 if generation.is_some_and(|generation| !generation.matches(&result.meta)) {
                     return Err(object_store::Error::Precondition {
@@ -545,10 +553,11 @@ async fn fetch_bytes(
                         source: "object generation does not match".into(),
                     });
                 }
-                result.bytes().await
+                result.bytes().await.map(Ok)
             }
         })
-        .await
+        .await?;
+    result.map_err(|error| loc.store.error_context(path).attach_err_info(error).into())
 }
 
 fn read_error(io_error_kinds: &IoErrorKinds, error: PolarsError, pinned: bool) -> FfiError {

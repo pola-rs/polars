@@ -317,3 +317,27 @@ fn parquet_manifest_rejects_sidecar_and_inline_actions_on_separate_rows() {
         _ => false,
     }));
 }
+
+#[test]
+fn prefetch_window_is_bounded_by_count_and_bytes_but_holds_one_file() {
+    use super::handlers::window_end;
+
+    let file = |size| {
+        FileMeta::new(
+            Url::parse(ROOT).unwrap().join("_delta_log/1.json").unwrap(),
+            0,
+            size,
+        )
+    };
+    let small = vec![file(10); 10];
+    assert_eq!(window_end(&small, 0, 4, 1 << 20), 4);
+    assert_eq!(window_end(&small, 8, 16, 1 << 20), 10);
+    let big = vec![file(20 << 20); 4];
+    // A second 20 MiB file would pass the 32 MiB budget.
+    assert_eq!(window_end(&big, 0, 4, 32 << 20), 1);
+    assert_eq!(window_end(&big, 1, 4, 32 << 20), 2);
+    // A file over the budget on its own is still taken.
+    assert_eq!(window_end(&big, 0, 4, 1), 1);
+    let mixed = [file(1 << 20), file(20 << 20), file(20 << 20)];
+    assert_eq!(window_end(&mixed, 0, 4, 32 << 20), 2);
+}

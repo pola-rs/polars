@@ -19,6 +19,11 @@ if TYPE_CHECKING:
 
 PLANNER_ENV_VAR = "POLARS_DELTA_PLANNER"
 
+# Deprecated no-op `DeltaTable` options that only tuned deltalake's own loading.
+_IGNORED_DELTA_TABLE_OPTIONS = frozenset(
+    {"without_files", "log_buffer_size", "skip_stats"}
+)
+
 
 def plugin_planner_required() -> bool:
     return _planner() == "plugin"
@@ -134,8 +139,11 @@ def plugin_scan(
     if not hasattr(plr, "_delta_plugin_scan"):
         msg = "this Polars build has no Delta I/O plugin support (requires cloud and parquet)"
         raise NotImplementedError(msg)
-    if dataset.delta_table_options:
-        msg = "Delta plugin does not support delta_table_options"
+    unsupported = sorted(
+        set(dataset.delta_table_options or {}) - _IGNORED_DELTA_TABLE_OPTIONS
+    )
+    if unsupported:
+        msg = f"Delta plugin does not support delta_table_options: {unsupported}"
         raise NotImplementedError(msg)
     table = dataset.table_.get()
     if table is not None and not hasattr(table, "_storage_options"):
@@ -183,9 +191,6 @@ def plugin_scan(
         dataset._plugin_metadata_cache = plr.PyIcebergMetadataFileCache(
             64 * 1024 * 1024
         )
-    if uri.startswith("lakefs://"):
-        msg = "Delta plugin does not support lakefs table storage"
-        raise NotImplementedError(msg)
     ambiguous = _delta_cloud_root_is_ambiguous(uri)
     if ambiguous and not dataset._table_uri_escaped:
         # The native planner opens this caller's spelling as the literal object key
@@ -215,7 +220,7 @@ def plugin_scan(
     table_id = table_id or None
     if expected_id is not None and table_id is not None and table_id != expected_id:
         msg = (
-            f"the Delta table at {uri!r} is not the one this scan was created from "
+            f"the Delta table at {dataset._user_table_uri()!r} is not the one this scan was created from "
             f"(table id {table_id!r}, expected {expected_id!r}); it was replaced. "
             "Create a new scan"
         )

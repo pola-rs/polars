@@ -20,8 +20,25 @@ struct Store(
     std::sync::atomic::AtomicUsize,
     std::sync::Mutex<Vec<String>>,
     std::sync::atomic::AtomicBool,
+    // Gets in flight now and at most, then listed objects whose get reports a replacement.
+    Flight,
+    std::sync::Mutex<std::collections::BTreeSet<String>>,
+);
+#[derive(Default)]
+struct Flight(
+    std::sync::atomic::AtomicUsize,
+    std::sync::atomic::AtomicUsize,
 );
 impl Store {
+    fn hide(&self, path: &str) {
+        self.5
+            .lock()
+            .unwrap()
+            .insert(format!("/table/_delta_log/{path}"));
+    }
+    fn max_gets_in_flight(&self) -> usize {
+        self.4.1.load(std::sync::atomic::Ordering::Relaxed)
+    }
     fn put(&mut self, path: &str, actions: &[Value]) {
         self.0.insert(
             format!("/table/_delta_log/{path}"),
@@ -62,22 +79,41 @@ unsafe extern "C" fn get_storage(
     ready(Ok(StorageHandle(ctx)))
 }
 unsafe extern "C" fn get(s: StorageHandle, url: FfiStr) -> FfiFuture<FfiResult<FfiBuf>> {
-    unsafe { store(s) }
+    use std::sync::atomic::Ordering::Relaxed;
+    let store = unsafe { store(s) };
+    store
         .2
         .lock()
         .unwrap()
         .push(url.as_str().unwrap().to_owned());
-    let data = unsafe { store(s) }
-        .0
-        .get(url.as_str().unwrap())
-        .map(|v| FfiBuf::from_vec(v.0.clone()))
-        .ok_or_else(|| {
-            FfiError::new(
-                FfiErrorKind::NOT_FOUND,
-                format!("missing {}", url.as_str().unwrap()),
-            )
-        });
-    ready(data)
+    let data = if store.5.lock().unwrap().contains(url.as_str().unwrap()) {
+        Err(FfiError::new(
+            FfiErrorKind::OBJECT_CHANGED,
+            "commit replaced after listing",
+        ))
+    } else {
+        store
+            .0
+            .get(url.as_str().unwrap())
+            .map(|v| FfiBuf::from_vec(v.0.clone()))
+            .ok_or_else(|| {
+                FfiError::new(
+                    FfiErrorKind::NOT_FOUND,
+                    format!("missing {}", url.as_str().unwrap()),
+                )
+            })
+    };
+    async move {
+        // Stay pending for a few polls, so that concurrent gets overlap.
+        let now = store.4.0.fetch_add(1, Relaxed) + 1;
+        store.4.1.fetch_max(now, Relaxed);
+        for _ in 0..3 {
+            tokio::task::yield_now().await;
+        }
+        store.4.0.fetch_sub(1, Relaxed);
+        data.into()
+    }
+    .into_ffi()
 }
 unsafe extern "C" fn head(s: StorageHandle, url: FfiStr) -> FfiFuture<FfiResult<u64>> {
     ready(
@@ -2000,4 +2036,68 @@ fn checkpoint_rejects_raw_timestamp_partition_without_writer_zone() {
             .contains("cannot recover checkpoint timestamp partition writer zone"),
         "{error:?}"
     );
+}
+
+fn many_commits(n: i64) -> Store {
+    let mut s = Store::default();
+    s.put(
+        "00000000000000000000.json",
+        &[protocol(), metadata(), add("a.parquet")],
+    );
+    for v in 1..n {
+        let mut actions = vec![add(&format!("f{v}.parquet"))];
+        if v == n - 1 {
+            actions.extend([protocol(), metadata()]);
+        }
+        s.put(&version_name(v), &actions);
+    }
+    s
+}
+
+fn commit_get_versions(s: &Store) -> Vec<i64> {
+    s.2.lock()
+        .unwrap()
+        .iter()
+        .filter(|u| !u.ends_with("_last_checkpoint"))
+        .filter_map(|u| u.rsplit('/').next()?.strip_suffix(".json")?.parse().ok())
+        .collect()
+}
+
+#[test]
+fn commits_are_fetched_concurrently_in_kernel_order() {
+    let s = many_commits(10);
+    let (header, paths) = planned(&s, Request::default()).unwrap();
+    assert_eq!(header.resolved_version, 9);
+    assert_eq!(paths.len(), 10);
+    assert!(s.max_gets_in_flight() >= 2, "{}", s.max_gets_in_flight());
+    // Batches only change when requests start: reads are still newest first. Kernel reads the
+    // newest commit twice, for protocol and metadata and again for the files.
+    let mut versions = commit_get_versions(&s);
+    assert_eq!(versions.len(), 11, "{versions:?}");
+    versions.retain({
+        let mut seen = std::collections::BTreeSet::new();
+        move |v| seen.insert(*v)
+    });
+    assert!(versions.windows(2).all(|w| w[0] > w[1]), "{versions:?}");
+}
+
+#[test]
+fn prefetched_commit_replaced_beyond_the_schema_only_stop_is_ignored() {
+    let s = many_commits(20);
+    // The newest commit holds the schema; the older ones of its window are never read.
+    s.hide(&version_name(17));
+    let request = Request {
+        schema_only: true,
+        ..Request::default()
+    };
+    let (header, _) = planned(&s, request).unwrap();
+    assert_eq!(header.resolved_version, 19);
+}
+
+#[test]
+fn prefetched_commit_replaced_inside_the_replay_is_reported_in_order() {
+    let s = many_commits(20);
+    s.hide(&version_name(10));
+    let error = planned(&s, Request::default()).err().unwrap();
+    assert_eq!(error.kind(), FfiErrorKind::OBJECT_CHANGED);
 }

@@ -241,7 +241,7 @@ class DeltaScanResolver(LazyFrameResolver):
                 # Native planning read this raw cloud key, which deltalake would
                 # decode into another prefix: reading it would change the table.
                 msg = (
-                    f"delta: the cloud path {self._native_table_uri()!r} is ambiguous "
+                    f"delta: the cloud path {self._user_table_uri()!r} is ambiguous "
                     "(a percent escape, `?` or `#`): polars-delta opened the literal "
                     "key but cannot read that table, and deltalake would open a "
                     f"different, decoded one instead ({e}). Use the exact key "
@@ -283,7 +283,7 @@ class DeltaScanResolver(LazyFrameResolver):
             import deltalake  # noqa: F401
         except ImportError as e:
             msg = (
-                f"delta: the cloud path {self._native_table_uri()!r} is ambiguous: "
+                f"delta: the cloud path {self._user_table_uri()!r} is ambiguous: "
                 "it reads as a literal percent escape (or `?`, `#`) in the object key, "
                 "or as the decoded prefix. By default it is read as released Polars "
                 "did (the decoded prefix), which needs `deltalake`; install it, or "
@@ -644,7 +644,19 @@ class DeltaScanResolver(LazyFrameResolver):
 
     def _native_table_uri(self) -> str:
         uri = self.table_uri()
-        return _native_uri_from_delta_table_uri(uri) if self._table_uri_escaped else uri
+        if self._table_uri_escaped:
+            uri = _native_uri_from_delta_table_uri(uri)
+        # lakeFS is read through its S3 gateway, as file and DV paths are.
+        if uri.startswith("lakefs://"):
+            uri = "s3://" + uri.removeprefix("lakefs://")
+        return uri
+
+    def _user_table_uri(self) -> str:
+        """The native URI spelled with the scheme the caller passed (for messages)."""
+        uri = self._native_table_uri()
+        if self.table_uri().startswith("lakefs://"):
+            uri = "lakefs://" + uri.removeprefix("s3://")
+        return uri
 
     def table(self) -> DeltaTable:
         """Fetch the DeltaTable object."""
@@ -740,6 +752,7 @@ class DeltaScanResolver(LazyFrameResolver):
         self, uri: str, *, native_guard: bool | None
     ) -> None:
         plugin_enabled = self._plugin_enabled
+        # Legacy-state lakeFS scans were all planned by deltalake (native refused them).
         if self.use_pyarrow or plugin_enabled is False or uri.startswith("lakefs://"):
             self._root_planner = "deltalake"
             return

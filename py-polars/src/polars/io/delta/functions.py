@@ -68,7 +68,7 @@ def read_delta(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     delta_table_options
-        Additional keyword arguments while reading a Delta lake Table.
+        Additional keyword arguments passed to `deltalake.DeltaTable`.
     use_pyarrow
         Flag to enable pyarrow dataset reads.
     pyarrow_options
@@ -133,16 +133,6 @@ def read_delta(
     ...     "AZURE_STORAGE_ACCOUNT_KEY": "AZURE_STORAGE_ACCOUNT_KEY",
     ... }
     >>> pl.read_delta(table_path, storage_options=storage_options)  # doctest: +SKIP
-
-    Reads a Delta table with additional delta specific options. In the below example,
-    `without_files` option is used which loads the table without file tracking
-    information.
-
-    >>> table_path = "/path/to/delta-table/"
-    >>> delta_table_options = {"without_files": True}
-    >>> pl.read_delta(
-    ...     table_path, delta_table_options=delta_table_options
-    ... )  # doctest: +SKIP
     """
     lf = scan_delta(
         source=source,
@@ -209,7 +199,7 @@ def scan_delta(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     delta_table_options
-        Additional keyword arguments while reading a Delta lake Table.
+        Additional keyword arguments passed to `deltalake.DeltaTable`.
     use_pyarrow
         Flag to enable pyarrow dataset reads.
     pyarrow_options
@@ -293,16 +283,6 @@ def scan_delta(
     ... }
     >>> pl.scan_delta(
     ...     table_path, storage_options=storage_options
-    ... ).collect()  # doctest: +SKIP
-
-    Creates a scan for a Delta table with additional delta specific options.
-    In the below example, `without_files` option is used which loads the table without
-    file tracking information.
-
-    >>> table_path = "/path/to/delta-table/"
-    >>> delta_table_options = {"without_files": True}
-    >>> pl.scan_delta(
-    ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
     """
     from polars.io.cloud.credential_provider._builder import (

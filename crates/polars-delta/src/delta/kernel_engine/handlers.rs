@@ -22,6 +22,62 @@ use super::{
     with_checkpoint_stats_text,
 };
 
+/// Commit files Kernel is expected to read next are fetched concurrently: one round trip per
+/// window instead of one per file. The window starts small, as a schema-only read can stop at the
+/// newest commits, and doubles up to the bound on objects held ahead of their reader. Listed
+/// sizes also bound a window to a byte budget, though it always holds at least one file.
+const PREFETCH_FIRST_WINDOW: usize = 4;
+const PREFETCH_MAX_WINDOW: usize = 16;
+const PREFETCH_WINDOW_BYTES: u64 = 32 << 20;
+
+/// End of the window starting at `from`: at most `window` files and `budget` listed bytes, but
+/// never fewer than one file.
+pub(super) fn window_end(files: &[FileMeta], from: usize, window: usize, budget: u64) -> usize {
+    let mut bytes = 0u64;
+    let taken = files[from..]
+        .iter()
+        .take(window)
+        .take_while(|file| {
+            bytes = bytes.saturating_add(file.size);
+            bytes <= budget || std::ptr::eq(*file, &files[from])
+        })
+        .count();
+    from + taken
+}
+
+/// Fetch `files[from..]`'s next window of JSON log files in one host callback and park the
+/// results for `HostStore::get_opts`. Returns the end of the window. Failures, and a closed
+/// engine, are left to the ordinary read of that file.
+fn prefetch_window(io: &HostIo, files: &[FileMeta], from: usize, window: usize) -> usize {
+    let end = window_end(files, from, window, PREFETCH_WINDOW_BYTES);
+    let urls = {
+        let parked = io.prefetched.lock().unwrap();
+        files[from..end]
+            .iter()
+            .filter(|file| file.location.path().ends_with(".json"))
+            .filter_map(|file| io.metadata_path(&file.location).ok())
+            // A parked failure is fetched again: a transient error must not outlive its pass.
+            .filter(|url| !matches!(parked.get(url), Some(Ok(_))))
+            .collect::<Vec<_>>()
+    };
+    if urls.len() > 1 {
+        let results = runtime::block_on(None, async {
+            let live = io.live.lock().await;
+            match live.as_ref() {
+                Some(live) => Some(live.get_many(&urls).await),
+                None => None,
+            }
+        });
+        if let Some(results) = results {
+            io.prefetched
+                .lock()
+                .unwrap()
+                .extend(urls.into_iter().zip(results));
+        }
+    }
+    end
+}
+
 pub(super) struct HostStorage(pub(super) Arc<HostIo>);
 
 impl StorageHandler for HostStorage {
@@ -150,33 +206,54 @@ impl JsonHandler for HostJson {
             return discover_checkpoint_sidecars(&self.0, batches, true);
         }
         if schema.field("add").is_none() || schema.field("remove").is_none() {
-            return self.1.read_json_files(files, schema, predicate);
+            let (io, inner, all) = (self.0.clone(), self.1.clone(), files.to_vec());
+            let (mut fetched, mut window) = (0, PREFETCH_FIRST_WINDOW);
+            return Ok(Box::new((0..all.len()).flat_map(move |i| {
+                let file = all[i].clone();
+                if i >= fetched {
+                    fetched = prefetch_window(&io, &all, i, window);
+                    window = (window * 2).min(PREFETCH_MAX_WINDOW);
+                }
+                match inner.read_json_files(&[file], schema.clone(), predicate.clone()) {
+                    Ok(batches) => batches,
+                    Err(error) => Box::new(std::iter::once(Err(error))),
+                }
+            })));
         }
 
         // There is no commit-name column in the scan projection. Read one object at a
         // time so the check sees every batch of the same commit and resets at its end.
+        let all = files.to_vec();
         let files = files.to_vec();
+        let io = self.0.clone();
+        let (mut fetched, mut window) = (0, PREFETCH_FIRST_WINDOW);
         let inner = self.1.clone();
         let original_columns = (0..schema.num_fields()).collect::<Arc<[_]>>();
         let commit_schema = input::commit_projection(&schema)?;
-        Ok(Box::new(files.into_iter().flat_map(move |file| {
-            let validate = file
-                .location
-                .path_segments()
-                .and_then(Iterator::last)
-                .is_some_and(input::is_commit);
-            let schema = if validate { &commit_schema } else { &schema };
-            match inner.read_json_files(&[file], schema.clone(), predicate.clone()) {
-                Ok(batches) if validate => {
-                    let mut actions = input::CommitActions::default();
-                    let original_columns = original_columns.clone();
-                    Box::new(batches.map(move |batch| actions.check(batch?, &original_columns)))
-                        as FileDataReadResultIterator
-                },
-                Ok(batches) => batches,
-                Err(error) => Box::new(std::iter::once(Err(error))),
-            }
-        })))
+        Ok(Box::new(files.into_iter().enumerate().flat_map(
+            move |(i, file)| {
+                if i >= fetched {
+                    fetched = prefetch_window(&io, &all, i, window);
+                    window = (window * 2).min(PREFETCH_MAX_WINDOW);
+                }
+                let validate = file
+                    .location
+                    .path_segments()
+                    .and_then(Iterator::last)
+                    .is_some_and(input::is_commit);
+                let schema = if validate { &commit_schema } else { &schema };
+                match inner.read_json_files(&[file], schema.clone(), predicate.clone()) {
+                    Ok(batches) if validate => {
+                        let mut actions = input::CommitActions::default();
+                        let original_columns = original_columns.clone();
+                        Box::new(batches.map(move |batch| actions.check(batch?, &original_columns)))
+                            as FileDataReadResultIterator
+                    },
+                    Ok(batches) => batches,
+                    Err(error) => Box::new(std::iter::once(Err(error))),
+                }
+            },
+        )))
     }
 
     fn write_json_file(

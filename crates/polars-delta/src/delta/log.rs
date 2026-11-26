@@ -163,7 +163,13 @@ fn transport_path(url: &url::Url) -> Result<String> {
     let path = percent_encoding::percent_decode_str(url.path())
         .decode_utf8()
         .map_err(invalid)?;
-    Ok(format!("{}{}", &url[..url::Position::BeforePath], path))
+    let origin = &url[..url::Position::BeforePath];
+    // lakeFS is read through its S3 gateway, as the deltalake route rewrites every file and
+    // deletion vector path. Every path of a plan passes through here.
+    match origin.strip_prefix("lakefs://") {
+        Some(rest) => Ok(format!("s3://{rest}{path}")),
+        None => Ok(format!("{origin}{path}")),
+    }
 }
 /// Files above this size are parsed on a blocking thread, so that the IO task keeps going.
 const PARSE_OFFLOAD_BYTES: usize = 32 * 1024;
@@ -545,6 +551,11 @@ mod tests {
         assert_eq!(
             absolute("/ignored", "file:///t/p=100%2525/a.parquet").unwrap(),
             "/t/p=100%25/a.parquet"
+        );
+        // lakeFS paths, as for add and deletion vector files, go to its S3 gateway.
+        assert_eq!(
+            absolute("s3://repo/main/t", "lakefs://repo/main/t/p=a%20b/a.parquet").unwrap(),
+            "s3://repo/main/t/p=a b/a.parquet"
         );
         assert_eq!(
             absolute("/ignored", "s3://bucket/t/p=100%2525/a.parquet").unwrap(),

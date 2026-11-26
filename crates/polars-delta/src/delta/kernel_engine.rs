@@ -14,7 +14,7 @@ use delta_kernel::{
 use delta_kernel_default_engine::DefaultEngine;
 use delta_kernel_default_engine::executor::tokio::TokioMultiThreadExecutor;
 use percent_encoding::percent_decode_str;
-use polars_io_ext_ffi::common::{FfiError, FfiErrorKind};
+use polars_io_ext_ffi::common::{FfiBuf, FfiError, FfiErrorKind};
 use polars_utils::aliases::{PlHashMap, PlHashSet};
 use tokio::sync::Mutex;
 use url::Url;
@@ -56,6 +56,7 @@ pub(super) fn with_engine<T>(
         })),
         aliases: Default::default(),
         sidecars: Default::default(),
+        prefetched: Default::default(),
     });
     let lease = Lease(&io);
     let store = Arc::new(store::HostStore(io.clone()));
@@ -126,6 +127,9 @@ struct HostIo {
     live: Mutex<Option<Live>>,
     aliases: std::sync::Mutex<PlHashMap<Path, Source>>,
     sidecars: std::sync::Mutex<PlHashSet<Url>>,
+    /// Commit files fetched ahead of Kernel's reads by `handlers::prefetch_window`, by host URL.
+    /// A full read of the same object takes its entry, including a failure.
+    prefetched: std::sync::Mutex<PlHashMap<String, std::result::Result<FfiBuf, HostError>>>,
 }
 
 struct Live {
@@ -234,6 +238,8 @@ struct Lease<'a>(&'a HostIo);
 
 impl Lease<'_> {
     fn close(&self) -> Option<HostError> {
+        // Kernel may keep the engine alive; parked buffers must not outlive the request.
+        self.0.prefetched.lock().unwrap().clear();
         futures::executor::block_on(self.0.live.lock())
             .take()
             .and_then(|live| live.changed)
