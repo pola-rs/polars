@@ -7363,7 +7363,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
