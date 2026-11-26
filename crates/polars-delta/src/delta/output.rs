@@ -424,6 +424,12 @@ async fn export(storage: &Storage, request: &Request, snapshot: Snapshot) -> Res
     let header = OutputHeader {
         resolved_version: snapshot.version,
         column_mapping_mode: schema.mode,
+        table_id: snapshot
+            .metadata
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
         row_count,
         statistics,
     }

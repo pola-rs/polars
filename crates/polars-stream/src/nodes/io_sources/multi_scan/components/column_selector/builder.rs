@@ -670,13 +670,30 @@ impl ColumnSelectorBuilder {
                             return mismatch_err("physical ID mismatch for map values column");
                         }
 
-                        let incoming_key_dtype = incoming_key.type_.to_polars_dtype();
-                        let target_key_dtype = target_key.type_.to_polars_dtype();
+                        // Struct keys can be renamed or reordered by column mapping; this
+                        // preserves key uniqueness, and `with_keys` revalidates it anyway.
+                        let key_selector = self.attach_iceberg_transforms(
+                            ColumnSelector::Position(0),
+                            incoming_key,
+                            target_key,
+                            iceberg_default_value_provider,
+                        )?;
 
-                        let Ok(cast_key) =
-                            incoming_key_dtype.matches_schema_type(&target_key_dtype)
-                        else {
-                            return mismatch_err("Map key types are not castable");
+                        let mut cast_key = false;
+                        let key_mapping = match key_selector {
+                            ColumnSelector::Position(0) => {
+                                let incoming_key_dtype = incoming_key.type_.to_polars_dtype();
+                                let target_key_dtype = target_key.type_.to_polars_dtype();
+
+                                let Ok(cast) =
+                                    incoming_key_dtype.matches_schema_type(&target_key_dtype)
+                                else {
+                                    return mismatch_err("Map key types are not castable");
+                                };
+                                cast_key = cast;
+                                None
+                            },
+                            key_selector => Some(key_selector),
                         };
 
                         let mut selector = match self.attach_iceberg_transforms(
@@ -689,6 +706,11 @@ impl ColumnSelectorBuilder {
                             value_selector => ColumnTransform::MapValuesMapping { value_selector }
                                 .into_selector(input_selector),
                         };
+
+                        if let Some(key_selector) = key_mapping {
+                            selector = ColumnTransform::MapKeysMapping { key_selector }
+                                .into_selector(selector);
+                        }
 
                         if cast_key {
                             selector = ColumnTransform::Cast {

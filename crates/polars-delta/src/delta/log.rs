@@ -92,6 +92,10 @@ pub fn absolute(root: &str, path: &str) -> Result<String> {
         }
     }
     if let Ok(url) = url::Url::parse(path) {
+        // A signed HTTP URL authenticates by its query: pass it on whole, still escaped.
+        if matches!(url.scheme(), "http" | "https") && url.query().is_some() {
+            return Ok(url.to_string());
+        }
         return transport_path(&url);
     }
     // File URIs describe an escaped filesystem root. Subsequent roots, including
@@ -322,18 +326,27 @@ fn commit_range(
 /// previous commit's time so that times strictly increase. In-commit timestamps increase by
 /// the protocol, so the first version past the target is found by binary search; modification
 /// times come with the listing, so they cost no reads.
+///
+/// `ict_from` is `(enablement version, enablement timestamp)`. A timestamp at or after the
+/// enablement timestamp lies in the in-commit era, however the older commits' modification
+/// times were set, so those are not consulted.
 pub(super) async fn version_at(
     storage: &Storage,
     commits: &BTreeMap<i64, Object>,
     timestamp: i64,
-    ict_from: Option<i64>,
+    ict_from: Option<(i64, Option<i64>)>,
 ) -> Result<i64> {
+    let in_commit_era = ict_from.is_some_and(|(_, at)| at.is_some_and(|at| timestamp >= at));
+    let ict_from = ict_from.map(|(version, _)| version);
     let mut chosen = None;
     let mut previous: Option<i64> = None;
     let mut in_commit = Vec::new();
     for (version, object) in commits {
         if ict_from.is_some_and(|from| *version >= from) {
             in_commit.push((*version, object));
+            continue;
+        }
+        if in_commit_era {
             continue;
         }
         let mtime = object
@@ -377,15 +390,18 @@ async fn version_at_with_metadata(
         .and_then(Value::as_str)
         == Some("true")
     {
-        Some(
+        let property = |name: &str| {
             config
-                .and_then(|c| c.get("delta.inCommitTimestampEnablementVersion"))
+                .and_then(|c| c.get(name))
                 .and_then(Value::as_str)
                 .map(str::parse::<i64>)
                 .transpose()
-                .map_err(invalid)?
-                .unwrap_or(0),
-        )
+                .map_err(invalid)
+        };
+        Some((
+            property("delta.inCommitTimestampEnablementVersion")?.unwrap_or(0),
+            property("delta.inCommitTimestampEnablementTimestamp")?,
+        ))
     } else {
         None
     };
@@ -528,6 +544,16 @@ mod tests {
         assert_eq!(
             absolute("/ignored", "s3://bucket/t/p=100%2525/a.parquet").unwrap(),
             "s3://bucket/t/p=100%25/a.parquet"
+        );
+    }
+    #[test]
+    fn signed_http_urls_keep_their_query() {
+        let signed = "https://host.example/t/a%20b.parquet?sig=a%2Bb&exp=1";
+        assert_eq!(absolute("s3://bucket/table", signed).unwrap(), signed);
+        // Without a query the object key is raw, like other absolute URIs.
+        assert_eq!(
+            absolute("s3://bucket/table", "https://host.example/t/a%20b.parquet").unwrap(),
+            "https://host.example/t/a b.parquet"
         );
     }
     #[test]

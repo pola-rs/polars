@@ -514,7 +514,12 @@ fn create_physical_plan_impl(
                 }
             }
 
+            // A predicate fully consumed by file skipping may reference columns that
+            // projection pushdown removed from the schema, so it must not be bound.
             let predicate = predicate
+                .filter(|_| {
+                    !predicate_file_skip_applied.is_some_and(|skip| skip.no_residual_predicate)
+                })
                 .map(|predicate| {
                     create_scan_predicate(
                         &predicate,

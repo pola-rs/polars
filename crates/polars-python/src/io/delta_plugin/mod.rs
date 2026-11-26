@@ -3,7 +3,7 @@ mod host;
 mod schema;
 use std::ffi::CStr;
 use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
 use polars::prelude::CloudScheme;
 use polars::prelude::deletion::{DeltaDeletionVectorDecoder, set_delta_deletion_vector_decoder};
@@ -128,12 +128,60 @@ fn register_decoder(plugin: &'static delta_v1::Plugin) {
     set_delta_deletion_vector_decoder(Arc::new(PluginDecoder(plugin)));
 }
 
+/// Loads the decoder run on Rust threads, and whether the interpreter is about to shut down.
+/// Python state must not be touched by a foreign thread once finalization begins: CPython aborts
+/// ("the GIL is released", "thread state must be current"), and `Py_IsFinalizing` alone leaves a
+/// window between the check and taking the GIL. So an `atexit` hook, which runs before
+/// finalization, refuses new loads and waits for the running ones.
+static LOADS: Mutex<(bool, usize)> = Mutex::new((false, 0));
+static LOADS_DONE: Condvar = Condvar::new();
+
+struct LoadGuard;
+
+impl LoadGuard {
+    /// `None` once the interpreter is shutting down.
+    fn begin() -> Option<Self> {
+        let mut loads = LOADS.lock().unwrap();
+        if loads.0 {
+            return None;
+        }
+        loads.1 += 1;
+        Some(Self)
+    }
+}
+
+impl Drop for LoadGuard {
+    fn drop(&mut self) {
+        LOADS.lock().unwrap().1 -= 1;
+        LOADS_DONE.notify_all();
+    }
+}
+
+/// `atexit` hook: no decoder load starts after this, and none is running when it returns.
+#[pyfunction]
+fn _delta_plugin_stop_loading(py: Python<'_>) {
+    py.detach(|| {
+        let mut loads = LOADS.lock().unwrap();
+        loads.0 = true;
+        while loads.1 > 0 {
+            loads = LOADS_DONE.wait(loads).unwrap();
+        }
+    });
+}
+
 /// Make scans find the decoder in a process that did not resolve the plan: on first need, import
 /// the Python layer and let it load the installed plugin. Called at module init.
-pub fn install_decoder_loader() {
+pub fn install_decoder_loader(py: Python<'_>) -> PyResult<()> {
+    py.import("atexit")?.call_method1(
+        "register",
+        (wrap_pyfunction!(_delta_plugin_stop_loading, py)?,),
+    )?;
     polars::prelude::deletion::set_delta_deletion_vector_decoder_loader(Box::new(|| {
         // This runs on a blocking-pool thread that can outlive the interpreter (a scan collected
-        // from a daemon thread or an atexit hook): `attach` would hang or crash there.
+        // from a daemon thread or an atexit hook): it must not attach once shutdown has begun.
+        let Some(_guard) = LoadGuard::begin() else {
+            return Err("the Python interpreter is shutting down".to_string());
+        };
         // `attach` is reentrant for a thread that already holds the GIL.
         Python::try_attach(|py| {
             let reason = py
@@ -148,6 +196,7 @@ pub fn install_decoder_loader() {
         })
         .unwrap_or_else(|| Err("the Python interpreter is shutting down".to_string()))
     }));
+    Ok(())
 }
 
 /// Register the plugin's deletion-vector decoder with the scan engine. Scans resolved by
@@ -187,7 +236,7 @@ pub fn _delta_plugin_scan(
     storage_options: OptPyCloudOptions,
     credential_provider: Option<Py<PyAny>>,
     metadata_cache: PyRef<'_, PyIcebergMetadataFileCache>,
-) -> PyResult<(PyLazyFrame, i64)> {
+) -> PyResult<(PyLazyFrame, i64, String)> {
     let capsule = capsule.cast::<PyCapsule>()?;
     let Dispatch::V2(plugin) = dispatch(capsule).map_err(PyPolarsErr::from)?;
     register_decoder(plugin);
@@ -215,7 +264,7 @@ pub fn _delta_plugin_scan(
             .to_string(),
         stats: Default::default(),
     };
-    let (lf, version) = py.enter_polars(move || {
+    let (lf, version, table_id) = py.enter_polars(move || {
         let ctx = host::HostCtx {
             cloud_options: cloud_options.clone(),
             metadata_cache: Some(metadata_cache),
@@ -231,16 +280,16 @@ pub fn _delta_plugin_scan(
             })?;
         if schema_only {
             // An empty frame with the table's schema: the plan listed no files.
-            let (schema, version) = schema::schema_only(output)?;
+            let (schema, version, table_id) = schema::schema_only(output)?;
             let lf = polars::prelude::IntoLazy::lazy(
                 polars::prelude::DataFrame::empty_with_schema(&schema),
             );
-            return PolarsResult::Ok((lf, version));
+            return PolarsResult::Ok((lf, version, table_id));
         }
-        let (dsl, version) = convert::build_scan(output, cloud_options)?;
-        Ok((polars::prelude::LazyFrame::from(dsl), version))
+        let (dsl, version, table_id) = convert::build_scan(output, cloud_options)?;
+        Ok((polars::prelude::LazyFrame::from(dsl), version, table_id))
     })?;
-    Ok((lf.into(), version))
+    Ok((lf.into(), version, table_id))
 }
 
 fn ffi_to_polars_err(

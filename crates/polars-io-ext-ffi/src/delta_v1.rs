@@ -224,6 +224,9 @@ pub struct FfiOutputHeader {
     pub column_mapping_mode: FfiBuf,
     pub row_count: FfiOption<RowCount>,
     pub statistics: bool,
+    /// The table's `metaData.id`: separates a replaced table from the same table at a version.
+    /// Added before v1 was first released: the v1 layout is not frozen until then.
+    pub table_id: FfiBuf,
 }
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct OutputHeader {
@@ -231,6 +234,7 @@ pub struct OutputHeader {
     pub column_mapping_mode: String,
     pub row_count: Option<(u64, u64)>,
     pub statistics: bool,
+    pub table_id: String,
 }
 impl OutputHeader {
     pub fn into_ffi(self) -> FfiOutputHeader {
@@ -242,6 +246,7 @@ impl OutputHeader {
                 .map(|(physical, deleted)| RowCount { physical, deleted })
                 .into(),
             statistics: self.statistics,
+            table_id: FfiBuf::from_string(self.table_id),
         }
     }
     pub fn from_ffi(h: &FfiOutputHeader) -> Self {
@@ -250,6 +255,7 @@ impl OutputHeader {
             column_mapping_mode: h.column_mapping_mode.to_string_lossy(),
             row_count: h.row_count.into_option().map(|c| (c.physical, c.deleted)),
             statistics: h.statistics,
+            table_id: h.table_id.to_string_lossy(),
         }
     }
 }

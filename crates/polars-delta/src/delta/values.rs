@@ -204,6 +204,27 @@ pub fn partition_text(
         Some(text) => Ok(Value(Sv::Str(Cow::Borrowed(text)))),
     }
 }
+/// Bytes of a binary partition value: `\uXXXX` escapes (the protocol's form) become the byte,
+/// and any other character is taken as that byte, so a lone backslash stays literal.
+fn binary_bytes(s: &str) -> Result<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(c) = rest.chars().next() {
+        let escaped = rest
+            .strip_prefix("\\u")
+            .and_then(|r| r.get(..4).map(|h| (h, &r[4..])))
+            .filter(|(h, _)| h.bytes().all(|b| b.is_ascii_hexdigit()));
+        if let Some((hex, after)) = escaped {
+            let unit = u16::from_str_radix(hex, 16).map_err(invalid)?;
+            out.push(u8::try_from(unit).map_err(invalid)?);
+            rest = after;
+        } else {
+            out.push(u8::try_from(c as u32).map_err(invalid)?);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    Ok(out)
+}
 /// `value` (unscaled, at `from` scale) as an unscaled decimal of `scale` and `precision`.
 fn rescale(value: i128, from: usize, scale: usize, precision: usize) -> Result<i128> {
     let v = if scale >= from {
@@ -363,14 +384,7 @@ impl Builder {
             }),
             Inner::Utf8(b) => b.push(value.text().as_deref()),
             Inner::Binary(b) => {
-                let bytes = value
-                    .text()
-                    .map(|s| {
-                        s.chars()
-                            .map(|c| u8::try_from(c as u32).map_err(invalid))
-                            .collect::<Result<Vec<_>>>()
-                    })
-                    .transpose()?;
+                let bytes = value.text().map(|s| binary_bytes(&s)).transpose()?;
                 b.push(bytes.as_deref())
             },
             Inner::Decimal(v, scale, precision) => v.push(match value {
@@ -515,7 +529,49 @@ pub fn stat_value<'a>(column: &Column, value: &Sv<'a>, null_count: bool, max: bo
             .and_then(|v| v.checked_add(1000))
             .map_or(Sv::Null, Sv::Int);
     }
+    if !null_count
+        && matches!(column.field.dtype, D::Float64)
+        && matches!(value, Sv::Num(_) | Sv::Str(_) | Sv::Float(_))
+        && widened_from_float(column)
+    {
+        // JSON bounds of an old FLOAT are its shortest decimal, which parsed as a DOUBLE can
+        // lie on either side of the widened value. Only a decimal that is itself a FLOAT's
+        // exact value is a proven bound. Typed (checkpoint) bounds were parsed from that text as
+        // DOUBLEs by Kernel, so they are checked alike.
+        let parsed = match value {
+            Sv::Float(v) => Some(*v),
+            _ => value.text().and_then(|s| s.parse::<f64>().ok()),
+        };
+        let exact = parsed.is_some_and(|v| v.is_finite() && f64::from(v as f32) == v);
+        if !exact {
+            return Sv::Null;
+        }
+    }
     value.clone()
+}
+/// Whether `column` was ever widened from FLOAT to DOUBLE (`delta.typeChanges`).
+fn widened_from_float(column: &Column) -> bool {
+    let Some(changes) = column
+        .field
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("delta.typeChanges"))
+    else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(changes)
+        .ok()
+        .and_then(|v| {
+            v.as_array().map(|changes| {
+                changes.iter().any(|c| {
+                    c["fromType"] == "float"
+                        && c["toType"] == "double"
+                        && c.get("fieldPath").is_none()
+                })
+            })
+        })
+        // Unreadable history cannot prove the bounds exact.
+        .unwrap_or(true)
 }
 #[cfg(test)]
 mod tests {
@@ -584,6 +640,28 @@ mod tests {
         let a = a.as_any().downcast_ref::<PrimitiveArray<i32>>().unwrap();
         assert_eq!(a.iter().collect::<Vec<_>>(), [Some(&5), Some(&6), Some(&7)]);
         assert!(array(&D::Int8, [Sv::Int(300)]).is_err());
+    }
+    #[test]
+    fn binary_partitions_decode_protocol_escapes_once() {
+        let a = array(
+            &D::BinaryView,
+            [
+                Sv::Str("\\u0068\\u0069".into()),
+                Sv::Str("\\u0000\\u00FF".into()),
+                // A literal backslash is the escape of 0x5C, so its tail stays text.
+                Sv::Str("\\u005Cu0061".into()),
+                Sv::Str("a\\z\\u00".into()),
+                Sv::Null,
+            ],
+        )
+        .unwrap();
+        let a = a.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+        assert_eq!(a.get(0), Some(&b"hi"[..]));
+        assert_eq!(a.get(1), Some(&b"\x00\xff"[..]));
+        assert_eq!(a.get(2), Some(&br"\u0061"[..]));
+        assert_eq!(a.get(3), Some(&br"a\z\u00"[..]));
+        assert_eq!(a.get(4), None);
+        assert!(array(&D::BinaryView, [Sv::Str("\\u0100".into())]).is_err());
     }
     #[test]
     fn push_or_null_keeps_builder_aligned() {

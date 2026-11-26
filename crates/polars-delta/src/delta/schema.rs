@@ -148,7 +148,20 @@ fn parse_fields(v: &Value, mode: &str) -> Result<Vec<Column>> {
                 return Err(invalid("duplicate case-insensitive field name"));
             }
             let raw_type = v.get("type").ok_or_else(|| invalid("missing field type"))?;
-            let (dtype, children) = parse_type(raw_type, mode)?;
+            let physical = if mode == "none" {
+                name.to_owned()
+            } else {
+                v.get("metadata")
+                    .and_then(|m| m.get("delta.columnMapping.physicalName"))
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| invalid("missing physical name"))?
+                    .to_owned()
+            };
+            let nested_ids = v
+                .get("metadata")
+                .and_then(|m| m.get("delta.columnMapping.nested.ids"))
+                .filter(|_| mode != "none");
+            let (dtype, children) = parse_type(raw_type, mode, nested_ids, &physical)?;
             let mut md = Metadata::new();
             if let Some(metadata) = v.get("metadata").and_then(Value::as_object) {
                 for (k, v) in metadata {
@@ -177,15 +190,6 @@ fn parse_fields(v: &Value, mode: &str) -> Result<Vec<Column>> {
             if is_variant(raw_type) {
                 md.insert("polars.delta.variant".into(), "true".into());
             }
-            let physical = if mode == "none" {
-                name.to_owned()
-            } else {
-                v.get("metadata")
-                    .and_then(|m| m.get("delta.columnMapping.physicalName"))
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| invalid("missing physical name"))?
-                    .to_owned()
-            };
             if mode != "none" {
                 let id = v
                     .get("metadata")
@@ -208,15 +212,26 @@ fn parse_fields(v: &Value, mode: &str) -> Result<Vec<Column>> {
         })
         .collect()
 }
-fn synthetic(name: &str, dtype: D, nullable: bool) -> Field {
+/// The ID declared for a nested array element, map key or map value in the field's
+/// `delta.columnMapping.nested.ids`, keyed by `<physical name>.element|key|value`.
+fn declared_id(nested_ids: Option<&Value>, path: &str) -> Result<Option<u32>> {
+    let Some(id) = nested_ids.and_then(|ids| ids.get(path)) else {
+        return Ok(None);
+    };
+    id.as_u64()
+        .filter(|i| *i > 0 && *i < i32::MAX as u64)
+        .map(|i| Some(i as u32))
+        .ok_or_else(|| invalid("invalid nested column mapping ID"))
+}
+fn synthetic(name: &str, dtype: D, nullable: bool, declared: Option<u32>) -> Field {
     let mut md = Metadata::new();
-    let id = match name {
+    let id = declared.unwrap_or(match name {
         "element" => u32::MAX,
         "key" => u32::MAX - 1,
         "variant_value" => u32::MAX - 3,
         "variant_metadata" => u32::MAX - 4,
         _ => u32::MAX - 2,
-    };
+    });
     md.insert("PARQUET:field_id".into(), id.to_string().into());
     Field::new(name.into(), dtype, nullable).with_metadata(md)
 }
@@ -225,15 +240,26 @@ fn is_variant(raw: &Value) -> bool {
         .or_else(|| raw.get("type").and_then(Value::as_str))
         == Some("variant")
 }
-fn synthetic_typed(name: &str, dtype: D, nullable: bool, raw: &Value) -> Field {
-    let mut field = synthetic(name, dtype, nullable);
+fn synthetic_typed(
+    name: &str,
+    dtype: D,
+    nullable: bool,
+    raw: &Value,
+    declared: Option<u32>,
+) -> Field {
+    let mut field = synthetic(name, dtype, nullable, declared);
     if is_variant(raw) {
         let metadata = field.metadata.get_or_insert_default();
         std::sync::Arc::make_mut(metadata).insert("polars.delta.variant".into(), "true".into());
     }
     field
 }
-fn parse_type(v: &Value, mode: &str) -> Result<(D, Vec<Column>)> {
+fn parse_type(
+    v: &Value,
+    mode: &str,
+    nested_ids: Option<&Value>,
+    path: &str,
+) -> Result<(D, Vec<Column>)> {
     if let Some(s) = v.as_str() {
         return Ok((primitive(s)?, vec![]));
     }
@@ -250,7 +276,8 @@ fn parse_type(v: &Value, mode: &str) -> Result<(D, Vec<Column>)> {
             let element = v
                 .get("elementType")
                 .ok_or_else(|| invalid("missing elementType"))?;
-            let (t, c) = parse_type(element, mode)?;
+            let element_path = format!("{path}.element");
+            let (t, c) = parse_type(element, mode, nested_ids, &element_path)?;
             Ok((
                 D::LargeList(Box::new(synthetic_typed(
                     "element",
@@ -259,6 +286,7 @@ fn parse_type(v: &Value, mode: &str) -> Result<(D, Vec<Column>)> {
                         .and_then(Value::as_bool)
                         .unwrap_or(true),
                     element,
+                    declared_id(nested_ids, &element_path)?,
                 ))),
                 c,
             ))
@@ -268,15 +296,23 @@ fn parse_type(v: &Value, mode: &str) -> Result<(D, Vec<Column>)> {
             let value = v
                 .get("valueType")
                 .ok_or_else(|| invalid("missing valueType"))?;
-            let (k, mut cols) = parse_type(key, mode)?;
-            let (t, c) = parse_type(value, mode)?;
+            let key_path = format!("{path}.key");
+            let value_path = format!("{path}.value");
+            let (k, mut cols) = parse_type(key, mode, nested_ids, &key_path)?;
+            let (t, c) = parse_type(value, mode, nested_ids, &value_path)?;
             cols.extend(c);
             Ok((
                 D::Map(
                     Box::new(Field::new(
                         "entries".into(),
                         D::Struct(vec![
-                            synthetic_typed("key", k, false, key),
+                            synthetic_typed(
+                                "key",
+                                k,
+                                false,
+                                key,
+                                declared_id(nested_ids, &key_path)?,
+                            ),
                             synthetic_typed(
                                 "value",
                                 t,
@@ -284,6 +320,7 @@ fn parse_type(v: &Value, mode: &str) -> Result<(D, Vec<Column>)> {
                                     .and_then(Value::as_bool)
                                     .unwrap_or(true),
                                 value,
+                                declared_id(nested_ids, &value_path)?,
                             ),
                         ]),
                         false,

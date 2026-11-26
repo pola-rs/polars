@@ -4,7 +4,7 @@ use polars_arrow::ffi;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_io_ext_ffi::delta_v1::{Output, OutputHeader};
 
-pub(super) fn schema_only(output: Output) -> PolarsResult<(Schema, i64)> {
+pub(super) fn schema_only(output: Output) -> PolarsResult<(Schema, i64, String)> {
     let Output {
         header,
         schema,
@@ -24,5 +24,5 @@ pub(super) fn schema_only(output: Output) -> PolarsResult<(Schema, i64)> {
         )
     };
     let schema = fields.iter().map(Field::from).collect();
-    Ok((schema, header.resolved_version))
+    Ok((schema, header.resolved_version, header.table_id))
 }

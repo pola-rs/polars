@@ -186,7 +186,14 @@ def plugin_scan(
     if uri.startswith("lakefs://"):
         msg = "Delta plugin does not support lakefs table storage"
         raise NotImplementedError(msg)
-    result, resolved_version = plr._delta_plugin_scan(
+    ambiguous = _delta_cloud_root_is_ambiguous(uri)
+    if ambiguous and not dataset._table_uri_escaped:
+        # The native planner opens this caller's spelling as the literal object key
+        # (the explicit `plugin` planner's intended meaning), while deltalake decodes
+        # escapes. Record that before planning, so a failure here (an unsupported
+        # table feature) can never fall back to the other interpretation.
+        dataset._root_planner = "plugin"
+    result, resolved_version, table_id = plr._delta_plugin_scan(
         _plugin_capsule(plr._IO_PLUGIN_IDS),
         table_uri=uri,
         version=version,
@@ -203,7 +210,20 @@ def plugin_scan(
         credential_provider=dataset.credential_provider_builder,
         metadata_cache=dataset._plugin_metadata_cache,
     )
+    expected_id = dataset._expected_table_id()
+    # An empty id is unknown (a table without one): nothing to compare.
+    table_id = table_id or None
+    if expected_id is not None and table_id is not None and table_id != expected_id:
+        msg = (
+            f"the Delta table at {uri!r} is not the one this scan was created from "
+            f"(table id {table_id!r}, expected {expected_id!r}); it was replaced. "
+            "Create a new scan"
+        )
+        raise ComputeError(msg)
+    if table_id is not None:
+        # An unknown id must not erase one learned earlier.
+        dataset._resolved_table_id = table_id
     dataset._resolved_version = resolved_version
-    if _delta_cloud_root_is_ambiguous(uri):
+    if ambiguous:
         dataset._root_planner = "plugin"
     return wrap_ldf(result), resolved_version

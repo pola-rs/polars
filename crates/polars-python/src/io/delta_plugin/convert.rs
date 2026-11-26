@@ -88,7 +88,7 @@ fn import_struct_stream(stream: ArrowArrayStream) -> PolarsResult<Option<DataFra
 pub(super) fn build_scan(
     output: Output,
     cloud_options: Option<CloudOptions>,
-) -> PolarsResult<(DslPlan, i64)> {
+) -> PolarsResult<(DslPlan, i64, String)> {
     let Output {
         header,
         schema,
@@ -254,6 +254,7 @@ pub(super) fn build_scan(
     Ok((
         DslBuilder::scan_parquet(ScanSources::Paths(Buffer::from(paths)), options, args)?.build(),
         header.resolved_version,
+        header.table_id,
     ))
 }
 

@@ -170,7 +170,13 @@ def main() -> None:
     require_equal("deltalake loaded", "deltalake" in sys.modules, False)
     print(
         json.dumps(
-            {"result": "pass", "schema": str(schema), "head": head, "count": count, "rows": rows}
+            {
+                "result": "pass",
+                "schema": str(schema),
+                "head": head,
+                "count": count,
+                "rows": rows,
+            }
         )
     )
 

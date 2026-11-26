@@ -314,7 +314,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     ))
     .unwrap();
     #[cfg(all(feature = "cloud", feature = "parquet"))]
-    crate::io::delta_plugin::install_decoder_loader();
+    crate::io::delta_plugin::install_decoder_loader(py)?;
 
     // Functions - I/O
     m.add_wrapped(wrap_pyfunction!(functions::_has_writable_scheme))

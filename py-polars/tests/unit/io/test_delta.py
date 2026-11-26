@@ -7,7 +7,7 @@ import warnings
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pyarrow as pa
 import pytest
@@ -2177,6 +2177,56 @@ def test_scan_delta_partition_values_from_log(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scan_delta_partition_filter_projects_data_column(
+    tmp_path: Path, engine: Literal["in-memory", "streaming"]
+) -> None:
+    # A predicate fully consumed by partition pruning must not be bound to the
+    # projected schema, which no longer holds its column.
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3, 4, 5, 6],
+            "p": ["A", "B", "B", None, "a=b/c", "a=b/c"],
+            "y": [10, 20, 30, 40, 50, 60],
+        }
+    )
+    df.write_delta(tmp_path, delta_write_options={"partition_by": ["p"]})
+    lf = pl.scan_delta(tmp_path)
+
+    def xs(q: pl.LazyFrame) -> list[int]:
+        return sorted(q.select("x").collect(engine=engine)["x"].to_list())
+
+    b = lf.filter(pl.col("p") == "B")
+    assert xs(b) == [2, 3]
+    assert b.select(pl.len()).collect(engine=engine).item() == 2
+    assert b.select(pl.col("y").sum()).collect(engine=engine).item() == 50
+    assert xs(lf.filter(pl.col("p").is_null())) == [4]
+    assert xs(lf.filter(pl.col("p") == "a=b/c")) == [5, 6]
+    # Mixed predicates still read and filter the data column.
+    assert xs(lf.filter((pl.col("p") == "B") & (pl.col("y") > 20))) == [3]
+    assert xs(lf.filter((pl.col("p") == "B") | (pl.col("y") == 50))) == [2, 3, 5]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("checkpoint", [False, True])
+def test_scan_delta_binary_partition_values_round_trip(
+    tmp_path: Path, checkpoint: bool
+) -> None:
+    values = [b"hello", b"a/b%z", b"\x00\xff", rb"\u0061", None]
+    df = pl.DataFrame({"id": range(len(values)), "part": values})
+    write_deltalake(tmp_path, df.to_arrow(), partition_by=["part"])
+    if checkpoint:
+        DeltaTable(tmp_path).create_checkpoint()
+
+    lf = pl.scan_delta(tmp_path)
+    assert_frame_equal(lf.collect(), df, check_row_order=False)
+    for value in values[:4]:
+        out = lf.filter(pl.col("part") == pl.lit(value)).collect()
+        assert out["part"].to_list() == [value]
+    assert lf.filter(pl.col("part").is_null()).collect()["id"].to_list() == [4]
+
+
+@pytest.mark.write_disk
 def test_scan_delta_aggregates_do_not_load_column_statistics(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
@@ -2300,3 +2350,222 @@ def test_scan_delta_casts_files_written_by_other_writers(
         expected.with_columns(**other).write_parquet(file)
         _resize_delta_add_actions(tmp_path)
         assert_frame_equal(pl.scan_delta(tmp_path).collect(), expected)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pa.schema([("a", pa.int32()), ("b", pa.int64())]),
+        pa.schema([("b", pa.int64()), ("a", pa.int64())]),
+        pa.schema([("a", pa.int64())]),
+        pa.schema([("a", pa.int64()), ("b", pa.int64()), ("extra", pa.int32())]),
+    ],
+    ids=["cast", "reorder", "subset", "extra"],
+)
+def test_scan_delta_pyarrow_schema_override_matches_data(
+    tmp_path: Path, schema: pa.Schema
+) -> None:
+    write_deltalake(tmp_path, pa.table({"a": [11, 22], "b": [101, 202]}))
+    dataset = DeltaTable(tmp_path).to_pyarrow_dataset(schema=schema)
+    expected = pl.scan_pyarrow_dataset(dataset).collect()
+
+    lf = pl.scan_delta(tmp_path, use_pyarrow=True, pyarrow_options={"schema": schema})
+    assert lf.collect_schema() == expected.schema
+    assert_frame_equal(lf.collect(), expected)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_supplied_table_after_log_expiry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.delta import _plugin
+
+    write_deltalake(tmp_path, pa.table({"x": [0]}))
+    held = DeltaTable(tmp_path)
+    write_deltalake(tmp_path, pa.table({"x": [1]}), mode="append")
+    DeltaTable(tmp_path).create_checkpoint()
+    (tmp_path / "_delta_log" / f"{0:020}.json").unlink()
+    assert held.version() == 0
+
+    if os.environ.get("POLARS_DELTA_PLANNER") == "plugin":
+        # The native planner is required: it cannot reopen the removed version.
+        with pytest.raises(ValueError, match="No table version found"):
+            pl.scan_delta(held).collect()
+        return
+
+    assert pl.scan_delta(held).collect().rows() == [(0,)]
+    assert pl.read_delta(held).rows() == [(0,)]
+
+    # The fallback is remembered: later collects do not retry native planning.
+    if not os.environ.get("POLARS_DELTA_PLANNER"):
+        calls = []
+        original = _plugin.plugin_scan
+        monkeypatch.setattr(
+            _plugin,
+            "plugin_scan",
+            lambda *a, **k: calls.append(1) or original(*a, **k),
+        )
+        dataset = new_pl_delta_dataset(held)
+        assert dataset._plugin_scan(schema_only=True) is None
+        assert dataset._plugin_scan(schema_only=True) is None
+        assert len(calls) == 1
+
+
+@pytest.mark.write_disk
+def test_scan_delta_supplied_table_serialization_keeps_loaded_version(
+    tmp_path: Path,
+) -> None:
+    write_deltalake(tmp_path, pa.table({"x": [0]}))
+    held = DeltaTable(tmp_path)
+    fresh = pl.scan_delta(held)
+    collected = pl.scan_delta(held)
+    assert collected.collect().rows() == [(0,)]
+    write_deltalake(tmp_path, pa.table({"x": [1]}), mode="append")
+    held.update_incremental()
+    write_deltalake(tmp_path, pa.table({"x": [2]}), mode="append")
+    assert held.version() == 1
+
+    for scan in (fresh, collected):
+        restored = pickle.loads(pickle.dumps(scan))
+        assert sorted(restored.collect().get_column("x")) == [0, 1]
+
+
+def test_delta_ambiguous_root_never_falls_back_to_other_interpretation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import polars._plr as plr
+    from polars.io.delta import _plugin
+
+    def unsupported(*_: Any, **__: Any) -> None:
+        msg = "unsupported table feature"
+        raise NotImplementedError(msg)
+
+    monkeypatch.setattr(plr, "_delta_plugin_scan", unsupported, raising=False)
+    monkeypatch.setattr(_plugin, "_plugin_capsule", lambda _: object())
+    monkeypatch.setattr(_plugin, "use_plugin_planner", lambda: True)
+    monkeypatch.delenv("POLARS_DELTA_PLANNER", raising=False)
+    monkeypatch.setattr(
+        "polars.io.delta._scan_resolver._get_delta_lake_table",
+        lambda **_: pytest.fail("must not reopen the path through deltalake"),
+        raising=False,
+    )
+
+    dataset = new_pl_delta_dataset("s3://bucket/literal%20space")
+    # Native planning opened the raw key (as a restored scan would): no fallback.
+    dataset._root_planner = "plugin"
+    with pytest.raises(pl.exceptions.ComputeError, match="ambiguous"):
+        dataset._plugin_scan(schema_only=True)
+
+    # The guard is recorded before planning, so a failure keeps the identity.
+    dataset = new_pl_delta_dataset("s3://bucket/literal%20space")
+    with pytest.raises(NotImplementedError):
+        _plugin.plugin_scan(dataset, schema_only=True)
+    assert dataset._root_planner == "plugin"
+
+
+def test_delta_auto_planner_uses_deltalake_for_ambiguous_caller_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from polars.io.delta import _plugin
+
+    calls = []
+    monkeypatch.setattr(_plugin, "use_plugin_planner", lambda: True)
+    monkeypatch.setattr(
+        _plugin, "plugin_scan", lambda *_, **__: calls.append(1) or (None, 0)
+    )
+    uri = "s3://bucket/literal%20space"
+
+    monkeypatch.delenv("POLARS_DELTA_PLANNER", raising=False)
+    assert new_pl_delta_dataset(uri)._plugin_scan(schema_only=True) is None
+    assert calls == []
+
+    # Explicit `plugin` keeps the raw native root.
+    monkeypatch.setenv("POLARS_DELTA_PLANNER", "plugin")
+    assert new_pl_delta_dataset(uri)._plugin_scan(schema_only=True) == (None, 0)
+    assert calls == [1]
+
+
+def test_delta_ambiguous_root_without_deltalake_explains_the_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from polars.io.delta import _plugin
+
+    monkeypatch.setattr(_plugin, "use_plugin_planner", lambda: True)
+    monkeypatch.delenv("POLARS_DELTA_PLANNER", raising=False)
+    monkeypatch.setitem(sys.modules, "deltalake", None)
+    dataset = new_pl_delta_dataset("s3://bucket/literal%20space")
+    with pytest.raises(ImportError, match=r"ambiguous.*deltalake.*PLANNER=plugin"):
+        dataset._plugin_scan(schema_only=True)
+
+
+@pytest.mark.parametrize("table_id", [None, ""])
+def test_delta_expected_table_id_ignores_a_table_without_id(
+    table_id: str | None,
+) -> None:
+    class Metadata:
+        id = table_id
+
+    class Table:
+        def metadata(self) -> Metadata:
+            return Metadata()
+
+    dataset = new_pl_delta_dataset("s3://bucket/t")
+    dataset.table_.set(Table())  # type: ignore[arg-type]
+    assert dataset._expected_table_id() is None
+    Metadata.id = "abc"  # type: ignore[assignment]
+    assert dataset._expected_table_id() == "abc"
+
+
+@pytest.mark.write_disk
+def test_scan_delta_pyarrow_old_state_with_schema_override(tmp_path: Path) -> None:
+    write_deltalake(tmp_path, pa.table({"a": [11, 22], "b": [101, 202]}))
+    schema = pa.schema([("b", pa.int64()), ("a", pa.int32())])
+    expected = pl.scan_pyarrow_dataset(
+        DeltaTable(tmp_path).to_pyarrow_dataset(schema=schema)
+    ).collect()
+    dataset = DeltaScanResolver(
+        table_=NoPickleOption(None),
+        table_uri_=str(tmp_path),
+        version=None,
+        storage_options=None,
+        credential_provider_builder=None,
+        delta_table_options=None,
+        use_pyarrow=True,
+        pyarrow_options={"schema": schema},
+    )
+    # Older pickles kept the Delta schema in `_schema` and had no `_table_schema`.
+    state = dataset.__getstate__()
+    state["_schema"] = pl.Schema(DeltaTable(tmp_path).schema())
+    state.pop("_table_schema", None)
+    dataset.__setstate__(state)
+    restored = pickle.loads(pickle.dumps(dataset))
+
+    frame, _ = restored._resolve_scan(
+        existing_resolved_version_key=None, projection=None, filter_columns=None
+    )
+    assert frame is not None
+    assert_frame_equal(frame.collect(), expected)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_pyarrow_builds_one_dataset_per_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_deltalake(tmp_path, pa.table({"a": [1]}))
+    calls = []
+    original = DeltaTable.to_pyarrow_dataset
+    monkeypatch.setattr(
+        DeltaTable,
+        "to_pyarrow_dataset",
+        lambda *a, **k: calls.append(1) or original(*a, **k),
+    )
+    lf = pl.scan_delta(tmp_path, use_pyarrow=True)
+    assert lf.collect_schema() == {"a": pl.Int64}
+    assert lf.collect().rows() == [(1,)]
+    assert len(calls) == 1
+    # A newer version builds another one.
+    write_deltalake(tmp_path, pa.table({"a": [2]}), mode="append")
+    assert sorted(pl.scan_delta(tmp_path, use_pyarrow=True).collect()["a"]) == [1, 2]

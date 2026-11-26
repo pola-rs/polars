@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -75,6 +76,26 @@ def _check_reader_protocol(table: DeltaTable) -> None:
         if len(missing_features) > 0:
             msg = f"delta table requires reader features {sorted(missing_features)}, which polars does not support"
             raise DeltaProtocolError(msg)
+
+
+def _table_id_of(table: DeltaTable) -> str | None:
+    """The table's `metaData.id`, None if it has none (or deltalake reports none)."""
+    table_id = table.metadata().id
+    return str(table_id) if table_id else None
+
+
+def _decode_binary_partition(value: str | bytes | None) -> bytes | None:
+    """Bytes of a binary partition value, with Delta byte escapes decoded once."""
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        # deltalake returns the escape text as bytes.
+        value = value.decode("latin-1")
+    return re.sub(
+        r"\\u00([0-9A-Fa-f]{2})",
+        lambda m: chr(int(m[1], 16)),
+        value,
+    ).encode("latin-1")
 
 
 def _table_root(table_uri: str) -> str:
@@ -161,13 +182,25 @@ class DeltaScanResolver(LazyFrameResolver):
     _table_version_pinned: bool = field(default=False, init=False, repr=False)
     _table_uri_escaped: bool | None = field(default=None, init=False, repr=False)
     _schema: Schema | None = field(default=None, init=False, repr=False)
+    # With `use_pyarrow`, `_schema` is that of the Arrow dataset as constructed
+    # (the caller's `schema` option can reorder, retype, drop or add columns);
+    # this is the table's own Delta schema, checked when the table advances.
+    _table_schema: Schema | None = field(default=None, init=False, repr=False)
     _resolved_version: int | None = field(default=None, init=False)
+    # The Delta table's `metaData.id` at first resolution (or the supplied object's):
+    # a table replaced at the same URI and version number has another one.
+    _resolved_table_id: str | None = field(default=None, init=False, repr=False)
     _plugin_enabled: bool | None = field(default=None, init=False)
     _root_planner: Literal["plugin", "deltalake"] | None = field(
         default=None, init=False, repr=False
     )
     _plugin_table_schema: str | None = field(default=None, init=False, repr=False)
     _plugin_metadata_cache: Any = field(default=None, init=False, repr=False)
+    # With `use_pyarrow`: the last dataset scan and its table version, so that the
+    # schema and the first resolution of a version build one dataset. Not pickled.
+    _pyarrow_frame: tuple[int, LazyFrame] | None = field(
+        default=None, init=False, repr=False
+    )
 
     def _plugin_scan(self, **options: Any) -> tuple[LazyFrame | None, int] | None:
         from polars.io.delta._plugin import (
@@ -189,11 +222,41 @@ class DeltaScanResolver(LazyFrameResolver):
             self._plugin_enabled = use_plugin_planner()
         if not self._plugin_enabled:
             return None
+        if (
+            self._root_planner is None
+            and not plugin_planner_required()
+            and self._caller_cloud_root_is_ambiguous()
+        ):
+            # The same spelling is a literal-percent key natively but a decoded
+            # prefix for deltalake, which released Polars used: the default call
+            # keeps that meaning. `POLARS_DELTA_PLANNER=plugin` opts into the literal
+            # key; table() records the choice so that it never changes afterwards.
+            self._require_deltalake_for_ambiguous_root()
+            return None
         try:
             return plugin_scan(self, **options)
-        except NotImplementedError:
+        except NotImplementedError as e:
             if plugin_planner_required():
                 raise
+            if self._root_planner == "plugin":
+                # Native planning read this raw cloud key, which deltalake would
+                # decode into another prefix: reading it would change the table.
+                msg = (
+                    f"delta: the cloud path {self._native_table_uri()!r} is ambiguous "
+                    "(a percent escape, `?` or `#`): polars-delta opened the literal "
+                    "key but cannot read that table, and deltalake would open a "
+                    f"different, decoded one instead ({e}). Use the exact key "
+                    "without such characters or a table that polars-delta supports."
+                )
+                raise ComputeError(msg) from e
+            self._plugin_enabled = False
+            return None
+        except ValueError as e:
+            if plugin_planner_required() or not self._supplied_snapshot_expired(e):
+                raise
+            # The caller's DeltaTable holds its loaded snapshot, but its version's
+            # log file was removed (a checkpoint replaced it): the native planner
+            # reopens the log by version, so plan from the object itself instead.
             self._plugin_enabled = False
             return None
         except IncompatiblePluginError:
@@ -203,6 +266,46 @@ class DeltaScanResolver(LazyFrameResolver):
             self._plugin_enabled = False
             return None
 
+    def _expected_table_id(self) -> str | None:
+        """The table identity a native expansion must match (None: not known yet)."""
+        table = self.table_.get()
+        if (
+            table is not None
+            and self.version is None
+            and not self._table_version_pinned
+        ):
+            # A supplied object holds its loaded metadata in memory.
+            return _table_id_of(table)
+        return self._resolved_table_id
+
+    def _require_deltalake_for_ambiguous_root(self) -> None:
+        """Raise a clear error if deltalake, which this path routes to, is missing."""
+        try:
+            import deltalake  # noqa: F401
+        except ImportError as e:
+            msg = (
+                f"delta: the cloud path {self._native_table_uri()!r} is ambiguous: "
+                "it reads as a literal percent escape (or `?`, `#`) in the object key, "
+                "or as the decoded prefix. By default it is read as released Polars "
+                "did (the decoded prefix), which needs `deltalake`; install it, or "
+                "set POLARS_DELTA_PLANNER=plugin to read the raw path natively"
+            )
+            raise ImportError(msg) from e
+
+    def _caller_cloud_root_is_ambiguous(self) -> bool:
+        self.table_uri()
+        return not self._table_uri_escaped and _delta_cloud_root_is_ambiguous(
+            self._native_table_uri()
+        )
+
+    def _supplied_snapshot_expired(self, error: ValueError) -> bool:
+        """Whether native planning could not reopen a supplied DeltaTable's version."""
+        return (
+            self.version is None
+            and self.table_.get() is not None
+            and "No table version found" in str(error)
+        )
+
     #
     # LazyFrameResolver interface functions
     #
@@ -210,8 +313,13 @@ class DeltaScanResolver(LazyFrameResolver):
     def schema(self) -> Schema:
         """Fetch the schema of the table."""
         if self._schema is None:
+            if self.use_pyarrow:
+                table = self.table()
+                self._table_schema = Schema(table.schema())
+                self._schema = self._pyarrow_scan(table).collect_schema()
+                self._resolved_version = table.version()
             # Reads the log's protocol and metadata only, not its file actions.
-            if (scan := self._plugin_scan(schema_only=True)) is not None:
+            elif (scan := self._plugin_scan(schema_only=True)) is not None:
                 frame, _ = scan
                 assert frame is not None
                 self._schema = frame.collect_schema()
@@ -220,6 +328,16 @@ class DeltaScanResolver(LazyFrameResolver):
                 self._schema = Schema(table.schema())
                 self._resolved_version = table.version()
         return self._schema
+
+    def _pyarrow_scan(self, table: DeltaTable) -> LazyFrame:
+        version = table.version()
+        if self._pyarrow_frame is not None and self._pyarrow_frame[0] == version:
+            return self._pyarrow_frame[1]
+        frame = pl.scan_pyarrow_dataset(
+            table.to_pyarrow_dataset(**(self.pyarrow_options or {}))
+        )
+        self._pyarrow_frame = (version, frame)
+        return frame
 
     def cse_eq(self, other: object) -> bool:
         return self is other
@@ -292,7 +410,11 @@ class DeltaScanResolver(LazyFrameResolver):
         table = self.table()
         self._resolved_version = table.version()
         version_key = str(self._resolved_version)
-        if self._schema is not None and Schema(table.schema()) != self._schema:
+        expected_table_schema = self._table_schema if self.use_pyarrow else self._schema
+        if (
+            expected_table_schema is not None
+            and Schema(table.schema()) != expected_table_schema
+        ):
             msg = "DeltaTable schema changed after scan creation; create a new scan"
             raise SchemaError(msg)
 
@@ -308,9 +430,17 @@ class DeltaScanResolver(LazyFrameResolver):
             return None, version_key
 
         if self.use_pyarrow:
-            return pl.scan_pyarrow_dataset(
-                table.to_pyarrow_dataset(**(self.pyarrow_options or {}))
-            ), version_key
+            frame = self._pyarrow_scan(table)
+            if self._table_schema is None:
+                # Saved before the Delta schema was kept apart: `_schema` may be the
+                # Delta schema rather than the dataset's (a `schema` option changes
+                # it), so it cannot be compared. Derive both again.
+                self._table_schema = Schema(table.schema())
+                self._schema = frame.collect_schema()
+            elif self._schema is not None and frame.collect_schema() != self._schema:
+                msg = "PyArrow dataset schema changed after scan creation; create a new scan"
+                raise SchemaError(msg)
+            return frame, version_key
 
         table_md = table.metadata()
         partition_columns = set(table_md.partition_columns)
@@ -375,6 +505,14 @@ class DeltaScanResolver(LazyFrameResolver):
                 raise ComputeError(msg)
             hive_partitions = add_actions.select(
                 pl.col("partition").struct.field(*hive_schema)
+            )
+            # Binary partition values are `\uXXXX` escapes, one per byte.
+            hive_partitions = hive_partitions.with_columns(
+                pl.col(name).map_elements(
+                    _decode_binary_partition, return_dtype=pl.Binary
+                )
+                for name, dtype in hive_schema.items()
+                if dtype == pl.Binary
             ).cast(hive_schema)
 
         reader_features = table.protocol().reader_features
@@ -564,7 +702,19 @@ class DeltaScanResolver(LazyFrameResolver):
     def __getstate__(self) -> dict[str, Any]:
         self.table_uri()
         state = self.__dict__.copy()
+        table = self.table_.get()
+        if (
+            table is not None
+            and self.version is None
+            and not self._table_version_pinned
+        ):
+            # The caller's loaded object is dropped from the state: save the version
+            # it holds (in memory, no I/O) so the restored scan reads exactly that
+            # snapshot, not an older resolved one or the latest.
+            state["_resolved_version"] = table.version()
+            state["_resolved_table_id"] = _table_id_of(table)
         state["_plugin_metadata_cache"] = None
+        state["_pyarrow_frame"] = None
         state["_plugin_enabled"] = None
         state["_root_planner"] = self._root_planner
         return state

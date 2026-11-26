@@ -276,6 +276,7 @@ impl<'a> ParsedLookup<'a> {
 /// Per-batch precomputation for [`Source::file_stats`].
 pub struct StatsLookup<'a> {
     parsed: Option<ParsedLookup<'a>>,
+    wanted: stats::Wanted,
 }
 impl Source {
     pub fn path(&self, row: usize) -> &str {
@@ -353,6 +354,7 @@ impl Source {
     }
     pub fn stats_lookup<'a>(&'a self, wanted: &[&str]) -> StatsLookup<'a> {
         StatsLookup {
+            wanted: stats::Wanted::new(wanted),
             parsed: match self {
                 Source::Checkpoint(c) => c
                     .stats_parsed
@@ -371,7 +373,9 @@ impl Source {
         lookup: &StatsLookup<'a>,
     ) -> Option<FileStats<'a>> {
         match self {
-            Source::Rows(r) => stats::scan(r.adds[row].stats.as_deref()?, wanted),
+            Source::Rows(r) => {
+                stats::scan_with(r.adds[row].stats.as_deref()?, wanted.len(), &lookup.wanted)
+            },
             Source::Checkpoint(c) => {
                 if let (Some(parsed), Some(lk)) = (&c.stats_parsed, &lookup.parsed) {
                     if !parsed.is_null(row) {
@@ -401,7 +405,11 @@ impl Source {
                         return Some(out);
                     }
                 }
-                stats::scan(str_at(c.stats.as_deref()?, row)?, wanted)
+                stats::scan_with(
+                    str_at(c.stats.as_deref()?, row)?,
+                    wanted.len(),
+                    &lookup.wanted,
+                )
             },
         }
     }

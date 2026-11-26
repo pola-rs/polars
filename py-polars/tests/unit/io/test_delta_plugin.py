@@ -325,7 +325,7 @@ def test_delta_plugin_widening_flag_visible_to_visitor(tmp_path: Path) -> None:
 
     # The planner's own resolved scan: `scan_delta` returns an unresolved dataset scan,
     # which the GPU engine cannot take (`IR::Resolver`) before it is resolved.
-    resolved, _ = plr._delta_plugin_scan(
+    resolved, _, _ = plr._delta_plugin_scan(
         _plugin_capsule(plr._IO_PLUGIN_IDS),
         table_uri=_resolve_delta_lake_uri(str(path), strict=False),
         version=None,
@@ -1212,7 +1212,14 @@ def test_delta_deltalake_cloud_root_preserves_identity_with_plugin(
                         )
 
         uri = f"s3://bucket/{root}"
+        # Explicit `plugin` opts into the raw native root: the literal key.
         assert_frame_equal(pl.scan_delta(uri, storage_options=options).collect(), other)
+        # The default (auto) keeps the meaning released Polars gave the spelling:
+        # the decoded prefix deltalake opens, the same as forcing deltalake.
+        monkeypatch.delenv("POLARS_DELTA_PLANNER")
+        assert_frame_equal(
+            pl.scan_delta(uri, storage_options=options).collect(), expected
+        )
         monkeypatch.setenv("POLARS_DELTA_PLANNER", "deltalake")
         scan = pl.scan_delta(uri, storage_options=options)
         assert scan.collect_schema() == expected.schema
@@ -1458,7 +1465,7 @@ def test_delta_plugin_recreated_table_reuses_log_name_and_mtime(tmp_path: Path) 
     cache = plr.PyIcebergMetadataFileCache(1 << 20)
 
     def collect() -> pl.DataFrame:
-        ldf, _ = plr._delta_plugin_scan(
+        ldf, _, _ = plr._delta_plugin_scan(
             _plugin_capsule(plr._IO_PLUGIN_IDS),
             table_uri=str(path),
             version=None,
@@ -1550,3 +1557,149 @@ def test_delta_plugin_checkpoint_replaced_between_head_and_range(
         assert all(ranges)
     finally:
         s3.server.shutdown()
+
+
+def _add_parquet(path: Path, table: Any) -> None:
+    import pyarrow.parquet as pq
+
+    file = path / "data.parquet"
+    pq.write_table(table, file)
+    with (path / "_delta_log/00000000000000000000.json").open("a") as f:
+        f.write(
+            "\n"
+            + json.dumps(
+                {
+                    "add": {
+                        "path": file.name,
+                        "size": file.stat().st_size,
+                        "partitionValues": {},
+                        "dataChange": True,
+                    }
+                }
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("physical", "expected_key"),
+    [
+        (("a", "b"), {"a": 10, "b": 20}),
+        (("b", "a"), {"a": 20, "b": 10}),
+        (("phys_a", "phys_b"), {"a": 10, "b": 20}),
+    ],
+)
+def test_delta_plugin_mapped_map_struct_keys(
+    tmp_path: Path, physical: tuple[str, str], expected_key: dict[str, int]
+) -> None:
+    import pyarrow as pa
+
+    def field_id(i: int) -> dict[bytes, bytes]:
+        return {b"PARQUET:field_id": str(i).encode()}
+
+    # The file holds the physical fields in the order of `physical_names`.
+    physical_names = ["a", "b"] if set(physical) == {"a", "b"} else list(physical)
+    ids = {physical[0]: 2, physical[1]: 3}
+    key = pa.struct(
+        [pa.field(n, pa.int64(), metadata=field_id(ids[n])) for n in physical_names]
+    )
+    dtype = pa.map_(key, pa.int64())
+    schema = pa.schema([pa.field("phys_map", dtype, metadata=field_id(1))])
+    values = dict(zip(physical_names, (10, 20), strict=True))
+    data = pa.Table.from_arrays([pa.array([[(values, 5)]], type=dtype)], schema=schema)
+
+    def mapped(name: str, dtype: Any, phys: str, i: int) -> dict[str, Any]:
+        return _field(
+            name,
+            dtype,
+            **{"delta.columnMapping.id": i, "delta.columnMapping.physicalName": phys},
+        )
+
+    delta_key = {
+        "type": "struct",
+        "fields": [
+            mapped("a", "long", physical[0], 2),
+            mapped("b", "long", physical[1], 3),
+        ],
+    }
+    delta_map = {
+        "type": "map",
+        "keyType": delta_key,
+        "valueType": "long",
+        "valueContainsNull": True,
+    }
+    path = _table(
+        tmp_path / "t", [mapped("m", delta_map, "phys_map", 1)], [], mode="name"
+    )
+    _add_parquet(path, data)
+
+    lf = pl.scan_delta(path)
+    for engine in ("auto", "streaming"):
+        out = lf.collect(engine=engine)
+        assert out.to_arrow()["m"].to_pylist() == [[(expected_key, 5)]]
+
+
+@pytest.mark.parametrize("mode", ["id", "name"])
+def test_delta_plugin_map_declared_nested_ids(tmp_path: Path, mode: str) -> None:
+    import pyarrow as pa
+
+    key = pa.field(
+        "key", pa.string(), nullable=False, metadata={b"PARQUET:field_id": b"102"}
+    )
+    value = pa.field("value", pa.int64(), metadata={b"PARQUET:field_id": b"103"})
+    dtype = pa.map_(key, value)
+    schema = pa.schema(
+        [pa.field("phys_map", dtype, metadata={b"PARQUET:field_id": b"2"})]
+    )
+    maps = [[("a", 7), ("b", None)], [], None]
+    data = pa.Table.from_arrays([pa.array(maps, type=dtype)], schema=schema)
+
+    delta_map = {
+        "type": "map",
+        "keyType": "string",
+        "valueType": "long",
+        "valueContainsNull": True,
+    }
+    field = _field(
+        "m",
+        delta_map,
+        **{
+            "delta.columnMapping.id": 2,
+            "delta.columnMapping.physicalName": "phys_map",
+            "delta.columnMapping.nested.ids": {
+                "phys_map.key": 102,
+                "phys_map.value": 103,
+            },
+        },
+    )
+    path = _table(tmp_path / "t", [field], [], mode=mode)
+    _add_parquet(path, data)
+
+    out = pl.scan_delta(path).collect()
+    assert out.to_arrow()["m"].to_pylist() == maps
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("held", ["schema", "projection", "supplied"])
+def test_delta_plugin_refuses_replaced_table_at_same_version(
+    tmp_path: Path, held: str
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    deltalake = pytest.importorskip("deltalake")
+
+    path, old = tmp_path / "table", tmp_path / "old"
+    deltalake.write_deltalake(path, pa.table({"x": [1], "y": [2]}))
+    if held == "supplied":
+        scan = pl.scan_delta(deltalake.DeltaTable(path))
+    else:
+        scan = pl.scan_delta(path)
+        if held == "schema":
+            scan.collect_schema()
+        else:
+            assert scan.collect().rows() == [(1, 2)]
+    path.rename(old)
+    deltalake.write_deltalake(path, pa.table({"x": [9], "y": [8]}))
+    assert deltalake.DeltaTable(path).version() == 0
+    # A fresh scan reads the replacement; the held one must not.
+    assert pl.scan_delta(path).collect().rows() == [(9, 8)]
+    with pytest.raises(pl.exceptions.ComputeError, match="replaced"):
+        (scan.select("x") if held == "projection" else scan).collect()

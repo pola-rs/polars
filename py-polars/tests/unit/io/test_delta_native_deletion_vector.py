@@ -452,8 +452,10 @@ def test_native_vectors_starting_together_load_the_plugin_once(tmp_path: Path) -
 
 
 def test_native_vector_scan_while_interpreter_exits(tmp_path: Path) -> None:
-    # A scan collected from a daemon thread while the interpreter shuts down reaches the
-    # plugin loader from a Rust thread: it must neither hang nor crash the process.
+    # A scan collected from daemon threads while the interpreter shuts down reaches the
+    # plugin loader from a Rust thread: it must neither hang nor crash the process. The
+    # window is narrow (about 2% of runs with eight threads before the loader waited for
+    # the `atexit` hook), so this is a probabilistic guard.
     pytest.importorskip("polars_delta")
     path = tmp_path / "data.parquet"
     pl.DataFrame({"a": range(5)}).write_parquet(path)
@@ -469,7 +471,8 @@ def test_native_vector_scan_while_interpreter_exits(tmp_path: Path) -> None:
         "            lf.collect()\n"
         "        except pl.exceptions.PolarsError:\n"
         "            pass\n"
-        "threading.Thread(target=run, daemon=True).start()\n"
+        "for _ in range(8):\n"
+        "    threading.Thread(target=run, daemon=True).start()\n"
     )
-    for _ in range(10):
+    for _ in range(30):
         _fresh_process(code, timeout=30)

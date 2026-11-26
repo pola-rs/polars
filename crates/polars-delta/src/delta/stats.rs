@@ -177,7 +177,7 @@ impl<'a> Scanner<'a> {
         })
     }
     /// An object of per-column statistics: keep the requested columns.
-    fn columns(&mut self, wanted: &[&str], out: &mut [Sv<'a>]) -> Option<()> {
+    fn columns(&mut self, wanted: &Wanted, out: &mut [Sv<'a>]) -> Option<()> {
         if self.peek()? != b'{' {
             // `null` or another type: no statistics of this kind.
             return self.skip(MAX_JSON_DEPTH - 1);
@@ -190,7 +190,7 @@ impl<'a> Scanner<'a> {
         loop {
             let key = self.string()?;
             self.eat(b':')?;
-            match wanted.iter().position(|w| *w == key) {
+            match wanted.position(&key) {
                 Some(i) => out[i] = self.value(MAX_JSON_DEPTH - 2)?,
                 None => self.skip(MAX_JSON_DEPTH - 2)?,
             }
@@ -205,15 +205,39 @@ impl<'a> Scanner<'a> {
         }
     }
 }
-/// Scan a `stats` string. `None` if it is not a JSON object (the file then has no statistics).
-/// Skips everything but `numRecords`, `tightBounds` and the `wanted` columns (physical names).
+/// The requested columns (physical names), indexed once for all files of a request.
+pub struct Wanted(polars_utils::aliases::PlHashMap<Box<str>, usize>);
+impl Wanted {
+    pub fn new(names: &[&str]) -> Self {
+        let mut index = polars_utils::aliases::PlHashMap::default();
+        for (i, name) in names.iter().enumerate() {
+            // The first of duplicate names wins.
+            index.entry(Box::<str>::from(*name)).or_insert(i);
+        }
+        Self(index)
+    }
+    fn position(&self, name: &str) -> Option<usize> {
+        self.0.get(name).copied()
+    }
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+/// [`scan_with`] for a one-off list of columns.
+#[cfg(test)]
 pub fn scan<'a>(stats: &'a str, wanted: &[&str]) -> Option<FileStats<'a>> {
+    scan_with(stats, wanted.len(), &Wanted::new(wanted))
+}
+/// Scan a `stats` string. `None` if it is not a JSON object (the file then has no statistics).
+/// Skips everything but `numRecords`, `tightBounds` and the `wanted` columns, of which there
+/// are `columns`.
+pub fn scan_with<'a>(stats: &'a str, columns: usize, wanted: &Wanted) -> Option<FileStats<'a>> {
     let mut s = Scanner {
         text: stats,
         bytes: stats.as_bytes(),
         pos: 0,
     };
-    let mut out = FileStats::new(wanted.len());
+    let mut out = FileStats::new(columns);
     s.eat(b'{')?;
     if s.peek()? == b'}' {
         s.pos += 1;

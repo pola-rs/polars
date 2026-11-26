@@ -639,7 +639,8 @@ fn unindexed_checkpoint_bound_stays_unknown() {
     );
 }
 
-/// Planned files' `(path, value)` for one `stats` child (`t_min`, `t_max`), as `Option<i128>`.
+/// Planned files' `(path, value)` for one `stats` child (`t_min`, `t_max`), as `Option<i128>`
+/// (booleans as 0 or 1, doubles as their bit patterns).
 fn planned_stats(s: &Store, columns: &[&str], child: &str) -> Vec<(String, Option<i128>)> {
     use polars_arrow::array::{BooleanArray, PrimitiveArray};
     let mut r = Request {
@@ -677,6 +678,8 @@ fn planned_stats(s: &Store, columns: &[&str], child: &str) -> Vec<(String, Optio
                 Some(v.value(i) as i128)
             } else if let Some(v) = v.as_any().downcast_ref::<BooleanArray>() {
                 Some(i128::from(v.value(i)))
+            } else if let Some(v) = v.as_any().downcast_ref::<PrimitiveArray<f64>>() {
+                Some(i128::from(v.value(i).to_bits()))
             } else {
                 Some(
                     v.as_any()
@@ -950,7 +953,7 @@ fn linear_version_at(times: &[(i64, Option<i64>)], timestamp: i64) -> Option<i64
 fn version_at_store(
     times: &[(i64, Option<i64>)],
     timestamp: i64,
-    ict_from: Option<i64>,
+    ict_from: Option<(i64, Option<i64>)>,
 ) -> (Option<i64>, usize) {
     let mut s = Store::default();
     let mut commits = BTreeMap::new();
@@ -1002,11 +1005,35 @@ fn timestamp_travel_matches_the_linear_scan() {
     times.extend((3..40).map(|v| (50, Some(10_000 + v * 100))));
     for timestamp in (0..15000).step_by(7) {
         assert_eq!(
-            version_at_store(&times, timestamp, Some(3)).0,
+            version_at_store(&times, timestamp, Some((3, None))).0,
             linear_version_at(&times, timestamp),
             "in-commit, timestamp {timestamp}"
         );
     }
+}
+
+#[test]
+fn timestamp_travel_trusts_in_commit_timestamps_from_the_enablement_timestamp() {
+    // Version 1's file time was set after the in-commit timestamps of versions 2 and 3.
+    let times = [
+        (1000, None),
+        (4000, None),
+        (50, Some(2000)),
+        (50, Some(3000)),
+    ];
+    for (timestamp, expected) in [(3000, Some(3)), (2500, Some(2)), (2000, Some(2))] {
+        assert_eq!(
+            version_at_store(&times, timestamp, Some((2, Some(2000)))).0,
+            expected,
+            "{timestamp}"
+        );
+    }
+    // Before the enablement timestamp the modification times still decide.
+    assert_eq!(
+        version_at_store(&times, 1500, Some((2, Some(2000)))).0,
+        Some(0)
+    );
+    assert_eq!(version_at_store(&times, 500, Some((2, Some(2000)))).0, None);
 }
 
 #[test]
@@ -1015,7 +1042,7 @@ fn timestamp_travel_reads_logarithmically_many_commits() {
         .map(|v| (1000 + v, Some(100_000 + v * 10)))
         .collect::<Vec<_>>();
     for timestamp in [99_999, 100_000, 100_005, 101_000, 101_990, 105_000] {
-        let (found, reads) = version_at_store(&times, timestamp, Some(0));
+        let (found, reads) = version_at_store(&times, timestamp, Some((0, None)));
         assert_eq!(found, linear_version_at(&times, timestamp), "{timestamp}");
         assert!(reads <= 9, "{reads} commit reads for {timestamp}");
     }
@@ -1084,15 +1111,26 @@ fn v2_manifest_reads_a_sidecar_with_no_action_or_host_mtime() {
 #[test]
 fn v2_sidecar_rejects_standalone_metadata_actions() {
     let mut manifest = v2_manifest(&[]);
-    let path = "/table/_delta_log/_sidecars/sidecar.parquet";
+    // A file URI needs a drive letter on Windows, and the host lists the path it resolves to.
+    let root = if cfg!(windows) { "C:\\table" } else { "/table" };
+    let uri = url::Url::from_file_path(
+        std::path::Path::new(root).join("_delta_log/_sidecars/sidecar.parquet"),
+    )
+    .unwrap();
+    let path = uri
+        .to_file_path()
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap();
     let bytes = fixture("rg-spread.checkpoint.parquet");
     manifest.last_mut().unwrap()["sidecar"] = json!({
-        "path": format!("file://{path}"),
+        "path": uri.as_str(),
         "sizeInBytes": bytes.len(),
         "modificationTime": 1000,
     });
     let mut store = v2_store(&manifest);
-    store.0.get_mut(path).unwrap().0 = bytes;
+    store.0.insert(path, (bytes, Some(1000)));
     let error = planned(&store, Request::default()).unwrap_err();
     assert!(
         error.message().contains("non-file action in sidecar"),
@@ -1375,6 +1413,116 @@ fn widened_date_json_bounds_with_declared_features() {
     );
     enable_date_widening(&mut store, false);
     assert_widened_date_bounds(&store);
+}
+
+#[test]
+fn widened_float_json_bounds_drop_values_that_are_not_exact_floats() {
+    let mut store = Store::default();
+    let stats = |min: &str, max: &str| {
+        format!(
+            r#"{{"numRecords":1,"minValues":{{"x":{min}}},"maxValues":{{"x":{max}}},"nullCount":{{"x":0}}}}"#
+        )
+    };
+    let add = |path: &str, stats: String| {
+        json!({"add":{"path":path,"size":10,"modificationTime":1000,"dataChange":true,
+            "partitionValues":{},"stats":stats}})
+    };
+    store.put(
+        "00000000000000000000.json",
+        &[
+            json!({"protocol":{"minReaderVersion":1,"minWriterVersion":2}}),
+            json!({"metaData":{"id":"id","format":{"provider":"parquet","options":{}},
+                "schemaString":json!({"type":"struct","fields":[
+                    {"name":"x","type":"float","nullable":true,"metadata":{}}
+                ]}).to_string(),"partitionColumns":[],"configuration":{}}}),
+            // The shortest text of the FLOAT -0.1, the exact widened value and 0.5.
+            add("short.parquet", stats("-0.1", "-0.1")),
+            add(
+                "exact.parquet",
+                stats("-0.10000000149011612", "-0.10000000149011612"),
+            ),
+            add("half.parquet", stats("0.5", "0.5")),
+        ],
+    );
+    store.put(
+        "00000000000000000001.json",
+        &[
+            json!({"protocol":{"minReaderVersion":3,"minWriterVersion":7,
+                "readerFeatures":["typeWidening"],"writerFeatures":["typeWidening"]}}),
+            json!({"metaData":{"id":"id","format":{"provider":"parquet","options":{}},
+                "schemaString":json!({"type":"struct","fields":[
+                    {"name":"x","type":"double","nullable":true,
+                     "metadata":{"delta.typeChanges":[
+                         {"fromType":"float","toType":"double","tableVersion":1}]}}
+                ]}).to_string(),"partitionColumns":[],
+                "configuration":{"delta.enableTypeWidening":"true"}}}),
+        ],
+    );
+    let exact = f64::from(-0.1f32).to_bits();
+    for child in ["x_min", "x_max"] {
+        assert_eq!(
+            planned_stats(&store, &["x"], child),
+            [
+                ("/table/exact.parquet".to_owned(), Some(i128::from(exact))),
+                (
+                    "/table/half.parquet".to_owned(),
+                    Some(i128::from(0.5f64.to_bits()))
+                ),
+                ("/table/short.parquet".to_owned(), None),
+            ],
+            "{child}"
+        );
+    }
+}
+
+fn assert_widened_float_bounds(store: &Store, short: Option<f64>) {
+    let bits = |v: f64| Some(i128::from(v.to_bits()));
+    for child in ["x_min", "x_max"] {
+        assert_eq!(
+            planned_stats(store, &["x"], child),
+            [
+                ("/table/exact.parquet".to_owned(), bits(f64::from(-0.1f32))),
+                ("/table/half.parquet".to_owned(), bits(0.5)),
+                ("/table/short.parquet".to_owned(), short.and_then(bits)),
+            ],
+            "{child}"
+        );
+    }
+}
+
+#[test]
+fn widened_float_checkpoint_keeps_float_bounds_exact_as_doubles() {
+    // Kernel coerces the typed FLOAT bounds of an old checkpoint to DOUBLE: all are floats.
+    let mut store = checkpoint_store(&[(
+        "00000000000000000000.checkpoint.parquet",
+        fixture("before-float-widening.checkpoint.parquet"),
+    )]);
+    store.put(
+        "00000000000000000001.json",
+        &[
+            json!({"protocol":{"minReaderVersion":3,"minWriterVersion":7,
+                "readerFeatures":["typeWidening"],"writerFeatures":["typeWidening"]}}),
+            json!({"metaData":{"id":"before-float-widening","format":{"provider":"parquet","options":{}},
+                "schemaString":json!({"type":"struct","fields":[
+                    {"name":"x","type":"double","nullable":true,
+                     "metadata":{"delta.typeChanges":[
+                         {"fromType":"float","toType":"double","tableVersion":1}]}}
+                ]}).to_string(),"partitionColumns":[],
+                "configuration":{"delta.enableTypeWidening":"true",
+                    "delta.checkpoint.writeStatsAsJson":"false",
+                    "delta.checkpoint.writeStatsAsStruct":"true"}}}),
+        ],
+    );
+    assert_widened_float_bounds(&store, Some(f64::from(-0.1f32)));
+}
+
+#[test]
+fn widened_float_checkpoint_drops_double_bounds_that_are_not_exact_floats() {
+    let store = checkpoint_store(&[(
+        "00000000000000000001.checkpoint.parquet",
+        fixture("after-float-widening.checkpoint.parquet"),
+    )]);
+    assert_widened_float_bounds(&store, None);
 }
 
 fn checkpoint_before_date_widening() -> Store {

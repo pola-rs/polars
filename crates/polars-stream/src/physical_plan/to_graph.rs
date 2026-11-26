@@ -1103,8 +1103,13 @@ fn to_graph_rec<'a>(
         } => {
             let hive_parts = hive_parts.clone();
 
+            // A predicate fully consumed by file skipping may reference columns that
+            // projection pushdown removed from the schema, so it must not be bound.
             let predicate = predicate
                 .as_ref()
+                .filter(|_| {
+                    !predicate_file_skip_applied.is_some_and(|skip| skip.no_residual_predicate)
+                })
                 .map(|pred| {
                     create_scan_predicate(
                         pred,

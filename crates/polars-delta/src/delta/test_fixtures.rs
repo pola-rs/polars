@@ -328,6 +328,58 @@ fn widened_checkpoint(name: &str) -> Vec<u8> {
     )
 }
 
+/// A checkpoint of a FLOAT column with typed bounds: FLOAT bounds before the widening to DOUBLE
+/// ("before-float-widening", version 0), or DOUBLE bounds after it ("after-float-widening",
+/// version 1; -0.1 is a double that is not exactly a float).
+fn float_widening_checkpoint(name: &str) -> Vec<u8> {
+    let after = name == "after-float-widening";
+    let mut x = column("x", if after { "double" } else { "float" });
+    let mut configuration = json!({
+        "delta.checkpoint.writeStatsAsJson": "false",
+        "delta.checkpoint.writeStatsAsStruct": "true",
+    });
+    let protocol = if after {
+        x["metadata"]["delta.typeChanges"] =
+            json!([{"fromType": "float", "toType": "double", "tableVersion": 1}]);
+        configuration["delta.enableTypeWidening"] = json!("true");
+        json!({"minReaderVersion": 3, "minWriterVersion": 7,
+            "readerFeatures": ["typeWidening"], "writerFeatures": ["typeWidening"]})
+    } else {
+        protocol()
+    };
+    let dtype = if after {
+        DataType::Float64
+    } else {
+        DataType::Float32
+    };
+    let mut fields = add_fields(string_map());
+    fields.extend([
+        ("modificationTime", DataType::Int64),
+        ("dataChange", DataType::Boolean),
+        ("stats_parsed", x_stats_type(dtype)),
+    ]);
+    let bound = |path: &str, value: f64| {
+        let mut add = add(path);
+        add["modificationTime"] = json!(1000);
+        add["dataChange"] = json!(true);
+        add["stats_parsed"] = json!({"numRecords": 1, "minValues": {"x": value},
+            "maxValues": {"x": value}, "nullCount": {"x": 0}});
+        json!({"add": add})
+    };
+    let short = if after { -0.1 } else { f64::from(-0.1f32) };
+    write(
+        checkpoint_schema(fields, after),
+        vec![
+            bound("short", short),
+            bound("exact", f64::from(-0.1f32)),
+            bound("half", 0.5),
+            json!({"metaData": metadata(name, vec![x], &[], configuration)}),
+            json!({"protocol": protocol}),
+        ],
+        None,
+    )
+}
+
 fn binary_stats() -> Vec<u8> {
     let mut fields = add_fields(string_map());
     let bounds = structure([("t", DataType::Int64), ("b", DataType::Binary)]);
@@ -444,6 +496,7 @@ pub(super) fn bytes(name: &str) -> Vec<u8> {
         "mixed-root" => mixed_root(),
         "wide-binary" => wide_checkpoint(),
         "binary-stats" => binary_stats(),
+        "before-float-widening" | "after-float-widening" => float_widening_checkpoint(name),
         "date-widened" | "before-date-widening" | "after-date-widening" => widened_checkpoint(name),
         "binary-partition" | "binary-partition-invalid" => {
             let value: &[u8] = if name == "binary-partition" {

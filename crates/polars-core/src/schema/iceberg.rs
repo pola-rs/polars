@@ -344,19 +344,34 @@ impl IcebergSchema {
     }
 }
 
+/// The table columns by each of their mapped names; the first column wins a shared name.
+fn columns_by_mapped_name(table: &IcebergSchema) -> PlHashMap<&str, &IcebergColumn> {
+    let mut out = PlHashMap::default();
+    for column in table.values() {
+        for name in &column.mapped_names {
+            out.entry(name.as_str()).or_insert(column);
+        }
+    }
+    out
+}
+
 /// Normalize Variant storage only after matching the enclosing field's Delta mapping.
 fn normalize_delta_variants<'a>(
     fields: impl IntoIterator<Item = &'a ArrowField>,
     table: &IcebergSchema,
     by_name: bool,
 ) -> PolarsResult<Vec<ArrowField>> {
+    let by_mapped_name = if by_name {
+        columns_by_mapped_name(table)
+    } else {
+        PlHashMap::default()
+    };
+
     fields
         .into_iter()
         .map(|field| {
             let column = if by_name {
-                table
-                    .values()
-                    .find(|c| c.mapped_names.iter().any(|n| n == &field.name))
+                by_mapped_name.get(field.name.as_str()).copied()
             } else {
                 field
                     .metadata
@@ -489,21 +504,19 @@ fn with_mapped_ids_of_level<'a>(
     // IDs of unmapped fields, unique within the level; they keep their position, which struct
     // field selection relies on.
     let mut unmapped_id = LIST_ELEMENT_DEFAULT_ID;
+    let by_mapped_name = columns_by_mapped_name(table);
 
     fields
         .into_iter()
-        .map(|field| {
-            match table
-                .values()
-                .find(|c| c.mapped_names.iter().any(|n| n == &field.name))
-            {
+        .map(
+            |field| match by_mapped_name.get(field.name.as_str()).copied() {
                 Some(column) => with_mapped_ids(field, column),
                 None => {
                     unmapped_id -= 1;
                     with_placeholder_ids(field, unmapped_id)
                 },
-            }
-        })
+            },
+        )
         .collect()
 }
 
